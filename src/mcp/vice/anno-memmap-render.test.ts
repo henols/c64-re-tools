@@ -20,6 +20,8 @@ import { synthesizeProject } from "./r2000-project.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
 import { formatConfidenceComment, CONFIDENCE_GRADES } from "./anno-confidence.ts";
 import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.ts";
+import type { AnnoStoreHandle } from "./anno-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -160,8 +162,135 @@ test("escapeMarkdownCell returns an empty string unchanged", () => {
   assert.equal(escapeMarkdownCell(""), "");
 });
 
-test("RENDERER_VERSION is bumped to \"2\" for the Markdown-cell-escaping output-shape change", () => {
-  assert.equal(RENDERER_VERSION, "2");
+test("RENDERER_VERSION is bumped to \"3\" for the store re-point -- the digest's canonical input is store rows, not the three wire shapes", () => {
+  // Version 2 pinned the Markdown-cell-escaping output-shape change (WR-04).
+  // Version 3 pins D-17: `computeRenderDigest()` canonicalises the store's own
+  // `RangeRow`/`LabelRow`/`CommentRow` instead of the three
+  // `r2000_get_*` wire shapes, so the SAME underlying annotations hash
+  // differently either side of that commit. An unchanged version across that
+  // boundary would let two incompatible renderings compare as ordinary drift.
+  assert.equal(RENDERER_VERSION, "3");
+});
+
+// ---------------------------------------------------------------------------
+// The render digest, over a real store. No child, no project file.
+// ---------------------------------------------------------------------------
+
+/** A store built by hand plus a valid sidecar beside it, both under THIS
+ * directory -- which is inside the workspace root, so `openStore()`'s
+ * confinement accepts it and a system tmpdir would (correctly) be refused.
+ * Every store-backed test below builds its input this way: explicit rows a
+ * reader can check against the expected Markdown, with no disassembly step in
+ * between. */
+function withRenderFixture<T>(
+  opts: { prefix: string; fill: (handle: AnnoStoreHandle) => void; provenance?: Record<string, unknown> },
+  fn: (paths: { dir: string; storePath: string; provenancePath: string }) => T | Promise<T>,
+): Promise<T> {
+  const dir = mkdtempSync(join(HERE, `.${opts.prefix}-`));
+  const storePath = join(dir, "probe.annostore");
+  const handle = openStore(storePath, { workspaceRoot: HERE });
+  try {
+    opts.fill(handle);
+  } finally {
+    closeStore(handle);
+  }
+  const provenancePath = join(dir, "capture.provenance.json");
+  writeFileSync(provenancePath, JSON.stringify(opts.provenance ?? VALID_HEADER, null, 2));
+  return Promise.resolve(fn({ dir, storePath, provenancePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+/** The rows the digest tests below perturb, one at a time. */
+function fillBaselineStore(handle: AnnoStoreHandle): void {
+  setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
+  setLabel(handle, { address: 0x0810, name: "init_screen", kind: "User" });
+  setComment(handle, { address: 0x0810, commentType: "line", text: formatConfidenceComment("confirmed-code", "observed executing at boot") });
+}
+
+test("the render digest is identical across two renders of the same store and the same sidecar", async () => {
+  await withRenderFixture({ prefix: "anno-memmap-digest-stable", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
+    const first = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    const second = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    assert.match(first.renderDigest, /^[0-9a-f]{64}$/);
+    assert.equal(first.renderDigest, second.renderDigest);
+    assert.equal(first.markdown, second.markdown);
+  });
+});
+
+test("changing a LABEL in the store changes the render digest -- the digest covers the store, not just the sidecar", async () => {
+  await withRenderFixture({ prefix: "anno-memmap-digest-label", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    // Re-opened WRITABLE: `mustExist` opens read-only (it exists to JUDGE an
+    // existing image), so a perturbation must not ask for it.
+    const handle = openStore(storePath, { workspaceRoot: HERE });
+    try {
+      setLabel(handle, { address: 0x0812, name: "raster_split", kind: "User" });
+    } finally {
+      closeStore(handle);
+    }
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    assert.notEqual(after.renderDigest, before.renderDigest);
+  });
+});
+
+test("changing a COMMENT in the store changes the render digest", async () => {
+  await withRenderFixture({ prefix: "anno-memmap-digest-comment", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    // Re-opened WRITABLE: `mustExist` opens read-only (it exists to JUDGE an
+    // existing image), so a perturbation must not ask for it.
+    const handle = openStore(storePath, { workspaceRoot: HERE });
+    try {
+      setComment(handle, { address: 0x0810, commentType: "line", text: formatConfidenceComment("probable-code", "reclassified") });
+    } finally {
+      closeStore(handle);
+    }
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    assert.notEqual(after.renderDigest, before.renderDigest);
+  });
+});
+
+test("changing a RANGE in the store changes the render digest", async () => {
+  await withRenderFixture({ prefix: "anno-memmap-digest-range", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    // Re-opened WRITABLE: `mustExist` opens read-only (it exists to JUDGE an
+    // existing image), so a perturbation must not ask for it.
+    const handle = openStore(storePath, { workspaceRoot: HERE });
+    try {
+      setDataType(handle, { start: 0x2000, endInclusive: 0x2007, dataType: "byte" });
+    } finally {
+      closeStore(handle);
+    }
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    assert.notEqual(after.renderDigest, before.renderDigest);
+  });
+});
+
+test("changing the SIDECAR BYTES alone changes the render digest, even when the parsed object is equivalent", async () => {
+  await withRenderFixture({ prefix: "anno-memmap-digest-sidecar", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    // Re-serialised with different whitespace: same parsed header, different
+    // bytes. The digest covers the RAW bytes, so this must still register.
+    writeFileSync(provenancePath, JSON.stringify(VALID_HEADER));
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    assert.notEqual(after.renderDigest, before.renderDigest);
+  });
+});
+
+test("the renderer module carries exactly ONE regenerator2000 mention, and it is the measurement-provenance comment", () => {
+  // Read as BYTES and count in-process. This module carries a literal NUL, so
+  // GNU grep classifies it as binary and reports nothing -- the blindness that
+  // produced three false "zero local imports" measurements before D-17.
+  const bytes = readFileSync(join(HERE, "anno-memmap-render.ts"));
+  assert.ok(bytes.includes(0x00), "the NUL byte that makes this a grep-blind file must still be here");
+  const lines = bytes.toString("utf8").split("\n");
+  const hits = lines.map((line, i) => ({ line, n: i + 1 })).filter((entry) => entry.line.includes("regenerator2000"));
+  assert.equal(hits.length, 1, `expected exactly one mention, found: ${JSON.stringify(hits)}`);
+  // The surviving mention explains the VERSION-2 digest lineage -- what the
+  // pre-store renderer hashed, and that those shapes were measured rather than
+  // transcribed. A mention over prose with no live subject would be an
+  // exemption kept alive for a statement that had become false.
+  const block = lines.slice(hits[0]!.n - 5, hits[0]!.n + 8).join("\n");
+  assert.match(block, /VERSION-2 DIGEST/);
+  assert.match(block, /r2000_get_blocks/);
 });
 
 // ---------------------------------------------------------------------------
