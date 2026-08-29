@@ -122,7 +122,12 @@ stream across full gameplay coverage is data, whatever the tracer guessed.
 
 ## Labels round-trip through VICE
 
-ACME's `--vicelabels` output and regenerator2000's exported label files share one format, which
-`vice_symbols_load` / `vice_symbols_lookup` consume. Labels therefore flow
-disassembler → source → build → debugger without translation. `acme-build` emits the `.vs` file on
-every build; load it after each one and your checkpoints carry real names.
+ACME's `--vicelabels` output is the `al C:xxxx .Name` format `vice_symbols_load` /
+`vice_symbols_lookup` consume, so labels flow source → build → debugger without translation.
+`acme-build` emits the `.vs` file on every build; load it after each one and your checkpoints carry
+real names.
+
+**The other direction — exporting the annotation store into that same format — is withdrawn as of
+2026-08-29 and returns in Phase 30.** In the meantime a name discovered live goes into the store with
+`anno_set_label_name` first (the store is the merge point) and reaches the emulator only through a
+`.lbl` you produce yourself.

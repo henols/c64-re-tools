@@ -89,7 +89,7 @@ node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg      # fro
 node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg --entropy 7.83
 ```
 
-Pass `--entropy` when you already have the number from `r2000_get_binary_info`; otherwise the
+Pass `--entropy` when you already have the number from `anno_get_binary_info`; otherwise the
 script measures it from the file. It prints one JSON object. Read the `verdict`:
 
 | Verdict | What it means | What to do |
@@ -100,10 +100,10 @@ script measures it from the file. It prints one JSON object. Read the `verdict`:
 | `unknown` | No route produced an answer. `unavailableReason` always says why. | Continue, but record the unknown. Never write it up as "not packed". |
 
 **A name is reported only when an external oracle stated one, and this project does not guess.**
-regenerator2000 computes packer identity on every load and throws it away before it reaches any
-machine-readable surface — that was established four independent ways at the pinned version, each
-written out in `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-RESEARCH.md`
-§2, and the dated decision that fixes the acceptance bar and its re-open trigger is recorded under
+No first-party route on this project's surface reports a packer name at all — the dated
+investigation that established this, four independent ways, is written out in
+`.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-RESEARCH.md` §2, and the
+dated decision that fixes the acceptance bar and its re-open trigger is recorded under
 `19-DECISIONS.md` in that same directory (SURF-03). So there is no code path here that can write a packer name from entropy, from a
 decompression address, or from a byte pattern. If you want a name and the finding does not give
 you one, install an external identifier and point `UNP64` or `UNP64_PATH` at it — do not infer it.
@@ -157,26 +157,30 @@ Recon's findings are not memory-map prose written once and left to rot — they 
 queryable annotation store, and the Markdown memory map is a *generated view* of that store (D-24),
 not something you hand-edit yourself.
 
-**Open or bootstrap the store**, then hand its path to every call that follows:
+**There is no bootstrap step, and no bootstrap verb.** The store is created by the first write to
+it: name a `.annostore` path on any mutating call — `anno_set_label_name`, `anno_set_comment`,
+`anno_set_data_type`, `anno_add_scope` — and it is created, committed and closed inside that call.
+A read-only call against a path that does not exist yet is REFUSED by name rather than answering
+against an empty store, so "I read nothing" and "there is nothing to read" stay distinguishable.
 
-```bash
-npx -y @henols/vice-mcp r2000 bootstrap game.prg                            # npm install
-node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 bootstrap game.prg   # in-repo/plugin
-```
-
-Every `r2000_*` tool takes an explicit `project` path pointing at the resulting `.regen2000proj`
-(D-19) — there is no ambient session state naming the store, so which project a call touched is
-always visible in the transcript.
+Every `anno_*` tool takes an explicit `store` path (D-19) — there is no ambient session state
+naming the store, so which store a call touched is always visible in the transcript. Every call
+that derives its answer from the program's **bytes** rather than from the annotations takes an
+`image` path as well — `anno_get_binary_info`, `anno_read_region`, `anno_disassemble`,
+`anno_get_cross_references`, `anno_search` and `anno_get_address_details`. The store holds
+annotations and never bytes, so an omitted image would read as a plausible success against
+whatever was recorded last. `image` is a `.prg` (2-byte little-endian load address plus payload) or
+an exactly-65536-byte flat capture, dispatched **by extension first**, never by length.
 
 **Write findings with the named tools, not a Markdown row:**
 
 | Tool | Use for |
 |---|---|
-| `r2000_set_label_name` | Naming a routine or table (`init_screen`, `sprite_table`) |
-| `r2000_set_data_type` | Classifying a block (`code`, `byte`, `address`, `petscii`, …) |
-| `r2000_add_scope` | Marking a handler's extent as a lexical scope |
-| `r2000_set_comment` | Recording the evidence — the carrier for the confidence grade below |
-| `r2000_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels/comments/block ranges, and batching is what makes that affordable under the per-call spawn-load-mutate-save-exit lifecycle |
+| `anno_set_label_name` | Naming a routine or table (`init_screen`, `sprite_table`) |
+| `anno_set_data_type` | Classifying a block (`code`, `byte`, `address`, `petscii`, …) |
+| `anno_add_scope` | Marking a handler's extent as a lexical scope |
+| `anno_set_comment` | Recording the evidence — the carrier for the confidence grade below |
+| `anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels/comments/block ranges, and one batch is one open/commit/close instead of dozens. The store (and the image, when an inner call needs one) is named ONCE at the top level and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth or an illegal label name refuses the **whole** batch by index and executes nothing; past that gate, execution runs to completion and each entry carries its own status, so an error entry inside a successful result means that one call did not work |
 
 **Grade with the confidence prefix.** Lead every evidence comment with exactly one of these five
 bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own source of truth):
@@ -187,92 +191,106 @@ bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own sour
 A typo in the bracket token — wrong case, an underscore, a plural, stray whitespace — **fails
 loudly**; it does not silently degrade into an ungraded comment. As with `RE-FINDINGS.md`, do not
 promote a row by editing its grade in place: re-verify and restate the evidence with a fresh
-`r2000_set_comment` call, so the record of when something stopped being a guess survives.
+`anno_set_comment` call, so the record of when something stopped being a guess survives.
 
-**Query instead of re-deriving.** `r2000_get_symbols`, `r2000_get_comments`, `r2000_get_blocks` and
-`r2000_get_cross_references` answer straight from the store. `r2000_search_disassembly` searches
-labels, comments and instructions together — but `max_results` is **REQUIRED** on this surface,
-because regenerator2000's own default is 50 and silently truncates a full-program pass. The query
-this whole workflow exists to make cheap:
+**Query instead of re-deriving.** `anno_get_symbols`, `anno_get_comments` and `anno_get_blocks`
+answer straight from the store; `anno_get_cross_references` and `anno_search` derive their answers
+from the image bytes plus the store's typed ranges, so they take `image` too. `anno_search` searches
+three corpora together — label names, comment text, and the instruction text rendered from every
+range typed `code` — **byte-exact and case-sensitive**, with each corpus named in the answer
+alongside how many entries it held, so a genuine zero over a real corpus stays distinguishable from
+a corpus this surface does not have.
 
-> "Show me everything still `[unknown]`" → `r2000_search_disassembly` with `query: "[unknown]"` and
+`max_results` is **REQUIRED, with no default,** on every one of those reads. That is deliberate: an
+implicit default silently truncates a full-program pass, and here the true match count rides beside
+the truncated list, so truncation is a fact you are told rather than one you infer. The query this
+whole workflow exists to make cheap:
+
+> "Show me everything still `[unknown]`" → `anno_search` with `query: "[unknown]"` and
 > an explicit `max_results` set above your program's comment count.
 
-(The composite address-details lookup is deliberately not on this surface — D-32, a 64K-project
-defect filed upstream — its answer is reachable as a combination of the tools above.)
+`anno_get_blocks` is also the read route for the store's other structural annotations: pass
+`include: ["scopes", "enums", "enum_usage"]` to get scope spans (which `anno_remove_scope` must
+match exactly), every project enum with its variants, and every address-to-enum association.
+
+`anno_get_address_details` composes everything known about ONE address — the labels bound there,
+the comments there, the typed range covering it, and the cross-references reaching it. **The
+composition is disclosed:** the body carries `composed_client_side` and a `composed_from` list
+naming all four sources, so a composition is never mistaken for something the store held whole.
 
 ### Take names to the running machine, and bring live findings back
 
-The store and the running emulator are not two independent destinations for a name — writing one
-into the store and discovering one live are two legs of **one loop**, in this order, matching how
-`R2000-14`/`R2000-15` were actually proven (see Phase 11's live walkthrough,
-`evidence/criterion4/WALKTHROUGH.md`):
+**Dated withdrawal, 2026-08-29 — the `.lbl` round trip is WITHDRAWN and returns in Phase 30.**
+The two CLI verbs that carried it, `export-lbl` and `import-lbl`, are gone from this surface: both
+were delivery paths into the retired static analyser, and rebuilding them over the annotation store
+is **Phase 30**'s work, behind the same real-ACME byte-diff oracle that phase builds for the export
+route. Do not reach for them here — they do not exist, and an invocation fails with an unknown-verb
+error and no explanation of why.
 
-1. **Export what the store already knows.** `r2000 export-lbl <project>` writes `al C:xxxx .Name`
-   lines that `stock-symbols.ts`'s own parser accepts — the verb reads the written file back
-   through that same parser before it reports success, never trusting a regenerator2000 exit code
-   alone.
+The **loop itself is not withdrawn**, only its two automated legs, and the discipline it encodes is
+what to keep doing by hand until the verbs return:
 
-   ```bash
-   npx -y @henols/vice-mcp r2000 export-lbl game.regen2000proj                            # npm install
-   node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 export-lbl game.regen2000proj  # in-repo/plugin
-   ```
+1. **The store is the merge point (D-29), not your own notes.** A name discovered live —
+   disassembling the running machine, a checkpoint hit — is written into the store with
+   `anno_set_label_name` *first*, before it is carried anywhere else.
+2. **`vice_symbols_load` REPLACES the machine's symbol table rather than merging into it.** Call it
+   **exactly once** per generated `.lbl` file. Loading an older file a second time, after the store
+   has moved on, silently discards the newer names.
+3. **Regenerate whole, never patch incrementally.** When the round trip returns, it regenerates the
+   entire `.lbl` from the store; a hand-written incremental patch reintroduces exactly the drift the
+   single merge point exists to prevent.
 
-2. **Load it into the running machine — `vice_symbols_load`, exactly once.** Load that `.lbl` file
-   into the live emulator with `vice_symbols_load`. Call it **exactly once** per regenerated file:
-   it REPLACES the machine's symbol table rather than merging into it, so loading an older export a
-   second time after the store has moved on would silently discard the newer names.
-3. **Discover something live the static pass could not, then write it to the store first.**
-   Disassembling or reading the running machine (`vice_disassemble`, a checkpoint hit, …) can turn
-   up a name the static store never had. Write it with `r2000_set_label_name` *before* regenerating
-   anything — the store is the merge point (D-29), not your own notes.
-4. **Regenerate the whole `.lbl` and bring it back with `import-lbl`, never an incremental patch.**
-   `r2000 import-lbl <project> <lbl>` imports an externally-produced `.lbl` file into the project,
-   and reports whether the import was **disk-verified** — re-read from disk in a fresh process,
-   never trusted from the child's own success text alone.
+Two traps that survive the withdrawal and will still apply when it returns: the export carried
+**USER** labels only — auto-generated `a_D011`/`e_FFD2` externals never appeared in the written
+file — and neither direction ever created a store from a raw input.
 
-   ```bash
-   npx -y @henols/vice-mcp r2000 import-lbl game.regen2000proj discovered.lbl                            # npm install
-   node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 import-lbl game.regen2000proj discovered.lbl  # in-repo/plugin
-   ```
-
-Two traps: `export-lbl` exports **USER** labels only — the auto-generated `a_D011`/`e_FFD2`
-externals never appear in the written file. And both verbs require an EXISTING `.regen2000proj`;
-neither one bootstraps a project from a raw input.
-
-`r2000 gen-enums` — turning register writes into named enum variants — is documented in
-`c64-memory-mapping`, alongside the `memmap.json` bit table it consumes.
+`gen-enums` — turning register writes into named enum variants — is **withdrawn on the same terms**
+and also returns in Phase 30. What it consumed, the `memmap.json` bit table, is documented in
+`c64-memory-mapping` along with the withdrawal.
 
 **Generate the memory map; do not hand-author it.** Fill in the provenance sidecar (schema and a
 filled example live in `templates/memory-map.template.md`), then:
 
 ```bash
-npx -y @henols/vice-mcp r2000 render-memmap game.regen2000proj --provenance sidecar.json
-node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 render-memmap game.regen2000proj --provenance sidecar.json
+npx -y @henols/vice-mcp anno render-memmap game.regen2000proj --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.regen2000proj --provenance sidecar.json
 ```
 
 Add `--check` to detect drift — either a hand edit to the rendered file, or a store change since it
 was last rendered. The rendered file carries a generated-file banner; treat it like every other
 generated artifact in this repo and never hand-edit it.
 
+**Dated note, 2026-08-29.** `render-memmap` is one of only **two** CLI verbs that still exist
+(`coverage` is the other), and it still reads the pre-store project file shown above. The route that
+used to create those project files is withdrawn, so until this verb is rebuilt over the
+`.annostore` it runs only against a project file you already have.
+
 ## Static disassembly
 
-Turning a `.prg` or a flat 64K image into ACME source, offline, is not part of this
-skill's own method — it is a separate route:
+**Dated withdrawal, 2026-08-29 — whole-program ACME export is WITHDRAWN and returns in Phase 30
+as `anno export-asm`, behind a real-ACME byte-diff oracle.** The `export-asm` CLI verb that used to
+turn a `.prg` or a flat 64K image into ACME source offline is gone from this surface. Its
+replacement is not a rename: Phase 30 rebuilds it over the annotation store and settles correctness
+by **assembling the output with a real ACME and diffing the bytes against the input** — never by an
+exit code and never by a string match on the exporter's own output. Do not reach for `export-asm`
+here; it does not exist in this phase.
 
-```bash
-npx -y @henols/vice-mcp r2000 export-asm game.prg          # npm installs
-node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
-```
+Two routes remain in the meantime, and they are the ones the rest of this playbook already uses:
 
-This is **static**, over a file on disk — `vice_disassemble` (the live-RAM route
-this skill's own table above uses) reads a running emulator's RAM at a checkpoint
-instead. The two are complementary: reach for the static route before the emulator
-is even running, and for `vice_disassemble` once you have a live checkpoint to
-decode from.
+- **`anno_read_region`** and **`anno_disassemble`** render one routine or table at an **explicit**
+  inclusive range, decoded fresh from the image bytes on every call and written nowhere. That is
+  the static route, bounded on purpose: the combined byte count is capped at **4096 bytes**
+  (`ANNO_READ_REGION_MAX_BYTES`), and a wider request is REFUSED by name rather than truncated,
+  because a full-64K disassembly dumped into an agent's context is exactly the hazard the cap
+  exists to prevent.
+- **`vice_disassemble`** is the live-RAM route this skill's own table above uses: it reads a
+  running emulator's RAM at a checkpoint.
 
-Extracting from a `.d64` image: name the file inside the image explicitly. The
-tool lists the directory and refuses rather than guess (D-02) — a guess could
+The two are complementary — reach for the static reads before the emulator is even running, and for
+`vice_disassemble` once you have a live checkpoint to decode from.
+
+Extracting a program from a `.d64` image is likewise a Phase 30 concern; when it returns it will
+name the file inside the image explicitly and refuse rather than guess (D-02), because a guess could
 analyse a cracktro or loader stub instead of the game.
 
 ## Before you touch the emulator
@@ -341,7 +359,7 @@ symbols it touches, is the absorbed pair in `c64-memory-mapping`.
 
 ### 1. Context first
 
-`r2000_get_binary_info` for `system`, `filename`, `description` and
+`anno_get_binary_info` for `system`, `filename`, `description` and
 `may_contain_undocumented_opcodes`.
 
 - `system` names the target machine and therefore which memory map, hardware
@@ -371,12 +389,12 @@ Find the start (the entry point or its label) and the end (`RTS`, `RTI`, or a
 
 ### 3. Read the range
 
-`r2000_read_region` over the routine's explicit range, with `view` **omitted**
-— the disassembly view is that parameter's documented default, confirmed live
-against the real binary, so the call needs no `view` at all here.
+`anno_read_region` over the routine's explicit range, naming the `store` and
+the `image`, with `view` **omitted** — the disassembly view is that parameter's
+documented default, so the call needs no `view` at all here.
 
 The combined byte count is capped at **4096 bytes** per call
-(`R2000_READ_REGION_MAX_BYTES`) and a request above it is refused by name
+(`ANNO_READ_REGION_MAX_BYTES`) and a request above it is refused by name
 rather than silently truncated. A routine longer than that — rare, but real in
 a decruncher or a level builder — is read as **consecutive ranges**. Read them
 in order; do not raise the cap to swallow the whole program, because the cap is
@@ -402,7 +420,7 @@ Recurring shapes worth recognising on sight:
 
 ### 4. Who calls it
 
-`r2000_get_cross_references` on the entry point. The caller is often more
+`anno_get_cross_references` on the entry point. The caller is often more
 decisive than the body:
 
 - Called from an init block → a setup routine, runs once.
@@ -419,15 +437,15 @@ For every address the routine reads or writes:
 
 1. `lookup` it first (see `c64-memory-mapping`). A hardware register or KERNAL
    entry point is answered outright and needs no further work.
-2. Otherwise `r2000_get_cross_references` on that address, and read the shape:
+2. Otherwise `anno_get_cross_references` on that address, and read the shape:
    - Written once, in init → a constant or a config value.
    - Written *and* read by several routines → shared state, a global.
    - In the zero page and used as `($addr),Y` → an indirect pointer.
 3. **Enums.** If the accessed addresses or the immediate values form a logical
    set — state constants, joystick direction bits, colour codes — check for an
    existing project, global or system enum that matches, and apply it with
-   `r2000_apply_enum_usage` at the accessing instruction. If none matches but
-   the set is clean, define one with `r2000_create_project_enum` (give it a
+   `anno_apply_enum_usage` at the accessing instruction. If none matches but
+   the set is clean, define one with `anno_create_project_enum` (give it a
    real `description`) and then apply it everywhere it fits. This is what turns
    `lda #$1b` into something a reader understands.
 
@@ -449,8 +467,8 @@ Four things, and they are the four things the comment block carries: **purpose**
 (one sentence), **inputs** (registers and memory used as arguments), **outputs**
 (registers and memory modified), **side effects** (hardware, screen, sound).
 
-Rename the label with `r2000_set_label_name`, then put a multi-line `"line"`
-comment above the first instruction with `r2000_set_comment`, in this exact
+Rename the label with `anno_set_label_name`, then put a multi-line `"line"`
+comment above the first instruction with `anno_set_comment`, in this exact
 shape — the separator is both the first and the last line:
 
 ```
@@ -549,7 +567,7 @@ A tokenised BASIC program is a linked list in memory. Each line is:
 3. **Bytes 4–N — the tokens**, running until a `$00` terminator.
 4. **End of program** when a line's next-line pointer is `$00 $00`.
 
-Read the range with `r2000_read_region`, `view: "hexdump"`, over an explicit
+Read the range with `anno_read_region`, `view: "hexdump"`, over an explicit
 start and end address — subject to the same 4096-byte ceiling as every other
 range read on this surface. Then walk the pointer chain from the first line
 until the pointer is `$00 $00`.
@@ -585,18 +603,20 @@ variable names, numbers.
 
 ### What a decoding pass would write
 
-Per line, batched through `r2000_batch_execute`:
+Per line, batched through `anno_batch_execute`:
 
-1. `r2000_set_data_type` `address` over bytes 0–1 (the next-line pointer).
-2. `r2000_set_data_type` `word` over bytes 2–3 (the line number).
-3. `r2000_set_data_type` `byte` from byte 4 through the `$00` terminator,
+1. `anno_set_data_type` `address` over bytes 0–1 (the next-line pointer).
+2. `anno_set_data_type` `word` over bytes 2–3 (the line number).
+3. `anno_set_data_type` `byte` from byte 4 through the `$00` terminator,
    inclusive.
-4. `r2000_set_comment` `"side"` at byte 0, carrying the reconstructed line —
+4. `anno_set_comment` `"side"` at byte 0, carrying the reconstructed line —
    `10 REM LODE RUNNER`.
 
 Then jump to the next-line pointer and repeat until it reads `$00 $00`, and
-finally mark that `$00 $00` terminator itself as `word`. `r2000_save_project`
-persists the result.
+finally mark that `$00 $00` terminator itself as `word`. Nothing needs to be
+"saved": every one of those writes committed and fsynced inside its own call.
+`anno_save_project` performs **no write at all** — it reports the store's current
+revision, which is what to quote when you write the pass up.
 
 ## Which skill does what
 
@@ -607,7 +627,7 @@ This one is the route between the stations. It does not restate what the others 
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
 | Assembling | `acme-build` |
-| Static disassembly of a `.prg` or flat image | `vice-mcp r2000 export-asm` (see above) |
+| Static disassembly of a `.prg` or flat image | **Withdrawn 2026-08-29; returns in Phase 30** as `anno export-asm` behind a real-ACME byte-diff oracle. Read one range at a time with `anno_read_region` in the meantime (see above) |
 | Whether a byte is original or cracker-changed | `c64-provenance-diff` |
 | The emulator stopped moving — wedged, self-trapped, or respawned | `vice-wedge-triage` |
 | **Which address to read next, and what the answer rules out** | here |

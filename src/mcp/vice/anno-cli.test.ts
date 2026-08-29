@@ -125,14 +125,14 @@ let helpResult: ReturnType<typeof spawnCli>;
 let unknownVerbResult: ReturnType<typeof spawnCli>;
 
 before(() => {
-  helpResult = spawnCli(["r2000", "--help"]);
-  unknownVerbResult = spawnCli(["r2000", "no-such-verb"]);
+  helpResult = spawnCli(["anno", "--help"]);
+  unknownVerbResult = spawnCli(["anno", "no-such-verb"]);
 });
 
-test("bin: `vice-mcp r2000 --help` exits 0, prints both invocation forms, and emits no JSON-RPC frame", () => {
+test("bin: `vice-mcp anno --help` exits 0, prints both invocation forms, and emits no JSON-RPC frame", () => {
   assert.equal(helpResult.status, 0, `stdout: ${helpResult.stdout} stderr: ${helpResult.stderr}`);
-  assert.match(helpResult.stdout, /npx -y @henols\/vice-mcp r2000 <verb>/);
-  assert.match(helpResult.stdout, /node <plugin-root>\/src\/mcp\/vice\/vice-proxy\.ts r2000 <verb>/);
+  assert.match(helpResult.stdout, /npx -y @henols\/vice-mcp anno <verb>/);
+  assert.match(helpResult.stdout, /node <plugin-root>\/src\/mcp\/vice\/vice-proxy\.ts anno <verb>/);
 
   // The load-bearing assertion: no line of stdout parses as a JSON object
   // carrying a `jsonrpc` key -- proof the subcommand short-circuits before
@@ -155,13 +155,13 @@ test("bin: `vice-mcp r2000 --help` exits 0, prints both invocation forms, and em
   }
 });
 
-test("bin: `vice-mcp r2000 no-such-verb` exits non-zero and prints a usage block", () => {
+test("bin: `vice-mcp anno no-such-verb` exits non-zero and prints a usage block", () => {
   assert.notEqual(unknownVerbResult.status, 0);
   const combined = `${unknownVerbResult.stdout}${unknownVerbResult.stderr}`;
   assert.match(combined, /usage \(npm install\)/);
 });
 
-test("bin: `vice-mcp r2000 --help` lists exactly the two surviving verbs", () => {
+test("bin: `vice-mcp anno --help` lists exactly the two surviving verbs", () => {
   for (const verb of SURVIVING_VERBS) {
     assert.match(helpResult.stdout, new RegExp(`\\b${verb}\\b`), `USAGE must document the surviving verb ${verb}`);
   }

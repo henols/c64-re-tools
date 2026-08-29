@@ -201,7 +201,7 @@ import { closeR2000SessionSync } from "./r2000-session.ts";
 
 // ------------------------------------------------------------ r2000 subcommand
 //
-// D-06 / RESEARCH.md Open Question #1 (plan 10-04): `vice-mcp r2000 <verb>` is
+// D-06 / RESEARCH.md Open Question #1 (plan 10-04): `vice-mcp anno <verb>` is
 // the ONLY surface that resolves identically across the Claude Code plugin
 // route and both npm-installer routes -- `installer/bin/cli.mjs`'s
 // `viceServerEntry()` always launches this server via `npx` in BOTH
@@ -218,7 +218,7 @@ import { closeR2000SessionSync } from "./r2000-session.ts";
 // must never open a socket, never probe a binary, and never write a byte of
 // JSON-RPC to stdout. WHAT NOT TO DO: never let this branch fall through
 // into the server path, and never print anything on stdout on the server
-// path that a CLI caller could confuse for `r2000` output.
+// path that a CLI caller could confuse for `anno` output.
 //
 // Ending the process here is deliberate and is NOT a violation of this
 // file's standing "never end the process from a teardown handler" rule (see
@@ -226,7 +226,7 @@ import { closeR2000SessionSync } from "./r2000-session.ts";
 // long-lived server's lease-release path, and this branch ends the process
 // before any lease, socket or handler exists. A dynamic import is used
 // (not a static one) so the CLI module is not part of the server's startup
-// cost on the normal, non-`r2000` path.
+// cost on the normal, non-`anno` path.
 //
 // IN-01 (10-REVIEW.md; 11.1-CONTEXT.md AUDIT-01, D-11.1-04): `console.log`/
 // `console.error` writes to `process.stdout`/`process.stderr` are
@@ -274,7 +274,7 @@ function drainStdio(stream: NodeJS.WriteStream): Promise<void> {
   });
 }
 
-if (process.argv[2] === "r2000") {
+if (process.argv[2] === "anno") {
   // A broken pipe (the reader closing early, e.g. `| head`) makes
   // `stream.write()` fail with EPIPE. Awaiting `drainStdio()` below gives
   // that failure the chance to actually surface as Node's stream 'error'
@@ -297,7 +297,7 @@ if (process.argv[2] === "r2000") {
   // export-asm's error path scales anywhere near 128 KiB on this host's
   // regenerator2000 0.9.20 -- both were measured before this hatch was
   // added; see 11.1-05-SUMMARY.md for the measurements). Never reachable
-  // from a real `r2000 <verb>` invocation: the check is against a specific,
+  // from a real `anno <verb>` invocation: the check is against a specific,
   // unambiguous env var name no real caller would ever set.
   const testFillBytes = process.env.VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES;
   if (testFillBytes) {

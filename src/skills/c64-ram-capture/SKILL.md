@@ -273,7 +273,7 @@ floor, not a complete set — more captures can only widen it.
 
 ## Feeding the memory map's provenance sidecar
 
-`c64-program-recon`'s generated memory map (`vice-mcp r2000 render-memmap`) takes a small provenance
+`c64-program-recon`'s generated memory map (`vice-mcp anno render-memmap`) takes a small provenance
 sidecar as input, and this skill supplies one of its fields: `scripts/compare.mjs digest`'s `sha256`
 and `size` become the sidecar's `captureSha256`, proving which image the rendered map describes. The
 sidecar's other run-scoped keys (`port01`, `dd00`, `vicBank`, `screenRam`, `charsetOrBitmap`, `mode`,

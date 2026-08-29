@@ -18,7 +18,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Whole-chip SID state without the read hazards | `vice_sid_get_state` (**requires the fork** — SID `$D400-$D418` is write-only in hardware and the binary monitor has no SID command; unrecoverable on stock) |
 | Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` (**both backends**) |
 | Find a known byte pattern | `vice_memory_search` (**both backends**) |
-| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` (**both backends**) — ACME `--vicelabels` and regenerator2000 output share this channel |
+| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` (**both backends**) — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29 and returns in Phase 30** |
 | Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (the two backends' verdict sets differ by one; see `docs/stock-vice-parity.md` D-03). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
 | Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.planning/incidents/` **before** anything is killed. The reason *is* the evidence record |
 | Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself; a value comes from that error or from `vice_diagnose` |
@@ -30,7 +30,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | What does address X mean? | the `c64-memory-mapping` skill — `node … lookup '$D018'`. **Do not restate its tables.** |
 | Is this byte original or cracker-changed? | the `c64-provenance-diff` skill |
 | A verified 64K image, or comparing two captures | the `c64-ram-capture` skill |
-| Traced disassembly with code/data separation | regenerator2000, via `vice-mcp r2000 export-asm` — a recursive-descent disassembler with an auto-analyzer; verified live: its `--verify` run reassembled byte-identically through a real ACME for both a `.prg` and a flat 64K image (`.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/evidence/10-verify-transcript.txt`) |
+| Whole-program static disassembly with code/data separation | **Withdrawn 2026-08-29; returns in Phase 30** as `anno export-asm`, settled by assembling the output with a real ACME and diffing the bytes against the input. In the meantime, read one explicit range at a time with `anno_read_region` / `anno_disassemble` (4096-byte cap per call, refused rather than truncated above it) and record what you verified with `anno_set_data_type` |
 
 ## Three traps in this table
 

@@ -99,7 +99,9 @@ function realSkillTexts(): string[] {
 // name is BOTH a verb the CLI still has AND one a real skill file really
 // names: `src/skills/c64-program-recon/SKILL.md`, its
 // `templates/memory-map.template.md` and `src/skills/c64-ram-capture/SKILL.md`
-// all carry the literal `r2000 render-memmap`. Plan 29-07 re-pointed this
+// all carry the literal `anno render-memmap` (the subcommand was renamed
+// from `r2000` by plan 29-09, in the same commit as the skill prose and
+// the proxy's own dispatch token). Plan 29-07 re-pointed this
 // control off `export-asm`, which the same plan removed -- a control naming a
 // verb that no longer exists proves nothing about a guard that only ever fires
 // on verbs that do.
@@ -184,5 +186,5 @@ test("the CI script's live execution path: `node scripts/check-skill-tool-covera
   const result = spawnSync(process.execPath, [CI_SCRIPT], { encoding: "utf8", cwd: ROOT });
   assert.equal(result.status, 0, `expected exit 0, got ${result.status}. stderr: ${result.stderr}`);
   assert.match(result.stdout, /OK/);
-  assert.match(result.stdout, /r2000 CLI verbs: \d+ parsed/);
+  assert.match(result.stdout, /anno CLI verbs: \d+ parsed/);
 });

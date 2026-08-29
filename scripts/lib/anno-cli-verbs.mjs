@@ -1,7 +1,15 @@
 #!/usr/bin/env node
-// scripts/lib/anno-cli-verbs.mjs -- the ONE definition of the `r2000` CLI
+// scripts/lib/anno-cli-verbs.mjs -- the ONE definition of the `anno` CLI
 // verb list, PARSED from `anno-cli.ts`'s own dispatch `switch (verb)` --
 // never a hand-typed array.
+//
+// THE SUBCOMMAND IS `anno`, RENAMED FROM `r2000` on 2026-08-29 (phase 29 plan
+// 29-09). Three halves spell that name and they move together, in one commit,
+// or this module's own predicate reds from the wrong side: the skill prose
+// that tells a reader how to invoke the CLI, the invocation literal
+// `verbsMissingFromSkills()` matches at the bottom of this file, and
+// `vice-proxy.ts`'s subcommand token. Changing any one alone reports every
+// verb as undocumented while the documentation is in fact correct.
 //
 // FLOW-01 (11.1-CONTEXT.md, D-11.1-02): `scripts/check-skill-tool-coverage.mjs`
 // checked `r2000_*` MCP TOOL names in skill prose but never CLI VERBS at
@@ -29,7 +37,7 @@
 // by git so `scripts/package.sh`'s `git archive` includes it.
 
 /**
- * The measured true count of `r2000` CLI verbs: `coverage` and `render-memmap`.
+ * The measured true count of `anno` CLI verbs: `coverage` and `render-memmap`.
  *
  * THIS IS A REPLACEMENT OVER A NEW SUBJECT, NOT A LOWERING -- and the
  * distinction is the whole reason this paragraph exists. A bare smaller number
@@ -160,10 +168,10 @@ export function parseAnnoCliVerbs(src) {
 
 /**
  * Returns the subset of `verbs` for which NO entry of `skillTexts` contains
- * the literal token `r2000 <verb>` -- the exact substring
- * `grep -rl 'r2000 <verb>'` matches, so this predicate and the FLOW-01
+ * the literal token `anno <verb>` -- the exact substring
+ * `grep -rl 'anno <verb>'` matches, so this predicate and the FLOW-01
  * finding it closes speak the same language.
  */
 export function verbsMissingFromSkills(verbs, skillTexts) {
-  return verbs.filter((verb) => !skillTexts.some((text) => text.includes(`r2000 ${verb}`)));
+  return verbs.filter((verb) => !skillTexts.some((text) => text.includes(`anno ${verb}`)));
 }

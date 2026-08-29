@@ -1,6 +1,6 @@
 ---
 name: routine-queue-walker
-description: Drive an existing regenerator2000 annotation project's backlog of undocumented routines and auto-named symbols to closure — build the candidate queue from labels and comments, work it one entry at a time against explicit addresses, rebuild it after every pass, and report every leftover. Use when asked to annotate every remaining routine in a project, document all undocumented subroutines left in an annotation project, rename the leftover auto-generated labels, clear a backlog of unnamed symbols, drive an annotation pass to completion, or list what is still unannotated after a pass.
+description: Drive an existing C64 annotation store's backlog of undocumented routines and auto-named symbols to closure — build the candidate queue from labels and comments, work it one entry at a time against explicit addresses, rebuild it after every pass, and report every leftover. Use when asked to annotate every remaining routine in a project, document all undocumented subroutines left in an annotation project, rename the leftover auto-generated labels, clear a backlog of unnamed symbols, drive an annotation pass to completion, or list what is still unannotated after a pass.
 ---
 
 <!--
@@ -21,16 +21,20 @@ Adapted from regenerator2000.
   upstream text instructs:
     - Upstream prescribes a parallel subagent fan-out with a fixed slot count
       and a refill-on-completion window. That is NOT carried. This project
-      walks the queue one entry at a time (Phase 18 criterion 4: the session
-      seam is a coarse FIFO mutex), because the child process was measured to
-      read its stdin serially and process exactly one request at a time — see
+      walks the queue one entry at a time. The reason was re-established
+      when the surface changed (2026-08-29): a single annotation store is a
+      single writer, and every write carries an optional `base_revision`
+      compare-and-swap, so fanning writers out turns concurrency into a
+      stale-revision storm rather than throughput. The original measurement
+      that first settled this — a serial single-request child — is recorded
+      in
       .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-STDIO-MULTIPLEXING-EVIDENCE.md
     - Upstream's three instructions to read a file inside its own excluded
       agent-skills directory at runtime are replaced with this project's own
       skill names and paths. Those upstream files do not exist for anyone who
       installed regenerator2000 from the crate.
     - Upstream's cursor-based entry route is replaced by explicit address
-      input plus `r2000_read_region`. Upstream's own text already forbids the
+      input plus `anno_read_region`. Upstream's own text already forbids the
       cursor route in this situation; this project has no editor cursor at all.
     - Upstream's `set_immediate_format` step is omitted — this project does not
       expose it. Upstream's `unpack_binary` step is omitted as destructive and
@@ -50,7 +54,7 @@ here is not slow work — it is a pass that *looks* finished while a hundred
 queue first, from data, then walk it to the end.
 
 This playbook assumes block classification has already happened and an
-annotation project already exists. If you do not yet know what the program is —
+annotation store already exists. If you do not yet know what the program is —
 where it starts, which vector is live, which regions are code — stop and run
 `c64-program-recon` first. That skill answers *what is this program*; this one
 answers *what is still undocumented in it, and how do I finish*.
@@ -58,17 +62,28 @@ answers *what is still undocumented in it, and how do I finish*.
 ## The one rule that makes this different from upstream's version
 
 **Work the queue one entry at a time.** Not as a throughput compromise — as an
-accurate model of the machine underneath. The regenerator2000 child reads its
-standard input serially and handles exactly one request at a time; this was
-measured, not assumed (`19-STDIO-MULTIPLEXING-EVIDENCE.md`). Fanning several
-writers at the session buys **zero** extra throughput: they re-serialise inside
-the child a moment later, and the only thing gained is a harder-to-read
-failure. Reading fan-out — several agents *thinking* over already-fetched
-answers — is fine, and its value is reasoning bandwidth, never I/O.
+accurate model of the store underneath. One `.annostore` is one writer: every
+mutating call opens it, commits and closes inside the call, and every one of
+them accepts an optional `base_revision` compare-and-swap that REFUSES a write
+computed against a revision the store has already moved past. Fanning several
+writers at one store therefore buys **zero** extra throughput and costs
+correctness: the losers come back as named stale-revision refusals you then
+have to re-derive and replay. Reading fan-out — several agents *thinking* over
+already-fetched answers — is fine, and its value is reasoning bandwidth, never
+I/O.
+
+**Every call names its own store.** There is no ambient "current store" on this
+surface: pass `store` (a `.annostore` path) on every call, and pass `image` as
+well on every call that derives its answer from the program's bytes rather than
+from the annotations — `anno_get_binary_info`, `anno_read_region`,
+`anno_disassemble`, `anno_get_cross_references`, `anno_search` and
+`anno_get_address_details`. The store holds annotations and never bytes, so an
+omitted image would read as a plausible success against whatever was recorded
+last.
 
 ## Phase 0 — context, and the packed-binary gate
 
-1. Call `r2000_get_binary_info`. Keep `origin`, `size`, `system`, `filename`,
+1. Call `anno_get_binary_info`. Keep `origin`, `size`, `system`, `filename`,
    `description` and `may_contain_undocumented_opcodes` — every later step
    quotes them.
 2. Read the returned `entropy` against the threshold of **7.5** carried in that
@@ -82,7 +97,7 @@ answers — is fine, and its value is reasoning bandwidth, never I/O.
    Come back with the captured image and start again at Phase 0.
 
 Upstream's in-place `unpack_binary` step is deliberately not carried: it is
-destructive (it clears the comments, labels and blocks already in the project)
+destructive (it clears the comments, labels and blocks already in the store)
 and this project has a non-destructive route to the same answer.
 
 ## Phase 1 — make sure blocks are classified
@@ -102,13 +117,17 @@ candidate is only meaningful once the bytes around it are known to be code.
 A routine counts as **already documented** when its entry address carries a
 line comment. That is the only test; do not guess from the label name.
 
-1. Call `r2000_get_symbols` for all labels — user, system and external. Keep
-   the answer; Phase 3 reuses it.
-2. Call `r2000_get_comments`. Keep that too.
+1. Call `anno_get_symbols` for all labels — user, system and external, with
+   an explicit `max_results` above the program's label count (`max_results` is
+   REQUIRED on this surface and has no default, so a truncated answer is always
+   a ceiling you chose). Keep the answer; Phase 3 reuses it.
+2. Call `anno_get_comments`, again with an explicit `max_results`. Keep that
+   too — the true match count rides beside the list, so truncation is a fact
+   you are told rather than one you infer.
 3. Keep a label as a routine candidate when any of these holds:
    - its name starts with `s_` (an auto-generated subroutine label);
    - it sits in a code region and is the target of at least one `JSR`
-     cross-reference (`r2000_get_cross_references`);
+     cross-reference (`anno_get_cross_references`);
    - it is a `p_XXXX` label sitting **inside a code region**. These come from
      split lo/hi immediate loads and from address tables, and they are almost
      always chained raster-IRQ handlers, hardware- or shadow-vector handlers,
@@ -125,21 +144,26 @@ line comment. That is the only test; do not guess from the label name.
 - **Always work from an explicit address** — `$XXXX`, or the decimal
   equivalent. Never from "wherever we are"; there is no editor cursor in this
   project's route, and upstream's own text forbids relying on one anyway. Read
-  the routine's bytes with `r2000_read_region` over the explicit range.
+  the routine's bytes with `anno_read_region` over the explicit range.
 - Take **one** entry at a time, to completion, before starting the next.
-- For each entry, do the full job: rename the label (`r2000_set_label_name`),
+- For each entry, do the full job: rename the label (`anno_set_label_name`),
   add a header line comment describing what the routine does and what it
   leaves in the registers and memory, add side comments on the instructions
-  that carry the meaning (`r2000_set_comment`), and record anything you are
+  that carry the meaning (`anno_set_comment`), and record anything you are
   unsure about rather than smoothing it over.
 - Record per entry: the address, the old label, the new label, a one-line
   summary, and any uncertainty. That record is the report in Phase 4.
 
 ### 2.3 Refresh point
 
-When the queue is empty, call `r2000_save_project`. Everything after this point
-re-reads the store, because Phase 2 has just changed the label names Phase 3
-filters on.
+When the queue is empty, read the store's revision with `anno_save_project`.
+**It performs no write, and it exists to say so:** every mutating verb on this
+surface has already committed and fsynced its own write by the time it
+returned, so there is nothing for an explicit save to flush. Record the
+revision — it is the checkpoint this pass is measured from, and the
+`base_revision` a later compare-and-swap write would quote. Everything after
+this point re-reads the store, because Phase 2 has just changed the label names
+Phase 3 filters on.
 
 ## Phase 3 — the symbol queue
 
@@ -149,7 +173,7 @@ A symbol counts as **already documented** when it has a name a human chose, or
 when it is a well-known system address (hardware register, KERNAL entry point,
 OS variable).
 
-1. Call `r2000_get_symbols` **again** — Phase 2 renamed things.
+1. Call `anno_get_symbols` **again** — Phase 2 renamed things.
 2. Keep every label whose name still matches an auto-generated pattern:
    `zpp_XX`, `zpf_XX`, `zpa_XX` in the zero page; `p_XXXX`, `f_XXXX`, `a_XXXX`
    and `e_XXXX` outside it.
@@ -160,7 +184,7 @@ OS variable).
 ### 3.2 Walk it
 
 Same discipline as Phase 2: explicit address, one entry at a time, to
-completion. For each symbol, use `r2000_get_cross_references` to find who
+completion. For each symbol, use `anno_get_cross_references` to find who
 touches it — a symbol's meaning is what its callers do with it — then rename it
 and comment it. Classify it plainly: flag, counter, pointer, state variable,
 buffer, table.
@@ -177,11 +201,13 @@ means, follow `src/skills/c64-memory-mapping/SKILL.md` rather than guessing.
 
 ### 3.3 Refresh point
 
-Call `r2000_save_project`.
+Read the revision again with `anno_save_project` and record it. No write is
+performed; the writes already landed.
 
 ## Phase 4 — save and report
 
-1. Call `r2000_save_project` one last time.
+1. Read the revision one last time with `anno_save_project` and quote it in
+   the report, so the pass is attributable to an exact store state.
 2. Write the report. Four sections, all of them required:
 
 **Regions.** How many regions are classified, grouped by type, plus anything
@@ -212,14 +238,20 @@ A report that says "all routines documented" is a claim about the report, not
 about the program. Measure it. From the repository root:
 
 ```
-node src/mcp/vice/vice-proxy.ts r2000 coverage <project>.regen2000proj
+node src/mcp/vice/vice-proxy.ts anno coverage game.prg --store game.annostore
 ```
+
+**`--store` is REQUIRED and is a second path, not a spelling of the first.**
+`<program>` supplies the payload bytes and the load origin; `--store` names the
+annotation store holding the labels, comments and typed ranges. The store holds
+annotations and never bytes, so the verb refuses to guess either path from the
+other.
 
 Add `--out coverage.json` to keep the machine-readable report, `--force` to
 overwrite one, and `--sample N` to widen the reproducibility sample. The verb
-reads the store through the same session everything else in this playbook uses
-and exits **0 even when the numbers are bad** — a low measurement is a result,
-not a failure. Non-zero means it could not read the project at all.
+reads the same store every call in this playbook writes to, and exits **0 even
+when the numbers are bad** — a low measurement is a result, not a failure.
+Non-zero means a caller error, or a store it could not read at all.
 
 **Run it three times:** once before Phase 2, so the pass has a starting point
 to be compared against; once at Phase 2.3's refresh point; and once at the end,
@@ -256,8 +288,12 @@ never a rating, and there is no number to report as "the coverage".
 - A failed call is not a reason to drop a queue entry. Log the address, the
   call and the error, put the entry back on the queue, and carry on with the
   next one. Report every one of those in the leftovers table.
-- If `r2000_save_project` fails, say so immediately and stop — the work since
-  the last refresh point is not persisted, and continuing widens the loss.
+- A refused write is not silent and must not be treated as one. A
+  stale-revision refusal (a `base_revision` that the store has moved past), an
+  illegal label name, or a scope that overlaps an existing one all come back
+  REFUSED and named, with nothing written. Re-read, re-derive and replay that
+  one entry; never widen the range or drop the `base_revision` to make the
+  refusal go away.
 - Never invent an answer to make a queue entry go away. An honest "this looks
   like a table, callers unclear" in the leftovers table is worth more than a
   confident wrong label that the next reader has to un-learn.

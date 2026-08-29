@@ -6,9 +6,15 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// regenerator2000 computes packer identity on EVERY load and then throws it
-// away before it reaches any machine-readable surface. At the pinned version
-// (0.9.20) that was established four independent ways, each read at the pin:
+// DATED PROVENANCE (2026-08-29): the retired static analyser this project once
+// rented -- regenerator2000, pinned at 0.9.20 -- computed packer identity on
+// EVERY load and then threw it away before it reached any machine-readable
+// surface. That analyser is GONE from this repository; nothing below calls it,
+// and this paragraph is history in the past tense, not a route. It is kept
+// because it is the whole reason this file exists: without it, the obvious
+// next step is to go looking for the packer-name call that was already proven
+// not to be there. At the pin, that absence was established four independent
+// ways, each read at the pin:
 //
 //   (a) the curated binary-info tool emits a fixed seven-field object
 //       (origin, size, system, filename, description, an illegal-opcode hint
@@ -27,15 +33,17 @@
 //       zero non-UI, non-internal consumers, and the command line has no flag
 //       that reports file info.
 //
-// So there is no read-only route to a packer name inside regenerator2000 at
-// this version. The two routes that would produce one -- copying upstream's
-// signature table (or transcribing its bytes into search patterns), and
-// inventing an `r2000_`-prefixed tool name that does not exist upstream --
-// are both refused: the first is the copy this milestone exists to avoid, and
-// the second would be a fabricated upstream tool that this repository's own
-// honesty gates would then treat as legitimate. What is left, and what this
-// file is, is a project-owned finding with an EXTERNAL oracle and an explicit
-// unknown.
+// So there was no read-only route to a packer name in that analyser, and there
+// is none on the surface that replaced it either: the annotation store holds
+// annotations, the derived reads decode instructions, and neither answers
+// "which packer". The two routes that would produce a name -- copying that
+// upstream project's signature table (or transcribing its bytes into search
+// patterns), and inventing a tool name on this project's own surface that no
+// verb actually implements -- are both refused: the first is the copy this
+// milestone exists to avoid, and the second would be a fabricated tool that
+// this repository's own honesty gates would then treat as legitimate. What is
+// left, and what this file is, is a project-owned finding with an EXTERNAL
+// oracle and an explicit unknown.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR
@@ -496,7 +504,20 @@ export function packerFinding(options = {}) {
   let entropySource = null;
   if (typeof entropy === "number" && Number.isFinite(entropy)) {
     measured = entropy;
-    entropySource = "r2000_get_binary_info";
+    // THE RECORDED PROVENANCE VALUE, DECIDED 2026-08-29 -- not string-replaced.
+    // Until this date this field carried the retired static analyser's
+    // binary-info verb, in that verb's own tool-name shape. Carrying that
+    // shape forward under ANY spelling is wrong twice over. It is a FACT
+    // ABOUT A PAST RUN: renaming it to a verb on the current surface would
+    // claim a run that never happened. And this branch cannot know who
+    // produced the number in the first place -- `--entropy` is
+    // caller-supplied, and the caller may equally have measured it, read it
+    // from a derived binary-info read, or copied it out of a report. So the
+    // value now names the CHANNEL, which this code can actually observe,
+    // rather than guessing a producer; the historical producer is recorded
+    // above in prose, with no token an extractor could mistake for a live
+    // route.
+    entropySource = "caller-supplied";
   } else if (bytes && bytes.length > 0) {
     measured = shannonEntropy(bytes);
     entropySource = "local-shannon-entropy";
@@ -509,9 +530,9 @@ export function packerFinding(options = {}) {
 
   // --- Route 3: the explicit unknown, always with a reason.
   return unknownFinding(
-    "no packer-identity route was available: the pinned regenerator2000 surface exposes no packer name on " +
-      "its tool or command-line surfaces, the external oracle was absent, and no entropy measurement was " +
-      "supplied, so packedness could not be established either",
+    "no packer-identity route was available: this project's own tool and command-line surfaces expose no " +
+      "packer name, the external oracle was absent, and no entropy measurement was supplied, so packedness " +
+      "could not be established either",
     evidence,
     checkedAt,
   );

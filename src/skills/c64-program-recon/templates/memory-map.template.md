@@ -8,8 +8,8 @@ needs beyond the store itself, plus the confidence vocabulary that store comment
 Run the generator once findings are in the store:
 
 ```bash
-npx -y @henols/vice-mcp r2000 render-memmap game.regen2000proj --provenance sidecar.json
-node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 render-memmap game.regen2000proj --provenance sidecar.json
+npx -y @henols/vice-mcp anno render-memmap game.regen2000proj --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.regen2000proj --provenance sidecar.json
 ```
 
 Add `--check` to compare the rendered file on disk against a fresh render — it exits non-zero and
@@ -64,7 +64,7 @@ literal values:
 
 ## Confidence vocabulary
 
-Every comment written into the store through `r2000_set_comment` that grades a finding leads with
+Every comment written into the store through `anno_set_comment` that grades a finding leads with
 one of these five bracket tokens (the parser in `anno-confidence.ts` throws on anything that is
 close but not exact — a typo never silently degrades into an ungraded comment):
 
@@ -80,4 +80,4 @@ Do not force an unknown range through a disassembler and record the output as co
 decode of data is silently wrong and contaminates everything downstream.
 
 **Do not promote a row by editing its grade.** Re-verify and restate the evidence with a fresh
-`r2000_set_comment` call, so the record of when something stopped being a guess survives.
+`anno_set_comment` call, so the record of when something stopped being a guess survives.

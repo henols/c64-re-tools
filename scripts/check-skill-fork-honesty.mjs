@@ -496,12 +496,33 @@ need(
 // Positive check: the replacement pointer must still exist (D-12) -- the
 // deletion must not be "fixed" by deleting the pointer to the proven route
 // too.
+//
+// RE-POINTED 2026-08-29 (phase 29 plan 29-09, D-10/CUT-05), and the ONE thing
+// to understand before touching it again is WHICH SIDE MOVED. This assertion
+// used to pin the live invocation `r2000 export-asm`. Phase 29 removes that
+// verb, so the assertion and the cut contradicted each other outright:
+// cleansing the skill failed this check, while keeping the string to satisfy
+// it fired the removal gate. THE SKILL IS THE SIDE THAT MOVED. Its live
+// instruction is gone -- a playbook must not point at a verb that does not
+// exist -- and in its place stands a dated withdrawal notice naming the route
+// under the name it will carry when it returns, the phase that returns it, and
+// the oracle it returns behind.
+//
+// The literal below is that FUTURE name, on purpose. It is present in the
+// notice today, and it stays present when Phase 30 restores the route as a
+// live instruction under exactly that name -- so this assertion survives the
+// restoration with no further edit, and the guard never has to be re-pointed a
+// second time. What the comment above says is unchanged in force: deleting the
+// notice fails this check, so the cut still cannot be "fixed" by deleting the
+// pointer to the route.
 const ACME_BUILD_SKILL_PATH = join(SKILLS_DIR, "acme-build", "SKILL.md");
 const acmeBuildSkillSource = readFileSync(ACME_BUILD_SKILL_PATH, "utf8");
 need(
-  acmeBuildSkillSource.includes("r2000 export-asm"),
-  `${ACME_BUILD_SKILL_PATH.slice(ROOT.length + 1)} is missing the replacement pointer string "r2000 export-asm" -- ` +
-    `the deletion must not be "fixed" by deleting the pointer to the proven route too.`
+  acmeBuildSkillSource.includes("anno export-asm"),
+  `${ACME_BUILD_SKILL_PATH.slice(ROOT.length + 1)} is missing the replacement pointer string "anno export-asm" -- ` +
+    `the deletion must not be "fixed" by deleting the pointer to the route too. While the route is withdrawn ` +
+    `that pointer is the dated withdrawal notice naming it; once Phase 30 restores it, the same string is the ` +
+    `live invocation.`
 );
 
 // --- Non-vacuity controls ---------------------------------------------------

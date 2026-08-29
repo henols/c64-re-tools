@@ -471,7 +471,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     extractables: [],
     note:
       "Second of the four SEAM-02-anchored entries. Skill-facing: it is documented as the generation " +
-      "route (never hand-author an address row) at src/skills/c64-program-recon/SKILL.md:250.",
+      "route (never hand-author an address row) at src/skills/c64-program-recon/SKILL.md:255.",
   },
   {
     module: "anno-regbits-gen.ts",
@@ -643,7 +643,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     basis: {
       consumers: [
         { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 309 },
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 50 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 53 },
         { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runR2000Cli" },
       ],
       requirements: [],
@@ -759,7 +759,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "CURATED_R2000_TOOLS", line: 49 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "CURATED_R2000_TOOLS", line: 51 },
       ],
       requirements: [],
       rationale:
@@ -786,7 +786,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 50 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 53 },
         { path: "src/mcp/vice/anno-verb-coverage.test.ts", symbol: "parseAnnoCliVerbs", line: 24 },
       ],
       requirements: ["CUT-04"],

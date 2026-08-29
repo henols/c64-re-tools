@@ -189,7 +189,7 @@ not a read-only lookup like `lookup` and `annotate`.
 ## Feeding the enum generator
 
 `memmap.json`'s structured `bits` entries are the source of the curated register bit-name table used
-to generate program-specific enums for regenerator2000's annotation store (R2000-13): register
+to generate program-specific enums for this project's annotation store: register
 writes disassemble as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` instead of a bare `#$1b`. The
 generator is `src/mcp/vice/anno-regbits-gen.ts`; its committed output is
 `src/mcp/vice/anno-regbits.json`; and that output is **digest-pinned** to `memmap.json` — a
@@ -204,22 +204,22 @@ override table (`OVERRIDES` in `anno-regbits-gen.ts`), not from this file. Widen
 the digit `0`) so those registers get a real structured entry here is separate work belonging to this
 skill, not the generator.
 
-**Installing those bit names into a project's own disassembly:** the table above only builds
-`anno-regbits.json` — turning a specific project's register *writes* into named enum variants is a
-separate, later step, once a `.regen2000proj` already exists (`r2000 bootstrap`, see
-`c64-program-recon`):
+**Installing those bit names into a program's own disassembly — dated withdrawal, 2026-08-29.** The
+table above only builds `anno-regbits.json`. Turning a specific program's register *writes* into
+named enum variants was the `gen-enums` CLI verb, and **that verb is WITHDRAWN from this surface
+and returns in Phase 30** as a rebuild over the annotation store, alongside the ACME export route
+and behind the same real-ACME byte-diff oracle. Do not invoke it here — it does not exist, and the
+invocation fails with an unknown-verb error and nothing to explain it.
 
-```bash
-npx -y @henols/vice-mcp r2000 gen-enums game.regen2000proj                            # npm install
-node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 gen-enums game.regen2000proj  # in-repo/plugin
-```
+What it did, so the rebuild has a specification and so a reader knows what is missing: it read the
+program's own disassembly, created one enum variant per DISTINCT value actually written at each
+matching immediate-load address (named from the curated table above), and printed
+total/paired/unpaired register-store counts plus a per-enum variant count.
 
-`r2000 gen-enums` requires an EXISTING `.regen2000proj` — it does not bootstrap one from a raw
-input. It reads the project's own disassembly, creates one enum variant per DISTINCT value actually
-written at each matching immediate-load address (named from the curated table above), and prints
-total/paired/unpaired register-store counts plus a per-enum variant count. It exits non-zero, naming
-the reason, when either of its two internal search passes hits its own 10000-row ceiling — pass
-`--max-results` to raise that ceiling for a program whose store exceeds it.
+**The by-hand route is open in the meantime, and it is the same one this skill already documents
+for any other enum.** `anno_create_project_enum` defines the variants and `anno_apply_enum_usage`
+binds one to the accessing instruction's address — see "Name it" and "Document it" below. That is
+manual where `gen-enums` was bulk, but it writes exactly the same rows into the store.
 
 <!--
 ATTRIBUTION (ABS-02)
@@ -238,13 +238,16 @@ Adapted from regenerator2000.
   ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
   upstream text instructs:
     - Upstream's "if a conversion was wrong, undo it" step is replaced with
-      "set the correct type again". `r2000_set_data_type` is idempotent over a
+      "set the correct type again". `anno_set_data_type` is idempotent over a
       range, so the undo call buys nothing and this project does not expose
       it.
     - Upstream's two instructions to insert a table boundary marker are NOT
-      carried as instructions — the underlying call is not exposed here. The
-      HAZARD they exist to prevent is carried instead, as a dated limitation
-      with a forward pointer, under "The adjacent-table limitation" below.
+      carried as instructions — the underlying call is not exposed here, and
+      as of 2026-08-29 the hazard they existed to prevent is GONE: the
+      annotation store never joins two rows of its own accord, so adjacent
+      same-type tables keep their boundary. The dated limitation and the
+      record of its closure are under "The adjacent-table limitation, and how
+      it was closed" below.
     - Upstream's soft cross-reference to its own sibling procedure file is
       replaced by a pointer to this project's own absorbed routine procedure
       in `src/skills/c64-program-recon/SKILL.md`. The upstream file it named
@@ -284,7 +287,13 @@ that is *not* evidence of code — it is a property of the 6502's dense opcode
 map. A region earns the Code type only when at least one of these holds:
 
 - **It is a `JSR`/`JMP` target.** Already-analysed code contains `JSR $addr` or
-  `JMP $addr` landing in it. Check with `r2000_get_cross_references`.
+  `JMP $addr` landing in it. Check with `anno_get_cross_references` — it names
+  the `image` as well as the `store`, takes a REQUIRED `max_results`, and unions
+  three sources on every call without caching any of them: the instructions
+  decoded fresh out of every range typed `code`, the typed split ADDRESS tables
+  (the `_address` forms produce cross-references and the `_word` forms do not),
+  and the stored rows, which exist because a computed dispatch cannot be
+  recovered from bytes at all.
 - **It is a branch target** of an already-analysed `BNE`/`BEQ`/`BCC`/`BCS`/
   `BPL`/`BMI`/`BVC`/`BVS`.
 - **It is a vector or handler**: its address appears in a vector table
@@ -301,9 +310,13 @@ four hundred lines of fiction.
 Work the Undefined blocks in four passes, in this order. Do not interleave
 them; each pass makes the next one cheaper.
 
-1. **Provably-reachable code** — `r2000_disassemble` at the entry point of each
-   region that meets the proof bar above. Control-flow disassembly follows the
-   flow itself and sets the Code blocks for you.
+1. **Provably-reachable code** — read from the entry point of each region that
+   meets the proof bar above with `anno_disassemble`, then type the range you
+   actually verified as `code` with `anno_set_data_type`. **Reading and typing
+   are two calls on this surface, and that is deliberate:** `anno_disassemble`
+   decodes fresh from the image bytes and writes nothing at all, so nothing is
+   ever classified as code by a decoder's guess — the boundary you record is
+   the one you read and judged.
 2. **Text** — PETSCII and screencode strings.
 3. **Tables** — byte, word, address and split (lo/hi, hi/lo) tables.
 4. **Whatever is left** — decide data, or leave it Undefined for a human.
@@ -312,7 +325,7 @@ them; each pass makes the next one cheaper.
 
 ### Scope, and reading a region
 
-1. `r2000_get_binary_info` first. Keep `origin`, `size`, `system`, `filename`,
+1. `anno_get_binary_info` first. Keep `origin`, `size`, `system`, `filename`,
    `description` and `may_contain_undocumented_opcodes`.
    - `system` names the target machine. On a C64 the rest of this skill *is*
      the memory map you need — `lookup` any address a region touches before
@@ -324,13 +337,15 @@ them; each pass makes the next one cheaper.
      `SAX`, `SLO`, `DCP`, `ISC`) may appear. **Do not misclassify those as
      data** — they are valid instructions. The flag is a human's hint, not a
      guarantee: some programs use them with the flag false.
-2. `r2000_get_blocks` to see what is already classified, and focus on the
-   Undefined entries.
-3. Read each candidate region twice, through `r2000_read_region`: `view:
+2. `anno_get_blocks` to see what is already classified, and focus on the
+   Undefined entries. `max_results` is REQUIRED with no default; pass a ceiling
+   above the range count you expect and compare the returned count against it.
+3. Read each candidate region twice, through `anno_read_region` (which names
+   both the `store` and the `image`): `view:
    "hexdump"` shows the byte patterns, and **omitting `view`** gives the
-   disassembly view — its documented default, confirmed live — which shows how
-   the region would decode. The combined byte count is capped at **4096 bytes** per call
-   (`R2000_READ_REGION_MAX_BYTES`), and a request above the cap is refused by
+   disassembly view — that is the parameter's documented default — which shows
+   how the region would decode. The combined byte count is capped at **4096 bytes** per call
+   (`ANNO_READ_REGION_MAX_BYTES`), and a request above the cap is refused by
    name rather than truncated — so walk a large binary in consecutive ranges.
    Chunks of **256–512 bytes** are the practical working size for
    classification; a 4096-byte hexdump is more than can be read carefully in
@@ -338,36 +353,51 @@ them; each pass makes the next one cheaper.
 
 ### Applying the classification
 
-- **Code**: call `r2000_disassemble` with the entry-point address. Do **not**
-  pass `"code"` to `r2000_set_data_type` — the enum accepts the value, but
-  setting a range to code is not the same as tracing flow through it, and only
-  the trace produces correct block boundaries. After every `r2000_disassemble`,
-  call `r2000_get_blocks` again: the trace has created blocks you have not seen.
-- **Data**: batch the `r2000_set_data_type` calls through
-  `r2000_batch_execute`. A real classification pass is dozens of ranges, and
-  batching is what makes that affordable. Do not put code regions in the batch.
+- **Code**: `anno_disassemble` from the entry-point address to READ, then
+  `anno_set_data_type` with `"code"` to RECORD the range you verified.
+  `anno_disassemble` performs no write, so nothing is classified until you say
+  so. Type only as far as you actually followed the flow — the end of a routine
+  at its `RTS`/`RTI`/`JMP`, not "to the end of the region" — because the typed
+  `code` ranges are what `anno_get_cross_references` and `anno_search` decode
+  instructions out of later.
+- **Data**: batch the `anno_set_data_type` calls through
+  `anno_batch_execute`. A real classification pass is dozens of ranges, and one
+  batch is one open/commit/close rather than dozens.
 - **A wrong classification is not a disaster and does not need undoing.**
-  `r2000_set_data_type` is idempotent over a range: set the correct type again
-  over the same range and the previous one is gone. (Upstream reaches for an
-  undo call here; this project does not expose one, and does not need to.)
-- Re-read `r2000_get_blocks` after each batch to confirm what actually landed.
+  `anno_set_data_type` is idempotent over a range: set the correct type again
+  over the same range and the previous one is gone, and an identical repeat
+  succeeds reporting `changed: false`. (Upstream reaches for an undo call here;
+  this project does not expose one, and does not need to.)
+- **Read the disclosures on a successful retype; they are not errors and they
+  are never dropped.** `contradictedComments` names comments whose recorded
+  confidence now contradicts the type you just applied, and
+  `reinterpretedSplitTables` names every split table the write FRAGMENTED, with
+  the entry-address pairs it read before and the pairs each surviving remainder
+  reads now. A split table's entries re-pair as a function of the row's start
+  **and** its length, so a fragment decodes to different 16-bit values than the
+  ones a human recorded.
+- A split layout REFUSES an odd byte count — the low half and the high half must
+  be the same length.
+- Re-read `anno_get_blocks` after each batch to confirm what actually landed.
+  `max_results` is REQUIRED on that read and has no default; the true match
+  count is returned beside the list.
 
 Example of a valid data-only batch, then the code regions separately:
 
 ```
-r2000_batch_execute:
-  - r2000_set_data_type  start=2304  end=2367  data_type="byte"
-  - r2000_set_data_type  start=2368  end=2431  data_type="petscii"
-then: r2000_disassemble address=2049
-then: r2000_disassemble address=2432
-then: r2000_get_blocks          # refresh
+anno_batch_execute:
+  - anno_set_data_type  start=2304  end=2367  data_type="byte"
+  - anno_set_data_type  start=2368  end=2431  data_type="petscii"
+then: anno_disassemble address=2049          # read, writes nothing
+then: anno_set_data_type start=2049 end=2303 data_type="code"
+then: anno_get_blocks max_results=500        # refresh
 ```
 
 ### The block types
 
 | Block type | `data_type` | When |
 |---|---|---|
-| **Code** | *call `r2000_disassemble`* | Provably-executed instructions. Never via `r2000_set_data_type`. |
+| **Code** | `code` | Provably-executed instructions. Read the extent with `anno_disassemble` first — it writes nothing — then record exactly what you verified. |
 | Byte | `byte` | Raw 8-bit data: sprites, bitmaps, charsets, lookup tables, variables, unknowns |
 | Word | `word` | 16-bit little-endian values: 16-bit variables, math constants, SID frequencies |
 | Address | `address` | 16-bit LE pointers — jump tables, vector lists. Creates cross-references |
@@ -419,35 +449,37 @@ in multiples of 64, or a bitmap. Export it rather than annotate it.
 it is passed to CHROUT, it is PETSCII. Getting this backwards produces text
 that renders as garbage in exactly one of the two places.
 
-### The adjacent-table limitation
+### The adjacent-table limitation, and how it was closed
 
-**Dated limitation, recorded 2026-08-24.** Two adjacent regions of the *same*
-type auto-merge into one block, and `r2000_get_blocks` reports the merged
-result. Two byte tables side by side, or the two halves of a split table
-sitting next to each other, therefore lose their boundary in the store.
+**Dated limitation, recorded 2026-08-24; CLOSED 2026-08-29 when the store
+changed underneath it.** The old store auto-merged two adjacent regions of the
+*same* type into one block, so two byte tables side by side — or the two halves
+of a split table sitting next to each other — lost their boundary on read, and
+the answer upstream reached for was a `toggle_splitter` call this project never
+exposed.
 
-Upstream's answer is a `toggle_splitter` call at the boundary, which this
-project does not expose. Until it does:
+**The annotation store does not do that.** It never joins two rows of its own
+accord: adjacent same-type ranges stay two rows, and `anno_get_blocks` reports
+them as two. A range you name that *spans* several existing rows still collapses
+to the one row you asked for — that is you asking, not the store deciding — and
+partial overlaps split and preserve the addresses outside your range rather than
+swallowing them.
 
-- **Do not** rely on the block listing to tell two adjacent same-type tables
-  apart. It cannot.
-- **Do** record the boundary where it survives: a `r2000_set_label_name` at the
-  start of the second table, and a line comment on both naming the extent you
-  actually determined.
-- Expect a systematic **over-merge** bias in any count taken from the block
-  store, and say so when reporting one.
+So the working rules are now the ordinary ones:
 
-The forward pointer: exposing the splitter is a Phase 20/21 concern, because
-`DECOMP-01` ("every byte is code, byte, word, address, PETSCII, screencode or
-table") cannot distinguish two adjacent tables without it, and `BUILD-02`
-("data tables extracted to their own files") has no boundary to cut on. The
-per-call disposition and its justification are in the manifest named in the
-attribution header above.
+- **Do** rely on the block listing to tell two adjacent same-type tables apart.
+  It can, provided you typed them as two calls rather than one spanning call.
+- **Do** still record the boundary in the annotations as well — an
+  `anno_set_label_name` at the start of the second table and a line comment on
+  both naming the extent you determined. A name and an evidence line survive a
+  later retype; a row boundary does not.
+- **Do not** carry the old over-merge caveat into a report taken from this
+  store. It was true of the retired one and is not true here.
 
 ### Labelling, and the report
 
-Name what you classified — `r2000_set_label_name` on entry points, tables and
-strings — and comment it with `r2000_set_comment` (`"line"` above,
+Name what you classified — `anno_set_label_name` on entry points, tables and
+strings — and comment it with `anno_set_comment` (`"line"` above,
 `"side"` beside). For the conventions to name things *by*, and for the
 comment-block format to use on a subroutine, follow the absorbed routine
 procedure in `src/skills/c64-program-recon/SKILL.md`.
@@ -459,7 +491,10 @@ Then report, and mean it:
 - **Every region still uncertain or still Undefined, by address.** This is the
   part that makes the pass reusable. A classification report with no uncertain
   regions on a real game is almost always a report that stopped looking.
-- Offer to `r2000_save_project`.
+- The store revision, read with `anno_save_project`. That verb performs **no
+  write** — every classification call above already committed and fsynced its
+  own — so quoting the revision is how the report is pinned to an exact store
+  state rather than to "after the pass".
 
 ### What goes wrong
 
@@ -491,7 +526,7 @@ Adapted from regenerator2000.
     - Upstream's cursor-based entry route is replaced by explicit address
       input. Upstream's own text forbids relying on the cursor in exactly this
       situation, and this project has no editor cursor at all; the composite
-      address lookup (`r2000_get_address_details`) takes an explicit address.
+      address lookup (`anno_get_address_details`) takes an explicit address.
     - Upstream's two low/high-byte immediate-formatting steps are NOT carried
       as instructions — the underlying call is not exposed here. They are
       named by bare verb, with the requirement that would supply their
@@ -522,10 +557,10 @@ name.
 
 - **Always start from an explicit address**, `$XXXX` or its decimal
   equivalent. There is no editor cursor in this project's route, and upstream's
-  own text forbids relying on one anyway. `r2000_get_address_details` composes
+  own text forbids relying on one anyway. `anno_get_address_details` composes
   the symbol, comments, block type and cross-references for one explicit
   address in a single call.
-- `r2000_get_binary_info` for `system`, `filename`, `description` and
+- `anno_get_binary_info` for `system`, `filename`, `description` and
   `may_contain_undocumented_opcodes`. `filename` and `description` are how a
   symbol gets a *domain* name — `lap_counter` in a racing game, `lives` in a
   platformer — instead of a generic one. With undocumented opcodes in play,
@@ -534,8 +569,9 @@ name.
 
 ### 2. Gather the usage
 
-`r2000_get_cross_references` on the address returns everywhere it is touched.
-Read the instruction at each site, because the instruction is the evidence:
+`anno_get_cross_references` on the address — naming the `store`, the `image` and
+a REQUIRED `max_results` — returns everywhere it is touched. Read the
+instruction at each site, because the instruction is the evidence:
 
 - **Writes**: `STA`, `STX`, `STY`
 - **Reads**: `LDA`, `LDX`, `LDY`, `BIT`, `CMP`, `CPX`, `CPY`, `ADC`, `SBC`
@@ -577,8 +613,8 @@ points *to*, which is the thing the name cannot carry.
 **A flag or bitmask?** Only ever `$00`/`$01` or `$00`/`$FF`; tested with `BIT`
 or `LDA`/`BEQ`. Name it as a predicate — `is_active`, `has_collided`. When the
 individual bits carry separate meanings, that is an enum: define it with
-`r2000_create_project_enum` (`$01 = ACTIVE`, `$02 = COLLIDED`, `$04 =
-VISIBLE`) and apply it with `r2000_apply_enum_usage` so every bitmask test
+`anno_create_project_enum` (`$01 = ACTIVE`, `$02 = COLLIDED`, `$04 =
+VISIBLE`) and apply it with `anno_apply_enum_usage` so every bitmask test
 reads as words rather than hex.
 
 **A counter or index?** `INC`/`DEC` inside a loop, compared against a limit
@@ -610,13 +646,13 @@ or writing the variable.
 > variable becomes `zp_`-prefixed too. The prefix makes the addressing mode
 > visible at every use site, which is the whole point.
 
-Apply it with `r2000_set_label_name`.
+Apply it with `anno_set_label_name`.
 
 ### 5. Document it
 
-- `r2000_set_comment` `"line"` at the definition: the range it occupies, its
+- `anno_set_comment` `"line"` at the definition: the range it occupies, its
   purpose, its bitfield layout if it has one.
-- `r2000_set_comment` `"side"` at the interesting *uses*: why this read, why
+- `anno_set_comment` `"side"` at the interesting *uses*: why this read, why
   this write. "Reset life counter" beside a `STA` is worth more than any name.
 - Define and apply enums where the values form a set (above).
 
@@ -641,7 +677,7 @@ still readable even though the store cannot format it.
   it. A classification with no evidence line is a guess wearing a name.
 - **Actions taken**: what was renamed, what was commented, which enums were
   defined or applied.
-- **Uncertainty**: if `r2000_get_cross_references` returned nothing, say which
+- **Uncertainty**: if `anno_get_cross_references` returned nothing, say which
   of the three explanations in step 2 you could and could not rule out.
 
 ## Troubleshooting

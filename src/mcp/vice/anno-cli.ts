@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // anno-cli.ts -- the thin CLI ergonomics layer over the annotation store
-// (D-06). Reached as `vice-mcp r2000 <verb>` because that bin is the only
+// (D-06). Reached as `vice-mcp anno <verb>` because that bin is the only
 // surface that resolves identically across the Claude Code plugin route and
 // both npm-installer routes: `installer/bin/cli.mjs`'s `viceServerEntry()`
 // always launches this server via `npx` in BOTH npm-installer modes, and
@@ -81,8 +81,8 @@ import { storePathWithinWorkspace } from "./anno-types.ts";
 import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
 import { decodeRawData } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
-const NPX_INVOCATION = "npx -y @henols/vice-mcp r2000 <verb>";
-const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 <verb>";
+const NPX_INVOCATION = "npx -y @henols/vice-mcp anno <verb>";
+const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
 
 const USAGE = `usage (npm install):    ${NPX_INVOCATION}
 usage (plugin/in-repo): ${PLUGIN_INVOCATION}

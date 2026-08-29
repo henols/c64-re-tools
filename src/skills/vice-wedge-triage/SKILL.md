@@ -167,14 +167,14 @@ connection but never answers is contention, not a hung emulator — and the brok
 knows whether it holds a lease on that port, which is the thing a human or agent can actually go
 check instead of guessing. Named causes, so a reader knows where to look: a hand-run `nc` session
 left open against the port, a second Claude Code session driving the same instance, VICE's own
-`-remotemonitor`, and any other 6502 debugger that dials in — including regenerator2000's own
-`--vice` flag. **This plugin's own regenerator2000 route can never be one of them:** the launch
-path refuses `--vice` by construction (no caller-supplied argv passthrough exists to inject it in
-the first place) *and* by a scan that throws if the flag is ever present in the final argv — not by
-documentation alone (`R2000-01`, plan 10-01) — so a user chasing a silent emulator can rule this
-project's own r2000 integration out immediately, rather than suspecting it. The standing advice
-does not change: contention is **never** a reason to recycle — the instance is healthy, merely
-claimed elsewhere.
+`-remotemonitor`, and any other 6502 debugger that dials in. **This plugin's own annotation route
+can never be one of them:** the `anno_*` tool surface and the `anno` CLI are pure store-and-image
+readers — they open a SQLite annotation store and decode bytes out of a file on disk, and there is
+no emulator connection anywhere on that path to contend for the port. That is a structural
+property of what those calls do, not a documented promise, so a user chasing a silent emulator can
+rule this project's own annotation tooling out immediately rather than suspecting it. The standing
+advice does not change: contention is **never** a reason to recycle — the instance is healthy,
+merely claimed elsewhere.
 
 ## The manual fallback, when `vice_diagnose` cannot answer
 

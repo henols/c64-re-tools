@@ -32,21 +32,24 @@
 // standing rule: it still never import()s, require()s, eval()s or spawns anything from src/skills/ --
 // skill content remains untrusted input that is matched, never executed.
 //
-// FLOW-01 (11.1-CONTEXT.md, D-11.1-02): everything above checks `r2000_*`
-// MCP TOOL names in skill prose, but nothing checked `r2000` CLI VERBS at
-// all -- so `gen-enums`, `export-lbl` and `import-lbl` (R2000-13/-14/-15's
-// own delivery path) reached `main` documented in zero skill files, with
-// nothing here catching it. The verb-coverage section near the bottom of
-// this file closes that gap the same way the rest of this file already
-// works: the verb list is PARSED from `anno-cli.ts`'s own dispatch switch
+// FLOW-01 (11.1-CONTEXT.md, D-11.1-02): everything above checks MCP TOOL
+// names in skill prose, but nothing checked CLI VERBS at all -- so
+// `gen-enums`, `export-lbl` and `import-lbl` (R2000-13/-14/-15's own delivery
+// path) reached `main` documented in zero skill files, with nothing here
+// catching it. The verb-coverage section near the bottom of this file closes
+// that gap the same way the rest of this file already works: the verb list is
+// PARSED from `anno-cli.ts`'s own dispatch switch
 // (`scripts/lib/anno-cli-verbs.mjs`), never a hand-typed array -- a
-// hard-coded list is exactly how this class of finding arrives.
+// hard-coded list is exactly how this class of finding arrives. The
+// subcommand those verbs are invoked under was renamed `r2000` -> `anno` on
+// 2026-08-29 (plan 29-09); the literal lives once, in that module.
 import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { CURATED_R2000_TOOLS } from "../src/mcp/vice/r2000-tools.ts";
+import { CURATED_ANNO_TOOLS } from "../src/mcp/vice/anno-tools.ts";
 import { parseAnnoCliVerbs, verbsMissingFromSkills, ANNO_CLI_VERB_FLOOR } from "./lib/anno-cli-verbs.mjs";
 import { walkSkills, MCP_PREFIX_RE, extractToolNames, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
 
@@ -80,33 +83,34 @@ for (const f of skillFiles) {
 // MCP_PREFIX_RE/TOOL_NAME_RE/extractToolNames() now live in
 // ./lib/skill-corpus.mjs (WR-12) -- imported above, not re-derived here.
 // Plan 11-05, Phase 11: a second, independent extraction pass for the
-// curated r2000_* surface (D-16/D-18). Kept in its OWN map rather than
+// curated annotation surface (D-16/D-18), RE-POINTED onto that surface's own
+// `anno_*` prefix by plan 29-09 (2026-08-29). Kept in its OWN map rather than
 // merged into `extracted` above -- the two families are served through
-// completely different gates (stock/fork manifests vs. CURATED_R2000_TOOLS,
+// completely different gates (stock/fork manifests vs. CURATED_ANNO_TOOLS,
 // a proxy-local allow-list), so conflating them would blur which gate a
 // given name is actually checked against.
-const R2000_TOOL_NAME_RE = /\br2000_[a-z0-9_]+/g;
+const ANNO_TOOL_NAME_RE = /\banno_[a-z0-9_]+/g;
 
 /** @type {Map<string, Set<string>>} */
 const extracted = new Map();
 /** @type {Map<string, Set<string>>} */
-const extractedR2000 = new Map();
+const extractedAnno = new Map();
 for (const f of skillFiles) {
   const raw = readFileSync(f, "utf8");
   const matches = extractToolNames(raw);
-  // r2000_* is a separate family with its own gate (CURATED_R2000_TOOLS,
+  // anno_* is a separate family with its own gate (CURATED_ANNO_TOOLS,
   // never either manifest) -- not part of the shared skill-corpus module,
   // but it still needs the same MCP-prefix strip before matching.
   const cleaned = raw.replace(MCP_PREFIX_RE, "");
-  const r2000Matches = cleaned.match(R2000_TOOL_NAME_RE) || [];
+  const annoMatches = cleaned.match(ANNO_TOOL_NAME_RE) || [];
   const rel = f.slice(ROOT.length + 1);
   for (const name of matches) {
     if (!extracted.has(name)) extracted.set(name, new Set());
     extracted.get(name).add(rel);
   }
-  for (const name of r2000Matches) {
-    if (!extractedR2000.has(name)) extractedR2000.set(name, new Set());
-    extractedR2000.get(name).add(rel);
+  for (const name of annoMatches) {
+    if (!extractedAnno.has(name)) extractedAnno.set(name, new Set());
+    extractedAnno.get(name).add(rel);
   }
 }
 
@@ -389,35 +393,35 @@ need(
   "non-vacuity: positive control vice_vicii_get_state must resolve as advertised on tools-manifest.stock.json -- if this fails, the manifest read is broken"
 );
 
-// --- r2000_* surface (plan 11-05, D-16/D-18) --------------------------------
+// --- anno_* surface (plan 11-05, D-16/D-18; re-pointed by plan 29-09) -------
 // Three assertions, the same shape as the vice_* checks above but against a
-// completely different gate (CURATED_R2000_TOOLS, a proxy-local allow-list --
+// completely different gate (CURATED_ANNO_TOOLS, a proxy-local allow-list --
 // never either manifest).
 //
-// 1. Every extracted r2000_* name must be curated -- the same
+// 1. Every extracted anno_* name must be curated -- the same
 //    unadvertised-name failure shape as the vice_* core check above, with the
 //    same three resolution routes.
-for (const [name, files] of extractedR2000) {
+for (const [name, files] of extractedAnno) {
   need(
-    CURATED_R2000_TOOLS.includes(name),
-    `${name}: referenced by ${[...files].join(", ")} but NOT in CURATED_R2000_TOOLS (r2000-tools.ts). ` +
-      `Resolve by: (1) implementing it and adding it to R2000_TOOL_DEFINITIONS with a named criterion, (2) removing the skill reference, or (3) recording it as a scope decision.`
+    CURATED_ANNO_TOOLS.includes(name),
+    `${name}: referenced by ${[...files].join(", ")} but NOT in CURATED_ANNO_TOOLS (anno-tools.ts). ` +
+      `Resolve by: (1) implementing it and adding it to ANNO_TOOL_DEFINITIONS with a named criterion, (2) removing the skill reference, or (3) recording it as a scope decision.`
   );
 }
-// 2. Every extracted r2000_* name must be absent from BOTH manifests -- the
+// 2. Every extracted anno_* name must be absent from BOTH manifests -- the
 //    second committed statement of this plan's manifest decision (D-16's
 //    family is served proxy-locally, in neither manifest, by design), in a
 //    different file from stock-dispatch.test.ts's own structural assertion
 //    of the same fact (the WR-11 lesson: a "present in neither manifest by
 //    design" claim must be checked, not merely asserted once).
-for (const [name, files] of extractedR2000) {
+for (const [name, files] of extractedAnno) {
   need(
     !forkNames.has(name),
-    `${name}: referenced by ${[...files].join(", ")} but present in the FORK manifest -- the r2000_* family is served proxy-locally, in neither manifest, by design`
+    `${name}: referenced by ${[...files].join(", ")} but present in the FORK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`
   );
   need(
     !stockNames.has(name),
-    `${name}: referenced by ${[...files].join(", ")} but present in the STOCK manifest -- the r2000_* family is served proxy-locally, in neither manifest, by design`
+    `${name}: referenced by ${[...files].join(", ")} but present in the STOCK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`
   );
 }
 // 3. Non-vacuity control (D-36, superseding D-32): r2000_get_address_details
@@ -430,21 +434,14 @@ need(
   CURATED_R2000_TOOLS.includes("r2000_get_address_details"),
   "non-vacuity: r2000_get_address_details must be curated (D-36, superseding D-32's exclusion, as a client-side composition) -- if this fails, D-36's composition has been silently re-excluded"
 );
-// 4. Non-vacuity FLOOR (plan 11-12): now that skill prose actually names
-//    r2000_* tools, the extraction finding none is itself a failure, exactly
-//    the way `extracted.size >= 30` guards the vice_* extraction above. The
-//    number 10 is not a guess -- it is the exact count plan 11-12 introduced,
-//    verified by `grep -oE '\br2000_[a-z0-9_]+' src/skills/**` across the
-//    three files that plan edited (c64-program-recon's SKILL.md and
-//    memory-map.template.md): r2000_add_scope, r2000_batch_execute,
-//    r2000_get_blocks, r2000_get_comments, r2000_get_cross_references,
-//    r2000_get_symbols, r2000_search_disassembly, r2000_set_comment,
-//    r2000_set_data_type, r2000_set_label_name. A future phase that adds a
-//    reference should raise this floor to the new true count -- never lower
-//    it to make a regression pass.
+// 4. Non-vacuity FLOOR (plan 11-12; RAISED to 18 over the new family by plan
+//    29-09, 2026-08-29 -- the raise record and its discipline are stated in
+//    full beside the assertion). Skill prose naming none of these is itself a
+//    failure, exactly the way `extracted.size >= 30` guards the vice_*
+//    extraction above.
 need(
-  extractedR2000.size >= 10,
-  `non-vacuity: expected at least 10 distinct r2000_* names extracted from src/skills/, got ${extractedR2000.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
+  extractedAnno.size >= 18,
+  `non-vacuity: expected at least 18 distinct anno_* names extracted from src/skills/, got ${extractedAnno.size} -- the extraction regex or the skill playbooks' tool references may have regressed`
 );
 // 5. The generated-artifact rule (render-memmap) is the one piece of D-24
 //    guidance a future session most needs to find -- assert at least one
@@ -454,18 +451,21 @@ need(
   "non-vacuity: expected at least one skill file to mention render-memmap (the memory map is a GENERATED VIEW, D-24) -- if this fails, the generated-artifact pointer has been lost from skill prose"
 );
 
-// --- r2000 CLI verb coverage (FLOW-01, plan 11.1-02) ------------------------
-// A fourth, independent section: the two r2000_* checks above are about MCP
-// TOOL names; this one is about `r2000 <verb>` CLI invocations, a
-// completely separate surface with its own source of truth
-// (anno-cli.ts's dispatch switch, not either manifest and not
-// CURATED_R2000_TOOLS).
-const r2000CliSrc = readFileSync(join(VICE_DIR, "anno-cli.ts"), "utf8");
-const r2000CliVerbs = parseAnnoCliVerbs(r2000CliSrc);
+// --- anno CLI verb coverage (FLOW-01, plan 11.1-02) -------------------------
+// A fifth, independent section: the checks above are about MCP TOOL names;
+// this one is about `anno <verb>` CLI invocations, a completely separate
+// surface with its own source of truth (anno-cli.ts's dispatch switch, not
+// either manifest and not CURATED_ANNO_TOOLS). The subcommand token itself
+// was renamed `r2000` -> `anno` by plan 29-09, in ONE commit spanning the
+// skill prose, `scripts/lib/anno-cli-verbs.mjs`'s invocation literal and
+// `vice-proxy.ts`'s dispatch token -- moving any one alone reds this section
+// from the wrong side.
+const annoCliSrc = readFileSync(join(VICE_DIR, "anno-cli.ts"), "utf8");
+const annoCliVerbs = parseAnnoCliVerbs(annoCliSrc);
 
 need(
-  r2000CliVerbs.length >= ANNO_CLI_VERB_FLOOR,
-  `non-vacuity: expected at least ${ANNO_CLI_VERB_FLOOR} r2000 CLI verbs parsed from anno-cli.ts's dispatch switch, got ${r2000CliVerbs.length} -- the parser or the switch statement itself may be broken`
+  annoCliVerbs.length >= ANNO_CLI_VERB_FLOOR,
+  `non-vacuity: expected at least ${ANNO_CLI_VERB_FLOOR} anno CLI verbs parsed from anno-cli.ts's dispatch switch, got ${annoCliVerbs.length} -- the parser or the switch statement itself may be broken`
 );
 
 // The requirement each verb was built to deliver, where the audit named
@@ -489,12 +489,12 @@ const VERB_REQUIREMENT = {
 };
 
 const skillTexts = skillFiles.map((f) => readFileSync(f, "utf8"));
-const missingCliVerbs = verbsMissingFromSkills(r2000CliVerbs, skillTexts);
+const missingCliVerbs = verbsMissingFromSkills(annoCliVerbs, skillTexts);
 for (const verb of missingCliVerbs) {
   const req = VERB_REQUIREMENT[verb] ? ` (${VERB_REQUIREMENT[verb]}'s delivery path)` : "";
   need(
     false,
-    `r2000 ${verb}: parsed from anno-cli.ts's dispatch switch but named by NO skill file${req}. ` +
+    `anno ${verb}: parsed from anno-cli.ts's dispatch switch but named by NO skill file${req}. ` +
       `Resolve by: (1) documenting it in a playbook, (2) removing the verb, or (3) recording it as a scope decision.`
   );
 }
@@ -522,9 +522,9 @@ console.log(
     `${categoryCount(PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY)} proxy-local-with-stock-manifest-entry, ${categoryCount(DENY_LISTED_TOOLS)} deny-listed, ` +
     `${categoryCount(NOT_A_TOOL_NAMES)} not-a-tool-name, ${FORK_ONLY_UNRECOVERABLE.length} fork-only-unrecoverable, ` +
     `${categoryCount(PENDING_LATER_PHASE)} pending-later-phase. ` +
-    // Floor asserted above (plan 11-12, need() #4): a count of 0 here is now
-    // a FAILURE, not a silent pass -- see that assertion's comment for the
-    // floor's provenance.
-    `r2000_*: ${extractedR2000.size} distinct names extracted, all curated (CURATED_R2000_TOOLS has ${CURATED_R2000_TOOLS.length} entries). ` +
-    `r2000 CLI verbs: ${r2000CliVerbs.length} parsed from anno-cli.ts, ${r2000CliVerbs.length - missingCliVerbs.length}/${r2000CliVerbs.length} resolved (named by at least one skill file).`
+    // Floor asserted above (plan 11-12, need() #4, raised by 29-09): a count
+    // of 0 here is now a FAILURE, not a silent pass -- see that assertion's
+    // comment for the floor's provenance.
+    `anno_*: ${extractedAnno.size} distinct names extracted, all curated (CURATED_ANNO_TOOLS has ${CURATED_ANNO_TOOLS.length} entries). ` +
+    `anno CLI verbs: ${annoCliVerbs.length} parsed from anno-cli.ts, ${annoCliVerbs.length - missingCliVerbs.length}/${annoCliVerbs.length} resolved (named by at least one skill file).`
 );

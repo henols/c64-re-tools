@@ -6453,13 +6453,13 @@ test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a 
 // fix therefore ships a narrow, clearly-labelled test-only escape hatch,
 // `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`, gated behind an env var name no
 // real caller would ever set, that writes a deterministic filler payload
-// through the SAME drained-exit code path a real `r2000 <verb>` call uses
+// through the SAME drained-exit code path a real `anno <verb>` call uses
 // -- see that hatch's own comment in vice-proxy.ts for the measurements
 // that ruled out both named routes.
 const FILL_PAYLOAD_BYTES = 512000; // well above the 65536-byte truncation point measured above
 
 test("IN-01: a piped r2000 invocation delivers the whole payload, well above the OS pipe capacity, with an exact byte count", () => {
-  const result = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"], {
+  const result = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"], {
     env: { ...process.env, VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES) },
     maxBuffer: FILL_PAYLOAD_BYTES * 2,
   });
@@ -6469,7 +6469,7 @@ test("IN-01: a piped r2000 invocation delivers the whole payload, well above the
 
 test("IN-01: the drain is bounded -- a piped invocation whose reader never drains still exits promptly (no hang)", () => {
   const start = Date.now();
-  const result = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"], {
+  const result = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"], {
     env: { ...process.env, VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES * 10) },
     // No stdio pipe consumer attached at all -- 'ignore' means the OS pipe
     // fills and is never drained by anything, the exact "nobody reads the
@@ -6483,7 +6483,7 @@ test("IN-01: the drain is bounded -- a piped invocation whose reader never drain
 });
 
 test("IN-01: r2000 --help's real (small) output is unaffected by the fix -- piped byte count equals unpiped byte count", () => {
-  const piped = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"]);
+  const piped = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"]);
   assert.equal(piped.status, 0);
 
   const scratchDir = mkdtempSync(join(tmpdir(), "vice-proxy-in01-"));
@@ -6499,7 +6499,7 @@ test("IN-01: r2000 --help's real (small) output is unaffected by the fix -- pipe
 
 test("IN-01: the r2000 CLI dispatch still ends the process promptly with no server ready log line", () => {
   const start = Date.now();
-  const result = spawnSync(process.execPath, [PROXY_PATH, "r2000", "--help"], { encoding: "utf8" });
+  const result = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"], { encoding: "utf8" });
   const elapsedMs = Date.now() - start;
   assert.equal(result.status, 0);
   assert.ok(elapsedMs < 5000, `expected a prompt exit, took ${elapsedMs}ms`);

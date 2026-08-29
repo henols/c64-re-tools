@@ -132,23 +132,32 @@ you also assemble by hand, so these stay recognised as mnemonics.
 
 ## Disassembly
 
-This skill does not disassemble. Static disassembly of a `.prg` or flat 64K image
-is a **required prerequisite** of this plugin, not an optional accelerator:
-regenerator2000, reached through
+This skill does not disassemble.
 
-```bash
-npx -y @henols/vice-mcp r2000 export-asm game.prg          # npm installs
-node <plugin-root>/src/mcp/vice/vice-proxy.ts r2000 export-asm game.prg  # in-repo/plugin
-```
+**Dated withdrawal, 2026-08-29 — whole-program static disassembly is WITHDRAWN
+and returns in Phase 30 as `anno export-asm`, behind a real-ACME byte-diff
+oracle.** The route that used to turn a `.prg` or a flat 64K image into ACME
+source offline is gone from this plugin's surface, and it is deliberately NOT
+replaced by an instruction that would fail with an unknown-verb error and
+nothing to explain it. Nothing in this repository disassembles a whole program
+today.
 
-A recursive-descent disassembler with an auto-analyzer does not render strings,
-tables and the BASIC stub as instructions, so there are no out-of-range labels
-to hand-define and no illegal-opcode lines to re-indent — the caveats this
-section used to carry were structural to a flat linear decoder and do not
-apply here. The exported source is verified reassemblable by a real ACME
-via `vice-mcp r2000 verify` (evidence:
-`.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/evidence/10-verify-transcript.txt`).
-`c64-program-recon` points at this same route; it is not restated there.
+What returns, and on what terms, so the gap is a known one rather than a
+surprise: **Phase 30 rebuilds the exporter over the annotation store**, and
+settles its correctness by **assembling the output with a real ACME and diffing
+the bytes against the input** — never by an exit code, and never by a string
+match on the exporter's own output. That is the change of kind, not a rename:
+the withdrawn route verified reassemblability through a transcript parser, and
+the recorded false pass that discipline exists against read `ACME not found in
+PATH (skipped)` / `All roundtrip verifications passed.` / `EXIT=0` — exit zero,
+an aggregate line reading as a full pass, and the one assembler this project
+cares about never having run.
+
+**In the meantime, read one range at a time.** `anno_read_region` and
+`anno_disassemble` render an explicit inclusive range out of the image on
+demand, capped at 4096 bytes per call and REFUSED by name above the cap rather
+than truncated. `c64-program-recon` documents that route and this withdrawal
+together; it is not restated there.
 
 ## Setup
 
@@ -182,7 +191,7 @@ This one turns source into bytes. It does not restate what the others carry.
 | Where to start on an unknown program, and which address to read next | `c64-program-recon` |
 | What a specific address or bit means, or annotating a listing | `c64-memory-mapping` — `node … lookup '$D018'` |
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
-| Static disassembly of a `.prg` or flat image | `vice-mcp r2000 export-asm` (see Disassembly above) |
+| Static disassembly of a `.prg` or flat image | **Withdrawn 2026-08-29; returns in Phase 30 as `anno export-asm`** behind a real-ACME byte-diff oracle (see Disassembly above) |
 | **Source in, `.prg` out** | here |
 
 ## References
