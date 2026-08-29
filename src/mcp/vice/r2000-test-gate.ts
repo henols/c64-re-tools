@@ -5,7 +5,7 @@
 // WHY THIS SEAM EXISTS (plan 11-01, R2000-10): Phase 11 adds four more
 // live-regenerator2000 test files on top of the three that already existed
 // after Phase 10 (r2000-project.test.ts, r2000-verify.test.ts,
-// r2000-cli.test.ts). Six-plus hand-copied `probeR2000()`/`R2000_AVAILABLE`/
+// anno-cli.test.ts). Six-plus hand-copied `probeR2000()`/`R2000_AVAILABLE`/
 // `SKIP_REASON`/`VICE_REQUIRE_R2000` bodies is exactly how a gate silently
 // diverges -- one copy gets its timeout changed, another its regex loosened,
 // and nobody notices until a live run behaves differently between two test

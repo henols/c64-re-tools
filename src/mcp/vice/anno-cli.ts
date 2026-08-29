@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// r2000-cli.ts -- the thin CLI ergonomics layer over the guarded regenerator2000
+// anno-cli.ts -- the thin CLI ergonomics layer over the guarded regenerator2000
 // seam (D-06). Reached as `vice-mcp r2000 <verb>` because that bin is the only
 // surface that resolves identically across the Claude Code plugin route and
 // both npm-installer routes: `installer/bin/cli.mjs`'s `viceServerEntry()`

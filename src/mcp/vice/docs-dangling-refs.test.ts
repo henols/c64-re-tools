@@ -200,7 +200,7 @@ test("planted-violation: the exact wording that survived plan 11-03 is detected 
 // Second, independent section: the SAME defect class (a dangling phase
 // pointer) one layer down, in SHIPPED SOURCE STRINGS rather than the
 // normative documents above. FLOW-02 (D-11.1-01) is the founding instance:
-// `r2000-cli.ts` told a user that closing the `.vsf` gap "is Phase 11's
+// `anno-cli.ts` told a user that closing the `.vsf` gap "is Phase 11's
 // job" in both its USAGE text and its live `bootstrap` refusal, and the
 // test that pinned the claim (`assert.match(stderr, /Phase 11/)`) never
 // caught it -- it certified the falsehood green. This section generalises
@@ -210,7 +210,7 @@ test("planted-violation: the exact wording that survived plan 11-03 is detected 
 // SCOPE: string/template literals only, NEVER comments. A comment-scoped
 // guard would be self-invalidating -- the commit that fixes a dangling
 // phase pointer legitimately wants to name the old wording in a "what NOT
-// to do" comment (this repo's established register; see r2000-cli.ts's and
+// to do" comment (this repo's established register; see anno-cli.ts's and
 // r2000-project.ts's FLOW-02 comments), and a guard that scanned comments
 // would fail on the very commit that satisfies it. CLAUDE.md's grep-gate
 // hygiene rule names exactly this hazard. KNOWN, ACCEPTED GAP:
@@ -221,7 +221,7 @@ test("planted-violation: the exact wording that survived plan 11-03 is detected 
 //
 // EXTRACTOR: a hand-written character state machine, not a regex. Measured
 // during planning: a regex-alternation extractor silently failed to see
-// r2000-cli.ts's `USAGE` template literal -- the exact site FLOW-02 lived
+// anno-cli.ts's `USAGE` template literal -- the exact site FLOW-02 lived
 // at -- and reported only 2 of the 3 literal fragments the pre-fix source
 // actually carried. A guard blind at the one site that mattered is worse
 // than no guard, so `extractStringLiterals()` below carries its own
@@ -383,10 +383,10 @@ test("positive control: the scanner captures the literals this guard exists to p
   // The anti-blindness control: without this, the test above can pass by
   // seeing nothing, exactly like the measured regex-alternation failure
   // this section's header describes.
-  const literals = extractStringLiterals(readFileSync(join(HERE, "r2000-cli.ts"), "utf8"));
+  const literals = extractStringLiterals(readFileSync(join(HERE, "anno-cli.ts"), "utf8"));
   assert.ok(
     literals.some((l) => /usage \(npm install\)/.test(l)),
-    "the scanner did not capture r2000-cli.ts's USAGE template literal -- exactly the blindness a regex-alternation extractor was measured to have",
+    "the scanner did not capture anno-cli.ts's USAGE template literal -- exactly the blindness a regex-alternation extractor was measured to have",
   );
   assert.ok(
     literals.some((l) => /\.vsf input is not supported/.test(l)),
@@ -440,11 +440,11 @@ test("planted-violation: the verbatim pre-fix wording is flagged, and the correc
     `expected exactly 3 flagged literal fragments (the USAGE template plus two of the refusal's three concatenated parts), got ${preFixHits.length}: ${JSON.stringify(preFixHits)}`,
   );
 
-  // The corrected wording (this repo's actual, current r2000-cli.ts) must
+  // The corrected wording (this repo's actual, current anno-cli.ts) must
   // NOT be flagged -- a guard that cannot be satisfied gets switched off
   // (this file's other planted-violation test makes the same point).
-  const correctedHits = extractStringLiterals(readFileSync(join(HERE, "r2000-cli.ts"), "utf8")).filter((l) =>
+  const correctedHits = extractStringLiterals(readFileSync(join(HERE, "anno-cli.ts"), "utf8")).filter((l) =>
     /\bPhase\s+\d/i.test(l),
   );
-  assert.deepEqual(correctedHits, [], "the corrected r2000-cli.ts must not be flagged -- the fix would be self-invalidating otherwise");
+  assert.deepEqual(correctedHits, [], "the corrected anno-cli.ts must not be flagged -- the fix would be self-invalidating otherwise");
 });

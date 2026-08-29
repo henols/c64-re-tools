@@ -1,4 +1,4 @@
-// Coverage for r2000-cli.ts: proves the argv-subcommand mechanism end to end
+// Coverage for anno-cli.ts: proves the argv-subcommand mechanism end to end
 // (the exact thing RESEARCH.md flagged as unverified for Assumption A2),
 // exercises both verbs in-process, and proves the .d64 refusal (D-02) writes
 // nothing. Bin-level tests spawn the real vice-proxy.ts bin exactly as a
@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { runR2000Cli, VERB_OPTIONS } from "./r2000-cli.ts";
+import { runR2000Cli, VERB_OPTIONS } from "./anno-cli.ts";
 import { tsToOffset } from "./anno-d64.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import {
@@ -381,7 +381,7 @@ test("in-process: bootstrap on a bare .prg writes a .regen2000proj with the forc
 // WR-07: a flat capture must be dispatched by EXTENSION, not by byte length,
 // so a truncated/oversized `.raw`/`.bin` hits flatImageOrigin()'s own named
 // refusal instead of silently falling through to parsePrg() (see
-// r2000-cli.ts's header comment for the reproduced incident this pins).
+// anno-cli.ts's header comment for the reproduced incident this pins).
 // ---------------------------------------------------------------------------
 
 test("in-process: bootstrap on a 4096-byte .raw capture fails, naming both the actual length and the required length (WR-07)", async () => {
@@ -456,7 +456,7 @@ test("in-process: bootstrap on a .prg whose length happens to be 4096 still boot
 /** Computed exactly once, by the shared seam. Passed through node:test's own
  * `{ skip }` option -- never a hand-rolled early return, which would report a
  * false PASS rather than a SKIP. */
-const SKIP_REASON: string | false = skipReasonFor("r2000-cli.test.ts");
+const SKIP_REASON: string | false = skipReasonFor("anno-cli.test.ts");
 
 test("regenerator2000 availability gate (D-11)", () => {
   assertR2000RequiredIfEnvSet(assert);
@@ -976,7 +976,7 @@ test(
 // plus a structural guard pinning it so a THIRD unguarded write cannot be
 // added silently.
 //
-// The structural guard reads r2000-cli.ts's own source, strips comments and
+// The structural guard reads anno-cli.ts's own source, strips comments and
 // string/template-literal bodies (so neither can produce a false brace/paren
 // match), then for every `writeFileSync(` occurrence walks BACKWARD through
 // the stripped text one character at a time, tracking brace depth, until it
@@ -996,7 +996,7 @@ test(
 // it must stop climbing at on the very first brace and report guarded).
 // ---------------------------------------------------------------------------
 
-const R2000_CLI_SOURCE_PATH = join(HERE, "r2000-cli.ts");
+const R2000_CLI_SOURCE_PATH = join(HERE, "anno-cli.ts");
 
 /**
  * Blanks every line comment, block comment, quoted string and template
@@ -1182,7 +1182,7 @@ function findWriteFileSyncCalls(source: string): { stripped: string; indices: nu
   return { stripped, indices };
 }
 
-test("structural (WR-09): every writeFileSync( in r2000-cli.ts is inside a try block, with a non-vacuous floor and named positive-control sites", () => {
+test("structural (WR-09): every writeFileSync( in anno-cli.ts is inside a try block, with a non-vacuous floor and named positive-control sites", () => {
   const source = readFileSync(R2000_CLI_SOURCE_PATH, "utf8");
   const { stripped, indices } = findWriteFileSyncCalls(source);
 
@@ -1340,7 +1340,7 @@ test(
 // silently dropping it. `verify` accepted (and discarded) `--out` because
 // `parseArgs()` is a single shared parser returning `out` for every verb,
 // while `cmdVerify()` never reads the field back out. `VERB_OPTIONS` (one
-// frozen map, `r2000-cli.ts`) plus `checkAcceptedOptions()`'s single
+// frozen map, `anno-cli.ts`) plus `checkAcceptedOptions()`'s single
 // pre-dispatch call site now refuses any `--flag`-shaped token a verb does
 // not accept, for all seven verbs uniformly.
 // ---------------------------------------------------------------------------
@@ -1383,7 +1383,7 @@ test("verify: --entry is still accepted and reaches the .d64 entry lookup, not r
 });
 
 // The verb count here is a FOURTH count site the eighth verb moves, alongside
-// `R2000_CLI_VERB_FLOOR`, `r2000-verb-coverage.test.ts`'s `REAL_VERBS` and the
+// `ANNO_CLI_VERB_FLOOR`, `anno-verb-coverage.test.ts`'s `REAL_VERBS` and the
 // dispatch switch itself. Raised from 7 to 8 by plan 19-04 when `coverage`
 // landed. Kept as a hand-maintained literal on purpose: deriving it from
 // `Object.keys(VERB_OPTIONS).length` would assert that a number equals itself.

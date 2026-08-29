@@ -235,7 +235,7 @@ import { closeR2000SessionSync } from "./r2000-session.ts";
 // immediately after can discard whatever write has not yet drained --
 // measured at a 128 KiB truncation point on this host's Node for a single
 // write exceeding the OS pipe's capacity. The reachable trigger is
-// `cmdExportAsm`'s `console.error(result.stderr)` in r2000-cli.ts, which can
+// `cmdExportAsm`'s `console.error(result.stderr)` in anno-cli.ts, which can
 // carry a large diagnostic from the spawned regenerator2000 child: the one
 // case where the user most needs the diagnostic is exactly the case a piped
 // invocation could silently lose it in. `drainStdio()` below explicitly
@@ -306,7 +306,7 @@ if (process.argv[2] === "r2000") {
     process.exit(0);
   }
 
-  const { runR2000Cli } = await import("./r2000-cli.ts");
+  const { runR2000Cli } = await import("./anno-cli.ts");
   const code = await runR2000Cli(process.argv.slice(3));
   await Promise.all([drainStdio(process.stdout), drainStdio(process.stderr)]);
   process.exit(code);

@@ -2177,7 +2177,7 @@ test("a census whose origin plus size would leave the 16-bit space is bounded, A
   // sub-report was not, and the two halves of one report described two
   // different address spaces. Nothing crashed -- the census's `mark()` filters
   // out-of-space values -- but the values were written into the JSON Phase 20
-  // and Phase 21 consume, and `r2000-cli.ts`'s `hexAddr()` renders them as five
+  // and Phase 21 consume, and `anno-cli.ts`'s `hexAddr()` renders them as five
   // hex digits.
   //
   // Asserted here rather than in a parallel test precisely so the census's own

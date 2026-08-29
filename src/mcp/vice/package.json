@@ -56,7 +56,7 @@
     "r2000-launch.ts",
     "r2000-project.ts",
     "anno-d64.ts",
-    "r2000-cli.ts",
+    "anno-cli.ts",
     "r2000-verify.ts",
     "r2000-mcp-client.ts",
     "r2000-session.ts",

@@ -981,7 +981,7 @@ export function scanIndirectDispatch(
   // above $10000 caused no crash (the census's `mark()` filters them) but they
   // were written into the JSON that the decomposition and reassembly work
   // consumes, and
-  // `r2000-cli.ts`'s `hexAddr()` renders them as five hex digits: a report
+  // `anno-cli.ts`'s `hexAddr()` renders them as five hex digits: a report
   // whose two halves describe two different address spaces is misleading even
   // when nothing throws. Computed the SAME way as the census's clamp so the two
   // are one quantity, not two that happen to agree.

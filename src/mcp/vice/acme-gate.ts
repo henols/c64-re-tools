@@ -3,7 +3,7 @@
 // implemented (SEAM-01).
 //
 // WHY THIS FILE EXISTS: `disasm-roundtrip.test.ts` established the
-// `ACME_BIN`/`VICE_REQUIRE_ACME` convention, `r2000-cli.test.ts` hand-copied
+// `ACME_BIN`/`VICE_REQUIRE_ACME` convention, `anno-cli.test.ts` hand-copied
 // it for its criterion-3 acceptance test, and a validation audit then needed a
 // THIRD copy for a fixture-reproducibility check. Three hand-copied
 // availability probes is exactly how a gate silently diverges: one copy gets

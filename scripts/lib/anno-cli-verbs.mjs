@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// scripts/lib/r2000-cli-verbs.mjs -- the ONE definition of the `r2000` CLI
-// verb list, PARSED from `r2000-cli.ts`'s own dispatch `switch (verb)` --
+// scripts/lib/anno-cli-verbs.mjs -- the ONE definition of the `r2000` CLI
+// verb list, PARSED from `anno-cli.ts`'s own dispatch `switch (verb)` --
 // never a hand-typed array.
 //
 // FLOW-01 (11.1-CONTEXT.md, D-11.1-02): `scripts/check-skill-tool-coverage.mjs`
@@ -13,7 +13,7 @@
 // out of the dispatch switch itself.
 //
 // This module is imported by BOTH `scripts/check-skill-tool-coverage.mjs`
-// (the CI script) and `src/mcp/vice/r2000-verb-coverage.test.ts` (the
+// (the CI script) and `src/mcp/vice/anno-verb-coverage.test.ts` (the
 // committed non-vacuity/planted-violation proof) -- one definition, two
 // callers, the same "single seam, two callers" shape `version.ts` /
 // `scripts/version.mjs` already use in this repo. `check-skill-tool-
@@ -34,13 +34,13 @@
  * `import-lbl`, `render-memmap`, `verify`. `coverage` is the 8th, added by
  * plan 19-04 as COV-01's delivery path (the instrument in
  * `src/mcp/vice/anno-coverage.ts`, which nothing could run before that
- * verb existed). A future phase that adds a 9th verb to `r2000-cli.ts`'s
+ * verb existed). A future phase that adds a 9th verb to `anno-cli.ts`'s
  * dispatch switch must raise this floor to the new true count when it lands
  * -- never lower it to make a regression pass (the `extractedR2000.size >=
  * 10` floor in `check-skill-tool-coverage.mjs` is the precedent this
  * mirrors).
  */
-export const R2000_CLI_VERB_FLOOR = 8;
+export const ANNO_CLI_VERB_FLOOR = 8;
 
 /**
  * Strips `//` line comments and `/* ... *\/` block comments from `src`,
@@ -120,7 +120,7 @@ function switchVerbBody(strippedSrc) {
 }
 
 /**
- * Parses `src` (the full text of a module shaped like `r2000-cli.ts`,
+ * Parses `src` (the full text of a module shaped like `anno-cli.ts`,
  * containing a `switch (verb) { case "<verb>": ... default: ... }`
  * dispatch) and returns the sorted, de-duplicated list of verbs named by
  * that switch's own `case "<verb>":` labels. The `default:` branch is never
@@ -129,7 +129,7 @@ function switchVerbBody(strippedSrc) {
  * invisible to this parser by construction: comments are stripped first,
  * and the scan is scoped to the one switch body.
  */
-export function parseR2000CliVerbs(src) {
+export function parseAnnoCliVerbs(src) {
   const stripped = stripComments(src);
   const body = switchVerbBody(stripped);
   if (body === null) return [];

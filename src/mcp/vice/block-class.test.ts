@@ -333,7 +333,7 @@ test("block-class.ts IS present in package.json's files[] array", () => {
     pkg.files.includes("block-class.ts"),
     true,
     "block-class.ts must ship: the tarball validator walks the relative-import closure from the published " +
-      "entry point, and this module is reachable through r2000-cli.ts and anno-coverage.ts. A reachable " +
+      "entry point, and this module is reachable through anno-cli.ts and anno-coverage.ts. A reachable " +
       "module missing from files[] fails the pack with ERR_MODULE_NOT_FOUND at a consumer's runtime.",
   );
 });

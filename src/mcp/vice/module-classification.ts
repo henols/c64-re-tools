@@ -84,7 +84,7 @@
 //     declared enumeration does not reach it, because its filename begins
 //     `docs-` rather than `r2000-`. Named explicitly rather than left for a
 //     reader to notice and wonder about.
-//   - `scripts/lib/r2000-cli-verbs.mjs` and its `.d.mts` declaration.
+//   - `scripts/lib/anno-cli-verbs.mjs` and its `.d.mts` declaration.
 //     CUT-04 names the former explicitly as a guard whose fate must be
 //     recorded, so both are carried here as DATA with
 //     `scope: "out-of-enumeration"`, while the enforcing test's own
@@ -112,7 +112,7 @@
 //     string-to-number parser with a range refusal, but its subject is the
 //     analyser's own spawn timeout env var and it has no consumer outside
 //     the family.
-//   - `checkAcceptedOptions` (`r2000-cli.ts:330`) is a generic argv option
+//   - `checkAcceptedOptions` (`anno-cli.ts:330`) is a generic argv option
 //     checker, used only by the CLI it lives in and its own test.
 //   - `resolveStorePath` (`r2000-tools.ts:972`) and
 //     `composeAddressDetails` (`r2000-tools.ts:1121`) both exist to work
@@ -367,7 +367,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "buildCoverageReport", line: 79 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildCoverageReport", line: 79 },
         { path: "src/mcp/vice/anno-coverage.test.ts", symbol: "buildCoverageReport" },
         { path: "src/mcp/vice/anno-coverage-grammar.test.ts", symbol: "coverageFindings" },
       ],
@@ -402,7 +402,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "listEntries", line: 62 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "listEntries", line: 62 },
         { path: "src/mcp/vice/anno-d64.test.ts", symbol: "sectorsPerTrack", line: 10 },
       ],
       requirements: ["SEAM-02"],
@@ -433,7 +433,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "generateEnums", line: 64 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "generateEnums", line: 64 },
         { path: "src/mcp/vice/anno-enum-gen.test.ts", symbol: "generateEnums" },
       ],
       requirements: ["R2000-13"],
@@ -459,7 +459,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "renderMemoryMap", line: 66 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "renderMemoryMap", line: 66 },
         { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "renderMemoryMap" },
       ],
       requirements: ["SEAM-02"],
@@ -550,7 +550,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "exportLabels", line: 65 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "exportLabels", line: 65 },
         { path: "src/mcp/vice/r2000-symbol-roundtrip.test.ts", symbol: "importLabels", line: 46 },
       ],
       requirements: ["R2000-14", "R2000-15"],
@@ -604,7 +604,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "verifyProject", line: 63 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "verifyProject", line: 63 },
         { path: "src/mcp/vice/r2000-verify.test.ts", symbol: "acmeVerdict", line: 37 },
       ],
       requirements: ["EXPORT-01", "EXPORT-03"],
@@ -625,20 +625,29 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "and parses ITS transcript, and that only the discipline survives. So what a later phase " +
       "inherits is the discipline and its two pinned false-pass transcripts, NOT the route. Act on the " +
       "discipline; do not read this verdict as a claim that the route survives. The CLI records the " +
-      "same fact twice, at r2000-cli.ts:91 and :631, and both citations had drifted by eight lines " +
+      "same fact twice, at anno-cli.ts:91 and :631, and both citations had drifted by eight lines " +
       "from the planning documents by the time this entry was written.",
   },
 
   // --- glue: the rented analyser is the whole subject ---
   {
-    module: "r2000-cli.ts",
-    scope: "in-enumeration",
+    module: "anno-cli.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-cli.ts",
+      to: "anno-cli.ts",
+      on: "2026-08-29",
+      why:
+        "Renamed with the capability modules it dispatches to, so the surviving verbs keep a home while the "
+        + "glue verbs are withdrawn (29-07) and their implementations deleted (29-10). The verdict is UNCHANGED: this is still glue, and the rename records where the glue went rather than reclassifying it.",
+    },
     verdict: "glue",
     basis: {
       consumers: [
         { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 309 },
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseR2000CliVerbs", line: 50 },
-        { path: "src/mcp/vice/r2000-cli.test.ts", symbol: "runR2000Cli" },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 50 },
+        { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runR2000Cli" },
       ],
       requirements: [],
       rationale:
@@ -663,7 +672,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
         { path: "src/mcp/vice/r2000-verify.ts", symbol: "buildVerifyArgs", line: 46 },
         { path: "src/mcp/vice/anno-symbols.ts", symbol: "runR2000", line: 72 },
         { path: "src/mcp/vice/r2000-mcp-client.ts", symbol: "buildMcpServerStdioArgs", line: 84 },
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "buildExportAsmArgs", line: 55 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildExportAsmArgs", line: 55 },
       ],
       requirements: [],
       rationale:
@@ -701,7 +710,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-cli.ts", symbol: "synthesizeProject", line: 56 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "synthesizeProject", line: 56 },
         { path: "src/mcp/vice/r2000-session.ts", symbol: "ensureProjectSettings", line: 94 },
         { path: "src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs", symbol: "synthesizeProject", line: 63 },
       ],
@@ -768,13 +777,13 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
 
   // --- out-of-enumeration: carried as data, named by CUT-04, not enumerated ---
   {
-    module: "scripts/lib/r2000-cli-verbs.mjs",
+    module: "scripts/lib/anno-cli-verbs.mjs",
     scope: "out-of-enumeration",
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseR2000CliVerbs", line: 50 },
-        { path: "src/mcp/vice/r2000-verb-coverage.test.ts", symbol: "parseR2000CliVerbs", line: 24 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 50 },
+        { path: "src/mcp/vice/anno-verb-coverage.test.ts", symbol: "parseAnnoCliVerbs", line: 24 },
       ],
       requirements: ["CUT-04"],
       rationale:
@@ -787,14 +796,18 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     note:
       "Outside the enforcing test's enumeration by design: the enumeration stays inside this module " +
       "directory, so this entry is data for a later reader rather than something the completeness loop " +
-      "checks. Stated here because an unstated exclusion is indistinguishable from an oversight.",
+      "checks. Stated here because an unstated exclusion is indistinguishable from an oversight. " +
+      "Plan 29-05 renamed this file from scripts/lib/r2000-cli-verbs.mjs and re-pointed the path above; " +
+      "the entry stays out-of-enumeration rather than becoming discharged, because it never answered to " +
+      "the enumeration in the first place and moving it would empty the set DIRECTION 7 proves the " +
+      "marker is doing the excluding with.",
   },
   {
-    module: "scripts/lib/r2000-cli-verbs.d.mts",
+    module: "scripts/lib/anno-cli-verbs.d.mts",
     scope: "out-of-enumeration",
     verdict: "glue",
     basis: {
-      consumers: [{ path: "src/mcp/vice/r2000-verb-coverage.test.ts", symbol: "parseR2000CliVerbs", line: 24 }],
+      consumers: [{ path: "src/mcp/vice/anno-verb-coverage.test.ts", symbol: "parseAnnoCliVerbs", line: 24 }],
       requirements: ["CUT-04"],
       rationale:
         "The ambient type declaration that lets a strict TypeScript test import the verb parser beside " +
@@ -802,8 +815,9 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     },
     extractables: [],
     note:
-      "Same out-of-enumeration reasoning as the module it declares. Recorded separately rather than " +
-      "folded into that entry so a later reader deleting by path finds both files listed.",
+      "Same out-of-enumeration reasoning as the module it declares, and renamed alongside it by plan " +
+      "29-05 (from scripts/lib/r2000-cli-verbs.d.mts). Recorded separately rather than folded into that " +
+      "entry so a later reader deleting by path finds both files listed.",
   },
 ];
 

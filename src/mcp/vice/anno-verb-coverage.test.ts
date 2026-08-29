@@ -1,12 +1,12 @@
-// r2000-verb-coverage.test.ts -- the non-vacuity/planted-violation proof for
+// anno-verb-coverage.test.ts -- the non-vacuity/planted-violation proof for
 // the FLOW-01 guard (11.1-CONTEXT.md, D-11.1-02).
 //
 // `scripts/check-skill-tool-coverage.mjs` checked `r2000_*` MCP TOOL names
 // in skill prose, but nothing checked `r2000` CLI VERBS at all -- so
 // `gen-enums`, `export-lbl` and `import-lbl` (R2000-13/-14/-15's own
 // delivery path) reached `main` documented in zero skill files, with
-// nothing catching it. `scripts/lib/r2000-cli-verbs.mjs` closes that gap by
-// PARSING the verb list from `r2000-cli.ts`'s own dispatch switch, and this
+// nothing catching it. `scripts/lib/anno-cli-verbs.mjs` closes that gap by
+// PARSING the verb list from `anno-cli.ts`'s own dispatch switch, and this
 // file is the committed proof that the parser and the CI script that
 // imports it both actually work -- a guard is only as good as the evidence
 // it was ever awake.
@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseR2000CliVerbs, verbsMissingFromSkills, R2000_CLI_VERB_FLOOR } from "../../../scripts/lib/r2000-cli-verbs.mjs";
+import { parseAnnoCliVerbs, verbsMissingFromSkills, ANNO_CLI_VERB_FLOOR } from "../../../scripts/lib/anno-cli-verbs.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <root>/src/mcp/vice
 const ROOT = join(HERE, "..", "..", ".."); // <root>
@@ -29,14 +29,14 @@ const SKILLS_DIR = join(ROOT, "src", "skills");
 const CI_SCRIPT = join(ROOT, "scripts", "check-skill-tool-coverage.mjs");
 
 /**
- * The verbs `r2000-cli.ts`'s dispatch switch really has, hand-maintained on
+ * The verbs `anno-cli.ts`'s dispatch switch really has, hand-maintained on
  * purpose. This is a FROZEN REGISTRY, not a convenience list: the real-source
  * parse test below compares the live parse against it with `deepEqual`, so
  * adding a verb to the switch without adding it here FAILS -- which is the
- * entire point. Deriving this array from `parseR2000CliVerbs()` (the very
+ * entire point. Deriving this array from `parseAnnoCliVerbs()` (the very
  * function under test) would turn every assertion below into a tautology that
  * passes no matter what the parser does. `coverage` was added by plan 19-04
- * alongside `R2000_CLI_VERB_FLOOR`'s rise from 7 to 8; both counts move
+ * alongside `ANNO_CLI_VERB_FLOOR`'s rise from 7 to 8; both counts move
  * together, deliberately, because they measure the same fact.
  */
 const REAL_VERBS = ["bootstrap", "coverage", "export-asm", "export-lbl", "gen-enums", "import-lbl", "render-memmap", "verify"];
@@ -82,7 +82,7 @@ function realSkillTexts(): string[] {
 }
 
 // A synthetic module carrying the SAME `switch (verb) { case "<verb>": ... }`
-// shape `r2000-cli.ts` uses, with one extra, real (non-commented) case --
+// shape `anno-cli.ts` uses, with one extra, real (non-commented) case --
 // the planted violation. `ghost-verb` is a verb name that will never exist
 // in the real skill corpus, so `verbsMissingFromSkills()` reporting it is
 // unambiguous evidence the guard fires on a genuinely new, undocumented
@@ -139,22 +139,22 @@ function dummyDispatch(verb) {
 }
 `;
 
-test("real-source parse: r2000-cli.ts's dispatch switch yields exactly the 8 known verbs, never 'default'", () => {
-  const src = readFileSync(join(HERE, "r2000-cli.ts"), "utf8");
-  const verbs = parseR2000CliVerbs(src);
+test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 8 known verbs, never 'default'", () => {
+  const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
+  const verbs = parseAnnoCliVerbs(src);
   assert.deepEqual(verbs, [...REAL_VERBS].sort());
   assert.ok(!verbs.includes("default"), "the switch's own default: branch must never be parsed as a verb");
 });
 
 test("positive control: every real verb is named by at least one real skill file (the Task 1 property, restated mechanically)", () => {
-  const src = readFileSync(join(HERE, "r2000-cli.ts"), "utf8");
-  const verbs = parseR2000CliVerbs(src);
+  const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
+  const verbs = parseAnnoCliVerbs(src);
   const missing = verbsMissingFromSkills(verbs, realSkillTexts());
   assert.deepEqual(missing, [], `expected no verb missing from the real skill corpus, got: ${missing.join(", ")}`);
 });
 
 test("planted violation: an 8th, genuinely new case is parsed and reported missing, while a real, documented verb is not", () => {
-  const verbs = parseR2000CliVerbs(PLANTED_VIOLATION_SRC);
+  const verbs = parseAnnoCliVerbs(PLANTED_VIOLATION_SRC);
   assert.equal(verbs.length, 8);
   assert.ok(verbs.includes("ghost-verb"), "the planted 8th case must be parsed as a verb");
 
@@ -170,17 +170,17 @@ test("planted violation: an 8th, genuinely new case is parsed and reported missi
 });
 
 test("comment hygiene: a case hidden in a block comment or a line comment is never parsed as a verb", () => {
-  const verbs = parseR2000CliVerbs(COMMENTED_OUT_CASE_SRC);
+  const verbs = parseAnnoCliVerbs(COMMENTED_OUT_CASE_SRC);
   assert.deepEqual(verbs, [...SYNTHETIC_FIXTURE_VERBS].sort());
   assert.ok(!verbs.includes("block-commented-ghost"));
   assert.ok(!verbs.includes("line-commented-ghost"));
 });
 
-test("non-vacuity floor: R2000_CLI_VERB_FLOOR matches the measured true count and the real parse meets it", () => {
-  assert.equal(R2000_CLI_VERB_FLOOR, 8);
-  const src = readFileSync(join(HERE, "r2000-cli.ts"), "utf8");
-  const verbs = parseR2000CliVerbs(src);
-  assert.ok(verbs.length >= R2000_CLI_VERB_FLOOR);
+test("non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it", () => {
+  assert.equal(ANNO_CLI_VERB_FLOOR, 8);
+  const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
+  const verbs = parseAnnoCliVerbs(src);
+  assert.ok(verbs.length >= ANNO_CLI_VERB_FLOOR);
 });
 
 test("the CI script's live execution path: `node scripts/check-skill-tool-coverage.mjs` exits 0 with 'OK' in stdout", () => {

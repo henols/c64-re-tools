@@ -41,7 +41,7 @@
 // WHAT NOT TO DO, named concretely:
 //   - Never keep a child alive outside these two sanctioned primitives. This
 //     module exposes exactly two: the one-shot `withR2000Session()` (CLI
-//     verbs -- `r2000-cli.ts`, the enum generator, the memory-map renderer)
+//     verbs -- `anno-cli.ts`, the enum generator, the memory-map renderer)
 //     and the long-lived `openR2000Session()` (the `r2000_*` MCP tool
 //     surface, via `r2000-session.ts`'s single-slot lifecycle owner). The
 //     PRIOR rule -- exactly one session per logical operation, no long-lived
@@ -574,7 +574,7 @@ export async function openR2000Session(
   // `r2000-tools.ts`'s `runR2000Tool()` was rewired through
   // `r2000-session.ts`'s HELD single slot, the child handle and its three
   // stdio pipes -- all ref'd libuv handles -- kept the event loop alive in
-  // every host that is not `vice-proxy.ts`. `r2000-cli.test.ts`'s WR-09 test
+  // every host that is not `vice-proxy.ts`. `anno-cli.test.ts`'s WR-09 test
   // calls `runR2000Tool("r2000_disassemble", ...)` once, and its `node --test`
   // worker then printed all 64 `ok` lines and hung forever, never reaching the
   // `1..64` summary. Three sibling test files hung the same way. The hazard is
@@ -598,7 +598,7 @@ export async function openR2000Session(
   // teardown region that calls `closeR2000SessionSync()`). This unref is the
   // complement that keeps every OTHER host exitable, not a substitute for it.
   // All four are load-bearing, verified by removing them: `child.unref()`
-  // ALONE still hung `r2000-cli.test.ts` (the three pipes are separate ref'd
+  // ALONE still hung `anno-cli.test.ts` (the three pipes are separate ref'd
   // libuv handles), so this is not defensive over-unreffing.
   child.unref();
   unrefStream(child.stdin);
@@ -655,7 +655,7 @@ export async function openR2000Session(
 
 /**
  * The one-shot contract every CLI-verb caller still uses (D18-07:
- * `r2000-cli.ts`, the enum generator, the memory-map renderer). A thin
+ * `anno-cli.ts`, the enum generator, the memory-map renderer). A thin
  * wrapper over `openR2000Session()`: open, run `fn(session.call)`, and on
  * the success path `close()` the session so a non-zero final exit still
  * surfaces exactly as it always has; on the throwing path, close without

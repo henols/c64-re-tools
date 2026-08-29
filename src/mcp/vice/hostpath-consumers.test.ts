@@ -282,7 +282,7 @@ test("planted violation, three import shapes (Phase 10 IN-02 proof): multi-line 
   const multiLineStaticImport = ["import {", '  hostPath,', '  SET_ENV_HINT,', '} from "./hostpath.ts";', "", "export function useIt() {}", ""].join("\n");
 
   // (b) Dynamic import -- the shape vice-proxy.ts's own
-  // `await import("./r2000-cli.ts")` proves exists in this repo's own style,
+  // `await import("./anno-cli.ts")` proves exists in this repo's own style,
   // and the shape the STATIC_IMPORT_RE-only closure walk in
   // check-npm-packages.mjs was measured to miss before that guard grew its
   // own DYNAMIC_IMPORT_RE sibling.

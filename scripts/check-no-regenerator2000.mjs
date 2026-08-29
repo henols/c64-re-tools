@@ -460,8 +460,8 @@ const TEMPORARY_ALLOW_LIST = [
   // re-pins this count in its own commit; 29-10 discharges the remainder.
   { path: "src/mcp/vice/anno-memmap-render.test.ts", count: 4, plan: "29-12" },
   { path: "src/mcp/vice/anno-symbols.ts", count: 7, plan: "29-10" },
-  { path: "src/mcp/vice/r2000-cli.ts", count: 13, plan: "29-07" },
-  { path: "src/mcp/vice/r2000-cli.test.ts", count: 14, plan: "29-07" },
+  { path: "src/mcp/vice/anno-cli.ts", count: 13, plan: "29-07" },
+  { path: "src/mcp/vice/anno-cli.test.ts", count: 14, plan: "29-07" },
   // The four unpaired guard tests still stand at their pre-rename paths: they
   // move in 29-05's OWN third task, which is also where all four leave this
   // block for a permanent exemption (each records a discipline, a provenance

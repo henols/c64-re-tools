@@ -2,7 +2,7 @@
 // imports it (src/mcp/vice/skill-description-overlap.test.ts, Phase 19/
 // ABS-03) typechecks under strict mode -- the same shape
 // scripts/lib/skill-corpus.d.mts, scripts/lib/skill-honesty-checks.d.mts and
-// scripts/lib/r2000-cli-verbs.d.mts already establish. This file is a
+// scripts/lib/anno-cli-verbs.d.mts already establish. This file is a
 // CI-only helper with no runtime role, so it stays out of
 // src/mcp/vice/package.json's files[] like its .mjs sibling.
 export interface SkillFrontmatter {

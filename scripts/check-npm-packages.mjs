@@ -218,7 +218,7 @@ const REQUIRED_DERIVED_MODULES = [
   ["stock-sprites.ts", "DERIV-06"],
   ["capability-registry.ts", "BACK-05"],
   ["version.ts", "D-5"],
-  ["r2000-cli.ts", "R2000-09"],
+  ["anno-cli.ts", "R2000-09"],
 ];
 for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   need(vice.files.includes(file), `vice-mcp: missing ${file} -- ${req} would ship a package that throws ERR_MODULE_NOT_FOUND`);
@@ -234,8 +234,8 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 //
 // Folded todo 1 (2026-08-20-npm-closure-walk-blind-to-dynamic-imports.md):
 // the walk was STATIC-IMPORT-ONLY, so `vice-proxy.ts:218`'s
-// `const { runR2000Cli } = await import("./r2000-cli.ts");` was structurally
-// invisible to it -- the whole r2000 family (r2000-cli.ts, anno-d64.ts,
+// `const { runR2000Cli } = await import("./anno-cli.ts");` was structurally
+// invisible to it -- the whole r2000 family (anno-cli.ts, anno-d64.ts,
 // r2000-project.ts, r2000-launch.ts, r2000-verify.ts) was reachable at
 // runtime through that one dynamic import but NONE of it was ever traversed,
 // so `files[]` was correct only by hand. The dynamic-import regex below is

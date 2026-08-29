@@ -29,7 +29,7 @@
 //
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`. It is reachable
 // from the published entry point's import closure -- `vice-proxy.ts` reaches
-// `r2000-cli.ts` (through a dynamic import), and `r2000-cli.ts` imports
+// `anno-cli.ts` (through a dynamic import), and `anno-cli.ts` imports
 // `parsePrg` and `flatImageOrigin` from here. `scripts/check-npm-packages.mjs`
 // walks that closure over `files[]` and fails the pack the moment a reachable
 // module sits outside the listed set, exactly as `anno-d64.ts`'s own header
@@ -49,11 +49,11 @@
 //     capture silently "bootstrapped" with an origin read backwards out of its
 //     own payload bytes and exited zero -- every downstream address wrong, no
 //     diagnostic. The refusal message texts are a user-visible contract:
-//     `r2000-cli.ts` prefixes them, and one of its tests asserts that a `.d64`
+//     `anno-cli.ts` prefixes them, and one of its tests asserts that a `.d64`
 //     entry rejection never leaks `parsePrg`'s own name to stderr, so a
 //     reworded message breaks a test for a reason that looks unrelated.
 //   - Never add the dispatch ORDER discipline here. Which check runs first for
-//     a given input extension is `r2000-cli.ts`'s concern (it dispatches
+//     a given input extension is `anno-cli.ts`'s concern (it dispatches
 //     `.raw`/`.bin` by extension BEFORE any length check, so that
 //     `flatImageOrigin`'s named refusal is always reachable for those two
 //     extensions). Neither function below may start inferring what kind of

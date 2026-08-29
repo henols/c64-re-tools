@@ -22,7 +22,7 @@
 //
 // WORKSPACE: temp project/label-file directories are created UNDER THIS
 // FILE'S OWN DIRECTORY (`mkdtempSync(join(HERE, "."...))`), mirroring
-// r2000-cli.test.ts's/r2000-tools.test.ts's/anno-enum-gen.test.ts's own
+// anno-cli.test.ts's/r2000-tools.test.ts's/anno-enum-gen.test.ts's own
 // convention -- `r2000-tools.ts`'s `resolveStorePath()` requires every
 // `.regen2000proj` path to resolve INSIDE the workspace root (T-11-PATH-
 // ESCAPE), which a system tmpdir path is refused by design. Every directory

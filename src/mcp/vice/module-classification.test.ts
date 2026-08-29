@@ -237,7 +237,7 @@ function lineCitationProblems(entry: ModuleClassificationEntry, root: string = R
  * "MEASURED, NOT HYPOTHETICAL" and recorded that three citations had already
  * drifted while it was being written (WR-06).
  *
- * A bare `:NN` continuation (the `at r2000-cli.ts:91 and :631` shape) inherits
+ * A bare `:NN` continuation (the `at anno-cli.ts:91 and :631` shape) inherits
  * the last path seen, which is how that shape reads to a human and how it
  * drifts.
  *
@@ -585,7 +585,7 @@ test("planted violation: an in-scope file with no entry is reported by the same 
   // break-and-restore probe, because the planted file then appeared in the
   // list too, and that muddied the attribution of an observed RED. A
   // predicate test should exercise the predicate, not the filesystem.
-  const syntheticDisk = ["r2000-cli.ts", "r2000-tools.ts", "r2000-synthetic-unclassified.ts"];
+  const syntheticDisk = ["r2000-launch.ts", "r2000-tools.ts", "r2000-synthetic-unclassified.ts"];
   const unclassified = unclassifiedModules(MODULE_CLASSIFICATION, syntheticDisk);
   assert.deepEqual(
     unclassified,

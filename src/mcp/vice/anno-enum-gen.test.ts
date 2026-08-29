@@ -232,7 +232,7 @@ test("anno-enum-gen.ts never references the machine-global save_global_enum() ro
 // Gated integration: generateEnums() end to end against a REAL
 // regenerator2000 child, proving the total pipeline (search -> pair ->
 // create -> apply) on a purpose-built tiny project. Criterion 3's own
-// ACME-export acceptance test lives in r2000-cli.test.ts (Task 3); this test
+// ACME-export acceptance test lives in anno-cli.test.ts (Task 3); this test
 // proves the GENERATOR's own mechanics, not the export surface.
 // ---------------------------------------------------------------------------
 

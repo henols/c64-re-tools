@@ -10,7 +10,7 @@
 // only by re-running the live script and reading its exit code, which says
 // nothing about whether the PREDICATE itself, in isolation, actually
 // distinguishes a violation from a clean file. This module is the "single
-// seam, two callers" shape `scripts/lib/r2000-cli-verbs.mjs` (plan 11.1-02)
+// seam, two callers" shape `scripts/lib/anno-cli-verbs.mjs` (plan 11.1-02)
 // already established in this repo, for the same reason: pull the logic out
 // so a test can call it directly.
 //
