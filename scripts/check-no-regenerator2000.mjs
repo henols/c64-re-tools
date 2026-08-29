@@ -141,6 +141,8 @@ export const SUBJECT_NEEDLE = "regenerator" + "2000";
 
 /** This gate's own repository-relative path, composed, never typed. */
 const GATE_PATH = `scripts/check-no-${SUBJECT_NEEDLE}.mjs`;
+/** Its ambient type declaration, so the colocated test typechecks. */
+const GATE_TYPES_PATH = `scripts/check-no-${SUBJECT_NEEDLE}.d.mts`;
 /** The dated phase-9 findings document, whose FILENAME carries the subject. */
 const PHASE9_FINDINGS_PATH = `docs/phase9-${SUBJECT_NEEDLE}-probe-findings.md`;
 
@@ -298,12 +300,14 @@ const EXEMPTION_CLASSES = [
   {
     id: "gate-self",
     why:
-      "this gate and the CI job that invokes it -- both of which carry the subject ONLY as part of THIS FILE'S " +
-      "OWN NAME, never as a live reference to the deleted integration. Task 3 of plan 29-02 adds three more " +
-      "members to this class in the same commit as the files themselves: the gate's ambient type declaration, " +
-      "the test that imports its predicates, and the fixtures README that names it.",
+      "this gate, its ambient type declaration, the CI job that invokes it, the test that imports its predicates, " +
+      "and the fixtures README that names it -- every one of which carries the subject ONLY as part of THIS " +
+      "FILE'S OWN NAME, never as a live reference to the deleted integration.",
     paths: {
       [GATE_PATH]: 1,
+      [GATE_TYPES_PATH]: 1,
+      "src/mcp/vice/removal-gate.test.ts": 1,
+      "src/mcp/vice/fixtures/README.md": 1,
       ".github/workflows/ci.yml": 1,
     },
   },
@@ -368,7 +372,7 @@ const EXEMPTION_CLASSES = [
       "fixture bodies that exist to be scanned by removal-gate.test.ts rather than by this gate. They are the " +
       "planted violations themselves, committed with a `.txt` suffix so no runner and no typechecker loads them.",
     prefixes: ["src/mcp/vice/fixtures/planted-"],
-    prefixHits: 0,
+    prefixHits: 2,
   },
   {
     id: "notices-attribution-blocks",

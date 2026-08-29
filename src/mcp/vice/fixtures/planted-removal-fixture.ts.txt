@@ -1,0 +1,19 @@
+// PLANTED VIOLATION FIXTURE -- route (a): a surviving `src/mcp/vice/*.ts`
+// module body that has re-acquired a reference to the deleted static-analysis
+// integration. Committed with a `.txt` suffix so no TypeScript program, no
+// `node --test` glob and no runtime import ever loads it, and so the real
+// removal gate scans it only through its `fixtures/planted-` prefix
+// exemption rather than as a reintroduction.
+//
+// This body is the SUBJECT of removal-gate.test.ts, never a copy of it: the
+// test drives the gate's own exported predicate against these bytes.
+
+import { spawnSync } from "node:child_process";
+
+/** Re-introduced helper: shells out to the analyser this project deleted. */
+export function probeAnalyser(projectPath: string): string {
+  const result = spawnSync("regenerator2000", ["--mcp-server-stdio", projectPath], {
+    encoding: "utf8",
+  });
+  return result.stdout ?? "";
+}

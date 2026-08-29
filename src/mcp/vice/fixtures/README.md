@@ -31,3 +31,21 @@ Evidence: direct read of live runtime state at `.vice-supervisor/` on the runnin
 (4 recorded instances at capture time), copied byte-for-byte (`diff` confirmed zero output against
 the live source files at capture time, while those live files still existed).
 Confidence: HIGH.
+
+---
+
+# Planted-violation fixtures
+
+`planted-*` files in this directory are **deliberate violations**, committed so a
+structural guard can be proven by observing it bite rather than by reading it. They carry a
+`.txt` suffix (or an inert extension) so that no TypeScript program, no `node --test` glob and no
+runtime import ever loads them.
+
+| Fixture | Guard it belongs to | Route it plants |
+|---|---|---|
+| `planted-removal-fixture.ts.txt` | the removal gate, `scripts/check-no-regenerator2000.mjs`, driven by `removal-gate.test.ts` | a surviving `src/mcp/vice/*.ts` module body |
+| `planted-removal-fixture.md.txt` | the same gate | a `docs/*.md` page outside its exemption set |
+
+The removal gate reaches both of these only through its `fixtures/planted-` **prefix exemption**,
+whose hit count is pinned exactly — so editing one of these bodies without moving that pin turns
+the gate red rather than quietly widening it.
