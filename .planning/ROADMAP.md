@@ -377,10 +377,10 @@ have.
 
 - [x] **Phase 27: Shared Seams Extracted** - The modules a prefix-driven deletion would silently take with it stand under their own names, with every surviving consumer proven still served (completed 2026-08-27)
 - [x] **Phase 28: The Store Core** - Labels, comments, per-range typing over the full 12-member vocabulary, scopes and project enums — durable across a `SIGKILL`, revertible, behind one persistence seam (completed 2026-08-29)
-- [ ] **Phase 29: The MCP Surface** - The store is reachable through a family derived from Phase 19's manifest, registered proxy-locally beside the family it replaces, with every registration-time guard already moved
+- [ ] **Phase 29: The MCP Surface** - The store is reachable through a family derived from Phase 19's manifest, registered proxy-locally — and the family it replaces is deleted in the same phase, with every guard moved by the change that broke it and the removal gate observed biting first (**widened by `D-01`**)
 - [ ] **Phase 30: ACME Export and the Real-ACME Oracle** - Exported source is correct because a real ACME assembles it and the bytes match, through a verify path built for this purpose and standing before the deletion window opens
-- [ ] **Phase 31: Procedure Re-pointing** - All five absorbed procedures execute on the new surface with their heuristics and their attribution intact, in both trees a user can receive them from
-- [ ] **Phase 32: The Deletion and the Grep Gate** - regenerator2000 is gone and provably stays gone, with every guard pinned to it given a fate before the gate rather than found red in CI
+- [ ] **Phase 31: Procedure Re-pointing** - The `ABS-02` attribution chain is byte-identical across both trees and Phase 19's manifest is re-synced in the commit that changes what it describes (**narrowed by `D-01`**: the re-pointing itself landed in Phase 29)
+- [ ] **Phase 32: The Deletion and the Grep Gate** - Every guard re-pointed off the deleted subject is proven non-vacuous as a set on a settled tree, and no living document is left pointing a user at a route that no longer exists (**narrowed by `D-01`**: the deletion and the grep gate landed in Phase 29)
 
 ## v0.7.0 Own the Annotation Store (Phase Details)
 
@@ -548,15 +548,22 @@ Notes:
 ### Phase 29: The MCP Surface
 
 **Goal**: The store is reachable through a tool family **derived from** Phase
-19's `upstream-procedure-manifest.json`, registered proxy-locally beside the
-family it will replace and shaped for an agent rather than a cursor — with every
-guard that breaks on *registration* already moved, and nothing yet deleted.
+19's `upstream-procedure-manifest.json`, registered proxy-locally and shaped for
+an agent rather than a cursor — and the family it replaces is **deleted in this
+same phase**, safely, because every guard that breaks on registration, on the
+rename and on the deletion moved with the change that broke it, and the removal
+gate was built and observed biting first.
+**Widened by `D-01`** from "registered beside the family it will replace, with
+nothing yet deleted": the owner chose deletion over unregister-and-quarantine, so
+the coexistence this phase was originally scoped around never happened. See
+criterion 2.
 **Depends on**: Phase 28 (the store this surface exposes)
-**Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, MCP-05, STORE-06
+**Requirements**: MCP-01, MCP-02, MCP-03, MCP-04, MCP-05, STORE-06, REPOINT-01, REPOINT-02, CUT-01, CUT-02, CUT-03, CUT-05
+*(The last six were **narrowed in from Phases 31 and 32 by D-01**, which moved the deletion into this phase and the re-pointing that had to precede it with it. They are moved, not duplicated — Phases 31 and 32 no longer name them, and every requirement still maps to exactly one phase.)*
 **Success Criteria** (what must be TRUE):
 
   1. Every verb the Phase 19 manifest classifies `curated` or `adapt-to-address-input` has a route, every verb it classifies `omit` is absent, and `r2000_delete_project_enum` — the one verb with zero callers anywhere — is not carried. The derivation is checked **mechanically**, so a verb added later without a named consumer **fails** rather than being reviewed.
-  2. **Both families are registered and callable at this phase's close** — that is the point of the phase: the replacement is demonstrably ready before anything is removed. The new family never reaches `forwardToVice()`, so CLAUDE.md's derived-tool path-translation constraint is satisfied **by construction** with no interception to forget: the existing body-slice assertion reports the runner containing none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`, and no new module imports `hostpath.ts`.
+  2. **The new family is registered and the retired one is deleted, in this same phase.** This criterion originally demanded that *both* families be registered and callable at the phase's close, and called that the point of the phase. **`D-01` superseded that before planning began** (`29-CONTEXT.md` § "The r2000 exit"): presented with unregister-and-quarantine, the owner chose deletion, so the coexistence this criterion was written to buy never happened and the criterion is edited to the outcome rather than left standing beside it. What made deleting *inside* the registration phase safe is an **ordering**, named here because it is the reason and not a detail: the removal gate was built and **observed biting** before anything was removed (29-02); every guard that breaks on the **rename** moved with the rename (29-05) and every guard that breaks on **registration** moved in the registering commit (29-01); both skill trees were re-pointed onto verbs that exist, proven against the *shipped* copy, before the removal (29-09); and only then was the glue deleted (29-10). The new family never reaches `forwardToVice()`, so CLAUDE.md's derived-tool path-translation constraint is satisfied **by construction** with no interception to forget: the body-slice assertion reports the runner containing none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`, and no new module imports `hostpath.ts`.
   3. Backend-agnosticism reads out of `stock-dispatch.test.ts`'s **ordered** `BACKEND_SEAM_BYPASS_KEYS` allow-list — where it is actually enforceable — and **not** out of `capability-registry.ts`, which holds only the per-backend delta a proxy-local family does not have. Neither manifest gains an entry, and `docs/tool-support.md` regenerates **byte-identical**.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
@@ -631,69 +638,77 @@ purpose, standing and exercised before the deletion window opens.
 
 Notes:
 
-- **Ordering constraint 2:** this phase must land **before** the phase that deletes `r2000-launch.ts`. Between them there is a window with no working external oracle, and every claim made inside it sits at fixture level.
+- **Ordering constraint 2, and where its subject now lives:** `r2000-launch.ts` was deleted in **Phase 29** (plan 29-10) under `D-01`, so the window this constraint warns about is **open now**, from the v0.7.0 Phase 29 close until this phase lands. The constraint is **honoured rather than broken**, and the mechanism is `D-02`/`D-14`: no export route was invented ahead of this phase's oracle. `export-asm`, `export-lbl`, `import-lbl` and `gen-enums` are **withdrawn** with dated notices in both skill trees and in `PROJECT.md`, so nothing makes an unverified reassembly claim inside the window — there is no claim to sit at fixture level. What this phase must therefore do is *rebuild* the route, not re-verify a surviving one.
 - **The "reuse the existing `--verify` seam" premise is false, and three researchers flagged it independently as the most dangerous item in the milestone.** `r2000-verify.ts` (184 lines) imports from `r2000-launch.ts` and parses *regenerator2000's* per-assembler transcript; it never invokes ACME, and it dies with its subject. Only the **discipline** survives. Plan this as a rebuild, not a rename.
 - The natural repair reopens the incident the seam exists to prevent: `spawnSync("acme", ...).status === 0` has the same hole one level over — a missing binary yields `status: null`, and a truthiness check reads a missing assembler as a pass. The recorded false pass, verbatim: `x ACME — ACME not found in PATH (skipped)` / `ok All roundtrip verifications passed.` / `EXIT=0` — exit zero, an aggregate line reading as a full pass, and the one assembler this project cares about never ran.
 - Spawn ACME with an **argv array**, never a shell string, matching `src/skills/acme-build/scripts/acme.mjs`'s argv verbatim so the two agree by inspection; never treat an ACME stderr *warning* as a failure. The verify module is a **deliberate second implementation** of that spawn, because `src/mcp/vice/**` and `src/skills/**` are separate npm packages and cannot import each other.
 - The committed golden witness of the target output format is [`notes/dxa-ghidra-pivot-evidence/r2000.asm`](notes/dxa-ghidra-pivot-evidence/r2000.asm), which carries four live `=*+$01` labels. The idiom was run against real ACME 0.97 during research: `smc_operand = * + $01` before `lda #$00` assembles `sta smc_operand` as `8d 02 08`, correctly targeting the operand byte.
-- Re-record both pinned transcripts — the honest pass and the false-pass trap — from **real ACME output**, not from the deleted producer's.
+- Re-record both pinned transcripts — the honest pass and the false-pass trap — from **real ACME output**, not from the deleted producer's. **Both were carried forward by plan 29-10 before their module was deleted and now live in `.planning/phases/29-the-mcp-surface/fixtures/`** — `verify-honest-pass.txt`, `verify-false-pass-trap.txt`, and a `README.md` recording their provenance (`regenerator2000 0.9.20` + ACME 0.97, Phase 10) and this obligation. They are carried as **the shape to reproduce, not content to assert against**: asserting against these bytes would re-pin this phase's oracle to the very producer it replaces, which is what the re-record obligation in this same sentence exists to prevent. The two statements agree deliberately.
 - Run the ACME hard-fail gate from Phase 27 at this phase's boundary too. It is the cheapest red available in the milestone and it protects every claim in this phase.
 
 ### Phase 31: Procedure Re-pointing
 
-**Goal**: All five absorbed analysis procedures execute on the new surface with
-their heuristics intact, in both trees a user can receive them from, and with the
-`ABS-02` attribution chain that outlives the deleted code left byte-identical —
-before anything is removed.
-**Depends on**: Phase 29 (the surface they are re-pointed onto) and Phase 30 (the export route two of them name)
-**Requirements**: REPOINT-01, REPOINT-02, REPOINT-03, REPOINT-04
+**Goal**: The attribution and provenance record that outlives the deleted code is
+correct — the `ABS-02` chain byte-identical across both trees, the one trigger
+description that named the retired analyser rewritten **substantively** and
+re-checked for collisions, and Phase 19's manifest re-synced in the same commit
+that changes what it describes.
+**Narrowed by `D-01`.** The re-pointing itself — this phase's original criteria 1,
+2 and 3, and `REPOINT-01`/`REPOINT-02` with them — was carried out in **Phase 29**
+by plan 29-09, because `D-01` moved the deletion into Phase 29 and the re-pointing
+had to precede it (see the restated ordering constraint 3 in Sequencing Rationale).
+Those criteria are discharged there and are not restated here.
+**Depends on**: Phase 29 (which carried out the re-pointing whose attribution and manifest records this phase must now make correct)
+**Requirements**: REPOINT-03, REPOINT-04
 **Success Criteria** (what must be TRUE):
 
-  1. Each of the five absorbed procedures runs end to end on the new surface with its heuristics unchanged — block-classification tables, symbol data-flow patterns, the BASIC V2 token table, the routine procedure and its pitfalls, the full-program orchestration — across the **10 files under `src/skills/`** that reference the old route and its **18 distinct tool names**, including the **executable** `scripts/packer-finding.mjs` and `templates/memory-map.template.md`, which is copied into consuming projects so a stale route there propagates into every future project.
-  2. `scripts/check-skill-tool-coverage.mjs` extracts **zero** `r2000_*` names from the skill tree, and its floor is re-expressed over the new prefix at the measured new count — **raised, not lowered** — so the guard is not converted into a permanently green one. The failure this criterion exists against has no error message at all: the playbook still reads correctly, the procedure simply cannot be executed, the agent gets "unknown tool" and improvises by re-deriving from bytes — the exact cost the store exists to remove.
-  3. The `installer/skills/` twin tree carries the same re-pointing, proven against the **shipped** copy by `scripts/check-npm-packages.mjs` rather than by `git grep` — `git ls-files installer/skills` returns **0** while the tarball ships it, so a tracked-files check is structurally blind to precisely what users receive.
-  4. The `ABS-02` attribution chain is intact after the change: **10 instances across two trees**, each with its two naming lines byte-identical, while `routine-queue-walker/SKILL.md:3`'s YAML `description:` — trigger text, **not** attribution, and therefore not exempt — changes **substantively** rather than being worked around. `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions passes on the rewritten text.
-  5. `upstream-procedure-manifest.json` is updated in the **same commit** that changes what it describes — its own third re-sync trigger requires it — including a criterion for `r2000_undo`'s `omit` disposition, so `r2000-upstream-audit.test.ts`'s justification assertion cannot end up recording a reversed decision.
+  1. The `ABS-02` attribution chain is intact after the change: **10 instances across two trees**, each with its two naming lines byte-identical, while `routine-queue-walker/SKILL.md:3`'s YAML `description:` — trigger text, **not** attribution, and therefore not exempt — changes **substantively** rather than being worked around. `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions passes on the rewritten text.
+  2. `upstream-procedure-manifest.json` is updated in the **same commit** that changes what it describes — its own third re-sync trigger requires it — including a criterion for `r2000_undo`'s `omit` disposition, so the justification assertion in `anno-derivation.test.ts` (the re-pointed successor to `r2000-upstream-audit.test.ts`) cannot end up recording a reversed decision.
 
 **Plans**: TBD
 
 Notes:
 
-- **Ordering constraint 3:** the removal must follow the re-pointing. Deleting first leaves the absorbed procedures pointing at nothing **and** makes the grep gate unable to distinguish "not yet re-pointed" from "reintroduced" — which makes the milestone's own gate requirement unenforceable.
-- Kept separate from the deletion deliberately: merging prose surgery across two trees and 18 tool names with a ~12.4k-line deletion produces a diff no reviewer can read. The two also fail differently — re-pointing fails as *inert knowledge* with no error anywhere, deletion fails as a red gate.
-- The checklist is mechanically derivable (`grep -ro "r2000_[a-z_]*"` plus `grep -rn "vice-mcp r2000"`), which is why research flagged this phase as needing no deeper research. **Re-measure the counts at plan time**: the research documents disagree on totals because they grepped different things, and the reconciled per-file figures (36/27/14) supersede an earlier 53/51/21.
-- `render-memmap` has **no** store dependency at all — it reads `memmap.json` and writes Markdown, with no store call site — so it can be re-pointed independently, or not at all. `memmap.json` itself is duplicated into `installer/skills/` by `installer/scripts/sync-skills.mjs`; a retarget must **not** read the installer copy.
-- `packer-finding.mjs`'s recorded provenance value `entropySource = "r2000_get_binary_info"` is a stored *fact about a past run*, not a route. Decide its fate explicitly rather than string-replacing it.
-- Two ✓ Validated requirements ride on this phase's care: `R2000-14`/`R2000-15`'s symbol round trip is implemented by a module Phase 27 classified as a capability, and the procedures that drive it are re-pointed here.
+- **Ordering constraint 3 no longer runs between this phase and Phase 32 — it became an *intra-phase* constraint of Phase 29.** It is restated there and in Sequencing Rationale rather than deleted, because it is the reason the removal gate was built and observed biting before the deletion commit, and deleting the constraint would delete the reason.
+- **The re-pointing itself landed in Phase 29 (plan 29-09), not here.** All five absorbed procedures, the 10 files under `src/skills/`, the 18 distinct tool names, `scripts/packer-finding.mjs`, `templates/memory-map.template.md` and the gitignored-but-shipped `installer/skills/` twin were re-pointed there and proven against the **shipped** copy by `scripts/check-npm-packages.mjs`. `scripts/check-skill-tool-coverage.mjs` extracts **zero** old-family names and its floor is re-expressed over the new prefix at the measured new count, raised not lowered. `REPOINT-01` and `REPOINT-02` are recorded complete against Phase 29.
+- **Partially discharged already, and stated so rather than left as work to redo:** `routine-queue-walker/SKILL.md:3`'s YAML `description:` was rewritten **substantively** in 29-09 (it now names the annotation store, not the retired analyser) and `check-skill-description-overlap.mjs` / `skill-description-overlap.test.ts` re-ran green over all seven descriptions. `REPOINT-03` is nevertheless **not** recorded complete — no verification pass has scored the `ABS-02` chain's byte-identity across both trees since, and a status may not claim more than its evidence. What remains for this phase is confirming that chain, not rewriting the description.
+- `packer-finding.mjs`'s recorded provenance value was given an explicit fate in 29-09 — the fact about the past run survives, the tool-name-shaped literal does not — and its residual mention sits under the removal gate's `surviving-provenance` permanent exemption. Do not re-open that decision here.
+- The `ABS-02` headers are protected in **both** directions and in **both** trees: `skill-attribution.test.ts` enforces them, and the removal gate's BLOCK-scoped `skill-attribution-headers` class exempts them with both a hit pin and a block pin, so **deleting a header fails the gate** rather than silencing it. Driving `grep -rail 'regenerator2000' installer/skills` to zero is therefore unsatisfiable by design, not an outstanding task.
+- **`R2000-14`/`R2000-15`'s symbol round trip is WITHDRAWN, not riding on this phase.** Its route was removed in Phase 29 (D-14) and it returns in **Phase 30**, rebuilt over the Phase 28 store alongside the ACME export oracle. See the dated withdrawal note in `PROJECT.md` and beside `SEAM-02` in `REQUIREMENTS.md`.
 
 ### Phase 32: The Deletion and the Grep Gate
 
-**Goal**: The regenerator2000 integration is deleted and provably stays deleted —
-the gate built and observed biting **before** the deletion commit, every guard
-pinned to the subject given a recorded fate, and no living document left pointing
-a user at a route that no longer exists.
-**Depends on**: Phase 31 (the procedures must already be re-pointed), and through it Phases 27-30. Last, non-negotiably
-**Requirements**: CUT-01, CUT-02, CUT-03, CUT-04, CUT-05, CUT-06
+**Goal**: The deletion **stays** clean — every guard and CI script that was
+re-pointed off the deleted subject is audited **as a set, after the dust has
+settled**, and proven non-vacuous; and no living document is left pointing a user
+at a route that no longer exists.
+**Narrowed by `D-01`.** The deletion itself, the grep gate, its non-vacuity
+assertion and the fork-honesty contradiction all landed in **Phase 29** —
+`CUT-01`, `CUT-02`, `CUT-03` and `CUT-05` are recorded against that phase, and
+this phase's original criteria 1, 2 and 3 are discharged there. What is left is
+the part that could not be done early: a retrospective audit whose subject does
+not exist until the last guard has moved.
+**Depends on**: Phase 29 (which deleted the integration and re-pointed the guard set this phase audits) and Phase 31 (the attribution and manifest records). Last, non-negotiably
+**Requirements**: CUT-04, CUT-06
 **Success Criteria** (what must be TRUE):
 
-  1. **The grep gate exists and has been observed biting on three plants before the deletion commit** — one `.ts` under `src/mcp/vice/`, one `docs/*.md` and one `scripts/*.mjs`, one each, because the `toacme` lesson was specifically about the non-obvious location — plus a fourth: the string planted in `installer/skills/` **after** a sync bites too, proving the gitignored-but-shipped tree is in scope. The scope is chosen against the measured blast radius (291 tracked files mention the word, **55** outside `.planning/`), so the gate neither fires ~236 times and gets switched off within a day nor goes blind to `docs/`, `scripts/`, `installer/` and both tarballs.
-  2. **The exemption set carries its own non-vacuity assertion:** deleting an attribution block **trips** the gate, observed — and the gate is separately observed **green** over the untouched attribution blocks, which is the specific false positive the exemption exists for. An exemption nothing can violate is not an exemption, and the cheapest way to silence a false fire is to delete the header.
-  3. A net **~12.4k lines** of the 25,759-line `r2000-*.ts` surface are gone and **~12.9k survive under names that no longer say `r2000`**, with the satellite surface discharged as its own enumerated task list rather than discovered: the coverage fixtures and their generator, the 19 `files[]` entries, the `vice-proxy.ts` wiring, the `scripts/` consumers, and `THIRD-PARTY-NOTICES.md` in **both** packages. Deleting a file still listed in `files[]` makes `scripts/check-npm-packages.mjs` **fail**, observed — npm silently ignores a stale entry, so an unproven packaging gate is a vacuous one.
-  4. **Every guard and CI script pinned to the deleted subject has a recorded fate, and none passes vacuously.** Each re-pointed guard's own planted violation is re-run against its **new** subject and observed red — a guard that cannot be made to fail has not been re-pointed. The three that go red **by construction** (`docs-linerefs`, `docs-dangling-refs`, `docs-r2000-decisions`) are **pre-declared as expected before the deletion**, so an unpredicted red is distinguishable from a predicted one, and each is discharged by rewriting content rather than by loosening the guard. `check-skill-fork-honesty.mjs:504`'s direct contradiction — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate — is resolved in **one change that names which side is correct**.
-  5. **No living document points a user at a deleted route:** install documentation, `CLAUDE.md`'s regenerator2000 constraint bullets and its `r2000_*` clause, `PROJECT.md`'s constraints and Key Decisions rows (including its already-stale `vice-proxy.ts` line citations), `ARCHITECTURE.md`'s Rule A21, `THIRD-PARTY-NOTICES.md`'s dual-licence notice — which **remains true** for the retained prose — and all seven skill playbooks. Full `npm test` (the whole glob, **broker stopped**, command named in the evidence) is green, both `check-*.mjs` CI scripts pass, `docs/tool-support.md` is byte-identical, and all six `docs-*.test.ts` guards are green — the last being a precondition of recording any milestone-audit status, enforced by a real `PreToolUse` hook rather than by convention.
+  1. **Every guard and CI script pinned to the deleted subject has a recorded fate, and none passes vacuously — audited over the whole re-pointed set at once, retrospectively.** This is `CUT-04`, and it is the one cut requirement Phase 29 deliberately did **not** pull forward; see the note below for why. Each re-pointed guard's own planted violation is re-run against its **new** subject and observed red — a guard that cannot be made to fail has not been re-pointed. The three that went red **by construction** (`docs-linerefs`, `docs-dangling-refs`, and `docs-absorbed-decisions` — renamed from `docs-r2000-decisions` by plan 29-05, in the same commit as `scripts/audit-gate.mjs`'s registry entry, per `D-12`) were **pre-declared before the deletion**, so an unpredicted red stayed distinguishable from a predicted one, and each was discharged by rewriting content rather than by loosening the guard; this phase re-checks that judgement over the settled tree rather than re-taking it. `check-skill-fork-honesty.mjs`'s direct contradiction is **already resolved** — plan 29-09 named the *skill* as the side that moves, replacing the live `"r2000 export-asm"` instruction with a dated withdrawal notice and re-pointing the guard's positive check at that notice's literal (`CUT-05`, recorded against Phase 29).
+  2. **No living document points a user at a deleted route** (`CUT-06`): install documentation, `CLAUDE.md`'s regenerator2000 constraint bullets and its `r2000_*` clause, `PROJECT.md`'s constraints and Key Decisions rows — including its already-stale `vice-proxy.ts` line citations and its `D-36` row's pointer at the **pre-rename** guard file name `docs-r2000-decisions.test.ts`, which no longer exists on disk — `ARCHITECTURE.md`'s Rule A21, `THIRD-PARTY-NOTICES.md`'s dual-licence notice — which **remains true** for the retained prose — and all seven skill playbooks. The **phase-close gate half** of this criterion (full `npm test` over the whole glob with the **broker stopped**, both `check-*.mjs` CI scripts, `docs/tool-support.md` byte-identical, and every `docs-*.test.ts` guard green — the last a precondition of recording any milestone-audit status, enforced by a real `PreToolUse` hook rather than by convention) was first carried out at **Phase 29's** close and is **re-run** here rather than established here.
 
 **Plans**: TBD
 
 Notes:
 
-- **Ordering constraint 5, and the `4f048bb` precedent:** that commit closed a milestone with `docs-review-disposition.test.ts` already red and nothing forced anyone to notice. The grep gate and every guard fate are therefore a **precondition** of the deletion commit, not a follow-up.
-- Research flags this phase as needing **deeper research at plan time**: the guard-fate list's recount is **done** (settled at the v0.7.0 open: 32 test files — 19 `r2000-`named plus 13 non-`r2000-`named that reference it — and 11 files under `scripts/`, not 2; the research documents' 9+2 / 13 and 20 / 21 figures are both superseded), so what remains here is the gate's scope predicate (`git ls-files` minus `.planning/**`, plus a post-sync read of `installer/skills/**` or the `npm pack --dry-run` file list) is a design decision with three measured failure modes.
-- The exemption needs **both** axes: block-scoped, shape-matched predicates (reusing `skill-attribution.test.ts`'s existing block extractor rather than a substring exemption) applied across **both** trees, with a per-exemption non-vacuity counter whose exact value is re-measured at plan time rather than copied from a research document. Never consult the exemption first.
-- `r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard and is the second leg of the "do not archive phase directories" decision. Renaming and keeping it preserves that leg; **deleting it must be an explicit recorded choice, never a side effect.**
-- `docs-r2000-decisions.test.ts` moves `scripts/audit-gate.mjs:136` with it. Removing the name from `audit-gate.mjs` without removing the test — or the reverse — **breaks the audit gate**; that file's own comment records that the two were added in one commit for exactly this reason.
+- **Why `CUT-04` stayed here when `CUT-01`, `CUT-02`, `CUT-03` and `CUT-05` were pulled forward into Phase 29 — deliberate, not an oversight.** `CUT-04` is a **retrospective vacuity audit**, and its subject only exists once the re-pointing has happened. Phase 29 re-pointed a **large** guard set — `hostpath-consumers.test.ts`'s module floor, `check-skill-tool-coverage.mjs`'s CLI-verb floor and its skill-coverage floor, `anno-derivation.test.ts`'s registry-versus-manifest non-vacuity relation, the `docs-absorbed-decisions` / `audit-gate.mjs` pair, `check-skill-fork-honesty.mjs`'s re-pointed README assertion, and `spawn-seam.test.ts` re-pointed onto the emulator spawn seam — and each was proven non-vacuous **individually, at the commit that moved it**, by that phase's own standing prohibition. What `CUT-04` adds is the **mechanical sweep over the whole set at once, measured after the dust settles**, which is a different check and one that cannot be run before the last guard has moved. Keeping it here is the only place it can be honest. **Phase 29 is the source of most of the guards it will audit**, so this phase's scope *grew* rather than shrank when the other four cut requirements left.
+- **Ordering constraint 5, and the `4f048bb` precedent:** that commit closed a milestone with `docs-review-disposition.test.ts` already red and nothing forced anyone to notice. The grep gate and every guard fate were therefore a **precondition** of the deletion commit rather than a follow-up — a rule Phase 29 had to satisfy *inside itself* once `D-01` moved the deletion there, which is exactly what it did (see the restated ordering constraint 3 in Sequencing Rationale). It still governs this phase: nothing here may be recorded green over a guard already red.
+- **The gate, its scope predicate and its exemption axes are BUILT, not outstanding.** Plan 29-02 delivered `scripts/check-no-regenerator2000.mjs` with the scope predicate settled (`git ls-files` minus the `.planning/` prefix, plus a post-sync read of the gitignored-but-shipped `installer/**` paths supplied by `packFiles()`), both exemption axes in place (line-scoped and BLOCK-scoped, the latter reusing `skill-attribution.test.ts`'s own block extractor), and per-exemption non-vacuity pins in **both** directions so deleting an attribution header fails the gate rather than silencing it. It was observed biting on four planted routes plus the exemption non-vacuity plant with a green false-positive control, and re-proven by two further plants against the real post-deletion tree in 29-10. Do not re-derive any of it here; audit it.
+- **The answer-key leg is preserved and the choice is recorded.** `r2000-answer-key.test.ts` — which reads `.planning/phases/11-*/evidence/` with no existence guard and is the second leg of the "do not archive phase directories" decision — was **renamed to `absorbed-answer-key.test.ts` and kept**, not deleted. `docs-r2000-decisions.test.ts` likewise moved to `docs-absorbed-decisions.test.ts` in the same commit as `scripts/audit-gate.mjs`'s registry entry, per `D-12`; splitting those two would have broken the audit gate, and it did not happen.
+- **Two guard fates were DEFERRED to this phase rather than discharged in Phase 29, and they are named here so the recorded-fate criterion picks them up instead of them sitting inert.** Both hinge on the same subject — the twelve committed `project.regen2000proj` coverage fixtures — so they are one decision taken twice, not two:
+  1. **`block-class.ts`'s transitional capitalised block-type arm survives its own removal trigger** (recorded by plan 29-07). Its producer is gone, but every committed coverage fixture is still spelled in that vocabulary, so deleting the arm today would silently reclassify every fixture block as `data`. Its **new** removal trigger is *the fixtures being re-spelled*; record its fate against that trigger rather than against the producer's absence.
+  2. **`src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs` kept its generator and FROZE its writer** (plan 29-10). `synthesizeProject()` was inlined as a module-private writer emitting byte-identical JSON rather than being re-pointed onto the Phase 28 store, because re-pointing it would re-derive all twelve fixtures and change what the census controls measure. Its header now records that those twelve files are the only remaining record of the format. The re-point is Phase 30's work on Phase 30's evidence; this phase records the fate, it does not perform the re-point.
 - Keep the **D-36** decision row as dated history rather than deleting it, and give its guard an explicit superseded-by fate. A dated decision with a named reversal trigger is a record, not a pointer at live code.
 - Close with **`--no-archive-phases`**. The deletion is not a route to relaxing that constraint: Phase 19's manifest is a design input to this milestone, and two surviving guards force the constraint regardless.
-- This phase contains no build work by design, and it is not thin: its deliverable is a gate observed biting on four separate plants, a green false-positive control, and a recorded, non-vacuously-verified fate for every guard and CI script pinned to the subject.
+- This phase contains no build work by design, and it is not thin: its deliverable is a **recorded, non-vacuously-verified fate for every guard and CI script** that was pinned to the deleted subject, measured over the whole re-pointed set at once on a settled tree — plus the living-document sweep. The gate itself, and its four observed plants and green false-positive control, were delivered in Phase 29; this phase audits that work rather than repeating it.
 
 ## Sequencing Rationale (v0.7.0)
 
@@ -715,15 +730,40 @@ count, are what the sequence exists to satisfy:
    them by name.
 
 2. **An ACME oracle exists before the deletion window opens** (30 → 32), or every
-   claim made inside that window sits at fixture level.
+   claim made inside that window sits at fixture level. **Where its subject now
+   lives, after `D-01`:** the deletion moved into **Phase 29**, so the window is
+   open *now* — from the Phase 29 close until Phase 30 lands. The constraint is
+   **honoured rather than broken**, and `D-02`/`D-14` are the mechanism: no export
+   route was invented ahead of the oracle. `export-asm`, `export-lbl`,
+   `import-lbl` and `gen-enums` are **withdrawn** with dated notices in both skill
+   trees and in `PROJECT.md`, so no claim is made inside the window at all — there
+   is nothing sitting at fixture level because there is nothing claiming.
 
-3. **The removal follows the skill re-pointing** (31 → 32), or the grep gate
-   cannot distinguish "not yet re-pointed" from "reintroduced" and the
-   milestone's own gate requirement becomes unenforceable.
+3. **The removal follows the skill re-pointing — RESTATED, 2026-08-30, as an
+   INTRA-PHASE constraint of Phase 29 rather than an inter-phase one between 31
+   and 32.** `D-01` moved both subjects into the same phase, so the rule did not
+   stop applying, it changed scale: it is why plan 29-02 ran *before* plan 29-10.
+   The gate was built and **observed biting** on four planted routes plus the
+   exemption non-vacuity plant, with a green false-positive control, at wave 1;
+   both skill trees were re-pointed at wave 5 and proven against the **shipped**
+   copy; the deletion commit came at wave 7. Deleting first would have left the
+   absorbed procedures pointing at nothing **and** left the grep gate unable to
+   distinguish "not yet re-pointed" from "reintroduced", which makes the
+   milestone's own gate requirement unenforceable. **The `4f048bb` precedent is
+   what this constraint exists against** — a milestone closed over an already-red
+   `docs-review-disposition.test.ts` with nothing forcing anyone to notice — and
+   that is why this is restated rather than deleted: deleting the constraint
+   deletes the reason the gate came first.
 
 4. **The registration-time guards move in the registration phase** (29) — *the
    single most important sequencing fact in the architecture research.* Two CI
-   gates break on the **rename**, not on the deletion.
+   gates break on the **rename**, not on the deletion. **Where its subject now
+   lives:** unchanged — still Phase 29 — but after `D-01` that phase carries the
+   rename, the registration *and* the deletion, so the constraint tightened
+   rather than moved. It was satisfied in three separate commits inside the
+   phase: registration-time guards at wave 1 (29-01), rename-time guards with the
+   `git mv` at wave 3 (29-05), and deletion-time guards with the deletion at
+   wave 7 (29-10).
 
 5. **Every gate is built before the thing it gates.** The `4f048bb` precedent is a
    milestone closed over an already-red guard with nothing forcing anyone to
