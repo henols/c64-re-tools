@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Phase 29 context gathered
-last_updated: "2026-08-29T13:15:38.125Z"
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-08-29T14:08:22.885Z"
 last_activity: 2026-08-29
-last_activity_desc: Phase 28 complete, transitioned to Phase 29
-state_head: 85f9f1ae733579e3a435823a09839bbefdff6a9e
+last_activity_desc: Plan 29-01 complete -- anno_* surface registered
+state_head: b124cdf3aff99453595481c5492f07b7cd1fa420
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 28
+  completed_plans: 29
   percent: 33
 ---
 
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 29 (The MCP Surface) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-29 — Phase 29 context gathered (r2000 deletion pulled forward)
+Phase: 29 (The MCP Surface) — EXECUTING
+Plan: 2 of 12
+Status: Executing — plan 29-01 complete (the anno_* registration tracer)
+Last activity: 2026-08-29 — Plan 29-01 complete: anno_get_symbols advertised and answering end to end; seven registration-time guards re-pointed
 
 ## Performance Metrics
 
@@ -314,6 +314,7 @@ Last activity: 2026-08-29 — Phase 29 context gathered (r2000 deletion pulled f
 | Phase 28 P19 | 38 min | 3 tasks | 4 files |
 | Phase 28 P22 | 32 min | 3 tasks | 4 files |
 | Phase 28 P23 | 32 min | 3 tasks | 5 files |
+| Phase 29 P01 | 17 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -674,6 +675,9 @@ Recent decisions affecting current work:
 - [Phase 28]: CR-10 answered with (b) — an even fragmentation of a split table is ACCEPTED and the re-interpretation is RETURNED AS DATA — not with (a), refuse every partial overlap — Criterion 3's operative failure word is "silently", not "preserve": no proper fragment of a split table preserves a single entry pair at ANY boundary (a fragment of m entries pairs its own byte j with its own byte m + j, matching an original pair only when the fragment IS the whole row), so preservation is not recoverable by a cleverer rule and only the silence can be removed. Answer (a) would make split tables editable only wholesale, and the verifier is explicit that every input here is ordinary annotation work. The disclosure rides beside contradictedComments, the pattern criterion 3 itself blesses.
 - [Phase 28]: The disclosure is a RETURN CHANNEL on SetDataTypeResult, not a new on-disk column recording the split table's original extent — A column is a SCHEMA_VERSION bump, which prohibition 28-10 P4 makes a one-way decision requiring the older on-disk shape to refuse by name — and this milestone's single irreversible decision is already spent on the twelve-member vocabulary. The return channel gives the caller the same fact at the only moment it can still act on it and costs nothing that cannot be reverted; setDataType has zero production callers today, so the field is revertible in-tree until Phase 29 publishes it.
 - [Phase 28]: The class invariant's caller's-range carve-out is applied SYMMETRICALLY to both sides of the comparison, and the refusals >= 3 floor deliberately does not rise — The carve-out belongs to the COMPARISON, never to the report: a caller range covering 9 or more contiguous bytes of a 16-byte split row wholly contains a pair that is ALSO in that row's entryPairsBefore, so a one-sided carve-out differs by exactly those pairs and reds on a CORRECT write. No step in today's sequence covers more than 8, which is the only reason one-sided would look green — proven by a planting that widens the lost side alone and fires on $1102..$1109. Separately, the round-6 verifier's instruction that the refusal floor rises was written for answer (a); under (b) parity remains the only refusal, so the floor that rises is the new reinterpretingSteps one, and the divergence is recorded in the test's own comment.
+- [Phase 29]: The registration-time guard set for the r2000_* -> anno_* substitution is SEVEN, not the five plan 29-01 enumerated: module-classification.ts Direction 9 line citations and anno-seam.test.ts files[] exact-three assertion also break on registration. Both are now derived from disk, so a later plan adding an anno-* module needs no edit to either. — Found by running the plan verify command rather than by reading: the plan enumerated guards by identifier grep, and these two break on a CONSEQUENCE of the substitution (a moved line, a grown files[] list) rather than on the identifier itself.
+- [Phase 29]: docs/tool-support.md is 8,132 bytes, not the 7,874 that 29-RESEARCH.md and plan 29-01 both asserted. It has been 8,132 since commit 602f9cb (phase 15) and was not touched by plan 29-01. Later plans must not re-derive the 7,874 figure from RESEARCH. — The load-bearing property (the table regenerates byte-identical to the committed file, unchanged by the loop substitution) holds and is now asserted mechanically on BOTH byte length and content in tool-support-table.test.mjs, so the stale figure never has to be trusted again.
+- [Phase 29]: WR-02 is closed: assertAnnoTool() sits INSIDE runAnnoTool()'s try, so every anno_* refusal resolves {isError:true} naming the error class rather than rejecting the promise as the r2000_* runner does. — r2000-tools.ts:772-774 recorded the asymmetry as out of scope for its own plan. One shape for every failure means an MCP caller has one branch to write, not two.
 
 ### Pending Todos
 
@@ -1289,8 +1293,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T08:30:12.149Z
-Stopped at: Phase 29 context gathered
+Last session: 2026-08-29T14:07:32.587Z
+Stopped at: Completed 29-01-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
@@ -1787,7 +1791,7 @@ Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed an
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: .planning/phases/29-the-mcp-surface/29-CONTEXT.md
+Resume file: None
 
 ## Operator Next Steps
 

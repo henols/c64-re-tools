@@ -259,6 +259,10 @@ Two facts later plans should carry forward:
 - **The registration-time guard set is seven, not five.** `module-classification.ts`'s Direction 9 citations and `anno-seam.test.ts`'s `files[]` assertion both break on registration and are now re-pointed; a plan adding another `anno-*` module needs no edit to either (both are derived from disk).
 - **`stock-dispatch.test.ts` no longer references `r2000-tools.ts` at all**, so plan 29-10's deletion of that module will not break it. `scripts/check-skill-tool-coverage.mjs:49` is the one surviving `CURATED_R2000_TOOLS` importer and is cited as such in `module-classification.ts`.
 
+**Requirement marking.** Of this plan's three requirements only `MCP-03` was marked Complete: `MCP-02` and `MCP-05` are declared by sibling plans in this phase that have no SUMMARY yet, so the shared-ID gate (`requirements.ready-ids`) correctly held them. They become ready when the last declaring plan finishes.
+
+**Broken-windows ledger.** One entry filed: `unrun-verify` on `src/mcp/vice/vice-proxy.test.ts` (MANUAL_ONLY, needs a live host VICE server), matching coverage entry D6.
+
 No blockers. No stubs. No new threat surface: the two trust boundaries this plan opens (LLM-supplied arguments, LLM-supplied store path) are the ones the plan's own threat register names, and T-29-01 through T-29-04 are all mitigated as specified.
 
 ---
