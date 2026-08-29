@@ -4917,23 +4917,18 @@ create index anno_comment_address on anno_comment(address);
 create index anno_xref_to on anno_xref(to_address);
 `;
 
-/**
- * Writes a genuine `SCHEMA_VERSION` 2 store file at `path`, IN A CHILD PROCESS.
- *
- * The child is not ceremony. `STORE-07` puts the `node:sqlite` dependency in
- * `anno-store.ts` alone, and a fixture builder that imported the builtin here
- * would put a second SQLite access point in the store's own test file -- which
- * is the shape that guard exists to keep rare. The child names the builtin; this
- * file does not.
- */
+/** The TEST-ONLY spawned helper that writes the fixture. Its own header records
+ * why it is a separate process: `anno-seam.test.ts` bounds the set of TEST
+ * files naming the SQLite builtin to a declared list, and building this fixture
+ * inline would have widened that list -- weakening a standing guard to serve
+ * one fixture. */
+const V2_FIXTURE_WRITER = join(HERE, "anno-schema-v2-fixture.mjs");
+
+/** Writes a genuine `SCHEMA_VERSION` 2 store file at `path`, in a child
+ * process. The frozen DDL is passed IN, so the shape stays declared here beside
+ * the claim it supports rather than in the writer. */
 function writeSchemaVersion2Store(path: string): void {
-  const script =
-    "const { DatabaseSync } = require('node:sqlite');" +
-    "const db = new DatabaseSync(process.argv[1]);" +
-    "db.exec(process.argv[2]);" +
-    "db.prepare('insert into anno_meta(id, schema_version, revision) values (1, 2, 0)').run();" +
-    "db.close();";
-  execFileSync(process.execPath, ["-e", script, path, SCHEMA_VERSION_2_DDL], { stdio: "pipe" });
+  execFileSync(process.execPath, [V2_FIXTURE_WRITER, path, SCHEMA_VERSION_2_DDL], { stdio: "pipe" });
 }
 
 test("D-15: a genuine SCHEMA_VERSION 2 store file is REFUSED by name -- naming both the version found and the version expected -- and the file is left byte-identical, so neither a silent open nor a silent upgrade is possible", () => {
