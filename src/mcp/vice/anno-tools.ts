@@ -130,7 +130,8 @@
 //     the error CLASS, so a caller can tell an `AnnoStoreCorruptError` from an
 //     `AnnoStorePathError` from the text alone (T-29-04, D18-12).
 //
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { extname } from "node:path";
 
 import {
   addScope,
@@ -168,6 +169,11 @@ import {
   storePathWithinWorkspace,
 } from "./anno-types.ts";
 import type { AnnoStoreErrorOptions, CommentRow, LabelRow } from "./anno-types.ts";
+import { crossReferencesTo, searchAnnotations } from "./anno-derive.ts";
+import { composeAddressDetails } from "./anno-details.ts";
+import { decode } from "./disasm-decoder.ts";
+import { render } from "./disasm-renderer.ts";
+import { flatImageOrigin, parsePrg } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
 
 // ---------------------------------------------------------------------------
@@ -398,6 +404,18 @@ const STORE_PROPERTY = {
     description:
       "Absolute or workspace-relative path to the .annostore annotation store. Refused if it resolves outside the " +
       "workspace root, including via a symlink. REQUIRED on every verb: there is no ambient 'current store'.",
+  },
+} as const;
+
+const IMAGE_PROPERTY = {
+  image: {
+    type: "string",
+    description:
+      "Absolute or workspace-relative path to the program image this answer is DERIVED from -- a .prg (2-byte " +
+      "little-endian load address plus payload) or an exactly-65536-byte flat capture (.raw/.bin, dispatched by " +
+      "extension before any length check). REQUIRED on every derived read (D-07): the store holds annotations and " +
+      "never bytes, so an omitted image would read as a plausible success against whatever was recorded last. " +
+      "Refused if it resolves outside the workspace root, including via a symlink.",
   },
 } as const;
 
@@ -730,6 +748,146 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       required: ["store"],
     },
   },
+  {
+    name: "anno_disassemble",
+    description:
+      "Renders ACME-ready `!cpu 6510` source for the instructions starting AT AN EXPLICIT ADDRESS you supply. " +
+      "There is no cursor and no 'current address' on this surface -- upstream's own procedure text says never to rely " +
+      "on one and this project has no editor to have one, so the address is always yours and always in the call. " +
+      "Decoded fresh from the image bytes on every call; nothing is cached and nothing is written. An opcode ACME " +
+      "cannot express is emitted as `!byte` with the mnemonic moved into a comment, never as a mnemonic that would " +
+      "fail to reassemble. The extent is bounded by the SAME byte cap that governs anno_read_region -- one cap, both " +
+      "views, so there is no per-view rule to get subtly wrong -- and defaults to that cap when end_address is " +
+      "omitted. A wider range is REFUSED by name with the cap and the requested width in the message, never " +
+      "silently truncated.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        ...IMAGE_PROPERTY,
+        address: {
+          description:
+            "The address to start decoding at, EXPLICITLY. Integer 0..65535, \"$hex\" or \"0x\" string; an unprefixed " +
+            "numeric string is refused.",
+        },
+        end_address: {
+          description:
+            "Optional last address to decode, INCLUSIVE. Omitted, the extent is the byte cap (or the end of the image, " +
+            "whichever comes first).",
+        },
+      },
+      required: ["store", "image", "address"],
+    },
+  },
+  {
+    name: "anno_read_region",
+    description:
+      "Reads ONE routine or table at an explicit inclusive address range, instead of exporting the whole program. " +
+      "`view: 'disasm'` is what routine documentation wants; `view: 'hexdump'` is what data-table classification and " +
+      "table extraction want; omitted, the view is 'disasm'. The combined byte count (end_address - start_address + 1) " +
+      "is capped, and the SAME cap governs anno_disassemble -- one cap, both views. A request above the cap is REFUSED " +
+      "by name, naming the cap and the requested width, rather than silently truncated: a full-64K disassembly view " +
+      "dumped into an agent's context is exactly the hazard the cap exists to prevent, and this family is not chunked, " +
+      "so the cap is the only bound there is.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        ...IMAGE_PROPERTY,
+        start_address: { description: "Start of the range, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
+        end_address: { description: "End of the range, INCLUSIVE." },
+        view: {
+          type: "string",
+          enum: ["disasm", "hexdump"],
+          description: "'disasm' = rendered 6510 source. 'hexdump' = raw hex bytes. Omitted defaults to 'disasm'.",
+        },
+      },
+      required: ["store", "image", "start_address", "end_address"],
+    },
+  },
+  {
+    name: "anno_get_binary_info",
+    description:
+      "Reports what the named image FILE is: how it was dispatched (a .prg's 2-byte little-endian load address, or a " +
+      "flat 64K capture's origin of 0), the origin, the total byte length, the payload byte length, and the Shannon " +
+      "entropy of the payload -- a value above 7.5 suggests the image is compressed or packed and that a depack pass " +
+      "is needed before any of it will decode sensibly. DISPATCH IS BY EXTENSION FIRST, never by byte length: a " +
+      "truncated .raw capture that fell through to the .prg parser once produced an origin read backwards out of its " +
+      "own payload bytes, exited zero, and made every downstream address silently wrong. A file too short to be a .prg " +
+      "is REFUSED by name.",
+    inputSchema: {
+      type: "object",
+      properties: { ...STORE_PROPERTY, ...IMAGE_PROPERTY },
+      required: ["store", "image"],
+    },
+  },
+  {
+    name: "anno_get_cross_references",
+    description:
+      "Every address that references the address you name, unioned from three sources and returned ascending and " +
+      "de-duplicated: the instructions decoded fresh out of every range typed `code`, the typed split ADDRESS tables " +
+      "(the `_address` forms produce cross-references and the `_word` forms do not -- that is the schema's own " +
+      "distinction, not a judgement made here), and the stored rows, which are the only half on disk and only because " +
+      "a computed dispatch or a hand-asserted edge cannot be recovered from bytes at all. DERIVED ON EVERY CALL AND " +
+      "NEVER CACHED: a cached derivation is a second on-disk truth that can disagree with the range table it came " +
+      "from. `max_results` is REQUIRED with no default; the true total rides beside the truncated list.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        ...IMAGE_PROPERTY,
+        address: { description: "The target address to find references TO. Integer, \"$hex\" or \"0x\" string." },
+        max_results: { type: "integer", description: "Maximum number of referencing addresses to return. REQUIRED -- no default." },
+      },
+      required: ["store", "image", "address", "max_results"],
+    },
+  },
+  {
+    name: "anno_search",
+    description:
+      "Searches three corpora for a substring: label names, comment text, and the instruction text rendered from every " +
+      "range typed `code`. MATCHING IS BYTE-EXACT AND CASE-SENSITIVE, applied identically to all three, and the rule " +
+      "is restated in the body so an empty answer tells you which rule produced it. Every corpus is named in the body " +
+      "with the number of entries it held, so a genuine zero over a real corpus is distinguishable from a corpus this " +
+      "surface does not have. NAMING A CORPUS THIS SURFACE DOES NOT HAVE (any search_<name> other than the three) is " +
+      "answered with `{available:false, reason}` in a SUCCESSFUL body -- not an error, because the request was " +
+      "well-formed, and not an empty result set, because an empty result set for an unanswerable question is a lie " +
+      "that reads like an answer. `max_results` is REQUIRED with no default: an implicit default would silently " +
+      "truncate a full-program pass.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        ...IMAGE_PROPERTY,
+        query: { type: "string", description: "The substring to find. Case-sensitive and byte-exact. An empty query is refused -- that is a listing, not a search." },
+        max_results: { type: "integer", description: "Maximum number of hits to return. REQUIRED -- no default on this surface." },
+        search_labels: { type: "boolean", description: "Search the label-name corpus. Defaults to true." },
+        search_comments: { type: "boolean", description: "Search the comment-text corpus. Defaults to true." },
+        search_instructions: { type: "boolean", description: "Search the rendered instruction corpus. Defaults to true. This is the expensive one: it decodes every code range." },
+      },
+      required: ["store", "image", "query", "max_results"],
+    },
+  },
+  {
+    name: "anno_get_address_details",
+    description:
+      "Everything this project knows about ONE address, composed from four reads: the labels bound there, the comments " +
+      "there, the typed range that covers it (resolved narrowest-range-wins through the paint index, never by a " +
+      "start/end bracket scan), and the cross-references that reach it. THE COMPOSITION IS DISCLOSED: the body carries " +
+      "`composed_client_side` and a `composed_from` list naming all four sources, so a composition is never mistaken " +
+      "for something the store held whole. A component with no answer comes back as `{available:false, reason}` rather " +
+      "than as an empty list, so an address that genuinely has no comments stays distinguishable from a question this " +
+      "composition could not put. Nothing is written on any path.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        ...IMAGE_PROPERTY,
+        address: { description: "The address to inspect. Integer, \"$hex\" or \"0x\" string." },
+      },
+      required: ["store", "image", "address"],
+    },
+  },
 ];
 
 /** The allow-list, DERIVED from the definitions above rather than hand-typed
@@ -891,6 +1049,173 @@ function assertSaveProjectArgs(args: unknown, batchIndex?: number): void {
   assertStoreArg("anno_save_project", args, batchIndex);
 }
 
+
+// ---------------------------------------------------------------------------
+// THE ONE SIZE CAP, GOVERNING BOTH VIEWS (T-29-25).
+//
+// A full-64K disassembly view dumped into an agent's context is the hazard this
+// cap exists to prevent; these verbs read a ROUTINE at a range, not the whole
+// program. 4096 is one sixteenth of the address space and far above any
+// realistic single routine. ONE cap covers the region read AND the disassemble
+// view, deliberately, so there is no per-view rule to get subtly wrong -- and
+// the disassembly view at the cap is the worst case, since the hexdump view of
+// the same byte count renders far less text.
+//
+// THE CAP IS THE ONLY BOUND THERE IS FOR THIS FAMILY. `vice-proxy.ts`'s
+// `wrapPossiblyChunked()` splits an oversized answer across a continuation
+// sequence, but `buildViceTool()` calls `run` DIRECTLY, so nothing on this
+// surface is chunked; and the client's own inline-response ceiling was measured
+// at 40-60 KB, far below the proxy's 500,000-character output cap. That is why
+// the second mitigation -- `max_results` REQUIRED with no default on every
+// list-returning verb, with the true total returned beside the truncated list
+// -- is not optional either.
+// ---------------------------------------------------------------------------
+
+export const ANNO_READ_REGION_MAX_BYTES = 4096;
+
+/** The environment variable that overrides the cap. Exported so a caller and a
+ * test name it in one place rather than two. */
+export const ANNO_READ_REGION_MAX_BYTES_ENV = "ANNO_READ_REGION_MAX_BYTES";
+
+/** Reads the cap override AT CALL TIME, never frozen at module load -- the same
+ * read-at-call-time convention `repoRoot()` is called under above, so one
+ * `node --test` process can point several different caps at this code within a
+ * single run. Falls back to the named default on an absent, non-finite or
+ * non-positive override. */
+function currentReadRegionMaxBytes(): number {
+  const raw = process.env[ANNO_READ_REGION_MAX_BYTES_ENV];
+  if (raw === undefined) return ANNO_READ_REGION_MAX_BYTES;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : ANNO_READ_REGION_MAX_BYTES;
+}
+
+export interface AnnoRegionRangeErrorOptions extends AnnoStoreErrorOptions {
+  toolName?: string;
+  start?: number;
+  end?: number;
+  requestedBytes?: number;
+  cap?: number;
+  batchIndex?: number;
+}
+
+/** A region or disassembly extent wider than the cap. Its own class, because a
+ * caller must be able to tell "your range is too wide" from every other
+ * argument refusal without substring-matching a message. */
+export class AnnoRegionRangeError extends AnnoStoreError {
+  toolName?: string;
+  start?: number;
+  end?: number;
+  requestedBytes?: number;
+  cap?: number;
+  batchIndex?: number;
+
+  constructor(message: string, { toolName, start, end, requestedBytes, cap, batchIndex, ...rest }: AnnoRegionRangeErrorOptions = {}) {
+    super(message, rest);
+    this.name = "AnnoRegionRangeError";
+    this.toolName = toolName;
+    this.start = start;
+    this.end = end;
+    this.requestedBytes = requestedBytes;
+    this.cap = cap;
+    this.batchIndex = batchIndex;
+  }
+}
+
+/** Enforces the ONE cap over an inclusive span, naming BOTH the cap and the
+ * requested width so the message is actionable without reading this file.
+ * Called from `anno_read_region` and `anno_disassemble` alike. */
+function assertWithinRegionCap(name: string, start: number, end: number, batchIndex?: number): void {
+  const requestedBytes = end - start + 1;
+  const cap = currentReadRegionMaxBytes();
+  if (requestedBytes > cap) {
+    throw new AnnoRegionRangeError(
+      `${name} refused${whereOf(batchIndex)}: requested ${requestedBytes} bytes ($${start.toString(16).padStart(4, "0")}..` +
+        `$${end.toString(16).padStart(4, "0")} inclusive), which exceeds the ${ANNO_READ_REGION_MAX_BYTES_ENV} cap of ${cap} -- ` +
+        `valid range is 1..${cap} bytes. This verb reads a routine at a range, not the whole program, and this family is NOT ` +
+        `chunked, so the cap is the only bound there is. Narrow the range, or set ${ANNO_READ_REGION_MAX_BYTES_ENV} to override.`,
+      { toolName: name, start, end, requestedBytes, cap, batchIndex },
+    );
+  }
+}
+
+/** Narrows the universally-required `image` argument (D-07) to a non-empty
+ * string. Containment is `resolveWorkspacePath()`'s concern, exactly as for the
+ * store path. */
+function assertImageArg(name: string, args: unknown, batchIndex?: number): string {
+  const bag = argBag(args);
+  if (typeof bag.image !== "string" || bag.image.trim() === "") {
+    refuseArg(
+      name,
+      "image",
+      '"image" must be a non-empty string naming the program image this answer is derived from -- the store holds ' +
+        "annotations, never bytes, and an omitted image would read as a plausible success against whatever was recorded last (D-07).",
+      batchIndex,
+    );
+  }
+  return bag.image as string;
+}
+
+function assertQueryArg(name: string, args: unknown, batchIndex?: number): void {
+  const raw = argBag(args).query;
+  if (typeof raw !== "string" || raw === "") {
+    refuseArg(
+      name,
+      "query",
+      `"query" must be a non-empty string, got ${JSON.stringify(raw)} -- an empty query matches every entry of every corpus, ` +
+        "which is a listing rather than a search, and the list verbs are what listing is for.",
+      batchIndex,
+    );
+  }
+}
+
+function assertDisassembleArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_disassemble", args, batchIndex);
+  assertImageArg("anno_disassemble", args, batchIndex);
+  const start = assertAddressArg("anno_disassemble", args, "address", batchIndex);
+  const bag = argBag(args);
+  if (bag.end_address !== undefined) {
+    const end = parseStoreAddress(bag.end_address, { what: "end_address" });
+    assertRangeShape(start, end, "byte");
+    assertWithinRegionCap("anno_disassemble", start, end, batchIndex);
+  }
+}
+
+function assertReadRegionArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_read_region", args, batchIndex);
+  assertImageArg("anno_read_region", args, batchIndex);
+  const { start, end } = assertSpanArgs("anno_read_region", args, "byte", batchIndex);
+  assertWithinRegionCap("anno_read_region", start, end, batchIndex);
+  const view = argBag(args).view;
+  if (view !== undefined && view !== "disasm" && view !== "hexdump") {
+    refuseArg("anno_read_region", "view", `${JSON.stringify(view)} is not a view -- expected "disasm" or "hexdump".`, batchIndex);
+  }
+}
+
+function assertBinaryInfoArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_get_binary_info", args, batchIndex);
+  assertImageArg("anno_get_binary_info", args, batchIndex);
+}
+
+function assertCrossReferencesArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_get_cross_references", args, batchIndex);
+  assertImageArg("anno_get_cross_references", args, batchIndex);
+  assertAddressArg("anno_get_cross_references", args, "address", batchIndex);
+  assertMaxResults("anno_get_cross_references", args, batchIndex);
+}
+
+function assertSearchArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_search", args, batchIndex);
+  assertImageArg("anno_search", args, batchIndex);
+  assertQueryArg("anno_search", args, batchIndex);
+  assertMaxResults("anno_search", args, batchIndex);
+}
+
+function assertAddressDetailsArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_get_address_details", args, batchIndex);
+  assertImageArg("anno_get_address_details", args, batchIndex);
+  assertAddressArg("anno_get_address_details", args, "address", batchIndex);
+}
+
 /**
  * THE ONE PER-VERB VALIDATOR DISPATCH. Both the outer gate and (once it lands)
  * the batch pre-validator call THIS function, never the individual validators
@@ -911,6 +1236,12 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
   if (name === "anno_update_project_enum") return assertUpdateEnumArgs(args, batchIndex);
   if (name === "anno_apply_enum_usage") return assertApplyEnumUsageArgs(args, batchIndex);
   if (name === "anno_save_project") return assertSaveProjectArgs(args, batchIndex);
+  if (name === "anno_disassemble") return assertDisassembleArgs(args, batchIndex);
+  if (name === "anno_read_region") return assertReadRegionArgs(args, batchIndex);
+  if (name === "anno_get_binary_info") return assertBinaryInfoArgs(args, batchIndex);
+  if (name === "anno_get_cross_references") return assertCrossReferencesArgs(args, batchIndex);
+  if (name === "anno_search") return assertSearchArgs(args, batchIndex);
+  if (name === "anno_get_address_details") return assertAddressDetailsArgs(args, batchIndex);
   // Every curated verb has an arm above. A curated name reaching here is a bug
   // in THIS file, and saying so by name is cheaper than a validator silently
   // accepting a payload nobody checked.
@@ -997,6 +1328,12 @@ const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_get_comments",
   "anno_get_blocks",
   "anno_save_project",
+  "anno_disassemble",
+  "anno_read_region",
+  "anno_get_binary_info",
+  "anno_get_cross_references",
+  "anno_search",
+  "anno_get_address_details",
 ]);
 
 /** Refuses an absent store BY NAME, returning the inode the later guard
@@ -1221,6 +1558,241 @@ function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// The image loader (D-07). The store holds annotations and never bytes, so
+// every derived read names its own image and this function is the ONE place
+// that turns that name into bytes plus an origin.
+//
+// DISPATCH IS BY EXTENSION FIRST, NEVER BY BYTE LENGTH, and the branch order
+// below is copied from `anno-cli.ts:483-506` rather than re-derived. The
+// incident it encodes (WR-07): a 4096-byte flat `.raw` capture fell through to
+// the `.prg` parser, whose first two bytes become the load address, so a
+// truncated capture silently "bootstrapped" with an origin read backwards out
+// of its own payload bytes and exited zero -- every downstream address wrong,
+// no diagnostic. The extension check runs BEFORE any length check so
+// `flatImageOrigin()`'s own named refusal stays reachable for those two
+// extensions.
+// ---------------------------------------------------------------------------
+
+interface LoadedImage {
+  path: string;
+  kind: "prg" | "flat";
+  origin: number;
+  body: Uint8Array;
+  totalBytes: number;
+}
+
+function loadImage(name: string, args: unknown): LoadedImage {
+  const raw = assertImageArg(name, args);
+  const path = resolveWorkspacePath(raw);
+  if (!existsSync(path)) {
+    throw new AnnoStorePathError(
+      `${name} refused: no image exists at ${JSON.stringify(path)} -- a derived read names the bytes it derives from (D-07), ` +
+        "and an image that is not there is a different fact from an image with nothing in it.",
+      { path },
+    );
+  }
+  const bytes = new Uint8Array(readFileSync(path));
+  const ext = extname(path).toLowerCase();
+  try {
+    if (ext === ".raw" || ext === ".bin") {
+      return { path, kind: "flat", origin: flatImageOrigin(bytes), body: bytes, totalBytes: bytes.length };
+    }
+    if (ext !== ".prg" && bytes.length === 65536) {
+      return { path, kind: "flat", origin: flatImageOrigin(bytes), body: bytes, totalBytes: bytes.length };
+    }
+    const { origin, body } = parsePrg(bytes);
+    return { path, kind: "prg", origin, body, totalBytes: bytes.length };
+  } catch (err) {
+    // `prg-image.ts` throws a bare `Error` by design -- it is a pure
+    // byte-layout module with no error family of its own. Wrapped here so the
+    // never-throw boundary can still name a class, and so the message carries
+    // the caller's own vocabulary (the image path) rather than only the
+    // internal function name.
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new AnnoToolArgumentError(
+      `${name} refused: ${JSON.stringify(path)} is not an image this surface can read (${reason}). Supply a .prg (a 2-byte ` +
+        "little-endian load address plus a payload) or an exactly-65536-byte flat capture.",
+      { toolName: name, argument: "image" },
+    );
+  }
+}
+
+/** Shannon entropy of `bytes`, in bits per byte. Above roughly 7.5 the image is
+ * very likely compressed or packed, and nothing in it will decode sensibly
+ * until it is depacked -- which is why this is REPORTED rather than left for a
+ * caller to wonder about after a disassembly comes back as noise. */
+function shannonEntropy(bytes: Uint8Array): number {
+  if (bytes.length === 0) return 0;
+  const histogram = new Uint32Array(256);
+  for (const byte of bytes) histogram[byte] += 1;
+  let entropy = 0;
+  for (const count of histogram) {
+    if (count === 0) continue;
+    const p = count / bytes.length;
+    entropy -= p * Math.log2(p);
+  }
+  return Math.round(entropy * 1000) / 1000;
+}
+
+/** The slice of `image` covering the inclusive span, or `null` when the span
+ * falls outside the bytes the image actually holds. `null` rather than a short
+ * slice: a partial answer to a range question reads as a complete answer to a
+ * smaller one. */
+function sliceSpan(image: LoadedImage, start: number, end: number): Uint8Array | null {
+  const from = start - image.origin;
+  const to = end - image.origin;
+  if (from < 0 || to >= image.body.length) return null;
+  return image.body.subarray(from, to + 1);
+}
+
+function outsideImage(name: string, image: LoadedImage, start: number, end: number): Record<string, unknown> {
+  const last = image.origin + image.body.length - 1;
+  return {
+    available: false,
+    reason:
+      `${name} was asked for $${start.toString(16).padStart(4, "0")}..$${end.toString(16).padStart(4, "0")}, which is not ` +
+      `entirely inside the image: ${JSON.stringify(image.path)} loads at $${image.origin.toString(16).padStart(4, "0")} and ` +
+      `ends at $${last.toString(16).padStart(4, "0")}. Reported as unanswerable rather than served as a short slice, because a ` +
+      "partial answer to a range question reads as a complete answer to a smaller one. Narrow the range, or name the image that " +
+      "actually covers those addresses.",
+  };
+}
+
+function hexdump(bytes: Uint8Array, start: number): string[] {
+  const lines: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    const chunk = bytes.subarray(offset, offset + 16);
+    const hex = [...chunk].map((b) => b.toString(16).padStart(2, "0")).join(" ");
+    lines.push(`$${(start + offset).toString(16).padStart(4, "0")}  ${hex}`);
+  }
+  return lines;
+}
+
+function dispatchDisassemble(args: unknown): unknown {
+  const image = loadImage("anno_disassemble", args);
+  const bag = argBag(args);
+  const start = parseStoreAddress(bag.address, { what: "address" });
+  const cap = currentReadRegionMaxBytes();
+  const last = image.origin + image.body.length - 1;
+  // An omitted end is the CAP, not the whole image: the default has to be the
+  // bound, or the default is the hazard.
+  const requestedEnd = bag.end_address !== undefined ? parseStoreAddress(bag.end_address, { what: "end_address" }) : Math.min(start + cap - 1, last);
+  if (bag.end_address !== undefined) assertWithinRegionCap("anno_disassemble", start, requestedEnd, undefined);
+  const end = Math.min(requestedEnd, last);
+  const slice = sliceSpan(image, start, end);
+  if (slice === null) return outsideImage("anno_disassemble", image, start, requestedEnd);
+
+  const instructions = decode(slice, start, { end });
+  return {
+    image: image.path,
+    origin: image.origin,
+    address: start,
+    end_address: end,
+    instructions: instructions.length,
+    listing: render(instructions, { origin: start }),
+  };
+}
+
+function dispatchReadRegion(args: unknown): unknown {
+  const image = loadImage("anno_read_region", args);
+  const bag = argBag(args);
+  const start = parseStoreAddress(bag.start_address, { what: "start_address" });
+  const end = parseStoreAddress(bag.end_address, { what: "end_address" });
+  const view = bag.view === "hexdump" ? "hexdump" : "disasm";
+  const slice = sliceSpan(image, start, end);
+  if (slice === null) return outsideImage("anno_read_region", image, start, end);
+
+  if (view === "hexdump") {
+    return { image: image.path, origin: image.origin, start_address: start, end_address: end, view, bytes: slice.length, hexdump: hexdump(slice, start).join("\n") };
+  }
+  const instructions = decode(slice, start, { end });
+  return {
+    image: image.path,
+    origin: image.origin,
+    start_address: start,
+    end_address: end,
+    view,
+    bytes: slice.length,
+    instructions: instructions.length,
+    listing: render(instructions, { origin: start }),
+  };
+}
+
+function dispatchBinaryInfo(args: unknown): unknown {
+  const image = loadImage("anno_get_binary_info", args);
+  const entropy = shannonEntropy(image.body);
+  return {
+    image: image.path,
+    kind: image.kind,
+    origin: image.origin,
+    total_bytes: image.totalBytes,
+    body_bytes: image.body.length,
+    last_address: image.origin + image.body.length - 1,
+    entropy,
+    likely_packed: entropy > 7.5,
+  };
+}
+
+function dispatchCrossReferences(handle: AnnoStoreHandle, args: unknown): unknown {
+  const image = loadImage("anno_get_cross_references", args);
+  const maxResults = assertMaxResults("anno_get_cross_references", args);
+  const bag = argBag(args);
+  const union = crossReferencesTo(handle, image.body, image.origin, bag.address as number | string);
+  const callers = union.callers.slice(0, maxResults);
+  return {
+    store: handle.path,
+    image: image.path,
+    to: union.to,
+    callers,
+    returned: callers.length,
+    total: union.count,
+    truncated: union.count > callers.length,
+  };
+}
+
+function dispatchSearch(handle: AnnoStoreHandle, args: unknown): unknown {
+  const image = loadImage("anno_search", args);
+  const bag = argBag(args);
+  // THE CALLER'S OWN BAG IS PASSED THROUGH, not reconstructed from the three
+  // keys this layer knows about. `searchAnnotations` detects a corpus this
+  // surface does not have by scanning for `search_<name>` keys it does not
+  // recognise, so rebuilding the request here would silently DROP exactly the
+  // signal the unanswerable-corpus report depends on -- and the caller would
+  // get a clean, plausible, wrong hit list for a corpus that was never
+  // searched. `query` and `max_results` are re-stated last so the validated
+  // values win over whatever shape arrived.
+  const result = searchAnnotations(handle, image.body, image.origin, {
+    ...bag,
+    query: bag.query as string,
+    max_results: assertMaxResults("anno_search", args),
+  });
+
+  const unanswerable = Object.keys(result.unavailable);
+  if (unanswerable.length > 0) {
+    // THE WHOLE CALL IS ANSWERED AS UNANSWERABLE, not served as a partial
+    // result set with a footnote. The request named a corpus this surface does
+    // not have, so any hit list returned beside that would look like the
+    // complete answer to the question actually asked -- which is the
+    // plausible-looking zero this shape exists against. `isError` stays FALSE:
+    // the request was well-formed and the answer is "no".
+    return {
+      available: false,
+      reason: unanswerable.map((corpus) => result.unavailable[corpus]!.reason).join(" "),
+      unanswerable_corpora: unanswerable,
+      corpora: result.corpora,
+    };
+  }
+  return { store: handle.path, image: image.path, ...result };
+}
+
+function dispatchAddressDetails(handle: AnnoStoreHandle, args: unknown): unknown {
+  const image = loadImage("anno_get_address_details", args);
+  const bag = argBag(args);
+  return { store: handle.path, image: image.path, ...composeAddressDetails(handle, image.body, image.origin, bag.address as number | string) };
+}
+
 async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): Promise<unknown> {
   if (name === "anno_get_symbols") return dispatchGetSymbols(handle, args);
   if (name === "anno_set_label_name") return dispatchSetLabelName(handle, args);
@@ -1233,6 +1805,12 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_update_project_enum") return dispatchUpdateProjectEnum(handle, args);
   if (name === "anno_apply_enum_usage") return dispatchApplyEnumUsage(handle, args);
   if (name === "anno_save_project") return dispatchSaveProject(handle);
+  if (name === "anno_disassemble") return dispatchDisassemble(args);
+  if (name === "anno_read_region") return dispatchReadRegion(args);
+  if (name === "anno_get_binary_info") return dispatchBinaryInfo(args);
+  if (name === "anno_get_cross_references") return dispatchCrossReferences(handle, args);
+  if (name === "anno_search") return dispatchSearch(handle, args);
+  if (name === "anno_get_address_details") return dispatchAddressDetails(handle, args);
   // Unreachable: `assertAnnoTool()` above has already refused every name
   // outside `CURATED_ANNO_TOOLS`, and every curated name has an arm here. It
   // refuses BY NAME anyway rather than returning a plausible-looking empty

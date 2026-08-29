@@ -20,13 +20,15 @@
 // emits an `ExperimentalWarning` unconditionally on first load.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { closeStore, listComments, listLabels, openStore, setLabel } from "./anno-store.ts";
 import {
+  ANNO_READ_REGION_MAX_BYTES,
+  ANNO_READ_REGION_MAX_BYTES_ENV,
   ANNO_TOOL_DEFINITIONS,
   AnnoToolArgumentError,
   AnnoUncuratedToolError,
@@ -599,11 +601,319 @@ test("anno-tools.ts re-implements no address parsing, no range validation and no
   }
   // Asserted over the STRIPPED source, so the header prose naming these
   // hazards cannot make the check pass by containing the words.
-  for (const forbidden of ["parseInt(", "parseFloat(", "charCodeAt(", "toLowerCase()", "normalize("]) {
+  for (const forbidden of ["parseInt(", "parseFloat(", "charCodeAt(", "normalize("]) {
     assert.equal(ANNO_TOOLS_CODE.includes(forbidden), false, `${forbidden} in anno-tools.ts would be a second, divergent rule beside the store's own`);
   }
+  // Case folding is permitted in EXACTLY one place -- normalizing a FILE
+  // EXTENSION, which is `anno-cli.ts`'s own discipline and not an argument
+  // rule. Anywhere else it would silently merge two names a human
+  // distinguished, which is the sanitization T-29-23 forbids.
+  const foldSites = ANNO_TOOLS_CODE.split("toLowerCase()").length - 1;
+  assert.equal(foldSites, 1, "case folding must appear exactly once in anno-tools.ts");
+  assert.match(ANNO_TOOLS_CODE, /extname\([^)]*\)\.toLowerCase\(\)/, "the one case-folding site must be the file-extension normalization");
   // No second copy of the frozen twelve as an executable array. The
   // inputSchema's `enum` is documentation and its members are string literals,
   // which the stripper has already removed.
   assert.equal(/\[\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*\]/.test(ANNO_TOOLS_CODE), false, "a twelve-member literal array here would be a second data-type vocabulary");
+});
+
+// ---------------------------------------------------------------------------
+// Plan 29-06 Task 2: the derived and composed read verbs.
+//
+// Every image below is a REAL file inside the REAL temporary workspace, written
+// through the same containment the verbs enforce -- the seam D-07 depends on is
+// exercised, never stubbed.
+// ---------------------------------------------------------------------------
+
+/** A .prg: a 2-byte little-endian load address followed by the payload. */
+function prgBytes(origin: number, payload: number[]): Uint8Array {
+  return Uint8Array.from([origin & 0xff, (origin >> 8) & 0xff, ...payload]);
+}
+
+function writeImage(ws: string, fileName: string, bytes: Uint8Array): string {
+  const path = join(ws, fileName);
+  writeFileSync(path, bytes);
+  return path;
+}
+
+/** `$c000 jsr $c010` / `$c003 jmp $c010` / `$c006 rts` -- two references to one
+ * address, from two different opcodes, so the union is not an artefact of one. */
+const TWO_CALLERS_PRG = prgBytes(0xc000, [0x20, 0x10, 0xc0, 0x4c, 0x10, 0xc0, 0x60]);
+
+/** Runs `body` with the region cap overridden, restoring it unconditionally.
+ * The override is read AT CALL TIME, which is what makes this possible inside a
+ * single `node --test` process. */
+async function withRegionCap(cap: string, run: () => Promise<void>): Promise<void> {
+  const previous = process.env[ANNO_READ_REGION_MAX_BYTES_ENV];
+  process.env[ANNO_READ_REGION_MAX_BYTES_ENV] = cap;
+  try {
+    await run();
+  } finally {
+    if (previous === undefined) delete process.env[ANNO_READ_REGION_MAX_BYTES_ENV];
+    else process.env[ANNO_READ_REGION_MAX_BYTES_ENV] = previous;
+  }
+}
+
+test("the six derived and composed verbs are advertised, and every one requires an explicit image (D-07)", () => {
+  for (const name of [
+    "anno_disassemble",
+    "anno_read_region",
+    "anno_get_binary_info",
+    "anno_get_cross_references",
+    "anno_search",
+    "anno_get_address_details",
+  ]) {
+    const def = definitionNamed(name);
+    assert.ok(def, `${name} must be in ANNO_TOOL_DEFINITIONS`);
+    const required = def!.inputSchema.required ?? [];
+    assert.ok(required.includes("store"), `${name} must require "store"`);
+    assert.ok(required.includes("image"), `${name} must require "image" -- the store holds annotations, never bytes (D-07)`);
+  }
+});
+
+test("anno_disassemble decodes at an EXPLICIT address, and the surface names no cursor anywhere (D-09)", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c006" });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const disasmBody = (await body(result)) as { address: number; instructions: number; listing: string };
+      assert.equal(disasmBody.address, 0xc000, "decoding starts where the caller said, and nowhere else");
+      assert.equal(disasmBody.instructions, 3);
+      assert.match(disasmBody.listing, /jsr \$c010/i);
+      assert.match(disasmBody.listing, /jmp \$c010/i);
+      assert.match(disasmBody.listing, /\* = \$c000/, "the listing's origin is the requested address");
+    },
+  );
+});
+
+test("D-09: no identifier, schema property or dispatch branch on this surface names a cursor or a current address", () => {
+  // Asserted over the COMMENT-AND-STRING-STRIPPED source, so the module
+  // header's own prose explaining why the anti-feature is absent cannot make
+  // the check pass by containing the word.
+  assert.equal(/cursor/i.test(ANNO_TOOLS_CODE), false, "a cursor identifier anywhere would reintroduce the anti-feature D-09 folded away");
+  assert.equal(/current[_\s]*address/i.test(ANNO_TOOLS_CODE), false, "a 'current address' concept is the same anti-feature under another name");
+  // And the check is not vacuous: the header DOES discuss it, in prose.
+  assert.match(ANNO_TOOLS_SOURCE, /cursor/i, "the header must explain the absence, or a later reader will read it as an oversight");
+});
+
+test("ONE cap governs BOTH views, is read at call time, and refuses by name with the cap and the requested width", async () => {
+  assert.equal(ANNO_READ_REGION_MAX_BYTES, 4096);
+  assert.equal(ANNO_READ_REGION_MAX_BYTES_ENV, "ANNO_READ_REGION_MAX_BYTES");
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+
+      const overDefault = await runAnnoTool("anno_read_region", { store, image, start_address: 0, end_address: 4096 });
+      assert.equal(overDefault.isError, true);
+      assert.match(overDefault.content[0]!.text, /\[AnnoRegionRangeError\]/);
+      assert.match(overDefault.content[0]!.text, /4097 bytes/, "the message must name the REQUESTED width");
+      assert.match(overDefault.content[0]!.text, /cap of 4096/, "the message must name the CAP");
+
+      await withRegionCap("8", async () => {
+        const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c008" });
+        assert.equal(region.isError, true, "the override is read at CALL time, not frozen at module load");
+        assert.match(region.content[0]!.text, /cap of 8/);
+
+        // THE SAME CAP GOVERNS THE DISASSEMBLE VIEW -- one cap, both views, so
+        // there is no per-view rule to get subtly wrong.
+        const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c008" });
+        assert.equal(disasm.isError, true);
+        assert.match(disasm.content[0]!.text, /\[AnnoRegionRangeError\]/);
+        assert.match(disasm.content[0]!.text, /cap of 8/);
+      });
+    },
+  );
+});
+
+test("anno_read_region serves both views, and a span outside the image is reported unanswerable rather than served short", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+
+      const hex = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c002", view: "hexdump" });
+      assert.equal(hex.isError, false, hex.content[0]!.text);
+      const hexBody = (await body(hex)) as { view: string; hexdump: string; bytes: number };
+      assert.equal(hexBody.view, "hexdump");
+      assert.equal(hexBody.bytes, 3);
+      assert.match(hexBody.hexdump, /\$c000 {2}20 10 c0/);
+
+      const outside = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c0ff" });
+      assert.equal(outside.isError, false, "a well-formed question this image cannot answer is not a caller error");
+      const outsideBody = (await body(outside)) as { available: boolean; reason: string };
+      assert.equal(outsideBody.available, false);
+      assert.ok(outsideBody.reason.length >= 40, "a bare token is not a reason");
+      assert.match(outsideBody.reason, /partial answer to a range question/);
+    },
+  );
+});
+
+test("anno_get_binary_info reports the load address, origin and lengths for a real PRG, and refuses a non-PRG by name", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const info = await runAnnoTool("anno_get_binary_info", { store, image });
+      assert.equal(info.isError, false, info.content[0]!.text);
+      const infoBody = (await body(info)) as { kind: string; origin: number; total_bytes: number; body_bytes: number; entropy: number; likely_packed: boolean };
+      assert.equal(infoBody.kind, "prg");
+      assert.equal(infoBody.origin, 0xc000, "the origin is the .prg's own 2-byte little-endian load address");
+      assert.equal(infoBody.total_bytes, 9);
+      assert.equal(infoBody.body_bytes, 7);
+      assert.equal(typeof infoBody.entropy, "number");
+      assert.equal(infoBody.likely_packed, false);
+
+      const flat = writeImage(ws, "capture.raw", new Uint8Array(65536));
+      const flatInfo = await runAnnoTool("anno_get_binary_info", { store, image: flat });
+      assert.equal(flatInfo.isError, false, flatInfo.content[0]!.text);
+      const flatBody = (await body(flatInfo)) as { kind: string; origin: number };
+      assert.equal(flatBody.kind, "flat");
+      assert.equal(flatBody.origin, 0, "a flat 64K capture's origin is 0");
+
+      // WR-07: a truncated .raw is dispatched by EXTENSION and hits
+      // flatImageOrigin's named refusal, never falls through to the .prg parser
+      // and gets an origin read backwards out of its own payload bytes.
+      const truncated = writeImage(ws, "truncated.raw", new Uint8Array(4096));
+      const truncatedInfo = await runAnnoTool("anno_get_binary_info", { store, image: truncated });
+      assert.equal(truncatedInfo.isError, true);
+      assert.match(truncatedInfo.content[0]!.text, /\[AnnoToolArgumentError\]/);
+      assert.match(truncatedInfo.content[0]!.text, /flat 64K capture must be exactly 65536 bytes/);
+
+      const tooShort = writeImage(ws, "short.prg", Uint8Array.from([0x00, 0xc0]));
+      const shortInfo = await runAnnoTool("anno_get_binary_info", { store, image: tooShort });
+      assert.equal(shortInfo.isError, true);
+      assert.match(shortInfo.content[0]!.text, /short\.prg/, "the refusal names the offending image, not only an internal function");
+      assert.match(shortInfo.content[0]!.text, /at least 3 bytes/);
+    },
+  );
+});
+
+test("anno_get_cross_references returns the derivation module's union, and the store is byte-identical afterwards", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const typed = await runAnnoTool("anno_set_data_type", { store, image, start_address: "$c000", end_address: "$c006", data_type: "code" });
+      assert.equal(typed.isError, false, typed.content[0]!.text);
+
+      const before = readFileSync(store);
+      const xrefs = await runAnnoTool("anno_get_cross_references", { store, image, address: "$c010", max_results: 10 });
+      assert.equal(xrefs.isError, false, xrefs.content[0]!.text);
+      const xrefBody = (await body(xrefs)) as { to: number; callers: number[]; total: number; truncated: boolean };
+      assert.equal(xrefBody.to, 0xc010);
+      assert.deepEqual(xrefBody.callers, [0xc000, 0xc003], "ascending and de-duplicated, unioned across the decoded code");
+      assert.equal(xrefBody.total, 2);
+      assert.equal(xrefBody.truncated, false);
+      assert.deepEqual(readFileSync(store), before, "a derived read must write NOTHING -- a cached derivation is a second on-disk truth");
+
+      const capped = await runAnnoTool("anno_get_cross_references", { store, image, address: "$c010", max_results: 1 });
+      const cappedBody = (await body(capped)) as { returned: number; total: number; truncated: boolean };
+      assert.equal(cappedBody.returned, 1);
+      assert.equal(cappedBody.total, 2, "the TRUE total rides beside the truncated list, so truncation is detectable");
+      assert.equal(cappedBody.truncated, true);
+    },
+  );
+});
+
+test("anno_search: max_results is REQUIRED with no default, and a capped answer reports the true total", async () => {
+  await withStore(
+    (handle) => {
+      setLabel(handle, { address: 0xc000, name: "loop_one", kind: "User" });
+      setLabel(handle, { address: 0xc010, name: "loop_two", kind: "User" });
+      setLabel(handle, { address: 0xc020, name: "loop_three", kind: "User" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+
+      const noCeiling = await runAnnoTool("anno_search", { store, image, query: "loop" });
+      assert.equal(noCeiling.isError, true, "an implicit default would silently truncate a full-program pass");
+      assert.match(noCeiling.content[0]!.text, /\[AnnoToolArgumentError\]/);
+      assert.match(noCeiling.content[0]!.text, /"max_results" must be a positive integer/);
+
+      const capped = await runAnnoTool("anno_search", { store, image, query: "loop", max_results: 1 });
+      assert.equal(capped.isError, false, capped.content[0]!.text);
+      const cappedBody = (await body(capped)) as { results: unknown[]; returned: number; total: number; truncated: boolean };
+      assert.equal(cappedBody.returned, 1, "one result, because one was asked for");
+      assert.equal(cappedBody.total, 3, "three matches, so the truncation is DETECTABLE rather than invisible");
+      assert.equal(cappedBody.truncated, true);
+    },
+  );
+});
+
+test("anno_search naming a corpus this surface does not have answers {available:false, reason} in a SUCCESSFUL body, never an empty result set", async () => {
+  await withStore(
+    (handle) => {
+      setLabel(handle, { address: 0xc000, name: "loop_one", kind: "User" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const result = await runAnnoTool("anno_search", { store, image, query: "loop", max_results: 10, search_strings: true });
+      assert.equal(result.isError, false, "the request was WELL-FORMED -- an error here teaches an agent to retry what will never work");
+      const refusal = (await body(result)) as { available: boolean; reason: string; unanswerable_corpora: string[]; results?: unknown };
+      assert.equal(refusal.available, false);
+      assert.equal(typeof refusal.reason, "string");
+      assert.ok(refusal.reason.length >= 40, `a bare token is not a reason (got ${refusal.reason.length} characters)`);
+      assert.deepEqual(refusal.unanswerable_corpora, ["strings"]);
+      assert.equal(refusal.results, undefined, "no hit list may ride alongside -- it would read as the complete answer to the question actually asked");
+    },
+  );
+});
+
+test("anno_get_address_details returns the composition with its composed_from disclosure intact", async () => {
+  await withStore(
+    (handle) => {
+      setLabel(handle, { address: 0xc010, name: "target", kind: "User" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const typed = await runAnnoTool("anno_set_data_type", { store, image, start_address: "$c000", end_address: "$c006", data_type: "code" });
+      assert.equal(typed.isError, false, typed.content[0]!.text);
+
+      const details = await runAnnoTool("anno_get_address_details", { store, image, address: "$c010" });
+      assert.equal(details.isError, false, details.content[0]!.text);
+      const detailsBody = (await body(details)) as {
+        address: number;
+        labels: { name: string }[];
+        comments: unknown[];
+        range: { available: boolean; reason?: string };
+        crossReferences: { available: boolean; value?: { callers: number[] } };
+        composed_client_side: boolean;
+        composed_from: string[];
+      };
+      assert.equal(detailsBody.address, 0xc010);
+      assert.deepEqual(detailsBody.labels.map((row) => row.name), ["target"]);
+      assert.equal(detailsBody.composed_client_side, true, "a composition must never be mistaken for something the store held whole");
+      assert.equal(detailsBody.composed_from.length, 4);
+      assert.equal(detailsBody.crossReferences.available, true);
+      assert.deepEqual(detailsBody.crossReferences.value!.callers, [0xc000, 0xc003]);
+      // $c010 sits in no typed range: that component reports WHY, rather than
+      // coming back as an empty object that reads like an answer.
+      assert.equal(detailsBody.range.available, false);
+      assert.ok((detailsBody.range.reason ?? "").length >= 40);
+    },
+  );
+});
+
+test("an image outside the workspace root, or absent, is refused by name -- the same containment the store path gets", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const outside = join(dirname(ws), "elsewhere.prg");
+      const escaped = await runAnnoTool("anno_get_binary_info", { store, image: outside });
+      assert.equal(escaped.isError, true);
+      assert.match(escaped.content[0]!.text, /\[AnnoStorePathError\]/);
+
+      const absent = await runAnnoTool("anno_get_binary_info", { store, image: join(ws, "not-here.prg") });
+      assert.equal(absent.isError, true);
+      assert.match(absent.content[0]!.text, /\[AnnoStorePathError\]/);
+      assert.match(absent.content[0]!.text, /no image exists at/);
+
+      const missing = await runAnnoTool("anno_get_binary_info", { store });
+      assert.equal(missing.isError, true);
+      assert.match(missing.content[0]!.text, /"image" must be a non-empty string/);
+    },
+  );
 });
