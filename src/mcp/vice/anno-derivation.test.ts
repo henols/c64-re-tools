@@ -53,6 +53,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import { CURATED_R2000_TOOLS } from "./r2000-tools.ts";
+// The surface-derivation half at the foot of this file (plan 29-08). The
+// upstream-integrity half above uses neither.
+import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
+import { annoRegisterEntryFor } from "./anno-register.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = resolve(
@@ -219,3 +223,206 @@ test(
     }
   }
 );
+
+// ===========================================================================
+// THE SURFACE-DERIVATION HALF (MCP-01, D-08, D-09) -- added by plan 29-08.
+//
+// Everything above this line is the UPSTREAM-INTEGRITY half and is unchanged:
+// it audits the manifest as a snapshot record (an immutable pin, a justified
+// and cited disposition for every non-curated call, named re-sync triggers with
+// mechanisms, and a live-gated re-hash that hard-fails rather than skipping
+// under its opt-in environment variable). This half audits the OTHER direction:
+// whether THIS PROJECT'S tool surface is actually derived from that record.
+//
+// WHY BOTH HALVES LIVE IN ONE FILE. They share the manifest read, and more
+// importantly they share a failure mode: a manifest that cannot be read makes
+// BOTH halves pass by finding nothing to check. Keeping them together means the
+// non-vacuity counters below sit in the same file as the pin they depend on.
+//
+// MCP-01's claim is that the surface is DERIVED rather than CHOSEN. That is a
+// claim about two directions, and only both together mean anything:
+//   FORWARD  -- every verb the manifest disposes `curated` or
+//               `adapt-to-address-input` has a route; every verb it disposes
+//               `omit` is absent; an unrecognised disposition FAILS rather than
+//               being skipped.
+//   BACKWARD -- every verb on the surface is either manifest-classified or
+//               carries an entry in the committed register citing at least one
+//               requirement id. Without this direction the surface could grow
+//               without limit and still satisfy the forward one.
+// ===========================================================================
+
+/**
+ * THE ONE MAPPING from an upstream verb name to this surface's name. Total over
+ * every upstream name, with EXACTLY TWO documented departures; everything else
+ * is the same suffix under this project's own family prefix.
+ *
+ * This is the only place the correspondence is written down. `anno-register.test.ts`
+ * deliberately does NOT copy it -- its shadowing check uses a broader
+ * suffix-equality relation and says so at the point of use, because a shadowing
+ * check must over-approximate while this mapping must be exact.
+ */
+function annoNameFor(upstream: string): string {
+  // DEPARTURE 1 (D-09): the cursor verb is folded into the disassemble verb's
+  // explicit `address` argument, which is what its "adapt-to-address-input"
+  // disposition resolved to. Upstream's own absorbed text forbids the cursor
+  // route in exactly the situation this project's procedures describe, and this
+  // project has no editor cursor at all -- the caller always supplies an address.
+  if (upstream === "r2000_get_disassembly_cursor") return "anno_disassemble";
+  // DEPARTURE 2: the search verb's shortened name. Upstream named the corpus in
+  // the verb; this surface names the three corpora in the ARGUMENTS
+  // (search_labels / search_comments / search_instructions), so carrying one
+  // corpus in the verb name would have contradicted the other two.
+  if (upstream === "r2000_search_disassembly") return "anno_search";
+  return "anno_" + upstream.slice(upstream.indexOf("_") + 1);
+}
+
+/** The four omit names, spelled BOTH ways -- the mapped surface name and the
+ * bare suffix -- so "absent under any spelling" is checked rather than asserted
+ * for the one spelling that happened to be convenient. */
+function omitSpellings(upstream: string): string[] {
+  return [annoNameFor(upstream), upstream.slice(upstream.indexOf("_") + 1)];
+}
+
+interface DerivationVerdict {
+  /** Upstream names disposed curated or adapt-to-address-input, deduplicated. */
+  routed: string[];
+  /** Upstream names disposed omit, deduplicated. */
+  omitted: string[];
+  /** Every offence, each naming the upstream verb and its disposition. */
+  problems: string[];
+}
+
+/**
+ * THE FORWARD DIRECTION, as one order-independent verdict.
+ *
+ * `procedures` and `definitions` are both parameters so the ordering test can
+ * drive this same code path over reversed copies of each -- the verdict must not
+ * depend on the order either side is walked.
+ */
+function derivationVerdict(
+  procedures: readonly { path: string; tools: Record<string, string> }[],
+  definitions: readonly { name: string }[],
+): DerivationVerdict {
+  const names = new Set(definitions.map((definition) => definition.name));
+  const routed = new Set<string>();
+  const omitted = new Set<string>();
+  const problems: string[] = [];
+  for (const procedure of procedures) {
+    for (const [upstream, disposition] of Object.entries(procedure.tools)) {
+      const anno = annoNameFor(upstream);
+      if (disposition === "curated" || disposition === "adapt-to-address-input") {
+        routed.add(upstream);
+        if (!names.has(anno)) {
+          problems.push(
+            `${upstream} is disposed "${disposition}" in ${procedure.path} but ${anno} has NO ROUTE on the ` +
+              "surface -- the surface is not derived from the manifest it claims to be derived from",
+          );
+        }
+      } else if (disposition === "omit") {
+        omitted.add(upstream);
+        for (const spelling of omitSpellings(upstream)) {
+          if (names.has(spelling)) {
+            problems.push(
+              `${upstream} is disposed "omit" in ${procedure.path} but ${spelling} IS on the surface -- ` +
+                "an omission the manifest justified and cited has been quietly reversed",
+            );
+          }
+        }
+      } else {
+        // NEVER SKIPPED. A manifest edit introducing a fourth disposition must
+        // fail outright: a value this check does not understand is a value it
+        // cannot claim to have enforced.
+        problems.push(
+          `${upstream} in ${procedure.path} carries unknown disposition "${disposition}" -- a disposition this ` +
+            "check does not recognise must FAIL, never be passed over",
+        );
+      }
+    }
+  }
+  return { routed: [...routed].sort(), omitted: [...omitted].sort(), problems: problems.sort() };
+}
+
+/** MEASURED against the committed manifest on 2026-08-29, not copied from a
+ * planning document: 16 DISTINCT upstream verbs disposed curated (15) or
+ * adapt-to-address-input (1), and 4 DISTINCT verbs disposed omit, across the
+ * five procedures -- several verbs appear in more than one procedure, so these
+ * are counts of NAMES and not of mentions. They exist so an empty or unreadable
+ * manifest read fails HERE rather than making every assertion above pass
+ * trivially by finding nothing to walk. */
+const MEASURED_ROUTED_MINIMUM = 16;
+const MEASURED_OMITTED_MINIMUM = 4;
+
+test("MCP-01 (forward): every curated or adapt-to-address-input verb has a route, every omit verb is absent under any spelling, and an unknown disposition fails outright", () => {
+  const verdict = derivationVerdict(manifest.procedures, ANNO_TOOL_DEFINITIONS);
+  assert.deepEqual(
+    verdict.problems,
+    [],
+    `derivation problems:\n  ${verdict.problems.join("\n  ")}\n\nMCP-01's whole claim is that this surface is ` +
+      "DERIVED rather than chosen. Each line above is a place where the surface and the manifest disagree.",
+  );
+  // NON-VACUITY. These two counters are the reason an empty or unreadable
+  // manifest cannot make the assertion above pass by walking nothing.
+  assert.ok(
+    verdict.routed.length >= MEASURED_ROUTED_MINIMUM,
+    `walked only ${verdict.routed.length} curated-or-adapt verbs, expected at least ${MEASURED_ROUTED_MINIMUM} -- ` +
+      "an empty or unreadable manifest read must fail here, not pass every assertion above it trivially",
+  );
+  assert.ok(
+    verdict.omitted.length >= MEASURED_OMITTED_MINIMUM,
+    `walked only ${verdict.omitted.length} omit verbs, expected at least ${MEASURED_OMITTED_MINIMUM} -- ` +
+      "the absence half would otherwise be asserted over an empty set",
+  );
+});
+
+test("MCP-01: the one verb with zero callers anywhere is not carried", () => {
+  const names = new Set(ANNO_TOOL_DEFINITIONS.map((definition) => definition.name));
+  // Named directly rather than derived, because it is derived from NOTHING: the
+  // manifest never mentions it, so no walk over the manifest can reach it. It is
+  // on the surface's exclusion list because a measured caller census found zero
+  // callers anywhere, and MCP-01 names it explicitly for that reason.
+  assert.equal(names.has("anno_delete_project_enum"), false, "the verb with zero callers anywhere must not be carried");
+  assert.equal(names.has("delete_project_enum"), false, "nor under its bare spelling");
+  // Non-vacuity for this assertion specifically: an empty surface would pass it.
+  assert.ok(names.size > 0, "the surface is empty -- the absence assertions above would pass trivially");
+});
+
+test("MCP-01 (ordering): the verdict is identical over reversed copies of BOTH the definition table and the procedure list", () => {
+  const forward = derivationVerdict(manifest.procedures, ANNO_TOOL_DEFINITIONS);
+  const reversed = derivationVerdict([...manifest.procedures].reverse(), [...ANNO_TOOL_DEFINITIONS].reverse());
+  assert.deepEqual(
+    reversed,
+    forward,
+    "the derivation verdict changed when the procedure list and the definition table were reversed -- a check " +
+      "whose result depends on walk order is a check whose result depends on where someone pasted an entry",
+  );
+  assert.ok(forward.routed.length > 0, "the reversed comparison ran over an empty walk");
+});
+
+test("MCP-01 (backward, D-08): every surface verb is either manifest-classified or carries a register entry citing at least one requirement id", () => {
+  const classified = new Set(
+    manifest.procedures.flatMap((procedure: { tools: Record<string, string> }) => Object.keys(procedure.tools)).map(annoNameFor),
+  );
+  // Non-vacuity: an empty classified set would push every verb into the register
+  // branch and turn this into a test of the register alone.
+  assert.ok(classified.size >= MEASURED_ROUTED_MINIMUM - 1, `only ${classified.size} classified surface names were derived from the manifest`);
+  const unjustified: string[] = [];
+  for (const definition of ANNO_TOOL_DEFINITIONS) {
+    if (classified.has(definition.name)) continue;
+    const entry = annoRegisterEntryFor(definition.name);
+    if (entry === undefined) {
+      unjustified.push(`${definition.name}: classified by NEITHER the manifest NOR the register`);
+      continue;
+    }
+    if (entry.requirements.length === 0) {
+      unjustified.push(`${definition.name}: has a register entry but it cites no requirement id`);
+    }
+  }
+  assert.deepEqual(
+    unjustified,
+    [],
+    `${unjustified.join("\n  ")}\n\nD-08 is literal about what happens next: a verb added with no named consumer ` +
+      "FAILS rather than being reviewed. Either derive it from the manifest, or give it a committed register entry " +
+      "citing a requirement id and a consumer.",
+  );
+  assert.ok(ANNO_TOOL_DEFINITIONS.length > 0, "the surface is empty -- this direction would pass over nothing");
+});
