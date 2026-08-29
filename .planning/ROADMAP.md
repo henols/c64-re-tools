@@ -564,17 +564,40 @@ guard that breaks on *registration* already moved, and nothing yet deleted.
 **Plans**: 12 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 29-01-PLAN.md — Tracer: the `anno_*` family registers end to end through `buildViceTool()`, with every registration-time guard moved in the same commit (wave 1)
 - [ ] 29-02-PLAN.md — The pre-phase baseline, and the removal gate built and observed biting before anything is deleted (wave 1)
 - [ ] 29-03-PLAN.md — `anno_enum_usage` and the one-way `SCHEMA_VERSION` 2→3 bump, with the v2 refusal proven a single witness (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 29-04-PLAN.md — STORE-06: derived cross-references and search, never cached, plus the address-details composition (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 29-05-PLAN.md — The nine registry-driven renames and the CLI rename, with every guard that breaks on the rename moved with it (wave 3)
 - [ ] 29-06-PLAN.md — The full verb surface: writes, stored reads, derived reads, and the depth-capped batch (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 29-07-PLAN.md — The two-verb CLI and the coverage census re-pointed onto the store, with the block-type vocabulary measured (wave 4)
 - [ ] 29-08-PLAN.md — MCP-01 made mechanical: the manifest derivation check and the committed verb register (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 29-09-PLAN.md — Skill re-pointing in both trees, and the fork-honesty contradiction resolved in one change (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 29-12-PLAN.md — D-17: `render-memmap` rebuilt onto the Phase 28 store, its gated tests converted rather than deleted (wave 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 29-10-PLAN.md — The deletion, gated: the glue removed, the knowledge kept, the line citations corrected (wave 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 29-11-PLAN.md — The record: the falsified criteria edited, Phases 30-32 narrowed, the gate's last exception closed (wave 8)
 
 Notes:

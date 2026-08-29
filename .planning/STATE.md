@@ -4,16 +4,16 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
-status: planning
+status: executing
 stopped_at: Phase 29 context gathered
-last_updated: "2026-08-29T08:30:12.491Z"
+last_updated: "2026-08-29T13:15:38.125Z"
 last_activity: 2026-08-29
 last_activity_desc: Phase 28 complete, transitioned to Phase 29
-state_head: 5f381438c4c18ef36cf496c6d4cd67ecb258737c
+state_head: 85f9f1ae733579e3a435823a09839bbefdff6a9e
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 28
+  total_plans: 40
   completed_plans: 28
   percent: 33
 ---
@@ -147,9 +147,9 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 29 — The MCP Surface
+Phase: 29 (The MCP Surface) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-29 — Phase 29 context gathered (r2000 deletion pulled forward)
 
 ## Performance Metrics
