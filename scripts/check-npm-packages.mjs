@@ -59,7 +59,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { topLevelSkillDirs } from "./lib/skill-corpus.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -137,7 +137,14 @@ function assertLeanTarball(packed) {
   );
 }
 
-function packFiles(dir) {
+// EXPORTED (29-02): the removal gate (`scripts/check-no-<subject>.mjs`,
+// named without its literal so this comment is not itself a subject mention)
+// reuses this helper
+// rather than re-implementing `npm pack --dry-run --json`, because THIS one
+// runs the installer's `prepack` hook -- and therefore its skill-sync -- so
+// the file list it returns is post-sync BY CONSTRUCTION. A re-implementation
+// would have to remember to sync first; this cannot forget.
+export function packFiles(dir) {
   const out = execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: dir, encoding: "utf8" });
   const parsed = JSON.parse(out);
   const entry = Array.isArray(parsed) ? parsed[0] : parsed;
@@ -151,6 +158,19 @@ function packFiles(dir) {
   return packed;
 }
 
+// Everything below is this script's own DRIVER and runs only when this file
+// is the process entry point. It is guarded (29-02) so that importing
+// packFiles() from another gate does not pack both packages, run every
+// assertion, and process.exit() from inside an `import` statement -- an
+// unrelated red in check-npm-packages would otherwise surface as a failure
+// of whichever gate imported it. `node scripts/check-npm-packages.mjs` is
+// unaffected: it IS the entry point, so the guard is true. Two inserted
+// lines, no reindentation -- the block below is byte-identical to what it
+// was before the guard, so this stays reviewable as the one-line export it
+// was meant to be.
+const IS_ENTRY_POINT = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (IS_ENTRY_POINT) {
 // --- @henols/vice-mcp -------------------------------------------------------
 const vice = packFiles(join(ROOT, "src/mcp/vice"));
 need(vice.name === "@henols/vice-mcp", `vice-mcp: name is "${vice.name}", expected "@henols/vice-mcp"`);
@@ -360,3 +380,4 @@ console.log(
     `  ${vice.name}@${vice.version} -- ${vice.files.length} files\n` +
     `  ${inst.name}@${inst.version} -- ${inst.files.length} files, ${skillMds.length} skills`
 );
+}

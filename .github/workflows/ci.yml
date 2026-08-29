@@ -169,6 +169,16 @@ jobs:
       - name: Validate npm package contents
         run: node scripts/check-npm-packages.mjs
 
+      # Blocking (CUT-02/CUT-03): the removal gate. It asserts the deleted
+      # static-analysis integration is named nowhere this repository tracks or
+      # ships, outside a dated allow-list and a set of exact-count, path- or
+      # block-scoped exemptions for the licence, attribution and provenance
+      # prose that legitimately keeps the name forever. It is deliberately in
+      # CI from the wave BEFORE the deletion, because 4f048bb closed a
+      # milestone with a guard already red and nothing forced anyone to notice.
+      - name: Validate the removed integration stays removed (CUT-02/CUT-03)
+        run: node scripts/check-no-regenerator2000.mjs
+
       # Blocking: a skill that documents a tool the active backend does not
       # advertise fails at runtime for the user with an unknown-tool error,
       # and the six skills are the product surface this milestone exists to
