@@ -47,11 +47,14 @@ import { repoRoot } from "./repo-root.ts";
 // rather than drifting the moment a second entry (tools_list, this plan) is
 // added and this file's own copy is not updated in lockstep.
 import { DENY_LIST } from "./vice.ts";
-// Plan 11-05: the curated r2000_* tool surface, imported (not re-hardcoded)
-// for the same reason DENY_LIST above is -- these tests must stay correct as
-// the curated set grows or shrinks, rather than drifting the moment a name
+// Plan 11-05: the curated tool surface, imported (not re-hardcoded) for the
+// same reason DENY_LIST above is -- these tests must stay correct as the
+// curated set grows or shrinks, rather than drifting the moment a name
 // changes and this file's own copy is not updated in lockstep.
-import { CURATED_R2000_TOOLS } from "./r2000-tools.ts";
+// Repointed by plan 29-10's merge: `CURATED_ANNO_TOOLS` died with
+// `r2000-tools.ts`; `CURATED_ANNO_TOOLS` is its successor, derived the same
+// way (from ANNO_TOOL_DEFINITIONS) and carrying the renamed anno_* surface.
+import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 // Read-only import for test assertions only -- this test file does not
 // modify vice-broker-client.ts's own content; ACQUIRE_TIMEOUT_MS (the
 // control-plane client's own acquire deadline, replacing the retiring
@@ -535,7 +538,7 @@ test("tools/list reads the committed snapshot with no emulator", async () => {
     // any manifest) -- tools/list never omits any synthetic or r2000_* tool.
     assert.equal(
       tools.length,
-      2 + 3 + CURATED_R2000_TOOLS.length,
+      2 + 3 + CURATED_ANNO_TOOLS.length,
       "both fixture tools plus all three synthetic tools plus every curated r2000_* tool must come back",
     );
 
@@ -596,7 +599,7 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
         // with it.
         assert.deepEqual(
           resp.result.tools.map((t: any) => t.name),
-          ["vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_R2000_TOOLS],
+          ["vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS],
           `expected only the synthetic and r2000_* tools for ${manifestFile}`
         );
 
@@ -614,7 +617,7 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
 
         proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} });
         const secondList = await proxy.nextMessage();
-        assert.deepEqual(secondList.result.tools.map((t: any) => t.name), ["vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_R2000_TOOLS]);
+        assert.deepEqual(secondList.result.tools.map((t: any) => t.name), ["vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS]);
 
         assert.equal(proxy.child.exitCode, null, "the proxy process must still be running");
         assert.equal(proxy.child.killed, false);
@@ -835,7 +838,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
   const manifest = JSON.parse(manifestText);
   const DENY_LISTED = new Set(DENY_LIST);
   const expectedManifestNames = manifest.tools.map((t: any) => t.name).filter((n: string) => !DENY_LISTED.has(n));
-  const expectedOrder = [...expectedManifestNames, "vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_R2000_TOOLS];
+  const expectedOrder = [...expectedManifestNames, "vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS];
   const manifestSchemaByName: Record<string, unknown> = Object.fromEntries(
     manifest.tools.map((t: any) => [t.name, t.inputSchema])
   );
