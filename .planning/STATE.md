@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-08-29T14:08:22.885Z"
+stopped_at: Completed 29-02-PLAN.md
+last_updated: "2026-08-29T14:48:51.053Z"
 last_activity: 2026-08-29
-last_activity_desc: Plan 29-01 complete -- anno_* surface registered
-state_head: b124cdf3aff99453595481c5492f07b7cd1fa420
+last_activity_desc: Plan 29-02 complete -- the removal gate, observed biting on four routes
+state_head: ccb61b319f11635a8143ed25ea71f28d89d0fd45
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 29
+  completed_plans: 30
   percent: 33
 ---
 
@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 29 (The MCP Surface) — EXECUTING
-Plan: 2 of 12
-Status: Executing — plan 29-01 complete (the anno_* registration tracer)
-Last activity: 2026-08-29 — Plan 29-01 complete: anno_get_symbols advertised and answering end to end; seven registration-time guards re-pointed
+Plan: 3 of 12
+Status: Executing — plans 29-01 and 29-02 complete (the anno_* registration tracer, then the removal gate)
+Last activity: 2026-08-29 — Plan 29-02 complete: `scripts/check-no-regenerator2000.mjs` is in CI, green over 395 tracked-and-shipped files with 8 exact-count exemption classes and a dated 49-entry allow-list, and was observed red on four evasion routes plus a deleted attribution block. `29-BASELINE.md` records the pre-phase failing-file SET and corrects assumption A1: the full glob does not terminate. Nothing is deleted yet.
 
 ## Performance Metrics
 
@@ -315,6 +315,7 @@ Last activity: 2026-08-29 — Plan 29-01 complete: anno_get_symbols advertised a
 | Phase 28 P22 | 32 min | 3 tasks | 4 files |
 | Phase 28 P23 | 32 min | 3 tasks | 5 files |
 | Phase 29 P01 | 17 min | 3 tasks | 11 files |
+| Phase 29 P02 | 41 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -678,6 +679,9 @@ Recent decisions affecting current work:
 - [Phase 29]: The registration-time guard set for the r2000_* -> anno_* substitution is SEVEN, not the five plan 29-01 enumerated: module-classification.ts Direction 9 line citations and anno-seam.test.ts files[] exact-three assertion also break on registration. Both are now derived from disk, so a later plan adding an anno-* module needs no edit to either. — Found by running the plan verify command rather than by reading: the plan enumerated guards by identifier grep, and these two break on a CONSEQUENCE of the substitution (a moved line, a grown files[] list) rather than on the identifier itself.
 - [Phase 29]: docs/tool-support.md is 8,132 bytes, not the 7,874 that 29-RESEARCH.md and plan 29-01 both asserted. It has been 8,132 since commit 602f9cb (phase 15) and was not touched by plan 29-01. Later plans must not re-derive the 7,874 figure from RESEARCH. — The load-bearing property (the table regenerates byte-identical to the committed file, unchanged by the loop substitution) holds and is now asserted mechanically on BOTH byte length and content in tool-support-table.test.mjs, so the stale figure never has to be trusted again.
 - [Phase 29]: WR-02 is closed: assertAnnoTool() sits INSIDE runAnnoTool()'s try, so every anno_* refusal resolves {isError:true} naming the error class rather than rejecting the promise as the r2000_* runner does. — r2000-tools.ts:772-774 recorded the asymmetry as out of scope for its own plan. One shape for every failure means an MCP caller has one branch to write, not two.
+- [Phase 29]: The removal gate scope is (git ls-files minus the .planning/ PREFIX) UNION packFiles("installer") -- tracked AND shipped — git ls-files installer/skills returns 0 while 8 files there mentioning the subject are shipped; npm pack --dry-run runs prepack, so the list is post-sync by construction and cannot forget
+- [Phase 29]: Two exemption classes beyond the plan enumeration: surviving-provenance (10 files) and gate-self (5 occurrences) — No plan in phase 29 discharges those 10 files, so allow-listing them would make 29-11 unable to assert the temporary block empty; 18 permanently-exempt files independently reproduces 29-RESEARCH.md figure
+- [Phase 29]: Assumption A1 corrected: the full-glob suite does NOT terminate, it blocks forever in vice-proxy.test.ts — Measured 25 min elapsed against 3 s CPU on the one live child; the usable baseline needs a bounded run plus a kill of that child, and its 41 failures are a lower bound
 
 ### Pending Todos
 
@@ -1293,8 +1297,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T14:07:32.587Z
-Stopped at: Completed 29-01-PLAN.md
+Last session: 2026-08-29T14:48:50.670Z
+Stopped at: Completed 29-02-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,

@@ -125,8 +125,8 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      "not yet re-pointed" from "reintroduced". -->
 
 - [ ] **CUT-01**: The regenerator2000 integration is deleted — a **net ~12.4k lines** of the 25,759-line `r2000-*.ts` surface (10,102 non-test + 15,657 test), the remaining ~12.9k surviving under new names. Both figures correct v0.6.0's `CUT-01`/`CUT-02`, which asserted 19,181; a phase sized at 25.7k deletes the coverage instrument and the enum generator
-- [ ] **CUT-02**: The grep gate's scope is chosen against measured blast radius and defended in both directions. 291 tracked files mention regenerator2000, **55 outside `.planning/`**, so ~236 legitimately keep the word permanently: a whole-tree gate produces 236 false fires and gets switched off, while the `toacme` precedent's real scope (`src/skills/` + `README.md` + `src/mcp/vice/` + `docs/stock-vice-parity.md`) is blind to `docs/`, `scripts/`, `installer/` and both tarballs. Proven by **three plants** — a `.ts`, a `docs/` file and a `scripts/` file — each observed biting
-- [ ] **CUT-03**: The gate's exemption set carries its own **non-vacuity assertion**: deleting an attribution block must trip it. An exemption nothing can violate is not an exemption
+- [x] **CUT-02**: The grep gate's scope is chosen against measured blast radius and defended in both directions. 291 tracked files mention regenerator2000, **55 outside `.planning/`**, so ~236 legitimately keep the word permanently: a whole-tree gate produces 236 false fires and gets switched off, while the `toacme` precedent's real scope (`src/skills/` + `README.md` + `src/mcp/vice/` + `docs/stock-vice-parity.md`) is blind to `docs/`, `scripts/`, `installer/` and both tarballs. Proven by **three plants** — a `.ts`, a `docs/` file and a `scripts/` file — each observed biting
+- [x] **CUT-03**: The gate's exemption set carries its own **non-vacuity assertion**: deleting an attribution block must trip it. An exemption nothing can violate is not an exemption
 - [ ] **CUT-04**: Every guard and CI script pinned to the deleted subject has a recorded fate and none passes **vacuously** — measured mechanically at the v0.7.0 open, resolving the research documents'
   disagreement: **32 test files** (19 `r2000-`named plus 13 non-`r2000-`named that
   reference it) and **11 files under `scripts/`**, not the 2 CI scripts first
@@ -233,8 +233,8 @@ over them.
 | REPOINT-03 | Phase 31 | Pending |
 | REPOINT-04 | Phase 31 | Pending |
 | CUT-01 | Phase 32 | Pending |
-| CUT-02 | Phase 32 | Pending |
-| CUT-03 | Phase 32 | Pending |
+| CUT-02 | Phase 32 | Complete |
+| CUT-03 | Phase 32 | Complete |
 | CUT-04 | Phase 32 | Pending |
 | CUT-05 | Phase 32 | Pending |
 | CUT-06 | Phase 32 | Pending |
