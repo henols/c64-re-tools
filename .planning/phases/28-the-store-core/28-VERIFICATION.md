@@ -1,7 +1,7 @@
 ---
 phase: 28-the-store-core
 verified: 2026-08-29T00:44:57Z
-status: human_needed
+status: passed
 score: 12/12 must-haves verified
 behavior_unverified: 2
 overrides_applied: 0
