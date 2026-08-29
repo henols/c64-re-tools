@@ -75,6 +75,9 @@ const EXPECTED_GUARD_NAMES_FOR_ASSERTION = [
   // registered, so BOTH docs-guard assertions in this file were red on a
   // correct tree. Registering it clears them with no floor change.
   "docs-uat-abstention.test.ts",
+  // Added by the same commit that registers it in audit-gate.mjs (a02863d
+  // shipped the guard file without either entry; CI 33275610121 caught it).
+  "docs-worktree-isolation.test.ts",
 ];
 
 interface GateJsonResult {

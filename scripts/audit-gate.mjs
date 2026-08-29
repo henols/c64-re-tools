@@ -149,6 +149,15 @@ export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   // prescribes. Registering it clears both with NO floor change: the floor is
   // `>= 7` and there are now 8 guards on disk.
   "docs-uat-abstention.test.ts",
+  // REGISTERED alongside the guard file it names, in the commit that fixes the
+  // CI red it caused. docs-worktree-isolation.test.ts landed on disk in commit
+  // a02863d (2026-08-29) without an entry here, and CI run 33275610121 went red
+  // on exactly the two assertions CR-02 built for this: the disk-derived
+  // deepEqual and the registry-drift detector. That is the mechanism working --
+  // the drift was caught by name on the first push rather than sitting green.
+  // No floor change, on the precedent directly above: the floor is `>= 7` and
+  // there are now 9 guards on disk.
+  "docs-worktree-isolation.test.ts",
 ]);
 
 /** Every `docs-*.test.ts` guard basename in `viceDir`, sorted. Derived from
