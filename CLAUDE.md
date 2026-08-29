@@ -305,14 +305,19 @@ rather than disabling isolation to avoid them:
 
 1. A plan delivering `.planning/STATE.md` or `ROADMAP.md` content gets the stock per-plan
    carve-out `USE_WORKTREES_FOR_PLAN=false` (worktree executors may not touch those files —
-   `execute-phase.md:707`; the commit strips them — `execute-plan.md:532`). `REQUIREMENTS.md`
+   `execute-phase.md`; the commit strips them — `execute-plan.md`). `REQUIREMENTS.md`
    is unaffected.
 2. `cleanup-wave` refuses any branch whose diff contains a deletion, unconditionally
-   (`worktree-safety.cjs:759-770`). Merge a deletion plan's branch by hand.
+   (`worktree-safety.cjs`'s cleanup-wave deletion check). Merge a deletion plan's branch by hand.
 3. The per-plan worktree gate owns the isolation sentinel; do not hand-force
    `--force-isolation` as a standing ritual.
 
-Full rationale and history: `.planning/ENGINEERING_RULES.md` § 20.
+GSD itself is a **vendored, gitignored install** — `/gsd-update` may be run freely and the
+repo never changes as a result. Nothing here may branch on whether it is installed (CI and
+fresh clones have none). Local customisations to it are reapplied by
+`node scripts/gsd-reapply-local.mjs`, wired as a SessionStart hook.
+
+Full rationale and history: `.planning/ENGINEERING_RULES.md` § 20 and § 20.1.
 
 
 

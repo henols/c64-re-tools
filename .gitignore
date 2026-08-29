@@ -62,3 +62,31 @@ dist/
 
 # GSD research scratch cache (subagent working files, not artifacts)
 .planning/research/.cache/
+
+# GSD (@opengsd/gsd-core) is a VENDORED install, not project source. It is
+# ~700 files / 12MB, regenerated wholesale by `/gsd-update`, and it is stamped
+# with THIS machine's absolute paths at install time -- 216 of its 697 files
+# contain the literal checkout path, so the tree is not portable to CI, to
+# another machine, or to another clone. Committing it would make every
+# `/gsd-update` a 12MB diff of unusable-elsewhere content; leaving it merely
+# untracked let a stray `git add -A` commit it by accident and kept `git
+# status` permanently noisy. Ignoring it explicitly is the intended state:
+# GSD may be updated freely and the repo never changes as a result.
+#
+# Local customisations to this tree are therefore NOT preserved by git. They
+# are reapplied idempotently by `node scripts/gsd-reapply-local.mjs` -- run it
+# after `/gsd-update`. Nothing in the repo may branch on whether this tree
+# exists; guards assert over tracked `.planning/` and `CLAUDE.md` only.
+/.claude/gsd-core/
+/.claude/agents/
+/.claude/commands/
+/.claude/hooks/
+/.claude/scripts/
+/.claude/skills/
+/.claude/gsd-file-manifest.json
+/.claude/gsd-install-state.json
+/.claude/gsd-migration-journal/
+/.claude/.gsd-profile
+/.gsd/
+/.agents/
+/.codex/

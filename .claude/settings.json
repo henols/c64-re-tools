@@ -11,6 +11,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/scripts/gsd-reapply-local.mjs\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

@@ -308,31 +308,12 @@ test("planted control: an untagged bare pass is NOT reported", () => {
   assert.equal(isAbstentionTagged(entries[0]), false, "a plain visual check carries no abstention marker");
 });
 
-test("if gsd-core is installed here, its UAT gate carries the abstention carve-out", (t) => {
-  // CONDITIONAL BY DESIGN. `.claude/gsd-core/` is a vendored install: untracked,
-  // absent on a fresh clone and in CI, and overwritten wholesale by
-  // `/gsd-update`. So this cannot be an unconditional assertion -- it would red
-  // every clone that never installed GSD. It skips when the file is absent and
-  // fails only when the gate is PRESENT and UNPATCHED, which is exactly the
-  // post-`/gsd-update` state where the fix has silently reverted and the next
-  // phase's UAT would start laundering abstentions again.
-  //
-  // The unconditional protection is the outcome guard at the top of this file,
-  // which reads tracked `.planning/` artifacts and runs everywhere.
-  const gate = join(ROOT, ".claude", "gsd-core", "workflows", "verify-work.md");
-  if (!existsSync(gate)) {
-    t.skip("gsd-core is not installed in this checkout (expected in CI and on fresh clones)");
-    return;
-  }
-  const text = readFileSync(gate, "utf8");
-  assert.ok(
-    text.includes("**The abstention carve-out.**"),
-    "gsd-core's verify-work.md has lost the abstention carve-out -- almost certainly a `/gsd-update` " +
-      "overwrite. Reapply it with:\n\n    node scripts/gsd-patch-uat-abstention.mjs\n\n" +
-      "Rationale: .planning/notes/uat-gate-launders-abstentions.md",
-  );
-  assert.ok(
-    text.includes("result: unverified"),
-    "gsd-core's verify-work.md carries the carve-out prose but not the `unverified` result value",
-  );
-});
+// The former "if gsd-core is installed here" case lived here. It was REMOVED on
+// 2026-08-29 when `.claude/gsd-core/` became gitignored: nothing in this repo may
+// branch on whether the vendored GSD install exists, and a test that skips in CI
+// and on every fresh clone reports on that tree rather than guarding this one.
+// Its job -- noticing that `/gsd-update` reverted the verify-work.md carve-out --
+// moved to `scripts/gsd-reapply-local.mjs`, wired as a SessionStart hook in
+// .claude/settings.json, which REPAIRS the revert instead of merely reporting it.
+// The unconditional outcome guard at the top of this file is unchanged and remains
+// the real protection: it reads tracked `.planning/` artifacts and runs everywhere.

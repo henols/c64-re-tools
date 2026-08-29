@@ -295,14 +295,14 @@ behaviour rather than local policy**. Honour them; do not "fix" them by disablin
 
 1. **Plans that deliver `.planning/STATE.md` or `.planning/ROADMAP.md` content must use the
    stock per-plan carve-out.** Worktree executors are forbidden to touch those files
-   (`execute-phase.md:707`) and the commit protocol strips them in parallel mode
-   (`execute-plan.md:532`), so such a plan would report success while delivering nothing. Set
+   (`execute-phase.md`) and the commit protocol strips them in parallel mode
+   (`execute-plan.md`), so such a plan would report success while delivering nothing. Set
    `USE_WORKTREES_FOR_PLAN=false` for that plan only, exactly as a submodule-touching plan
    gets — the per-plan worktree gate re-records the plan-scoped isolation sentinel itself.
    `REQUIREMENTS.md` is unaffected; it is on the committed allow-list.
 
 2. **`cleanup-wave` refuses any branch whose diff contains a file deletion**, unconditionally
-   (`worktree-safety.cjs:759-770`; upstream records an opt-in as a deferred decision). A
+   (`worktree-safety.cjs`'s cleanup-wave deletion check; upstream records an opt-in as a deferred decision). A
    deletion plan's branch builds and commits correctly — merge it by hand.
 
 3. **The per-plan gate owns the isolation sentinel.** Do not hand-force `--force-isolation`
@@ -314,3 +314,31 @@ refuted: it ran to completion in foreground and backgrounded dispatch, with no s
 or namespace restriction present. The genuine reasons to avoid delegating a live task are that
 the executor already *is* the agent the plan expects, and that the VICE binary monitor serves
 exactly one client, so concurrent drivers corrupt the evidence. Cite those, not a stall.
+
+### 20.1 GSD is a vendored install — never committed, never depended on
+
+`.claude/gsd-core/` and its sibling installed dirs (`agents/`, `commands/`, `hooks/`,
+`scripts/`, `skills/`, the `gsd-*.json` manifests, `.gsd/`, `.agents/`, `.codex/`) are a
+**vendored install**, gitignored as of 2026-08-29. Three consequences, all deliberate:
+
+1. **`/gsd-update` may be run freely and the repo never changes as a result.** The tree is
+   ~700 files / 12MB and 216 of them contain this machine's absolute checkout path, so it is
+   not portable to CI, another machine, or another clone. Committing it would make every
+   update a large diff of unusable-elsewhere content.
+
+2. **Nothing in this repo may branch on whether GSD is installed.** CI and fresh clones have
+   no GSD at all and that is a supported state, not a degraded one. Guards assert over tracked
+   `.planning/` and `CLAUDE.md` only, run identically everywhere, and never skip. Do not add a
+   test that skips when `gsd-core` is missing — such a test reports on the vendored tree rather
+   than guarding this one.
+
+3. **Local customisations to the install are not preserved by git.** They are reapplied
+   idempotently by `node scripts/gsd-reapply-local.mjs`, wired as a SessionStart hook in
+   `.claude/settings.json` so a `/gsd-update` revert self-heals at the start of the next
+   session instead of failing mid-phase. Two are currently carried: the executor's
+   `mcp__vice__*` tool grant plus `effort: high`, and the UAT abstention carve-out. Add any
+   new customisation to that script or it will be silently lost.
+
+For the same reason, **do not cite line numbers inside the vendored tree** in tracked prose.
+Those numbers drift on every update and nothing can check them. Name the file and the semantic
+anchor instead.
