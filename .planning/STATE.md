@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Completed 29-09-PLAN.md
-last_updated: "2026-08-29T18:44:45.743Z"
+stopped_at: Completed 29-12-PLAN.md
+last_updated: "2026-08-29T19:13:21.397Z"
 last_activity: 2026-08-29
-last_activity_desc: Plan 29-09 complete -- every absorbed procedure re-pointed onto the anno surface in both trees, six withdrawn CLI verbs given dated withdrawal notices, the r2000 -> anno subcommand renamed across its three halves in one commit, and the 29-09 allow-list discharged 65 -> 0
-state_head: 1003a0fa3a21d8e11a38bb6e50fcdd906f6ea757
+last_activity_desc: "Plan 29-12 complete -- D-17 discharged: render-memmap renders from the Phase 28 store with no child on its path, block kind interpreted only by blockClassAt(), RENDERER_VERSION bumped 2 -> 3 alongside the digest's changed input, the three gated render tests converted to ungated store-backed tests (3 skipped -> 0), and every moved regenerator2000 count re-pinned in the same commit. anno-tools.ts is now deletable by plan 29-10."
+state_head: 7317e649fae4f274da299daabfb2318394064f64
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 37
+  completed_plans: 38
   percent: 33
 ---
 
@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 29 (The MCP Surface) — EXECUTING
-Plan: 10 of 12
-Status: Executing — plans 29-01 through 29-09 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, the derived cross-references/search/address-details composition, the capability rename, the complete 19-verb anno_* surface, the two-verb CLI and census re-point, the verb register, and the procedure re-pointing)
-Last activity: 2026-08-29 — Plan 29-09 complete: ordering constraint 3 is discharged. All five absorbed procedures now execute on the owned surface, in both trees a user can receive them from. Measured at execution and superseding the planning prose: **5** skill files named **17** distinct old-family tool names (ROADMAP Phase 31's "18" is wrong), and **10** files mentioned the retired analyser at all. The re-pointing is a PROCEDURE rewrite, not a name swap — `anno_disassemble` renders and writes nothing, so classification became read-then-record; `anno_save_project` performs no write; every call names its own `store` and every derived read its `image`; `max_results` is REQUIRED with no default on five reads; and the 2026-08-24 adjacent-table limitation is recorded CLOSED because the store never joins two rows of its own accord (STORE-02). Six withdrawn CLI verbs each carry a dated withdrawal notice naming Phase 30 and the real-ACME byte-diff oracle. The `r2000` -> `anno` subcommand moved across all three halves in ONE commit — skill prose, the verb-coverage literal, and the proxy's dispatch token at 5 added / 5 deleted. D-10/CUT-05 is resolved with the skill named as the side that moved, and the fork-honesty assertion re-pointed at the withdrawal notice's FUTURE route name so Phase 30's restoration keeps it true. The 29-09 allow-list went **65 -> 11 -> 0**: five files re-measured at zero and were deleted, four moved to permanent exemptions (a new BLOCK-scoped `skill-attribution-headers` class over the ABS-02 headers, bidirectional like the notices one). The skill-coverage floor is a measured RAISE, 10 -> 18, with its non-vacuity subject re-pointed onto `anno_search` so a disappearance fires that control and `anno-register.ts`'s guard together. Failing-file SET unchanged: 5, all `r2000-session.test.ts`.
+Plan: 11 of 12
+Status: Executing — plans 29-01 through 29-09 and 29-12 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, the derived cross-references/search/address-details composition, the capability rename, the complete 19-verb anno_* surface, the two-verb CLI and census re-point, the verb register, the procedure re-pointing, and D-17's render-memmap rebuild onto the store). Plans 29-10 (wave 7) and 29-11 (wave 8) remain.
+Last activity: 2026-08-29 — Plan 29-12 complete: D-17 discharged. `render-memmap` renders from a Phase 28 annotation store with no regenerator2000 child on any path it reaches — the three `r2000_get_*` queries became `listRanges`/`listLabels`/`listComments` on ONE handle opened with an explicit `workspaceRoot` plus `mustExist` and closed in a `finally`, and neither the module nor any of its four local imports reaches the retired runner. **That is what plan 29-10 was waiting for: `anno-tools.ts` is now deletable rather than load-bearing.** The renderer's `b.type === "Code"` test — a second interpretation of the vocabulary `block-class.ts` says is interpreted "HERE and nowhere else" — is gone, routed through `blockClassAt()`; the Range/Contents column prints the store's own `dataType`. `RENDERER_VERSION` went "2" -> "3" in the SAME commit that changed the digest's canonical input, and the three wire interfaces were deleted with it. The three previously-gated render tests were CONVERTED, not deleted: each builds its rows directly in a real store, the file went 3 skipped -> 0 skipped, and the `[unknown]` test finally asserts the throw its own name has promised since Phase 11. Counts moved and re-pinned in the same commit: the module holds at exactly 1 on line 79 (the `:79` provenance paragraph re-anchored onto the version-2 digest lineage and made self-contained, so 29-05 row 11 stays PERMANENT), the test file went 4 -> 2 and its entry was re-cited to 29-10. Eight deviations, all mechanical consequences of guards the plan did not enumerate — typecheck ordering, the confinement seam, three line pins, and the gate's own self-exemption. Failing-file SET unchanged and now smaller: `r2000-session.test.ts` alone (6 under load); `audit-integrity.test.ts` left the set earlier in this phase, explained rather than banked.
 
 ## Performance Metrics
 
@@ -323,6 +323,7 @@ Last activity: 2026-08-29 — Plan 29-09 complete: ordering constraint 3 is disc
 | Phase 29 P07 | 46 min | 3 tasks | 12 files |
 | Phase 29 P08 | 9 min | 3 tasks | 5 files |
 | Phase 29 P09 | 71 min | 3 tasks | 22 files |
+| Phase 29 P12 | 19 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -712,6 +713,10 @@ Recent decisions affecting current work:
 - [Phase 29]: The ABS-02 attribution headers move to a BLOCK-scoped permanent exemption rather than being scrubbed. Plan 29-09's literal criterion of zero subject mentions under installer/skills is unsatisfiable without deleting attributions, which CUT-03 and ROADMAP Phase 31 criterion 4 both forbid
 - [Phase 29]: packer-finding.mjs's entropySource names the CHANNEL (caller-supplied), never a verb: the number is caller-supplied and the code cannot know its producer, so naming a current verb would claim a run that never happened
 - [Phase 29]: check-skill-fork-honesty.mjs's README required-substring is RE-POINTED, not dropped: it asserted a prerequisite claim that died with the integration, and now asserts the CUT-03 attribution that outlives it
+- [Phase 29]: D-17: render-memmap reads the annotation store directly -- three store readers on ONE handle opened with an explicit workspaceRoot plus mustExist -- instead of driving a regenerator2000 child through three r2000_get_* queries. — The falsified measurement that produced D-17 was a grep blind spot, not an oversight: anno-memmap-render.ts carries a literal NUL at offset 12862, so a plain grep reports "binary file matches" and three separate measurements read it as having zero local imports. Every count this plan took against that file used grep -a.
+- [Phase 29]: RenderMemoryMapOptions and CheckRenderedMemoryMapOptions take a REQUIRED workspaceRoot, beyond the planned projectPath -> storePath rename. — T-29-52 asks for openStore() with an explicit root and mustExist, and openStore() refuses outright without a root unless the caller claims the path is module-derived -- which is false for a CLI argument. The mitigation cannot be expressed by the rename alone. The CLI passes the same repoRoot() it confines the path against, so both confinement answers agree by construction rather than by a second rule.
+- [Phase 29]: The :79 measurement-provenance comment was kept and re-anchored rather than discharged; 29-05 row 11 stays PERMANENT at 1. — Its subject is live: with the three wire interfaces deleted it is the last record anywhere of what the version-2 digest hashed, which is what makes the "2" -> "3" bump a statement about two KNOWN input shapes rather than one known and one assumed. The plan offered a four-artifact escape (delete the comment, re-pin row 11 temporary/0, update the gate, correct 29-10s acceptance criterion); it was not needed. A co-located test asserts the paragraph still carries the three spellings AND that the declarations it used to point at are gone, so "a comment above a hole" is a red test rather than a later discovery.
+- [Phase 29]: The three gated render tests were converted onto the store, not deleted -- plan 29-10s recorded fate for that half is superseded. — D-01 forbids a test driving a real child; it does not ask for the assertions to be thrown away. 29-10s "removes the gated half" was written when that half had no substrate to move to. It does now, so the file went 3 skipped -> 0 skipped with the assertions intact, and one of them gained the malformed-prefix throw its own name had promised since Phase 11.
 
 ### Pending Todos
 
@@ -1327,8 +1332,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T18:44:45.431Z
-Stopped at: Completed 29-09-PLAN.md
+Last session: 2026-08-29T19:12:15.824Z
+Stopped at: Completed 29-12-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
