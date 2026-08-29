@@ -36,8 +36,8 @@ that instruction, poisons the whole function, or is silently skipped — and the
 answer decides whether a custom SLEIGH extension is needed or whether dxa's
 coverage is sufficient in practice.
 
-## Local patch, config knob, or upstream fix for the UAT `unverified` disposition?
-_Raised 2026-08-29 via /gsd-explore_
+## ~~Local patch, config knob, or upstream fix for the UAT `unverified` disposition?~~ ANSWERED
+_Raised 2026-08-29 via /gsd-explore — answered same day_
 
 The end-of-phase UAT gate has no way to record "unverifiable by construction"
 and defaults a bare Enter to `result: pass`, which laundered three of phase 28's
@@ -74,3 +74,31 @@ oversight, or is there an intended path (a UAT-side equivalent of the `#1602`
 this project simply is not invoking? That mechanism already proves the gate can
 write a resolved result without asking the user — which is most of the machinery
 the fix needs.
+
+**Answered 2026-08-29: none of the three alone — split the fix by what each half
+can guarantee.** The question assumed one location had to carry the whole thing.
+It doesn't, and the two halves have different durability requirements:
+
+- The **guarantee** cannot live in `.claude/gsd-core/` at all, because that tree
+  is untracked (`git ls-files .claude/` returns only `settings.json`) and absent
+  in CI. It lives in tracked `.planning/` instead, enforced by
+  `src/mcp/vice/docs-uat-abstention.test.ts`, which checks the **outcome** — an
+  abstention-tagged UAT entry recorded `pass` with no resolution-side field.
+  Tool-agnostic and update-proof by construction.
+- The **ergonomics** (stopping the gate asking unanswerable questions) has to be
+  the local patch, since only the gate can decline to prompt. Made cheap to
+  restore with `scripts/gsd-patch-uat-abstention.mjs` (idempotent; verified to
+  round-trip byte-identically; refuses to force-fit if upstream rewords).
+- The **gap between them** — a `/gsd-update` silently reverting the patch — is
+  covered by a conditional case that skips when gsd-core is absent and fails when
+  it is present-but-unpatched, naming the reapply command.
+
+The sub-question ("is this an upstream oversight, or is there an intended path?")
+resolved to **oversight, with the machinery already present**: `#1602`'s
+`auto_passed[] / source: automated` path at `verify-work.md:262-272` already
+writes a resolved UAT result without asking the user. The fix reuses that exact
+mechanism with the opposite value, which is why it is five edits and not a
+redesign. `honest-verifier.md` and `verify-work.md` genuinely contradicted each
+other — the first mandating "never `passed`" for abstained `backstop` truths, the
+second having no vocabulary to honour it. **Still worth filing upstream** so other
+consumers get it; not blocking anything here.

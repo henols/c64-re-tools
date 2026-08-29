@@ -98,5 +98,52 @@ Related: the plan-phase gates (`plan-phase.md` steps 9b, 9c, 13, 13a) are all
 uncovered, and never on a clean run. They are already failure-only gates and
 are not part of this problem.
 
-See [[uat-unverified-disposition]] for the proposed fix and
-[[reopen-phase-28-uat-passes]] for the live bad data this already wrote.
+## Resolution — 2026-08-29, same day
+
+Fixed, not filed. Four pieces:
+
+1. **The gate** — `.claude/gsd-core/workflows/verify-work.md`, five edits adding a
+   `result: unverified` disposition. Items carrying `insufficient_spec`,
+   `verification: backstop` / `judgment`, or a carried `behavior_unverified` tag
+   are now written pre-resolved as `unverified` at file-creation time and are
+   **never presented as a checkpoint** — reusing `#1602`'s existing
+   `auto_passed[] / source: automated` mechanism (`verify-work.md:262-272`) with
+   the opposite value. `unverified` is definitive (does not hold the session at
+   `partial`) and is never silent (it appears in the completion line).
+2. **The data** — `28-UAT.md` corrected to `passed: 1, unverified: 2`. The two
+   abstentions now agree with the STILL OPEN rows at `REQUIREMENTS.md:252-257`
+   instead of contradicting them.
+3. **The one real decision** — item 3's judgment review was actually performed.
+   Split verdict: `anno-store.ts:1918-1922` is not a false guarantee (it names its
+   own limit); the "THE GATE" comment is under-scoped and got a "WHAT THIS GATE
+   DOES NOT ASK" clause naming the non-coverage — the shape question is asked of
+   remainders only, and a fully-covered row is deleted unexamined. Comment-only.
+
+   *Line-number note:* the historical records cite this site as
+   `anno-store.ts:2131-2139`, which was the **ordering** comment's range at
+   review time. The new clause was inserted above it, so that range now spans the
+   clause itself and the ordering comment sits at `:2142-2151`. The records are
+   snapshots and are correct as of their own date — they are deliberately not
+   rewritten. Anchor on the text `THE GATE` / `WHAT THIS GATE DOES NOT ASK`
+   rather than on the numbers.
+4. **The durability** — `.claude/gsd-core/` is untracked and `/gsd-update`
+   overwrites it, so the guarantee could not live there.
+   `src/mcp/vice/docs-uat-abstention.test.ts` (9 cases) guards the **outcome** in
+   tracked `.planning/`: an abstention-tagged entry recorded `pass` with no
+   resolution-side field is a failure. Verified red on all three pre-fix entries
+   and green on the corrected file. `scripts/gsd-patch-uat-abstention.mjs`
+   reapplies the gate patch after an update; a conditional case in the test fails
+   when gsd-core is present-but-unpatched.
+
+**The discriminator the guard uses, and why.** Not the tag — phase 27 proves a
+tagged item can be legitimately passed. All three of `27-UAT.md`'s entries carry a
+substantive `note:`; item 2 accepts its `backstop` concurrency abstention as "not
+applicable — single-threaded, pure, no interruptible path" and shows its work down
+to `r2000-coverage.ts:2173`. That is an earned pass. Phase 28's were keypresses.
+The difference is a **resolution-side** field (`note:` / `decision:` /
+`source: human_decision`), so that is what the guard requires. Question-side
+fields (`expected:`, `why_human:`) deliberately do not count — they are written at
+file-creation time and were present on every one of phase 28's false passes.
+
+See `.planning/todos/completed/2026-08-29-uat-unverified-disposition.md` and
+`.planning/todos/completed/2026-08-29-reopen-phase-28-uat-false-passes.md`.

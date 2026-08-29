@@ -3,6 +3,8 @@ created: 2026-08-29
 source: /gsd-explore — see .planning/notes/uat-gate-launders-abstentions.md
 severity: major
 kind: data-correction
+status: done
+completed: 2026-08-29
 ---
 
 # Phase 28's UAT records three passes that contradict its own verification
@@ -75,3 +77,34 @@ after any phase-state verb runs.
 
 Fixing the data without fixing the gate means the next phase reproduces it. See
 [[uat-unverified-disposition]].
+
+
+## Outcome
+
+Done 2026-08-29, in the same commit as the gate fix.
+
+`28-UAT.md` now reads `total: 3, passed: 1, unverified: 2`:
+
+- Items 1 and 2 → `result: unverified` with `reason: fault_injection_required` /
+  `insufficient_spec`, `carried: true`, and a `corrected:` field citing
+  `28-VERIFICATION.md:6` / `:349` and `REQUIREMENTS.md:252-257`. Both are now
+  **consistent** with the STILL OPEN rows they contradicted; `REQUIREMENTS.md`
+  needed no edit, which was the point.
+- Item 3 → stayed `pass`, but earned: `source: human_decision` plus a recorded
+  `decision:` block. The review was actually performed. **Split verdict:**
+  `anno-store.ts:1918-1922` is NOT a false guarantee (its docstring names its own
+  limit — "A full cover is a deletion, and a deletion is already visible in the
+  row set"), so 28-07 P3 is over-read and no change was made. The "THE GATE"
+  comment (cited `:2131-2139` at review time; the clause now occupies that range
+  and the ordering comment it displaced sits at `:2142-2151`) IS under-scoped: the shape question is asked only of head/tail remainders, and a
+  fully-covered row takes neither branch and is deleted unexamined — correct
+  behaviour, but "THE GATE" invites reading it as a validity check over
+  `overlapping`. 28-21 P1 stands, and the correction did **not** wait for a
+  future edit to `retype()` (the verifier's recommendation): a
+  "WHAT THIS GATE DOES NOT ASK" clause was added in this commit. Comment-only,
+  no behaviour change, typecheck clean.
+- The remaining twelve judgment-tier verdicts are `held`; no action.
+
+The guard `src/mcp/vice/docs-uat-abstention.test.ts` was verified to red on all
+three pre-fix entries (via `git show HEAD:...`) and green on the corrected file,
+so this correction cannot silently regress.

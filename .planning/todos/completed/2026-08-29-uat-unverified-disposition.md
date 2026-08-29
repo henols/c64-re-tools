@@ -2,6 +2,8 @@
 created: 2026-08-29
 source: /gsd-explore — see .planning/notes/uat-gate-launders-abstentions.md
 severity: major
+status: done
+completed: 2026-08-29
 scope: .claude/gsd-core (vendored install — see the durability note below)
 ---
 
@@ -63,17 +65,41 @@ hard-halts."* Applying it to the interactive path too is the whole fix.
 Deleting it loses the abstention as well — the same information loss with less
 ceremony. The stop is not the problem; the missing vocabulary is. See the note.
 
-## Durability problem — resolve before implementing
+## Durability — RESOLVED: both halves, not one
 
 `.claude/gsd-core/` is a **vendored install** (untracked; `/gsd-update`
-overwrites it). A local edit to `verify-work.md` is lost on the next update and
-leaves no trace explaining why UAT behavior silently reverted.
+overwrites it), so the gate patch alone could never be durable. The answer was
+not to pick one of the three options in the research question but to split the
+fix by what each half can actually guarantee:
 
-Open question captured separately in `.planning/research/questions.md`
-("Local patch, config knob, or upstream fix…"). Do not start the edit until that
-is answered — the answer changes *where the code goes*, not what it does.
+- **Ergonomics (revertible):** the five edits to `verify-work.md`, reapplied by
+  `scripts/gsd-patch-uat-abstention.mjs` — idempotent, verified to round-trip
+  byte-identically, and refusing to force-fit if upstream rewords the anchors.
+- **Guarantee (durable):** `src/mcp/vice/docs-uat-abstention.test.ts` guards the
+  **outcome** in tracked `.planning/`, so a laundered abstention is caught in CI
+  no matter which tool wrote the UAT file or whether the patch survived.
+- **Bridge:** a *conditional* case in that test skips when gsd-core is absent
+  (CI, fresh clones) and fails when it is present-but-unpatched — i.e. exactly
+  the post-`/gsd-update` state — naming the reapply command in its message.
+
+Verified both directions: the outcome guard reds on all three of phase 28's
+pre-fix entries and greens on the corrected file; the conditional guard reds on
+a reverted gate and greens after the applier runs.
 
 ## Not in scope
 
 The plan-phase gates (`plan-phase.md` steps 9b, 9c, 13, 13a) are already
 conditional failure-only gates and never fire on a clean run. Leave them alone.
+
+
+## Outcome
+
+Done 2026-08-29. Shipped:
+
+- `.claude/gsd-core/workflows/verify-work.md` — 5 edits (abstention carve-out in
+  `<philosophy>`; `unverified: 0` in the template Summary; pre-resolve rule in
+  `create_uat_file` so tagged items are never presented; explicit `unverified`
+  branch in `process_response`; `unverified` counted as definitive in
+  `complete_session`, with the non-silent completion line).
+- `scripts/gsd-patch-uat-abstention.mjs` — idempotent reapply after `/gsd-update`.
+- `src/mcp/vice/docs-uat-abstention.test.ts` — 9 cases, all green.

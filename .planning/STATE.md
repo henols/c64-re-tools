@@ -1156,15 +1156,17 @@ by `.planning/quick/260823-kf6`.
 | testing | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host | minor | Pending |
 | capture | 2026-08-26-frame-exact-emulator-stop-is-unowned | major | Pending |
 | docs | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability | major | Pending |
-| planning | 2026-08-29-reopen-phase-28-uat-false-passes | major | Pending |
-| planning | 2026-08-29-uat-unverified-disposition | major | Pending |
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
-close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, two on
-2026-08-29), the first of
-them the first pending todo since Phase 17 plan 17-01 emptied the tree. The
+close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28), the first of
+them the first pending todo since Phase 17 plan 17-01 emptied the tree. Two rows
+filed on 2026-08-29 (`uat-unverified-disposition`, `reopen-phase-28-uat-false-passes`)
+were removed the same day: both are complete on disk under
+`.planning/todos/completed/`, and `docs-deferred-ledger.test.ts` direction B goes
+red on a completed todo still carrying a Pending row here — which is how their
+removal was caught, the mirror image of the direction-A cases described below. The
 `phase-7-pitfall-5-…` row was filed by a `/gsd-explore` session and its ledger row was
 added only after `docs-deferred-ledger.test.ts` direction A went red on it --
 the third occurrence of that same file-without-row cause recorded in this

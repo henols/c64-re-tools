@@ -2128,6 +2128,17 @@ function retype(
   // point's own shape question, BEFORE anything is deleted or inserted -- and,
   // for a split row that survives that question, what the fragmentation COSTS.
   //
+  // WHAT THIS GATE DOES NOT ASK, said here because "THE GATE" reads absolute
+  // and a reader will otherwise take it for one (WR-31, 28-21 P1 / 28-07 P3):
+  // the shape question is asked of REMAINDERS, never of the overlapped row
+  // itself. A row the caller's range covers in full has no head and no tail,
+  // so neither branch below runs and its shape is never examined -- correctly,
+  // because the second loop DELETES it outright and a deletion owes no shape.
+  // The consequence to hold on to: a malformed legacy row (one an already-
+  // superseded build wrote) is refused only when something of it SURVIVES.
+  // Do not read this gate as a validity check over `overlapping`; it is a
+  // validity check over what `retype()` is about to write back.
+  //
   // ORDER WITHIN THE LOOP IS LOAD-BEARING TWICE OVER: the two refusal checks run
   // before the reinterpretation for the SAME row, so a row whose remainder fails
   // parity never reaches a computation that would refuse it a second time with a
