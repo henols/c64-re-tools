@@ -561,7 +561,20 @@ guard that breaks on *registration* already moved, and nothing yet deleted.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
 
-**Plans**: TBD
+**Plans**: 11 plans
+
+Plans:
+- [ ] 29-01-PLAN.md — Tracer: the `anno_*` family registers end to end through `buildViceTool()`, with every registration-time guard moved in the same commit (wave 1)
+- [ ] 29-02-PLAN.md — The pre-phase baseline, and the removal gate built and observed biting before anything is deleted (wave 1)
+- [ ] 29-03-PLAN.md — `anno_enum_usage` and the one-way `SCHEMA_VERSION` 2→3 bump, with the v2 refusal proven a single witness (wave 1)
+- [ ] 29-04-PLAN.md — STORE-06: derived cross-references and search, never cached, plus the address-details composition (wave 2)
+- [ ] 29-05-PLAN.md — The nine registry-driven renames and the CLI rename, with every guard that breaks on the rename moved with it (wave 3)
+- [ ] 29-06-PLAN.md — The full verb surface: writes, stored reads, derived reads, and the depth-capped batch (wave 3)
+- [ ] 29-07-PLAN.md — The two-verb CLI and the coverage census re-pointed onto the store, with the block-type vocabulary measured (wave 4)
+- [ ] 29-08-PLAN.md — MCP-01 made mechanical: the manifest derivation check and the committed verb register (wave 4)
+- [ ] 29-09-PLAN.md — Skill re-pointing in both trees, and the fork-honesty contradiction resolved in one change (wave 5)
+- [ ] 29-10-PLAN.md — The deletion, gated: the glue removed, the knowledge kept, the line citations corrected (wave 6)
+- [ ] 29-11-PLAN.md — The record: the falsified criteria edited, Phases 30-32 narrowed, the gate's last exception closed (wave 7)
 
 Notes:
 
