@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.ts";
 import {
+  AnnoAddressError,
   AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
@@ -49,13 +50,16 @@ import {
 } from "./anno-types.ts";
 import {
   addScope,
+  applyEnumUsage,
   applyWrite,
   applyWriteWithoutCommit,
+  clearEnumUsage,
   closeStore,
   contradictedCommentsFor,
   createProjectEnum,
   currentRevision,
   listComments,
+  listEnumUsage,
   listLabels,
   listProjectEnums,
   listRanges,
@@ -4682,6 +4686,129 @@ test("WR-25 companion: the escape option opens the same path successfully, so th
       assert.equal(currentRevision(handle), 0, "the escape path creates and initialises exactly as the confined path does");
     } finally {
       closeStore(handle);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-15: `anno_enum_usage` -- one address, at most one enum, associated BY ENUM
+// ID. Everything below is the behaviour the `anno_apply_enum_usage` verb
+// dispatches to.
+// ---------------------------------------------------------------------------
+
+test("applying a project enum at an address is idempotent, is refused by name when the enum does not exist, and clears back to nothing", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      createProjectEnum(store, { name: "Colors", variants: { "0": "black", "1": "white" } });
+
+      const first = applyEnumUsage(store, { address: 0xd020, name: "Colors" });
+      assert.equal(first.changed, true, "the first apply at this address is a real edit");
+      const rows = listEnumUsage(store);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].address, 0xd020);
+      assert.equal(rows[0].enumName, "Colors");
+      assert.equal(rows[0].bank, null, "bank is reserved and every row written today carries null");
+
+      // THE IDEMPOTENCY CLAIM IS ABOUT `changed`, NOT ABOUT THE REVISION, and
+      // the distinction is the module's own (see `AnnoWriteResult`): every
+      // ACCEPTED write advances the revision by exactly one, including one that
+      // turned out to be identical to what was already stored, because the
+      // snapshot ring needs the advance to stay meaningful. `changed` is the
+      // only signal that separates a no-op from a real edit, and this is
+      // `putXref`'s shape copied rather than a second convention invented here.
+      const before = currentRevision(store);
+      const repeat = applyEnumUsage(store, { address: 0xd020, name: "Colors" });
+      assert.equal(repeat.changed, false, "the same enum at the same address is an accepted NO-OP, not a second row and not a refusal");
+      assert.equal(listEnumUsage(store).length, 1, "and it leaves exactly one row");
+      assert.equal(currentRevision(store), before + 1, "an accepted write advances the revision by one even when it changed nothing -- AnnoWriteResult's stated invariant");
+
+      assert.throws(
+        () => applyEnumUsage(store, { address: 0xd021, name: "NoSuchEnum" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoLabelError, `expected AnnoLabelError, got ${String(e)}`);
+          assert.match(e.message, /NoSuchEnum/, "the refusal must name the enum it could not find");
+          return true;
+        },
+      );
+      assert.equal(listEnumUsage(store).length, 1, "a refused apply writes nothing");
+
+      const cleared = clearEnumUsage(store, { address: 0xd020 });
+      assert.equal(cleared.changed, true, "clearing an address that carried a usage is a real edit");
+      assert.equal(listEnumUsage(store).length, 0);
+
+      const clearAgain = clearEnumUsage(store, { address: 0xd020 });
+      assert.equal(clearAgain.changed, false, "clearing an address with no usage is an accepted no-op, NOT an error -- clearing is idempotent in the same direction applying is");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("an enum usage is associated by enum ID, so renaming the enum through updateProjectEnum re-resolves the usage rather than orphaning or silently re-pointing it", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      createProjectEnum(store, { name: "Colors", variants: { "0": "black" } });
+      const enumId = listProjectEnums(store)[0].id;
+      applyEnumUsage(store, { address: 0xd020, name: "Colors" });
+
+      updateProjectEnum(store, { name: "Colors", newName: "VicColors" });
+
+      const rows = listEnumUsage(store);
+      assert.equal(rows.length, 1, "the rename must not orphan the usage");
+      assert.equal(rows[0].enumId, enumId, "the persisted association is the enum's ID, and the ID did not move");
+      assert.equal(
+        rows[0].enumName,
+        "VicColors",
+        "and the name is resolved through the join at read time, so it follows the rename instead of pointing at a name nothing holds",
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("applyEnumUsage validates its address through parseStoreAddress before any SQL runs -- an out-of-range address and an UNPREFIXED numeric string are both refused, and neither writes a row", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      createProjectEnum(store, { name: "Colors", variants: { "0": "black" } });
+
+      assert.throws(
+        () => applyEnumUsage(store, { address: 0x10000, name: "Colors" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoAddressError, `expected AnnoAddressError, got ${String(e)}`);
+          return true;
+        },
+      );
+
+      // T-29-11, WR-22's recorded failure re-driven one table over: a JSON
+      // `"53280"` arriving verbatim must be an ARGUMENT error, not a row at
+      // some address SQLite's column affinity guessed at.
+      assert.throws(
+        () => applyEnumUsage(store, { address: "53280", name: "Colors" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoAddressError, `expected AnnoAddressError, got ${String(e)}`);
+          return true;
+        },
+      );
+
+      assert.throws(
+        () => clearEnumUsage(store, { address: "53280" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoAddressError, `expected AnnoAddressError, got ${String(e)}`);
+          return true;
+        },
+      );
+
+      assert.equal(listEnumUsage(store).length, 0, "no refused call may leave a row behind");
+      assert.equal(currentRevision(store), 1, "and no refused call may advance the revision past the single createProjectEnum write");
+    } finally {
+      closeStore(store);
     }
   });
 });

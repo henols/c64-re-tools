@@ -42,6 +42,7 @@ import {
   AnnoTypeError,
   COMMENT_TYPES,
   DATA_TYPES,
+  type EnumUsageRow,
   LABEL_KINDS,
   MAX_COMMENT_BYTES,
   MNEMONIC_DENYLIST,
@@ -49,6 +50,7 @@ import {
   parseVariantKey,
   producesXrefsFor,
   resolveSplitTargets,
+  SCHEMA_VERSION,
   splitEntryAddressPairs,
   SPLIT_DATA_TYPES,
   XREF_ACCESS_KINDS,
@@ -723,4 +725,52 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
     "and not the SQLite builtin: STORE-07 puts the dependency in anno-store.ts alone, and a validator layer that opened a connection " +
       "would be a second place the store can be reached",
   );
+});
+
+// ---------------------------------------------------------------------------
+// D-15: the SCHEMA_VERSION 2 -> 3 bump that bought `anno_enum_usage`, and the
+// row shape the association is read back through.
+//
+// These two pins are HAND-WRITTEN for the same reason the twelve data types
+// above are: the question is DID THE ONE HOME CHANGE, not DO TWO HOMES AGREE.
+// Deriving `3` from the constant would make the pin read its own subject.
+// ---------------------------------------------------------------------------
+
+test("SCHEMA_VERSION is 3, and the constant's own doc comment records D-15 by name and by date -- the bump is a decision on the record, not a number that drifted", () => {
+  assert.equal(
+    SCHEMA_VERSION,
+    3,
+    "version 3 is D-15's deliberate one-way bump: it buys the anno_enum_usage table, and it strands every version 2 store on disk " +
+      "because no migration arm was written. An edit to this number must be a decision, which is why the expectation is typed out here " +
+      "by hand rather than derived from the constant it is checking.",
+  );
+
+  const src = readFileSync(join(HERE, "anno-types.ts"), "utf8");
+  assert.match(
+    src,
+    /D-15/,
+    "the SCHEMA_VERSION doc comment must cite D-15 by name: a version bump whose rationale lives only in a planning directory is a " +
+      "number the next reader has no way to weigh",
+  );
+  assert.match(src, /2026-08-29/, "and it must carry the decision's date, matching the dated-record discipline the version 1 paragraph beside it already uses");
+  assert.match(
+    src,
+    /no migration arm/i,
+    "and it must state the accepted COST in the same voice: no migration arm was written, so every version 2 store is unopenable",
+  );
+});
+
+test("EnumUsageRow carries exactly id, address, enumId, enumName and bank -- the association is read back by enum ID, with the name resolved through the join rather than stored twice", () => {
+  // A TYPE-LEVEL assertion first: this literal only compiles under `npm run
+  // typecheck` if the interface has these five fields and no other required
+  // one. The runtime key check below is the second half -- together they catch
+  // both a renamed field and a field silently added.
+  const row: EnumUsageRow = { id: 1, address: 0xd020, enumId: 7, enumName: "Colors", bank: null };
+  assert.deepEqual(
+    Object.keys(row).sort(),
+    ["address", "bank", "enumId", "enumName", "id"],
+    "enumId is what the store persists and enumName is what the join resolves; a row that carried only the NAME would be re-pointed " +
+      "silently by updateProjectEnum's rename, which is exactly the failure the id association exists to prevent",
+  );
+  assert.equal(row.bank, null, "bank is the same reserved, uninterpreted column every other row type carries");
 });
