@@ -707,42 +707,11 @@ const TEMPORARY_ALLOW_LIST = [
   //    against.
   //
   //    ONE ENTRY SURVIVES THIS PLAN, AND IT IS AN ORPHAN. See the block below.
-  { path: "src/mcp/vice/vice-proxy.test.ts", count: 1, plan: "29-10" },
-  // ^^ NOT DISCHARGED BY 29-10, AND DELIBERATELY SO -- read this before
-  //    "finishing the job" by editing that file.
-  //
-  //    The orchestrator running plan 29-10 issued an explicit, in-flight scope
-  //    instruction: vice-proxy.test.ts is OUT OF SCOPE for this plan, in both
-  //    directions -- do not update its expectations, and do not silence it with
-  //    a skip either. It carries three pre-existing failures that assert on
-  //    tool names phase 29 renamed, and the decision about what to do with
-  //    them was explicitly reserved rather than delegated to a deletion plan.
-  //
-  //    Its one remaining occurrence is a past-tense measurement note about a
-  //    flat capture's diagnostic size. The count is UNCHANGED at 1, so this
-  //    entry does not fail the pin check and this gate is GREEN with it in
-  //    place -- the reason it is still here is 29-11's emptiness assertion,
-  //    which this entry will fail until it is resolved.
-  //
-  //    IT STAYS A TEMPORARY ENTRY. Promoting it to a permanent exemption to
-  //    make 29-11 pass would be the widening this file's own header forbids:
-  //    the mention is not permanent, nobody has decided it should survive, and
-  //    an exemption granted to dodge an assertion is precisely the shape this
-  //    gate exists to refuse. The citation still names 29-10 because that is
-  //    the plan that would otherwise have ended it; 29-11 owns the emptiness
-  //    assertion and is the right place to settle it, once the vice-proxy.test
-  //    question the orchestrator reserved has been answered.
-  // CLAUDE.md's single mention was the `routine-queue-walker` row of the
-  // project-skills table -- a VERBATIM MIRROR of that skill's own frontmatter
-  // `description:`, byte-for-byte, asserted by
-  // check-skill-description-overlap.mjs. Plan 29-09 rewrote that description
-  // (it is trigger text, not attribution, and ROADMAP Phase 31 criterion 4
-  // requires it to change substantively), so the mirror had to move in the
-  // same commit or the overlap guard goes red. The count therefore reached
-  // ZERO three plans early and the entry is DELETED rather than re-pinned:
-  // an entry pinning a count of zero is an exemption with room in it, which
-  // this file's own header forbids. Nothing 29-10 does to CLAUDE.md is
-  // blocked by its absence.
+  // The 29-10 orphan entry that stood here is DISCHARGED (2026-08-30): the
+  // file's single counted mention was historical prose, rewritten in place
+  // to keep the measurement and drop the subject's name. No assertion in
+  // that file was touched and no skip was added -- the reserved decision
+  // about its three stale tool-name failures remains reserved.
 ];
 
 /**

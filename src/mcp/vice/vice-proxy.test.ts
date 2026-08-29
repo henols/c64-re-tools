@@ -6449,7 +6449,8 @@ test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a 
 // leaves the choice open): NEITHER scales on this host. `--help`'s USAGE
 // text is a fixed ~5.6 KB string, and cmdExportAsm's error path was
 // measured directly against both a garbage `.regen2000proj` and a garbage
-// flat `.raw` capture -- regenerator2000 0.9.20's own diagnostic stays a
+// flat `.raw` capture -- the retired analyser's own diagnostic (measured at
+// its 0.9.20 release, before phase 29 removed the integration) stays a
 // small, roughly constant size (67-221 bytes) regardless of input size, so
 // neither route can deterministically clear "well above 128 KiB" without a
 // real, large capture this plan is explicitly not allowed to require. The
