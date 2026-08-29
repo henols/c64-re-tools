@@ -60,7 +60,20 @@ const NEW_SHIPPED_MODULES = ["anno-types.ts", "anno-index.ts", "anno-store.ts"];
  * already records, seen from the other side: the guard cannot exempt itself
  * without blinding itself.
  */
-const TEST_FILES_NAMING_SQLITE = ["anno-seam.test.ts"];
+/**
+ * SECOND MEMBER, added by plan 29-04 for the SAME unavoidable reason as the
+ * first. `anno-derive.test.ts`'s never-cache structural control asserts that the
+ * derivation modules name NO persistence binding -- and asserting an absence
+ * requires spelling the thing that must be absent, as a string literal, which a
+ * specifier scan running with `keepLiteralBodies = true` cannot tell apart from
+ * a real import. It is DIVERGENCE 2's trade seen from the other side once more:
+ * a guard that asserts the specifier is missing cannot itself avoid naming it.
+ *
+ * Neither member imports the builtin. Both reach the store only through
+ * `anno-store.ts`'s own entry points, which is the property this list exists to
+ * keep reviewed rather than the property it can mechanically prove.
+ */
+const TEST_FILES_NAMING_SQLITE = ["anno-derive.test.ts", "anno-seam.test.ts"];
 
 /**
  * True iff the (already `codeOnly`-stripped, LITERAL-BODIES-KEPT) source names
@@ -623,7 +636,8 @@ test("node:sqlite is bounded in the TEST tree too: the set of test files naming 
       "cannot see the test tree, and a store test reaching for DatabaseSync directly rather than through the seam is exactly how the " +
       "dependency spreads where no guard is looking",
   );
-  assert.equal(namers.length, 1);
+  assert.equal(namers.length, TEST_FILES_NAMING_SQLITE.length);
+  assert.ok(namers.length > 0, "a scan that returned [] would deepEqual an empty declared list and prove nothing");
 });
 
 test("non-vacuity of the test-tree scan: a planted test file naming the specifier IS reported by the same predicate", () => {
