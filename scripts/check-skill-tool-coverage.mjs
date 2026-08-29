@@ -48,7 +48,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
-import { CURATED_R2000_TOOLS } from "../src/mcp/vice/r2000-tools.ts";
 import { CURATED_ANNO_TOOLS } from "../src/mcp/vice/anno-tools.ts";
 import { parseAnnoCliVerbs, verbsMissingFromSkills, ANNO_CLI_VERB_FLOOR } from "./lib/anno-cli-verbs.mjs";
 import { walkSkills, MCP_PREFIX_RE, extractToolNames, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
@@ -424,21 +423,58 @@ for (const [name, files] of extractedAnno) {
     `${name}: referenced by ${[...files].join(", ")} but present in the STOCK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`
   );
 }
-// 3. Non-vacuity control (D-36, superseding D-32): r2000_get_address_details
-//    MUST be curated, as a client-side composition -- D-32's former
-//    exclusion no longer holds. If it is ever silently re-excluded, or
-//    silently re-pointed at upstream's own (still-defective) same-named
-//    tool, this assertion is exactly what forces a deliberate edit here
-//    rather than a silent pass.
+// 3. Non-vacuity control -- AND NOTE WHAT CHANGED STRUCTURALLY UNDERNEATH IT
+//    (plan 29-09, 2026-08-29). The retired family had a curated allow-list
+//    AND was checkable against two shipped manifests it was absent from. The
+//    surviving `anno_*` family HAS NO MANIFEST AT ALL: it is served
+//    proxy-locally, it is in neither tools-manifest.json nor
+//    tools-manifest.stock.json, and nothing generates one for it. So check 2
+//    above -- "absent from BOTH manifests" -- is the ONLY structural check
+//    these names get, and it can only ever pass. That makes this control
+//    LOAD-BEARING rather than decorative: it is the one assertion here that
+//    fails when a real name leaves the surface, and its SUBJECT has to be
+//    chosen for that job rather than picked as a convenient example.
+//
+//    THE SUBJECT IS THE SEARCH VERB (C-5). It was `r2000_get_address_details`,
+//    a verb of a family this phase retires, so the control had to be
+//    re-pointed regardless. `anno_search` is chosen because a disappearance
+//    fires TWO independent checks rather than neither: it is `STORE-06`'s own
+//    named requirement, and it is the headline entry of
+//    `src/mcp/vice/anno-register.ts`, whose guard asserts the register and the
+//    live surface agree in both directions. A control whose subject can vanish
+//    unnoticed is not a control.
 need(
-  CURATED_R2000_TOOLS.includes("r2000_get_address_details"),
-  "non-vacuity: r2000_get_address_details must be curated (D-36, superseding D-32's exclusion, as a client-side composition) -- if this fails, D-36's composition has been silently re-excluded"
+  CURATED_ANNO_TOOLS.includes("anno_search"),
+  "non-vacuity: anno_search must be curated -- it is STORE-06's named requirement and anno-register.ts's headline entry, and this is the only assertion in this section that fails when a real name leaves the surface (the anno_* family has no manifest to check against)"
 );
-// 4. Non-vacuity FLOOR (plan 11-12; RAISED to 18 over the new family by plan
-//    29-09, 2026-08-29 -- the raise record and its discipline are stated in
-//    full beside the assertion). Skill prose naming none of these is itself a
-//    failure, exactly the way `extracted.size >= 30` guards the vice_*
-//    extraction above.
+// 4. Non-vacuity FLOOR (plan 11-12), RAISED FROM 10 TO 18 by plan 29-09 on
+//    2026-08-29, and it is a RAISE, not a replacement -- which is the whole
+//    point of saying so here rather than just editing the number.
+//
+//    The floor it replaces was 10: the exact count plan 11-12 introduced, over
+//    the retired `r2000_*` family, across the three files that plan edited.
+//    Plan 29-09 re-pointed every one of those references onto the surviving
+//    `anno_*` surface and, in doing so, MEASURED what the skill tree actually
+//    carries afterwards: 18 distinct names, spread over
+//    c64-program-recon's SKILL.md and memory-map.template.md,
+//    c64-memory-mapping's SKILL.md, routine-queue-walker's SKILL.md and
+//    packer-finding.mjs. 18 is that measurement and not a target -- the
+//    re-pointing was done first and counted second.
+//
+//    Two things make this a raise rather than the lowering the sibling
+//    CLI-verb floor had to record as a REPLACEMENT (see ANNO_CLI_VERB_FLOOR's
+//    own paragraph in scripts/lib/anno-cli-verbs.mjs, where a verb set really
+//    did shrink underneath its floor). First, the number went UP: 10 -> 18.
+//    Second, the population did not shrink -- every one of the 17 distinct
+//    old-family names the skill tree carried resolves to a verb that exists,
+//    so nothing was dropped to reach this figure; the surplus is prose that
+//    now names verbs the old surface had no equivalent for.
+//
+//    THE RAISE-NEVER-LOWER DISCIPLINE RUNS FORWARD FROM 18, unchanged in
+//    force. A future phase that documents another verb raises this to the new
+//    true count in the commit that adds the reference. Nothing lowers it to
+//    make a regression pass; a genuine narrowing of the surface is a decision
+//    of the same weight as the one recorded above, written down the same way.
 need(
   extractedAnno.size >= 18,
   `non-vacuity: expected at least 18 distinct anno_* names extracted from src/skills/, got ${extractedAnno.size} -- the extraction regex or the skill playbooks' tool references may have regressed`

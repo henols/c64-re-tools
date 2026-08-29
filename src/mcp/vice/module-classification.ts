@@ -643,7 +643,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     basis: {
       consumers: [
         { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 309 },
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 53 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 52 },
         { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runR2000Cli" },
       ],
       requirements: [],
@@ -759,7 +759,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "CURATED_R2000_TOOLS", line: 51 },
+        { path: "src/mcp/vice/anno-derivation.test.ts", symbol: "CURATED_R2000_TOOLS", line: 55 },
       ],
       requirements: [],
       rationale:
@@ -767,11 +767,16 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
         "gate, the store-path resolver and the client-side compositions that work around specific " +
         "behaviours of that analyser. THREE of its consumers were outside the family -- the stdio entry " +
         "point, a structural guard and a CI script -- and that is precisely the trap the discriminator " +
-        "warns about: all three survive, none of their imports does. TWO of those three imports are " +
-        "already gone as of plan 29-01, which substituted the owned store's own anno_* surface into the " +
-        "registration loop and re-pointed the structural guard onto it; the CI script's import is the " +
-        "one still standing, and it is cited above so this verdict keeps a live basis rather than an " +
-        "empty one. MCP-01 replaces this surface with one derived from the procedure manifest.",
+        "warns about: all three survive, none of their imports does. All three of those imports are now " +
+        "gone: plan 29-01 substituted the owned store's own anno_* surface into the registration loop " +
+        "and re-pointed the structural guard onto it, and plan 29-09 (2026-08-29) removed the CI " +
+        "script's import when it re-expressed that guard's extraction over the surviving annotation " +
+        "surface's own curated set instead. The " +
+        "citation above is therefore RE-POINTED rather than deleted, onto the one out-of-family " +
+        "consumer still importing this set -- the derivation guard, which reads the curated names to " +
+        "check the Phase 19 procedure manifest's own dispositions against them -- so this verdict keeps " +
+        "a live basis rather than an empty one. MCP-01 replaces this surface with one derived from the " +
+        "procedure manifest.",
     },
     extractables: [],
     note:
@@ -786,7 +791,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 53 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 52 },
         { path: "src/mcp/vice/anno-verb-coverage.test.ts", symbol: "parseAnnoCliVerbs", line: 24 },
       ],
       requirements: ["CUT-04"],
