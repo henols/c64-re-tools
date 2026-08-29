@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Completed 29-03-PLAN.md
-last_updated: "2026-08-29T15:45:47.380Z"
+stopped_at: Completed 29-04-PLAN.md
+last_updated: "2026-08-29T16:09:16.719Z"
 last_activity: 2026-08-29
-last_activity_desc: Plan 29-03 complete -- anno_enum_usage at SCHEMA_VERSION 3, and the v2 refusal proven a single witness
-state_head: f7ab468caf307fb59447f481187f1e397cb54d5b
+last_activity_desc: Plan 29-04 complete -- STORE-06 derives cross-references and search from the bytes, and the never-cache rule is enforced by a two-halved control
+state_head: c60622c1d47b642128cd09c8a8a64c2e4518c1fe
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 31
+  completed_plans: 32
   percent: 33
 ---
 
@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 29 (The MCP Surface) — EXECUTING
-Plan: 4 of 12
-Status: Executing — plans 29-01, 29-02 and 29-03 complete (the anno_* registration tracer, the removal gate, then the enum-usage table and the SCHEMA_VERSION 3 bump)
-Last activity: 2026-08-29 — Plan 29-03 complete: D-15 executed. `anno_enum_usage` associates one address with one project enum BY ENUM ID, `SCHEMA_VERSION` is 3 with the accepted cost dated in the constant's own doc comment, and `applyEnumUsage`/`clearEnumUsage`/`listEnumUsage` copy `putXref`'s idempotency shape. No migration arm exists anywhere in the module, and that is now enforced structurally: exactly one `schema_version` comparison site inside `openStore`, both plantings observed RED. A genuine v2 store file is observed refused by name and left byte-identical. The automated failing-FILE set is unchanged against `29-BASELINE.md`.
+Plan: 5 of 12
+Status: Executing — plans 29-01 through 29-04 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, then the derived cross-references, search and address-details composition)
+Last activity: 2026-08-29 — Plan 29-04 complete: `STORE-06` answers from the bytes. `crossReferencesTo()` unions the decoded `code` ranges, the typed split ADDRESS tables and `listXrefs()`'s stored non-derivable rows into one ascending, de-duplicated list; `searchAnnotations()` runs byte-exact and case-sensitive over three independently disableable corpora with `max_results` required and the true total returned; `composeAddressDetails()` replaces four MCP round trips with four store reads, resolving the containing range through `resolveAt` and disclosing what it was composed from. The never-cache rule is now ENFORCED rather than stated: six behavioural observations plus a directory-wide SQL-write-site census against a named fifteen-entry set, with a planted `insert` observed reddening three assertions. The failing-FILE set is unchanged against `29-BASELINE.md`.
 
 ## Performance Metrics
 
@@ -317,6 +317,7 @@ Last activity: 2026-08-29 — Plan 29-03 complete: D-15 executed. `anno_enum_usa
 | Phase 29 P01 | 17 min | 3 tasks | 11 files |
 | Phase 29 P02 | 41 min | 3 tasks | 9 files |
 | Phase 29 P03 | 17 min | 3 tasks | 5 files |
+| Phase 29 P04 | 25 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -685,6 +686,8 @@ Recent decisions affecting current work:
 - [Phase 29]: Assumption A1 corrected: the full-glob suite does NOT terminate, it blocks forever in vice-proxy.test.ts — Measured 25 min elapsed against 3 s CPU on the one live child; the usable baseline needs a bounded run plus a kill of that child, and its 41 failures are a lower bound
 - [Phase 29]: D-15 executed: SCHEMA_VERSION 2 -> 3 with anno_enum_usage and NO migration arm; every version 2 store is deliberately unopenable — Owner-confirmed one-way call, 2026-08-29. Re-measured basis: no store file is tracked in the repo or present in its working tree; anno-store.ts landed 2026-08-27 and the version 2 shape 2026-08-28; the last release tag v0.5.0 (2026-08-25) PREDATES the store, so no tagged release ever shipped it. A migration arm would put new code into a module six hardening rounds went into, to protect stores that may not exist.
 - [Phase 29]: An enum usage is associated by anno_enum.id, never by name, and the schema_version refusal is enforced as a SINGLE witness structurally — A name-keyed usage would be silently re-pointed by an updateProjectEnum rename. The single-witness test asserts exactly one comparison site inside openStore, no second anno_meta.schema_version write, and no migration entry point; both plantings were observed RED. Its failure message states that a second comparison site is how a migration arm arrives without a decision.
+- [Phase 29]: Search matching is byte-exact and CASE SENSITIVE, matching setLabel's own exact-byte-equality identity rule -- a case-folding search would report a hit on a label the store considers a different name
+- [Phase 29]: The never-cache rule is enforced by a two-halved control: six behavioural observations of the store file, plus a directory-wide SQL-write-site census against a named fifteen-entry set of file-and-declaration pairs
 
 ### Pending Todos
 
@@ -1300,8 +1303,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T15:45:46.981Z
-Stopped at: Completed 29-03-PLAN.md
+Last session: 2026-08-29T16:09:16.332Z
+Stopped at: Completed 29-04-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,

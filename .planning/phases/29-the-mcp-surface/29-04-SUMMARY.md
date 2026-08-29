@@ -286,6 +286,10 @@ Three facts later plans should carry forward:
 - **A test that asserts the ABSENCE of `node:sqlite` must declare itself** in `anno-seam.test.ts`'s `TEST_FILES_NAMING_SQLITE`. That array is now two members and is meant to be edited deliberately.
 - **`EXPECTED_SQL_WRITE_SITES` is a named fifteen-entry set.** A plan that adds a legitimate write entry point to `anno-store.ts` must add its declaration name there in the same commit; a plan that adds one anywhere else has broken the rule the set exists to enforce.
 
+**Requirement marking.** `STORE-06` is declared by this plan AND by 29-07 and 29-11, neither of which has a SUMMARY yet, so the shared-ID gate (`requirements.ready-ids`) correctly held it: `0/1 ready, blocked: [STORE-06]`. It becomes ready when the last declaring plan finishes. The requirement's substance -- derived cross-references, search, `max_results` required, nothing cached -- is delivered and proven here; what is outstanding is the surface those two plans put in front of it.
+
+**Broken-windows ledger.** No entry filed: no stub, no skipped test, and every `<verify>` in the plan ran to completion.
+
 No blockers. No stubs. No new threat surface beyond the two the plan's own register names, and T-29-14 through T-29-17 are all mitigated as specified — the `image` argument never becomes a path in these modules (they take bytes, never a filesystem path, so `parsePrg`/`storePathWithinWorkspace` containment stays at the caller boundary where 29-01 put it).
 
 ---
