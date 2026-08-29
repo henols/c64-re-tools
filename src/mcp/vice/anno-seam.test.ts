@@ -250,8 +250,20 @@ test("package.json files[] ships every anno-* production module on disk and no a
   // so the deepEqual still reddens) while letting the module count grow
   // without a hand edit that a future plan would have to remember to make.
   const annoEntries = pkg.files.filter((entry) => entry.startsWith("anno-")).sort();
+  // `.json` IS in the derivation, and it is a decision rather than a widening
+  // (plan 29-05). The family gained a SHIPPED GENERATED DATA FILE when
+  // r2000-regbits.json was renamed to anno-regbits.json: it is listed in
+  // files[] because a skill playbook cites it by filename as the curated
+  // bit-name table, and it is neither a test file nor a test-only spawned
+  // helper -- the two things this assertion exists to keep OUT. Leaving the
+  // derivation at `(ts|mts)` would have made a correctly-shipped data file
+  // read as an illegitimate entry, and the cheap fix under that pressure is
+  // to drop it from files[], which silently unships it. Both teeth survive
+  // unchanged: `.test.` files are still excluded by the filter below, and
+  // anno-durability-mutator.mjs / anno-schema-v2-fixture.mjs are still `.mjs`
+  // and still land in neither set, so listing either still reddens this.
   const annoProductionModulesOnDisk = readdirSync(HERE)
-    .filter((name) => /^anno-.*\.(ts|mts)$/.test(name))
+    .filter((name) => /^anno-.*\.(ts|mts|json)$/.test(name))
     .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name))
     .sort();
   assert.ok(
