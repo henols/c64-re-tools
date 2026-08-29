@@ -51,9 +51,10 @@ import { DENY_LIST } from "./vice.ts";
 // same reason DENY_LIST above is -- these tests must stay correct as the
 // curated set grows or shrinks, rather than drifting the moment a name
 // changes and this file's own copy is not updated in lockstep.
-// Repointed by plan 29-10's merge: `CURATED_ANNO_TOOLS` died with
-// `r2000-tools.ts`; `CURATED_ANNO_TOOLS` is its successor, derived the same
-// way (from ANNO_TOOL_DEFINITIONS) and carrying the renamed anno_* surface.
+// Repointed after plan 29-10's merge: `CURATED_R2000_TOOLS` died with
+// `r2000-tools.ts`; `CURATED_ANNO_TOOLS` (anno-tools.ts) is its successor,
+// derived the same way (from ANNO_TOOL_DEFINITIONS) and carrying the renamed
+// anno_* surface.
 import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 // Read-only import for test assertions only -- this test file does not
 // modify vice-broker-client.ts's own content; ACQUIRE_TIMEOUT_MS (the
@@ -6462,7 +6463,7 @@ test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a 
 // that ruled out both named routes.
 const FILL_PAYLOAD_BYTES = 512000; // well above the 65536-byte truncation point measured above
 
-test("IN-01: a piped r2000 invocation delivers the whole payload, well above the OS pipe capacity, with an exact byte count", () => {
+test("IN-01: a piped anno invocation delivers the whole payload, well above the OS pipe capacity, with an exact byte count", () => {
   const result = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"], {
     env: { ...process.env, VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES) },
     maxBuffer: FILL_PAYLOAD_BYTES * 2,
@@ -6486,14 +6487,14 @@ test("IN-01: the drain is bounded -- a piped invocation whose reader never drain
   assert.ok(elapsedMs < 2000, `expected the bounded drain to resolve well under 2s (T-11.1-EXITHANG); took ${elapsedMs}ms`);
 });
 
-test("IN-01: r2000 --help's real (small) output is unaffected by the fix -- piped byte count equals unpiped byte count", () => {
+test("IN-01: anno --help's real (small) output is unaffected by the fix -- piped byte count equals unpiped byte count", () => {
   const piped = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"]);
   assert.equal(piped.status, 0);
 
   const scratchDir = mkdtempSync(join(tmpdir(), "vice-proxy-in01-"));
   const outFile = join(scratchDir, "help.out");
   try {
-    spawnSync("sh", ["-c", `${JSON.stringify(process.execPath)} ${JSON.stringify(PROXY_PATH)} r2000 --help > ${JSON.stringify(outFile)}`]);
+    spawnSync("sh", ["-c", `${JSON.stringify(process.execPath)} ${JSON.stringify(PROXY_PATH)} anno --help > ${JSON.stringify(outFile)}`]);
     const unpipedBytes = statSync(outFile).size;
     assert.equal(piped.stdout.length, unpipedBytes, "piped and unpiped byte counts must match exactly");
   } finally {
@@ -6501,7 +6502,7 @@ test("IN-01: r2000 --help's real (small) output is unaffected by the fix -- pipe
   }
 });
 
-test("IN-01: the r2000 CLI dispatch still ends the process promptly with no server ready log line", () => {
+test("IN-01: the anno CLI dispatch still ends the process promptly with no server ready log line", () => {
   const start = Date.now();
   const result = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"], { encoding: "utf8" });
   const elapsedMs = Date.now() - start;
