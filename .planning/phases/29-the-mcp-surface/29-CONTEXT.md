@@ -50,8 +50,7 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
 
 ### The r2000 exit (supersedes ROADMAP criterion 2 and MCP-05's coexistence clause)
 
-- **D-01 — r2000 is deleted in Phase 29, not unregistered and not deferred to
-  Phase 32.** The user's directive: *"The r2000 usage is decided to be removed
+- **D-01 — r2000 is deleted in Phase 29, not unregistered and not deferred to Phase 32.** The user's directive: *"The r2000 usage is decided to be removed
   and if it can't be removed right now everything about it must be disabled and
   never be included in any tests."* Presented with unregister-and-quarantine
   (files kept, tests gated off, structural guards live) as the recommended
@@ -65,8 +64,7 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
   criterion 2 was written to buy ("the replacement is demonstrably ready before
   anything is removed") cannot be re-bought after the fact.
 
-- **D-02 — Scope of the cut: only the binary-driving glue is deleted; the CLI is
-  renamed and keeps its capability-backed verbs.** The user answered "You decide"
+- **D-02 — Scope of the cut: only the binary-driving glue is deleted; the CLI is renamed and keeps its capability-backed verbs.** The user answered "You decide"
   on what rides forward, and this is the call. **Deleted:**
   `r2000-launch.ts`, `r2000-mcp-client.ts`, `r2000-session.ts`, `r2000-tools.ts`,
   `r2000-project.ts`, `scripts/lib/r2000-cli-verbs.mjs`,
@@ -81,9 +79,7 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
   of Phase 30's oracle, so ordering constraint 2 is honoured rather than broken.
   — **Reversibility:** one-way — see D-01.
 
-- **D-03 — The 11 `capability` modules are renamed out from under the prefix
-  BEFORE anything is deleted, and the deletion is driven by
-  `module-classification.ts`, never by a prefix sweep.** Measured at discussion
+- **D-03 — The 11 `capability` modules are renamed out from under the prefix BEFORE anything is deleted, and the deletion is driven by `module-classification.ts`, never by a prefix sweep.** Measured at discussion
   time: Phase 27 delivered the classification registry and the ACME-gate
   extraction, but all 19 classified modules still carry `r2000-` on disk. The
   survivors are `r2000-acme-ident.ts`, `r2000-confidence.ts`, `r2000-coverage.ts`,
@@ -116,8 +112,7 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
   — **Reversibility:** costly — the prefix is baked into the derivation test, the
   tool-support table generator, the module floor, the grep gate and 9 skill files.
 
-- **D-06 — Open/close per call, with an explicit store-path argument on every
-  verb.** `openStore(path, { workspaceRoot })` and `closeStore` in a `finally`;
+- **D-06 — Open/close per call, with an explicit store-path argument on every verb.** `openStore(path, { workspaceRoot })` and `closeStore` in a `finally`;
   no cross-call state anywhere. Two Phase 28 hazard classes become unreachable
   across calls by construction: `revertTo` returning a **new** handle (nothing
   cached to swap), and `transactionStateUnknown` wedging a connection (nothing
@@ -145,8 +140,7 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
   — **Reversibility:** costly — the argument is required, so making it optional
   later is additive, but making it *absent* later is a contract break.
 
-- **D-08 — Derivation is checked against the manifest, and verbs the manifest
-  does not classify live in a second committed register.** The mechanical test
+- **D-08 — Derivation is checked against the manifest, and verbs the manifest does not classify live in a second committed register.** The mechanical test
   asserts three things against
   `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`:
   every verb classified `curated` or `adapt-to-address-input` has a route, every
@@ -165,16 +159,14 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
   breaks what `r2000-upstream-audit.test.ts` says.
   — **Reversibility:** reversible.
 
-- **D-09 — `r2000_get_disassembly_cursor` is folded into the disassemble verb's
-  address argument, not carried as a verb.** That is what
+- **D-09 — `r2000_get_disassembly_cursor` is folded into the disassemble verb's address argument, not carried as a verb.** That is what
   `adapt-to-address-input` means here, and it agrees with the roadmap's recorded
   anti-feature (upstream's own procedure text says *"NEVER use the 'current
   cursor address'"*).
 
 ### The guards with a fate
 
-- **D-10 — `check-skill-fork-honesty.mjs:504`: the skill loses the route and the
-  assertion is re-pointed.** It asserts `acme-build/SKILL.md` still contains the
+- **D-10 — `check-skill-fork-honesty.mjs:504`: the skill loses the route and the assertion is re-pointed.** It asserts `acme-build/SKILL.md` still contains the
   literal `"r2000 export-asm"`; D-02 deletes that verb, so the guard goes red
   either way. The route is stripped from the skill and the assertion re-pointed at
   the renamed CLI, with Phase 30 restoring an export route under that name. Named
@@ -188,13 +180,11 @@ and re-invented inside a window with no oracle). Automatic annotation (v0.8.0).
   silently discharge that constraint. ROADMAP Phase 32's note requires this be an
   explicit recorded choice rather than a side effect; it is recorded here.
 
-- **D-12 — `docs-r2000-decisions.test.ts` and `scripts/audit-gate.mjs:136` move
-  together, in one commit.** Their own comment records that they were added in one
+- **D-12 — `docs-r2000-decisions.test.ts` and `scripts/audit-gate.mjs:136` move together, in one commit.** Their own comment records that they were added in one
   commit for exactly this reason: removing the name from `audit-gate.mjs` without
   removing the test, or the reverse, **breaks the audit gate**.
 
-- **D-13 — The registration-time guards move in the registering commit
-  (`MCP-05`), and their re-pointing is now a rename rather than a duplication.**
+- **D-13 — The registration-time guards move in the registering commit (`MCP-05`), and their re-pointing is now a rename rather than a duplication.**
   `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS`
   regex and its two deliberate duplicate witnesses move together and none is
   refactored into a shared helper. `hostpath-consumers.test.ts`'s
@@ -232,8 +222,7 @@ nothing is restated here as if newly measured.
   requirement is next checked.
   — **Reversibility:** reversible — the verbs return in Phase 30.
 
-- **D-15 — `anno_enum_usage` is added and `SCHEMA_VERSION` bumps 2 → 3, with no
-  migration arm.** **User decision, 2026-08-29.** `r2000_apply_enum_usage` is
+- **D-15 — `anno_enum_usage` is added and `SCHEMA_VERSION` bumps 2 → 3, with no migration arm.** **User decision, 2026-08-29.** `r2000_apply_enum_usage` is
   disposed `curated` in the Phase 19 manifest, so D-08's mechanical check demands
   a route, but the Phase 28 store has no table associating an enum with an
   address and `openStore` hard-refuses a mismatched `schema_version`
@@ -249,8 +238,7 @@ nothing is restated here as if newly measured.
   that a v2 store still refuses by name rather than being silently upgraded.
   — **Reversibility:** one-way — existing v2 stores cannot be reopened after this.
 
-- **D-16 — D-03's rename set is 9, not 11: `r2000-test-gate.ts` and
-  `r2000-verify.ts` are deleted, not renamed.** *Agent-resolved, taking the
+- **D-16 — D-03's rename set is 9, not 11: `r2000-test-gate.ts` and `r2000-verify.ts` are deleted, not renamed.** *Agent-resolved, taking the
   research recommendation* (`29-RESEARCH.md` § CD-2 / § F-3). This is not research
   overruling `module-classification.ts` — it is research reading the registry as
   D-03 requires. The registry's own `note` fields say *"Do NOT read this verdict
