@@ -9,25 +9,47 @@
 // 34 real bytes, goes through `parsePrg()`, and is decoded by the same
 // `decode()` the production module calls.
 //
+// THE NEVER-CACHED CONTROL has two halves and both are here: behavioural (six
+// observations of the store file, the snapshot ring and the revision, all
+// unchanged across repeated derived queries) and structural (the derivation
+// modules' stripped source, plus a directory-wide census of SQL write sites
+// against a NAMED expected set).
+//
 // Nothing here asserts stderr is empty, and nothing may: `node:sqlite` emits an
 // `ExperimentalWarning` unconditionally on first load.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { closeStore, listRanges, openStore, paintIndexOf, putXref, setComment, setDataType, setLabel } from "./anno-store.ts";
+import {
+  closeStore,
+  currentRevision,
+  listRanges,
+  openStore,
+  paintIndexOf,
+  putXref,
+  setComment,
+  setDataType,
+  setLabel,
+  snapshotDirFor,
+} from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 import { NO_ROW, resolveAt } from "./anno-index.ts";
 import { AnnoAddressError } from "./anno-types.ts";
 import { parsePrg } from "./prg-image.ts";
+import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
 import {
   AnnoDeriveArgumentError,
   ANNO_DERIVE_MAX_IMAGE_BYTES,
   crossReferencesTo,
   searchAnnotations,
 } from "./anno-derive.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // The fixture: 34 real bytes, laid out so every behavioural case in the plan
@@ -353,4 +375,209 @@ test("STORE-06: the instruction corpus is bounded, and exceeding the cap is refu
       else process.env.ANNO_SEARCH_MAX_CORPUS_BYTES = previous;
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// 3. The never-cached control, behavioural half (task 2)
+// ---------------------------------------------------------------------------
+
+/** Four independent observations of the store file, plus the snapshot ring and
+ * the revision. A cache written on a read path moves at least one of them. */
+function observe(fx: Fixture): Record<string, unknown> {
+  const stat = statSync(fx.handle.path);
+  const bytes = readFileSync(fx.handle.path);
+  const snapshotDir = snapshotDirFor(fx.handle);
+  let snapshotEntries = 0;
+  try {
+    snapshotEntries = readdirSync(snapshotDir).length;
+  } catch {
+    snapshotEntries = -1; // the ring directory does not exist yet -- also a fact
+  }
+  return {
+    xrefRows: (fx.handle.db.prepare("select count(*) as n from anno_xref").get() as { n: number }).n,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    hash: createHash("sha256").update(bytes).digest("hex"),
+    revision: currentRevision(fx.handle),
+    snapshotEntries,
+  };
+}
+
+test("STORE-06 never-cached control: repeated derived queries leave the store byte-identical", () => {
+  withFixture((fx) => {
+    const before = observe(fx);
+
+    for (const target of [0xc000, 0x0810, 0x0020, 0x1234, 0xcfff, 0xdead]) {
+      crossReferencesTo(fx.handle, fx.image, fx.origin, target);
+    }
+    for (const query of ["jsr", "lda", "no_such_term_anywhere", "$c000"]) {
+      searchAnnotations(fx.handle, fx.image, fx.origin, { query, max_results: 50 });
+    }
+    const after = observe(fx);
+    assert.deepEqual(
+      after,
+      before,
+      "putXref's own contract: \"A cached derivation would be a SECOND ON-DISK TRUTH that can disagree with the range table it " +
+        'came from, and the disagreement is invisible because both answers look authoritative." A derived query that writes ' +
+        "anything -- an xref row, a byte of the store file, a snapshot, a revision -- has broken that contract.",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. The never-cached control, structural half (task 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * SQL as it is ACTUALLY written in this tree is a STRING LITERAL, so the census
+ * below strips comments while KEEPING literal bodies (`codeOnly(src, true)`).
+ * Stripping comments first is not optional -- the derivation module's own header
+ * must explain the never-cache rule, and matching the raw file would let that
+ * prose invalidate the check that enforces it. Keeping literal bodies is equally
+ * not optional in the other direction: the strict mode would blank every SQL
+ * string in the tree and the census would find nothing at all.
+ */
+function strippedSource(name: string): string {
+  return codeOnly(readFileSync(join(HERE, name), "utf8"), true);
+}
+
+/** SQL-SHAPED write verbs, not bare English words: `create table`, never
+ * `created`. A prose sentence cannot trip this; a real statement cannot evade
+ * it. */
+const SQL_WRITE_VERB = /\b(?:insert\s+into|update\s+[a-z_]+\s+set|delete\s+from|drop\s+(?:table|index)|create\s+(?:table|index|unique)|replace\s+into|vacuum\s+into|alter\s+table)\b/gi;
+
+/** Node's filesystem write surface, named individually. */
+const FS_WRITE_CALLS = [
+  "writeFileSync",
+  "appendFileSync",
+  "createWriteStream",
+  "copyFileSync",
+  "renameSync",
+  "mkdirSync",
+  "rmSync",
+  "unlinkSync",
+  "writeSync",
+  "fsyncSync",
+  "truncateSync",
+];
+
+/** The three host/container path-translation seam modules. MCP-02: none may be
+ * imported by a proxy-local derivation. */
+const HOST_PATH_SEAMS = ["hostpath.ts", "containerpath.ts", "container-guard.mts"];
+
+/** Every module of this area whose whole subject is DERIVATION. All three
+ * assertions below are applied to each of them identically. */
+const DERIVATION_MODULES = ["anno-derive.ts"];
+
+test("STORE-06 never-cached control: the derivation modules' stripped source carries no SQL write verb", () => {
+  for (const name of DERIVATION_MODULES) {
+    const source = strippedSource(name);
+    SQL_WRITE_VERB.lastIndex = 0;
+    const found = source.match(SQL_WRITE_VERB) ?? [];
+    assert.deepEqual(found, [], `${name} must never write: a cached derivation is a second on-disk truth (putXref's contract)`);
+  }
+});
+
+test("STORE-06 never-cached control: the derivation modules name no filesystem write call and no SQLite binding", () => {
+  for (const name of DERIVATION_MODULES) {
+    const source = strippedSource(name);
+    for (const call of FS_WRITE_CALLS) {
+      assert.ok(!source.includes(call), `${name} must not name ${call} -- a derived answer is computed, never persisted`);
+    }
+    assert.ok(!source.includes("node:fs"), `${name} must not reach the filesystem at all`);
+    assert.ok(!source.includes("node:sqlite"), `${name} must reach the store only through anno-store.ts's entry points (STORE-07)`);
+  }
+});
+
+test("MCP-02: the derivation modules import none of the three host-path seam modules", () => {
+  for (const name of DERIVATION_MODULES) {
+    const source = strippedSource(name);
+    for (const seam of HOST_PATH_SEAMS) {
+      assert.ok(!source.includes(seam), `${name} must not import ${seam} -- the store path is a PROXY-LOCAL filesystem path`);
+    }
+  }
+});
+
+/** The last top-level `function`/`const` declaration before `index` -- the
+ * function a write site sits in. Line-anchored so a local `const` inside a
+ * callback never renames a site. */
+function enclosingDeclaration(source: string, index: number): string {
+  const TOP_LEVEL = /^(?:export\s+)?(?:async\s+)?(?:function\s+([A-Za-z_$][\w$]*)|const\s+([A-Za-z_$][\w$]*))/gm;
+  let name = "(module scope)";
+  let match: RegExpExecArray | null;
+  while ((match = TOP_LEVEL.exec(source)) !== null && match.index < index) {
+    name = match[1] ?? match[2] ?? name;
+  }
+  return name;
+}
+
+/**
+ * Every SQL write site across the STRIPPED sources of the shipped module set,
+ * as `file#declaration` pairs.
+ *
+ * The scanned set is `shippedTsModules()` -- NOT a local `readdirSync` -- so it
+ * throws rather than silently shrinking when a `files[]` entry is missing from
+ * disk. A guard that scans nothing finds nothing.
+ */
+function sqlWriteSites(): string[] {
+  const sites = new Set<string>();
+  for (const name of shippedTsModules()) {
+    const source = strippedSource(name);
+    SQL_WRITE_VERB.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = SQL_WRITE_VERB.exec(source)) !== null) {
+      sites.add(`${name}#${enclosingDeclaration(source, match.index)}`);
+    }
+  }
+  return [...sites].sort();
+}
+
+/**
+ * THE NAMED EXPECTED SET -- file-and-declaration pairs, listed individually
+ * rather than counted. A bare count would be satisfied by a new write site on a
+ * read path replacing an old one on a write path.
+ *
+ * Every entry is in `anno-store.ts`, which is the whole claim: the ONE seam owns
+ * every write. `applyEnumUsage` and `clearEnumUsage` are the two sites plan
+ * 29-03 added with `anno_enum_usage` (its third new function, `listEnumUsage`,
+ * is a read and correctly does not appear here).
+ */
+const EXPECTED_SQL_WRITE_SITES = [
+  "anno-store.ts#DDL",
+  "anno-store.ts#addScope",
+  "anno-store.ts#applyEnumUsage",
+  "anno-store.ts#clearEnumUsage",
+  "anno-store.ts#createProjectEnum",
+  "anno-store.ts#insertRange",
+  "anno-store.ts#openStore",
+  "anno-store.ts#pruneSnapshots",
+  "anno-store.ts#putXref",
+  "anno-store.ts#retype",
+  "anno-store.ts#runWriteSequence",
+  "anno-store.ts#setComment",
+  "anno-store.ts#setLabel",
+  "anno-store.ts#stageSnapshot",
+  "anno-store.ts#updateProjectEnum",
+];
+
+test("STORE-06 never-cached control: the tree's SQL write sites are exactly the named expected set", () => {
+  const sites = sqlWriteSites();
+  assert.deepEqual(
+    sites,
+    EXPECTED_SQL_WRITE_SITES,
+    "a NEW write site anywhere -- and especially on a read path -- is what this control exists to catch. " +
+      "putXref's contract: \"nothing derivable is ever written here. A cached derivation would be a SECOND ON-DISK TRUTH " +
+      'that can disagree with the range table it came from."',
+  );
+  assert.ok(sites.length > 0, "a census that returned nothing would deepEqual an empty expectation and prove nothing");
+});
+
+test("STORE-06 never-cached control: the census can actually SEE a planted write site", () => {
+  // Non-vacuity: the same predicate the real census uses, over a planted
+  // source. Without this, a stripper change that blanked every SQL string
+  // would leave the census green and empty.
+  const planted = codeOnly('function cacheIt() {\n  db.prepare("insert into anno_xref(a) values (?)").run(1);\n}\n', true);
+  SQL_WRITE_VERB.lastIndex = 0;
+  assert.equal((planted.match(SQL_WRITE_VERB) ?? []).length, 1);
+  assert.equal(enclosingDeclaration(planted, planted.search(/insert/i)), "cacheIt");
 });
