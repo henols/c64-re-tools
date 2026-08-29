@@ -1,0 +1,11 @@
+Loaded: "prg-fixture.regen2000proj"
+Assembler overridden to: ACME
+
+Roundtrip Export Verification
+=============================
+  ✗ 64tass — 64tass not found in PATH (skipped)
+  ✓ ACME — byte-identical (3 bytes)
+  ✓ ca65 — byte-identical (3 bytes)
+  ✗ KickAssembler — KickAssembler not found in PATH (skipped)
+
+✓ All roundtrip verifications passed.

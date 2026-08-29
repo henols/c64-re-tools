@@ -1,29 +1,73 @@
 // anno-enum-gen.test.ts -- coverage for anno-enum-gen.ts (D-20/D-22/D-23,
-// R2000-13 Task 2): the pinned variantNameFor() target, decoding totality
-// across all 256 values for four registers, sanitization refusals (including
-// the zero-spawn injection proof), adjacent-only pairing, and the
-// truncation-signal report.
-import { test, after } from "node:test";
+// R2000-13): the pinned variantNameFor() target, decoding totality across all
+// 256 values for four registers, sanitization refusals, the adjacent-pair
+// rule, D-20's one-variant-per-distinct-value plan, and the truncation-signal
+// wording contract.
+//
+// WHAT CHANGED HERE (plan 29-10, D-01, 2026-08-30). This file used to end in
+// four blocks that drove a real external analyser child: an UNGATED
+// availability assertion that ran on every suite invocation, and three
+// environment-gated integration tests. All four are GONE, not skipped and not
+// converted to `todo` -- D-01's own words are that the retired integration
+// must "never be included in any tests", and a gated block whose subject no
+// longer exists is still a test that includes it. Their imports (the
+// availability-gate module and the project-file synthesiser) were deleted in
+// the same commit, so the file would have failed at load time regardless.
+//
+// THE COVERAGE DID NOT GO WITH THEM. Every assertion those blocks made about
+// this module's OWN logic is now made against the real extracted functions
+// rather than against a synthetic reconstruction of their shape:
+//   - the adjacent-pair arithmetic used to be re-derived inline here, in a
+//     test whose own comment said it could not call the real function because
+//     that function needed a live child. It calls `pairSearchRows()` now.
+//   - the truncation wording used to be rebuilt line by line here, for the
+//     same reason. It calls `buildEnumGenerationReport()` now.
+//   - the per-register enum plan (D-20's one-variant-per-distinct-value rule)
+//     was only ever exercised through the live pipeline. It is unit-tested
+//     here now, against `planEnumsForPairing()`.
+// Two assertions were DELETED rather than re-pointed, and neither was
+// weakened to keep it green: the spy-binary zero-spawn proof (its subject was
+// the deleted installer's first child spawn -- the client-side refusal it
+// proved is still asserted directly, below, against `sanitizeVariantMap()`),
+// and the grep asserting the two disassembly-search call sites passed an
+// explicit `max_results` (those call sites are the fetch this plan removed;
+// the "no silent caps" rule they served is asserted against the report
+// builder instead). Phase 30 restores the fetch and the installer, and with
+// them the integration coverage.
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   assertLegalAcmeIdentifier,
-  createOrUpdateEnum,
+  buildEnumGenerationReport,
   DEFAULT_MAX_RESULTS,
-  generateEnums,
+  type DisasmSearchRow,
+  type EnumInstallSummary,
+  pairSearchRows,
   parseImmediateOperand,
-  pairImmediateLoadsToStores,
+  planEnumsForPairing,
   registerKeyFor,
   sanitizeVariantMap,
   variantNameFor,
 } from "./anno-enum-gen.ts";
-import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
-import { synthesizeProject } from "./r2000-project.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** Builds one disassembly row in the shape the deleted fetch returned and the
+ * shape Phase 30's rebuilt fetch must still produce. */
+function row(addr: number, mnemonic: string, operand: string): DisasmSearchRow {
+  return {
+    address: `$${addr.toString(16).toUpperCase().padStart(4, "0")}`,
+    address_decimal: addr,
+    label: "",
+    mnemonic,
+    operand,
+    comment: "",
+  };
+}
 
 // ---------------------------------------------------------------------------
 // The pinned measured target.
@@ -100,68 +144,85 @@ test("sanitizeVariantMap refuses a bad token before returning anything", () => {
   assert.throws(() => sanitizeVariantMap("$D011", new Map([[0x1b, "BAD\nNAME=$00"]])));
 });
 
-// ---------------------------------------------------------------------------
-// The zero-spawn injection proof: a bad variant name must never reach a
-// spawned regenerator2000 child. Mirrors r2000-tools.test.ts's own spy-binary
-// technique.
-// ---------------------------------------------------------------------------
-
-let spyWorkDir: string | undefined;
-
-after(() => {
-  if (spyWorkDir) rmSync(spyWorkDir, { recursive: true, force: true });
-});
-
-test("createOrUpdateEnum refuses an injection attempt (newline + '= $00') BEFORE any child process is spawned (counted, not reasoned)", async () => {
-  spyWorkDir = mkdtempSync(join(HERE, ".anno-enum-gen-test-spy-"));
-  const marker = join(spyWorkDir, "spawned.marker");
-  const spyBin = join(spyWorkDir, "spy-r2000.mjs");
-  writeFileSync(
-    spyBin,
-    "#!/usr/bin/env node\n" +
-      'import { writeFileSync } from "node:fs";\n' +
-      `writeFileSync(${JSON.stringify(marker)}, "spawned");\n` +
-      "process.exit(1);\n",
-  );
-  chmodSync(spyBin, 0o755);
-
-  const prevBin = process.env.R2000_BIN;
-  process.env.R2000_BIN = spyBin;
-  try {
-    const projectPath = join(spyWorkDir, "injection-test.regen2000proj");
-    await assert.rejects(
-      createOrUpdateEnum(projectPath, "$D011", new Map([[0x1b, "BAD\nNAME = $00"]])),
+test(
+  "T-11-NAME-INJECT: sanitizeVariantMap refuses the injection shape (newline + '= $00') and returns NOTHING, so a rebuilt installer that calls it first cannot pass the name on",
+  () => {
+    // The property the deleted installer proved with a spy binary: because
+    // this refusal is entirely client-side and happens before any I/O, an
+    // illegal variant name provably never reaches a child. With the installer
+    // gone the spy has nothing to observe, so the refusal itself is asserted
+    // directly -- including that it is total (no partial map is returned for
+    // the legal entries that preceded the illegal one).
+    let returned: unknown = "not-thrown";
+    assert.throws(
+      () => {
+        returned = sanitizeVariantMap(
+          "$D011",
+          new Map([
+            [0x00, "LEGAL_NAME"],
+            [0x1b, "BAD\nNAME = $00"],
+          ]),
+        );
+      },
       /not a legal ACME identifier/,
     );
-  } finally {
-    if (prevBin === undefined) delete process.env.R2000_BIN;
-    else process.env.R2000_BIN = prevBin;
-  }
+    assert.equal(returned, "not-thrown", "sanitizeVariantMap must return nothing at all when any name is illegal");
+  },
+);
 
-  assert.equal(existsSync(marker), false, "the spy binary must never have been invoked -- sanitization happens before any spawn");
+// ---------------------------------------------------------------------------
+// Pairing: the D-23 adjacent-only rule, against the real pairSearchRows().
+// ---------------------------------------------------------------------------
+
+test("pairSearchRows: a store at A+2 pairs with its immediate load; a store at A+3 does not", () => {
+  const ldaRows = [row(0x0810, "lda", "#$1b")];
+  const staRows = [row(0x0812, "sta", "$d011")];
+  const paired = pairSearchRows(ldaRows, staRows);
+  assert.equal(paired.totalRegisterStores, 1);
+  assert.equal(paired.pairedStores, 1);
+  assert.equal(paired.unpairedStores, 0);
+  assert.deepEqual(paired.occurrences, [{ regKey: "$D011", value: 0x1b, ldaAddr: 0x0810 }]);
+
+  const offByOne = pairSearchRows(ldaRows, [row(0x0813, "sta", "$d011")]);
+  assert.equal(offByOne.totalRegisterStores, 1, "the store is still a store to a known register");
+  assert.equal(offByOne.pairedStores, 0, "a store at A+3 must NOT pair -- adjacent-only, no dataflow");
+  assert.equal(offByOne.unpairedStores, 1);
 });
 
-// ---------------------------------------------------------------------------
-// Pairing: adjacent-only (A+2), synthetic result sets (no live child needed).
-// ---------------------------------------------------------------------------
+test("pairSearchRows: a store to a register the bit-name table does not know is not counted at all", () => {
+  const paired = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$c000")]);
+  assert.equal(paired.totalRegisterStores, 0, "$C000 is not in anno-regbits.json, so it is not a register store");
+  assert.equal(paired.occurrences.length, 0);
+});
 
-test("pairing logic (via a synthetic occurrence list): a store at A+2 pairs, a store at A+3 does not", () => {
-  // This exercises the pairing ARITHMETIC directly (address_decimal - 2 ===
-  // ldaAddr) rather than going through pairImmediateLoadsToStores(), which
-  // needs a live child -- the arithmetic itself has no dependency on the
-  // server, so it is proven here as a pure function of two synthetic rows.
-  const ldaRows = [{ address_decimal: 0x0810, operand: "#$1b", mnemonic: "lda", address: "$0810", label: "", comment: "" }];
-  const staRowPaired = { address_decimal: 0x0812, operand: "$d011", mnemonic: "sta", address: "$0812", label: "", comment: "" };
-  const staRowUnpaired = { address_decimal: 0x0813, operand: "$d011", mnemonic: "sta", address: "$0813", label: "", comment: "" };
+test("pairSearchRows: register matching is case-insensitive on the operand's hex ($d011 and $D011 both pair)", () => {
+  for (const operand of ["$d011", "$D011"]) {
+    const paired = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", operand)]);
+    assert.equal(paired.pairedStores, 1, `expected ${operand} to normalise onto $D011`);
+    assert.equal(paired.occurrences[0]!.regKey, "$D011");
+  }
+});
 
-  const immByAddr = new Map(ldaRows.map((r) => [r.address_decimal, parseImmediateOperand(r.operand)]));
+test("pairSearchRows: an unparsable immediate operand is skipped rather than fatal (D-23's 'a miss costs nothing')", () => {
+  // This is the exact shape an already-enum-applied instruction took in the
+  // live view: the raw "#$1b" was replaced by an enum reference, which is not
+  // a parsable immediate. A re-run must be a safe no-op, never a crash.
+  const paired = pairSearchRows([row(0x0810, "lda", "#D011.YSCROLL3_ROW25_SCREENON_TEXT")], [row(0x0812, "sta", "$d011")]);
+  assert.equal(paired.totalRegisterStores, 1);
+  assert.equal(paired.pairedStores, 0);
+  assert.equal(paired.unpairedStores, 1);
+});
 
-  const pairedLdaAddr = staRowPaired.address_decimal - 2;
-  assert.equal(immByAddr.has(pairedLdaAddr), true, "a store at A+2 must find its immediate load");
-  assert.equal(immByAddr.get(pairedLdaAddr), 0x1b);
+test("pairSearchRows: a pass whose row count EQUALS the requested ceiling is reported as possibly truncated (D-23, no silent caps)", () => {
+  const ldas = [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$1b")];
+  const stas = [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")];
+  const atCeiling = pairSearchRows(ldas, stas, 2);
+  assert.equal(atCeiling.pass1Truncated, true);
+  assert.equal(atCeiling.pass2Truncated, true);
 
-  const unpairedLdaAddr = staRowUnpaired.address_decimal - 2;
-  assert.equal(immByAddr.has(unpairedLdaAddr), false, "a store at A+3 must NOT find an immediate load at A+2's own lda address");
+  const belowCeiling = pairSearchRows(ldas, stas, 3);
+  assert.equal(belowCeiling.pass1Truncated, false);
+  assert.equal(belowCeiling.pass2Truncated, false);
 });
 
 test("parseImmediateOperand parses hex, decimal and binary immediates, and refuses a non-immediate operand", () => {
@@ -172,182 +233,103 @@ test("parseImmediateOperand parses hex, decimal and binary immediates, and refus
 });
 
 // ---------------------------------------------------------------------------
-// Truncation signal: a synthetic result set of exactly max_results rows
-// produces a report containing the word "truncat". Exercised via the real
-// pairImmediateLoadsToStores()/generateEnums() gated section below (needs a
-// live regenerator2000 child to produce genuinely large result sets) --
-// this unit-level test proves the WORDING contract directly against
-// generateEnums()'s own report-building logic shape.
+// D-20: one variant per DISTINCT value the program actually writes.
 // ---------------------------------------------------------------------------
 
-test("the coverage report's summary lines contain 'truncat' when a pass returns exactly max_results and total/paired/unpaired counts are always present", () => {
-  // Constructs the same summaryLines shape generateEnums() builds, directly,
-  // to pin the WORDING contract without needing a live child to force a
-  // truncation.
-  const totalRegisterStores = 5;
-  const pairedStores = 5;
-  const unpairedStores = 0;
-  const pass1Truncated = true;
-  const pass2Truncated = false;
-  const maxResults = DEFAULT_MAX_RESULTS;
+test("planEnumsForPairing: two stores of the SAME value to one register produce ONE variant and TWO usages (D-20)", () => {
+  const pairing = pairSearchRows(
+    [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$1b")],
+    [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")],
+  );
+  const planned = planEnumsForPairing(pairing);
+  assert.equal(planned.length, 1);
+  assert.equal(planned[0]!.enumName, "D011");
+  assert.equal(planned[0]!.variants.size, 1, "one variant per DISTINCT value -- never one per occurrence");
+  assert.equal(planned[0]!.variants.get(0x1b), "YSCROLL3_ROW25_SCREENON_TEXT");
+  assert.equal(planned[0]!.occurrences.length, 2, "both usages still bind, at their own lda addresses");
+  assert.deepEqual(
+    planned[0]!.occurrences.map((o) => o.ldaAddr),
+    [0x0810, 0x0820],
+  );
+});
 
-  const summaryLines: string[] = [
-    `total register stores seen: ${totalRegisterStores}`,
-    `paired (adjacent lda #imm found): ${pairedStores}`,
-    `unpaired (no adjacent immediate load): ${unpairedStores}`,
+test("planEnumsForPairing: two DISTINCT values to one register produce two variants, and never a 256-value table", () => {
+  const pairing = pairSearchRows(
+    [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$00")],
+    [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")],
+  );
+  const planned = planEnumsForPairing(pairing);
+  assert.equal(planned.length, 1);
+  assert.equal(planned[0]!.variants.size, 2);
+  assert.deepEqual([...planned[0]!.variants.keys()].sort((a, b) => a - b), [0x00, 0x1b]);
+});
+
+test("planEnumsForPairing: a usage binds to the lda address, NEVER the store address (measured binding rule)", () => {
+  const pairing = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$d011")]);
+  const planned = planEnumsForPairing(pairing);
+  assert.equal(planned[0]!.occurrences[0]!.ldaAddr, 0x0810);
+  assert.notEqual(planned[0]!.occurrences[0]!.ldaAddr, 0x0812);
+});
+
+test("planEnumsForPairing: two different registers produce two separate enums", () => {
+  const pairing = pairSearchRows(
+    [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$08")],
+    [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d016")],
+  );
+  const planned = planEnumsForPairing(pairing);
+  assert.deepEqual(planned.map((p) => p.enumName).sort(), ["D011", "D016"]);
+});
+
+// ---------------------------------------------------------------------------
+// D-23's wording contract, against the real report builder.
+// ---------------------------------------------------------------------------
+
+test("buildEnumGenerationReport: the summary lines contain 'truncat' when a pass hit its ceiling, and always carry total/paired/unpaired", () => {
+  const ldas = [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$00")];
+  const stas = [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")];
+  const pairing = pairSearchRows(ldas, stas, 2); // exactly at the ceiling
+  const installed: EnumInstallSummary[] = [
+    { regKey: "$D011", enumName: "D011", variantCount: 2, action: "created", usagesApplied: 2 },
   ];
-  if (pass1Truncated) {
-    summaryLines.push(`TRUNCATION WARNING: pass 1 (lda search) returned exactly max_results=${maxResults} rows -- coverage may be incomplete`);
-  }
-  if (pass2Truncated) {
-    summaryLines.push(`TRUNCATION WARNING: pass 2 (sta search) returned exactly max_results=${maxResults} rows -- coverage may be incomplete`);
-  }
+  const report = buildEnumGenerationReport(pairing, installed, 2);
 
-  const joined = summaryLines.join("\n");
+  const joined = report.summaryLines.join("\n");
   assert.match(joined, /truncat/i);
-  assert.match(joined, /total register stores seen: 5/);
-  assert.match(joined, /paired \(adjacent lda #imm found\): 5/);
+  assert.match(joined, /total register stores seen: 2/);
+  assert.match(joined, /paired \(adjacent lda #imm found\): 2/);
   assert.match(joined, /unpaired \(no adjacent immediate load\): 0/);
+  assert.match(joined, /enum D011: created, 2 variant\(s\), 2 usage\(s\) applied/);
+});
+
+test("buildEnumGenerationReport: a run below its ceiling says NOTHING about truncation -- the signal must not be always-on", () => {
+  const pairing = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$d011")], DEFAULT_MAX_RESULTS);
+  const report = buildEnumGenerationReport(pairing, [], DEFAULT_MAX_RESULTS);
+  assert.doesNotMatch(report.summaryLines.join("\n"), /truncat/i);
+  assert.equal(report.pass1Truncated, false);
+  assert.equal(report.pass2Truncated, false);
+});
+
+test("buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible", () => {
+  const pairing = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$d011")]);
+  const report = buildEnumGenerationReport(pairing, [
+    { regKey: "$D011", enumName: "D011", variantCount: 1, action: "updated", usagesApplied: 1 },
+  ]);
+  assert.match(report.summaryLines.join("\n"), /enum D011: updated,/);
 });
 
 // ---------------------------------------------------------------------------
-// grep-gate structural assertions (module hygiene, mechanical not eyeballed).
+// grep-gate structural assertion (module hygiene, mechanical not eyeballed).
+//
+// DORMANT BY DESIGN, and kept for that reason. This module has no install
+// route at all after plan 29-10, so nothing here could currently write a
+// machine-global enum. The guard goes live again the instant Phase 30 adds an
+// installer -- which is precisely the commit in which D-21 could be violated,
+// and precisely the commit in which nobody would think to re-add a guard that
+// had been deleted for being trivially green.
 // ---------------------------------------------------------------------------
-
-test("every r2000_search_disassembly call site in anno-enum-gen.ts passes an explicit max_results (grep-counted >= 2)", () => {
-  const src = readFileSync(join(HERE, "anno-enum-gen.ts"), "utf8");
-  const callSites = src.match(/r2000_search_disassembly/g) ?? [];
-  const maxResultsMentions = src.match(/max_results/g) ?? [];
-  assert.ok(callSites.length >= 2, "expected at least two r2000_search_disassembly references (the two passes)");
-  assert.ok(maxResultsMentions.length >= 2, "expected max_results to appear at least twice");
-});
 
 test("anno-enum-gen.ts never references the machine-global save_global_enum() route (D-21, zero-count grep)", () => {
   const src = readFileSync(join(HERE, "anno-enum-gen.ts"), "utf8");
   const count = (src.match(/save_global_enum/g) ?? []).length;
   assert.equal(count, 0);
 });
-
-// ---------------------------------------------------------------------------
-// Gated integration: generateEnums() end to end against a REAL
-// regenerator2000 child, proving the total pipeline (search -> pair ->
-// create -> apply) on a purpose-built tiny project. Criterion 3's own
-// ACME-export acceptance test lives in anno-cli.test.ts (Task 3); this test
-// proves the GENERATOR's own mechanics, not the export surface.
-// ---------------------------------------------------------------------------
-
-const SKIP_REASON: string | false = skipReasonFor("anno-enum-gen.test.ts");
-
-test("regenerator2000 availability gate (D-11)", () => {
-  assertR2000RequiredIfEnvSet(assert);
-});
-
-test(
-  "gated: pairImmediateLoadsToStores() finds exactly one paired occurrence on lda #$1b / sta $d011 / rts",
-  { skip: SKIP_REASON },
-  async () => {
-    const dir = mkdtempSync(join(HERE, ".anno-enum-gen-test-pairing-"));
-    try {
-      const projectPath = join(dir, "probe.regen2000proj");
-      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]); // lda #$1b / sta $d011 / rts
-      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
-
-      const { runR2000Tool } = await import("./r2000-tools.ts");
-      await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
-
-      const result = await pairImmediateLoadsToStores(projectPath);
-      assert.equal(result.totalRegisterStores, 1);
-      assert.equal(result.pairedStores, 1);
-      assert.equal(result.unpairedStores, 0);
-      assert.equal(result.occurrences.length, 1);
-      assert.equal(result.occurrences[0]!.regKey, "$D011");
-      assert.equal(result.occurrences[0]!.value, 0x1b);
-      assert.equal(result.occurrences[0]!.ldaAddr, 0x0810);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  },
-);
-
-test(
-  "gated: generateEnums() end to end on lda #$1b / sta $d011 / rts creates one enum, one variant, one usage, with a clean (non-truncated) report",
-  { skip: SKIP_REASON },
-  async () => {
-    const dir = mkdtempSync(join(HERE, ".anno-enum-gen-test-gated-"));
-    try {
-      const projectPath = join(dir, "probe.regen2000proj");
-      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]); // lda #$1b / sta $d011 / rts
-      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
-
-      // Force the region to be analysed as Code first, mirroring the plan's
-      // own r2000_disassemble step (needed before search can find anything).
-      const { runR2000Tool } = await import("./r2000-tools.ts");
-      const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
-      assert.equal(disasmResult.isError, false, `r2000_disassemble failed: ${JSON.stringify(disasmResult)}`);
-
-      const report = await generateEnums({ projectPath });
-
-      assert.equal(report.totalRegisterStores, 1);
-      assert.equal(report.pairedStores, 1);
-      assert.equal(report.unpairedStores, 0);
-      assert.equal(report.pass1Truncated, false);
-      assert.equal(report.pass2Truncated, false);
-      assert.equal(report.enums.length, 1);
-      assert.equal(report.enums[0]!.enumName, "D011");
-      assert.equal(report.enums[0]!.variantCount, 1);
-      assert.equal(report.enums[0]!.usagesApplied, 1);
-      assert.equal(report.enums[0]!.action, "created");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  },
-);
-
-test(
-  "gated: createOrUpdateEnum() falls back to update when the enum name already exists (R2000-13's re-runnable requirement, the precedence this module documents)",
-  { skip: SKIP_REASON },
-  async () => {
-    // Deliberately calls createOrUpdateEnum() directly (not the full
-    // generateEnums() pipeline) with a HAND-BUILT variants map, isolating
-    // the create-then-update precedence from the pairing pass. This is the
-    // scenario the precedence actually protects: the SAME enum name already
-    // exists in the project (e.g. from a prior gen-enums run against a
-    // program whose disassembly has not otherwise changed), independent of
-    // whether any instruction's operand currently displays that enum.
-    //
-    // NOTE (discovered live during this task, documented rather than
-    // silently worked around): once r2000_apply_enum_usage has been applied
-    // to an address, that instruction's OWN r2000_search_disassembly operand
-    // text switches from the raw immediate ("#$1b") to the applied enum
-    // reference ("#D011.YSCROLL3_..." -- the dot form, RESEARCH.md's own
-    // documented live-view-vs-export discrepancy) -- so a literal
-    // generateEnums()-then-generateEnums()-again re-run over the SAME
-    // already-applied instructions finds nothing left to pair on its second
-    // pass (parseImmediateOperand correctly refuses the enum-reference text
-    // as an unparsable immediate, and the pairing loop skips it, per D-23's
-    // "a miss costs nothing" posture) -- it is a safe no-op, not a crash,
-    // but it does not exercise the update precedence end to end. Filed as a
-    // known follow-up rather than solved here: re-deriving a raw immediate
-    // value from an already-enum-applied address would need either a
-    // pre-pass that clears every existing usage first, or a currently
-    // out-of-scope tool (`r2000_read_region`, excluded by D-18) to read the
-    // raw byte directly.
-    const dir = mkdtempSync(join(HERE, ".anno-enum-gen-test-rerun-"));
-    try {
-      const projectPath = join(dir, "probe.regen2000proj");
-      const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]);
-      writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
-
-      const { runR2000Tool } = await import("./r2000-tools.ts");
-      await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
-
-      const first = await createOrUpdateEnum(projectPath, "$D011", new Map([[0x1b, "YSCROLL3_ROW25_SCREENON_TEXT"]]));
-      assert.equal(first, "created");
-
-      const second = await createOrUpdateEnum(projectPath, "$D011", new Map([[0x1b, "YSCROLL3_ROW25_SCREENON_TEXT"], [0x00, "V0"]]));
-      assert.equal(second, "updated", "calling createOrUpdateEnum() again with the same enum name must update, not fail");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  },
-);

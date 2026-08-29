@@ -1,0 +1,3 @@
+✗ ACME — ACME not found in PATH (skipped)
+✓ All roundtrip verifications passed.
+EXIT=0

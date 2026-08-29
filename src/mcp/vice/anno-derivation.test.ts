@@ -52,10 +52,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
-import { CURATED_R2000_TOOLS } from "./r2000-tools.ts";
-// The surface-derivation half at the foot of this file (plan 29-08). The
-// upstream-integrity half above uses neither.
-import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
+// The surface-derivation half at the foot of this file (plan 29-08).
+// `CURATED_ANNO_TOOLS` is ALSO used by the upstream-integrity half above, as
+// of plan 29-10: that half used to compare the manifest's `curated`
+// dispositions against the retired analyser's own curated set, and that set
+// was deleted with the module holding it. The comparison was RE-POINTED onto
+// the surviving surface rather than removed -- a guard dropped because its
+// subject was renamed is the drift it exists to catch -- carrying
+// `annoNameFor()`, the upstream-to-surface mapping plan 29-08 added, so the
+// comparison keeps its meaning instead of becoming a rename.
+import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -111,21 +117,65 @@ test("Phase 19 pins and classifies all five upstream analysis procedures", () =>
   }
 });
 
+/**
+ * Whether `upstream` has a route of ITS OWN on this project's surface --
+ * `annoNameFor()`'s image is on `CURATED_ANNO_TOOLS`, and the verb was not
+ * FOLDED into another one.
+ *
+ * The fold exclusion is not a convenience. `annoNameFor()` is deliberately
+ * NOT injective: D-09's departure 1 maps the cursor verb onto the SAME
+ * surface name the disassemble verb already owns, because this project has no
+ * editor cursor and the caller always supplies an address. Without the
+ * exclusion, that folded verb would test as "has a route" purely because the
+ * verb it was folded into does, and the biconditional below would fail on a
+ * correct tree.
+ *
+ * The excluded set is DERIVED from the manifest's own dispositions
+ * (`adapt-to-address-input` is precisely "absorbed into another verb's
+ * arguments"), never hand-typed, so a second fold recorded upstream is
+ * excluded automatically instead of silently breaking this guard. Its
+ * non-vacuity is asserted below rather than assumed.
+ */
+function hasDedicatedSurfaceRoute(upstream: string, disposition: string): boolean {
+  if (disposition === "adapt-to-address-input") return false;
+  return CURATED_ANNO_TOOLS.includes(annoNameFor(upstream));
+}
+
 test("every non-curated upstream call carries a justification and a citation", () => {
   const nonCurated = new Set<string>();
+  const folded = new Set<string>();
   for (const procedure of manifest.procedures) {
     for (const [name, disposition] of Object.entries(procedure.tools) as [string, string][]) {
-      const curated = CURATED_R2000_TOOLS.includes(name);
-      // The manifest's own bookkeeping must agree with r2000-tools.ts: a name
-      // marked "curated" here that is absent from CURATED_R2000_TOOLS (or the
-      // reverse) means the two records have drifted.
+      if (disposition === "adapt-to-address-input") folded.add(name);
+      const curated = hasDedicatedSurfaceRoute(name, disposition);
+      // The manifest's own bookkeeping must agree with the LIVE surface: a
+      // name marked "curated" here that has no dedicated route on
+      // CURATED_ANNO_TOOLS (or the reverse) means the two records have
+      // drifted. RE-POINTED by plan 29-10 from the retired analyser's own
+      // curated set, which was deleted with its module, onto the surviving
+      // surface via annoNameFor(). This is still an AGREEMENT check between
+      // two independently-maintained records, not a presence check: it must
+      // fail when the manifest and the surface disagree, in either direction.
       assert.equal(
         disposition === "curated",
         curated,
-        `${procedure.path}: ${name} is disposed "${disposition}" but CURATED_R2000_TOOLS ${curated ? "does" : "does not"} contain it`
+        `${procedure.path}: ${name} is disposed "${disposition}" but the surface ${curated ? "does" : "does not"} carry a dedicated route for it (${annoNameFor(name)})`
       );
       if (!curated) nonCurated.add(name);
     }
+  }
+
+  // NON-VACUITY OF THE FOLD EXCLUSION. If this were empty, the exclusion
+  // above would be decorative and its removal would go unnoticed; if the
+  // folded verb's surface name were absent, the exclusion would not be doing
+  // any work either. Both are asserted, so the exclusion is load-bearing and
+  // provably so.
+  assert.ok(folded.size >= 1, "expected at least one folded (adapt-to-address-input) upstream verb");
+  for (const name of folded) {
+    assert.ok(
+      CURATED_ANNO_TOOLS.includes(annoNameFor(name)),
+      `${name} is folded, so its surface name ${annoNameFor(name)} must exist -- otherwise the fold went nowhere`
+    );
   }
 
   // Non-vacuity: five non-curated names were enumerated in 19-RESEARCH.md

@@ -1700,7 +1700,7 @@ function classFromStore(gradeToken: string | null, blockClass: BlockClass | null
 /** Escapes `value` so it can be interpolated into a `RegExp` as a LITERAL.
  *
  * A label name is store data, not a literal this file controls: it arrives
- * from a regenerator2000 project file the operator did not necessarily author
+ * from an annotation store the operator did not necessarily author
  * (a cracked release's annotation store, a shared project). A name carrying
  * regex metacharacters must therefore become text rather than a pattern.
  * Same discipline `skill-attribution.test.ts` applies to manifest-sourced
@@ -1976,10 +1976,10 @@ export interface DivergenceReport {
 }
 
 const DIVERGENCE_NOTE =
-  "KNOWN, NAMED BIAS ON THE STORE SIDE: regenerator2000 auto-merges two adjacent same-type " +
-  "blocks with no boundary marker, and the upstream setter for that marker (its splitter toggle) " +
-  "is not on this project's curated tool surface. An over-merge on the store side is therefore " +
-  "expected and is not evidence of a census error. The census side reads no block data at all.";
+  "KNOWN, NAMED BIAS ON THE STORE SIDE: an annotation store may merge two adjacent same-type " +
+  "blocks that carry no boundary marker between them, and no verb on this project's curated " +
+  "surface sets that marker. An over-merge on the store side is therefore expected and is not " +
+  "evidence of a census error. The census side reads no block data at all.";
 
 /** `blockClassifier` is REQUIRED with NO default -- see
  * `ReproducibilityInput`'s field of the same name for why. */

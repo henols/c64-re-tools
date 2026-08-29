@@ -1,108 +1,126 @@
 #!/usr/bin/env node
 // anno-enum-gen.ts -- the ONE authoritative place in this repo for value ->
-// variant naming, the adjacent-pair pass, identifier sanitization, enum
-// installation and the coverage report (D-20/D-22/D-23, R2000-13, criterion
-// 3 -- the phase's most distinctive deliverable: neither this project nor
-// regenerator2000 can produce it alone).
+// variant naming, the adjacent-pair rule, identifier sanitization, the
+// per-register enum plan and the coverage report's wording contract
+// (D-20/D-22/D-23, R2000-13).
 //
-// MEASURED MECHANISM FACTS (all confirmed by direct live calls against a
-// real regenerator2000 0.9.20 child on this host, not merely paraphrased
-// from RESEARCH.md):
-//   - `EnumDefinition.variants` is a flat `BTreeMap<u16, String>` -- a plain
-//     value-to-name map. There is NO bit-OR composition anywhere in 0.9.20.
-//   - `r2000_apply_enum_usage` binds to the INSTRUCTION ADDRESS holding the
+// WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS (plan 29-10, D-01,
+// 2026-08-30). Read this paragraph before looking for a function that is not
+// here.
+//
+//   WHAT LEFT: the ROUTE, and only the route. Four things went, because all
+//   four spoke to the retired external analyser's own tool surface and every
+//   module they spoke through was deleted in the same commit:
+//     - the two disassembly searches that FETCHED the `lda` and `sta` rows;
+//     - `parseSearchRows()`, which unwrapped that surface's own result shape;
+//     - `createOrUpdateEnum()` and `applyUsage()`, which INSTALLED an enum
+//       and bound it to an address through that surface;
+//     - `generateEnums()`, the pass that strung those together.
+//
+//   WHAT STAYED: the HEURISTICS, all of them, as live code rather than as
+//   prose about code that used to exist. This is the part the classification
+//   registry exists to protect, so it was extracted from the route rather
+//   than deleted with it:
+//     - `variantNameFor()` and the bit-name table it decodes against -- the
+//       whole D-22 naming vocabulary, untouched, still pinned by its
+//       injectivity tests across all 256 values.
+//     - `pairSearchRows()` -- the D-23 adjacent-pair rule (a store pairs with
+//       an immediate load exactly 2 bytes earlier, adjacent-only, no
+//       dataflow, a miss costs nothing), lifted out of the deleted fetch
+//       loop verbatim and now a PURE function of two already-fetched row
+//       arrays. Phase 30 supplies the rows; the rule does not change.
+//     - `planEnumsForPairing()` -- D-20's own rule: one variant per DISTINCT
+//       value the program actually writes, never a full
+//       256-values-per-register table, with the first-seen `lda` address
+//       kept as each value's representative binding site.
+//     - `buildEnumGenerationReport()` -- D-23's "no silent caps" wording
+//       contract, which states a possible truncation in WORDS rather than
+//       leaving it to be inferred from a row count.
+//     - `sanitizeVariantMap()` and the identifier gate it runs, unchanged.
+//
+//   WHERE THE ROUTE RETURNS: **Phase 30**, which rebuilds the fetch and the
+//   install over this project's own Phase 28 annotation store and renders the
+//   enums into the ACME export. Everything above is what it builds against.
+//
+// MEASURED MECHANISM FACTS, PAST TENSE -- kept because they are WHY the
+// heuristics have the shape they have, not because anything still calls the
+// producer they were measured against (a real pinned-version 0.9.20 child on
+// this host, by direct live call, never paraphrased from a document):
+//   - An enum definition's variants were a flat `BTreeMap<u16, String>` -- a
+//     plain value-to-name map, with NO bit-OR composition anywhere. That is
+//     why `variantNameFor()` must produce one TOTAL name per value rather
+//     than a composable set of flags.
+//   - Applying an enum usage bound it to the INSTRUCTION ADDRESS holding the
 //     immediate operand (the `lda`, never the `sta`) -- confirmed both by
-//     direct call and by `handler.rs:1236-1264`'s own description text.
-//   - Applying an enum emits its WHOLE variant list into the exported ACME
-//     header; an unmatched value falls back to bare `#$xx` while the dead
-//     definitions are still emitted. This is exactly why D-20 generates one
-//     variant per value the program actually writes, never a full
-//     256-values-per-register table.
-//   - `r2000_create_project_enum` FAILS with "Enum '<name>' already exists"
-//     (`app_state.rs:443-457`'s `validate_new_enum_name`) if the name is
-//     already taken -- there is no upsert. This module's own precedence
-//     (documented at `createOrUpdateEnum()` below): try create first, and
-//     ONLY on an "already exists" failure fall back to
-//     `r2000_update_project_enum`, which replaces the variant map wholesale
-//     (R2000-13's own "re-runnable" requirement).
-//   - `r2000_search_disassembly` matches its `query` regex against the
+//     direct call and by `handler.rs:1236-1264`'s own description text. That
+//     is why `PairOccurrence` carries `ldaAddr` and not the store address.
+//   - Applying an enum emitted its WHOLE variant list into the exported ACME
+//     header; an unmatched value fell back to bare `#$xx` while the dead
+//     definitions were still emitted. This is exactly why D-20 generates one
+//     variant per value the program actually writes.
+//   - Creating an enum FAILED with "Enum '<name>' already exists"
+//     (`app_state.rs:443-457`'s `validate_new_enum_name`) if the name was
+//     already taken -- there was no upsert. That is why `EnumInstallAction`
+//     has two values and why R2000-13's re-runnability needed a documented
+//     create-then-update precedence rather than a single call. A rebuilt
+//     installer that cannot express "updated" has lost that requirement.
+//   - The disassembly search matched its `query` regex against the
 //     `mnemonic` and `operand` fields INDEPENDENTLY (`state/search.rs:
-//     309-313`, `text_matches(&line.mnemonic, ...)` OR
-//     `text_matches(&line.operand, ...)`) -- they are NEVER concatenated
-//     into one searchable string. This corrects RESEARCH.md's own Pattern 2
-//     code example, which assumed a combined `"^sta \$(...)"`-shaped query
-//     would match a "mnemonic + operand" string; measured live, it does not
-//     (a query is applied to `mnemonic` OR `operand`, so a combined pattern
-//     never matches either field alone). This module instead queries the
-//     MNEMONIC exactly (`"^lda$"` / `"^sta$"`, case-insensitive per the
-//     server's own `(?i)` prefix) and does the register/immediate-mode
-//     narrowing CLIENT-SIDE against this project's own curated register set
-//     -- still derived from `anno-regbits.json`'s own keys, never a second
-//     hardcoded list, exactly as D-23 requires; only the MECHANISM by which
-//     that narrowing happens changed from "one combined regex" to "two exact
-//     mnemonic queries plus a client-side operand filter".
-//   - `r2000_search_disassembly`'s `max_results` server-side default is 50
-//     (`handler.rs:1074-1077`) -- always pass an explicit value on this
-//     surface (D-23's "no silent caps": the returned count is compared
-//     against the requested ceiling and a truncation signal is reported in
-//     words, never left to be inferred).
+//     309-313`) -- they were NEVER concatenated into one searchable string.
+//     A combined `"^sta \$(...)"`-shaped query therefore matched neither
+//     field alone. The consequence that outlives it: the register and
+//     immediate-mode narrowing belongs CLIENT-SIDE, against this project's
+//     own curated register set derived from `anno-regbits.json`'s own keys,
+//     which is what `pairSearchRows()` still does and what D-23 requires.
+//   - That search's `max_results` server-side default was 50
+//     (`handler.rs:1074-1077`), which is where D-23's "no silent caps" rule
+//     came from: never accept a producer's own default ceiling, and report a
+//     possible truncation in words.
+//   - The live query view rendered an applied enum reference as
+//     `EnumName.VARIANT` (a dot) while the ACME export rendered
+//     `EnumName_VARIANT` (an underscore). VERSION-SCOPED to 0.9.20
+//     (RESEARCH.md Assumption A2). Phase 30 must re-measure the equivalent
+//     discrepancy against its own export rather than inherit this one.
 //
 // WHAT NOT TO DO, named concretely:
-//   - Never assert criterion 3 against `r2000_search_disassembly`'s own
-//     rendered operand text. Measured discrepancy (RESEARCH.md, confirmed
-//     unchanged this session): the live query view renders an applied enum
-//     reference as `EnumName.VARIANT` (a dot), while the ACME export
-//     (`--export_asm`) renders `EnumName_VARIANT` (an underscore) -- exactly
-//     what criterion 3's own wording quotes. This finding is VERSION-SCOPED
-//     to regenerator2000 0.9.20 (RESEARCH.md Assumption A2) -- re-verify
-//     against `--export_asm` at execution time rather than trusting it as
-//     permanent; Task 3's acceptance test records what it observes on this
-//     run rather than assuming the historical finding still holds.
-//   - Never omit `max_results` on a `r2000_search_disassembly` call in this
-//     module. Every call site below passes it explicitly.
-//   - Never call `r2000_create_project_enum` (or `_update_`) with an
-//     unsanitized identifier. `assertLegalAcmeIdentifier()` (now defined in
-//     `anno-acme-ident.ts`, re-exported here) runs on the enum name AND
-//     every variant name inside `sanitizeVariantMap()`, which is called
-//     BEFORE `createOrUpdateEnum()` ever reaches `runR2000Tool()` -- proven
-//     zero-spawn in `anno-enum-gen.test.ts` via a spy binary.
-//   - Never write a machine-global enum. Every call in this module goes
-//     through `runR2000Tool()` (`r2000-tools.ts`, plan 11-05), which only
-//     knows `r2000_create_project_enum`/`r2000_update_project_enum` -- the
-//     machine-wide config-dir save route named in D-21 is never referenced
-//     anywhere in this file (asserted mechanically by
-//     `anno-enum-gen.test.ts`'s own zero-count grep).
-//   - Never call `r2000-mcp-client.ts` directly. Every child interaction in
-//     this module goes through `r2000-tools.ts`'s `runR2000Tool()`, so the
-//     curated allow-list gate and the per-call auto-save both apply for
-//     free, exactly as plan 11-05's own "Next Phase Readiness" note
-//     instructs.
+//   - Never write a machine-global enum. The machine-wide config-dir save
+//     route named in D-21 is never referenced anywhere in this file, and
+//     `anno-enum-gen.test.ts`'s own zero-count grep asserts that
+//     mechanically. That guard is DORMANT while this module has no install
+//     route at all and goes live again the moment Phase 30 adds one -- which
+//     is exactly when it is needed, so it stays.
+//   - Never call an install path with an unsanitized identifier.
+//     `assertLegalAcmeIdentifier()` (defined in `anno-acme-ident.ts`,
+//     re-exported here) runs on every variant name inside
+//     `sanitizeVariantMap()`. Phase 30's rebuilt installer calls
+//     `sanitizeVariantMap()` BEFORE it does any I/O, for the same reason the
+//     deleted one did: sanitization is entirely client-side, so a rejected
+//     name provably never reaches a child.
+//   - Never re-derive the register set from a second hardcoded list. It comes
+//     from `anno-regbits.json`'s own keys, via `loadRegBits()`, always.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runR2000Tool } from "./r2000-tools.ts";
 import type { RegBitsField, RegBitsTable } from "./anno-regbits-gen.ts";
 import { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REGBITS_PATH = join(HERE, "anno-regbits.json");
 
-/** The server-side default (`handler.rs:1074-1077`) this surface's own
- * `runR2000Tool()` wrapper REQUIRES an explicit override for -- named here
- * so every call site in this module states its ceiling instead of trusting
- * the child's own default. */
+/** The ceiling a caller states instead of trusting a producer's own default
+ * (which was 50, `handler.rs:1074-1077`). D-23's "no silent caps" rule: the
+ * returned row count is compared against THIS value and a possible truncation
+ * is reported in words. Phase 30's rebuilt fetch passes it explicitly for the
+ * same reason. */
 export const DEFAULT_MAX_RESULTS = 10_000;
 
-// MAX_ACME_IDENTIFIER_LENGTH / assertLegalAcmeIdentifier() now live in
+// MAX_ACME_IDENTIFIER_LENGTH / assertLegalAcmeIdentifier() live in
 // anno-acme-ident.ts (plan 260821-a86, T-11-NAME-INJECT) -- that module is
 // the ONE authoritative place for the ACME identifier policy, consumed by
-// THIS file's createOrUpdateEnum()/sanitizeVariantMap() below plus two more
-// entry routes (r2000-tools.ts's r2000_set_label_name, anno-symbols.ts's
-// importLabels()) that could not import it from here without forming a
-// cycle (this file statically imports runR2000Tool FROM r2000-tools.ts).
-// Re-exported here (imported above) so this file's own existing
-// consumers/tests keep their current import path.
+// THIS file's sanitizeVariantMap() below plus anno-symbols.ts's own pre-spawn
+// label-name gate. Re-exported here (imported above) so this file's existing
+// consumers and tests keep their current import path.
 export { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier };
 
 // ---------------------------------------------------------------------------
@@ -210,30 +228,6 @@ export interface DisasmSearchRow {
   comment: string;
 }
 
-/** Parses one `r2000_search_disassembly` `ToolCallResult` into its rows,
- * throwing (naming `what`) on a reported `isError` or an unparsable body --
- * never silently treating either as "no rows". */
-async function parseSearchRows(
-  resultPromise: ReturnType<typeof runR2000Tool>,
-  what: string,
-): Promise<DisasmSearchRow[]> {
-  const result = await resultPromise;
-  const text = result.content.map((c) => c.text).join("");
-  if (result.isError) {
-    throw new Error(`${what} failed: ${text}`);
-  }
-  let rows: unknown;
-  try {
-    rows = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`${what}: could not parse response as JSON (${err instanceof Error ? err.message : String(err)}): ${text}`);
-  }
-  if (!Array.isArray(rows)) {
-    throw new Error(`${what}: expected an array of rows, got ${typeof rows}`);
-  }
-  return rows as DisasmSearchRow[];
-}
-
 /** Parses an ACME-style immediate operand string (`"#$1b"`, `"#42"`,
  * `"#%00011011"`) into its numeric value. Throws on anything else, naming
  * the offending operand text -- never silently returns 0 for an
@@ -284,48 +278,37 @@ export interface PairingResult {
 }
 
 /**
- * Runs the two-pass search (all `lda` instructions, all `sta` instructions --
- * queried by EXACT mnemonic match, per this module's own measured correction
- * to RESEARCH.md's combined-regex assumption, see header comment) and pairs
- * each store to a register this module's bit-name table knows with an
- * immediate load exactly 2 bytes earlier (D-23: adjacent-only, no
- * dataflow -- `lda #imm` is always 2 bytes in immediate mode, so the
- * following store begins at `ldaAddr + 2` regardless of the store's own
- * addressing mode).
+ * THE D-23 ADJACENT-PAIR RULE -- pure, and the reason this module survived
+ * the cut (plan 29-10). It was extracted verbatim from the deleted two-pass
+ * fetch, which is now the CALLER's job: hand it the `lda` rows and the `sta`
+ * rows and it pairs each store to a register the bit-name table knows with an
+ * immediate load exactly 2 bytes earlier.
+ *
+ * Adjacent-only, no dataflow: `lda #imm` is always 2 bytes in immediate mode,
+ * so the following store begins at `ldaAddr + 2` regardless of the store's
+ * own addressing mode. A store with no immediate load at exactly that address
+ * is simply not paired -- D-23's "a miss costs nothing" posture, which is
+ * what keeps this rule cheap enough to be worth having at all.
+ *
+ * The register narrowing is CLIENT-SIDE, against `anno-regbits.json`'s own
+ * keys, never a second hardcoded list and never a producer-side query
+ * (see the measured search-field fact in this module's header for why that
+ * is not merely a preference).
+ *
+ * `maxResults` is the ceiling the caller asked its fetch for. A pass whose
+ * row count EQUALS that ceiling is reported as possibly truncated, per D-23's
+ * "no silent caps" -- pass the same value the fetch used, or the truncation
+ * signal is meaningless.
  */
-export async function pairImmediateLoadsToStores(
-  projectPath: string,
+export function pairSearchRows(
+  ldaRows: readonly DisasmSearchRow[],
+  staRows: readonly DisasmSearchRow[],
   maxResults: number = DEFAULT_MAX_RESULTS,
-): Promise<PairingResult> {
+): PairingResult {
   const table = loadRegBits();
   const knownRegisters = new Set(Object.keys(table));
 
-  const ldaRows = await parseSearchRows(
-    runR2000Tool("r2000_search_disassembly", {
-      project: projectPath,
-      query: "^lda$",
-      use_regex: true,
-      max_results: maxResults,
-      search_labels: false,
-      search_comments: false,
-      search_instructions: true,
-    }),
-    "r2000_search_disassembly (pass 1: lda)",
-  );
   const pass1Truncated = ldaRows.length === maxResults;
-
-  const staRows = await parseSearchRows(
-    runR2000Tool("r2000_search_disassembly", {
-      project: projectPath,
-      query: "^sta$",
-      use_regex: true,
-      max_results: maxResults,
-      search_labels: false,
-      search_comments: false,
-      search_instructions: true,
-    }),
-    "r2000_search_disassembly (pass 2: sta)",
-  );
   const pass2Truncated = staRows.length === maxResults;
 
   const immByAddr = new Map<number, number>();
@@ -364,22 +347,29 @@ export async function pairImmediateLoadsToStores(
 }
 
 // ---------------------------------------------------------------------------
-// Enum installation (D-20/D-21/D-33-adjacent: only through runR2000Tool()).
+// The enum PLAN and its wording contract (D-20/D-21/D-23). The installation
+// route that consumed these was deleted by plan 29-10; what a rebuilt one
+// needs is all still here.
 // ---------------------------------------------------------------------------
 
-/** Formats a numeric value the way `r2000_create_project_enum`'s own
- * `EnumDefinition::parse_variants` accepts (`$`-prefixed lowercase hex),
- * matching the measured example in this phase's own RESEARCH.md exactly. */
+/** Formats a numeric value the way the retired producer's own
+ * `EnumDefinition::parse_variants` accepted it (`$`-prefixed lowercase hex),
+ * matching the measured example in this phase's own RESEARCH.md exactly.
+ * Kept because it is the shape a variant KEY takes, and Phase 30 needs to
+ * know what it was to decide whether to keep it. */
 function formatVariantKey(value: number): string {
   return `$${value.toString(16)}`;
 }
 
 /**
- * Builds the `{ "$1b": "YSCROLL3_..." }`-shaped variants object for
- * `r2000_create_project_enum`/`_update_`, calling `assertLegalAcmeIdentifier`
- * on every variant name FIRST -- this is the whole reason
- * `createOrUpdateEnum()` below can prove zero child spawns for a rejected
- * name: sanitization happens entirely client-side, before any I/O.
+ * Builds the `{ "$1b": "YSCROLL3_..." }`-shaped variants object, calling
+ * `assertLegalAcmeIdentifier` on every variant name FIRST.
+ *
+ * That ordering is the whole property, not an implementation detail: because
+ * sanitization happens entirely client-side and before any I/O, a rejected
+ * name provably never reaches a child process. The deleted installer proved
+ * exactly that with a spy binary; Phase 30's installer inherits the property
+ * by calling this function before it does any I/O of its own.
  */
 export function sanitizeVariantMap(regKey: string, variants: ReadonlyMap<number, string>): Record<string, string> {
   const out: Record<string, string> = {};
@@ -390,75 +380,20 @@ export function sanitizeVariantMap(regKey: string, variants: ReadonlyMap<number,
   return out;
 }
 
-export type EnumInstallAction = "created" | "updated";
-
 /**
- * Creates (or, on an "already exists" failure, updates) the project-level
- * enum named after `regKey` (e.g. `$D011` -> enum name `D011`) with
- * `variants`. Precedence, decided and documented here: CREATE is tried
- * first; only when regenerator2000 itself reports the name already exists
- * (`validate_new_enum_name`'s own message, `app_state.rs:455`) does this
- * function fall back to UPDATE, which replaces the variant map wholesale --
- * this is what makes a re-run of `generateEnums()` idempotent (R2000-13's
- * "re-runnable" requirement) rather than failing on every run after the
- * first.
+ * The two outcomes a rebuilt installer must still be able to report.
  *
- * `assertLegalAcmeIdentifier` runs on the enum name and (via
- * `sanitizeVariantMap`) every variant name BEFORE either child call --
- * proven zero-spawn in `anno-enum-gen.test.ts` via a spy binary.
+ * KEPT ACROSS THE CUT (plan 29-10) even though nothing in this repo installs
+ * an enum today. Creating an enum whose name already existed FAILED outright
+ * on the retired producer -- there was no upsert -- so R2000-13's
+ * "re-runnable" requirement was met by a documented precedence: try CREATE
+ * first, and only on an already-exists failure fall back to UPDATE, which
+ * replaces the variant map wholesale. That precedence, and this two-valued
+ * result, are the requirement's whole observable content. A Phase 30
+ * installer that can only ever report "created" has quietly dropped
+ * R2000-13.
  */
-export async function createOrUpdateEnum(
-  projectPath: string,
-  regKey: string,
-  variants: ReadonlyMap<number, string>,
-): Promise<EnumInstallAction> {
-  const enumName = regKey.slice(1); // "$D011" -> "D011"
-  assertLegalAcmeIdentifier(enumName, `enum name for ${regKey}`);
-  const variantsObj = sanitizeVariantMap(regKey, variants);
-
-  const createResult = await runR2000Tool("r2000_create_project_enum", {
-    project: projectPath,
-    name: enumName,
-    variants: variantsObj,
-  });
-  if (!createResult.isError) return "created";
-
-  const createText = createResult.content.map((c) => c.text).join(" ");
-  if (!/already exists/i.test(createText)) {
-    throw new Error(`r2000_create_project_enum failed for "${enumName}": ${createText}`);
-  }
-
-  const updateResult = await runR2000Tool("r2000_update_project_enum", {
-    project: projectPath,
-    name: enumName,
-    variants: variantsObj,
-  });
-  if (updateResult.isError) {
-    throw new Error(
-      `r2000_update_project_enum failed for "${enumName}" (after create reported already-exists): ` +
-        `${updateResult.content.map((c) => c.text).join(" ")}`,
-    );
-  }
-  return "updated";
-}
-
-async function applyUsage(projectPath: string, address: number, enumName: string): Promise<void> {
-  const result = await runR2000Tool("r2000_apply_enum_usage", {
-    project: projectPath,
-    address,
-    name: enumName,
-  });
-  if (result.isError) {
-    throw new Error(
-      `r2000_apply_enum_usage failed at address ${address} for enum "${enumName}": ` +
-        `${result.content.map((c) => c.text).join(" ")}`,
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// generateEnums() -- the whole pass, and its coverage report.
-// ---------------------------------------------------------------------------
+export type EnumInstallAction = "created" | "updated";
 
 export interface EnumInstallSummary {
   regKey: string;
@@ -466,6 +401,61 @@ export interface EnumInstallSummary {
   variantCount: number;
   action: EnumInstallAction;
   usagesApplied: number;
+}
+
+/** One register's worth of the plan: the enum name, the sanitized variant
+ * map, and every paired occurrence whose `lda` address a usage must be bound
+ * to (never the store address -- see the measured binding fact in this
+ * module's header). */
+export interface PlannedEnum {
+  regKey: string;
+  enumName: string;
+  /** value -> variant name, one entry per DISTINCT value observed (D-20). */
+  variants: Map<number, string>;
+  occurrences: PairOccurrence[];
+}
+
+/**
+ * D-20's OWN RULE, pure and route-free: group the paired occurrences by
+ * register, keep ONE variant per DISTINCT value the program actually writes,
+ * and name each with `variantNameFor()`.
+ *
+ * Never a full 256-values-per-register table. That is not an efficiency
+ * choice: applying an enum emitted its WHOLE variant list into the exported
+ * ACME header, so a table of 256 dead definitions is 256 lines of noise in
+ * the output for every register touched. The measured fact is in this
+ * module's header; this function is where the consequence lives.
+ *
+ * Extracted from the deleted `generateEnums()` pass by plan 29-10 with its
+ * grouping and naming unchanged -- only the install calls that followed it
+ * went.
+ */
+export function planEnumsForPairing(pairing: PairingResult): PlannedEnum[] {
+  // regKey -> value -> representative ldaAddr (first seen)
+  const byRegister = new Map<string, Map<number, number>>();
+  const occurrencesByRegister = new Map<string, PairOccurrence[]>();
+  for (const occ of pairing.occurrences) {
+    if (!byRegister.has(occ.regKey)) byRegister.set(occ.regKey, new Map());
+    if (!occurrencesByRegister.has(occ.regKey)) occurrencesByRegister.set(occ.regKey, []);
+    byRegister.get(occ.regKey)!.set(occ.value, occ.ldaAddr);
+    occurrencesByRegister.get(occ.regKey)!.push(occ);
+  }
+
+  const planned: PlannedEnum[] = [];
+  for (const [regKey, valuesToLdaAddr] of byRegister) {
+    const address = Number.parseInt(regKey.slice(1), 16);
+    const variants = new Map<number, string>();
+    for (const value of valuesToLdaAddr.keys()) {
+      variants.set(value, variantNameFor(address, value));
+    }
+    planned.push({
+      regKey,
+      enumName: regKey.slice(1), // "$D011" -> "D011"
+      variants,
+      occurrences: occurrencesByRegister.get(regKey) ?? [],
+    });
+  }
+  return planned;
 }
 
 export interface EnumGenerationReport {
@@ -481,68 +471,26 @@ export interface EnumGenerationReport {
   summaryLines: string[];
 }
 
-export interface GenerateEnumsOptions {
-  projectPath: string;
-  maxResults?: number;
-}
-
 /**
- * The whole D-20/D-22/D-23 pass: two exact-mnemonic searches (explicit
- * `max_results`, never the server's own 50-row default), adjacent-only
- * pairing, one variant per DISTINCT value observed per register (D-20),
- * create-or-update per register (this module's own documented precedence),
- * apply-usage at every paired `lda` address (never the store address --
- * measured, `handler.rs:1236-1264`), and a coverage report naming totals,
- * pairing counts and any possible truncation explicitly.
+ * D-23's WORDING CONTRACT, pure and route-free: the coverage report that
+ * names the totals, the pairing counts and -- in WORDS, never left to be
+ * inferred from a row count that happens to equal a ceiling -- any pass that
+ * may have been truncated.
  *
- * Persistence: every mutating call here goes through `runR2000Tool()`
- * (`r2000-tools.ts`), whose own per-call auto-save (D-17) already persists
- * each create/update/apply the instant its own session closes -- see that
- * module's header for why a SECOND, standalone `r2000_save_project` call
- * after a sequence of already-auto-saving calls is not issued here: it would
- * only ever observe an unchanged hash (nothing pending) and report a
- * spurious `R2000SaveNotPersistedError`, which `r2000-tools.ts`'s own header
- * documents as the expected (not buggy) shape of that specific call
- * sequence. Persistence itself is independently proven at the ACME EXPORT
- * layer (Task 3), not re-asserted here.
+ * "No silent caps" is the whole point. A caller who reads
+ * `pairedStores: 4000` off a run whose fetch ceiling was 4000 has no way to
+ * know whether that is the answer or the ceiling; a line containing the word
+ * "TRUNCATION" is the difference between a measurement and a guess.
+ *
+ * Extracted from the deleted `generateEnums()` pass by plan 29-10 with its
+ * strings byte-identical, so a rebuilt pass reports in the same words rather
+ * than paraphrasing them.
  */
-export async function generateEnums({ projectPath, maxResults = DEFAULT_MAX_RESULTS }: GenerateEnumsOptions): Promise<EnumGenerationReport> {
-  const pairing = await pairImmediateLoadsToStores(projectPath, maxResults);
-
-  const byRegister = new Map<string, Map<number, number>>(); // regKey -> value -> representative ldaAddr (first seen)
-  const occurrencesByRegister = new Map<string, PairOccurrence[]>();
-  for (const occ of pairing.occurrences) {
-    if (!byRegister.has(occ.regKey)) byRegister.set(occ.regKey, new Map());
-    if (!occurrencesByRegister.has(occ.regKey)) occurrencesByRegister.set(occ.regKey, []);
-    byRegister.get(occ.regKey)!.set(occ.value, occ.ldaAddr);
-    occurrencesByRegister.get(occ.regKey)!.push(occ);
-  }
-
-  const enums: EnumInstallSummary[] = [];
-  for (const [regKey, valuesToLdaAddr] of byRegister) {
-    const address = Number.parseInt(regKey.slice(1), 16);
-    const variants = new Map<number, string>();
-    for (const value of valuesToLdaAddr.keys()) {
-      variants.set(value, variantNameFor(address, value));
-    }
-
-    const action = await createOrUpdateEnum(projectPath, regKey, variants);
-
-    const occurrences = occurrencesByRegister.get(regKey) ?? [];
-    for (const occ of occurrences) {
-      const enumName = regKey.slice(1);
-      await applyUsage(projectPath, occ.ldaAddr, enumName);
-    }
-
-    enums.push({
-      regKey,
-      enumName: regKey.slice(1),
-      variantCount: variants.size,
-      action,
-      usagesApplied: occurrences.length,
-    });
-  }
-
+export function buildEnumGenerationReport(
+  pairing: PairingResult,
+  enums: readonly EnumInstallSummary[],
+  maxResults: number = DEFAULT_MAX_RESULTS,
+): EnumGenerationReport {
   const summaryLines: string[] = [
     `total register stores seen: ${pairing.totalRegisterStores}`,
     `paired (adjacent lda #imm found): ${pairing.pairedStores}`,
@@ -568,7 +516,8 @@ export async function generateEnums({ projectPath, maxResults = DEFAULT_MAX_RESU
     unpairedStores: pairing.unpairedStores,
     pass1Truncated: pairing.pass1Truncated,
     pass2Truncated: pairing.pass2Truncated,
-    enums,
+    enums: [...enums],
     summaryLines,
   };
 }
+
