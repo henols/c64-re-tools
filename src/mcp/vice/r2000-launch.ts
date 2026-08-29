@@ -27,7 +27,7 @@
 //     here, never a bespoke ad hoc argv assembled at a call site;
 //   - the ONE **synchronous**, blocking `spawnSync` of regenerator2000
 //     (`runR2000()`), used by every CLI verb (`r2000-cli.ts`) and by
-//     `r2000-verify.ts`/`r2000-symbols.ts`.
+//     `r2000-verify.ts`/`anno-symbols.ts`.
 // `r2000-mcp-client.ts`'s `withR2000Session()` is the ONE **asynchronous**
 // spawn site (`spawn()`, not `spawnSync()`) -- it exists because a
 // long-lived MCP-over-stdio child session cannot be a blocking call, which

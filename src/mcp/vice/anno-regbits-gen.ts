@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// r2000-regbits-gen.ts -- the ONE authoritative place in this repo that turns
+// anno-regbits-gen.ts -- the ONE authoritative place in this repo that turns
 // c64-memory-mapping's memmap.json into the curated address->bit-name table
-// r2000-enum-gen.ts decodes register values against (D-22, R2000-13).
+// anno-enum-gen.ts decodes register values against (D-22, R2000-13).
 //
 // WHY THIS EXISTS (D-22): neither register the phase's own pinned criterion-3
 // target needs ($D011) nor the registers a real game writes to constantly
@@ -18,8 +18,8 @@
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: reading memmap.json's 29
 // structured `bits` entries, normalising each `bits[].bit` range string into
 // `{mask, shift}`, deriving (or overriding) a legal ACME identifier for every
-// field, and emitting the committed, banner-marked `r2000-regbits.json`
-// artifact `r2000-enum-gen.ts` decodes against. No other module may read
+// field, and emitting the committed, banner-marked `anno-regbits.json`
+// artifact `anno-enum-gen.ts` decodes against. No other module may read
 // memmap.json for this purpose or hand-maintain a second bit-name table.
 //
 // KEY-SHAPE DECISION: table keys are `$XXXX` (uppercase, 4-hex-digit,
@@ -31,11 +31,11 @@
 // numeric-sort step is needed to keep the emitted JSON diff-stable.
 //
 // WHAT NOT TO DO, named concretely:
-//   - Never hand-edit r2000-regbits.json. It is a generated-but-committed
+//   - Never hand-edit anno-regbits.json. It is a generated-but-committed
 //     artifact (ENGINEERING_RULES.md Sec 11), the same shape
 //     `resources-sync.test.ts` already established for compiled `.mjs`
-//     build output -- re-run `node r2000-regbits-gen.ts` and let the drift
-//     guard in r2000-regbits.test.ts confirm the result matches.
+//     build output -- re-run `node anno-regbits-gen.ts` and let the drift
+//     guard in anno-regbits.test.ts confirm the result matches.
 //   - Never silently skip or placeholder an unmappable bit description.
 //     `buildRegBits()` THROWS, naming the address, the bit range and the
 //     offending description, when mechanical derivation fails AND no
@@ -63,7 +63,7 @@ const MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-ma
 
 /** Where the generated, committed artifact lives -- always a sibling of this
  * generator, never a caller-supplied path. */
-const OUTPUT_PATH = join(HERE, "r2000-regbits.json");
+const OUTPUT_PATH = join(HERE, "anno-regbits.json");
 
 export type FieldKind = "flag" | "numeric" | "enum";
 
@@ -191,7 +191,7 @@ function spriteBitFields(suffix: string): RegBitsField[] {
 
 // ---------------------------------------------------------------------------
 // OVERRIDES -- every entry carries its own WHY comment immediately above it
-// (r2000-regbits.test.ts's own non-vacuity check counts these two things
+// (anno-regbits.test.ts's own non-vacuity check counts these two things
 // against each other, so removing a comment without removing its entry, or
 // vice versa, fails a test rather than silently drifting).
 // ---------------------------------------------------------------------------
@@ -400,9 +400,9 @@ export function buildRegBitsDocument(): RegBitsDocument {
   const table = buildRegBits();
   const doc: RegBitsDocument = {
     _generated: {
-      generator: "r2000-regbits-gen.ts",
+      generator: "anno-regbits-gen.ts",
       memmapSha256: memmapSha256(),
-      warning: "GENERATED FILE -- do not hand-edit. Regenerate via `node r2000-regbits-gen.ts` from src/mcp/vice.",
+      warning: "GENERATED FILE -- do not hand-edit. Regenerate via `node anno-regbits-gen.ts` from src/mcp/vice.",
     },
   };
   for (const key of Object.keys(table).sort()) {
@@ -412,10 +412,10 @@ export function buildRegBitsDocument(): RegBitsDocument {
 }
 
 // Run-as-script: regenerate the committed artifact. Guarded so importing this
-// module (e.g. from r2000-regbits.test.ts) never has a write side effect.
+// module (e.g. from anno-regbits.test.ts) never has a write side effect.
 const isMain = process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url;
 if (isMain) {
   const doc = buildRegBitsDocument();
   writeFileSync(OUTPUT_PATH, `${JSON.stringify(doc, null, 2)}\n`);
-  console.log(`r2000-regbits-gen: wrote ${OUTPUT_PATH} (${Object.keys(doc).length - 1} registers)`);
+  console.log(`anno-regbits-gen: wrote ${OUTPUT_PATH} (${Object.keys(doc).length - 1} registers)`);
 }

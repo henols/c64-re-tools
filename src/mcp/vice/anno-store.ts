@@ -174,7 +174,7 @@ import {
   type XrefAccessKind,
   type XrefRow,
 } from "./anno-types.ts";
-import { CONFIDENCE_GRADES, parseConfidencePrefix, R2000ConfidenceGradeError } from "./r2000-confidence.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix, R2000ConfidenceGradeError } from "./anno-confidence.ts";
 // Imported for ONE purpose: the family predicate the guarded regions below use to
 // decide "rethrow unchanged" versus "wrap". Every `Anno*Error` in `anno-types.ts`
 // already extends it, so nothing new enters the module graph -- `anno-types.ts`

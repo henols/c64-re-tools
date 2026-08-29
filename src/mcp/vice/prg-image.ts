@@ -17,7 +17,7 @@
 // WHY THIS FILE EXISTS SEPARATELY: these three functions used to live in
 // `r2000-project.ts`, the module that builds a `.regen2000proj` file for the
 // regenerator2000 analyser. They were never about that analyser. One of them
-// is imported statically by the byte-coverage census (`r2000-coverage.ts`), a
+// is imported statically by the byte-coverage census (`anno-coverage.ts`), a
 // capability that must keep working independently of whether this repo still
 // drives that analyser at all -- so a census whose only route to a payload
 // decoder ran through analyser glue was one deletion away from breaking with
@@ -32,7 +32,7 @@
 // `r2000-cli.ts` (through a dynamic import), and `r2000-cli.ts` imports
 // `parsePrg` and `flatImageOrigin` from here. `scripts/check-npm-packages.mjs`
 // walks that closure over `files[]` and fails the pack the moment a reachable
-// module sits outside the listed set, exactly as `r2000-d64.ts`'s own header
+// module sits outside the listed set, exactly as `anno-d64.ts`'s own header
 // records for the same reason.
 //
 // WHAT NOT TO DO:

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// r2000-coverage.ts -- the ONE place that measures how well a binary has
+// anno-coverage.ts -- the ONE place that measures how well a binary has
 // actually been reverse-engineered (COV-01, COV-02).
 //
 // ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@
 // is the only place in the tree that interprets a store block-type string --
 // and it reaches only a sub-report that is explicitly named as a comparison,
 // never a measure of completeness. This file compares NEUTRAL block classes
-// and never a store vocabulary. `r2000-coverage.test.ts` pins that boundary
+// and never a store vocabulary. `anno-coverage.test.ts` pins that boundary
 // twice: by rewriting every block entry to one type and asserting no census
 // byte count moves, and by substituting a second block vocabulary through
 // the boundary and asserting the same thing.
@@ -83,7 +83,7 @@
 //      reasons, NOT an aggregate: it never averages, sums or weights the
 //      measures, and every finding names exactly one of them.
 //   4. NEVER define a second confidence vocabulary. `CONFIDENCE_GRADES` from
-//      `./r2000-confidence.ts` is the only one; that module's own header
+//      `./anno-confidence.ts` is the only one; that module's own header
 //      forbids a second spelling.
 //   5. NEVER import this repository's host-path or container-path translation
 //      modules. The whole r2000 module family is asserted ABSENT from that
@@ -97,7 +97,7 @@
 //      import here. A coverage run is read-only over a project file BY
 //      CONSTRUCTION, so two concurrent runs cannot corrupt a project and an
 //      interrupted run leaves no partial report behind -- there is nothing on
-//      disk for it to leave. `r2000-coverage.test.ts` asserts that at source
+//      disk for it to leave. `anno-coverage.test.ts` asserts that at source
 //      level.
 //   7. NEVER let an absent input read as a pass (COV-02). A missing payload,
 //      an undecodable one, or an empty comment set reports an explicit `null`
@@ -141,7 +141,7 @@
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode, type Instruction } from "./disasm-decoder.ts";
 import { decodeRawData } from "./prg-image.ts";
-import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
 import { readFileSync } from "node:fs";
 
 // ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ import { readFileSync } from "node:fs";
  * The report's schema version. The decomposition sweep reads this report
  * repeatedly and the reassembly gate reuses the dispatch scan, so the field
  * set is a contract, not an implementation detail. Bump this ONLY together
- * with `r2000-coverage.test.ts`'s exact top-level key-set assertion -- that
+ * with `anno-coverage.test.ts`'s exact top-level key-set assertion -- that
  * test exists so a silent field rename fails loudly rather than quietly
  * feeding two consumers `undefined`.
  *
@@ -187,7 +187,7 @@ export const MAX_TABLE_ENTRIES = 64;
  * loads further apart than this are not treated as a lo/hi pair. */
 /** How many decoded instructions the class-3 pairing window spans, and the
  * `reach` every `hasDispatchContext()` / `resolveSplitOrientation()` call is
- * given. EXPORTED so the gate-interior witness in `r2000-coverage.test.ts` can
+ * given. EXPORTED so the gate-interior witness in `anno-coverage.test.ts` can
  * ask its question over the same window the predicate rules on, rather than
  * over a number typed into a test that could silently drift from this one. */
 export const SPLIT_TABLE_WINDOW = 8;
@@ -743,7 +743,7 @@ interface DispatchPairing {
  * `reachedAsInstruction`.
  *
  * ADDING A SHAPE HERE WITHOUT A NEGATIVE CONTROL THAT REACHES ITS INTERIOR
- * FAILS THE TEST SUITE BY NAME. `r2000-coverage.test.ts`'s
+ * FAILS THE TEST SUITE BY NAME. `anno-coverage.test.ts`'s
  * `GATE_INTERIOR_DECLARATIONS` must claim every id in this array, and a
  * declaration is checked mechanically by a witness that decodes the payload --
  * not accepted as a claim. That mechanism exists because CR-04 was a real
@@ -802,7 +802,7 @@ export interface DispatchGateRoute {
  *
  * ADDING A THIRD GATE HERE WITHOUT A CONTROL FOR IT FAILS THE TEST SUITE BY
  * NAME, and so does adding one to `scanIndirectDispatch()` without recording
- * it here. Four assertions in `r2000-coverage.test.ts` hold this array down
+ * it here. Four assertions in `anno-coverage.test.ts` hold this array down
  * against the module's own text rather than against a hand-maintained mirror:
  * the number of `hasDispatchContext(` call sites equals the number of records
  * whose `consultsSharedGate` is true; each record's `publishesInto` occurs
@@ -1827,7 +1827,7 @@ function citesCallerByName(rawComment: string, name: string): boolean {
  * unanchored `includes()` could be satisfied by a string that merely TOUCHES a
  * caller's short form -- a falsely-clean verdict on the anti-gaming measure
  * itself (T-19-14, T-19G-06-01, T-19G-12-01). Held down in BOTH directions by
- * three committed controls in `r2000-coverage.test.ts`: "ANCHORING: a
+ * three committed controls in `anno-coverage.test.ts`: "ANCHORING: a
  * colliding longer hex never satisfies the multi-caller rule ...", "ANCHORING:
  * a caller's label name satisfies the rule only on an identifier boundary",
  * and "WR-13: a caller's label name counts only when the comment USES it as a
@@ -2090,7 +2090,7 @@ export interface CoverageOptions {
    * made by editing `block-class.ts`, never by threading a different
    * classifier in from a call site: a second production classifier is a
    * second answer to "what class is this address", which is exactly what the
-   * boundary exists to prevent. `r2000-coverage.test.ts` is the only caller
+   * boundary exists to prevent. `anno-coverage.test.ts` is the only caller
    * that supplies it, and it supplies a vocabulary sharing no string with
    * the real one so that a comparison site left behind anywhere in this file
    * moves a census byte count and fails loudly.

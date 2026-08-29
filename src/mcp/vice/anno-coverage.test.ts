@@ -1,4 +1,4 @@
-// r2000-coverage.test.ts -- the six committed controls, the schema pin, the
+// anno-coverage.test.ts -- the six committed controls, the schema pin, the
 // independence proof, and the reproducibility seal.
 //
 // WHY THIS FILE IS SHAPED THE WAY IT IS: a coverage instrument's own failure
@@ -58,7 +58,7 @@ import {
   type R2000Comment,
   type R2000CrossReference,
   type R2000Symbol,
-} from "./r2000-coverage.ts";
+} from "./anno-coverage.ts";
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { DATA_TYPES, LABEL_KINDS } from "./anno-types.ts";
 import { decode } from "./disasm-decoder.ts";
@@ -650,7 +650,7 @@ test("independence: rewriting every block entry to one type leaves every census 
 //
 // WHY THE SECOND VOCABULARY SHARES NO STRING WITH THE FIRST -- do NOT
 // "simplify" this back into overlap. Zero overlap is what makes a comparison
-// site LEFT BEHIND in `r2000-coverage.ts` observable. A left-behind site
+// site LEFT BEHIND in `anno-coverage.ts` observable. A left-behind site
 // compares a block entry's raw `type` against the production vocabulary's own
 // spelling; fed a listing spelled in that vocabulary it would agree with the
 // production adapter and hide. Fed a listing the substituted classifier reads
@@ -680,7 +680,7 @@ const PRODUCTION_BLOCK_SPELLINGS: readonly string[] = [
 ];
 
 /** The subset of `PRODUCTION_BLOCK_SPELLINGS` whose presence as a string
- * literal in `r2000-coverage.ts` would actually mean a store spelling had
+ * literal in `anno-coverage.ts` would actually mean a store spelling had
  * leaked into the census -- i.e. every accepted spelling EXCEPT the ones that
  * are string-identical to a neutral `BlockClass` token.
  *
@@ -772,7 +772,7 @@ test("substitutability: the substituted vocabulary shares no string with EITHER 
     shared,
     [],
     "the substituted vocabulary shares a spelling with the production one -- a comparison site left behind in " +
-      "r2000-coverage.ts could then agree with the adapter by accident and hide from the proof below",
+      "anno-coverage.ts could then agree with the adapter by accident and hide from the proof below",
   );
 });
 
@@ -887,7 +887,7 @@ test("idempotency: building the coverage report twice over the same fixture thro
 //
 // `SEAM-03` extracted the BLOCK-type vocabulary into `block-class.ts`. The
 // sibling LABEL-KIND vocabulary was never extracted and is still compared
-// inline at four sites in `r2000-coverage.ts`: `:1430`
+// inline at four sites in `anno-coverage.ts`: `:1430`
 // (`kind === "System" || kind === "Platform"`), `:1432` (`kind === "User"`),
 // `:1869` (the `nameByAddress` build) and `:2180` (the `seeds` build). This
 // section does not extract that second boundary -- it PINS the agreement and
@@ -921,7 +921,7 @@ test("a lowercase label kind collapses the user tally to zero with no error -- t
   const after = reportFor(WELL_DOCUMENTED, { symbols: lowercased });
 
   const why =
-    "computeLabelRatio compares the kind against the CAPITALISED spellings at r2000-coverage.ts:1430 and :1432, " +
+    "computeLabelRatio compares the kind against the CAPITALISED spellings at anno-coverage.ts:1430 and :1432, " +
     "and a kind matching neither falls through BOTH branches -- so a store emitting a lowercase kind empties the " +
     "tally with no error anywhere. The same comparison is repeated inline at :1869 (nameByAddress) and :2180 " +
     "(seeds), where the same lowercase kind empties the census's name map and its seed set. This tally is the " +
@@ -951,7 +951,7 @@ test("derived agreement: every member of the store's label-kind vocabulary appea
   // for ARE string literals, and `codeOnly()`'s default strict mode blanks
   // literal bodies -- which would make every one of them unobservable and
   // turn this loop into a guard that passes by construction.
-  const source = codeOnly(readFileSync(join(HERE, "r2000-coverage.ts"), "utf8"), true);
+  const source = codeOnly(readFileSync(join(HERE, "anno-coverage.ts"), "utf8"), true);
 
   // THE ASYMMETRY IS DECIDED, not an oversight: block types are lowercase and
   // label kinds are capitalised. `DATA_TYPES` is lowercase because it is read
@@ -1048,12 +1048,12 @@ test("SUPPLEMENT (not the proof): the census module's source carries no producti
   // why exempting exactly those two is the honest measurement rather than a
   // lowered floor -- and note that the exemption list's size is itself
   // asserted above, so it cannot widen unnoticed.
-  const source = codeOnly(readFileSync(join(HERE, "r2000-coverage.ts"), "utf8"), true);
+  const source = codeOnly(readFileSync(join(HERE, "anno-coverage.ts"), "utf8"), true);
   for (const spelling of CENSUS_FORBIDDEN_BLOCK_LITERALS) {
     assert.equal(
       source.includes(`"${spelling}"`),
       false,
-      `r2000-coverage.ts carries the block-type literal "${spelling}" -- the store's vocabulary belongs to block-class.ts alone`,
+      `anno-coverage.ts carries the block-type literal "${spelling}" -- the store's vocabulary belongs to block-class.ts alone`,
     );
   }
 });
@@ -1066,7 +1066,7 @@ test("SUPPLEMENT (WR-12): no shipped module passes CoverageOptions.blockClassifi
   // invariant this phase introduced got a committed guard; this one had only a
   // comment (WR-12). Built from the enumerator and the stripper this phase
   // extracted, so it covers whatever `files[]` ships rather than a list.
-  const DECLARATION_SITE = "r2000-coverage.ts";
+  const DECLARATION_SITE = "anno-coverage.ts";
   const offenders: string[] = [];
   for (const module of shippedTsModules()) {
     // The declaration site itself legitimately names the option: the interface
@@ -4050,7 +4050,7 @@ test("the witness is PURE over its four arguments: two calls on one payload retu
 const COVERAGE_SIGNATURE = "function hasDispatchContext(";
 
 function coverageSource(): string {
-  return readFileSync(join(HERE, "r2000-coverage.ts"), "utf8");
+  return readFileSync(join(HERE, "anno-coverage.ts"), "utf8");
 }
 
 /**
@@ -4299,7 +4299,7 @@ test("EVERY true-returning site of hasDispatchContext() consults the PAIRING und
 // defect this round closes, so shipping its fix in a form vulnerable to it
 // would be the same mistake a third time.
 //
-// All four read `r2000-coverage.ts` through `functionBodyFromSource()`, the one
+// All four read `anno-coverage.ts` through `functionBodyFromSource()`, the one
 // source reader in this file, and all four are anchored on CODE with comments
 // stripped -- a pin satisfiable by editing a comment is not a pin.
 // ---------------------------------------------------------------------------
@@ -4347,7 +4347,7 @@ test("PIN 1: the number of hasDispatchContext() CALL SITES equals the number of 
   assert.equal(
     callSites,
     consulting.length,
-    `r2000-coverage.ts calls hasDispatchContext() from ${callSites} site(s), but DISPATCH_GATE_ROUTES declares ` +
+    `anno-coverage.ts calls hasDispatchContext() from ${callSites} site(s), but DISPATCH_GATE_ROUTES declares ` +
       `${consulting.length} route(s) with consultsSharedGate: true (${consulting.map((r) => r.id).join(", ") || "(none)"}). A ` +
       `consumer of the shared gate is a ROUTE by which a declared shape becomes a proven finding, and every reachable route owes ` +
       `the suite a negative control that DECLINES through its own publication collection. Adding one here without recording it ` +
@@ -4461,7 +4461,7 @@ test("PIN 4: the class-4 publication site PRECEDES the shared gate's only call s
 // agreeing and the third -- the one producing the headline number -- never
 // asking at all. A report-level control catches that on the payload it was
 // written for; only a source-level pin catches the NEXT reader that answers it
-// a fourth way. All four read `r2000-coverage.ts` through
+// a fourth way. All four read `anno-coverage.ts` through
 // `functionBodyFromSource()`, the one source reader in this file, and every
 // anchor is CODE with comments stripped.
 // ---------------------------------------------------------------------------
@@ -4500,7 +4500,7 @@ function censusBodyText(): string {
   assert.equal(
     countOccurrences(source, CENSUS_SIGNATURE),
     1,
-    `the anchor ${JSON.stringify(CENSUS_SIGNATURE)} must occur exactly once in r2000-coverage.ts, or the extraction below reads some ` +
+    `the anchor ${JSON.stringify(CENSUS_SIGNATURE)} must occur exactly once in anno-coverage.ts, or the extraction below reads some ` +
       `other function's body and every pin built on it measures the wrong text`,
   );
   const body = withoutComments(functionBodyFromSource(source, CENSUS_SIGNATURE));
@@ -4526,7 +4526,7 @@ test("PIN 5: the decodability predicate is DECLARED exactly once and CALLED from
   assert.equal(
     callSites,
     3,
-    `r2000-coverage.ts calls the decodability predicate from ${callSites} site(s), not 3. The three consumers are the recursive ` +
+    `anno-coverage.ts calls the decodability predicate from ${callSites} site(s), not 3. The three consumers are the recursive ` +
       `descent, the linear sweep and the entry-point gate. A FOURTH consumer is a fourth place that decides what counts as an ` +
       `instruction, and two standards among three readers is exactly how the descent came to claim sixty-four of sixty-four bytes ` +
       `on a four-byte program while the sweep beside it said four. A consumer REMOVED is the same defect running the other way.`,
@@ -4593,7 +4593,7 @@ test("PIN 7: the decoder's illegal flag is READ at exactly one site in the modul
   assert.equal(
     reads,
     1,
-    `the decoder's illegal flag is read at ${reads} site(s) in r2000-coverage.ts. Exactly one is allowed, and it is the decodability ` +
+    `the decoder's illegal flag is read at ${reads} site(s) in anno-coverage.ts. Exactly one is allowed, and it is the decodability ` +
       `predicate's own body. A second reader is a second standard for what counts as an instruction, whether or not it agrees today.`,
   );
 
@@ -4655,9 +4655,9 @@ test("the previously-unseen Phase 11 fixture -- authored for a different phase, 
 // ---------------------------------------------------------------------------
 
 test("the coverage module contains no file-write call, no project-save call and no live-session import", () => {
-  const source = readFileSync(join(HERE, "r2000-coverage.ts"), "utf8");
+  const source = readFileSync(join(HERE, "anno-coverage.ts"), "utf8");
   for (const forbidden of ["writeFileSync", "renameSync", "appendFileSync", "save_project", "r2000-session.ts"]) {
-    assert.ok(!source.includes(forbidden), `r2000-coverage.ts mentions ${forbidden} -- a coverage run must be read-only by construction`);
+    assert.ok(!source.includes(forbidden), `anno-coverage.ts mentions ${forbidden} -- a coverage run must be read-only by construction`);
   }
   assert.ok(!/hostpath|containerpath/.test(source), "the r2000 module family must stay absent from the path-translation consumer set");
 });

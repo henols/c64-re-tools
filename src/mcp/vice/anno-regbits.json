@@ -1,8 +1,8 @@
 {
   "_generated": {
-    "generator": "r2000-regbits-gen.ts",
+    "generator": "anno-regbits-gen.ts",
     "memmapSha256": "60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe",
-    "warning": "GENERATED FILE -- do not hand-edit. Regenerate via `node r2000-regbits-gen.ts` from src/mcp/vice."
+    "warning": "GENERATED FILE -- do not hand-edit. Regenerate via `node anno-regbits-gen.ts` from src/mcp/vice."
   },
   "$0001": {
     "label": "MOS 6510 Micro-Processor On-Chip I/O Port",

@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { runR2000Cli, VERB_OPTIONS } from "./r2000-cli.ts";
-import { tsToOffset } from "./r2000-d64.ts";
+import { tsToOffset } from "./anno-d64.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import {
   R2000_AVAILABLE,
@@ -64,7 +64,7 @@ function withTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
 // ---------------------------------------------------------------------------
 // A minimal, self-contained .d64 fixture -- one directory sector at 18/1 with
 // a single "GAME" entry, its payload written across a single sector. Rebuilt
-// here (not exported from r2000-d64.test.ts, per that file's scope) using the
+// here (not exported from anno-d64.test.ts, per that file's scope) using the
 // same DOS end-of-chain convention: the last sector's next-track byte is 0
 // and its next-sector byte holds the zero-based offset of the last used byte.
 // ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ function writeDirEntry(
 function writeSingleSectorEntry(buf: Buffer, track: number, sector: number, payload: Uint8Array): void {
   const off = tsToOffset(track, sector);
   buf[off] = 0; // end of chain
-  buf[off + 1] = payload.length + 1; // last-used-byte offset (see r2000-d64.ts's own convention)
+  buf[off + 1] = payload.length + 1; // last-used-byte offset (see anno-d64.ts's own convention)
   Buffer.from(payload).copy(buf, off + 2);
 }
 
@@ -620,7 +620,7 @@ test("import-lbl: a missing label file is refused", async () => {
 });
 
 // import-lbl's ceiling refusal needs no live regenerator2000 at all --
-// r2000-symbols.ts's importLabels() checks the caller-supplied .lbl's own
+// anno-symbols.ts's importLabels() checks the caller-supplied .lbl's own
 // ceilings BEFORE ever spawning a child (T-11-LBL-SIZE), so the project file
 // content is never even read.
 test("import-lbl: a .lbl exceeding the line-count ceiling is refused with stock-symbols.ts's own ceiling message", async () => {
@@ -701,7 +701,7 @@ test("ACME availability gate (D-08), reused for criterion 3", () => {
  * this test also drives runR2000Tool()/generateEnums() directly, and
  * r2000-tools.ts's resolveStorePath() (T-11-PATH-ESCAPE) requires every
  * .regen2000proj path to resolve INSIDE the workspace root -- a system
- * tmpdir path is refused by design. Mirrors r2000-enum-gen.test.ts's own
+ * tmpdir path is refused by design. Mirrors anno-enum-gen.test.ts's own
  * workspace-local temp-dir convention. */
 function withWorkspaceTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
   const dir = mkdtempSync(join(HERE, ".r2000-cli-test-criterion3-"));
@@ -897,12 +897,12 @@ test(
     await withWorkspaceTempDir(async (dir) => {
       const projectPath = join(dir, "memmap.regen2000proj");
       // lda #$1b ; sta $d011 -- same tiny, fully hand-predictable program
-      // r2000-memmap-render.test.ts's own golden test uses.
+      // anno-memmap-render.test.ts's own golden test uses.
       const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0]);
       writeFileSync(projectPath, synthesizeProject(bytes, { origin: 0x0810 }));
 
       const { runR2000Tool } = await import("./r2000-tools.ts");
-      const { formatConfidenceComment } = await import("./r2000-confidence.ts");
+      const { formatConfidenceComment } = await import("./anno-confidence.ts");
 
       const disasmResult = await runR2000Tool("r2000_disassemble", { project: projectPath, address: 0x0810 });
       assert.equal(disasmResult.isError, false, JSON.stringify(disasmResult));

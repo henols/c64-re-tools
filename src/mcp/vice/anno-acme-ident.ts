@@ -1,29 +1,29 @@
 #!/usr/bin/env node
-// r2000-acme-ident.ts -- the ONE authoritative place in this repo for the
+// anno-acme-ident.ts -- the ONE authoritative place in this repo for the
 // ACME identifier policy (T-11-ENUM-NAME / T-11-NAME-INJECT): what makes a
 // string a legal ACME symbol/label name, and the single check function that
 // decides it.
 //
-// WHY THIS MODULE EXISTS: this policy started life inside r2000-enum-gen.ts,
+// WHY THIS MODULE EXISTS: this policy started life inside anno-enum-gen.ts,
 // consumed only by its own `createOrUpdateEnum()`/`sanitizeVariantMap()`.
 // T-11-NAME-INJECT widened the finding to a SECOND entry route --
 // `r2000_set_label_name` (both outer and batch-inner) in r2000-tools.ts, and
-// `importLabels()` in r2000-symbols.ts -- and `r2000-enum-gen.ts` statically
+// `importLabels()` in anno-symbols.ts -- and `anno-enum-gen.ts` statically
 // imports `runR2000Tool` FROM `r2000-tools.ts`, so `r2000-tools.ts` cannot
-// import the policy back from `r2000-enum-gen.ts` without forming a module
+// import the policy back from `anno-enum-gen.ts` without forming a module
 // cycle. This module has no import from anywhere else in this repo, so
 // every one of those consumers (and any future one) can import it directly.
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: `MAX_ACME_IDENTIFIER_LENGTH`,
 // `ACME_IDENT_RE`, `ACME_RESERVED_MNEMONICS` and `assertLegalAcmeIdentifier()`
 // -- the complete, only definition of "legal ACME identifier" in this repo.
-// `r2000-enum-gen.ts` re-exports `assertLegalAcmeIdentifier` /
+// `anno-enum-gen.ts` re-exports `assertLegalAcmeIdentifier` /
 // `MAX_ACME_IDENTIFIER_LENGTH` from here so its own existing consumers and
 // tests keep their current import path; it does not hold a second copy.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Never add a second identifier regex anywhere in this repo. The
-//     `r2000-regbits-gen.ts` / `r2000-regbits.test.ts` copies of
+//     `anno-regbits-gen.ts` / `anno-regbits.test.ts` copies of
 //     `ACME_IDENT_RE` predate this module and are out of this plan's scope
 //     (260821-a86) to consolidate -- but no NEW copy should be added; import
 //     this module's `assertLegalAcmeIdentifier()` instead.
@@ -34,7 +34,7 @@
 //     caller-visible name must never diverge from what actually gets
 //     exported into ACME source.
 //   - Never import anything from this repo into this module. It must stay
-//     importable by both `r2000-tools.ts` and `r2000-enum-gen.ts` (which
+//     importable by both `r2000-tools.ts` and `anno-enum-gen.ts` (which
 //     imports `runR2000Tool` FROM `r2000-tools.ts`) without a cycle.
 export const MAX_ACME_IDENTIFIER_LENGTH = 200;
 
@@ -73,7 +73,7 @@ const ACME_RESERVED_MNEMONICS: ReadonlySet<string> = new Set([
  * (`formatter_acme.rs:367-369`). This function is called on BOTH the enum
  * name and every variant name, and is called BEFORE any
  * `r2000_create_project_enum`/`r2000_update_project_enum` call reaches
- * `runR2000Tool()` -- proven zero-spawn in `r2000-enum-gen.test.ts`.
+ * `runR2000Tool()` -- proven zero-spawn in `anno-enum-gen.test.ts`.
  */
 export function assertLegalAcmeIdentifier(id: string, what: string): void {
   if (id.length === 0) {

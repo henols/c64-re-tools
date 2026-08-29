@@ -330,12 +330,27 @@ test("DIRECTION 2 (no orphans): every in-enumeration entry names a module that e
 });
 
 test("DIRECTION 2 (encoding): the generated data file is matched by its FULL filename including the extension, never by a stem", () => {
-  const disk = inEnumerationOnDisk();
-  assert.ok(disk.includes("r2000-regbits.json"), "the in-scope enumeration must include the generated data file by full filename");
-  assert.ok(classificationFor("r2000-regbits.json") !== undefined, "the data file must have its own entry, keyed by its full filename");
+  // RE-EXPRESSED BY PLAN 29-05, and the reason is the whole point of the
+  // `discharged` scope. This assertion used to read the data file out of
+  // `inEnumerationOnDisk()`. The rename took it OUT of that enumeration -- the
+  // enumeration is the r2000-prefixed family awaiting deletion, and the data
+  // file is a survivor now -- so reading it from there would either go red on
+  // a correct tree or force the enumeration to be widened to keep one
+  // assertion alive, which is a guard re-pointed at a subject that cannot
+  // fail. The CHECKED PROPERTY is unchanged and is the only thing that
+  // mattered: the registry keys on the EXACT filename INCLUDING the
+  // extension, never on a stem.
+  const entry = classificationFor("anno-regbits.json");
+  assert.ok(entry !== undefined, "the data file must have its own entry, keyed by its full filename");
+  assert.equal(entry?.scope, "discharged", "and that entry records a carried-out fate rather than an enumeration membership");
+  assert.ok(existsSync(join(HERE, "anno-regbits.json")), "the generated data file itself must still be on disk under the name its fate names");
   assert.ok(
-    classificationFor("r2000-regbits") === undefined,
+    classificationFor("anno-regbits") === undefined,
     "a stem must NOT resolve to the data file's entry -- module values and on-disk filenames are compared as exact strings",
+  );
+  assert.ok(
+    classificationFor("r2000-regbits.json") === undefined,
+    "and the PRE-RENAME full filename must not resolve either -- the entry moved with the file, it was not duplicated",
   );
 });
 
@@ -570,7 +585,7 @@ test("planted violation: an in-scope file with no entry is reported by the same 
   // break-and-restore probe, because the planted file then appeared in the
   // list too, and that muddied the attribution of an observed RED. A
   // predicate test should exercise the predicate, not the filesystem.
-  const syntheticDisk = ["r2000-cli.ts", "r2000-regbits.json", "r2000-synthetic-unclassified.ts"];
+  const syntheticDisk = ["r2000-cli.ts", "r2000-tools.ts", "r2000-synthetic-unclassified.ts"];
   const unclassified = unclassifiedModules(MODULE_CLASSIFICATION, syntheticDisk);
   assert.deepEqual(
     unclassified,

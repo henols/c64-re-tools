@@ -154,13 +154,13 @@ test("codeOnly(): the two real modules CR-01 was measured on are scanned whole, 
   // than a synthetic string -- a future rewrite of the state machine that
   // reintroduces the truncation fails HERE with the module named. Both
   // modules are real `files[]` entries whose regex bodies contain a
-  // backtick (`r2000-coverage.ts:1495`) and a single quote
+  // backtick (`anno-coverage.ts:1495`) and a single quote
   // (`incident-record.ts:107`); before the fix the first was truncated from
   // 2329 lines to 1107 and the second from 443 to 89. Symbols are asserted
   // rather than line counts, so ordinary growth in either module does not
   // redden this.
   const expected: Record<string, string[]> = {
-    "r2000-coverage.ts": [
+    "anno-coverage.ts": [
       "computeCommentVacuity",
       "computeReproducibility",
       "COVERAGE_REPORT_KEYS",

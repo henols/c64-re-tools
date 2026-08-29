@@ -1,4 +1,4 @@
-// Coverage for r2000-d64.ts: a round-trip proof over a synthesised in-test
+// Coverage for anno-d64.ts: a round-trip proof over a synthesised in-test
 // `.d64` image (no fixture file on disk, no external binary), plus every
 // refusal path D-02 depends on -- unknown name, ambiguous name, corrupt
 // chain, and an out-of-image pointer -- each proven to throw rather than
@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { sectorsPerTrack, tsToOffset, listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
+import { sectorsPerTrack, tsToOffset, listEntries, extractEntry, assertPlainImage } from "./anno-d64.ts";
 import { parsePrg } from "./prg-image.ts";
 
 // ------------------------------------------------------------ fixture helpers

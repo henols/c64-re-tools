@@ -82,7 +82,7 @@ import {
   stageSnapshot,
   updateProjectEnum,
 } from "./anno-store.ts";
-import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
 import { codeOnly } from "./shipped-modules.ts";
 import { ViceError } from "./vice.ts";
 

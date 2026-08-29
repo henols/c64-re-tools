@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// r2000-enum-gen.ts -- the ONE authoritative place in this repo for value ->
+// anno-enum-gen.ts -- the ONE authoritative place in this repo for value ->
 // variant naming, the adjacent-pair pass, identifier sanitization, enum
 // installation and the coverage report (D-20/D-22/D-23, R2000-13, criterion
 // 3 -- the phase's most distinctive deliverable: neither this project nor
@@ -37,7 +37,7 @@
 //     MNEMONIC exactly (`"^lda$"` / `"^sta$"`, case-insensitive per the
 //     server's own `(?i)` prefix) and does the register/immediate-mode
 //     narrowing CLIENT-SIDE against this project's own curated register set
-//     -- still derived from `r2000-regbits.json`'s own keys, never a second
+//     -- still derived from `anno-regbits.json`'s own keys, never a second
 //     hardcoded list, exactly as D-23 requires; only the MECHANISM by which
 //     that narrowing happens changed from "one combined regex" to "two exact
 //     mnemonic queries plus a client-side operand filter".
@@ -62,16 +62,16 @@
 //     module. Every call site below passes it explicitly.
 //   - Never call `r2000_create_project_enum` (or `_update_`) with an
 //     unsanitized identifier. `assertLegalAcmeIdentifier()` (now defined in
-//     `r2000-acme-ident.ts`, re-exported here) runs on the enum name AND
+//     `anno-acme-ident.ts`, re-exported here) runs on the enum name AND
 //     every variant name inside `sanitizeVariantMap()`, which is called
 //     BEFORE `createOrUpdateEnum()` ever reaches `runR2000Tool()` -- proven
-//     zero-spawn in `r2000-enum-gen.test.ts` via a spy binary.
+//     zero-spawn in `anno-enum-gen.test.ts` via a spy binary.
 //   - Never write a machine-global enum. Every call in this module goes
 //     through `runR2000Tool()` (`r2000-tools.ts`, plan 11-05), which only
 //     knows `r2000_create_project_enum`/`r2000_update_project_enum` -- the
 //     machine-wide config-dir save route named in D-21 is never referenced
 //     anywhere in this file (asserted mechanically by
-//     `r2000-enum-gen.test.ts`'s own zero-count grep).
+//     `anno-enum-gen.test.ts`'s own zero-count grep).
 //   - Never call `r2000-mcp-client.ts` directly. Every child interaction in
 //     this module goes through `r2000-tools.ts`'s `runR2000Tool()`, so the
 //     curated allow-list gate and the per-call auto-save both apply for
@@ -82,11 +82,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runR2000Tool } from "./r2000-tools.ts";
-import type { RegBitsField, RegBitsTable } from "./r2000-regbits-gen.ts";
-import { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier } from "./r2000-acme-ident.ts";
+import type { RegBitsField, RegBitsTable } from "./anno-regbits-gen.ts";
+import { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REGBITS_PATH = join(HERE, "r2000-regbits.json");
+const REGBITS_PATH = join(HERE, "anno-regbits.json");
 
 /** The server-side default (`handler.rs:1074-1077`) this surface's own
  * `runR2000Tool()` wrapper REQUIRES an explicit override for -- named here
@@ -95,10 +95,10 @@ const REGBITS_PATH = join(HERE, "r2000-regbits.json");
 export const DEFAULT_MAX_RESULTS = 10_000;
 
 // MAX_ACME_IDENTIFIER_LENGTH / assertLegalAcmeIdentifier() now live in
-// r2000-acme-ident.ts (plan 260821-a86, T-11-NAME-INJECT) -- that module is
+// anno-acme-ident.ts (plan 260821-a86, T-11-NAME-INJECT) -- that module is
 // the ONE authoritative place for the ACME identifier policy, consumed by
 // THIS file's createOrUpdateEnum()/sanitizeVariantMap() below plus two more
-// entry routes (r2000-tools.ts's r2000_set_label_name, r2000-symbols.ts's
+// entry routes (r2000-tools.ts's r2000_set_label_name, anno-symbols.ts's
 // importLabels()) that could not import it from here without forming a
 // cycle (this file statically imports runR2000Tool FROM r2000-tools.ts).
 // Re-exported here (imported above) so this file's own existing
@@ -145,7 +145,7 @@ export function registerKeyFor(address: number): string {
  *     REFUSES (throws), naming the register/field/value, rather than
  *     silently dropping the field: a dropped token could make two distinct
  *     register values decode to the identical name, which is exactly the
- *     property `r2000-enum-gen.test.ts`'s 256-value check exists to catch.
+ *     property `anno-enum-gen.test.ts`'s 256-value check exists to catch.
  *   - an empty-string token contributes NOTHING to the joined name (it is
  *     filtered out before the final `_`-join) -- this is what makes the
  *     silent-by-design case above actually silent in the output.
@@ -159,8 +159,8 @@ export function variantNameFor(register: number, value: number): string {
   const entry = table[key];
   if (!entry) {
     throw new Error(
-      `variantNameFor: no bit-name table entry for register ${key} -- r2000-regbits.json has no fields ` +
-        "for this address (add an OVERRIDES entry in r2000-regbits-gen.ts, or exclude it from generation).",
+      `variantNameFor: no bit-name table entry for register ${key} -- anno-regbits.json has no fields ` +
+        "for this address (add an OVERRIDES entry in anno-regbits-gen.ts, or exclude it from generation).",
     );
   }
 
@@ -405,7 +405,7 @@ export type EnumInstallAction = "created" | "updated";
  *
  * `assertLegalAcmeIdentifier` runs on the enum name and (via
  * `sanitizeVariantMap`) every variant name BEFORE either child call --
- * proven zero-spawn in `r2000-enum-gen.test.ts` via a spy binary.
+ * proven zero-spawn in `anno-enum-gen.test.ts` via a spy binary.
  */
 export async function createOrUpdateEnum(
   projectPath: string,

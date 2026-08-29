@@ -65,7 +65,7 @@ literal values:
 ## Confidence vocabulary
 
 Every comment written into the store through `r2000_set_comment` that grades a finding leads with
-one of these five bracket tokens (the parser in `r2000-confidence.ts` throws on anything that is
+one of these five bracket tokens (the parser in `anno-confidence.ts` throws on anything that is
 close but not exact — a typo never silently degrades into an ungraded comment):
 
 | Grade | Bracket token | Means |

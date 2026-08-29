@@ -179,7 +179,7 @@ always visible in the transcript.
 | `r2000_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels/comments/block ranges, and batching is what makes that affordable under the per-call spawn-load-mutate-save-exit lifecycle |
 
 **Grade with the confidence prefix.** Lead every evidence comment with exactly one of these five
-bracket tokens (quoted verbatim from `r2000-confidence.ts`, the parser's own source of truth):
+bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own source of truth):
 
 `[confirmed-code]` (confirmed code), `[probable-code]` (probable code), `[confirmed-data]`
 (confirmed data), `[probable-data]` (probable data), `[unknown]` (unknown).

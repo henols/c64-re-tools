@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// r2000-symbols.ts -- the ONE authoritative place in this repo for the
+// anno-symbols.ts -- the ONE authoritative place in this repo for the
 // symbol round trip between regenerator2000's annotation store and stock
 // VICE's symbol table (R2000-14/R2000-15, ARCHITECTURE.md Rule A20).
 //
@@ -62,7 +62,7 @@
 //     actually on disk".
 //   - Never let an illegal label name from a `.lbl` file reach a spawned
 //     child (T-11-NAME-INJECT, closed). `importLabels()` validates every
-//     name against `r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier()`
+//     name against `anno-acme-ident.ts`'s `assertLegalAcmeIdentifier()`
 //     BEFORE `buildImportLblArgs()` is ever called -- REJECT, never
 //     sanitize, matching `r2000-tools.ts`'s `r2000_set_label_name` posture.
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -73,7 +73,7 @@ import { buildExportLblArgs, buildImportLblArgs, runR2000 } from "./r2000-launch
 import { withR2000Session, saveAndVerify } from "./r2000-mcp-client.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
 import { parseViceLabelFile, MAX_LABEL_FILE_BYTES } from "./stock-symbols.ts";
-import { assertLegalAcmeIdentifier } from "./r2000-acme-ident.ts";
+import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 
 /** This module's own error class, following `r2000-tools.ts`'s
  * `R2000StorePathError` / `r2000-launch.ts`'s `R2000ViceFlagError` minimal
@@ -228,7 +228,7 @@ export type ImportLabelsResult = ImportLabelsVerified | ImportLabelsUnverified;
  * (`MAX_LABEL_FILE_LINES`/`MAX_SYMBOLS`) propagate verbatim -- an oversized
  * or over-populated `.lbl` never reaches regenerator2000 at all.
  *
- * Every discovered name is then validated against `r2000-acme-ident.ts`'s
+ * Every discovered name is then validated against `anno-acme-ident.ts`'s
  * `assertLegalAcmeIdentifier()`, also BEFORE any spawn (T-11-NAME-INJECT,
  * closed): an illegal name throws `R2000SymbolsError` naming the offending
  * name, its 1-based line number, and that line's own text -- REJECT, never
@@ -257,7 +257,7 @@ export async function importLabels({ projectPath, lblPath }: ImportLabelsOptions
   const importedNames = Array.from(inputParsed.table.byName.keys());
 
   // T-11-NAME-INJECT (route B, closed): every discovered label name is
-  // validated against the one ACME identifier seam (r2000-acme-ident.ts)
+  // validated against the one ACME identifier seam (anno-acme-ident.ts)
   // BEFORE any child is spawned -- REJECT, never sanitize, matching
   // r2000-tools.ts's r2000_set_label_name posture. The offending line is
   // located by a substring search over the already-read inputText, never a
@@ -286,7 +286,7 @@ export async function importLabels({ projectPath, lblPath }: ImportLabelsOptions
 
   // Independent proof #2: a brand-new process, after the import session has
   // fully closed, re-reads the project from disk and re-exports its labels.
-  const verifyDir = mkdtempSync(join(tmpdir(), "r2000-symbols-verify-"));
+  const verifyDir = mkdtempSync(join(tmpdir(), "anno-symbols-verify-"));
   try {
     const reExportPath = join(verifyDir, "reexport.lbl");
     const exported = await exportLabels({ projectPath, outPath: reExportPath });

@@ -59,25 +59,25 @@ import { synthesizeProject } from "./r2000-project.ts";
 // builder above. The dispatch ORDER below (extension before length) is this
 // file's own discipline and is unaffected by where the two functions live.
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
-import { listEntries, extractEntry, assertPlainImage } from "./r2000-d64.ts";
+import { listEntries, extractEntry, assertPlainImage } from "./anno-d64.ts";
 import { verifyProject } from "./r2000-verify.ts";
-import { generateEnums } from "./r2000-enum-gen.ts";
-import { exportLabels, importLabels } from "./r2000-symbols.ts";
-import { renderMemoryMap, checkRenderedMemoryMap } from "./r2000-memmap-render.ts";
+import { generateEnums } from "./anno-enum-gen.ts";
+import { exportLabels, importLabels } from "./anno-symbols.ts";
+import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts";
 // The coverage instrument (COV-01/COV-02) plus the ONE authoritative
 // project-path validator and the ONE session-backed tool runner. `coverage`
 // adds NO child-process site of its own: every store read below goes through
 // `runR2000Tool()`, which routes into `r2000-session.ts`'s single held
 // regenerator2000 child for this project path (Rule A21) -- exactly the same
-// route `r2000-memmap-render.ts` already uses, and the reason
+// route `anno-memmap-render.ts` already uses, and the reason
 // the frozen two-entry child-process-site registry (the `r2000-*-seam` guard
 // suite) is untouched by this verb (T-19-25). That registry's own guard scans
 // this file, so the two verbs of the child-launch family are deliberately not
 // written out here in prose either -- an acceptance check greps this source
-// for them and a mention would trip it, exactly as `r2000-coverage.ts`'s
+// for them and a mention would trip it, exactly as `anno-coverage.ts`'s
 // header records for the path-translation module names.
-import { buildCoverageReport, coverageFindings } from "./r2000-coverage.ts";
-import type { CoverageReport, R2000Comment, R2000CrossReference, R2000Symbol } from "./r2000-coverage.ts";
+import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
+import type { CoverageReport, R2000Comment, R2000CrossReference, R2000Symbol } from "./anno-coverage.ts";
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
 import type { BlockEntry } from "./block-class.ts";
@@ -143,7 +143,7 @@ verbs:
       Generates program-specific enums from the register writes an existing
       .regen2000proj's disassembly already contains (D-20/D-22/D-23,
       R2000-13) -- one variant per DISTINCT value actually written, named
-      from the curated bit-name table (r2000-regbits.json), applied at every
+      from the curated bit-name table (anno-regbits.json), applied at every
       matching immediate-load address, and saved. Prints total/paired/
       unpaired register-store counts and, per created/updated enum, its name
       and variant count. Requires an EXISTING .regen2000proj (this verb does
@@ -196,7 +196,7 @@ verbs:
 
   coverage <project> [--out FILE] [--force] [--sample N]
       Measures how far an EXISTING .regen2000proj has actually been
-      reverse-engineered (COV-01/COV-02), through r2000-coverage.ts. Reads
+      reverse-engineered (COV-01/COV-02), through anno-coverage.ts. Reads
       the store's symbols, comments, blocks and per-label cross-references
       over the one held session, and the project's own payload bytes, then
       prints three separately named measures -- the structural byte census,
@@ -725,7 +725,7 @@ function parseGenEnumsArgs(rest: string[]): GenEnumsParsedArgs {
 
 /**
  * `gen-enums <project> [--max-results N]` -- D-20/D-22/D-23's whole pass,
- * driven through `generateEnums()` (`r2000-enum-gen.ts`, Task 2). Prints the
+ * driven through `generateEnums()` (`anno-enum-gen.ts`, Task 2). Prints the
  * coverage report's own summary lines (total/paired/unpaired counts, one
  * line per created/updated enum) and returns non-zero when: an unknown
  * option was given (WR-08); no project path was given; the project file
@@ -838,7 +838,7 @@ function parseImportLblArgs(rest: string[]): ImportLblParsedArgs {
 
 /**
  * `export-lbl <project> [--out FILE]` -- the R2000-14 export leg, via
- * `r2000-symbols.ts`'s `exportLabels()`. Prints the written path and the
+ * `anno-symbols.ts`'s `exportLabels()`. Prints the written path and the
  * symbol count parsed back from the file (never the raw regenerator2000
  * exit code alone -- `exportLabels()` itself already re-reads and validates
  * the file through stock-symbols.ts's parser before returning).
@@ -881,7 +881,7 @@ async function cmdExportLbl(rest: string[]): Promise<number> {
 
 /**
  * `import-lbl <project> <lbl>` -- the R2000-15/D-28 import leg, via
- * `r2000-symbols.ts`'s `importLabels()`. Prints the names imported, then an
+ * `anno-symbols.ts`'s `importLabels()`. Prints the names imported, then an
  * explicit line naming that persistence was proven by an independent disk
  * re-read (never left implicit, so the transcript itself shows the D-28
  * trap was avoided). Exits non-zero -- naming the reason, which includes
@@ -986,7 +986,7 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
 
 /**
  * `render-memmap <project> --provenance FILE [--out FILE] [--check]` --
- * D-24's generated-view verb, via `r2000-memmap-render.ts`'s
+ * D-24's generated-view verb, via `anno-memmap-render.ts`'s
  * `renderMemoryMap()`/`checkRenderedMemoryMap()`. Never writes a file when
  * `--check` is given -- that mode only reads and reports.
  */
@@ -1150,7 +1150,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
 const MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS = 512;
 
 /** One curated read through the session runner, with its JSON answer parsed.
- * Mirrors `r2000-memmap-render.ts`'s own `queryR2000Json()` rather than
+ * Mirrors `anno-memmap-render.ts`'s own `queryR2000Json()` rather than
  * introducing a second convention -- and, like it, adds no child-launch site
  * of its own: the child process is owned by `r2000-session.ts` alone. */
 async function queryR2000Json<T>(name: string, args: Record<string, unknown>): Promise<T> {
@@ -1186,7 +1186,7 @@ interface CrossReferenceBound {
  * THE ONE RULE THIS FUNCTION EXISTS TO HOLD (COV-01, and the reason the
  * rendering lives here rather than being a generic pretty-printer): print
  * every measure's own numbers under its own heading, and never compute a
- * combined figure at the point of display. `r2000-coverage.ts`'s report
+ * combined figure at the point of display. `anno-coverage.ts`'s report
  * object carries no aggregate -- if one ever appears, it will be because
  * somebody averaged, summed or weighted these numbers HERE. Do not. The
  * ratios below measure different populations (labels, comments, sampled
@@ -1312,7 +1312,7 @@ function printCoverageReport(report: CoverageReport, bound: CrossReferenceBound)
 
 /**
  * `coverage <project> [--out FILE] [--force] [--sample N]` -- COV-01's
- * delivery path: the instrument from `r2000-coverage.ts`, run against a real
+ * delivery path: the instrument from `anno-coverage.ts`, run against a real
  * project through the existing session seam.
  *
  * Two properties this function must keep:

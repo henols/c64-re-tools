@@ -1,4 +1,4 @@
-// r2000-memmap-render.test.ts -- pins the D-24/D-27 reconciliation: the
+// anno-memmap-render.test.ts -- pins the D-24/D-27 reconciliation: the
 // provenance sidecar schema (unit half, always runs), and the golden-output
 // render plus its drift guard against a real regenerator2000 child (gated
 // half, D-11).
@@ -15,10 +15,10 @@ import {
   checkRenderedMemoryMap,
   escapeMarkdownCell,
   RENDERER_VERSION,
-} from "./r2000-memmap-render.ts";
+} from "./anno-memmap-render.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
-import { formatConfidenceComment, CONFIDENCE_GRADES } from "./r2000-confidence.ts";
+import { formatConfidenceComment, CONFIDENCE_GRADES } from "./anno-confidence.ts";
 import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -133,9 +133,9 @@ test("parseProvenanceHeader refuses a non-object payload", () => {
 // ---------------------------------------------------------------------------
 
 test("the renderer's layout is embedded in TypeScript, never read from the recon skill's template at runtime", () => {
-  const source = readFileSync(join(HERE, "r2000-memmap-render.ts"), "utf8");
+  const source = readFileSync(join(HERE, "anno-memmap-render.ts"), "utf8");
   const templateFilenameMentions = (source.match(/memory-map\.template\.md/g) ?? []).length;
-  assert.equal(templateFilenameMentions, 0, "r2000-memmap-render.ts must never name the recon skill's template file");
+  assert.equal(templateFilenameMentions, 0, "anno-memmap-render.ts must never name the recon skill's template file");
 });
 
 // ---------------------------------------------------------------------------
@@ -169,7 +169,7 @@ test("RENDERER_VERSION is bumped to \"2\" for the Markdown-cell-escaping output-
 // regenerator2000 child (D-11).
 // ---------------------------------------------------------------------------
 
-const SKIP_REASON: string | false = skipReasonFor("r2000-memmap-render.test.ts");
+const SKIP_REASON: string | false = skipReasonFor("anno-memmap-render.test.ts");
 
 test("regenerator2000 availability gate (D-11)", () => {
   assertR2000RequiredIfEnvSet(assert);
@@ -185,7 +185,7 @@ test(
   "gated: renders a golden memory map from a small synthesized store plus a fixture sidecar, exact bytes except the digest line",
   { skip: SKIP_REASON },
   async () => {
-    liveWorkDir = mkdtempSync(join(HERE, ".r2000-memmap-render-test-"));
+    liveWorkDir = mkdtempSync(join(HERE, ".anno-memmap-render-test-"));
 
     // lda #$1b ; sta $d011 -- criterion 3's own acceptance example, kept tiny
     // and fully hand-predictable so the golden output below can be
@@ -360,7 +360,7 @@ test(
   "gated: an address whose store comment carries [unknown] appears under Open questions, and a malformed store comment throws rather than rendering silently",
   { skip: SKIP_REASON },
   async () => {
-    const dir = mkdtempSync(join(HERE, ".r2000-memmap-render-test2-"));
+    const dir = mkdtempSync(join(HERE, ".anno-memmap-render-test2-"));
     try {
       const bytes = new Uint8Array([0xa9, 0x1b, 0x8d, 0x11, 0xd0]);
       const origin = 0x0810;
@@ -423,7 +423,7 @@ test(
   "gated: comment evidence containing BOTH a pipe and an embedded newline renders as ONE well-formed table row, table structure intact, escaped content preserved",
   { skip: SKIP_REASON },
   async () => {
-    const dir = mkdtempSync(join(HERE, ".r2000-memmap-render-test3-"));
+    const dir = mkdtempSync(join(HERE, ".anno-memmap-render-test3-"));
     try {
       const plainEvidence = "observed executing at boot";
       const trickyEvidence = "table | pipe\nsecond line";

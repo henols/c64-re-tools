@@ -69,7 +69,7 @@
 //
 // EXTERNAL-WRITE STALENESS (found live by this plan's own full-suite run,
 // r2000-symbol-roundtrip.test.ts's criterion-4 closed-symbol-loop test --
-// R2000-15): D18-07 deliberately keeps `r2000-symbols.ts`'s `importLabels()`
+// R2000-15): D18-07 deliberately keeps `anno-symbols.ts`'s `importLabels()`
 // on the one-shot `withR2000Session()` contract, a SEPARATE regenerator2000
 // process from whatever this module holds open for the same project path
 // (in production, a genuinely separate OS process -- `vice-mcp r2000

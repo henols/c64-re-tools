@@ -44,7 +44,7 @@
 //      migration; it is data loss.
 //   2. NEVER write a second literal list of the split layouts.
 //      `SPLIT_DATA_TYPES` is DERIVED by filtering `DATA_TYPES`, the way
-//      `r2000-confidence.ts:79` derives `VALID_BRACKETS` with a `.map()`. Two
+//      `anno-confidence.ts:79` derives `VALID_BRACKETS` with a `.map()`. Two
 //      literal lists are two homes for one fact, and they drift silently.
 //   3. NEVER hold module-level mutable state here. Every export below is a
 //      frozen constant, so two concurrent callers cannot observe each other
@@ -91,7 +91,7 @@
 //      (`r2000-tools.ts:246-251`): "An illegal name is REJECTED, never
 //      sanitized or quoted."
 //   8. NEVER restate the eleven auto-generated-name prefixes here. They live in
-//      exactly one place, `r2000-coverage.ts`'s `AUTO_NAME_PREFIX_RE`, and
+//      exactly one place, `anno-coverage.ts`'s `AUTO_NAME_PREFIX_RE`, and
 //      `EXPORT-02` names the exact failure a short reimplementation causes: a
 //      five-prefix copy silently under-counts, which breaks the
 //      `routine-queue-walker` skill's backlog construction while every test
@@ -281,7 +281,7 @@ export type CommentType = (typeof COMMENT_TYPES)[number];
  * named verbatim in `src/skills/c64-memory-mapping/SKILL.md`, so a re-spelling
  * would break a shipped playbook. `LABEL_KINDS` is capitalised because its only
  * mechanical consumer is the coverage census, which already spells it
- * `"User"`/`"Auto"`/`"System"` at four sites (`r2000-coverage.ts:206` for the
+ * `"User"`/`"Auto"`/`"System"` at four sites (`anno-coverage.ts:206` for the
  * doc form, `:1425-1435` for the acceptance, where `"Platform"` is taken as a
  * synonym of `"System"`). Matching the consumer costs nothing; changing the
  * consumer costs four edits inside a 2,292-line module and buys no criterion.
@@ -377,7 +377,7 @@ export interface CommentRow {
  * contradicted it. A bare address list would send every recipient straight back
  * to `listComments()`.
  *
- * `grade` is the bracket token verbatim, as `r2000-confidence.ts` spells it --
+ * `grade` is the bracket token verbatim, as `anno-confidence.ts` spells it --
  * this store never writes a second spelling of one.
  */
 export interface ContradictedComment {

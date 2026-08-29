@@ -354,7 +354,7 @@ export interface WithR2000SessionOptions {
   /**
    * Overrides the argv this session spawns with, in place of
    * `buildMcpServerStdioArgs({ projectPath })`. Added for 11-08's
-   * `r2000-symbols.ts` `importLabels()` (D-28): its argv is
+   * `anno-symbols.ts` `importLabels()` (D-28): its argv is
    * `buildImportLblArgs({ projectPath, lblPath })` --
    * `["--import_lbl", lblPath, "--mcp-server-stdio", projectPath]` -- which
    * this module's own default argv cannot express (it is fixed to plain

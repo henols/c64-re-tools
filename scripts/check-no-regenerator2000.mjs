@@ -62,7 +62,7 @@
 //      not an exemption.
 //
 //   4. Do NOT shell out to `grep`, and do NOT skip a file because it looks
-//      binary. `src/mcp/vice/r2000-memmap-render.ts` carries a literal NUL
+//      binary. `src/mcp/vice/anno-memmap-render.ts` carries a literal NUL
 //      byte at offset 12862 (line 291 -- the "\0" field separator in its
 //      sidecar hash canonicalisation), so GNU grep classifies the whole file
 //      as binary, prints "binary file matches" instead of a count, and skips
@@ -341,11 +341,37 @@ const EXEMPTION_CLASSES = [
       "the one comment recording that this module's three declared query result shapes were measured LIVE against " +
       "a real pinned-version child rather than transcribed from a document. Pinned at exactly 1, at line 79, in a " +
       "file GNU grep refuses to read. PERMANENT, and re-pointed to anno-memmap-render.ts by plan 29-05.",
-    paths: { "src/mcp/vice/r2000-memmap-render.ts": 1 },
+    paths: { "src/mcp/vice/anno-memmap-render.ts": 1 },
     /** Extra pin: the ONE occurrence must be at this line. This is what makes
      *  the binary-safety criterion checkable rather than asserted -- a
      *  grep-backed implementation reports nothing here. */
-    lines: { "src/mcp/vice/r2000-memmap-render.ts": [79] },
+    lines: { "src/mcp/vice/anno-memmap-render.ts": [79] },
+  },
+  {
+    id: "enum-name-threat-history",
+    why:
+      "T-11-ENUM-NAME's recorded threat history, with its pinned UPSTREAM source citations " +
+      "(`app_state.rs:443`, `formatter_acme.rs:367-369`). It states what an upstream project's own validation " +
+      "did and did NOT do, which is why assertLegalAcmeIdentifier() exists at all; it is true in the past tense " +
+      "once the integration is gone and deleting it would delete the reason for the function. LINE-SCOPED, so a " +
+      "second mention anywhere else in this module is a reintroduction rather than a covered occurrence. Path " +
+      "re-pointed from the pre-rename name by plan 29-05.",
+    atLines: { "src/mcp/vice/anno-acme-ident.ts": [68] },
+  },
+  {
+    id: "census-design-and-incident-records",
+    why:
+      "the census's own rejected-design record and the WR-13 defect reproduction. `:9` records the route this " +
+      "module REFUSES -- asking the analyser what it classified as `Code` is circular, provably so at upstream's " +
+      "`analyzer.rs:445-540` -- which is the reason the module has the shape it has and stays true once the " +
+      "rejected producer is gone. `:1752` and the test's `:1549` are one verbatim incident reproduction from " +
+      "19-REVIEW.md; renaming the producer inside a past defect's reproduced inputs falsifies the record. " +
+      "LINE-SCOPED because anno-coverage.ts is the one SPLIT file in this phase: its other two mentions describe " +
+      "a live route and are temporarily allow-listed to 29-10 instead. Opened by plan 29-05.",
+    atLines: {
+      "src/mcp/vice/anno-coverage.ts": [9, 1752],
+      "src/mcp/vice/anno-coverage.test.ts": [1549],
+    },
   },
   {
     id: "surviving-provenance",
@@ -407,23 +433,44 @@ const EXEMPTION_CLASSES = [
 const ALLOW_LIST_OPENED = "2026-08-29";
 
 const TEMPORARY_ALLOW_LIST = [
-  // -- plan 29-05: the capability modules, the CLI, its verb parser, and the
-  //    four unpaired guard tests. 29-05 `git mv`s these and re-points their
-  //    prose; each entry moves to its `anno-*` path in the same commit.
-  { path: "src/mcp/vice/r2000-acme-ident.ts", count: 1, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-coverage.ts", count: 4, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-coverage.test.ts", count: 1, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-enum-gen.ts", count: 4, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-enum-gen.test.ts", count: 4, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-memmap-render.test.ts", count: 4, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-symbols.ts", count: 7, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-cli.ts", count: 13, plan: "29-05" },
-  { path: "src/mcp/vice/r2000-cli.test.ts", count: 14, plan: "29-05" },
+  // -- THE RENAME SET, RE-POINTED BY PLAN 29-05 IN THE SAME COMMIT AS THE
+  //    `git mv` (the staleness contract in this file's header).
+  //
+  //    29-05 RE-BUCKETED these entries as well as re-pointing them, because a
+  //    bucket is a property of a MENTION and wave 1 could only see files. Six
+  //    of the fourteen entries that stood here left this block entirely:
+  //      - anno-acme-ident.ts (1) and anno-coverage.test.ts (1) are PERMANENT
+  //        -- see `enum-name-threat-history` and
+  //        `census-design-and-incident-records` above.
+  //      - anno-coverage.ts SPLIT 2/2: two mentions are permanent (line-scoped
+  //        above), two describe a live route and stay here, citing 29-10.
+  //      - module-classification.ts (1) and hostpath-consumers.test.ts (1)
+  //        were DISCHARGED by 29-05 itself: both are files 29-05 edits in
+  //        place rather than renames, so scrubbing them there costs no
+  //        pure-move reviewability, and neither statement stays true.
+  //
+  //    Everything left here cites the plan that ENDS it, and every citing plan
+  //    carries BOTH this gate AND the named file in its own `files_modified`
+  //    -- the reachability rule. An entry citing a plan that cannot touch its
+  //    file is an orphan that makes 29-11's emptiness assertion unreachable.
+  { path: "src/mcp/vice/anno-coverage.ts", count: 2, plan: "29-10" },
+  { path: "src/mcp/vice/anno-enum-gen.ts", count: 4, plan: "29-10" },
+  { path: "src/mcp/vice/anno-enum-gen.test.ts", count: 4, plan: "29-10" },
+  // D-17: 29-12 rebuilds the render verb onto the Phase 28 store at wave 6 and
+  // re-pins this count in its own commit; 29-10 discharges the remainder.
+  { path: "src/mcp/vice/anno-memmap-render.test.ts", count: 4, plan: "29-12" },
+  { path: "src/mcp/vice/anno-symbols.ts", count: 7, plan: "29-10" },
+  { path: "src/mcp/vice/r2000-cli.ts", count: 13, plan: "29-07" },
+  { path: "src/mcp/vice/r2000-cli.test.ts", count: 14, plan: "29-07" },
+  // The four unpaired guard tests still stand at their pre-rename paths: they
+  // move in 29-05's OWN third task, which is also where all four leave this
+  // block for a permanent exemption (each records a discipline, a provenance
+  // constant or a founding incident that stays true after the deletion).
+  // r2000-upstream-audit.test.ts is absent because it is already permanently
+  // exempt as `upstream-audit-manifest-provenance`.
   { path: "src/mcp/vice/r2000-spawn-seam.test.ts", count: 39, plan: "29-05" },
   { path: "src/mcp/vice/r2000-answer-key.test.ts", count: 2, plan: "29-05" },
   { path: "src/mcp/vice/docs-r2000-decisions.test.ts", count: 2, plan: "29-05" },
-  { path: "src/mcp/vice/module-classification.ts", count: 1, plan: "29-05" },
-  { path: "src/mcp/vice/hostpath-consumers.test.ts", count: 1, plan: "29-05" },
 
   // -- plan 29-09: the skill playbooks and the installation prose. Each
   //    src/skills/ entry has a shipped mirror under installer/skills/, which
@@ -513,6 +560,16 @@ const noticesBlockCounts = new Map();
 function exemptionFor(rel, line, text) {
   for (const cls of EXEMPTION_CLASSES) {
     if (cls.paths && Object.prototype.hasOwnProperty.call(cls.paths, rel)) return cls;
+    // LINE-SCOPED (`atLines`): the exemption covers ONLY the enumerated lines
+    // of the named path. Every other occurrence in the same file falls
+    // through -- to the allow-list if the file has an entry, and to the
+    // reintroduction error if it does not. This is the mechanism that makes a
+    // SPLIT file expressible without widening anything: see the split note
+    // above TEMPORARY_ALLOW_LIST.
+    if (cls.atLines && Object.prototype.hasOwnProperty.call(cls.atLines, rel)) {
+      if (cls.atLines[rel].includes(line)) return cls;
+      continue; // not this class's line -- keep looking, never a whole-file pass
+    }
     if (cls.prefixes && cls.prefixes.some((p) => rel.startsWith(p))) return cls;
     if (cls.blockScoped && cls.blockScoped.includes(rel)) {
       if (isInsideAttributionBlock(text, line)) return cls;
@@ -522,6 +579,15 @@ function exemptionFor(rel, line, text) {
   return null;
 }
 
+/** True when `rel` is exempted by a LINE-SCOPED class -- i.e. the file is
+ *  deliberately SPLIT across the two blocks and its coexistence in both is the
+ *  recorded decision, not the accident the conflict assertion below catches. */
+function isLineScopedSplit(rel) {
+  return EXEMPTION_CLASSES.some(
+    (cls) => cls.atLines && Object.prototype.hasOwnProperty.call(cls.atLines, rel)
+  );
+}
+
 for (const rel of scope.paths) {
   const abs = join(ROOT, rel);
   if (!existsSync(abs)) {
@@ -529,7 +595,7 @@ for (const rel of scope.paths) {
     continue;
   }
   // Bytes in, decoded here. Never `grep`, never a binary-file skip: see rule 4
-  // of this file's header and the NUL byte at r2000-memmap-render.ts:12862.
+  // of this file's header and the NUL byte at anno-memmap-render.ts:12862.
   const text = readFileSync(abs).toString("utf8");
   scanned.push(rel);
 
@@ -544,11 +610,12 @@ for (const rel of scope.paths) {
   for (const line of hits) {
     const cls = exemptionFor(rel, line, text);
     if (cls) {
-      if (allowEntry) {
+      if (allowEntry && !isLineScopedSplit(rel)) {
         need(
           false,
           `${rel}: is BOTH permanently exempt (class "${cls.id}") and on the temporary allow-list (plan ` +
-            `${allowEntry.plan}) -- one file cannot be both "keeps the name forever" and "loses it this phase"`
+            `${allowEntry.plan}) -- one file cannot be both "keeps the name forever" and "loses it this phase" ` +
+            `unless the split is RECORDED line by line in an \`atLines\` class, which this one is not`
         );
       }
       perClassHits.set(cls.id, perClassHits.get(cls.id) + 1);
@@ -614,6 +681,25 @@ for (const cls of EXEMPTION_CLASSES) {
       need(
         Object.prototype.hasOwnProperty.call(cls.paths, p),
         `exemption "${cls.id}": ${p} was exempted but is not one of its pinned paths`
+      );
+    }
+  }
+  if (cls.atLines) {
+    for (const [p, expectedLines] of Object.entries(cls.atLines)) {
+      const actual = (perClassLines.get(cls.id).get(p) ?? []).slice().sort((a, b) => a - b);
+      const expected = [...expectedLines].sort((a, b) => a - b);
+      need(
+        JSON.stringify(actual) === JSON.stringify(expected),
+        `exemption "${cls.id}" line scope: expected ${p} to carry exempted occurrence(s) at line(s) ` +
+          `${expected.join(", ")}, got [${actual.join(", ")}]. A line-scoped exemption pins BOTH how many and ` +
+          `WHICH; a mention that moved must move its pin in the same commit, and a mention that multiplied is a ` +
+          `reintroduction rather than a drift.`
+      );
+    }
+    for (const p of byPath.keys()) {
+      need(
+        Object.prototype.hasOwnProperty.call(cls.atLines, p),
+        `exemption "${cls.id}": ${p} was exempted but is not one of its line-scoped paths`
       );
     }
   }

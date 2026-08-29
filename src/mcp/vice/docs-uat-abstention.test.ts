@@ -38,7 +38,7 @@
 // `27-UAT.md`'s entries carry a substantive `note:` -- item 2 accepts its
 // `backstop` concurrency abstention as "not applicable - single-threaded,
 // pure, no interruptible path" and shows its work down to
-// `r2000-coverage.ts:2173`. That is an earned pass. Phase 28's were
+// `anno-coverage.ts:2173`. That is an earned pass. Phase 28's were
 // keypresses. The difference between them is a recorded rationale, so that
 // is what this guard requires.
 //

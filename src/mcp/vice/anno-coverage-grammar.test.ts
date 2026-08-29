@@ -1,4 +1,4 @@
-// r2000-coverage-grammar.test.ts -- a COMPOSED corpus of 6502 arrangements, a
+// anno-coverage-grammar.test.ts -- a COMPOSED corpus of 6502 arrangements, a
 // COMPUTED expectation for each one, and the corpus-wide statement that the
 // dispatch instrument proves exactly the arrangements that carry a proven
 // data-flow link.
@@ -68,7 +68,7 @@ import {
   computeStructuralCensus,
   provenDispatchTargets,
   scanIndirectDispatch,
-} from "./r2000-coverage.ts";
+} from "./anno-coverage.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1836,11 +1836,11 @@ test("the corpus reaches every generative dimension: order, interleaving, gap pl
 });
 
 test("the module under test is READ-ONLY by construction, and this suite writes no file", () => {
-  // The corpus lives in memory. `r2000-coverage.ts` performs no filesystem
+  // The corpus lives in memory. `anno-coverage.ts` performs no filesystem
   // write outside its own project loader, and this file adds none: the
-  // committed source-level assertion in `r2000-coverage.test.ts` proves the
+  // committed source-level assertion in `anno-coverage.test.ts` proves the
   // former, and this one states that the grammar suite did not change it.
-  const source = readFileSync(join(HERE, "r2000-coverage-grammar.test.ts"), "utf8");
+  const source = readFileSync(join(HERE, "anno-coverage-grammar.test.ts"), "utf8");
   for (const forbidden of ["writeFileSync", "appendFileSync", "mkdirSync", "rmSync", "unlinkSync"]) {
     assert.ok(
       !source.includes(`${forbidden}(`),
@@ -1858,7 +1858,7 @@ test("the oracle never reaches the instrument: no decode, no scan, no census ins
   // implementation, asserted over this file's OWN source text rather than left
   // to the reader. A future edit that reaches for the scan to settle a hard case
   // reds here by name.
-  const source = readFileSync(join(HERE, "r2000-coverage-grammar.test.ts"), "utf8");
+  const source = readFileSync(join(HERE, "anno-coverage-grammar.test.ts"), "utf8");
   const beginMarker = "// --- ORACLE SECTION BEGIN ---";
   const endMarker = "// --- ORACLE SECTION END ---";
   const begin = source.indexOf(beginMarker);

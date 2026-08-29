@@ -191,21 +191,21 @@ not a read-only lookup like `lookup` and `annotate`.
 `memmap.json`'s structured `bits` entries are the source of the curated register bit-name table used
 to generate program-specific enums for regenerator2000's annotation store (R2000-13): register
 writes disassemble as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` instead of a bare `#$1b`. The
-generator is `src/mcp/vice/r2000-regbits-gen.ts`; its committed output is
-`src/mcp/vice/r2000-regbits.json`; and that output is **digest-pinned** to `memmap.json` — a
-`node r2000-regbits-gen.ts` run compares its own fresh build against the committed file, and CI fails
+generator is `src/mcp/vice/anno-regbits-gen.ts`; its committed output is
+`src/mcp/vice/anno-regbits.json`; and that output is **digest-pinned** to `memmap.json` — a
+`node anno-regbits-gen.ts` run compares its own fresh build against the committed file, and CI fails
 if `memmap.json` changed without a re-run.
 
 **The honest gap:** only 29 of this file's 959 entries carry a structured `bits` array. `$D015`,
 `$D017`, `$D01A` and `$D01B`–`$D01D` — the sprite-plane bitmask registers a real game writes
 constantly — are **not** among those 29, so the enum generator supplies them from its own curated
-override table (`OVERRIDES` in `r2000-regbits-gen.ts`), not from this file. Widening `memmap.json`'s
+override table (`OVERRIDES` in `anno-regbits-gen.ts`), not from this file. Widening `memmap.json`'s
 `io` parser (or repairing the OCR damage already present in some `bits` prose, e.g. a letter `O` for
 the digit `0`) so those registers get a real structured entry here is separate work belonging to this
 skill, not the generator.
 
 **Installing those bit names into a project's own disassembly:** the table above only builds
-`r2000-regbits.json` — turning a specific project's register *writes* into named enum variants is a
+`anno-regbits.json` — turning a specific project's register *writes* into named enum variants is a
 separate, later step, once a `.regen2000proj` already exists (`r2000 bootstrap`, see
 `c64-program-recon`):
 

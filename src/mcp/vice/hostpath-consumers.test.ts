@@ -195,49 +195,70 @@ test("every module this phase adds is absent from the hostpath.ts consumer set (
   }
 });
 
-/** The r2000 production module family, derived from disk rather than typed
- * (INT-01/D-11.1-03): every `r2000-*.ts` file `topLevelProductionModules()`
+/** The annotation module family, derived from disk rather than typed
+ * (INT-01/D-11.1-03): every `anno-*.ts` file `topLevelProductionModules()`
  * already excludes `*.test.*` from. This is the SAME `readdirSync`-based
  * helper the five-member EXPECTED_IMPORTERS test above uses -- reused, not a
- * second directory walk -- filtered down to the r2000 name pattern. */
-function r2000ProductionModules(): string[] {
-  return topLevelProductionModules().filter((name) => /^r2000-.*\.ts$/.test(name));
+ * second directory walk -- filtered down to the family name pattern.
+ *
+ * RE-EXPRESSED OVER THE `anno-` PREFIX BY PLAN 29-05 (D-05, D-13). The
+ * helper this replaces filtered on `/^r2000-.*\.ts$/`; nine capability
+ * modules moved out from under that prefix in the same commit, so a filter
+ * left pointing at it would have kept counting a shrinking family and gone
+ * quietly vacuous as the family emptied. The prefix is the one D-05 locks,
+ * and the derivation shape -- readdirSync plus a stable prefix regex -- is
+ * unchanged, which is the half INT-01 was actually about. */
+function annoProductionModules(): string[] {
+  return topLevelProductionModules().filter((name) => /^anno-.*\.ts$/.test(name));
 }
 
-// Measured true count as of this phase (11.1-03, 2026-08-21): 14 production
-// r2000-*.ts modules on disk. This floor must be RAISED, never lowered, as
-// the family grows -- an empty or broken glob (e.g. a typo'd filter regex,
-// or a directory walk that silently resolves to the wrong path) must fail
-// this test rather than pass vacuously, which is the exact defect INT-01
-// found in the ten-name hard-coded array this replaces.
-const R2000_MODULE_FLOOR = 14;
+// MEASURED, NOT COPIED: the count of `anno-*.ts` production modules on disk
+// at this commit. This floor must be RAISED, never lowered -- an empty or
+// broken glob (a typo'd filter regex, or a directory walk that silently
+// resolves to the wrong path) must fail THIS test rather than let the
+// absence assertion below pass trivially, which is the exact defect INT-01
+// found in the ten-name hard-coded array this whole derivation replaces.
+//
+// It replaces `R2000_MODULE_FLOOR = 14` over the old prefix, and D-13 reads
+// "raised, not lowered" LITERALLY: the value here is never below 14.
+const ANNO_MODULE_FLOOR = 14;
 
-test("the r2000 module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
-  const modules = r2000ProductionModules();
+test("the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
+  const modules = annoProductionModules();
   assert.ok(
-    modules.length >= R2000_MODULE_FLOOR,
-    `expected >= ${R2000_MODULE_FLOOR} r2000-*.ts production modules on disk, found ${modules.length} -- ` +
+    modules.length >= ANNO_MODULE_FLOOR,
+    `expected >= ${ANNO_MODULE_FLOOR} anno-*.ts production modules on disk, found ${modules.length} -- ` +
       "an empty or broken glob must fail loudly here rather than let the absence assertion below pass trivially",
   );
 });
 
-test("INT-01's positive control: the four modules the audit found uncovered are present in the derived r2000 set", () => {
+test("INT-01's positive control: the modules the audit found uncovered are present in the derived annotation set", () => {
   // The finding's own reproduction, kept as a permanent test: if a future
   // rename or move drops one of these out of the glob, this says which one
   // -- rather than the absence test below silently stopping short again.
-  const modules = r2000ProductionModules();
-  for (const name of ["r2000-acme-ident.ts", "r2000-regbits-gen.ts", "r2000-symbols.ts", "r2000-test-gate.ts"]) {
-    assert.ok(modules.includes(name), `${name} (named by INT-01 as uncovered) must be present in the derived r2000 module set`);
+  //
+  // THREE of INT-01's four names are here under the prefix plan 29-05 moved
+  // them to. The FOURTH -- the availability-gate module -- cannot be named
+  // under any prefix: plan 29-10 deletes it outright on D-16's authority
+  // (its own registry note says in terms that its verdict must not be read
+  // as a claim the module survives, and that what a later phase inherits is
+  // the DISCIPLINE, not the route). A name that is about to stop existing is
+  // not a positive control; it is a scheduled red. `anno-store.ts` -- the
+  // owned annotation store this milestone builds -- is substituted for it,
+  // so the control keeps naming four real, current files.
+  const modules = annoProductionModules();
+  for (const name of ["anno-acme-ident.ts", "anno-regbits-gen.ts", "anno-symbols.ts", "anno-store.ts"]) {
+    assert.ok(modules.includes(name), `${name} (INT-01's positive control) must be present in the derived annotation module set`);
   }
 });
 
-test("the r2000 module family (D-08/R2000-02) is absent from the consumer set -- regenerator2000 runs container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
+test("the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
   const importers = hostpathImporters();
-  const r2000Modules = r2000ProductionModules();
+  const annoModules = annoProductionModules();
   // Non-vacuity is asserted separately above; this loop still guards against
   // an empty array silently making every assertion below vacuously true.
-  assert.ok(r2000Modules.length > 0, "r2000ProductionModules() must not be empty");
-  for (const name of r2000Modules) {
+  assert.ok(annoModules.length > 0, "annoProductionModules() must not be empty");
+  for (const name of annoModules) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
 });

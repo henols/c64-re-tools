@@ -5,7 +5,7 @@
 // when it goes).
 //
 // WHY THIS FILE EXISTS (SEAM-02): a later milestone deletes the
-// regenerator2000 integration -- CUT-01 sizes it at a net ~12.4k lines out
+// rented static-analysis integration -- CUT-01 sizes it at a net ~12.4k lines out
 // of a 25,759-line family. The cheap way to drive that deletion is a name
 // glob, and the name glob is wrong: ten of the sixteen non-test modules in
 // the family implement things that have nothing to do with the analyser
@@ -134,7 +134,7 @@
 // ONE MEASURED CORRECTION WORTH CARRYING. EXPORT-02's clause about the 11
 // typed label prefixes owned by `AUTO_NAME_PREFIX_RE` reads as though it
 // belongs to the ACME identifier module. It does not: `AUTO_NAME_PREFIX_RE`
-// is declared at `r2000-coverage.ts:1392`, so EXPORT-02 anchors the CENSUS
+// is declared at `anno-coverage.ts:1392`, so EXPORT-02 anchors the CENSUS
 // entry, and the ACME identifier module's basis is EXPORT-01 and EXPORT-03
 // (identifier legality is a precondition of source that a real assembler
 // accepts) instead.
@@ -180,8 +180,38 @@ export type ModuleVerdict = "capability" | "glue" | "glue-with-extractable";
  *     reader's benefit, but the enforcing test's enumeration deliberately
  *     does not reach it. Excluded from the disk-completeness loop by this
  *     marker rather than by a special case inside the loop.
+ *   - "discharged": the entry's module NO LONGER ANSWERS TO THE ENUMERATION
+ *     because its fate has been carried out -- it was renamed out of the
+ *     scanned family, or deleted. The entry is KEPT, as dated history: the
+ *     verdict, the basis and the notes are the record of WHY the module was
+ *     judged the way it was, and that record is exactly what a deletion
+ *     under pressure destroys. Excluded from both completeness directions by
+ *     this marker, like "out-of-enumeration", and carried instead by the
+ *     DISCHARGE-CLOSURE relation, which checks the entry's `fate` against
+ *     disk.
  */
-export type ModuleScope = "in-enumeration" | "out-of-enumeration";
+export type ModuleScope = "in-enumeration" | "out-of-enumeration" | "discharged";
+
+/**
+ * WHAT HAPPENED TO A DISCHARGED MODULE -- the record that makes the third
+ * scope value checkable rather than a shrug.
+ *
+ *   - "renamed": the module is still here, under `to`. `from` is the name it
+ *     answered to when this record was written, kept because the whole point
+ *     of this file is that a later reader can follow the judgement back to
+ *     the tree it was made against.
+ *   - "deleted": the module is gone. There is no `to`; `supersededBy` names
+ *     what took over its subject, where anything did.
+ *
+ * `on` is the ISO date the fate was carried out and `why` states it in one
+ * sentence. Both are prose for a human; the ENFORCED half is the closure
+ * relation in the enforcing test -- a renamed fate whose `to` is not on disk,
+ * or a deleted fate whose module still is, fails there. That is what stops a
+ * rename from being RECORDED without HAPPENING.
+ */
+export type ModuleFate =
+  | { readonly kind: "renamed"; readonly from: string; readonly to: string; readonly on: string; readonly why: string }
+  | { readonly kind: "deleted"; readonly on: string; readonly why: string; readonly supersededBy?: string };
 
 /**
  * One cited consumer of the classified module.
@@ -249,19 +279,31 @@ export interface ModuleClassificationEntry {
   basis: ModuleBasis;
   extractables: readonly string[];
   note?: string;
+  /** REQUIRED IN PRACTICE for a "discharged" entry and meaningless without
+   * one: what happened to the module, checked against disk by the enforcing
+   * test's discharge-closure relation. Absent on every other scope. */
+  fate?: ModuleFate;
 }
 
 export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
   // --- capability: this project's own subject matter, under a rented name ---
   {
-    module: "r2000-acme-ident.ts",
-    scope: "in-enumeration",
+    module: "anno-acme-ident.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-acme-ident.ts",
+      to: "anno-acme-ident.ts",
+      on: "2026-08-29",
+      why:
+        "ACME identifier legality is this project's own subject matter (EXPORT-01/EXPORT-03); the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
         { path: "src/mcp/vice/r2000-tools.ts", symbol: "assertLegalAcmeIdentifier", line: 104 },
-        { path: "src/mcp/vice/r2000-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 86 },
-        { path: "src/mcp/vice/r2000-symbols.ts", symbol: "assertLegalAcmeIdentifier", line: 76 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 86 },
+        { path: "src/mcp/vice/anno-symbols.ts", symbol: "assertLegalAcmeIdentifier", line: 76 },
       ],
       requirements: ["EXPORT-01", "EXPORT-03"],
       rationale:
@@ -279,13 +321,21 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "entry's note gives the exact site), so EXPORT-02 anchors the census rather than this module.",
   },
   {
-    module: "r2000-confidence.ts",
-    scope: "in-enumeration",
+    module: "anno-confidence.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-confidence.ts",
+      to: "anno-confidence.ts",
+      on: "2026-08-29",
+      why:
+        "D-25's confidence-grade vocabulary is a second store surface this project owns (COV-01/COV-02); the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-coverage.ts", symbol: "CONFIDENCE_GRADES", line: 144 },
-        { path: "src/mcp/vice/r2000-memmap-render.test.ts", symbol: "formatConfidenceComment", line: 21 },
+        { path: "src/mcp/vice/anno-coverage.ts", symbol: "CONFIDENCE_GRADES", line: 144 },
+        { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "formatConfidenceComment", line: 21 },
       ],
       requirements: ["COV-01", "COV-02"],
       rationale:
@@ -304,14 +354,22 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "that changes grade spellings is not covered by that boundary's substitutability proof.",
   },
   {
-    module: "r2000-coverage.ts",
-    scope: "in-enumeration",
+    module: "anno-coverage.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-coverage.ts",
+      to: "anno-coverage.ts",
+      on: "2026-08-29",
+      why:
+        "The byte-coverage census is the instrument CUT-01 states outright a family-sized deletion would take with it; the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
         { path: "src/mcp/vice/r2000-cli.ts", symbol: "buildCoverageReport", line: 79 },
-        { path: "src/mcp/vice/r2000-coverage.test.ts", symbol: "buildCoverageReport" },
-        { path: "src/mcp/vice/r2000-coverage-grammar.test.ts", symbol: "coverageFindings" },
+        { path: "src/mcp/vice/anno-coverage.test.ts", symbol: "buildCoverageReport" },
+        { path: "src/mcp/vice/anno-coverage-grammar.test.ts", symbol: "coverageFindings" },
       ],
       requirements: ["COV-01", "COV-02", "EXPORT-02"],
       rationale:
@@ -327,17 +385,25 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "Its entire contact with the annotation store is now one import of block-class.ts, and its payload " +
       "decoder is prg-image.ts's decodeRawData -- both landed earlier in this phase, so it no longer " +
       "reaches into the analyser family for either. The recogniser EXPORT-02 names is " +
-      "declared at r2000-coverage.ts:1392; it is named here rather than in the basis so the " +
+      "declared at anno-coverage.ts:1392; it is named here rather than in the basis so the " +
       "basis stays free of the token the enforcing test's Direction 4 scans for.",
   },
   {
-    module: "r2000-d64.ts",
-    scope: "in-enumeration",
+    module: "anno-d64.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-d64.ts",
+      to: "anno-d64.ts",
+      on: "2026-08-29",
+      why:
+        "1541 disk geometry is not a property of any tool; the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
         { path: "src/mcp/vice/r2000-cli.ts", symbol: "listEntries", line: 62 },
-        { path: "src/mcp/vice/r2000-d64.test.ts", symbol: "sectorsPerTrack", line: 10 },
+        { path: "src/mcp/vice/anno-d64.test.ts", symbol: "sectorsPerTrack", line: 10 },
       ],
       requirements: ["SEAM-02"],
       rationale:
@@ -354,13 +420,21 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "src/skills/c64-program-recon/SKILL.md:274, and that guidance outlives the analyser.",
   },
   {
-    module: "r2000-enum-gen.ts",
-    scope: "in-enumeration",
+    module: "anno-enum-gen.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-enum-gen.ts",
+      to: "anno-enum-gen.ts",
+      on: "2026-08-29",
+      why:
+        "Re-runnable enum generation from observed register writes (R2000-13) reads a committed table, not the analyser; the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
         { path: "src/mcp/vice/r2000-cli.ts", symbol: "generateEnums", line: 64 },
-        { path: "src/mcp/vice/r2000-enum-gen.test.ts", symbol: "generateEnums" },
+        { path: "src/mcp/vice/anno-enum-gen.test.ts", symbol: "generateEnums" },
       ],
       requirements: ["R2000-13"],
       rationale:
@@ -372,13 +446,21 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     extractables: [],
   },
   {
-    module: "r2000-memmap-render.ts",
-    scope: "in-enumeration",
+    module: "anno-memmap-render.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-memmap-render.ts",
+      to: "anno-memmap-render.ts",
+      on: "2026-08-29",
+      why:
+        "The rendering discipline, the sidecar schema, the generated-file banner and the drift check are this project's; the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
         { path: "src/mcp/vice/r2000-cli.ts", symbol: "renderMemoryMap", line: 66 },
-        { path: "src/mcp/vice/r2000-memmap-render.test.ts", symbol: "renderMemoryMap" },
+        { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "renderMemoryMap" },
       ],
       requirements: ["SEAM-02"],
       rationale:
@@ -394,13 +476,21 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "route (never hand-author an address row) at src/skills/c64-program-recon/SKILL.md:250.",
   },
   {
-    module: "r2000-regbits-gen.ts",
-    scope: "in-enumeration",
+    module: "anno-regbits-gen.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-regbits-gen.ts",
+      to: "anno-regbits-gen.ts",
+      on: "2026-08-29",
+      why:
+        "The derivation's subject is Commodore 64 register layout; the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-enum-gen.ts", symbol: "RegBitsTable", line: 85 },
-        { path: "src/mcp/vice/r2000-regbits.test.ts", symbol: "buildRegBits" },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "RegBitsTable", line: 85 },
+        { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "buildRegBits" },
       ],
       requirements: ["SEAM-02"],
       rationale:
@@ -411,18 +501,26 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     },
     extractables: [],
     note:
-      "Third of the four SEAM-02-anchored entries. It PRODUCES r2000-regbits.json, which carries its " +
+      "Third of the four SEAM-02-anchored entries. It PRODUCES anno-regbits.json, which carries its " +
       "own entry below because that file matches the declared enumeration scope.",
   },
   {
-    module: "r2000-regbits.json",
-    scope: "in-enumeration",
+    module: "anno-regbits.json",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-regbits.json",
+      to: "anno-regbits.json",
+      on: "2026-08-29",
+      why:
+        "The one shipped data file in the declared scope, cited by filename from a shipped skill playbook; the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/r2000-enum-gen.ts", symbol: "REGBITS_PATH", line: 89 },
-        { path: "src/mcp/vice/r2000-regbits.test.ts", symbol: "r2000-regbits.json", line: 48 },
-        { path: "src/skills/c64-memory-mapping/SKILL.md", symbol: "r2000-regbits.json", line: 195 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "REGBITS_PATH", line: 89 },
+        { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "anno-regbits.json", line: 48 },
+        { path: "src/skills/c64-memory-mapping/SKILL.md", symbol: "anno-regbits.json", line: 195 },
       ],
       requirements: ["SEAM-02"],
       rationale:
@@ -439,8 +537,16 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "recorded fate. Fourth and last of the four SEAM-02-anchored entries.",
   },
   {
-    module: "r2000-symbols.ts",
-    scope: "in-enumeration",
+    module: "anno-symbols.ts",
+    scope: "discharged",
+    fate: {
+      kind: "renamed",
+      from: "r2000-symbols.ts",
+      to: "anno-symbols.ts",
+      on: "2026-08-29",
+      why:
+        "The validated label round trip (R2000-14/R2000-15) is what those requirements were validated against; the verdict is unchanged and only the name moved.",
+    },
     verdict: "capability",
     basis: {
       consumers: [
@@ -555,7 +661,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     basis: {
       consumers: [
         { path: "src/mcp/vice/r2000-verify.ts", symbol: "buildVerifyArgs", line: 46 },
-        { path: "src/mcp/vice/r2000-symbols.ts", symbol: "runR2000", line: 72 },
+        { path: "src/mcp/vice/anno-symbols.ts", symbol: "runR2000", line: 72 },
         { path: "src/mcp/vice/r2000-mcp-client.ts", symbol: "buildMcpServerStdioArgs", line: 84 },
         { path: "src/mcp/vice/r2000-cli.ts", symbol: "buildExportAsmArgs", line: 55 },
       ],
@@ -579,7 +685,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       consumers: [
         { path: "src/mcp/vice/r2000-tools.ts", symbol: "R2000Call", line: 108 },
         { path: "src/mcp/vice/r2000-session.ts", symbol: "openR2000Session", line: 554 },
-        { path: "src/mcp/vice/r2000-symbols.ts", symbol: "withR2000Session", line: 73 },
+        { path: "src/mcp/vice/anno-symbols.ts", symbol: "withR2000Session", line: 73 },
       ],
       requirements: [],
       rationale:

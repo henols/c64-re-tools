@@ -43,7 +43,7 @@
 // extraction -- it was absent from every prior copy, and its absence was
 // measured on this tree as a truncation, not reasoned about: a regex body
 // containing a backtick or a quote opened a phantom literal frame the
-// scanner never left, cutting `r2000-coverage.ts` (whose `:1495` does
+// scanner never left, cutting `anno-coverage.ts` (whose `:1495` does
 // `.replace(/[`*_]/g, "")`) from 2329 lines to 1107 and `incident-record.ts`
 // (whose `:107` does `/'/g`) from 443 to 89 -- hiding seven real exported
 // functions from the R2000-01 spawn-seam guard reading them. That is the
@@ -303,7 +303,7 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
     // backtick, and without this branch such a character opens a phantom
     // string/template frame the scanner never leaves -- silently truncating
     // the rest of the file out of the "code" every consuming guard matches
-    // against. Measured, not hypothetical: `r2000-coverage.ts:1495`
+    // against. Measured, not hypothetical: `anno-coverage.ts:1495`
     // (`.replace(/[`*_]/g, "")`) truncated a 2329-line module to 1107 lines
     // of visible code, and `incident-record.ts:107` (`/'/g`) truncated 443
     // lines to 89, hiding seven real exported functions from

@@ -82,7 +82,7 @@ const VICE_LABEL_LINE_RE = /^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/;
 
 /** T-05-02-03: three independent resource ceilings, each refusing with both
  * the observed value and the limit named. `MAX_LABEL_FILE_BYTES` is exported
- * (11-08, Rule A20) so `r2000-symbols.ts`'s `exportLabels()`/`importLabels()`
+ * (11-08, Rule A20) so `anno-symbols.ts`'s `exportLabels()`/`importLabels()`
  * can apply the SAME byte ceiling to a regenerator2000-produced/-consumed
  * `.lbl` file before ever calling `parseViceLabelFile()` below -- never a
  * second hand-copied number. */
@@ -201,7 +201,7 @@ function resolveLabelFilePath(pathArg: unknown): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Exported (11-08, Rule A20) so `r2000-symbols.ts` can validate a
+ * Exported (11-08, Rule A20) so `anno-symbols.ts` can validate a
  * regenerator2000-produced `.lbl` file (or check a caller-supplied one
  * BEFORE it is ever handed to a spawned regenerator2000 child) through THIS
  * parser -- the ONE `al C:xxxx .Name` reader in this repo -- rather than

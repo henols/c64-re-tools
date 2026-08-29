@@ -62,7 +62,7 @@ writer emits rather than a hand-assembled approximation.
 | File | What it is |
 |---|---|
 | `project.regen2000proj` | the project file, written by `synthesizeProject()`. Identical across the **five** `nc*` fixtures — for those, only the store differs. The false-positive pair, the interior pair and the push-idiom pair each carry their own program, which is the whole point of them. |
-| `store.json` | the already-fetched store data in exactly the shape the curated read tools return: `symbols`, `comments`, `blocks`, `cross_references`. Also carries `control`, `purpose`, `expect_clean` and `expect_measure`, so `r2000-coverage.test.ts` is data-driven off the fixture rather than repeating each expectation in test code. The false-positive pair, the interior pair and the push-idiom pair additionally carry `code_size`, so the non-inflation assertion reads the bound **from the fixture** instead of from a number typed into a test. |
+| `store.json` | the already-fetched store data in exactly the shape the curated read tools return: `symbols`, `comments`, `blocks`, `cross_references`. Also carries `control`, `purpose`, `expect_clean` and `expect_measure`, so `anno-coverage.test.ts` is data-driven off the fixture rather than repeating each expectation in test code. The false-positive pair, the interior pair and the push-idiom pair additionally carry `code_size`, so the non-inflation assertion reads the bound **from the fixture** instead of from a number typed into a test. |
 
 ## The program shared by the five `nc*` fixtures
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// r2000-confidence.ts -- the ONE authoritative place in this repo for D-25's
+// anno-confidence.ts -- the ONE authoritative place in this repo for D-25's
 // confidence-grade convention: a machine-readable bracket-token prefix inside
 // an r2000 line comment (e.g. `[confirmed-code] observed executing at $0810`).
 //

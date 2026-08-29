@@ -1,4 +1,4 @@
-// r2000-confidence.test.ts -- pins D-25's confidence-prefix convention: the
+// anno-confidence.test.ts -- pins D-25's confidence-prefix convention: the
 // five-grade vocabulary, the parser's must-throw-on-typo behaviour, the
 // composer, and the search-query builder.
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import {
   formatConfidenceComment,
   searchQueryForGrade,
   R2000ConfidenceGradeError,
-} from "./r2000-confidence.ts";
+} from "./anno-confidence.ts";
 
 // ---------------------------------------------------------------------------
 // Non-vacuity control: the vocabulary itself. A drift from

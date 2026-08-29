@@ -1,4 +1,4 @@
-// r2000-enum-gen.test.ts -- coverage for r2000-enum-gen.ts (D-20/D-22/D-23,
+// anno-enum-gen.test.ts -- coverage for anno-enum-gen.ts (D-20/D-22/D-23,
 // R2000-13 Task 2): the pinned variantNameFor() target, decoding totality
 // across all 256 values for four registers, sanitization refusals (including
 // the zero-spawn injection proof), adjacent-only pairing, and the
@@ -19,7 +19,7 @@ import {
   registerKeyFor,
   sanitizeVariantMap,
   variantNameFor,
-} from "./r2000-enum-gen.ts";
+} from "./anno-enum-gen.ts";
 import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
 import { synthesizeProject } from "./r2000-project.ts";
 
@@ -113,7 +113,7 @@ after(() => {
 });
 
 test("createOrUpdateEnum refuses an injection attempt (newline + '= $00') BEFORE any child process is spawned (counted, not reasoned)", async () => {
-  spyWorkDir = mkdtempSync(join(HERE, ".r2000-enum-gen-test-spy-"));
+  spyWorkDir = mkdtempSync(join(HERE, ".anno-enum-gen-test-spy-"));
   const marker = join(spyWorkDir, "spawned.marker");
   const spyBin = join(spyWorkDir, "spy-r2000.mjs");
   writeFileSync(
@@ -214,16 +214,16 @@ test("the coverage report's summary lines contain 'truncat' when a pass returns 
 // grep-gate structural assertions (module hygiene, mechanical not eyeballed).
 // ---------------------------------------------------------------------------
 
-test("every r2000_search_disassembly call site in r2000-enum-gen.ts passes an explicit max_results (grep-counted >= 2)", () => {
-  const src = readFileSync(join(HERE, "r2000-enum-gen.ts"), "utf8");
+test("every r2000_search_disassembly call site in anno-enum-gen.ts passes an explicit max_results (grep-counted >= 2)", () => {
+  const src = readFileSync(join(HERE, "anno-enum-gen.ts"), "utf8");
   const callSites = src.match(/r2000_search_disassembly/g) ?? [];
   const maxResultsMentions = src.match(/max_results/g) ?? [];
   assert.ok(callSites.length >= 2, "expected at least two r2000_search_disassembly references (the two passes)");
   assert.ok(maxResultsMentions.length >= 2, "expected max_results to appear at least twice");
 });
 
-test("r2000-enum-gen.ts never references the machine-global save_global_enum() route (D-21, zero-count grep)", () => {
-  const src = readFileSync(join(HERE, "r2000-enum-gen.ts"), "utf8");
+test("anno-enum-gen.ts never references the machine-global save_global_enum() route (D-21, zero-count grep)", () => {
+  const src = readFileSync(join(HERE, "anno-enum-gen.ts"), "utf8");
   const count = (src.match(/save_global_enum/g) ?? []).length;
   assert.equal(count, 0);
 });
@@ -236,7 +236,7 @@ test("r2000-enum-gen.ts never references the machine-global save_global_enum() r
 // proves the GENERATOR's own mechanics, not the export surface.
 // ---------------------------------------------------------------------------
 
-const SKIP_REASON: string | false = skipReasonFor("r2000-enum-gen.test.ts");
+const SKIP_REASON: string | false = skipReasonFor("anno-enum-gen.test.ts");
 
 test("regenerator2000 availability gate (D-11)", () => {
   assertR2000RequiredIfEnvSet(assert);
@@ -246,7 +246,7 @@ test(
   "gated: pairImmediateLoadsToStores() finds exactly one paired occurrence on lda #$1b / sta $d011 / rts",
   { skip: SKIP_REASON },
   async () => {
-    const dir = mkdtempSync(join(HERE, ".r2000-enum-gen-test-pairing-"));
+    const dir = mkdtempSync(join(HERE, ".anno-enum-gen-test-pairing-"));
     try {
       const projectPath = join(dir, "probe.regen2000proj");
       const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]); // lda #$1b / sta $d011 / rts
@@ -273,7 +273,7 @@ test(
   "gated: generateEnums() end to end on lda #$1b / sta $d011 / rts creates one enum, one variant, one usage, with a clean (non-truncated) report",
   { skip: SKIP_REASON },
   async () => {
-    const dir = mkdtempSync(join(HERE, ".r2000-enum-gen-test-gated-"));
+    const dir = mkdtempSync(join(HERE, ".anno-enum-gen-test-gated-"));
     try {
       const projectPath = join(dir, "probe.regen2000proj");
       const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]); // lda #$1b / sta $d011 / rts
@@ -332,7 +332,7 @@ test(
     // pre-pass that clears every existing usage first, or a currently
     // out-of-scope tool (`r2000_read_region`, excluded by D-18) to read the
     // raw byte directly.
-    const dir = mkdtempSync(join(HERE, ".r2000-enum-gen-test-rerun-"));
+    const dir = mkdtempSync(join(HERE, ".anno-enum-gen-test-rerun-"));
     try {
       const projectPath = join(dir, "probe.regen2000proj");
       const bytes = Uint8Array.from([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60]);

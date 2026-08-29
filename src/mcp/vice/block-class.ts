@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// `r2000-coverage.ts` is the coverage instrument: it implements two Validated
+// `anno-coverage.ts` is the coverage instrument: it implements two Validated
 // requirements and measures how much of a binary has actually been reverse-
 // engineered. Its census is a pure function of the raw bytes and the seed set
 // the caller supplies -- deliberately, because deriving completeness from the
@@ -49,7 +49,7 @@
 //       asserts the class this module returns for EVERY member, with its own
 //       non-vacuity assertions on the counts. It reddens the moment either
 //       side drifts; a spot check would not.
-//   (b) `r2000-coverage.test.ts`'s zero-overlap substitutability proof. Its
+//   (b) `anno-coverage.test.ts`'s zero-overlap substitutability proof. Its
 //       substituted vocabulary (`EXECUTABLE_EXTENT` and its two siblings)
 //       shares no string with EITHER accepted vocabulary, so a left-behind
 //       comparison site is still observable there -- which is why that
@@ -60,7 +60,7 @@
 // WHAT NOT TO DO -- each of these is a specific, named trap
 // ---------------------------------------------------------------------------
 //   1. NEVER accept the census, the raw program bytes, a decoder, or a
-//      confidence grade as an argument here. `r2000-coverage.ts` records a
+//      confidence grade as an argument here. `anno-coverage.ts` records a
 //      BYTES-VERSUS-STORE independence axis: one side classifies an address
 //      using only the raw bytes and the census, the other using only the
 //      store's own documentation, and NEITHER SIDE READS THE OTHER'S INPUT.

@@ -22,7 +22,7 @@
 //
 // WORKSPACE: temp project/label-file directories are created UNDER THIS
 // FILE'S OWN DIRECTORY (`mkdtempSync(join(HERE, "."...))`), mirroring
-// r2000-cli.test.ts's/r2000-tools.test.ts's/r2000-enum-gen.test.ts's own
+// r2000-cli.test.ts's/r2000-tools.test.ts's/anno-enum-gen.test.ts's own
 // convention -- `r2000-tools.ts`'s `resolveStorePath()` requires every
 // `.regen2000proj` path to resolve INSIDE the workspace root (T-11-PATH-
 // ESCAPE), which a system tmpdir path is refused by design. Every directory
@@ -43,7 +43,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";
-import { exportLabels, importLabels, R2000SymbolsError, regenerateAndReload } from "./r2000-symbols.ts";
+import { exportLabels, importLabels, R2000SymbolsError, regenerateAndReload } from "./anno-symbols.ts";
 import { runR2000Tool } from "./r2000-tools.ts";
 import { runR2000 } from "./r2000-launch.ts";
 import { synthesizeProject } from "./r2000-project.ts";
@@ -376,7 +376,7 @@ test("R2000SymbolsError carries the class's own name", () => {
 // callers today (confirmed by grep across src/mcp/vice/,
 // src/skills/ and scripts/ during the 11.1 audit). Rather than leave
 // that ambiguous for a future phase to misread as "already wired", it is
-// marked LIBRARY-ONLY in its own doc comment (r2000-symbols.ts), and this
+// marked LIBRARY-ONLY in its own doc comment (anno-symbols.ts), and this
 // guard ties that marker to the real caller count in BOTH directions:
 // zero callers requires the marker present; one or more callers requires
 // the marker ABSENT (adopted, header now stale). Purely structural, no
@@ -388,17 +388,17 @@ test("R2000SymbolsError carries the class's own name", () => {
  * NOT read as a bare `Phase <N>` INSIDE A STRING LITERAL in a shipped
  * module: it lives here as a string constant in a `*.test.ts` file (not a
  * shipped module -- absent from package.json's `files[]`), and in
- * r2000-symbols.ts as prose inside a `/** ... *\/` doc comment (comments
+ * anno-symbols.ts as prose inside a `/** ... *\/` doc comment (comments
  * are not scanned for phase-literal dangling refs). `docs-dangling-refs
  * .test.ts` is run after this file specifically to confirm neither
  * exemption was accidentally violated. */
 const LIBRARY_ONLY_MARKER = "LIBRARY-ONLY (Phase 11 IN-02, D-11.1-06)";
 
-const R2000_SYMBOLS_SOURCE_PATH = join(HERE, "r2000-symbols.ts");
+const R2000_SYMBOLS_SOURCE_PATH = join(HERE, "anno-symbols.ts");
 
 /** Strips `//` and `/* ... *\/` comments, reusing `r2000-launch.test.ts`'s
  * WR-02-fixed close-token-by-position algorithm verbatim rather than
- * reinventing it -- needed here because r2000-symbols.ts's own header and
+ * reinventing it -- needed here because anno-symbols.ts's own header and
  * this guard's marker comment both discuss `regenerateAndReload(` in
  * prose, which an unfiltered scan would count as a call. */
 function stripCommentLines(src: string): string {
@@ -472,7 +472,7 @@ const SCRIPTS_DIR = join(REPO_ROOT, "scripts");
 
 /** Every production module this guard searches for a REAL call to
  * `regenerateAndReload`: every top-level non-test `.ts`/`.mts` file under
- * `src/mcp/vice` (excluding r2000-symbols.ts's own definition site,
+ * `src/mcp/vice` (excluding anno-symbols.ts's own definition site,
  * per this plan's explicit instruction), plus every file under
  * `src/skills/` and `scripts/` -- the same three trees the Phase 11
  * IN-02 audit itself grepped. */
@@ -485,7 +485,7 @@ function productionCallerSearchDomain(): string[] {
 }
 
 /** Counts production callers of `regenerateAndReload` across the derived
- * search domain. r2000-symbols.ts is scanned too (it is in the domain via
+ * search domain. anno-symbols.ts is scanned too (it is in the domain via
  * `viceModules` above) but with its own declaration line excluded, per the
  * plan's explicit "excluding its own definition site" instruction --
  * every other file is scanned without that exclusion, since none of them
@@ -514,12 +514,12 @@ function countProductionCallers(): { file: string; count: number }[] {
 test("non-vacuity: the scanner reaches regenerateAndReload's own definition site and at least one test reference", () => {
   // (a) the definition site itself, found directly (not via the caller
   // scanner, which deliberately excludes it) -- proves this test file's
-  // path resolution to r2000-symbols.ts is correct.
+  // path resolution to anno-symbols.ts is correct.
   const symbolsSrc = readFileSync(R2000_SYMBOLS_SOURCE_PATH, "utf8");
   assert.match(
     stripCommentLines(symbolsSrc),
     /\bexport\s+async\s+function\s+regenerateAndReload\s*\(/,
-    "the scanner's own path to r2000-symbols.ts did not find regenerateAndReload's declaration -- the search " +
+    "the scanner's own path to anno-symbols.ts did not find regenerateAndReload's declaration -- the search " +
       "domain is broken, not merely 'zero callers'",
   );
 
@@ -553,7 +553,7 @@ function assertLibraryOnlyBiconditional(callers: { file: string; count: number }
   if (callers.length === 0) {
     assert.ok(
       markerPresent,
-      "regenerateAndReload has zero production callers but r2000-symbols.ts is missing the LIBRARY-ONLY " +
+      "regenerateAndReload has zero production callers but anno-symbols.ts is missing the LIBRARY-ONLY " +
         `marker (${JSON.stringify(LIBRARY_ONLY_MARKER)}) -- the header must record this status`,
     );
   } else {
@@ -562,13 +562,13 @@ function assertLibraryOnlyBiconditional(callers: { file: string; count: number }
       false,
       "regenerateAndReload now has a production caller (" +
         callers.map((c) => `${c.file} x${c.count}`).join(", ") +
-        ") but r2000-symbols.ts still carries the LIBRARY-ONLY marker -- the function has been adopted and " +
+        ") but anno-symbols.ts still carries the LIBRARY-ONLY marker -- the function has been adopted and " +
         "its header is now stale. Remove the marker in the same commit that adds the caller.",
     );
   }
 }
 
-test("Phase 11 IN-02 biconditional: zero production callers of regenerateAndReload <=> the LIBRARY-ONLY marker is present in r2000-symbols.ts", () => {
+test("Phase 11 IN-02 biconditional: zero production callers of regenerateAndReload <=> the LIBRARY-ONLY marker is present in anno-symbols.ts", () => {
   const callers = countProductionCallers();
   const symbolsSrc = readFileSync(R2000_SYMBOLS_SOURCE_PATH, "utf8");
   const markerPresent = symbolsSrc.includes(LIBRARY_ONLY_MARKER);
@@ -585,7 +585,7 @@ test("current state, asserted explicitly (not only the rule): today's caller cou
   const symbolsSrc = readFileSync(R2000_SYMBOLS_SOURCE_PATH, "utf8");
   assert.ok(
     symbolsSrc.includes(LIBRARY_ONLY_MARKER),
-    `r2000-symbols.ts must contain the literal marker ${JSON.stringify(LIBRARY_ONLY_MARKER)} today`,
+    `anno-symbols.ts must contain the literal marker ${JSON.stringify(LIBRARY_ONLY_MARKER)} today`,
   );
 });
 
@@ -608,7 +608,7 @@ test("planted violation: a production caller makes assertLibraryOnlyBiconditiona
 test("planted violation: zero callers with the marker absent also fails assertLibraryOnlyBiconditional", () => {
   assert.throws(
     () => assertLibraryOnlyBiconditional([], /* markerPresent */ false),
-    /zero production callers but r2000-symbols\.ts is missing the LIBRARY-ONLY/,
+    /zero production callers but anno-symbols\.ts is missing the LIBRARY-ONLY/,
   );
 });
 

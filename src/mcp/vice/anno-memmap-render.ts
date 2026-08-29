@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// r2000-memmap-render.ts -- the ONE authoritative place in this repo that
+// anno-memmap-render.ts -- the ONE authoritative place in this repo that
 // renders the human-readable Markdown memory map from the r2000 annotation
 // store (D-24) plus a validated run-scoped provenance sidecar (D-27's
 // reconciliation, recorded in 11-10-PLAN.md's objective).
@@ -67,8 +67,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 import { runR2000Tool } from "./r2000-tools.ts";
-import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
-import type { ConfidenceGrade } from "./r2000-confidence.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
+import type { ConfidenceGrade } from "./anno-confidence.ts";
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -270,7 +270,7 @@ export const RENDERER_VERSION = "2";
  * item: every `|` becomes `\|`, and every `\r\n`/`\n`/bare `\r` collapses to
  * `<br>` (a single-line-safe line break inside a table cell). This control
  * ESCAPES and never REJECTS -- unlike the label-name policy
- * (`r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier()`, T-11-NAME-INJECT's
+ * (`anno-acme-ident.ts`'s `assertLegalAcmeIdentifier()`, T-11-NAME-INJECT's
  * other leg), because comment `evidence` legitimately contains `|` and
  * embedded newlines (`r2000_set_comment`'s own schema documents multi-line
  * support) -- refusing here would refuse valid data, not an attack. Closes

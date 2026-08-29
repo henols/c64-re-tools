@@ -101,7 +101,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { repoRoot } from "./repo-root.ts";
-import { assertLegalAcmeIdentifier } from "./r2000-acme-ident.ts";
+import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 // Type-only -- costs no child process at import time (mirrors
 // r2000-session.ts's own "class/type imports are free, the spawn primitive
 // is reached only via dynamic import" convention).
@@ -761,7 +761,7 @@ function assertReadRegionArgs(args: unknown, batchIndex?: number): void {
 }
 
 /** Validates an `r2000_set_label_name` call's `name` argument against the
- * one ACME identifier seam (`r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier()`),
+ * one ACME identifier seam (`anno-acme-ident.ts`'s `assertLegalAcmeIdentifier()`),
  * re-throwing as `R2000LabelNameError` on failure. A no-op when `args` is
  * not a plain object carrying a string `name` -- that shape is a different
  * concern (a missing/malformed required argument), not this function's.

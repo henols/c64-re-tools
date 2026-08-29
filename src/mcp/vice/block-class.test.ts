@@ -260,9 +260,9 @@ test("block-class.ts imports nothing census-side, disassembler-side, transport-s
   // passed regardless -- a guard whose scanned set can shrink to nothing
   // while staying green, which is trap 1's "quietly" made literal:
   //
-  //   import "./r2000-coverage.ts";                    // no `from` at all
-  //   import { x } from './r2000-coverage.ts';         // single-quoted
-  //   const m = await import("./r2000-coverage.ts");   // dynamic
+  //   import "./anno-coverage.ts";                    // no `from` at all
+  //   import { x } from './anno-coverage.ts';         // single-quoted
+  //   const m = await import("./anno-coverage.ts");   // dynamic
   const source = codeOnly(raw, true);
 
   const specifiers = [
@@ -333,7 +333,7 @@ test("block-class.ts IS present in package.json's files[] array", () => {
     pkg.files.includes("block-class.ts"),
     true,
     "block-class.ts must ship: the tarball validator walks the relative-import closure from the published " +
-      "entry point, and this module is reachable through r2000-cli.ts and r2000-coverage.ts. A reachable " +
+      "entry point, and this module is reachable through r2000-cli.ts and anno-coverage.ts. A reachable " +
       "module missing from files[] fails the pack with ERR_MODULE_NOT_FOUND at a consumer's runtime.",
   );
 });
