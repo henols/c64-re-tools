@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
 status: executing
-stopped_at: Completed 29-05-PLAN.md
-last_updated: "2026-08-29T16:45:39.062Z"
+stopped_at: Completed 29-06-PLAN.md
+last_updated: "2026-08-29T17:17:26.762Z"
 last_activity: 2026-08-29
 last_activity_desc: Plan 29-05 complete -- nine capability modules and the CLI renamed out from under the retired prefix, the registry records each fate, the module floor is a measured raise to 15, and the removal gate is green at every commit
-state_head: a7be8902c2542a0ee0740f1b0dbd1d55f29719cd
+state_head: 346c76240487283045033824cc27e534235ca0c0
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 40
-  completed_plans: 33
+  completed_plans: 34
   percent: 33
 ---
 
@@ -148,7 +148,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 29 (The MCP Surface) — EXECUTING
-Plan: 6 of 12
+Plan: 7 of 12
 Status: Executing — plans 29-01 through 29-05 complete (the anno_* registration tracer, the removal gate, the enum-usage table and SCHEMA_VERSION 3 bump, the derived cross-references/search/address-details composition, and the capability rename out from under the retired prefix)
 Last activity: 2026-08-29 — Plan 29-05 complete: ordering constraint 4 is discharged. Nine capability modules, the CLI and its verb parser, and four unpaired guard tests are on new names, derived entry by entry from `module-classification.ts` rather than by a prefix sweep; the registry gained a `ModuleFate` type and a `discharged` scope, and DIRECTION 6's `disk.length > 0` is replaced by a discharge-closure relation that survives the enumeration emptying. `ANNO_MODULE_FLOOR` is a measured 15 over `/^anno-.*\.ts$/` — strictly above the 14 it replaces — with a four-name positive control that all exist. The removal gate is green at EVERY commit: no entry names a moved path, nothing cites 29-05 any more, and one file (`anno-coverage.ts`) splits 2 permanent + 2 temporary through a new line-scoped `atLines` exemption shape. `audit-integrity.test.ts` LEFT the baseline failing set — the cause was CR-02 registry drift (`docs-uat-abstention.test.ts` unregistered since `19b5bd5`), fixed with no floor change. No file entered the set.
 
@@ -319,6 +319,7 @@ Last activity: 2026-08-29 — Plan 29-05 complete: ordering constraint 4 is disc
 | Phase 29 P03 | 17 min | 3 tasks | 5 files |
 | Phase 29 P04 | 25 min | 3 tasks | 5 files |
 | Phase 29 P05 | 29 min | 3 tasks | 68 files |
+| Phase 29 P06 | 71 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -693,6 +694,10 @@ Recent decisions affecting current work:
 - [Phase 29]: Plan 29-05: a discharged registry entry keys on the NEW filename and its fate records both from and to; the scope means the module no longer answers to the ENUMERATION, not that it no longer exists — Keeps classificationFor() answering for survivors, and makes the deletion arm of the discharge-closure relation symmetric.
 - [Phase 29]: Plan 29-05: the removal gate gained a line-scoped atLines exemption shape, because a bucket is a property of a MENTION and the wave-1 gate refused a file present in both blocks — anno-coverage.ts splits 2 permanent + 2 temporary. atLines narrows rather than widens: an occurrence at any other line falls through to the allow-list or to the reintroduction error.
 - [Phase 29]: Plan 29-05: docs-uat-abstention.test.ts registered in EXPECTED_DOCS_GUARD_NAMES -- it was the cause of both pre-existing audit-integrity.test.ts failures, and it clears with no DOCS_GUARD_FLOOR change — CR-02 registry drift: the guard landed on disk in 19b5bd5 and was never registered, so the audit gate could not have noticed its deletion.
+- [Phase 29]: The anno_* surface is completed in ONE plan (19 verbs), not split — 29-08's derivation check asserts every manifest-curated verb has a route; a same-wave sibling holding part of the surface would make that assertion depend on a sibling and misattribute its failure.
+- [Phase 29]: A write verb cannot use openStore's mustExist, so the absent-store refusal moved into anno-tools.ts with an inode-identity guard — mustExist deliberately bundles the absent-path refusal with a read-only connection; the refusal is now made by name before the open, and the unlink-between-check-and-open window mustExist was closing is closed by comparing the store file's inode across the open.
+- [Phase 29]: anno_get_blocks carries an include array for scopes, enums and enum_usage instead of the surface growing two more reader verbs — The phase's canonical roll-up fixes the surface at exactly 19 tool names and 29-08's check requires a committed register entry for every unclassified verb; the read routes exist without changing the declared verb count.
+- [Phase 29]: anno-store.ts gained removeScope(), addScope's inverse, in the same phase as the refusal it recovers from — F-5 (WR-28 / 28-REVIEW:1788-1814) requires the inverse ship with the refusal; no inverse existed, and anno-tools.ts must never issue SQL of its own, so it had to land in the one write seam.
 
 ### Pending Todos
 
@@ -1308,8 +1313,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T16:45:38.761Z
-Stopped at: Completed 29-05-PLAN.md
+Last session: 2026-08-29T17:17:00.089Z
+Stopped at: Completed 29-06-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,

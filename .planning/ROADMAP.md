@@ -561,7 +561,7 @@ guard that breaks on *registration* already moved, and nothing yet deleted.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
 
-**Plans**: 5/12 plans executed
+**Plans**: 6/12 plans executed
 
 Plans:
 **Wave 1**
@@ -577,7 +577,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 29-05-PLAN.md — The nine registry-driven renames and the CLI rename, with every guard that breaks on the rename moved with it (wave 3)
-- [ ] 29-06-PLAN.md — The full verb surface: writes, stored reads, derived reads, and the depth-capped batch (wave 3)
+- [x] 29-06-PLAN.md — The full verb surface: writes, stored reads, derived reads, and the depth-capped batch (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -1046,7 +1046,7 @@ in a milestone archive.
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
-| 29. The MCP Surface | v0.7.0 | 5/12 | In Progress | - |
+| 29. The MCP Surface | v0.7.0 | 6/12 | In Progress | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
