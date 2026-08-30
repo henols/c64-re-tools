@@ -66,7 +66,7 @@
 //     tests on both routes match on their wording, so a reworded message
 //     breaks a test for a reason that looks unrelated. (Attribution corrected
 //     2026-08-30, WR-07: this line named `anno-cli.ts`, which prefixed them
-//     through a `bootstrap` verb deleted in phase 29, D-14.)
+//     through a `bootstrap` verb deleted by D-14 on 2026-08-29.)
 //   - Never add the dispatch ORDER discipline here. Which check runs first for
 //     a given input extension belongs to the two loaders that own it --
 //     `anno-tools.ts`'s `loadImage()` for the MCP tool surface and

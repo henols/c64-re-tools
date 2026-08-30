@@ -2188,7 +2188,7 @@ function imageRefusal(projectPath: string, err: unknown): LoadedProject {
  * reachable for those two extensions.
  *
  * The retired JSON-project form is the TRAILING branch and nothing more: its
- * only producer was deleted in phase 29 (D-14), so it is retained purely so a
+ * only producer was deleted by D-14 (2026-08-29), so it is retained purely so a
  * caller with an existing project file on disk is not broken. Its diagnoses
  * are byte-identical to what they were, with the single exception recorded on
  * the syntax branch below.
