@@ -429,7 +429,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "One of the four entries whose only requirement anchor is SEAM-02's own enumeration, which is the " +
       "weakest basis shape in this record. Its skill-facing behaviour -- list the directory and refuse " +
       "rather than guess which file inside the image to analyse -- is documented at " +
-      "src/skills/c64-program-recon/SKILL.md:274, and that guidance outlives the analyser.",
+      "src/skills/c64-program-recon/SKILL.md:306, and that guidance outlives the analyser.",
   },
   {
     module: "anno-enum-gen.ts",

@@ -252,18 +252,31 @@ and also returns in Phase 30. What it consumed, the `memmap.json` bit table, is 
 filled example live in `templates/memory-map.template.md`), then:
 
 ```bash
-npx -y @henols/vice-mcp anno render-memmap game.regen2000proj --provenance sidecar.json
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.regen2000proj --provenance sidecar.json
+npx -y @henols/vice-mcp anno render-memmap game.annostore --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
 ```
 
 Add `--check` to detect drift — either a hand edit to the rendered file, or a store change since it
 was last rendered. The rendered file carries a generated-file banner; treat it like every other
 generated artifact in this repo and never hand-edit it.
 
-**Dated note, 2026-08-29.** `render-memmap` is one of only **two** CLI verbs that still exist
-(`coverage` is the other), and it still reads the pre-store project file shown above. The route that
-used to create those project files is withdrawn, so until this verb is rebuilt over the
-`.annostore` it runs only against a project file you already have.
+**This playbook itself has a generated twin, and it is not the one to edit.**
+`installer/skills/c64-program-recon/` is a gitignored COPY of this directory, rebuilt from it by
+`installer/scripts/sync-skills.mjs` on the installer package's `prepack` and by
+`npm --prefix installer run sync-skills`. Edit THIS file; never edit the twin. A hand-edit there is
+overwritten by the next sync and is not independently covered either — the gates that scan the
+shipped tree run the sync before they scan it, so a change made only in the twin is erased before it
+is ever measured. A change made here is SHIPPED only once that sync has run.
+
+**Dated correction, 2026-08-30 — `render-memmap` reads the annotation store directly, and the note
+that used to stand here was WRONG when it shipped.** Phase 29 plan 29-12 rebuilt this verb over the
+Phase 28 annotation store on `D-17`'s authority: its positional is an EXISTING `.annostore`, opened
+with `mustExist` — an absent store is refused by name rather than created — and nothing on the path
+it reaches consults the retired external analyser. The pre-store project file the earlier note named
+has no producer left in this repository, so there is no route back to the old spelling. That earlier
+note asserted in the PRESENT TENSE that this verb still read a project file; it was already false
+when it shipped, and it is DELETED here rather than amended, so a reader comparing two dated claims
+can tell which one to believe.
 
 ## Static disassembly
 

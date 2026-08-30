@@ -184,11 +184,27 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // else's workspace, not shipped with its own container image -- so the old
 // ".devcontainer/-exactly-2" assertion is gone. This array still
 // shrinks/grows only by a deliberate, committed edit.
+//
+// The fifth entry is the first one that is NOT host tooling, and it is named
+// here rather than excluded by a `.planning/` filter so that the census keeps
+// asking "what shell scripts does this repository track", not "what shell
+// scripts does this repository track that someone remembered to count". Phase
+// 29 plan 29-15 added `.planning/phases/29-the-mcp-surface/29-15-e2e.sh`: a
+// committed, one-off proof that the `render-memmap` invocation DOCUMENTED in
+// `src/skills/c64-program-recon/SKILL.md` actually runs, extracted from the
+// playbook rather than restated. It exists because the phase's own skill gate
+// resolves verb NAMES and never an invocation's ARGUMENTS, so a documented
+// command that always failed passed a green suite (29-REVIEW.md CR-04). It
+// lives under `.planning/` deliberately -- the removal gate under `scripts/`
+// scopes itself to `git ls-files` minus that PREFIX, and the script names the
+// retired vocabulary by necessity -- so a future reader looking for it under
+// `scripts/` will not find it.
 const EXPECTED_TRACKED_SHELL_SCRIPTS = [
   "src/mcp/vice/resources/vice-launcher.sh",
   "scripts/ensure-mcp-deps.sh",
   "scripts/package.sh",
   "scripts/release-assets.sh",
+  ".planning/phases/29-the-mcp-surface/29-15-e2e.sh",
 ].sort();
 
 test("structural: git ls-files enumerates the tracked shell-script set as exactly EXPECTED_TRACKED_SHELL_SCRIPTS", async () => {

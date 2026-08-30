@@ -1,15 +1,15 @@
 # Memory map generation
 
 **The memory map is GENERATED, not hand-authored (D-24).** The store — labels, comments, block
-types and scopes written through the `r2000_*` tools described in `../SKILL.md` — is canonical. This
+types and scopes written through the `anno_*` tools described in `../SKILL.md` — is canonical. This
 file used to be a fill-in-the-rows document; it is now the schema for the one input the generator
 needs beyond the store itself, plus the confidence vocabulary that store comments carry.
 
 Run the generator once findings are in the store:
 
 ```bash
-npx -y @henols/vice-mcp anno render-memmap game.regen2000proj --provenance sidecar.json
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.regen2000proj --provenance sidecar.json
+npx -y @henols/vice-mcp anno render-memmap game.annostore --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
 ```
 
 Add `--check` to compare the rendered file on disk against a fresh render — it exits non-zero and
