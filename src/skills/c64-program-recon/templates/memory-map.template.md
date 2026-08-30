@@ -13,11 +13,25 @@ node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore 
 ```
 
 Add `--check` to compare the rendered file on disk against a fresh render — it exits non-zero and
-prints the first differing line on **either** a hand edit to the rendered file **or** a store change
-since it was last rendered. There is no way to "fix" drift by editing the rendered file directly:
-the fix is always to re-run the generator (or, if the sidecar itself is stale, correct it and
-re-run). The generated file carries a banner naming the store, the sidecar and a content digest —
-do not strip it.
+prints the first differing line. Drift is reported when, and only when, one of these changed: the
+rendered file itself (a hand edit); a store row (a range, a label, a comment, or a comment's
+confidence grade); the provenance sidecar's bytes; the location of the store or the sidecar
+**relative to the workspace root**; or the renderer. **Relocating the checkout is not drift** — the
+same tree at a different absolute path renders the same bytes, because the banner records
+workspace-relative locations rather than absolute ones.
+
+There is no way to "fix" drift by editing the rendered file directly: the fix is always to re-run
+the generator (or, if the sidecar itself is stale, correct it and re-run). That remedy is safe to
+follow on any machine — because the banner records workspace-relative locations, re-running in a
+different checkout or in a worktree does not rewrite the file with that machine's absolute paths.
+The generated file carries a banner naming the store, the sidecar and a content digest — do not
+strip it.
+
+**One-time drift after upgrading, 2026-08-30.** A memory map rendered *before* 2026-08-30 will
+report `drifted` on its first `--check` after this change, exactly once: the banner's `store:` and
+`sidecar:` lines moved from absolute to workspace-relative spellings. Re-run the generator once and
+commit the new banner, after which the file is stable across machines and worktrees. This is a
+one-time, self-clearing banner correction — not a bug, and not a migration.
 
 ## The provenance sidecar
 
