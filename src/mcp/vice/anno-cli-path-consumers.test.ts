@@ -80,7 +80,7 @@
 import test, { before } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -337,7 +337,17 @@ const VICE_PROXY_PATH = join(HERE, "vice-proxy.ts");
 let usageText = "";
 
 before(() => {
-  const result = spawnSync("node", [VICE_PROXY_PATH, "anno", "--help"], {
+  // `process.execPath`, never a bare "node" (WR-20). The shipped server has no
+  // build step and runs `.ts` through Node's native type-stripping, so it
+  // requires Node >= 22.18; whenever the Node running this suite is not the
+  // first `node` on PATH -- an nvm/fnm/volta shell, a CI matrix job, a
+  // sudo-elevated run, a Debian box whose /usr/bin/node is 20 -- a bare "node"
+  // child either cannot parse the TypeScript or is a different runtime
+  // entirely, and the two positional directions below then fail for a reason
+  // that has nothing to do with the property under test. PATH resolution also
+  // makes the child's identity influenceable in a way `process.execPath` is
+  // not. The census-guard test at the end of this file keeps this uniform.
+  const result = spawnSync(process.execPath, [VICE_PROXY_PATH, "anno", "--help"], {
     encoding: "utf8" as const,
     env: { ...process.env, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" },
     timeout: 20_000,
@@ -475,5 +485,50 @@ test("non-vacuity floor: CLI_PATH_ARGUMENTS has at least CLI_PATH_ARGUMENT_FLOOR
     `expected >= ${CLI_PATH_ARGUMENT_FLOOR} entries in CLI_PATH_ARGUMENTS, found ${CLI_PATH_ARGUMENTS.length} -- ` +
       "a truncated or accidentally-emptied inventory must fail loudly HERE rather than let every assertion above pass " +
       "trivially. The floor is a hand-pinned literal on purpose; never derive it from CLI_PATH_ARGUMENTS.length.",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// WR-20: the Node child every spawn in this tree starts is `process.execPath`.
+//
+// A census on 2026-08-30 found 27 sites passing `process.execPath` and exactly
+// two passing a bare "node": the `--help` capture in this file (added by plan
+// 29-20) and `anno-cli.test.ts`'s `spawnCli()` (pre-existing). Both were fixed
+// in one commit, because leaving one behind is what made the other look like a
+// precedent -- `scripts/check-skill-cli-invocations.mjs`, edited in the same
+// round as the new site, already used `process.execPath`.
+//
+// The guard is a source scan rather than a count, so it names the offending
+// file and line instead of reporting a number that moved. It is deliberately
+// scoped to the FIRST ARGUMENT of a spawn: a bare "node" appearing as a
+// documented invocation inside a string (the skill playbooks' `node
+// <plugin-root>/...` route) is not a spawn and must keep passing.
+// ---------------------------------------------------------------------------
+
+test("WR-20: no Node child is spawned as a bare \"node\" -- every site passes process.execPath", () => {
+  const roots = [HERE, join(HERE, "..", "..", "..", "scripts"), join(HERE, "..", "..", "..", "scripts", "lib")];
+  const offenders: string[] = [];
+  let scanned = 0;
+  for (const root of roots) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(ts|mts|mjs)$/.test(entry.name)) continue;
+      scanned++;
+      const lines = readFileSync(join(root, entry.name), "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (/\b(spawnSync|spawn|execFileSync|execFile)\(\s*"node"/.test(line)) {
+          offenders.push(`${entry.name}:${i + 1}: ${line.trim()}`);
+        }
+      });
+    }
+  }
+  // Non-vacuity: a scan that found nothing to read would report zero offenders
+  // and look like a clean tree, which is this repo's standing failure mode for
+  // a guard.
+  assert.ok(scanned >= 40, `precondition: expected to scan at least 40 source files, scanned ${scanned}`);
+  assert.deepEqual(
+    offenders,
+    [],
+    "a Node child spawned as a bare \"node\" resolves through PATH, which need not be the Node >= 22.18 that can " +
+      "type-strip this tree's .ts sources:\n  " + offenders.join("\n  "),
   );
 });
