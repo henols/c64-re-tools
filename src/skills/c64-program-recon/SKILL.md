@@ -260,6 +260,14 @@ Add `--check` to detect drift — either a hand edit to the rendered file, or a 
 was last rendered. The rendered file carries a generated-file banner; treat it like every other
 generated artifact in this repo and never hand-edit it.
 
+**This playbook itself has a generated twin, and it is not the one to edit.**
+`installer/skills/c64-program-recon/` is a gitignored COPY of this directory, rebuilt from it by
+`installer/scripts/sync-skills.mjs` on the installer package's `prepack` and by
+`npm --prefix installer run sync-skills`. Edit THIS file; never edit the twin. A hand-edit there is
+overwritten by the next sync and is not independently covered either — the gates that scan the
+shipped tree run the sync before they scan it, so a change made only in the twin is erased before it
+is ever measured. A change made here is SHIPPED only once that sync has run.
+
 **Dated correction, 2026-08-30 — `render-memmap` reads the annotation store directly, and the note
 that used to stand here was WRONG when it shipped.** Phase 29 plan 29-12 rebuilt this verb over the
 Phase 28 annotation store on `D-17`'s authority: its positional is an EXISTING `.annostore`, opened
