@@ -8,35 +8,48 @@
 // consuming project for some other filesystem-path-resolving design to find.
 //
 // ---------------------------------------------------------------------------
-// TWO VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29).
+// THREE VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29; third verb landed
+// 2026-08-31).
 // ---------------------------------------------------------------------------
 // This file used to carry eight. Six were removed in one commit because they
 // were delivery paths for the retired external analyser this project used to
 // rent an annotation store from: three drove its child process directly and
 // three reached it through capability modules that did. Removing the analyser
 // without removing them would have left six verbs that typecheck, dispatch,
-// and then fail at the first call.
+// and then fail at the first call. That paragraph is kept rather than deleted:
+// it records what went and why, and it stays true.
 //
-// What went, and where it went:
-//   - `bootstrap`, `export-asm`, `verify` -- the analyser's own routes. The
-//     export/reassembly route returns with the ACME oracle, rebuilt over the
-//     store rather than resurrected.
+// What went, and where it stands now:
+//   - `bootstrap`, `export-asm`, `verify` -- the analyser's own routes.
+//     `export-asm` RETURNED on 2026-08-31 as a REBUILD OVER THE ANNOTATION
+//     STORE behind a real-ACME byte-diff oracle -- not as restored code, and
+//     not sharing a line with the deleted implementation. It is the third
+//     verb below. `bootstrap` and `verify` did not come back: `bootstrap`
+//     created the analyser's own project file, which no longer exists as a
+//     format this repo produces, and `verify` drove the analyser's own
+//     checker.
 //   - `gen-enums`, `export-lbl`, `import-lbl` -- the enum generator and the
-//     VICE-label round trip. Same fate, same route: they come back as
-//     rebuilds over the store, not as restored code. Until then the symbol
-//     round trip has NO route at all, which is recorded as a withdrawal in
-//     `.planning/PROJECT.md`'s shipped-capability list rather than left for a
-//     reader to discover by running it.
+//     VICE-label round trip. These did NOT return with `export-asm`. No
+//     requirement and no success criterion of the phase that rebuilt
+//     `export-asm` covers any of them, and NO PHASE CURRENTLY OWNS THEM, so
+//     the symbol round trip still has NO route at all. That is recorded as a
+//     withdrawal in `.planning/PROJECT.md`'s shipped-capability list rather
+//     than left for a reader to discover by running it. The exact wording of
+//     those withdrawal notices across both skill trees is re-pointed in one
+//     place, by the plan that owns the tree-wide sweep (30-06); this file
+//     states the code fact and does not restate their text, so the two edits
+//     cannot contradict each other.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Never auto-pick an input when the caller does not name one (D-02). A
 //     silent auto-pick would happily analyse a cracktro or loader stub's
 //     bytes instead of the actual game -- precisely the failure
 //     `c64-provenance-diff` exists to prevent elsewhere in this project.
-//     Both surviving verbs take an EXISTING project and refuse rather than
-//     guess: `render-memmap` demands its provenance sidecar by name, and
-//     `coverage` demands its annotation store by name. Neither derives the
-//     other's path from the one it was given.
+//     Every verb takes EXISTING inputs and refuses rather than guess:
+//     `render-memmap` demands its provenance sidecar by name, `coverage`
+//     demands its annotation store by name, and `export-asm` demands BOTH an
+//     existing store and an existing image. No verb derives one
+//     caller-supplied path from another.
 //   - Never grow a second path validator. Every caller-supplied path below
 //     goes through `storePathWithinWorkspace()` -- the ONE confinement seam,
 //     the same one `anno-tools.ts` puts its store and image arguments
@@ -101,9 +114,17 @@
 // This absence is asserted structurally by `hostpath-consumers.test.ts`
 // (D-08), not merely stated here.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 
 import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts";
+// The ACME source emitter (EXPORT-01). It reads the store and the image and
+// returns text plus counts; it starts no assembler and knows nothing about
+// one. `acme-verify.ts` -- the module that DOES spawn ACME -- is deliberately
+// NOT imported here and must never be: it is test-only (it is absent from
+// `package.json`'s `files[]` on purpose), so a shipped module importing it
+// would drag it into the published closure `check-npm-packages.mjs` walks.
+import { exportAsm } from "./anno-export-asm.ts";
+import type { ExportAsmResult } from "./anno-export-asm.ts";
 // The coverage instrument (COV-01/COV-02). It declares its own input shapes
 // and never reads a store, a file or a tool on its own behalf -- a caller
 // fetches and hands the data in, which is exactly what makes the store
@@ -194,8 +215,35 @@ verbs:
       claim unfalsifiable, because any one weak measure can be hidden by
       averaging it against a strong one.
 
-Both verbs require inputs that already exist. Neither creates a project, a
-store or a sidecar, and neither derives one path from another -- this CLI
+  export-asm <image> --store FILE [--out FILE] [--force]
+      Writes ACME source for a program from its annotation store. <image>
+      supplies the PAYLOAD BYTES and the load origin; --store names the
+      ANNOTATION STORE holding the ranges, labels, comments and enums. Those
+      are two separate files on purpose, and NEITHER IS DERIVED FROM THE
+      OTHER: the store holds annotations and never bytes, so an exporter has
+      to be told which bytes it is describing and this verb refuses to guess
+      one from the other.
+      The default --out is the image's basename with a .a extension, in the
+      STORE's own directory. That derived default is put through the SAME
+      confinement seam as a caller-supplied --out, rather than trusted
+      because this verb computed it. An existing destination is refused
+      unless --force is passed.
+      Requires an EXISTING annotation store and an EXISTING image, and
+      creates neither.
+      THIS VERB DOES NOT ASSEMBLE ITS OUTPUT. It writes source text and
+      nothing more: it starts no assembler, reads no assembler's exit status
+      and compares no bytes. Whether that source reassembles to the image it
+      came from is settled by the byte-diff oracle in this project's own test
+      suite, which is deliberately test-only, so nothing this command prints
+      may be read as a verification result.
+      Refuses, by name and with exit 1, any annotation the exporter cannot
+      express -- a range the image does not cover, an enum bound to an
+      operand that cannot carry it, a comment with no line to attach to.
+      Such an annotation is never silently dropped while this command
+      reports success.
+
+Every verb requires inputs that already exist. None creates a project, a
+store or a sidecar, and none derives one path from another -- this CLI
 never guesses (D-02).
 `;
 
@@ -217,11 +265,17 @@ function errMsg(err: unknown): string {
  * `coverage`'s `--store` is REQUIRED rather than optional, and it is declared
  * here for the same reason as every other entry: the verb reads it. It is not
  * defaulted from `<image>` -- see this file's header on never deriving one
- * caller-supplied path from another.
+ * caller-supplied path from another. `export-asm`'s `--store` is required on
+ * the same terms and for the same reason.
+ *
+ * `export-asm` deliberately carries NO assembler-facing option. It writes
+ * source and runs no assembler, so there is no binary to name, no exit status
+ * to surface and no flag that could imply either.
  */
 export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "render-memmap": ["--provenance", "--out", "--force", "--check"],
   coverage: ["--store", "--out", "--force", "--sample"],
+  "export-asm": ["--store", "--out", "--force"],
 });
 
 /**
@@ -249,10 +303,10 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
 
 /**
  * Refuses to overwrite an existing file at `outPath` unless the caller
- * passed `--force`. Called by BOTH verbs that write an output file --
- * `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes) and
- * `cmdCoverage()` -- so overwrite safety is uniform rather than one verb
- * accreting a check the other lacks (CR-01/CR-02).
+ * passed `--force`. Called by ALL THREE verbs that write an output file --
+ * `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes),
+ * `cmdCoverage()` and `cmdExportAsm()` -- so overwrite safety is uniform
+ * rather than one verb accreting a check the others lack (CR-01/CR-02).
  *
  * "SHARED BY EVERY VERB THAT WRITES AN OUTPUT FILE" IS WHAT THIS DOC USED TO
  * SAY, AND IT WAS NOT TRUE. `render-memmap` wrote an output file and had
@@ -296,8 +350,8 @@ interface RenderMemmapParsedArgs {
  *
  * `--force` is parsed in the SAME boolean shape `parseCoverageArgs()` already
  * uses, deliberately rather than as a second convention: it feeds the same
- * `refuseOverwrite()` both verbs share, so a caller who learns the opt-in on
- * one verb has learned it on the other. */
+ * `refuseOverwrite()` every writing verb shares, so a caller who learns the
+ * opt-in on one verb has learned it on the others. */
 function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
   const positional: string[] = [];
   let provenance: string | undefined;
@@ -1034,6 +1088,225 @@ async function cmdCoverage(rest: string[]): Promise<number> {
   return 0;
 }
 
+interface ExportAsmParsedArgs {
+  positional: string[];
+  store?: string;
+  storeMissingValue?: boolean;
+  out?: string;
+  outMissingValue?: boolean;
+  force?: boolean;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for export-asm -- exactly `--store`, `--out` and
+ * `--force`. The SAME WR-08 posture, and deliberately the same SHAPE, as
+ * `parseRenderMemmapArgs()` and `parseCoverageArgs()` above rather than a
+ * third convention: an unimplemented flag is refused as `unknownOption`, and
+ * `--store`/`--out` with a missing or flag-shaped value are refused through
+ * their own `*MissingValue` fields rather than silently swallowing the next
+ * token. */
+function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
+  const positional: string[] = [];
+  let store: string | undefined;
+  let storeMissingValue = false;
+  let out: string | undefined;
+  let outMissingValue = false;
+  let force = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--store") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        storeMissingValue = true;
+      } else {
+        store = value;
+        i++;
+      }
+    } else if (a === "--out") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        outMissingValue = true;
+      } else {
+        out = value;
+        i++;
+      }
+    } else if (a === "--force") {
+      force = true;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, store, storeMissingValue, out, outMissingValue, force, unknownOption };
+}
+
+/**
+ * The destination `export-asm` writes to when the caller names none: the
+ * IMAGE's basename with its extension replaced by `.a`, in the STORE's own
+ * directory.
+ *
+ * The store's directory rather than the image's, deliberately and for the
+ * reason `render-memmap`'s `memory-map.md` default already gives: the output
+ * is a GENERATED VIEW of the annotations, so it belongs beside the artefact it
+ * was generated from. The image is an input this verb only reads.
+ *
+ * A name with no extension keeps its whole basename and gains `.a`; a name
+ * that already ends in `.a` is unchanged in spelling, which is correct -- the
+ * caller then gets the overwrite refusal rather than a silently-different
+ * destination.
+ */
+function defaultExportAsmOut(imagePath: string, storeDir: string): string {
+  const base = basename(imagePath);
+  const ext = extname(base);
+  const stem = ext === "" ? base : base.slice(0, -ext.length);
+  return join(storeDir, `${stem}.a`);
+}
+
+/**
+ * `export-asm <image> --store FILE [--out FILE] [--force]` -- ACME source for
+ * a program, emitted from its annotation store by `anno-export-asm.ts`'s
+ * `exportAsm()`.
+ *
+ * ALL THREE OF THIS VERB'S PATHS ARE CONFINED, and the ORDER each step happens
+ * in is the load-bearing part rather than the mere presence of the calls. It
+ * follows `cmdRenderMemmap()`'s chain deliberately, because that chain is the
+ * corrected shape of three reproduced escapes (`29-VERIFICATION.md` gap 3 /
+ * `29-REVIEW.md` CR-02 and CR-03) on exactly the argument shapes this verb
+ * has:
+ *
+ *   - `<image>` and `--store` go through `storePathWithinWorkspace()` BEFORE
+ *     any `existsSync` probe. A stat is itself an oracle -- it answers "does
+ *     this file exist" for any path this process can reach -- so probing first
+ *     and confining second would leak that answer for a path the seam is about
+ *     to refuse.
+ *   - `--out`'s DEFAULT is applied FIRST and the result confined AFTER, so a
+ *     path this verb computed is confined by the same rule as one a caller
+ *     supplied, rather than trusted because this verb computed it (CR-02).
+ *   - From each seam call onwards the RAW CALLER STRING IS DEAD.
+ *     `storePathWithinWorkspace()` returns the REALPATH, and it is the
+ *     realpath that reaches `readFileSync`, `openStore()`, `refuseOverwrite()`
+ *     and `writeFileSync` -- so every printed line names the file that is
+ *     actually on disk.
+ *   - `refuseOverwrite()` runs against the CONFINED destination, so the file
+ *     it protects is the file that would actually be written.
+ *
+ * WHAT THIS VERB DOES NOT DO, stated here as well as in `USAGE` because a
+ * reader of the code must not have to infer it: it does not assemble. It
+ * spawns nothing, reads no assembler's exit status and compares no bytes. The
+ * byte-diff oracle that settles whether this source reassembles to the image
+ * it came from is test-only and is not importable from here -- a shipped
+ * module importing it would drag a test-only module into `package.json`'s
+ * `files[]` closure. Nothing this function prints may therefore read as a
+ * verification result, and the summary says so in as many words.
+ */
+async function cmdExportAsm(rest: string[]): Promise<number> {
+  const { positional, store, storeMissingValue, out, outMissingValue, force, unknownOption } = parseExportAsmArgs(rest);
+
+  if (unknownOption) {
+    console.error(`export-asm: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (storeMissingValue) {
+    console.error("export-asm: --store requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (outMissingValue) {
+    console.error("export-asm: --out requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  if (positional.length !== 1) {
+    console.error("export-asm: usage: export-asm <image> --store FILE [--out FILE] [--force]");
+    return 1;
+  }
+  const image = positional[0]!;
+  if (!store) {
+    console.error(
+      "export-asm: --store FILE is required -- the annotation store holds the ranges, labels, comments and enums, " +
+        "and this verb will not derive its path from <image>.\n",
+    );
+    console.log(USAGE);
+    return 1;
+  }
+
+  // T-30-15 / CR-03: the ONE confinement seam, on both input paths, BEFORE any
+  // filesystem probe. `openStore()` downstream is handed this same workspace
+  // root, so its own confinement agrees by construction rather than by a
+  // second rule.
+  const workspaceRoot = repoRoot();
+  let imagePath: string;
+  let storePath: string;
+  try {
+    imagePath = storePathWithinWorkspace(image, workspaceRoot);
+    storePath = storePathWithinWorkspace(store, workspaceRoot);
+  } catch (err) {
+    console.error(`export-asm: ${errMsg(err)}`);
+    return 1;
+  }
+  if (!existsSync(storePath)) {
+    console.error(
+      `export-asm: annotation store not found: ${storePath} -- refusing to CREATE one, because "the annotations are ` +
+        'gone" and "there are no annotations" must not read the same.',
+    );
+    return 1;
+  }
+  if (!existsSync(imagePath)) {
+    console.error(`export-asm: image not found: ${imagePath}`);
+    return 1;
+  }
+
+  // T-30-02 / CR-02. The default is applied FIRST and the RESULT confined,
+  // so the derived path and a caller-supplied one are confined by the same
+  // rule.
+  let outPath: string;
+  try {
+    outPath = storePathWithinWorkspace(out ?? defaultExportAsmOut(imagePath, dirname(storePath)), workspaceRoot);
+  } catch (err) {
+    console.error(`export-asm: ${errMsg(err)}`);
+    return 1;
+  }
+
+  // Against the CONFINED path, so the file this check protects is the file
+  // that would actually be written.
+  if (!refuseOverwrite(outPath, force, "export-asm")) {
+    return 1;
+  }
+
+  let result: ExportAsmResult;
+  try {
+    result = exportAsm({ storePath, imagePath, workspaceRoot });
+  } catch (err) {
+    // Every refusal the exporter raises -- an uncovered range, an
+    // inexpressible enum binding, a comment with no line to attach to --
+    // arrives here already named. It is reported as this verb's own
+    // single actionable line and never as a thrown stack trace, and the verb
+    // exits non-zero rather than reporting success over a dropped annotation.
+    console.error(`export-asm: ${errMsg(err)}`);
+    return 1;
+  }
+  try {
+    writeFileSync(outPath, result.source);
+  } catch (err) {
+    // Same shape as `cmdRenderMemmap()`'s write failure one verb over (WR-09):
+    // an ordinary write failure -- missing parent directory, permissions, full
+    // disk -- must not throw past this verb's own never-throw contract.
+    console.error(`export-asm: could not write ${outPath}: ${errMsg(err)}`);
+    return 1;
+  }
+  console.log(
+    `export-asm: wrote ${outPath} (${result.blocks.length} block(s), ${result.symbolCount} symbol(s), ` +
+      `${result.autoNamedSymbolCount} auto-named, ${result.unexpressibleCount} unexpressible instruction(s), ` +
+      `${result.midInstructionLabelCount} mid-instruction label(s), ${result.enumSubstitutionCount} enum substitution(s))`,
+  );
+  console.log("export-asm: this file has NOT been assembled -- this command writes source text and runs no assembler.");
+  return 0;
+}
+
 /**
  * Entry point for the `r2000` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
@@ -1068,6 +1341,8 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         return await cmdRenderMemmap(rest);
       case "coverage":
         return await cmdCoverage(rest);
+      case "export-asm":
+        return await cmdExportAsm(rest);
       default:
         // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
         // `r2000:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
@@ -1075,7 +1350,7 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         // no longer dispatches. Only the STRING moved: the enclosing function
         // keeps its current name, so no consumer, test or record entry moves
         // with it (see the plan's <wr14_scope_decision>).
-        console.error(`anno: unknown verb "${verb}" -- this CLI has exactly two: render-memmap and coverage\n`);
+        console.error(`anno: unknown verb "${verb}" -- this CLI has exactly three: render-memmap, coverage and export-asm\n`);
         console.log(USAGE);
         return 1;
     }

@@ -13,9 +13,11 @@
 //      MASTRA_TELEMETRY_DISABLED=1 in the child env), and asserts no line of
 //      stdout is a JSON-RPC frame -- the proof the subcommand short-circuits
 //      before the MCP server ever starts.
-//   2. THE NARROWING IS REAL. Each of the six removed verbs is rejected, and
-//      the rejection names the two that exist. A verb removed from the
-//      dispatch switch but left in USAGE, or vice versa, fails here.
+//   2. THE NARROWING IS REAL. Each verb that is still removed is rejected, and
+//      the rejection names the ones that exist. A verb removed from the
+//      dispatch switch but left in USAGE, or vice versa, fails here. Five of
+//      D-14's six are still gone; `export-asm` returned on 2026-08-31 as a
+//      rebuild over the annotation store and moved to `SURVIVING_VERBS`.
 //   3. THE OPTION CONTRACT (IN-06). `VERB_OPTIONS` and USAGE agree per verb,
 //      every documented option is accepted, and every undocumented one is
 //      refused with the verb's own name on the front.
@@ -48,13 +50,23 @@ import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The six verbs D-14 removed. Hand-listed on purpose: deriving it from
- * `VERB_OPTIONS` would assert that a removed verb is removed, which is a
- * tautology. This list is what makes "the narrowing happened" falsifiable. */
-const REMOVED_VERBS = ["bootstrap", "export-asm", "verify", "gen-enums", "export-lbl", "import-lbl"];
+/** The verbs D-14 removed THAT ARE STILL GONE. Hand-listed on purpose:
+ * deriving it from `VERB_OPTIONS` would assert that a removed verb is removed,
+ * which is a tautology. This list is what makes "the narrowing happened"
+ * falsifiable.
+ *
+ * NARROWED FROM SIX TO FIVE on 2026-08-31: `export-asm` RETURNED, rebuilt over
+ * the annotation store behind a real-ACME byte-diff oracle, and moved to
+ * `SURVIVING_VERBS` in the same commit. It is removed from this list because a
+ * list of removed verbs that names a verb the CLI dispatches asserts something
+ * false; the removal of the other five is unchanged in force. `gen-enums`,
+ * `export-lbl` and `import-lbl` did NOT come back with it and no phase
+ * currently owns them. */
+const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import-lbl"];
 
-/** The two that survive. Same reasoning, opposite polarity. */
-const SURVIVING_VERBS = ["render-memmap", "coverage"];
+/** The verbs the CLI really dispatches. Same reasoning, opposite polarity.
+ * Grew from two to three on 2026-08-31 with `export-asm`. */
+const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm"];
 
 /** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
  * missing or placeholder key by name, so any test that renders for real needs
@@ -267,7 +279,7 @@ test("bin: `vice-mcp anno no-such-verb` exits non-zero and prints a usage block"
   assert.match(combined, /usage \(npm install\)/);
 });
 
-test("bin: `vice-mcp anno --help` lists exactly the two surviving verbs", () => {
+test("bin: `vice-mcp anno --help` lists exactly the surviving verbs", () => {
   for (const verb of SURVIVING_VERBS) {
     assert.match(helpResult.stdout, new RegExp(`\\b${verb}\\b`), `USAGE must document the surviving verb ${verb}`);
   }
@@ -290,7 +302,7 @@ test("bin: both invocations terminate on their own within the timeout, not via s
 // The narrowing itself (D-14). Six verbs are GONE, not disabled.
 // ---------------------------------------------------------------------------
 
-test("each of the six removed verbs is rejected, and the rejection names the two verbs that exist", async () => {
+test("each removed verb is still rejected, and the rejection names the verbs that exist", async () => {
   for (const verb of REMOVED_VERBS) {
     const { result: code, stdout, stderr } = await withCapturedConsole(() => runR2000Cli([verb, "some.project"]));
     assert.notEqual(code, 0, `the removed verb "${verb}" must be rejected, not dispatched`);
@@ -315,7 +327,7 @@ test("USAGE names neither the removed verbs nor their options", () => {
   }
 });
 
-test("VERB_OPTIONS carries exactly the two surviving verbs", () => {
+test("VERB_OPTIONS carries exactly the surviving verbs", () => {
   assert.deepEqual(Object.keys(VERB_OPTIONS).sort(), [...SURVIVING_VERBS].sort());
 });
 
@@ -737,17 +749,17 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 // IN-06 -- a verb refuses an option it does not implement instead of silently
 // dropping it. `VERB_OPTIONS` (one frozen map in `anno-cli.ts`) plus
 // `checkAcceptedOptions()`'s single pre-dispatch call site refuse any
-// `--flag`-shaped token a verb does not accept, for both verbs uniformly.
+// `--flag`-shaped token a verb does not accept, for every verb uniformly.
 // ---------------------------------------------------------------------------
 
 // The verb count here is a count site that MOVES with the dispatch switch,
 // alongside `ANNO_CLI_VERB_FLOOR` and `anno-verb-coverage.test.ts`'s own verb
 // list. Kept as a hand-maintained literal on purpose: deriving it from
 // `Object.keys(VERB_OPTIONS).length` would assert that a number equals itself.
-test("the verb-options map agrees with USAGE's own per-verb option lists, for both verbs (IN-06)", () => {
+test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 2, `expected exactly 2 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 3, `expected exactly 3 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
