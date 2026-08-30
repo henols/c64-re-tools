@@ -65,9 +65,9 @@ import { join } from "node:path";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
-import { exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
-import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.ts";
-import { DATA_TYPES } from "./anno-types.ts";
+import { assertExportableCommentText, exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
+import { openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
+import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 
 /** Computed exactly once, by the shared seam. Every ACME-dependent test in
  * this file passes this through node:test's own `{ skip }` option. */
@@ -559,4 +559,143 @@ test("a store with ZERO comments emits no comment line, and still round-trips", 
   const verdict = verifyExport(result);
   assert.equal(verdict.outcome, "ok", `a comment-free export must round-trip:${context(result, verdict)}`);
   assert.equal(verdict.byteDiff?.equal, true, `comment-free byte-diff:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// Comments. Two placements, one refusal at each of the two boundaries, and a
+// round trip -- because a comment cannot change a byte, and the byte-diff is
+// what proves the emission did not accidentally change one anyway.
+// ---------------------------------------------------------------------------
+
+function commentedFixture(tag: string, comments: readonly { address: number; commentType: string; text: string }[]): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: PLANTED_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0808, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+    comments,
+  });
+}
+
+test("a `line` comment sits on its own line immediately before its instruction; a `side` comment appends to that instruction's line", () => {
+  const { dir, storePath, imagePath } = commentedFixture("comments-shape", [
+    { address: 0x0801, commentType: "line", text: "the entry point" },
+    { address: 0x0803, commentType: "side", text: "read the flag" },
+  ]);
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  const lineComment = lines.indexOf("        ; the entry point");
+  const firstInstruction = lines.indexOf("        lda #$00");
+  assert.ok(lineComment >= 0, `the line comment must be emitted at the block's indent:\n${result.source}`);
+  assert.equal(lineComment + 1, firstInstruction, "a line comment sits IMMEDIATELY before the line for its address");
+
+  assert.ok(
+    lines.some((line) => line.startsWith("        lda $90") && line.endsWith("  ; read the flag")),
+    `a side comment appends to its own instruction's line:\n${result.source}`,
+  );
+  assert.equal(result.commentCount, 2);
+});
+
+test("an export carrying both comment kinds still reassembles byte-identically", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = commentedFixture("comments-roundtrip", [
+    { address: 0x0801, commentType: "line", text: "the entry point" },
+    { address: 0x0803, commentType: "side", text: "read the flag" },
+    { address: 0x0808, commentType: "line", text: "back to the caller" },
+  ]);
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const verdict = verifyExport(result);
+
+  assert.equal(verdict.outcome, "ok", `comments cannot change a byte, and this is the proof:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `commented byte-diff:${context(result, verdict)}`);
+  assert.equal(result.commentCount, 3);
+});
+
+test("assertExportableCommentText() REFUSES a line break at the export boundary and returns a clean string UNCHANGED", () => {
+  // Both directions in one test: a control that only ever refuses is
+  // indistinguishable from one that is broken in the accepting direction.
+  assert.throws(
+    () => assertExportableCommentText("raster split\nlda #$00", 0x0801),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /, "every refusal from this module is prefixed `exportAsm:`");
+      assert.ok(e.message.includes("$0801"), `the refusal names the ADDRESS, which is a fact about the comment: ${e.message}`);
+      assert.match(e.message, /line break|newline/i, `the refusal names the mechanism: ${e.message}`);
+      assert.equal(e.message.includes("raster split"), false, "the refusal must NOT quote the stored text back (CR-03)");
+      return true;
+    },
+  );
+
+  assert.equal(assertExportableCommentText("raster split at line $64", 0x0801), "raster split at line $64");
+});
+
+test("the export boundary re-checks rather than trusting the store: a store written BEFORE the refusal existed is refused at export", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = commentedFixture("comments-legacy", [{ address: 0x0801, commentType: "line", text: "clean at write time" }]);
+
+  // Rewrite the row behind the store's own write verb, exactly as a store
+  // written before Part A's refusal existed would already hold it. This is the
+  // ONE place this file goes around a public write verb, and it does so to
+  // reproduce a state the public verbs can no longer create.
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    handle.db.prepare("update anno_comment set text = ?").run("raster split\nlda #$00");
+  } finally {
+    closeStore(handle);
+  }
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("$0801"), `the refusal names the address: ${e.message}`);
+      return true;
+    },
+    "the export boundary is the last place before the bytes become assembler input",
+  );
+});
+
+test("defence in depth: writing a newline-bearing comment through the store's public write verb is refused before it reaches disk", () => {
+  const dir = freshDir("comments-store-refusal");
+  const { storePath } = buildStore(dir, {
+    origin: 0x0801,
+    body: PLANTED_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0808, dataType: "code" }],
+    labels: [],
+  });
+
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    assert.throws(
+      () => setComment(handle, { address: 0x0801, commentType: "line", text: "raster split\nlda #$00" }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoCommentError, `expected AnnoCommentError, got ${String(e)}`);
+        assert.equal(e.reason, "embedded newline");
+        return true;
+      },
+    );
+    assert.deepEqual(listComments(handle), [], "the refused write left NOTHING on disk");
+  } finally {
+    closeStore(handle);
+  }
+});
+
+test("a comment the export cannot place is refused BY NAME, never dropped from the output while the export reports success", () => {
+  // $0802 is the operand byte of the two-byte `lda #$00` at $0801 -- there is no
+  // emitted line whose address is $0802. Placing it silently on the neighbouring
+  // instruction would move a human's note onto a different instruction.
+  const { dir, storePath, imagePath } = commentedFixture("comments-unplaceable", [
+    { address: 0x0802, commentType: "line", text: "mid-instruction" },
+  ]);
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("$0802"), `the refusal names the address it could not place: ${e.message}`);
+      assert.equal(e.message.includes("mid-instruction"), false, "the refusal must not quote the stored text back (CR-03)");
+      return true;
+    },
+  );
 });
