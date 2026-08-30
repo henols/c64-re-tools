@@ -4,12 +4,12 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 30
 current_phase_name: ACME Export and the Real-ACME Oracle
-status: planned
+status: executing
 stopped_at: "Phase 30 PLANNED — 6 plans (30-01..30-06) in 5 waves, verified on 2026-08-30T20:59Z; run /gsd-execute-phase 30"
-last_updated: "2026-08-30T20:59:23.043Z"
+last_updated: "2026-08-30T21:07:22.516Z"
 last_activity: 2026-08-30
-last_activity_desc: "Phase 30 PLANNED — 6 plans across 5 waves, no CONTEXT.md (no discuss-phase was run; the ROADMAP section carried the settled design and two owner decisions were taken inline during the planning run). USER-D-01 scoped the phase to the ACME oracle plus export-asm only, holding gen-enums/export-lbl/import-lbl out despite five in-tree statements and REQUIREMENTS.md:73 promising their return here — 30-06 re-points every falsified statement in the same phase that falsifies them, and the measured census is larger than the five USER-D-01 named. USER-D-02 kept the ACME verify module test-only, mirroring acme-gate.ts, so it never joins the npm files[] closure or spawn-seam.test.ts while the exporter itself ships. Research (845 lines, HIGH confidence) measured every ACME claim live against ACME 0.97 Zem on this host and found a fourth false-pass vector recorded nowhere in this repo: ACME leaves a pre-existing output file completely untouched when it fails, so a fixed output path plus an earlier successful run byte-diffs against stale bytes and reads as a pass — the verify module assembles into a fresh mkdtemp and requires the output file to have been created by that run. It also measured that =*+$01 label PLACEMENT decides correctness while ACME exits 0 either way, and that a forward-referenced zero-page symbol silently widens to absolute with only a warning. Two plan-checker rounds: round 1 returned 1 blocker + 5 warnings — the blocker being that the leading tracer slice, the one the phase requires verified before any expansion, had an unfailable `|| true` gate, the exact EXIT=0-over-an-assembler-that-never-ran shape this phase exists to eliminate. The revision swept all six plans and found 17 more of the same family (every `| tail -12` exits with tail's status, laundering a suite failure into EXIT=0); all 17 now carry set -o pipefail and the checker re-confirmed 0 unfailable gates by its own scan rather than on report. Round 2 returned 0 blockers + 2 warnings, both wording-level and both closed: 30-04 had pinned exitStatus === 0 on the enum wrong-operand control while its own action argued 30-03's per-block `*` bracket makes ACME exit 1 — a self-contradiction that would have scored a false gap against correct work — and the acmeBin JSDoc overclaimed. Final pass: VERIFICATION PASSED. Requirements coverage 3/3; decision-coverage gate skipped (no CONTEXT.md); specless probe fallback ran with 6 edges surfaced and 6 authored, 0 flagged assumptions, prohibitions descriptor-less in all six plans."
-state_head: 160205badd591c419b07a6ef19476efa97734596
+last_activity_desc: Phase 30 execution started
+state_head: 21d4c36abd8c11a3f5dff6364d928901cb64ed02
 progress:
   total_phases: 6
   completed_phases: 3
@@ -24,7 +24,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-29 after Phase 28)
 
-**Current focus:** Phase 29 — The MCP Surface
+**Current focus:** Phase 30 — ACME Export and the Real-ACME Oracle
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 30 (ACME Export and the Real-ACME Oracle) — READY TO EXECUTE
-Plan: 0/6 executed. 30-01..30-06 across 5 waves; wave 1 is a single type="tracer" slice (one store -> export -> real ACME -> byte-diff -> verdict) that must be verified before any expansion task. Wave 2 runs 30-02 and 30-03 in parallel on disjoint files under paired <same_wave_contract> blocks.
-Status: Ready to execute Phase 30 — run /gsd-execute-phase 30. Phase 29 is COMPLETE — re-verification round 3 (2026-08-30T17:46Z) scored it passed, 6/6, superseding round 1 (4/6) and round 2 (4/6, a different 4/6). All twelve of its requirements read Complete; REPOINT-01 and REPOINT-02 were the last two to move and moved on that verdict, not on the gap plans own reading of their work. Carried forward as a stated residual rather than a gap: WR-17 (RENDERER_VERSION not bumped when the memory-map banner output shape changed) is dispositioned OPEN-AS-WARNING with a named follow-up for whichever phase next edits anno-memmap-render.ts — including the guard whose absence is the real defect, a test that fails when the banner lines move without the constant. Eleven further findings stay OPEN-AS-WARNING (WR-02..WR-04, WR-06..WR-13) and WR-14 (Phase 30), WR-15/WR-16 (deferred on record) and CUT-06 (Phase 32) are out of scope on record.
-Last activity: 2026-08-30 — Phase 30 planned: research, pattern map, validation strategy and 6 plans, verified over two plan-checker revision rounds (1 blocker + 5 warnings, then 2 warnings, then passed).
+Phase: 30 (ACME Export and the Real-ACME Oracle) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 30
+Last activity: 2026-08-30 — Phase 30 execution started
 
 ## Performance Metrics
 
