@@ -1020,7 +1020,13 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
       case "coverage":
         return await cmdCoverage(rest);
       default:
-        console.error(`r2000: unknown verb "${verb}" -- this CLI has exactly two: render-memmap and coverage\n`);
+        // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
+        // `r2000:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
+        // -- so a user who mistyped a verb was answered by a subcommand that
+        // no longer dispatches. Only the STRING moved: the enclosing function
+        // keeps its current name, so no consumer, test or record entry moves
+        // with it (see the plan's <wr14_scope_decision>).
+        console.error(`anno: unknown verb "${verb}" -- this CLI has exactly two: render-memmap and coverage\n`);
         console.log(USAGE);
         return 1;
     }
@@ -1029,7 +1035,8 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
     // own code with its own message, so anything arriving here is unexpected
     // and is reported verbatim rather than swallowed. The loud failure is the
     // point (D-07).
-    console.error(`r2000: ${errMsg(err)}`);
+    // WR-14 site 2, second half -- same correction, same reason.
+    console.error(`anno: ${errMsg(err)}`);
     return 1;
   }
 }

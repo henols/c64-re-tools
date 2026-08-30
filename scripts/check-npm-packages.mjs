@@ -232,13 +232,24 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 // 3 hit it twice (6801cf5, 897faf6) and an earlier draft of Phase 4's plan
 // set would have hit it again.
 //
-// Folded todo 1 (2026-08-20-npm-closure-walk-blind-to-dynamic-imports.md):
-// the walk was STATIC-IMPORT-ONLY, so `vice-proxy.ts:218`'s
+// Folded todo 1 (2026-08-20-npm-closure-walk-blind-to-dynamic-imports.md).
+// HISTORICAL, AND DELIBERATELY IN THE PAST TENSE (WR-14 site 5, marked
+// 2026-08-30 by plan 29-16): everything in this paragraph records the state at
+// the time the finding was CLOSED, and it names the modules by their
+// PRE-DELETION names so the citation is followable in both directions. Three
+// of the five no longer exist -- `r2000-project.ts`, `r2000-launch.ts` and
+// `r2000-verify.ts` were deleted in phase 29 (D-14) -- and half-renaming the
+// sentence would leave a citation unusable in both directions, which is
+// exactly what the review prescribed against.
+//
+// As it stood then: the walk was STATIC-IMPORT-ONLY, so `vice-proxy.ts`'s
 // `const { runR2000Cli } = await import("./anno-cli.ts");` was structurally
-// invisible to it -- the whole r2000 family (anno-cli.ts, anno-d64.ts,
-// r2000-project.ts, r2000-launch.ts, r2000-verify.ts) was reachable at
-// runtime through that one dynamic import but NONE of it was ever traversed,
-// so `files[]` was correct only by hand. The dynamic-import regex below is
+// invisible to it -- the whole family reachable through that one dynamic
+// import (anno-cli.ts, anno-d64.ts, r2000-project.ts, r2000-launch.ts,
+// r2000-verify.ts) was NEVER traversed, so `files[]` was correct only by hand.
+// (`runR2000Cli` is left as it stands: the function still carries that name on
+// this tree, so the sentence remains followable as written.) The
+// dynamic-import regex below is
 // ADDED alongside the static one (never a replacement) so a module reachable
 // only through `await import("./x.ts")` and missing from `files[]` now
 // produces the same "is imported by ... but is not in the published

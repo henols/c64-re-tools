@@ -59,10 +59,16 @@
  * over the annotation store, alongside the ACME export oracle. Each verb that
  * lands there raises this floor to the new true count, in the commit that adds
  * it. Nothing lowers it again without a decision of the same weight as D-14,
- * recorded the same way. (The `extractedR2000.size >= 10` floor in
+ * recorded the same way. (The `extractedAnno.size >= 18` floor in
  * `check-skill-tool-coverage.mjs` is the precedent this mirrors, and it is a
  * DIFFERENT guard over a DIFFERENT subject -- MCP tool names, not CLI verbs --
- * so the two numbers never move together.)
+ * so the two numbers never move together. WR-14 site 4, corrected 2026-08-30
+ * (plan 29-16): this parenthetical cited that floor as `extractedR2000.size >=
+ * 10`, and BOTH halves had since changed -- the identifier was renamed with
+ * the subcommand on 2026-08-29 (29-09) and the floor was raised 10 -> 18 in
+ * the same plan -- so a reader following the cross-reference found nothing.
+ * The paragraph's argument is unchanged and `ANNO_CLI_VERB_FLOOR` is
+ * untouched; only the citation now names something that exists.)
  */
 export const ANNO_CLI_VERB_FLOOR = 2;
 
