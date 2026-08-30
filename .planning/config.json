@@ -50,7 +50,9 @@
     "security_asvs_level": 1,
     "security_block_on": "high",
     "ui_review": true,
-    "use_worktrees": true
+    "use_worktrees": true,
+    "build_command": "cd src/mcp/vice && npm run typecheck",
+    "test_command": "cd src/mcp/vice && npm run test:automated"
   },
   "hooks": {
     "context_warnings": true,
