@@ -568,7 +568,7 @@ criterion 2.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
 
-**Plans**: 15/17 plans executed — the original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. Wave 1 (29-13, 29-14, 29-17) is executed and merged; 29-15 and 29-16 remain pending. The phase is NOT complete until re-verification passes.
+**Plans**: 16/17 plans executed — the original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. Waves 1 and 2 (29-13, 29-14, 29-17, 29-15) are executed and merged; 29-16 remains pending. The phase is NOT complete until re-verification passes.
 
 Plans:
 **Wave 1**
@@ -619,7 +619,7 @@ Plans:
 
 *Gap-closure wave 2* *(blocked on 29-14 — file ownership of `module-classification.ts`, not content)*
 
-- [ ] 29-15-PLAN.md — Both skill trees re-pointed onto a store the `render-memmap` verb can open, and the falsified dated note deleted rather than amended, with the documented command run end to end inside `<automated>` (gap 2a, CR-04) (wave 2)
+- [x] 29-15-PLAN.md — Both skill trees re-pointed onto a store the `render-memmap` verb can open, and the falsified dated note deleted rather than amended, with the documented command run end to end inside `<automated>` (gap 2a, CR-04) (wave 2)
 
 *Gap-closure wave 3* *(blocked on 29-14 and 29-15)*
 
@@ -1104,7 +1104,7 @@ in a milestone archive.
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
-| 29. The MCP Surface | v0.7.0 | 15/17 | In Progress | - |
+| 29. The MCP Surface | v0.7.0 | 16/17 | In Progress | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
