@@ -112,6 +112,75 @@ import { ACME_BIN } from "./acme-gate.ts";
  * exit code. */
 export type AcmeOutcome = "ok" | "failed" | "skipped";
 
+/** What a spawn attempt turned out to be. Two values, and the distinction is
+ * the whole content of the recorded false pass: `"unavailable"` means the
+ * assembler NEVER RAN, `"ran"` means a process really executed and its result
+ * -- whatever its exit status -- is a real observation about the source. */
+export type SpawnClassification = "unavailable" | "ran";
+
+/** The shape of the classification decision, named so a test can drive the
+ * SAME property predicate with a deliberately wrong implementation and watch it
+ * report a pass. Only the two fields the decision may legitimately read appear
+ * here; a classifier cannot reach stdout, stderr or the output file. */
+export type SpawnClassifier = (r: { error?: unknown; status: number | null }) => SpawnClassification;
+
+/**
+ * The ONE spawn classification in this module.
+ *
+ * A spawn is `"unavailable"` when it carries a spawn error OR has no exit
+ * status at all -- both mean no process ever produced a result. Everything else
+ * `"ran"`, including a non-zero exit: a process that ran and failed made a real
+ * statement about the source, and the byte-diff is what judges it.
+ *
+ * MEASURED, ACME 0.97 on this host (RESEARCH.md Pitfall 2, four rows):
+ * a working `acme` exits `0` with no error; the bare name `acme-does-not-exist`
+ * yields no exit status at all with an `ENOENT` error; the absolute path
+ * `/nonexistent/acme` yields the same shape; and a present-but-non-executable
+ * file (`/etc/hostname`) yields no exit status with an `EACCES` error. The
+ * historical rule took the exit status's TRUTHINESS as "nothing went wrong",
+ * and for all three of the missing-binary rows that truthiness test evaluates
+ * TRUE -- which is exactly how a missing assembler was scored as a pass. That
+ * one recorded false pass is why this function exists and why nothing else in
+ * this module decides availability.
+ */
+export const classifySpawn: SpawnClassifier = (r) =>
+  r.error !== undefined || r.status === null ? "unavailable" : "ran";
+
+/** A missing-binary spawn shape as MEASURED, not as imagined -- the three
+ * missing-assembler rows of RESEARCH.md Pitfall 2's table, reproduced live on
+ * this host against ACME 0.97. */
+function measuredMissingBinarySpawn(code: string, syscallTarget: string): { error?: unknown; status: number | null } {
+  const error = new Error(`spawnSync ${syscallTarget} ${code}`) as NodeJS.ErrnoException;
+  error.code = code;
+  return { error, status: null };
+}
+
+/** The three measured missing-binary shapes, in the table's own order. */
+const MEASURED_MISSING_BINARY_SPAWNS: readonly { error?: unknown; status: number | null }[] = Object.freeze([
+  measuredMissingBinarySpawn("ENOENT", "acme-does-not-exist"),
+  measuredMissingBinarySpawn("ENOENT", "/nonexistent/acme"),
+  measuredMissingBinarySpawn("EACCES", "/etc/hostname"),
+]);
+
+/**
+ * THE ONE PREDICATE: does `classify` refuse every measured missing-assembler
+ * spawn shape?
+ *
+ * Both directions of the guard call THIS function -- the real check passes
+ * `classifySpawn`, and the planted-violation control in `acme-verify.test.ts`
+ * passes a locally-defined classifier implementing the historical
+ * truthiness-of-exit-status rule. There is therefore exactly ONE definition of
+ * the property "a missing assembler is never a pass", the way
+ * `anno-cli-path-consumers.test.ts`'s `confinesAtLeast()` is the one definition
+ * of "routes through the seam". A structural guard and its own proof that the
+ * guard can bite must share the checked logic rather than each carry a copy:
+ * two copies drift, and the copy that drifts is always the control, which then
+ * silently stops being able to fail.
+ */
+export function missingAssemblerIsNeverAPass(classify: SpawnClassifier): boolean {
+  return MEASURED_MISSING_BINARY_SPAWNS.every((shape) => classify(shape) === "unavailable");
+}
+
 /** The verdict's actual basis: an octet-level comparison, never a string
  * comparison of decoded text. Every length and offset here is a BYTE count. */
 export interface AcmeByteDiff {
@@ -247,27 +316,267 @@ export const ACME_VERIFY_ARGV_FLAGS: readonly string[] = Object.freeze([
 /** The flag whose following token carries the output format. */
 const FORMAT_FLAG = "-f";
 
-/** ACME's `--msvc` diagnostic shape, the same regex the sibling build driver
- * uses: `file(line) : Error (Zone <z>): message`. */
+/** ACME's `--msvc` diagnostic shape, the SAME regex the sibling build driver
+ * carries at `src/skills/acme-build/scripts/acme.mjs`:
+ * `file(line) : Error (Zone <z>): message`.
+ *
+ * This is a DELIBERATE second implementation of one shape, for exactly the
+ * reason `ACME_VERIFY_ARGV_FLAGS` is (see plan 30-01's assumption-delta
+ * decision): `src/mcp/vice/**` and `src/skills/**` publish as separate npm
+ * packages that cannot import each other, so a shared module is not reachable
+ * without inventing a third package for one regex. The accepted cost is that
+ * the two can drift; the argv-agreement test in `acme-verify.test.ts` is the
+ * pattern for holding two such constructions together. */
 const MSVC = /^(.*?)\((\d+)\)\s*:\s*(Error|Warning|Serious error)\s*(?:\(([^)]*)\))?\s*:\s*(.*)$/;
+
+/** ACME's non-`--msvc` diagnostic spelling, kept as a safety net in case a
+ * build ever ignores `--msvc`, measured verbatim:
+ * `Error - File dup.a, line 4 (Zone <untitled>): Symbol already defined.` */
+const BARE_DIAGNOSTIC = /^(Serious error|Error|Warning) - File (.*?), line (\d+)\s*(?:\(([^)]*)\))?\s*:\s*(.*)$/;
+
+/** The last-resort severity sniff: any stderr line OPENING with one of ACME's
+ * three severity words, in a shape neither regex above recognises. Such a line
+ * still carries its severity, and dropping it would silently downgrade a real
+ * error into "no diagnostics were reported". `Serious error` is listed first so
+ * the alternation cannot match its `Error` suffix by itself. */
+const BARE_SEVERITY = /^(Serious error|Error|Warning)\b/;
 
 /** ACME's own per-segment result line under `-v2`, on STDOUT. The hex extents
  * are NOT zero-padded (`0x801`, not `0x0801`), so the capture is
- * variable-width. */
-const SEGMENT_LINE = /^Segment size is \d+ \(0x[0-9a-fA-F]+\) bytes \(0x([0-9a-fA-F]+) - 0x([0-9a-fA-F]+) exclusive\)\.\s*$/;
+ * variable-width. The leading decimal is the byte SIZE, captured because it is
+ * ACME's own statement of how much it emitted. */
+const SEGMENT_LINE = /^Segment size is (\d+) \(0x[0-9a-fA-F]+\) bytes \(0x([0-9a-fA-F]+) - 0x([0-9a-fA-F]+) exclusive\)\.\s*$/;
 
 /** The aggregate line. Recorded, never trusted. */
 const AGGREGATE_LINE = /^Saving \d+ \(0x[0-9a-fA-F]+\) bytes \(0x[0-9a-fA-F]+ - 0x[0-9a-fA-F]+ exclusive\)\.\s*$/;
 
-/** ACME's non-`--msvc` error spelling, kept as a safety net in case a build
- * ever ignores `--msvc`: `Error - File dup.a, line 4 (Zone <untitled>): ...` */
-const BARE_SEVERITY = /^(Serious error|Error)\b/;
+/** One of ACME's OWN per-segment result lines, parsed. `endExclusive` is one
+ * past the last byte, exactly as ACME prints it. */
+export interface AcmeSegmentLine {
+  /** First address the segment covers. */
+  start: number;
+  /** One past the last address the segment covers. */
+  endExclusive: number;
+  /** The byte count ACME itself printed, RECORDED rather than recomputed from
+   * the extents: a disagreement between the two is ACME contradicting itself
+   * and belongs in the evidence, not silently normalised away. */
+  size: number;
+  /** The line verbatim, so a human reads what ACME actually printed. */
+  raw: string;
+}
 
-type DiagnosticSeverity = "error" | "serious_error" | "warning" | "note";
+/** One of ACME's diagnostics, parsed. Severity carries ACME's OWN three
+ * spellings rather than a normalised lowercase form, so a reader of this record
+ * sees the word ACME printed. */
+export interface AcmeDiagnostic {
+  /** The source file ACME named, or `""` when the line's shape did not carry
+   * one (the last-resort severity sniff). */
+  file: string;
+  /** The 1-based source line ACME named, or `0` when the shape carried none. */
+  line: number;
+  severity: "Error" | "Warning" | "Serious error";
+  /** ACME's zone, e.g. `Zone <untitled>`, or `""` when absent. */
+  zone: string;
+  /** The diagnostic text after the final colon, or the whole line under the
+   * last-resort sniff. */
+  message: string;
+  /** The line verbatim. */
+  raw: string;
+}
 
-interface ParsedDiagnostic {
-  text: string;
-  severity: DiagnosticSeverity;
+/**
+ * VERDICT RULE 1 of five: ACME's OWN per-segment result lines are READ OFF
+ * STDOUT, never inferred from anything this module already believes.
+ *
+ * These lines are the unanimity subject. Under `-v2` ACME prints one per block
+ * it emitted, stating where the block starts and where it ends -- its own
+ * account of what it did, independent of the exporter's account of what it
+ * asked for. Comparing two independent accounts is the only reason the
+ * unanimity rule means anything; deriving one from the other would make it a
+ * self-check.
+ *
+ * Measured (RESEARCH.md Pitfall 10): these are on STDOUT, while every
+ * diagnostic is on STDERR. A verdict that reads only one stream is blind to
+ * half the evidence.
+ */
+export function parseAcmeResultLines(stdout: string): AcmeSegmentLine[] {
+  const out: AcmeSegmentLine[] = [];
+  for (const raw of stdout.split("\n")) {
+    const line = raw.trimEnd();
+    const m = line.match(SEGMENT_LINE);
+    if (m === null) continue;
+    out.push({
+      start: Number.parseInt(m[2]!, 16),
+      endExclusive: Number.parseInt(m[3]!, 16),
+      size: Number.parseInt(m[1]!, 10),
+      raw: line,
+    });
+  }
+  return out;
+}
+
+/**
+ * VERDICT RULE 2 of five: the aggregate is RECORDED AND NEVER TRUSTED.
+ *
+ * `Saving N (0xN) bytes (0xA - 0xB exclusive).` is one line asserting something
+ * about a whole run, sitting above per-item detail nobody read. That is
+ * structurally the SAME OBJECT as the `All roundtrip verifications passed.`
+ * line that lied in the carried false-pass trap, where it read as a full pass
+ * while the one assembler that mattered never ran. This function's whole
+ * contract is therefore to hand the lines to a human and to no rule: nothing in
+ * the verdict consults its return value except rule 3, which uses only HOW MANY
+ * there are and never what any of them says.
+ */
+export function parseAcmeAggregateLines(stdout: string): string[] {
+  const out: string[] = [];
+  for (const raw of stdout.split("\n")) {
+    const line = raw.trimEnd();
+    if (AGGREGATE_LINE.test(line)) out.push(line);
+  }
+  return out;
+}
+
+/**
+ * VERDICT RULE 3 of five: two authoritative lines that disagree are REFUSED,
+ * never resolved by picking one.
+ *
+ * Returns a reason string when more than one aggregate line is present, and
+ * `undefined` for zero or one. Picking -- the first, the last, the largest --
+ * would mean this module inventing an answer ACME did not give, which is how a
+ * verdict layer starts making claims of its own.
+ */
+export function refuseOnCompetingAggregates(aggregateLines: readonly string[]): string | undefined {
+  if (aggregateLines.length <= 1) return undefined;
+  return (
+    `ACME emitted ${aggregateLines.length} aggregate "Saving ..." lines that do not agree on one extent ` +
+    `(${aggregateLines.map((l) => JSON.stringify(l)).join(", ")}). This module refuses to pick between competing ` +
+    `authoritative lines, so the verdict is a refusal rather than a guess.`
+  );
+}
+
+/**
+ * VERDICT RULE 4 of five: UNANIMITY against the exporter's own blocks, with the
+ * FIRST disagreement driving the verdict.
+ *
+ * Returns a reason string naming the first index whose parsed extents differ
+ * from the expected segment (or naming a COUNT disagreement, which is the
+ * degenerate case of the same property), and `undefined` when every pair
+ * agrees. It runs on every verdict: `expectedSegments` is a REQUIRED option
+ * (D30-06), so there is no call site that can reach `"ok"` with this rule
+ * unrun.
+ *
+ * A passing earlier line must never hide a later failing one, which is why this
+ * walks every pair rather than stopping at the first agreement.
+ */
+export function firstResultLineDisagreement(
+  parsed: readonly AcmeSegmentLine[],
+  expected: readonly { start: number; endExclusive: number }[]
+): string | undefined {
+  if (expected.length !== parsed.length) {
+    return (
+      `ACME's own per-segment result lines disagree with the exporter's blocks in COUNT: ` +
+      `${expected.length} block(s) expected, ${parsed.length} per-segment result line(s) parsed from stdout. ` +
+      `The unanimity rule runs on every verdict, so this disagreement is never skipped.`
+    );
+  }
+  for (let i = 0; i < expected.length; i++) {
+    const want = expected[i]!;
+    const got = parsed[i]!;
+    if (want.start !== got.start || want.endExclusive !== got.endExclusive) {
+      return (
+        `ACME's own per-segment result line ${i} disagrees with the exporter's block ${i}: ` +
+        `expected ${hex(want.start)}..${hex(want.endExclusive)} (exclusive), ` +
+        `ACME reported ${hex(got.start)}..${hex(got.endExclusive)} (exclusive). ` +
+        `The FIRST mismatch drives the verdict.`
+      );
+    }
+  }
+  return undefined;
+}
+
+/**
+ * VERDICT RULE 5 of five: only `Error` and `Serious error` are fatal -- a
+ * `Warning` NEVER fails the verdict.
+ *
+ * Measured on ACME 0.97: warnings are emitted for buggy-but-legal constructs
+ * (`jmp ($xxff)`, unstable ANE/LXA) and for a raw-number operand under
+ * `-Wtype-mismatch`, all of which assemble to exactly the right bytes. The
+ * tracer's own `sta $d020` trips that last one and must still come back `"ok"`.
+ * Treating a warning as fatal would make a byte-correct export fail; treating
+ * an error as non-fatal would let a run that never produced bytes reach the
+ * byte-diff.
+ *
+ * Three shapes are recognised, most specific first: ACME's `--msvc` form, its
+ * default `Error - File f, line N (...)` form (a safety net in case a build
+ * ever ignores `--msvc`), and a last-resort severity sniff for any line opening
+ * with one of the three severity words. A line matching none of them carries no
+ * severity and is not a diagnostic; `AcmeVerifyResult.diagnostics` records
+ * every stderr line regardless, so nothing is lost to a human reader.
+ */
+export function parseAcmeDiagnostics(stderr: string): AcmeDiagnostic[] {
+  const out: AcmeDiagnostic[] = [];
+  for (const rawLine of stderr.split("\n")) {
+    const raw = rawLine.trimEnd();
+    if (!raw.trim()) continue;
+
+    const msvc = raw.match(MSVC);
+    if (msvc !== null) {
+      out.push({
+        file: msvc[1]!,
+        line: Number.parseInt(msvc[2]!, 10),
+        severity: msvc[3] as AcmeDiagnostic["severity"],
+        zone: msvc[4] ?? "",
+        message: msvc[5]!,
+        raw,
+      });
+      continue;
+    }
+
+    const bare = raw.match(BARE_DIAGNOSTIC);
+    if (bare !== null) {
+      out.push({
+        file: bare[2]!,
+        line: Number.parseInt(bare[3]!, 10),
+        severity: bare[1] as AcmeDiagnostic["severity"],
+        zone: bare[4] ?? "",
+        message: bare[5]!,
+        raw,
+      });
+      continue;
+    }
+
+    const sniff = raw.trim().match(BARE_SEVERITY);
+    if (sniff !== null) {
+      out.push({
+        file: "",
+        line: 0,
+        severity: sniff[1] as AcmeDiagnostic["severity"],
+        zone: "",
+        message: raw.trim(),
+        raw,
+      });
+    }
+  }
+  return out;
+}
+
+/** Whether a parsed diagnostic stops the verdict. Rule 5's other half, kept
+ * beside it: exactly the two error spellings, and never `Warning`. */
+function isFatal(d: AcmeDiagnostic): boolean {
+  return d.severity !== "Warning";
+}
+
+/** Every non-empty stderr line, verbatim. This is what
+ * `AcmeVerifyResult.diagnostics` records -- deliberately WIDER than
+ * `parseAcmeDiagnostics()`'s structured subset, so a line whose shape this
+ * module does not recognise still reaches the human reading the result. */
+function stderrLines(stderr: string): string[] {
+  const out: string[] = [];
+  for (const rawLine of stderr.split("\n")) {
+    const raw = rawLine.trimEnd();
+    if (raw.trim()) out.push(raw);
+  }
+  return out;
 }
 
 function hex(value: number): string {
@@ -280,26 +589,6 @@ function buildArgv(format: "plain" | "cbm", outPath: string, srcPath: string): s
   const formatIndex = flags.indexOf(FORMAT_FLAG);
   if (formatIndex >= 0 && formatIndex + 1 < flags.length) flags[formatIndex + 1] = format;
   return [...flags, "-o", outPath, srcPath];
-}
-
-function parseDiagnostics(stderrText: string): ParsedDiagnostic[] {
-  const out: ParsedDiagnostic[] = [];
-  for (const raw of stderrText.split("\n")) {
-    const text = raw.trimEnd();
-    if (!text.trim()) continue;
-    const m = text.match(MSVC);
-    if (m) {
-      const severity = m[3]!.toLowerCase().replace(" ", "_") as DiagnosticSeverity;
-      out.push({ text, severity });
-      continue;
-    }
-    out.push({ text, severity: BARE_SEVERITY.test(text.trim()) ? "error" : "note" });
-  }
-  return out;
-}
-
-function isFatal(d: ParsedDiagnostic): boolean {
-  return d.severity === "error" || d.severity === "serious_error";
 }
 
 function compareBytes(expected: Buffer, actual: Buffer): AcmeByteDiff {
@@ -328,8 +617,8 @@ function compareBytes(expected: Buffer, actual: Buffer): AcmeByteDiff {
  * REASON PRECEDENCE -- the order the rules run, and therefore which refusal
  * wins when several apply:
  *
- *   1. The spawn never ran (`r.error` set, or `r.status === null`) => `"skipped"`.
- *      Reached before any exit-status arithmetic exists.
+ *   1. `classifySpawn()` reports `"unavailable"` -- the spawn never ran =>
+ *      `"skipped"`. Reached before any exit-status arithmetic exists.
  *   2. ACME reported an `Error` or `Serious error` => `"failed"`, quoting the
  *      FIRST such diagnostic verbatim. ACME's own words about why it stopped
  *      are more use to a human than the downstream consequence, which is why
@@ -373,7 +662,9 @@ export function verifyAcmeAssembles(options: AcmeVerifyOptions): AcmeVerifyResul
     // Assigned ONCE. Read by nothing below.
     const exitStatus: number | null = r.status;
 
-    if (r.error !== undefined || r.status === null) {
+    // Rule 1, through the ONE classifier. Nothing else in this module decides
+    // availability, and nothing below reads the exit status for any purpose.
+    if (classifySpawn(r) === "unavailable") {
       const code = r.error !== undefined ? ((r.error as NodeJS.ErrnoException).code ?? r.error.name) : "no exit status";
       return {
         outcome: "skipped",
@@ -388,76 +679,42 @@ export function verifyAcmeAssembles(options: AcmeVerifyOptions): AcmeVerifyResul
       };
     }
 
-    const stdoutLines = (r.stdout ?? "").split("\n").map((l) => l.trimEnd());
-    const segmentMatches: { line: string; start: number; endExclusive: number }[] = [];
-    const aggregateLines: string[] = [];
-    for (const line of stdoutLines) {
-      const seg = line.match(SEGMENT_LINE);
-      if (seg) {
-        segmentMatches.push({
-          line,
-          start: Number.parseInt(seg[1]!, 16),
-          endExclusive: Number.parseInt(seg[2]!, 16),
-        });
-        continue;
-      }
-      if (AGGREGATE_LINE.test(line)) aggregateLines.push(line);
-    }
-    const acmeResultLines = segmentMatches.map((s) => s.line);
+    // Every rule below is one of the five named pure helpers above, called in
+    // the documented precedence order. The body decides NOTHING itself: each
+    // rule has its own name, its own JSDoc stating which property it carries,
+    // and its own test driving it directly with real ACME output.
+    const stdout = r.stdout ?? "";
+    const segmentLines = parseAcmeResultLines(stdout);
+    const aggregateLines = parseAcmeAggregateLines(stdout);
+    const acmeResultLines = segmentLines.map((s) => s.raw);
 
-    const parsed = parseDiagnostics(r.stderr ?? "");
-    const diagnostics = parsed.map((d) => d.text);
+    const parsed = parseAcmeDiagnostics(r.stderr ?? "");
+    const diagnostics = stderrLines(r.stderr ?? "");
 
+    const expected = options.expectedSegments;
     const base = { exitStatus, acmeResultLines, aggregateLines, diagnostics, byteDiff: null } as const;
 
-    // Rule 2: ACME's own errors win. Warnings never fail.
+    // Rule 2 (verdict rule 5 of the five): ACME's own errors win. Warnings never fail.
     const firstFatal = parsed.find(isFatal);
     if (firstFatal !== undefined) {
       return {
         ...base,
         outcome: "failed",
-        reason: `ACME reported a fatal diagnostic: ${firstFatal.text}`,
+        reason: `ACME reported a fatal diagnostic: ${firstFatal.raw}`,
       };
     }
 
-    // Rule 3: competing authoritative aggregates. Refuse to guess.
-    if (aggregateLines.length > 1) {
-      return {
-        ...base,
-        outcome: "failed",
-        reason:
-          `ACME emitted ${aggregateLines.length} aggregate "Saving ..." lines that do not agree on one extent ` +
-          `(${aggregateLines.map((l) => JSON.stringify(l)).join(", ")}). This module refuses to pick between competing ` +
-          `authoritative lines, so the verdict is a refusal rather than a guess.`,
-      };
+    // Rule 3 (verdict rule 3 of the five): competing authoritative aggregates. Refuse to guess.
+    const competing = refuseOnCompetingAggregates(aggregateLines);
+    if (competing !== undefined) {
+      return { ...base, outcome: "failed", reason: competing };
     }
 
-    // Rule 4: unanimity against the exporter's own blocks. Unconditional.
-    const expected = options.expectedSegments;
-    if (expected.length !== segmentMatches.length) {
-      return {
-        ...base,
-        outcome: "failed",
-        reason:
-          `ACME's own per-segment result lines disagree with the exporter's blocks in COUNT: ` +
-          `${expected.length} block(s) expected, ${segmentMatches.length} per-segment result line(s) parsed from stdout. ` +
-          `The unanimity rule runs on every verdict, so this disagreement is never skipped.`,
-      };
-    }
-    for (let i = 0; i < expected.length; i++) {
-      const want = expected[i]!;
-      const got = segmentMatches[i]!;
-      if (want.start !== got.start || want.endExclusive !== got.endExclusive) {
-        return {
-          ...base,
-          outcome: "failed",
-          reason:
-            `ACME's own per-segment result line ${i} disagrees with the exporter's block ${i}: ` +
-            `expected ${hex(want.start)}..${hex(want.endExclusive)} (exclusive), ` +
-            `ACME reported ${hex(got.start)}..${hex(got.endExclusive)} (exclusive). ` +
-            `The FIRST mismatch drives the verdict.`,
-        };
-      }
+    // Rule 4 (verdict rules 1 and 4 of the five): unanimity against the
+    // exporter's own blocks, over ACME's own parsed result lines. Unconditional.
+    const disagreement = firstResultLineDisagreement(segmentLines, expected);
+    if (disagreement !== undefined) {
+      return { ...base, outcome: "failed", reason: disagreement };
     }
 
     // Rule 5: no output file at all.

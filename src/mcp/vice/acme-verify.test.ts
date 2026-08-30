@@ -35,37 +35,62 @@
 // verdict's basis is the byte-diff; `diagnostics` is recorded for a human and
 // only `Error`/`Serious error` are fatal.
 //
-// WHAT THIS FILE DOES NOT PROVE: the `ACME_BIN` *environment variable* boundary.
-// `ACME_BIN` and `ACME_AVAILABLE` are module-load `const`s in `acme-gate.ts`, so
-// only a child process can move them; that observation belongs to the
-// mandatory-red harness in a later plan of this phase, not here. The `acmeBin`
-// option is an in-process seam, deliberately NOT a second way to reach a real
-// assembler.
+// THE `ACME_BIN` *ENVIRONMENT VARIABLE* BOUNDARY IS PROVED HERE TOO, AND ONLY
+// IN A CHILD PROCESS. `ACME_BIN` and `ACME_AVAILABLE` are module-load `const`s
+// in `acme-gate.ts`: by the time any test body in THIS process runs, the probe
+// has already happened, so assigning `process.env.ACME_BIN` here cannot affect
+// it. MANDATORY RED 1 (plan 30-02) therefore spawns `process.execPath --test`
+// over a generated probe with the environment overridden -- and it spawns the
+// paired control direction too, because a non-zero exit on its own cannot tell
+// "the gate fired" from "the harness broke". The `acmeBin` option remains an
+// in-process seam, deliberately NOT a second way to reach a real assembler, and
+// deliberately NOT a substitute for this child-process observation.
 //
-// COST, STATED RATHER THAN SMUGGLED: two child processes per suite run -- one
-// `/bin/true`, and one REAL ACME assemble in the tracer -- plus one spawn that
-// fails before exec, together well under a second. On top of that sits
-// `acme-gate.ts`'s own module-load availability probe, which is paid once per
-// node process and shared with every other ACME-gated file, not billed again
-// here.
+// COST, STATED RATHER THAN SMUGGLED: NINE child processes per suite run, plus
+// two spawns that fail before exec. The nine are: one `/bin/true`; six real
+// ACME assembles (the tracer, MANDATORY RED 2's honest control and its red, the
+// stale-output reproduction's direct spawn, and the `!error` test's
+// honest-then-failing pair); and the two `node --test` children of the
+// MANDATORY RED 1 harness, whose failing direction is MEMOISED so several
+// assertions share ONE spawn. The two `node --test` children dominate at
+// roughly a second each, because each pays a fresh Node start plus
+// `acme-gate.ts`'s module-load probe of a binary that is not there; the six
+// ACME runs are milliseconds apiece. On top of all of it sits this process's
+// own `acme-gate.ts` probe, paid once per node process and shared with every
+// other ACME-gated file, not billed again here.
 //
 // This file is deliberately never added to `MANUAL_ONLY_TESTS`: `test-gate.mjs`'s
 // `automatedTestFiles()` auto-discovers every on-disk `*.test.*`, and
 // `test-gate.test.ts`'s drift guard fails the build if a file escapes both sets.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeOutcome } from "./acme-verify.ts";
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+import {
+  ACME_VERIFY_ARGV_FLAGS,
+  classifySpawn,
+  firstResultLineDisagreement,
+  missingAssemblerIsNeverAPass,
+  parseAcmeAggregateLines,
+  parseAcmeDiagnostics,
+  parseAcmeResultLines,
+  refuseOnCompetingAggregates,
+  verifyAcmeAssembles,
+  type AcmeOutcome,
+  type SpawnClassifier,
+} from "./acme-verify.ts";
 import { exportAsm } from "./anno-export-asm.ts";
 import { openStore, closeStore, setDataType, setLabel } from "./anno-store.ts";
+import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
+const GATE_MODULE_PATH = join(HERE, "acme-gate.ts");
 const SKILL_DRIVER_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.mjs");
 
 /** Computed exactly ONCE, by the shared `acme-gate.ts` seam. Every
@@ -202,6 +227,237 @@ test("AcmeOutcome has exactly three members (proved by the exhaustive switch abo
 });
 
 // ---------------------------------------------------------------------------
+// MANDATORY RED 1 (plan 30-02): A MISSING ASSEMBLER IS NEVER A PASS.
+//
+// The ROADMAP records the founding false pass in one sentence: a verification
+// route ran, exited zero and printed an aggregate line reading as a full pass
+// while the one assembler the project cares about never ran at all. This
+// section is where that refusal stops being a design statement and becomes an
+// observation, in BOTH of the two ways it has to be made.
+//
+// IN PROCESS, the property itself: `missingAssemblerIsNeverAPass()` is the ONE
+// predicate, and it is driven twice -- once with the real `classifySpawn` and
+// once with a locally-defined classifier implementing the historical
+// truthiness-of-exit-status rule. The second direction is what proves the guard
+// is CAPABLE of biting; without it, a predicate that answered `true` for every
+// input would look identical to a working one.
+//
+// IN A CHILD PROCESS, the environment-variable boundary: `ACME_BIN` and
+// `ACME_AVAILABLE` are module-load `const`s, so no in-process assignment can
+// move them, and the FAIL direction is paired with a control run that must exit
+// ZERO.
+// ---------------------------------------------------------------------------
+
+/**
+ * A DELIBERATE PLANTED VIOLATION -- the historical rule, in its own words: it
+ * decides availability from the TRUTHINESS OF THE EXIT STATUS rather than from
+ * the presence of a spawn error.
+ *
+ * The ROADMAP's note on the recorded false pass, quoted: a verification route
+ * "ran, exited zero, and printed an aggregate summary line that read as a full
+ * pass -- while the one assembler the project actually cares about never ran at
+ * all". Measured (RESEARCH.md Pitfall 2), a spawn that never ran carries NO
+ * exit status, so `!r.status` is `true` for it and this classifier calls it
+ * `"ran"` -- the hole, exactly as recorded. It is not a constant function: for
+ * a real non-zero exit it answers `"unavailable"`, which is wrong in the other
+ * direction and is why the shortcut was never salvageable.
+ */
+const SHORTCUT_CLASSIFIER: SpawnClassifier = (r) => (!r.status ? "ran" : "unavailable");
+
+test("MANDATORY RED 1 (in process): a missing assembler is never a pass, and the same predicate driven with the historical exit-status shortcut says it is", () => {
+  assert.equal(
+    missingAssemblerIsNeverAPass(classifySpawn),
+    true,
+    "the real classifier must refuse ALL THREE measured missing-binary spawn shapes (a bare nonexistent name, an " +
+      "absolute nonexistent path, and a present-but-non-executable file). Any one of them classified as `ran` is a " +
+      "missing assembler reaching the byte-diff rules with no bytes to diff"
+  );
+  assert.equal(
+    missingAssemblerIsNeverAPass(SHORTCUT_CLASSIFIER),
+    false,
+    "the HISTORICAL truthiness-of-exit-status classifier must be REPORTED by this same predicate -- a control that " +
+      "only ever refuses is indistinguishable from one that works, and a guard whose control cannot fail is not a " +
+      "guard. Both directions call missingAssemblerIsNeverAPass(), so there is exactly one definition of the property"
+  );
+});
+
+test("classifySpawn maps the three measured shapes: no exit status is `unavailable`, exit 0 and exit 1 are both `ran`", () => {
+  const enoent = new Error("spawnSync acme-does-not-exist ENOENT") as NodeJS.ErrnoException;
+  enoent.code = "ENOENT";
+  assert.equal(classifySpawn({ error: enoent, status: null }), "unavailable");
+  assert.equal(classifySpawn({ status: 0 }), "ran");
+  assert.equal(
+    classifySpawn({ status: 1 }),
+    "ran",
+    "a NON-ZERO exit is a process that really ran and made a real statement about the source. Folding it into " +
+      "`unavailable` would hide a genuine assembly failure behind the outcome that means `no claim exists`"
+  );
+});
+
+/** The gate's own refusal wording, read out of `acme-gate.ts` at run time
+ * rather than retyped here. Retyping it is how the child-process observation
+ * below ends up passing for the wrong reason: a typo'd import path, a syntax
+ * error and a missing probe file all exit non-zero too, and only matching the
+ * gate's REAL message distinguishes "the gate fired" from "the harness broke". */
+const GATE_REFUSAL_PREFIX = "VICE_REQUIRE_ACME is set but no real ACME was found at";
+
+test("non-vacuity guard: the refusal wording the child output is matched against is really present in acme-gate.ts", () => {
+  assert.ok(
+    readFileSync(GATE_MODULE_PATH, "utf8").includes(GATE_REFUSAL_PREFIX),
+    `acme-gate.ts no longer contains the refusal wording this file matches on (${JSON.stringify(GATE_REFUSAL_PREFIX)}) ` +
+      `-- update both together, never only one, or the child-process red below silently starts passing on any non-zero exit`
+  );
+});
+
+interface ChildRun {
+  status: number | null;
+  output: string;
+}
+
+/**
+ * Writes a generated probe into a FRESH temp directory, points the child's
+ * `ACME_BIN` at a path inside it that is never created, and runs the probe
+ * under a child `node --test`.
+ *
+ * WHY A CHILD AT ALL: `ACME_BIN` is a module-load `const` in `acme-gate.ts`, so
+ * only a genuinely new module load can see an overridden environment. The
+ * in-process `acmeBin` seam above proves the OUTCOME is reachable; only this
+ * proves the ENV-VAR boundary.
+ *
+ * WHY THE PROBE LIVES UNDER `tmpdir()` AND NOT NEXT TO THIS FILE: a stray
+ * `*.test.*` in the module directory would be collected by
+ * `node --test '*.test.*'` on the next run and would break
+ * `test-gate.test.ts`'s "every on-disk test file lands in exactly one of the
+ * automated/manual sets" assertion. The directory is removed in a `finally`, on
+ * the FAILURE path too -- this host's `/tmp` is RAM-backed, so a leaked probe
+ * directory is leaked memory.
+ *
+ * `requireAcme: false` DELETES `VICE_REQUIRE_ACME` rather than blanking it: an
+ * empty string is still a set variable to the gate, whose check is a plain
+ * truthiness test on `process.env.VICE_REQUIRE_ACME`, so blanking it would
+ * assert the wrong thing while looking right.
+ */
+function runVerifyProbe(requireAcme: boolean): ChildRun {
+  const dir = mkdtempSync(join(tmpdir(), "acme-verify-red-"));
+  try {
+    const probePath = join(dir, "probe.test.mjs");
+    const missingBinary = join(dir, "definitely-not-acme");
+    writeFileSync(
+      probePath,
+      `import { test } from "node:test";\n` +
+        `import assert from "node:assert/strict";\n` +
+        `import { assertAcmeRequiredIfEnvSet } from ${JSON.stringify(GATE_MODULE_PATH)};\n` +
+        `import { verifyAcmeAssembles } from ${JSON.stringify(VERIFY_MODULE_PATH)};\n` +
+        `test("ACME availability gate, under a deliberately nonexistent ACME_BIN", () => {\n` +
+        `  assertAcmeRequiredIfEnvSet(assert);\n` +
+        `});\n` +
+        // The probe passes NO `acmeBin`. The whole point is the module-load
+        // constant `ACME_BIN`, which only this child can move. It DOES pass
+        // `expectedSegments` and a matching `expectedBytes`, because
+        // `expectedSegments` is REQUIRED (D30-06) and a probe that could not
+        // compile would exit non-zero for the wrong reason and read as the
+        // gate firing.
+        `test("verifyAcmeAssembles() with a nonexistent ACME_BIN is never ok", () => {\n` +
+        `  const verdict = verifyAcmeAssembles({\n` +
+        `    source: ${JSON.stringify(TRIVIAL_SOURCE)},\n` +
+        `    expectedBytes: Uint8Array.from([0xa9, 0x00, 0x60]),\n` +
+        `    expectedSegments: [{ start: 0x0801, endExclusive: 0x0804 }],\n` +
+        `  });\n` +
+        `  assert.notEqual(verdict.outcome, "ok", "outcome=" + verdict.outcome + " reason=" + verdict.reason);\n` +
+        `});\n`,
+      "utf8"
+    );
+
+    const env: Record<string, string | undefined> = { ...process.env, ACME_BIN: missingBinary };
+    if (requireAcme) env.VICE_REQUIRE_ACME = "1";
+    else delete env.VICE_REQUIRE_ACME;
+    // MEASURED TRAP, not a precaution: Node sets `NODE_TEST_CONTEXT` in every
+    // process it runs a test file in, and a child `node --test` that inherits
+    // it refuses to run ANY file at all -- it prints "run() is being called
+    // recursively within a test file. skipping running files" and exits ZERO.
+    // Inherited, the FAIL direction below would report a zero exit on a
+    // perfectly working gate, reading as "the hard FAIL degraded into a skip",
+    // and the control direction would pass vacuously. Both directions would
+    // then be measuring the harness rather than the gate. Delete it.
+    delete env.NODE_TEST_CONTEXT;
+
+    // `process.execPath`, never a bare binary name (WR-20): the child must be
+    // THIS Node, whose version supports type-stripping the `.ts` modules the
+    // probe imports by absolute path.
+    const r = spawnSync(process.execPath, ["--test", probePath], {
+      encoding: "utf8",
+      timeout: 30_000,
+      env,
+    });
+    return { status: r.status, output: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The ONE `VICE_REQUIRE_ACME=1` probe run, memoised (WR-11, the discipline
+ * `acme-gate.test.ts` records at its own `failRun()`). Two tests below assert
+ * two properties of the SAME failing child run against one fixed input, so a
+ * second spawn would add a full Node start plus a `mkdtemp`/`rm` cycle on a
+ * RAM-backed `/tmp` and no observation. Lazily computed rather than called at
+ * the top level, so running a filtered subset of this file does not spawn a
+ * child it never asserts on. */
+let redRunCache: ChildRun | undefined;
+function redRun(): ChildRun {
+  if (redRunCache === undefined) redRunCache = runVerifyProbe(true);
+  return redRunCache;
+}
+
+test("MANDATORY RED 1 (child process): VICE_REQUIRE_ACME=1 with a nonexistent ACME_BIN makes the child FAIL, never skip", () => {
+  const r = redRun();
+  assert.notEqual(
+    r.status,
+    0,
+    `expected a NON-ZERO exit. A zero exit means the hard-FAIL gate degraded into a silent SKIP with a missing ` +
+      `assembler -- the exact shape of the recorded false pass, and the reason this red is mandatory. Child output:\n${r.output}`
+  );
+});
+
+test("MANDATORY RED 1 (child process): that same failing run names the gate's OWN refusal wording, so the non-zero exit is the assertion and not a broken import", () => {
+  const r = redRun();
+  assert.ok(
+    r.output.includes(GATE_REFUSAL_PREFIX),
+    `the child exited non-zero but its output never names the gate's refusal wording ` +
+      `(${JSON.stringify(GATE_REFUSAL_PREFIX)}) -- a module-resolution error, a syntax error or a missing probe file ` +
+      `also exit non-zero. Child output:\n${r.output}`
+  );
+});
+
+test("MANDATORY RED 1, paired direction: the identical child run with VICE_REQUIRE_ACME ABSENT exits zero", () => {
+  const r = runVerifyProbe(false);
+  assert.equal(
+    r.status,
+    0,
+    `expected a ZERO exit with VICE_REQUIRE_ACME unset and the same nonexistent ACME_BIN -- the probe's second test ` +
+      `(outcome is never "ok") must still hold, so this run proves the harness itself works. A non-zero exit here ` +
+      `means the FAIL observed above came from the harness rather than from the gate, and NEITHER direction proves ` +
+      `anything. Child output:\n${r.output}`
+  );
+});
+
+test("a verify driven with the missing-binary spawn shape is `skipped`, and `skipped` is never `ok`", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acme-verify-missing-"));
+  try {
+    const missingBinary = join(dir, "definitely-not-acme");
+    const verdict = verifyAcmeAssembles({
+      source: TRIVIAL_SOURCE,
+      expectedBytes: TRIVIAL_BYTES,
+      expectedSegments: TRIVIAL_SEGMENTS,
+      acmeBin: missingBinary,
+    });
+    assert.equal(verdict.outcome, "skipped", `reason: ${verdict.reason}`);
+    assert.notEqual(verdict.outcome, "ok", "a skipped assembler must never be presented as a pass on any surface");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Store fixtures. Every one builds a REAL store with the store's own public
 // write verbs -- never raw SQL -- in a fresh temp directory removed in a
 // `finally`, because this host's `/tmp` is RAM-backed and a leaked directory is
@@ -253,56 +509,68 @@ function withStore(
 //
 // DIVISION OF LABOUR, recorded here so a later reader does not add a third,
 // weaker copy: the `"skipped"` outcome is proved directly and in-process above,
-// through the `acmeBin` seam with its paired `/bin/true` direction. What is
-// still unproven is the ENV-VAR boundary -- `ACME_BIN` is read from the
-// environment once at module load, so only a child process can move it -- and
-// that observation belongs to the mandatory-red harness in a later plan of this
-// phase, by design.
+// through the `acmeBin` seam with its paired `/bin/true` direction; the ENV-VAR
+// boundary -- `ACME_BIN` is read from the environment once at module load, so
+// only a child process can move it -- is proved by MANDATORY RED 1's child
+// harness, also above. Neither is a substitute for the other, and a third,
+// weaker in-process copy of either would only dilute both.
 // ---------------------------------------------------------------------------
 
-test("TRACER: store -> export -> real ACME 0.97 -> byte-diff -> ok", { skip: SKIP_REASON }, () => {
-  // `lda #$00` / `sta $d020` / `rts` -- six bytes covering $0801..$0806.
-  const body = [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x60];
+/** The tracer subject's own bytes: `lda #$00` / `sta $d020` / `rts` -- six
+ * bytes covering $0801..$0806. Index 1 is the `lda`'s immediate operand, which
+ * MANDATORY RED 2 below corrupts. */
+const TRACER_BODY: readonly number[] = [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x60];
 
+/**
+ * Builds the tracer's store, image and export ONCE, in one place, and hands the
+ * export to `fn`. Factored out so MANDATORY RED 2 is provably a change of ONE
+ * BYTE against the same export and nothing else -- a second, separately-written
+ * copy of the scenario would leave "the red differs from the control somewhere
+ * else too" as an open possibility, and the red's whole claim is that one byte
+ * is the entire difference.
+ */
+function buildTracerExport(fn: (result: ReturnType<typeof exportAsm>) => void): void {
   withStore(
     0x0801,
-    body,
+    TRACER_BODY,
     [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
     [{ address: 0x0801, name: "entry" }],
-    ({ dir, storePath, imagePath }) => {
-      const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
-
-      const verdict = verifyAcmeAssembles({
-        source: result.source,
-        expectedBytes: result.expectedBytes,
-        expectedSegments: result.blocks,
-      });
-
-      const context =
-        `\n  reason: ${verdict.reason}` +
-        `\n  diagnostics: ${verdict.diagnostics.join(" | ") || "(none)"}` +
-        `\n  acmeResultLines: ${verdict.acmeResultLines.join(" | ") || "(none)"}` +
-        `\n  source:\n${result.source}`;
-
-      assert.equal(verdict.outcome, "ok", `the tracer must round-trip through a real ACME:${context}`);
-      assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict, and it must be equal:${context}`);
-      assert.equal(
-        verdict.byteDiff?.firstDifferingOffset,
-        null,
-        `an equal byte-diff has no first differing offset:${context}`
-      );
-      assert.ok(
-        verdict.acmeResultLines.length >= 1,
-        `ACME's own per-segment result lines must have been parsed and recorded:${context}`
-      );
-      assert.notEqual(
-        verdict.exitStatus,
-        undefined,
-        "exitStatus is RECORDED so a human can read what happened, and CONSULTED BY NOTHING -- this assertion " +
-          "checks only that it was populated, never that it was zero, because a zero exit is compatible with a wrong byte"
-      );
-    }
+    ({ dir, storePath, imagePath }) => fn(exportAsm({ storePath, imagePath, workspaceRoot: dir }))
   );
+}
+
+test("TRACER: store -> export -> real ACME 0.97 -> byte-diff -> ok", { skip: SKIP_REASON }, () => {
+  buildTracerExport((result) => {
+    const verdict = verifyAcmeAssembles({
+      source: result.source,
+      expectedBytes: result.expectedBytes,
+      expectedSegments: result.blocks,
+    });
+
+    const context =
+      `\n  reason: ${verdict.reason}` +
+      `\n  diagnostics: ${verdict.diagnostics.join(" | ") || "(none)"}` +
+      `\n  acmeResultLines: ${verdict.acmeResultLines.join(" | ") || "(none)"}` +
+      `\n  source:\n${result.source}`;
+
+    assert.equal(verdict.outcome, "ok", `the tracer must round-trip through a real ACME:${context}`);
+    assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict, and it must be equal:${context}`);
+    assert.equal(
+      verdict.byteDiff?.firstDifferingOffset,
+      null,
+      `an equal byte-diff has no first differing offset:${context}`
+    );
+    assert.ok(
+      verdict.acmeResultLines.length >= 1,
+      `ACME's own per-segment result lines must have been parsed and recorded:${context}`
+    );
+    assert.notEqual(
+      verdict.exitStatus,
+      undefined,
+      "exitStatus is RECORDED so a human can read what happened, and CONSULTED BY NOTHING -- this assertion " +
+        "checks only that it was populated, never that it was zero, because a zero exit is compatible with a wrong byte"
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -640,5 +908,542 @@ test("the binary-token divergence is real on both sides (the one declared diverg
     DECLARED_DIVERGENCES.length,
     3,
     "exactly three divergences are declared. Growing this list must be a visible edit with its own justification"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// MANDATORY RED 2 (plan 30-02): A CORRUPTED BYTE IS CAUGHT BY THE DIFF WHILE
+// ACME ITSELF REPORTS SUCCESS.
+//
+// Measured on ACME 0.97 (RESEARCH.md Pitfall 3): `lda #$00` and `lda #$01` both
+// assemble and both exit 0, and their bytes differ. The exit status cannot see
+// a wrong byte, so it cannot be the verdict EVEN WHEN IT IS ZERO -- which is a
+// separate and stronger claim than "a missing assembler is not a pass", and is
+// why this red exists alongside red 1 rather than instead of it.
+//
+// The whole content of this red is the three fields co-occurring in ONE
+// recorded result: `outcome: "failed"`, `byteDiff.equal: false`, and
+// `exitStatus: 0`.
+// ---------------------------------------------------------------------------
+
+test("MANDATORY RED 2: a corrupted export byte fails the byte-diff while ACME itself exits 0", { skip: SKIP_REASON }, () => {
+  buildTracerExport((result) => {
+    // 1. The honest control FIRST, so the red below is a change of exactly one
+    //    byte against the same export and nothing else.
+    const honest = verifyAcmeAssembles({
+      source: result.source,
+      expectedBytes: result.expectedBytes,
+      expectedSegments: result.blocks,
+    });
+    assert.equal(
+      honest.outcome,
+      "ok",
+      `the honest control must pass before the corruption means anything; reason: ${honest.reason}`
+    );
+    // Rule 5 of the five, observed end to end: this very source trips ACME's
+    // `-Wtype-mismatch` warning on its `sta $d020` raw-number operand, and a
+    // WARNING NEVER FAILS THE VERDICT.
+    assert.ok(
+      honest.diagnostics.length >= 1,
+      "the tracer source trips a real ACME Warning; if it stopped doing so this control silently stopped proving " +
+        `that warnings are non-fatal. diagnostics: ${JSON.stringify(honest.diagnostics)}`
+    );
+    assert.equal(
+      parseAcmeDiagnostics(honest.diagnostics.join("\n")).every((d) => d.severity === "Warning"),
+      true,
+      `an "ok" verdict must carry only Warnings; got ${JSON.stringify(honest.diagnostics)}`
+    );
+
+    // 2. Flip ONE operand byte. Index 1 is the `lda`'s immediate operand:
+    //    `a9 00` becomes `a9 01`, which is the measured Pitfall 3 shape --
+    //    both forms assemble, both exit 0, the bytes differ.
+    const CORRUPTED_INDEX = 1;
+    const corrupted = Uint8Array.from(result.expectedBytes);
+    assert.equal(corrupted[CORRUPTED_INDEX], 0x00, "the byte about to be corrupted must be the `lda #$00` operand");
+    corrupted[CORRUPTED_INDEX] = 0x01;
+
+    // 3. The red.
+    const red = verifyAcmeAssembles({
+      source: result.source,
+      expectedBytes: corrupted,
+      expectedSegments: result.blocks,
+    });
+    const recorded = JSON.stringify(
+      {
+        outcome: red.outcome,
+        exitStatus: red.exitStatus,
+        acmeResultLines: red.acmeResultLines,
+        aggregateLines: red.aggregateLines,
+        diagnostics: red.diagnostics,
+        byteDiff: red.byteDiff,
+        reason: red.reason,
+      },
+      null,
+      2
+    );
+
+    assert.equal(red.outcome, "failed", `a wrong expected byte must FAIL:\n${recorded}`);
+    assert.equal(red.byteDiff?.equal, false, `the byte-diff is the verdict and it must disagree:\n${recorded}`);
+    assert.equal(
+      red.byteDiff?.firstDifferingOffset,
+      CORRUPTED_INDEX,
+      `the first differing offset is a BYTE offset and must name the byte that was flipped:\n${recorded}`
+    );
+    assert.equal(
+      red.exitStatus,
+      0,
+      "ACME REPORTED SUCCESS -- exit status 0 -- AND THE BYTE-DIFF CAUGHT IT ANYWAY. That co-occurrence is the whole " +
+        "content of this red: an exit status cannot see a wrong byte, so it can never be the verdict, not even when " +
+        `it is zero:\n${recorded}`
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE STALE-OUTPUT TRAP (RESEARCH.md Pitfall 1) -- the FOURTH false-pass
+// vector, and the one undocumented anywhere in this repo before Phase 30.
+//
+// ACME fails, exits 1, prints an error, and LEAVES A PRE-EXISTING OUTPUT FILE
+// COMPLETELY UNTOUCHED. A verify path that assembles to a fixed path and diffs
+// it would find yesterday's correct bytes and report a pass on a tree where the
+// exporter is broken.
+//
+// Two tests: ACME's behaviour reproduced directly on this host, and the
+// module's defence against it observed behaviourally.
+// ---------------------------------------------------------------------------
+
+test("real ACME does NOT truncate its output file on failure: a pre-existing file survives an exit-1 run untouched", { skip: SKIP_REASON }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "acme-verify-stale-"));
+  try {
+    const outPath = join(dir, "stale.bin");
+    const KNOWN_BYTES = Buffer.from("STALE", "ascii");
+    writeFileSync(outPath, KNOWN_BYTES);
+
+    const srcPath = join(dir, "dup.a");
+    writeFileSync(srcPath, ["!cpu 6510", "dup = $10", "dup = $20", "* = $0801", "\trts", ""].join("\n"), "utf8");
+
+    // argv ARRAY, never a shell string (T-30-01), and the same `-f plain
+    // --msvc` shape the verdict uses.
+    const r = spawnSync(ACME_BIN, ["-f", "plain", "--msvc", "-o", outPath, srcPath], {
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    const transcript = `exit=${r.status}\nstdout:\n${r.stdout ?? ""}\nstderr:\n${r.stderr ?? ""}`;
+
+    assert.equal(r.status, 1, `a duplicate symbol assignment must fail ACME:\n${transcript}`);
+    const diagnostics = parseAcmeDiagnostics(r.stderr ?? "");
+    assert.ok(
+      diagnostics.some((d) => d.severity === "Error" && /already defined/i.test(d.message)),
+      `ACME's own duplicate-symbol diagnostic must be parsed as an Error:\n${transcript}`
+    );
+    assert.equal(
+      Buffer.compare(readFileSync(outPath), KNOWN_BYTES),
+      0,
+      "THE VECTOR: the pre-existing output file still holds the bytes it held BEFORE the failing run. Nothing " +
+        "truncates it, because ACME opens the output only after a successful final pass. A verify path using a " +
+        `fixed output path would byte-diff these bytes and call the failed run a pass:\n${transcript}`
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a failing `!error` assertion is `failed` with byteDiff null, and an earlier honest run's diff never survives into it", { skip: SKIP_REASON }, () => {
+  // Differs from TRIVIAL_SOURCE by exactly one trailing line: a `*`-assertion
+  // that cannot hold. Measured on this host: exit 1, the `!error` text on
+  // stderr, and NO output file written at all.
+  const failingSource = [
+    "!cpu 6510",
+    "* = $0801",
+    "\tlda #$00",
+    "\trts",
+    '!if * != $0899 { !error "block end drifted: expected $0899" }',
+    "",
+  ].join("\n");
+
+  // Run 1: honest. Establishes that a passing `byteDiff` exists to be leaked.
+  const honest = verifyAcmeAssembles({
+    source: TRIVIAL_SOURCE,
+    expectedBytes: TRIVIAL_BYTES,
+    expectedSegments: TRIVIAL_SEGMENTS,
+  });
+  assert.equal(honest.outcome, "ok", `the honest run must pass first; reason: ${honest.reason}`);
+  assert.equal(honest.byteDiff?.equal, true, "the honest run's diff is the thing that must NOT survive into run 2");
+
+  // Run 2: the same primitive, immediately after, on a source that cannot
+  // produce an output file.
+  const failed = verifyAcmeAssembles({
+    source: failingSource,
+    expectedBytes: TRIVIAL_BYTES,
+    expectedSegments: TRIVIAL_SEGMENTS,
+  });
+  assert.equal(failed.outcome, "failed", `reason: ${failed.reason}`);
+  assert.equal(
+    failed.byteDiff,
+    null,
+    "THE LOAD-BEARING HALF: a null byteDiff proves NO BYTES WERE READ AT ALL, and therefore that no previous run's " +
+      "product could have been reported as a match. Every invocation assembles into its own fresh mkdtemp directory, " +
+      `so the two runs cannot even share a path. reason: ${failed.reason}`
+  );
+  assert.match(
+    failed.reason,
+    /block end drifted/,
+    "the reason quotes ACME's OWN `!error` text, which is the rule that fires FIRST under the documented reason " +
+      "precedence -- a diagnostic beats the downstream absent-output-file consequence, so this case never reaches " +
+      `the absent-file wording and must not be asserted against it. reason: ${failed.reason}`
+  );
+});
+
+// ---------------------------------------------------------------------------
+// ONE NAMED TEST PER VERDICT RULE, EACH AGAINST ITS OWN NAMED PURE HELPER.
+//
+// The end-to-end path exercises all five at once, which means a rule that
+// silently stopped firing would still leave the tracer green as long as the
+// bytes happened to agree. Driving each helper directly, with the VERBATIM real
+// ACME output recorded in `30-RESEARCH.md` § Code Examples 7 and 2, is what
+// makes each rule independently observable.
+//
+// These strings are COPIED, not paraphrased: a paraphrase would test the parser
+// against a shape the assembler never printed.
+// ---------------------------------------------------------------------------
+
+/** Real ACME `-v2` STDOUT for the two-block case, verbatim (RESEARCH.md § Code
+ * Examples 2), reproduced live on this host. */
+const REAL_V2_STDOUT = [
+  "First pass.",
+  "Segment size is 3 (0x3) bytes (0x801 - 0x804 exclusive).",
+  "Segment size is 1 (0x1) bytes (0x810 - 0x811 exclusive).",
+  "Saving 16 (0x10) bytes (0x801 - 0x811 exclusive).",
+  "",
+].join("\n");
+
+/** Real ACME `--msvc` STDERR lines, verbatim (RESEARCH.md § Code Examples 7). */
+const REAL_MSVC_STDERR = [
+  "dup.a(4) : Error (Zone <untitled>): Symbol already defined.",
+  "warn.a(3) : Warning (Zone <untitled>): Assembling unstable LXA #NONZERO instruction",
+  "warn.a(4) : Warning (Zone <untitled>): Assembling buggy JMP($xxff) instruction",
+  "f1.a(3) : Warning (Zone <untitled>): Using oversized addressing mode.",
+  "ovl.a(5) : Error (Zone <untitled>): Segment starts inside another one, overwriting it.",
+  "",
+].join("\n");
+
+test("VERDICT RULE 1 of five: parseAcmeResultLines() reads ACME's OWN per-segment lines off real -v2 stdout", () => {
+  const parsed = parseAcmeResultLines(REAL_V2_STDOUT);
+  assert.deepEqual(
+    parsed,
+    [
+      { start: 0x0801, endExclusive: 0x0804, size: 3, raw: "Segment size is 3 (0x3) bytes (0x801 - 0x804 exclusive)." },
+      { start: 0x0810, endExclusive: 0x0811, size: 1, raw: "Segment size is 1 (0x1) bytes (0x810 - 0x811 exclusive)." },
+    ],
+    "one record per `Segment size is ...` line, with start and endExclusive parsed from the NON-zero-padded hex " +
+      "extents (`0x801`, not `0x0801`) and the size read as decimal"
+  );
+  assert.equal(
+    parsed.some((p) => p.raw.startsWith("Saving")),
+    false,
+    "the aggregate `Saving ...` line is NOT a per-segment result line -- folding it in would make the unanimity " +
+      "subject include the very line this module refuses to trust"
+  );
+  assert.equal(parsed.some((p) => p.raw === "First pass."), false, "`First pass.` is progress noise, not a result line");
+});
+
+test("VERDICT RULE 2 of five: parseAcmeAggregateLines() returns the `Saving ...` lines and nothing else -- recorded, never trusted", () => {
+  assert.deepEqual(
+    parseAcmeAggregateLines(REAL_V2_STDOUT),
+    ["Saving 16 (0x10) bytes (0x801 - 0x811 exclusive)."],
+    "exactly the aggregate line: not the per-segment lines, not `First pass.`"
+  );
+  assert.deepEqual(parseAcmeAggregateLines(""), [], "no stdout means no aggregate lines, not an invented one");
+  // The structural twin of the line that lied in the carried false-pass trap:
+  // one line asserting a whole run passed, above per-item detail nobody read.
+  assert.equal(
+    parseAcmeAggregateLines(REAL_V2_STDOUT).length < parseAcmeResultLines(REAL_V2_STDOUT).length,
+    true,
+    "the aggregate summarises MORE detail than it carries, which is exactly why it is recorded and never consulted"
+  );
+});
+
+test("VERDICT RULE 3 of five: refuseOnCompetingAggregates() refuses two disagreeing aggregates and passes one or none", () => {
+  const reason = refuseOnCompetingAggregates([
+    "Saving 16 (0x10) bytes (0x801 - 0x811 exclusive).",
+    "Saving 32 (0x20) bytes (0x801 - 0x821 exclusive).",
+  ]);
+  assert.equal(typeof reason, "string", "two competing authoritative lines must produce a refusal");
+  assert.match(String(reason), /refuses to pick/, `the refusal must say it is a refusal and not a guess; got ${reason}`);
+  assert.match(String(reason), /0x811/, "the refusal must quote the competing lines so a human can see the disagreement");
+  assert.match(String(reason), /0x821/, "both competing lines, not just the first");
+
+  assert.equal(
+    refuseOnCompetingAggregates(["Saving 16 (0x10) bytes (0x801 - 0x811 exclusive)."]),
+    undefined,
+    "one aggregate line is not a disagreement"
+  );
+  assert.equal(refuseOnCompetingAggregates([]), undefined, "no aggregate line is not a disagreement either");
+});
+
+test("VERDICT RULE 4 of five: firstResultLineDisagreement() names the FIRST disagreeing index, and agrees silently", () => {
+  const parsed = parseAcmeResultLines(REAL_V2_STDOUT);
+  assert.equal(
+    firstResultLineDisagreement(parsed, [
+      { start: 0x0801, endExclusive: 0x0804 },
+      { start: 0x0810, endExclusive: 0x0811 },
+    ]),
+    undefined,
+    "every pair agreeing means no reason at all -- silence is what unanimity looks like"
+  );
+
+  // A passing EARLIER line must never hide a later failing one.
+  const later = firstResultLineDisagreement(parsed, [
+    { start: 0x0801, endExclusive: 0x0804 },
+    { start: 0x0810, endExclusive: 0x0812 },
+  ]);
+  assert.match(String(later), /result line 1 /, `the FIRST mismatch is at index 1 and must be named; got ${later}`);
+  assert.match(String(later), /\$0812/, "the reason must state what was expected");
+  assert.match(String(later), /\$0811/, "and what ACME actually reported");
+
+  const count = firstResultLineDisagreement(parsed, [{ start: 0x0801, endExclusive: 0x0804 }]);
+  assert.match(String(count), /in COUNT/, `a count disagreement is the degenerate case of the same property; got ${count}`);
+  assert.match(String(count), /never skipped/, "the message must record that this rule runs on every verdict");
+});
+
+test("VERDICT RULE 5 of five: parseAcmeDiagnostics() classifies real Warning lines as warnings and real Error lines as errors", () => {
+  const parsed = parseAcmeDiagnostics(REAL_MSVC_STDERR);
+  assert.deepEqual(
+    parsed.map((d) => d.severity),
+    ["Error", "Warning", "Warning", "Warning", "Error"],
+    "ACME's own three severity spellings, preserved rather than normalised to a lowercase form a reader has to map back"
+  );
+  assert.deepEqual(
+    parsed.map((d) => `${d.file}:${d.line}`),
+    ["dup.a:4", "warn.a:3", "warn.a:4", "f1.a:3", "ovl.a:5"],
+    "the --msvc shape carries the file and the 1-based line, and both are parsed"
+  );
+  assert.equal(parsed[0]!.zone, "Zone <untitled>", "ACME's zone is captured verbatim");
+  assert.equal(parsed[0]!.message, "Symbol already defined.", "the message is the text after the final colon");
+
+  // The safety net: ACME's DEFAULT (non---msvc) spelling, measured verbatim.
+  const bare = parseAcmeDiagnostics("Error - File dup.a, line 4 (Zone <untitled>): Symbol already defined.\n");
+  assert.equal(bare.length, 1, "a build that ignored --msvc must not read as `no diagnostics were reported`");
+  assert.equal(bare[0]!.severity, "Error");
+  assert.equal(bare[0]!.file, "dup.a");
+  assert.equal(bare[0]!.line, 4);
+
+  // A `Serious error` must never be shortened to its `Error` suffix, and must
+  // never fall through to the Warning branch.
+  const serious = parseAcmeDiagnostics("x.a(1) : Serious error (Zone <untitled>): Out of memory.\n");
+  assert.equal(serious[0]!.severity, "Serious error");
+});
+
+// ---------------------------------------------------------------------------
+// EXPORT-03, STRUCTURALLY: THE VERDICT IS NEVER A STRING MATCH ON THE
+// EXPORTER'S OWN OUTPUT.
+//
+// An oracle that decided by re-rendering, re-parsing or substring-matching the
+// text the exporter produced would be a self-check wearing an oracle's clothes:
+// it would agree with the exporter by construction, and this project's record
+// is that an internally-verified opcode table still shipped fourteen wrong
+// entries. The verdict's only basis is an octet comparison against bytes the
+// CALLER derived from the image.
+//
+// The scan is paired with two controls, following
+// `anno-cli-path-consumers.test.ts`'s discipline: a planted violation (so the
+// predicate is provably able to report one) and a comment-only source (so the
+// scan cannot degrade into a substring search that passes by counting its own
+// prose).
+// ---------------------------------------------------------------------------
+
+/** Substring-containment / text-search calls whose RECEIVER is the
+ * caller-supplied source text. */
+const SOURCE_TEXT_SEARCH_RE =
+  /\b(?:options\s*\.\s*)?source\s*\.\s*(?:includes|indexOf|lastIndexOf|search|match|matchAll|startsWith|endsWith|split)\s*\(/;
+
+/** The mirrored form: a regex or string tested AGAINST the source text. */
+const SOURCE_TEXT_TESTED_RE = /\.\s*(?:test|exec)\s*\(\s*(?:options\s*\.\s*)?source\s*[),]/;
+
+/** THE ONE PREDICATE. The real scan and both controls call this same function,
+ * so there is exactly one definition of "decides from the exporter's own text". */
+function matchesOnCallerSourceText(strippedSrc: string): boolean {
+  return SOURCE_TEXT_SEARCH_RE.test(strippedSrc) || SOURCE_TEXT_TESTED_RE.test(strippedSrc);
+}
+
+test("EXPORT-03: the verdict never string-matches the exporter's own output, and the scan that says so can go red", () => {
+  const realSrc = stripComments(readFileSync(VERIFY_MODULE_PATH, "utf8"));
+  assert.equal(
+    matchesOnCallerSourceText(realSrc),
+    false,
+    "acme-verify.ts must never search, split or regex-test the caller-supplied `source` text. A verdict derived " +
+      "from the exported text agrees with the exporter by construction -- it is a self-check wearing an oracle's " +
+      "clothes, and the byte-diff against image-derived bytes is the only thing that makes this a round trip"
+  );
+
+  // Planted violation: the defect's minimal shape.
+  const plantedViolation = [
+    "export function verdict(options: { source: string }): string {",
+    '  if (options.source.includes("!error")) return "failed";',
+    '  return "ok";',
+    "}",
+    "",
+  ].join("\n");
+  assert.equal(
+    matchesOnCallerSourceText(stripComments(plantedViolation)),
+    true,
+    "the predicate must REPORT a verdict derived from the source text -- if this passes, the real scan above is not " +
+      "capable of catching a violation and a control that only ever refuses is indistinguishable from one that works"
+  );
+
+  // Comment-only control: the half that keeps the scan trustworthy by proving
+  // it did not become a substring search over prose. Both shapes below are real
+  // -- acme-verify.ts's own header names this hazard repeatedly.
+  const commentOnly = [
+    "// Never decide from options.source.includes(...) -- that is a self-check.",
+    "/* A verdict must not do source.match(/!error/) either. */",
+    "export function verdict(options: { expectedBytes: Uint8Array }): number {",
+    "  return options.expectedBytes.length;",
+    "}",
+    "",
+  ].join("\n");
+  assert.equal(
+    matchesOnCallerSourceText(stripComments(commentOnly)),
+    false,
+    "a mention inside only a // comment and a block comment must NOT be reported -- otherwise the guard fails by " +
+      "matching the very prose that described the problem, and would have to be weakened to pass"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// THE PINNED TRANSCRIPTS, KEPT HONEST.
+//
+// Phase 29 moved two verify transcripts under `.planning/` when it deleted the
+// producer that made them, and its README set this phase an explicit
+// obligation: RE-RECORD both from real assembler output through the NEW route,
+// and never assert a rebuilt parser against the retired producer's bytes,
+// because a green test over those bytes would prove only that the new parser
+// can read a deleted tool's format.
+//
+// The obligation is discharged with evidence rather than deleted. This block is
+// the evidence: the new transcripts exist, their provenance is recorded, the
+// parser and its own evidence agree, the new files are provably NOT copies, and
+// nothing else in this tree reads the retired producer's directory.
+// ---------------------------------------------------------------------------
+
+/** The Phase 29 fixtures directory, relative to `.planning/phases/`. Named in
+ * ONE place -- this constant -- so the assertions below have a single site to
+ * update if those files ever move, and so the scan further down can name the
+ * exact literal a violation would have to contain. */
+const PHASE_29_FIXTURES_REL = "29-the-mcp-surface/fixtures";
+
+const PLANNING_PHASES = join(repoRoot(), ".planning", "phases");
+const PHASE_29_FIXTURES_DIR = join(PLANNING_PHASES, PHASE_29_FIXTURES_REL);
+const PHASE_30_FIXTURES_DIR = join(PLANNING_PHASES, "30-acme-export-and-the-real-acme-oracle", "fixtures");
+
+/** The two transcript filenames, identical on both sides -- which is exactly
+ * what makes the byte-inequality assertion below meaningful. */
+const PINNED_TRANSCRIPTS = ["verify-honest-pass.txt", "verify-false-pass-trap.txt"] as const;
+
+/** Pulls one delimited section out of a captured transcript. The delimiters are
+ * written by `capture-transcripts.mjs`; a missing one is an assertion failure
+ * rather than an empty string, so a reformatted transcript cannot make the
+ * agreement assertion below pass by comparing nothing to nothing. */
+function transcriptSection(text: string, name: string): string {
+  const begin = `>>> BEGIN ${name}\n`;
+  const end = `\n<<< END ${name}`;
+  const from = text.indexOf(begin);
+  assert.notEqual(from, -1, `the transcript no longer carries a ${JSON.stringify(name)} section`);
+  const to = text.indexOf(end, from);
+  assert.notEqual(to, -1, `the transcript's ${JSON.stringify(name)} section is unterminated`);
+  return text.slice(from + begin.length, to);
+}
+
+test("the phase's own pinned transcripts and their provenance README are on disk", () => {
+  for (const name of PINNED_TRANSCRIPTS) {
+    assert.ok(existsSync(join(PHASE_30_FIXTURES_DIR, name)), `${name} is missing from ${PHASE_30_FIXTURES_DIR}`);
+  }
+  assert.ok(existsSync(join(PHASE_30_FIXTURES_DIR, "README.md")), "the fixtures README carries the provenance table");
+  assert.ok(
+    existsSync(join(PHASE_30_FIXTURES_DIR, "capture-transcripts.mjs")),
+    "the README's Regenerating section names a real program; evidence whose production cannot be re-run is a claim"
+  );
+});
+
+test("the fixtures README records the assembler release string and a capture date", () => {
+  const readme = readFileSync(join(PHASE_30_FIXTURES_DIR, "README.md"), "utf8");
+  assert.match(
+    readme,
+    /ACME 0\.97 "Zem"/,
+    "the provenance table must name the exact assembler release the transcripts came out of -- `an assembler` is not provenance"
+  );
+  assert.match(
+    readme,
+    /\b20\d\d-\d\d-\d\d\b/,
+    "the provenance table must carry a capture date, so a reader can tell a fresh capture from a stale one"
+  );
+  assert.match(
+    readme,
+    /read for shape only|read \*\*for shape only\*\*|for shape only/i,
+    "the DO-NOT block must answer the Phase 29 README's obligation BY NAME: those transcripts were read for shape only " +
+      "and are never asserted against"
+  );
+});
+
+test("the honest-pass transcript and parseAcmeResultLines() agree -- the parser and its own evidence tell the same story", () => {
+  const honest = readFileSync(join(PHASE_30_FIXTURES_DIR, "verify-honest-pass.txt"), "utf8");
+  const stdoutSection = transcriptSection(honest, "ACME STDOUT");
+  const recorded = transcriptSection(honest, "AcmeVerifyResult.acmeResultLines")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+
+  assert.ok(
+    recorded.length >= 1,
+    "the transcript records at least one per-segment result line; zero would make the comparison below vacuous"
+  );
+  assert.deepEqual(
+    parseAcmeResultLines(stdoutSection).map((p) => p.raw),
+    recorded,
+    "re-parsing the transcript's own captured STDOUT must reproduce exactly the acmeResultLines the transcript " +
+      "records. A disagreement means either the parser drifted from the assembler output it claims to read, or the " +
+      "transcript was edited by hand after capture -- and the README forbids the second"
+  );
+});
+
+test("non-vacuity: each re-recorded transcript is NOT byte-equal to its Phase 29 counterpart", () => {
+  for (const name of PINNED_TRANSCRIPTS) {
+    const mine = readFileSync(join(PHASE_30_FIXTURES_DIR, name));
+    const retired = readFileSync(join(PHASE_29_FIXTURES_DIR, name));
+    assert.notEqual(
+      Buffer.compare(mine, retired),
+      0,
+      `${name} is BYTE-EQUAL to the Phase 29 file of the same name, which means it was COPIED rather than ` +
+        `re-recorded. The re-record obligation exists because the Phase 29 bytes are a deleted producer's output: ` +
+        `pinning them again would prove this phase's parser can read a tool that no longer exists, which is the one ` +
+        `piece of evidence it must not claim to have.`
+    );
+  }
+});
+
+test("no test in this phase reads the retired producer's fixtures directory", () => {
+  const testFiles = readdirSync(HERE).filter((f) => /\.test\./.test(f));
+  assert.ok(
+    testFiles.length >= 20,
+    `the test-file census went short (${testFiles.length}) -- a truncated listing would make the scan below pass trivially`
+  );
+
+  const offenders = testFiles.filter(
+    (f) => f !== "acme-verify.test.ts" && readFileSync(join(HERE, f), "utf8").includes(PHASE_29_FIXTURES_REL)
+  );
+  assert.deepEqual(
+    offenders,
+    [],
+    `these test files name the retired producer's fixtures directory: ${offenders.join(", ")}. THE HAZARD IS ` +
+      `RE-PINNING: an assertion against those bytes would hold a rebuilt parser to a deleted tool's output format, ` +
+      `and would keep passing long after the format it really has to read had moved. This file is the ONE exception, ` +
+      `and it names that directory for exactly one purpose -- asserting the new transcripts are not copies of it.`
+  );
+
+  const self = readFileSync(join(HERE, "acme-verify.test.ts"), "utf8");
+  assert.equal(
+    self.split(PHASE_29_FIXTURES_REL).length - 1,
+    1,
+    "the retired directory is named EXACTLY ONCE in this file, in the PHASE_29_FIXTURES_REL constant, so there is " +
+      "one place to update if those files ever move. A second occurrence means a path was rebuilt by hand somewhere"
   );
 });

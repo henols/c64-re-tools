@@ -1,0 +1,59 @@
+# verify-false-pass-trap.txt -- the three false-pass vectors, PROVOKED
+# against Phase 30's own route and refused by it. Not narrated: every
+# number and every line below is captured output.
+#
+# Captured by capture-transcripts.mjs on 2026-08-30T22:00:23.649Z.
+# Assembler: This is ACME, release 0.97 ("Zem"), 31 Jan 2021 (resolved from ACME_BIN="acme")
+#
+# Nothing below was trimmed, re-wrapped, redacted or edited after capture,
+# beyond the single declared temp-path placeholder substitution (<TMPDIR>).
+
+>>> BEGIN VECTOR 1 -- THE MISSING ASSEMBLER
+ACME_BIN used:                       <TMPDIR>/definitely-not-acme
+spawnSync status:                    null
+spawnSync error.code:                ENOENT
+historical truthiness classifier:    ran   <- reads a spawn that NEVER RAN as a run
+classifySpawn():                     unavailable
+
+verifyAcmeAssembles() over the same source, with that binary:
+    outcome:  skipped
+    reason:   ACME never ran: spawning "<TMPDIR>/definitely-not-acme" failed with ENOENT. No assembler ran, so no claim about the bytes exists -- this is "skipped", which is neither a pass nor a byte-level failure.
+    byteDiff: null
+
+REFUSED BY: verdict rule 1 -- classifySpawn() reports "unavailable", so
+the outcome is "skipped", which is neither a pass nor a byte-level
+failure. A skipped assembler is never presented as a pass on any surface.
+<<< END VECTOR 1 -- THE MISSING ASSEMBLER
+
+>>> BEGIN VECTOR 2 -- THE STALE OUTPUT FILE
+output path:            <TMPDIR>/stale.bin
+bytes BEFORE the run:   53 54 41 4c 45   (ascii "STALE")
+source assembled:       <TMPDIR>/dup.a -- a duplicate symbol assignment
+argv:                   acme -f plain --msvc -o <TMPDIR>/stale.bin <TMPDIR>/dup.a
+ACME exit status:       1
+ACME stderr:            <TMPDIR>/dup.a(3) : Error (Zone <untitled>): Symbol already defined.
+bytes AFTER the run:    53 54 41 4c 45   (ascii "STALE")   <- UNCHANGED
+
+REFUSED BY: verdict rule 6 -- every invocation assembles into a fresh
+mkdtemp directory and requires the output path to have been ABSENT before
+the spawn, so "did THIS run create it" is the property. A verify path
+using a fixed output path would have byte-diffed the bytes above and
+called this failed run a pass.
+<<< END VECTOR 2 -- THE STALE OUTPUT FILE
+
+>>> BEGIN VECTOR 3 -- EXIT ZERO ON A WRONG BYTE
+source:                 the SAME honest export as verify-honest-pass.txt
+expectedBytes:          a9 01 8d 20 d0 60   <- index 1 corrupted, $00 -> $01
+ACME exit status:       0   <- ACME REPORTED SUCCESS
+ACME's own result lines:
+    Segment size is 6 (0x6) bytes (0x801 - 0x807 exclusive).
+aggregate line (recorded, never trusted):
+    Saving 6 (0x6) bytes (0x801 - 0x807 exclusive).
+byteDiff:               {"equal":false,"firstDifferingOffset":1,"expectedLength":6,"actualLength":6}
+outcome:                failed
+reason:                 assembled bytes differ from the expected bytes: first differing byte offset 1, expected length 6, actual length 6.
+
+REFUSED BY: verdict rule 6 -- the byte-diff IS the verdict. The exit
+status cannot see a wrong byte, so it can never be the verdict, not even
+when it is zero.
+<<< END VECTOR 3 -- EXIT ZERO ON A WRONG BYTE
