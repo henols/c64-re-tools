@@ -19,7 +19,7 @@ affects: [phase-30, anno-tools, mcp-surface, gap-closure]
 actuals:
   tokens: 47054
   tasks: 3
-  commits: 6
+  commits: 8
 
 tech-stack:
   added: []
