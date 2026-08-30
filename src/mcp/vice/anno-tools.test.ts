@@ -822,31 +822,51 @@ test("CR-01: the incoherent range is STRUCTURALLY absent -- an out-of-image disa
   );
 });
 
-test("CR-01: an inverted span -- an end_address BELOW the start -- refuses on BOTH verbs rather than serving an empty slice", async () => {
+test("CR-01: an inverted span is refused IDENTICALLY by both verbs, and the one no validator can catch is caught by sliceSpan()", async () => {
   await withStore(
     () => {},
     async (ws, store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
 
-      // Both bounds are INSIDE the image; only their order is wrong. This is
-      // the `sliceSpan()` totality case: the low-bound and high-bound guards
-      // both pass, and without the inverted-span guard `subarray(from, to+1)`
-      // hands back a zero-length success.
+      // FIRST LAYER. When the caller NAMES an end below the start, the shared
+      // range-shape validator in anno-types.ts refuses it for both verbs
+      // before any byte is indexed. That is a caller error, not an
+      // unanswerable question, and both verbs report it the same way -- the
+      // agreement CR-01 is about holds at this layer too.
       const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1003", end_address: "$1001" });
       const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$1003", end_address: "$1001" });
-
       for (const [name, result] of [
         ["anno_disassemble", disasm],
         ["anno_read_region", region],
       ] as const) {
-        assert.equal(result.isError, false, `${name}: ${result.content[0]!.text}`);
-        const verdict = (await body(result)) as { available?: boolean; bytes?: number; instructions?: number };
-        assert.equal(verdict.available, false, `${name} must refuse a span that covers no bytes, never serve it as a zero-length success`);
-        assert.equal("bytes" in verdict, false, `${name} must not report a byte count for a span it refused`);
-        assert.equal("instructions" in verdict, false, `${name} must not report an instruction count for a span it refused`);
+        assert.equal(result.isError, true, `${name} must refuse a transposed range, never serve it as a zero-length success`);
+        assert.match(result.content[0]!.text, /\[AnnoRangeShapeError\]/, `${name} must refuse it BY NAME through the shared validator`);
+        assert.match(result.content[0]!.text, /is below start/);
       }
+
+      // SECOND LAYER, and the one that actually bit. An OMITTED end_address is
+      // derived from the image's own last address, so no caller named it and
+      // no argument validator can see it -- yet for a start past the image
+      // that derived end lands BELOW the start. Both of sliceSpan()'s bound
+      // checks pass for this pair (`from` is non-negative, `to` is inside the
+      // body) and ONLY the inverted-span condition catches it. This is the
+      // exact route the reported `{instructions:0, end_address:4099}` took.
+      const derived = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      assert.equal(derived.isError, false, derived.content[0]!.text);
+      const verdict = (await body(derived)) as { available?: boolean };
+      assert.equal(verdict.available, false, "sliceSpan() must be TOTAL -- an inverted span it alone can see is still refused, never subarray'd to nothing");
     },
   );
+});
+
+test("CR-01: sliceSpan()'s guard names all THREE cases, so the inverted-span condition cannot be dropped as redundant", () => {
+  // Asserted over the comment-and-string-stripped source: the doc comment
+  // above the function explains the third case at length, and must not be
+  // what makes this check pass.
+  const guard = /if\s*\(from < 0 \|\| to >= image\.body\.length \|\| from > to\) return null;/;
+  assert.match(ANNO_TOOLS_CODE, guard, "sliceSpan() must guard the low bound, the high bound AND the inverted span (CR-01)");
+  // And the reason is written down, or a later reader removes it as dead.
+  assert.match(ANNO_TOOLS_SOURCE, /INVERTED span/, "the third case must carry its own rationale in the doc comment");
 });
 
 test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds on both verbs, with a non-zero instruction count", async () => {

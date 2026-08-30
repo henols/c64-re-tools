@@ -1794,14 +1794,33 @@ function shannonEntropy(bytes: Uint8Array): number {
 /** The slice of `image` covering the inclusive span, or `null` when the span
  * falls outside the bytes the image actually holds. `null` rather than a short
  * slice: a partial answer to a range question reads as a complete answer to a
- * smaller one. */
+ * smaller one.
+ *
+ * TOTAL OVER EVERY (start, end) PAIR, and that is three cases, not two. Below
+ * the origin and past the last byte are the obvious two. The third is an
+ * INVERTED span -- a resolved `from` past its own `to` -- which passes both
+ * bound checks while covering no bytes at all, and which `subarray()` would
+ * hand back as a zero-length success. That is the same failure as a short
+ * slice wearing a smaller hat: answering a question about no bytes with an
+ * empty result reads as a complete answer to a smaller question, which is the
+ * very thing this `null` return exists against (CR-01). */
 function sliceSpan(image: LoadedImage, start: number, end: number): Uint8Array | null {
   const from = start - image.origin;
   const to = end - image.origin;
-  if (from < 0 || to >= image.body.length) return null;
+  if (from < 0 || to >= image.body.length || from > to) return null;
   return image.body.subarray(from, to + 1);
 }
 
+/** The ONE refusal builder both read verbs report through. `anno_disassemble`
+ * and `anno_read_region` each call `sliceSpan()` exactly once, over the span
+ * their own answer would have reported -- the span the CALLER can see -- and
+ * each reaches this builder from that one verdict. Their AGREEMENT is the
+ * property CR-01 was reported against: the defect was `anno_disassemble`
+ * narrowing the requested end down to the image's last address BEFORE slicing,
+ * so an out-of-image start produced an empty slice instead of the `null` that
+ * reaches here, and the caller got `instructions:0` with an `end_address`
+ * numerically below the `address` asked about. Do not reintroduce a per-verb
+ * narrowing: it makes the two verbs disagree about the same bytes. */
 function outsideImage(name: string, image: LoadedImage, start: number, end: number): Record<string, unknown> {
   const last = image.origin + image.body.length - 1;
   return {
@@ -1835,16 +1854,21 @@ function dispatchDisassemble(args: unknown): unknown {
   // bound, or the default is the hazard.
   const requestedEnd = bag.end_address !== undefined ? parseStoreAddress(bag.end_address, { what: "end_address" }) : Math.min(start + cap - 1, last);
   if (bag.end_address !== undefined) assertWithinRegionCap("anno_disassemble", start, requestedEnd, undefined);
-  const end = Math.min(requestedEnd, last);
-  const slice = sliceSpan(image, start, end);
+  // Sliced on the span the CALLER named, never on one narrowed down to the
+  // image's last address first. The narrowing used to happen here, and it is
+  // what made this verb disagree with `anno_read_region` (CR-01) -- see
+  // `outsideImage()`. Note what is NOT lost: an omitted `end_address` derives
+  // `requestedEnd` from the image's own last address above, so it is inside
+  // the image by construction and nothing a caller named is narrowed away.
+  const slice = sliceSpan(image, start, requestedEnd);
   if (slice === null) return outsideImage("anno_disassemble", image, start, requestedEnd);
 
-  const instructions = decode(slice, start, { end });
+  const instructions = decode(slice, start, { end: requestedEnd });
   return {
     image: image.path,
     origin: image.origin,
     address: start,
-    end_address: end,
+    end_address: requestedEnd,
     instructions: instructions.length,
     listing: render(instructions, { origin: start }),
   };
