@@ -283,6 +283,38 @@ export function parseDocumentedInvocations(text) {
 }
 
 /**
+ * Reads `key` off `table` ONLY when it is an OWN property -- `undefined` for
+ * anything inherited, and for a `table` that is not an object at all.
+ *
+ * WHY THIS EXISTS (WR-19, 2026-08-30). Every table `checkInvocation()` reads is
+ * keyed by a VERB TAKEN FROM SKILL TEXT, and every one of them is a plain
+ * object literal, which inherits from `Object.prototype`. Bare bracket access
+ * therefore resolved `constructor`, `toString`, `valueOf`, `hasOwnProperty` and
+ * `__proto__` to TRUTHY inherited values, so the unknown-verb short-circuit did
+ * not fire and the next read crashed. All three sites, reproduced against the
+ * shipped tables before this helper existed:
+ *
+ *   `anno constructor game.prg`            -> TypeError: kinds.includes is not a function
+ *   `anno toString game.prg --store x`     -> TypeError: function is not iterable
+ *   `anno hasOwnProperty game.prg --force` -> TypeError: accepted.includes is not a function
+ *
+ * `scripts/check-skill-cli-invocations.mjs` calls `checkInvocation()` bare
+ * inside its loop, so the gate died with a stack trace instead of the named
+ * problem message its whole reporting path is built around -- while this
+ * module's own header says three times that skill content is untrusted input
+ * that is MATCHED, never executed. An input-derived key reaching a prototype
+ * lookup is that posture broken.
+ *
+ * ONE PREDICATE, THREE CALL SITES, deliberately: a fix that hardened only the
+ * verb lookup would leave the finding armed one table over, and the crash the
+ * required-flag loop produced was itself a SECOND site added after the first
+ * existed. Every new verb-keyed table read in this function goes through here.
+ */
+function own(table, key) {
+  return table !== null && typeof table === "object" && Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/**
  * Returns an array of human-readable problems with ONE invocation -- empty
  * when it is sound.
  *
@@ -318,7 +350,10 @@ export function parseDocumentedInvocations(text) {
  * A verb the CLI does not have is itself a problem: `verbOptions` IS the verb
  * set, so an unknown key is reported by name rather than skipped as
  * "nothing to check". It SHORT-CIRCUITS -- every later check is keyed by verb
- * and would have no entry to read.
+ * and would have no entry to read. That sentence is true for an INHERITED key
+ * too (`constructor`, `toString`, `__proto__`) only because every table read
+ * here goes through `own()`; until 2026-08-30 those keys crashed the gate with
+ * an unhandled `TypeError` instead (WR-19).
  *
  * A positional carrying a placeholder shape (`<store>`, `FILE`, `...`) is
  * SKIPPED rather than refused -- usage synopses are documentation, not
@@ -333,8 +368,10 @@ export function checkInvocation(invocation, verbOptions, positionalKinds, requir
   const { verb, positionals, flags, raw } = invocation;
   const where = raw ? ` (in: ${raw})` : "";
 
-  const accepted = verbOptions?.[verb];
-  if (!accepted) {
+  // WR-19: OWN-property reads throughout. A verb is untrusted skill text, and
+  // every table below is a plain object literal.
+  const accepted = own(verbOptions, verb);
+  if (!Array.isArray(accepted)) {
     problems.push(
       `anno ${verb}: no such verb -- the CLI's own VERB_OPTIONS declares ${Object.keys(verbOptions ?? {}).sort().join(", ") || "nothing"}${where}`,
     );
@@ -347,7 +384,7 @@ export function checkInvocation(invocation, verbOptions, positionalKinds, requir
     }
   }
 
-  const kinds = positionalKinds?.[verb] ?? [];
+  const kinds = own(positionalKinds, verb) ?? [];
   for (const positional of positionals) {
     if (isPlaceholder(positional)) continue;
     const ext = extensionOf(positional);
@@ -365,7 +402,7 @@ export function checkInvocation(invocation, verbOptions, positionalKinds, requir
   // WR-01. Presence, not membership: the flag may be spelled with a real value
   // or a synopsis placeholder, and either way the TOKEN is what is required.
   const present = new Set(flags.map(({ flag }) => flag));
-  for (const flag of requiredFlags?.[verb] ?? []) {
+  for (const flag of own(requiredFlags, verb) ?? []) {
     if (!present.has(flag)) {
       problems.push(
         `anno ${verb}: ${flag} is required and is missing -- the command exits non-zero at runtime without it${where}`,

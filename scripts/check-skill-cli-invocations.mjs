@@ -104,8 +104,24 @@ need(
     "the extractor, the skill playbooks or installer/skills/'s regeneration may have regressed. Do NOT lower the floor to make this pass.",
 );
 
+// The predicate is called inside a try/catch as DEFENCE IN DEPTH, not as the
+// fix for anything (WR-19, 2026-08-30). The real fix is `own()` in the lib: a
+// verb taken from skill text used to reach a prototype lookup, so
+// `anno constructor ...` killed this gate with an unhandled TypeError and a
+// stack trace instead of the named problem message every line below is built
+// around. That hole is closed at the source. This wrapper exists so that if a
+// FUTURE verb-keyed read is added without going through `own()`, the gate
+// still fails as a reported problem naming the file and the invocation --
+// never as a bare stack trace, and never as a silent pass.
 for (const { file, invocation } of invocations) {
-  for (const problem of checkInvocation(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS)) {
+  let problems;
+  try {
+    problems = checkInvocation(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS);
+  } catch (err) {
+    need(false, `${file}: the invocation checker THREW on ${JSON.stringify(invocation.raw)} -- ${err instanceof Error ? err.message : String(err)}`);
+    continue;
+  }
+  for (const problem of problems) {
     need(false, `${file}: ${problem}`);
   }
 }

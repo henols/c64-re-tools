@@ -407,3 +407,100 @@ test("one definition, two callers: the CI gate imports the shipped tables instea
   );
   assert.match(gate, /checkInvocation\(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS\)/, "and pass it to the predicate");
 });
+
+// ---------------------------------------------------------------------------
+// 7. WR-19 -- an `Object.prototype` key in the VERB slot.
+//
+// Every verb-keyed table this predicate reads is a plain object literal, so it
+// inherits from `Object.prototype`. Before 2026-08-30 all three reads were
+// bare bracket access, which meant an inherited key was TRUTHY and sailed past
+// the unknown-verb short-circuit into three different unhandled `TypeError`s
+// -- one per table. Reproduced against the shipped tables before the fix:
+//
+//   "anno constructor game.prg"             -> TypeError: kinds.includes is not a function
+//   "anno toString game.prg --store x.annostore"
+//                                           -> TypeError: function is not iterable
+//   "anno hasOwnProperty game.prg --force"  -> TypeError: accepted.includes is not a function
+//
+// A genuine unknown verb (`export-asm`, planted violation 3 above) refused
+// correctly the whole time, so the defect is specifically PROTOTYPE
+// INHERITANCE, not "unknown verbs are unhandled". That distinction is why each
+// case below asserts the refusal MESSAGE rather than merely "did not throw":
+// a predicate that returned `[]` for these would be a second, quieter bug.
+//
+// One control per CRASH SITE, not one per key: the three sites are the
+// flag-membership read, the positional-kind read and the required-flag read,
+// and a fix that hardens one of the three re-arms this finding one table over.
+// ---------------------------------------------------------------------------
+
+/** The `Object.prototype` keys a documented invocation could name in the verb
+ * slot. Not exhaustive by construction -- it is a list of the inherited
+ * properties whose VALUES have the three shapes that broke the three reads
+ * (a function, a function, and the prototype object itself). */
+const INHERITED_VERB_KEYS = ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"] as const;
+
+test("WR-19 crash site 1 (positional-kind read): an inherited verb key is refused by name, not crashed on", () => {
+  const problems = problemsFor("vice-mcp anno constructor game.prg");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /no such verb/i, "the documented behaviour is a named refusal, not a TypeError and not silence");
+  assert.match(problems[0]!, /constructor/, "and it must name the verb the reader wrote");
+  assert.match(problems[0]!, /coverage/, "and the verb set the CLI really declares");
+});
+
+test("WR-19 crash site 2 (required-flag read, ADDED THIS ROUND): `toString` in the verb slot is refused by name", () => {
+  // `for (const flag of requiredFlags[verb] ?? [])` over `Object.prototype
+  // .toString` threw "function is not iterable". That loop is the WR-01 fix,
+  // so this round introduced a SECOND crash site in a function that already
+  // had one; this control is what keeps a third from being added silently.
+  const problems = problemsFor("vice-mcp anno toString game.prg --store game.annostore");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /no such verb/i);
+  assert.match(problems[0]!, /toString/);
+});
+
+test("WR-19 crash site 3 (flag-membership read): an inherited verb key carrying a FLAG is refused by name", () => {
+  // A flag is required to reach this site at all: `accepted.includes(flag)`
+  // only runs when there is a flag to check.
+  const problems = problemsFor("vice-mcp anno hasOwnProperty game.prg --force");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /no such verb/i);
+  assert.match(problems[0]!, /hasOwnProperty/);
+});
+
+test("WR-19: every inherited key is refused, and the refusal SHORT-CIRCUITS exactly as a real unknown verb does", () => {
+  for (const key of INHERITED_VERB_KEYS) {
+    const problems = problemsFor(`vice-mcp anno ${key} game.prg --store game.annostore`);
+    assert.equal(problems.length, 1, `${key}: ${problems.join("; ")}`);
+    assert.deepEqual(problems.map(problemKind), [PROBLEM_ORDER[0]], `${key} must report unknown-verb alone`);
+  }
+});
+
+test("WR-19 discrimination control: an ORDINARY unknown verb and a REAL verb are unaffected by the own-property gate", () => {
+  // Both halves in one test, so the property under test is the
+  // discrimination rather than the refusal. A predicate that refused every
+  // verb would satisfy the four cases above.
+  const ordinary = problemsFor("vice-mcp anno export-asm game.annostore");
+  assert.equal(ordinary.length, 1, ordinary.join("; "));
+  assert.match(ordinary[0]!, /no such verb/i);
+  assert.deepEqual(problemsFor("vice-mcp anno coverage game.prg --store game.annostore"), [], "a real verb must still pass");
+});
+
+test("WR-19: the OTHER two tables are read own-property too, proven with a table whose inherited key would otherwise be reached", () => {
+  // The verb-slot cases above all short-circuit at the FIRST table, so on
+  // their own they would still pass if only `verbOptions` were hardened. This
+  // one hands the predicate a verb the option table DOES declare while the
+  // other two tables do not, so the positional-kind and required-flag reads
+  // are the ones under test.
+  const verbOptions = Object.freeze({ toString: Object.freeze(["--store"]) });
+  const parsed = parseInvocations(fenced("vice-mcp anno toString game.prg --store game.annostore"));
+  assert.equal(parsed!.length, 1);
+  // POSITIONAL_KINDS and REQUIRED_FLAGS are the SHIPPED tables: neither has an
+  // own `toString`, so both reads must yield the empty default rather than
+  // `Object.prototype.toString`.
+  const problems = checkOne(parsed![0]!, verbOptions, POSITIONAL_KINDS, REQUIRED_FLAGS);
+  assert.deepEqual(
+    problems,
+    ["anno toString: takes no positional argument, but game.prg was supplied (in: vice-mcp anno toString game.prg --store game.annostore)"],
+    "an undeclared positional-kind entry means 'this verb takes no positional', never Object.prototype.toString",
+  );
+});
