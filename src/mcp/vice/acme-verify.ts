@@ -112,6 +112,75 @@ import { ACME_BIN } from "./acme-gate.ts";
  * exit code. */
 export type AcmeOutcome = "ok" | "failed" | "skipped";
 
+/** What a spawn attempt turned out to be. Two values, and the distinction is
+ * the whole content of the recorded false pass: `"unavailable"` means the
+ * assembler NEVER RAN, `"ran"` means a process really executed and its result
+ * -- whatever its exit status -- is a real observation about the source. */
+export type SpawnClassification = "unavailable" | "ran";
+
+/** The shape of the classification decision, named so a test can drive the
+ * SAME property predicate with a deliberately wrong implementation and watch it
+ * report a pass. Only the two fields the decision may legitimately read appear
+ * here; a classifier cannot reach stdout, stderr or the output file. */
+export type SpawnClassifier = (r: { error?: unknown; status: number | null }) => SpawnClassification;
+
+/**
+ * The ONE spawn classification in this module.
+ *
+ * A spawn is `"unavailable"` when it carries a spawn error OR has no exit
+ * status at all -- both mean no process ever produced a result. Everything else
+ * `"ran"`, including a non-zero exit: a process that ran and failed made a real
+ * statement about the source, and the byte-diff is what judges it.
+ *
+ * MEASURED, ACME 0.97 on this host (RESEARCH.md Pitfall 2, four rows):
+ * a working `acme` exits `0` with no error; the bare name `acme-does-not-exist`
+ * yields no exit status at all with an `ENOENT` error; the absolute path
+ * `/nonexistent/acme` yields the same shape; and a present-but-non-executable
+ * file (`/etc/hostname`) yields no exit status with an `EACCES` error. The
+ * historical rule took the exit status's TRUTHINESS as "nothing went wrong",
+ * and for all three of the missing-binary rows that truthiness test evaluates
+ * TRUE -- which is exactly how a missing assembler was scored as a pass. That
+ * one recorded false pass is why this function exists and why nothing else in
+ * this module decides availability.
+ */
+export const classifySpawn: SpawnClassifier = (r) =>
+  r.error !== undefined || r.status === null ? "unavailable" : "ran";
+
+/** A missing-binary spawn shape as MEASURED, not as imagined -- the three
+ * missing-assembler rows of RESEARCH.md Pitfall 2's table, reproduced live on
+ * this host against ACME 0.97. */
+function measuredMissingBinarySpawn(code: string, syscallTarget: string): { error?: unknown; status: number | null } {
+  const error = new Error(`spawnSync ${syscallTarget} ${code}`) as NodeJS.ErrnoException;
+  error.code = code;
+  return { error, status: null };
+}
+
+/** The three measured missing-binary shapes, in the table's own order. */
+const MEASURED_MISSING_BINARY_SPAWNS: readonly { error?: unknown; status: number | null }[] = Object.freeze([
+  measuredMissingBinarySpawn("ENOENT", "acme-does-not-exist"),
+  measuredMissingBinarySpawn("ENOENT", "/nonexistent/acme"),
+  measuredMissingBinarySpawn("EACCES", "/etc/hostname"),
+]);
+
+/**
+ * THE ONE PREDICATE: does `classify` refuse every measured missing-assembler
+ * spawn shape?
+ *
+ * Both directions of the guard call THIS function -- the real check passes
+ * `classifySpawn`, and the planted-violation control in `acme-verify.test.ts`
+ * passes a locally-defined classifier implementing the historical
+ * truthiness-of-exit-status rule. There is therefore exactly ONE definition of
+ * the property "a missing assembler is never a pass", the way
+ * `anno-cli-path-consumers.test.ts`'s `confinesAtLeast()` is the one definition
+ * of "routes through the seam". A structural guard and its own proof that the
+ * guard can bite must share the checked logic rather than each carry a copy:
+ * two copies drift, and the copy that drifts is always the control, which then
+ * silently stops being able to fail.
+ */
+export function missingAssemblerIsNeverAPass(classify: SpawnClassifier): boolean {
+  return MEASURED_MISSING_BINARY_SPAWNS.every((shape) => classify(shape) === "unavailable");
+}
+
 /** The verdict's actual basis: an octet-level comparison, never a string
  * comparison of decoded text. Every length and offset here is a BYTE count. */
 export interface AcmeByteDiff {
@@ -328,8 +397,8 @@ function compareBytes(expected: Buffer, actual: Buffer): AcmeByteDiff {
  * REASON PRECEDENCE -- the order the rules run, and therefore which refusal
  * wins when several apply:
  *
- *   1. The spawn never ran (`r.error` set, or `r.status === null`) => `"skipped"`.
- *      Reached before any exit-status arithmetic exists.
+ *   1. `classifySpawn()` reports `"unavailable"` -- the spawn never ran =>
+ *      `"skipped"`. Reached before any exit-status arithmetic exists.
  *   2. ACME reported an `Error` or `Serious error` => `"failed"`, quoting the
  *      FIRST such diagnostic verbatim. ACME's own words about why it stopped
  *      are more use to a human than the downstream consequence, which is why
@@ -373,7 +442,9 @@ export function verifyAcmeAssembles(options: AcmeVerifyOptions): AcmeVerifyResul
     // Assigned ONCE. Read by nothing below.
     const exitStatus: number | null = r.status;
 
-    if (r.error !== undefined || r.status === null) {
+    // Rule 1, through the ONE classifier. Nothing else in this module decides
+    // availability, and nothing below reads the exit status for any purpose.
+    if (classifySpawn(r) === "unavailable") {
       const code = r.error !== undefined ? ((r.error as NodeJS.ErrnoException).code ?? r.error.name) : "no exit status";
       return {
         outcome: "skipped",

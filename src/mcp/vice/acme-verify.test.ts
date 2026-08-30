@@ -35,37 +35,53 @@
 // verdict's basis is the byte-diff; `diagnostics` is recorded for a human and
 // only `Error`/`Serious error` are fatal.
 //
-// WHAT THIS FILE DOES NOT PROVE: the `ACME_BIN` *environment variable* boundary.
-// `ACME_BIN` and `ACME_AVAILABLE` are module-load `const`s in `acme-gate.ts`, so
-// only a child process can move them; that observation belongs to the
-// mandatory-red harness in a later plan of this phase, not here. The `acmeBin`
-// option is an in-process seam, deliberately NOT a second way to reach a real
-// assembler.
+// THE `ACME_BIN` *ENVIRONMENT VARIABLE* BOUNDARY IS PROVED HERE TOO, AND ONLY
+// IN A CHILD PROCESS. `ACME_BIN` and `ACME_AVAILABLE` are module-load `const`s
+// in `acme-gate.ts`: by the time any test body in THIS process runs, the probe
+// has already happened, so assigning `process.env.ACME_BIN` here cannot affect
+// it. MANDATORY RED 1 (plan 30-02) therefore spawns `process.execPath --test`
+// over a generated probe with the environment overridden -- and it spawns the
+// paired control direction too, because a non-zero exit on its own cannot tell
+// "the gate fired" from "the harness broke". The `acmeBin` option remains an
+// in-process seam, deliberately NOT a second way to reach a real assembler, and
+// deliberately NOT a substitute for this child-process observation.
 //
-// COST, STATED RATHER THAN SMUGGLED: two child processes per suite run -- one
-// `/bin/true`, and one REAL ACME assemble in the tracer -- plus one spawn that
-// fails before exec, together well under a second. On top of that sits
-// `acme-gate.ts`'s own module-load availability probe, which is paid once per
-// node process and shared with every other ACME-gated file, not billed again
-// here.
+// COST, STATED RATHER THAN SMUGGLED: four child processes per suite run -- one
+// `/bin/true`, one REAL ACME assemble in the tracer, and the two `node --test`
+// children of the MANDATORY RED 1 harness below (its failing direction is
+// MEMOISED, so several assertions share one spawn) -- plus one spawn that fails
+// before exec. The two `node --test` children dominate: roughly a second each,
+// because each pays a fresh Node start plus `acme-gate.ts`'s module-load probe
+// of a binary that is not there. On top of that sits this process's own
+// `acme-gate.ts` probe, paid once per node process and shared with every other
+// ACME-gated file, not billed again here.
 //
 // This file is deliberately never added to `MANUAL_ONLY_TESTS`: `test-gate.mjs`'s
 // `automatedTestFiles()` auto-discovers every on-disk `*.test.*`, and
 // `test-gate.test.ts`'s drift guard fails the build if a file escapes both sets.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeOutcome } from "./acme-verify.ts";
+import {
+  ACME_VERIFY_ARGV_FLAGS,
+  classifySpawn,
+  missingAssemblerIsNeverAPass,
+  verifyAcmeAssembles,
+  type AcmeOutcome,
+  type SpawnClassifier,
+} from "./acme-verify.ts";
 import { exportAsm } from "./anno-export-asm.ts";
 import { openStore, closeStore, setDataType, setLabel } from "./anno-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
+const GATE_MODULE_PATH = join(HERE, "acme-gate.ts");
 const SKILL_DRIVER_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.mjs");
 
 /** Computed exactly ONCE, by the shared `acme-gate.ts` seam. Every
@@ -199,6 +215,237 @@ test("AcmeOutcome has exactly three members (proved by the exhaustive switch abo
     "`skipped` and `ok` must not describe the same thing -- a skipped assembler is not a pass on any surface"
   );
   assert.equal(SKIP_REASON === false || typeof SKIP_REASON === "string", true);
+});
+
+// ---------------------------------------------------------------------------
+// MANDATORY RED 1 (plan 30-02): A MISSING ASSEMBLER IS NEVER A PASS.
+//
+// The ROADMAP records the founding false pass in one sentence: a verification
+// route ran, exited zero and printed an aggregate line reading as a full pass
+// while the one assembler the project cares about never ran at all. This
+// section is where that refusal stops being a design statement and becomes an
+// observation, in BOTH of the two ways it has to be made.
+//
+// IN PROCESS, the property itself: `missingAssemblerIsNeverAPass()` is the ONE
+// predicate, and it is driven twice -- once with the real `classifySpawn` and
+// once with a locally-defined classifier implementing the historical
+// truthiness-of-exit-status rule. The second direction is what proves the guard
+// is CAPABLE of biting; without it, a predicate that answered `true` for every
+// input would look identical to a working one.
+//
+// IN A CHILD PROCESS, the environment-variable boundary: `ACME_BIN` and
+// `ACME_AVAILABLE` are module-load `const`s, so no in-process assignment can
+// move them, and the FAIL direction is paired with a control run that must exit
+// ZERO.
+// ---------------------------------------------------------------------------
+
+/**
+ * A DELIBERATE PLANTED VIOLATION -- the historical rule, in its own words: it
+ * decides availability from the TRUTHINESS OF THE EXIT STATUS rather than from
+ * the presence of a spawn error.
+ *
+ * The ROADMAP's note on the recorded false pass, quoted: a verification route
+ * "ran, exited zero, and printed an aggregate summary line that read as a full
+ * pass -- while the one assembler the project actually cares about never ran at
+ * all". Measured (RESEARCH.md Pitfall 2), a spawn that never ran carries NO
+ * exit status, so `!r.status` is `true` for it and this classifier calls it
+ * `"ran"` -- the hole, exactly as recorded. It is not a constant function: for
+ * a real non-zero exit it answers `"unavailable"`, which is wrong in the other
+ * direction and is why the shortcut was never salvageable.
+ */
+const SHORTCUT_CLASSIFIER: SpawnClassifier = (r) => (!r.status ? "ran" : "unavailable");
+
+test("MANDATORY RED 1 (in process): a missing assembler is never a pass, and the same predicate driven with the historical exit-status shortcut says it is", () => {
+  assert.equal(
+    missingAssemblerIsNeverAPass(classifySpawn),
+    true,
+    "the real classifier must refuse ALL THREE measured missing-binary spawn shapes (a bare nonexistent name, an " +
+      "absolute nonexistent path, and a present-but-non-executable file). Any one of them classified as `ran` is a " +
+      "missing assembler reaching the byte-diff rules with no bytes to diff"
+  );
+  assert.equal(
+    missingAssemblerIsNeverAPass(SHORTCUT_CLASSIFIER),
+    false,
+    "the HISTORICAL truthiness-of-exit-status classifier must be REPORTED by this same predicate -- a control that " +
+      "only ever refuses is indistinguishable from one that works, and a guard whose control cannot fail is not a " +
+      "guard. Both directions call missingAssemblerIsNeverAPass(), so there is exactly one definition of the property"
+  );
+});
+
+test("classifySpawn maps the three measured shapes: no exit status is `unavailable`, exit 0 and exit 1 are both `ran`", () => {
+  const enoent = new Error("spawnSync acme-does-not-exist ENOENT") as NodeJS.ErrnoException;
+  enoent.code = "ENOENT";
+  assert.equal(classifySpawn({ error: enoent, status: null }), "unavailable");
+  assert.equal(classifySpawn({ status: 0 }), "ran");
+  assert.equal(
+    classifySpawn({ status: 1 }),
+    "ran",
+    "a NON-ZERO exit is a process that really ran and made a real statement about the source. Folding it into " +
+      "`unavailable` would hide a genuine assembly failure behind the outcome that means `no claim exists`"
+  );
+});
+
+/** The gate's own refusal wording, read out of `acme-gate.ts` at run time
+ * rather than retyped here. Retyping it is how the child-process observation
+ * below ends up passing for the wrong reason: a typo'd import path, a syntax
+ * error and a missing probe file all exit non-zero too, and only matching the
+ * gate's REAL message distinguishes "the gate fired" from "the harness broke". */
+const GATE_REFUSAL_PREFIX = "VICE_REQUIRE_ACME is set but no real ACME was found at";
+
+test("non-vacuity guard: the refusal wording the child output is matched against is really present in acme-gate.ts", () => {
+  assert.ok(
+    readFileSync(GATE_MODULE_PATH, "utf8").includes(GATE_REFUSAL_PREFIX),
+    `acme-gate.ts no longer contains the refusal wording this file matches on (${JSON.stringify(GATE_REFUSAL_PREFIX)}) ` +
+      `-- update both together, never only one, or the child-process red below silently starts passing on any non-zero exit`
+  );
+});
+
+interface ChildRun {
+  status: number | null;
+  output: string;
+}
+
+/**
+ * Writes a generated probe into a FRESH temp directory, points the child's
+ * `ACME_BIN` at a path inside it that is never created, and runs the probe
+ * under a child `node --test`.
+ *
+ * WHY A CHILD AT ALL: `ACME_BIN` is a module-load `const` in `acme-gate.ts`, so
+ * only a genuinely new module load can see an overridden environment. The
+ * in-process `acmeBin` seam above proves the OUTCOME is reachable; only this
+ * proves the ENV-VAR boundary.
+ *
+ * WHY THE PROBE LIVES UNDER `tmpdir()` AND NOT NEXT TO THIS FILE: a stray
+ * `*.test.*` in the module directory would be collected by
+ * `node --test '*.test.*'` on the next run and would break
+ * `test-gate.test.ts`'s "every on-disk test file lands in exactly one of the
+ * automated/manual sets" assertion. The directory is removed in a `finally`, on
+ * the FAILURE path too -- this host's `/tmp` is RAM-backed, so a leaked probe
+ * directory is leaked memory.
+ *
+ * `requireAcme: false` DELETES `VICE_REQUIRE_ACME` rather than blanking it: an
+ * empty string is still a set variable to the gate, whose check is a plain
+ * truthiness test on `process.env.VICE_REQUIRE_ACME`, so blanking it would
+ * assert the wrong thing while looking right.
+ */
+function runVerifyProbe(requireAcme: boolean): ChildRun {
+  const dir = mkdtempSync(join(tmpdir(), "acme-verify-red-"));
+  try {
+    const probePath = join(dir, "probe.test.mjs");
+    const missingBinary = join(dir, "definitely-not-acme");
+    writeFileSync(
+      probePath,
+      `import { test } from "node:test";\n` +
+        `import assert from "node:assert/strict";\n` +
+        `import { assertAcmeRequiredIfEnvSet } from ${JSON.stringify(GATE_MODULE_PATH)};\n` +
+        `import { verifyAcmeAssembles } from ${JSON.stringify(VERIFY_MODULE_PATH)};\n` +
+        `test("ACME availability gate, under a deliberately nonexistent ACME_BIN", () => {\n` +
+        `  assertAcmeRequiredIfEnvSet(assert);\n` +
+        `});\n` +
+        // The probe passes NO `acmeBin`. The whole point is the module-load
+        // constant `ACME_BIN`, which only this child can move. It DOES pass
+        // `expectedSegments` and a matching `expectedBytes`, because
+        // `expectedSegments` is REQUIRED (D30-06) and a probe that could not
+        // compile would exit non-zero for the wrong reason and read as the
+        // gate firing.
+        `test("verifyAcmeAssembles() with a nonexistent ACME_BIN is never ok", () => {\n` +
+        `  const verdict = verifyAcmeAssembles({\n` +
+        `    source: ${JSON.stringify(TRIVIAL_SOURCE)},\n` +
+        `    expectedBytes: Uint8Array.from([0xa9, 0x00, 0x60]),\n` +
+        `    expectedSegments: [{ start: 0x0801, endExclusive: 0x0804 }],\n` +
+        `  });\n` +
+        `  assert.notEqual(verdict.outcome, "ok", "outcome=" + verdict.outcome + " reason=" + verdict.reason);\n` +
+        `});\n`,
+      "utf8"
+    );
+
+    const env: Record<string, string | undefined> = { ...process.env, ACME_BIN: missingBinary };
+    if (requireAcme) env.VICE_REQUIRE_ACME = "1";
+    else delete env.VICE_REQUIRE_ACME;
+    // MEASURED TRAP, not a precaution: Node sets `NODE_TEST_CONTEXT` in every
+    // process it runs a test file in, and a child `node --test` that inherits
+    // it refuses to run ANY file at all -- it prints "run() is being called
+    // recursively within a test file. skipping running files" and exits ZERO.
+    // Inherited, the FAIL direction below would report a zero exit on a
+    // perfectly working gate, reading as "the hard FAIL degraded into a skip",
+    // and the control direction would pass vacuously. Both directions would
+    // then be measuring the harness rather than the gate. Delete it.
+    delete env.NODE_TEST_CONTEXT;
+
+    // `process.execPath`, never a bare binary name (WR-20): the child must be
+    // THIS Node, whose version supports type-stripping the `.ts` modules the
+    // probe imports by absolute path.
+    const r = spawnSync(process.execPath, ["--test", probePath], {
+      encoding: "utf8",
+      timeout: 30_000,
+      env,
+    });
+    return { status: r.status, output: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The ONE `VICE_REQUIRE_ACME=1` probe run, memoised (WR-11, the discipline
+ * `acme-gate.test.ts` records at its own `failRun()`). Two tests below assert
+ * two properties of the SAME failing child run against one fixed input, so a
+ * second spawn would add a full Node start plus a `mkdtemp`/`rm` cycle on a
+ * RAM-backed `/tmp` and no observation. Lazily computed rather than called at
+ * the top level, so running a filtered subset of this file does not spawn a
+ * child it never asserts on. */
+let redRunCache: ChildRun | undefined;
+function redRun(): ChildRun {
+  if (redRunCache === undefined) redRunCache = runVerifyProbe(true);
+  return redRunCache;
+}
+
+test("MANDATORY RED 1 (child process): VICE_REQUIRE_ACME=1 with a nonexistent ACME_BIN makes the child FAIL, never skip", () => {
+  const r = redRun();
+  assert.notEqual(
+    r.status,
+    0,
+    `expected a NON-ZERO exit. A zero exit means the hard-FAIL gate degraded into a silent SKIP with a missing ` +
+      `assembler -- the exact shape of the recorded false pass, and the reason this red is mandatory. Child output:\n${r.output}`
+  );
+});
+
+test("MANDATORY RED 1 (child process): that same failing run names the gate's OWN refusal wording, so the non-zero exit is the assertion and not a broken import", () => {
+  const r = redRun();
+  assert.ok(
+    r.output.includes(GATE_REFUSAL_PREFIX),
+    `the child exited non-zero but its output never names the gate's refusal wording ` +
+      `(${JSON.stringify(GATE_REFUSAL_PREFIX)}) -- a module-resolution error, a syntax error or a missing probe file ` +
+      `also exit non-zero. Child output:\n${r.output}`
+  );
+});
+
+test("MANDATORY RED 1, paired direction: the identical child run with VICE_REQUIRE_ACME ABSENT exits zero", () => {
+  const r = runVerifyProbe(false);
+  assert.equal(
+    r.status,
+    0,
+    `expected a ZERO exit with VICE_REQUIRE_ACME unset and the same nonexistent ACME_BIN -- the probe's second test ` +
+      `(outcome is never "ok") must still hold, so this run proves the harness itself works. A non-zero exit here ` +
+      `means the FAIL observed above came from the harness rather than from the gate, and NEITHER direction proves ` +
+      `anything. Child output:\n${r.output}`
+  );
+});
+
+test("a verify driven with the missing-binary spawn shape is `skipped`, and `skipped` is never `ok`", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acme-verify-missing-"));
+  try {
+    const missingBinary = join(dir, "definitely-not-acme");
+    const verdict = verifyAcmeAssembles({
+      source: TRIVIAL_SOURCE,
+      expectedBytes: TRIVIAL_BYTES,
+      expectedSegments: TRIVIAL_SEGMENTS,
+      acmeBin: missingBinary,
+    });
+    assert.equal(verdict.outcome, "skipped", `reason: ${verdict.reason}`);
+    assert.notEqual(verdict.outcome, "ok", "a skipped assembler must never be presented as a pass on any surface");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
