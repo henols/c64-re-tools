@@ -436,13 +436,18 @@ const EXEMPTION_CLASSES = [
       "the census's own rejected-design record and the WR-13 defect reproduction. `:9` records the route this " +
       "module REFUSES -- asking the analyser what it classified as `Code` is circular, provably so at upstream's " +
       "`analyzer.rs:445-540` -- which is the reason the module has the shape it has and stays true once the " +
-      "rejected producer is gone. `:1752` and the test's `:1549` are one verbatim incident reproduction from " +
+      "rejected producer is gone. `:1753` and the test's `:1557` are one verbatim incident reproduction from " +
       "19-REVIEW.md; renaming the producer inside a past defect's reproduced inputs falsifies the record. " +
       "LINE-SCOPED because anno-coverage.ts is the one SPLIT file in this phase: its other two mentions describe " +
-      "a live route and are temporarily allow-listed to 29-10 instead. Opened by plan 29-05.",
+      "a live route and are temporarily allow-listed to 29-10 instead. Opened by plan 29-05. " +
+      "PINS RE-MEASURED 2026-08-30 (plan 29-16): 1752 -> 1753 and the test's 1549 -> 1557, both pure DRIFT from " +
+      "that plan's own edits above them -- the `node:path` import the coverage loader's extension dispatch needs, " +
+      "and the test file's new imports for the CR-05 cases. The COUNT is unchanged at two and one, which is what " +
+      "makes this a re-pin rather than a reintroduction; the gate's own message states the rule this follows -- " +
+      "a mention that moved moves its pin in the same commit, a mention that multiplied does not.",
     atLines: {
-      "src/mcp/vice/anno-coverage.ts": [9, 1752],
-      "src/mcp/vice/anno-coverage.test.ts": [1549],
+      "src/mcp/vice/anno-coverage.ts": [9, 1753],
+      "src/mcp/vice/anno-coverage.test.ts": [1557],
     },
   },
   {
