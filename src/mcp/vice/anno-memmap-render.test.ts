@@ -39,6 +39,7 @@ import {
 } from "./anno-memmap-render.ts";
 import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
+import { AnnoCommentError } from "./anno-types.ts";
 import { formatConfidenceComment, CONFIDENCE_GRADES } from "./anno-confidence.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -764,6 +765,31 @@ test("an address whose store comment carries [unknown] appears under Open questi
   );
 });
 
+/**
+ * Writes one `line` comment, INCLUDING one that carries an embedded line break.
+ *
+ * `assertCommentText()` refuses an embedded line break at the store's write
+ * boundary (Phase 30 plan 30-03), so `setComment()` can no longer put one on
+ * disk. This renderer's cell escaping is precisely the defence-in-depth for a
+ * store written BEFORE that refusal existed -- so the fixture reproduces that
+ * state directly rather than the escaping test being deleted along with the
+ * only way to reach it. The public verb is still used for every other column,
+ * and for the text itself whenever the text is one the store accepts.
+ */
+function writeCommentIncludingLegacyLineBreaks(handle: AnnoStoreHandle, address: number, text: string): void {
+  try {
+    setComment(handle, { address, commentType: "line", text });
+    return;
+  } catch (err) {
+    if (!(err instanceof AnnoCommentError) || err.reason !== "embedded newline") throw err;
+  }
+  // The row is created through the public verb with the line breaks collapsed,
+  // so every other column is validated, and only the text column is then put
+  // back to what a pre-refusal store would hold.
+  setComment(handle, { address, commentType: "line", text: text.replace(/[\n\r\u2028\u2029]/g, " ") });
+  handle.db.prepare("update anno_comment set text = ? where address = ? and comment_type = ?").run(text, address, "line");
+}
+
 /** Renders a one-range store whose single line comment carries `grade` and
  * `evidence`, and returns the Markdown. The escaping test below compares two
  * of these against each other. */
@@ -773,7 +799,7 @@ async function renderSingleCommentedBlock(prefix: string, grade: string, evidenc
       prefix,
       fill: (handle) => {
         setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
-        setComment(handle, { address: 0x0810, commentType: "line", text: formatConfidenceComment(grade, evidence) });
+        writeCommentIncludingLegacyLineBreaks(handle, 0x0810, formatConfidenceComment(grade, evidence));
       },
     },
     async ({ storePath, provenancePath }) => (await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE })).markdown,

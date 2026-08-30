@@ -784,7 +784,8 @@ export class AnnoLabelError extends AnnoStoreError {
 }
 
 export interface AnnoCommentErrorOptions {
-  /** Which rule fired: the byte bound, or the semicolon prefix. */
+  /** Which rule fired: not a string, an embedded newline, the semicolon
+   * prefix, or the byte bound. */
   reason?: string;
   /** The text's UTF-8 byte length, so a caller can see how far over it was
    * rather than only that it was over. */
@@ -792,8 +793,9 @@ export interface AnnoCommentErrorOptions {
 }
 
 /**
- * Comment (or description) text is refused: over `MAX_COMMENT_BYTES` in UTF-8
- * bytes, or carrying the `';'` prefix the schema instructs callers to omit.
+ * Comment (or description) text is refused: not a string, carrying an embedded
+ * line break, over `MAX_COMMENT_BYTES` in UTF-8 bytes, or carrying the `';'`
+ * prefix the schema instructs callers to omit.
  * A separate class from `AnnoLabelError` because neither of its fields fits --
  * comment text is not an identifier and has no address to collide at.
  */
@@ -1378,11 +1380,44 @@ function utf8ByteLength(text: string): number {
 }
 
 /**
- * Refuses comment text that is over `MAX_COMMENT_BYTES` UTF-8 bytes, or that
- * carries the `';'` prefix the schema tells callers to omit ("Do not include
- * the ';' prefix", `r2000-tools.ts:269`). Returns the text UNCHANGED -- an
- * over-long comment is REFUSED, never truncated, because a truncation drops
- * the end of a human's sentence and reports success.
+ * Every line-break character a comment may not contain: LF, CR, and the two
+ * Unicode line separators U+2028 / U+2029.
+ *
+ * LF and CR are the ones that genuinely end a line in generated assembler
+ * source. U+2028 and U+2029 are refused alongside them because some editors
+ * emit them where a human meant a line break, and a field documented as
+ * single-line should not silently carry one on any of the four spellings -- a
+ * check that catches three of four is a check somebody will trip over exactly
+ * once, a long way from here.
+ */
+const LINE_BREAK_RE = /[\n\r\u2028\u2029]/;
+
+/**
+ * Refuses comment (or description) text. FOUR checks, in the order they run:
+ *
+ *   1. Not a string at all.
+ *   2. An embedded LINE BREAK -- `\n`, `\r`, U+2028 or U+2029, anywhere in the
+ *      text. Named before a length is, because "your comment has a line break
+ *      in it" is actionable and "your comment is too long" would not be.
+ *   3. The `';'` prefix the schema tells callers to omit ("Do not include the
+ *      ';' prefix", `r2000-tools.ts:269`) -- unless `allowLeadingSemicolon`.
+ *   4. Over `MAX_COMMENT_BYTES` UTF-8 bytes.
+ *
+ * Returns the text UNCHANGED on acceptance. Every refusal is a REFUSAL and
+ * never a repair: an over-long comment is not truncated, because a truncation
+ * drops the end of a human's sentence and reports success, and a line break is
+ * not stripped, because stripping MERGES two things somebody wrote on separate
+ * lines into one text -- the same silent, permanent loss trap 7 records for
+ * space-to-underscore label sanitisation.
+ *
+ * WHY A LINE BREAK IS A REFUSAL AND NOT A COSMETIC ISSUE: the store holds the
+ * comment's WORDS and the exporter adds the `';'` prefix. A stored line break
+ * therefore puts everything after it into the generated ACME source at column
+ * zero -- as assembler INPUT, not as a comment.
+ *
+ * The line-break rule applies UNCONDITIONALLY, `allowLeadingSemicolon`
+ * included. Both call sites are single-line text fields; that flag governs the
+ * semicolon rule and nothing else.
  *
  * `allowLeadingSemicolon` exists for the one neighbouring text field with the
  * same byte bound and no semicolon rule: a project enum's free-text
@@ -1392,6 +1427,14 @@ export function assertCommentText(text: unknown, opts: { what?: string; allowLea
   const what = opts.what ?? "comment";
   if (typeof text !== "string") {
     throw new AnnoCommentError(`${what} text ${JSON.stringify(text)} is not a string`, { reason: "not a string" });
+  }
+  if (LINE_BREAK_RE.test(text)) {
+    throw new AnnoCommentError(
+      `${what} text contains an embedded line break -- the store holds the comment's words and the exporter adds the ';' prefix, so a stored ` +
+        `newline would put everything after it into the generated ACME source at column zero, as assembler input rather than as a comment. ` +
+        `It is REFUSED rather than stripped, because stripping merges two lines somebody wrote separately into one text and reports success`,
+      { reason: "embedded newline" },
+    );
   }
   if (opts.allowLeadingSemicolon !== true && /^\s*;/.test(text)) {
     throw new AnnoCommentError(

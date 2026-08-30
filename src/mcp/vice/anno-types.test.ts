@@ -559,6 +559,62 @@ test("assertCommentText measures its bound in UTF-8 BYTES, not code units, and r
   );
 });
 
+test("assertCommentText REFUSES an embedded line break by name -- every separator, and every position in the string", () => {
+  // The store holds the comment's WORDS and the exporter adds the `;` prefix.
+  // A stored line break therefore puts everything after it into the generated
+  // ACME source at column zero, as assembler INPUT rather than as a comment.
+  const cases: readonly (readonly [string, string])[] = [
+    ["a newline in the middle", "raster split\nlda #$00"],
+    ["a newline as the FINAL character", "raster split\n"],
+    ["a newline as the FIRST character", "\nlda #$00"],
+    ["a carriage return", "raster split\rlda #$00"],
+    ["a CRLF pair", "raster split\r\nlda #$00"],
+    // Written as escapes, never as the raw characters: a bare U+2028 in this
+    // file would be invisible in every editor and in every reviewer's diff.
+    ["U+2028 LINE SEPARATOR", "raster split\u2028lda #$00"],
+    ["U+2029 PARAGRAPH SEPARATOR", "raster split\u2029lda #$00"],
+  ];
+
+  for (const [what, text] of cases) {
+    assert.throws(
+      () => assertCommentText(text),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoCommentError, `${what}: expected AnnoCommentError, got ${String(e)}`);
+        assert.equal(e.reason, "embedded newline", `${what}: the refusal must name the rule that fired`);
+        assert.match(
+          e.message,
+          /line break|newline/i,
+          `${what}: the message must name the mechanism, not merely say the text was refused -- got ${JSON.stringify(e.message)}`,
+        );
+        return true;
+      },
+      `${what} must be REFUSED, never stripped: stripping merges two comments a human wrote separately into one text, silently and permanently`,
+    );
+  }
+});
+
+test("the embedded-newline refusal applies with allowLeadingSemicolon: true too -- that flag governs the semicolon rule only", () => {
+  assert.throws(
+    () => assertCommentText("a description\nwith a line break", { allowLeadingSemicolon: true }),
+    (e: unknown) => {
+      assert.ok(e instanceof AnnoCommentError);
+      assert.equal(e.reason, "embedded newline", "both call sites are SINGLE-LINE text fields; the opt-out is about the ';' prefix, not about line breaks");
+      return true;
+    },
+  );
+});
+
+test("text with no line break is returned UNCHANGED -- including one byte under the bound, so the new check cannot be what makes the old assertions pass", () => {
+  assert.equal(assertCommentText("raster split at line $64"), "raster split at line $64");
+  assert.equal(assertCommentText("tabs\tand spaces are not line breaks"), "tabs\tand spaces are not line breaks");
+  const underBound = "x".repeat(MAX_COMMENT_BYTES - 1);
+  assert.equal(assertCommentText(underBound), underBound, "one byte under the bound with no line break is accepted and returned unchanged");
+  assert.equal(
+    assertCommentText("; a description may still start with one", { allowLeadingSemicolon: true }),
+    "; a description may still start with one",
+  );
+});
+
 test("assertEnumName and parseVariantKey complete the validator set: the identifier rule, the four numeric-string key forms, and a refusal for anything else", () => {
   for (const legal of ["vic_registers", "_mode", "Sprite0"]) {
     assert.equal(assertEnumName(legal), legal, `${legal} must be accepted and returned unchanged`);
