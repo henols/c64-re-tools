@@ -4,18 +4,18 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 29
 current_phase_name: The MCP Surface
-status: complete
-stopped_at: Completed 29-11-PLAN.md (phase 29 complete, 12/12)
-last_updated: "2026-08-30T08:12:41.562Z"
+status: gaps_found
+stopped_at: Phase 29 verified at 4/6 — gaps_found; awaiting gap-closure planning
+last_updated: "2026-08-30T08:51:37.835Z"
 last_activity: 2026-08-30
-last_activity_desc: "Phase 29 complete, 12/12 plans. 29-10 deleted the regenerator2000 integration (14 files, 8221 lines) and was merged by hand because cleanup-wave refuses deletion branches; 29-11 closed the removal gate's temporary allow-list and asserted its emptiness, recording CUT-01 Partial and REPOINT-03 Pending rather than inventing evidence. Phases 30-32 remain."
-state_head: 2732ff112082da004c3c40d84b1355bd2b7e02bf
+last_activity_desc: "Phase 29 executed 12/12 and VERIFIED at 4/6 — gaps_found, so the phase is NOT complete. Code review found 6 reproduced blockers; MCP-04, REPOINT-01 and REPOINT-02 were reverted out of Complete; CUT-01 stays Partial and its three sizing figures are now measured and falsified. 29-10 deleted the regenerator2000 integration (14 files, 8221 lines) and was merged by hand because cleanup-wave refuses deletion branches; 29-11 closed the removal gate's temporary allow-list and asserted its emptiness, recording CUT-01 Partial and REPOINT-03 Pending rather than inventing evidence. Phases 30-32 remain."
+state_head: e87650e622cd5dc78a94f794df9c2df2dfe6c908
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 2
   total_plans: 40
   completed_plans: 40
-  percent: 50
+  percent: 33
 ---
 
 # Project State
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 29 (The MCP Surface) — COMPLETE
+Phase: 29 (The MCP Surface) — GAPS FOUND (4/6)
 Plan: 12 of 12
-Status: Complete — all twelve plans executed. The regenerator2000 integration is gone: 14 files and 8,221 lines deleted by 29-10, the removal gate's temporary allow-list closed and asserted empty by 29-11, and the permanent exemption set unchanged at 157 across 12 classes (nothing widened to force emptiness). Phases 30-32 remain in this milestone.
-Last activity: 2026-08-30 — Plans 29-10 and 29-11 complete. 29-10 deleted the deletion set exactly (14 files, nothing outside its declared `files_modified`) and read "keep the knowledge" as EXTRACTING the pure half of each retired route — `pairSearchRows()`, `planEnumsForPairing()`, `buildEnumGenerationReport()`, `validateLabelFileForImport()` — which is why `anno-enum-gen.test.ts` gained 8 tests that now drive real functions instead of reconstructing algorithms inline. Its branch was merged BY HAND: stock `worktree-safety.cjs` refuses any branch whose diff contains a deletion, unconditionally. 29-11 corrected the falsified roadmap criteria (the phase GOAL carried the same "nothing yet deleted" clause two lines above criterion 2, fixed in the same commit), moved the traceability rows, and closed the gate. It recorded CUT-01 as **Partial** rather than Complete because 29-10's own summary says the ~12.4k-line sizing claim was never measured, and left REPOINT-03 **Pending** because no verification pass has scored the ABS-02 chain — both judgements preserved here deliberately, and `phase.complete` was NOT run precisely because it would flip them. Orchestrator follow-ups: `vice-proxy.test.ts` repointed off the deleted `r2000-tools.ts` (typecheck was broken), its dead `r2000 --help` invocation pointed at the renamed `anno` subcommand, and one orphaned allow-list entry discharged. A CI narrowing to `test:automated` was attempted and REVERTED — `ci-guardrails` is a committed test asserting CI must keep the full `*.test.*` glob so BACK-05, the stdio proxy's only end-to-end wire proof, keeps running.
+Status: Gaps found — all twelve plans executed, but verification scored 4/6 and the phase is NOT complete. Five gaps, every one reproduced by executing shipped code: CR-01 (`anno_disassemble` answers an out-of-image address with `isError:false, instructions:0` and an end_address BELOW the start — the "plausible-looking zero" criterion 5 and MCP-04 explicitly forbid); CR-04/CR-05 (two shipped skill commands are dead in BOTH trees, and `routine-queue-walker`'s only measurement step has no correct spelling because its input format's producer was deleted this same phase — this falsifies criterion 2's "proven against the shipped copy" clause and blocks REPOINT-01/REPOINT-02); CR-02/CR-03 (`--out` escaped the workspace and destroyed a pre-existing file with no `--force`; `--provenance` echoed a foreign file's bytes back — three function headers assert the opposite, and `anno-confinement.test.ts` has 15 tests of the predicate and ZERO over its consumer set); CR-06 (nested `anno_batch_execute` unconditionally refused, with a message stating the opposite of the tool's own description); and CUT-01, measured for the first time by this verification pass — 26,023 lines pre-phase, 15,957 surviving, 10,066 net removed, so all three of the requirement's stated figures are falsified in the same direction. The phase's STRUCTURAL work is verified and well guarded: SC-1, SC-3 and SC-4 pass, the safety ordering is a fact of the commit DAG (`git merge-base --is-ancestor` confirms the gate commit and its biting observation both precede the deletion), the registering commit deletes nothing, and no `anno-*` module imports `hostpath.ts` at all. All twelve plans executed. The regenerator2000 integration is gone: 14 files and 8,221 lines deleted by 29-10, the removal gate's temporary allow-list closed and asserted empty by 29-11, and the permanent exemption set unchanged at 157 across 12 classes (nothing widened to force emptiness). Phases 30-32 remain in this milestone.
+Last activity: 2026-08-30 — Phase 29 tail gates run: code review (6 BLOCKER / 14 WARNING, every blocker reproduced against a throwaway store), regression gate (2676 tests, 2 failures both caused by the freshly-committed undispositioned REVIEW.md and both discharged when VERIFICATION.md named the finding ids — re-observed 7/7 and 44/44 green), and the phase verifier (4/6, gaps_found). `r2000-session.test.ts`'s 5 baseline failures left the set BY CONSTRUCTION — 29-10 deleted the file — not by repair. Earlier: plans 29-10 and 29-11 complete. 29-10 deleted the deletion set exactly (14 files, nothing outside its declared `files_modified`) and read "keep the knowledge" as EXTRACTING the pure half of each retired route — `pairSearchRows()`, `planEnumsForPairing()`, `buildEnumGenerationReport()`, `validateLabelFileForImport()` — which is why `anno-enum-gen.test.ts` gained 8 tests that now drive real functions instead of reconstructing algorithms inline. Its branch was merged BY HAND: stock `worktree-safety.cjs` refuses any branch whose diff contains a deletion, unconditionally. 29-11 corrected the falsified roadmap criteria (the phase GOAL carried the same "nothing yet deleted" clause two lines above criterion 2, fixed in the same commit), moved the traceability rows, and closed the gate. It recorded CUT-01 as **Partial** rather than Complete because 29-10's own summary says the ~12.4k-line sizing claim was never measured, and left REPOINT-03 **Pending** because no verification pass has scored the ABS-02 chain — both judgements preserved here deliberately, and `phase.complete` was NOT run precisely because it would flip them. Orchestrator follow-ups: `vice-proxy.test.ts` repointed off the deleted `r2000-tools.ts` (typecheck was broken), its dead `r2000 --help` invocation pointed at the renamed `anno` subcommand, and one orphaned allow-list entry discharged. A CI narrowing to `test:automated` was attempted and REVERTED — `ci-guardrails` is a committed test asserting CI must keep the full `*.test.*` glob so BACK-05, the stdio proxy's only end-to-end wire proof, keeps running.
 
 ## Performance Metrics
 
