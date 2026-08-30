@@ -1291,6 +1291,143 @@ test("a batch names its store ONCE and every inner call inherits it -- an inner 
   );
 });
 
+// ---------------------------------------------------------------------------
+// CR-06 / MCP-04: THE TWO PHASES MUST AGREE ABOUT WHAT AN INNER PAYLOAD IS.
+//
+// Phase-one validation used to recurse on a nested entry's RAW arguments while
+// phase-two execution recursed on its EFFECTIVE ones, so the documented
+// top-level store inheritance was refused WHOLE at every depth -- with a
+// message stating there is no ambient store to inherit, which is the opposite
+// of what the tool's own description promises. `ANNO_MAX_BATCH_DEPTH`
+// therefore governed a shape unreachable by the documented route: a cap with a
+// negative control and no reachable POSITIVE one.
+//
+// Both phases now obtain an inner call's effective arguments from
+// `batchArgumentsFor()`, and the cases below pin the positive control, the
+// negative control, the override discipline and the recursive allow-list --
+// the last two so the positive control is not paid for by weakening them.
+// ---------------------------------------------------------------------------
+
+test("CR-06 / MCP-04 positive control: a depth-1 nested batch relying on the DOCUMENTED store inheritance validates AND executes", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      // The inner batch names NO store -- exactly what the description tells a
+      // caller to write: "the store is named ONCE at the top level and every
+      // inner call inherits it".
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          {
+            name: "anno_batch_execute",
+            arguments: { calls: [{ name: "anno_set_label_name", arguments: { address: "$c000", name: "nested_label" } }] },
+          },
+        ],
+      });
+      assert.equal(result.isError, false, `the documented route must not be refused whole -- ${result.content[0]!.text}`);
+      const batchBody = (await body(result)) as { results: { status: string; result?: Record<string, unknown> }[]; failed: number };
+      assert.equal(batchBody.failed, 0);
+      assert.equal(batchBody.results[0]!.status, "success", "the inner batch must have EXECUTED, not merely validated");
+
+      // And the write really landed, in the store named once at the top.
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, ["nested_label"], "inheritance must reach the LEAF call, two levels down");
+    },
+  );
+});
+
+test("CR-06 negative control: a chain past the cap is still refused BY NAME, and nothing executes", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      // Depth is DERIVED from the cap, never hard-coded: raising the cap must
+      // not silently turn this negative control into a passing positive one.
+      // The top-level payload is depth 0, so `ANNO_MAX_BATCH_DEPTH + 1` nested
+      // payloads put the innermost at depth ANNO_MAX_BATCH_DEPTH + 1.
+      function nest(remaining: number): Record<string, unknown> {
+        if (remaining === 0) {
+          return { calls: [{ name: "anno_set_label_name", arguments: { address: "$c000", name: "would_have_landed" } }] };
+        }
+        return { calls: [{ name: "anno_batch_execute", arguments: nest(remaining - 1) }] };
+      }
+      const refused = await runAnnoTool("anno_batch_execute", { store, ...nest(ANNO_MAX_BATCH_DEPTH + 1) });
+
+      assert.equal(refused.isError, true, "past the cap the payload is refused, not walked");
+      assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
+      assert.match(refused.content[0]!.text, new RegExp(`deeper than ${ANNO_MAX_BATCH_DEPTH} levels`), "the refusal must NAME the cap's value");
+      assert.match(refused.content[0]!.text, /refused BY NAME rather than walked/);
+
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, [], "nothing may execute from a batch refused whole");
+    },
+  );
+});
+
+test("CR-06: an inner store is overridden by the batch's own in BOTH phases, at depth", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const elsewhere = join(dirname(ws), "elsewhere.annostore");
+      // BOTH the nested batch AND its leaf call name a different store. If
+      // phase one validated against `elsewhere` while phase two executed
+      // against `store` (or the reverse), the two phases would be targeting
+      // different stores -- which is the window propagating effective
+      // arguments closes.
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          {
+            name: "anno_batch_execute",
+            arguments: {
+              store: elsewhere,
+              calls: [{ name: "anno_set_label_name", arguments: { store: elsewhere, address: "$c000", name: "inherited_at_depth" } }],
+            },
+          },
+        ],
+      });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const batchBody = (await body(result)) as { results: { status: string }[] };
+      assert.equal(batchBody.results[0]!.status, "success");
+
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, ["inherited_at_depth"], "the write must land in the batch's OWN store, never the one an inner call named");
+      assert.equal(existsSync(elsewhere), false, "the store the inner calls named was never even reached");
+    },
+  );
+});
+
+test("CR-06: the recursive allow-list still bites -- an uncurated name TWO levels down refuses the WHOLE batch by index", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const refused = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          { name: "anno_set_label_name", arguments: { address: "$c100", name: "would_have_landed" } },
+          {
+            name: "anno_batch_execute",
+            arguments: {
+              calls: [{ name: "anno_batch_execute", arguments: { calls: [{ name: "anno_delete_everything", arguments: {} }] } }],
+            },
+          },
+        ],
+      });
+      assert.equal(refused.isError, true, "the positive control above must not have been paid for by weakening this");
+      assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
+      assert.match(refused.content[0]!.text, /anno_delete_everything/);
+      assert.match(refused.content[0]!.text, /refused WHOLE/);
+      assert.match(refused.content[0]!.text, /calls\[0\]/, "the refusal names the index of the offending inner call");
+
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, [], "the good FIRST call must not have landed -- refusal happens before anything is opened");
+    },
+  );
+});
+
 test("a batch of derived reads inherits the image too, and the whole batch shares ONE open/close pair", async () => {
   await withStore(
     () => {},
