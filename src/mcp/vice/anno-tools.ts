@@ -1713,16 +1713,25 @@ function dispatchApplyEnumUsage(handle: AnnoStoreHandle, args: unknown): unknown
  * leaving the caller to infer durability from an empty success. `curated` in
  * the manifest means a route is required; returning `{available:false}` was
  * rejected, because a permanent refusal for a curated disposition is what the
- * `omit` disposition is for and the manifest does not say `omit`. */
+ * `omit` disposition is for and the manifest does not say `omit`.
+ *
+ * THE REVISION IS READ EXACTLY ONCE, into a `const`, and that single value
+ * feeds both the returned field and the note's prose. This is the one verb
+ * whose output a caller is TOLD to use as a `base_revision` compare-and-swap
+ * guard, so a field and a prose that could name different revisions is a guard
+ * built on a number its own note contradicts -- and a guard nobody can trust is
+ * worse than no guard, because it is acted on (WR-10). Two reads agreeing is an
+ * accident of when they ran; one read agreeing with itself is a property. */
 function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
+  const revision = currentRevision(handle);
   return {
     store: handle.path,
-    revision: currentRevision(handle),
+    revision,
     wrote: false,
     note:
       "This verb performed NO write. Every mutating verb on this surface commits and fsyncs its own write before it " +
       "returns, so the store was already durable at revision " +
-      String(currentRevision(handle)) +
+      String(revision) +
       " when this call arrived and there was nothing for an explicit save to flush. The revision is reported so it can " +
       "be used as a base_revision compare-and-swap guard on a later write.",
   };
