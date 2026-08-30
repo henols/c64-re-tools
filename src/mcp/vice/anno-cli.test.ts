@@ -949,8 +949,13 @@ test("structural (WR-09): every writeFileSync( in anno-cli.ts is inside a try bl
     contexts.some((c) => c.includes("outPath, rendered.markdown")),
     `expected to see cmdRenderMemmap()'s own write site among: ${JSON.stringify(contexts)}`,
   );
+  // `outPath`, not `out`: CR-02 confined `coverage`'s output argument through
+  // `storePathWithinWorkspace()`, and the write now takes the RETURNED
+  // realpath rather than the raw caller string. Updating this control to the
+  // confined name is deliberate -- pinning `out,` here would keep the control
+  // green only for as long as the escape it was written beside stayed open.
   assert.ok(
-    contexts.some((c) => c.includes("out, JSON.stringify(report")),
+    contexts.some((c) => c.includes("outPath, JSON.stringify(report")),
     `expected to see cmdCoverage()'s own write site among: ${JSON.stringify(contexts)}`,
   );
 

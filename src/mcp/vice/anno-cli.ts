@@ -43,6 +43,37 @@
 //     through. A second answer to "is this path inside the workspace" is a
 //     confinement escape waiting to be written.
 //
+//     THIS PARAGRAPH WAS FALSE WHEN IT WAS FIRST WRITTEN, and that is why it
+//     now names the mechanism that keeps it. `29-VERIFICATION.md` gap 3 /
+//     `29-REVIEW.md` CR-02 and CR-03 reproduced three escapes on this very
+//     tree, on arguments the shipped playbooks tell an agent to compose in a
+//     Bash invocation: `render-memmap --out` and `coverage --out` reached
+//     `writeFileSync` as raw caller strings (the first silently replacing a
+//     pre-existing file OUTSIDE the workspace root and exiting 0), and
+//     `render-memmap --provenance` reached `readFileSync` raw, making it an
+//     arbitrary-file read oracle that then DISCLOSED the file's opening bytes
+//     through an interpolated parse error. Four of the six arguments were
+//     unconfined while this paragraph said all of them were.
+//
+//     A header naming a maintained property is a written warrant for the next
+//     maintainer not to check, so when the property and the prose disagree the
+//     prose is the more dangerous half. What went wrong is worth stating
+//     precisely: the SEAM was never weak -- `anno-confinement.test.ts` proves
+//     the predicate fifteen ways, including the symlink and dangling-link
+//     classes -- but its CONSUMER SET was unenumerated, and nothing could fail
+//     when a new argument skipped it. `anno-cli-path-consumers.test.ts` closes
+//     exactly that asymmetry: it enumerates every caller-supplied path
+//     argument this CLI accepts, derives the flag half from `VERB_OPTIONS`
+//     below so a new path-shaped flag joins the audit automatically, and fails
+//     when one of them reaches a filesystem call without passing through the
+//     seam. The next unconfined argument fails a test rather than a review.
+//
+//   - Never use the RAW caller string after confining it.
+//     `storePathWithinWorkspace()` returns the REALPATH, not its input, so
+//     carrying the original forward reintroduces the escape one line below the
+//     check that refused it -- and makes every "wrote X" line name a file that
+//     is not the one on disk.
+//
 // `runR2000Cli()` returns an exit code and never terminates the process
 // itself, so it is testable in-process as well as from the bin (the bin,
 // `vice-proxy.ts`, is the only place that ends the process with this
@@ -88,13 +119,14 @@ const USAGE = `usage (npm install):    ${NPX_INVOCATION}
 usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 
 verbs:
-  render-memmap <store> --provenance FILE [--out FILE] [--check]
+  render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]
       Generates the Markdown memory map from an annotation store plus a
       validated provenance sidecar (D-24: the store is canonical, this
       output is a GENERATED VIEW -- never hand-edit it). Without --check,
-      writes --out (default: memory-map.md beside the project) and prints
-      the row count, the number of [unknown]-graded rows, and the render
-      digest. With --check, re-renders in memory and compares against the
+      writes --out (default: memory-map.md beside the project), refusing
+      to overwrite an existing file there unless --force is passed, and
+      prints the row count, the number of [unknown]-graded rows, and the
+      render digest. With --check, re-renders in memory and compares against the
       file at --out: prints "in sync" and exits 0 when they match, prints
       the first differing line and exits non-zero on drift (from either a
       hand edit OR a store-side change since the file was last rendered),
@@ -151,7 +183,7 @@ function errMsg(err: unknown): string {
  * caller-supplied path from another.
  */
 export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  "render-memmap": ["--provenance", "--out", "--check"],
+  "render-memmap": ["--provenance", "--out", "--force", "--check"],
   coverage: ["--store", "--out", "--force", "--sample"],
 });
 
@@ -180,9 +212,23 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
 
 /**
  * Refuses to overwrite an existing file at `outPath` unless the caller
- * passed `--force`. Shared by every verb that writes an output file, so
- * overwrite safety stays uniform rather than one verb accreting a check the
- * others lack (CR-01/CR-02).
+ * passed `--force`. Called by BOTH verbs that write an output file --
+ * `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes) and
+ * `cmdCoverage()` -- so overwrite safety is uniform rather than one verb
+ * accreting a check the other lacks (CR-01/CR-02).
+ *
+ * "SHARED BY EVERY VERB THAT WRITES AN OUTPUT FILE" IS WHAT THIS DOC USED TO
+ * SAY, AND IT WAS NOT TRUE. `render-memmap` wrote an output file and had
+ * neither `--force` in its option set nor a call to this function anywhere on
+ * its path; `29-REVIEW.md` CR-02 reproduced it destroying a pre-existing file
+ * silently, exit code 0. The claim is now stated as the two call sites it
+ * actually has, because a count is checkable where "every" is not.
+ *
+ * `outPath` MUST already be confined through `storePathWithinWorkspace()`.
+ * This function performs no confinement of its own and must never be read as
+ * providing any: it answers "does this file already exist", which is a
+ * different question from "may this process write here", and running it
+ * against an unconfined path produces a check that guards the wrong file.
  */
 function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel: string, extraHint = ""): boolean {
   if (force || !existsSync(outPath)) return true;
@@ -199,22 +245,29 @@ interface RenderMemmapParsedArgs {
   provenanceMissingValue?: boolean;
   out?: string;
   outMissingValue?: boolean;
+  force?: boolean;
   check?: boolean;
   unknownOption?: string;
 }
 
 /** Fixed, closed option set for render-memmap -- exactly `--provenance`,
- * `--out` and `--check`. Per WR-08's posture (do not silently accept a flag
- * a verb does not implement, or a flag missing its value), any OTHER
- * `--flag`-shaped token is refused as `unknownOption`, and `--provenance`/
- * `--out` with no value (or a flag-shaped "value") is refused via their own
- * `*MissingValue` fields. */
+ * `--out`, `--force` and `--check`. Per WR-08's posture (do not silently
+ * accept a flag a verb does not implement, or a flag missing its value), any
+ * OTHER `--flag`-shaped token is refused as `unknownOption`, and
+ * `--provenance`/`--out` with no value (or a flag-shaped "value") is refused
+ * via their own `*MissingValue` fields.
+ *
+ * `--force` is parsed in the SAME boolean shape `parseCoverageArgs()` already
+ * uses, deliberately rather than as a second convention: it feeds the same
+ * `refuseOverwrite()` both verbs share, so a caller who learns the opt-in on
+ * one verb has learned it on the other. */
 function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
   const positional: string[] = [];
   let provenance: string | undefined;
   let provenanceMissingValue = false;
   let out: string | undefined;
   let outMissingValue = false;
+  let force = false;
   let check = false;
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
@@ -235,6 +288,8 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
         out = value;
         i++;
       }
+    } else if (a === "--force") {
+      force = true;
     } else if (a === "--check") {
       check = true;
     } else if (a.startsWith("--")) {
@@ -243,20 +298,47 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
       positional.push(a);
     }
   }
-  return { positional, provenance, provenanceMissingValue, out, outMissingValue, check, unknownOption };
+  return { positional, provenance, provenanceMissingValue, out, outMissingValue, force, check, unknownOption };
 }
 
 /**
- * `render-memmap <store> --provenance FILE [--out FILE] [--check]` --
- * D-24's generated-view verb, via `anno-memmap-render.ts`'s
+ * `render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]`
+ * -- D-24's generated-view verb, via `anno-memmap-render.ts`'s
  * `renderMemoryMap()`/`checkRenderedMemoryMap()`. Never writes a file when
  * `--check` is given -- that mode only reads and reports.
  *
- * The positional argument is the ANNOTATION STORE this map is rendered from
- * -- the same substrate `coverage` reads -- and it goes through the SAME one
- * confinement seam, `storePathWithinWorkspace()` against `repoRoot()`
- * (T-29-51). Never a second hand-rolled rule, and never a suffix check
- * standing in for a location check.
+ * ALL THREE OF THIS VERB'S PATHS ARE CONFINED, and the reason each one is
+ * named here rather than left to a reader to infer is that two of them were
+ * NOT, and shipped that way. `29-VERIFICATION.md` gap 3 / `29-REVIEW.md`
+ * CR-02 and CR-03 reproduced both on this tree:
+ *
+ *   - `--out` reached `writeFileSync` as the RAW caller string. Pointed
+ *     outside the workspace root it exited 0, printed `wrote /tmp/.../
+ *     PRECIOUS.md` and replaced that pre-existing file's bytes. `--force`
+ *     was not in this verb's option set at all, so `refuseOverwrite()` --
+ *     whose own doc claims the safety is uniform across every verb that
+ *     writes an output file -- was never reached from here (CR-02).
+ *   - `--provenance` reached `readFileSync` as the RAW caller string, making
+ *     it an arbitrary-file read oracle; the sidecar parse failure then
+ *     interpolated Node's own parse error, which carries a snippet of the
+ *     file, so the oracle DISCLOSED CONTENT (CR-03). Confining it here also
+ *     confines it for `anno-memmap-render.ts`, which reads it with no check
+ *     of its own.
+ *
+ * Every one of them now goes through the SAME one confinement seam,
+ * `storePathWithinWorkspace()` against `repoRoot()` (T-29-51) -- never a
+ * second hand-rolled rule, and never a suffix check standing in for a
+ * location check. The DEFAULT output path is confined too, deliberately: a
+ * derived path is confined by the same rule as a caller-supplied one rather
+ * than trusted because it was derived.
+ *
+ * The predicate was never the weak half -- `anno-confinement.test.ts` proves
+ * it fifteen ways. Its CONSUMER SET was unenumerated, and that asymmetry is
+ * the whole mechanism by which both findings shipped past a green suite.
+ * `anno-cli-path-consumers.test.ts` is what closes it: it enumerates every
+ * caller-supplied path argument this CLI accepts and fails when one of them
+ * reaches a filesystem call without passing through the seam. A header that
+ * asserts a property must point at the mechanism that keeps it.
  */
 async function cmdRenderMemmap(rest: string[]): Promise<number> {
   const {
@@ -265,6 +347,7 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     provenanceMissingValue,
     out,
     outMissingValue,
+    force,
     check,
     unknownOption,
   } = parseRenderMemmapArgs(rest);
@@ -315,17 +398,41 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
-  if (!existsSync(provenance)) {
-    console.error(`render-memmap: provenance sidecar not found: ${provenance}`);
+
+  // CR-03. The sidecar is confined BEFORE the existence check, so a path
+  // outside the workspace root never reaches the filesystem at all -- not as
+  // an `existsSync` probe (which is itself an oracle: it answers "does this
+  // file exist" for any path the process can stat) and not as the
+  // `readFileSync` inside `renderMemoryMap()`. From here on the RAW caller
+  // string is dead: `provenancePath` is the realpath the seam returned, and
+  // it is what every downstream call receives.
+  let provenancePath: string;
+  try {
+    provenancePath = storePathWithinWorkspace(provenance, workspaceRoot);
+  } catch (err) {
+    console.error(`render-memmap: ${errMsg(err)}`);
+    return 1;
+  }
+  if (!existsSync(provenancePath)) {
+    console.error(`render-memmap: provenance sidecar not found: ${provenancePath}`);
     return 1;
   }
 
-  const outPath = out ?? join(dirname(storePath), "memory-map.md");
+  // CR-02. The default is applied FIRST and the result confined AFTER, so the
+  // derived path and a caller-supplied one are confined by the same rule --
+  // rather than the default being trusted because this verb computed it.
+  let outPath: string;
+  try {
+    outPath = storePathWithinWorkspace(out ?? join(dirname(storePath), "memory-map.md"), workspaceRoot);
+  } catch (err) {
+    console.error(`render-memmap: ${errMsg(err)}`);
+    return 1;
+  }
 
   if (check) {
     let result: Awaited<ReturnType<typeof checkRenderedMemoryMap>>;
     try {
-      result = await checkRenderedMemoryMap({ storePath, provenancePath: provenance, renderedPath: outPath, workspaceRoot });
+      result = await checkRenderedMemoryMap({ storePath, provenancePath, renderedPath: outPath, workspaceRoot });
     } catch (err) {
       console.error(`render-memmap: ${errMsg(err)}`);
       return 1;
@@ -344,9 +451,16 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
+  // CR-02, the second half. `--check` never writes, so the overwrite refusal
+  // belongs on THIS branch only -- and it runs against the CONFINED path, so
+  // the file it protects is the file that would actually be written.
+  if (!refuseOverwrite(outPath, force, "render-memmap")) {
+    return 1;
+  }
+
   let rendered: Awaited<ReturnType<typeof renderMemoryMap>>;
   try {
-    rendered = await renderMemoryMap({ storePath, provenancePath: provenance, workspaceRoot });
+    rendered = await renderMemoryMap({ storePath, provenancePath, workspaceRoot });
   } catch (err) {
     console.error(`render-memmap: ${errMsg(err)}`);
     return 1;
@@ -700,12 +814,20 @@ function printCoverageReport(report: CoverageReport): void {
  * guessing one path from the other is exactly the auto-pick D-02 forbids.
  *
  * Two properties this function must keep:
- *   - NO SECOND PATH VALIDATOR (T-19-22 / T-29-28). Both caller-supplied paths
- *     are confined by `storePathWithinWorkspace()` against `repoRoot()` -- the
- *     one seam, the same one `anno-tools.ts` puts its own store and image
- *     arguments through. `openStore()` is then handed the same workspace root,
- *     so its own confinement agrees by construction rather than by a second
- *     rule.
+ *   - NO SECOND PATH VALIDATOR (T-19-22 / T-29-28), over ALL THREE of this
+ *     verb's caller-supplied paths -- the positional, `--store` and `--out`.
+ *     The count is stated because it was WRONG: this doc said "both" and meant
+ *     it, while `--out` reached `refuseOverwrite()` and `writeFileSync()` as
+ *     the raw caller string. `29-REVIEW.md` CR-02 reproduced the escape --
+ *     `coverage <project> --store <store> --out /tmp/...` wrote the report
+ *     outside the workspace root. All three now go through
+ *     `storePathWithinWorkspace()` against `repoRoot()` -- the one seam, the
+ *     same one `anno-tools.ts` puts its own store and image arguments through.
+ *     `openStore()` is then handed the same workspace root, so its own
+ *     confinement agrees by construction rather than by a second rule. The
+ *     enumeration is now mechanical rather than prose:
+ *     `anno-cli-path-consumers.test.ts` fails when a path argument this verb
+ *     accepts reaches a filesystem call without passing through the seam.
  *   - THE STORE IS OPENED ONCE, read-only, for the whole verb, and closed in a
  *     `finally`. `mustExist` is what makes "the annotations are gone" and
  *     "there are no annotations" refuse differently instead of reading the
@@ -760,15 +882,18 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // T-19-22 / T-29-28: the ONE confinement seam, for BOTH caller-supplied
-  // paths. Never a second hand-rolled one, and never a different rule for the
-  // store than for the program it annotates.
+  // T-19-22 / T-29-28 / CR-02: the ONE confinement seam, for ALL THREE
+  // caller-supplied paths. Never a second hand-rolled one, and never a
+  // different rule for the store than for the program it annotates -- or, as
+  // CR-02 found, no rule at all for the report this verb writes.
   const workspaceRoot = repoRoot();
   let projectPath: string;
   let storePath: string;
+  let outPath: string | undefined;
   try {
     projectPath = storePathWithinWorkspace(project, workspaceRoot);
     storePath = storePathWithinWorkspace(store, workspaceRoot);
+    outPath = out === undefined ? undefined : storePathWithinWorkspace(out, workspaceRoot);
   } catch (err) {
     console.error(`coverage: ${errMsg(err)}`);
     return 1;
@@ -785,7 +910,9 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  if (out && !refuseOverwrite(out, force, "coverage")) {
+  // Against the CONFINED path, so the file this check protects is the file
+  // that would actually be written.
+  if (outPath !== undefined && !refuseOverwrite(outPath, force, "coverage")) {
     return 1;
   }
 
@@ -835,14 +962,16 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
   printCoverageReport(report);
 
-  if (out) {
+  if (outPath !== undefined) {
     try {
-      writeFileSync(out, JSON.stringify(report, null, 2) + "\n");
+      writeFileSync(outPath, JSON.stringify(report, null, 2) + "\n");
     } catch (err) {
-      console.error(`coverage: could not write ${out}: ${errMsg(err)}`);
+      console.error(`coverage: could not write ${outPath}: ${errMsg(err)}`);
       return 1;
     }
-    console.log(`coverage: wrote ${out} (schema version ${report.schemaVersion})`);
+    // The CONFINED path, so the line names the file that was actually written
+    // rather than whatever the caller typed.
+    console.log(`coverage: wrote ${outPath} (schema version ${report.schemaVersion})`);
   }
 
   if (!report.project.payloadDecoded) {
