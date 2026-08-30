@@ -25,7 +25,7 @@
 // coverage.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -205,8 +205,31 @@ function withRenderFixture<T>(
   fn: (paths: { dir: string; storePath: string; provenancePath: string }) => T | Promise<T>,
 ): Promise<T> {
   const dir = mkdtempSync(join(HERE, `.${opts.prefix}-`));
+  const built = buildStoreFixture({ root: dir, fill: opts.fill, provenance: opts.provenance });
+  return Promise.resolve(fn(built)).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+/** Builds a store plus its sidecar at a FIXED relative location beneath an
+ * ARBITRARY workspace root, and returns the three paths.
+ *
+ * Extracted out of `withRenderFixture()` rather than duplicated beside it,
+ * because the cross-root regression below needs the SAME builder pointed at
+ * two different roots -- two trees built by two different code paths would be
+ * "similar", and the property under test is that they are IDENTICAL. Naming
+ * the relative location explicitly is the other half of that: the whole point
+ * of the workspace-relative banner is that the same tree at two absolute paths
+ * renders the same bytes, which is only a meaningful claim when the store sits
+ * at the same place beneath each root. */
+function buildStoreFixture(opts: {
+  root: string;
+  relDir?: string;
+  fill: (handle: AnnoStoreHandle) => void;
+  provenance?: Record<string, unknown>;
+}): { dir: string; storePath: string; provenancePath: string } {
+  const dir = opts.relDir ? join(opts.root, opts.relDir) : opts.root;
+  mkdirSync(dir, { recursive: true });
   const storePath = join(dir, "probe.annostore");
-  const handle = openStore(storePath, { workspaceRoot: HERE });
+  const handle = openStore(storePath, { workspaceRoot: opts.root });
   try {
     opts.fill(handle);
   } finally {
@@ -214,7 +237,7 @@ function withRenderFixture<T>(
   }
   const provenancePath = join(dir, "capture.provenance.json");
   writeFileSync(provenancePath, JSON.stringify(opts.provenance ?? VALID_HEADER, null, 2));
-  return Promise.resolve(fn({ dir, storePath, provenancePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
+  return { dir, storePath, provenancePath };
 }
 
 /** The rows the digest tests below perturb, one at a time. */
@@ -487,6 +510,99 @@ test("renders a golden memory map from a hand-built store plus a fixture sidecar
       assert.deepEqual(missing, { status: "missing", path: join(dir, "does-not-exist.md") });
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// The cross-root regression (CR-01 / `29-VERIFICATION.md` gap 1). This is the
+// test that could not exist before the banner became workspace-relative, and
+// its absence is why the defect shipped green: nothing rendered under one root
+// and re-checked the identical bytes under another.
+//
+// Named for the PROPERTY rather than the mechanism. The defect was not "the
+// banner holds an absolute path" -- that is the cause. The defect is that the
+// artifact's own digest said the content was identical while the gate over the
+// same artifact said it had drifted, and both were correct about the different
+// things they measured.
+// ---------------------------------------------------------------------------
+
+test("the render digest and the --check verdict AGREE: the identical tree at a different absolute path is in-sync, not drifted", async () => {
+  const outer = mkdtempSync(join(HERE, ".anno-memmap-cross-root-"));
+  try {
+    const rootA = join(outer, "rootA");
+    const rootB = join(outer, "rootB");
+
+    // Build under A, then COPY the whole tree to B -- rather than building
+    // twice -- so the two are byte-identical by construction. A store is a
+    // SQLite file; two independent creations of "the same" store are not
+    // guaranteed to be byte-equal, and this test would then be measuring the
+    // wrong thing.
+    const a = buildStoreFixture({ root: rootA, relDir: "annotations", fill: fillBaselineStore });
+    cpSync(rootA, rootB, { recursive: true });
+    const b = {
+      dir: join(rootB, "annotations"),
+      storePath: join(rootB, "annotations", "probe.annostore"),
+      provenancePath: join(rootB, "annotations", "capture.provenance.json"),
+    };
+    assert.deepEqual(readFileSync(a.storePath), readFileSync(b.storePath), "the two stores must be byte-identical inputs");
+    assert.deepEqual(
+      readFileSync(a.provenancePath),
+      readFileSync(b.provenancePath),
+      "the two sidecars must be byte-identical inputs",
+    );
+
+    const renderA = await renderMemoryMap({
+      storePath: a.storePath,
+      provenancePath: a.provenancePath,
+      workspaceRoot: rootA,
+    });
+    const renderB = await renderMemoryMap({
+      storePath: b.storePath,
+      provenancePath: b.provenancePath,
+      workspaceRoot: rootB,
+    });
+
+    // The artifact half: the two renders agree on every byte, not merely on
+    // the digest. A digest that matched while the bytes differed is exactly
+    // the contradiction this closes.
+    assert.equal(renderA.renderDigest, renderB.renderDigest, "identical inputs must produce an identical digest");
+    assert.equal(
+      renderA.markdown,
+      renderB.markdown,
+      "identical inputs at two absolute paths must render byte-identical markdown -- if this fails, machine identity is back in the banner",
+    );
+
+    // The gate half: write A's bytes, copy them verbatim into B, and ask B.
+    const renderedA = join(a.dir, "memory-map.md");
+    writeFileSync(renderedA, renderA.markdown);
+    const renderedB = join(b.dir, "memory-map.md");
+    writeFileSync(renderedB, readFileSync(renderedA));
+    assert.deepEqual(readFileSync(renderedA), readFileSync(renderedB), "the copied rendered file must be byte-identical");
+
+    const verdict = await checkRenderedMemoryMap({
+      storePath: b.storePath,
+      provenancePath: b.provenancePath,
+      renderedPath: renderedB,
+      workspaceRoot: rootB,
+    });
+    assert.deepEqual(
+      verdict,
+      { status: "in-sync" },
+      "relocating the checkout is not drift -- the compared bytes must be a function of content and workspace-relative location only (CR-01)",
+    );
+
+    // And the gate has not merely been blunted: a real hand edit under root B
+    // is still caught. A control that only ever passes is worth nothing.
+    writeFileSync(renderedB, renderA.markdown.replace("init_screen", "init_screeX"));
+    const handEdit = await checkRenderedMemoryMap({
+      storePath: b.storePath,
+      provenancePath: b.provenancePath,
+      renderedPath: renderedB,
+      workspaceRoot: rootB,
+    });
+    assert.equal(handEdit.status, "drifted", "a hand edit must still be caught at the second root");
+  } finally {
+    rmSync(outer, { recursive: true, force: true });
+  }
 });
 
 test("an address whose store comment carries [unknown] appears under Open questions, and a malformed confidence prefix throws rather than rendering silently", async () => {
