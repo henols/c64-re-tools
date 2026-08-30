@@ -74,9 +74,9 @@
 // never a false disagreement. But an export makes no claim about bytes outside
 // its own blocks, and neither does the byte-diff that settles it.
 //
-// SCOPE, STILL DELIBERATELY NARROW: code ranges, the twelve typed data ranges
-// and comments. There is no enum substitution and no mid-instruction `=*+$01`
-// label insertion here yet; those arrive in a later plan of this phase.
+// SCOPE, STILL DELIBERATELY NARROW: code ranges, the twelve typed data ranges,
+// comments and mid-instruction `=*+$NN` labels. There is no enum substitution
+// here yet; that arrives in a later plan of this phase.
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
@@ -161,6 +161,13 @@ export interface ExportAsmResult {
    * comment count when this function returns: a comment with no emitted line
    * to attach to is refused by name rather than left out of this number. */
   commentCount: number;
+  /** How many inline mid-instruction label definitions the source carries --
+   * one per store label whose address falls STRICTLY INSIDE a decoded
+   * instruction. `midInstructionLabelLine()` is the one place that spelling
+   * exists. Equal to the number of labels that were therefore EXCLUDED from the
+   * header definition block, because such a label is defined inline and
+   * defining it twice is ACME's `Symbol already defined.` */
+  midInstructionLabelCount: number;
 }
 
 /** How many raw bytes go on one `!byte` line for a non-code block. */
@@ -362,6 +369,29 @@ function formatSymbolDefinition(name: string, address: number): string {
 }
 
 /**
+ * One mid-instruction label definition, in the golden witness's own compact
+ * spelling -- no spaces around the `=`, the offset in two hex digits:
+ * `f_0900 =*+$01` [`.planning/notes/dxa-ghidra-pivot-evidence/r2000.asm:202`].
+ * That witness carries SIX such labels (lines 51, 81, 135, 145, 202 and 205);
+ * the ROADMAP note saying four is documentation drift, corrected in
+ * `30-RESEARCH.md`.
+ *
+ * `offset` is `label.address - instr.address`, so it is 1 or 2 for every
+ * 6502/6510 instruction -- the value is rendered rather than bounded here
+ * because the caller derives it from a decoded instruction's own length and
+ * cannot produce anything else.
+ */
+function midInstructionLabelLine(name: string, offset: number): string {
+  return `${name} =*+$${offset.toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * Below this address a mid-instruction label is REFUSED rather than emitted.
+ * See `exportAsm()`'s code-block emitter for the measured reason.
+ */
+const MID_INSTRUCTION_LABEL_FLOOR = 0x100;
+
+/**
  * The store's own spellings for the two comment placements, DESTRUCTURED out of
  * `COMMENT_TYPES` -- the ONE home of that vocabulary -- rather than re-typed as
  * literals here. The same idiom `anno-memmap-render.ts` uses at its own read
@@ -523,21 +553,6 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   }
   const symbolFor = (address: number): string | undefined => labelIndex.get(address);
 
-  const lines: string[] = ["!cpu 6510"];
-
-  // EVERY store label is defined here, in a block BEFORE the first `* =`, not
-  // only the ones a substitution happened to use. Measured on ACME 0.97: a
-  // symbol defined AFTER its first reference widens the referencing
-  // instruction from zeropage to absolute -- `a5 10` becomes `ad 10 00`, three
-  // bytes where the original was two -- and it does so with the WARNING
-  // `Using oversized addressing mode.` and exit status 0. Everything after it
-  // shifts. Defining first is the mitigation; the per-block `*` assertions
-  // below are the backstop for a future change that ever drops this block, and
-  // the byte-diff is what settles the whole claim.
-  for (const label of sortedLabels) {
-    lines.push(formatSymbolDefinition(label.name, label.address));
-  }
-
   // Comments indexed by the address they annotate, each address's list left in
   // `listComments()`'s own `id` order.
   const commentsByAddress = new Map<number, CommentRow[]>();
@@ -551,6 +566,15 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   let unexpressibleCount = 0;
   let dataByteCount = 0;
 
+  // The addresses of every label emitted INLINE as `name =*+$NN`. They are
+  // collected during block emission and read afterwards by the header, which
+  // is why the header is built AFTER this loop even though it is emitted
+  // BEFORE it: a label defined inline must not ALSO be defined in the header,
+  // or ACME refuses the whole source with `Symbol already defined.`
+  const midInstructionLabelAddresses = new Set<number>();
+
+  const blockLines: string[] = [];
+
   for (const block of blocks) {
     const slice = image.bytes.subarray(block.start - imageStart, block.endExclusive - imageStart);
     const content: string[] = [];
@@ -562,6 +586,66 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       const instructions = decode(slice, block.start, { end: block.endExclusive });
       for (const instr of instructions) {
         if (!instr.acmeExpressible) unexpressibleCount++;
+
+        // A store label whose address falls STRICTLY INSIDE this instruction
+        // names one of its operand bytes -- a self-modifying-code write target.
+        // It is emitted as `name =*+$NN` on its own line IMMEDIATELY BEFORE the
+        // instruction that owns the byte, and NEVER after it.
+        //
+        // PLACEMENT IS LOAD-BEARING AND WAS MEASURED IN BOTH DIRECTIONS ON ACME
+        // 0.97. With `smc_operand =*+$01` above `lda #$00` at $0801, a later
+        // `sta smc_operand` assembles as `8d 02 08` -- $0802, the `lda`'s own
+        // operand byte. Move the same line BELOW its host and the symbol takes
+        // the value of the NEXT instruction's operand ($0804), producing
+        // `8d 04 08`. ACME exits 0 in BOTH cases and prints nothing to
+        // distinguish them: only a byte-diff tells the two apart, which is why
+        // `anno-export-asm.test.ts` carries that move as a negative control
+        // rather than trusting an exit status.
+        for (const label of sortedLabels) {
+          if (label.address <= instr.address || label.address >= instr.address + instr.bytes.length) continue;
+
+          // A mid-instruction label below $0100 is REFUSED. This is the ONE
+          // hole `disasm-renderer.ts`'s `+2` width force does not already close
+          // FOR THIS MODULE, in the precise sense that it is the one place this
+          // module has no mitigation of its own and depends entirely on the
+          // renderer's.
+          //
+          // For an ORDINARY label this module owns the mitigation: it writes
+          // the header definition with TWO hex digits below $0100 (see
+          // `formatSymbolDefinition()`), which is what makes ACME encode the
+          // reference at the original width. A `=*+$NN` label cannot use it --
+          // it is defined INLINE by construction, so its width is decided by
+          // whatever the referencing instruction's own rendering forced.
+          //
+          // MEASURED, ACME 0.97, a label at $0081 named by an earlier
+          // `lda #$00` at $0080:
+          //   `inc+2 smc_operand`  -> `ee 81 00`, EXIT 0, no diagnostic  (correct)
+          //   `inc   smc_operand`  -> `e6 81`,    EXIT 0, NO DIAGNOSTIC AT ALL
+          // Two bytes where the original was three, silently, with the whole
+          // rest of the block shifted. (The same reference placed BEFORE the
+          // definition widens instead, and does at least emit
+          // `Warning (Zone <untitled>): Using oversized addressing mode.` --
+          // still exit 0.) The only thing standing between this exporter and
+          // that shift is a `disasm-renderer.ts` invariant this module does not
+          // own, so the case is refused BY NAME rather than emitted and hoped
+          // for.
+          if (label.address < MID_INSTRUCTION_LABEL_FLOOR) {
+            throw new Error(
+              `exportAsm: label ${JSON.stringify(label.name)} names address ${hex4(label.address)} inside an instruction, and a ` +
+                `mid-instruction label below ${hex4(MID_INSTRUCTION_LABEL_FLOOR)} cannot be emitted -- it must be defined INLINE, ` +
+                `relative to the program counter at its host instruction, which forgoes this exporter's own two-hex-digit ` +
+                `header-definition width rule, and a reference to it ` +
+                `then encodes at whatever width the renderer forced. Measured on ACME 0.97: the unforced form shrinks a three-byte ` +
+                `absolute instruction to a two-byte zeropage one at exit 0 with NO diagnostic, shifting every byte after it. ` +
+                `REFUSED rather than emitted.`,
+            );
+          }
+
+          midInstructionLabelAddresses.add(label.address);
+          content.push(midInstructionLabelLine(label.name, label.address - instr.address));
+          block.lineCount++;
+        }
+
         // The span is the instruction's FIRST address only, not its whole
         // length: a comment stored against an operand byte belongs to no
         // emitted line, and attaching it to the instruction that happens to
@@ -587,8 +671,33 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     // EVERY block goes through `emitBlock()`, code and data alike, so there is
     // exactly one place that brackets a block and no route that emits an
     // unbracketed one.
-    lines.push(...emitBlock(block.start, block.endExclusive, content));
+    blockLines.push(...emitBlock(block.start, block.endExclusive, content));
   }
+
+  // EVERY store label is defined here, in a block BEFORE the first `* =`, not
+  // only the ones a substitution happened to use -- EXCEPT the mid-instruction
+  // ones, which the loop above already defined inline and which ACME would
+  // refuse as `Symbol already defined.` if they appeared twice.
+  //
+  // Measured on ACME 0.97: a symbol defined AFTER its first reference widens
+  // the referencing instruction from zeropage to absolute -- `a5 10` becomes
+  // `ad 10 00`, three bytes where the original was two -- and it does so with
+  // the WARNING `Using oversized addressing mode.` and exit status 0.
+  // Everything after it shifts. Defining first is the mitigation; the per-block
+  // `*` assertions are the backstop for a future change that ever drops this
+  // block, and the byte-diff is what settles the whole claim.
+  //
+  // THIS BLOCK IS BUILT AFTER THE BLOCK LOOP AND EMITTED BEFORE IT. Which
+  // labels are defined inline is only knowable once the code blocks have been
+  // decoded, and the header must not restate those; the assembled order below
+  // is what the source actually carries.
+  const headerLines: string[] = [];
+  for (const label of sortedLabels) {
+    if (midInstructionLabelAddresses.has(label.address)) continue;
+    headerLines.push(formatSymbolDefinition(label.name, label.address));
+  }
+
+  const lines: string[] = ["!cpu 6510", ...headerLines, ...blockLines];
 
   // An annotation this exporter cannot express is REFUSED BY NAME, never
   // dropped from the output while the export reports success. A comment is
@@ -622,5 +731,6 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     unexpressibleCount,
     dataByteCount,
     commentCount: placement.placed.size,
+    midInstructionLabelCount: midInstructionLabelAddresses.size,
   };
 }

@@ -50,28 +50,43 @@
 //     `Using oversized addressing mode.` on legal, byte-correct output at exit
 //     0. A positive case here is proved by `outcome === "ok"` with
 //     `byteDiff.equal === true`, never by an exit status.
-//   - Never call `verifyAcmeAssembles()` anywhere but inside `verifyExport()`.
-//     That helper always supplies the REQUIRED `expectedSegments`, so the
-//     unanimity rule against ACME's own per-segment lines has exactly one
-//     place to be right and cannot be dropped from a later test by omission.
+//   - Never call `verifyAcmeAssembles()` anywhere but inside
+//     `verifyExportText()`. That helper always supplies the REQUIRED
+//     `expectedSegments`, so the unanimity rule against ACME's own per-segment
+//     lines has exactly one place to be right and cannot be dropped from a
+//     later test by omission. `verifyExport()` is a one-line delegation to it
+//     for the common "verify this export's own source" case; a test that needs
+//     to verify MUTATED source text against an UNMUTATED export's expectations
+//     calls `verifyExportText()` directly rather than growing a second call
+//     site.
 //   - Never interpolate a source string into a shell command. `assembleRaw()`
 //     writes it to a file and spawns ACME with an argv array.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import { assertExportableCommentText, exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
 import { openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
+import { decode } from "./disasm-decoder.ts";
 
 /** Computed exactly once, by the shared seam. Every ACME-dependent test in
  * this file passes this through node:test's own `{ skip }` option. */
 const SKIP_REASON: string | false = acmeSkipReasonFor("anno-export-asm.test.ts");
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The committed self-modifying fixture and the ACME source it was assembled
+ * from. See `fixtures/export-asm/README.md` for the provenance table. */
+const SMC_DIR = join(HERE, "fixtures", "export-asm");
+const SMC_SOURCE_PATH = join(SMC_DIR, "smc.a");
+const SMC_PRG_PATH = join(SMC_DIR, "smc.prg");
 
 test("ACME availability gate", () => {
   assertAcmeRequiredIfEnvSet(assert);
@@ -137,6 +152,28 @@ function buildStore(dir: string, spec: StoreSpec): StoreFixture {
   return { dir, storePath, imagePath };
 }
 
+/**
+ * A store built in a fresh temp directory over an image ALREADY ON DISK.
+ *
+ * The committed fixtures are the point of the tests that use this: their bytes
+ * are what a real assembler wrote, not a `body` array this file invented, so
+ * the store has to be attached to the file rather than the file synthesised
+ * from the store.
+ */
+function buildStoreOverImage(tag: string, imagePath: string, spec: Omit<StoreSpec, "origin" | "body">): StoreFixture {
+  const dir = freshDir(tag);
+  const storePath = join(dir, "anno.sqlite");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    for (const range of spec.ranges) setDataType(handle, range);
+    for (const label of spec.labels ?? []) setLabel(handle, { ...label, kind: "User" });
+    for (const comment of spec.comments ?? []) setComment(handle, comment);
+  } finally {
+    closeStore(handle);
+  }
+  return { dir, storePath, imagePath };
+}
+
 /** What a raw ACME run tells us when the verdict layer is deliberately out of
  * the way: its own exit status, its own streams, and whether it wrote a file. */
 interface RawAssembly {
@@ -173,16 +210,30 @@ function assembleRaw(source: string): RawAssembly {
  * dropped by omission in some later test. It passes no `acmeBin`, so every
  * round trip in this file runs against the real assembler.
  *
+ * `source` IS A SEPARATE PARAMETER FROM `result` ON PURPOSE. The negative
+ * controls in this file take a valid export and apply ONE documented mutation
+ * to its text, then ask whether the assembler still reproduces the bytes the
+ * UNMUTATED export said it must. Both halves have to come from the same call:
+ * mutating `result.source` in place would move the expectations along with the
+ * mutation and the control would prove nothing.
+ *
  * A test that wants a DELIBERATELY mismatched segment list passes it
  * explicitly at its own call site rather than editing this helper -- widening
  * the one correct call is how the rule stops being run everywhere.
  */
-function verifyExport(result: ExportAsmResult): AcmeVerifyResult {
+function verifyExportText(result: ExportAsmResult, source: string): AcmeVerifyResult {
   return verifyAcmeAssembles({
-    source: result.source,
+    source,
     expectedBytes: result.expectedBytes,
     expectedSegments: result.blocks,
   });
+}
+
+/** The common case: verify an export's own source against its own
+ * expectations. A one-line delegation, so the call site above does not
+ * multiply. */
+function verifyExport(result: ExportAsmResult): AcmeVerifyResult {
+  return verifyExportText(result, result.source);
 }
 
 /** A verdict rendered for a failure message: everything a human needs to see
@@ -698,4 +749,195 @@ test("a comment the export cannot place is refused BY NAME, never dropped from t
       return true;
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Mid-instruction `=*+$NN` labels, on a fixture that GENUINELY SELF-MODIFIES.
+//
+// Criterion 3 is explicit that emitting the idiom is not the criterion. A
+// fixture that merely CONTAINS `=*+$01` would keep every test below green if
+// the line were emitted on the wrong instruction, in the wrong place, or for an
+// address no instruction owns. So the fixture's self-modification is proved
+// FROM ITS BYTES, the round trip is proved by the byte-diff, and the placement
+// rule is proved by a negative control that ACME accepts at exit 0.
+// ---------------------------------------------------------------------------
+
+test("FIXTURE INTEGRITY: smc.prg genuinely self-modifies -- an `inc` writes to an earlier `lda #`'s own immediate operand byte, proved FROM THE BYTES", () => {
+  const raw = new Uint8Array(readFileSync(SMC_PRG_PATH));
+  assert.ok(raw.length > 2, `the fixture must carry a payload:\n  length: ${raw.length}`);
+  assert.equal(raw[0], 0x01, "the `.prg` load address is little-endian, low byte first");
+  assert.equal(raw[1], 0x08, "the fixture loads at $0801");
+
+  const origin = raw[0]! | (raw[1]! << 8);
+  assert.equal(origin, 0x0801);
+
+  const instructions = decode(raw.subarray(2), origin);
+
+  // Which addresses are the IMMEDIATE operand byte of some instruction, and
+  // which instruction owns each. Derived from the decode, never from a
+  // hand-written offset -- an offset would keep agreeing with itself after the
+  // fixture stopped self-modifying.
+  const immediateOperandOwner = new Map<number, number>();
+  for (const instr of instructions) {
+    if (instr.operand?.role === "immediate") immediateOperandOwner.set(instr.address + 1, instr.address);
+  }
+  assert.ok(immediateOperandOwner.size > 0, "the fixture must contain at least one immediate-operand instruction");
+
+  const selfModifyingWrites = instructions.filter((instr) => instr.operand?.role === "absolute" && immediateOperandOwner.has(instr.operand.value));
+  assert.equal(
+    selfModifyingWrites.length,
+    1,
+    "smc.prg must contain EXACTLY ONE instruction whose absolute write target is another instruction's immediate operand byte. " +
+      "If this is 0 the fixture has stopped self-modifying and every test over it is now testing nothing; if it is more than 1 the " +
+      "assertions below no longer name a unique write target. Fix smc.a, then regenerate with " +
+      `\`node fixtures/export-asm/make-export-asm-fixtures.mjs\`.\n  decoded: ${instructions.map((i) => `$${i.address.toString(16)} ${i.mnemonic}`).join(", ")}`,
+  );
+
+  const writer = selfModifyingWrites[0]!;
+  const target = writer.operand!.value;
+  const owner = immediateOperandOwner.get(target)!;
+  assert.ok(
+    owner < writer.address,
+    `the modified instruction must come BEFORE the instruction that modifies it: owner $${owner.toString(16)}, writer $${writer.address.toString(16)}`,
+  );
+  assert.equal(target, 0x0802, "the write target is the `lda #$00` operand byte at $0802");
+  assert.equal(writer.mnemonic, "inc");
+});
+
+test("REGENERATOR AGREEMENT: re-assembling smc.a reproduces the committed smc.prg byte-for-byte", { skip: SKIP_REASON }, () => {
+  const dir = freshDir("smc-regen");
+  const outPath = join(dir, "smc.prg");
+  // `-f cbm` deliberately, NOT ACME_VERIFY_ARGV_FLAGS' `-f plain`: the fixture
+  // is a real `.prg` and carries its two-byte load address, which is what the
+  // integrity test above reads.
+  const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, SMC_SOURCE_PATH], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(r.status, 0, `smc.a must assemble:\n  stderr: ${r.stderr ?? ""}`);
+  assert.equal(existsSync(outPath), true, "ACME must write an output file");
+
+  assert.deepEqual(
+    [...new Uint8Array(readFileSync(outPath))],
+    [...new Uint8Array(readFileSync(SMC_PRG_PATH))],
+    "smc.a and smc.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its source assembles to; " +
+      "regenerate with `cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.mjs`.",
+  );
+});
+
+/** The store the round-trip and negative-control tests share: the whole
+ * eleven-byte fixture as one code range, an ordinary label at the entry point,
+ * and the mid-instruction label naming the self-modified operand byte. */
+function smcFixture(tag: string): StoreFixture {
+  return buildStoreOverImage(tag, SMC_PRG_PATH, {
+    ranges: [{ start: 0x0801, endInclusive: 0x080b, dataType: "code" }],
+    labels: [
+      { address: 0x0801, name: "entry" },
+      { address: 0x0802, name: "smc_operand" },
+    ],
+  });
+}
+
+test("a label strictly inside an instruction is emitted as `name =*+$NN` on the line IMMEDIATELY BEFORE its host, and is NOT restated in the header", () => {
+  const { dir, storePath, imagePath } = smcFixture("smc-shape");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  const definition = lines.indexOf("smc_operand =*+$01");
+  const host = lines.indexOf("        lda #$00");
+  assert.ok(definition >= 0, `the mid-instruction label must use the golden witness's compact spelling:\n${result.source}`);
+  assert.equal(
+    definition + 1,
+    host,
+    `the definition sits IMMEDIATELY BEFORE the instruction whose operand byte it names -- placed after it, it would name the NEXT instruction's operand:\n${result.source}`,
+  );
+
+  assert.ok(lines.includes("        inc smc_operand"), `the self-modifying write must render through the substituted name:\n${result.source}`);
+
+  // Defined inline, so it must NOT also appear in the header -- two definitions
+  // of one name is ACME's `Symbol already defined.`
+  const headerDefinitions = lines.filter((line) => /^[A-Za-z_][A-Za-z0-9_]* = \$/.test(line));
+  assert.deepEqual(headerDefinitions, ["entry = $0801"], `only the ordinary label belongs in the header block:\n${result.source}`);
+
+  assert.equal(result.midInstructionLabelCount, 1);
+  assert.equal(result.symbolCount, 2, "`symbolCount` counts every store label the source defines, header and inline alike");
+});
+
+test("ROUND TRIP: the self-modifying fixture reassembles BYTE-IDENTICALLY with its write target named by a mid-instruction label", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = smcFixture("smc-roundtrip");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const verdict = verifyExport(result);
+
+  assert.equal(verdict.outcome, "ok", `a genuinely self-modifying program must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict -- "ACME exits 0" is nowhere the proof:${context(result, verdict)}`);
+});
+
+test("NEGATIVE CONTROL: moving the `=*+$01` line to AFTER its host instruction changes the bytes, and ACME exits 0 anyway", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = smcFixture("smc-negative");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // ONE documented move: the definition goes from immediately BEFORE its host
+  // to immediately AFTER it. `*` is then $0803 rather than $0801, so the symbol
+  // takes the value $0804 -- the operand byte of the NEXT instruction.
+  const moved = result.source.replace("smc_operand =*+$01\n", "").replace("        lda #$00\n", "        lda #$00\nsmc_operand =*+$01\n");
+  assert.notEqual(moved, result.source, "the move must change the source");
+  const movedLines = moved.split("\n");
+  assert.equal(
+    movedLines.indexOf("smc_operand =*+$01"),
+    movedLines.indexOf("        lda #$00") + 1,
+    `the moved definition must sit immediately AFTER its former host:\n${moved}`,
+  );
+
+  const verdict = verifyExportText(result, moved);
+
+  assert.equal(
+    verdict.outcome,
+    "failed",
+    `the wrong placement must be REFUSED:\n  outcome: ${verdict.outcome}\n  reason: ${verdict.reason}\n  exitStatus: ${verdict.exitStatus}\n${moved}`,
+  );
+  assert.equal(
+    verdict.exitStatus,
+    0,
+    "ACME ACCEPTED the wrongly-placed label -- the instruction's LENGTH is unchanged, so the per-block `*` assertions cannot fire and " +
+      `the assembler has nothing to complain about. Only the byte-diff tells the two placements apart.\n  reason: ${verdict.reason}`,
+  );
+  assert.equal(verdict.byteDiff?.equal, false, `the bytes must disagree:\n  reason: ${verdict.reason}`);
+  assert.equal(
+    verdict.byteDiff?.firstDifferingOffset,
+    3,
+    "offset 3 from the block start $0801 is $0804 -- the low byte of the `inc` operand, which now points at the NEXT instruction's " +
+      `operand byte instead of the first one's.\n  byteDiff: ${JSON.stringify(verdict.byteDiff)}`,
+  );
+});
+
+test("a mid-instruction label below $0100 is REFUSED BY NAME rather than emitted", () => {
+  // $0081 is the immediate operand byte of the `lda #$00` at $0080. A `=*+$01`
+  // label is defined INLINE, so this exporter's own two-hex-digit header
+  // definition rule cannot hold the referencing operand's width, and the only
+  // remaining defence is a `disasm-renderer.ts` invariant this module does not
+  // own. Measured on ACME 0.97, the unforced form assembles `inc smc_operand`
+  // to `e6 81` -- two bytes where the original was three -- at exit 0 with NO
+  // diagnostic at all.
+  const { dir, storePath, imagePath } = buildStore(freshDir("smc-zeropage"), {
+    origin: 0x0080,
+    body: [0xa9, 0x00, 0x60],
+    ranges: [{ start: 0x0080, endInclusive: 0x0082, dataType: "code" }],
+    labels: [{ address: 0x0081, name: "zpf_81" }],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /, "every refusal from this module is prefixed `exportAsm:`");
+      assert.ok(e.message.includes("$0081"), `the refusal names the ADDRESS it refused: ${e.message}`);
+      assert.ok(e.message.includes("zpf_81"), `the refusal names the LABEL, so a human can find the row: ${e.message}`);
+      assert.ok(e.message.includes("$0100"), `the refusal names the floor: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("a store with no mid-instruction label reports `midInstructionLabelCount` zero -- the counter is not a constant", () => {
+  const { dir, storePath, imagePath } = shapeFixture("smc-count-zero");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.equal(result.midInstructionLabelCount, 0);
+  assert.equal(result.source.includes("=*+$"), false, `no inline definition may be emitted when no label sits inside an instruction:\n${result.source}`);
 });
