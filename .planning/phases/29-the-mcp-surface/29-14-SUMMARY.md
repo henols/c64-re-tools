@@ -370,6 +370,14 @@ None — no external service configuration required.
 - **For plans 29-15 and 29-16 (waves 2 and 3):** `module-classification.ts`'s three `anno-cli.ts` citations now read **94**, **99** and **201**. Plan 29-16's import changes will move them again and must re-measure in the same task, exactly as this plan did.
 - One concern carried forward: the seam's refusal message says "refusing to open a store there" for arguments that are not stores. Cosmetic, deliberate, and recorded above.
 
+## Self-Check: PASSED
+
+- All 5 claimed source files present on disk (`ls -1`), plus this SUMMARY.
+- All 6 claimed commits present in `git log --oneline --all`: `eba2dc9`, `e776be7`, `57c6b74`, `37b529d`, `c9b7203`, `a6d16eb`.
+- Final combined run of the six affected test files: **138 tests, 138 pass, 0 fail.**
+- No file deletions in any commit (`git diff --diff-filter=D` empty at each).
+- `STATE.md` and `ROADMAP.md` untouched, per worktree-mode rules.
+
 ---
 *Phase: 29-the-mcp-surface*
 *Completed: 2026-08-30*
