@@ -753,6 +753,144 @@ test("anno_read_region serves both views, and a span outside the image is report
   );
 });
 
+// ---------------------------------------------------------------------------
+// CR-01 / MCP-04: THE TWO READ VERBS MUST AGREE.
+//
+// `anno_disassemble` and `anno_read_region` ask the same question of the same
+// bytes through the same `sliceSpan()`/`outsideImage()` pair. The review
+// reproduced them DISAGREEING: `anno_read_region` refused an out-of-image
+// address correctly while `anno_disassemble` answered `isError:false` with
+// `instructions:0` and an `end_address` numerically BELOW the `address` asked
+// about -- a plausible-looking zero, and the exact shape ROADMAP criterion 5
+// and this surface's own prohibition forbid.
+//
+// The property under assertion below is their AGREEMENT, asserted in ONE test
+// per case rather than as two independent shapes that could drift apart again.
+// ---------------------------------------------------------------------------
+
+/** Loads at $1000 with FOUR payload bytes, so its last address is $1003:
+ * `lda #$00` / `inx` / `rts`. Deliberately tiny -- every address at or above
+ * $1004 is outside it, which is what the out-of-image cases need, and the
+ * three instructions give the over-refusal control something non-zero to
+ * count. */
+const TINY_PRG = prgBytes(0x1000, [0xa9, 0x00, 0xe8, 0x60]);
+
+/** The out-of-image address the review reported against: $9000, far past a
+ * four-byte image loading at $1000. */
+const OUT_OF_IMAGE = 0x9000;
+
+test("CR-01 / MCP-04: both read verbs return the SAME {available:false} verdict for an out-of-image address", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      const region = await runAnnoTool("anno_read_region", { store, image, start_address: OUT_OF_IMAGE, end_address: OUT_OF_IMAGE + 16 });
+
+      for (const [name, result] of [
+        ["anno_disassemble", disasm],
+        ["anno_read_region", region],
+      ] as const) {
+        assert.equal(result.isError, false, `${name}: a well-formed question this image cannot answer is not a caller error -- ${result.content[0]!.text}`);
+        const verdict = (await body(result)) as { available?: boolean; reason?: string };
+        assert.equal(verdict.available, false, `${name} must report the address as unanswerable, exactly as its sibling verb does`);
+        assert.equal(typeof verdict.reason, "string", `${name} must say WHY`);
+        assert.ok(verdict.reason!.length >= 40, `${name}: a bare token is not a reason`);
+      }
+    },
+  );
+});
+
+test("CR-01: the incoherent range is STRUCTURALLY absent -- an out-of-image disassemble carries no end_address and no instructions", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      assert.equal(disasm.isError, false, disasm.content[0]!.text);
+      const verdict = await body(disasm);
+
+      // The reproduced defect was `{instructions: 0, end_address: 4099}` for
+      // `address: 36864`. Asserting the KEYS are absent, not merely that the
+      // numbers are sane: a range whose end is below its own start must be
+      // unreachable, not unlikely.
+      assert.equal("end_address" in verdict, false, "a refusal must not carry a range at all -- an end_address below the address asked about is the reported defect");
+      assert.equal("instructions" in verdict, false, "a refusal must not carry an instruction COUNT -- zero reads as a measurement");
+      assert.equal("listing" in verdict, false, "and it must not carry an empty listing either");
+    },
+  );
+});
+
+test("CR-01: an inverted span -- an end_address BELOW the start -- refuses on BOTH verbs rather than serving an empty slice", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+
+      // Both bounds are INSIDE the image; only their order is wrong. This is
+      // the `sliceSpan()` totality case: the low-bound and high-bound guards
+      // both pass, and without the inverted-span guard `subarray(from, to+1)`
+      // hands back a zero-length success.
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1003", end_address: "$1001" });
+      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$1003", end_address: "$1001" });
+
+      for (const [name, result] of [
+        ["anno_disassemble", disasm],
+        ["anno_read_region", region],
+      ] as const) {
+        assert.equal(result.isError, false, `${name}: ${result.content[0]!.text}`);
+        const verdict = (await body(result)) as { available?: boolean; bytes?: number; instructions?: number };
+        assert.equal(verdict.available, false, `${name} must refuse a span that covers no bytes, never serve it as a zero-length success`);
+        assert.equal("bytes" in verdict, false, `${name} must not report a byte count for a span it refused`);
+        assert.equal("instructions" in verdict, false, `${name} must not report an instruction count for a span it refused`);
+      }
+    },
+  );
+});
+
+test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds on both verbs, with a non-zero instruction count", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+
+      // Without this control a fix that refused EVERYTHING would pass the
+      // three cases above and prove nothing.
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1000", end_address: "$1003" });
+      assert.equal(disasm.isError, false, disasm.content[0]!.text);
+      const disasmBody = (await body(disasm)) as { available?: boolean; instructions: number; end_address: number; listing: string };
+      assert.equal(disasmBody.available, undefined, "a span inside the image is answered, not refused");
+      assert.ok(disasmBody.instructions > 0, "the fix must DISCRIMINATE -- a real span still decodes to real instructions");
+      assert.equal(disasmBody.end_address, 0x1003);
+      assert.match(disasmBody.listing, /rts/i);
+
+      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$1000", end_address: "$1003" });
+      assert.equal(region.isError, false, region.content[0]!.text);
+      const regionBody = (await body(region)) as { available?: boolean; bytes: number };
+      assert.equal(regionBody.available, undefined);
+      assert.equal(regionBody.bytes, 4);
+    },
+  );
+});
+
+test("CR-01: an OMITTED end_address still defaults to the image's own bound -- removing the clamp must not remove the ergonomics", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+      const last = 0x1003;
+
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1000" });
+      assert.equal(disasm.isError, false, disasm.content[0]!.text);
+      const disasmBody = (await body(disasm)) as { available?: boolean; instructions: number; end_address: number };
+      assert.equal(disasmBody.available, undefined, "an omitted end is derived from the image itself and is inside it by construction");
+      assert.ok(disasmBody.instructions > 0);
+      assert.ok(disasmBody.end_address <= last, `an omitted end must not run past the image's last address $${last.toString(16)}`);
+    },
+  );
+});
+
 test("anno_get_binary_info reports the load address, origin and lengths for a real PRG, and refuses a non-PRG by name", async () => {
   await withStore(
     () => {},
