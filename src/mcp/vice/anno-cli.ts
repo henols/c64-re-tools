@@ -62,11 +62,23 @@
 //     the predicate fifteen ways, including the symlink and dangling-link
 //     classes -- but its CONSUMER SET was unenumerated, and nothing could fail
 //     when a new argument skipped it. `anno-cli-path-consumers.test.ts` closes
-//     exactly that asymmetry: it enumerates every caller-supplied path
-//     argument this CLI accepts, derives the flag half from `VERB_OPTIONS`
-//     below so a new path-shaped flag joins the audit automatically, and fails
-//     when one of them reaches a filesystem call without passing through the
-//     seam. The next unconfined argument fails a test rather than a review.
+//     exactly that asymmetry: it ENUMERATES every caller-supplied path
+//     argument this CLI accepts -- the flags derived from `VERB_OPTIONS`
+//     below, the positionals derived from each verb's `--help` synopsis line
+//     -- and fails when the inventory and the surface disagree in either
+//     direction, or when the number of confinement call sites in this file
+//     falls below the inventory's size. A new path-shaped flag or positional
+//     therefore joins the audit automatically instead of by a reviewer
+//     noticing.
+//
+//     AND WHAT IT DOES NOT CHECK, stated in terms so the limit can be closed
+//     deliberately rather than discovered (WR-02): it does not associate a
+//     particular argument with a particular call site. "Six arguments each
+//     confined once" and "five confined with one of them confined twice" read
+//     the same to it. That association needs per-argument dataflow through
+//     this file -- a static-analysis job, deliberately not taken on in a
+//     gap-closure round -- so what this paragraph now claims is the narrower
+//     property the test has, not the wider one it used to be credited with.
 //
 //   - Never use the RAW caller string after confining it.
 //     `storePathWithinWorkspace()` returns the REALPATH, not its input, so
@@ -357,9 +369,15 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
  * it fifteen ways. Its CONSUMER SET was unenumerated, and that asymmetry is
  * the whole mechanism by which both findings shipped past a green suite.
  * `anno-cli-path-consumers.test.ts` is what closes it: it enumerates every
- * caller-supplied path argument this CLI accepts and fails when one of them
- * reaches a filesystem call without passing through the seam. A header that
- * asserts a property must point at the mechanism that keeps it.
+ * caller-supplied path argument this CLI accepts -- flags from
+ * `VERB_OPTIONS`, positionals from each verb's `--help` synopsis line -- and
+ * fails when the inventory and the surface disagree in either direction, or
+ * when this file's confinement call sites number fewer than the inventory's
+ * entries. It does not associate a particular argument with a particular call
+ * site (WR-02), so six arguments confined once each and five confined with one
+ * of them confined twice read the same to it; that limit is named here rather
+ * than papered over. A header that asserts a property must point at the
+ * mechanism that keeps it, and must claim no more than the mechanism checks.
  */
 async function cmdRenderMemmap(rest: string[]): Promise<number> {
   const {
@@ -849,8 +867,13 @@ function printCoverageReport(report: CoverageReport): void {
  *     `openStore()` is then handed the same workspace root, so its own
  *     confinement agrees by construction rather than by a second rule. The
  *     enumeration is now mechanical rather than prose:
- *     `anno-cli-path-consumers.test.ts` fails when a path argument this verb
- *     accepts reaches a filesystem call without passing through the seam.
+ *     `anno-cli-path-consumers.test.ts` inventories this verb's path
+ *     arguments -- flags from `VERB_OPTIONS`, positionals from the `--help`
+ *     synopsis line -- and fails when that inventory and the surface disagree
+ *     either way, or when this file's confinement call sites number fewer
+ *     than the inventory's entries. It does not associate a given argument
+ *     with a given call site (WR-02), so it cannot tell six arguments
+ *     confined once each from five confined with one confined twice.
  *   - THE STORE IS OPENED ONCE, read-only, for the whole verb, and closed in a
  *     `finally`. `mustExist` is what makes "the annotations are gone" and
  *     "there are no annotations" refuse differently instead of reading the
