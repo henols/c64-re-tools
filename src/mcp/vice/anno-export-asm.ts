@@ -43,9 +43,13 @@
 //     a second copy of that vocabulary by name; this module does not need it at
 //     all, and a copy made "just to filter" is how the eleventh prefix goes
 //     missing in one of two places.
-//   - Never compare a `dataType` string in this module. `block-class.ts` is the
-//     one place in this tree allowed to interpret that column; here it is
-//     copied VERBATIM onto the emitted block and read by nobody.
+//   - Never compare a `dataType` string in this module beyond the TWO places
+//     that already do, each of which says so in its own comment:
+//     `CODE_DATA_TYPE`'s decoder-or-dump branch, and `WORD_PAIR_DATA_TYPES`'s
+//     `!word` eligibility check. Both are questions about the emitted TEXT.
+//     `block-class.ts` is the one place in this tree allowed to INTERPRET that
+//     column -- what the data means -- and everywhere else here the string is
+//     copied VERBATIM onto the emitted block and its trailing comment.
 //   - Never import this tree's host/container path-translation modules
 //     (`hostpath.ts` / `containerpath.ts`). Their consumer set is a closed,
 //     mechanically asserted list of named modules and an exporter has no reason
@@ -70,10 +74,9 @@
 // never a false disagreement. But an export makes no claim about bytes outside
 // its own blocks, and neither does the byte-diff that settles it.
 //
-// SCOPE, DELIBERATELY NARROW: code ranges only. There is no typed-data emitter,
-// no enum substitution, no mid-instruction `=*+$01` label insertion and no
-// comment emission here. Those arrive in later plans of this phase; the tracer
-// this module belongs to proves the PATH, not the breadth.
+// SCOPE, STILL DELIBERATELY NARROW: code ranges, the twelve typed data ranges
+// and comments. There is no enum substitution and no mid-instruction `=*+$01`
+// label insertion here yet; those arrive in a later plan of this phase.
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
@@ -149,10 +152,83 @@ export interface ExportAsmResult {
    * which therefore went out as `!byte` directives with their mnemonic moved
    * into a trailing comment. */
   unexpressibleCount: number;
+  /** How many bytes went out through the DATA path -- every byte of every
+   * block whose `dataType` is not `code`. A code block contributes nothing
+   * here, however many bytes it decoded. */
+  dataByteCount: number;
 }
 
 /** How many raw bytes go on one `!byte` line for a non-code block. */
-const BYTES_PER_DATA_LINE = 8;
+const BYTES_PER_DATA_LINE = 16;
+
+/** How many 16-bit values go on one `!word` line. */
+const WORDS_PER_DATA_LINE = 8;
+
+/**
+ * The two `DATA_TYPES` members whose bytes are ADJACENT little-endian pairs,
+ * and therefore the only ones `!word` can emit without changing a byte.
+ *
+ * THIS IS THE ONE PLACE IN THIS MODULE A TYPE NAME IS READ FOR EMISSION, other
+ * than `CODE_DATA_TYPE`'s decoder/dump branch. `block-class.ts` owns
+ * INTERPRETATION of a `dataType`; these two names are read here only to answer
+ * "may this block's bytes be re-grouped into pairs", which is a question about
+ * the emitted TEXT and not about what the data means. Every other type -- the
+ * four split-table layouts included, whose low and high halves are NOT adjacent
+ * pairs -- is copied verbatim onto a `!byte` line and never compared.
+ */
+const WORD_PAIR_DATA_TYPES: readonly string[] = Object.freeze(["word", "address"]);
+
+/**
+ * Emits one non-code block's bytes.
+ *
+ * THE RULE, and its reason: byte-identity is the criterion, and `!byte` is
+ * byte-identical for every type. `!word` is used ONLY where it is provably
+ * identical AND improves readability -- `word` and `address` ranges of even
+ * length, where ACME's `!word` emits little-endian pairs (measured). Everything
+ * else goes out as `!byte`.
+ *
+ * `!text` IS DELIBERATELY NOT EMITTED for `petscii` / `screencode`. `!text`
+ * applies ACME's CURRENT conversion table, and a conversion this exporter does
+ * not control is exactly the way a byte-identical claim stops being true --
+ * silently, on somebody else's machine, with a different ACME build. The type
+ * name goes into the trailing comment instead, so a human reader loses nothing
+ * a converter would have told them about the bytes' meaning.
+ *
+ * `stock-petscii.ts` was checked for a reusable byte-to-text converter and
+ * exports only `asciiToPetscii()` -- the other direction. A second conversion
+ * table is NOT invented here; that would be the same drift hazard wearing a
+ * local name.
+ *
+ * OVERLAP: `--strict-segments` is in the verify argv, which promotes ACME's
+ * "Segment starts inside another one, overwriting it." from a Warning to an
+ * Error (measured, exit 1). Without it a store holding two overlapping ranges
+ * would silently overwrite one with the other and the byte-diff would compare
+ * against whichever won.
+ */
+function emitDataLines(slice: Uint8Array, dataType: string): string[] {
+  const out: string[] = [];
+
+  if (WORD_PAIR_DATA_TYPES.includes(dataType) && slice.length % 2 === 0) {
+    for (let offset = 0; offset < slice.length; offset += WORDS_PER_DATA_LINE * 2) {
+      const chunk = slice.subarray(offset, Math.min(offset + WORDS_PER_DATA_LINE * 2, slice.length));
+      const values: string[] = [];
+      for (let i = 0; i < chunk.length; i += 2) values.push(hex4(chunk[i]! | (chunk[i + 1]! << 8)));
+      out.push(`${INDENT}!word ${values.join(", ")}  ; ${dataType}`);
+    }
+    return out;
+  }
+
+  // The fallback says WHY it happened, because "this word table came out as
+  // bytes" is otherwise indistinguishable from a missing feature.
+  const why = WORD_PAIR_DATA_TYPES.includes(dataType)
+    ? ` (odd byte count ${slice.length} -- !word emits PAIRS, so a byte-identical emission falls back to !byte)`
+    : "";
+  for (let offset = 0; offset < slice.length; offset += BYTES_PER_DATA_LINE) {
+    const chunk = slice.subarray(offset, Math.min(offset + BYTES_PER_DATA_LINE, slice.length));
+    out.push(`${INDENT}!byte ${[...chunk].map(hex2).join(", ")}  ; ${dataType}${why}`);
+  }
+  return out;
+}
 
 /** ACME source indent for directive lines, matching `disasm-renderer.ts`'s own
  * cosmetic indent so the two emitters' output reads as one document. */
@@ -354,6 +430,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   }
 
   let unexpressibleCount = 0;
+  let dataByteCount = 0;
 
   for (const block of blocks) {
     const slice = image.bytes.subarray(block.start - imageStart, block.endExclusive - imageStart);
@@ -370,16 +447,14 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         block.lineCount++;
       }
     } else {
-      // Every non-code block goes out as raw `!byte` directives in this plan.
-      // The typed emitter (word, address, petscii, screencode, the four split
-      // layouts) arrives in a later plan; emitting bytes is correct in the
-      // meantime because it reproduces the image exactly, which is the only
-      // property the byte-diff measures.
-      for (let offset = 0; offset < slice.length; offset += BYTES_PER_DATA_LINE) {
-        const chunk = slice.subarray(offset, Math.min(offset + BYTES_PER_DATA_LINE, slice.length));
-        content.push(`${INDENT}!byte ${[...chunk].map(hex2).join(", ")}`);
-        block.lineCount++;
-      }
+      // The `dataType` reaching `emitDataLines()` is the store's own string,
+      // copied off the row and passed through -- this module never branches on
+      // it beyond the code/not-code test above and the `!word` eligibility
+      // check inside the emitter.
+      const dataLines = emitDataLines(slice, block.dataType);
+      content.push(...dataLines);
+      block.lineCount += dataLines.length;
+      dataByteCount += slice.length;
     }
 
     // EVERY block goes through `emitBlock()`, code and data alike, so there is
@@ -403,5 +478,6 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     blocks,
     symbolCount: sortedLabels.length,
     unexpressibleCount,
+    dataByteCount,
   };
 }

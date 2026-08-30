@@ -470,7 +470,12 @@ test("`word` of ODD length falls back to `!byte`, says why, and still reassemble
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
 
   assert.ok(result.source.includes("!byte $00, $ff, $34"), `an odd byte count cannot be emitted as pairs:\n${result.source}`);
-  assert.equal(result.source.includes("!word"), false, `the fallback must not ALSO emit \`!word\`:\n${result.source}`);
+  // Matched as a DIRECTIVE at the start of a line, not as a substring: the
+  // fallback's own trailing comment says the words "!word emits PAIRS", and an
+  // assertion that trips over the explanation instead of the emission would be
+  // reporting on the comment.
+  const wordDirectives = result.source.split("\n").filter((line) => /^\s*!word\b/.test(line));
+  assert.deepEqual(wordDirectives, [], `the fallback must not ALSO emit a \`!word\` directive:\n${result.source}`);
   assert.ok(result.source.includes("odd byte count"), `the fallback must say why it happened:\n${result.source}`);
 
   const verdict = verifyExport(result);
