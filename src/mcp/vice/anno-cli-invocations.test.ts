@@ -263,3 +263,84 @@ test("the checker reads the CLI's OWN option set, so a flag the CLI accepts is n
     assert.deepEqual(problems, [], `${verb}: ${problems.join("; ")}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// 6. WR-01 -- a REQUIRED flag that is OMITTED.
+//
+// The gate this file proves was built so "a name-only floor cannot see a dead
+// command" could not ship again, and then went green for a documented command
+// that exits 1: the verifier planted `anno coverage game.prg` (no `--store`) at
+// `routine-queue-walker/SKILL.md:241` and got
+// `check-skill-cli-invocations: OK -- 10 documented anno CLI invocation(s) ...`,
+// exit 0. Flag MEMBERSHIP and positional EXTENSION were both checked
+// thoroughly; flag PRESENCE was not checked at all. A guard proven on the
+// wrong axis.
+//
+// The required-flag table is passed IN like the other two, so these cases can
+// hand the predicate a deliberately-wrong table when that is the point.
+// ---------------------------------------------------------------------------
+
+const REQUIRED_FLAGS_LOCAL = Object.freeze({
+  coverage: Object.freeze(["--store"]),
+  "render-memmap": Object.freeze(["--provenance"]),
+});
+
+function problemsForRequired(line: string, requiredFlags: Readonly<Record<string, readonly string[]>> = REQUIRED_FLAGS_LOCAL): string[] {
+  const parsed = parseInvocations(fenced(line));
+  assert.notEqual(parsed, null);
+  assert.equal(parsed!.length, 1, `expected exactly one invocation from ${JSON.stringify(line)}`);
+  return checkOne(parsed![0]!, VERB_OPTIONS, POSITIONAL_KINDS, requiredFlags);
+}
+
+test("WR-01: an omitted REQUIRED flag is reported by name", () => {
+  // The verifier's exact plant, verbatim.
+  const problems = problemsForRequired("node src/mcp/vice/vice-proxy.ts anno coverage game.prg");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /--store/, "the problem must name the omitted flag");
+  assert.match(problems[0]!, /required/i);
+  // The reader has to be able to act on it: say what actually happens.
+  assert.match(problems[0]!, /exits non-zero/i, "the problem must say the command fails at runtime without it");
+  assert.match(problems[0]!, /anno coverage game\.prg/, "and quote the line a reader has to go and find");
+});
+
+test("WR-01 positive control: the same invocation WITH --store is sound", () => {
+  assert.deepEqual(problemsForRequired("node src/mcp/vice/vice-proxy.ts anno coverage game.prg --store game.annostore"), []);
+});
+
+test("WR-01: render-memmap's own required flag is checked too, both directions", () => {
+  const without = problemsForRequired("vice-mcp anno render-memmap game.annostore");
+  assert.equal(without.length, 1, without.join("; "));
+  assert.match(without[0]!, /--provenance/);
+  assert.match(without[0]!, /required/i);
+  assert.deepEqual(problemsForRequired("vice-mcp anno render-memmap game.annostore --provenance sidecar.json"), []);
+});
+
+test("a required flag written in a USAGE synopsis, with a placeholder VALUE, counts as PRESENT", () => {
+  // Presence is a property of the flag TOKEN, so `--store FILE` is present by
+  // construction and no second placeholder rule is needed beside
+  // `isPlaceholder()`. A gate that reds on a synopsis is one nobody keeps green.
+  assert.deepEqual(problemsForRequired("vice-mcp anno coverage <program> --store FILE"), []);
+  assert.deepEqual(problemsForRequired("vice-mcp anno render-memmap <store> --provenance FILE --out FILE"), []);
+});
+
+/** Classifies one problem message by the check that produced it. Used only by
+ * the ordering assertion, which is about the SEQUENCE rather than the text. */
+function problemKind(problem: string): string {
+  if (/no such verb/i.test(problem)) return "unknown-verb";
+  if (/accepted option set/i.test(problem)) return "flag-membership";
+  if (/is not one this verb reads|takes no positional argument/i.test(problem)) return "positional-kind";
+  if (/is required/i.test(problem)) return "required-flag";
+  return `unclassified: ${problem}`;
+}
+
+test("multiple problems are reported in the declared order, stably across runs", () => {
+  // One invocation carrying all three non-short-circuiting problems at once:
+  // an unaccepted flag, a positional outside the declared kinds, and an
+  // omitted required flag.
+  const line = "vice-mcp anno render-memmap game.regen2000proj --verbose";
+  const first = problemsForRequired(line);
+  assert.equal(first.length, 3, first.join("; "));
+  assert.deepEqual(first.map(problemKind), ["flag-membership", "positional-kind", "required-flag"]);
+  const second = problemsForRequired(line);
+  assert.deepEqual(second, first, "two runs over the same input must return identical problem arrays");
+});
