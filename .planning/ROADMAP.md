@@ -568,7 +568,7 @@ criterion 2.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
 
-**Plans**: 21 plans — **17 executed, 4 planned and not yet executed**. The original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. All three of those gap waves are executed and merged (29-13, 29-14, 29-17, then 29-15, then 29-16), and re-verification has run: **4/6 again, but a different 4/6** — five of the six prior gaps are closed, two remain (criterion 2's `render-memmap --check` false drift, and `CUT-01`'s non-reproducing surviving-line figure). **Gap-closure round 2 (29-18..29-21, in 2 waves) is planned on 2026-08-30 against those two remaining gaps** and is not yet executed. The phase is NOT complete.
+**Plans**: 20/21 plans executed — **20 executed, 1 remaining (29-20, wave 2)**. The original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. All three of those gap waves are executed and merged (29-13, 29-14, 29-17, then 29-15, then 29-16), and re-verification has run: **4/6 again, but a different 4/6** — five of the six prior gaps are closed, two remain (criterion 2's `render-memmap --check` false drift, and `CUT-01`'s non-reproducing surviving-line figure). **Gap-closure round 2 (29-18..29-21, in 2 waves) is executing on 2026-08-30 against those two remaining gaps**: wave 1 (29-18, 29-19, 29-21) is executed and merged, and 29-20 (wave 2) remains. The phase is NOT complete.
 
 Plans:
 **Wave 1**
@@ -637,9 +637,9 @@ Plans:
 
 *Gap-closure round 2, wave 1* (three plans, no shared files — fully parallel)
 
-- [ ] 29-18-PLAN.md — **Tracer:** the `render-memmap` banner made path-independent through one new `workspaceRelativePath()` seam, proven end to end by rendering under root A and `--check`ing the identical bytes under root B, and the suite that PINNED the defect re-pointed (gap 1, CR-01) (wave 1)
-- [ ] 29-19-PLAN.md — The invocation gate taught to see an omitted REQUIRED flag, with its declaration tables moved where its own committed test can read them, and the verifier's exact plant observed biting (gap 1 `missing` item 4, WR-01) (wave 1)
-- [ ] 29-21-PLAN.md — `CUT-01` re-measured rather than transcribed, at a commit the sentence names, with checkbox, sizing sentence, provenance paragraphs and traceability row moved in one edit; and `MCP-04` promoted on the re-verification verdict across all four of its sites (gap 2, plus the stale row) (wave 1)
+- [x] 29-18-PLAN.md — **Tracer:** the `render-memmap` banner made path-independent through one new `workspaceRelativePath()` seam, proven end to end by rendering under root A and `--check`ing the identical bytes under root B, and the suite that PINNED the defect re-pointed (gap 1, CR-01) (wave 1)
+- [x] 29-19-PLAN.md — The invocation gate taught to see an omitted REQUIRED flag, with its declaration tables moved where its own committed test can read them, and the verifier's exact plant observed biting (gap 1 `missing` item 4, WR-01) (wave 1)
+- [x] 29-21-PLAN.md — `CUT-01` re-measured rather than transcribed, at a commit the sentence names, with checkbox, sizing sentence, provenance paragraphs and traceability row moved in one edit; and `MCP-04` promoted on the re-verification verdict across all four of its sites (gap 2, plus the stale row) (wave 1)
 
 *Gap-closure round 2, wave 2* *(blocked on 29-18 for content — the corrected prose describes the corrected code — and on 29-18/29-19 for **file ownership** of `module-classification.ts` and of the invocation gate's baseline; those are ownership dependencies, not content ones)*
 
@@ -1124,7 +1124,7 @@ in a milestone archive.
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
-| 29. The MCP Surface | v0.7.0 | 17/17 | In Progress | - |
+| 29. The MCP Surface | v0.7.0 | 20/21 | In Progress | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
