@@ -348,7 +348,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     basis: {
       consumers: [
         { path: "src/mcp/vice/anno-coverage.ts", symbol: "CONFIDENCE_GRADES", line: 144 },
-        { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "formatConfidenceComment", line: 42 },
+        { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "formatConfidenceComment", line: 43 },
       ],
       requirements: ["COV-01", "COV-02"],
       rationale:

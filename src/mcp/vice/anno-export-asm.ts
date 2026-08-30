@@ -80,8 +80,9 @@
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
-import { openStore, closeStore, listRanges, listLabels } from "./anno-store.ts";
-import type { LabelRow, RangeRow } from "./anno-types.ts";
+import { openStore, closeStore, listRanges, listLabels, listComments } from "./anno-store.ts";
+import { AnnoCommentError, COMMENT_TYPES, assertCommentText } from "./anno-types.ts";
+import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 import { decode } from "./disasm-decoder.ts";
 import { renderLine } from "./disasm-renderer.ts";
@@ -156,6 +157,10 @@ export interface ExportAsmResult {
    * block whose `dataType` is not `code`. A code block contributes nothing
    * here, however many bytes it decoded. */
   dataByteCount: number;
+  /** How many store comments the source carries. Always the store's FULL
+   * comment count when this function returns: a comment with no emitted line
+   * to attach to is refused by name rather than left out of this number. */
+  commentCount: number;
 }
 
 /** How many raw bytes go on one `!byte` line for a non-code block. */
@@ -177,6 +182,15 @@ const WORDS_PER_DATA_LINE = 8;
  * pairs -- is copied verbatim onto a `!byte` line and never compared.
  */
 const WORD_PAIR_DATA_TYPES: readonly string[] = Object.freeze(["word", "address"]);
+
+/** One emitted data line, with the address span it covers. The span is what
+ * lets a stored comment find its line: a `!byte` line covers up to sixteen
+ * addresses, and a comment on any of them belongs to that line. */
+interface DataLine {
+  text: string;
+  start: number;
+  endExclusive: number;
+}
 
 /**
  * Emits one non-code block's bytes.
@@ -205,15 +219,19 @@ const WORD_PAIR_DATA_TYPES: readonly string[] = Object.freeze(["word", "address"
  * would silently overwrite one with the other and the byte-diff would compare
  * against whichever won.
  */
-function emitDataLines(slice: Uint8Array, dataType: string): string[] {
-  const out: string[] = [];
+function emitDataLines(slice: Uint8Array, dataType: string, blockStart: number): DataLine[] {
+  const out: DataLine[] = [];
 
   if (WORD_PAIR_DATA_TYPES.includes(dataType) && slice.length % 2 === 0) {
     for (let offset = 0; offset < slice.length; offset += WORDS_PER_DATA_LINE * 2) {
       const chunk = slice.subarray(offset, Math.min(offset + WORDS_PER_DATA_LINE * 2, slice.length));
       const values: string[] = [];
       for (let i = 0; i < chunk.length; i += 2) values.push(hex4(chunk[i]! | (chunk[i + 1]! << 8)));
-      out.push(`${INDENT}!word ${values.join(", ")}  ; ${dataType}`);
+      out.push({
+        text: `${INDENT}!word ${values.join(", ")}  ; ${dataType}`,
+        start: blockStart + offset,
+        endExclusive: blockStart + offset + chunk.length,
+      });
     }
     return out;
   }
@@ -225,7 +243,11 @@ function emitDataLines(slice: Uint8Array, dataType: string): string[] {
     : "";
   for (let offset = 0; offset < slice.length; offset += BYTES_PER_DATA_LINE) {
     const chunk = slice.subarray(offset, Math.min(offset + BYTES_PER_DATA_LINE, slice.length));
-    out.push(`${INDENT}!byte ${[...chunk].map(hex2).join(", ")}  ; ${dataType}${why}`);
+    out.push({
+      text: `${INDENT}!byte ${[...chunk].map(hex2).join(", ")}  ; ${dataType}${why}`,
+      start: blockStart + offset,
+      endExclusive: blockStart + offset + chunk.length,
+    });
   }
   return out;
 }
@@ -340,6 +362,91 @@ function formatSymbolDefinition(name: string, address: number): string {
 }
 
 /**
+ * The store's own spellings for the two comment placements, DESTRUCTURED out of
+ * `COMMENT_TYPES` -- the ONE home of that vocabulary -- rather than re-typed as
+ * literals here. The same idiom `anno-memmap-render.ts` uses at its own read
+ * boundary: a re-typed `"line"` is a second copy of a vocabulary that has one
+ * home, and the two diverge in silence the first time the schema's spelling
+ * changes.
+ */
+const [LINE_COMMENT, SIDE_COMMENT] = COMMENT_TYPES;
+
+/**
+ * Re-checks, at the EXPORT boundary, that a stored comment can be emitted.
+ *
+ * WHY THIS EXISTS RATHER THAN TRUSTING THE STORE. `assertCommentText()` is the
+ * one comment-text vocabulary and it now refuses an embedded line break -- but
+ * a store file written BEFORE that refusal existed, or through any route that
+ * did not call it, can still hold one on disk. This boundary is the last place
+ * before those bytes become assembler input, so it asks the question again. It
+ * RE-CHECKS rather than RE-DEFINES: the predicate is `assertCommentText()`'s,
+ * called here, never a second regex that could drift from it.
+ *
+ * The store validator's own message is deliberately DISCARDED and replaced.
+ * That message interpolates the offending text for one of its four cases, and
+ * an exporter error that quotes a file's contents back is a content-disclosure
+ * oracle (CR-03). What survives is the address and which rule fired -- facts
+ * ABOUT the comment, never the comment.
+ */
+export function assertExportableCommentText(text: string, address: number): string {
+  try {
+    return assertCommentText(text);
+  } catch (err) {
+    const reason = err instanceof AnnoCommentError && err.reason !== undefined ? err.reason : "refused by the store's comment-text vocabulary";
+    throw new Error(
+      `exportAsm: the comment at ${hex4(address)} cannot be emitted (${reason}). Every comment this exporter emits is a single line of text ` +
+        `that the store's own comment-text vocabulary accepts; a stored line break would put everything after it into the ACME source at ` +
+        `column zero, as assembler input rather than as a comment. REFUSED rather than repaired -- stripping or truncating here would change ` +
+        `what somebody wrote and report success.`,
+    );
+  }
+}
+
+/** Where the comments live while a block is being emitted, and which of them
+ * have found a line to attach to. Anything still unplaced when the last block
+ * is done is REFUSED by name rather than dropped. */
+interface CommentPlacement {
+  byAddress: ReadonlyMap<number, CommentRow[]>;
+  placed: Set<number>;
+}
+
+/**
+ * Attaches every stored comment for the addresses `[start, endExclusive)` to
+ * one emitted line: a `line` comment on its own line immediately before it, a
+ * `side` comment appended to it.
+ *
+ * Multiple comments at one address emit in `id` order, which is the order
+ * `listComments()` returns them in -- so two people's notes at one address keep
+ * the order they were written in rather than an order this module invented.
+ */
+function withComments(text: string, start: number, endExclusive: number, ctx: CommentPlacement): string[] {
+  const before: string[] = [];
+  let line = text;
+
+  for (let address = start; address < endExclusive; address++) {
+    for (const row of ctx.byAddress.get(address) ?? []) {
+      const safe = assertExportableCommentText(row.text, row.address);
+      ctx.placed.add(row.id);
+      if (row.commentType === LINE_COMMENT) {
+        before.push(`${INDENT}; ${safe}`);
+      } else if (row.commentType === SIDE_COMMENT) {
+        line = `${line}  ; ${safe}`;
+      } else {
+        // Unreachable through the type, and reachable through a store file
+        // somebody edited. Refusing beats guessing which of the two placements
+        // an unknown third one meant.
+        throw new Error(
+          `exportAsm: the comment at ${hex4(row.address)} has placement ${JSON.stringify(row.commentType)}, which is not one of the ` +
+            `${COMMENT_TYPES.length} placements the store defines (${COMMENT_TYPES.join(", ")}) -- refusing to guess where it belongs.`,
+        );
+      }
+    }
+  }
+
+  return [...before, line];
+}
+
+/**
  * Exports the annotation store at `options.storePath`, over the image at
  * `options.imagePath`, as ACME source plus the exact bytes that source must
  * assemble to.
@@ -366,9 +473,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   const handle = openStore(storePath, { workspaceRoot, mustExist: true });
   let ranges: RangeRow[];
   let labels: LabelRow[];
+  let comments: CommentRow[];
   try {
     ranges = listRanges(handle);
     labels = listLabels(handle);
+    comments = listComments(handle);
   } finally {
     closeStore(handle);
   }
@@ -429,6 +538,16 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     lines.push(formatSymbolDefinition(label.name, label.address));
   }
 
+  // Comments indexed by the address they annotate, each address's list left in
+  // `listComments()`'s own `id` order.
+  const commentsByAddress = new Map<number, CommentRow[]>();
+  for (const row of comments) {
+    const at = commentsByAddress.get(row.address);
+    if (at) at.push(row);
+    else commentsByAddress.set(row.address, [row]);
+  }
+  const placement: CommentPlacement = { byAddress: commentsByAddress, placed: new Set<number>() };
+
   let unexpressibleCount = 0;
   let dataByteCount = 0;
 
@@ -443,17 +562,25 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       const instructions = decode(slice, block.start, { end: block.endExclusive });
       for (const instr of instructions) {
         if (!instr.acmeExpressible) unexpressibleCount++;
-        content.push(renderLine(instr, { showSymbols: true, symbolFor }));
-        block.lineCount++;
+        // The span is the instruction's FIRST address only, not its whole
+        // length: a comment stored against an operand byte belongs to no
+        // emitted line, and attaching it to the instruction that happens to
+        // contain that byte would move a human's note onto a different address
+        // than the one they chose. It stays unplaced and is refused below.
+        const emitted = withComments(renderLine(instr, { showSymbols: true, symbolFor }), instr.address, instr.address + 1, placement);
+        content.push(...emitted);
+        block.lineCount += emitted.length;
       }
     } else {
       // The `dataType` reaching `emitDataLines()` is the store's own string,
       // copied off the row and passed through -- this module never branches on
       // it beyond the code/not-code test above and the `!word` eligibility
       // check inside the emitter.
-      const dataLines = emitDataLines(slice, block.dataType);
-      content.push(...dataLines);
-      block.lineCount += dataLines.length;
+      for (const dataLine of emitDataLines(slice, block.dataType, block.start)) {
+        const emitted = withComments(dataLine.text, dataLine.start, dataLine.endExclusive, placement);
+        content.push(...emitted);
+        block.lineCount += emitted.length;
+      }
       dataByteCount += slice.length;
     }
 
@@ -461,6 +588,21 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     // exactly one place that brackets a block and no route that emits an
     // unbracketed one.
     lines.push(...emitBlock(block.start, block.endExclusive, content));
+  }
+
+  // An annotation this exporter cannot express is REFUSED BY NAME, never
+  // dropped from the output while the export reports success. A comment is
+  // unplaceable when its address is inside an instruction rather than at its
+  // start, or outside every annotated range -- and in both cases the honest
+  // answer is that this export does not carry it, said out loud.
+  if (placement.placed.size !== comments.length) {
+    const unplaced = comments.filter((row) => !placement.placed.has(row.id));
+    const first = unplaced[0]!;
+    throw new Error(
+      `exportAsm: the ${first.commentType} comment at ${hex4(first.address)} has no emitted line to attach to -- that address is inside an ` +
+        `instruction rather than at its start, or is not covered by any annotated range. ` +
+        `${unplaced.length} of ${comments.length} comment(s) are in this state. Refusing to export while silently dropping them.`,
+    );
   }
 
   // `expectedBytes` is built from the IMAGE, never from `lines`. Gaps between
@@ -479,5 +621,6 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     symbolCount: sortedLabels.length,
     unexpressibleCount,
     dataByteCount,
+    commentCount: placement.placed.size,
   };
 }
