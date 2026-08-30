@@ -176,7 +176,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "render-memmap", argument: "<store>", kind: "positional" },
   { verb: "render-memmap", argument: "--provenance", kind: "flag" },
   { verb: "render-memmap", argument: "--out", kind: "flag" },
-  { verb: "coverage", argument: "<project>", kind: "positional" },
+  { verb: "coverage", argument: "<image>", kind: "positional" },
   { verb: "coverage", argument: "--store", kind: "flag" },
   { verb: "coverage", argument: "--out", kind: "flag" },
 ];
@@ -197,7 +197,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample"];
 /**
  * MEASURED, NOT COPIED: six caller-supplied path arguments across the two
  * verbs at this commit -- the store positional plus `--provenance` and `--out`
- * on `render-memmap`, and the project positional plus `--store` and `--out` on
+ * on `render-memmap`, and the image positional plus `--store` and `--out` on
  * `coverage`. Counted by reading both command functions, not carried over from
  * any planning document.
  *
