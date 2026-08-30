@@ -1246,3 +1246,61 @@ test("(G) over-refusal control: the DEFAULT output path (no --out) still resolve
     assert.ok(stdout.includes(derived));
   });
 });
+
+// ---------------------------------------------------------------------------
+// CR-03, one layer down: the sidecar parse failure names the failure without
+// echoing the file's bytes. Asserted HERE, at the CLI boundary, because that
+// is the surface an agent actually composes an invocation against.
+// ---------------------------------------------------------------------------
+
+test("CR-03 (H): an in-workspace sidecar that is not JSON fails naming the path and the failure, and discloses NONE of its bytes", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = makeRenderableStore(ws);
+    // Ten characters, at the file's opening -- see test B's note: Node's
+    // parse-error snippet truncates at ten, so a longer token would make this
+    // assertion vacuous rather than protective.
+    const token = "WWXXLEAKED";
+    const provenancePath = join(ws, "sidecar.json");
+    writeFileSync(provenancePath, `${token}\nnot json at all\n`);
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath]),
+    );
+    assert.notEqual(code, 0);
+    assert.ok(stderr.includes(provenancePath), "the failure must still NAME the sidecar it could not parse");
+    assert.match(stderr, /not valid JSON/i, "the failure must still say WHAT went wrong");
+    assert.ok(
+      !`${stdout}\n${stderr}`.includes(token),
+      `the parse failure disclosed the sidecar's contents -- found ${JSON.stringify(token)} in:\n${stdout}\n${stderr}`,
+    );
+  });
+});
+
+test("CR-03 (I): a sidecar that IS valid JSON but is not a valid provenance header still fails through the HEADER PARSER, naming the fields", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = makeRenderableStore(ws);
+    const provenancePath = join(ws, "sidecar.json");
+    // Valid JSON, wrong schema. A schema failure names FIELDS THE CALLER
+    // SUPPLIED and is not a disclosure route, so blurring it into the syntax
+    // failure would lose the diagnostic this verb depends on.
+    writeFileSync(provenancePath, JSON.stringify({ capturePath: "/tmp/x.raw" }));
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath]),
+    );
+    assert.notEqual(code, 0);
+    assert.doesNotMatch(stderr, /not valid JSON/i, "a SCHEMA failure must not be reported as a SYNTAX failure");
+    assert.match(stderr, /captureSha256/, "the header parser's own message names the missing required keys");
+  });
+});
+
+test("CR-03 (J, over-refusal control): a valid sidecar still renders", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = makeRenderableStore(ws);
+    const provenancePath = makeSidecar(ws);
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", join(ws, "ok.md")]),
+    );
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /wrote/i);
+    assert.match(readFileSync(join(ws, "ok.md"), "utf8"), /Range/);
+  });
+});
