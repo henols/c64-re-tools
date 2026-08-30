@@ -672,7 +672,7 @@ purpose, standing and exercised before the deletion window opens.
   4. What ACME cannot express is **reported as such** rather than emitted and hoped for: an illegal opcode outside the 221 expressible under `!cpu 6510` round-trips byte-identically as `!byte $xx` with a naming comment and never as an invented mnemonic, and every block asserts `*` equals its original address so a label substituted for a zero-page literal cannot change the instruction length and shift the code after it unnoticed. An enum renders on the **immediate** operand only, with reassembly byte-identity as the control that catches the wrong-operand case.
   5. A duplicate label is **refused** by the store, and with that refusal removed the export reassembles and **real ACME itself reports the duplicate-symbol error** — the external oracle confirming the internal one. That is the shape this project's own record demands: an internally-verified opcode table still shipped 14 wrong entries, caught only by running the output through a real assembler.
 
-**Plans**: 1/6 plans executed across 5 waves
+**Plans**: 3/6 plans executed across 5 waves
 
 Plans:
 **Wave 1**
@@ -681,8 +681,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 30-02-PLAN.md — Both mandatory reds against the new producer, the five verdict rules as named pure helpers, and both pinned transcripts re-recorded from real ACME 0.97 (wave 2)
-- [ ] 30-03-PLAN.md — Per-block `*` assertions proved capable of biting, the typed data-range emitter over all twelve `DATA_TYPES`, and the embedded-newline refusal `assertCommentText()` did not have (wave 2)
+- [x] 30-02-PLAN.md — Both mandatory reds against the new producer, the five verdict rules as named pure helpers, and both pinned transcripts re-recorded from real ACME 0.97 (wave 2)
+- [x] 30-03-PLAN.md — Per-block `*` assertions proved capable of biting, the typed data-range emitter over all twelve `DATA_TYPES`, and the embedded-newline refusal `assertCommentText()` did not have (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -1147,7 +1147,7 @@ in a milestone archive.
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
 | 29. The MCP Surface | v0.7.0 | 21/21 | Complete | 2026-08-30 |
-| 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 1/6 | In Progress|  |
+| 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 3/6 | In Progress|  |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
 
