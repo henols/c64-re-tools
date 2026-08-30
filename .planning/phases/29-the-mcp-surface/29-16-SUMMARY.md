@@ -455,3 +455,7 @@ None — no external service configuration required.
 ---
 *Phase: 29-the-mcp-surface*
 *Completed: 2026-08-30*
+
+## Self-Check: PASSED
+
+All four created files exist on disk and all six commit hashes resolve in `git log --oneline --all`.
