@@ -195,10 +195,10 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // playbook rather than restated. It exists because the phase's own skill gate
 // resolves verb NAMES and never an invocation's ARGUMENTS, so a documented
 // command that always failed passed a green suite (29-REVIEW.md CR-04). It
-// lives under `.planning/` deliberately -- `check-no-regenerator2000.mjs`'s
-// scope is `git ls-files` minus that PREFIX, and the script names the retired
-// vocabulary -- so a future reader looking for it under `scripts/` will not
-// find it.
+// lives under `.planning/` deliberately -- the removal gate under `scripts/`
+// scopes itself to `git ls-files` minus that PREFIX, and the script names the
+// retired vocabulary by necessity -- so a future reader looking for it under
+// `scripts/` will not find it.
 const EXPECTED_TRACKED_SHELL_SCRIPTS = [
   "src/mcp/vice/resources/vice-launcher.sh",
   "scripts/ensure-mcp-deps.sh",
