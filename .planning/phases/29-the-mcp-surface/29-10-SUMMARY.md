@@ -197,6 +197,44 @@ status: complete
 
 No file was deleted by Task 1.
 
+### Retroactive closure of the gate's one recorded weakness (2026-08-30)
+
+The paragraph above records, honestly and deliberately, that this reversibility
+gate was **auto-selected by the executing agent rather than answered by a
+person** — the one weakness this plan's own record flagged against itself.
+
+**That weakness is now closed. The owner was presented with the gate and
+answered it: "confirmed", option `delete-now`, on 2026-08-30.** The five
+preconditions were presented as the table above, each cited to the summary that
+evidences it, and the confirmation was given on that basis.
+
+The record is appended rather than rewritten: the 2026-08-29 auto-selection is
+what actually drove the execution, and overwriting it would erase the sequence a
+later reader needs. The correct reading is that the deletion was executed on an
+auto-selected gate and the owner **subsequently ratified it against the same
+evidence** — not that a human answered before the files were removed.
+
+**Each precondition was re-verified independently at ratification time**, against
+the named summary rather than by copying the table forward:
+
+| Precondition | Re-verified against | Observed |
+|---|---|---|
+| Gate exists and was observed biting | `29-02-SUMMARY.md` | Four planted evasion routes (a)–(d) plus the attribution false-positive control and a behavioural binary-safety proof, all driven through the gate's own exported predicate |
+| Both skill trees point somewhere real, shipped copy included | `29-09-SUMMARY.md` | 65 → 0 gate citations discharged; withdrawn verbs carry dated notices naming Phase 30; no live `r2000_*` invocation under either tree |
+| Guards breaking on the RENAME moved with it | `29-05-SUMMARY.md` | Coverage entry "Every guard that breaks on the rename moved with it"; gate green at every commit the plan made |
+| Guards breaking on REGISTRATION moved in the registering commit | `29-01-SUMMARY.md` | "all seven guards that break on registration moved in the same wave" — seven, where the plan had enumerated five |
+| Pre-phase failing-file SET recorded | `29-BASELINE.md` | Present on disk; the three-file set (`vice-proxy.test.ts`, `r2000-session.test.ts`, `audit-integrity.test.ts`) taken at `c27922a` with the broker down |
+
+**State of the tree at ratification.** All five CI gates exit 0
+(`check-no-regenerator2000`, `check-npm-packages`, `check-skill-tool-coverage`,
+`check-skill-fork-honesty`, `audit-gate`) and `npm run typecheck` exits **0** —
+so Deviation 1 below, which left `vice-proxy.test.ts:54` importing a deleted
+module and typecheck red, has since been closed by follow-up commits `d77d5db`
+and `dcd3d3e`, and the removal gate's temporary allow-list is asserted **empty**
+by plan 29-11. The tree-wide dangling-import sweep was re-run at ratification:
+**Arm 1 prints nothing** and **Arm 2 prints 15**, so the emptiness assertion is
+backed by a demonstrably non-vacuous scanner.
+
 ## Accomplishments
 
 ### The deletion set came from the registry, not from a prefix sweep
