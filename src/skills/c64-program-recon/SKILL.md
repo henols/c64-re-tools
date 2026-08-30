@@ -256,9 +256,28 @@ npx -y @henols/vice-mcp anno render-memmap game.annostore --provenance sidecar.j
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
 ```
 
-Add `--check` to detect drift — either a hand edit to the rendered file, or a store change since it
-was last rendered. The rendered file carries a generated-file banner; treat it like every other
-generated artifact in this repo and never hand-edit it.
+Add `--check` to detect drift. It is reported when, and only when, one of these changed: the
+rendered file itself (a hand edit); a store row (a range, a label, a comment, or a comment's
+confidence grade); the provenance sidecar's bytes; the location of the store or the sidecar
+**relative to the workspace root**; or the renderer. **Relocating the checkout is not drift** — the
+same tree at a different absolute path renders the same bytes, because the banner records
+workspace-relative locations. The rendered file carries a generated-file banner; treat it like every
+other generated artifact in this repo and never hand-edit it.
+
+**Dated correction, 2026-08-30 — the paragraph above used to name TWO drift causes, and a third
+existed.** Before gap-closure round 2 the banner recorded the store and the sidecar by their
+ABSOLUTE paths, so the checkout's own location was a silent third cause: an identical store,
+sidecar and rendered file reported `drifted` the moment the tree sat at a different absolute path,
+while `render-memmap` printed the same `render_digest` in both. Plan 29-18 removed that cause by
+recording workspace-relative locations, so the cause set above is the one the shipped verb has. The
+old two-cause wording is superseded rather than merely reworded, and this note says so because a
+reader meeting it in history needs to know which claim was live when.
+
+**One-time drift after upgrading, 2026-08-30.** A memory map rendered *before* that change reports
+`drifted` on its first `--check` afterwards, exactly once, because the banner's recorded locations
+changed from absolute to workspace-relative spellings. Re-run the generator and commit the new
+banner. This repository has no committed rendered `memory-map.md` — only the template — so nothing
+here regresses; the sentence is written for **consuming projects**, which do have one.
 
 **This playbook itself has a generated twin, and it is not the one to edit.**
 `installer/skills/c64-program-recon/` is a gitignored COPY of this directory, rebuilt from it by

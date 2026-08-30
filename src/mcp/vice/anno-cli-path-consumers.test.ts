@@ -31,7 +31,25 @@
 //
 // WHAT THIS FILE IS THE ONE AUTHORITATIVE PLACE FOR: the inventory of
 // caller-supplied path arguments the `anno` CLI accepts. `CLI_PATH_ARGUMENTS`
-// below is that inventory; nothing else in this tree declares it.
+// below is that inventory; nothing else in this tree declares it. Both halves
+// of it are now derived from the surface rather than merely asserted: the
+// FLAGS from `VERB_OPTIONS` (direction 2), the POSITIONALS from each verb's
+// `--help` synopsis line (direction 3b), each in BOTH directions.
+//
+// WHAT THIS FILE DOES NOT CHECK, NAMED SO A LATER READER CAN CLOSE IT ON
+// PURPOSE INSTEAD OF DISCOVERING IT (WR-02). The seam assertion in section 3
+// is an aggregate COUNT: it requires at least as many
+// `storePathWithinWorkspace(` call sites in `anno-cli.ts` as there are entries
+// in `CLI_PATH_ARGUMENTS`. IT DOES NOT ASSOCIATE A PARTICULAR ARGUMENT WITH A
+// PARTICULAR CALL SITE, so "six arguments each confined once" and "five
+// confined with one of them confined twice" are indistinguishable to it. That
+// association needs per-argument dataflow through a 900-line CLI -- a
+// static-analysis job, deliberately not taken on in a gap-closure round -- and
+// tightening `>=` to `==` would not reach it either, since the same six sites
+// satisfy both readings. Three headers in `anno-cli.ts` used to credit this
+// file with that association; they were corrected in the same change that
+// added the positional direction, because a header naming a property this file
+// does not check is a written warrant for the next maintainer not to check it.
 //
 // WHY IT IS A NEW FILE rather than more cases in `anno-confinement.test.ts`.
 // The same reasoning that file records for its own separation from
@@ -59,8 +77,9 @@
 //     several times over, so an unfiltered count would "pass" by counting the
 //     very comments that described the problem. Comment stripping below is
 //     mandatory, not hygiene.
-import test from "node:test";
+import test, { before } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -157,7 +176,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "render-memmap", argument: "<store>", kind: "positional" },
   { verb: "render-memmap", argument: "--provenance", kind: "flag" },
   { verb: "render-memmap", argument: "--out", kind: "flag" },
-  { verb: "coverage", argument: "<project>", kind: "positional" },
+  { verb: "coverage", argument: "<image>", kind: "positional" },
   { verb: "coverage", argument: "--store", kind: "flag" },
   { verb: "coverage", argument: "--out", kind: "flag" },
 ];
@@ -178,7 +197,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample"];
 /**
  * MEASURED, NOT COPIED: six caller-supplied path arguments across the two
  * verbs at this commit -- the store positional plus `--provenance` and `--out`
- * on `render-memmap`, and the project positional plus `--store` and `--out` on
+ * on `render-memmap`, and the image positional plus `--store` and `--out` on
  * `coverage`. Counted by reading both command functions, not carried over from
  * any planning document.
  *
@@ -284,6 +303,106 @@ test("the seam count is taken against COMMENT-STRIPPED source -- an unfiltered c
       "the import names it without calling it) -- if they do not, stripComments() is no longer removing anything and " +
       "the guard above has quietly become a substring search.",
   );
+});
+
+// ---------------------------------------------------------------------------
+// 3b. THE POSITIONAL HALF OF THE INVENTORY (WR-02).
+//
+// Direction 2 derives the FLAG half from `VERB_OPTIONS`, so a new path-shaped
+// flag joins the audit automatically. The POSITIONALS had no direction at all:
+// `<store>` and `<image>` sat in `CLI_PATH_ARGUMENTS` as hand-declarations
+// nothing could contradict, so a verb that grew a second positional would have
+// joined the CLI without joining the audit -- and a positional RENAMED on the
+// surface would have left the inventory auditing a spelling no caller can pass.
+//
+// THE DECLARATION OF RECORD FOR A POSITIONAL IS THE VERB'S USAGE SYNOPSIS
+// LINE, read from `--help` STDOUT rather than scraped from the source literal.
+// Same route as `anno-cli.test.ts`'s IN-06 test, and for its reason: `--help`
+// is the only channel by which a caller learns what to pass, so a source
+// literal that never reached stdout would satisfy a source-scraping check
+// while telling the caller nothing. The parsing shape is that test's too --
+// locate the verb's line, extract its declared tokens with one regex -- reused
+// rather than reinvented, and without importing one test file from another.
+//
+// BOTH DIRECTIONS, for the same reason section 2 needs both: an uninventoried
+// positional is the failure that ships, and a stale inventory entry is the one
+// that reads as coverage while auditing nothing.
+// ---------------------------------------------------------------------------
+
+const VICE_PROXY_PATH = join(HERE, "vice-proxy.ts");
+
+/** The shipped `anno --help` text, captured once. Populated in `before()`
+ * rather than at module scope so a spawn failure is reported as a test-file
+ * setup failure with its stderr rather than an unhandled throw at import. */
+let usageText = "";
+
+before(() => {
+  const result = spawnSync("node", [VICE_PROXY_PATH, "anno", "--help"], {
+    encoding: "utf8" as const,
+    env: { ...process.env, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" },
+    timeout: 20_000,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `\`anno --help\` exited ${result.status} (signal ${result.signal}) -- the positional directions below have no ` +
+      `declaration of record without it. stderr: ${result.stderr}`,
+  );
+  usageText = result.stdout;
+});
+
+/**
+ * Every positional a verb's USAGE synopsis line declares, in the spelling a
+ * caller sees.
+ *
+ * `<...>`-shaped tokens only, and that is a property of this CLI's own
+ * synopsis convention rather than a guess: flag VALUES are spelled `FILE` and
+ * `N`, and optional groups are spelled `[--out FILE]`, so an angled token on a
+ * synopsis line is a positional and nothing else. An OPTIONAL positional
+ * (`[<file>]`) is matched too, which is correct -- optional or not, it is a
+ * caller-supplied path argument and belongs in the inventory.
+ */
+function declaredPositionals(usage: string, verb: string): string[] {
+  const escaped = verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const lineMatch = new RegExp(`^ {2}${escaped}\\b.*$`, "m").exec(usage);
+  assert.ok(
+    lineMatch,
+    `expected a USAGE synopsis line for verb "${verb}" -- a verb with no synopsis has no declaration of record for ` +
+      "its positionals, so none of them can be audited",
+  );
+  return lineMatch![0].match(/<[a-zA-Z][a-zA-Z0-9_-]*>/g) ?? [];
+}
+
+test("every positional a verb's USAGE synopsis declares is named in CLI_PATH_ARGUMENTS", () => {
+  for (const verb of Object.keys(VERB_OPTIONS)) {
+    const inventoried = new Set(
+      CLI_PATH_ARGUMENTS.filter((e) => e.verb === verb && e.kind === "positional").map((e) => e.argument),
+    );
+    for (const positional of declaredPositionals(usageText, verb)) {
+      assert.ok(
+        inventoried.has(positional),
+        `${verb}'s USAGE synopsis declares the positional ${positional}, which is not named in CLI_PATH_ARGUMENTS ` +
+          `(that verb's inventoried positionals are ${JSON.stringify([...inventoried])}). Add it to the inventory AND ` +
+          "add its storePathWithinWorkspace() call in anno-cli.ts. Do NOT rename the synopsis token to match a stale " +
+          "inventory entry, and do NOT drop the positional from the synopsis to make this pass -- the synopsis is the " +
+          "only route by which a caller learns what to pass.",
+      );
+    }
+  }
+});
+
+test("every CLI_PATH_ARGUMENTS positional is declared in some verb's USAGE synopsis -- a stale entry audits nothing while reading as coverage", () => {
+  for (const entry of CLI_PATH_ARGUMENTS) {
+    if (entry.kind !== "positional") continue;
+    const declared = declaredPositionals(usageText, entry.verb);
+    assert.ok(
+      declared.includes(entry.argument),
+      `CLI_PATH_ARGUMENTS names ${entry.verb} ${entry.argument} as a positional, but that verb's USAGE synopsis ` +
+        `declares ${JSON.stringify(declared)}. An entry for a positional the shipped surface does not offer audits ` +
+        "nothing. Re-point the entry onto the shipped spelling; do NOT delete it to make this pass unless the " +
+        "positional itself is genuinely gone.",
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------

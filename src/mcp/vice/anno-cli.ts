@@ -62,11 +62,23 @@
 //     the predicate fifteen ways, including the symlink and dangling-link
 //     classes -- but its CONSUMER SET was unenumerated, and nothing could fail
 //     when a new argument skipped it. `anno-cli-path-consumers.test.ts` closes
-//     exactly that asymmetry: it enumerates every caller-supplied path
-//     argument this CLI accepts, derives the flag half from `VERB_OPTIONS`
-//     below so a new path-shaped flag joins the audit automatically, and fails
-//     when one of them reaches a filesystem call without passing through the
-//     seam. The next unconfined argument fails a test rather than a review.
+//     exactly that asymmetry: it ENUMERATES every caller-supplied path
+//     argument this CLI accepts -- the flags derived from `VERB_OPTIONS`
+//     below, the positionals derived from each verb's `--help` synopsis line
+//     -- and fails when the inventory and the surface disagree in either
+//     direction, or when the number of confinement call sites in this file
+//     falls below the inventory's size. A new path-shaped flag or positional
+//     therefore joins the audit automatically instead of by a reviewer
+//     noticing.
+//
+//     AND WHAT IT DOES NOT CHECK, stated in terms so the limit can be closed
+//     deliberately rather than discovered (WR-02): it does not associate a
+//     particular argument with a particular call site. "Six arguments each
+//     confined once" and "five confined with one of them confined twice" read
+//     the same to it. That association needs per-argument dataflow through
+//     this file -- a static-analysis job, deliberately not taken on in a
+//     gap-closure round -- so what this paragraph now claims is the narrower
+//     property the test has, not the wider one it used to be credited with.
 //
 //   - Never use the RAW caller string after confining it.
 //     `storePathWithinWorkspace()` returns the REALPATH, not its input, so
@@ -122,35 +134,57 @@ verbs:
       Generates the Markdown memory map from an annotation store plus a
       validated provenance sidecar (D-24: the store is canonical, this
       output is a GENERATED VIEW -- never hand-edit it). Without --check,
-      writes --out (default: memory-map.md beside the project), refusing
-      to overwrite an existing file there unless --force is passed, and
-      prints the row count, the number of [unknown]-graded rows, and the
-      render digest. With --check, re-renders in memory and compares against the
-      file at --out: prints "in sync" and exits 0 when they match, prints
-      the first differing line and exits non-zero on drift (from either a
-      hand edit OR a store-side change since the file was last rendered),
-      or prints "missing" and exits non-zero when --out does not exist yet.
-      --check is how a hand edit to the generated file is caught. Requires
-      an EXISTING annotation store and an EXISTING --provenance sidecar
-      (this verb creates neither).
+      writes --out (default: memory-map.md beside the STORE -- in the
+      store's own directory), refusing to overwrite an existing file there
+      unless --force is passed, and prints the row count, the number of
+      [unknown]-graded rows, and the render digest. That derived default is
+      put through the SAME confinement seam as a caller-supplied --out,
+      rather than trusted because this verb computed it.
+      With --check, re-renders in memory and compares against the file at
+      --out: prints "in sync" and exits 0 when they match, prints the first
+      differing line and exits non-zero on drift, or prints "missing" and
+      exits non-zero when --out does not exist yet. Drift is reported when,
+      and only when, one of these changed: this file itself (a hand edit --
+      which is what --check exists to catch); a store row (a range, a label,
+      a comment, or a comment's confidence grade); the provenance sidecar's
+      bytes; the location of the store or the sidecar RELATIVE TO THE
+      WORKSPACE ROOT; or the renderer. Relocating the checkout is NOT drift --
+      the same tree at a different absolute path renders these same bytes,
+      because the two locations the banner records are workspace-relative.
+      Requires an EXISTING annotation store and an EXISTING --provenance
+      sidecar (this verb creates neither).
 
-  coverage <project> --store FILE [--out FILE] [--force] [--sample N]
+  coverage <image> --store FILE [--out FILE] [--force] [--sample N]
       Measures how far a program has actually been reverse-engineered
-      (COV-01/COV-02), through anno-coverage.ts. <project> supplies the
+      (COV-01/COV-02), through anno-coverage.ts. <image> supplies the
       PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
       holding the labels, comments and typed ranges. Those are two separate
       files on purpose: the store holds annotations and never bytes, so a
       derived measure has to be told which bytes it is measuring and this
-      verb refuses to guess one from the other. Prints three separately
-      named measures -- the structural byte census, the two label figures,
-      and the sampled reproducibility result -- plus the comment-vacuity
-      measure, the indirect-dispatch scan and the divergence sub-report,
-      each under its own heading with its own numbers. Writes the JSON
-      report to --out when given, refusing to overwrite an existing file
-      there unless --force is passed; --sample overrides the
-      reproducibility sample size. Exits non-zero ONLY for a caller error
-      or a store it could not read -- a low measurement is a RESULT, never
-      a failure, so a bad report still exits 0.
+      verb refuses to guess one from the other.
+      <image> is dispatched BY EXTENSION FIRST and never by byte length.
+      Three forms are read: a .prg (its first two bytes are the load
+      address); a .raw or .bin flat capture; and a file of any other
+      extension that is exactly 65536 bytes, read as a flat capture. The
+      retired JSON project form survives as a TRAILING LEGACY branch,
+      reached only when none of those matched -- its only producer was
+      deleted (D-14) and it is kept solely so an existing file on disk is
+      not broken.
+      Prints three separately named measures -- the structural byte census,
+      the two label figures, and the sampled reproducibility result -- plus
+      the comment-vacuity measure, the indirect-dispatch scan and the
+      divergence sub-report, each under its own heading with its own
+      numbers. Writes the JSON report to --out when given, refusing to
+      overwrite an existing file there unless --force is passed; --sample
+      overrides the reproducibility sample size.
+      Exits non-zero for a caller error (a missing or malformed argument, a
+      path outside the workspace root, a named file that does not exist, or
+      a refused overwrite of an existing --out without --force), for a store
+      it could not read, for a report it could not write, and for an image
+      whose PAYLOAD COULD NOT BE DECODED -- that last is not a low score but
+      a measurement taken over nothing, and it is reported AFTER the report
+      so the reason is on screen. A LOW MEASUREMENT IS A RESULT, NEVER A
+      FAILURE, so a bad report still exits 0.
       This verb deliberately reports separate numbers and never a single
       combined figure: one aggregate is precisely what makes a coverage
       claim unfalsifiable, because any one weak measure can be hidden by
@@ -178,7 +212,7 @@ function errMsg(err: unknown): string {
  *
  * `coverage`'s `--store` is REQUIRED rather than optional, and it is declared
  * here for the same reason as every other entry: the verb reads it. It is not
- * defaulted from `<project>` -- see this file's header on never deriving one
+ * defaulted from `<image>` -- see this file's header on never deriving one
  * caller-supplied path from another.
  */
 export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
@@ -335,9 +369,15 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
  * it fifteen ways. Its CONSUMER SET was unenumerated, and that asymmetry is
  * the whole mechanism by which both findings shipped past a green suite.
  * `anno-cli-path-consumers.test.ts` is what closes it: it enumerates every
- * caller-supplied path argument this CLI accepts and fails when one of them
- * reaches a filesystem call without passing through the seam. A header that
- * asserts a property must point at the mechanism that keeps it.
+ * caller-supplied path argument this CLI accepts -- flags from
+ * `VERB_OPTIONS`, positionals from each verb's `--help` synopsis line -- and
+ * fails when the inventory and the surface disagree in either direction, or
+ * when this file's confinement call sites number fewer than the inventory's
+ * entries. It does not associate a particular argument with a particular call
+ * site (WR-02), so six arguments confined once each and five confined with one
+ * of them confined twice read the same to it; that limit is named here rather
+ * than papered over. A header that asserts a property must point at the
+ * mechanism that keeps it, and must claim no more than the mechanism checks.
  */
 async function cmdRenderMemmap(rest: string[]): Promise<number> {
   const {
@@ -804,11 +844,11 @@ function printCoverageReport(report: CoverageReport): void {
 }
 
 /**
- * `coverage <project> --store FILE [--out FILE] [--force] [--sample N]` --
+ * `coverage <image> --store FILE [--out FILE] [--force] [--sample N]` --
  * COV-01's delivery path: the instrument from `anno-coverage.ts`, run against
  * a real program and a real annotation store.
  *
- * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<project>` carries the payload
+ * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<image>` carries the payload
  * bytes and the load origin; `--store` names the annotation store holding the
  * labels, comments and typed ranges. The store holds annotations and never
  * bytes, so a derived measure has to be told which bytes it is measuring, and
@@ -827,8 +867,13 @@ function printCoverageReport(report: CoverageReport): void {
  *     `openStore()` is then handed the same workspace root, so its own
  *     confinement agrees by construction rather than by a second rule. The
  *     enumeration is now mechanical rather than prose:
- *     `anno-cli-path-consumers.test.ts` fails when a path argument this verb
- *     accepts reaches a filesystem call without passing through the seam.
+ *     `anno-cli-path-consumers.test.ts` inventories this verb's path
+ *     arguments -- flags from `VERB_OPTIONS`, positionals from the `--help`
+ *     synopsis line -- and fails when that inventory and the surface disagree
+ *     either way, or when this file's confinement call sites number fewer
+ *     than the inventory's entries. It does not associate a given argument
+ *     with a given call site (WR-02), so it cannot tell six arguments
+ *     confined once each from five confined with one confined twice.
  *   - THE STORE IS OPENED ONCE, read-only, for the whole verb, and closed in a
  *     `finally`. `mustExist` is what makes "the annotations are gone" and
  *     "there are no annotations" refuse differently instead of reading the
@@ -867,7 +912,7 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
   const project = positional[0];
   if (!project) {
-    console.error("coverage: usage: coverage <project> --store FILE [--out FILE] [--force] [--sample N]");
+    console.error("coverage: usage: coverage <image> --store FILE [--out FILE] [--force] [--sample N]");
     return 1;
   }
   if (!store) {
