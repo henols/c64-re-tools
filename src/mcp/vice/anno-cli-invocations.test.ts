@@ -25,6 +25,9 @@ import {
   parseDocumentedInvocations,
   checkInvocation,
   ANNO_INVOCATION_FLOOR,
+  POSITIONAL_KINDS,
+  REQUIRED_FLAGS,
+  PROBLEM_ORDER,
 } from "../../../scripts/lib/anno-cli-invocations.mjs";
 import { VERB_OPTIONS } from "./anno-cli.ts";
 
@@ -40,18 +43,15 @@ const SKILLS_DIR = join(ROOT, "src", "skills");
 const parseInvocations = parseDocumentedInvocations;
 const checkOne = checkInvocation;
 
-/**
- * The per-verb positional kinds, hand-maintained here on purpose -- the same
- * frozen map `check-skill-cli-invocations.mjs` declares. Deriving it from that
- * script would mean importing the script, which runs the live gate on import;
- * deriving it from the predicates under test would make every assertion below
- * a tautology. Two copies of a two-key map, each with a test that fails when
- * they disagree, is the cheaper trade.
- */
-const POSITIONAL_KINDS = Object.freeze({
-  coverage: Object.freeze([".prg", ".raw", ".bin"]),
-  "render-memmap": Object.freeze([".annostore", ".store"]),
-});
+// The two per-verb declaration tables are IMPORTED from the lib above, not
+// declared here. Until 2026-08-30 this file kept a private copy of
+// `POSITIONAL_KINDS`, because the only other declaration lived in
+// `check-skill-cli-invocations.mjs`, which runs the live gate at import time.
+// That left the suite proving a FIXTURE while CI ran the shipped map -- an
+// edit to one could go green against the other. The tables moved into the
+// import-safe lib (WR-01) precisely so these assertions run against the map
+// the gate uses. A deliberately-wrong table is still used below, but only
+// where a planted control needs one, and each such use says why.
 
 function skillText(...segments: string[]): string {
   return readFileSync(join(SKILLS_DIR, ...segments), "utf8");
@@ -96,7 +96,7 @@ test("non-vacuity: every invocation the real playbooks document passes the check
     const parsed = parseInvocations(skillText(skill, ...file.split("/")));
     assert.notEqual(parsed, null, `${skill}/${file}: no fenced block found`);
     for (const invocation of parsed!) {
-      const problems = checkOne(invocation, VERB_OPTIONS, POSITIONAL_KINDS);
+      const problems = checkOne(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS);
       assert.deepEqual(problems, [], `${skill}/${file}: ${problems.join("; ")}`);
     }
   }
@@ -125,7 +125,7 @@ function problemsFor(line: string): string[] {
   const parsed = parseInvocations(fenced(line));
   assert.notEqual(parsed, null);
   assert.equal(parsed!.length, 1, `expected exactly one invocation from ${JSON.stringify(line)}`);
-  return checkOne(parsed![0]!, VERB_OPTIONS, POSITIONAL_KINDS);
+  return checkOne(parsed![0]!, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS);
 }
 
 test("planted violation 1: a flag the verb does not accept is reported by name", () => {
@@ -245,7 +245,7 @@ test("a boolean flag at end of line carries no value, and a value-taking flag ca
     { flag: "--provenance", value: "sidecar.json" },
     { flag: "--check", value: null },
   ]);
-  assert.deepEqual(checkOne(invocation!, VERB_OPTIONS, POSITIONAL_KINDS), []);
+  assert.deepEqual(checkOne(invocation!, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS), []);
 });
 
 test("a synopsis placeholder positional is skipped rather than refused -- usage lines are documentation, not invocations", () => {
@@ -280,12 +280,10 @@ test("the checker reads the CLI's OWN option set, so a flag the CLI accepts is n
 // hand the predicate a deliberately-wrong table when that is the point.
 // ---------------------------------------------------------------------------
 
-const REQUIRED_FLAGS_LOCAL = Object.freeze({
-  coverage: Object.freeze(["--store"]),
-  "render-memmap": Object.freeze(["--provenance"]),
-});
-
-function problemsForRequired(line: string, requiredFlags: Readonly<Record<string, readonly string[]>> = REQUIRED_FLAGS_LOCAL): string[] {
+/** Like `problemsFor`, but hands the predicate a CALLER-SUPPLIED required-flag
+ * table. Used only by the control that proves the check is table-driven rather
+ * than hard-coded to the two flags the shipped table happens to name. */
+function problemsForWithTable(line: string, requiredFlags: Readonly<Record<string, readonly string[]>>): string[] {
   const parsed = parseInvocations(fenced(line));
   assert.notEqual(parsed, null);
   assert.equal(parsed!.length, 1, `expected exactly one invocation from ${JSON.stringify(line)}`);
@@ -294,7 +292,7 @@ function problemsForRequired(line: string, requiredFlags: Readonly<Record<string
 
 test("WR-01: an omitted REQUIRED flag is reported by name", () => {
   // The verifier's exact plant, verbatim.
-  const problems = problemsForRequired("node src/mcp/vice/vice-proxy.ts anno coverage game.prg");
+  const problems = problemsFor("node src/mcp/vice/vice-proxy.ts anno coverage game.prg");
   assert.equal(problems.length, 1, problems.join("; "));
   assert.match(problems[0]!, /--store/, "the problem must name the omitted flag");
   assert.match(problems[0]!, /required/i);
@@ -304,23 +302,37 @@ test("WR-01: an omitted REQUIRED flag is reported by name", () => {
 });
 
 test("WR-01 positive control: the same invocation WITH --store is sound", () => {
-  assert.deepEqual(problemsForRequired("node src/mcp/vice/vice-proxy.ts anno coverage game.prg --store game.annostore"), []);
+  assert.deepEqual(problemsFor("node src/mcp/vice/vice-proxy.ts anno coverage game.prg --store game.annostore"), []);
 });
 
 test("WR-01: render-memmap's own required flag is checked too, both directions", () => {
-  const without = problemsForRequired("vice-mcp anno render-memmap game.annostore");
+  const without = problemsFor("vice-mcp anno render-memmap game.annostore");
   assert.equal(without.length, 1, without.join("; "));
   assert.match(without[0]!, /--provenance/);
   assert.match(without[0]!, /required/i);
-  assert.deepEqual(problemsForRequired("vice-mcp anno render-memmap game.annostore --provenance sidecar.json"), []);
+  assert.deepEqual(problemsFor("vice-mcp anno render-memmap game.annostore --provenance sidecar.json"), []);
+});
+
+test("the required-flag check reads the table it is GIVEN, not a hard-coded pair of flag names", () => {
+  // A deliberately-wrong local table: correct here, and only here, because the
+  // property under test is that the predicate stays parameterised. If the
+  // check were hard-coded to --store/--provenance this would report nothing.
+  const wrong = Object.freeze({ coverage: Object.freeze(["--out"]) });
+  const problems = problemsForWithTable("vice-mcp anno coverage game.prg --store game.annostore", wrong);
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /--out/, "the caller's table names --out, so --out is what must be reported");
+  // ...and the shipped table does NOT require --out, so the same line is sound
+  // under the map CI actually runs. Both halves in one test make the property
+  // the DISCRIMINATION rather than the refusal.
+  assert.deepEqual(problemsFor("vice-mcp anno coverage game.prg --store game.annostore"), []);
 });
 
 test("a required flag written in a USAGE synopsis, with a placeholder VALUE, counts as PRESENT", () => {
   // Presence is a property of the flag TOKEN, so `--store FILE` is present by
   // construction and no second placeholder rule is needed beside
   // `isPlaceholder()`. A gate that reds on a synopsis is one nobody keeps green.
-  assert.deepEqual(problemsForRequired("vice-mcp anno coverage <program> --store FILE"), []);
-  assert.deepEqual(problemsForRequired("vice-mcp anno render-memmap <store> --provenance FILE --out FILE"), []);
+  assert.deepEqual(problemsFor("vice-mcp anno coverage <program> --store FILE"), []);
+  assert.deepEqual(problemsFor("vice-mcp anno render-memmap <store> --provenance FILE --out FILE"), []);
 });
 
 /** Classifies one problem message by the check that produced it. Used only by
@@ -338,9 +350,60 @@ test("multiple problems are reported in the declared order, stably across runs",
   // an unaccepted flag, a positional outside the declared kinds, and an
   // omitted required flag.
   const line = "vice-mcp anno render-memmap game.regen2000proj --verbose";
-  const first = problemsForRequired(line);
+  const first = problemsFor(line);
   assert.equal(first.length, 3, first.join("; "));
-  assert.deepEqual(first.map(problemKind), ["flag-membership", "positional-kind", "required-flag"]);
-  const second = problemsForRequired(line);
+  // Asserted against the SHIPPED constant, so a refactor that reorders the
+  // control flow without moving PROBLEM_ORDER is caught here.
+  assert.deepEqual(
+    first.map(problemKind),
+    PROBLEM_ORDER.filter((kind) => kind !== "unknown-verb"),
+    "the three accumulating checks must report in the declared order",
+  );
+  const second = problemsFor(line);
   assert.deepEqual(second, first, "two runs over the same input must return identical problem arrays");
+});
+
+test("the unknown-verb case SHORT-CIRCUITS: it is reported alone, never alongside the other three", () => {
+  // Same line as above but with a verb the CLI does not have, so every
+  // verb-keyed table has no entry to read.
+  const problems = problemsFor("vice-mcp anno export-asm game.regen2000proj --verbose");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.deepEqual(problems.map(problemKind), [PROBLEM_ORDER[0]]);
+});
+
+test("non-vacuity, the other direction: every VERB_OPTIONS verb has a REQUIRED_FLAGS entry, even an empty one", () => {
+  // An empty array is a deliberate, readable "this verb requires nothing". An
+  // ABSENT key is a verb that joined the gate with its required flags simply
+  // undeclared, which is how WR-01's hole would reopen for the next verb.
+  for (const verb of Object.keys(VERB_OPTIONS)) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(REQUIRED_FLAGS, verb),
+      `${verb} is in the CLI's own VERB_OPTIONS but has no REQUIRED_FLAGS entry -- declare [] if it requires nothing`,
+    );
+    assert.ok(Array.isArray(REQUIRED_FLAGS[verb as keyof typeof REQUIRED_FLAGS]), `${verb}'s REQUIRED_FLAGS entry must be an array`);
+  }
+  // ...and every flag named as required must be one the verb actually accepts,
+  // or the table would demand a flag the CLI refuses.
+  for (const [verb, required] of Object.entries(REQUIRED_FLAGS)) {
+    for (const flag of required) {
+      assert.ok(VERB_OPTIONS[verb]?.includes(flag), `${verb}: REQUIRED_FLAGS names ${flag}, which is not in that verb's VERB_OPTIONS`);
+    }
+  }
+});
+
+test("one definition, two callers: the CI gate imports the shipped tables instead of declaring its own", () => {
+  // The structural half of WR-01. The behavioural tests above are only worth
+  // anything if the table they assert against is the table CI runs; a
+  // re-introduced local copy in the gate script would restore the drift this
+  // move removed, with every test in this file still green.
+  const gate = readFileSync(join(ROOT, "scripts", "check-skill-cli-invocations.mjs"), "utf8");
+  assert.match(gate, /POSITIONAL_KINDS,?\s/, "precondition: the gate still uses the table");
+  assert.doesNotMatch(gate, /const\s+POSITIONAL_KINDS\s*=/, "the gate must not re-declare POSITIONAL_KINDS locally");
+  assert.doesNotMatch(gate, /const\s+REQUIRED_FLAGS\s*=/, "the gate must not declare REQUIRED_FLAGS locally");
+  assert.match(
+    gate,
+    /import\s*\{[^}]*REQUIRED_FLAGS[^}]*\}\s*from\s*"\.\/lib\/anno-cli-invocations\.mjs"/s,
+    "the gate must import the required-flag table from the lib this file imports it from",
+  );
+  assert.match(gate, /checkInvocation\(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS\)/, "and pass it to the predicate");
 });
