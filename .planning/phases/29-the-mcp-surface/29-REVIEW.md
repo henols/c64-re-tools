@@ -1,112 +1,384 @@
 ---
 phase: 29-the-mcp-surface
-reviewed: 2026-08-30T14:05:00Z
+reviewed: 2026-08-30T18:40:00Z
 depth: standard
-files_reviewed: 96
+files_reviewed: 14
 files_reviewed_list:
-  - CLAUDE.md
-  - .github/workflows/ci.yml
-  - .gitignore
-  - README.md
-  - scripts/audit-gate.mjs
-  - scripts/check-no-regenerator2000.d.mts
-  - scripts/check-no-regenerator2000.mjs
-  - scripts/check-npm-packages.mjs
   - scripts/check-skill-cli-invocations.mjs
-  - scripts/check-skill-fork-honesty.mjs
-  - scripts/check-skill-tool-coverage.mjs
-  - scripts/generate-tool-support-table.mjs
   - scripts/lib/anno-cli-invocations.d.mts
   - scripts/lib/anno-cli-invocations.mjs
-  - scripts/lib/anno-cli-verbs.d.mts
-  - scripts/lib/anno-cli-verbs.mjs
-  - scripts/lib/skill-corpus.d.mts
-  - scripts/lib/skill-descriptions.d.mts
-  - scripts/lib/skill-honesty-checks.mjs
-  - src/mcp/vice/absorbed-answer-key.test.ts
-  - src/mcp/vice/acme-gate.ts
-  - src/mcp/vice/anno-acme-ident.ts
   - src/mcp/vice/anno-cli-invocations.test.ts
   - src/mcp/vice/anno-cli-path-consumers.test.ts
   - src/mcp/vice/anno-cli.test.ts
   - src/mcp/vice/anno-cli.ts
-  - src/mcp/vice/anno-confidence.test.ts
-  - src/mcp/vice/anno-confidence.ts
-  - src/mcp/vice/anno-coverage-grammar.test.ts
-  - src/mcp/vice/anno-coverage.test.ts
-  - src/mcp/vice/anno-coverage.ts
-  - src/mcp/vice/anno-d64.test.ts
-  - src/mcp/vice/anno-d64.ts
-  - src/mcp/vice/anno-derivation.test.ts
-  - src/mcp/vice/anno-derive.test.ts
-  - src/mcp/vice/anno-derive.ts
-  - src/mcp/vice/anno-details.ts
-  - src/mcp/vice/anno-enum-gen.test.ts
-  - src/mcp/vice/anno-enum-gen.ts
+  - src/mcp/vice/anno-confinement.test.ts
   - src/mcp/vice/anno-memmap-render.test.ts
   - src/mcp/vice/anno-memmap-render.ts
-  - src/mcp/vice/anno-regbits-gen.ts
-  - src/mcp/vice/anno-regbits.json
-  - src/mcp/vice/anno-regbits.test.ts
-  - src/mcp/vice/anno-register.test.ts
-  - src/mcp/vice/anno-register.ts
-  - src/mcp/vice/anno-schema-v2-fixture.mjs
-  - src/mcp/vice/anno-seam.test.ts
-  - src/mcp/vice/anno-store.test.ts
-  - src/mcp/vice/anno-store.ts
-  - src/mcp/vice/anno-symbols.ts
-  - src/mcp/vice/anno-tools.test.ts
-  - src/mcp/vice/anno-tools.ts
-  - src/mcp/vice/anno-types.test.ts
   - src/mcp/vice/anno-types.ts
-  - src/mcp/vice/anno-verb-coverage.test.ts
-  - src/mcp/vice/audit-integrity.test.ts
-  - src/mcp/vice/block-class.test.ts
-  - src/mcp/vice/block-class.ts
-  - src/mcp/vice/capability-registry.test.ts
-  - src/mcp/vice/comment-phase-pointers.test.ts
-  - src/mcp/vice/docs-absorbed-decisions.test.ts
-  - src/mcp/vice/docs-dangling-refs.test.ts
-  - src/mcp/vice/docs-uat-abstention.test.ts
-  - src/mcp/vice/docs-worktree-isolation.test.ts
-  - src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs
-  - src/mcp/vice/fixtures/coverage/README.md
-  - src/mcp/vice/fixtures/planted-removal-fixture.md.txt
-  - src/mcp/vice/fixtures/planted-removal-fixture.ts.txt
-  - src/mcp/vice/fixtures/README.md
-  - src/mcp/vice/hop-chain-comments.test.ts
-  - src/mcp/vice/hostpath-consumers.test.ts
-  - src/mcp/vice/host-scripts.test.ts
-  - src/mcp/vice/module-classification.test.ts
   - src/mcp/vice/module-classification.ts
-  - src/mcp/vice/package.json
-  - src/mcp/vice/prg-image.ts
-  - src/mcp/vice/removal-gate.test.ts
-  - src/mcp/vice/shipped-modules.test.ts
-  - src/mcp/vice/shipped-modules.ts
-  - src/mcp/vice/spawn-seam.test.ts
-  - src/mcp/vice/stock-dispatch.test.ts
-  - src/mcp/vice/stock-symbols.ts
-  - src/mcp/vice/tool-support-table.test.mjs
-  - src/mcp/vice/vice-proxy.test.ts
-  - src/mcp/vice/vice-proxy.ts
-  - src/skills/acme-build/SKILL.md
-  - src/skills/c64-memory-mapping/SKILL.md
-  - src/skills/c64-program-recon/references/reconstruction.md
-  - src/skills/c64-program-recon/references/tool-selection.md
-  - src/skills/c64-program-recon/scripts/packer-finding.mjs
   - src/skills/c64-program-recon/SKILL.md
   - src/skills/c64-program-recon/templates/memory-map.template.md
-  - src/skills/c64-ram-capture/SKILL.md
-  - src/skills/routine-queue-walker/SKILL.md
-  - src/skills/vice-wedge-triage/SKILL.md
 findings:
   critical: 1
-  warning: 16
+  warning: 21
   info: 0
-  total: 17
+  total: 22
 status: issues_found
 ---
+
+# Phase 29: Code Review Report — gap-closure round 2 (14 files)
+
+**Reviewed:** 2026-08-30T18:40:00Z
+**Depth:** standard
+**Files Reviewed (this pass):** 14
+**Diff base:** `6715a75`
+**Status:** issues_found
+
+## Scope of this pass — read this before the counts
+
+**This pass reviewed 14 files, not 96.** It covers exactly the source files changed by gap-closure
+round 2 (plans 29-18, 29-19, 29-20; 29-21 touched only `.planning/REQUIREMENTS.md` and is out of
+scope). The 17 findings `CR-01` and `WR-01`..`WR-16` below this section come from the earlier
+**2026-08-30T14:05Z pass over 96 files** and are **preserved verbatim**. They were *not* re-derived
+here. Where this round's work bears on one of them, the re-check is recorded in the table below
+against its existing id — the finding text itself is untouched.
+
+The frontmatter counts are the *cumulative* ledger for phase 29 (1 critical + 21 warnings = 22),
+not a count of what this pass found. This pass found **five new warnings and no new blockers**.
+
+## Summary of this pass
+
+Round 2's two headline deliverables are **genuinely closed, and closed on the axis they claimed**,
+not by comment repair. Both were verified by execution against this working tree, not by reading
+the fix:
+
+* **`CR-01` is closed.** `workspaceRelativePath()` (`anno-types.ts:1245-1260`) is a real seam with
+  four committed control tests (`anno-confinement.test.ts` 16-19) covering the equal case, deep
+  nesting, POSIX separator normalisation, the escape refusal *and* its discrimination control (a
+  `..` that normalises back inside is accepted), and the symlinked-root pairing the CLI actually
+  produces. `renderMemoryMap()` records the two relative spellings and
+  `anno-memmap-render.test.ts`'s new cross-root test builds a store under root A, `cpSync`s the
+  whole tree to root B, asserts the inputs are byte-identical, and asserts `checkRenderedMemoryMap()`
+  returns `in-sync` — with a hand-edit control at root B so the gate is not merely blunted. The
+  golden test now asserts the **absence** of the absolute paths, which is the assertion whose
+  absence let the defect ship green. Ran green here: 139/139 across the five changed test files,
+  `tsc --noEmit` exit 0.
+* **`WR-01` is closed on both halves.** `checkInvocation()` now takes a fourth, **non-optional**
+  `requiredFlags` table (`anno-cli-invocations.d.mts:62-67` makes forgetting it a compile error),
+  and `POSITIONAL_KINDS`/`REQUIRED_FLAGS` moved into the import-safe lib so the committed test
+  asserts against the map CI runs — with a structural test that reddens if the gate re-declares
+  either locally. The verifier's exact plant (`anno coverage game.prg`) is now reported by name.
+
+What did not survive scrutiny — **five new warnings, all reproduced against this tree**:
+
+* **The renderer changed its output shape and `RENDERER_VERSION` was not bumped** (`WR-17`), which
+  the constant's own doc comment says is exactly when it must be. Measured: `computeRenderDigest`
+  is byte-identical across the round and the version is `"3"` on both sides, so every consuming
+  project's existing `memory-map.md` will report `drifted` at line 3 with an **identical
+  `render_digest`** beside the verdict. That is CR-01's own contradiction — digest says identical,
+  gate says drifted — replayed one last time, using none of the mechanism built to distinguish it.
+* **The invocation gate still passes two documented-command-exits-1 shapes** (`WR-18`), one of
+  which is `CR-04`'s shape moved from the positional slot into the flag slot. Reproduced:
+  `anno coverage game.prg --store game.prg` and `anno coverage game.prg --store` both return `[]`.
+  `WR-01`'s own proposed fix named `FLAG_KINDS` alongside `REQUIRED_FLAGS`; only the latter shipped.
+* **The gate crashes with an unhandled `TypeError` on an `Object.prototype` key in the verb slot**
+  (`WR-19`), instead of the "no such verb" refusal its own doc comment promises. Reproduced for
+  `constructor`, `toString` and `__proto__`; the `toString` crash site is the required-flag loop
+  **added this round**.
+* **The new `--help` capture spawns bare `"node"`** (`WR-20`), against ~25 sibling call sites in
+  this tree that use `process.execPath`.
+* **The corrected USAGE contradicts itself within three lines** (`WR-21`): `<image>` is "dispatched
+  BY EXTENSION FIRST and never by byte length", followed immediately by a form that is dispatched
+  by byte length. 29-20's stated charter was that no comment asserts a guarantee the code does not
+  provide.
+
+Every probe artifact was removed; `git status` is unchanged from session start apart from the
+pre-existing untracked files.
+
+## Re-check of the prior 17 findings (against their existing ids, not re-derived)
+
+| id | status after round 2 | evidence |
+|---|---|---|
+| `CR-01` | **CLOSED** by 29-18 (`88a95a5` feat, `97f8c02` RED test, `99333b8` absence assertions) | cross-root `in-sync` test + hand-edit control, both green; golden test asserts the absolute paths are absent |
+| `WR-01` | **CLOSED** by 29-19 (`0b84ff5` feat, `f23bd6e` RED test) | required-flag presence checked from a shared table; gate re-declaration is structurally forbidden. Residual holes are a **new** finding (`WR-18`), not this one reopening |
+| `WR-02` | **PARTIALLY CLOSED** by 29-20 (`23cae55`, `c8503f9`, `2da457d`) | the positional half of the inventory is now derived from `--help` in both directions, and the three over-claiming headers are corrected to state the narrower property. The aggregate-count limit itself is **unchanged and now named in four places** — an honest deferral, not a fix |
+| `WR-03` | OPEN, untouched | `check-npm-packages.mjs` not in this round's diff |
+| `WR-04` | OPEN, untouched — and its measurement has moved | the raw NUL is still at `anno-memmap-render.ts:315`, but the import edit on line 72 shifted its byte offsets to **15097 and 15118** (the ledger text above records 15074, measured pre-round). `check-no-regenerator2000.mjs`'s two "offset 12862 (line 291)" citations remain stale. Nothing mechanical catches either drift |
+| `WR-05` | **CLOSED**, with one named residual **confirmed** | 29-20 re-spelled the synopsis to `coverage <image>`, named the three image forms, corrected "beside the project" → "beside the STORE", and added the payload-decode exit path. All four re-verified against the code. **Residual confirmed, exactly as `29-20-SUMMARY.md` predicts it:** `anno-cli.ts:921` still reads `will not derive its path from <project>`, and `scripts/lib/anno-cli-invocations.mjs:158` quotes that sentence *verbatim* as `REQUIRED_FLAGS`' provenance. The coupling is real — the two must move in one commit or the quote stops being a quote. Not re-raised as a new id; already on record |
+| `WR-06`..`WR-13` | OPEN, untouched (dispositioned OPEN-AS-WARNING) | none of `anno-derive.ts`, `anno-store.ts`, `anno-tools.ts`, `prg-image.ts`, `anno-coverage.ts` is in this round's diff |
+| `WR-14`, `WR-15`, `WR-16` | DEFERRED ON RECORD, unchanged | no disagreement with the deferrals; `runR2000Cli` is still the exported entry point (`anno-cli.test.ts` still calls it), which is what the `WR-16` deferral says |
+
+Two prior citations were re-verified rather than assumed and are **correct**:
+`module-classification.ts`'s three updated line references (`anno-cli.ts:106`, `:111`, `:234`) all
+contain their cited symbols, and `module-classification.test.ts` Direction 9/9b checks that
+mechanically — so those edits carry their own guard.
+
+## Narrative Findings (AI reviewer) — new in this pass
+
+### WR-17 (NEW): the renderer's output shape changed and `RENDERER_VERSION` was not bumped, so every existing memory map drifts with an identical digest beside the verdict
+
+**File:** `src/mcp/vice/anno-memmap-render.ts:278-290` (the constant and its contract), `:472-499`
+(the changed output); `src/skills/c64-program-recon/SKILL.md:276-280` and
+`src/skills/c64-program-recon/templates/memory-map.template.md:30-34` (the consequence, documented
+in prose instead)
+
+**Issue:** `RENDERER_VERSION`'s own doc comment states the rule this change had to follow:
+
+```ts
+/** Bumped whenever this renderer's OUTPUT SHAPE **or its digest's canonical
+ * INPUT** changes, so a re-render under a new renderer version is
+ * distinguishable from drift under the same one. */
+export const RENDERER_VERSION = "3";
+```
+
+29-18 changed the output shape substantially — the `store:` and `sidecar:` lines moved from
+absolute to relative spellings, and the trailing banner prose went from three lines to eight — and
+left the constant at `"3"`. Measured on this tree, not inferred:
+
+```
+$ git show 6715a75:src/mcp/vice/anno-memmap-render.ts | grep 'RENDERER_VERSION = '
+export const RENDERER_VERSION = "3";
+$ grep -a 'RENDERER_VERSION = ' src/mcp/vice/anno-memmap-render.ts
+export const RENDERER_VERSION = "3";
+$ diff <(git show 6715a75:...|sed -n '/function computeRenderDigest/,/^}/p') <(sed -n '/function computeRenderDigest/,/^}/p' ...)
+computeRenderDigest IDENTICAL across the round
+```
+
+`computeRenderDigest()` covers the store rows, the sidecar bytes and `RENDERER_VERSION` — none of
+which moved. So for any already-rendered `memory-map.md`, the fresh render produces the **same
+64-hex `render_digest`** and **different surrounding bytes**. `--check` therefore reports
+`drifted at line 3`, and a reader comparing the two banners sees an identical digest beside a
+"drifted" verdict.
+
+That is precisely the contradiction `CR-01` was raised for ("the file's own digest disagrees with
+the gate"), reproduced once more — for every consuming project that upgrades — by the one change
+that closed it. Both shipped playbooks acknowledge the symptom in prose ("One-time drift after
+upgrading, 2026-08-30 … This is a one-time, self-clearing banner correction — not a bug"), which
+means the consequence was known and the mechanism that exists to signal it was left unused. A prose
+note in a playbook is not on screen when a CI `--check` job goes red; the digest line is.
+
+This is a WARNING rather than a BLOCKER because it is transient and self-clearing, and because this
+repository has no committed rendered `memory-map.md` (verified — a `grep -ra` for the banner across
+every `.md` finds only the template). The cost lands entirely on consumers.
+
+**Fix:** bump the constant in the same commit as any output-shape change, and record the reason
+where the two earlier bumps are recorded:
+
+```ts
+/* Version 4 (CR-01, 29-18) is an OUTPUT-SHAPE change: the banner's `store:` and
+ * `sidecar:` lines record workspace-relative locations instead of absolute
+ * realpaths, and the explanatory block grew. Leaving it at "3" makes an
+ * upgrade indistinguishable from a hand edit, which is the one distinction
+ * this constant exists to draw. */
+export const RENDERER_VERSION = "4";
+```
+
+Then re-point the two playbook notes at the version bump ("the banner's `render_digest` changes
+too, which is how you tell an upgrade from a hand edit"), and add a test that fails when the banner
+lines change without the constant moving — e.g. hash the banner block's line count and prose in the
+golden test, so the two can only move together.
+
+### WR-18 (NEW): the invocation gate still reports OK for two documented commands that exit 1 — one of them is CR-04's shape moved from the positional slot into the flag slot
+
+**File:** `scripts/lib/anno-cli-invocations.mjs:331-377` (`checkInvocation`), `:285-303` (the
+"two things it still does not check" list)
+
+**Issue:** `WR-01`'s fix added flag **presence**. Its stated fix also named a `FLAG_KINDS` map
+("give flag values their own kinds map"); that half did not ship. Reproduced against the shipped
+tables on this tree:
+
+```
+"vice-mcp anno coverage game.prg --store game.prg"                       -> []
+"vice-mcp anno coverage game.prg --store"                                -> []
+"vice-mcp anno render-memmap game.annostore --provenance game.annostore" -> []
+"vice-mcp anno render-memmap game.annostore --provenance"                -> []
+```
+
+All four are green, and all four exit 1 at runtime:
+
+* `--store game.prg` — `openStore()` refuses it ("not an annotation store"). That is **`CR-04`
+  verbatim**, with the wrong-kind file moved from the positional slot to a flag value. The gate
+  checks kinds for positionals and for nothing else, so the same mistake one token to the right is
+  invisible.
+* `--store` with no value — `parseCoverageArgs()` sets `storeMissingValue` and `cmdCoverage()`
+  prints `coverage: --store requires a value` and returns 1 (`anno-cli.ts:558`, `:897-900`). The
+  presence check is deliberately token-only ("presence is a property of the flag TOKEN"), and that
+  reasoning is right for a synopsis placeholder (`--store FILE`) but wrong for a flag at end of
+  line, which is not a placeholder — it is a dead command.
+
+The module does name "a flag's VALUE" as unchecked, but illustrates it only with the harmless
+scalar case (`--sample abc`). A reader of that list will not conclude that a documented
+`--store game.prg` is unchecked, because the example chosen is the one where being unchecked does
+not matter. The whole point of that list is that a limit named honestly can be closed on purpose;
+naming it with the benign example undercuts that.
+
+**Fix:** add the kinds map and tighten presence to require a value where the CLI does:
+
+```js
+export const FLAG_KINDS = Object.freeze({
+  coverage: Object.freeze({ "--store": [".annostore", ".store"], "--out": [".json"] }),
+  "render-memmap": Object.freeze({ "--provenance": [".json"], "--out": [".md"] }),
+});
+// in checkInvocation(), after the presence loop:
+for (const { flag, value } of flags) {
+  if (!requiredFlags?.[verb]?.includes(flag)) continue;
+  if (value === null) problems.push(`anno ${verb}: ${flag} is required but was documented with no value -- the command exits non-zero at runtime${where}`);
+}
+for (const { flag, value } of flags) {
+  const kinds = flagKinds?.[verb]?.[flag];
+  if (!kinds || value === null || isPlaceholder(value)) continue;
+  if (!kinds.includes(extensionOf(value))) {
+    problems.push(`anno ${verb}: ${flag} value ${value} has extension ${extensionOf(value) || "(none)"}, which is not one this flag reads (${kinds.join(", ")})${where}`);
+  }
+}
+```
+
+Extend `PROBLEM_ORDER` with the two new kinds, add both to `anno-cli-invocations.d.mts`, and plant
+both shapes in `anno-cli-invocations.test.ts` beside the existing controls — the file's existing
+plants cover a wrong positional extension and an omitted flag, and neither of these.
+
+### WR-19 (NEW): an `Object.prototype` key in the verb slot crashes the CI gate with an unhandled `TypeError` instead of the documented "no such verb" refusal
+
+**File:** `scripts/lib/anno-cli-invocations.mjs:336`, `:350`, `:368`;
+`scripts/check-skill-cli-invocations.mjs:107-111` (no try/catch around the call)
+
+**Issue:** All three verb-keyed tables are read with bare bracket access on plain object literals,
+which inherit from `Object.prototype`. `verbOptions?.["constructor"]` is the `Object` constructor —
+truthy — so the unknown-verb short-circuit does not fire, and the next line calls `.includes()` on
+a function. Reproduced against the shipped tables:
+
+```
+"vice-mcp anno constructor game.prg" -> THREW TypeError: kinds.includes is not a function
+"vice-mcp anno toString game.prg"    -> THREW TypeError: function is not iterable (cannot read property Symbol(Symbol.iterator))
+"vice-mcp anno __proto__ x"          -> THREW TypeError: kinds.includes is not a function
+```
+
+The `toString` case throws from `for (const flag of requiredFlags?.[verb] ?? [])` — the loop
+**added this round**, so this change introduced a second crash site in a function that already had
+one. `check-skill-cli-invocations.mjs` calls `checkInvocation()` bare inside its loop, so the gate
+dies with a stack trace and a non-zero exit rather than the named problem message its whole
+reporting path is built around.
+
+Two things make this worth fixing rather than shrugging at. First, the module's own doc comment
+promises the opposite behaviour by name: *"A verb the CLI does not have is itself a problem:
+`verbOptions` IS the verb set, so an unknown key is reported by name rather than skipped."* That is
+false for every inherited key. Second, this module frames skill text as untrusted input three times
+in its own header ("skill content is untrusted input that is MATCHED, never executed"); a module
+that says that should not have an input-derived key reaching a prototype lookup.
+
+**Fix:** gate every table read on own-property, in one predicate so the three sites cannot drift:
+
+```js
+const own = (table, key) => (table !== null && typeof table === "object" && Object.hasOwn(table, key) ? table[key] : undefined);
+...
+const accepted = own(verbOptions, verb);
+if (!Array.isArray(accepted)) { problems.push(`anno ${verb}: no such verb -- ...`); return problems; }
+const kinds = own(positionalKinds, verb) ?? [];
+for (const flag of own(requiredFlags, verb) ?? []) { ... }
+```
+
+Add a planted control for `anno constructor game.prg` asserting the "no such verb" message rather
+than a throw — the existing unknown-verb test uses `export-asm`, an ordinary name that never
+touches this path.
+
+### WR-20 (NEW): the new `--help` capture spawns bare `"node"`, not `process.execPath`, against ~25 sibling call sites that do
+
+**File:** `src/mcp/vice/anno-cli-path-consumers.test.ts:340`
+
+**Issue:**
+
+```ts
+const result = spawnSync("node", [VICE_PROXY_PATH, "anno", "--help"], { ... });
+```
+
+A census of every `spawnSync`/`execFileSync` of a Node child in this tree finds 25 sites using
+`process.execPath` and exactly two using bare `"node"` — `anno-cli.test.ts:134` (pre-existing) and
+this one, added this round. `scripts/check-skill-cli-invocations.mjs:66` — a file this same round
+edited — uses `process.execPath`.
+
+The consequence is specific rather than theoretical. This `before()` hook's own comment calls
+`--help` "the declaration of record" for the two new positional-direction assertions, and its
+assertion message says those directions "have no declaration of record without it". The shipped
+server has no build step and runs `.ts` through Node's native type-stripping, so it requires Node
+>= 22.18 (`package.json:81-83`). Whenever the Node that `npm test` runs under is not the first `node`
+on `PATH` — an `nvm`/`fnm`/`volta` shell, a CI matrix job, a `sudo`-elevated run, a Debian box
+where `/usr/bin/node` is 20 — the child either fails to parse the TypeScript or is a different
+runtime entirely, and both new tests fail for a reason that has nothing to do with the property
+under test. `PATH` resolution also makes the child's identity attacker-influenceable in a way
+`process.execPath` is not.
+
+**Fix:** one token, matching every other site in the tree:
+
+```ts
+const result = spawnSync(process.execPath, [VICE_PROXY_PATH, "anno", "--help"], { ... });
+```
+
+`anno-cli.test.ts:134` should move in the same commit — it is the only other site, and leaving one
+behind is what made this one look like a precedent.
+
+### WR-21 (NEW): the corrected `coverage` USAGE contradicts itself within three lines about how `<image>` is dispatched
+
+**File:** `src/mcp/vice/anno-cli.ts:165-172`; the code it describes is
+`src/mcp/vice/anno-coverage.ts:2217-2232`
+
+**Issue:** 29-20's charter was that no comment asserts a guarantee the code does not provide. The
+replacement text asserts one:
+
+```
+      <image> is dispatched BY EXTENSION FIRST and never by byte length.
+      Three forms are read: a .prg (its first two bytes are the load
+      address); a .raw or .bin flat capture; and a file of any other
+      extension that is exactly 65536 bytes, read as a flat capture.
+```
+
+The third form **is** a byte-length dispatch — `if (ext !== ".prg" && bytes.length === 65536)` at
+`anno-coverage.ts:2222` — so the sentence is refuted by the sentence after it. The true rule, which
+`loadProjectImage()`'s own header states correctly, is narrower: *for `.raw` and `.bin` the
+extension check runs before any length check*, which is what keeps `flatImageOrigin()`'s named
+refusal reachable for a truncated capture (the `WR-07` incident that branch order encodes). A reader
+who takes the absolute at face value will conclude that a 65536-byte `.dat` is rejected, when it is
+read as a flat capture.
+
+Second, smaller inaccuracy in the same paragraph: the three forms are listed `.prg` first, while
+the dispatch order is `.raw`/`.bin`, then the 65536-byte fallback, then `.prg`. Order is
+load-bearing here — it is the whole subject of the header paragraph being paraphrased — so listing
+it wrongly in the one text a `--help` caller reads is not merely cosmetic.
+
+**Fix:** state the rule the code has, in the code's own order:
+
+```
+      <image> is dispatched IN THIS ORDER, and the order is load-bearing:
+      a .raw or .bin is read as a flat capture BY EXTENSION, before any
+      length check, so a truncated capture is refused by name instead of
+      falling through to the .prg parser; then any non-.prg file that is
+      exactly 65536 bytes is read as a flat capture; then a .prg (its first
+      two bytes are the load address). The retired JSON project form is the
+      trailing legacy branch, reached only when none of those matched.
+```
+
+Consider asserting the synopsis against `POSITIONAL_KINDS` and against `loadProjectImage()`'s
+branch order so the two cannot drift again — `anno-cli-path-consumers.test.ts` already proves that
+parsing `--help` output mechanically is cheap here.
+
+---
+
+_Reviewed: 2026-08-30T18:40:00Z_
+_Reviewer: Claude (gsd-code-reviewer)_
+_Depth: standard_
+_Scope: the 14 files changed by gap-closure round 2, diff base `6715a75`_
+
+---
+
+<!--
+  EVERYTHING BELOW THIS LINE IS THE 2026-08-30T14:05Z PASS OVER 96 FILES,
+  PRESERVED VERBATIM. Its 17 findings (CR-01, WR-01..WR-16) are referenced by
+  name across this phase's PLAN.md and SUMMARY.md files, by 29-VERIFICATION.md
+  and by .planning/REQUIREMENTS.md, and are derived mechanically by
+  src/mcp/vice/docs-review-disposition.test.ts. Do not renumber, delete or
+  reword them. This pass's re-check of each one is the table above, recorded
+  against the existing ids.
+-->
+
 
 # Phase 29: Code Review Report (re-review after gap closure 29-13..29-17)
 
