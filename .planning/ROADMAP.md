@@ -672,7 +672,15 @@ purpose, standing and exercised before the deletion window opens.
   4. What ACME cannot express is **reported as such** rather than emitted and hoped for: an illegal opcode outside the 221 expressible under `!cpu 6510` round-trips byte-identically as `!byte $xx` with a naming comment and never as an invented mnemonic, and every block asserts `*` equals its original address so a label substituted for a zero-page literal cannot change the instruction length and shift the code after it unnoticed. An enum renders on the **immediate** operand only, with reassembly byte-identity as the control that catches the wrong-operand case.
   5. A duplicate label is **refused** by the store, and with that refusal removed the export reassembles and **real ACME itself reports the duplicate-symbol error** — the external oracle confirming the internal one. That is the shape this project's own record demands: an internally-verified opcode table still shipped 14 wrong entries, caught only by running the output through a real assembler.
 
-**Plans**: TBD
+**Plans**: 6 plans across 5 waves
+
+Plans:
+- [ ] 30-01-PLAN.md — TRACER: one store, one range, one image, real ACME, one byte-diff — `acme-verify.ts` (test-only) and `anno-export-asm.ts` (ships) proved end to end (wave 1)
+- [ ] 30-02-PLAN.md — Both mandatory reds against the new producer, the five verdict rules as named pure helpers, and both pinned transcripts re-recorded from real ACME 0.97 (wave 2)
+- [ ] 30-03-PLAN.md — Per-block `*` assertions proved capable of biting, the typed data-range emitter over all twelve `DATA_TYPES`, and the embedded-newline refusal `assertCommentText()` did not have (wave 2)
+- [ ] 30-04-PLAN.md — The `=*+$01` idiom on a fixture that genuinely self-modifies, the eleven prefixes read from `AUTO_NAME_PREFIX_RE`, enums on the immediate operand only, every inexpressible opcode as `!byte`, and real ACME confirming the duplicate-label refusal (wave 3)
+- [ ] 30-05-PLAN.md — `anno export-asm` lands as a CLI verb, with every floor it moves raised on both sides in the same commit and the exporter added to the `files[]` closure (wave 4)
+- [ ] 30-06-PLAN.md — Re-point every statement this phase falsifies in both skill trees, the shipped module headers and the project record, plus the guard that ties documented verb status to the parsed verb set (wave 5)
 
 Notes:
 
