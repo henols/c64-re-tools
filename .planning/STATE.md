@@ -6,10 +6,10 @@ current_phase: 29
 current_phase_name: The MCP Surface
 status: complete
 stopped_at: Completed 29-11-PLAN.md (phase 29 complete, 12/12)
-last_updated: "2026-08-29T23:48:16.327Z"
+last_updated: "2026-08-30T08:12:41.562Z"
 last_activity: 2026-08-30
 last_activity_desc: "Phase 29 complete, 12/12 plans. 29-10 deleted the regenerator2000 integration (14 files, 8221 lines) and was merged by hand because cleanup-wave refuses deletion branches; 29-11 closed the removal gate's temporary allow-list and asserted its emptiness, recording CUT-01 Partial and REPOINT-03 Pending rather than inventing evidence. Phases 30-32 remain."
-state_head: c8da6041d904e5022bb8fcbeb2b333227a89b901
+state_head: 2732ff112082da004c3c40d84b1355bd2b7e02bf
 progress:
   total_phases: 6
   completed_phases: 3
@@ -719,6 +719,7 @@ Recent decisions affecting current work:
 - [Phase 29]: RenderMemoryMapOptions and CheckRenderedMemoryMapOptions take a REQUIRED workspaceRoot, beyond the planned projectPath -> storePath rename. — T-29-52 asks for openStore() with an explicit root and mustExist, and openStore() refuses outright without a root unless the caller claims the path is module-derived -- which is false for a CLI argument. The mitigation cannot be expressed by the rename alone. The CLI passes the same repoRoot() it confines the path against, so both confinement answers agree by construction rather than by a second rule.
 - [Phase 29]: The :79 measurement-provenance comment was kept and re-anchored rather than discharged; 29-05 row 11 stays PERMANENT at 1. — Its subject is live: with the three wire interfaces deleted it is the last record anywhere of what the version-2 digest hashed, which is what makes the "2" -> "3" bump a statement about two KNOWN input shapes rather than one known and one assumed. The plan offered a four-artifact escape (delete the comment, re-pin row 11 temporary/0, update the gate, correct 29-10s acceptance criterion); it was not needed. A co-located test asserts the paragraph still carries the three spellings AND that the declarations it used to point at are gone, so "a comment above a hole" is a red test rather than a later discovery.
 - [Phase 29]: The three gated render tests were converted onto the store, not deleted -- plan 29-10s recorded fate for that half is superseded. — D-01 forbids a test driving a real child; it does not ask for the assertions to be thrown away. 29-10s "removes the gated half" was written when that half had no substrate to move to. It does now, so the file went 3 skipped -> 0 skipped with the assertions intact, and one of them gained the malformed-prefix throw its own name had promised since Phase 11.
+- [Phase 29]: Phase 29's one-way deletion gate (plan 29-10 Task 1) was ratified by the owner on 2026-08-30 — The deletion was executed on an executor auto-selection, which 29-10-SUMMARY.md recorded as its own weakness. The owner has since answered the gate 'confirmed' (delete-now) against the same five preconditions, each re-verified independently against the summary evidencing it. Recorded as ratification-after-execution, not as a human answer preceding the deletion.
 
 ### Pending Todos
 
