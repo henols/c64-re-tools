@@ -62,6 +62,7 @@
     "anno-acme-ident.ts",
     "anno-confidence.ts",
     "anno-memmap-render.ts",
+    "anno-export-asm.ts",
     "anno-coverage.ts",
     "block-class.ts",
     "prg-image.ts",
