@@ -247,11 +247,28 @@ annotation store holding the labels, comments and typed ranges. The store holds
 annotations and never bytes, so the verb refuses to guess either path from the
 other.
 
+**Dated note, 2026-08-30 — the positional is a program IMAGE, and the command
+above is now correct against the shipped verb.** `<program>` is a `.prg` (a
+2-byte little-endian load address followed by the payload) or an
+**exactly-65536-byte** flat capture with a `.raw` or `.bin` extension — the two
+forms every other verb and tool on this surface already reads, and the two
+`c64-ram-capture` produces. The intermediate project-file format this verb
+previously required has **no producer left in this repo**; it is still accepted
+so an existing project file keeps working, but nothing here writes one, so do
+not go looking for a step that produces it.
+
+Dispatch is by **file extension first, length second**. A short flat capture is
+therefore refused by name — `a flat 64K capture must be exactly 65536 bytes` —
+rather than misread as a `.prg` whose first two payload bytes become the load
+address. If you get that refusal, the capture is truncated; re-capture it, do
+not rename it.
+
 Add `--out coverage.json` to keep the machine-readable report, `--force` to
 overwrite one, and `--sample N` to widen the reproducibility sample. The verb
 reads the same store every call in this playbook writes to, and exits **0 even
 when the numbers are bad** — a low measurement is a result, not a failure.
-Non-zero means a caller error, or a store it could not read at all.
+Non-zero means a caller error, an image it could not read, or a store it could
+not read at all.
 
 **Run it three times:** once before Phase 2, so the pass has a starting point
 to be compared against; once at Phase 2.3's refresh point; and once at the end,

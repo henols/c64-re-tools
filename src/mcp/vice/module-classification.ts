@@ -124,7 +124,7 @@
 //     parser with a range refusal, but its subject was the analyser's own
 //     spawn timeout environment variable and it had no consumer outside the
 //     family.
-//   - `checkAcceptedOptions` (`anno-cli.ts:201`) is a generic argv option
+//   - `checkAcceptedOptions` (`anno-cli.ts:200`) is a generic argv option
 //     checker, used only by the CLI it lives in and its own test. This is the
 //     one of the four whose module SURVIVED, so it is the one that keeps its
 //     citation.
@@ -148,7 +148,7 @@
 // ONE MEASURED CORRECTION WORTH CARRYING. EXPORT-02's clause about the 11
 // typed label prefixes owned by `AUTO_NAME_PREFIX_RE` reads as though it
 // belongs to the ACME identifier module. It does not: `AUTO_NAME_PREFIX_RE`
-// is declared at `anno-coverage.ts:1392`, so EXPORT-02 anchors the CENSUS
+// is declared at `anno-coverage.ts:1393`, so EXPORT-02 anchors the CENSUS
 // entry, and the ACME identifier module's basis is EXPORT-01 and EXPORT-03
 // (identifier legality is a precondition of source that a real assembler
 // accepts) instead.
@@ -398,7 +398,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "Its entire contact with the annotation store is now one import of block-class.ts, and its payload " +
       "decoder is prg-image.ts's decodeRawData -- both landed earlier in this phase, so it no longer " +
       "reaches into the analyser family for either. The recogniser EXPORT-02 names is " +
-      "declared at anno-coverage.ts:1392; it is named here rather than in the basis so the " +
+      "declared at anno-coverage.ts:1393; it is named here rather than in the basis so the " +
       "basis stays free of the token the enforcing test's Direction 4 scans for.",
   },
   {

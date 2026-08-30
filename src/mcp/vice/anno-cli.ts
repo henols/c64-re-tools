@@ -96,8 +96,8 @@ import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts
 // and never reads a store, a file or a tool on its own behalf -- a caller
 // fetches and hands the data in, which is exactly what makes the store
 // re-point below a CALLER-side change and nothing more.
-import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
-import type { CoverageReport, R2000Comment, R2000CrossReference, R2000Symbol } from "./anno-coverage.ts";
+import { buildCoverageReport, coverageFindings, loadProjectImage } from "./anno-coverage.ts";
+import type { CoverageReport, LoadedProject, R2000Comment, R2000CrossReference, R2000Symbol } from "./anno-coverage.ts";
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
 import type { BlockEntry } from "./block-class.ts";
@@ -110,7 +110,6 @@ import type { AnnoStoreHandle } from "./anno-store.ts";
 import { crossReferencesTo } from "./anno-derive.ts";
 import { storePathWithinWorkspace } from "./anno-types.ts";
 import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
-import { decodeRawData } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
 const NPX_INVOCATION = "npx -y @henols/vice-mcp anno <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
@@ -639,32 +638,34 @@ export function crossReferencesFromStore(
 
 /**
  * The payload bytes and the load origin, read from the SAME project file the
- * census reads them from.
+ * census reads them from -- and, since 2026-08-30, through the SAME FUNCTION.
  *
- * Deliberately not a second byte source: `buildCoverageReport()` decodes this
- * file itself, and handing `crossReferencesTo()` bytes from somewhere else
- * would let the two halves of one report disagree about which program they
- * describe. Returns `null` -- never a throw and never a guess -- when the file
- * is unreadable or carries no decodable payload; the census reports that same
- * condition itself, in its own words, and the verb exits non-zero on it.
+ * NOT a second byte source, and no longer only by convention. This used to be
+ * a second hand-rolled decode sitting beside `buildCoverageReport()`'s own,
+ * with a comment asking a reader to keep the two in step; two decodes over one
+ * path is two answers to "which program does this report describe", and the
+ * comment was the only thing holding them together (`T-29-16-02`). It now
+ * delegates to `anno-coverage.ts`'s exported `loadProjectImage()`, so the
+ * derived half and the censused half of one report CANNOT describe different
+ * programs -- they are the same call.
+ *
+ * Returns `null` -- never a throw and never a guess -- when the payload did
+ * not decode or decoded to nothing. The census reports that same condition
+ * itself, in its own words, and the verb exits non-zero on it.
  */
 function projectImage(projectPath: string): { origin: number; bytes: Uint8Array } | null {
-  let parsed: unknown;
+  let loaded: LoadedProject;
   try {
-    parsed = JSON.parse(readFileSync(projectPath, "utf8"));
+    loaded = loadProjectImage(projectPath);
   } catch {
+    // The one throw the loader has left is an unreadable PATH. This verb has
+    // already checked existence above and the census reports the condition in
+    // its own words, so a null is the right answer here rather than a second
+    // diagnosis of the same fact.
     return null;
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-  const project = parsed as Record<string, unknown>;
-  const origin = typeof project.origin === "number" && Number.isSafeInteger(project.origin) ? project.origin : 0;
-  if (typeof project.raw_data_base64 !== "string") return null;
-  try {
-    const bytes = new Uint8Array(decodeRawData(project.raw_data_base64));
-    return bytes.length === 0 ? null : { origin, bytes };
-  } catch {
-    return null;
-  }
+  if (!loaded.payloadDecoded || loaded.bytes.length === 0) return null;
+  return { origin: loaded.origin, bytes: loaded.bytes };
 }
 
 function hexAddr(address: number): string {
@@ -1019,7 +1020,13 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
       case "coverage":
         return await cmdCoverage(rest);
       default:
-        console.error(`r2000: unknown verb "${verb}" -- this CLI has exactly two: render-memmap and coverage\n`);
+        // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
+        // `r2000:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
+        // -- so a user who mistyped a verb was answered by a subcommand that
+        // no longer dispatches. Only the STRING moved: the enclosing function
+        // keeps its current name, so no consumer, test or record entry moves
+        // with it (see the plan's <wr14_scope_decision>).
+        console.error(`anno: unknown verb "${verb}" -- this CLI has exactly two: render-memmap and coverage\n`);
         console.log(USAGE);
         return 1;
     }
@@ -1028,7 +1035,8 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
     // own code with its own message, so anything arriving here is unexpected
     // and is reported verbatim rather than swallowed. The loud failure is the
     // point (D-07).
-    console.error(`r2000: ${errMsg(err)}`);
+    // WR-14 site 2, second half -- same correction, same reason.
+    console.error(`anno: ${errMsg(err)}`);
     return 1;
   }
 }

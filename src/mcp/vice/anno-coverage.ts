@@ -140,9 +140,10 @@
 
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode, type Instruction } from "./disasm-decoder.ts";
-import { decodeRawData } from "./prg-image.ts";
+import { decodeRawData, flatImageOrigin, parsePrg } from "./prg-image.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
 import { readFileSync } from "node:fs";
+import { extname } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -2098,35 +2099,171 @@ export interface CoverageOptions {
   blockClassifier?: BlockClassifier;
 }
 
-interface LoadedProject {
+export interface LoadedProject {
   origin: number;
   bytes: Uint8Array;
   payloadDecoded: boolean;
   reason: string | null;
 }
 
-function loadProject(projectPath: string): LoadedProject {
-  let text: string;
+/**
+ * The ONE piece of a `JSON.parse` failure that is safe to report: the byte
+ * offset at which parsing stopped, as ` (at byte offset N)`, or `""` when the
+ * runtime did not name one.
+ *
+ * WHY THIS IS A DIGIT EXTRACTOR AND NOT A MESSAGE PASS-THROUGH (CR-03,
+ * `T-29-16-06`). V8's JSON `SyntaxError` embeds a SNIPPET OF THE INPUT in its
+ * own message -- `Unexpected token 'Q', "QQZZORACLE"... is not valid JSON` --
+ * so any code that forwards `err.message` from a JSON parse over
+ * caller-supplied bytes is a content-disclosure oracle. The capture group is
+ * `(\d+)` and nothing else, so no byte of the parsed file can reach the
+ * returned string however the runtime words its message.
+ *
+ * DELIBERATELY A SECOND COPY of `anno-memmap-render.ts`'s function of the same
+ * name, not an import: that module is the memory-map RENDERER and pulls in the
+ * annotation store, the provenance schema and the confidence vocabulary. This
+ * module is the census instrument, which declares its own input shapes and
+ * imports none of that. A three-line pure digit extractor duplicated with an
+ * explicit cross-reference is cheaper than coupling the instrument to the
+ * renderer; if a third caller ever appears, that is the moment to give it a
+ * shared home. Keep the two in step: widening either regex beyond digits
+ * reopens CR-03 on that side.
+ */
+function jsonParsePosition(err: unknown): string {
+  const match = /\bat position (\d+)\b/.exec(err instanceof Error ? err.message : String(err));
+  return match ? ` (at byte offset ${match[1]})` : "";
+}
+
+/**
+ * A flat capture's `LoadedProject`, or the refusal `flatImageOrigin()` raises
+ * for one that is not exactly 65536 bytes. Split out so both extension-first
+ * branches reach the SAME refusal rather than two spellings of it.
+ */
+function flatImage(projectPath: string, bytes: Uint8Array): LoadedProject {
   try {
-    text = readFileSync(projectPath, "utf8");
+    return { origin: flatImageOrigin(bytes), bytes, payloadDecoded: true, reason: null };
+  } catch (err) {
+    return imageRefusal(projectPath, err);
+  }
+}
+
+/**
+ * The shared shape for an extension-dispatched refusal. `prg-image.ts` throws
+ * a bare `Error` by design (it is a pure byte-layout module with no error
+ * family of its own), and its two messages are a user-visible contract, so
+ * they are carried through verbatim beside the path the caller named.
+ *
+ * These messages state a LENGTH -- "input is 4096 byte(s)", "a .prg needs at
+ * least 3 bytes" -- and never a byte of the file's content, so unlike the JSON
+ * syntax branch below they are safe to interpolate.
+ */
+function imageRefusal(projectPath: string, err: unknown): LoadedProject {
+  return {
+    origin: 0,
+    bytes: new Uint8Array(0),
+    payloadDecoded: false,
+    reason: `${projectPath} is not an image this surface can read -- ${err instanceof Error ? err.message : String(err)}`,
+  };
+}
+
+/**
+ * THE ONE DEFINITION of how the coverage verb turns a path into bytes plus an
+ * origin. It has exactly TWO callers -- `buildCoverageReport()`'s census
+ * below, and `anno-cli.ts`'s `projectImage()`, which supplies the byte source
+ * for the cross-reference derivation. A third hand-rolled decode anywhere is
+ * the defect this export exists to remove: until 2026-08-30 there were two,
+ * and the two halves of one report could therefore describe different
+ * programs (`T-29-16-02`).
+ *
+ * DISPATCH IS BY EXTENSION FIRST, NEVER BY BYTE LENGTH, and that order is a
+ * CONTRACT rather than a style choice. It is copied from `anno-tools.ts`'s
+ * `loadImage()` -- the surface's own image loader -- rather than re-derived,
+ * so the two views of "what is an image" cannot drift. The incident it
+ * encodes (WR-07): a 4096-byte flat `.raw` capture fell through to the `.prg`
+ * parser, whose first two bytes become the load address, so a truncated
+ * capture silently reported a complete-looking measurement with an origin
+ * read backwards out of its own payload bytes, and exited zero -- every
+ * downstream address wrong, no diagnostic. Running the extension check before
+ * any length check is what keeps `flatImageOrigin()`'s named refusal
+ * reachable for those two extensions.
+ *
+ * The retired JSON-project form is the TRAILING branch and nothing more: its
+ * only producer was deleted by D-14 (2026-08-29), so it is retained purely so a
+ * caller with an existing project file on disk is not broken. Its diagnoses
+ * are byte-identical to what they were, with the single exception recorded on
+ * the syntax branch below.
+ *
+ * Failure of an EXTENSION-DISPATCHED branch is a `payloadDecoded: false` with
+ * the underlying refusal as the reason, never a throw. The one throw left is
+ * for a path that cannot be READ at all -- a caller-contract violation.
+ */
+export function loadProjectImage(projectPath: string): LoadedProject {
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(readFileSync(projectPath));
   } catch (err) {
     // A path that cannot be read is a CALLER CONTRACT violation, not
-    // malformed data -- the one class this module throws for.
+    // malformed data -- the one class this module throws for. The
+    // interpolated message here is an ERRNO-class failure (ENOENT, EACCES,
+    // EISDIR) that carries no byte of the file's content, so it is left
+    // interpolated on purpose; plan 29-14 left the equivalent read-failure
+    // branch on the sibling verb alone for exactly this reason.
     throw new R2000CoverageInputError(
       `buildCoverageReport: could not read ${projectPath} -- ${err instanceof Error ? err.message : String(err)}`,
       { cause: err, projectPath },
     );
   }
 
+  // The live image forms, in `loadImage()`'s own branch order.
+  const ext = extname(projectPath).toLowerCase();
+  if (ext === ".raw" || ext === ".bin") {
+    return flatImage(projectPath, bytes);
+  }
+  if (ext !== ".prg" && bytes.length === 65536) {
+    return flatImage(projectPath, bytes);
+  }
+  if (ext === ".prg") {
+    try {
+      const { origin, body } = parsePrg(bytes);
+      return { origin, bytes: new Uint8Array(body), payloadDecoded: true, reason: null };
+    } catch (err) {
+      return imageRefusal(projectPath, err);
+    }
+  }
+
+  // The retired project form, reached only when nothing above matched.
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
   } catch (err) {
+    // NEVER INTERPOLATE THE UNDERLYING PARSE ERROR HERE (CR-03,
+    // `T-29-16-06`). V8's SyntaxError quotes a snippet of the input it choked
+    // on, so passing it through turns `<project>` -- a positional the shipped
+    // playbooks tell an LLM to compose in a Bash invocation -- into a
+    // CONTENT-DISCLOSURE ORACLE. Reproduced verbatim on this very tree before
+    // the fix: `game.prg is not valid JSON -- Unexpected token '', "<the
+    // file's own opening bytes>"... is not valid JSON`.
+    //
+    // Plan 29-14 (`T-29-14-01`) applies exactly this treatment to the
+    // `render-memmap --provenance` sidecar's syntax failure. Both sibling
+    // verbs therefore give one treatment to one defect class. Residual
+    // severity is MEDIUM here rather than 29-14's HIGH only because
+    // `storePathWithinWorkspace()` confines this positional before the
+    // loader sees it, so the oracle cannot leave the workspace -- an
+    // in-workspace content echo is still a content echo.
+    //
+    // What survives is everything a caller legitimately needs: WHICH file,
+    // and THAT it is not JSON. The byte OFFSET is included where the runtime
+    // exposes one, because a position is a fact about where parsing stopped
+    // and not about what the file contains. Do not "improve" this by
+    // restoring the parser's message.
     return {
       origin: 0,
       bytes: new Uint8Array(0),
       payloadDecoded: false,
-      reason: `${projectPath} is not valid JSON -- ${err instanceof Error ? err.message : String(err)}`,
+      reason:
+        `${projectPath} is not valid JSON${jsonParsePosition(err)} and is not a .prg or an exactly-65536-byte flat capture ` +
+        "(the underlying parser message is deliberately NOT included -- it quotes the file's own bytes, CR-03)",
     };
   }
 
@@ -2172,7 +2309,7 @@ export function buildCoverageReport(opts: CoverageOptions): CoverageReport {
   // never disagree about which store vocabulary they are reading.
   const blockClassifier = typeof opts.blockClassifier === "function" ? opts.blockClassifier : blockClassAt;
 
-  const loaded = loadProject(opts.projectPath);
+  const loaded = loadProjectImage(opts.projectPath);
 
   const seeds = new Set<number>();
   seeds.add(loaded.origin);
