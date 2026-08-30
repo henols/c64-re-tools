@@ -1359,6 +1359,41 @@ test("a store with no enums reports `enumSubstitutionCount` zero and `autoNamedS
   assert.equal(result.autoNamedSymbolCount, 0, "`entry` is a user-chosen name and matches no auto prefix");
 });
 
+test("a store with an EMPTY enum set still reassembles byte-identically -- an exporter that only works on a richly annotated store fails on a fresh project", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = shapeFixture("empty-enums");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.enumSubstitutionCount, 0);
+  const definitions = result.source.split("\n").filter((line) => /^[A-Za-z_][A-Za-z0-9_]* = \$/.test(line));
+  assert.deepEqual(definitions, ["entry = $0801"], `no enum variant definition may be emitted when the store holds no enums:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `an enum-free export must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `enum-free byte-diff:${context(result, verdict)}`);
+});
+
+test("a SINGLE-ELEMENT range -- one byte, one instruction -- exports bracketed and reassembles byte-identically", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("single-element"), {
+    origin: 0x0801,
+    body: [0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0801, dataType: "code" }],
+    labels: [],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.blocks.length, 1);
+  assert.equal(result.blocks[0]?.endExclusive, 0x0802, "endExclusive is one past the last byte, even for a one-byte range");
+  assert.equal(result.expectedBytes.length, 1);
+  assert.ok(
+    result.source.split("\n").includes('!if * != $0802 { !error "export-asm: block end drifted, expected $0802" }'),
+    `a one-byte block is bracketed like any other:\n${result.source}`,
+  );
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a single-element range must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `single-element byte-diff:${context(result, verdict)}`);
+});
+
 // ---------------------------------------------------------------------------
 // All 256 opcodes through the exporter, in ONE image and ONE ACME invocation.
 //
