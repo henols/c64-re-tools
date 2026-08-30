@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Mechanical check behind REPOINT-01 and REPOINT-02: every documented
 // `anno <verb> ...` invocation in BOTH skill trees is ARGUMENT-CHECKED --
-// every flag against the verb's real accepted option set, and every positional
-// against the file kinds that verb actually reads.
+// every flag against the verb's real accepted option set, every positional
+// against the file kinds that verb actually reads, and every flag the verb
+// REQUIRES for its presence (the third check was added 2026-08-30, WR-01:
+// without it this gate reported OK for a documented command that exits 1).
 //
 // WHY A SECOND SKILL GATE (29-VERIFICATION.md gap 2, review ids CR-04/CR-05).
 // `scripts/check-skill-tool-coverage.mjs` resolves tool and verb NAMES. It is
@@ -35,7 +37,19 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { VERB_OPTIONS } from "../src/mcp/vice/anno-cli.ts";
-import { parseDocumentedInvocations, checkInvocation, ANNO_INVOCATION_FLOOR } from "./lib/anno-cli-invocations.mjs";
+// The two per-verb declaration tables are imported, not declared here. They
+// lived in this file until 2026-08-30, which meant the committed test could
+// not read them -- this script runs its whole check at import time -- so the
+// test declared a private COPY and proved a fixture while CI ran the shipped
+// map. Moving them into the import-safe lib makes the table the test asserts
+// against the table this gate uses (WR-01).
+import {
+  parseDocumentedInvocations,
+  checkInvocation,
+  ANNO_INVOCATION_FLOOR,
+  POSITIONAL_KINDS,
+  REQUIRED_FLAGS,
+} from "./lib/anno-cli-invocations.mjs";
 import { walkSkills } from "./lib/skill-corpus.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -44,40 +58,6 @@ const errors = [];
 const need = (cond, msg) => {
   if (!cond) errors.push(msg);
 };
-
-// ---------------------------------------------------------------------------
-// The per-verb positional kinds.
-//
-// ONE FROZEN MAP, and it MIRRORS two functions rather than inventing a third
-// truth. A future image or store format is added HERE and in the function
-// named beside it, in the same commit:
-//
-//   coverage <program>      -> `loadProjectImage()` in
-//                              `src/mcp/vice/anno-coverage.ts`, whose dispatch
-//                              is `.prg` (load address plus payload) or an
-//                              exactly-65536-byte flat capture named `.raw` or
-//                              `.bin`. The retired `.regen2000proj`/`.project`
-//                              JSON form is still ACCEPTED by that function so
-//                              an existing file is not broken, but it has no
-//                              producer left in this repo, so it is
-//                              deliberately NOT listed as a kind a playbook
-//                              may document: a gate that blessed it would let
-//                              CR-05 be re-documented verbatim.
-//
-//   render-memmap <store>   -> `openStore()` in `src/mcp/vice/anno-store.ts`.
-//                              That function enforces no extension at all --
-//                              it opens a SQLite database by path -- so this
-//                              entry pins the shipped CONVENTION rather than a
-//                              code check, and its job is to catch a positional
-//                              naming a different ARTEFACT KIND in the store
-//                              slot. That is exactly CR-04:
-//                              `game.regen2000proj` in the store slot, refused
-//                              at runtime with "not an annotation store".
-// ---------------------------------------------------------------------------
-const POSITIONAL_KINDS = Object.freeze({
-  coverage: Object.freeze([".prg", ".raw", ".bin"]),
-  "render-memmap": Object.freeze([".annostore", ".store"]),
-});
 
 // ---------------------------------------------------------------------------
 // The corpus: BOTH trees.
@@ -125,7 +105,7 @@ need(
 );
 
 for (const { file, invocation } of invocations) {
-  for (const problem of checkInvocation(invocation, VERB_OPTIONS, POSITIONAL_KINDS)) {
+  for (const problem of checkInvocation(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS)) {
     need(false, `${file}: ${problem}`);
   }
 }
@@ -142,5 +122,6 @@ console.log(
   `check-skill-cli-invocations: OK -- ${invocations.length} documented anno CLI invocation(s) extracted from ` +
     `${filesWithFences.size} of ${filesScanned} skill file(s) across ${TREES.length} trees (${TREES.map((t) => t.name).join(", ")}); ` +
     `${verbsCovered.length} verb(s) covered (${verbsCovered.join(", ")}); ` +
-    `every flag checked against anno-cli.ts's own VERB_OPTIONS and every positional against the kinds its loader reads.`,
+    `every flag checked against anno-cli.ts's own VERB_OPTIONS, every positional against the kinds its loader reads, ` +
+    `and every REQUIRED flag for its presence.`,
 );
