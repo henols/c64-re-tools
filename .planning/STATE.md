@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
-current_phase: 29
-current_phase_name: The MCP Surface
-status: executing
-stopped_at: "Phase 29 gap-closure round 2 EXECUTING — 4 plans (29-18..29-21) in 2 waves, dispatched by /gsd-execute-phase 29 --gaps-only"
-last_updated: "2026-08-30T15:53:58.737Z"
+current_phase: 30
+current_phase_name: ACME Export and the Real-ACME Oracle
+status: planning
+stopped_at: "Phase 29 COMPLETE — re-verification round 3 passed 6/6 on 2026-08-30T17:46Z; ready to plan Phase 30"
+last_updated: "2026-08-30T17:52:10.360Z"
 last_activity: 2026-08-30
-last_activity_desc: "Phase 29 gap-closure round 2 EXECUTION STARTED (/gsd-execute-phase 29 --gaps-only): 4 plans 29-18..29-21 dispatched across 2 waves. Planning record that produced them: Phase 29 gap-closure round 2 PLANNED (not executed). Four plans 29-18..29-21 written for the two gaps 29-VERIFICATION.md (round 2, 4/6) left open, each carrying gap_closure: true; requirements union is exactly REPOINT-01, REPOINT-02, CUT-01, MCP-04. Wave 1 is 29-18 (tracer: the render-memmap banner made path-independent through one new workspaceRelativePath() seam, proven by rendering under root A and --checking identical bytes under root B, with the suite that PINNED the defect re-pointed), 29-19 (the invocation gate taught to see an omitted REQUIRED flag, its declaration tables moved where its own committed test reads them, the verifier's exact plant observed biting) and 29-21 (CUT-01 RE-MEASURED rather than transcribed, at a commit the corrected sentence names, checkbox + sizing sentence + provenance paragraphs + traceability row moved in one edit; MCP-04 promoted on the re-verification verdict across all four of its sites). Wave 2 is 29-20 (the three falsified drift texts including the template copied into every new project, plus WR-05's other USAGE drifts and the WR-02 header contradiction, discharging the 29-14 prohibition's three recorded counts). Two owner decisions were taken rather than deferred: the banner records WORKSPACE-RELATIVE paths (paths-to-stderr rejected — the artifact is committed and its provenance belongs in it), and CUT-01 is CORRECTED to figures that re-derive rather than accepted via an overrides: entry (the owner's 2026-08-30 decision already chose measured figures; 29-17 executed it with a figure that did not reproduce). Planning ran plan -> check -> revise x4; plan-checker issue trajectory 7 -> 3 -> 3 -> 0 blockers, final pass 0 BLOCKER. Every checker finding was verified by measurement rather than read, and the planner corrected the checker four times, each backed by a measurement: REQUIREMENTS.md:257 carries 15,957 but never carried 10,066 (so the symmetric assertion the checker dictated would have been unsatisfiable); the live CUT-01 entry is :128-132 not :126-142; the wrapped anno-cli.ts header site is :68/:69 not :64; and the untraced-truth enumeration omitted one entry. The orchestrator also had two errors corrected: the live prohibition set is THREE (29-13, 29-14, 29-17) not four, and the OPEN-AS-WARNING set is ELEVEN (WR-02..WR-04, WR-06..WR-13) against a brief that said twelve and listed ten — the residual sentence is now byte-identical across all four plans and matches the disposition table. Scope fence held: nothing planned for WR-03/04/06-13, WR-14 (Phase 30), WR-15/WR-16 (deferred on record), CUT-06 (Phase 32) or either deferred-items.md entry. Denominator checked, not assumed: truths 1-5 are the ROADMAP success criteria and truth 6 is a declared requirement, so this round is NOT the self-generated-scope loop; a dated 2026-08-30 stopping rule in all four plans seals on the contract with residuals stated if round 3 finds new defects in plan-derived truths."
-state_head: 3c5efec0dee805e4f98999d370cfe732fc8e4502
+last_activity_desc: "Phase 29 COMPLETE. Gap-closure round 2 (29-18..29-21, 2 waves) executed and merged, then re-verification round 3 scored the phase passed, 6/6 — superseding round 1 (4/6) and round 2 (4/6, a different 4/6). Both remaining gaps closed and each RE-EXECUTED rather than read. Gap 1 (ROADMAP criterion 2 / REPOINT-01/02): all FOUR missing items closed — render-memmap --check made path-independent through one new workspaceRelativePath() seam (anno-types.ts:1245, consumed at anno-memmap-render.ts:467-468), proven by rendering under root A and byte-copying to root B at a different absolute path for an in-sync/exit-0 verdict, with three negative controls (hand edit, store label rename, store moved relative to the root) each still reporting drifted at a named line so the gate was not merely blunted; and WR-01 closed, the invocation gate now seeing an omitted REQUIRED flag with its declaration tables moved into the import-safe lib so the committed test and CI share one definition instead of the test proving a private fixture copy. Gap 2 (CUT-01): re-measured independently by the verifier from the git object store, not accepted from the plan — 26,023 pre-phase at 8f21d77 (35 files, 10,035 non-test + 15,988 test), 19,714 surviving at f16d0b1 (23 files), net 6,309; the descendant map is injective (20 + 15 removed = 35) and today HEAD measures 21,372, which is why naming f16d0b1 was the load-bearing half of the fix. A secondary error was caught and corrected that nobody had asked for: REQUIREMENTS.md:132 had quoted 18,728 — the 20-descendant subtotal — as the total for d30b63e, which actually measures 19,714. MCP-04 promotion confirmed warranted. REPOINT-01/02 moved to Complete on THIS verdict: all four plans deliberately held them at Gaps Found rather than promote from their own work, which the verifier scored as correct discipline. A post-execution code review raised five new findings; four were fixed (WR-19, an Object.prototype key crashing the invocation gate instead of refusing by name, reproduced by the orchestrator before and after; WR-18 flag-value kind and presence; WR-21 a USAGE self-contradiction introduced by 29-20 own corrective edit; WR-20 bare node vs process.execPath) and WR-17 was escalated to the verifier rather than decided by the fixer — RENDERER_VERSION was deliberately not bumped by 29-18, and the verifier ruled OPEN-AS-WARNING with a named follow-up: a one-time self-clearing true positive with a poor diagnostic, not CR-01 permanent machine-dependent false positive, with no committed rendered memory-map.md in this repo and the one-time drift documented in both copy-forward playbook texts. Suite green throughout: 2771 tests, 2765 pass, 0 fail; typecheck exit 0; all eight CI gates exit 0."
+state_head: d9ed5b56a9ac2aa96cca456744a2a7f4cc38363b
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 49
-  completed_plans: 45
-  percent: 33
+  completed_plans: 49
+  percent: 50
 ---
 
 # Project State
@@ -147,16 +147,16 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 29 (The MCP Surface) — EXECUTING gap-closure round 2 (29-18..29-21); prior verdict GAPS FOUND (4/6)
-Plan: 21 total — 17 executed (29-01..29-17), 4 in flight this run (29-18..29-21). Wave 1: 29-18, 29-19, 29-21. Wave 2: 29-20 (depends on 29-18 and 29-19 by file ownership of module-classification.ts, not content).
-Status: Both remaining gaps are IN FLIGHT this run, neither is closed yet. GAP 1 (ROADMAP criterion 2 / REPOINT-01/02) — render-memmap --check reports drifted for two byte-identical trees whose checkout paths differ while printing an IDENTICAL render_digest, because the banner writes absolute paths into what is a byte comparison; plans 29-18 (the seam plus the cross-root proof, with anno-memmap-render.test.ts:378/:439 re-pointed because they PIN the defect), 29-19 (WR-01, the gate that went green for a documented command missing a required flag) and 29-20 (the three falsified user-facing texts plus WR-05 and WR-02). GAP 2 (CUT-01) — the surviving-line figure does not re-derive at any commit in the phase under the requirement's own predicate; plan 29-21 re-measures at execution time and writes what it measures, anchored to a named commit, rather than transcribing the verifier's numbers. 29-21 also promotes MCP-04, whose row still read Gaps Found against a SATISFIED verdict. Eleven OPEN-AS-WARNING findings and three deferred ones are stated residuals, not scope.
-Last activity: 2026-08-30 — gap-closure round 2 execution started; planning history: 4 plans committed (62f27b8), then three revision passes (ef6336d, 6cd47be, c9d8dc8) and a prose closeout (bddd61d). Plan-checker ran three times: 3 BLOCKER + 4 WARNING, then 1 BLOCKER + 2 WARNING, then 0 BLOCKER + 3 WARNING, and the last three were closed rather than sealed because a self-audit sentence claiming a property its own frontmatter lacks is the 29-14 prohibition shape, inside the round that discharges it.
+Phase: 30 — ACME Export and the Real-ACME Oracle (not started)
+Plan: Not started. Phase 29 closed at 21/21 plans across 8 waves plus two gap-closure rounds.
+Status: Ready to plan. Phase 29 is COMPLETE — re-verification round 3 (2026-08-30T17:46Z) scored it passed, 6/6, superseding round 1 (4/6) and round 2 (4/6, a different 4/6). All twelve of its requirements read Complete; REPOINT-01 and REPOINT-02 were the last two to move and moved on that verdict, not on the gap plans own reading of their work. Carried forward as a stated residual rather than a gap: WR-17 (RENDERER_VERSION not bumped when the memory-map banner output shape changed) is dispositioned OPEN-AS-WARNING with a named follow-up for whichever phase next edits anno-memmap-render.ts — including the guard whose absence is the real defect, a test that fails when the banner lines move without the constant. Eleven further findings stay OPEN-AS-WARNING (WR-02..WR-04, WR-06..WR-13) and WR-14 (Phase 30), WR-15/WR-16 (deferred on record) and CUT-06 (Phase 32) are out of scope on record.
+Last activity: 2026-08-30 — Phase 29 completed and verified; transitioned to Phase 30.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 221
+- Total plans completed: 242
 - Average duration: —
 - Total execution time: —
 
@@ -187,6 +187,7 @@ Last activity: 2026-08-30 — gap-closure round 2 execution started; planning hi
 | 23 | 6 | - | - |
 | 27 | 5 | - | - |
 | 28 | 23 | - | - |
+| 29 | 21 | - | - |
 
 **Recent Trend:**
 
@@ -1336,7 +1337,7 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 ## Session Continuity
 
 Last session: 2026-08-29T23:48:15.947Z
-Stopped at: Completed 29-12-PLAN.md
+Stopped at: Phase 29 complete, ready to plan Phase 30
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
