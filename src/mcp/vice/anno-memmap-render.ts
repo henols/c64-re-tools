@@ -96,6 +96,29 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * The ONE piece of a `JSON.parse` failure that is safe to report: the byte
+ * offset at which parsing stopped, as ` (at byte offset N)`, or `""` when the
+ * runtime did not name one.
+ *
+ * WHY THIS IS A DIGIT EXTRACTOR AND NOT A MESSAGE PASS-THROUGH (CR-03). V8's
+ * JSON `SyntaxError` embeds a SNIPPET OF THE INPUT in its own message --
+ * `Unexpected token 'Q', "QQZZORACLE"... is not valid JSON` -- so any code
+ * that forwards `err.message` from a JSON parse over caller-supplied bytes is
+ * a content-disclosure oracle. The capture group here is `(\d+)` and nothing
+ * else, so no byte of the parsed file can reach the returned string however
+ * the runtime words its message. Widening this regex to capture anything but
+ * digits reopens CR-03.
+ *
+ * Returns `""` rather than guessing when no position is present (`Unexpected
+ * end of JSON input` carries none) -- an absent offset is reported by absence,
+ * never by a fabricated zero.
+ */
+function jsonParsePosition(err: unknown): string {
+  const match = /\bat position (\d+)\b/.exec(errMsg(err));
+  return match ? ` (at byte offset ${match[1]})` : "";
+}
+
 /** The store's own spelling for a comment placed on its own line before the
  * instruction, read out of `COMMENT_TYPES` -- the ONE home of that
  * vocabulary -- rather than re-typed as a literal here. The pre-store
@@ -313,6 +336,20 @@ export interface RenderMemoryMapOptions {
    *  against the same `workspaceRoot`, so both answers agree by construction
    *  rather than by a second rule (T-29-51). */
   storePath: string;
+  /** The provenance sidecar to render from. The CALLER confines it through
+   *  `storePathWithinWorkspace()` before entering this module -- today that
+   *  caller is `anno-cli.ts`'s `cmdRenderMemmap()`. THIS MODULE PERFORMS NO
+   *  CONFINEMENT OF ITS OWN, and must never be handed a path that has not
+   *  been through that seam.
+   *
+   *  THIS FIELD WAS DOCUMENTED BY SILENCE, and the silence is what the review
+   *  names as the mechanism. `storePath` one line above carried four lines
+   *  stating who confines it; this field, an equally caller-supplied path
+   *  reaching an equally real `readFileSync`, carried nothing -- so a reader
+   *  comparing the two would reasonably conclude the difference was
+   *  deliberate. It was not: the CLI read this argument raw, making it an
+   *  arbitrary-file read oracle (`29-REVIEW.md` CR-03). An absent comment
+   *  beside a present one is a claim, and this one was false. */
   provenancePath: string;
   /** The workspace root both confinement checks are taken against. REQUIRED
    *  rather than defaulted: `openStore()`'s default behaviour is to CREATE
@@ -359,7 +396,22 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
   try {
     sidecarJson = JSON.parse(sidecarBytes);
   } catch (err) {
-    throw new Error(`renderMemoryMap: provenance sidecar at "${provenancePath}" is not valid JSON: ${errMsg(err)}`);
+    // NEVER INTERPOLATE THE UNDERLYING PARSE ERROR HERE (CR-03). Node's
+    // SyntaxError quotes a snippet of the input it choked on -- e.g.
+    // `Unexpected token 'Q', "QQZZORACLE"... is not valid JSON` -- so passing
+    // it through turns a read refusal into a CONTENT-DISCLOSURE ORACLE. That
+    // matters here specifically because this argument arrives from an
+    // agent-composed Bash invocation: the shipped playbooks tell an LLM to
+    // compose this path, so the error text is read by whatever composed it.
+    //
+    // What survives is everything a caller legitimately needs to fix the
+    // problem: WHICH file, and THAT it is not JSON. The byte OFFSET is
+    // included where Node exposes one, because a position is a fact about
+    // where parsing stopped and not about what the file contains.
+    throw new Error(
+      `renderMemoryMap: provenance sidecar at "${provenancePath}" is not valid JSON${jsonParsePosition(err)}. ` +
+        "The underlying parser message is deliberately NOT included -- it quotes the file's own bytes (CR-03).",
+    );
   }
   const provenance = parseProvenanceHeader(sidecarJson);
 
@@ -506,7 +558,16 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
 export interface CheckRenderedMemoryMapOptions {
   /** See `RenderMemoryMapOptions.storePath`. */
   storePath: string;
+  /** See `RenderMemoryMapOptions.provenancePath` -- same argument, one layer
+   *  up. The CALLER (`anno-cli.ts`'s `cmdRenderMemmap()`) confines it through
+   *  `storePathWithinWorkspace()`; this module performs no confinement of its
+   *  own (CR-03). */
   provenancePath: string;
+  /** The rendered file to compare against, read RAW by `readFileSync` below.
+   *  The CALLER confines it through `storePathWithinWorkspace()` -- the SAME
+   *  resolution that produces the write path on the non-`--check` branch, so
+   *  the drift check and the write are one confined value rather than two
+   *  rules. This module performs no confinement of its own (CR-02). */
   renderedPath: string;
   /** See `RenderMemoryMapOptions.workspaceRoot`. */
   workspaceRoot: string;
