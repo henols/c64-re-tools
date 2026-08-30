@@ -45,33 +45,63 @@
 //     imported from `anno-types.ts`, so a thirteenth member added later is
 //     covered the next time this file runs. A copied list would silently stop
 //     covering the vocabulary the moment it grew.
+//   - Never hardcode a static "known unassemblable" list for the 256-opcode
+//     suite, in the same voice `disasm-roundtrip.test.ts:33-37` uses it. Every
+//     assertion there is driven from `disasm-opcodes.ts`'s own `OPCODES` table,
+//     so a future correction to that table is automatically re-verified the
+//     next time this file runs -- and that matters here more than anywhere: an
+//     internally-verified version of that table shipped FOURTEEN wrong entries,
+//     caught only by running its output through a real assembler.
 //   - Never treat an ACME stderr WARNING as a failure. ACME 0.97 emits
 //     `Warning (Zone <untitled>): Wrong type - expected address.` and
 //     `Using oversized addressing mode.` on legal, byte-correct output at exit
 //     0. A positive case here is proved by `outcome === "ok"` with
 //     `byteDiff.equal === true`, never by an exit status.
-//   - Never call `verifyAcmeAssembles()` anywhere but inside `verifyExport()`.
-//     That helper always supplies the REQUIRED `expectedSegments`, so the
-//     unanimity rule against ACME's own per-segment lines has exactly one
-//     place to be right and cannot be dropped from a later test by omission.
+//   - Never call `verifyAcmeAssembles()` anywhere but inside
+//     `verifyExportText()`. That helper always supplies the REQUIRED
+//     `expectedSegments`, so the unanimity rule against ACME's own per-segment
+//     lines has exactly one place to be right and cannot be dropped from a
+//     later test by omission. `verifyExport()` is a one-line delegation to it
+//     for the common "verify this export's own source" case; a test that needs
+//     to verify MUTATED source text against an UNMUTATED export's expectations
+//     calls `verifyExportText()` directly rather than growing a second call
+//     site.
 //   - Never interpolate a source string into a shell command. `assembleRaw()`
 //     writes it to a file and spawns ACME with an argv array.
+//   - Never write the eleven auto-name prefixes as an array literal in this
+//     file. They are PARSED out of `AUTO_NAME_PREFIX_RE.source`'s own
+//     alternation, so a twelfth prefix added to that regex is covered the next
+//     time this file runs and a five-prefix copy anywhere is caught. A literal
+//     list here would be the very reimplementation the structural scan below
+//     exists to detect -- committed in the file that detects it.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
+import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import { assertExportableCommentText, exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
-import { openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
+import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
+import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
+import { decode } from "./disasm-decoder.ts";
+import { OPCODES } from "./disasm-opcodes.ts";
 
 /** Computed exactly once, by the shared seam. Every ACME-dependent test in
  * this file passes this through node:test's own `{ skip }` option. */
 const SKIP_REASON: string | false = acmeSkipReasonFor("anno-export-asm.test.ts");
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The committed self-modifying fixture and the ACME source it was assembled
+ * from. See `fixtures/export-asm/README.md` for the provenance table. */
+const SMC_DIR = join(HERE, "fixtures", "export-asm");
+const SMC_SOURCE_PATH = join(SMC_DIR, "smc.a");
+const SMC_PRG_PATH = join(SMC_DIR, "smc.prg");
 
 test("ACME availability gate", () => {
   assertAcmeRequiredIfEnvSet(assert);
@@ -105,6 +135,8 @@ interface StoreSpec {
   ranges: readonly { start: number; endInclusive: number; dataType: string }[];
   labels?: readonly { address: number; name: string }[];
   comments?: readonly { address: number; commentType: string; text: string }[];
+  enums?: readonly { name: string; variants: Record<string, string> }[];
+  enumUsage?: readonly { address: number; name: string }[];
 }
 
 interface StoreFixture {
@@ -130,10 +162,36 @@ function buildStore(dir: string, spec: StoreSpec): StoreFixture {
     for (const range of spec.ranges) setDataType(handle, range);
     for (const label of spec.labels ?? []) setLabel(handle, { ...label, kind: "User" });
     for (const comment of spec.comments ?? []) setComment(handle, comment);
+    for (const projectEnum of spec.enums ?? []) createProjectEnum(handle, projectEnum);
+    for (const usage of spec.enumUsage ?? []) applyEnumUsage(handle, usage);
   } finally {
     closeStore(handle);
   }
 
+  return { dir, storePath, imagePath };
+}
+
+/**
+ * A store built in a fresh temp directory over an image ALREADY ON DISK.
+ *
+ * The committed fixtures are the point of the tests that use this: their bytes
+ * are what a real assembler wrote, not a `body` array this file invented, so
+ * the store has to be attached to the file rather than the file synthesised
+ * from the store.
+ */
+function buildStoreOverImage(tag: string, imagePath: string, spec: Omit<StoreSpec, "origin" | "body">): StoreFixture {
+  const dir = freshDir(tag);
+  const storePath = join(dir, "anno.sqlite");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    for (const range of spec.ranges) setDataType(handle, range);
+    for (const label of spec.labels ?? []) setLabel(handle, { ...label, kind: "User" });
+    for (const comment of spec.comments ?? []) setComment(handle, comment);
+    for (const projectEnum of spec.enums ?? []) createProjectEnum(handle, projectEnum);
+    for (const usage of spec.enumUsage ?? []) applyEnumUsage(handle, usage);
+  } finally {
+    closeStore(handle);
+  }
   return { dir, storePath, imagePath };
 }
 
@@ -173,16 +231,45 @@ function assembleRaw(source: string): RawAssembly {
  * dropped by omission in some later test. It passes no `acmeBin`, so every
  * round trip in this file runs against the real assembler.
  *
+ * `source` IS A SEPARATE PARAMETER FROM `result` ON PURPOSE. The negative
+ * controls in this file take a valid export and apply ONE documented mutation
+ * to its text, then ask whether the assembler still reproduces the bytes the
+ * UNMUTATED export said it must. Both halves have to come from the same call:
+ * mutating `result.source` in place would move the expectations along with the
+ * mutation and the control would prove nothing.
+ *
  * A test that wants a DELIBERATELY mismatched segment list passes it
  * explicitly at its own call site rather than editing this helper -- widening
  * the one correct call is how the rule stops being run everywhere.
  */
-function verifyExport(result: ExportAsmResult): AcmeVerifyResult {
+function verifyExportText(result: ExportAsmResult, source: string): AcmeVerifyResult {
   return verifyAcmeAssembles({
-    source: result.source,
+    source,
     expectedBytes: result.expectedBytes,
     expectedSegments: result.blocks,
   });
+}
+
+/** The common case: verify an export's own source against its own
+ * expectations. A one-line delegation, so the call site above does not
+ * multiply. */
+function verifyExport(result: ExportAsmResult): AcmeVerifyResult {
+  return verifyExportText(result, result.source);
+}
+
+/**
+ * The `name = $XXXX` definition line for `name`, with any trailing marker
+ * comment split off.
+ *
+ * An auto-generated name's definition carries a fixed trailing comment (the
+ * annotation-backlog marker), so a test about the DEFINITION -- its hex-digit
+ * count, its presence, its position -- compares the part before the comment
+ * rather than the whole line. Split on the two-space `;` separator this module
+ * uses everywhere, so a definition that never grew a comment compares
+ * unchanged.
+ */
+function definitionOf(lines: readonly string[], name: string): string | undefined {
+  return lines.find((line) => line.startsWith(`${name} = `))?.split("  ;")[0];
 }
 
 /** A verdict rendered for a failure message: everything a human needs to see
@@ -301,8 +388,13 @@ test("a symbol below $0100 is defined with TWO hex digits and one at or above wi
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
   const lines = result.source.split("\n");
 
-  assert.ok(
-    lines.includes("zpf_90 = $90"),
+  // Compared on the DEFINITION only, with any trailing marker comment split
+  // off: `zpf_90` matches the auto-name prefix set, so its line also carries
+  // the backlog marker. The digit count is what this test is about, and a
+  // comment cannot change a byte.
+  assert.equal(
+    definitionOf(lines, "zpf_90"),
+    "zpf_90 = $90",
     `measured on ACME 0.97: \`zpf = $10\` then \`lda zpf\` is 2 bytes (zeropage) while \`zpf = $0010\` then the same line is ` +
       `3 bytes (absolute), so the DEFINITION's digit count is a byte-width decision:\n${result.source}`,
   );
@@ -375,10 +467,17 @@ test("PLANTED VIOLATION 2: a symbol substituted into a zeropage operand with its
   //   `Warning (Zone <untitled>): Using oversized addressing mode.`
   // to show for it at exit 0 in isolation. Here the end assertion converts that
   // silent widening into a refusal.
+  // The definition line is READ OUT OF THE EXPORT rather than retyped: `zpf_90`
+  // matches the auto-name prefix set, so its line also carries the backlog
+  // marker, and a retyped literal would silently match nothing -- leaving the
+  // source unmodified and the "violation" passing for the wrong reason.
+  const zpDefinitionLine = result.source.split("\n").find((line) => line.startsWith("zpf_90 = "));
+  assert.ok(zpDefinitionLine !== undefined, `the fixture must define zpf_90:\n${result.source}`);
+
   const planted = result.source
-    .replace("zpf_90 = $90\n", "")
+    .replace(`${zpDefinitionLine}\n`, "")
     .replace("        lda $90", "        lda zpf_90")
-    .replace("        rts\n", "        rts\nzpf_90 = $90\n");
+    .replace("        rts\n", `        rts\n${zpDefinitionLine}\n`);
   assert.ok(planted.includes("        lda zpf_90"), `the zeropage operand must actually carry the symbol:\n${planted}`);
   assert.ok(planted.indexOf("zpf_90 = $90") > planted.indexOf("* = $0801"), `the definition must sit below the first \`* =\`:\n${planted}`);
 
@@ -395,7 +494,7 @@ test("PLANTED VIOLATION 2: a symbol substituted into a zeropage operand with its
   // intact, assembles at exit 0 with byte-identical output. The header block
   // and the width force cover the same hazard from different sides, and the
   // block brackets are what covers losing both.
-  const moveOnly = result.source.replace("zpf_90 = $90\n", "").replace("        rts\n", "        rts\nzpf_90 = $90\n");
+  const moveOnly = result.source.replace(`${zpDefinitionLine}\n`, "").replace("        rts\n", `        rts\n${zpDefinitionLine}\n`);
   const survived = assembleRaw(moveOnly);
   assert.equal(survived.status, 0, `the move alone must NOT fire -- the \`+2\` force already holds the width:\n  stderr: ${survived.stderr}`);
   assert.equal(survived.outputExists, true, "the move alone still produces an output file");
@@ -697,5 +796,822 @@ test("a comment the export cannot place is refused BY NAME, never dropped from t
       assert.equal(e.message.includes("mid-instruction"), false, "the refusal must not quote the stored text back (CR-03)");
       return true;
     },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Mid-instruction `=*+$NN` labels, on a fixture that GENUINELY SELF-MODIFIES.
+//
+// Criterion 3 is explicit that emitting the idiom is not the criterion. A
+// fixture that merely CONTAINS `=*+$01` would keep every test below green if
+// the line were emitted on the wrong instruction, in the wrong place, or for an
+// address no instruction owns. So the fixture's self-modification is proved
+// FROM ITS BYTES, the round trip is proved by the byte-diff, and the placement
+// rule is proved by a negative control that ACME accepts at exit 0.
+// ---------------------------------------------------------------------------
+
+test("FIXTURE INTEGRITY: smc.prg genuinely self-modifies -- an `inc` writes to an earlier `lda #`'s own immediate operand byte, proved FROM THE BYTES", () => {
+  const raw = new Uint8Array(readFileSync(SMC_PRG_PATH));
+  assert.ok(raw.length > 2, `the fixture must carry a payload:\n  length: ${raw.length}`);
+  assert.equal(raw[0], 0x01, "the `.prg` load address is little-endian, low byte first");
+  assert.equal(raw[1], 0x08, "the fixture loads at $0801");
+
+  const origin = raw[0]! | (raw[1]! << 8);
+  assert.equal(origin, 0x0801);
+
+  const instructions = decode(raw.subarray(2), origin);
+
+  // Which addresses are the IMMEDIATE operand byte of some instruction, and
+  // which instruction owns each. Derived from the decode, never from a
+  // hand-written offset -- an offset would keep agreeing with itself after the
+  // fixture stopped self-modifying.
+  const immediateOperandOwner = new Map<number, number>();
+  for (const instr of instructions) {
+    if (instr.operand?.role === "immediate") immediateOperandOwner.set(instr.address + 1, instr.address);
+  }
+  assert.ok(immediateOperandOwner.size > 0, "the fixture must contain at least one immediate-operand instruction");
+
+  const selfModifyingWrites = instructions.filter((instr) => instr.operand?.role === "absolute" && immediateOperandOwner.has(instr.operand.value));
+  assert.equal(
+    selfModifyingWrites.length,
+    1,
+    "smc.prg must contain EXACTLY ONE instruction whose absolute write target is another instruction's immediate operand byte. " +
+      "If this is 0 the fixture has stopped self-modifying and every test over it is now testing nothing; if it is more than 1 the " +
+      "assertions below no longer name a unique write target. Fix smc.a, then regenerate with " +
+      `\`node fixtures/export-asm/make-export-asm-fixtures.mjs\`.\n  decoded: ${instructions.map((i) => `$${i.address.toString(16)} ${i.mnemonic}`).join(", ")}`,
+  );
+
+  const writer = selfModifyingWrites[0]!;
+  const target = writer.operand!.value;
+  const owner = immediateOperandOwner.get(target)!;
+  assert.ok(
+    owner < writer.address,
+    `the modified instruction must come BEFORE the instruction that modifies it: owner $${owner.toString(16)}, writer $${writer.address.toString(16)}`,
+  );
+  assert.equal(target, 0x0802, "the write target is the `lda #$00` operand byte at $0802");
+  assert.equal(writer.mnemonic, "inc");
+});
+
+test("REGENERATOR AGREEMENT: re-assembling smc.a reproduces the committed smc.prg byte-for-byte", { skip: SKIP_REASON }, () => {
+  const dir = freshDir("smc-regen");
+  const outPath = join(dir, "smc.prg");
+  // `-f cbm` deliberately, NOT ACME_VERIFY_ARGV_FLAGS' `-f plain`: the fixture
+  // is a real `.prg` and carries its two-byte load address, which is what the
+  // integrity test above reads.
+  const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, SMC_SOURCE_PATH], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(r.status, 0, `smc.a must assemble:\n  stderr: ${r.stderr ?? ""}`);
+  assert.equal(existsSync(outPath), true, "ACME must write an output file");
+
+  assert.deepEqual(
+    [...new Uint8Array(readFileSync(outPath))],
+    [...new Uint8Array(readFileSync(SMC_PRG_PATH))],
+    "smc.a and smc.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its source assembles to; " +
+      "regenerate with `cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.mjs`.",
+  );
+});
+
+/** The store the round-trip and negative-control tests share: the whole
+ * eleven-byte fixture as one code range, an ordinary label at the entry point,
+ * and the mid-instruction label naming the self-modified operand byte. */
+function smcFixture(tag: string): StoreFixture {
+  return buildStoreOverImage(tag, SMC_PRG_PATH, {
+    ranges: [{ start: 0x0801, endInclusive: 0x080b, dataType: "code" }],
+    labels: [
+      { address: 0x0801, name: "entry" },
+      { address: 0x0802, name: "smc_operand" },
+    ],
+  });
+}
+
+test("a label strictly inside an instruction is emitted as `name =*+$NN` on the line IMMEDIATELY BEFORE its host, and is NOT restated in the header", () => {
+  const { dir, storePath, imagePath } = smcFixture("smc-shape");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  const definition = lines.indexOf("smc_operand =*+$01");
+  const host = lines.indexOf("        lda #$00");
+  assert.ok(definition >= 0, `the mid-instruction label must use the golden witness's compact spelling:\n${result.source}`);
+  assert.equal(
+    definition + 1,
+    host,
+    `the definition sits IMMEDIATELY BEFORE the instruction whose operand byte it names -- placed after it, it would name the NEXT instruction's operand:\n${result.source}`,
+  );
+
+  assert.ok(lines.includes("        inc smc_operand"), `the self-modifying write must render through the substituted name:\n${result.source}`);
+
+  // Defined inline, so it must NOT also appear in the header -- two definitions
+  // of one name is ACME's `Symbol already defined.`
+  const headerDefinitions = lines.filter((line) => /^[A-Za-z_][A-Za-z0-9_]* = \$/.test(line));
+  assert.deepEqual(headerDefinitions, ["entry = $0801"], `only the ordinary label belongs in the header block:\n${result.source}`);
+
+  assert.equal(result.midInstructionLabelCount, 1);
+  assert.equal(result.symbolCount, 2, "`symbolCount` counts every store label the source defines, header and inline alike");
+});
+
+test("ROUND TRIP: the self-modifying fixture reassembles BYTE-IDENTICALLY with its write target named by a mid-instruction label", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = smcFixture("smc-roundtrip");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const verdict = verifyExport(result);
+
+  assert.equal(verdict.outcome, "ok", `a genuinely self-modifying program must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict -- "ACME exits 0" is nowhere the proof:${context(result, verdict)}`);
+});
+
+test("NEGATIVE CONTROL: moving the `=*+$01` line to AFTER its host instruction changes the bytes, and ACME exits 0 anyway", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = smcFixture("smc-negative");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // ONE documented move: the definition goes from immediately BEFORE its host
+  // to immediately AFTER it. `*` is then $0803 rather than $0801, so the symbol
+  // takes the value $0804 -- the operand byte of the NEXT instruction.
+  const moved = result.source.replace("smc_operand =*+$01\n", "").replace("        lda #$00\n", "        lda #$00\nsmc_operand =*+$01\n");
+  assert.notEqual(moved, result.source, "the move must change the source");
+  const movedLines = moved.split("\n");
+  assert.equal(
+    movedLines.indexOf("smc_operand =*+$01"),
+    movedLines.indexOf("        lda #$00") + 1,
+    `the moved definition must sit immediately AFTER its former host:\n${moved}`,
+  );
+
+  const verdict = verifyExportText(result, moved);
+
+  assert.equal(
+    verdict.outcome,
+    "failed",
+    `the wrong placement must be REFUSED:\n  outcome: ${verdict.outcome}\n  reason: ${verdict.reason}\n  exitStatus: ${verdict.exitStatus}\n${moved}`,
+  );
+  assert.equal(
+    verdict.exitStatus,
+    0,
+    "ACME ACCEPTED the wrongly-placed label -- the instruction's LENGTH is unchanged, so the per-block `*` assertions cannot fire and " +
+      `the assembler has nothing to complain about. Only the byte-diff tells the two placements apart.\n  reason: ${verdict.reason}`,
+  );
+  assert.equal(verdict.byteDiff?.equal, false, `the bytes must disagree:\n  reason: ${verdict.reason}`);
+  assert.equal(
+    verdict.byteDiff?.firstDifferingOffset,
+    3,
+    "offset 3 from the block start $0801 is $0804 -- the low byte of the `inc` operand, which now points at the NEXT instruction's " +
+      `operand byte instead of the first one's.\n  byteDiff: ${JSON.stringify(verdict.byteDiff)}`,
+  );
+});
+
+test("a mid-instruction label below $0100 is REFUSED BY NAME rather than emitted", () => {
+  // $0081 is the immediate operand byte of the `lda #$00` at $0080. A `=*+$01`
+  // label is defined INLINE, so this exporter's own two-hex-digit header
+  // definition rule cannot hold the referencing operand's width, and the only
+  // remaining defence is a `disasm-renderer.ts` invariant this module does not
+  // own. Measured on ACME 0.97, the unforced form assembles `inc smc_operand`
+  // to `e6 81` -- two bytes where the original was three -- at exit 0 with NO
+  // diagnostic at all.
+  const { dir, storePath, imagePath } = buildStore(freshDir("smc-zeropage"), {
+    origin: 0x0080,
+    body: [0xa9, 0x00, 0x60],
+    ranges: [{ start: 0x0080, endInclusive: 0x0082, dataType: "code" }],
+    labels: [{ address: 0x0081, name: "zpf_81" }],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /, "every refusal from this module is prefixed `exportAsm:`");
+      assert.ok(e.message.includes("$0081"), `the refusal names the ADDRESS it refused: ${e.message}`);
+      assert.ok(e.message.includes("zpf_81"), `the refusal names the LABEL, so a human can find the row: ${e.message}`);
+      assert.ok(e.message.includes("$0100"), `the refusal names the floor: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("a store with no mid-instruction label reports `midInstructionLabelCount` zero -- the counter is not a constant", () => {
+  const { dir, storePath, imagePath } = shapeFixture("smc-count-zero");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.equal(result.midInstructionLabelCount, 0);
+  assert.equal(result.source.includes("=*+$"), false, `no inline definition may be emitted when no label sits inside an instruction:\n${result.source}`);
+});
+
+// ---------------------------------------------------------------------------
+// The eleven typed auto-name prefixes, read from their ONE home.
+//
+// `anno-types.ts:93-99` forbids restating them and names the failure a short
+// reimplementation causes: a five-prefix copy silently under-counts, breaking
+// `routine-queue-walker`'s backlog construction while every test keeps passing.
+// The structural scan below is what turns that from a rule into a check, and it
+// has THREE directions -- including the comment-only control that stops it
+// degrading into a substring search which passes by counting its own prose.
+// ---------------------------------------------------------------------------
+
+const EXPORTER_PATH = join(HERE, "anno-export-asm.ts");
+
+/**
+ * A quote-aware comment stripper, the shape `anno-cli-path-consumers.test.ts`
+ * uses. A COPY rather than an import: that helper is not exported, and widening
+ * another test file's surface for this one is a larger change than the twenty
+ * lines below.
+ */
+function stripComments(src: string): string {
+  let out = "";
+  const n = src.length;
+  let i = 0;
+  let quote: string | null = null;
+  while (i < n) {
+    const c = src[i]!;
+    if (quote) {
+      out += c;
+      if (c === "\\") {
+        out += src[i + 1] ?? "";
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "/") {
+      while (i < n && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * The eleven prefix tokens, parsed out of `AUTO_NAME_PREFIX_RE`'s OWN
+ * alternation. Never a literal list -- see this file's WHAT NOT TO DO.
+ */
+function parseAutoNamePrefixes(): string[] {
+  const match = /^\^\(([^)]+)\)$/.exec(AUTO_NAME_PREFIX_RE.source);
+  assert.ok(
+    match,
+    `AUTO_NAME_PREFIX_RE is no longer a single anchored alternation, so this file can no longer derive the prefix set from it: ` +
+      `${AUTO_NAME_PREFIX_RE.source}`,
+  );
+  return match[1]!.split("|");
+}
+
+/**
+ * Regex literals in already-stripped TypeScript source, matched only where a
+ * regex may legally BEGIN (start of line, or after an operator-ish character).
+ * Without that guard the `/` inside a string like `"./anno-store.ts"` opens a
+ * phantom literal and the scan reports on text that is not a regex at all.
+ */
+function regexLiteralBodies(strippedSrc: string): string[] {
+  const bodies: string[] = [];
+  for (const m of strippedSrc.matchAll(/(^|[=(,:[!&|?{;+\s])\/((?:\\.|\[[^\]]*\]|[^/\n\\])+)\/[dgimsuvy]*/gm)) {
+    bodies.push(m[2]!);
+  }
+  return bodies;
+}
+
+/**
+ * THE ONE PREDICATE. The real scan and BOTH controls call this same function,
+ * so there is exactly one definition of "restates the auto-name prefixes rather
+ * than importing them" -- the discipline `anno-cli-path-consumers.test.ts`
+ * states: a structural test and its own proof must share the checked logic
+ * rather than each carry a copy.
+ *
+ * `true` means VIOLATION: the source either does not import
+ * `AUTO_NAME_PREFIX_RE` at all, or it carries a regex literal whose body names
+ * two or more of the prefix tokens -- which is what a hand-rolled
+ * reimplementation looks like.
+ */
+function restatesAutoNamePrefixes(strippedSrc: string, prefixes: readonly string[]): boolean {
+  const importsTheRegex = /import\s*\{[^}]*\bAUTO_NAME_PREFIX_RE\b[^}]*\}\s*from/.test(strippedSrc);
+  const restatingLiteral = regexLiteralBodies(strippedSrc).some((body) => prefixes.filter((prefix) => body.includes(prefix)).length >= 2);
+  return !importsTheRegex || restatingLiteral;
+}
+
+test("the auto-name prefix set is parsed from AUTO_NAME_PREFIX_RE's own alternation: exactly eleven, `L_` absent, ASCII case-sensitive", () => {
+  const prefixes = parseAutoNamePrefixes();
+  assert.equal(
+    prefixes.length,
+    11,
+    `the prefix vocabulary changed size. It is PARSED from AUTO_NAME_PREFIX_RE rather than copied, so the new member is already covered ` +
+      `everywhere in this file -- update this pinned count and confirm the new prefix round-trips.\n  parsed: ${prefixes.join(", ")}`,
+  );
+  assert.equal(prefixes.includes("L_"), false, "`L_` must stay absent -- upstream gives it to predefined AND user-defined labels alike, so it cannot distinguish auto from user");
+  assert.equal(AUTO_NAME_PREFIX_RE.test("L_main_loop"), false);
+
+  // ASCII case-sensitive: an uppercased auto name is a user rename.
+  assert.equal(AUTO_NAME_PREFIX_RE.test("s_0820"), true);
+  assert.equal(AUTO_NAME_PREFIX_RE.test("S_0820"), false, "matching is ASCII case-sensitive, exactly as upstream emits the prefixes");
+});
+
+test("STRUCTURAL SCAN, all three directions: the exporter imports the prefix regex, a planted five-prefix copy is reported, and a comment-only mention is NOT", () => {
+  const prefixes = parseAutoNamePrefixes();
+  const real = stripComments(readFileSync(EXPORTER_PATH, "utf8"));
+
+  // Direction 1: the real source is clean.
+  assert.equal(
+    restatesAutoNamePrefixes(real, prefixes),
+    false,
+    "anno-export-asm.ts must import AUTO_NAME_PREFIX_RE from its one home and carry no regex literal restating the prefixes. " +
+      "A five-prefix copy under-counts silently and breaks routine-queue-walker's backlog construction while every test keeps passing.",
+  );
+
+  // Direction 2: a planted FIVE-prefix regex literal is reported. Built from the
+  // parsed tokens, so it is a genuine short copy of the real vocabulary rather
+  // than five names typed here.
+  const plantedBody = `/^(${prefixes.slice(0, 5).join("|")})/`;
+  const plantedSource = `${real}\nconst LOCAL_AUTO_PREFIX_RE = ${plantedBody};\n`;
+  assert.equal(
+    restatesAutoNamePrefixes(plantedSource, prefixes),
+    true,
+    `the scan must REPORT a five-prefix reimplementation, or it is not checking anything:\n  planted: ${plantedBody}`,
+  );
+
+  // Direction 3: the SAME text inside a comment is NOT reported. This is the
+  // control that stops the scan degrading into a substring search that passes by
+  // counting the module's own prose about the prefixes.
+  const commentOnly = stripComments(`${readFileSync(EXPORTER_PATH, "utf8")}\n// a note mentioning ${plantedBody} in prose only\n`);
+  assert.equal(
+    restatesAutoNamePrefixes(commentOnly, prefixes),
+    false,
+    "a comment naming the prefixes is documentation, not a reimplementation -- a scan that cannot tell them apart would fire on the " +
+      "module's own WHAT-NOT-TO-DO paragraph",
+  );
+
+  // And the planted violation must be caught for the RIGHT reason: a source with
+  // the import removed is also a violation, by the other half of the predicate.
+  assert.equal(
+    restatesAutoNamePrefixes(real.replace("AUTO_NAME_PREFIX_RE", "SOMETHING_ELSE"), prefixes),
+    true,
+    "dropping the import is a violation too -- the predicate has two halves and both must bite",
+  );
+});
+
+test("every one of the parsed prefixes round-trips as a label name, is MARKED in the source, and `L_`/uppercase names are not counted", { skip: SKIP_REASON }, () => {
+  const prefixes = parseAutoNamePrefixes();
+
+  // One label per parsed prefix, at addresses OUTSIDE the code range so no
+  // substitution or mid-instruction rule is engaged -- this test is about the
+  // marking, not about operand rendering.
+  const autoLabels = prefixes.map((prefix, i) => ({ address: 0x2000 + i, name: `${prefix}${i.toString(16).padStart(2, "0")}` }));
+  const { dir, storePath, imagePath } = buildStore(freshDir("prefixes"), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [
+      ...autoLabels,
+      // Both deliberate non-matches: `L_` is excluded from the vocabulary, and
+      // matching is ASCII case-sensitive.
+      { address: 0x2100, name: "L_0801" },
+      { address: 0x2101, name: "S_0820" },
+    ],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  for (const label of autoLabels) {
+    const line = lines.find((l) => l.startsWith(`${label.name} = `));
+    assert.ok(line !== undefined, `every prefixed label must reach the source:\n${result.source}`);
+    assert.notEqual(line.split("  ;")[1], undefined, `\`${label.name}\` must be MARKED as auto-generated:\n  line: ${line}`);
+  }
+
+  assert.equal(definitionOf(lines, "L_0801"), "L_0801 = $2100");
+  assert.equal(lines.find((l) => l.startsWith("L_0801 = "))?.includes("  ;"), false, "`L_` is not an auto-name prefix, so its definition carries no marker");
+  assert.equal(lines.find((l) => l.startsWith("S_0820 = "))?.includes("  ;"), false, "prefix matching is ASCII case-sensitive, so `S_0820` is a user rename");
+
+  assert.equal(result.autoNamedSymbolCount, prefixes.length, "one marked definition per parsed prefix, and neither of the two non-matches");
+  assert.equal(result.symbolCount, prefixes.length + 2);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a store full of auto-named labels must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `auto-name marking is a COMMENT and cannot change a byte:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// Enums, on the IMMEDIATE operand only.
+//
+// Measured on ACME 0.97: `lda #viccolor_BLACK` with `viccolor_BLACK = $00` is
+// byte-identical to `lda #$00`, while the same symbol moved onto a following
+// `sta` encodes as ZEROPAGE -- two bytes where the absolute original was three.
+// The wrong-operand case changes both the bytes AND the instruction length.
+// ---------------------------------------------------------------------------
+
+/** `viccolor` over the two values the shape fixture's `lda #$00` can take. */
+const VICCOLOR = { name: "viccolor", variants: { $00: "BLACK", $01: "WHITE" } } as const;
+
+function enumFixture(tag: string, usageAddress: number): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+    enums: [{ name: VICCOLOR.name, variants: { ...VICCOLOR.variants } }],
+    enumUsage: [{ address: usageAddress, name: VICCOLOR.name }],
+  });
+}
+
+test("an enum on an IMMEDIATE operand renders as `#<enum>_<VARIANT>`, defines the variant in the header, and produces the SAME bytes as the plain form", { skip: SKIP_REASON }, () => {
+  const withEnum = enumFixture("enum-immediate", 0x0801);
+  const enumResult = exportAsm({ storePath: withEnum.storePath, imagePath: withEnum.imagePath, workspaceRoot: withEnum.dir });
+
+  const plain = shapeFixture("enum-plain");
+  const plainResult = exportAsm({ storePath: plain.storePath, imagePath: plain.imagePath, workspaceRoot: plain.dir });
+
+  const lines = enumResult.source.split("\n");
+  assert.ok(lines.includes("        lda #viccolor_BLACK"), `the immediate operand must render through the variant name:\n${enumResult.source}`);
+  assert.equal(definitionOf(lines, "viccolor_BLACK"), "viccolor_BLACK = $00", `the variant is defined with TWO hex digits, per the width rule:\n${enumResult.source}`);
+  assert.equal(lines.indexOf("viccolor_BLACK = $00") < lines.indexOf("* = $0801"), true, "the variant definition belongs in the header block, before the first `* =`");
+  assert.equal(enumResult.enumSubstitutionCount, 1);
+  assert.equal(enumResult.source.includes("lda #$00"), false, "the hex literal must be REPLACED, not merely accompanied");
+
+  // The two exports must expect the SAME bytes: a name is not a value.
+  assert.deepEqual([...enumResult.expectedBytes], [...plainResult.expectedBytes]);
+
+  const enumVerdict = verifyExport(enumResult);
+  const plainVerdict = verifyExport(plainResult);
+  assert.equal(enumVerdict.outcome, "ok", `the enum form must round-trip:${context(enumResult, enumVerdict)}`);
+  assert.equal(plainVerdict.outcome, "ok", `the plain form must round-trip:${context(plainResult, plainVerdict)}`);
+  assert.equal(enumVerdict.byteDiff?.equal, true);
+  assert.equal(plainVerdict.byteDiff?.equal, true);
+});
+
+test("an enum bound to a NON-IMMEDIATE operand is REFUSED by name, naming the address and the operand role", () => {
+  // $0803 is the `sta $d020` -- an absolute operand.
+  const { dir, storePath, imagePath } = enumFixture("enum-wrong-operand", 0x0803);
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("$0803"), `the refusal names the ADDRESS: ${e.message}`);
+      assert.ok(e.message.includes("absolute"), `the refusal names the OPERAND ROLE it refused: ${e.message}`);
+      assert.ok(e.message.includes("viccolor"), `the refusal names the ENUM, so a human can find the row: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("WRONG-OPERAND CONTROL: hand-moving the enum symbol onto a following `sta` is REFUSED at the source-text boundary", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = enumFixture("enum-control", 0x0801);
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // ONE documented move: the symbol leaves the immediate operand it belongs on
+  // and lands on the absolute operand of the following `sta`.
+  const moved = result.source.replace("        lda #viccolor_BLACK", "        lda #$00").replace("        sta $d020", "        sta viccolor_BLACK");
+  assert.notEqual(moved, result.source, "the move must change the source");
+  assert.ok(moved.includes("        sta viccolor_BLACK"), `the sta must actually carry the symbol:\n${moved}`);
+
+  const verdict = verifyExportText(result, moved);
+
+  // WHAT IS LOAD-BEARING AND ASSERTED UNCONDITIONALLY: the mutation is REFUSED,
+  // and nothing about the run reads as a pass.
+  assert.equal(
+    verdict.outcome,
+    "failed",
+    `the wrong-operand emission must be REFUSED:\n  outcome: ${verdict.outcome}\n  reason: ${verdict.reason}\n  exitStatus: ${verdict.exitStatus}\n${moved}`,
+  );
+  assert.notEqual(verdict.outcome, "ok");
+  assert.notEqual(verdict.byteDiff?.equal, true);
+
+  // WHICH RULE PRODUCED THE VERDICT IS OBSERVED, NEVER PINNED IN ADVANCE. Two
+  // refusals are in play and they disagree about the exit code. `viccolor_BLACK`
+  // is $00, so `sta viccolor_BLACK` re-encodes as ZEROPAGE -- two bytes where
+  // the absolute original was three -- and the block's own `!if * != $0807` end
+  // assertion fires first. That is a STRONGER catch than the byte-diff, not a
+  // weaker one: ACME exits 1 and writes no output file at all. Recorded as
+  // measured; the `*` assertion is NOT silenced to manufacture an exit-0
+  // observation, because that would disable one instrument to demonstrate
+  // another.
+  if (verdict.exitStatus === 1) {
+    assert.ok(
+      verdict.diagnostics.some((d) => d.includes("export-asm: block end drifted")),
+      `at exit 1, the per-block \`*\` assertion must be the rule that produced the verdict:\n  diagnostics: ${verdict.diagnostics.join(" | ")}`,
+    );
+  } else {
+    assert.equal(verdict.exitStatus, 0, `ACME's exit status is one of the two measured outcomes:\n  reason: ${verdict.reason}`);
+    assert.equal(verdict.byteDiff?.equal, false, `at exit 0, the byte-diff must be the rule that produced the verdict:\n  reason: ${verdict.reason}`);
+  }
+});
+
+test("an enum carrying a variant above $ff is REFUSED for an immediate operand, and real ACME refuses the same shape with `Number does not fit in 8 bits.`", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("enum-wide"), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [],
+    enums: [{ name: "viccolor", variants: { $00: "BLACK", $0100: "WIDE" } }],
+    enumUsage: [{ address: 0x0801, name: "viccolor" }],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("WIDE"), `the refusal names the VARIANT: ${e.message}`);
+      assert.ok(e.message.includes("$0801"), `the refusal names the ADDRESS: ${e.message}`);
+      return true;
+    },
+  );
+
+  // THE EXTERNAL ORACLE, agreeing with the internal one. The exporter refuses
+  // first so its message can name the store row; ACME refuses the same shape
+  // with its own words and its own exit status.
+  const wide = assembleRaw("!cpu 6510\nviccolor_WIDE = $0100\n* = $0801\n        lda #viccolor_WIDE\n        rts\n");
+  assert.equal(wide.status, 1, `real ACME must refuse a >$ff value on an immediate operand:\n  stdout: ${wide.stdout}\n  stderr: ${wide.stderr}`);
+  assert.ok(
+    wide.stderr.includes("Number does not fit in 8 bits."),
+    `ACME's OWN message must be what refused it:\n  stderr: ${wide.stderr}`,
+  );
+
+  // The paired direction: the same source with a value that DOES fit assembles,
+  // so the red above is one changed value and nothing else.
+  const narrow = assembleRaw("!cpu 6510\nviccolor_WIDE = $01\n* = $0801\n        lda #viccolor_WIDE\n        rts\n");
+  assert.equal(narrow.status, 0, `the same shape with a byte value must assemble:\n  stderr: ${narrow.stderr}`);
+});
+
+test("an enum usage with no decoded instruction at its address is REFUSED by name, never silently dropped", () => {
+  // $0802 is the operand byte of the `lda #$00` at $0801 -- no emitted line
+  // starts there.
+  const { dir, storePath, imagePath } = enumFixture("enum-unplaceable", 0x0802);
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("$0802"), `the refusal names the address it could not attach to: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("a store with no enums reports `enumSubstitutionCount` zero and `autoNamedSymbolCount` zero -- neither counter is a constant", () => {
+  const { dir, storePath, imagePath } = shapeFixture("enum-count-zero");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.equal(result.enumSubstitutionCount, 0);
+  assert.equal(result.autoNamedSymbolCount, 0, "`entry` is a user-chosen name and matches no auto prefix");
+});
+
+test("a store with an EMPTY enum set still reassembles byte-identically -- an exporter that only works on a richly annotated store fails on a fresh project", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = shapeFixture("empty-enums");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.enumSubstitutionCount, 0);
+  const definitions = result.source.split("\n").filter((line) => /^[A-Za-z_][A-Za-z0-9_]* = \$/.test(line));
+  assert.deepEqual(definitions, ["entry = $0801"], `no enum variant definition may be emitted when the store holds no enums:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `an enum-free export must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `enum-free byte-diff:${context(result, verdict)}`);
+});
+
+test("a SINGLE-ELEMENT range -- one byte, one instruction -- exports bracketed and reassembles byte-identically", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("single-element"), {
+    origin: 0x0801,
+    body: [0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0801, dataType: "code" }],
+    labels: [],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.blocks.length, 1);
+  assert.equal(result.blocks[0]?.endExclusive, 0x0802, "endExclusive is one past the last byte, even for a one-byte range");
+  assert.equal(result.expectedBytes.length, 1);
+  assert.ok(
+    result.source.split("\n").includes('!if * != $0802 { !error "export-asm: block end drifted, expected $0802" }'),
+    `a one-byte block is bracketed like any other:\n${result.source}`,
+  );
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a single-element range must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `single-element byte-diff:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// All 256 opcodes through the exporter, in ONE image and ONE ACME invocation.
+//
+// This is the control that caught FOURTEEN wrong entries in `disasm-opcodes.ts`
+// during phase 04: two `jam`/`anc` duplicate groups and four `nop` subgroups
+// were corrected from an untested seed by a real-ACME round trip. Every
+// assertion below is driven from the `OPCODES` table itself, so a future
+// correction to that table is automatically re-verified the next time this file
+// runs.
+// ---------------------------------------------------------------------------
+
+const RENDERER_PATH = join(HERE, "disasm-renderer.ts");
+
+/** `disasm-renderer.ts`'s FIXED note vocabulary for the two flags that put an
+ * instruction on the `!byte` path. Not exported from that module, so the
+ * strings are asserted present in its source below before anything matches on
+ * them -- the `acme-gate.test.ts` non-vacuity technique. */
+const UNASSEMBLABLE_NOTE = "not expressible in ACME !cpu 6510";
+const ILLEGAL_NOTE = "illegal opcode";
+
+/** `$xx`, matching `disasm-renderer.ts`'s own `!byte` operand spelling. */
+function byteHex(value: number): string {
+  return `$${(value & 0xff).toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * ONE image in which every opcode `$00..$ff` decodes at a known address, in
+ * opcode order: the opcode byte followed by `OPCODES[b].length - 1` filler
+ * bytes, so the linear decode stays aligned. `disasm-roundtrip.test.ts`'s
+ * Suite C is the model.
+ *
+ * The filler is `$00`, which keeps every relative branch's target at
+ * `address + 2` -- inside the block and trivially in range -- and every
+ * absolute operand at `$0000`, which `disasm-renderer.ts` renders with its
+ * `+2` width force.
+ */
+function everyOpcodeImage(origin: number): { bytes: number[]; addressOf: number[] } {
+  const bytes: number[] = [];
+  const addressOf: number[] = [];
+  for (let op = 0; op <= 0xff; op++) {
+    addressOf[op] = origin + bytes.length;
+    bytes.push(op);
+    for (let i = 1; i < OPCODES[op]!.length; i++) bytes.push(0x00);
+  }
+  return { bytes, addressOf };
+}
+
+test("the `!byte` note vocabulary matched below is really present in disasm-renderer.ts (so this file cannot pass for the wrong reason)", () => {
+  const src = readFileSync(RENDERER_PATH, "utf8");
+  for (const note of [UNASSEMBLABLE_NOTE, ILLEGAL_NOTE]) {
+    assert.ok(src.includes(note), `disasm-renderer.ts no longer contains the note text this file matches on (${JSON.stringify(note)}) -- update both together, never only one`);
+  }
+});
+
+test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` with a naming comment, and the whole export reassembles byte-identically", { skip: SKIP_REASON }, () => {
+  const origin = 0x1000;
+  const { bytes, addressOf } = everyOpcodeImage(origin);
+  const { dir, storePath, imagePath } = buildStore(freshDir("all-opcodes"), {
+    origin,
+    body: bytes,
+    ranges: [{ start: origin, endInclusive: origin + bytes.length - 1, dataType: "code" }],
+    labels: [],
+  });
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  const originAssert = lines.findIndex((l) => l.startsWith("!if * != ") && l.includes("block origin drifted"));
+  const endAssert = lines.findIndex((l) => l.startsWith("!if * != ") && l.includes("block end drifted"));
+  assert.ok(originAssert >= 0 && endAssert > originAssert, `the block must be bracketed:\n${result.source}`);
+  const content = lines.slice(originAssert + 1, endAssert);
+  assert.equal(content.length, 256, "one emitted line per opcode -- no labels and no comments are in this store, so the mapping is one-to-one");
+
+  // Computed from the table in this same test, never pinned. 35 against the
+  // current table; a correction to `acmeExpressible` moves both sides together.
+  const unexpressibleFromTable = OPCODES.filter((entry) => !entry.acmeExpressible).length;
+  assert.equal(
+    result.unexpressibleCount,
+    unexpressibleFromTable,
+    `every \`acmeExpressible: false\` entry the layout covered must be counted:\n  from OPCODES: ${unexpressibleFromTable}\n  reported: ${result.unexpressibleCount}`,
+  );
+
+  const wrongDirective: string[] = [];
+  const missingBytes: string[] = [];
+  const missingComment: string[] = [];
+
+  for (let op = 0; op <= 0xff; op++) {
+    const entry = OPCODES[op]!;
+    const line = content[op]!;
+    const where = `$${op.toString(16).padStart(2, "0")} (${entry.mnemonic}/${entry.mode}) at $${addressOf[op]!.toString(16)}`;
+    const isByteDirective = /^\s*!byte\b/.test(line);
+
+    if (!entry.acmeExpressible) {
+      if (!isByteDirective) {
+        wrongDirective.push(`${where}: acmeExpressible:false must go out as !byte, got: ${line}`);
+        continue;
+      }
+      // Every one of the instruction's bytes, in the renderer's own spelling.
+      const own = bytes.slice(addressOf[op]! - origin, addressOf[op]! - origin + entry.length).map(byteHex).join(", ");
+      if (!line.includes(own)) missingBytes.push(`${where}: expected all ${entry.length} byte(s) as \`${own}\`, got: ${line}`);
+      // The mnemonic and the note text, in the trailing comment.
+      const comment = line.split("  ; ")[1] ?? "";
+      if (!comment.includes(entry.mnemonic)) missingComment.push(`${where}: the trailing comment must name the mnemonic, got: ${line}`);
+      if (!comment.includes(UNASSEMBLABLE_NOTE)) missingComment.push(`${where}: the trailing comment must carry the fixed note text, got: ${line}`);
+      if (entry.illegal && !comment.includes(ILLEGAL_NOTE)) missingComment.push(`${where}: an illegal opcode's note must say so, got: ${line}`);
+    } else if (isByteDirective) {
+      wrongDirective.push(`${where}: acmeExpressible:true must render as a mnemonic line, got: ${line}`);
+    }
+  }
+
+  assert.deepEqual(wrongDirective, [], `wrong directive for these opcodes:\n${wrongDirective.join("\n")}`);
+  assert.deepEqual(missingBytes, [], `a \`!byte\` substitution must carry EVERY byte, or the following instruction lands at the wrong address:\n${missingBytes.join("\n")}`);
+  assert.deepEqual(missingComment, [], `the mnemonic a human reader needs must move into the trailing comment:\n${missingComment.join("\n")}`);
+
+  // No invented mnemonic anywhere on a `!byte` line: the DIRECTIVE half of
+  // every such line is bytes and nothing else, so an unassemblable mnemonic
+  // cannot have leaked out of the comment and into the assembler's input.
+  const malformed = content.filter((line) => /^\s*!byte\b/.test(line)).filter((line) => !/^\s*!byte \$[0-9a-f]{2}(, \$[0-9a-f]{2})*\s*$/.test(line.split("  ; ")[0] ?? ""));
+  assert.deepEqual(malformed, [], `a \`!byte\` line's directive half must be hex bytes only -- anything else is a mnemonic ACME would reject:\n${malformed.join("\n")}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(
+    verdict.outcome,
+    "ok",
+    "THIS is the control that caught fourteen wrong entries in disasm-opcodes.ts: an internally-verified opcode table still shipped " +
+      `two \`jam\`/\`anc\` duplicate groups and four \`nop\` subgroups wrong, and only a real assembler found them.${context(result, verdict)}`,
+  );
+  assert.equal(verdict.byteDiff?.equal, true, `all 256 opcodes must reassemble byte-identically:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// The duplicate-label refusal, confirmed by real ACME.
+//
+// A REFINEMENT OF RESEARCH.md's ASSUMPTION A5, recorded here rather than left
+// implicit. `anno_label.name` carries a `unique` DDL constraint
+// (`anno-store.ts:266`) ON TOP OF `setLabel()`'s own guard, so the store cannot
+// hold two rows with one name AT ALL and a store-level plant can never reach
+// ACME. The external observation is therefore produced at the SOURCE-TEXT
+// boundary, which is the only place the duplicate can exist.
+//
+// That is a refinement, not a departure from criterion 5: criterion 5 asks for
+// the external oracle to CONFIRM the internal one, and it does -- the store
+// refuses the duplicate by name, and real ACME independently refuses the same
+// duplicate with its own words and its own exit status.
+// ---------------------------------------------------------------------------
+
+const STORE_PATH_ON_DISK = join(HERE, "anno-store.ts");
+
+/** `setLabel()`'s own refusal wording, read out of the module source rather
+ * than retyped from memory -- the `acme-gate.test.ts` technique. Retyping is
+ * how a test ends up passing for the wrong reason: any throw would satisfy an
+ * `assert.throws()` with no message predicate. */
+const SET_LABEL_REFUSAL = "is already bound to address";
+
+test("the store's duplicate-label refusal wording asserted below is really present in anno-store.ts (so this file cannot pass for the wrong reason)", () => {
+  const src = readFileSync(STORE_PATH_ON_DISK, "utf8");
+  assert.ok(
+    src.includes(SET_LABEL_REFUSAL),
+    `anno-store.ts no longer contains the refusal wording this file matches on (${JSON.stringify(SET_LABEL_REFUSAL)}) -- update both together, never only one`,
+  );
+});
+
+test("INTERNAL REFUSAL: setLabel() refuses a name already bound to a DIFFERENT address, and does NOT refuse the same name at the same address", () => {
+  const dir = freshDir("dup-store");
+  const { storePath } = buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+  });
+
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    assert.throws(
+      () => setLabel(handle, { address: 0x0803, name: "entry", kind: "User" }),
+      (e: unknown) => {
+        assert.ok(e instanceof Error);
+        assert.ok(e.message.includes(SET_LABEL_REFUSAL), `the store's OWN refusal must be what fired: ${e.message}`);
+        assert.ok(e.message.includes("$0801"), `the refusal names the address the name is already bound to: ${e.message}`);
+        assert.ok(e.message.includes("$0803"), `and the address it was asked to also name: ${e.message}`);
+        return true;
+      },
+    );
+
+    // THE PAIRED DIRECTION. A guard that refuses everything is indistinguishable
+    // from one that works, so the accepting case is asserted in the same test.
+    assert.doesNotThrow(
+      () => setLabel(handle, { address: 0x0801, name: "entry", kind: "User" }),
+      "rebinding the SAME name to the SAME address is a no-op, not a collision",
+    );
+  } finally {
+    closeStore(handle);
+  }
+});
+
+test("EXTERNAL ORACLE: real ACME refuses the same duplicate at the source-text boundary with `Symbol already defined.` and exit 1", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = shapeFixture("dup-acme");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // The paired direction FIRST: the un-duplicated source assembles and verifies,
+  // so the red below is ONE line of difference and nothing else.
+  const clean = verifyExport(result);
+  assert.equal(clean.outcome, "ok", `the un-duplicated export must verify:${context(result, clean)}`);
+  assert.equal(clean.byteDiff?.equal, true);
+
+  // ONE documented mutation: the same symbol name defined a second time, at a
+  // different address. The store cannot hold this state -- `anno_label.name` is
+  // `unique` -- so the source text is the only place it can exist.
+  const duplicated = result.source.replace("entry = $0801\n", "entry = $0801\nentry = $0900\n");
+  assert.notEqual(duplicated, result.source, "the duplication must change the source");
+
+  const run = assembleRaw(duplicated);
+  assert.equal(run.status, 1, `real ACME must REFUSE a duplicate symbol:\n  stdout: ${run.stdout}\n  stderr: ${run.stderr}`);
+  assert.equal(run.outputExists, false, "a refused assembly writes no output file");
+
+  const diagnostics = parseAcmeDiagnostics(run.stderr);
+  assert.ok(
+    diagnostics.some((d) => d.severity === "Error" && d.message.includes("Symbol already defined.")),
+    `ACME's OWN duplicate-symbol message, in its --msvc spelling, must be what refused it:\n  stderr: ${run.stderr}\n  parsed: ${JSON.stringify(diagnostics)}`,
   );
 });

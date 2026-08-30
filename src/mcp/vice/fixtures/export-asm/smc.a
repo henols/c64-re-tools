@@ -1,0 +1,49 @@
+; smc.a -- a program that GENUINELY MODIFIES ITS OWN CODE.
+;
+; WHY THIS FILE EXISTS
+; --------------------
+; Phase 30's criterion 3 is explicit that EMITTING the `=*+$01` idiom is not
+; the criterion. A fixture that merely CONTAINS the idiom proves only that the
+; exporter can print three characters. What has to be proved is that a program
+; whose own bytes are rewritten at runtime exports with its write target named
+; by a mid-instruction label, and REASSEMBLES BYTE-IDENTICALLY.
+;
+; So this program really does it. On every pass:
+;
+;   * `inc smc_operand` increments the byte at $0802, which is the IMMEDIATE
+;     OPERAND of the `lda #$00` at $0801. The instruction the CPU executes on
+;     the next pass is a different instruction than the one it executed on this
+;     one -- `lda #$00`, then `lda #$01`, then `lda #$02`, ...
+;   * that value is written to the border colour register, so the effect is
+;     observable and the self-modification is not dead code.
+;   * `jmp $0801` runs the modified instruction.
+;
+; The label `smc_operand` therefore names an address that is STRICTLY INSIDE a
+; decoded instruction. There is no way to name it with an ordinary
+; `name = $0802` definition and still have an exporter round-trip: the
+; assembler must be told the address relative to the program counter at the
+; instruction that OWNS the byte.
+;
+; PLACEMENT IS LOAD-BEARING
+; -------------------------
+; `smc_operand = *+$01` sits on its own line IMMEDIATELY BEFORE its host
+; instruction. Moved to immediately AFTER it, the label names $0804 -- the
+; operand of the NEXT instruction -- and ACME exits 0 either way. Only a
+; byte-diff tells the two apart. `anno-export-asm.test.ts` carries that
+; negative control.
+;
+; ASSEMBLED WITH `-f cbm`, so `smc.prg` carries the two-byte little-endian load
+; address ($01 $08) a real C64 `.prg` has.
+;
+; Regenerate with:
+;   cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.mjs
+
+!cpu 6510
+
+* = $0801
+
+smc_operand = *+$01
+        lda #$00
+        inc smc_operand
+        sta $d020
+        jmp $0801

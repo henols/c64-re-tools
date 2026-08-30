@@ -612,8 +612,14 @@ test("a store label below $0100 is defined with TWO hex digits, and one at or ab
       // `zpf = $0010` gives `ad 10 00` (3 bytes). The DEFINITION's digit count
       // decides the OPERAND's width, so this is a byte-level property wearing
       // the clothes of a formatting detail.
-      assert.ok(
-        lines.includes("zpf_10 = $10"),
+      // Compared on the DEFINITION only, with any trailing comment split off:
+      // `zpf_10` matches `AUTO_NAME_PREFIX_RE`, so the exporter appends its
+      // auto-generated-name marker to that line. The digit count is what this
+      // test is about, and a comment cannot change a byte.
+      const zpIndex = lines.findIndex((l) => l.startsWith("zpf_10 = "));
+      assert.equal(
+        lines[zpIndex]?.split("  ;")[0],
+        "zpf_10 = $10",
         `a zero-page definition must carry two hex digits; got:\n${result.source}`
       );
       assert.ok(
@@ -622,7 +628,7 @@ test("a store label below $0100 is defined with TWO hex digits, and one at or ab
       );
 
       const firstOrigin = lines.findIndex((l) => l.startsWith("* ="));
-      const lastDefinition = Math.max(lines.indexOf("zpf_10 = $10"), lines.indexOf("entry = $0801"));
+      const lastDefinition = Math.max(zpIndex, lines.indexOf("entry = $0801"));
       assert.ok(
         lastDefinition < firstOrigin,
         "EVERY definition sits before the first `* =`. A symbol defined after its first reference widens the " +
