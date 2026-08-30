@@ -122,35 +122,57 @@ verbs:
       Generates the Markdown memory map from an annotation store plus a
       validated provenance sidecar (D-24: the store is canonical, this
       output is a GENERATED VIEW -- never hand-edit it). Without --check,
-      writes --out (default: memory-map.md beside the project), refusing
-      to overwrite an existing file there unless --force is passed, and
-      prints the row count, the number of [unknown]-graded rows, and the
-      render digest. With --check, re-renders in memory and compares against the
-      file at --out: prints "in sync" and exits 0 when they match, prints
-      the first differing line and exits non-zero on drift (from either a
-      hand edit OR a store-side change since the file was last rendered),
-      or prints "missing" and exits non-zero when --out does not exist yet.
-      --check is how a hand edit to the generated file is caught. Requires
-      an EXISTING annotation store and an EXISTING --provenance sidecar
-      (this verb creates neither).
+      writes --out (default: memory-map.md beside the STORE -- in the
+      store's own directory), refusing to overwrite an existing file there
+      unless --force is passed, and prints the row count, the number of
+      [unknown]-graded rows, and the render digest. That derived default is
+      put through the SAME confinement seam as a caller-supplied --out,
+      rather than trusted because this verb computed it.
+      With --check, re-renders in memory and compares against the file at
+      --out: prints "in sync" and exits 0 when they match, prints the first
+      differing line and exits non-zero on drift, or prints "missing" and
+      exits non-zero when --out does not exist yet. Drift is reported when,
+      and only when, one of these changed: this file itself (a hand edit --
+      which is what --check exists to catch); a store row (a range, a label,
+      a comment, or a comment's confidence grade); the provenance sidecar's
+      bytes; the location of the store or the sidecar RELATIVE TO THE
+      WORKSPACE ROOT; or the renderer. Relocating the checkout is NOT drift --
+      the same tree at a different absolute path renders these same bytes,
+      because the two locations the banner records are workspace-relative.
+      Requires an EXISTING annotation store and an EXISTING --provenance
+      sidecar (this verb creates neither).
 
-  coverage <project> --store FILE [--out FILE] [--force] [--sample N]
+  coverage <image> --store FILE [--out FILE] [--force] [--sample N]
       Measures how far a program has actually been reverse-engineered
-      (COV-01/COV-02), through anno-coverage.ts. <project> supplies the
+      (COV-01/COV-02), through anno-coverage.ts. <image> supplies the
       PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
       holding the labels, comments and typed ranges. Those are two separate
       files on purpose: the store holds annotations and never bytes, so a
       derived measure has to be told which bytes it is measuring and this
-      verb refuses to guess one from the other. Prints three separately
-      named measures -- the structural byte census, the two label figures,
-      and the sampled reproducibility result -- plus the comment-vacuity
-      measure, the indirect-dispatch scan and the divergence sub-report,
-      each under its own heading with its own numbers. Writes the JSON
-      report to --out when given, refusing to overwrite an existing file
-      there unless --force is passed; --sample overrides the
-      reproducibility sample size. Exits non-zero ONLY for a caller error
-      or a store it could not read -- a low measurement is a RESULT, never
-      a failure, so a bad report still exits 0.
+      verb refuses to guess one from the other.
+      <image> is dispatched BY EXTENSION FIRST and never by byte length.
+      Three forms are read: a .prg (its first two bytes are the load
+      address); a .raw or .bin flat capture; and a file of any other
+      extension that is exactly 65536 bytes, read as a flat capture. The
+      retired JSON project form survives as a TRAILING LEGACY branch,
+      reached only when none of those matched -- its only producer was
+      deleted (D-14) and it is kept solely so an existing file on disk is
+      not broken.
+      Prints three separately named measures -- the structural byte census,
+      the two label figures, and the sampled reproducibility result -- plus
+      the comment-vacuity measure, the indirect-dispatch scan and the
+      divergence sub-report, each under its own heading with its own
+      numbers. Writes the JSON report to --out when given, refusing to
+      overwrite an existing file there unless --force is passed; --sample
+      overrides the reproducibility sample size.
+      Exits non-zero for a caller error (a missing or malformed argument, a
+      path outside the workspace root, a named file that does not exist, or
+      a refused overwrite of an existing --out without --force), for a store
+      it could not read, for a report it could not write, and for an image
+      whose PAYLOAD COULD NOT BE DECODED -- that last is not a low score but
+      a measurement taken over nothing, and it is reported AFTER the report
+      so the reason is on screen. A LOW MEASUREMENT IS A RESULT, NEVER A
+      FAILURE, so a bad report still exits 0.
       This verb deliberately reports separate numbers and never a single
       combined figure: one aggregate is precisely what makes a coverage
       claim unfalsifiable, because any one weak measure can be hidden by
@@ -178,7 +200,7 @@ function errMsg(err: unknown): string {
  *
  * `coverage`'s `--store` is REQUIRED rather than optional, and it is declared
  * here for the same reason as every other entry: the verb reads it. It is not
- * defaulted from `<project>` -- see this file's header on never deriving one
+ * defaulted from `<image>` -- see this file's header on never deriving one
  * caller-supplied path from another.
  */
 export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
@@ -804,11 +826,11 @@ function printCoverageReport(report: CoverageReport): void {
 }
 
 /**
- * `coverage <project> --store FILE [--out FILE] [--force] [--sample N]` --
+ * `coverage <image> --store FILE [--out FILE] [--force] [--sample N]` --
  * COV-01's delivery path: the instrument from `anno-coverage.ts`, run against
  * a real program and a real annotation store.
  *
- * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<project>` carries the payload
+ * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<image>` carries the payload
  * bytes and the load origin; `--store` names the annotation store holding the
  * labels, comments and typed ranges. The store holds annotations and never
  * bytes, so a derived measure has to be told which bytes it is measuring, and
@@ -867,7 +889,7 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
   const project = positional[0];
   if (!project) {
-    console.error("coverage: usage: coverage <project> --store FILE [--out FILE] [--force] [--sample N]");
+    console.error("coverage: usage: coverage <image> --store FILE [--out FILE] [--force] [--sample N]");
     return 1;
   }
   if (!store) {

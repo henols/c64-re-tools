@@ -325,7 +325,7 @@ test("render-memmap: --out followed by a flag-shaped token is refused (not silen
 test("coverage: a missing project positional is refused with the two-path usage line", async () => {
   const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["coverage"]));
   assert.notEqual(code, 0);
-  assert.match(stderr, /usage: coverage <project> --store FILE/);
+  assert.match(stderr, /usage: coverage <image> --store FILE/);
 });
 
 test("coverage: --store is REQUIRED and is never derived from <project> (D-02: this CLI does not guess)", async () => {
