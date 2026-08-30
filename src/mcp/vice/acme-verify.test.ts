@@ -65,7 +65,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -86,6 +86,7 @@ import {
 } from "./acme-verify.ts";
 import { exportAsm } from "./anno-export-asm.ts";
 import { openStore, closeStore, setDataType, setLabel } from "./anno-store.ts";
+import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
@@ -1306,5 +1307,143 @@ test("EXPORT-03: the verdict never string-matches the exporter's own output, and
     false,
     "a mention inside only a // comment and a block comment must NOT be reported -- otherwise the guard fails by " +
       "matching the very prose that described the problem, and would have to be weakened to pass"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// THE PINNED TRANSCRIPTS, KEPT HONEST.
+//
+// Phase 29 moved two verify transcripts under `.planning/` when it deleted the
+// producer that made them, and its README set this phase an explicit
+// obligation: RE-RECORD both from real assembler output through the NEW route,
+// and never assert a rebuilt parser against the retired producer's bytes,
+// because a green test over those bytes would prove only that the new parser
+// can read a deleted tool's format.
+//
+// The obligation is discharged with evidence rather than deleted. This block is
+// the evidence: the new transcripts exist, their provenance is recorded, the
+// parser and its own evidence agree, the new files are provably NOT copies, and
+// nothing else in this tree reads the retired producer's directory.
+// ---------------------------------------------------------------------------
+
+/** The Phase 29 fixtures directory, relative to `.planning/phases/`. Named in
+ * ONE place -- this constant -- so the assertions below have a single site to
+ * update if those files ever move, and so the scan further down can name the
+ * exact literal a violation would have to contain. */
+const PHASE_29_FIXTURES_REL = "29-the-mcp-surface/fixtures";
+
+const PLANNING_PHASES = join(repoRoot(), ".planning", "phases");
+const PHASE_29_FIXTURES_DIR = join(PLANNING_PHASES, PHASE_29_FIXTURES_REL);
+const PHASE_30_FIXTURES_DIR = join(PLANNING_PHASES, "30-acme-export-and-the-real-acme-oracle", "fixtures");
+
+/** The two transcript filenames, identical on both sides -- which is exactly
+ * what makes the byte-inequality assertion below meaningful. */
+const PINNED_TRANSCRIPTS = ["verify-honest-pass.txt", "verify-false-pass-trap.txt"] as const;
+
+/** Pulls one delimited section out of a captured transcript. The delimiters are
+ * written by `capture-transcripts.mjs`; a missing one is an assertion failure
+ * rather than an empty string, so a reformatted transcript cannot make the
+ * agreement assertion below pass by comparing nothing to nothing. */
+function transcriptSection(text: string, name: string): string {
+  const begin = `>>> BEGIN ${name}\n`;
+  const end = `\n<<< END ${name}`;
+  const from = text.indexOf(begin);
+  assert.notEqual(from, -1, `the transcript no longer carries a ${JSON.stringify(name)} section`);
+  const to = text.indexOf(end, from);
+  assert.notEqual(to, -1, `the transcript's ${JSON.stringify(name)} section is unterminated`);
+  return text.slice(from + begin.length, to);
+}
+
+test("the phase's own pinned transcripts and their provenance README are on disk", () => {
+  for (const name of PINNED_TRANSCRIPTS) {
+    assert.ok(existsSync(join(PHASE_30_FIXTURES_DIR, name)), `${name} is missing from ${PHASE_30_FIXTURES_DIR}`);
+  }
+  assert.ok(existsSync(join(PHASE_30_FIXTURES_DIR, "README.md")), "the fixtures README carries the provenance table");
+  assert.ok(
+    existsSync(join(PHASE_30_FIXTURES_DIR, "capture-transcripts.mjs")),
+    "the README's Regenerating section names a real program; evidence whose production cannot be re-run is a claim"
+  );
+});
+
+test("the fixtures README records the assembler release string and a capture date", () => {
+  const readme = readFileSync(join(PHASE_30_FIXTURES_DIR, "README.md"), "utf8");
+  assert.match(
+    readme,
+    /ACME 0\.97 "Zem"/,
+    "the provenance table must name the exact assembler release the transcripts came out of -- `an assembler` is not provenance"
+  );
+  assert.match(
+    readme,
+    /\b20\d\d-\d\d-\d\d\b/,
+    "the provenance table must carry a capture date, so a reader can tell a fresh capture from a stale one"
+  );
+  assert.match(
+    readme,
+    /read for shape only|read \*\*for shape only\*\*|for shape only/i,
+    "the DO-NOT block must answer the Phase 29 README's obligation BY NAME: those transcripts were read for shape only " +
+      "and are never asserted against"
+  );
+});
+
+test("the honest-pass transcript and parseAcmeResultLines() agree -- the parser and its own evidence tell the same story", () => {
+  const honest = readFileSync(join(PHASE_30_FIXTURES_DIR, "verify-honest-pass.txt"), "utf8");
+  const stdoutSection = transcriptSection(honest, "ACME STDOUT");
+  const recorded = transcriptSection(honest, "AcmeVerifyResult.acmeResultLines")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+
+  assert.ok(
+    recorded.length >= 1,
+    "the transcript records at least one per-segment result line; zero would make the comparison below vacuous"
+  );
+  assert.deepEqual(
+    parseAcmeResultLines(stdoutSection).map((p) => p.raw),
+    recorded,
+    "re-parsing the transcript's own captured STDOUT must reproduce exactly the acmeResultLines the transcript " +
+      "records. A disagreement means either the parser drifted from the assembler output it claims to read, or the " +
+      "transcript was edited by hand after capture -- and the README forbids the second"
+  );
+});
+
+test("non-vacuity: each re-recorded transcript is NOT byte-equal to its Phase 29 counterpart", () => {
+  for (const name of PINNED_TRANSCRIPTS) {
+    const mine = readFileSync(join(PHASE_30_FIXTURES_DIR, name));
+    const retired = readFileSync(join(PHASE_29_FIXTURES_DIR, name));
+    assert.notEqual(
+      Buffer.compare(mine, retired),
+      0,
+      `${name} is BYTE-EQUAL to the Phase 29 file of the same name, which means it was COPIED rather than ` +
+        `re-recorded. The re-record obligation exists because the Phase 29 bytes are a deleted producer's output: ` +
+        `pinning them again would prove this phase's parser can read a tool that no longer exists, which is the one ` +
+        `piece of evidence it must not claim to have.`
+    );
+  }
+});
+
+test("no test in this phase reads the retired producer's fixtures directory", () => {
+  const testFiles = readdirSync(HERE).filter((f) => /\.test\./.test(f));
+  assert.ok(
+    testFiles.length >= 20,
+    `the test-file census went short (${testFiles.length}) -- a truncated listing would make the scan below pass trivially`
+  );
+
+  const offenders = testFiles.filter(
+    (f) => f !== "acme-verify.test.ts" && readFileSync(join(HERE, f), "utf8").includes(PHASE_29_FIXTURES_REL)
+  );
+  assert.deepEqual(
+    offenders,
+    [],
+    `these test files name the retired producer's fixtures directory: ${offenders.join(", ")}. THE HAZARD IS ` +
+      `RE-PINNING: an assertion against those bytes would hold a rebuilt parser to a deleted tool's output format, ` +
+      `and would keep passing long after the format it really has to read had moved. This file is the ONE exception, ` +
+      `and it names that directory for exactly one purpose -- asserting the new transcripts are not copies of it.`
+  );
+
+  const self = readFileSync(join(HERE, "acme-verify.test.ts"), "utf8");
+  assert.equal(
+    self.split(PHASE_29_FIXTURES_REL).length - 1,
+    1,
+    "the retired directory is named EXACTLY ONCE in this file, in the PHASE_29_FIXTURES_REL constant, so there is " +
+      "one place to update if those files ever move. A second occurrence means a path was rebuilt by hand somewhere"
   );
 });

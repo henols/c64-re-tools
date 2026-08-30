@@ -1,0 +1,88 @@
+# verify-honest-pass.txt -- an HONEST PASS through Phase 30's own producer
+#
+# Captured by capture-transcripts.mjs on 2026-08-30T22:00:23.649Z.
+# Assembler: This is ACME, release 0.97 ("Zem"), 31 Jan 2021 (resolved from ACME_BIN="acme")
+# Producer:  anno-export-asm.ts's exportAsm() + acme-verify.ts's verifyAcmeAssembles()
+#
+# Nothing below was trimmed, re-wrapped, redacted or edited after capture,
+# beyond the single declared temp-path placeholder substitution (<TMPDIR>).
+
+>>> BEGIN SCENARIO
+A real annotation store with ONE code range and ONE label, over a real
+.prg image, exported to ACME source and assembled by a real ACME.
+
+image:       <TMPDIR>/game.prg -- a .prg whose 2-byte little-endian
+             load address is $0801 and whose body is:
+                 a9 00 8d 20 d0 60
+             (lda #$00 / sta $d020 / rts)
+store range: start $0801, endInclusive $0806, dataType "code"
+store label: "entry" at $0801, kind User
+
+exported ACME source, verbatim:
+    !cpu 6510
+    entry = $0801
+    * = $0801
+            lda #$00
+            sta $d020
+            rts
+    
+expectedBytes (derived from the IMAGE, never from the source text):
+    a9 00 8d 20 d0 60
+expectedSegments (the exporter's own blocks):
+    [{"start":2049,"endExclusive":2055}]
+<<< END SCENARIO
+
+>>> BEGIN ACME ARGV
+acme --cpu 6510 -f plain -Wtype-mismatch --strict-segments --msvc -v2 -o <TMPDIR>/export.bin <TMPDIR>/export.a
+<<< END ACME ARGV
+
+>>> BEGIN ACME STDOUT
+First pass.
+Segment size is 6 (0x6) bytes (0x801 - 0x807 exclusive).
+Saving 6 (0x6) bytes (0x801 - 0x807 exclusive).
+<<< END ACME STDOUT
+
+>>> BEGIN ACME STDERR
+<TMPDIR>/export.a(5) : Warning (Zone <untitled>): Wrong type - expected address.
+<<< END ACME STDERR
+
+>>> BEGIN ACME EXIT STATUS
+0
+<<< END ACME EXIT STATUS
+
+>>> BEGIN AcmeVerifyResult.outcome
+ok
+<<< END AcmeVerifyResult.outcome
+
+>>> BEGIN AcmeVerifyResult.exitStatus
+0
+<<< END AcmeVerifyResult.exitStatus
+
+>>> BEGIN AcmeVerifyResult.acmeResultLines
+Segment size is 6 (0x6) bytes (0x801 - 0x807 exclusive).
+<<< END AcmeVerifyResult.acmeResultLines
+
+>>> BEGIN AcmeVerifyResult.aggregateLines
+Saving 6 (0x6) bytes (0x801 - 0x807 exclusive).
+<<< END AcmeVerifyResult.aggregateLines
+
+>>> BEGIN AcmeVerifyResult.diagnostics
+<TMPDIR>/export.a(5) : Warning (Zone <untitled>): Wrong type - expected address.
+<<< END AcmeVerifyResult.diagnostics
+
+>>> BEGIN AcmeVerifyResult.byteDiff
+{
+  "equal": true,
+  "firstDifferingOffset": null,
+  "expectedLength": 6,
+  "actualLength": 6
+}
+<<< END AcmeVerifyResult.byteDiff
+
+>>> BEGIN AcmeVerifyResult.reason
+the output file this run created is byte-identical to the expected bytes (6 byte(s) across 1 segment(s)).
+<<< END AcmeVerifyResult.reason
+
+# The verdict is the byteDiff above. The exitStatus is recorded and
+# consulted by nothing; the aggregate line is recorded and trusted by
+# nothing; the stderr Warning did not make the outcome "failed".
