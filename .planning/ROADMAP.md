@@ -568,7 +568,7 @@ criterion 2.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
 
-**Plans**: 17/17 plans executed — the original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. All three gap waves are executed and merged (29-13, 29-14, 29-17, then 29-15, then 29-16), and re-verification has run: **4/6 again, but a different 4/6** — five of the six prior gaps are closed, two remain (criterion 2's `render-memmap --check` false drift, and `CUT-01`'s non-reproducing surviving-line figure). The phase is NOT complete.
+**Plans**: 21 plans — **17 executed, 4 planned and not yet executed**. The original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. All three of those gap waves are executed and merged (29-13, 29-14, 29-17, then 29-15, then 29-16), and re-verification has run: **4/6 again, but a different 4/6** — five of the six prior gaps are closed, two remain (criterion 2's `render-memmap --check` false drift, and `CUT-01`'s non-reproducing surviving-line figure). **Gap-closure round 2 (29-18..29-21, in 2 waves) is planned on 2026-08-30 against those two remaining gaps** and is not yet executed. The phase is NOT complete.
 
 Plans:
 **Wave 1**
@@ -624,6 +624,26 @@ Plans:
 *Gap-closure wave 3* *(blocked on 29-14 and 29-15)*
 
 - [x] 29-16-PLAN.md — The coverage verb taught the image forms the surface already reads so its only documented invocation runs, plus the CI gate that argument-checks every documented invocation (gap 2b, CR-05, plus WR-07 and WR-14 in part — the two internal identifier renames are deferred on a recorded decision) (wave 3)
+
+**Gap closure — round 2**, added 2026-08-30 after the re-verification scored the phase **4/6 again, but a different 4/6**. Four plans in **2 waves**, each carrying `gap_closure: true`. Waves restart at 1: none of these depends on a round-1 plan for content, only for the tree they all branch from.
+
+**This round is NOT the self-generated-scope loop, and that was checked rather than asserted.** The denominator did not grow — same six truths, same six-way split. Truths 1-5 are the five **Success Criteria** listed above; truth 6 is **`CUT-01`**, a requirement named on this phase's own `**Requirements**:` line. Neither remaining gap is a must-have lifted from a gap plan's own frontmatter. Accordingly the round's `requirements:` fields name only **REPOINT-01, REPOINT-02, CUT-01, MCP-04**; the other eight phase requirement IDs are already covered by plans 29-01..29-17 and are deliberately not re-planned.
+
+**What is deliberately NOT in this round**, so a later reader can tell an omission from a decision: the twelve findings dispositioned **OPEN-AS-WARNING** in `29-VERIFICATION.md` (WR-03, WR-04, WR-06..WR-13) are recorded and explicitly not blocking this phase; **WR-14** is deferred to Phase 30 on shipped evidence at `scripts/lib/anno-cli-verbs.mjs:57-60`; **WR-15** and **WR-16** are deferred on record (`29-16-PLAN.md:138` and its `<wr14_scope_decision>`); **CUT-06** belongs to Phase 32 — the gap-1 texts are not CUT-06, because they misdescribe a **live** verb this phase built rather than pointing at a deleted route; and both items in `deferred-items.md` stay where they are. **WR-02 is the single warning folded in**, and only because a recorded prohibition is `violated` on it.
+
+**Two owner decisions were already taken and are implemented rather than re-opened.** CR-01's fix shape: the banner records **workspace-relative** paths — the alternative of moving them to stderr is rejected, because the memory map is a committed artifact and its provenance belongs inside it where `--check` can compare it in CI and in a worktree. And `CUT-01`: **correct the sentence to the figures that re-derive**, with **no** `overrides:` entry — an override would defeat the requirement's own stated purpose.
+
+**Stopping rule, dated 2026-08-30 and written into all four plans.** If a **round-3** verification again finds new defects in **plan-derived** truths while all five success criteria plus `CUT-01` read verified, the phase **seals on the contract with its residuals stated** rather than running a round 4.
+
+*Gap-closure round 2, wave 1* (three plans, no shared files — fully parallel)
+
+- [ ] 29-18-PLAN.md — **Tracer:** the `render-memmap` banner made path-independent through one new `workspaceRelativePath()` seam, proven end to end by rendering under root A and `--check`ing the identical bytes under root B, and the suite that PINNED the defect re-pointed (gap 1, CR-01) (wave 1)
+- [ ] 29-19-PLAN.md — The invocation gate taught to see an omitted REQUIRED flag, with its declaration tables moved where its own committed test can read them, and the verifier's exact plant observed biting (gap 1 `missing` item 4, WR-01) (wave 1)
+- [ ] 29-21-PLAN.md — `CUT-01` re-measured rather than transcribed, at a commit the sentence names, with checkbox, sizing sentence, provenance paragraphs and traceability row moved in one edit; and `MCP-04` promoted on the re-verification verdict across all four of its sites (gap 2, plus the stale row) (wave 1)
+
+*Gap-closure round 2, wave 2* *(blocked on 29-18 for content — the corrected prose describes the corrected code — and on 29-18/29-19 for **file ownership** of `module-classification.ts` and of the invocation gate's baseline; those are ownership dependencies, not content ones)*
+
+- [ ] 29-20-PLAN.md — The three falsified user-facing drift texts corrected, including the template copied into every new project, plus WR-05's other USAGE drifts and the WR-02 header contradiction resolved with its residual named — discharging the 29-14 prohibition's three recorded counts (gap 1 `missing` item 3, WR-05, WR-02) (wave 2)
 
 Notes:
 
