@@ -162,14 +162,18 @@ verbs:
       files on purpose: the store holds annotations and never bytes, so a
       derived measure has to be told which bytes it is measuring and this
       verb refuses to guess one from the other.
-      <image> is dispatched BY EXTENSION FIRST and never by byte length.
-      Three forms are read: a .prg (its first two bytes are the load
-      address); a .raw or .bin flat capture; and a file of any other
-      extension that is exactly 65536 bytes, read as a flat capture. The
-      retired JSON project form survives as a TRAILING LEGACY branch,
-      reached only when none of those matched -- its only producer was
-      deleted (D-14) and it is kept solely so an existing file on disk is
-      not broken.
+      <image> is dispatched IN THIS ORDER, and the order is load-bearing:
+      first, a .raw or .bin is read as a flat capture BY EXTENSION, before
+      any length check, so a truncated capture is refused BY NAME instead
+      of falling through to the .prg parser (WR-07: a 4096-byte .raw once
+      had its first two bytes read as a load address and reported a
+      complete-looking measurement); then any file that is NOT a .prg and
+      is exactly 65536 bytes is read as a flat capture, which is the one
+      branch that does dispatch on byte length; then a .prg, whose first
+      two bytes are the load address. The retired JSON project form
+      survives as a TRAILING LEGACY branch, reached only when none of
+      those matched -- its only producer was deleted (D-14) and it is kept
+      solely so an existing file on disk is not broken.
       Prints three separately named measures -- the structural byte census,
       the two label figures, and the sampled reproducibility result -- plus
       the comment-vacuity measure, the indirect-dispatch scan and the

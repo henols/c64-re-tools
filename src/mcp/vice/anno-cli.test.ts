@@ -172,6 +172,89 @@ test("bin: `vice-mcp anno --help` exits 0, prints both invocation forms, and emi
   }
 });
 
+// ---------------------------------------------------------------------------
+// WR-21: the `coverage` USAGE paragraph versus `loadProjectImage()`'s real
+// branch order.
+//
+// The text this replaces said `<image>` is "dispatched BY EXTENSION FIRST and
+// never by byte length" and then, three lines later, named a byte-length
+// dispatch (`ext !== ".prg" && bytes.length === 65536`). It also listed the
+// three forms `.prg` first, while the code tries `.raw`/`.bin` first -- and
+// order is the whole SUBJECT of that paragraph, because running the extension
+// check before any length check is what keeps `flatImageOrigin()`'s named
+// refusal reachable for a truncated capture (the WR-07 incident).
+//
+// This guard compares the ORDER the shipped `--help` text names the forms in
+// against the ORDER `loadProjectImage()`'s own source branches on, so the two
+// cannot drift apart again silently. It deliberately compares ORDER rather
+// than prose: a guard that pinned wording would fight every future edit.
+// ---------------------------------------------------------------------------
+
+/** The three live image forms, each with the pattern that locates it in
+ * `anno-coverage.ts`'s dispatch and the pattern that locates it in the
+ * shipped USAGE text. The legacy JSON branch is excluded: it is the fallthrough
+ * and has no `ext ===` test to locate. */
+const COVERAGE_IMAGE_FORMS = [
+  {
+    name: ".raw/.bin, by extension",
+    inCode: /ext === "\.raw" \|\| ext === "\.bin"/,
+    inUsage: /a \.raw or \.bin is read as a flat capture BY EXTENSION/,
+  },
+  {
+    name: "the exactly-65536-byte non-.prg fallback",
+    inCode: /ext !== "\.prg" && bytes\.length === 65536/,
+    inUsage: /is NOT a \.prg and\s+is exactly 65536 bytes/,
+  },
+  {
+    name: ".prg",
+    inCode: /if \(ext === "\.prg"\)/,
+    inUsage: /then a \.prg, whose first/,
+  },
+] as const;
+
+/** The order `patterns` first occur in `text`, as form names. Asserts every
+ * pattern matches -- a guard that silently dropped an unmatched form would
+ * compare a shorter list against a shorter list and pass. */
+function orderOfForms(text: string, which: "inCode" | "inUsage"): string[] {
+  return COVERAGE_IMAGE_FORMS.map((form) => {
+    const at = text.search(form[which]);
+    assert.notEqual(at, -1, `${which}: could not locate the ${form.name} branch -- this guard is blind until its pattern is repaired`);
+    return { name: form.name, at };
+  })
+    .sort((a, b) => a.at - b.at)
+    .map((f) => f.name);
+}
+
+test("WR-21: the coverage USAGE names the image forms in loadProjectImage()'s OWN branch order", () => {
+  const loaderSource = readFileSync(join(HERE, "anno-coverage.ts"), "utf8");
+  const loaderStart = loaderSource.indexOf("export function loadProjectImage(");
+  assert.notEqual(loaderStart, -1, "precondition: loadProjectImage() is still the dispatcher this text describes");
+  const loaderBody = loaderSource.slice(loaderStart, loaderSource.indexOf("// The retired project form", loaderStart));
+  assert.ok(loaderBody.length > 0, "precondition: the loader body was sliced, not emptied");
+
+  const usageStart = helpResult.stdout.indexOf("coverage <image>");
+  assert.notEqual(usageStart, -1, "precondition: the coverage synopsis is still in --help");
+  const usageBlock = helpResult.stdout.slice(usageStart, helpResult.stdout.indexOf("Prints three separately named", usageStart));
+  assert.ok(usageBlock.length > 0, "precondition: the coverage USAGE block was sliced, not emptied");
+
+  assert.deepEqual(
+    orderOfForms(usageBlock, "inUsage"),
+    orderOfForms(loaderBody, "inCode"),
+    "the order --help names the image forms in must be the order loadProjectImage() actually tries them",
+  );
+});
+
+test("WR-21: the coverage USAGE no longer claims dispatch is NEVER by byte length, because one branch is", () => {
+  // The specific false absolute, asserted as an absence. Deleting the
+  // specificity would also satisfy the order test above, so this half names
+  // what must NOT come back -- and its positive control names what must stay.
+  const usageStart = helpResult.stdout.indexOf("coverage <image>");
+  const usageBlock = helpResult.stdout.slice(usageStart, helpResult.stdout.indexOf("Prints three separately named", usageStart));
+  assert.doesNotMatch(usageBlock, /never by byte length/i, "one branch IS a byte-length dispatch (ext !== '.prg' && bytes.length === 65536)");
+  assert.match(usageBlock, /65536/, "and the byte-length branch must still be named, not deleted");
+  assert.match(usageBlock, /order is load-bearing/i, "the reason the order matters must stay on screen for a --help reader");
+});
+
 test("bin: `vice-mcp anno no-such-verb` exits non-zero and prints a usage block", () => {
   assert.notEqual(unknownVerbResult.status, 0);
   const combined = `${unknownVerbResult.stdout}${unknownVerbResult.stderr}`;
