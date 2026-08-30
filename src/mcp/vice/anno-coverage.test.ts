@@ -29,9 +29,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 import {
   AUTO_NAME_PREFIX_RE,
@@ -51,6 +53,7 @@ import {
   computeReproducibility,
   computeStructuralCensus,
   coverageFindings,
+  loadProjectImage,
   normaliseComment,
   provenDispatchTargets,
   scanIndirectDispatch,
@@ -64,6 +67,11 @@ import { DATA_TYPES, LABEL_KINDS } from "./anno-types.ts";
 import { decode } from "./disasm-decoder.ts";
 import { decodeRawData } from "./prg-image.ts";
 import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
+// CR-05 case E asserts that the coverage loader and the MCP tool surface's own
+// image loader agree. `loadImage()` is module-private, so the comparison runs
+// through its published face, `anno_get_binary_info`.
+import { openStore, closeStore } from "./anno-store.ts";
+import { runAnnoTool } from "./anno-tools.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
@@ -4778,4 +4786,231 @@ test("LIVE non-vacuity: both routes are recomputed from the committed fixture an
   assert.equal(sha256(storeLine), sealed, `the live store route produced ${JSON.stringify(storeLine)}, which does not hash to the seal`);
   assert.equal(sha256(bytesLine), sealed, `the live bytes route produced ${JSON.stringify(bytesLine)}, which does not hash to the seal`);
   assert.equal(storeLine, bytesLine, "the two independent routes disagree -- report the disagreement, do not edit the seal");
+});
+
+// ---------------------------------------------------------------------------
+// CR-05 / REPOINT-01 / WR-07, and the `T-29-14-01` disclosure symmetry.
+//
+// WHAT THIS SECTION REPRODUCES. `anno coverage game.prg --store
+// game.annostore` -- the ONLY measurement instruction `routine-queue-walker`
+// has -- printed a full report of ZEROS and exited 1, because the positional
+// was loaded by two functions that between them understood exactly one format:
+// the retired analyser's JSON project file carrying a gzip-then-base64
+// payload, whose only producer was DELETED in this same phase (D-14). Observed
+// verbatim on this tree before the fix:
+//
+//   origin $0000, 0 byte(s), payload UNAVAILABLE -- .../game.prg is not valid
+//   JSON -- Unexpected token '', "<the file's own opening bytes>"... is not
+//   valid JSON
+//
+// That one line carries BOTH defects this section pins: a live image form the
+// verb could not read (CR-05), and the file's own bytes echoed back out of a
+// caller-supplied path (`T-29-16-06`, the same shape plan 29-14 removed from
+// the sibling render verb in this same round).
+//
+// THE DISPATCH ORDER IS THE POINT OF CASE C. Extension first, length second --
+// copied from `anno-tools.ts`'s `loadImage()`, not re-derived. A short flat
+// capture must be REFUSED BY NAME, never fall through to the load-address
+// parser and come back with an origin read backwards out of its own payload.
+// ---------------------------------------------------------------------------
+
+/** A .prg: a 2-byte little-endian load address followed by the payload. The
+ * same construction `anno-tools.test.ts` uses, so the two sides of case E are
+ * built the same way. */
+function prgBytes(origin: number, payload: readonly number[]): Uint8Array {
+  return Uint8Array.from([origin & 0xff, (origin >> 8) & 0xff, ...payload]);
+}
+
+/** `$c000 lda #$01` / `$c002 jsr $c008` / `$c005 jmp $c000` / `$c008 rts`. */
+const LOADER_PAYLOAD = [0xa9, 0x01, 0x20, 0x08, 0xc0, 0x4c, 0x00, 0xc0, 0x60] as const;
+
+/** Runs `body` against a fresh temp directory, removed unconditionally. */
+async function withImageDir(body: (dir: string) => Promise<void> | void): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), "anno-coverage-image-"));
+  try {
+    await body(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function writeImageFile(dir: string, name: string, bytes: Uint8Array): string {
+  const path = join(dir, name);
+  writeFileSync(path, bytes);
+  return path;
+}
+
+test("CR-05 (A): a real .prg is censused -- payload decoded, origin from its own load address, non-zero byte count", async () => {
+  await withImageDir((dir) => {
+    const path = writeImageFile(dir, "game.prg", prgBytes(0xc000, LOADER_PAYLOAD));
+    const report = buildCoverageReport({ projectPath: path });
+    assert.equal(report.project.payloadDecoded, true, "a .prg is a live image form and must decode");
+    assert.equal(report.project.reason, null);
+    assert.equal(report.project.origin, 0xc000, "the origin is the .prg's own 2-byte little-endian load address");
+    assert.equal(report.structural.rangeBytes, LOADER_PAYLOAD.length, "the censused range is the PAYLOAD, load address excluded");
+    assert.ok(report.structural.reachedAsInstruction > 0, "a real program seeded at its own origin must reach some bytes");
+  });
+});
+
+test("CR-05 (B): an exactly-65536-byte flat capture with a .raw extension decodes at origin 0", async () => {
+  await withImageDir((dir) => {
+    const flat = new Uint8Array(65536);
+    flat[0] = 0x60; // rts at $0000, so the census has something to descend into
+    const path = writeImageFile(dir, "capture.raw", flat);
+    const report = buildCoverageReport({ projectPath: path });
+    assert.equal(report.project.payloadDecoded, true);
+    assert.equal(report.project.origin, 0, "a flat 64K capture's origin is 0");
+    assert.equal(report.structural.rangeBytes, 65536);
+  });
+});
+
+test("CR-05 (C, WR-07): a SHORT flat .raw is refused BY NAME, never parsed as a load address plus payload", async () => {
+  await withImageDir((dir) => {
+    // The concrete incident `prg-image.ts`'s header records: 4096 bytes whose
+    // first two are 0xea 0xea. Falling through to the load-address parser
+    // would report origin $eaea and exit zero. Extension dispatch runs BEFORE
+    // any length check precisely so this refusal stays reachable.
+    const path = writeImageFile(dir, "truncated.raw", new Uint8Array(4096).fill(0xea));
+    const report = buildCoverageReport({ projectPath: path });
+    assert.equal(report.project.payloadDecoded, false, "a truncated capture must not read as a complete measurement");
+    assert.notEqual(report.project.origin, 0xeaea, "the origin must NOT be read backwards out of the payload's own first two bytes");
+    assert.equal(report.project.origin, 0);
+    assert.ok(
+      typeof report.project.reason === "string" && report.project.reason.includes("flat 64K capture must be exactly 65536 bytes"),
+      `the refusal must be the flat-capture one, by name -- got ${JSON.stringify(report.project.reason)}`,
+    );
+    assert.ok(report.project.reason!.includes(path), "the refusal must name the file the caller supplied");
+  });
+});
+
+test("CR-05 (D): the retired JSON project form still loads, so an existing project file is not broken", async () => {
+  await withImageDir((dir) => {
+    const payload = Uint8Array.from(LOADER_PAYLOAD);
+    const path = join(dir, "legacy.project");
+    writeFileSync(path, JSON.stringify({ origin: 0xc000, raw_data_base64: gzipSync(Buffer.from(payload)).toString("base64") }));
+    const report = buildCoverageReport({ projectPath: path });
+    assert.equal(report.project.payloadDecoded, true, "the legacy form is retained on purpose -- see loadProjectImage's trailing branch");
+    assert.equal(report.project.origin, 0xc000);
+    assert.equal(report.structural.rangeBytes, payload.length);
+  });
+});
+
+test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer identically for one .prg and one flat capture", async () => {
+  // `loadImage()` is module-private; `anno_get_binary_info` is its published
+  // face and reports the same origin and body length, so this compares the two
+  // views of "what is an image" through the surface that actually ships one.
+  // It runs against a real workspace because `loadImage()` confines its path.
+  const ws = mkdtempSync(join(tmpdir(), "anno-coverage-agree-"));
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  try {
+    const storePath = join(ws, "project.annostore");
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    process.env.CLAUDE_PROJECT_DIR = ws;
+
+    for (const [name, bytes, expectOrigin] of [
+      ["game.prg", prgBytes(0xc000, LOADER_PAYLOAD), 0xc000],
+      ["capture.raw", new Uint8Array(65536), 0],
+    ] as const) {
+      const image = writeImageFile(ws, name, bytes);
+      const loaded = loadProjectImage(image);
+      const info = await runAnnoTool("anno_get_binary_info", { store: storePath, image });
+      assert.equal(info.isError, false, info.content[0]!.text);
+      const toolBody = JSON.parse(info.content[0]!.text) as { origin: number; body_bytes: number };
+      assert.equal(loaded.payloadDecoded, true, `${name}: the coverage loader must accept what the tool surface accepts`);
+      assert.equal(loaded.origin, expectOrigin, `${name}: origin`);
+      assert.equal(loaded.origin, toolBody.origin, `${name}: the two loaders must agree on the origin`);
+      assert.equal(loaded.bytes.length, toolBody.body_bytes, `${name}: the two loaders must agree on the body length`);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("CR-05 (F, one decode two callers): anno-cli.ts's cross-reference byte source delegates to this loader rather than re-parsing", () => {
+  // The STRUCTURAL half: `projectImage()` names `loadProjectImage` and no
+  // longer carries a JSON.parse of its own. Asserted over the source because
+  // the property under test is "there is one decode", which no runtime value
+  // can show on its own.
+  const cliSource = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
+  assert.ok(cliSource.includes("loadProjectImage"), "anno-cli.ts must call the exported loader");
+  const fromProjectImage = cliSource.slice(cliSource.indexOf("function projectImage("));
+  const bodyOnly = fromProjectImage.slice(0, fromProjectImage.indexOf("\n}\n") + 3);
+  assert.ok(bodyOnly.includes("loadProjectImage("), "projectImage() must DELEGATE, not merely mention the loader elsewhere in the file");
+  assert.ok(!bodyOnly.includes("JSON.parse"), "projectImage() must not carry a second decode of its own");
+  assert.ok(!bodyOnly.includes("decodeRawData"), "projectImage() must not carry a second payload decode of its own");
+  assert.ok(!cliSource.includes('from "./prg-image.ts"'), "anno-cli.ts must no longer reach the byte-layout module directly");
+});
+
+test("CR-05 (F, behavioural): a file the loader refuses yields BOTH no usable image and payloadDecoded:false in one run", async () => {
+  await withImageDir((dir) => {
+    const path = writeImageFile(dir, "truncated.raw", new Uint8Array(4096).fill(0xea));
+    const loaded = loadProjectImage(path);
+    const report = buildCoverageReport({ projectPath: path });
+    // The CLI's null-versus-image decision is exactly this predicate, so the
+    // two halves of one report cannot disagree: same call, same answer.
+    assert.equal(loaded.payloadDecoded, false);
+    assert.equal(loaded.bytes.length, 0, "a refused image yields no bytes for the cross-reference derivation to run over");
+    assert.equal(report.project.payloadDecoded, false);
+    assert.equal(report.project.reason, loaded.reason, "the census's stated reason IS the loader's own");
+  });
+});
+
+test("CR-05 (G, read-only and re-runnable): two runs over one store and image give the same figures and leave the store byte-identical", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "anno-coverage-rerun-"));
+  try {
+    const storePath = join(ws, "project.annostore");
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const image = writeImageFile(ws, "game.prg", prgBytes(0xc000, LOADER_PAYLOAD));
+    const before = sha256(readFileSync(storePath).toString("base64"));
+    const first = buildCoverageReport({ projectPath: image });
+    const second = buildCoverageReport({ projectPath: image });
+    const after = sha256(readFileSync(storePath).toString("base64"));
+    assert.deepEqual(second.structural, first.structural, "the census must be stable across runs");
+    assert.equal(second.project.origin, first.project.origin);
+    assert.equal(second.project.payloadDecoded, first.project.payloadDecoded);
+    assert.equal(after, before, "the coverage path opens read-only and must write nothing");
+  } finally {
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("CR-05 (H, the T-29-14-01 symmetry): a non-JSON file's reason names the path and the failure but discloses NONE of its bytes", async () => {
+  await withImageDir((dir) => {
+    // TEN CHARACTERS, AND THAT LENGTH IS LOAD-BEARING. V8 truncates its own
+    // JSON parse-error snippet at ten (`Unexpected token 'Q', "QQZZORACLE"...
+    // is not valid JSON`), so a longer planted token is NEVER fully present
+    // even in the disclosing build, and asserting its absence would pass
+    // vacuously against the live oracle this case exists to catch. Plan 29-14
+    // learned that on the sibling verb; the lesson is inherited here rather
+    // than rediscovered.
+    const token = "QQZZORACLE";
+    const path = join(dir, "leak.project");
+    writeFileSync(path, `${token}\nmore private lines\n`);
+    const report = buildCoverageReport({ projectPath: path });
+    assert.equal(report.project.payloadDecoded, false);
+    const reason = report.project.reason ?? "";
+    // The DIAGNOSIS must survive -- asserting only the token's absence would
+    // be satisfied by a reason that said nothing at all.
+    assert.ok(reason.includes(path), "the failure must still NAME the file it could not read");
+    assert.match(reason, /not valid JSON/i, "the failure must still say WHAT went wrong");
+    // ...and the CONTENT must not.
+    assert.ok(!reason.includes(token), `the reason disclosed the file's contents -- found ${JSON.stringify(token)} in ${JSON.stringify(reason)}`);
+    const findings = coverageFindings(report)
+      .findings.map((f) => JSON.stringify(f))
+      .join("\n");
+    assert.ok(!findings.includes(token), "the findings list must not disclose it either");
+  });
+});
+
+test("CR-05 (H, control): where the runtime names a parse POSITION the reason carries the offset -- a position is not content", async () => {
+  await withImageDir((dir) => {
+    const path = join(dir, "malformed.project");
+    // Valid JSON up to a point, so V8 reports `... at position N`.
+    writeFileSync(path, '{"a":1,,}');
+    const report = buildCoverageReport({ projectPath: path });
+    assert.equal(report.project.payloadDecoded, false);
+    assert.match(report.project.reason ?? "", /at byte offset \d+/, "an offset the runtime exposes is reported, because it is a position and not content");
+  });
 });

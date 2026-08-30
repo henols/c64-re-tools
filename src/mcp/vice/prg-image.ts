@@ -28,12 +28,24 @@
 // intact while looking finished.
 //
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`. It is reachable
-// from the published entry point's import closure -- `vice-proxy.ts` reaches
-// `anno-cli.ts` (through a dynamic import), and `anno-cli.ts` imports
-// `parsePrg` and `flatImageOrigin` from here. `scripts/check-npm-packages.mjs`
-// walks that closure over `files[]` and fails the pack the moment a reachable
-// module sits outside the listed set, exactly as `anno-d64.ts`'s own header
-// records for the same reason.
+// from the published entry point's import closure, and the STATIC route is
+// named here first because it is the stronger reachability claim: `anno-
+// tools.ts` -- the curated `anno_*` MCP tool surface -- imports `parsePrg` and
+// `flatImageOrigin` from here with a plain top-level import, and `vice-proxy.ts`
+// imports `anno-tools.ts` statically. `anno-coverage.ts` (the byte-coverage
+// census) imports `decodeRawData`, `parsePrg` and `flatImageOrigin` for the
+// same three facts on the CLI's route. `scripts/check-npm-packages.mjs` walks
+// that closure over `files[]` and fails the pack the moment a reachable module
+// sits outside the listed set, exactly as `anno-d64.ts`'s own header records
+// for the same reason.
+//
+// CORRECTED 2026-08-30 (WR-07, plan 29-16). This paragraph previously named
+// `anno-cli.ts` as importing `parsePrg` and `flatImageOrigin` and rested the
+// whole reachability claim on the DYNAMIC import that reaches that file. That
+// was doubly wrong: `anno-cli.ts` imported neither symbol (it imported
+// `decodeRawData` only), and it now imports nothing from here at all -- its
+// image decode delegates to `anno-coverage.ts`'s `loadProjectImage()`. A
+// stated reason for shipping a file has to be true or it is worse than absent.
 //
 // WHAT NOT TO DO:
 //   - Never give any function here a filesystem PATH parameter. They take byte
@@ -48,15 +60,20 @@
 //     parser, whose first two bytes become the load address, so a truncated
 //     capture silently "bootstrapped" with an origin read backwards out of its
 //     own payload bytes and exited zero -- every downstream address wrong, no
-//     diagnostic. The refusal message texts are a user-visible contract:
-//     `anno-cli.ts` prefixes them, and one of its tests asserts that a `.d64`
-//     entry rejection never leaks `parsePrg`'s own name to stderr, so a
-//     reworded message breaks a test for a reason that looks unrelated.
+//     diagnostic. The refusal message texts are a user-visible contract: both
+//     `anno-tools.ts`'s `loadImage()` and `anno-coverage.ts`'s
+//     `loadProjectImage()` prefix them with the caller's own image path, and
+//     tests on both routes match on their wording, so a reworded message
+//     breaks a test for a reason that looks unrelated. (Attribution corrected
+//     2026-08-30, WR-07: this line named `anno-cli.ts`, which prefixed them
+//     through a `bootstrap` verb deleted in phase 29, D-14.)
 //   - Never add the dispatch ORDER discipline here. Which check runs first for
-//     a given input extension is `anno-cli.ts`'s concern (it dispatches
-//     `.raw`/`.bin` by extension BEFORE any length check, so that
+//     a given input extension belongs to the two loaders that own it --
+//     `anno-tools.ts`'s `loadImage()` for the MCP tool surface and
+//     `anno-coverage.ts`'s `loadProjectImage()` for the coverage verb. Both
+//     dispatch `.raw`/`.bin` by extension BEFORE any length check, so that
 //     `flatImageOrigin`'s named refusal is always reachable for those two
-//     extensions). Neither function below may start inferring what kind of
+//     extensions. Neither function below may start inferring what kind of
 //     image it was handed.
 
 import { gunzipSync } from "node:zlib";
