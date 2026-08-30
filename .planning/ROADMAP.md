@@ -568,7 +568,7 @@ criterion 2.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
 
-**Plans**: 12/12 plans executed
+**Plans**: 17 plans — the original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 2 further waves) were added and are pending. The phase is NOT complete.
 
 Plans:
 **Wave 1**
@@ -606,6 +606,19 @@ Plans:
 **Wave 8** *(blocked on Wave 7 completion)*
 
 - [x] 29-11-PLAN.md — The record: the falsified criteria edited, Phases 30-32 narrowed, the gate's last exception closed (wave 8)
+
+**Gap closure** — added 2026-08-30 after `29-VERIFICATION.md` scored the phase **4/6, `gaps_found`**. Five plans closing the five recorded gaps; each carries `gap_closure: true`. Waves restart at 1 because the twelve original plans are shipped and none of these depends on them.
+
+*Gap-closure wave 1* (four plans, no shared files — fully parallel)
+
+- [ ] 29-13-PLAN.md — MCP-04: `anno_disassemble` and `anno_read_region` made to agree on an out-of-image address, and the nested batch made to validate on the arguments it executes (gaps 1 and 4, CR-01/CR-06, plus WR-10) (wave 1)
+- [ ] 29-14-PLAN.md — The CLI's caller-supplied paths run through the one confinement seam, `render-memmap` gains `--force`, and the seam's consumer set becomes a closed, tested set (gap 3, CR-02/CR-03/WR-08) (wave 1)
+- [ ] 29-15-PLAN.md — Both skill trees re-pointed onto a store the `render-memmap` verb can open, and the falsified dated note deleted rather than amended (gap 2a, CR-04) (wave 1)
+- [ ] 29-17-PLAN.md — `CUT-01`'s three falsified sizing figures corrected to the measured ones and the row moved in the same edit, on the owner's 2026-08-30 decision (gap 5) (wave 1)
+
+*Gap-closure wave 2* *(blocked on 29-14 and 29-15)*
+
+- [ ] 29-16-PLAN.md — The coverage verb taught the image forms the surface already reads so its only documented invocation runs, plus the CI gate that argument-checks every documented invocation (gap 2b, CR-05, plus WR-07/WR-14) (wave 2)
 
 Notes:
 
