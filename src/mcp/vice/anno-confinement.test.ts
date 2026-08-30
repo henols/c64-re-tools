@@ -95,7 +95,7 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
 import { closeStore, openStore } from "./anno-store.ts";
-import { AnnoStorePathError, storePathWithinWorkspace } from "./anno-types.ts";
+import { AnnoStorePathError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.ts";
 import { ViceError } from "./vice.ts";
 
 /** `anno-store.test.ts`'s `inTempDir` shape -- `mkdtempSync` under `tmpdir()`
@@ -707,5 +707,138 @@ test("15. a symlink cycle in an ANCESTOR position is refused with AnnoStorePathE
     assert.ok(Date.now() - startedAt < 2000, "the refusal must be prompt in BOTH spellings: an unbounded hop is a hang, and a hang in a confinement check is a denial of service on unvalidated input");
     assert.deepEqual(readdirSync(outside), [], "nothing was created outside the workspace root");
     assert.deepEqual(readdirSync(ws).sort(), ["a", "b"], "and nothing was created inside it either -- the confinement check creates nothing");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `workspaceRelativePath()` -- the control set for the OTHER seam in
+// `anno-types.ts`, placed here rather than in a new file because it shares a
+// root-resolution rule with `storePathWithinWorkspace()` above and the same
+// symlink scaffolding is what tests that rule.
+//
+// WHAT IT IS FOR, so a later reader does not read it as a second confinement
+// check. It computes the spelling that goes into a COMPARED artifact -- the
+// memory map's banner, which `checkRenderedMemoryMap()` re-renders and diffs
+// byte for byte. `CR-01` / `29-VERIFICATION.md` gap 1: the banner recorded the
+// absolute realpaths, so a byte-identical store, sidecar and rendered file
+// reported `drifted` the moment the checkout sat at a different absolute path,
+// while the artifact's own `render_digest` printed identical in both trees.
+//
+// AND THE SAME DISCRIMINATION RULE APPLIES HERE. A function that refused every
+// path would pass test 18's refusal half and prove nothing. Tests 16, 17 and 19
+// are what make 18 meaningful: the equal case, the nested case and the
+// symlinked-root case must all be ACCEPTED and spelled cleanly, and 18's own
+// second half asserts that a `..` segment which normalises back INSIDE the root
+// is accepted rather than refused on sight.
+// ---------------------------------------------------------------------------
+
+test("16. workspaceRelativePath: the root itself spells `.`, one segment below spells that segment, and a deep nest spells the whole path", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    mkdirSync(ws);
+
+    // The EQUAL case yields `.` -- never an empty field and never a bare
+    // separator. A banner line reading `store:` with nothing after it is not a
+    // recorded location, it is a missing one.
+    assert.equal(workspaceRelativePath(ws, ws), ".", "path and root resolving equal must spell `.`");
+
+    // One segment below: the segment, with NO leading separator. A leading
+    // separator would make the spelling look absolute to a reader and to any
+    // later `isAbsolute()` check.
+    const oneDown = join(ws, "game.annostore");
+    writeFileSync(oneDown, "");
+    assert.equal(workspaceRelativePath(oneDown, ws), "game.annostore");
+
+    // Deep nesting: every segment survives, in order.
+    const deep = join(ws, "a", "b", "c");
+    mkdirSync(deep, { recursive: true });
+    const deepStore = join(deep, "game.annostore");
+    writeFileSync(deepStore, "");
+    assert.equal(workspaceRelativePath(deepStore, ws), "a/b/c/game.annostore");
+  });
+});
+
+test("17. workspaceRelativePath: the spelling is separator-NORMALISED to POSIX `/` -- whose definition of equality applies is settled in one place", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    const deep = join(ws, "a", "b");
+    mkdirSync(deep, { recursive: true });
+    const store = join(deep, "game.annostore");
+    writeFileSync(store, "");
+
+    const spelling = workspaceRelativePath(store, ws);
+
+    // This is the property that lets the SAME tree checked out on two hosts
+    // with different path separators compare byte-identical: the compared bytes
+    // carry one separator spelling, not the host's.
+    assert.ok(!spelling.includes("\\"), `the spelling must contain no backslash, got ${JSON.stringify(spelling)}`);
+    assert.ok(!/^[A-Za-z]:/.test(spelling), `the spelling must contain no drive letter, got ${JSON.stringify(spelling)}`);
+    assert.deepEqual(spelling.split("/"), ["a", "b", "game.annostore"], "segments are joined by `/` and by nothing else");
+    assert.ok(!spelling.startsWith("/"), "a relative spelling never starts with a separator");
+  });
+});
+
+test("18. workspaceRelativePath: a path OUTSIDE the root is refused BY NAME rather than spelled with `..`, while a `..` that normalises back INSIDE is accepted", () => {
+  inTempDir((root) => {
+    const ws = join(root, "ws");
+    const outside = join(root, "outside");
+    mkdirSync(ws);
+    mkdirSync(outside);
+    const foreign = join(outside, "game.annostore");
+    writeFileSync(foreign, "");
+
+    // THE REFUSAL. Returning "../outside/game.annostore" would be the same
+    // machine-dependence wearing a different spelling: the number of `..` hops
+    // encodes where the checkout sits.
+    let thrown: unknown;
+    try {
+      const spelled = workspaceRelativePath(foreign, ws);
+      assert.fail(`expected a refusal, got the spelling ${JSON.stringify(spelled)}`);
+    } catch (e) {
+      thrown = e;
+    }
+    assert.ok(thrown instanceof AnnoStorePathError, `the refusal must be an AnnoStorePathError, got ${String(thrown)}`);
+    assert.ok(thrown instanceof ViceError, "AnnoStorePathError stays inside the ViceError family");
+    const message = (thrown as Error).message;
+    assert.ok(message.includes(realpathSync(foreign)), "the refusal names the RESOLVED path");
+    assert.ok(message.includes(realpathSync(ws)), "the refusal names the RESOLVED workspace root");
+    assert.ok(!message.includes(".."), "the refusal must not hand back the `..` spelling it declined to return");
+
+    // THE DISCRIMINATION. A control that refuses every `..` proves nothing --
+    // it would also refuse a legitimate in-workspace path spelled with one.
+    mkdirSync(join(ws, "sub"));
+    const round_trip = join(ws, "sub", "..", "game.annostore");
+    writeFileSync(join(ws, "game.annostore"), "");
+    assert.equal(
+      workspaceRelativePath(round_trip, ws),
+      "game.annostore",
+      "a `..` segment that normalises back inside the root is a legitimate in-workspace path and must be ACCEPTED",
+    );
+  });
+});
+
+test("19. workspaceRelativePath: a symlinked workspace ROOT does not make an in-workspace store look foreign -- both sides go through the one resolution", () => {
+  inTempDir((root) => {
+    const realWs = join(root, "realws");
+    mkdirSync(realWs);
+    const linkWs = join(root, "linkws");
+    symlinkSync(realWs, linkWs, "dir");
+
+    // The exact pairing the CLI produces: `repoRoot()` is not necessarily a
+    // realpath, while the store path has already been through
+    // `storePathWithinWorkspace()` and therefore IS one. Resolve only one side
+    // and this legitimate pairing spells `../realws/game.annostore` -- machine
+    // dependence back under a new spelling -- or throws outright.
+    const store = join(realWs, "game.annostore");
+    writeFileSync(store, "");
+    assert.equal(
+      workspaceRelativePath(store, linkWs),
+      "game.annostore",
+      "a realpath'd store under a symlinked root spells cleanly, because both sides go through realpathOfNearestExisting",
+    );
+
+    // And the mirror: the store reached THROUGH the link resolves to the same
+    // spelling, so the two agree rather than disagreeing by one hop.
+    assert.equal(workspaceRelativePath(join(linkWs, "game.annostore"), realWs), "game.annostore");
   });
 });

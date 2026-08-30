@@ -480,6 +480,18 @@ test("renders a golden memory map from a hand-built store plus a fixture sidecar
       assert.ok(result.markdown.includes("  store: probe.annostore"));
       assert.ok(result.markdown.includes("  sidecar: capture.provenance.json"));
 
+      // THE NEGATIVE, and its absence is why the defect shipped green. The
+      // suite asserted the two paths were PRESENT and never that the ABSOLUTE
+      // ones were absent, so nothing here could tell a workspace-relative
+      // location from a machine-specific one.
+      const absoluteLeakMessage =
+        "CR-01: an ABSOLUTE path in the banner makes the `--check` drift verdict a function of the CHECKOUT LOCATION " +
+        "rather than of the content -- the same tree at another absolute path would then report `drifted` while its " +
+        "own render_digest reported identical. The banner records workspace-relative locations only.";
+      assert.ok(!result.markdown.includes(storePath), absoluteLeakMessage);
+      assert.ok(!result.markdown.includes(provenancePath), absoluteLeakMessage);
+      assert.ok(!result.markdown.includes(dir), absoluteLeakMessage);
+
       // ---------------------------------------------------------------------
       // checkRenderedMemoryMap: in-sync, hand-edit drift, store-change drift,
       // and missing.
@@ -622,6 +634,86 @@ test("the render digest and the --check verdict AGREE: the identical tree at a d
   } finally {
     rmSync(outer, { recursive: true, force: true });
   }
+});
+
+test("a store with ZERO ranges, labels and comments renders a banner and a digest, and that file cross-root checks in-sync -- a zero-row render is a RESULT, never a refusal", async () => {
+  const outer = mkdtempSync(join(HERE, ".anno-memmap-empty-"));
+  try {
+    const rootA = join(outer, "rootA");
+    const rootB = join(outer, "rootB");
+
+    // Nothing written into the store at all: no range, no label, no comment.
+    const a = buildStoreFixture({ root: rootA, relDir: "annotations", fill: () => {} });
+    cpSync(rootA, rootB, { recursive: true });
+    const b = {
+      dir: join(rootB, "annotations"),
+      storePath: join(rootB, "annotations", "probe.annostore"),
+      provenancePath: join(rootB, "annotations", "capture.provenance.json"),
+    };
+
+    const render = await renderMemoryMap({
+      storePath: a.storePath,
+      provenancePath: a.provenancePath,
+      workspaceRoot: rootA,
+    });
+
+    // A RESULT, not a refusal: nothing threw, the banner exists, the digest is
+    // well-formed, and the counts are honestly zero rather than absent.
+    assert.equal(render.rowCount, 0, "zero blocks must render as zero rows, not as an error");
+    assert.equal(render.unknownCount, 0);
+    assert.match(render.renderDigest, /^[0-9a-f]{64}$/, "an empty store still produces a well-formed 64-hex digest");
+    assert.ok(render.markdown.includes("  store: annotations/probe.annostore"));
+    assert.ok(render.markdown.includes("| Range | Contents | Confidence | Evidence |"), "the block table header is still emitted");
+    assert.match(render.markdown, /## Open questions\n\n- \(none\)/);
+
+    const renderedA = join(a.dir, "memory-map.md");
+    writeFileSync(renderedA, render.markdown);
+    const renderedB = join(b.dir, "memory-map.md");
+    writeFileSync(renderedB, readFileSync(renderedA));
+
+    const verdict = await checkRenderedMemoryMap({
+      storePath: b.storePath,
+      provenancePath: b.provenancePath,
+      renderedPath: renderedB,
+      workspaceRoot: rootB,
+    });
+    assert.deepEqual(verdict, { status: "in-sync" }, "the empty case is path-independent too, not merely the populated one");
+  } finally {
+    rmSync(outer, { recursive: true, force: true });
+  }
+});
+
+test("--check names the LOWEST differing line when the file differs on several, and two runs over the same inputs name the same line", async () => {
+  await withRenderFixture(
+    { prefix: "anno-memmap-lowest-line", fill: fillBaselineStore },
+    async ({ dir, storePath, provenancePath }) => {
+      const render = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
+      const renderedPath = join(dir, "memory-map.md");
+
+      // Two edits, deliberately applied to lines FAR apart and written in the
+      // reverse order of their line numbers, so a check that returned "the
+      // last difference found" or "the most recently edited line" would name
+      // the higher one.
+      const lines = render.markdown.split("\n");
+      const lowerIndex = lines.findIndex((l) => l.startsWith("| `$0810-$0814`"));
+      const upperIndex = lines.findIndex((l) => l.startsWith("| $0810 | init_screen"));
+      assert.ok(lowerIndex > 0 && upperIndex > lowerIndex, "fixture assumption: the block row precedes the routine row");
+
+      lines[upperIndex] = lines[upperIndex]!.replace("init_screen", "init_screeX");
+      lines[lowerIndex] = lines[lowerIndex]!.replace("| code |", "| data |");
+      writeFileSync(renderedPath, lines.join("\n"));
+
+      const first = await checkRenderedMemoryMap({ storePath, provenancePath, renderedPath, workspaceRoot: dir });
+      assert.equal(first.status, "drifted");
+      if (first.status !== "drifted") return;
+      assert.equal(first.line, lowerIndex + 1, "the LOWEST differing line is the one named, not the last or the largest");
+
+      // Stable: the same inputs name the same line, because both sides come
+      // from the same deterministic sort rather than from iteration order.
+      const second = await checkRenderedMemoryMap({ storePath, provenancePath, renderedPath, workspaceRoot: dir });
+      assert.deepEqual(second, first, "two runs over identical inputs must return the identical verdict");
+    },
+  );
 });
 
 test("an address whose store comment carries [unknown] appears under Open questions, and a malformed confidence prefix throws rather than rendering silently", async () => {
