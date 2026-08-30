@@ -675,11 +675,25 @@ purpose, standing and exercised before the deletion window opens.
 **Plans**: 6 plans across 5 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 30-01-PLAN.md — TRACER: one store, one range, one image, real ACME, one byte-diff — `acme-verify.ts` (test-only) and `anno-export-asm.ts` (ships) proved end to end (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 30-02-PLAN.md — Both mandatory reds against the new producer, the five verdict rules as named pure helpers, and both pinned transcripts re-recorded from real ACME 0.97 (wave 2)
 - [ ] 30-03-PLAN.md — Per-block `*` assertions proved capable of biting, the typed data-range emitter over all twelve `DATA_TYPES`, and the embedded-newline refusal `assertCommentText()` did not have (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 30-04-PLAN.md — The `=*+$01` idiom on a fixture that genuinely self-modifies, the eleven prefixes read from `AUTO_NAME_PREFIX_RE`, enums on the immediate operand only, every inexpressible opcode as `!byte`, and real ACME confirming the duplicate-label refusal (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 30-05-PLAN.md — `anno export-asm` lands as a CLI verb, with every floor it moves raised on both sides in the same commit and the exporter added to the `files[]` closure (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 30-06-PLAN.md — Re-point every statement this phase falsifies in both skill trees, the shipped module headers and the project record, plus the guard that ties documented verb status to the parsed verb set (wave 5)
 
 Notes:
