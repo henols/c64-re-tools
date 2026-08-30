@@ -1453,3 +1453,37 @@ test("no test in this phase reads the retired producer's fixtures directory", ()
       "one place to update if those files ever move. A second occurrence means a path was rebuilt by hand somewhere"
   );
 });
+
+// ---------------------------------------------------------------------------
+// D30-01 / USER-D-02: this module SHIPS NOWHERE, and that is mechanically
+// enforced rather than promised.
+//
+// The mirror of `acme-gate.test.ts`'s own absence assertion, deliberately
+// worded the same way and placed next to its subject rather than beside that
+// one. Added 2026-08-31, in the plan that made `anno-export-asm.ts` reachable
+// from `vice-proxy.ts` through `anno-cli.ts`: the exporter joining the
+// published closure is exactly the change that makes it tempting to let the
+// verifier follow it.
+// ---------------------------------------------------------------------------
+
+test("acme-verify.ts is absent from package.json's files[] array (test-only, mechanically enforced)", () => {
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
+  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
+  assert.equal(
+    pkg.files.includes("acme-verify.ts"),
+    false,
+    "acme-verify.ts is test-only and must never ship in the published npm tarball. Being absent is what lets it " +
+      "import ACME_BIN from acme-gate.ts instead of resolving that environment variable itself -- which acme-gate.ts " +
+      "forbids by name, because a second resolution of ACME_BIN is a second answer to which assembler ran"
+  );
+  // The paired direction, so this is a discrimination rather than a blanket
+  // refusal: the module it verifies DOES ship, and shipped in the commit that
+  // created it. Without this half, an accidentally-emptied files[] would
+  // satisfy the assertion above.
+  assert.equal(
+    pkg.files.includes("anno-export-asm.ts"),
+    true,
+    "anno-export-asm.ts is shipped runtime -- it is reachable from vice-proxy.ts through anno-cli.ts's export-asm " +
+      "verb, and check-npm-packages.mjs's closure walk fails the pack when a reachable module is unlisted"
+  );
+});

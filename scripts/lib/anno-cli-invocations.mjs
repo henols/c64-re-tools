@@ -122,6 +122,20 @@ export const ANNO_INVOCATION_FLOOR = 10;
 //                              `game.regen2000proj` in the store slot, refused
 //                              at runtime with "not an annotation store".
 //
+//   export-asm <image>      -> `loadImage()` in
+//                              `src/mcp/vice/anno-export-asm.ts`, whose
+//                              dispatch is a `.prg` (2-byte little-endian load
+//                              address then payload) or a flat capture. The
+//                              SAME two artefact kinds `coverage <image>`
+//                              reads, because it is the same artefact in the
+//                              same slot -- and, exactly as there, the retired
+//                              JSON project form is deliberately NOT listed.
+//                              Added 2026-08-31 with the verb itself: the
+//                              committed test asserts every key of the CLI's
+//                              own `VERB_OPTIONS` appears in all three tables,
+//                              so a verb cannot join the CLI while staying
+//                              invisible to this gate.
+//
 // DECLARED HERE, NOT IN THE GATE SCRIPT, since 2026-08-30 (WR-01). It lived in
 // `scripts/check-skill-cli-invocations.mjs` until then, which runs its whole
 // check AT IMPORT TIME -- so nothing could import the table without running the
@@ -135,6 +149,7 @@ export const ANNO_INVOCATION_FLOOR = 10;
 export const POSITIONAL_KINDS = Object.freeze({
   coverage: Object.freeze([".prg", ".raw", ".bin"]),
   "render-memmap": Object.freeze([".annostore", ".store"]),
+  "export-asm": Object.freeze([".prg", ".raw", ".bin"]),
 });
 
 // ---------------------------------------------------------------------------
@@ -160,6 +175,11 @@ export const POSITIONAL_KINDS = Object.freeze({
 //   render-memmap  -> `src/mcp/vice/anno-cli.ts`:
 //                     "render-memmap: --provenance FILE is required"
 //
+//   export-asm     -> `src/mcp/vice/anno-cli.ts`:
+//                     "export-asm: --store FILE is required -- the annotation
+//                      store holds the ranges, labels, comments and enums, and
+//                      this verb will not derive its path from <image>."
+//
 // A VERB WITH NO VISIBLE REFUSAL BRANCH GETS `[]`, DELIBERATELY AND EXPLICITLY.
 // An absent key and an empty array must not read the same: the committed test
 // asserts every key of the CLI's own `VERB_OPTIONS` appears here, so a verb
@@ -171,6 +191,7 @@ export const POSITIONAL_KINDS = Object.freeze({
 export const REQUIRED_FLAGS = Object.freeze({
   coverage: Object.freeze(["--store"]),
   "render-memmap": Object.freeze(["--provenance"]),
+  "export-asm": Object.freeze(["--store"]),
 });
 
 // ---------------------------------------------------------------------------
@@ -214,6 +235,21 @@ export const REQUIRED_FLAGS = Object.freeze({
 //                             store (`anno-cli.ts`, `join(dirname(storePath),
 //                             "memory-map.md")`).
 //
+//   export-asm --store     -> `openStore()` again, same artefact through a
+//                             different slot, same two kinds and the same
+//                             shipped-CONVENTION caveat as `coverage --store`.
+//
+//   export-asm --out       -> ACME source text. `.a` is this repo's own
+//                             spelling for it -- `src/skills/acme-build/`
+//                             assembles `.a` files and the exporter's own
+//                             derived default is the image's basename with a
+//                             `.a` extension (`anno-cli.ts`,
+//                             `defaultExportAsmOut()`). `.asm` is accepted
+//                             alongside it because the acme-build playbook
+//                             names both spellings as sources it assembles, so
+//                             a documented `--out foo.asm` is a live command
+//                             rather than a mistake.
+//
 // A FLAG WITH NO ENTRY IS A FLAG THIS MAP MAKES NO CLAIM ABOUT, and there are
 // two deliberate absences rather than oversights: `--force` and `--check` are
 // BOOLEAN (they take no value at all), and `--sample N` takes an INTEGER, not a
@@ -234,6 +270,10 @@ export const FLAG_KINDS = Object.freeze({
   "render-memmap": Object.freeze({
     "--provenance": Object.freeze([".json"]),
     "--out": Object.freeze([".md"]),
+  }),
+  "export-asm": Object.freeze({
+    "--store": Object.freeze([".annostore", ".store"]),
+    "--out": Object.freeze([".a", ".asm"]),
   }),
 });
 

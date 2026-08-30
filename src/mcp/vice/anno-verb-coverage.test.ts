@@ -40,10 +40,17 @@ const CI_SCRIPT = join(ROOT, "scripts", "check-skill-tool-coverage.mjs");
  * NARROWED FROM EIGHT TO TWO on 2026-08-29 by plan 29-07 (D-14), together with
  * `ANNO_CLI_VERB_FLOOR`. Both counts move together, deliberately, because they
  * measure the same fact. See that constant's own comment for why a smaller
- * number here is a REPLACEMENT over a new verb set rather than a lowering, and
- * for the Phase 30 event that raises it again.
+ * number here is a REPLACEMENT over a new verb set rather than a lowering.
+ *
+ * RAISED TWO -> THREE on 2026-08-31 by plan 30-05, together with
+ * `ANNO_CLI_VERB_FLOOR` again: `export-asm` returned as a rebuild over the
+ * annotation store behind a real-ACME byte-diff oracle. That is the event the
+ * previous version of this paragraph forecast; it has now happened, and this
+ * sentence records it rather than predicting it. `gen-enums`, `export-lbl` and
+ * `import-lbl` did NOT return with it and no phase currently owns them, so the
+ * next raise has no named date.
  */
-const REAL_VERBS = ["coverage", "render-memmap"];
+const REAL_VERBS = ["coverage", "export-asm", "render-memmap"];
 
 /**
  * The verbs the COMMENT-HYGIENE synthetic source below carries. Deliberately
@@ -175,7 +182,7 @@ test("comment hygiene: a case hidden in a block comment or a line comment is nev
 });
 
 test("non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it", () => {
-  assert.equal(ANNO_CLI_VERB_FLOOR, 2);
+  assert.equal(ANNO_CLI_VERB_FLOOR, 3);
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.ok(verbs.length >= ANNO_CLI_VERB_FLOOR);

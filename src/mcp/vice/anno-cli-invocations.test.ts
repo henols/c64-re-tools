@@ -146,10 +146,21 @@ test("planted violation 2 (CR-04's exact shape): a positional whose extension is
   assert.match(problems[0]!, /\.annostore/, "and the kinds the verb does read");
 });
 
+// RE-POINTED 2026-08-31 (plan 30-05). Every unknown-verb control in this file
+// used to name `export-asm`, which was the natural choice while it was one of
+// the six verbs D-14 deleted. It came back that day -- rebuilt over the
+// annotation store -- so a control naming it stopped testing the unknown-verb
+// path and started asserting something false about a verb the CLI dispatches.
+// `bootstrap` replaces it: it was deleted in the same commit as `export-asm`,
+// it did NOT come back (it created the retired analyser's own project file, a
+// format this repo no longer produces), and it is the same SHAPE of control --
+// a plausible verb a reader might type, not an invented token.
+const GONE_VERB = "bootstrap";
+
 test("planted violation 3: a verb the CLI does not have is reported by name", () => {
-  const problems = problemsFor("node src/mcp/vice/vice-proxy.ts anno export-asm game.annostore --out out.a");
+  const problems = problemsFor(`node src/mcp/vice/vice-proxy.ts anno ${GONE_VERB} game.annostore --out out.a`);
   assert.ok(problems.length >= 1);
-  assert.match(problems[0]!, /export-asm/);
+  assert.match(problems[0]!, new RegExp(GONE_VERB));
   assert.match(problems[0]!, /no such verb/i);
   // The report names the real verb set, so the fix is legible from the failure.
   assert.match(problems[0]!, /coverage/);
@@ -265,7 +276,15 @@ function sampleValueFor(verb: string, flag: string): string {
 
 test("the checker reads the CLI's OWN option set, so a flag the CLI accepts is never reported", () => {
   for (const [verb, flags] of Object.entries(VERB_OPTIONS)) {
-    const positional = verb === "coverage" ? "game.prg" : "game.annostore";
+    // The positional is DERIVED from the verb's own declared kinds rather than
+    // hand-picked per verb (it was a `verb === "coverage"` ternary until
+    // 2026-08-31, which silently handed `export-asm` -- an IMAGE-positional
+    // verb -- an annotation store and failed for a correct reason). Taking the
+    // first declared kind means a verb added later cannot make this test red
+    // for a reason that has nothing to do with the property under test.
+    const positionalKinds = POSITIONAL_KINDS[verb as keyof typeof POSITIONAL_KINDS] ?? [];
+    assert.ok(positionalKinds.length > 0, `${verb} has no POSITIONAL_KINDS entry, so this test has no valid positional to build`);
+    const positional = `game${positionalKinds[0]}`;
     // Every flag is given a value, which is harmless for the boolean ones
     // here: the point is that no flag in the CLI's own set is refused as
     // UNKNOWN. Since WR-18 the value has to be one the flag's own kinds
@@ -397,7 +416,7 @@ test("multiple problems are reported in the declared order, stably across runs",
 test("the unknown-verb case SHORT-CIRCUITS: it is reported alone, never alongside the other three", () => {
   // Same line as above but with a verb the CLI does not have, so every
   // verb-keyed table has no entry to read.
-  const problems = problemsFor("vice-mcp anno export-asm game.regen2000proj --verbose");
+  const problems = problemsFor(`vice-mcp anno ${GONE_VERB} game.regen2000proj --verbose`);
   assert.equal(problems.length, 1, problems.join("; "));
   assert.deepEqual(problems.map(problemKind), [PROBLEM_ORDER[0]]);
 });
@@ -500,7 +519,7 @@ test("PROBLEM_ORDER is non-vacuous: every declared kind is produced by at least 
   // planted cases.
   const produced = new Set(
     [
-      "vice-mcp anno export-asm game.annostore",
+      `vice-mcp anno ${GONE_VERB} game.annostore`,
       "vice-mcp anno coverage game.prg --store game.annostore --verbose",
       "vice-mcp anno coverage game.proj --store game.annostore",
       "vice-mcp anno coverage game.prg",
@@ -525,7 +544,7 @@ test("PROBLEM_ORDER is non-vacuous: every declared kind is produced by at least 
 //                                           -> TypeError: function is not iterable
 //   "anno hasOwnProperty game.prg --force"  -> TypeError: accepted.includes is not a function
 //
-// A genuine unknown verb (`export-asm`, planted violation 3 above) refused
+// A genuine unknown verb (`bootstrap`, planted violation 3 above) refused
 // correctly the whole time, so the defect is specifically PROTOTYPE
 // INHERITANCE, not "unknown verbs are unhandled". That distinction is why each
 // case below asserts the refusal MESSAGE rather than merely "did not throw":
@@ -582,7 +601,7 @@ test("WR-19 discrimination control: an ORDINARY unknown verb and a REAL verb are
   // Both halves in one test, so the property under test is the
   // discrimination rather than the refusal. A predicate that refused every
   // verb would satisfy the four cases above.
-  const ordinary = problemsFor("vice-mcp anno export-asm game.annostore");
+  const ordinary = problemsFor(`vice-mcp anno ${GONE_VERB} game.annostore`);
   assert.equal(ordinary.length, 1, ordinary.join("; "));
   assert.match(ordinary[0]!, /no such verb/i);
   assert.deepEqual(problemsFor("vice-mcp anno coverage game.prg --store game.annostore"), [], "a real verb must still pass");

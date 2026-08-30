@@ -13,9 +13,11 @@
 //      MASTRA_TELEMETRY_DISABLED=1 in the child env), and asserts no line of
 //      stdout is a JSON-RPC frame -- the proof the subcommand short-circuits
 //      before the MCP server ever starts.
-//   2. THE NARROWING IS REAL. Each of the six removed verbs is rejected, and
-//      the rejection names the two that exist. A verb removed from the
-//      dispatch switch but left in USAGE, or vice versa, fails here.
+//   2. THE NARROWING IS REAL. Each verb that is still removed is rejected, and
+//      the rejection names the ones that exist. A verb removed from the
+//      dispatch switch but left in USAGE, or vice versa, fails here. Five of
+//      D-14's six are still gone; `export-asm` returned on 2026-08-31 as a
+//      rebuild over the annotation store and moved to `SURVIVING_VERBS`.
 //   3. THE OPTION CONTRACT (IN-06). `VERB_OPTIONS` and USAGE agree per verb,
 //      every documented option is accepted, and every undocumented one is
 //      refused with the verb's own name on the front.
@@ -48,13 +50,23 @@ import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The six verbs D-14 removed. Hand-listed on purpose: deriving it from
- * `VERB_OPTIONS` would assert that a removed verb is removed, which is a
- * tautology. This list is what makes "the narrowing happened" falsifiable. */
-const REMOVED_VERBS = ["bootstrap", "export-asm", "verify", "gen-enums", "export-lbl", "import-lbl"];
+/** The verbs D-14 removed THAT ARE STILL GONE. Hand-listed on purpose:
+ * deriving it from `VERB_OPTIONS` would assert that a removed verb is removed,
+ * which is a tautology. This list is what makes "the narrowing happened"
+ * falsifiable.
+ *
+ * NARROWED FROM SIX TO FIVE on 2026-08-31: `export-asm` RETURNED, rebuilt over
+ * the annotation store behind a real-ACME byte-diff oracle, and moved to
+ * `SURVIVING_VERBS` in the same commit. It is removed from this list because a
+ * list of removed verbs that names a verb the CLI dispatches asserts something
+ * false; the removal of the other five is unchanged in force. `gen-enums`,
+ * `export-lbl` and `import-lbl` did NOT come back with it and no phase
+ * currently owns them. */
+const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import-lbl"];
 
-/** The two that survive. Same reasoning, opposite polarity. */
-const SURVIVING_VERBS = ["render-memmap", "coverage"];
+/** The verbs the CLI really dispatches. Same reasoning, opposite polarity.
+ * Grew from two to three on 2026-08-31 with `export-asm`. */
+const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm"];
 
 /** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
  * missing or placeholder key by name, so any test that renders for real needs
@@ -267,7 +279,7 @@ test("bin: `vice-mcp anno no-such-verb` exits non-zero and prints a usage block"
   assert.match(combined, /usage \(npm install\)/);
 });
 
-test("bin: `vice-mcp anno --help` lists exactly the two surviving verbs", () => {
+test("bin: `vice-mcp anno --help` lists exactly the surviving verbs", () => {
   for (const verb of SURVIVING_VERBS) {
     assert.match(helpResult.stdout, new RegExp(`\\b${verb}\\b`), `USAGE must document the surviving verb ${verb}`);
   }
@@ -290,7 +302,7 @@ test("bin: both invocations terminate on their own within the timeout, not via s
 // The narrowing itself (D-14). Six verbs are GONE, not disabled.
 // ---------------------------------------------------------------------------
 
-test("each of the six removed verbs is rejected, and the rejection names the two verbs that exist", async () => {
+test("each removed verb is still rejected, and the rejection names the verbs that exist", async () => {
   for (const verb of REMOVED_VERBS) {
     const { result: code, stdout, stderr } = await withCapturedConsole(() => runR2000Cli([verb, "some.project"]));
     assert.notEqual(code, 0, `the removed verb "${verb}" must be rejected, not dispatched`);
@@ -315,7 +327,7 @@ test("USAGE names neither the removed verbs nor their options", () => {
   }
 });
 
-test("VERB_OPTIONS carries exactly the two surviving verbs", () => {
+test("VERB_OPTIONS carries exactly the surviving verbs", () => {
   assert.deepEqual(Object.keys(VERB_OPTIONS).sort(), [...SURVIVING_VERBS].sort());
 });
 
@@ -737,17 +749,17 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 // IN-06 -- a verb refuses an option it does not implement instead of silently
 // dropping it. `VERB_OPTIONS` (one frozen map in `anno-cli.ts`) plus
 // `checkAcceptedOptions()`'s single pre-dispatch call site refuse any
-// `--flag`-shaped token a verb does not accept, for both verbs uniformly.
+// `--flag`-shaped token a verb does not accept, for every verb uniformly.
 // ---------------------------------------------------------------------------
 
 // The verb count here is a count site that MOVES with the dispatch switch,
 // alongside `ANNO_CLI_VERB_FLOOR` and `anno-verb-coverage.test.ts`'s own verb
 // list. Kept as a hand-maintained literal on purpose: deriving it from
 // `Object.keys(VERB_OPTIONS).length` would assert that a number equals itself.
-test("the verb-options map agrees with USAGE's own per-verb option lists, for both verbs (IN-06)", () => {
+test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 2, `expected exactly 2 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 3, `expected exactly 3 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
@@ -1391,5 +1403,236 @@ test("CR-03 (J, over-refusal control): a valid sidecar still renders", async () 
     assert.equal(code, 0, stderr);
     assert.match(stdout, /wrote/i);
     assert.match(readFileSync(join(ws, "ok.md"), "utf8"), /Range/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `export-asm` -- the third verb (EXPORT-01), added 2026-08-31.
+//
+// Everything here runs INSIDE the workspace root through
+// `withWorkspaceTempDir()`, for the reason the render-memmap section above
+// already records: all three of this verb's paths go through
+// `storePathWithinWorkspace()` against `repoRoot()`, so a system tmpdir path is
+// refused BY DESIGN. The two tests that WANT that refusal use `withTempDir()`
+// deliberately, and say so.
+//
+// Both temp helpers remove their directory with
+// `rmSync(..., { recursive: true, force: true })` in a `finally` (T-30-07):
+// `/tmp` is RAM-backed on this project's development host, so a leaked
+// directory is leaked memory rather than leaked disk.
+// ---------------------------------------------------------------------------
+
+/** A store plus the image it annotates, both inside `dir`.
+ *
+ * The image is a `.prg`: two little-endian load-address bytes then the payload.
+ * The payload is three real instructions (`lda #$01`, `sta $d020`, `rts`), so
+ * the export has something to DECODE rather than a single byte that would make
+ * every assertion below hold trivially. */
+function makeExportableProject(dir: string, imageName = "game.prg"): { storePath: string; imagePath: string } {
+  const imagePath = join(dir, imageName);
+  writeFileSync(imagePath, Buffer.from([0x00, 0xc0, 0xa9, 0x01, 0x8d, 0x20, 0xd0, 0x60]));
+  const storePath = join(dir, "game.annostore");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    setDataType(handle, { start: 0xc000, endInclusive: 0xc005, dataType: "code" });
+    setLabel(handle, { address: 0xc000, name: "start", kind: "User" });
+  } finally {
+    closeStore(handle);
+  }
+  return { storePath, imagePath };
+}
+
+test("export-asm: --help lists the verb and states, in as many words, that it does NOT assemble", () => {
+  assert.match(helpResult.stdout, /^ {2}export-asm <image> --store FILE \[--out FILE\] \[--force\]$/m);
+  assert.match(helpResult.stdout, /DOES NOT ASSEMBLE/);
+  // The claim this verb must never make. `--help` is the only channel by which
+  // a caller learns what the command does, so the absence has to hold there.
+  assert.doesNotMatch(
+    helpResult.stdout.slice(helpResult.stdout.indexOf("  export-asm <image>")),
+    /\bverified\b|\bverification passed\b/i,
+    "nothing in the export-asm block may read as a verification result -- the byte-diff oracle is test-only",
+  );
+});
+
+test("export-asm: writes ACME source to the derived default path beside the STORE and exits 0", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, "--store", storePath]),
+    );
+    assert.equal(code, 0, stderr);
+
+    // The derived default: the IMAGE's basename with a `.a` extension, in the
+    // STORE's own directory.
+    const outPath = join(ws, "game.a");
+    assert.ok(existsSync(outPath), `expected the derived default output at ${outPath}; stdout: ${stdout}`);
+
+    const source = readFileSync(outPath, "utf8");
+    assert.equal(source.split("\n")[0], "!cpu 6510", "the first line is the CPU directive the exporter emits");
+    assert.match(source, /^start = \$C000$/m, "the store's label reaches the source");
+
+    // The summary line names the CONFINED path -- the file that is actually on
+    // disk, never whatever the caller typed.
+    const lines = stdout.split("\n").filter((l) => l.length > 0);
+    assert.equal(lines.length, 2, `expected exactly two printed lines, got ${JSON.stringify(lines)}`);
+    assert.match(lines[0]!, /^export-asm: wrote /);
+    assert.ok(lines[0]!.includes(outPath), `the summary must name the confined path; got ${lines[0]}`);
+    assert.match(lines[0]!, /1 block\(s\), 1 symbol\(s\)/);
+
+    // The second line, asserted for its MEANING rather than as a slogan: the
+    // command must state that it assembled nothing.
+    assert.match(lines[1]!, /has NOT been assembled/);
+    assert.match(lines[1]!, /runs no assembler/);
+  });
+});
+
+test("export-asm: --out overrides the destination, and both runs produce byte-identical source", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const chosen = join(ws, "chosen.a");
+    const first = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", chosen]));
+    assert.equal(first.result, 0, first.stderr);
+    const firstBytes = readFileSync(chosen);
+
+    // Re-running over an unchanged store and image writes the same bytes. The
+    // property is DETERMINISM, so it is asserted on the bytes rather than on a
+    // count that could coincide.
+    const second = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", chosen, "--force"]),
+    );
+    assert.equal(second.result, 0, second.stderr);
+    assert.deepEqual(readFileSync(chosen), firstBytes, "a second export over an unchanged store must be byte-identical");
+  });
+});
+
+test("export-asm: an existing destination is refused without --force, and the file is left untouched", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const outPath = join(ws, "occupied.a");
+    writeFileSync(outPath, "PRECIOUS\n");
+
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /refusing to overwrite the existing file/i);
+    assert.match(stderr, /--force/);
+    assert.equal(readFileSync(outPath, "utf8"), "PRECIOUS\n", "the refusal must not have touched the file it refused to replace");
+
+    // And the opposite direction, so the refusal is a discrimination rather
+    // than a blanket one.
+    const forced = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", outPath, "--force"]),
+    );
+    assert.equal(forced.result, 0, forced.stderr);
+    assert.match(readFileSync(outPath, "utf8"), /^!cpu 6510/);
+  });
+});
+
+test("export-asm: a --store outside the workspace root is refused by the ONE seam, and nothing is created there", async () => {
+  await withTempDir(async (outside) => {
+    // Deliberately a SYSTEM tmpdir: this test wants the confinement refusal,
+    // which is precisely what a path outside the workspace root produces.
+    await withWorkspaceTempDir(async (ws) => {
+      const { imagePath } = makeExportableProject(ws);
+      const escaped = join(outside, "escaped.annostore");
+      const escapedOut = join(outside, "escaped.a");
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["export-asm", imagePath, "--store", escaped, "--out", escapedOut]),
+      );
+      assert.notEqual(code, 0);
+      assert.match(stderr, /outside the workspace root/i);
+      assert.equal(existsSync(escaped), false, "the refusal must not have created a store outside the root");
+      assert.equal(existsSync(escapedOut), false, "and must not have written the export there either");
+    });
+  });
+});
+
+test("export-asm: an --out outside the workspace root is refused even when both INPUTS are legal", async () => {
+  await withTempDir(async (outside) => {
+    await withWorkspaceTempDir(async (ws) => {
+      const { storePath, imagePath } = makeExportableProject(ws);
+      const escapedOut = join(outside, "PRECIOUS.a");
+      writeFileSync(escapedOut, "PRECIOUS\n");
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", escapedOut, "--force"]),
+      );
+      assert.notEqual(code, 0);
+      assert.match(stderr, /outside the workspace root/i);
+      // T-30-02's exact shape: a pre-existing file outside the root must not be
+      // replaced, and `--force` must not be a way past the seam.
+      assert.equal(readFileSync(escapedOut, "utf8"), "PRECIOUS\n", "a file outside the workspace root must be untouched");
+    });
+  });
+});
+
+test("export-asm: a missing annotation store is refused rather than CREATED", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { imagePath } = makeExportableProject(ws);
+    const missing = join(ws, "does-not-exist.annostore");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, "--store", missing]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /annotation store not found/i);
+    assert.match(stderr, /refusing to CREATE one/i);
+    assert.equal(existsSync(missing), false, "the refusal must not have created the store it refused to find");
+  });
+});
+
+test("export-asm: a nonexistent image is refused by name", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath } = makeExportableProject(ws);
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", join(ws, "no-such.prg"), "--store", storePath]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /image not found/i);
+  });
+});
+
+test("export-asm: a missing --store, and a --store with no value, are each refused by their OWN message", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { imagePath } = makeExportableProject(ws);
+
+    const absent = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath]));
+    assert.notEqual(absent.result, 0);
+    assert.match(absent.stderr, /--store FILE is required/);
+    assert.match(absent.stderr, /will not derive its path from <image>/);
+
+    const noValue = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath, "--store"]));
+    assert.notEqual(noValue.result, 0);
+    assert.match(noValue.stderr, /--store requires a value/);
+
+    // A flag-shaped "value" is a missing value, not a path called `--force`.
+    const flagShaped = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath, "--store", "--force"]));
+    assert.notEqual(flagShaped.result, 0);
+    assert.match(flagShaped.stderr, /--store requires a value/);
+  });
+});
+
+test("export-asm: an unknown option is refused by checkAcceptedOptions() BEFORE the verb runs", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--nonsense"]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /^export-asm: unknown option "--nonsense"/);
+    assert.match(stderr, /not accepted by this verb/);
+    // Nothing was written: the shared pre-dispatch check runs before
+    // `cmdExportAsm()` is ever entered.
+    assert.equal(existsSync(join(ws, "game.a")), false);
+  });
+});
+
+test("export-asm: more than one positional is refused rather than silently ignored", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, imagePath, "--store", storePath]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /usage: export-asm <image>/);
   });
 });
