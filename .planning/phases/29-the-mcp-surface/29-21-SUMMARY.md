@@ -475,3 +475,12 @@ None — no external service configuration required.
 ---
 *Phase: 29-the-mcp-surface*
 *Completed: 2026-08-30*
+
+## Self-Check: PASSED
+
+- `.planning/phases/29-the-mcp-surface/29-21-SUMMARY.md` — FOUND on disk (34848 bytes)
+- `.planning/REQUIREMENTS.md` — FOUND, modified by both task commits
+- `7a49a3d` — FOUND in git log (Task 1)
+- `5692265` — FOUND in git log (Task 2)
+- `75a4b8a` — FOUND in git log (SUMMARY)
+- Working tree clean; plan-wide diff lists exactly `.planning/REQUIREMENTS.md` plus this SUMMARY
