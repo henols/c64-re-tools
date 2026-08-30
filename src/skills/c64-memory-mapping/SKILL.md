@@ -206,10 +206,13 @@ skill, not the generator.
 
 **Installing those bit names into a program's own disassembly — dated withdrawal, 2026-08-29.** The
 table above only builds `anno-regbits.json`. Turning a specific program's register *writes* into
-named enum variants was the `gen-enums` CLI verb, and **that verb is WITHDRAWN from this surface
-and returns in Phase 30** as a rebuild over the annotation store, alongside the ACME export route
-and behind the same real-ACME byte-diff oracle. Do not invoke it here — it does not exist, and the
-invocation fails with an unknown-verb error and nothing to explain it.
+named enum variants was the `gen-enums` CLI verb, and **that verb is WITHDRAWN from this surface, and
+no phase currently owns its return.** This notice previously forecast that it would come
+back as a rebuild over the annotation store alongside the ACME export route; the ACME export route
+did come back on 2026-08-31, but the phase that rebuilt it covered that route only — no requirement
+and no success criterion of it mentioned `gen-enums`. That forecast is corrected here rather than
+deleted. Do not invoke the verb — it does not exist, and the invocation fails with an unknown-verb
+error and nothing to explain it.
 
 What it did, so the rebuild has a specification and so a reader knows what is missing: it read the
 program's own disassembly, created one enum variant per DISTINCT value actually written at each

@@ -132,32 +132,57 @@ you also assemble by hand, so these stay recognised as mnemonics.
 
 ## Disassembly
 
-This skill does not disassemble.
+This skill does not disassemble. The route that does is `anno export-asm`, and
+it lives in the `anno` CLI rather than here.
 
-**Dated withdrawal, 2026-08-29 — whole-program static disassembly is WITHDRAWN
-and returns in Phase 30 as `anno export-asm`, behind a real-ACME byte-diff
-oracle.** The route that used to turn a `.prg` or a flat 64K image into ACME
-source offline is gone from this plugin's surface, and it is deliberately NOT
-replaced by an instruction that would fail with an unknown-verb error and
-nothing to explain it. Nothing in this repository disassembles a whole program
-today.
-
-What returns, and on what terms, so the gap is a known one rather than a
-surprise: **Phase 30 rebuilds the exporter over the annotation store**, and
-settles its correctness by **assembling the output with a real ACME and diffing
+**Dated withdrawal 2026-08-29, dated return 2026-08-31 — both halves are kept,
+because the withdrawal is the record of why the route is shaped the way it is.**
+Whole-program static disassembly was WITHDRAWN on 2026-08-29 (`D-02`/`D-14`)
+rather than left standing on an unverified reassembly claim: the removed route
+settled correctness with a transcript parser, and the recorded false pass that
+discipline exists against read `ACME not found in PATH (skipped)` / `All
+roundtrip verifications passed.` / `EXIT=0` — exit zero, an aggregate line
+reading as a full pass, and the one assembler this project cares about never
+having run. On **2026-08-31 the route returned**, rebuilt over the annotation
+store as `anno export-asm`. It is not a rename of what was removed: its
+correctness is settled by **assembling the output with a real ACME and diffing
 the bytes against the input** — never by an exit code, and never by a string
-match on the exporter's own output. That is the change of kind, not a rename:
-the withdrawn route verified reassemblability through a transcript parser, and
-the recorded false pass that discipline exists against read `ACME not found in
-PATH (skipped)` / `All roundtrip verifications passed.` / `EXIT=0` — exit zero,
-an aggregate line reading as a full pass, and the one assembler this project
-cares about never having run.
+match on the exporter's own output.
 
-**In the meantime, read one range at a time.** `anno_read_region` and
-`anno_disassemble` render an explicit inclusive range out of the image on
-demand, capped at 4096 bytes per call and REFUSED by name above the cap rather
-than truncated. `c64-program-recon` documents that route and this withdrawal
-together; it is not restated there.
+**The live invocation:**
+
+```bash
+npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game.a
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
+```
+
+`<image>` and `--store` are **two separate arguments and neither is derived from
+the other** — the image supplies the bytes, the store supplies the names, ranges,
+typed regions and comments, and naming one does not name the other. `--out`
+defaults to a `.a` beside the **store**, not beside the image, because the export
+is a generated view of the annotations. An existing destination is refused rather
+than overwritten unless you pass `--force`.
+
+**The verb writes source text and runs no assembler.** Its own second output line
+says so, in as many words:
+
+```
+export-asm: this file has NOT been assembled -- this command writes source text and runs no assembler.
+```
+
+The real-ACME byte-diff oracle is **test-only** — it lives in
+`src/mcp/vice/acme-verify.ts`, is exercised by `acme-verify.test.ts` (hard-failed
+in CI with `VICE_REQUIRE_ACME=1`), and is deliberately absent from the published
+package, so nothing on the runtime path can reach it. A clean `export-asm` run is
+therefore evidence that source was written and nothing more; it is not an
+assembler verdict. If you need to know the emitted source reassembles, assemble
+it yourself — that is what this skill's own build route is for.
+
+**Reading one range at a time is still the right move for a single routine.**
+`anno_read_region` and `anno_disassemble` render an explicit inclusive range out
+of the image on demand, capped at 4096 bytes per call and REFUSED by name above
+the cap rather than truncated. `c64-program-recon` documents that route and this
+history together; it is not restated there.
 
 ## Setup
 
@@ -191,7 +216,7 @@ This one turns source into bytes. It does not restate what the others carry.
 | Where to start on an unknown program, and which address to read next | `c64-program-recon` |
 | What a specific address or bit means, or annotating a listing | `c64-memory-mapping` — `node … lookup '$D018'` |
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
-| Static disassembly of a `.prg` or flat image | **Withdrawn 2026-08-29; returns in Phase 30 as `anno export-asm`** behind a real-ACME byte-diff oracle (see Disassembly above) |
+| Static disassembly of a `.prg` or flat image | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31 behind a real-ACME byte-diff oracle that is test-only, so the verb writes source and assembles nothing (see Disassembly above) |
 | **Source in, `.prg` out** | here |
 
 ## References

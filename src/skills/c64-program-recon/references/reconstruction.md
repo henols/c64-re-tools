@@ -128,6 +128,7 @@ ACME's `--vicelabels` output is the `al C:xxxx .Name` format `vice_symbols_load`
 real names.
 
 **The other direction — exporting the annotation store into that same format — is withdrawn as of
-2026-08-29 and returns in Phase 30.** In the meantime a name discovered live goes into the store with
-`anno_set_label_name` first (the store is the merge point) and reaches the emulator only through a
-`.lbl` you produce yourself.
+2026-08-29, and no phase currently owns its return** (an earlier forecast naming a numbered phase
+for it is superseded: that phase covered the ACME export oracle only). So a name discovered live
+goes into the store with `anno_set_label_name` first (the store is the merge point) and reaches the
+emulator only through a `.lbl` you produce yourself.

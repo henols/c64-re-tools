@@ -220,15 +220,18 @@ naming all four sources, so a composition is never mistaken for something the st
 
 ### Take names to the running machine, and bring live findings back
 
-**Dated withdrawal, 2026-08-29 — the `.lbl` round trip is WITHDRAWN and returns in Phase 30.**
-The two CLI verbs that carried it, `export-lbl` and `import-lbl`, are gone from this surface: both
-were delivery paths into the retired static analyser, and rebuilding them over the annotation store
-is **Phase 30**'s work, behind the same real-ACME byte-diff oracle that phase builds for the export
-route. Do not reach for them here — they do not exist, and an invocation fails with an unknown-verb
+**Dated withdrawal, 2026-08-29 — the `.lbl` round trip is WITHDRAWN, and as of 2026-08-31 no phase
+currently owns its return.** The two CLI verbs that carried it, `export-lbl` and `import-lbl`, are
+gone from this surface: both were delivery paths into the retired static analyser. This notice
+previously forecast that a numbered phase would rebuild them alongside the ACME export route; that
+forecast was **wrong and is corrected here rather than deleted**. The phase that rebuilt the ACME
+export route covered that route only — no requirement and no success criterion of it mentioned the
+`.lbl` round trip — so the round trip still has no route and **no phase currently owns its return**.
+Do not reach for these verbs here: they do not exist, and an invocation fails with an unknown-verb
 error and no explanation of why.
 
 The **loop itself is not withdrawn**, only its two automated legs, and the discipline it encodes is
-what to keep doing by hand until the verbs return:
+what to keep doing by hand for as long as they stay gone:
 
 1. **The store is the merge point (D-29), not your own notes.** A name discovered live —
    disassembling the running machine, a checkpoint hit — is written into the store with
@@ -236,17 +239,19 @@ what to keep doing by hand until the verbs return:
 2. **`vice_symbols_load` REPLACES the machine's symbol table rather than merging into it.** Call it
    **exactly once** per generated `.lbl` file. Loading an older file a second time, after the store
    has moved on, silently discards the newer names.
-3. **Regenerate whole, never patch incrementally.** When the round trip returns, it regenerates the
-   entire `.lbl` from the store; a hand-written incremental patch reintroduces exactly the drift the
-   single merge point exists to prevent.
+3. **Regenerate whole, never patch incrementally.** The round trip regenerated the entire `.lbl`
+   from the store, and any rebuild of it must do the same; a hand-written incremental patch
+   reintroduces exactly the drift the single merge point exists to prevent.
 
-Two traps that survive the withdrawal and will still apply when it returns: the export carried
-**USER** labels only — auto-generated `a_D011`/`e_FFD2` externals never appeared in the written
-file — and neither direction ever created a store from a raw input.
+Two traps that survive the withdrawal and are part of the specification whoever eventually rebuilds
+this will read: the export carried **USER** labels only — auto-generated `a_D011`/`e_FFD2` externals
+never appeared in the written file — and neither direction ever created a store from a raw input.
 
-`gen-enums` — turning register writes into named enum variants — is **withdrawn on the same terms**
-and also returns in Phase 30. What it consumed, the `memmap.json` bit table, is documented in
-`c64-memory-mapping` along with the withdrawal.
+`gen-enums` — turning register writes into named enum variants — is **withdrawn on the same terms,
+and no phase currently owns its return either**. The same superseded forecast named a numbered phase
+for it; that phase's requirements covered the ACME export oracle only. What `gen-enums` consumed,
+the `memmap.json` bit table, is documented in `c64-memory-mapping` along with the withdrawal and the
+by-hand route that stays open.
 
 **Generate the memory map; do not hand-author it.** Fill in the provenance sidecar (schema and a
 filled example live in `templates/memory-map.template.md`), then:
@@ -299,15 +304,33 @@ can tell which one to believe.
 
 ## Static disassembly
 
-**Dated withdrawal, 2026-08-29 — whole-program ACME export is WITHDRAWN and returns in Phase 30
-as `anno export-asm`, behind a real-ACME byte-diff oracle.** The `export-asm` CLI verb that used to
-turn a `.prg` or a flat 64K image into ACME source offline is gone from this surface. Its
-replacement is not a rename: Phase 30 rebuilds it over the annotation store and settles correctness
-by **assembling the output with a real ACME and diffing the bytes against the input** — never by an
-exit code and never by a string match on the exporter's own output. Do not reach for `export-asm`
-here; it does not exist in this phase.
+**Dated withdrawal 2026-08-29, dated return 2026-08-31 — whole-program ACME export was WITHDRAWN
+and has come back as `anno export-asm`, behind a real-ACME byte-diff oracle.** The notice is kept
+rather than deleted because the withdrawal explains the shape of what returned. The removed verb
+turned a `.prg` or a flat 64K image into ACME source offline and settled its own correctness with a
+transcript parser; what returned is not a rename of it. It is rebuilt over the **annotation store**,
+and its correctness is settled by **assembling the output with a real ACME and diffing the bytes
+against the input** — never by an exit code and never by a string match on the exporter's own
+output.
 
-Two routes remain in the meantime, and they are the ones the rest of this playbook already uses:
+```bash
+npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game.a
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
+```
+
+`<image>` and `--store` are **two separate arguments and neither is derived from the other**: the
+image supplies the bytes, the store supplies the names, typed ranges and comments. `--out` defaults
+to a `.a` beside the **store** rather than beside the image, and an existing destination is refused
+rather than overwritten unless you pass `--force`.
+
+**It writes source and runs no assembler**, and says so in its own second output line
+(`this file has NOT been assembled`). The real-ACME byte-diff is a **test-only** oracle in this
+repository's test suite, absent from the published package and unreachable at runtime — so a clean
+run is evidence that source was written, not an assembler verdict. `acme-build` carries the full
+statement of that split.
+
+Two routes remain for reading a single routine, and they are the ones the rest of this playbook
+already uses:
 
 - **`anno_read_region`** and **`anno_disassemble`** render one routine or table at an **explicit**
   inclusive range, decoded fresh from the image bytes on every call and written nowhere. That is
@@ -321,9 +344,11 @@ Two routes remain in the meantime, and they are the ones the rest of this playbo
 The two are complementary — reach for the static reads before the emulator is even running, and for
 `vice_disassemble` once you have a live checkpoint to decode from.
 
-Extracting a program from a `.d64` image is likewise a Phase 30 concern; when it returns it will
-name the file inside the image explicitly and refuse rather than guess (D-02), because a guess could
-analyse a cracktro or loader stub instead of the game.
+Extracting a program from a `.d64` image is a separate capability that this repository still does
+not have, and — correcting an earlier note that assigned it to the same numbered phase as the ACME
+export oracle — **no phase currently owns it**. Whenever it is built it must name the file inside
+the image explicitly and refuse rather than guess (D-02), because a guess could analyse a cracktro
+or loader stub instead of the game.
 
 ## Before you touch the emulator
 
@@ -659,7 +684,7 @@ This one is the route between the stations. It does not restate what the others 
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
 | Assembling | `acme-build` |
-| Static disassembly of a `.prg` or flat image | **Withdrawn 2026-08-29; returns in Phase 30** as `anno export-asm` behind a real-ACME byte-diff oracle. Read one range at a time with `anno_read_region` in the meantime (see above) |
+| Static disassembly of a `.prg` or flat image | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31 behind a real-ACME byte-diff oracle that is test-only, so the verb writes source and assembles nothing. Read one range at a time with `anno_read_region` for a single routine (see above) |
 | Whether a byte is original or cracker-changed | `c64-provenance-diff` |
 | The emulator stopped moving — wedged, self-trapped, or respawned | `vice-wedge-triage` |
 | **Which address to read next, and what the answer rules out** | here |
