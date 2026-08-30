@@ -74,20 +74,30 @@ trap cleanup EXIT INT TERM
 # `scripts/ensure-mcp-deps.sh` on SessionStart -- which means it is ABSENT in a
 # freshly-created git worktree, and the documented command would then fail with
 # ERR_MODULE_NOT_FOUND for a reason that has nothing to do with the invocation
-# under test. Borrow the main checkout's tree through a symlink rather than
-# running any package-manager install (which would be a network fetch and is
-# explicitly not an auto-fixable step), and remove it again on exit so the
-# worktree is left exactly as found.
-DEPS="src/mcp/vice/node_modules"
-if [ ! -e "$DEPS" ]; then
-  MAIN_ROOT="$(cd "$(dirname "$(git rev-parse --git-common-dir)")" && pwd)"
-  if [ -d "$MAIN_ROOT/src/mcp/vice/node_modules" ]; then
-    ln -s "$MAIN_ROOT/src/mcp/vice/node_modules" "$DEPS"
-    DEPS_LINK="$DEPS"
-    echo "29-15-e2e: borrowed node_modules from ${MAIN_ROOT}/src/mcp/vice (temporary symlink)"
+# under test. Borrow the main checkout's tree rather than running any
+# package-manager install (a network fetch, and explicitly not an auto-fixable
+# step), and remove the borrowed link again on exit so the worktree is left
+# exactly as found.
+#
+# TWO DETAILS THAT LOOK LIKE OVER-ENGINEERING AND ARE NOT:
+#   - The probe is for `@mastra/mcp` ITSELF, never for the node_modules
+#     DIRECTORY. `npm run` creates a bare `src/mcp/vice/node_modules/.cache`
+#     (and `.bin`) as a side effect, so a directory-existence probe reports
+#     "deps present" over a tree with no packages in it at all -- which is the
+#     exact false-green this bootstrap exists to avoid.
+#   - The link goes at the WORKTREE ROOT, not over `src/mcp/vice/node_modules`.
+#     Node's resolver walks EVERY ancestor's node_modules, so a root-level link
+#     is found after the (possibly npm-stubbed) package-local one misses --
+#     and nothing that already exists has to be moved aside or restored.
+MAIN_ROOT="$(cd "$(dirname "$(git rev-parse --git-common-dir)")" && pwd)"
+if [ ! -d "src/mcp/vice/node_modules/@mastra/mcp" ] && [ ! -d "node_modules/@mastra/mcp" ]; then
+  if [ -d "$MAIN_ROOT/src/mcp/vice/node_modules/@mastra/mcp" ]; then
+    ln -s "$MAIN_ROOT/src/mcp/vice/node_modules" "node_modules"
+    DEPS_LINK="node_modules"
+    echo "29-15-e2e: borrowed node_modules from ${MAIN_ROOT}/src/mcp/vice (temporary root-level symlink)"
   else
-    echo "29-15-e2e: FAIL -- ${DEPS} is absent and no main-checkout copy was found at" >&2
-    echo "29-15-e2e:   ${MAIN_ROOT}/src/mcp/vice/node_modules" >&2
+    echo "29-15-e2e: FAIL -- @mastra/mcp is not installed here and no main-checkout copy was found at" >&2
+    echo "29-15-e2e:   ${MAIN_ROOT}/src/mcp/vice/node_modules/@mastra/mcp" >&2
     echo "29-15-e2e: Run scripts/ensure-mcp-deps.sh (or 'npm ci' in src/mcp/vice) first." >&2
     echo "29-15-e2e: This is the BOOTSTRAP being incomplete, NOT the documented command failing." >&2
     exit 4
