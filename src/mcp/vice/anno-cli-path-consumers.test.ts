@@ -41,11 +41,11 @@
 // is an aggregate COUNT: it requires at least as many
 // `storePathWithinWorkspace(` call sites in `anno-cli.ts` as there are entries
 // in `CLI_PATH_ARGUMENTS`. IT DOES NOT ASSOCIATE A PARTICULAR ARGUMENT WITH A
-// PARTICULAR CALL SITE, so "six arguments each confined once" and "five
+// PARTICULAR CALL SITE, so "nine arguments each confined once" and "eight
 // confined with one of them confined twice" are indistinguishable to it. That
-// association needs per-argument dataflow through a 900-line CLI -- a
+// association needs per-argument dataflow through a 1200-line CLI -- a
 // static-analysis job, deliberately not taken on in a gap-closure round -- and
-// tightening `>=` to `==` would not reach it either, since the same six sites
+// tightening `>=` to `==` would not reach it either, since the same nine sites
 // satisfy both readings. Three headers in `anno-cli.ts` used to credit this
 // file with that association; they were corrected in the same change that
 // added the positional direction, because a header naming a property this file
@@ -179,6 +179,9 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "coverage", argument: "<image>", kind: "positional" },
   { verb: "coverage", argument: "--store", kind: "flag" },
   { verb: "coverage", argument: "--out", kind: "flag" },
+  { verb: "export-asm", argument: "<image>", kind: "positional" },
+  { verb: "export-asm", argument: "--store", kind: "flag" },
+  { verb: "export-asm", argument: "--out", kind: "flag" },
 ];
 
 /**
@@ -195,11 +198,16 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
 const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample"];
 
 /**
- * MEASURED, NOT COPIED: six caller-supplied path arguments across the two
+ * MEASURED, NOT COPIED: nine caller-supplied path arguments across the three
  * verbs at this commit -- the store positional plus `--provenance` and `--out`
- * on `render-memmap`, and the image positional plus `--store` and `--out` on
- * `coverage`. Counted by reading both command functions, not carried over from
- * any planning document.
+ * on `render-memmap`, the image positional plus `--store` and `--out` on
+ * `coverage`, and the image positional plus `--store` and `--out` on
+ * `export-asm`. Counted by reading all three command functions, not carried
+ * over from any planning document.
+ *
+ * RAISED 6 -> 9 on 2026-08-31, in the commit that landed `export-asm`. Its
+ * three path arguments are confined by the same seam in `cmdExportAsm()`, and
+ * the raise is what makes that statement falsifiable rather than a claim.
  *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
@@ -208,7 +216,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample"];
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 6;
+const CLI_PATH_ARGUMENT_FLOOR = 9;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.
@@ -227,7 +235,7 @@ test("every path-shaped FLAG in CLI_PATH_ARGUMENTS is a real accepted option of 
   }
 });
 
-test("every verb named in CLI_PATH_ARGUMENTS is a real verb, and both real verbs are represented", () => {
+test("every verb named in CLI_PATH_ARGUMENTS is a real verb, and every real verb is represented", () => {
   const verbsInInventory = new Set(CLI_PATH_ARGUMENTS.map((e) => e.verb));
   const realVerbs = new Set(Object.keys(VERB_OPTIONS));
   assert.deepEqual(

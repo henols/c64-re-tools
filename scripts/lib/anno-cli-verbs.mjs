@@ -37,7 +37,8 @@
 // by git so `scripts/package.sh`'s `git archive` includes it.
 
 /**
- * The measured true count of `anno` CLI verbs: `coverage` and `render-memmap`.
+ * The measured true count of `anno` CLI verbs: `coverage`, `export-asm` and
+ * `render-memmap`.
  *
  * THIS IS A REPLACEMENT OVER A NEW SUBJECT, NOT A LOWERING -- and the
  * distinction is the whole reason this paragraph exists. A bare smaller number
@@ -53,13 +54,25 @@
  * Holding 8 would not have preserved a discipline; it would have asserted a
  * fact about verbs that are gone.
  *
- * THE RAISE-NEVER-LOWER DISCIPLINE RUNS FORWARD FROM 2, unchanged in force and
- * with a named next event: three of the six -- the enum generator and the two
- * halves of the VICE-label round trip -- return in **Phase 30** as rebuilds
- * over the annotation store, alongside the ACME export oracle. Each verb that
- * lands there raises this floor to the new true count, in the commit that adds
- * it. Nothing lowers it again without a decision of the same weight as D-14,
- * recorded the same way. (The `extractedAnno.size >= 18` floor in
+ * THE RAISE-NEVER-LOWER DISCIPLINE RAN FORWARD FROM 2 AND HAS ALREADY MOVED
+ * ONCE, unchanged in force. On 2026-08-31 `export-asm` RETURNED -- rebuilt over
+ * the annotation store behind a real-ACME byte-diff oracle, not restored code
+ * -- and that is what raises this floor from 2 to 3, in the same commit that
+ * added the verb.
+ *
+ * WHAT DID NOT COME BACK WITH IT, stated so nobody reads the raise as broader
+ * than it is: `gen-enums`, `export-lbl` and `import-lbl` did NOT return. No
+ * requirement and no success criterion of the work that rebuilt `export-asm`
+ * covers any of them, and NO PHASE CURRENTLY OWNS THEM. An earlier version of
+ * this paragraph forecast that all three would come back alongside the ACME
+ * export oracle; that forecast was wrong and is replaced here by what
+ * happened, rather than deleted. The symbol round trip therefore still has no
+ * route at all, which is recorded as a withdrawal in `.planning/PROJECT.md`'s
+ * shipped-capability list.
+ *
+ * Every verb that lands raises this floor to the new true count, in the commit
+ * that adds it. Nothing lowers it again without a decision of the same weight
+ * as D-14, recorded the same way. (The `extractedAnno.size >= 18` floor in
  * `check-skill-tool-coverage.mjs` is the precedent this mirrors, and it is a
  * DIFFERENT guard over a DIFFERENT subject -- MCP tool names, not CLI verbs --
  * so the two numbers never move together. WR-14 site 4, corrected 2026-08-30
@@ -70,7 +83,7 @@
  * The paragraph's argument is unchanged and `ANNO_CLI_VERB_FLOOR` is
  * untouched; only the citation now names something that exists.)
  */
-export const ANNO_CLI_VERB_FLOOR = 2;
+export const ANNO_CLI_VERB_FLOOR = 3;
 
 /**
  * Strips `//` line comments and `/* ... *\/` block comments from `src`,

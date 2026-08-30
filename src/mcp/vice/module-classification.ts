@@ -124,7 +124,7 @@
 //     parser with a range refusal, but its subject was the analyser's own
 //     spawn timeout environment variable and it had no consumer outside the
 //     family.
-//   - `checkAcceptedOptions` (`anno-cli.ts:238`) is a generic argv option
+//   - `checkAcceptedOptions` (`anno-cli.ts:292`) is a generic argv option
 //     checker, used only by the CLI it lives in and its own test. This is the
 //     one of the four whose module SURVIVED, so it is the one that keeps its
 //     citation.
@@ -380,7 +380,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildCoverageReport", line: 111 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildCoverageReport", line: 132 },
         { path: "src/mcp/vice/anno-coverage.test.ts", symbol: "buildCoverageReport" },
         { path: "src/mcp/vice/anno-coverage-grammar.test.ts", symbol: "coverageFindings" },
       ],
@@ -470,7 +470,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "renderMemoryMap", line: 106 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "renderMemoryMap", line: 119 },
         { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "renderMemoryMap" },
       ],
       requirements: ["SEAM-02"],
