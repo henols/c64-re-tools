@@ -1,8 +1,8 @@
 ---
 phase: 29-the-mcp-surface
-reviewed: 2026-08-30T08:40:00Z
+reviewed: 2026-08-30T14:05:00Z
 depth: standard
-files_reviewed: 90
+files_reviewed: 96
 files_reviewed_list:
   - CLAUDE.md
   - .github/workflows/ci.yml
@@ -12,9 +12,12 @@ files_reviewed_list:
   - scripts/check-no-regenerator2000.d.mts
   - scripts/check-no-regenerator2000.mjs
   - scripts/check-npm-packages.mjs
+  - scripts/check-skill-cli-invocations.mjs
   - scripts/check-skill-fork-honesty.mjs
   - scripts/check-skill-tool-coverage.mjs
   - scripts/generate-tool-support-table.mjs
+  - scripts/lib/anno-cli-invocations.d.mts
+  - scripts/lib/anno-cli-invocations.mjs
   - scripts/lib/anno-cli-verbs.d.mts
   - scripts/lib/anno-cli-verbs.mjs
   - scripts/lib/skill-corpus.d.mts
@@ -23,6 +26,8 @@ files_reviewed_list:
   - src/mcp/vice/absorbed-answer-key.test.ts
   - src/mcp/vice/acme-gate.ts
   - src/mcp/vice/anno-acme-ident.ts
+  - src/mcp/vice/anno-cli-invocations.test.ts
+  - src/mcp/vice/anno-cli-path-consumers.test.ts
   - src/mcp/vice/anno-cli.test.ts
   - src/mcp/vice/anno-cli.ts
   - src/mcp/vice/anno-confidence.test.ts
@@ -71,6 +76,7 @@ files_reviewed_list:
   - src/mcp/vice/fixtures/README.md
   - src/mcp/vice/hop-chain-comments.test.ts
   - src/mcp/vice/hostpath-consumers.test.ts
+  - src/mcp/vice/host-scripts.test.ts
   - src/mcp/vice/module-classification.test.ts
   - src/mcp/vice/module-classification.ts
   - src/mcp/vice/package.json
@@ -95,598 +101,515 @@ files_reviewed_list:
   - src/skills/routine-queue-walker/SKILL.md
   - src/skills/vice-wedge-triage/SKILL.md
 findings:
-  critical: 6
-  warning: 14
+  critical: 1
+  warning: 16
   info: 0
-  total: 20
+  total: 17
 status: issues_found
 ---
 
-# Phase 29: Code Review Report
+# Phase 29: Code Review Report (re-review after gap closure 29-13..29-17)
 
-**Reviewed:** 2026-08-30T08:40:00Z
+**Reviewed:** 2026-08-30T14:05:00Z
 **Depth:** standard
-**Files Reviewed:** 90
+**Files Reviewed:** 96
 **Status:** issues_found
 
 ## Summary
 
-Phase 29 replaced the external-analyser integration with a store-backed `anno_*` MCP surface
-(`anno-tools.ts`, 2,060 lines, 19 verbs), bumped `SCHEMA_VERSION` to 3 with `anno_enum_usage` and
-`removeScope()`, rebuilt `render-memmap` over the store, narrowed the CLI to two verbs, and deleted
-14 files / 8,221 lines behind a new removal gate.
+This overwrites the 2026-08-30T08:40Z review (90 files, 6 BLOCKER / 14 WARNING). Every prior
+finding was re-checked against the code as it now stands, by reading the fix and — for the six
+blockers and four of the behavioural warnings — by executing the shipped code.
 
-The store seam and the never-throw boundary are, on the whole, well built: `runAnnoTool()`'s
-`try`/`finally` is correct, the allow-list gate runs before any argument is looked at, `changed:false`
-is never mapped to an error, and refusals carry their class. The removal gate itself
-(`check-no-regenerator2000.mjs`) is sound — byte-level reads, no binary skip, pinned exact counts in
-both directions, a non-vacuity floor, and a proven-empty allow-list.
+**All six prior BLOCKERs are genuinely closed.** Not one of them is a comment-only repair:
 
-What did not survive scrutiny is the boundary **around** that core:
+* CR-01 — `sliceSpan()` now has the third case (`from > to`, `anno-tools.ts:1836`) and
+  `dispatchDisassemble()` slices the span the caller named instead of one pre-clamped to `last`
+  (`:1885-1889`). Both read verbs now reach the same `outsideImage()` from the same verdict.
+* CR-02 — all six caller-supplied paths on the two verbs pass `storePathWithinWorkspace()`
+  (`anno-cli.ts:383`, `:410`, `:425`, `:895-897`); `--force` is in `render-memmap`'s
+  `VERB_OPTIONS`; `refuseOverwrite()` runs on the *confined* path on the non-`--check` branch.
+* CR-03 — the sidecar parse failure is a digit-only offset extractor
+  (`anno-memmap-render.ts:117-120`, `:412`), and 29-16 applied the same treatment to
+  `anno-coverage.ts:2234-2265`'s sibling branch.
+* CR-04 — all four `render-memmap` invocations name `game.annostore`; the falsified dated note is
+  replaced by a correct one at `c64-program-recon/SKILL.md:271`.
+* CR-05 — `loadProjectImage()` dispatches `.raw`/`.bin`/`.prg` by extension first
+  (`anno-coverage.ts:2200-2235`), so the playbook's `coverage game.prg --store ...` runs.
+* CR-06 — phase one recurses on `batchArgumentsFor(args, call)` (`anno-tools.ts:1371`), the same
+  function phase two asks.
 
-* **Two of the three caller-supplied paths on the CLI are unconfined.** `--out` writes and
-  `--provenance` reads escape the workspace root entirely. I reproduced both against this working
-  tree: `anno coverage --out /tmp/…` wrote a file outside the repo, and `anno render-memmap --out
-  /tmp/…` *silently overwrote* a pre-existing file with no `--force` and no refusal. Both function
-  headers assert the opposite in writing.
-* **`anno_disassemble` produces a plausible-looking zero** — the exact failure mode this module's
-  own header is written against. An address wholly outside the image returns `isError:false`,
-  `instructions: 0`, and an `end_address` numerically *below* the `address` it was asked about. Its
-  sibling `anno_read_region` handles the same input correctly, so the two views documented as
-  sharing "one cap, both views" disagree.
-* **Three shipped skill playbooks document commands that cannot run.** The `render-memmap`
-  invocation in `c64-program-recon/SKILL.md` (and the *template an agent copies*) still names
-  `game.regen2000proj`, and a dated note actively asserts the verb "still reads the pre-store
-  project file" — plan 29-12 rebuilt it over the store. `routine-queue-walker`'s Phase-5 measurement
-  command passes a `.prg` to a verb that requires the deleted analyser's JSON format.
-* **Nested `anno_batch_execute` is unconditionally refused**, because phase-one validation does not
-  propagate the batch's `store` the way phase-two execution does — with a refusal message that tells
-  the caller the opposite of the tool's own description.
+Prior WR-07, WR-08 and WR-10 are closed. WR-14 is closed in the two user-facing places and in both
+stale cross-references; the two internal identifier renames are **deferred on a recorded decision**
+and are re-raised below only as a pointer, not as a new demand. WR-13 is likewise
+**deferred on record**.
 
-Every BLOCKER below was reproduced by executing the shipped code, not inferred. All probe artifacts
-were removed; the working tree is unmodified.
+`npm run test:automated` is green on this tree (2734 tests, 0 failures, 45.7 s), the new
+`check-skill-cli-invocations` gate is wired into CI at `.github/workflows/ci.yml:215` and passes,
+and `check-npm-packages.mjs` passes.
+
+What did not survive scrutiny:
+
+* **One new BLOCKER, reproduced.** `render-memmap --check` — the phase's own drift detector, and
+  the only thing standing between a generated view and a hand edit — reports `drifted` for a store
+  and sidecar that are byte-for-byte identical, purely because the checkout sits at a different
+  absolute path. The banner it compares carries realpaths; the content digest inside that same
+  banner is identical across the two runs. The gate contradicts the file's own digest.
+* **Eight prior WARNINGs are untouched**, two of them re-reproduced here against the current tree
+  rather than carried on the old report's word.
+* **The two new CI gates each have a hole in the class they were built to close.** The invocation
+  gate passes `anno coverage game.prg` with the REQUIRED `--store` omitted — a documented command
+  that exits 1, which is exactly CR-05's shape. And `anno-cli-path-consumers.test.ts`, cited in
+  three separate headers as the mechanism that "fails when one of them reaches a filesystem call
+  without passing through the seam", is a *count* of call sites that cannot associate a call with
+  an argument and does not cover positionals at all.
+* **A literal NUL byte was introduced into a shipped source file this phase**, and the gate that
+  documents that hazard cites its offset twice — both stale.
+
+Every BLOCKER and every reproduced WARNING below was executed against this working tree. All probe
+artifacts were removed; `git status` is unchanged from the session start.
 
 ## Critical Issues
 
-### CR-01: `anno_disassemble` answers a wholly-out-of-image address with a successful empty listing
+### CR-01: `render-memmap --check` reports drift on an unmodified store whenever the absolute path differs — while the file's own digest says the content is identical
 
-**File:** `src/mcp/vice/anno-tools.ts:1798-1803`, `1836-1840`
+**File:** `src/mcp/vice/anno-memmap-render.ts:462-463` (banner), `:601-603` (byte comparison);
+`src/mcp/vice/anno-cli.ts:383`, `:410`, `:425` (what is passed in)
 
-**Issue:** `sliceSpan()` guards only `from < 0 || to >= body.length`. It never checks `from > to`.
-`dispatchDisassemble()` clamps `end = Math.min(requestedEnd, last)` *before* slicing, so when
-`start` is past the end of the image, `from` exceeds `to` and `subarray()` returns an **empty**
-`Uint8Array` rather than `null` — the `outsideImage()` refusal at `:1840` is never reached.
-
-Reproduced against a `.prg` loading at `$1000` with a 4-byte payload:
-
-```
-anno_disassemble { address: 0x9000 }            -> isError:false
-{"origin":4096,"address":36864,"end_address":4099,"instructions":0,"listing":"!cpu 6510\n* = $9000"}
-
-anno_disassemble { address: 0x9000, end_address: 0x9010 }  -> identical
-anno_read_region { start:0x9000, end:0x9010 }   -> {"available":false,"reason":"...not entirely inside the image..."}   (correct)
-```
-
-Two facts make this a blocker rather than cosmetic. First, the body reports `end_address: 4099`
-(`$1003`) for `address: 36864` (`$9000`) — an end below the start, i.e. an incoherent range that no
-caller can validate. Second, this is precisely the "plausible-looking zero" MCP-04 and this file's
-own header forbid: an agent asked to disassemble a routine at an address it mis-derived is told the
-routine has no instructions, which reads as "this region is empty" rather than "you named the wrong
-image".
-
-**Fix:** make `sliceSpan()` total, and refuse before the clamp:
+**Issue:** Since plan 29-14, `cmdRenderMemmap()` passes the **realpath** returned by
+`storePathWithinWorkspace()` into `renderMemoryMap()` for all three paths. The renderer writes two
+of them verbatim into the generated file's banner:
 
 ```ts
-function sliceSpan(image: LoadedImage, start: number, end: number): Uint8Array | null {
-  const from = start - image.origin;
-  const to = end - image.origin;
-  if (from < 0 || to >= image.body.length || from > to) return null;   // <-- add from > to
-  return image.body.subarray(from, to + 1);
-}
+lines.push(`  store: ${storePath}`);
+lines.push(`  sidecar: ${provenancePath}`);
 ```
 
-and in `dispatchDisassemble()` refuse on the *requested* span before clamping, so `start > last` is
-reported by `outsideImage()`:
+`checkRenderedMemoryMap()` then compares the on-disk file against a fresh render **byte for byte**
+(`:601-603`). So the generated view is bound to the absolute path of the checkout that produced it,
+and `--check` fails anywhere else — a different developer's clone, CI, or (directly relevant here,
+per CLAUDE.md's GSD Execution Isolation section) any GSD worktree, which by construction sits at a
+different absolute path from `main`.
+
+Reproduced on this tree with an identical store and sidecar copied from `a/` to `b/`:
+
+```
+$ anno render-memmap .tmp-review/a/game.annostore --provenance .tmp-review/a/sidecar.json
+render-memmap: wrote .../a/memory-map.md (1 row(s), 0 [unknown], digest 50e6c1b4...c8abe2)
+
+$ cp -r .tmp-review/a .tmp-review/b
+$ anno render-memmap .tmp-review/b/game.annostore --provenance .tmp-review/b/sidecar.json --check
+render-memmap: drifted at line 3
+  expected:   store: /home/.../.tmp-review/b/game.annostore
+  actual:     store: /home/.../.tmp-review/a/game.annostore
+```
+
+Three things make this a blocker rather than cosmetic.
+
+1. **The verdict is wrong, and the message names two causes neither of which happened.** USAGE
+   (`anno-cli.ts:129-131`) and the shipped template (`memory-map.template.md:15-17`) both tell the
+   reader drift means "either a hand edit to the rendered file **or** a store change since it was
+   last rendered". Here it means neither, and nothing in the output says so.
+2. **The file's own digest disagrees with the gate.** `computeRenderDigest()` covers the sorted
+   store rows, the sidecar bytes and `RENDERER_VERSION` — not the paths — so both runs above
+   printed `50e6c1b4...c8abe2`. A reader comparing the two banners sees the same digest beside a
+   "drifted" verdict.
+3. **The documented remedy makes it worse.** `memory-map.template.md:17-19` says "There is no way
+   to 'fix' drift by editing the rendered file directly: the fix is always to re-run the
+   generator." Doing that rewrites the committed artifact with the current machine's paths, so the
+   file churns on every checkout and the *next* machine reds again. `--check` in CI is unusable for
+   a committed memory map, which is the artifact it was built for.
+
+**Fix:** make the banner path-independent — record the paths relative to the workspace root, which
+is a fact about the project rather than about the machine:
 
 ```ts
-if (start > last) return outsideImage("anno_disassemble", image, start, requestedEnd);
-const end = Math.min(requestedEnd, last);
+// anno-memmap-render.ts, inside renderMemoryMap()
+import { relative } from "node:path";
+...
+lines.push(`  store: ${relative(workspaceRoot, storePath)}`);
+lines.push(`  sidecar: ${relative(workspaceRoot, provenancePath)}`);
 ```
 
----
-
-### CR-02: `anno <verb> --out` writes outside the workspace root, and `render-memmap` overwrites without `--force`
-
-**File:** `src/mcp/vice/anno-cli.ts:323`, `:355`, `:770-771`, `:788`, `:840`
-
-**Issue:** Both verbs put *some* of their caller-supplied paths through
-`storePathWithinWorkspace()` and leave `--out` outside it entirely. `cmdCoverage()` confines
-`project` and `store` (`:770-771`) then calls `writeFileSync(out, …)` (`:840`) on the raw argument.
-`cmdRenderMemmap()` confines `store` (`:301`) then calls `writeFileSync(outPath, …)` (`:355`), where
-`outPath` is the raw `--out` when supplied (`:323`).
-
-Both headers state the opposite as a maintained property — `:704` claims "Both caller-supplied paths
-are confined by `storePathWithinWorkspace()`" and `:41` calls it "the ONE confinement seam" — so the
-next maintainer has a written guarantee that the code does not keep. There are three caller-supplied
-paths on each verb, not two.
-
-`cmdRenderMemmap()` additionally never calls `refuseOverwrite()`, and `--force` is not in its
-`VERB_OPTIONS` entry at all, so the write is unconditional.
-
-Reproduced on this tree:
-
-```
-$ anno coverage <project> --store <store> --out /tmp/ESCAPE-PROOF.json
-coverage: wrote /tmp/ESCAPE-PROOF.json (schema version 2)          # outside the repo
-
-$ echo "PRE-EXISTING IMPORTANT FILE" > /tmp/ESCAPE-VICTIM.md
-$ anno render-memmap <store> --provenance /tmp/sidecar.json --out /tmp/ESCAPE-VICTIM.md
-render-memmap: wrote /tmp/ESCAPE-VICTIM.md (0 row(s), …)           # silently destroyed, no --force
-```
-
-This CLI is invoked by skill playbooks through Bash with agent-composed arguments
-(`routine-queue-walker/SKILL.md:241`, `c64-program-recon/SKILL.md:255`), so the argument is
-LLM-supplied by design — the same threat model `anno-tools.ts` and `stock-symbols.ts` already confine
-against.
-
-**Fix:** run every caller-supplied path through the one seam, and make overwrite policy uniform:
-
-```ts
-// cmdCoverage
-let outPath: string | undefined;
-if (out) {
-  try { outPath = storePathWithinWorkspace(out, workspaceRoot); }
-  catch (err) { console.error(`coverage: ${errMsg(err)}`); return 1; }
-  if (!refuseOverwrite(outPath, force, "coverage")) return 1;
-}
-…
-writeFileSync(outPath!, …);
-
-// cmdRenderMemmap -- confine the explicit --out, and add --force to VERB_OPTIONS
-const outPath = out
-  ? storePathWithinWorkspace(out, workspaceRoot)
-  : join(dirname(storePath), "memory-map.md");
-if (!check && !refuseOverwrite(outPath, force, "render-memmap",
-      " -- the rendered map is a generated view; re-run with --force to regenerate it")) return 1;
-```
-
----
-
-### CR-03: `render-memmap --provenance` reads any file on the filesystem and echoes its opening bytes
-
-**File:** `src/mcp/vice/anno-cli.ts:311-313`, `src/mcp/vice/anno-memmap-render.ts:316`, `:353-362`
-
-**Issue:** `provenancePath` is never confined — not in `cmdRenderMemmap()` and not in
-`renderMemoryMap()`, whose `RenderMemoryMapOptions` doc comment documents `storePath`'s confinement
-in detail (`anno-memmap-render.ts:311-314`) and says nothing at all about `provenancePath` one line
-below (`:316`). `readFileSync(provenancePath, "utf8")` at `:353` then reads whatever the argument
-points at, and the JSON-parse failure at `:362` interpolates Node's own error message, which carries
-a content snippet.
-
-Reproduced:
-
-```
-$ printf 'SECRET_TOKEN=hunter2-abcdefg\n' > /tmp/secret.env
-$ anno render-memmap <store> --provenance /tmp/secret.env
-render-memmap: renderMemoryMap: provenance sidecar at "/tmp/secret.env" is not valid JSON:
-Unexpected token 'S', "SECRET_TOK"... is not valid JSON
-```
-
-An arbitrary-file-read oracle with partial content disclosure, driven by an agent-composed argument,
-in a tree whose stated architecture is that *every* host-facing or caller-supplied path goes through
-one seam.
-
-**Fix:** confine it at the CLI, next to `storePath`, and take the workspace root into
-`renderMemoryMap()`'s own contract:
-
-```ts
-let provenancePath: string;
-try {
-  storePath      = storePathWithinWorkspace(store, workspaceRoot);
-  provenancePath = storePathWithinWorkspace(provenance, workspaceRoot);
-} catch (err) { console.error(`render-memmap: ${errMsg(err)}`); return 1; }
-```
-
-and in `anno-memmap-render.ts`, either re-confine `provenancePath` against the `workspaceRoot` it
-already receives, or document it as confined-by-the-caller the way `storePath` is — silence is what
-let this through.
-
----
-
-### CR-04: The shipped playbook and the copy-forward template document a `render-memmap` invocation that cannot work
-
-**File:** `src/skills/c64-program-recon/SKILL.md:255-256` and `:263-267`;
-`src/skills/c64-program-recon/templates/memory-map.template.md:11-12`;
-identical shipped twins at `installer/skills/c64-program-recon/SKILL.md:255-256` and
-`installer/skills/c64-program-recon/templates/memory-map.template.md:11-12`
-
-**Issue:** Plan 29-12 rebuilt `render-memmap` over the annotation store — the verb's positional
-argument is now the store (`anno-cli.ts:284`, USAGE at `:91`), opened with `openStore(…,
-{mustExist:true})`. The playbooks were not updated. They still instruct:
-
-```bash
-npx -y @henols/vice-mcp anno render-memmap game.regen2000proj --provenance sidecar.json
-```
-
-and the dated note at `:263-267` asserts, in the present tense, the opposite of the shipped code:
-
-> "it still reads the pre-store project file shown above. … until this verb is rebuilt over the
-> `.annostore` it runs only against a project file you already have."
-
-Reproduced against a real `.regen2000proj`-shaped file:
-
-```
-render-memmap: …/game.regen2000proj: not an annotation store (file is not a database) --
-refusing to treat a truncated, empty or foreign file as an empty store…      (exit 1)
-```
-
-The `.regen2000proj` format's only producer was deleted in this same phase, so the documented input
-cannot be created either. `memory-map.template.md` is a template an agent **copies into every new
-project**, so the wrong route propagates rather than staying put, and `SKILL.md` is the primary
-route an agent reaches this verb by.
-
-**Fix:** re-point all four files onto the store, and delete the falsified dated note:
-
-```bash
-npx -y @henols/vice-mcp anno render-memmap game.annostore --provenance sidecar.json
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
-```
-
-Replace `:263-267` with the fact that is now true: the verb reads the store, creates neither the
-store nor the sidecar, and writes `memory-map.md` beside the store by default.
-
----
-
-### CR-05: `routine-queue-walker`'s Phase-5 measurement command cannot run — `coverage <project>` requires the deleted analyser's JSON format
-
-**File:** `src/skills/routine-queue-walker/SKILL.md:241` (and the shipped twin at
-`installer/skills/routine-queue-walker/SKILL.md:241`); `src/mcp/vice/anno-cli.ts:537-554`,
-`src/mcp/vice/anno-coverage.ts:2108-2155`
-
-**Issue:** The playbook's only measurement instruction is:
-
-```
-node src/mcp/vice/vice-proxy.ts anno coverage game.prg --store game.annostore
-```
-
-But `<project>` is parsed as JSON with a `raw_data_base64` gzip payload — `projectImage()` at
-`anno-cli.ts:541` does `JSON.parse(readFileSync(projectPath, "utf8"))`, and `loadProject()` at
-`anno-coverage.ts:2111` does the same. A `.prg` is not JSON. Reproduced:
-
-```
-$ anno coverage game.prg --store p.annostore ; echo $?
-coverage: the project's payload was UNAVAILABLE -- …/g.prg is not valid JSON --
-Unexpected token ' ', " ????" is not valid JSON
-1
-```
-
-The verb prints a whole report of zeros and then exits 1, so a reader skimming the output sees a
-completed census. Worse, the format `<project>` requires was produced only by `r2000-project.ts`,
-deleted in this phase — so unlike CR-04 there is no correct spelling of this command for a new
-project at all. `coverage` is currently reachable only for users holding a pre-deletion project file.
-
-This is the same class of gap the phase *did* record for `render-memmap` (a dated withdrawal note)
-and did not record here. Either the verb needs a `.prg`/flat-image input path (it already has
-`parsePrg`/`flatImageOrigin` one import away via `prg-image.ts`), or the playbook must carry an
-explicit dated withdrawal saying the measurement is unavailable this milestone. Shipping a
-measurement step that always fails is the worst of the three options.
-
-**Fix (preferred):** teach `projectImage()`/`loadProject()` the two image forms `anno-tools.ts`'s
-`loadImage()` already dispatches (extension first, never by byte length), and change the playbook
-and USAGE to `coverage <image> --store FILE`. **Fix (minimum):** add a dated withdrawal note to
-`routine-queue-walker/SKILL.md` beside `:241` naming the deleted producer, matching the shape
-`c64-program-recon/SKILL.md` uses for `gen-enums`/`export-lbl`.
-
----
-
-### CR-06: Nested `anno_batch_execute` is always refused — phase-one validation does not inherit `store`, phase-two execution does
-
-**File:** `src/mcp/vice/anno-tools.ts:1352-1355`, `:1366-1368`, `:1934-1936`
-
-**Issue:** `assertAnnoBatch()` recurses into a nested batch with the child's **raw** arguments:
-
-```ts
-if (call.name === "anno_batch_execute") {
-  assertAnnoBatch(call.arguments, depth + 1);   // <-- store NOT injected
-  return;
-}
-```
-
-The recursion then validates the grandchild calls with `batchArgumentsFor(args, call)` where `args`
-is the *nested* payload, whose `store` is `undefined` — because the outer batch supplies it. Phase
-two does the opposite: `dispatchBatchExecute()` at `:1934` builds `innerArgs =
-batchArgumentsFor(bag, call)`, which *does* carry the outer store into the nested batch.
-
-So every nested batch that relies on the documented inheritance is refused whole. Reproduced:
-
-```
-anno_batch_execute { store, calls: [ { name:"anno_batch_execute",
-  arguments: { calls: [ { name:"anno_save_project", arguments:{} } ] } } ] }
-
--> isError:true  [AnnoToolArgumentError] anno_save_project refused (calls[0]):
-   "store" must be a non-empty string … because there is no ambient current store to inherit.
-```
-
-Three things make this worse than a plain refusal. The message tells the caller *there is no
-inheritance*, while the tool description at `:900-911` says "The store … is named ONCE at the top
-level and every inner call inherits it; an inner `store` is overridden, never honoured." The
-refusal names `anno_save_project` as the culprit, so nothing in the message points at the nesting.
-And `ANNO_MAX_BATCH_DEPTH = 4` with its stack-exhaustion rationale (T-29-24) governs a shape that
-cannot currently reach depth 2 by the documented route — the cap is exercised only by callers who
-redundantly re-supply `store` inside (verified: that spelling does execute).
-
-**Fix:** propagate the effective arguments into the recursion, exactly as execution does:
-
-```ts
-if (call.name === "anno_batch_execute") {
-  assertAnnoBatch(batchArgumentsFor(args, call), depth + 1);
-  return;
-}
-```
-
-Add a test asserting that a depth-2 batch relying on inheritance validates *and* executes, and that
-depth-5 is refused by name — the depth cap currently has no reachable positive control.
+`workspaceRoot` is already a required option on both `RenderMemoryMapOptions` and
+`CheckRenderedMemoryMapOptions`, so no signature changes. Add a test that renders under root A,
+re-`--check`s the same bytes under root B, and asserts `in-sync` — that property is what the
+current suite does not pin, which is why this shipped. If the absolute paths are wanted for
+diagnostics, print them to stderr on the write path instead of into the compared artifact.
 
 ## Warnings
 
-### WR-01: `unique(address, bank)` on `anno_enum_usage` enforces nothing for the rows this code writes
+### WR-01 (NEW): the new invocation gate cannot see a documented command that omits a REQUIRED flag — the same class as CR-05
 
-**File:** `src/mcp/vice/anno-store.ts:290-296`, `:3332-3337`
+**File:** `scripts/lib/anno-cli-invocations.mjs:216-251`; `scripts/check-skill-cli-invocations.mjs:75-78`
 
-**Issue:** SQLite treats NULLs as distinct in a UNIQUE index. Every row `applyEnumUsage()` writes
-has `bank = null` (`:3341`), so the constraint never fires. Verified directly:
+**Issue:** `checkInvocation()` checks exactly two things: every flag is in `VERB_OPTIONS`, and
+every *positional*'s extension is a declared kind. It never checks that a verb's **required** flags
+are present, and it never checks a **flag value**'s kind. Both verbs have a required flag
+(`coverage --store` at `anno-cli.ts:872-878`, `render-memmap --provenance` at `:399-403`) and both
+exit 1 without it. Reproduced: I edited `routine-queue-walker/SKILL.md:241` to read
+`anno coverage game.prg` and re-ran the gate —
 
 ```
-create table t (…, bank integer, unique(address, bank));
-insert (4096, 1, null); insert (4096, 2, null);   -> SECOND INSERT SUCCEEDED
+check-skill-cli-invocations: OK -- 10 documented anno CLI invocation(s) ...
 ```
 
-The comment at `:3332` cites that constraint by name as the reason "ONE ADDRESS CARRIES AT MOST ONE
-ENUM". The invariant actually rests entirely on the select-then-update at `:3327-3335`, which holds
-single-process inside `applyWrite`'s transaction but has no database-level backstop — and
-`listEnumUsage()`'s join would happily return both duplicates.
+— green, for a documented command that cannot run. That is precisely the failure the gate's own
+header says it exists to catch ("a name-only floor cannot see a dead command"), reproduced one
+level up. A documented `--store game.prg` would pass for the same reason: only positionals get a
+kind check, never flag values.
 
-**Fix:** either make the invariant real —
-`create unique index anno_enum_usage_addr on anno_enum_usage(address, ifnull(bank, -1));` — or
-correct the comment to say the invariant is upheld by the guarded write path alone and that the
-declared constraint is inert while `bank` is null. Do not leave a comment naming a guarantee the
-schema does not provide.
+**Fix:** declare the required set beside `POSITIONAL_KINDS` and check it, and give flag values their
+own kinds map:
 
-### WR-02: `references anno_enum(id)` is inert, and `listEnumUsage()`'s inner join hides the consequence
+```js
+const REQUIRED_FLAGS = Object.freeze({ coverage: ["--store"], "render-memmap": ["--provenance"] });
+const FLAG_KINDS = Object.freeze({
+  coverage: { "--store": [".annostore", ".store"] },
+  "render-memmap": { "--provenance": [".json"], "--out": [".md"] },
+});
+// in checkInvocation():
+for (const flag of requiredFlags?.[verb] ?? []) {
+  if (!flags.some((f) => f.flag === flag)) problems.push(`anno ${verb}: ${flag} is required but was not supplied${where}`);
+}
+for (const { flag, value } of flags) {
+  const kinds = flagKinds?.[verb]?.[flag];
+  if (kinds && value && !isPlaceholder(value) && !kinds.includes(extensionOf(value))) {
+    problems.push(`anno ${verb}: ${flag} value ${value} is not one of ${kinds.join(", ")}${where}`);
+  }
+}
+```
 
-**File:** `src/mcp/vice/anno-store.ts:293`, `:3389-3403`
+Add a planted-violation case to `anno-cli-invocations.test.ts` for the omitted-required-flag shape;
+the file's existing controls only plant a wrong extension.
 
-**Issue:** SQLite does not enforce foreign keys unless `pragma foreign_keys = ON`, and this module
-deliberately sets no pragmas (trap 4). `listEnumUsage()` uses `join anno_enum e on e.id =
-u.enum_id`, so a usage row whose enum is missing would silently vanish from the listing rather than
-be reported — the store would return a shorter list than it holds, with nothing saying so. Reachable
-today only if a future verb deletes an enum (there is none) or a restored snapshot disagrees; but
-the phase added the table without adding the guard.
+### WR-02 (NEW): `anno-cli-path-consumers.test.ts`'s central assertion is a call-site COUNT, not an argument-to-seam association, and it is blind to positionals
 
-**Fix:** use a `left join` and surface an unresolved row as
-`{ enumName: null, unresolved: true }`, or add an explicit integrity assertion in
-`listEnumUsage()` that a usage row with no enum is an `AnnoStoreCorruptError`. Note the FK's
-inertness in the DDL comment either way.
+**File:** `src/mcp/vice/anno-cli-path-consumers.test.ts:131-141`, `:229-243`, `:260-269`
 
-### WR-03: `search_*` flags accept any non-`false` value, so the string `"false"` silently enables a corpus
+**Issue:** Three separate headers (`anno-cli.ts:63-70`, `:337-343`, and this file's own `:32-42`)
+name this test as the mechanism that "fails when one of [the path arguments] reaches a filesystem
+call without passing through the seam". It does not do that. It does:
 
-**File:** `src/mcp/vice/anno-derive.ts:459-462`; `src/mcp/vice/anno-tools.ts:1252-1257`
+```ts
+function seamCallCount(strippedSrc) { return strippedSrc.split("storePathWithinWorkspace(").length - 1; }
+confinesAtLeast(stripped, CLI_PATH_ARGUMENTS.length)   // 6 >= 6
+```
 
-**Issue:** `corpusEnabled()` returns `flag !== false`. The `inputSchema` declares
-`type: "boolean"`, but `vice-proxy.ts`'s `validate: (value) => ({ value })` enforces nothing (this
-file's own `AnnoToolArgumentError` doc comment says so), and `assertSearchArgs()` never checks the
-three flags. Reproduced: `anno_search { search_labels: "false" }` returns
-`"labels":{"searched":true,…}` — the opposite of what was asked, with no refusal. A JSON string
-where a boolean was meant is one of the most common LLM argument errors.
+That is a count with no association. It cannot distinguish "six arguments, each confined once" (the
+real state — verified, `anno-cli.ts` has exactly six call sites at `:383`, `:410`, `:425`,
+`:895`, `:896`, `:897`) from "five arguments confined, one of them twice, one raw": the count is 6
+in both. There is no slack today, which is what keeps it useful at all, but the property it is
+credited with is not the property it checks.
 
-**Fix:** validate them in `assertSearchArgs()` alongside every other argument:
+Second, narrower hole: assertion 2 (`:229-243`) — the direction its own comment calls "the one that
+catches the ACTUAL failure" — iterates `Object.entries(VERB_OPTIONS)`, which contains only
+**flags**. A new *positional* path argument (`coverage <project>` and `render-memmap <store>` are
+both positionals) is forced into `CLI_PATH_ARGUMENTS` by nothing at all: an author who adds one and
+forgets the inventory entry gets a green suite and a count that still matches.
+
+**Fix:** make the check per-argument rather than aggregate. Slice each `cmd*` function's body out of
+the stripped source and require one `\w+\s*=\s*storePathWithinWorkspace\(` assignment inside that
+body per inventory entry for that verb. Then extend assertion 2 to derive positionals too: the
+per-verb `USAGE` synopsis already names them (`render-memmap <store>`, `coverage <project>`), so
+parse the `<...>` tokens out of `USAGE` and require each to be in the inventory, exactly as flags
+are derived from `VERB_OPTIONS`.
+
+### WR-03 (NEW): `check-npm-packages.mjs`'s entire driver is behind an unasserted entry-point heuristic that fails silently
+
+**File:** `scripts/check-npm-packages.mjs:161-171`, `:394`
+
+**Issue:** 29-02 wrapped every assertion in the file in:
+
+```js
+const IS_ENTRY_POINT = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (IS_ENTRY_POINT) {
+  ... the whole gate ...
+}
+```
+
+If that comparison is ever false when the script *is* meant to run — invoked through a symlinked
+path, through an `npm`/`npx` shim that rewrites `argv[1]`, or on a platform where the realpath and
+the resolved argv path differ — the process prints **nothing at all** and exits **0**. CI reads
+that as a pass. A gate whose failure mode is silence is exactly the shape this repository's own
+removal gate carries a non-vacuity floor against; this one has none.
+
+It is correct today: `node scripts/check-npm-packages.mjs` passes (verified — 78 vice-mcp files, 34
+installer files, 7 skills, clean). The objection is the failure mode, not the current value.
+
+**Fix:** hoist the body into an exported `main()` and make the branch loud rather than silent:
+
+```js
+export function main() { /* the whole gate */ }
+if (IS_ENTRY_POINT) main();
+else if (process.argv[1] !== undefined && basename(process.argv[1]) === basename(fileURLToPath(import.meta.url))) {
+  console.error("check-npm-packages: invoked as an entry point but the entry-point test failed -- refusing to exit 0 silently");
+  process.exit(1);
+}
+```
+
+`check-no-regenerator2000.mjs` keeps importing `packFiles` and is unaffected.
+
+### WR-04 (NEW): a literal NUL byte was introduced into a shipped source file, and the gate that documents the hazard cites a stale offset twice
+
+**File:** `src/mcp/vice/anno-memmap-render.ts:315`; citations at
+`scripts/check-no-regenerator2000.mjs:65-67` and `:815`
+
+**Issue:** `computeRenderDigest()`'s canonicalisation embeds a raw `0x00` byte in its separator
+string literal rather than a `\u0000` escape sequence:
+
+```
+const canonical = JSON.stringify({ blocks, symbols, comments }) + "<a raw NUL byte>" + sidecarBytes + "<a raw NUL byte>" + RENDERER_VERSION;
+```
+
+The file did not exist at the diff base (`git show <base>:...anno-memmap-render.ts` -> does not
+exist), so this is new in this phase. The consequence is documented in this repo's own memory and
+in the removal gate's own header: GNU `grep` classifies the whole file as binary and silently skips
+it under `grep -c`/`grep -o` unless `-a` is passed, and that has already produced one wrong
+decision here. A `\u0000` escape produces a byte-identical digest input with none of that.
+
+The two citations of the byte are both **stale**: they say "offset 12862 (line 291)". Measured now:
+byte 15074, line 315. `removal-gate.test.ts:234-243` asserts only that *some* NUL is present, so
+nothing catches the drift — a reader following either citation lands in unrelated code.
+
+**Fix:** replace the raw byte with the escape and name why, in a constant so there is one spelling:
+
+```ts
+// A field separator written as an ESCAPE, never a raw byte: a raw NUL makes this whole file
+// binary to grep, and a grep-backed census then silently skips it.
+const DIGEST_FIELD_SEPARATOR = "\u0000";
+const canonical = JSON.stringify({ blocks, symbols, comments }) + DIGEST_FIELD_SEPARATOR + sidecarBytes + DIGEST_FIELD_SEPARATOR + RENDERER_VERSION;
+```
+
+The digest input is byte-identical, so no fixture or pin moves. Then delete both stale offsets from
+`check-no-regenerator2000.mjs` — with the raw byte gone the caveat is historical, and rule 4
+("never shell out to grep, never skip a file that looks binary") stands on its own without a
+line-number citation that has to be maintained.
+
+### WR-05 (NEW): USAGE drifted away from the code that 29-12 and 29-16 changed
+
+**File:** `src/mcp/vice/anno-cli.ts:125`, `:136-153`
+
+**Issue:** `--help` is the only route by which a CLI caller learns what to pass, and three of its
+statements are now wrong or incomplete:
+
+* `:125` — "writes --out (default: **memory-map.md beside the project**)". The code computes
+  `join(dirname(storePath), "memory-map.md")` (`:425`) — beside the **store**. "The project" is the
+  pre-29-12 vocabulary; the verb no longer takes a project.
+* `:136-138` — `coverage <project> ... <project> supplies the PAYLOAD BYTES and the load origin`.
+  After 29-16 the positional is an **image**: `.prg`, or an exactly-65536-byte `.raw`/`.bin`
+  (`anno-coverage.ts:2218-2231`). USAGE names none of those forms, so a user reading `--help`
+  cannot discover the input the shipped playbook now uses — while
+  `check-skill-cli-invocations.mjs:75-78` pins exactly those three extensions as the only ones a
+  playbook may document. Plan 29-16's own stated deliverable was to change "the playbook **and
+  USAGE**"; only the playbook moved.
+* `:150-152` — "Exits non-zero ONLY for a caller error or a store it could not read". It also exits
+  1 on an undecodable payload (`:961-966`), which `cmdCoverage()`'s own doc comment names and USAGE
+  does not.
+
+**Fix:** re-spell the synopsis as `coverage <image> --store FILE ...`, name the three accepted image
+forms in the body, change "beside the project" to "beside the store", and add the payload-decode
+failure to the exit-code sentence. Consider asserting the synopsis against `POSITIONAL_KINDS` so
+the two cannot drift again.
+
+### WR-06 (STILL OPEN — was WR-03): `search_*` flags accept any non-`false` value, so the string `"false"` silently enables a corpus
+
+**File:** `src/mcp/vice/anno-derive.ts:459-462`; `src/mcp/vice/anno-tools.ts:1254-1259`
+
+**Issue:** Unchanged. `corpusEnabled()` is still `flag !== false`, and `assertSearchArgs()` still
+validates only `store`, `image`, `query` and `max_results`. Every other argument family on this
+surface has a validator (`assertMaxResults`, `assertBaseRevisionArg`, `assertGetBlocksArgs`'s
+`include` membership check) and these three do not. `vice-proxy.ts`'s `validate: (value) => ({
+value })` enforces nothing, so a JSON string where a boolean was meant — one of the most common LLM
+argument errors — reverses the caller's intent with no refusal.
+
+**Fix:** as previously stated, add to `assertSearchArgs()`:
 
 ```ts
 for (const key of ["search_labels", "search_comments", "search_instructions"] as const) {
   const raw = argBag(args)[key];
   if (raw !== undefined && typeof raw !== "boolean") {
-    refuseArg(name, key, `"${key}" must be a boolean, got ${JSON.stringify(raw)} -- a string "false" would ENABLE the corpus.`, batchIndex);
+    refuseArg("anno_search", key, `"${key}" must be a boolean, got ${JSON.stringify(raw)} -- a string "false" would ENABLE the corpus.`, batchIndex);
   }
 }
 ```
 
-### WR-04: Four structural collections are returned whole, ungoverned by `max_results`, in a family that is not chunked
+### WR-07 (STILL OPEN — was WR-06): `corpora.<name>.entries` means two different things depending on which corpus was disabled
 
-**File:** `src/mcp/vice/anno-tools.ts:1608`, `:1647-1649`, `:1661`, `:1673`, `:1689`
+**File:** `src/mcp/vice/anno-derive.ts:543-570`
 
-**Issue:** `anno_get_blocks`'s `include` returns `scopes`/`enums`/`enum_usage` whole, and **every
-enum and scope write verb echoes the full collection back on every call**: `dispatchScope` returns
-all scopes, `dispatchCreateProjectEnum`/`dispatchUpdateProjectEnum` return all enums,
-`dispatchApplyEnumUsage` returns all enum usages. `anno_enum_usage` is address-keyed and can hold up
-to 65,536 rows. The file's own cap comment (`:1100-1120`) states that nothing on this family is
-chunked and that "the cap is the only bound there is", and the schema justifies the exemption with
-"these collections are small by construction" — which is an assumption about caller behaviour, not a
-property of the schema. A batch applying enum usage across a table returns a linearly growing list
-on each of its entries.
+**Issue:** Unchanged. `labelHits`/`commentHits` are built unconditionally (`:543`, `:548`), so a
+disabled labels or comments corpus still reports its true size; `instructionHits` is `[]` when
+disabled (`:565`), so a disabled instruction corpus reports `entries: 0`. The verb's description
+promises every corpus is named with the number of entries it held, which is false for exactly one
+of the three.
 
-**Fix:** bound the echo-backs (return a count plus the affected row, not the whole table), and give
-`include`'s collections their own explicit ceiling with a `truncated` flag, matching the
+**Fix:** report `entries: null` for any corpus with `searched: false`, matching the
+`{available:false, reason}` discipline the rest of this surface uses, so an unmeasured size is
+distinguishable from a measured zero.
+
+### WR-08 (STILL OPEN — was WR-01): `unique(address, bank)` enforces nothing for the rows this code writes
+
+**File:** `src/mcp/vice/anno-store.ts:290-295`, `:3327-3341`
+
+**Issue:** Unchanged. SQLite treats NULLs as distinct in a UNIQUE index, and every row
+`applyEnumUsage()` writes has `bank = null` (`:3340`), so `unique(address, bank)` never fires. The
+comment at `:3332-3334` cites that constraint by name as the reason "ONE ADDRESS CARRIES AT MOST
+ONE ENUM". The invariant actually rests entirely on the select-then-update at `:3327-3338`, which
+holds single-process inside `applyWrite`'s transaction but has no database-level backstop.
+
+**Fix:** either make the invariant real —
+`create unique index anno_enum_usage_addr on anno_enum_usage(address, ifnull(bank, -1));` — or
+correct the comment to say the invariant is upheld by the guarded write path alone and that the
+declared constraint is inert while `bank` is null.
+
+### WR-09 (STILL OPEN — was WR-02): `references anno_enum(id)` is inert and `listEnumUsage()`'s inner join hides the consequence
+
+**File:** `src/mcp/vice/anno-store.ts:293`, `:3389-3403`
+
+**Issue:** Unchanged. SQLite enforces no foreign key without `pragma foreign_keys = ON`, which this
+module deliberately never sets. `listEnumUsage()` uses `join anno_enum e on e.id = u.enum_id`, so a
+usage row whose enum is missing vanishes from the listing rather than being reported — a shorter
+list than the store holds, with nothing saying so.
+
+**Fix:** `left join` plus `{ enumName: null, unresolved: true }`, or an explicit
+`AnnoStoreCorruptError` for an unresolved row. Note the FK's inertness in the DDL comment either
+way.
+
+### WR-10 (STILL OPEN — was WR-04): four structural collections are returned whole, ungoverned by `max_results`, in a family that is not chunked
+
+**File:** `src/mcp/vice/anno-tools.ts:1626`, `:1665-1667`, `:1679`, `:1690`, `:1706`
+
+**Issue:** Unchanged. `dispatchScope` returns `scopes: listScopes(handle)`;
+`dispatchCreateProjectEnum`/`dispatchUpdateProjectEnum` return `enums: listProjectEnums(handle)`;
+`dispatchApplyEnumUsage` returns `enum_usage: listEnumUsage(handle)`; and `anno_get_blocks`'s
+`include` returns all three whole. `anno_enum_usage` is address-keyed and can hold 65,536 rows. The
+file's own cap comment (`:1100-1120`) states that nothing in this family is chunked and "the cap is
+the only bound there is". A batch applying enum usage across a table returns a linearly growing
+list on every entry.
+
+**Fix:** bound the echo-backs (return a count plus the affected row, not the whole table) and give
+`include`'s collections an explicit ceiling with a `truncated` flag, matching the
 `returned`/`matched`/`truncated` shape the list verbs already use.
 
-### WR-05: `store` and `image` are documented as "workspace-relative" but are resolved against `process.cwd()`
+### WR-11 (STILL OPEN — was WR-05): `store` and `image` are documented as "workspace-relative" but resolve against `process.cwd()`
 
-**File:** `src/mcp/vice/anno-tools.ts:407-414` (STORE_PROPERTY), `:416-426` (IMAGE_PROPERTY);
-`src/mcp/vice/anno-types.ts` `realpathOfNearestExisting()` → `resolve(p)`
+**File:** `src/mcp/vice/anno-tools.ts:407-426`; `src/mcp/vice/anno-types.ts:1080-1081`, `:1192-1202`
 
-**Issue:** Both schema descriptions say "Absolute or workspace-relative path".
-`storePathWithinWorkspace()` calls `resolve(path)`, which is relative to the **process working
-directory**, and only then confines the result against `repoRoot()`. Demonstrated: running the same
-relative argument from a subdirectory resolved to `<cwd>/<arg>`, not `<repoRoot>/<arg>`. The MCP
-server's CWD is whatever Claude Code launched it in, which is not guaranteed to equal the resolved
-repo root (`repo-root.ts` has a four-step fallback ladder that does not start at CWD).
+**Issue:** Unchanged. `realpathOfNearestExisting()` opens with `resolve(p)`, which is relative to
+the **process working directory**, and only then is the result confined against `repoRoot()`. The
+MCP server's CWD is whatever Claude Code launched it in; `repo-root.ts` has a four-step fallback
+ladder that does not start at CWD. It fails safe — a mis-resolved path is refused rather than
+silently accepted — but the refusal names a path the caller never typed, which is hard to diagnose.
 
-It fails safe — a mis-resolved path is refused by the confinement check rather than silently
-accepted — but the refusal will name a path the caller never typed, which is hard to diagnose.
-
-**Fix:** resolve relative arguments against the workspace root explicitly, or correct both
+**Fix:** resolve a relative argument against the workspace root explicitly, or correct both schema
 descriptions to "absolute, or relative to the server's working directory".
 
-### WR-06: `corpora.<name>.entries` means two different things depending on which corpus was disabled
+### WR-12 (STILL OPEN — was WR-11): the inode guard compares `ino` without `dev`
 
-**File:** `src/mcp/vice/anno-derive.ts:565-571`
+**File:** `src/mcp/vice/anno-tools.ts:1513-1533`
 
-**Issue:** `labelHits` and `commentHits` are computed unconditionally, so a disabled labels corpus
-still reports its true size; `instructionHits` is `[]` when disabled, so a disabled instructions
-corpus reports `entries: 0`. Verified: `{search_labels:false, search_instructions:false}` returns
-`labels:{searched:false,entries:0}` only because the store is empty — on a populated store the two
-disagree. The verb's own description promises "Every corpus is named in the body with the number of
-entries it held", which is false for the instructions corpus when it is not searched.
+**Issue:** Unchanged. `assertStorePresent()` returns `statSync(storePath).ino` and
+`assertSameFile()` compares that single number. Inode numbers are unique only per filesystem, so a
+swap to a same-numbered inode on a different device — a bind mount or tmpfs overlay, the exact
+shape this repo's architecture is built around — passes the guard the comment calls "closes the
+window between the existence check and the open".
 
-**Fix:** either count the instruction corpus's entries even when it is not searched (expensive, and
-the description warns about that), or report `entries: null` for any corpus with `searched:false`
-so an unmeasured size is distinguishable from a measured zero — the same
-`{available:false, reason}` discipline the rest of this surface uses.
+**Fix:** capture and compare `{ dev, ino }`. One extra field; the two call sites are adjacent.
 
-### WR-07: `prg-image.ts`'s reachability rationale — the stated reason it is in `files[]` — is now false
+### WR-13 (STILL OPEN — was WR-12, reproduced): `parsePrg()` accepts a load address whose payload runs past `$FFFF`, and the overflow now reaches two surfaces
 
-**File:** `src/mcp/vice/prg-image.ts:30-36`
+**File:** `src/mcp/vice/prg-image.ts:87-97`; `src/mcp/vice/anno-tools.ts:1852-1861`, `:1877`;
+`src/mcp/vice/anno-coverage.ts:2226-2231`
 
-**Issue:** The header claims: "`vice-proxy.ts` reaches `anno-cli.ts` (through a dynamic import), and
-`anno-cli.ts` imports `parsePrg` and `flatImageOrigin` from here." `anno-cli.ts:82` imports only
-`decodeRawData`. The two named functions are now reached through `anno-tools.ts`'s `loadImage()` and
-`anno-coverage.ts`, so the module *is* still reachable — but the sentence a maintainer would check
-this against is wrong, and this is exactly the "rationale that became false" pattern the store
-module's own header treats as evidence.
+**Issue:** Unchanged, and reproduced against this tree with a `.prg` carrying load address `$FF00`
+and a 1024-byte payload:
 
-**Fix:** rewrite `:30-36` to name the two live routes (`anno-tools.ts`'s `loadImage()` for the MCP
-surface, `anno-coverage.ts` for the census) and the one `anno-cli.ts` actually uses.
-
-### WR-08: `refuseOverwrite()`'s doc claims uniformity it does not have
-
-**File:** `src/mcp/vice/anno-cli.ts:182-193`
-
-**Issue:** "Shared by every verb that writes an output file, so overwrite safety stays uniform
-rather than one verb accreting a check the others lack (CR-01/CR-02)." `cmdRenderMemmap()` writes
-`--out` at `:355` and never calls it. The comment names the exact defect it now contains.
-
-**Fix:** wire `render-memmap` through `refuseOverwrite()` (see CR-02), or scope the comment to
-`coverage` and record why the generated view is exempt.
-
-### WR-09: Five modules with no production consumer are still shipped in the npm tarball
-
-**File:** `src/mcp/vice/package.json:56-73`
-
-**Issue:** After the deletion, `anno-d64.ts`, `anno-symbols.ts`, `anno-enum-gen.ts`,
-`anno-regbits-gen.ts` and `anno-register.ts` have no importer outside their own tests
-(`anno-regbits-gen.ts` is imported only by `anno-enum-gen.ts`, itself orphaned;
-`anno-acme-ident.ts` survives only through those two). Their previous consumers — `r2000-cli.ts`,
-`r2000-tools.ts`, `r2000-session.ts` — were deleted in plan 29-10. `check-npm-packages.mjs` asserts
-only that every *reachable* module is listed, never the converse, so nothing catches this.
-`anno-register.ts` in particular is a documentation registry with a test-only consumer.
-
-This matters beyond tidiness: `anno-seam.test.ts` and `shipped-modules.ts` derive their scan set
-from `files[]`, so unreachable modules dilute those guards, and 29-08's own register asserts verbs
-have "named consumers" while five of the modules behind them have none.
-
-**Fix:** decide per module. If Phase 30 rebuilds `gen-enums`/`export-lbl`/`import-lbl` over the
-store (as `anno-cli-verbs.mjs:50-60` says it will), record that here as a dated retention note
-naming the phase. Otherwise remove them from `files[]` and from the tree.
-
-### WR-10: `dispatchSaveProject()` reads the revision twice, so the field and the prose can disagree
-
-**File:** `src/mcp/vice/anno-tools.ts:1700-1710`
-
-**Issue:** `revision: currentRevision(handle)` at `:1702` and
-`String(currentRevision(handle))` at `:1707` are two separate reads on the same connection. A
-concurrent writer committing between them yields a body whose `revision` field and whose note text
-name different revisions — from the one verb whose entire purpose is reporting a revision that will
-be used as a `base_revision` compare-and-swap guard.
-
-**Fix:**
-
-```ts
-const revision = currentRevision(handle);
-return { store: handle.path, revision, wrote: false, note: `… durable at revision ${revision} …` };
+```
+anno_get_binary_info -> {"kind":"prg","origin":65280,"body_bytes":1024,"last_address":66303,...}
+anno_read_region     -> "...loads at $ff00 and ends at $102ff..."
+anno_disassemble { address: "0x10000" } -> [AnnoAddressError] 65536 is out of range -- expected 0..65535
 ```
 
-### WR-11: The inode guard compares `ino` without `dev`
+`last_address: 66303` and the five-hex-digit `$102ff` are outside the 6510's address space and are
+returned as successful answers, while `parseStoreAddress()` refuses any such value everywhere else
+on the same surface — so a caller who reads `last_address` and feeds it back is refused by the tool
+that just produced it. 29-16 gave `parsePrg()` a **second** consumer
+(`anno-coverage.ts`'s `loadProjectImage()`), so the same unvalidated origin now also seeds the byte
+census's address arithmetic on the CLI route.
 
-**File:** `src/mcp/vice/anno-tools.ts:1495-1514`
-
-**Issue:** `assertStorePresent()` returns `statSync(p).ino` and `assertSameFile()` compares it. Inode
-numbers are unique only per filesystem, so a swap to a same-numbered inode on a different device
-(a bind mount or tmpfs overlay — a shape this repo's architecture is built around) passes the guard.
-The cost of closing it is one field.
-
-**Fix:** capture and compare `{ dev, ino }`:
-
-```ts
-function assertStorePresent(name: string, p: string): { dev: number; ino: number } {
-  … const s = statSync(p); return { dev: s.dev, ino: s.ino };
-}
-function assertSameFile(name: string, p: string, before: { dev: number; ino: number }): void {
-  const now = statSync(p);
-  if (now.dev !== before.dev || now.ino !== before.ino) { … }
-}
-```
-
-### WR-12: `parsePrg()` accepts a load address whose payload runs past `$FFFF`, and the overflow reaches result bodies
-
-**File:** `src/mcp/vice/prg-image.ts:69-78`; `src/mcp/vice/anno-tools.ts:1806`, `:1834`, `:1877`
-
-**Issue:** `parsePrg()` validates only `length >= 3`. A `.prg` with load address `$FF00` and a 1 KB
-payload yields `origin + body.length - 1 > 0xffff`. `loadImage()` computes `last` from that
-(`:1834`), `dispatchBinaryInfo()` returns it as `last_address` (`:1877`), and `outsideImage()` prints
-it as a five-hex-digit "address" (`:1806`) — a value outside the 6510's address space that
-`parseStoreAddress()` would refuse anywhere else on this surface. `anno-derive.ts:197` caps the
-*image* at 65,536 bytes but says nothing about origin + length.
-
-**Fix:** refuse in `parsePrg()` by name, in the same shape as its length refusal:
+**Fix:** refuse in `parsePrg()`, in the same shape as its existing length refusal, so both loaders
+inherit it:
 
 ```ts
 if (origin + (bytes.length - 2) - 1 > 0xffff) {
-  throw new Error(`parsePrg: load address $${origin.toString(16)} plus ${bytes.length - 2} payload byte(s) runs past $ffff`);
+  throw new Error(
+    `parsePrg: load address $${origin.toString(16)} plus ${bytes.length - 2} payload byte(s) runs past $ffff -- ` +
+      "a .prg that does not fit the 6510's address space is refused by name rather than reported with a five-digit address",
+  );
 }
 ```
 
-### WR-13: The removal gate's `exemptionFor()` short-circuits, making any class added after the block-scoped ones unreachable
+Both `loadImage()` and `loadProjectImage()` already wrap `parsePrg()`'s throw into their own named
+refusal, so no call site changes.
 
-**File:** `scripts/check-no-regenerator2000.mjs:782-789`
+### WR-14 (STILL OPEN — was WR-09): five shipped modules have no production consumer, and one has no consumer at all
 
-**Issue:** For a path listed in a `blockScoped` or `skillBlocks` class, an occurrence outside a block
-`return null` immediately, aborting the loop over the remaining `EXEMPTION_CLASSES`. This is
-correct today only because those two classes are last in the array. A future class appended after
-them silently cannot cover any file that also appears in `NOTICES_FILES` or
-`SKILL_ATTRIBUTION_PINS` — and the failure mode is a false reintroduction error whose cause is
-invisible from the message. Contrast the `atLines` branch immediately above, which correctly
-`continue`s.
+**File:** `src/mcp/vice/package.json:51-73`
 
-**Fix:** `continue` instead of `return null`, and let the final `return null` after the loop be the
-only "no class covers this" answer. The per-class exact-count assertions already prevent a second
-class from over-covering.
+**Issue:** Unchanged, and re-measured on this tree by scanning every `.ts`/`.mts` importer:
 
-### WR-14: Mechanical renaming left user-facing and cross-referencing strings pointing at the retired vocabulary
+| module | importers |
+|---|---|
+| `anno-symbols.ts` | **none — not even a test** |
+| `anno-d64.ts` | `anno-d64.test.ts` only |
+| `anno-enum-gen.ts` | `anno-enum-gen.test.ts` only |
+| `anno-regbits-gen.ts` | `anno-enum-gen.ts` (itself orphaned) + `anno-regbits.test.ts` |
+| `anno-register.ts` | `anno-derivation.test.ts`, `anno-register.test.ts` |
+| `anno-acme-ident.ts` | reached only through the two orphans above |
 
-**File:** `src/mcp/vice/anno-cli.ts:866`, `:893`, `:902`; `src/mcp/vice/vice-proxy.ts:300`;
-`scripts/lib/anno-cli-verbs.mjs:62`; `scripts/check-npm-packages.mjs:236-239`
+All six are in `files[]` and ship in `@henols/vice-mcp`. `check-npm-packages.mjs` asserts only that
+every *reachable* module is listed, never the converse, so nothing catches this.
+`anno-seam.test.ts` and `shipped-modules.ts` derive their scan sets from `files[]`, so unreachable
+modules dilute those guards.
 
-**Issue:** The subcommand was renamed `r2000` → `anno` but several identifiers and user-visible
-strings were not:
+**Fix:** decide per module and record it. If Phase 30 rebuilds `gen-enums`/`export-lbl`/`import-lbl`
+over the store (as `.planning/REQUIREMENTS.md:73` and `scripts/lib/anno-cli-verbs.mjs` both say it
+will), add a dated retention note naming Phase 30 and the requirement ids — the same shape
+`prg-image.ts:30-50` now uses for its own reachability claim. Otherwise remove them from `files[]`
+and from the tree. `anno-symbols.ts`, with zero importers including tests, needs an answer either
+way.
 
-* `anno-cli.ts:893` — a user typing `vice-mcp anno badverb` is answered `r2000: unknown verb "…"`,
-  naming a subcommand that no longer dispatches. Same at `:902` for the last-resort catch.
-* `anno-cli.ts:866` — the CLI's exported entry point is still `runR2000Cli`, and
-  `vice-proxy.ts:307` imports it under that name.
-* `vice-proxy.ts:300` — the test hatch is still `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`.
-* `scripts/lib/anno-cli-verbs.mjs:62` cites "`extractedR2000.size >= 10`" as its precedent; that
-  identifier is now `extractedAnno` and the floor is 18 (`check-skill-tool-coverage.mjs:478`), so a
-  reader following the cross-reference finds nothing.
-* `scripts/check-npm-packages.mjs:236-239` mixes renamed and deleted module names in one historical
-  sentence ("the whole r2000 family (`anno-cli.ts`, `anno-d64.ts`, `r2000-project.ts`,
-  `r2000-launch.ts`, `r2000-verify.ts`)"), three of which no longer exist.
+### WR-15 (DEFERRED ON RECORD — was WR-13): the removal gate's `exemptionFor()` short-circuits
 
-**Fix:** rename `runR2000Cli` → `runAnnoCli` and the env hatch, change the two `r2000:` message
-prefixes to `anno:`, and repair the two stale cross-references. For the historical sentence in
-`check-npm-packages.mjs`, mark it explicitly past-tense with the pre-deletion names rather than
-half-renaming it — a citation that is half-renamed is unusable in both directions.
+**File:** `scripts/check-no-regenerator2000.mjs:773-797`
+
+**Issue:** Still present and **deliberately deferred on a recorded decision** — raised here as a
+pointer only, not as a new demand. For a path in a `blockScoped` or `skillBlocks` class, an
+occurrence outside a block `return null`s immediately (`:789`, `:793`), aborting the loop over the
+remaining `EXEMPTION_CLASSES`; the `atLines` branch immediately above correctly `continue`s
+(`:784`). Correct today only because those two classes are last in the array.
+
+**Fix (when the deferral is lifted):** `continue` instead of `return null`, letting the final
+`return null` after the loop be the only "no class covers this" answer.
+
+### WR-16 (PARTIALLY CLOSED, REMAINDER DEFERRED ON RECORD — was WR-14): the retired vocabulary survives in two internal identifiers
+
+**File:** `src/mcp/vice/anno-cli.ts:866`; `src/mcp/vice/vice-proxy.ts:300`, `:307`
+
+**Issue:** Plan 29-16 closed the user-facing half — both `r2000:` message prefixes are now `anno:`
+(`anno-cli.ts:1017`, `:1026`), `anno-cli-verbs.mjs`'s stale `extractedR2000`/floor cross-reference
+is repaired, and `check-npm-packages.mjs:235-251` is marked explicitly past-tense with the
+pre-deletion names. What remains is **deferred on a recorded decision**
+(`<wr14_scope_decision>`): the exported entry point is still `runR2000Cli` and the test hatch is
+still `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`. Noted so the deferral stays visible rather than
+becoming invisible, not re-litigated.
+
+**Fix (when the deferral is lifted):** rename both together with their two consumers
+(`vice-proxy.ts:307`, `vice-proxy.test.ts`), in one commit.
 
 ---
 
-_Reviewed: 2026-08-30T08:40:00Z_
+_Reviewed: 2026-08-30T14:05:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
