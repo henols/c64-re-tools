@@ -900,7 +900,8 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "Executes several curated anno_* calls against ONE store, in order, inside one open/close pair. Use it for a " +
       "multi-edit pass -- marking many regions, renaming many labels -- and not for calls that depend on each other's " +
       "results. The store (and the image, when the inner calls need one) is named ONCE at the top level and every " +
-      "inner call inherits it; an inner `store` is overridden, never honoured. TWO PHASES, and the difference matters " +
+      "inner call inherits it, INCLUDING through nesting -- a batch inside a batch inherits it too, and so does that " +
+      "batch's own inner calls; an inner `store` is overridden at every depth, never honoured. TWO PHASES, and the difference matters " +
       "when you read the answer. FIRST, the whole payload is pre-validated before anything is opened: a malformed " +
       "payload, an EMPTY calls array, a malformed entry, an inner name outside the curated set at any depth, an " +
       "illegal label name, or an over-cap region range refuses the WHOLE batch by index, and nothing executes. " +
@@ -1310,6 +1311,12 @@ function assertAddressDetailsArgs(args: unknown, batchIndex?: number): void {
  * identically whether the verb was called directly or smuggled inside a batch.
  * That is the shared-validator discipline, and it is what makes the outer
  * allow-list gate mean anything for a nested-argument verb.
+ *
+ * THE SAME DISCIPLINE APPLIES TO THE ARGUMENTS THEMSELVES. Every inner
+ * payload this function walks -- a leaf verb's or a nested batch's -- is
+ * obtained from `batchArgumentsFor()`, the one function phase two also asks.
+ * A phase that computed an inner call's arguments its own way would be
+ * validating a payload the executor never runs, which is what CR-06 was.
  */
 export function assertAnnoBatch(args: unknown, depth = 0): void {
   if (depth > ANNO_MAX_BATCH_DEPTH) {
@@ -1350,7 +1357,18 @@ export function assertAnnoBatch(args: unknown, depth = 0): void {
       );
     }
     if (call.name === "anno_batch_execute") {
-      assertAnnoBatch(call.arguments, depth + 1);
+      // RECURSES ON THE EFFECTIVE ARGUMENTS, NOT THE RAW BAG, and that is the
+      // whole of CR-06. Phase two -- `dispatchBatchExecute()` -- has always
+      // recursed on `batchArgumentsFor(bag, call)`; phase one used to recurse
+      // on `call.arguments`. The two phases therefore disagreed about what the
+      // inner payload WAS, and a nested batch written the documented way (the
+      // store named ONCE at the top, every inner call inheriting it) was
+      // refused whole at every depth -- with a message saying there is no
+      // ambient store to inherit, the exact opposite of this verb's own
+      // description. Read this line as a pair with the executor's recursion:
+      // one function, `batchArgumentsFor()`, defines an inner call's effective
+      // arguments, and both phases ask it.
+      assertAnnoBatch(batchArgumentsFor(args, call), depth + 1);
       return;
     }
     assertVerbArgs(call.name, batchArgumentsFor(args, call), i);
@@ -1695,16 +1713,25 @@ function dispatchApplyEnumUsage(handle: AnnoStoreHandle, args: unknown): unknown
  * leaving the caller to infer durability from an empty success. `curated` in
  * the manifest means a route is required; returning `{available:false}` was
  * rejected, because a permanent refusal for a curated disposition is what the
- * `omit` disposition is for and the manifest does not say `omit`. */
+ * `omit` disposition is for and the manifest does not say `omit`.
+ *
+ * THE REVISION IS READ EXACTLY ONCE, into a `const`, and that single value
+ * feeds both the returned field and the note's prose. This is the one verb
+ * whose output a caller is TOLD to use as a `base_revision` compare-and-swap
+ * guard, so a field and a prose that could name different revisions is a guard
+ * built on a number its own note contradicts -- and a guard nobody can trust is
+ * worse than no guard, because it is acted on (WR-10). Two reads agreeing is an
+ * accident of when they ran; one read agreeing with itself is a property. */
 function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
+  const revision = currentRevision(handle);
   return {
     store: handle.path,
-    revision: currentRevision(handle),
+    revision,
     wrote: false,
     note:
       "This verb performed NO write. Every mutating verb on this surface commits and fsyncs its own write before it " +
       "returns, so the store was already durable at revision " +
-      String(currentRevision(handle)) +
+      String(revision) +
       " when this call arrived and there was nothing for an explicit save to flush. The revision is reported so it can " +
       "be used as a base_revision compare-and-swap guard on a later write.",
   };
@@ -1794,14 +1821,33 @@ function shannonEntropy(bytes: Uint8Array): number {
 /** The slice of `image` covering the inclusive span, or `null` when the span
  * falls outside the bytes the image actually holds. `null` rather than a short
  * slice: a partial answer to a range question reads as a complete answer to a
- * smaller one. */
+ * smaller one.
+ *
+ * TOTAL OVER EVERY (start, end) PAIR, and that is three cases, not two. Below
+ * the origin and past the last byte are the obvious two. The third is an
+ * INVERTED span -- a resolved `from` past its own `to` -- which passes both
+ * bound checks while covering no bytes at all, and which `subarray()` would
+ * hand back as a zero-length success. That is the same failure as a short
+ * slice wearing a smaller hat: answering a question about no bytes with an
+ * empty result reads as a complete answer to a smaller question, which is the
+ * very thing this `null` return exists against (CR-01). */
 function sliceSpan(image: LoadedImage, start: number, end: number): Uint8Array | null {
   const from = start - image.origin;
   const to = end - image.origin;
-  if (from < 0 || to >= image.body.length) return null;
+  if (from < 0 || to >= image.body.length || from > to) return null;
   return image.body.subarray(from, to + 1);
 }
 
+/** The ONE refusal builder both read verbs report through. `anno_disassemble`
+ * and `anno_read_region` each call `sliceSpan()` exactly once, over the span
+ * their own answer would have reported -- the span the CALLER can see -- and
+ * each reaches this builder from that one verdict. Their AGREEMENT is the
+ * property CR-01 was reported against: the defect was `anno_disassemble`
+ * narrowing the requested end down to the image's last address BEFORE slicing,
+ * so an out-of-image start produced an empty slice instead of the `null` that
+ * reaches here, and the caller got `instructions:0` with an `end_address`
+ * numerically below the `address` asked about. Do not reintroduce a per-verb
+ * narrowing: it makes the two verbs disagree about the same bytes. */
 function outsideImage(name: string, image: LoadedImage, start: number, end: number): Record<string, unknown> {
   const last = image.origin + image.body.length - 1;
   return {
@@ -1835,16 +1881,21 @@ function dispatchDisassemble(args: unknown): unknown {
   // bound, or the default is the hazard.
   const requestedEnd = bag.end_address !== undefined ? parseStoreAddress(bag.end_address, { what: "end_address" }) : Math.min(start + cap - 1, last);
   if (bag.end_address !== undefined) assertWithinRegionCap("anno_disassemble", start, requestedEnd, undefined);
-  const end = Math.min(requestedEnd, last);
-  const slice = sliceSpan(image, start, end);
+  // Sliced on the span the CALLER named, never on one narrowed down to the
+  // image's last address first. The narrowing used to happen here, and it is
+  // what made this verb disagree with `anno_read_region` (CR-01) -- see
+  // `outsideImage()`. Note what is NOT lost: an omitted `end_address` derives
+  // `requestedEnd` from the image's own last address above, so it is inside
+  // the image by construction and nothing a caller named is narrowed away.
+  const slice = sliceSpan(image, start, requestedEnd);
   if (slice === null) return outsideImage("anno_disassemble", image, start, requestedEnd);
 
-  const instructions = decode(slice, start, { end });
+  const instructions = decode(slice, start, { end: requestedEnd });
   return {
     image: image.path,
     origin: image.origin,
     address: start,
-    end_address: end,
+    end_address: requestedEnd,
     instructions: instructions.length,
     listing: render(instructions, { origin: start }),
   };

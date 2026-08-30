@@ -575,6 +575,47 @@ test("anno_save_project reports the revision and PERFORMS NO WRITE -- the revisi
   );
 });
 
+test("WR-10: anno_save_project's revision FIELD and the revision named in its own prose are the same value", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      // Seeded so the revision is not whatever an empty store starts at --
+      // a pin that only held at revision 0 would hold for the wrong reason.
+      for (const [i, name] of ["first_label", "second_label", "third_label"].entries()) {
+        const written = await runAnnoTool("anno_set_label_name", { store, address: 0xc000 + i * 0x10, name });
+        assert.equal(written.isError, false, written.content[0]!.text);
+      }
+
+      const saved = await runAnnoTool("anno_save_project", { store });
+      assert.equal(saved.isError, false, saved.content[0]!.text);
+      const savedBody = (await body(saved)) as { revision: number; wrote: boolean; note: string };
+
+      // Extracted from the PROSE, never asserted as a literal: a literal would
+      // pin the fixture, and the property here is that the two AGREE. This is
+      // the one verb whose output a caller is told to use as a base_revision
+      // compare-and-swap guard, so a field and a note that can name different
+      // revisions is a guard built on a number its own note contradicts.
+      const named = /revision (\d+)/.exec(savedBody.note);
+      assert.ok(named, `the note must NAME the revision it is talking about -- got ${JSON.stringify(savedBody.note)}`);
+      assert.equal(Number(named![1]), savedBody.revision, "the field and the prose must be the SAME revision, by construction");
+
+      // The honest no-op stays honest: this must not have become a silent success.
+      assert.equal(savedBody.wrote, false);
+      assert.match(savedBody.note, /performed NO write/);
+    },
+  );
+});
+
+test("WR-10: dispatchSaveProject() reads the store revision EXACTLY ONCE", () => {
+  // Asserted over the comment-and-string-stripped source, so neither the
+  // function's own rationale nor the note's prose can affect the count.
+  const start = ANNO_TOOLS_CODE.indexOf("function dispatchSaveProject(");
+  assert.ok(start > 0, "dispatchSaveProject() must exist");
+  const bodyText = ANNO_TOOLS_CODE.slice(start, ANNO_TOOLS_CODE.indexOf("\n}", start));
+  const reads = bodyText.match(/currentRevision\(/g) ?? [];
+  assert.equal(reads.length, 1, "two reads are two chances to disagree -- the field and the prose must come from ONE const");
+});
+
 test("every verb closes the store: no handle is left open and no journal sidecar survives a repeated call", async () => {
   await withStore(
     () => {},
@@ -749,6 +790,164 @@ test("anno_read_region serves both views, and a span outside the image is report
       assert.equal(outsideBody.available, false);
       assert.ok(outsideBody.reason.length >= 40, "a bare token is not a reason");
       assert.match(outsideBody.reason, /partial answer to a range question/);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CR-01 / MCP-04: THE TWO READ VERBS MUST AGREE.
+//
+// `anno_disassemble` and `anno_read_region` ask the same question of the same
+// bytes through the same `sliceSpan()`/`outsideImage()` pair. The review
+// reproduced them DISAGREEING: `anno_read_region` refused an out-of-image
+// address correctly while `anno_disassemble` answered `isError:false` with
+// `instructions:0` and an `end_address` numerically BELOW the `address` asked
+// about -- a plausible-looking zero, and the exact shape ROADMAP criterion 5
+// and this surface's own prohibition forbid.
+//
+// The property under assertion below is their AGREEMENT, asserted in ONE test
+// per case rather than as two independent shapes that could drift apart again.
+// ---------------------------------------------------------------------------
+
+/** Loads at $1000 with FOUR payload bytes, so its last address is $1003:
+ * `lda #$00` / `inx` / `rts`. Deliberately tiny -- every address at or above
+ * $1004 is outside it, which is what the out-of-image cases need, and the
+ * three instructions give the over-refusal control something non-zero to
+ * count. */
+const TINY_PRG = prgBytes(0x1000, [0xa9, 0x00, 0xe8, 0x60]);
+
+/** The out-of-image address the review reported against: $9000, far past a
+ * four-byte image loading at $1000. */
+const OUT_OF_IMAGE = 0x9000;
+
+test("CR-01 / MCP-04: both read verbs return the SAME {available:false} verdict for an out-of-image address", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      const region = await runAnnoTool("anno_read_region", { store, image, start_address: OUT_OF_IMAGE, end_address: OUT_OF_IMAGE + 16 });
+
+      for (const [name, result] of [
+        ["anno_disassemble", disasm],
+        ["anno_read_region", region],
+      ] as const) {
+        assert.equal(result.isError, false, `${name}: a well-formed question this image cannot answer is not a caller error -- ${result.content[0]!.text}`);
+        const verdict = (await body(result)) as { available?: boolean; reason?: string };
+        assert.equal(verdict.available, false, `${name} must report the address as unanswerable, exactly as its sibling verb does`);
+        assert.equal(typeof verdict.reason, "string", `${name} must say WHY`);
+        assert.ok(verdict.reason!.length >= 40, `${name}: a bare token is not a reason`);
+      }
+    },
+  );
+});
+
+test("CR-01: the incoherent range is STRUCTURALLY absent -- an out-of-image disassemble carries no end_address and no instructions", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      assert.equal(disasm.isError, false, disasm.content[0]!.text);
+      const verdict = await body(disasm);
+
+      // The reproduced defect was `{instructions: 0, end_address: 4099}` for
+      // `address: 36864`. Asserting the KEYS are absent, not merely that the
+      // numbers are sane: a range whose end is below its own start must be
+      // unreachable, not unlikely.
+      assert.equal("end_address" in verdict, false, "a refusal must not carry a range at all -- an end_address below the address asked about is the reported defect");
+      assert.equal("instructions" in verdict, false, "a refusal must not carry an instruction COUNT -- zero reads as a measurement");
+      assert.equal("listing" in verdict, false, "and it must not carry an empty listing either");
+    },
+  );
+});
+
+test("CR-01: an inverted span is refused IDENTICALLY by both verbs, and the one no validator can catch is caught by sliceSpan()", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+
+      // FIRST LAYER. When the caller NAMES an end below the start, the shared
+      // range-shape validator in anno-types.ts refuses it for both verbs
+      // before any byte is indexed. That is a caller error, not an
+      // unanswerable question, and both verbs report it the same way -- the
+      // agreement CR-01 is about holds at this layer too.
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1003", end_address: "$1001" });
+      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$1003", end_address: "$1001" });
+      for (const [name, result] of [
+        ["anno_disassemble", disasm],
+        ["anno_read_region", region],
+      ] as const) {
+        assert.equal(result.isError, true, `${name} must refuse a transposed range, never serve it as a zero-length success`);
+        assert.match(result.content[0]!.text, /\[AnnoRangeShapeError\]/, `${name} must refuse it BY NAME through the shared validator`);
+        assert.match(result.content[0]!.text, /is below start/);
+      }
+
+      // SECOND LAYER, and the one that actually bit. An OMITTED end_address is
+      // derived from the image's own last address, so no caller named it and
+      // no argument validator can see it -- yet for a start past the image
+      // that derived end lands BELOW the start. Both of sliceSpan()'s bound
+      // checks pass for this pair (`from` is non-negative, `to` is inside the
+      // body) and ONLY the inverted-span condition catches it. This is the
+      // exact route the reported `{instructions:0, end_address:4099}` took.
+      const derived = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      assert.equal(derived.isError, false, derived.content[0]!.text);
+      const verdict = (await body(derived)) as { available?: boolean };
+      assert.equal(verdict.available, false, "sliceSpan() must be TOTAL -- an inverted span it alone can see is still refused, never subarray'd to nothing");
+    },
+  );
+});
+
+test("CR-01: sliceSpan()'s guard names all THREE cases, so the inverted-span condition cannot be dropped as redundant", () => {
+  // Asserted over the comment-and-string-stripped source: the doc comment
+  // above the function explains the third case at length, and must not be
+  // what makes this check pass.
+  const guard = /if\s*\(from < 0 \|\| to >= image\.body\.length \|\| from > to\) return null;/;
+  assert.match(ANNO_TOOLS_CODE, guard, "sliceSpan() must guard the low bound, the high bound AND the inverted span (CR-01)");
+  // And the reason is written down, or a later reader removes it as dead.
+  assert.match(ANNO_TOOLS_SOURCE, /INVERTED span/, "the third case must carry its own rationale in the doc comment");
+});
+
+test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds on both verbs, with a non-zero instruction count", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+
+      // Without this control a fix that refused EVERYTHING would pass the
+      // three cases above and prove nothing.
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1000", end_address: "$1003" });
+      assert.equal(disasm.isError, false, disasm.content[0]!.text);
+      const disasmBody = (await body(disasm)) as { available?: boolean; instructions: number; end_address: number; listing: string };
+      assert.equal(disasmBody.available, undefined, "a span inside the image is answered, not refused");
+      assert.ok(disasmBody.instructions > 0, "the fix must DISCRIMINATE -- a real span still decodes to real instructions");
+      assert.equal(disasmBody.end_address, 0x1003);
+      assert.match(disasmBody.listing, /rts/i);
+
+      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$1000", end_address: "$1003" });
+      assert.equal(region.isError, false, region.content[0]!.text);
+      const regionBody = (await body(region)) as { available?: boolean; bytes: number };
+      assert.equal(regionBody.available, undefined);
+      assert.equal(regionBody.bytes, 4);
+    },
+  );
+});
+
+test("CR-01: an OMITTED end_address still defaults to the image's own bound -- removing the clamp must not remove the ergonomics", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+      const last = 0x1003;
+
+      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1000" });
+      assert.equal(disasm.isError, false, disasm.content[0]!.text);
+      const disasmBody = (await body(disasm)) as { available?: boolean; instructions: number; end_address: number };
+      assert.equal(disasmBody.available, undefined, "an omitted end is derived from the image itself and is inside it by construction");
+      assert.ok(disasmBody.instructions > 0);
+      assert.ok(disasmBody.end_address <= last, `an omitted end must not run past the image's last address $${last.toString(16)}`);
     },
   );
 });
@@ -1129,6 +1328,143 @@ test("a batch names its store ONCE and every inner call inherits it -- an inner 
       const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
       assert.deepEqual(names, ["inherited"], "the write landed in the batch's own store, not the one the inner call named");
       assert.equal(existsSync(elsewhere), false, "the inner call's store was never even reached");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CR-06 / MCP-04: THE TWO PHASES MUST AGREE ABOUT WHAT AN INNER PAYLOAD IS.
+//
+// Phase-one validation used to recurse on a nested entry's RAW arguments while
+// phase-two execution recursed on its EFFECTIVE ones, so the documented
+// top-level store inheritance was refused WHOLE at every depth -- with a
+// message stating there is no ambient store to inherit, which is the opposite
+// of what the tool's own description promises. `ANNO_MAX_BATCH_DEPTH`
+// therefore governed a shape unreachable by the documented route: a cap with a
+// negative control and no reachable POSITIVE one.
+//
+// Both phases now obtain an inner call's effective arguments from
+// `batchArgumentsFor()`, and the cases below pin the positive control, the
+// negative control, the override discipline and the recursive allow-list --
+// the last two so the positive control is not paid for by weakening them.
+// ---------------------------------------------------------------------------
+
+test("CR-06 / MCP-04 positive control: a depth-1 nested batch relying on the DOCUMENTED store inheritance validates AND executes", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      // The inner batch names NO store -- exactly what the description tells a
+      // caller to write: "the store is named ONCE at the top level and every
+      // inner call inherits it".
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          {
+            name: "anno_batch_execute",
+            arguments: { calls: [{ name: "anno_set_label_name", arguments: { address: "$c000", name: "nested_label" } }] },
+          },
+        ],
+      });
+      assert.equal(result.isError, false, `the documented route must not be refused whole -- ${result.content[0]!.text}`);
+      const batchBody = (await body(result)) as { results: { status: string; result?: Record<string, unknown> }[]; failed: number };
+      assert.equal(batchBody.failed, 0);
+      assert.equal(batchBody.results[0]!.status, "success", "the inner batch must have EXECUTED, not merely validated");
+
+      // And the write really landed, in the store named once at the top.
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, ["nested_label"], "inheritance must reach the LEAF call, two levels down");
+    },
+  );
+});
+
+test("CR-06 negative control: a chain past the cap is still refused BY NAME, and nothing executes", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      // Depth is DERIVED from the cap, never hard-coded: raising the cap must
+      // not silently turn this negative control into a passing positive one.
+      // The top-level payload is depth 0, so `ANNO_MAX_BATCH_DEPTH + 1` nested
+      // payloads put the innermost at depth ANNO_MAX_BATCH_DEPTH + 1.
+      function nest(remaining: number): Record<string, unknown> {
+        if (remaining === 0) {
+          return { calls: [{ name: "anno_set_label_name", arguments: { address: "$c000", name: "would_have_landed" } }] };
+        }
+        return { calls: [{ name: "anno_batch_execute", arguments: nest(remaining - 1) }] };
+      }
+      const refused = await runAnnoTool("anno_batch_execute", { store, ...nest(ANNO_MAX_BATCH_DEPTH + 1) });
+
+      assert.equal(refused.isError, true, "past the cap the payload is refused, not walked");
+      assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
+      assert.match(refused.content[0]!.text, new RegExp(`deeper than ${ANNO_MAX_BATCH_DEPTH} levels`), "the refusal must NAME the cap's value");
+      assert.match(refused.content[0]!.text, /refused BY NAME rather than walked/);
+
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, [], "nothing may execute from a batch refused whole");
+    },
+  );
+});
+
+test("CR-06: an inner store is overridden by the batch's own in BOTH phases, at depth", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const elsewhere = join(dirname(ws), "elsewhere.annostore");
+      // BOTH the nested batch AND its leaf call name a different store. If
+      // phase one validated against `elsewhere` while phase two executed
+      // against `store` (or the reverse), the two phases would be targeting
+      // different stores -- which is the window propagating effective
+      // arguments closes.
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          {
+            name: "anno_batch_execute",
+            arguments: {
+              store: elsewhere,
+              calls: [{ name: "anno_set_label_name", arguments: { store: elsewhere, address: "$c000", name: "inherited_at_depth" } }],
+            },
+          },
+        ],
+      });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const batchBody = (await body(result)) as { results: { status: string }[] };
+      assert.equal(batchBody.results[0]!.status, "success");
+
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, ["inherited_at_depth"], "the write must land in the batch's OWN store, never the one an inner call named");
+      assert.equal(existsSync(elsewhere), false, "the store the inner calls named was never even reached");
+    },
+  );
+});
+
+test("CR-06: the recursive allow-list still bites -- an uncurated name TWO levels down refuses the WHOLE batch by index", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const refused = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          { name: "anno_set_label_name", arguments: { address: "$c100", name: "would_have_landed" } },
+          {
+            name: "anno_batch_execute",
+            arguments: {
+              calls: [{ name: "anno_batch_execute", arguments: { calls: [{ name: "anno_delete_everything", arguments: {} }] } }],
+            },
+          },
+        ],
+      });
+      assert.equal(refused.isError, true, "the positive control above must not have been paid for by weakening this");
+      assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
+      assert.match(refused.content[0]!.text, /anno_delete_everything/);
+      assert.match(refused.content[0]!.text, /refused WHOLE/);
+      assert.match(refused.content[0]!.text, /calls\[0\]/, "the refusal names the index of the offending inner call");
+
+      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
+      assert.deepEqual(names, [], "the good FIRST call must not have landed -- refusal happens before anything is opened");
     },
   );
 });
