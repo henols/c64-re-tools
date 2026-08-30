@@ -37,14 +37,23 @@
 //       kept in the past tense because they are why the discipline has the
 //       shape it has, not because anything still calls that producer.
 //
-//   WHERE THE ROUTE RETURNS: **Phase 30**, rebuilt over the Phase 28
-//   annotation store alongside the ACME export oracle. `.planning/PROJECT.md`
-//   carries the dated R2000-14/R2000-15 withdrawal notice and says the same
-//   thing: this is a temporary loss of a capability that was genuinely
-//   Validated, not a completed one being tidied away. The demonstration was
-//   made end to end against genuine unpatched stock `x64sc` and that record
-//   still stands. A reader checking today whether the symbol round trip works
-//   should read this as: it does not, and the reason is a sequencing choice.
+//   WHERE THE ROUTE RETURNS: **NO PHASE CURRENTLY OWNS ITS RETURN**, and the
+//   earlier version of this line said otherwise. It forecast that the `.lbl`
+//   round trip would be rebuilt over the annotation store alongside the ACME
+//   export oracle. Half of that happened on 2026-08-31 -- the ACME export
+//   route came back as the `anno export-asm` CLI verb -- but the work that
+//   rebuilt it covered that route ONLY: no requirement and no success
+//   criterion of it mentioned `export-lbl` or `import-lbl`. So the forecast
+//   was wrong, and it is CORRECTED here rather than deleted, because deleting
+//   a withdrawal notice erases the record that a capability went missing and
+//   why. `.planning/PROJECT.md` carries the dated R2000-14/R2000-15 notice and
+//   says the same thing: this is a temporary loss of a capability that was
+//   genuinely Validated, not a completed one being tidied away. The
+//   demonstration was made end to end against genuine unpatched stock `x64sc`
+//   and that record still stands. A reader checking today whether the symbol
+//   round trip works should read this as: it does not, nobody currently owns
+//   making it work again, and the specification for whoever eventually does is
+//   the measured-facts block below.
 //
 // WHY THIS FILE EXISTS: static-analysis symbols going OUT to VICE and
 // live-discovered symbols coming IN from VICE must flow through explicit
@@ -89,8 +98,9 @@
 //     child (T-11-NAME-INJECT, closed). `validateLabelFileForImport()` below
 //     validates every name against `anno-acme-ident.ts`'s
 //     `assertLegalAcmeIdentifier()` BEFORE any argv is built -- REJECT, never
-//     sanitize. Phase 30's rebuilt import route must call it first, for the
-//     same reason and in the same position.
+//     sanitize. Any rebuilt import route must call it first, for the same
+//     reason and in the same position -- the obligation is on the route,
+//     whenever one is built, and is not held by a numbered phase.
 import { readFileSync, statSync } from "node:fs";
 
 import { parseViceLabelFile, MAX_LABEL_FILE_BYTES } from "./stock-symbols.ts";
@@ -160,10 +170,11 @@ export interface ImportLabelsUnverified {
  *
  * KEPT ACROSS THE CUT (plan 29-10). The route that produced it is gone; the
  * distinction it encodes is the whole lesson of the `--import_lbl` discard
- * measured in this module's header, and Phase 30's rebuilt import route is
- * expected to return this shape rather than invent a weaker one. A rebuilt
- * route that returns a bare name list has silently dropped the property this
- * type exists to make unrepresentable.
+ * measured in this module's header. Because no phase currently owns rebuilding
+ * that route, this type is its only surviving contract; whenever a route IS
+ * built it is expected to return this shape rather than
+ * invent a weaker one. A rebuilt route that returns a bare name list has
+ * silently dropped the property this type exists to make unrepresentable.
  */
 export type ImportLabelsResult = ImportLabelsVerified | ImportLabelsUnverified;
 
@@ -201,9 +212,10 @@ export interface ValidatedLabelFile {
  * text, never a second `al C:` regex (this module's header forbids a third
  * parser for that format).
  *
- * Phase 30's rebuilt import route calls this FIRST, before it builds any
- * argv. That position is the property T-11-NAME-INJECT was closed on: no
- * illegal name can reach a child, because no child exists yet when this runs.
+ * A rebuilt import route -- whenever one is built, since no phase currently
+ * owns writing it -- calls this FIRST, before it builds any argv. That
+ * position is the property T-11-NAME-INJECT was closed on: no illegal name can
+ * reach a child, because no child exists yet when this runs.
  */
 export function validateLabelFileForImport({ lblPath }: { lblPath: string }): ValidatedLabelFile {
   let size: number;

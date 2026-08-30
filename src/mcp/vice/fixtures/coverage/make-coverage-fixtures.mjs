@@ -77,8 +77,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // WHY INLINE RATHER THAN RE-POINT ONTO THIS PROJECT'S OWN STORE. The twelve
 // fixtures' consumers read the ANALYSER's project file. Re-pointing the writer
 // at the Phase 28 annotation store would re-derive all twelve committed
-// fixtures and change what the census controls measure -- which is Phase 30's
-// work, on Phase 30's evidence, not a side effect of a deletion. The deleted
+// fixtures and change what the census controls measure -- which is deliberate
+// work, done on its own evidence, not a side effect of a deletion. The deleted
 // module's own classification entry says the same thing in the other
 // direction: once the store is this project's own, there is no such file to
 // synthesise.
@@ -89,9 +89,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // this writer and those fixtures ever disagree, the fixtures are the
 // authority, not this code.
 //
-// PHASE 30 re-points this writer when the store-native project file lands.
-// Until then it is frozen: do not "improve" the shape, the key order, or the
-// compression, because every one of those is load-bearing for byte equality.
+// THIS WRITER IS RE-POINTED WHEN A STORE-NATIVE PROJECT FILE LANDS, AND NO
+// PHASE CURRENTLY OWNS LANDING ONE. An earlier version of this line named a
+// numbered phase for it; that phase shipped the ACME export oracle and nothing
+// store-native to re-point onto, so no phase currently owns the file this
+// writer would be re-pointed at, and the forecast is corrected here rather than
+// deleted. While no such file exists this writer is FROZEN: do not "improve"
+// the shape, the key order, or the compression, because every one of those is
+// load-bearing for byte equality.
 //
 // EVERY CHECKED NEGATIVE IN THIS FILE STAYS. The equal-length and
 // identical-tail throws, `assertDispatchesNowhere()`,

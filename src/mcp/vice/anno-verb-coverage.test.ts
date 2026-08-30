@@ -144,7 +144,7 @@ function dummyDispatch(verb) {
 }
 `;
 
-test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 2 known verbs, never 'default'", () => {
+test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 3 known verbs, never 'default'", () => {
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.deepEqual(verbs, [...REAL_VERBS].sort());
@@ -194,4 +194,199 @@ test("the CI script's live execution path: `node scripts/check-skill-tool-covera
   assert.equal(result.status, 0, `expected exit 0, got ${result.status}. stderr: ${result.stderr}`);
   assert.match(result.stdout, /OK/);
   assert.match(result.stdout, /anno CLI verbs: \d+ parsed/);
+});
+
+// ---------------------------------------------------------------------------
+// THE DOCUMENTED-STATUS GUARD (plan 30-06)
+// ---------------------------------------------------------------------------
+// WHY IT EXISTS. Six shipped files across two skill trees said `anno export-asm`
+// was withdrawn and named a numbered phase for its return. The moment the verb
+// landed, every one of those sentences was false, and NOTHING failed:
+// `comment-phase-pointers.test.ts` scans shipped `.ts`/`.mts` COMMENTS for seven
+// assignment shapes and reads no markdown at all, and `docs-dangling-refs.test.ts`'s
+// FLOW-02 is deliberately scoped to shipped STRING and TEMPLATE LITERALS. A stale
+// withdrawal claim in a `SKILL.md` is invisible to both. The sibling property --
+// "a verb the CLI has is NAMED by at least one skill file" -- was already guarded
+// above by `verbsMissingFromSkills()`; what was unguarded is the STATUS that
+// naming carries. A playbook that names a live verb only to call it unavailable
+// is worse than one that never mentions it: it actively stops an agent using a
+// route that works.
+//
+// This guard lives HERE rather than in a new file because this is already the
+// file that owns "what the verb set is", and it consumes `parseAnnoCliVerbs()`
+// rather than re-listing verbs -- a hand-written verb list in a guard is the
+// same defect FLOW-01 recorded, one layer up.
+
+/**
+ * Both skill trees. `installer/skills/` is GENERATED and GITIGNORED yet SHIPPED
+ * in the published tarball (`git ls-files installer/skills` returns 0), so any
+ * gate scoped to tracked files is structurally blind to the copy users actually
+ * receive (REPOINT-02). Scanning only `src/skills/` would leave the shipped tree
+ * unguarded for exactly as long as it takes someone to forget the sync.
+ */
+const SKILL_MARKDOWN_ROOTS = [join(ROOT, "src", "skills"), join(ROOT, "installer", "skills")] as const;
+
+/**
+ * The phrases that count as "this document says the verb is unavailable".
+ * Derived from the wording ACTUALLY used in this tree, not invented:
+ * `WITHDRAWN` and `withdrawn` are the dated-notice spelling every skill file
+ * uses, and `does not exist` is the second half of the standing formula
+ * ("it does not exist, and the invocation fails with an unknown-verb error").
+ *
+ * DO NOT WIDEN THIS LIST TO CATCH A HYPOTHETICAL PHRASING. Every phrase added
+ * for a wording nobody has written yet moves this scan one step closer to a
+ * substring search over English, at which point it reports the prose that
+ * discusses the hazard as though it were the hazard -- and the first response
+ * to that is an allowlist, which is how a guard stops being read.
+ */
+const WITHDRAWAL_PHRASES = ["WITHDRAWN", "withdrawn", "does not exist"] as const;
+
+/**
+ * The phrases that DISCHARGE a withdrawal claim in the same window.
+ *
+ * This is not a loophole, it is the property being measured. A dated withdrawal
+ * notice must never be deleted -- deleting it erases the record that a
+ * capability was missing and why -- so the correct state for a verb that WENT
+ * AWAY AND CAME BACK is a paragraph that says both things. What is forbidden is
+ * a paragraph that says the verb is withdrawn and stops there.
+ *
+ * All markers are PAST TENSE on purpose. `returns` (the forecast spelling this
+ * plan repaired) must NOT discharge anything: "is WITHDRAWN and returns in a
+ * later phase" is precisely the claim this guard exists to catch, and it is the
+ * sentence the non-vacuity control below reinstates.
+ */
+const RETURN_MARKERS = ["returned", "RETURNED", "came back", "has come back"] as const;
+
+/** A withdrawal claim this scan reports, with everything a reader needs to find it. */
+interface WithdrawalClaim {
+  readonly verb: string;
+  readonly phrase: string;
+  readonly excerpt: string;
+}
+
+/**
+ * THE ONE PREDICATE. The real corpus scan and both planted controls call this
+ * and nothing else, so there is exactly one definition of "this document says a
+ * live verb is withdrawn" -- if the predicate is wrong, every caller is wrong
+ * together and the controls say so.
+ *
+ * THE WINDOW IS THE MARKDOWN PARAGRAPH (a blank-line-delimited block, capped at
+ * `PARAGRAPH_CAP` characters), because that is the unit a human reads a status
+ * claim in. A fixed character radius was tried first and is wrong twice over:
+ * markdown is hard-wrapped, so a radius large enough to span a wrapped sentence
+ * also reaches into the next claim, while one small enough to stay inside a
+ * sentence misses a claim split across two lines.
+ *
+ * A verb is located by the SAME spelling `verbsMissingFromSkills()` uses to
+ * decide a skill file names it -- the literal `anno <verb>`. That is deliberate
+ * and load-bearing: `coverage` is an ordinary English word this corpus uses
+ * constantly ("full gameplay coverage", "byte-coverage census"), and a bare
+ * name match would report those paragraphs for containing an unrelated
+ * `withdrawn` several lines away.
+ */
+function withdrawalClaimsFor(markdown: string, verbs: readonly string[]): WithdrawalClaim[] {
+  const PARAGRAPH_CAP = 4000;
+  const claims: WithdrawalClaim[] = [];
+  for (const paragraph of markdown.split(/\n[ \t]*\n/)) {
+    const block = paragraph.slice(0, PARAGRAPH_CAP);
+    if (RETURN_MARKERS.some((m) => block.includes(m))) continue;
+    const phrase = WITHDRAWAL_PHRASES.find((p) => block.includes(p));
+    if (phrase === undefined) continue;
+    for (const verb of verbs) {
+      if (!block.includes(`anno ${verb}`)) continue;
+      claims.push({ verb, phrase, excerpt: block.replace(/\s+/g, " ").trim().slice(0, 200) });
+    }
+  }
+  return claims;
+}
+
+/** Every `*.md` under a skill tree. Same walk convention as `walkSkillFiles()`
+ * above, narrowed to markdown: this guard is about what a HUMAN reads, and the
+ * `.mjs` helper scripts carry no status prose. */
+function walkSkillMarkdown(dir: string, acc: string[] = []): string[] {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return acc;
+  }
+  for (const entry of entries) {
+    if (entry.name === "node_modules") continue;
+    const p = join(dir, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) walkSkillMarkdown(p, acc);
+    else if (entry.name.endsWith(".md")) acc.push(p);
+  }
+  return acc;
+}
+
+test("a verb the CLI actually dispatches is never documented as withdrawn, in either skill tree", () => {
+  // The shipped tree is generated; regenerate it first so this scans the copy
+  // users receive rather than a stale one. Exactly what
+  // `scripts/check-skill-cli-invocations.mjs` does, for exactly the same reason,
+  // and the only child process either of them starts is this first-party script.
+  const sync = spawnSync(process.execPath, [join(ROOT, "installer", "scripts", "sync-skills.mjs")], {
+    encoding: "utf8",
+    cwd: ROOT,
+  });
+  assert.equal(sync.status, 0, `sync-skills.mjs failed, so the shipped tree cannot be scanned: ${sync.stderr}`);
+
+  const verbs = parseAnnoCliVerbs(readFileSync(join(HERE, "anno-cli.ts"), "utf8"));
+  assert.ok(verbs.length >= ANNO_CLI_VERB_FLOOR, "the verb parse itself is broken; this scan would be vacuous");
+
+  const problems: string[] = [];
+  let filesScanned = 0;
+  for (const root of SKILL_MARKDOWN_ROOTS) {
+    const files = walkSkillMarkdown(root);
+    // Non-vacuity, per root: a scan whose corpus silently shrank to zero
+    // passes everything. Both roots must really have been read.
+    assert.ok(files.length > 0, `no markdown found under ${root} -- the scanned set shrank to zero`);
+    filesScanned += files.length;
+    for (const file of files) {
+      for (const claim of withdrawalClaimsFor(readFileSync(file, "utf8"), verbs)) {
+        problems.push(
+          `${file.slice(ROOT.length + 1)}: describes \`anno ${claim.verb}\` as unavailable ("${claim.phrase}") ` +
+            `with no record that it came back -- a verb the CLI dispatches must not be documented as withdrawn. ` +
+            `Paragraph: "${claim.excerpt}"`
+        );
+      }
+    }
+  }
+
+  assert.ok(filesScanned >= 20, `expected both skill trees scanned, got only ${filesScanned} markdown file(s)`);
+  assert.deepEqual(problems, [], problems.join("\n"));
+});
+
+test("planted violation: the same predicate reports a dispatched verb documented as withdrawn, and stays silent for one the CLI does not dispatch", () => {
+  const verbs = parseAnnoCliVerbs(readFileSync(join(HERE, "anno-cli.ts"), "utf8"));
+
+  // POSITIVE CONTROL -- the sentence this plan repaired, reinstated verbatim in
+  // a synthetic document. If the predicate ever stops reporting this, the guard
+  // has stopped guarding the exact defect it was built for.
+  const bad = [
+    "## Disassembly",
+    "",
+    "**Dated withdrawal, 2026-08-29 -- whole-program static disassembly is WITHDRAWN",
+    "and returns in a later phase as `anno export-asm`, behind a real-ACME byte-diff",
+    "oracle.** Do not reach for it here; it does not exist.",
+  ].join("\n");
+  const badClaims = withdrawalClaimsFor(bad, verbs);
+  assert.equal(badClaims.length, 1, `expected exactly one claim, got ${JSON.stringify(badClaims)}`);
+  assert.equal(badClaims[0]?.verb, "export-asm");
+
+  // NEGATIVE CONTROL, DIRECTION 1 -- a verb the CLI does NOT dispatch, described
+  // in the same withdrawn shape, is NOT reported. `export-lbl` is real history,
+  // not an invented token: it was removed on 2026-08-29 and no phase currently
+  // owns its return, so the skills legitimately describe it as withdrawn and
+  // this guard must leave that alone. Without this direction the guard would
+  // forbid the honest notices it depends on.
+  const stillWithdrawn = "The `anno export-lbl` round trip is WITHDRAWN and does not exist on this surface.";
+  assert.deepEqual(withdrawalClaimsFor(stillWithdrawn, verbs), []);
+
+  // NEGATIVE CONTROL, DIRECTION 2 -- a dispatched verb whose paragraph records
+  // BOTH the withdrawal and the return is not reported. A control that only ever
+  // refuses is indistinguishable from one that is broken shut.
+  const discharged =
+    "Whole-program static disassembly was WITHDRAWN on 2026-08-29 and returned on 2026-08-31 as `anno export-asm`.";
+  assert.deepEqual(withdrawalClaimsFor(discharged, verbs), []);
 });

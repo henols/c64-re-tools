@@ -28,7 +28,8 @@
 //       an immediate load exactly 2 bytes earlier, adjacent-only, no
 //       dataflow, a miss costs nothing), lifted out of the deleted fetch
 //       loop verbatim and now a PURE function of two already-fetched row
-//       arrays. Phase 30 supplies the rows; the rule does not change.
+//       arrays. Whoever rebuilds the fetch supplies the rows; the rule does
+//       not change.
 //     - `planEnumsForPairing()` -- D-20's own rule: one variant per DISTINCT
 //       value the program actually writes, never a full
 //       256-values-per-register table, with the first-seen `lda` address
@@ -38,9 +39,17 @@
 //       leaving it to be inferred from a row count.
 //     - `sanitizeVariantMap()` and the identifier gate it runs, unchanged.
 //
-//   WHERE THE ROUTE RETURNS: **Phase 30**, which rebuilds the fetch and the
-//   install over this project's own Phase 28 annotation store and renders the
-//   enums into the ACME export. Everything above is what it builds against.
+//   WHERE THE ROUTE RETURNS: **NO PHASE CURRENTLY OWNS ITS RETURN**, and this
+//   line used to say otherwise. It forecast a rebuild of the fetch and the
+//   install over this project's own annotation store, rendering the enums into
+//   the ACME export. The ACME export route itself did come back on 2026-08-31,
+//   as the `anno export-asm` CLI verb -- but the work that rebuilt it covered
+//   that route ONLY: no requirement and no success criterion of it mentioned
+//   `gen-enums`, and no phase currently owns rebuilding it. The forecast was
+//   therefore wrong, and it is CORRECTED here
+//   rather than deleted, because deleting the notice would erase the record
+//   that the capability went missing. Everything above is the specification
+//   whoever eventually rebuilds it builds against.
 //
 // MEASURED MECHANISM FACTS, PAST TENSE -- kept because they are WHY the
 // heuristics have the shape they have, not because anything still calls the
@@ -79,20 +88,22 @@
 //   - The live query view rendered an applied enum reference as
 //     `EnumName.VARIANT` (a dot) while the ACME export rendered
 //     `EnumName_VARIANT` (an underscore). VERSION-SCOPED to 0.9.20
-//     (RESEARCH.md Assumption A2). Phase 30 must re-measure the equivalent
-//     discrepancy against its own export rather than inherit this one.
+//     (RESEARCH.md Assumption A2). A rebuilt route must RE-MEASURE the
+//     equivalent discrepancy against its own export rather than inherit this
+//     one -- the obligation belongs to the rebuild, not to a numbered phase.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Never write a machine-global enum. The machine-wide config-dir save
 //     route named in D-21 is never referenced anywhere in this file, and
 //     `anno-enum-gen.test.ts`'s own zero-count grep asserts that
 //     mechanically. That guard is DORMANT while this module has no install
-//     route at all and goes live again the moment Phase 30 adds one -- which
-//     is exactly when it is needed, so it stays.
+//     route at all and goes live again the instant ANY install route is added
+//     -- the condition is a route existing, not a phase arriving -- which is
+//     exactly when it is needed, so it stays.
 //   - Never call an install path with an unsanitized identifier.
 //     `assertLegalAcmeIdentifier()` (defined in `anno-acme-ident.ts`,
 //     re-exported here) runs on every variant name inside
-//     `sanitizeVariantMap()`. Phase 30's rebuilt installer calls
+//     `sanitizeVariantMap()`. Any rebuilt installer calls
 //     `sanitizeVariantMap()` BEFORE it does any I/O, for the same reason the
 //     deleted one did: sanitization is entirely client-side, so a rejected
 //     name provably never reaches a child.
@@ -111,8 +122,8 @@ const REGBITS_PATH = join(HERE, "anno-regbits.json");
 /** The ceiling a caller states instead of trusting a producer's own default
  * (which was 50, `handler.rs:1074-1077`). D-23's "no silent caps" rule: the
  * returned row count is compared against THIS value and a possible truncation
- * is reported in words. Phase 30's rebuilt fetch passes it explicitly for the
- * same reason. */
+ * is reported in words. A rebuilt fetch passes it explicitly for the same
+ * reason. */
 export const DEFAULT_MAX_RESULTS = 10_000;
 
 // MAX_ACME_IDENTIFIER_LENGTH / assertLegalAcmeIdentifier() live in
@@ -355,8 +366,8 @@ export function pairSearchRows(
 /** Formats a numeric value the way the retired producer's own
  * `EnumDefinition::parse_variants` accepted it (`$`-prefixed lowercase hex),
  * matching the measured example in this phase's own RESEARCH.md exactly.
- * Kept because it is the shape a variant KEY takes, and Phase 30 needs to
- * know what it was to decide whether to keep it. */
+ * Kept because it is the shape a variant KEY takes, and whoever rebuilds the
+ * route needs to know what it was to decide whether to keep it. */
 function formatVariantKey(value: number): string {
   return `$${value.toString(16)}`;
 }
@@ -368,7 +379,7 @@ function formatVariantKey(value: number): string {
  * That ordering is the whole property, not an implementation detail: because
  * sanitization happens entirely client-side and before any I/O, a rejected
  * name provably never reaches a child process. The deleted installer proved
- * exactly that with a spy binary; Phase 30's installer inherits the property
+ * exactly that with a spy binary; any rebuilt installer inherits the property
  * by calling this function before it does any I/O of its own.
  */
 export function sanitizeVariantMap(regKey: string, variants: ReadonlyMap<number, string>): Record<string, string> {
@@ -389,9 +400,8 @@ export function sanitizeVariantMap(regKey: string, variants: ReadonlyMap<number,
  * "re-runnable" requirement was met by a documented precedence: try CREATE
  * first, and only on an already-exists failure fall back to UPDATE, which
  * replaces the variant map wholesale. That precedence, and this two-valued
- * result, are the requirement's whole observable content. A Phase 30
- * installer that can only ever report "created" has quietly dropped
- * R2000-13.
+ * result, are the requirement's whole observable content. A rebuilt installer
+ * that can only ever report "created" has quietly dropped R2000-13.
  */
 export type EnumInstallAction = "created" | "updated";
 

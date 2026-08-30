@@ -32,8 +32,11 @@
 // and the grep asserting the two disassembly-search call sites passed an
 // explicit `max_results` (those call sites are the fetch this plan removed;
 // the "no silent caps" rule they served is asserted against the report
-// builder instead). Phase 30 restores the fetch and the installer, and with
-// them the integration coverage.
+// builder instead). Restoring the fetch and the installer -- and with them the
+// integration coverage those two assertions covered -- is work NO PHASE
+// CURRENTLY OWNS. An earlier version of this line named a numbered phase for
+// it; the phase it named rebuilt the ACME export route only, and this line is
+// corrected rather than deleted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -57,7 +60,7 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Builds one disassembly row in the shape the deleted fetch returned and the
- * shape Phase 30's rebuilt fetch must still produce. */
+ * shape any rebuilt fetch must still produce. */
 function row(addr: number, mnemonic: string, operand: string): DisasmSearchRow {
   return {
     address: `$${addr.toString(16).toUpperCase().padStart(4, "0")}`,
@@ -322,8 +325,9 @@ test("buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13'
 //
 // DORMANT BY DESIGN, and kept for that reason. This module has no install
 // route at all after plan 29-10, so nothing here could currently write a
-// machine-global enum. The guard goes live again the instant Phase 30 adds an
-// installer -- which is precisely the commit in which D-21 could be violated,
+// machine-global enum. The guard goes live again the instant ANY installer is
+// added -- the condition is a route existing, not a phase arriving, and that is
+// precisely the commit in which D-21 could be violated,
 // and precisely the commit in which nobody would think to re-add a guard that
 // had been deleted for being trivially green.
 // ---------------------------------------------------------------------------

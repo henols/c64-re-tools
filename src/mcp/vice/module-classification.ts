@@ -315,8 +315,8 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 106 },
-        { path: "src/mcp/vice/anno-symbols.ts", symbol: "assertLegalAcmeIdentifier", line: 97 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 117 },
+        { path: "src/mcp/vice/anno-symbols.ts", symbol: "assertLegalAcmeIdentifier", line: 107 },
       ],
       requirements: ["EXPORT-01", "EXPORT-03"],
       rationale:
@@ -500,7 +500,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "RegBitsTable", line: 105 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "RegBitsTable", line: 116 },
         { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "buildRegBits" },
       ],
       requirements: ["SEAM-02"],
@@ -529,7 +529,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "REGBITS_PATH", line: 109 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "REGBITS_PATH", line: 120 },
         { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "anno-regbits.json", line: 48 },
         { path: "src/skills/c64-memory-mapping/SKILL.md", symbol: "anno-regbits.json", line: 195 },
       ],
@@ -625,8 +625,12 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
         "transcripts, NOT the route -- and the route was the whole module. Deleted rather than renamed (plan " +
         "29-10, D-16) on that authority. THE TRANSCRIPTS RODE FORWARD before the module went: both are " +
         "committed verbatim under .planning/phases/29-the-mcp-surface/fixtures/, with a README recording their " +
-        "provenance and Phase 30's obligation to RE-RECORD them from real assembler output rather than assert " +
-        "against these.",
+        "provenance and the obligation to RE-RECORD them from real assembler output rather than assert " +
+        "against these. THAT OBLIGATION IS DISCHARGED. Plan 30-02 re-recorded both transcripts from a real " +
+        "ACME through this project's own verify producer and committed them, with a provenance README and a " +
+        "regeneration program, under .planning/phases/30-acme-export-and-the-real-acme-oracle/fixtures/; a " +
+        "committed test additionally asserts byte-INEQUALITY against the carried-forward pair, so the new " +
+        "evidence cannot be the old evidence renamed.",
       supersededBy: ".planning/phases/29-the-mcp-surface/fixtures/",
     },
     verdict: "capability",
@@ -651,8 +655,11 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "inherits is the discipline and its two pinned false-pass transcripts, NOT the route. Act on the " +
       "discipline; do not read this verdict as a claim that the route survives. The CLI used to record " +
       "the same fact twice, in its header and again in cmdVerify(); plan 29-07 removed the verify " +
-      "verb outright (D-14), so those two citations are gone rather than drifted, and this note is " +
-      "now the only place the fact lives until Phase 30 rebuilds the route.",
+      "verb outright (D-14), so those two citations are gone rather than drifted. This note WAS the only " +
+      "place the fact lived; it no longer is. The route was rebuilt on 2026-08-31 -- not restored -- as " +
+      "acme-verify.ts, a TEST-ONLY oracle that byte-diffs a file it assembled itself against bytes the " +
+      "caller derived from the image, and never consults an exit code or an aggregate line. That module now " +
+      "holds the discipline in executable form; this note records where it went.",
   },
 
   // --- glue: the rented analyser is the whole subject ---

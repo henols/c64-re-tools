@@ -520,21 +520,24 @@ need(
 // under the name it will carry when it returns, the phase that returns it, and
 // the oracle it returns behind.
 //
-// The literal below is that FUTURE name, on purpose. It is present in the
-// notice today, and it stays present when Phase 30 restores the route as a
-// live instruction under exactly that name -- so this assertion survives the
-// restoration with no further edit, and the guard never has to be re-pointed a
-// second time. What the comment above says is unchanged in force: deleting the
-// notice fails this check, so the cut still cannot be "fixed" by deleting the
-// pointer to the route.
+// The literal below was that FUTURE name when it was pinned, on purpose, and
+// THE PREDICTION HELD. The route came back on 2026-08-31 as a live instruction
+// under exactly that name, and this assertion survived the restoration with no
+// edit at all -- the pointer that was a dated withdrawal notice is now a live
+// invocation, and the same string satisfies the check in both states. That is
+// the whole reason it was pinned to the returning name rather than the removed
+// one, and it is recorded here in the past tense because it has happened. What
+// the comment above says is unchanged in force: deleting the notice fails this
+// check, so the cut still cannot be "fixed" by deleting the pointer to the
+// route.
 const ACME_BUILD_SKILL_PATH = join(SKILLS_DIR, "acme-build", "SKILL.md");
 const acmeBuildSkillSource = readFileSync(ACME_BUILD_SKILL_PATH, "utf8");
 need(
   acmeBuildSkillSource.includes("anno export-asm"),
   `${ACME_BUILD_SKILL_PATH.slice(ROOT.length + 1)} is missing the replacement pointer string "anno export-asm" -- ` +
-    `the deletion must not be "fixed" by deleting the pointer to the route too. While the route is withdrawn ` +
-    `that pointer is the dated withdrawal notice naming it; once Phase 30 restores it, the same string is the ` +
-    `live invocation.`
+    `the deletion must not be "fixed" by deleting the pointer to the route too. While the route was withdrawn ` +
+    `that pointer was the dated withdrawal notice naming it; since the route returned on 2026-08-31 the same ` +
+    `string is the live invocation, which is why this assertion never had to move.`
 );
 
 // --- Non-vacuity controls ---------------------------------------------------
