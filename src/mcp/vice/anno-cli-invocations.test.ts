@@ -27,6 +27,7 @@ import {
   ANNO_INVOCATION_FLOOR,
   POSITIONAL_KINDS,
   REQUIRED_FLAGS,
+  FLAG_KINDS,
   PROBLEM_ORDER,
 } from "../../../scripts/lib/anno-cli-invocations.mjs";
 import { VERB_OPTIONS } from "./anno-cli.ts";
@@ -43,7 +44,7 @@ const SKILLS_DIR = join(ROOT, "src", "skills");
 const parseInvocations = parseDocumentedInvocations;
 const checkOne = checkInvocation;
 
-// The two per-verb declaration tables are IMPORTED from the lib above, not
+// The three per-verb declaration tables are IMPORTED from the lib above, not
 // declared here. Until 2026-08-30 this file kept a private copy of
 // `POSITIONAL_KINDS`, because the only other declaration lived in
 // `check-skill-cli-invocations.mjs`, which runs the live gate at import time.
@@ -96,7 +97,7 @@ test("non-vacuity: every invocation the real playbooks document passes the check
     const parsed = parseInvocations(skillText(skill, ...file.split("/")));
     assert.notEqual(parsed, null, `${skill}/${file}: no fenced block found`);
     for (const invocation of parsed!) {
-      const problems = checkOne(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS);
+      const problems = checkOne(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS, FLAG_KINDS);
       assert.deepEqual(problems, [], `${skill}/${file}: ${problems.join("; ")}`);
     }
   }
@@ -125,7 +126,7 @@ function problemsFor(line: string): string[] {
   const parsed = parseInvocations(fenced(line));
   assert.notEqual(parsed, null);
   assert.equal(parsed!.length, 1, `expected exactly one invocation from ${JSON.stringify(line)}`);
-  return checkOne(parsed![0]!, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS);
+  return checkOne(parsed![0]!, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS, FLAG_KINDS);
 }
 
 test("planted violation 1: a flag the verb does not accept is reported by name", () => {
@@ -245,7 +246,7 @@ test("a boolean flag at end of line carries no value, and a value-taking flag ca
     { flag: "--provenance", value: "sidecar.json" },
     { flag: "--check", value: null },
   ]);
-  assert.deepEqual(checkOne(invocation!, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS), []);
+  assert.deepEqual(checkOne(invocation!, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS, FLAG_KINDS), []);
 });
 
 test("a synopsis placeholder positional is skipped rather than refused -- usage lines are documentation, not invocations", () => {
@@ -253,12 +254,24 @@ test("a synopsis placeholder positional is skipped rather than refused -- usage 
   assert.deepEqual(problemsFor("vice-mcp anno render-memmap <store> --provenance FILE --out FILE"), []);
 });
 
+/** A value the FLAG's own declared kinds accept, or a bare token where the
+ * flag declares none (`--force`, `--check`, `--sample`). Derived from the
+ * shipped table rather than hand-written, so a new flag kind cannot make the
+ * test below assert against a value the gate would now refuse. */
+function sampleValueFor(verb: string, flag: string): string {
+  const kinds = FLAG_KINDS[verb]?.[flag];
+  return kinds !== undefined && kinds.length > 0 ? `value${kinds[0]}` : "x";
+}
+
 test("the checker reads the CLI's OWN option set, so a flag the CLI accepts is never reported", () => {
   for (const [verb, flags] of Object.entries(VERB_OPTIONS)) {
     const positional = verb === "coverage" ? "game.prg" : "game.annostore";
-    const line = `vice-mcp anno ${verb} ${positional} ${flags.map((f) => `${f} x`).join(" ")}`;
-    // Every flag is given a value token, which is harmless for the boolean
-    // ones here: the point is that no flag in the CLI's own set is refused.
+    // Every flag is given a value, which is harmless for the boolean ones
+    // here: the point is that no flag in the CLI's own set is refused as
+    // UNKNOWN. Since WR-18 the value has to be one the flag's own kinds
+    // accept, or the line would be refused for a different -- and correct --
+    // reason, which would make this test pass for the wrong cause.
+    const line = `vice-mcp anno ${verb} ${positional} ${flags.map((f) => `${f} ${sampleValueFor(verb, f)}`).join(" ")}`;
     const problems = problemsFor(line);
     assert.deepEqual(problems, [], `${verb}: ${problems.join("; ")}`);
   }
@@ -287,7 +300,7 @@ function problemsForWithTable(line: string, requiredFlags: Readonly<Record<strin
   const parsed = parseInvocations(fenced(line));
   assert.notEqual(parsed, null);
   assert.equal(parsed!.length, 1, `expected exactly one invocation from ${JSON.stringify(line)}`);
-  return checkOne(parsed![0]!, VERB_OPTIONS, POSITIONAL_KINDS, requiredFlags);
+  return checkOne(parsed![0]!, VERB_OPTIONS, POSITIONAL_KINDS, requiredFlags, FLAG_KINDS);
 }
 
 test("WR-01: an omitted REQUIRED flag is reported by name", () => {
@@ -341,8 +354,29 @@ function problemKind(problem: string): string {
   if (/no such verb/i.test(problem)) return "unknown-verb";
   if (/accepted option set/i.test(problem)) return "flag-membership";
   if (/is not one this verb reads|takes no positional argument/i.test(problem)) return "positional-kind";
+  // Order matters here and only here: the two WR-18 kinds are more specific
+  // than the WR-01 one, and `is required` would otherwise swallow them.
+  if (/takes a value and was documented with none/i.test(problem)) return "flag-value-missing";
+  if (/is not one this flag reads/i.test(problem)) return "flag-value-kind";
   if (/is required/i.test(problem)) return "required-flag";
   return `unclassified: ${problem}`;
+}
+
+/** Asserts `kinds` are all declared in `PROBLEM_ORDER` and appear in its
+ * relative order. Weaker than a `deepEqual` against the whole constant, and
+ * deliberately so: since WR-18 no single invocation can carry every kind at
+ * once (a required flag cannot be both missing and valueless), so the ordering
+ * property has to be stated as "a subsequence of the declared order" and each
+ * case's exact kinds asserted beside it. */
+function assertInDeclaredOrder(kinds: string[]): void {
+  const indices = kinds.map((k) => {
+    const at = PROBLEM_ORDER.indexOf(k);
+    assert.notEqual(at, -1, `${k} is not in the declared PROBLEM_ORDER`);
+    return at;
+  });
+  for (let i = 1; i < indices.length; i++) {
+    assert.ok(indices[i]! >= indices[i - 1]!, `${kinds[i]} was reported before ${kinds[i - 1]}, against the declared order`);
+  }
 }
 
 test("multiple problems are reported in the declared order, stably across runs", () => {
@@ -352,13 +386,10 @@ test("multiple problems are reported in the declared order, stably across runs",
   const line = "vice-mcp anno render-memmap game.regen2000proj --verbose";
   const first = problemsFor(line);
   assert.equal(first.length, 3, first.join("; "));
+  assert.deepEqual(first.map(problemKind), ["flag-membership", "positional-kind", "required-flag"]);
   // Asserted against the SHIPPED constant, so a refactor that reorders the
   // control flow without moving PROBLEM_ORDER is caught here.
-  assert.deepEqual(
-    first.map(problemKind),
-    PROBLEM_ORDER.filter((kind) => kind !== "unknown-verb"),
-    "the three accumulating checks must report in the declared order",
-  );
+  assertInDeclaredOrder(first.map(problemKind));
   const second = problemsFor(line);
   assert.deepEqual(second, first, "two runs over the same input must return identical problem arrays");
 });
@@ -400,12 +431,84 @@ test("one definition, two callers: the CI gate imports the shipped tables instea
   assert.match(gate, /POSITIONAL_KINDS,?\s/, "precondition: the gate still uses the table");
   assert.doesNotMatch(gate, /const\s+POSITIONAL_KINDS\s*=/, "the gate must not re-declare POSITIONAL_KINDS locally");
   assert.doesNotMatch(gate, /const\s+REQUIRED_FLAGS\s*=/, "the gate must not declare REQUIRED_FLAGS locally");
+  assert.doesNotMatch(gate, /const\s+FLAG_KINDS\s*=/, "the gate must not declare FLAG_KINDS locally");
+  for (const table of ["REQUIRED_FLAGS", "FLAG_KINDS"]) {
+    assert.match(
+      gate,
+      new RegExp(`import\\s*\\{[^}]*${table}[^}]*\\}\\s*from\\s*"\\./lib/anno-cli-invocations\\.mjs"`, "s"),
+      `the gate must import ${table} from the lib this file imports it from`,
+    );
+  }
   assert.match(
     gate,
-    /import\s*\{[^}]*REQUIRED_FLAGS[^}]*\}\s*from\s*"\.\/lib\/anno-cli-invocations\.mjs"/s,
-    "the gate must import the required-flag table from the lib this file imports it from",
+    /checkInvocation\(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS, FLAG_KINDS\)/,
+    "and pass all three shipped tables to the predicate",
   );
-  assert.match(gate, /checkInvocation\(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS\)/, "and pass it to the predicate");
+});
+
+test("WR-18 non-vacuity, the other direction: every VERB_OPTIONS verb has a FLAG_KINDS entry, even an empty one", () => {
+  // Same discipline as REQUIRED_FLAGS above, and for the same reason: an
+  // ABSENT key is a verb that joined the gate with its flag kinds simply
+  // undeclared, which is how WR-18's hole reopens for the next verb.
+  for (const verb of Object.keys(VERB_OPTIONS)) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(FLAG_KINDS, verb),
+      `${verb} is in the CLI's own VERB_OPTIONS but has no FLAG_KINDS entry -- declare {} if none of its flags takes a path`,
+    );
+    const entry = FLAG_KINDS[verb as keyof typeof FLAG_KINDS];
+    assert.equal(typeof entry, "object", `${verb}'s FLAG_KINDS entry must be an object`);
+  }
+  // ...and every flag named must be one the verb actually accepts, or the
+  // table would constrain a flag the CLI refuses outright.
+  for (const [verb, byFlag] of Object.entries(FLAG_KINDS)) {
+    for (const [flag, kinds] of Object.entries(byFlag)) {
+      assert.ok(VERB_OPTIONS[verb]?.includes(flag), `${verb}: FLAG_KINDS names ${flag}, which is not in that verb's VERB_OPTIONS`);
+      assert.ok(Array.isArray(kinds) && kinds.length > 0, `${verb} ${flag}: an entry with no kinds constrains nothing -- omit the flag instead`);
+      for (const kind of kinds) assert.match(kind, /^\.[a-z0-9]+$/, `${verb} ${flag}: ${kind} is not a lowercase dotted extension`);
+    }
+  }
+  // Every REQUIRED flag is value-taking in this CLI, so each must also be in
+  // FLAG_KINDS -- otherwise a required flag at end of line would be caught by
+  // the derived value-taking set alone, with nothing pinning its kind.
+  for (const [verb, required] of Object.entries(REQUIRED_FLAGS)) {
+    for (const flag of required) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(FLAG_KINDS[verb] ?? {}, flag),
+        `${verb}: ${flag} is REQUIRED but has no FLAG_KINDS entry -- its value's kind is then unchecked`,
+      );
+    }
+  }
+});
+
+test("WR-18: the two new checks report in the declared order, after the three that preceded them", () => {
+  const valueless = problemsFor("vice-mcp anno coverage game.proj --verbose --store");
+  assert.deepEqual(valueless.map(problemKind), ["flag-membership", "positional-kind", "flag-value-missing"], valueless.join("; "));
+  assertInDeclaredOrder(valueless.map(problemKind));
+
+  const wrongKind = problemsFor("vice-mcp anno coverage game.proj --store game.prg");
+  assert.deepEqual(wrongKind.map(problemKind), ["positional-kind", "flag-value-kind"], wrongKind.join("; "));
+  assertInDeclaredOrder(wrongKind.map(problemKind));
+
+  // Stability, the property the original ordering test asserts for the other
+  // three: two runs over the same input return identical arrays.
+  assert.deepEqual(problemsFor("vice-mcp anno coverage game.proj --store game.prg"), wrongKind);
+});
+
+test("PROBLEM_ORDER is non-vacuous: every declared kind is produced by at least one control here", () => {
+  // A kind added to the constant with no check behind it would otherwise sit
+  // there looking like coverage. Each line below is one of this file's own
+  // planted cases.
+  const produced = new Set(
+    [
+      "vice-mcp anno export-asm game.annostore",
+      "vice-mcp anno coverage game.prg --store game.annostore --verbose",
+      "vice-mcp anno coverage game.proj --store game.annostore",
+      "vice-mcp anno coverage game.prg",
+      "vice-mcp anno coverage game.prg --store",
+      "vice-mcp anno coverage game.prg --store game.prg",
+    ].flatMap((line) => problemsFor(line).map(problemKind)),
+  );
+  assert.deepEqual([...produced].sort(), [...PROBLEM_ORDER].sort(), "every declared problem kind must be reachable");
 });
 
 // ---------------------------------------------------------------------------
@@ -497,10 +600,89 @@ test("WR-19: the OTHER two tables are read own-property too, proven with a table
   // POSITIONAL_KINDS and REQUIRED_FLAGS are the SHIPPED tables: neither has an
   // own `toString`, so both reads must yield the empty default rather than
   // `Object.prototype.toString`.
-  const problems = checkOne(parsed![0]!, verbOptions, POSITIONAL_KINDS, REQUIRED_FLAGS);
+  const problems = checkOne(parsed![0]!, verbOptions, POSITIONAL_KINDS, REQUIRED_FLAGS, FLAG_KINDS);
   assert.deepEqual(
     problems,
     ["anno toString: takes no positional argument, but game.prg was supplied (in: vice-mcp anno toString game.prg --store game.annostore)"],
     "an undeclared positional-kind entry means 'this verb takes no positional', never Object.prototype.toString",
   );
+});
+
+// ---------------------------------------------------------------------------
+// 8. WR-18 -- a flag VALUE of the wrong kind, and a value-taking flag
+//    documented with no value.
+//
+// `WR-01`'s fix added flag PRESENCE and its own proposed fix named a
+// `FLAG_KINDS` map alongside `REQUIRED_FLAGS`; only the latter shipped. The
+// residue was two documented-command-exits-1 shapes the gate reported OK for.
+// Reproduced against the shipped tables at 9cb8217, all four `[]`:
+//
+//   anno coverage game.prg --store game.prg
+//   anno coverage game.prg --store
+//   anno render-memmap game.annostore --provenance game.annostore
+//   anno render-memmap game.annostore --provenance
+//
+// The first is `CR-04` VERBATIM with the wrong-kind file moved one token to
+// the right, out of the positional slot and into the flag slot: the gate
+// checked kinds for positionals and for nothing else, so the same mistake was
+// invisible. The second is a flag at end of line, which is not a synopsis
+// placeholder -- it is a dead command (`coverage: --store requires a value`,
+// exit 1).
+// ---------------------------------------------------------------------------
+
+test("WR-18 (CR-04's shape in the FLAG slot): a --store value of the wrong kind is reported by name", () => {
+  const problems = problemsFor("vice-mcp anno coverage game.prg --store game.prg");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /--store/, "the problem must name the flag");
+  assert.match(problems[0]!, /game\.prg/, "and the value the reader wrote");
+  assert.match(problems[0]!, /\.annostore/, "and the kinds this flag does read");
+});
+
+test("WR-18: a --provenance value of the wrong kind is reported by name", () => {
+  const problems = problemsFor("vice-mcp anno render-memmap game.annostore --provenance game.annostore");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /--provenance/);
+  assert.match(problems[0]!, /\.json/, "the sidecar is read with JSON.parse, so .json is the kind");
+});
+
+test("WR-18: a value-taking flag at END OF LINE is a dead command, not a synopsis placeholder", () => {
+  for (const line of ["vice-mcp anno coverage game.prg --store", "vice-mcp anno render-memmap game.annostore --provenance"]) {
+    const problems = problemsFor(line);
+    assert.equal(problems.length, 1, `${line}: ${problems.join("; ")}`);
+    assert.match(problems[0]!, /takes a value and was documented with none/i);
+    assert.match(problems[0]!, /exits non-zero/i, "the reader has to be told what actually happens");
+  }
+});
+
+test("WR-18: a NON-required value-taking flag with no value is caught too -- --out also exits 1 without one", () => {
+  // `coverage: --out requires a value` / `render-memmap: --out requires a
+  // value`. Being non-required makes the flag optional to SUPPLY, not optional
+  // to give a value to once supplied.
+  const problems = problemsFor("vice-mcp anno coverage game.prg --store game.annostore --out");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /--out/);
+  assert.match(problems[0]!, /takes a value and was documented with none/i);
+});
+
+test("WR-18 positive controls: the correctly-spelled sibling of every case above is sound", () => {
+  for (const line of [
+    "vice-mcp anno coverage game.prg --store game.annostore",
+    "vice-mcp anno coverage game.prg --store game.store",
+    "vice-mcp anno coverage game.prg --store game.annostore --out report.json",
+    "vice-mcp anno render-memmap game.annostore --provenance sidecar.json",
+    "vice-mcp anno render-memmap game.annostore --provenance sidecar.json --out memory-map.md",
+  ]) {
+    assert.deepEqual(problemsFor(line), [], line);
+  }
+});
+
+test("WR-18: a synopsis PLACEHOLDER value is still skipped -- a gate that reds on `--store FILE` is one nobody keeps green", () => {
+  assert.deepEqual(problemsFor("vice-mcp anno coverage <image> --store FILE --out FILE"), []);
+  assert.deepEqual(problemsFor("vice-mcp anno render-memmap <store> --provenance FILE --out FILE"), []);
+});
+
+test("WR-18: a BOOLEAN flag with no value is never reported -- --force and --check take none", () => {
+  assert.deepEqual(problemsFor("vice-mcp anno render-memmap game.annostore --provenance sidecar.json --check"), []);
+  assert.deepEqual(problemsFor("vice-mcp anno render-memmap game.annostore --provenance sidecar.json --force"), []);
+  assert.deepEqual(problemsFor("vice-mcp anno coverage game.prg --store game.annostore --force"), []);
 });

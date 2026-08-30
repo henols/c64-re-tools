@@ -173,6 +173,70 @@ export const REQUIRED_FLAGS = Object.freeze({
   "render-memmap": Object.freeze(["--provenance"]),
 });
 
+// ---------------------------------------------------------------------------
+// The per-verb, per-flag VALUE kinds.
+//
+// WHY THIS EXISTS (WR-18, 2026-08-30). `WR-01`'s own proposed fix named this
+// map alongside `REQUIRED_FLAGS`; only the latter shipped. The gate therefore
+// checked kinds for POSITIONALS and for nothing else, and reported OK for
+//
+//   anno coverage game.prg --store game.prg
+//
+// which is `CR-04` VERBATIM -- an artefact of the wrong kind in the store slot,
+// refused at runtime with "not an annotation store" -- with the mistake moved
+// one token to the right, out of the positional slot and into the flag slot.
+// The same class of defect, invisible to the gate built to catch it, because
+// the check was bound to a SLOT rather than to the ARGUMENT.
+//
+// WHAT EACH ENTRY IS GROUNDED IN, read off the code, never guessed:
+//
+//   coverage --store       -> `openStore()` in `src/mcp/vice/anno-store.ts`.
+//                             Same function and same two kinds as
+//                             `POSITIONAL_KINDS["render-memmap"]`, because it
+//                             is the same artefact reached through a different
+//                             slot. Like that entry, this pins the shipped
+//                             CONVENTION rather than a code check: `openStore()`
+//                             enforces no extension, it opens a SQLite database
+//                             by path. Its job is to catch a different
+//                             ARTEFACT KIND in the store slot.
+//
+//   coverage --out         -> `anno-cli.ts`, the report write:
+//                             `writeFileSync(outPath, JSON.stringify(report, null, 2) + "\n")`.
+//                             A JSON report; USAGE calls it "the JSON report".
+//
+//   render-memmap --provenance -> the sidecar is JSON-parsed
+//                             (`anno-memmap-render.ts`'s sidecar branch, whose
+//                             syntax failure is the CR-03 digit-only offset
+//                             extractor). A non-JSON file exits 1.
+//
+//   render-memmap --out    -> the generated Markdown memory map; the verb's own
+//                             derived default is `memory-map.md` beside the
+//                             store (`anno-cli.ts`, `join(dirname(storePath),
+//                             "memory-map.md")`).
+//
+// A FLAG WITH NO ENTRY IS A FLAG THIS MAP MAKES NO CLAIM ABOUT, and there are
+// two deliberate absences rather than oversights: `--force` and `--check` are
+// BOOLEAN (they take no value at all), and `--sample N` takes an INTEGER, not a
+// path -- an extension table has nothing to say about either. `--sample abc` is
+// still refused only at runtime, and that is named in `checkInvocation()`'s own
+// list of what it does not check.
+//
+// A VERB WITH NO VALUE-TAKING FLAG GETS `{}`, DELIBERATELY AND EXPLICITLY, for
+// the reason `REQUIRED_FLAGS` gives at length: an absent key and an empty entry
+// must not read the same, and the committed test asserts every key of the CLI's
+// own `VERB_OPTIONS` appears here.
+// ---------------------------------------------------------------------------
+export const FLAG_KINDS = Object.freeze({
+  coverage: Object.freeze({
+    "--store": Object.freeze([".annostore", ".store"]),
+    "--out": Object.freeze([".json"]),
+  }),
+  "render-memmap": Object.freeze({
+    "--provenance": Object.freeze([".json"]),
+    "--out": Object.freeze([".md"]),
+  }),
+});
+
 /**
  * The order `checkInvocation()` reports problems in, declared rather than left
  * to fall out of the control flow -- an implicit order is one a refactor
@@ -181,9 +245,18 @@ export const REQUIRED_FLAGS = Object.freeze({
  *
  * `unknown-verb` SHORT-CIRCUITS: when it fires it is the only problem
  * returned, because every later check reads a verb-keyed table that has no
- * entry to read. The remaining three accumulate in this order.
+ * entry to read. The remaining five accumulate in this order.
  */
-export const PROBLEM_ORDER = Object.freeze(["unknown-verb", "flag-membership", "positional-kind", "required-flag"]);
+export const PROBLEM_ORDER = Object.freeze([
+  "unknown-verb",
+  "flag-membership",
+  "positional-kind",
+  "required-flag",
+  // The two WR-18 additions, placed AFTER the three that preceded them so an
+  // existing failure's reported order is unchanged by their arrival.
+  "flag-value-missing",
+  "flag-value-kind",
+]);
 
 /**
  * Returns every fenced code block's body in `text`, as an array of strings,
@@ -318,31 +391,52 @@ function own(table, key) {
  * Returns an array of human-readable problems with ONE invocation -- empty
  * when it is sound.
  *
- * It checks THREE things:
+ * It checks FIVE things:
  *   1. every flag is in that verb's real accepted option set,
  *   2. every positional's file extension is one of the kinds declared for that
- *      verb's slot, and
+ *      verb's slot,
  *   3. every flag the verb REQUIRES is present (WR-01 -- until 2026-08-30 this
  *      one was missing, and the gate reported OK for a documented command that
- *      exits 1).
+ *      exits 1),
+ *   4. every VALUE-TAKING flag actually carries a value (WR-18), and
+ *   5. every flag value's file extension is one of the kinds declared for that
+ *      FLAG (WR-18 -- until 2026-08-30 kinds were checked for the positional
+ *      SLOT and for nothing else, so `--store game.prg` was `CR-04` moved one
+ *      token to the right and invisible).
+ *
+ * Check 4's "value-taking" set is DERIVED, not a fourth table: a flag is
+ * value-taking when `flagKinds` declares kinds for it (an extension table only
+ * makes sense for a flag that takes a path) or when `requiredFlags` names it.
+ * The second half matters for a future required flag that takes a non-path
+ * value; today the two sets coincide. A flag in neither -- `--force`,
+ * `--check`, `--sample` -- is never reported for a missing value.
  *
  * AND TWO THINGS IT STILL DOES NOT CHECK, named so this comment does not
- * acquire a new false guarantee the moment it stops being a list of two:
- *   - a flag's VALUE. `--sample abc` passes here and is refused only at
- *     runtime, by the CLI's own "must be a positive integer" branch.
+ * acquire a new false guarantee the moment it stops being a list of two. Both
+ * are named with the case where being unchecked actually MATTERS, which is
+ * what the previous version of this list got wrong: it illustrated the
+ * flag-value gap with the harmless `--sample abc` while a documented
+ * `--store game.prg` was equally unchecked and fatal.
+ *   - a flag value that is not a PATH. `--sample abc` passes here and is
+ *     refused only at runtime, by the CLI's own "must be a positive integer"
+ *     branch, so a documented `--sample abc` is a dead command this gate does
+ *     not see. Closing it needs a value-SHAPE notion this module does not have.
  *   - a verb's argument ARITY. Two positionals where the verb reads one are
- *     each checked for KIND and neither is reported as one too many.
+ *     each checked for KIND and neither is reported as one too many, so a
+ *     documented `coverage a.prg b.prg --store s.annostore` passes here and
+ *     exits 1 at runtime.
  *
- * All three tables -- `verbOptions` (the CLI's own frozen `VERB_OPTIONS`),
- * `positionalKinds` and `requiredFlags` -- are passed IN as parameters rather
- * than read from module scope, so this stays a pure predicate a caller can
- * hand a deliberately-wrong table to, which is exactly what the committed
- * planted controls do. Two of the three are also DECLARED in this module (see
- * `POSITIONAL_KINDS` and `REQUIRED_FLAGS` above) so the gate and its test can
- * import the same definition; declaring frozen DATA adds no first-party
- * TypeScript import and no filesystem access, so the property that lets the
- * committed test call this in isolation is unchanged. `verbOptions` is never
- * declared here -- see this file's "never hand-type the accepted option set".
+ * All four tables -- `verbOptions` (the CLI's own frozen `VERB_OPTIONS`),
+ * `positionalKinds`, `requiredFlags` and `flagKinds` -- are passed IN as
+ * parameters rather than read from module scope, so this stays a pure
+ * predicate a caller can hand a deliberately-wrong table to, which is exactly
+ * what the committed planted controls do. Three of the four are also DECLARED
+ * in this module (see `POSITIONAL_KINDS`, `REQUIRED_FLAGS` and `FLAG_KINDS`
+ * above) so the gate and its test can import the same definition; declaring
+ * frozen DATA adds no first-party TypeScript import and no filesystem access,
+ * so the property that lets the committed test call this in isolation is
+ * unchanged. `verbOptions` is never declared here -- see this file's "never
+ * hand-type the accepted option set".
  *
  * PROBLEMS COME BACK IN THE DECLARED `PROBLEM_ORDER`, not in whatever order
  * the control flow happens to produce.
@@ -355,15 +449,17 @@ function own(table, key) {
  * here goes through `own()`; until 2026-08-30 those keys crashed the gate with
  * an unhandled `TypeError` instead (WR-19).
  *
- * A positional carrying a placeholder shape (`<store>`, `FILE`, `...`) is
- * SKIPPED rather than refused -- usage synopses are documentation, not
- * invocations, and a gate that reds on `<store>` is one nobody can keep green.
- * The required-flag check needs no second placeholder rule beside
- * `isPlaceholder()`: presence is a property of the flag TOKEN, so a synopsis
- * spelling the flag with a placeholder value (`--provenance FILE`) is present
- * by construction.
+ * A positional OR A FLAG VALUE carrying a placeholder shape (`<store>`,
+ * `FILE`, `...`) is SKIPPED rather than refused -- usage synopses are
+ * documentation, not invocations, and a gate that reds on `<store>` or on
+ * `--store FILE` is one nobody can keep green. The required-flag PRESENCE
+ * check needs no placeholder rule at all: presence is a property of the flag
+ * TOKEN, so a synopsis spelling the flag with a placeholder value
+ * (`--provenance FILE`) is present by construction. A flag at END OF LINE is
+ * the case that reasoning does NOT cover, and it is not a synopsis: it is a
+ * dead command, which is why check 4 exists (WR-18).
  */
-export function checkInvocation(invocation, verbOptions, positionalKinds, requiredFlags) {
+export function checkInvocation(invocation, verbOptions, positionalKinds, requiredFlags, flagKinds) {
   const problems = [];
   const { verb, positionals, flags, raw } = invocation;
   const where = raw ? ` (in: ${raw})` : "";
@@ -401,11 +497,41 @@ export function checkInvocation(invocation, verbOptions, positionalKinds, requir
 
   // WR-01. Presence, not membership: the flag may be spelled with a real value
   // or a synopsis placeholder, and either way the TOKEN is what is required.
+  const required = own(requiredFlags, verb) ?? [];
   const present = new Set(flags.map(({ flag }) => flag));
-  for (const flag of own(requiredFlags, verb) ?? []) {
+  for (const flag of required) {
     if (!present.has(flag)) {
       problems.push(
         `anno ${verb}: ${flag} is required and is missing -- the command exits non-zero at runtime without it${where}`,
+      );
+    }
+  }
+
+  // WR-18, check 4. A flag at END OF LINE (or followed by another flag) parses
+  // with `value === null`. For a BOOLEAN flag that is the correct spelling; for
+  // a value-taking one it is a dead command -- `coverage: --store requires a
+  // value`, exit 1 -- and the presence check above cannot see it, because the
+  // TOKEN is there.
+  const kindsByFlag = own(flagKinds, verb) ?? {};
+  const takesValue = (flag) => Object.hasOwn(kindsByFlag, flag) || required.includes(flag);
+  for (const { flag, value } of flags) {
+    if (value === null && takesValue(flag)) {
+      problems.push(
+        `anno ${verb}: ${flag} takes a value and was documented with none -- the command exits non-zero at runtime${where}`,
+      );
+    }
+  }
+
+  // WR-18, check 5. The positional check bound to the ARGUMENT rather than to
+  // the SLOT: `--store game.prg` is CR-04's artefact-kind mistake one token to
+  // the right.
+  for (const { flag, value } of flags) {
+    const valueKinds = own(kindsByFlag, flag);
+    if (valueKinds === undefined || value === null || isPlaceholder(value)) continue;
+    const ext = extensionOf(value);
+    if (!valueKinds.includes(ext)) {
+      problems.push(
+        `anno ${verb}: ${flag} value ${value} has extension ${ext || "(none)"}, which is not one this flag reads (${valueKinds.join(", ")})${where}`,
       );
     }
   }

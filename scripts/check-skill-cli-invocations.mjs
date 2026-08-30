@@ -2,9 +2,13 @@
 // Mechanical check behind REPOINT-01 and REPOINT-02: every documented
 // `anno <verb> ...` invocation in BOTH skill trees is ARGUMENT-CHECKED --
 // every flag against the verb's real accepted option set, every positional
-// against the file kinds that verb actually reads, and every flag the verb
-// REQUIRES for its presence (the third check was added 2026-08-30, WR-01:
-// without it this gate reported OK for a documented command that exits 1).
+// against the file kinds that verb actually reads, every flag the verb
+// REQUIRES for its presence (added 2026-08-30, WR-01: without it this gate
+// reported OK for a documented command that exits 1), and every value-taking
+// flag for BOTH a value and that value's kind (added 2026-08-30, WR-18: kinds
+// were checked for the positional SLOT and for nothing else, so CR-04's
+// artefact-kind mistake was invisible one token to the right, in
+// `--store game.prg`).
 //
 // WHY A SECOND SKILL GATE (29-VERIFICATION.md gap 2, review ids CR-04/CR-05).
 // `scripts/check-skill-tool-coverage.mjs` resolves tool and verb NAMES. It is
@@ -37,7 +41,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { VERB_OPTIONS } from "../src/mcp/vice/anno-cli.ts";
-// The two per-verb declaration tables are imported, not declared here. They
+// The per-verb declaration tables are imported, not declared here. They
 // lived in this file until 2026-08-30, which meant the committed test could
 // not read them -- this script runs its whole check at import time -- so the
 // test declared a private COPY and proved a fixture while CI ran the shipped
@@ -49,6 +53,7 @@ import {
   ANNO_INVOCATION_FLOOR,
   POSITIONAL_KINDS,
   REQUIRED_FLAGS,
+  FLAG_KINDS,
 } from "./lib/anno-cli-invocations.mjs";
 import { walkSkills } from "./lib/skill-corpus.mjs";
 
@@ -116,7 +121,7 @@ need(
 for (const { file, invocation } of invocations) {
   let problems;
   try {
-    problems = checkInvocation(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS);
+    problems = checkInvocation(invocation, VERB_OPTIONS, POSITIONAL_KINDS, REQUIRED_FLAGS, FLAG_KINDS);
   } catch (err) {
     need(false, `${file}: the invocation checker THREW on ${JSON.stringify(invocation.raw)} -- ${err instanceof Error ? err.message : String(err)}`);
     continue;
@@ -139,5 +144,5 @@ console.log(
     `${filesWithFences.size} of ${filesScanned} skill file(s) across ${TREES.length} trees (${TREES.map((t) => t.name).join(", ")}); ` +
     `${verbsCovered.length} verb(s) covered (${verbsCovered.join(", ")}); ` +
     `every flag checked against anno-cli.ts's own VERB_OPTIONS, every positional against the kinds its loader reads, ` +
-    `and every REQUIRED flag for its presence.`,
+    `every REQUIRED flag for its presence, and every value-taking flag for both a value and that value's kind.`,
 );
