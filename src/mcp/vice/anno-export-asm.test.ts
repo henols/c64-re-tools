@@ -61,6 +61,12 @@
 //     site.
 //   - Never interpolate a source string into a shell command. `assembleRaw()`
 //     writes it to a file and spawns ACME with an argv array.
+//   - Never write the eleven auto-name prefixes as an array literal in this
+//     file. They are PARSED out of `AUTO_NAME_PREFIX_RE.source`'s own
+//     alternation, so a twelfth prefix added to that regex is covered the next
+//     time this file runs and a five-prefix copy anywhere is caught. A literal
+//     list here would be the very reimplementation the structural scan below
+//     exists to detect -- committed in the file that detects it.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -72,7 +78,8 @@ import { fileURLToPath } from "node:url";
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import { assertExportableCommentText, exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
-import { openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
+import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
+import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 import { decode } from "./disasm-decoder.ts";
 
@@ -120,6 +127,8 @@ interface StoreSpec {
   ranges: readonly { start: number; endInclusive: number; dataType: string }[];
   labels?: readonly { address: number; name: string }[];
   comments?: readonly { address: number; commentType: string; text: string }[];
+  enums?: readonly { name: string; variants: Record<string, string> }[];
+  enumUsage?: readonly { address: number; name: string }[];
 }
 
 interface StoreFixture {
@@ -145,6 +154,8 @@ function buildStore(dir: string, spec: StoreSpec): StoreFixture {
     for (const range of spec.ranges) setDataType(handle, range);
     for (const label of spec.labels ?? []) setLabel(handle, { ...label, kind: "User" });
     for (const comment of spec.comments ?? []) setComment(handle, comment);
+    for (const projectEnum of spec.enums ?? []) createProjectEnum(handle, projectEnum);
+    for (const usage of spec.enumUsage ?? []) applyEnumUsage(handle, usage);
   } finally {
     closeStore(handle);
   }
@@ -168,6 +179,8 @@ function buildStoreOverImage(tag: string, imagePath: string, spec: Omit<StoreSpe
     for (const range of spec.ranges) setDataType(handle, range);
     for (const label of spec.labels ?? []) setLabel(handle, { ...label, kind: "User" });
     for (const comment of spec.comments ?? []) setComment(handle, comment);
+    for (const projectEnum of spec.enums ?? []) createProjectEnum(handle, projectEnum);
+    for (const usage of spec.enumUsage ?? []) applyEnumUsage(handle, usage);
   } finally {
     closeStore(handle);
   }
@@ -234,6 +247,21 @@ function verifyExportText(result: ExportAsmResult, source: string): AcmeVerifyRe
  * multiply. */
 function verifyExport(result: ExportAsmResult): AcmeVerifyResult {
   return verifyExportText(result, result.source);
+}
+
+/**
+ * The `name = $XXXX` definition line for `name`, with any trailing marker
+ * comment split off.
+ *
+ * An auto-generated name's definition carries a fixed trailing comment (the
+ * annotation-backlog marker), so a test about the DEFINITION -- its hex-digit
+ * count, its presence, its position -- compares the part before the comment
+ * rather than the whole line. Split on the two-space `;` separator this module
+ * uses everywhere, so a definition that never grew a comment compares
+ * unchanged.
+ */
+function definitionOf(lines: readonly string[], name: string): string | undefined {
+  return lines.find((line) => line.startsWith(`${name} = `))?.split("  ;")[0];
 }
 
 /** A verdict rendered for a failure message: everything a human needs to see
@@ -352,8 +380,13 @@ test("a symbol below $0100 is defined with TWO hex digits and one at or above wi
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
   const lines = result.source.split("\n");
 
-  assert.ok(
-    lines.includes("zpf_90 = $90"),
+  // Compared on the DEFINITION only, with any trailing marker comment split
+  // off: `zpf_90` matches the auto-name prefix set, so its line also carries
+  // the backlog marker. The digit count is what this test is about, and a
+  // comment cannot change a byte.
+  assert.equal(
+    definitionOf(lines, "zpf_90"),
+    "zpf_90 = $90",
     `measured on ACME 0.97: \`zpf = $10\` then \`lda zpf\` is 2 bytes (zeropage) while \`zpf = $0010\` then the same line is ` +
       `3 bytes (absolute), so the DEFINITION's digit count is a byte-width decision:\n${result.source}`,
   );
@@ -426,10 +459,17 @@ test("PLANTED VIOLATION 2: a symbol substituted into a zeropage operand with its
   //   `Warning (Zone <untitled>): Using oversized addressing mode.`
   // to show for it at exit 0 in isolation. Here the end assertion converts that
   // silent widening into a refusal.
+  // The definition line is READ OUT OF THE EXPORT rather than retyped: `zpf_90`
+  // matches the auto-name prefix set, so its line also carries the backlog
+  // marker, and a retyped literal would silently match nothing -- leaving the
+  // source unmodified and the "violation" passing for the wrong reason.
+  const zpDefinitionLine = result.source.split("\n").find((line) => line.startsWith("zpf_90 = "));
+  assert.ok(zpDefinitionLine !== undefined, `the fixture must define zpf_90:\n${result.source}`);
+
   const planted = result.source
-    .replace("zpf_90 = $90\n", "")
+    .replace(`${zpDefinitionLine}\n`, "")
     .replace("        lda $90", "        lda zpf_90")
-    .replace("        rts\n", "        rts\nzpf_90 = $90\n");
+    .replace("        rts\n", `        rts\n${zpDefinitionLine}\n`);
   assert.ok(planted.includes("        lda zpf_90"), `the zeropage operand must actually carry the symbol:\n${planted}`);
   assert.ok(planted.indexOf("zpf_90 = $90") > planted.indexOf("* = $0801"), `the definition must sit below the first \`* =\`:\n${planted}`);
 
@@ -446,7 +486,7 @@ test("PLANTED VIOLATION 2: a symbol substituted into a zeropage operand with its
   // intact, assembles at exit 0 with byte-identical output. The header block
   // and the width force cover the same hazard from different sides, and the
   // block brackets are what covers losing both.
-  const moveOnly = result.source.replace("zpf_90 = $90\n", "").replace("        rts\n", "        rts\nzpf_90 = $90\n");
+  const moveOnly = result.source.replace(`${zpDefinitionLine}\n`, "").replace("        rts\n", `        rts\n${zpDefinitionLine}\n`);
   const survived = assembleRaw(moveOnly);
   assert.equal(survived.status, 0, `the move alone must NOT fire -- the \`+2\` force already holds the width:\n  stderr: ${survived.stderr}`);
   assert.equal(survived.outputExists, true, "the move alone still produces an output file");
@@ -940,4 +980,373 @@ test("a store with no mid-instruction label reports `midInstructionLabelCount` z
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
   assert.equal(result.midInstructionLabelCount, 0);
   assert.equal(result.source.includes("=*+$"), false, `no inline definition may be emitted when no label sits inside an instruction:\n${result.source}`);
+});
+
+// ---------------------------------------------------------------------------
+// The eleven typed auto-name prefixes, read from their ONE home.
+//
+// `anno-types.ts:93-99` forbids restating them and names the failure a short
+// reimplementation causes: a five-prefix copy silently under-counts, breaking
+// `routine-queue-walker`'s backlog construction while every test keeps passing.
+// The structural scan below is what turns that from a rule into a check, and it
+// has THREE directions -- including the comment-only control that stops it
+// degrading into a substring search which passes by counting its own prose.
+// ---------------------------------------------------------------------------
+
+const EXPORTER_PATH = join(HERE, "anno-export-asm.ts");
+
+/**
+ * A quote-aware comment stripper, the shape `anno-cli-path-consumers.test.ts`
+ * uses. A COPY rather than an import: that helper is not exported, and widening
+ * another test file's surface for this one is a larger change than the twenty
+ * lines below.
+ */
+function stripComments(src: string): string {
+  let out = "";
+  const n = src.length;
+  let i = 0;
+  let quote: string | null = null;
+  while (i < n) {
+    const c = src[i]!;
+    if (quote) {
+      out += c;
+      if (c === "\\") {
+        out += src[i + 1] ?? "";
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "/") {
+      while (i < n && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * The eleven prefix tokens, parsed out of `AUTO_NAME_PREFIX_RE`'s OWN
+ * alternation. Never a literal list -- see this file's WHAT NOT TO DO.
+ */
+function parseAutoNamePrefixes(): string[] {
+  const match = /^\^\(([^)]+)\)$/.exec(AUTO_NAME_PREFIX_RE.source);
+  assert.ok(
+    match,
+    `AUTO_NAME_PREFIX_RE is no longer a single anchored alternation, so this file can no longer derive the prefix set from it: ` +
+      `${AUTO_NAME_PREFIX_RE.source}`,
+  );
+  return match[1]!.split("|");
+}
+
+/**
+ * Regex literals in already-stripped TypeScript source, matched only where a
+ * regex may legally BEGIN (start of line, or after an operator-ish character).
+ * Without that guard the `/` inside a string like `"./anno-store.ts"` opens a
+ * phantom literal and the scan reports on text that is not a regex at all.
+ */
+function regexLiteralBodies(strippedSrc: string): string[] {
+  const bodies: string[] = [];
+  for (const m of strippedSrc.matchAll(/(^|[=(,:[!&|?{;+\s])\/((?:\\.|\[[^\]]*\]|[^/\n\\])+)\/[dgimsuvy]*/gm)) {
+    bodies.push(m[2]!);
+  }
+  return bodies;
+}
+
+/**
+ * THE ONE PREDICATE. The real scan and BOTH controls call this same function,
+ * so there is exactly one definition of "restates the auto-name prefixes rather
+ * than importing them" -- the discipline `anno-cli-path-consumers.test.ts`
+ * states: a structural test and its own proof must share the checked logic
+ * rather than each carry a copy.
+ *
+ * `true` means VIOLATION: the source either does not import
+ * `AUTO_NAME_PREFIX_RE` at all, or it carries a regex literal whose body names
+ * two or more of the prefix tokens -- which is what a hand-rolled
+ * reimplementation looks like.
+ */
+function restatesAutoNamePrefixes(strippedSrc: string, prefixes: readonly string[]): boolean {
+  const importsTheRegex = /import\s*\{[^}]*\bAUTO_NAME_PREFIX_RE\b[^}]*\}\s*from/.test(strippedSrc);
+  const restatingLiteral = regexLiteralBodies(strippedSrc).some((body) => prefixes.filter((prefix) => body.includes(prefix)).length >= 2);
+  return !importsTheRegex || restatingLiteral;
+}
+
+test("the auto-name prefix set is parsed from AUTO_NAME_PREFIX_RE's own alternation: exactly eleven, `L_` absent, ASCII case-sensitive", () => {
+  const prefixes = parseAutoNamePrefixes();
+  assert.equal(
+    prefixes.length,
+    11,
+    `the prefix vocabulary changed size. It is PARSED from AUTO_NAME_PREFIX_RE rather than copied, so the new member is already covered ` +
+      `everywhere in this file -- update this pinned count and confirm the new prefix round-trips.\n  parsed: ${prefixes.join(", ")}`,
+  );
+  assert.equal(prefixes.includes("L_"), false, "`L_` must stay absent -- upstream gives it to predefined AND user-defined labels alike, so it cannot distinguish auto from user");
+  assert.equal(AUTO_NAME_PREFIX_RE.test("L_main_loop"), false);
+
+  // ASCII case-sensitive: an uppercased auto name is a user rename.
+  assert.equal(AUTO_NAME_PREFIX_RE.test("s_0820"), true);
+  assert.equal(AUTO_NAME_PREFIX_RE.test("S_0820"), false, "matching is ASCII case-sensitive, exactly as upstream emits the prefixes");
+});
+
+test("STRUCTURAL SCAN, all three directions: the exporter imports the prefix regex, a planted five-prefix copy is reported, and a comment-only mention is NOT", () => {
+  const prefixes = parseAutoNamePrefixes();
+  const real = stripComments(readFileSync(EXPORTER_PATH, "utf8"));
+
+  // Direction 1: the real source is clean.
+  assert.equal(
+    restatesAutoNamePrefixes(real, prefixes),
+    false,
+    "anno-export-asm.ts must import AUTO_NAME_PREFIX_RE from its one home and carry no regex literal restating the prefixes. " +
+      "A five-prefix copy under-counts silently and breaks routine-queue-walker's backlog construction while every test keeps passing.",
+  );
+
+  // Direction 2: a planted FIVE-prefix regex literal is reported. Built from the
+  // parsed tokens, so it is a genuine short copy of the real vocabulary rather
+  // than five names typed here.
+  const plantedBody = `/^(${prefixes.slice(0, 5).join("|")})/`;
+  const plantedSource = `${real}\nconst LOCAL_AUTO_PREFIX_RE = ${plantedBody};\n`;
+  assert.equal(
+    restatesAutoNamePrefixes(plantedSource, prefixes),
+    true,
+    `the scan must REPORT a five-prefix reimplementation, or it is not checking anything:\n  planted: ${plantedBody}`,
+  );
+
+  // Direction 3: the SAME text inside a comment is NOT reported. This is the
+  // control that stops the scan degrading into a substring search that passes by
+  // counting the module's own prose about the prefixes.
+  const commentOnly = stripComments(`${readFileSync(EXPORTER_PATH, "utf8")}\n// a note mentioning ${plantedBody} in prose only\n`);
+  assert.equal(
+    restatesAutoNamePrefixes(commentOnly, prefixes),
+    false,
+    "a comment naming the prefixes is documentation, not a reimplementation -- a scan that cannot tell them apart would fire on the " +
+      "module's own WHAT-NOT-TO-DO paragraph",
+  );
+
+  // And the planted violation must be caught for the RIGHT reason: a source with
+  // the import removed is also a violation, by the other half of the predicate.
+  assert.equal(
+    restatesAutoNamePrefixes(real.replace("AUTO_NAME_PREFIX_RE", "SOMETHING_ELSE"), prefixes),
+    true,
+    "dropping the import is a violation too -- the predicate has two halves and both must bite",
+  );
+});
+
+test("every one of the parsed prefixes round-trips as a label name, is MARKED in the source, and `L_`/uppercase names are not counted", { skip: SKIP_REASON }, () => {
+  const prefixes = parseAutoNamePrefixes();
+
+  // One label per parsed prefix, at addresses OUTSIDE the code range so no
+  // substitution or mid-instruction rule is engaged -- this test is about the
+  // marking, not about operand rendering.
+  const autoLabels = prefixes.map((prefix, i) => ({ address: 0x2000 + i, name: `${prefix}${i.toString(16).padStart(2, "0")}` }));
+  const { dir, storePath, imagePath } = buildStore(freshDir("prefixes"), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [
+      ...autoLabels,
+      // Both deliberate non-matches: `L_` is excluded from the vocabulary, and
+      // matching is ASCII case-sensitive.
+      { address: 0x2100, name: "L_0801" },
+      { address: 0x2101, name: "S_0820" },
+    ],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  for (const label of autoLabels) {
+    const line = lines.find((l) => l.startsWith(`${label.name} = `));
+    assert.ok(line !== undefined, `every prefixed label must reach the source:\n${result.source}`);
+    assert.notEqual(line.split("  ;")[1], undefined, `\`${label.name}\` must be MARKED as auto-generated:\n  line: ${line}`);
+  }
+
+  assert.equal(definitionOf(lines, "L_0801"), "L_0801 = $2100");
+  assert.equal(lines.find((l) => l.startsWith("L_0801 = "))?.includes("  ;"), false, "`L_` is not an auto-name prefix, so its definition carries no marker");
+  assert.equal(lines.find((l) => l.startsWith("S_0820 = "))?.includes("  ;"), false, "prefix matching is ASCII case-sensitive, so `S_0820` is a user rename");
+
+  assert.equal(result.autoNamedSymbolCount, prefixes.length, "one marked definition per parsed prefix, and neither of the two non-matches");
+  assert.equal(result.symbolCount, prefixes.length + 2);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a store full of auto-named labels must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `auto-name marking is a COMMENT and cannot change a byte:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// Enums, on the IMMEDIATE operand only.
+//
+// Measured on ACME 0.97: `lda #viccolor_BLACK` with `viccolor_BLACK = $00` is
+// byte-identical to `lda #$00`, while the same symbol moved onto a following
+// `sta` encodes as ZEROPAGE -- two bytes where the absolute original was three.
+// The wrong-operand case changes both the bytes AND the instruction length.
+// ---------------------------------------------------------------------------
+
+/** `viccolor` over the two values the shape fixture's `lda #$00` can take. */
+const VICCOLOR = { name: "viccolor", variants: { $00: "BLACK", $01: "WHITE" } } as const;
+
+function enumFixture(tag: string, usageAddress: number): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+    enums: [{ name: VICCOLOR.name, variants: { ...VICCOLOR.variants } }],
+    enumUsage: [{ address: usageAddress, name: VICCOLOR.name }],
+  });
+}
+
+test("an enum on an IMMEDIATE operand renders as `#<enum>_<VARIANT>`, defines the variant in the header, and produces the SAME bytes as the plain form", { skip: SKIP_REASON }, () => {
+  const withEnum = enumFixture("enum-immediate", 0x0801);
+  const enumResult = exportAsm({ storePath: withEnum.storePath, imagePath: withEnum.imagePath, workspaceRoot: withEnum.dir });
+
+  const plain = shapeFixture("enum-plain");
+  const plainResult = exportAsm({ storePath: plain.storePath, imagePath: plain.imagePath, workspaceRoot: plain.dir });
+
+  const lines = enumResult.source.split("\n");
+  assert.ok(lines.includes("        lda #viccolor_BLACK"), `the immediate operand must render through the variant name:\n${enumResult.source}`);
+  assert.equal(definitionOf(lines, "viccolor_BLACK"), "viccolor_BLACK = $00", `the variant is defined with TWO hex digits, per the width rule:\n${enumResult.source}`);
+  assert.equal(lines.indexOf("viccolor_BLACK = $00") < lines.indexOf("* = $0801"), true, "the variant definition belongs in the header block, before the first `* =`");
+  assert.equal(enumResult.enumSubstitutionCount, 1);
+  assert.equal(enumResult.source.includes("lda #$00"), false, "the hex literal must be REPLACED, not merely accompanied");
+
+  // The two exports must expect the SAME bytes: a name is not a value.
+  assert.deepEqual([...enumResult.expectedBytes], [...plainResult.expectedBytes]);
+
+  const enumVerdict = verifyExport(enumResult);
+  const plainVerdict = verifyExport(plainResult);
+  assert.equal(enumVerdict.outcome, "ok", `the enum form must round-trip:${context(enumResult, enumVerdict)}`);
+  assert.equal(plainVerdict.outcome, "ok", `the plain form must round-trip:${context(plainResult, plainVerdict)}`);
+  assert.equal(enumVerdict.byteDiff?.equal, true);
+  assert.equal(plainVerdict.byteDiff?.equal, true);
+});
+
+test("an enum bound to a NON-IMMEDIATE operand is REFUSED by name, naming the address and the operand role", () => {
+  // $0803 is the `sta $d020` -- an absolute operand.
+  const { dir, storePath, imagePath } = enumFixture("enum-wrong-operand", 0x0803);
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("$0803"), `the refusal names the ADDRESS: ${e.message}`);
+      assert.ok(e.message.includes("absolute"), `the refusal names the OPERAND ROLE it refused: ${e.message}`);
+      assert.ok(e.message.includes("viccolor"), `the refusal names the ENUM, so a human can find the row: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("WRONG-OPERAND CONTROL: hand-moving the enum symbol onto a following `sta` is REFUSED at the source-text boundary", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = enumFixture("enum-control", 0x0801);
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // ONE documented move: the symbol leaves the immediate operand it belongs on
+  // and lands on the absolute operand of the following `sta`.
+  const moved = result.source.replace("        lda #viccolor_BLACK", "        lda #$00").replace("        sta $d020", "        sta viccolor_BLACK");
+  assert.notEqual(moved, result.source, "the move must change the source");
+  assert.ok(moved.includes("        sta viccolor_BLACK"), `the sta must actually carry the symbol:\n${moved}`);
+
+  const verdict = verifyExportText(result, moved);
+
+  // WHAT IS LOAD-BEARING AND ASSERTED UNCONDITIONALLY: the mutation is REFUSED,
+  // and nothing about the run reads as a pass.
+  assert.equal(
+    verdict.outcome,
+    "failed",
+    `the wrong-operand emission must be REFUSED:\n  outcome: ${verdict.outcome}\n  reason: ${verdict.reason}\n  exitStatus: ${verdict.exitStatus}\n${moved}`,
+  );
+  assert.notEqual(verdict.outcome, "ok");
+  assert.notEqual(verdict.byteDiff?.equal, true);
+
+  // WHICH RULE PRODUCED THE VERDICT IS OBSERVED, NEVER PINNED IN ADVANCE. Two
+  // refusals are in play and they disagree about the exit code. `viccolor_BLACK`
+  // is $00, so `sta viccolor_BLACK` re-encodes as ZEROPAGE -- two bytes where
+  // the absolute original was three -- and the block's own `!if * != $0807` end
+  // assertion fires first. That is a STRONGER catch than the byte-diff, not a
+  // weaker one: ACME exits 1 and writes no output file at all. Recorded as
+  // measured; the `*` assertion is NOT silenced to manufacture an exit-0
+  // observation, because that would disable one instrument to demonstrate
+  // another.
+  if (verdict.exitStatus === 1) {
+    assert.ok(
+      verdict.diagnostics.some((d) => d.includes("export-asm: block end drifted")),
+      `at exit 1, the per-block \`*\` assertion must be the rule that produced the verdict:\n  diagnostics: ${verdict.diagnostics.join(" | ")}`,
+    );
+  } else {
+    assert.equal(verdict.exitStatus, 0, `ACME's exit status is one of the two measured outcomes:\n  reason: ${verdict.reason}`);
+    assert.equal(verdict.byteDiff?.equal, false, `at exit 0, the byte-diff must be the rule that produced the verdict:\n  reason: ${verdict.reason}`);
+  }
+});
+
+test("an enum carrying a variant above $ff is REFUSED for an immediate operand, and real ACME refuses the same shape with `Number does not fit in 8 bits.`", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("enum-wide"), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [],
+    enums: [{ name: "viccolor", variants: { $00: "BLACK", $0100: "WIDE" } }],
+    enumUsage: [{ address: 0x0801, name: "viccolor" }],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("WIDE"), `the refusal names the VARIANT: ${e.message}`);
+      assert.ok(e.message.includes("$0801"), `the refusal names the ADDRESS: ${e.message}`);
+      return true;
+    },
+  );
+
+  // THE EXTERNAL ORACLE, agreeing with the internal one. The exporter refuses
+  // first so its message can name the store row; ACME refuses the same shape
+  // with its own words and its own exit status.
+  const wide = assembleRaw("!cpu 6510\nviccolor_WIDE = $0100\n* = $0801\n        lda #viccolor_WIDE\n        rts\n");
+  assert.equal(wide.status, 1, `real ACME must refuse a >$ff value on an immediate operand:\n  stdout: ${wide.stdout}\n  stderr: ${wide.stderr}`);
+  assert.ok(
+    wide.stderr.includes("Number does not fit in 8 bits."),
+    `ACME's OWN message must be what refused it:\n  stderr: ${wide.stderr}`,
+  );
+
+  // The paired direction: the same source with a value that DOES fit assembles,
+  // so the red above is one changed value and nothing else.
+  const narrow = assembleRaw("!cpu 6510\nviccolor_WIDE = $01\n* = $0801\n        lda #viccolor_WIDE\n        rts\n");
+  assert.equal(narrow.status, 0, `the same shape with a byte value must assemble:\n  stderr: ${narrow.stderr}`);
+});
+
+test("an enum usage with no decoded instruction at its address is REFUSED by name, never silently dropped", () => {
+  // $0802 is the operand byte of the `lda #$00` at $0801 -- no emitted line
+  // starts there.
+  const { dir, storePath, imagePath } = enumFixture("enum-unplaceable", 0x0802);
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("$0802"), `the refusal names the address it could not attach to: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("a store with no enums reports `enumSubstitutionCount` zero and `autoNamedSymbolCount` zero -- neither counter is a constant", () => {
+  const { dir, storePath, imagePath } = shapeFixture("enum-count-zero");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.equal(result.enumSubstitutionCount, 0);
+  assert.equal(result.autoNamedSymbolCount, 0, "`entry` is a user-chosen name and matches no auto prefix");
 });

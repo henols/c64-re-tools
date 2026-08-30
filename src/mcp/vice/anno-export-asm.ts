@@ -39,10 +39,20 @@
 //     owns D-09's `!byte` substitution and D-11's width invariant, both
 //     verified against real ACME. A second emitter would be a second answer to
 //     "how wide is this operand", and the two would drift silently.
-//   - Never restate the eleven auto-name prefixes here. `anno-types.ts` forbids
-//     a second copy of that vocabulary by name; this module does not need it at
-//     all, and a copy made "just to filter" is how the eleventh prefix goes
-//     missing in one of two places.
+//   - Never restate the eleven auto-name prefixes here. `anno-types.ts:93-99`
+//     forbids a second copy of that vocabulary BY NAME, and names the exact
+//     failure a short reimplementation causes: a five-prefix copy silently
+//     under-counts, which breaks `routine-queue-walker`'s backlog construction
+//     while every test keeps passing. This module DOES need the vocabulary --
+//     it marks auto-generated names in the emitted source -- and it gets it by
+//     IMPORTING `AUTO_NAME_PREFIX_RE` from its one home. A copy made "just to
+//     filter" is how the eleventh prefix goes missing in one of two places.
+//   - Never emit an enum on anything but an IMMEDIATE operand. Measured on ACME
+//     0.97, `sta viccolor_WHITE` with `viccolor_WHITE = $01` encodes as
+//     ZEROPAGE -- `85 01`, two bytes where the absolute original was three --
+//     so the substitution changes both the bytes and the instruction length. A
+//     non-immediate operand is REFUSED by name below, never rendered and hoped
+//     for.
 //   - Never compare a `dataType` string in this module beyond the TWO places
 //     that already do, each of which says so in its own comment:
 //     `CODE_DATA_TYPE`'s decoder-or-dump branch, and `WORD_PAIR_DATA_TYPES`'s
@@ -75,15 +85,34 @@
 // its own blocks, and neither does the byte-diff that settles it.
 //
 // SCOPE, STILL DELIBERATELY NARROW: code ranges, the twelve typed data ranges,
-// comments and mid-instruction `=*+$NN` labels. There is no enum substitution
-// here yet; that arrives in a later plan of this phase.
+// comments, mid-instruction inline labels and immediate-operand enum
+// substitution.
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
-import { openStore, closeStore, listRanges, listLabels, listComments } from "./anno-store.ts";
-import { AnnoCommentError, COMMENT_TYPES, assertCommentText } from "./anno-types.ts";
-import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
+import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage } from "./anno-store.ts";
+import { AnnoCommentError, COMMENT_TYPES, assertCommentText, parseVariantKey } from "./anno-types.ts";
+import type { CommentRow, EnumUsageRow, LabelRow, ProjectEnumRow, RangeRow } from "./anno-types.ts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
+// The eleven typed auto-name prefixes, IMPORTED FROM THEIR ONE HOME rather than
+// restated. This is the first cross-module PRODUCTION importer of that
+// constant; before this the only consumers were `anno-coverage.ts`'s own
+// `computeLabelRatio()` and its test file.
+//
+// WHY THE EXPORTER CARES. `routine-queue-walker`'s SKILL.md reads the typed
+// prefixes as DOCUMENTED VOCABULARY (`s_`, `p_`, `b_`, `zpp_`, `zpf_`, `zpa_`,
+// `f_`, `a_` at :128-181 and :220-226) and never imports the regex, so the
+// coupling between that skill's backlog signal and this repo's definition of
+// "auto-generated name" is by convention and would break in SILENCE. Marking
+// those definitions in the exported source is what keeps the backlog visible to
+// a human reading the generated assembly, which is the one artefact that leaves
+// this tree.
+//
+// WHAT NOT TO DO: do not restate the eleven here, in any form -- not as an
+// array, not as a second regex, not as a doc comment listing them.
+// `anno-types.ts:93-99` forbids it by name, and `EXPORT-02` names the failure
+// mode: a five-prefix copy under-counts silently.
+import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 import { decode } from "./disasm-decoder.ts";
 import { renderLine } from "./disasm-renderer.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
@@ -168,6 +197,15 @@ export interface ExportAsmResult {
    * header definition block, because such a label is defined inline and
    * defining it twice is ACME's `Symbol already defined.` */
   midInstructionLabelCount: number;
+  /** How many emitted symbol definitions carry an AUTO-GENERATED name, decided
+   * by `AUTO_NAME_PREFIX_RE` -- the eleven typed prefixes, read from their one
+   * home and never restated here. This is `routine-queue-walker`'s backlog
+   * signal, surfaced in the one artefact that leaves this tree. */
+  autoNamedSymbolCount: number;
+  /** How many instruction operands were rendered through a project enum's
+   * variant name instead of a hex literal. Every one of them is an IMMEDIATE
+   * operand; any other operand role is refused. */
+  enumSubstitutionCount: number;
 }
 
 /** How many raw bytes go on one `!byte` line for a non-code block. */
@@ -392,6 +430,55 @@ function midInstructionLabelLine(name: string, offset: number): string {
 const MID_INSTRUCTION_LABEL_FLOOR = 0x100;
 
 /**
+ * The fixed trailing comment that marks an auto-generated symbol name in the
+ * emitted source. ONE spelling, in one place: a second wording would make the
+ * marker ungreppable for the human reading the generated assembly, which is the
+ * only reader it exists for.
+ */
+const AUTO_NAME_MARKER = "  ; auto-generated name -- still in the annotation backlog";
+
+/**
+ * The largest value an enum variant may carry to be substitutable into an
+ * IMMEDIATE operand.
+ *
+ * Measured on ACME 0.97: `viccolor_WIDE = $0100` then `lda #viccolor_WIDE`
+ * is `Error ... : Number does not fit in 8 bits.` at exit 1. The exporter
+ * refuses FIRST so the message can name the store row and the enum, rather than
+ * a line number in a temp file the caller never sees.
+ */
+const MAX_IMMEDIATE_VARIANT_VALUE = 0xff;
+
+/**
+ * Replaces the `#$XX` immediate literal `renderLine()` produced with `#symbol`.
+ *
+ * WHY A TARGETED TEXT SUBSTITUTION RATHER THAN A `RenderOptions` WIDENING.
+ * D-11 forbids `renderLine()` from substituting a symbol into an immediate
+ * operand at all, because of the `#<`/`#>` high/low-byte ambiguity, and that
+ * rule is verified against a real assembler in `disasm-roundtrip.test.ts`. It
+ * is not relaxed here. What an ENUM adds is a caller-supplied fact the renderer
+ * does not have -- that this particular byte is a member of a named vocabulary
+ * -- so the substitution happens at this boundary, on this module's own output,
+ * for exactly one operand whose width is one byte and therefore cannot change.
+ *
+ * The literal is located and matched EXACTLY. A rendered line that does not
+ * carry the expected literal is a disagreement between this module and the
+ * renderer, and it is refused rather than patched over: a `replace()` that
+ * silently matched nothing would emit the hex literal while the count claimed a
+ * substitution happened.
+ */
+function substituteImmediateEnum(line: string, value: number, symbol: string, address: number): string {
+  const literal = `#${hex2(value)}`;
+  const at = line.indexOf(literal);
+  if (at < 0) {
+    throw new Error(
+      `exportAsm: the instruction at ${hex4(address)} carries an enum usage, but its rendered line does not contain the immediate ` +
+        `literal ${literal} this module expected to replace. Refusing to emit a line whose substitution silently did nothing.`,
+    );
+  }
+  return `${line.slice(0, at)}#${symbol}${line.slice(at + literal.length)}`;
+}
+
+/**
  * The store's own spellings for the two comment placements, DESTRUCTURED out of
  * `COMMENT_TYPES` -- the ONE home of that vocabulary -- rather than re-typed as
  * literals here. The same idiom `anno-memmap-render.ts` uses at its own read
@@ -504,10 +591,14 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   let ranges: RangeRow[];
   let labels: LabelRow[];
   let comments: CommentRow[];
+  let projectEnums: ProjectEnumRow[];
+  let enumUsage: EnumUsageRow[];
   try {
     ranges = listRanges(handle);
     labels = listLabels(handle);
     comments = listComments(handle);
+    projectEnums = listProjectEnums(handle);
+    enumUsage = listEnumUsage(handle);
   } finally {
     closeStore(handle);
   }
@@ -563,8 +654,36 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   }
   const placement: CommentPlacement = { byAddress: commentsByAddress, placed: new Set<number>() };
 
+  // Enum usages indexed by the address they annotate. `listEnumUsage()` already
+  // resolves the enum's NAME through a join on `anno_enum.id`, so this module
+  // never holds a second on-disk copy of it; the row set is turned into an
+  // address lookup here and the enum's own variants are joined on by name from
+  // `listProjectEnums()`.
+  const enumsByName = new Map<string, ProjectEnumRow>();
+  for (const row of projectEnums) enumsByName.set(row.name, row);
+  const usageByAddress = new Map<number, EnumUsageRow>();
+  for (const row of enumUsage) usageByAddress.set(row.address, row);
+  const appliedEnumUsage = new Set<number>();
+  /** `<enumName>_<VARIANT> = $XX` definition lines, in first-emitted order.
+   * They join the header block for the same reason label definitions do. */
+  const enumDefinitionLines: string[] = [];
+  const definedEnumSymbols = new Set<string>();
+
   let unexpressibleCount = 0;
   let dataByteCount = 0;
+
+  // AUTO-GENERATED NAMES ARE MARKED, not filtered. Every store label reaches
+  // the source either way; the marker is the backlog signal, carried into the
+  // one artefact that leaves this tree. The predicate is
+  // `AUTO_NAME_PREFIX_RE`'s, imported -- never a second copy. It is applied at
+  // BOTH definition sites, header and inline, so an auto-named self-modifying
+  // code operand is as visible in the backlog as any other.
+  let autoNamedSymbolCount = 0;
+  const markIfAutoNamed = (name: string, line: string): string => {
+    if (!AUTO_NAME_PREFIX_RE.test(name)) return line;
+    autoNamedSymbolCount++;
+    return `${line}${AUTO_NAME_MARKER}`;
+  };
 
   // The addresses of every label emitted INLINE as `name =*+$NN`. They are
   // collected during block emission and read afterwards by the header, which
@@ -642,8 +761,83 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           }
 
           midInstructionLabelAddresses.add(label.address);
-          content.push(midInstructionLabelLine(label.name, label.address - instr.address));
+          content.push(markIfAutoNamed(label.name, midInstructionLabelLine(label.name, label.address - instr.address)));
           block.lineCount++;
+        }
+
+        let rendered = renderLine(instr, { showSymbols: true, symbolFor });
+
+        // ENUM SUBSTITUTION, IMMEDIATE OPERAND ONLY.
+        const usage = usageByAddress.get(instr.address);
+        if (usage !== undefined) {
+          const role = instr.operand?.role;
+          if (role !== "immediate") {
+            throw new Error(
+              `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to ${hex4(usage.address)}, whose operand role is ` +
+                `${JSON.stringify(role ?? "none")} -- an enum renders on the IMMEDIATE operand only. Emitting it on any other operand ` +
+                `changes both the bytes and the instruction length while ACME exits 0 (measured on ACME 0.97: \`sta\` on a symbol below ` +
+                `$0100 encodes as zeropage, 2 bytes instead of 3). REFUSED rather than rendered.`,
+            );
+          }
+
+          const project = enumsByName.get(usage.enumName);
+          if (project === undefined) {
+            // Unreachable through `applyEnumUsage()`, which resolves the enum
+            // inside its own transaction, and reachable through a store file
+            // somebody edited. Refusing beats emitting an operand with no
+            // vocabulary behind it.
+            throw new Error(
+              `exportAsm: the enum usage at ${hex4(usage.address)} names enum ${JSON.stringify(usage.enumName)}, which the store holds ` +
+                `no definition for. Refusing to emit an operand whose vocabulary is missing.`,
+            );
+          }
+
+          // EVERY variant of the enum is checked, not only the one this operand
+          // matched. An enum carrying a variant above $ff is not a BYTE
+          // vocabulary, and binding it to a byte operand is a modelling error
+          // whose only symptom would otherwise be a variant that silently never
+          // renders. Refusing here names the enum and the variant; ACME's own
+          // refusal for the same shape is `Number does not fit in 8 bits.` at
+          // exit 1, and names a line in a temp file instead.
+          let matched: string | undefined;
+          for (const [key, variantName] of Object.entries(project.variants)) {
+            const value = parseVariantKey(key);
+            if (value > MAX_IMMEDIATE_VARIANT_VALUE) {
+              throw new Error(
+                `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, but its ` +
+                  `variant ${JSON.stringify(variantName)} has the value ${value}, above ` +
+                  `${MAX_IMMEDIATE_VARIANT_VALUE} -- an immediate operand is ONE byte, so this enum is not a byte vocabulary. ` +
+                  `Real ACME refuses the same shape with "Number does not fit in 8 bits." and exit 1; this refusal happens first so it ` +
+                  `can name the enum and the variant rather than a temp-file line number.`,
+              );
+            }
+            if (value === instr.operand!.value) matched = variantName;
+          }
+
+          if (matched === undefined) {
+            throw new Error(
+              `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, whose ` +
+                `value is ${hex2(instr.operand!.value)}, and the enum has no variant for that value. Refusing to emit the hex literal ` +
+                `while reporting an enum substitution that did not happen.`,
+            );
+          }
+
+          const symbol = `${usage.enumName}_${matched}`;
+          // REJECT, never sanitise -- the same contract every other name this
+          // module emits passes through, applied to the COMPOSED name because
+          // that is what actually reaches the ACME source.
+          assertLegalAcmeIdentifier(symbol, `exportAsm: enum variant symbol for ${hex4(usage.address)}`);
+          // ONLY THE MATCHED VARIANT IS DEFINED, not the whole vocabulary. A
+          // definition the source never references is clutter a human reader
+          // has to discount, and every extra emitted symbol is one more chance
+          // to collide with a label name and turn a correct export into ACME's
+          // `Symbol already defined.`
+          if (!definedEnumSymbols.has(symbol)) {
+            definedEnumSymbols.add(symbol);
+            enumDefinitionLines.push(formatSymbolDefinition(symbol, instr.operand!.value));
+          }
+          rendered = substituteImmediateEnum(rendered, instr.operand!.value, symbol, instr.address);
+          appliedEnumUsage.add(usage.id);
         }
 
         // The span is the instruction's FIRST address only, not its whole
@@ -651,7 +845,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         // emitted line, and attaching it to the instruction that happens to
         // contain that byte would move a human's note onto a different address
         // than the one they chose. It stays unplaced and is refused below.
-        const emitted = withComments(renderLine(instr, { showSymbols: true, symbolFor }), instr.address, instr.address + 1, placement);
+        const emitted = withComments(rendered, instr.address, instr.address + 1, placement);
         content.push(...emitted);
         block.lineCount += emitted.length;
       }
@@ -691,10 +885,24 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   // labels are defined inline is only knowable once the code blocks have been
   // decoded, and the header must not restate those; the assembled order below
   // is what the source actually carries.
-  const headerLines: string[] = [];
+  const headerLines: string[] = [...enumDefinitionLines];
   for (const label of sortedLabels) {
     if (midInstructionLabelAddresses.has(label.address)) continue;
-    headerLines.push(formatSymbolDefinition(label.name, label.address));
+    headerLines.push(markIfAutoNamed(label.name, formatSymbolDefinition(label.name, label.address)));
+  }
+
+  // An enum usage this export never reached is REFUSED BY NAME, for the reason
+  // an unplaceable comment is: its address is inside an instruction rather than
+  // at its start, or is not covered by any CODE range, and in both cases the
+  // honest answer is that this export does not carry it, said out loud.
+  if (appliedEnumUsage.size !== enumUsage.length) {
+    const unapplied = enumUsage.filter((row) => !appliedEnumUsage.has(row.id));
+    const first = unapplied[0]!;
+    throw new Error(
+      `exportAsm: the enum usage at ${hex4(first.address)} (enum ${JSON.stringify(first.enumName)}) has no decoded instruction to ` +
+        `attach to -- that address is inside an instruction rather than at its start, or is not covered by any \`code\` range. ` +
+        `${unapplied.length} of ${enumUsage.length} enum usage(s) are in this state. Refusing to export while silently dropping them.`,
+    );
   }
 
   const lines: string[] = ["!cpu 6510", ...headerLines, ...blockLines];
@@ -732,5 +940,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     dataByteCount,
     commentCount: placement.placed.size,
     midInstructionLabelCount: midInstructionLabelAddresses.size,
+    autoNamedSymbolCount,
+    enumSubstitutionCount: appliedEnumUsage.size,
   };
 }
