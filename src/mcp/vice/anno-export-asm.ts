@@ -102,8 +102,8 @@ export interface ExportBlock {
   /** The store's `dataType`, copied VERBATIM off the row. Never compared in
    * this module beyond the single code/not-code branch the emitter needs. */
   dataType: string;
-  /** How many content lines the block emitted, not counting its `* =` origin
-   * line. */
+  /** How many CONTENT lines the block emitted -- not its `* =` origin line and
+   * not the two `!if * != ...` assertions that bracket it. */
   lineCount: number;
 }
 
@@ -167,6 +167,51 @@ function hex4(value: number): string {
 }
 
 /**
+ * `$XXXX` for an address, and for the ONE value in this module that is not an
+ * address: a block's EXCLUSIVE end, which is `$10000` for a range ending at
+ * `$ffff`. `hex4()` masks with `0xffff` and would render that as `$0000` -- an
+ * assertion no assembly can ever satisfy, firing on a correct export. Padded,
+ * never masked.
+ */
+function hexExtent(value: number): string {
+  return `$${value.toString(16).padStart(4, "0")}`;
+}
+
+/**
+ * Wraps one block's content lines in its origin and its `*` assertions.
+ *
+ * THE EXCLUSIVE END IS THE POINT. Measured on ACME 0.97: `* = $0801` followed
+ * by `lda #$00` and `rts` leaves `*` at `$0804`, one past the last emitted
+ * byte. The store's own row uses an INCLUSIVE end, so the conversion is
+ * `endExclusive = row.endInclusive + 1` and it is done in exactly one place
+ * (see `exportAsm()`'s block construction).
+ *
+ * WHY BOTH ENDS. `!cpu 6510` plus correct-looking mnemonics is not enough:
+ * measured, a substitution that changes ONE instruction's length -- dropping
+ * ACME's `+2` size force from an absolute operand below `$0100`, or
+ * forward-referencing a zero-page symbol -- assembles at exit 0 and shifts
+ * every byte after it. The end assertion is what turns that into a refusal:
+ * ACME exits 1, prints the `!error` text below on stderr, and writes NO output
+ * file.
+ *
+ * WHY THE EXPECTED VALUE IS SPELLED OUT IN THE MESSAGE. Interpolating `*` into
+ * an `!error` renders it as `<decimal> (0x<hex>)`, not as `$hex`, so the
+ * expected value is written in `$` form in the message text itself rather than
+ * relying on ACME's rendering.
+ *
+ * WHY NOT `!pseudopc`. It is not an alternative: measured, it errors with
+ * `Program counter undefined.` unless `*` has already been set.
+ */
+function emitBlock(start: number, endExclusive: number, lines: readonly string[]): string[] {
+  return [
+    `* = ${hexExtent(start)}`,
+    `!if * != ${hexExtent(start)} { !error "export-asm: block origin drifted, expected ${hexExtent(start)}" }`,
+    ...lines,
+    `!if * != ${hexExtent(endExclusive)} { !error "export-asm: block end drifted, expected ${hexExtent(endExclusive)}" }`,
+  ];
+}
+
+/**
  * Reads the image and dispatches its layout, BY EXTENSION FIRST and never by
  * byte length. That order is a contract copied from the surface's own image
  * loaders rather than re-derived: a truncated flat capture that falls through
@@ -213,7 +258,7 @@ function loadImage(imagePath: string): { origin: number; bytes: Uint8Array } {
  * wrong bytes -- the single most likely way for this module to be quietly
  * incorrect.
  */
-function symbolDefinition(name: string, address: number): string {
+function formatSymbolDefinition(name: string, address: number): string {
   const digits = address < 0x100 ? 2 : 4;
   return `${name} = $${address.toString(16).toUpperCase().padStart(digits, "0")}`;
 }
@@ -299,18 +344,20 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   // only the ones a substitution happened to use. Measured on ACME 0.97: a
   // symbol defined AFTER its first reference widens the referencing
   // instruction from zeropage to absolute -- `a5 10` becomes `ad 10 00`, three
-  // bytes where the original was two -- and it does so with a WARNING and exit
-  // status 0. Everything after it shifts. Defining first is the mitigation;
-  // the byte-diff is what would catch it if this block were ever dropped.
+  // bytes where the original was two -- and it does so with the WARNING
+  // `Using oversized addressing mode.` and exit status 0. Everything after it
+  // shifts. Defining first is the mitigation; the per-block `*` assertions
+  // below are the backstop for a future change that ever drops this block, and
+  // the byte-diff is what settles the whole claim.
   for (const label of sortedLabels) {
-    lines.push(symbolDefinition(label.name, label.address));
+    lines.push(formatSymbolDefinition(label.name, label.address));
   }
 
   let unexpressibleCount = 0;
 
   for (const block of blocks) {
-    lines.push(`* = ${hex4(block.start)}`);
     const slice = image.bytes.subarray(block.start - imageStart, block.endExclusive - imageStart);
+    const content: string[] = [];
 
     if (block.dataType === CODE_DATA_TYPE) {
       // D-11 is inherited UNCHANGED: `renderLine()` decides operand width and
@@ -319,22 +366,26 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       const instructions = decode(slice, block.start, { end: block.endExclusive });
       for (const instr of instructions) {
         if (!instr.acmeExpressible) unexpressibleCount++;
-        lines.push(renderLine(instr, { showSymbols: true, symbolFor }));
+        content.push(renderLine(instr, { showSymbols: true, symbolFor }));
         block.lineCount++;
       }
-      continue;
+    } else {
+      // Every non-code block goes out as raw `!byte` directives in this plan.
+      // The typed emitter (word, address, petscii, screencode, the four split
+      // layouts) arrives in a later plan; emitting bytes is correct in the
+      // meantime because it reproduces the image exactly, which is the only
+      // property the byte-diff measures.
+      for (let offset = 0; offset < slice.length; offset += BYTES_PER_DATA_LINE) {
+        const chunk = slice.subarray(offset, Math.min(offset + BYTES_PER_DATA_LINE, slice.length));
+        content.push(`${INDENT}!byte ${[...chunk].map(hex2).join(", ")}`);
+        block.lineCount++;
+      }
     }
 
-    // Every non-code block goes out as raw `!byte` directives in this plan.
-    // The typed emitter (word, address, petscii, screencode, the four split
-    // layouts) arrives in a later plan; emitting bytes is correct in the
-    // meantime because it reproduces the image exactly, which is the only
-    // property the byte-diff measures.
-    for (let offset = 0; offset < slice.length; offset += BYTES_PER_DATA_LINE) {
-      const chunk = slice.subarray(offset, Math.min(offset + BYTES_PER_DATA_LINE, slice.length));
-      lines.push(`${INDENT}!byte ${[...chunk].map(hex2).join(", ")}`);
-      block.lineCount++;
-    }
+    // EVERY block goes through `emitBlock()`, code and data alike, so there is
+    // exactly one place that brackets a block and no route that emits an
+    // unbracketed one.
+    lines.push(...emitBlock(block.start, block.endExclusive, content));
   }
 
   // `expectedBytes` is built from the IMAGE, never from `lines`. Gaps between
