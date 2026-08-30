@@ -204,6 +204,16 @@ jobs:
       - name: Validate skill description trigger uniqueness (Phase 19, ABS-03)
         run: node scripts/check-skill-description-overlap.mjs
 
+      # Blocking (REPOINT-01/REPOINT-02): a documented `anno <verb>` command
+      # whose ARGUMENTS are wrong runs, fails for the user, and passes every
+      # gate above -- because the two skill gates beside it resolve NAMES and
+      # never an invocation's arguments. That is the structural reason CR-04
+      # (`render-memmap <a file the store opener refuses>`) and CR-05
+      # (`coverage <a format with no producer left>`) both shipped green in
+      # Phase 29 and were found only by driving the CLI by hand.
+      - name: Validate documented anno CLI invocations argument-by-argument (REPOINT-01/02)
+        run: node scripts/check-skill-cli-invocations.mjs
+
       - name: Build installable package
         run: bash scripts/package.sh
 
