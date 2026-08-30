@@ -303,3 +303,24 @@ None — no external service configuration required.
 ---
 *Phase: 29-the-mcp-surface*
 *Completed: 2026-08-30*
+
+## Self-Check: PASSED
+
+- **Files:** `src/mcp/vice/anno-tools.ts`, `src/mcp/vice/anno-tools.test.ts` and
+  `.planning/phases/29-the-mcp-surface/29-13-SUMMARY.md` all present on disk.
+- **Commits:** all seven recorded hashes (`2e9940a`, `e53b8cc`, `da3b8e0`,
+  `a57cc5c`, `edef4ac`, `bdbc089`, `d3b2c59`) present in
+  `git log f16d0b1..HEAD`.
+- **Acceptance criteria re-run:** `Math.min(requestedEnd` → 0;
+  `assertAnnoBatch(call.arguments` → 0; `currentRevision(` inside
+  `dispatchSaveProject()` → 1; `node --test anno-tools.test.ts` → 54/54;
+  `npm run typecheck` → exit 0.
+- **Plan-level verification re-run:** `audit-gate.mjs` exit 0;
+  `check-no-regenerator2000.mjs` exit 0 with 0 entries;
+  `docs/tool-support.md` md5 `bb4744890855e58887142e5a97f44fc0` unchanged.
+- **Deletions:** `git diff --diff-filter=D` over the branch is EMPTY, so the
+  branch does not trip `cleanup-wave`'s deletion refusal.
+- **Working tree:** clean; the temporary `node_modules` symlink was removed and
+  never staged.
+- **Shared artefacts:** `STATE.md` and `ROADMAP.md` untouched (worktree mode —
+  the orchestrator owns those writes).
