@@ -5,16 +5,16 @@ milestone_name: Own the Annotation Store
 current_phase: 30
 current_phase_name: ACME Export and the Real-ACME Oracle
 status: executing
-stopped_at: "Phase 30 PLANNED — 6 plans (30-01..30-06) in 5 waves, verified on 2026-08-30T20:59Z; run /gsd-execute-phase 30"
-last_updated: "2026-08-30T21:07:22.516Z"
-last_activity: 2026-08-30
-last_activity_desc: Phase 30 execution started
-state_head: 21d4c36abd8c11a3f5dff6364d928901cb64ed02
+stopped_at: Completed 30-06-PLAN.md
+last_updated: "2026-08-30T23:48:35.102Z"
+last_activity: 2026-08-31
+last_activity_desc: Phase 30 plan 30-06 executed (wave 5, final)
+state_head: d2135b306fe48db0d338ff7e878e4f0db34b5bdc
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 55
-  completed_plans: 49
+  completed_plans: 55
   percent: 50
 ---
 
@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 30 (ACME Export and the Real-ACME Oracle) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 30
-Last activity: 2026-08-30 — Phase 30 execution started
+Plan: 6 of 6
+Status: All 6 plans executed; ready to verify Phase 30
+Last activity: 2026-08-31 — Phase 30 plan 30-06 executed (wave 5, final)
 
 ## Performance Metrics
 
@@ -327,6 +327,7 @@ Last activity: 2026-08-30 — Phase 30 execution started
 | Phase 29 P12 | 19 min | 3 tasks | 5 files |
 | Phase 29 P29-10 | 84 | - tasks | - files |
 | Phase 29 P29-11 | 22 | - tasks | - files |
+| Phase 30 P06 | 62 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -721,6 +722,8 @@ Recent decisions affecting current work:
 - [Phase 29]: The :79 measurement-provenance comment was kept and re-anchored rather than discharged; 29-05 row 11 stays PERMANENT at 1. — Its subject is live: with the three wire interfaces deleted it is the last record anywhere of what the version-2 digest hashed, which is what makes the "2" -> "3" bump a statement about two KNOWN input shapes rather than one known and one assumed. The plan offered a four-artifact escape (delete the comment, re-pin row 11 temporary/0, update the gate, correct 29-10s acceptance criterion); it was not needed. A co-located test asserts the paragraph still carries the three spellings AND that the declarations it used to point at are gone, so "a comment above a hole" is a red test rather than a later discovery.
 - [Phase 29]: The three gated render tests were converted onto the store, not deleted -- plan 29-10s recorded fate for that half is superseded. — D-01 forbids a test driving a real child; it does not ask for the assertions to be thrown away. 29-10s "removes the gated half" was written when that half had no substrate to move to. It does now, so the file went 3 skipped -> 0 skipped with the assertions intact, and one of them gained the malformed-prefix throw its own name had promised since Phase 11.
 - [Phase 29]: Phase 29's one-way deletion gate (plan 29-10 Task 1) was ratified by the owner on 2026-08-30 — The deletion was executed on an executor auto-selection, which 29-10-SUMMARY.md recorded as its own weakness. The owner has since answered the gate 'confirmed' (delete-now) against the same five preconditions, each re-verified independently against the summary evidencing it. Recorded as ratification-after-execution, not as a human answer preceding the deletion.
+- [Phase 30]: Plan 30-06's new documented-status guard reports a withdrawal claim only when the same markdown paragraph carries no record that the verb came back; a paragraph stating both the 2026-08-29 withdrawal and the 2026-08-31 return is clean by design, because a dated notice must be corrected rather than deleted.
+- [Phase 30]: PROJECT.md gained two NEW dated sub-notes (R2000-13/gen-enums and R2000-06/export-asm) rather than only editing existing ones: plan 30-06 assumed those withdrawal notes already existed there and they did not, so the record was completed instead of the assumption being carried.
 
 ### Pending Todos
 
@@ -1336,8 +1339,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-29T23:48:15.947Z
-Stopped at: Phase 29 complete, ready to plan Phase 30
+Last session: 2026-08-30T23:48:34.583Z
+Stopped at: Completed 30-06-PLAN.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,

@@ -105,9 +105,9 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
      not: that seam invokes regenerator2000 and parses ITS transcript. Only the
      discipline survives. -->
 
-- [ ] **EXPORT-01**: The store exports ACME source, and correctness is established by **a real ACME actually assembling it** — through a verify path built for this purpose, since the existing `--verify` seam invokes regenerator2000 rather than ACME. The surviving discipline is carried explicitly: never trust the exit code, require unanimity, and a skipped assembler is not a pass. Proven by **two mandatory reds** — an exit-1 run where ACME passed, and an exit-0 run where ACME never ran
-- [ ] **EXPORT-02**: Both carried idioms are load-bearing in that reassembly rather than merely emitted: a self-modifying write target named by the `=*+$01` mid-instruction label reassembles byte-identically, and the **11** typed label prefixes already owned by `AUTO_NAME_PREFIX_RE` are carried — not a five-prefix reimplementation, which would silently break `routine-queue-walker`'s backlog construction. Neither idiom exists in this codebase today; both are built, not preserved
-- [ ] **EXPORT-03**: Correctness is never claimed from a string match on the exporter's own output. This project's own record is that an internally-checked opcode table still shipped 14 wrong entries, and illegal opcodes ACME cannot assemble are reported as such rather than emitted and hoped for
+- [x] **EXPORT-01**: The store exports ACME source, and correctness is established by **a real ACME actually assembling it** — through a verify path built for this purpose, since the existing `--verify` seam invokes regenerator2000 rather than ACME. The surviving discipline is carried explicitly: never trust the exit code, require unanimity, and a skipped assembler is not a pass. Proven by **two mandatory reds** — an exit-1 run where ACME passed, and an exit-0 run where ACME never ran
+- [x] **EXPORT-02**: Both carried idioms are load-bearing in that reassembly rather than merely emitted: a self-modifying write target named by the `=*+$01` mid-instruction label reassembles byte-identically, and the **11** typed label prefixes already owned by `AUTO_NAME_PREFIX_RE` are carried — not a five-prefix reimplementation, which would silently break `routine-queue-walker`'s backlog construction. Neither idiom exists in this codebase today; both are built, not preserved
+- [x] **EXPORT-03**: Correctness is never claimed from a string match on the exporter's own output. This project's own record is that an internally-checked opcode table still shipped 14 wrong entries, and illegal opcodes ACME cannot assemble are reported as such rather than emitted and hoped for
 
 ### Procedure Re-pointing
 
@@ -233,9 +233,9 @@ over them.
 | MCP-04 | Phase 29 | Complete |
 | MCP-05 | Phase 29 | Complete |
 | STORE-06 | Phase 29 | Complete |
-| EXPORT-01 | Phase 30 | Pending |
-| EXPORT-02 | Phase 30 | Pending |
-| EXPORT-03 | Phase 30 | Pending |
+| EXPORT-01 | Phase 30 | Complete |
+| EXPORT-02 | Phase 30 | Complete |
+| EXPORT-03 | Phase 30 | Complete |
 | REPOINT-01 | Phase 29 | Complete |
 | REPOINT-02 | Phase 29 | Complete |
 | REPOINT-03 | Phase 31 | Pending |
