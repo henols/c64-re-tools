@@ -900,7 +900,8 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "Executes several curated anno_* calls against ONE store, in order, inside one open/close pair. Use it for a " +
       "multi-edit pass -- marking many regions, renaming many labels -- and not for calls that depend on each other's " +
       "results. The store (and the image, when the inner calls need one) is named ONCE at the top level and every " +
-      "inner call inherits it; an inner `store` is overridden, never honoured. TWO PHASES, and the difference matters " +
+      "inner call inherits it, INCLUDING through nesting -- a batch inside a batch inherits it too, and so does that " +
+      "batch's own inner calls; an inner `store` is overridden at every depth, never honoured. TWO PHASES, and the difference matters " +
       "when you read the answer. FIRST, the whole payload is pre-validated before anything is opened: a malformed " +
       "payload, an EMPTY calls array, a malformed entry, an inner name outside the curated set at any depth, an " +
       "illegal label name, or an over-cap region range refuses the WHOLE batch by index, and nothing executes. " +
@@ -1310,6 +1311,12 @@ function assertAddressDetailsArgs(args: unknown, batchIndex?: number): void {
  * identically whether the verb was called directly or smuggled inside a batch.
  * That is the shared-validator discipline, and it is what makes the outer
  * allow-list gate mean anything for a nested-argument verb.
+ *
+ * THE SAME DISCIPLINE APPLIES TO THE ARGUMENTS THEMSELVES. Every inner
+ * payload this function walks -- a leaf verb's or a nested batch's -- is
+ * obtained from `batchArgumentsFor()`, the one function phase two also asks.
+ * A phase that computed an inner call's arguments its own way would be
+ * validating a payload the executor never runs, which is what CR-06 was.
  */
 export function assertAnnoBatch(args: unknown, depth = 0): void {
   if (depth > ANNO_MAX_BATCH_DEPTH) {
@@ -1350,7 +1357,18 @@ export function assertAnnoBatch(args: unknown, depth = 0): void {
       );
     }
     if (call.name === "anno_batch_execute") {
-      assertAnnoBatch(call.arguments, depth + 1);
+      // RECURSES ON THE EFFECTIVE ARGUMENTS, NOT THE RAW BAG, and that is the
+      // whole of CR-06. Phase two -- `dispatchBatchExecute()` -- has always
+      // recursed on `batchArgumentsFor(bag, call)`; phase one used to recurse
+      // on `call.arguments`. The two phases therefore disagreed about what the
+      // inner payload WAS, and a nested batch written the documented way (the
+      // store named ONCE at the top, every inner call inheriting it) was
+      // refused whole at every depth -- with a message saying there is no
+      // ambient store to inherit, the exact opposite of this verb's own
+      // description. Read this line as a pair with the executor's recursion:
+      // one function, `batchArgumentsFor()`, defines an inner call's effective
+      // arguments, and both phases ask it.
+      assertAnnoBatch(batchArgumentsFor(args, call), depth + 1);
       return;
     }
     assertVerbArgs(call.name, batchArgumentsFor(args, call), i);
