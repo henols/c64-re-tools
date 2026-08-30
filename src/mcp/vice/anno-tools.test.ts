@@ -575,6 +575,47 @@ test("anno_save_project reports the revision and PERFORMS NO WRITE -- the revisi
   );
 });
 
+test("WR-10: anno_save_project's revision FIELD and the revision named in its own prose are the same value", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      // Seeded so the revision is not whatever an empty store starts at --
+      // a pin that only held at revision 0 would hold for the wrong reason.
+      for (const [i, name] of ["first_label", "second_label", "third_label"].entries()) {
+        const written = await runAnnoTool("anno_set_label_name", { store, address: 0xc000 + i * 0x10, name });
+        assert.equal(written.isError, false, written.content[0]!.text);
+      }
+
+      const saved = await runAnnoTool("anno_save_project", { store });
+      assert.equal(saved.isError, false, saved.content[0]!.text);
+      const savedBody = (await body(saved)) as { revision: number; wrote: boolean; note: string };
+
+      // Extracted from the PROSE, never asserted as a literal: a literal would
+      // pin the fixture, and the property here is that the two AGREE. This is
+      // the one verb whose output a caller is told to use as a base_revision
+      // compare-and-swap guard, so a field and a note that can name different
+      // revisions is a guard built on a number its own note contradicts.
+      const named = /revision (\d+)/.exec(savedBody.note);
+      assert.ok(named, `the note must NAME the revision it is talking about -- got ${JSON.stringify(savedBody.note)}`);
+      assert.equal(Number(named![1]), savedBody.revision, "the field and the prose must be the SAME revision, by construction");
+
+      // The honest no-op stays honest: this must not have become a silent success.
+      assert.equal(savedBody.wrote, false);
+      assert.match(savedBody.note, /performed NO write/);
+    },
+  );
+});
+
+test("WR-10: dispatchSaveProject() reads the store revision EXACTLY ONCE", () => {
+  // Asserted over the comment-and-string-stripped source, so neither the
+  // function's own rationale nor the note's prose can affect the count.
+  const start = ANNO_TOOLS_CODE.indexOf("function dispatchSaveProject(");
+  assert.ok(start > 0, "dispatchSaveProject() must exist");
+  const bodyText = ANNO_TOOLS_CODE.slice(start, ANNO_TOOLS_CODE.indexOf("\n}", start));
+  const reads = bodyText.match(/currentRevision\(/g) ?? [];
+  assert.equal(reads.length, 1, "two reads are two chances to disagree -- the field and the prose must come from ONE const");
+});
+
 test("every verb closes the store: no handle is left open and no journal sidecar survives a repeated call", async () => {
   await withStore(
     () => {},
