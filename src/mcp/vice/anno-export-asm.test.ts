@@ -67,6 +67,7 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import { exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
 import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.ts";
+import { DATA_TYPES } from "./anno-types.ts";
 
 /** Computed exactly once, by the shared seam. Every ACME-dependent test in
  * this file passes this through node:test's own `{ skip }` option. */
@@ -398,4 +399,159 @@ test("PLANTED VIOLATION 2: a symbol substituted into a zeropage operand with its
   const survived = assembleRaw(moveOnly);
   assert.equal(survived.status, 0, `the move alone must NOT fire -- the \`+2\` force already holds the width:\n  stderr: ${survived.stderr}`);
   assert.equal(survived.outputExists, true, "the move alone still produces an output file");
+});
+
+// ---------------------------------------------------------------------------
+// The typed data-range emitter. Every one of the twelve `DATA_TYPES` members
+// must reassemble byte-identically, and the suite is driven from the
+// vocabulary's OWN source so a thirteenth member is covered automatically.
+// ---------------------------------------------------------------------------
+
+/**
+ * Eight bytes covering $0801..$0808, deliberately non-trivial: `$00` and `$ff`
+ * are both present (the two values a lazy emitter most easily gets wrong), and
+ * the `$34 $12` / `$c0 $00` pairs are non-palindromic, so an emitter that split
+ * them in the wrong byte order would produce different bytes rather than the
+ * same ones. The length is EVEN because `assertRangeShape()` requires an even
+ * byte count for the four split-table layouts.
+ */
+const DATA_BODY = [0x00, 0xff, 0x34, 0x12, 0xc0, 0x00, 0x01, 0x08] as const;
+
+test("the data-type suite is driven from `DATA_TYPES` itself -- a thirteenth member must arrive with a thirteenth case", () => {
+  assert.equal(
+    DATA_TYPES.length,
+    12,
+    "the vocabulary grew. This file iterates it rather than copying it, so the new member is already covered -- update this pinned count and " +
+      "confirm the new case round-trips, rather than adding a name to a list here.",
+  );
+});
+
+for (const dataType of DATA_TYPES) {
+  test(`data type round trip: a \`${dataType}\` range reassembles byte-identically`, { skip: SKIP_REASON }, () => {
+    const { dir, storePath, imagePath } = buildStore(freshDir(`dt-${dataType}`), {
+      origin: 0x0801,
+      body: DATA_BODY,
+      ranges: [{ start: 0x0801, endInclusive: 0x0808, dataType }],
+      labels: [],
+    });
+    const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+    const verdict = verifyExport(result);
+
+    assert.equal(verdict.outcome, "ok", `a \`${dataType}\` range must round-trip byte-identically:${context(result, verdict)}`);
+    assert.equal(verdict.byteDiff?.equal, true, `\`${dataType}\`: the byte-diff IS the verdict:${context(result, verdict)}`);
+  });
+}
+
+test("`word` and `address` of EVEN length emit `!word` in little-endian order, with the type named verbatim", () => {
+  for (const dataType of ["word", "address"]) {
+    const { dir, storePath, imagePath } = buildStore(freshDir(`word-${dataType}`), {
+      origin: 0x0801,
+      body: DATA_BODY,
+      ranges: [{ start: 0x0801, endInclusive: 0x0808, dataType }],
+      labels: [],
+    });
+    const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+    assert.ok(
+      result.source.includes(`!word $ff00, $1234, $00c0, $0801  ; ${dataType}`),
+      `a \`${dataType}\` range must assemble each little-endian PAIR into one value, and name its type:\n${result.source}`,
+    );
+    assert.equal(result.dataByteCount, 8, "every byte went out through the data path");
+  }
+});
+
+test("`word` of ODD length falls back to `!byte`, says why, and still reassembles byte-identically", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("word-odd"), {
+    origin: 0x0801,
+    body: DATA_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0803, dataType: "word" }],
+    labels: [],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.ok(result.source.includes("!byte $00, $ff, $34"), `an odd byte count cannot be emitted as pairs:\n${result.source}`);
+  assert.equal(result.source.includes("!word"), false, `the fallback must not ALSO emit \`!word\`:\n${result.source}`);
+  assert.ok(result.source.includes("odd byte count"), `the fallback must say why it happened:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `the fallback must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the fallback's byte-diff must be equal:${context(result, verdict)}`);
+});
+
+test("no `!text` directive is ever emitted -- a conversion table this exporter does not control cannot back a byte-identical claim", () => {
+  for (const dataType of ["petscii", "screencode"]) {
+    const { dir, storePath, imagePath } = buildStore(freshDir(`text-${dataType}`), {
+      origin: 0x0801,
+      body: DATA_BODY,
+      ranges: [{ start: 0x0801, endInclusive: 0x0808, dataType }],
+      labels: [],
+    });
+    const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+    assert.equal(result.source.includes("!text"), false, `\`${dataType}\` must go out as bytes, not through ACME's conversion table:\n${result.source}`);
+    assert.ok(result.source.includes(`  ; ${dataType}`), `the type must be named verbatim on the emitted line:\n${result.source}`);
+  }
+});
+
+test("`dataByteCount` counts every byte emitted through the data path, and nothing a code block emitted", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("databytes"), {
+    origin: 0x0801,
+    body: [...SHAPE_BODY, ...DATA_BODY],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0806, dataType: "code" },
+      { start: 0x0807, endInclusive: 0x080e, dataType: "byte" },
+    ],
+    labels: [],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.dataByteCount, 8, "the six code bytes are not data bytes");
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a mixed code/data export must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `mixed code/data byte-diff:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// Empty inputs. Both are "nothing to emit" cases that must still produce a
+// source a real assembler reproduces -- an exporter that only works when the
+// store is richly annotated is an exporter that fails on a fresh project.
+// ---------------------------------------------------------------------------
+
+test("a store with ZERO labels emits no symbol definitions and renders every operand as a hex literal, and still round-trips", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("no-labels"), {
+    origin: 0x0801,
+    body: PLANTED_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0808, dataType: "code" }],
+    labels: [],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.symbolCount, 0);
+  // A definition line is `name = $XXXX` at column zero. Matched by shape rather
+  // than by the substring `" = $"`, which the `* = $0801` origin line also
+  // carries -- an assertion that fires on a correct export proves nothing.
+  const definitions = result.source.split("\n").filter((line) => /^[A-Za-z_][A-Za-z0-9_]* = \$/.test(line));
+  assert.deepEqual(definitions, [], `no symbol-definition line may be emitted for a store with no labels:\n${result.source}`);
+  assert.ok(result.source.includes("sta+2 $0090"), `every operand falls back to a hex literal -- with the width force intact:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a label-free export must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `label-free byte-diff:${context(result, verdict)}`);
+});
+
+test("a store with ZERO comments emits no comment line, and still round-trips", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("no-comments"), {
+    origin: 0x0801,
+    body: PLANTED_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0808, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const commentLines = result.source.split("\n").filter((line) => line.trimStart().startsWith(";"));
+  assert.deepEqual(commentLines, [], `no line may be a comment when the store holds none:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a comment-free export must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `comment-free byte-diff:${context(result, verdict)}`);
 });
