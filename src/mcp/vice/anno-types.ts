@@ -108,7 +108,7 @@
 //      exceeds the byte bound on disk. `assertCommentText()` measures with a
 //      `TextEncoder`.
 import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { OPCODES } from "./disasm-opcodes.ts";
 import { ViceError, type ViceErrorOptions } from "./vice.ts";
@@ -1199,6 +1199,64 @@ export function storePathWithinWorkspace(path: string, workspaceRoot: string): s
     );
   }
   return resolvedPath;
+}
+
+/**
+ * Returns the location of `path` RELATIVE to `workspaceRoot`, spelled with
+ * POSIX `/` separators, or `"."` when the two resolve to the same directory.
+ * Throws `AnnoStorePathError` -- the same class `storePathWithinWorkspace()`
+ * throws -- when the spelling would leave the root.
+ *
+ * WHY THIS IS A SEAM RATHER THAN AN INLINE `relative()` AT ITS ONE CALL SITE.
+ * The spelling this returns goes into a **compared** artifact: the memory
+ * map's banner is re-rendered and diffed BYTE FOR BYTE by
+ * `checkRenderedMemoryMap()`. The defect it closes (`CR-01`, gap 1 in
+ * `.planning/phases/29-the-mcp-surface/29-VERIFICATION.md`) is that machine
+ * identity leaked into that content comparison: the banner recorded the
+ * absolute realpaths, so the same store, the same sidecar and the same
+ * rendered file reported `drifted` as soon as the checkout sat at a different
+ * absolute path -- while the artifact's own `render_digest`, which covers
+ * content and not paths, printed IDENTICAL in both trees. The digest and the
+ * verdict disagreed by construction. "Which spelling goes into the compared
+ * bytes" therefore needs exactly one definition, and this is it; an inlined
+ * `relative()` at the call site is how it grows a second one.
+ *
+ * BOTH SIDES GO THROUGH `realpathOfNearestExisting`, for the same reason
+ * `storePathWithinWorkspace()` above does, and the two must not drift apart.
+ * The store path arrives here having already been through that seam (the CLI
+ * confines it), while the workspace root arrives from `repoRoot()` and is NOT
+ * necessarily a realpath. Resolving only one side would make a legitimately
+ * in-workspace store look foreign whenever the root is reached through a
+ * symlink -- the common case on hosts where the temp directory is a link --
+ * and would silently produce a `../…` spelling, re-introducing the very
+ * machine dependence this function exists to remove, wearing a new spelling.
+ *
+ * THE ESCAPE CASE THROWS DELIBERATELY. Returning `"../../tmp/xyz/game.annostore"`
+ * would be machine identity again: the number of `..` hops encodes where the
+ * checkout sits. A banner cannot record a location outside the workspace root
+ * at all, so this makes that unrepresentable rather than merely unlikely. A
+ * caller that wants to record such a path has a confinement problem, not a
+ * spelling problem.
+ *
+ * This is NOT a confinement check and must not be read as one. It computes a
+ * spelling and refuses one it cannot spell; `storePathWithinWorkspace()` above
+ * is the seam that decides whether a path may be opened at all.
+ */
+export function workspaceRelativePath(path: string, workspaceRoot: string): string {
+  const resolvedRoot = realpathOfNearestExisting(workspaceRoot);
+  const resolvedPath = realpathOfNearestExisting(path);
+  if (resolvedPath === resolvedRoot) return ".";
+
+  const spelling = relative(resolvedRoot, resolvedPath).split(sep).join("/");
+  if (spelling === "" || isAbsolute(spelling) || spelling === ".." || spelling.startsWith("../")) {
+    throw new AnnoStorePathError(
+      `path ${JSON.stringify(resolvedPath)} is outside the workspace root ${JSON.stringify(resolvedRoot)} -- ` +
+        "refusing to record a location outside the workspace root, because a relative spelling that escapes the root " +
+        "encodes where the checkout sits and is the same machine-dependence under a different spelling",
+      { path: resolvedPath, workspaceRoot: resolvedRoot },
+    );
+  }
+  return spelling;
 }
 
 /**
