@@ -242,7 +242,19 @@ function annoProductionModules(): string[] {
 // non-vacuity this floor exists to provide. Keep it a hand-pinned integer
 // literal. `raised, never lowered` (D-13) is read literally: 16 is strictly
 // greater than the 15 it replaces.
-const ANNO_MODULE_FLOOR = 15 + 1;
+//
+// RAISED FROM 16 TO 17 BY PLAN 30-01 (EXPORT-01), which lands exactly one new
+// `anno-*.ts` production module: `anno-export-asm.ts`, the store-driven ACME
+// source exporter that replaces the export route Phase 29 withdrew. The raise
+// is again expressed as a RELATION -- the value plan 29-08 measured, plus the
+// one module this plan adds -- rather than as a fresh measurement, so the
+// arithmetic stays readable. The sibling module this plan also creates,
+// `acme-verify.ts`, is deliberately NOT counted here and never will be: it
+// carries no `anno-` prefix and is TEST-ONLY, absent from `files[]` by
+// decision, so it is outside this derivation by construction rather than by
+// exclusion. `raised, never lowered` (D-13) again read literally: 17 is
+// strictly greater than the 16 it replaces.
+const ANNO_MODULE_FLOOR = 16 + 1;
 
 test("the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();
