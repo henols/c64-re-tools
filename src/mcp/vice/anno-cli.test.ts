@@ -1015,3 +1015,229 @@ test("in-process (WR-09): render-memmap with --out inside a non-existent directo
     assert.doesNotMatch(stderr, /\n\s+at /, "stderr must not contain stack-trace text");
   });
 });
+
+// ---------------------------------------------------------------------------
+// CR-02 / CR-03 / WR-08: EVERY caller-supplied path is confined, and the
+// refusals disclose nothing.
+//
+// WHAT THESE REPRODUCE. The phase verifier drove the shipped CLI on this very
+// working tree and got three escapes, all on arguments the shipped playbooks
+// tell an agent to compose in a Bash invocation:
+//
+//   1. `render-memmap --out <path outside the workspace>` exited 0, printed
+//      `render-memmap: wrote /tmp/.../PRECIOUS.md`, and silently replaced that
+//      pre-existing file's bytes. `--force` was not in the verb's option set
+//      at all and the verb never reached `refuseOverwrite()` (CR-02).
+//   2. `render-memmap --provenance <file outside the workspace>` was an
+//      arbitrary-file READ oracle WITH CONTENT DISCLOSURE: the sidecar parse
+//      failure interpolated Node's own parse error, and that error carries a
+//      snippet of the file. Observed verbatim: `... is not valid JSON:
+//      Unexpected token 'T', "TOKEN-ZZQQ"... is not valid JSON` (CR-03).
+//   3. `coverage --out <path outside the workspace>` took the same escape as
+//      1 -- checked for overwrite and then written, both against the raw
+//      caller string (CR-02).
+//
+// WHY THE CONTENT ASSERTION IS SEPARATE FROM THE EXIT-CODE ASSERTION. Case 2
+// already exited non-zero BEFORE the fix. A test asserting only the exit code
+// would have been green over a live disclosure oracle. The planted distinctive
+// token, asserted ABSENT from combined stdout+stderr, is the half that
+// actually sees the property.
+//
+// EVERY REFUSAL HERE IS PAIRED WITH AN OVER-REFUSAL CONTROL. A verb that can
+// never write satisfies every refusal test above and is useless; the
+// in-workspace write, the `--force` overwrite and the default-output-path
+// cases are what make the refusals mean something.
+// ---------------------------------------------------------------------------
+
+/** A real store carrying one typed range, so a render actually produces rows. */
+function makeRenderableStore(dir: string): string {
+  const storePath = join(dir, "game.annostore");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
+  } finally {
+    closeStore(handle);
+  }
+  return storePath;
+}
+
+/** A fully-filled sidecar on disk -- `parseProvenanceHeader()` refuses a
+ * missing or placeholder key by name, so a render that must SUCCEED needs
+ * every required field present. */
+function makeSidecar(dir: string, name = "sidecar.json"): string {
+  const p = join(dir, name);
+  writeFileSync(p, JSON.stringify(RENDER_SIDECAR, null, 2));
+  return p;
+}
+
+test("CR-02 (A): render-memmap --out outside the workspace root is refused by the ONE seam, and creates nothing there", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    await withTempDir(async (outside) => {
+      const storePath = makeRenderableStore(ws);
+      const provenancePath = makeSidecar(ws);
+      const escaped = join(outside, "memory-map.md");
+      const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", escaped]),
+      );
+      assert.notEqual(code, 0, "an --out outside the workspace root must not succeed");
+      assert.match(stderr, /outside the workspace root/i, "the refusal must name the confinement, not some downstream symptom");
+      assert.equal(existsSync(escaped), false, "the refusal must not have written the file it refused to write");
+      assert.doesNotMatch(stdout, /wrote/i, "a refused run must not report a write");
+    });
+  });
+});
+
+test("CR-03 (B): render-memmap --provenance outside the workspace root is refused, and the refusal contains NONE of that file's bytes", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    await withTempDir(async (outside) => {
+      const storePath = makeRenderableStore(ws);
+      // THE TOKEN IS EXACTLY TEN CHARACTERS, AND THAT IS LOAD-BEARING.
+      // Node truncates its own JSON parse-error snippet at ten characters
+      // (`Unexpected token 'T', "TOKEN-ZZQQ"... is not valid JSON` -- the
+      // verifier's own reproduction, from a 26-character plant). A longer
+      // token is therefore NEVER fully present in the message, so asserting
+      // its absence would pass vacuously against the live oracle this test
+      // exists to catch. Measured, not assumed: this assertion was confirmed
+      // RED against the unfixed code before the fix landed.
+      const secret = join(outside, "secret.txt");
+      const token = "QQZZORACLE";
+      writeFileSync(secret, `${token}\nmore private lines\n`);
+      const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["render-memmap", storePath, "--provenance", secret]),
+      );
+      assert.notEqual(code, 0);
+      assert.match(stderr, /outside the workspace root/i, "the read must be refused BY THE CONFINEMENT, before the file is opened at all");
+      assert.ok(
+        !`${stdout}\n${stderr}`.includes(token),
+        `the combined output disclosed the target file's contents -- found ${JSON.stringify(token)} in:\n${stdout}\n${stderr}`,
+      );
+    });
+  });
+});
+
+test("CR-02/WR-08 (C): render-memmap refuses to overwrite an existing in-workspace --out without --force, leaving its bytes untouched", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = makeRenderableStore(ws);
+    const provenancePath = makeSidecar(ws);
+    const outPath = join(ws, "memory-map.md");
+    const original = "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n";
+    writeFileSync(outPath, original);
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /refusing to overwrite the existing file/i);
+    assert.ok(stderr.includes(outPath), "the refusal must name the file it refused to overwrite");
+    assert.match(stderr, /--force/, "the refusal must name the opt-in that would allow it");
+    assert.equal(readFileSync(outPath, "utf8"), original, "a refused overwrite must leave the file byte-identical");
+  });
+});
+
+test("CR-02/WR-08 (D, over-refusal control): render-memmap --force DOES overwrite -- so C is not satisfied by a verb that can never write", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = makeRenderableStore(ws);
+    const provenancePath = makeSidecar(ws);
+    const outPath = join(ws, "memory-map.md");
+    writeFileSync(outPath, "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n");
+    const { result: code, stdout } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--force"]),
+    );
+    assert.equal(code, 0, "--force must be an ACCEPTED option of this verb and must succeed");
+    assert.match(stdout, /wrote/i);
+    const after = readFileSync(outPath, "utf8");
+    assert.notEqual(after, "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n", "--force must actually overwrite");
+    assert.match(after, /Range/, "the overwritten file must be the rendered memory map");
+  });
+});
+
+test("CR-02/WR-08: --force is a declared accepted option of render-memmap in VERB_OPTIONS", () => {
+  assert.ok(
+    VERB_OPTIONS["render-memmap"]!.includes("--force"),
+    "refuseOverwrite()'s doc claims overwrite safety is uniform across every verb that WRITES an output file -- render-memmap writes one",
+  );
+});
+
+test("CR-02 (E): coverage --out outside the workspace root is refused, and creates nothing there", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    await withTempDir(async (outside) => {
+      const projectPath = join(ws, "game.project");
+      writeFileSync(projectPath, JSON.stringify({ origin: 0x0810, raw_data_base64: "" }));
+      const storePath = join(ws, "annotations.store");
+      closeStore(openStore(storePath, { workspaceRoot: ws }));
+      const escaped = join(outside, "coverage.json");
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", escaped]),
+      );
+      assert.notEqual(code, 0);
+      assert.match(stderr, /outside the workspace root/i);
+      assert.equal(existsSync(escaped), false, "the refusal must not have written the report it refused to write");
+    });
+  });
+});
+
+test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs, and --check still reports missing / in-sync / drifted", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = makeRenderableStore(ws);
+    const provenancePath = makeSidecar(ws);
+    const outPath = join(ws, "rendered.md");
+
+    // --check BEFORE anything is rendered: "missing".
+    const missing = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+    );
+    assert.notEqual(missing.result, 0);
+    assert.match(missing.stderr, /missing/i);
+    assert.equal(existsSync(outPath), false, "--check must never write");
+
+    // The write itself.
+    const wrote = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+    );
+    assert.equal(wrote.result, 0, wrote.stderr);
+    assert.equal(existsSync(outPath), true);
+    assert.ok(wrote.stdout.includes(outPath), "the success line must name the file that was actually written");
+
+    // --check against the freshly written file: "in sync".
+    const inSync = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+    );
+    assert.equal(inSync.result, 0, inSync.stderr);
+    assert.match(inSync.stdout, /in sync/i);
+
+    // A hand edit: "drifted".
+    const onDisk = readFileSync(outPath, "utf8").split("\n");
+    onDisk[onDisk.length - 2] = "a hand edit that was never rendered";
+    writeFileSync(outPath, onDisk.join("\n"));
+    const drifted = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+    );
+    assert.notEqual(drifted.result, 0);
+    assert.match(drifted.stderr, /drifted at line/i);
+
+    // The coverage verb's in-workspace --out still writes too.
+    const projectPath = join(ws, "game.project");
+    writeFileSync(projectPath, JSON.stringify({ origin: 0x0810, raw_data_base64: "" }));
+    const covOut = join(ws, "coverage.json");
+    const cov = await withCapturedConsole(() => runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", covOut]));
+    assert.equal(existsSync(covOut), true, "an in-workspace coverage --out must still be written");
+    assert.ok(cov.stdout.includes(covOut), "the coverage 'wrote' line must name the file that was actually written");
+  });
+});
+
+test("(G) over-refusal control: the DEFAULT output path (no --out) still resolves through the seam and still writes", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = makeRenderableStore(ws);
+    const provenancePath = makeSidecar(ws);
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath]),
+    );
+    assert.equal(code, 0, stderr);
+    const derived = join(ws, "memory-map.md");
+    assert.equal(existsSync(derived), true, "the derived default must still be written beside the store");
+    assert.match(stdout, /wrote/i);
+    // Confining the DEFAULT too is deliberate: a derived path is confined by
+    // the same rule as a caller-supplied one rather than trusted because it
+    // was derived.
+    assert.ok(stdout.includes(derived));
+  });
+});
