@@ -568,7 +568,7 @@ criterion 2.
   4. The registration-time gates move in the commit that registers the family, and `docs/tool-support.md`'s byte-identity drift guard, `node scripts/check-skill-tool-coverage.mjs` and `node scripts/check-npm-packages.mjs` are all green **with nothing deleted**. `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS` regex and its **two deliberate duplicate witnesses** move together and none is refactored into a shared helper; `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR` is re-pointed with its floor **raised** to the measured new count and its positive control replaced with real new filenames.
   5. Cross-references and search over the typed decode are answerable through the surface — which addresses reference a given address, and search across labels, comments and instructions — **derived on every query from the surviving `disasm-*` decoders and never cached on disk**, with `max_results` required (no default) and the result count returned so truncation is detectable. Addressing is by explicit address with no cursor concept, a repeated edit **succeeds** reporting no change rather than being rejected, a batch pre-validates every inner name and returns per-item status without aborting on the first failure, and an ambiguous or unsupported request **refuses by name** with `{available:false, reason}` rather than a plausible-looking zero.
 
-**Plans**: 20/21 plans executed — **20 executed, 1 remaining (29-20, wave 2)**. The original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. All three of those gap waves are executed and merged (29-13, 29-14, 29-17, then 29-15, then 29-16), and re-verification has run: **4/6 again, but a different 4/6** — five of the six prior gaps are closed, two remain (criterion 2's `render-memmap --check` false drift, and `CUT-01`'s non-reproducing surviving-line figure). **Gap-closure round 2 (29-18..29-21, in 2 waves) is executing on 2026-08-30 against those two remaining gaps**: wave 1 (29-18, 29-19, 29-21) is executed and merged, and 29-20 (wave 2) remains. The phase is NOT complete.
+**Plans**: 21/21 plans executed — **all 21 executed and merged**. The original 12 all executed, then **verified at 4/6 — `gaps_found`**, so 5 gap-closure plans (29-13..29-17, in 3 further waves) were added. All three of those gap waves are executed and merged (29-13, 29-14, 29-17, then 29-15, then 29-16), and re-verification has run: **4/6 again, but a different 4/6** — five of the six prior gaps are closed, two remain (criterion 2's `render-memmap --check` false drift, and `CUT-01`'s non-reproducing surviving-line figure). **Gap-closure round 2 (29-18..29-21, in 2 waves) was executed on 2026-08-30 against those two remaining gaps**: both waves are executed and merged (wave 1: 29-18, 29-19, 29-21; wave 2: 29-20). Re-verification has not yet run on this round, so the phase is not yet complete.
 
 Plans:
 **Wave 1**
@@ -643,7 +643,7 @@ Plans:
 
 *Gap-closure round 2, wave 2* *(blocked on 29-18 for content — the corrected prose describes the corrected code — and on 29-18/29-19 for **file ownership** of `module-classification.ts` and of the invocation gate's baseline; those are ownership dependencies, not content ones)*
 
-- [ ] 29-20-PLAN.md — The three falsified user-facing drift texts corrected, including the template copied into every new project, plus WR-05's other USAGE drifts and the WR-02 header contradiction resolved with its residual named — discharging the 29-14 prohibition's three recorded counts (gap 1 `missing` item 3, WR-05, WR-02) (wave 2)
+- [x] 29-20-PLAN.md — The three falsified user-facing drift texts corrected, including the template copied into every new project, plus WR-05's other USAGE drifts and the WR-02 header contradiction resolved with its residual named — discharging the 29-14 prohibition's three recorded counts (gap 1 `missing` item 3, WR-05, WR-02) (wave 2)
 
 Notes:
 
@@ -1124,7 +1124,7 @@ in a milestone archive.
 | 26. Automatic Annotation | v0.6.0 | — | Held for v0.8.0 | - |
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
-| 29. The MCP Surface | v0.7.0 | 20/21 | In Progress | - |
+| 29. The MCP Surface | v0.7.0 | 21/21 | In Progress | - |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | — | Not started | - |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
