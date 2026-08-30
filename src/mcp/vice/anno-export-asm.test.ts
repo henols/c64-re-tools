@@ -45,6 +45,13 @@
 //     imported from `anno-types.ts`, so a thirteenth member added later is
 //     covered the next time this file runs. A copied list would silently stop
 //     covering the vocabulary the moment it grew.
+//   - Never hardcode a static "known unassemblable" list for the 256-opcode
+//     suite, in the same voice `disasm-roundtrip.test.ts:33-37` uses it. Every
+//     assertion there is driven from `disasm-opcodes.ts`'s own `OPCODES` table,
+//     so a future correction to that table is automatically re-verified the
+//     next time this file runs -- and that matters here more than anywhere: an
+//     internally-verified version of that table shipped FOURTEEN wrong entries,
+//     caught only by running its output through a real assembler.
 //   - Never treat an ACME stderr WARNING as a failure. ACME 0.97 emits
 //     `Warning (Zone <untitled>): Wrong type - expected address.` and
 //     `Using oversized addressing mode.` on legal, byte-correct output at exit
@@ -76,12 +83,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { ACME_VERIFY_ARGV_FLAGS, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
+import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import { assertExportableCommentText, exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 import { decode } from "./disasm-decoder.ts";
+import { OPCODES } from "./disasm-opcodes.ts";
 
 /** Computed exactly once, by the shared seam. Every ACME-dependent test in
  * this file passes this through node:test's own `{ skip }` option. */
@@ -1349,4 +1357,226 @@ test("a store with no enums reports `enumSubstitutionCount` zero and `autoNamedS
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
   assert.equal(result.enumSubstitutionCount, 0);
   assert.equal(result.autoNamedSymbolCount, 0, "`entry` is a user-chosen name and matches no auto prefix");
+});
+
+// ---------------------------------------------------------------------------
+// All 256 opcodes through the exporter, in ONE image and ONE ACME invocation.
+//
+// This is the control that caught FOURTEEN wrong entries in `disasm-opcodes.ts`
+// during phase 04: two `jam`/`anc` duplicate groups and four `nop` subgroups
+// were corrected from an untested seed by a real-ACME round trip. Every
+// assertion below is driven from the `OPCODES` table itself, so a future
+// correction to that table is automatically re-verified the next time this file
+// runs.
+// ---------------------------------------------------------------------------
+
+const RENDERER_PATH = join(HERE, "disasm-renderer.ts");
+
+/** `disasm-renderer.ts`'s FIXED note vocabulary for the two flags that put an
+ * instruction on the `!byte` path. Not exported from that module, so the
+ * strings are asserted present in its source below before anything matches on
+ * them -- the `acme-gate.test.ts` non-vacuity technique. */
+const UNASSEMBLABLE_NOTE = "not expressible in ACME !cpu 6510";
+const ILLEGAL_NOTE = "illegal opcode";
+
+/** `$xx`, matching `disasm-renderer.ts`'s own `!byte` operand spelling. */
+function byteHex(value: number): string {
+  return `$${(value & 0xff).toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * ONE image in which every opcode `$00..$ff` decodes at a known address, in
+ * opcode order: the opcode byte followed by `OPCODES[b].length - 1` filler
+ * bytes, so the linear decode stays aligned. `disasm-roundtrip.test.ts`'s
+ * Suite C is the model.
+ *
+ * The filler is `$00`, which keeps every relative branch's target at
+ * `address + 2` -- inside the block and trivially in range -- and every
+ * absolute operand at `$0000`, which `disasm-renderer.ts` renders with its
+ * `+2` width force.
+ */
+function everyOpcodeImage(origin: number): { bytes: number[]; addressOf: number[] } {
+  const bytes: number[] = [];
+  const addressOf: number[] = [];
+  for (let op = 0; op <= 0xff; op++) {
+    addressOf[op] = origin + bytes.length;
+    bytes.push(op);
+    for (let i = 1; i < OPCODES[op]!.length; i++) bytes.push(0x00);
+  }
+  return { bytes, addressOf };
+}
+
+test("the `!byte` note vocabulary matched below is really present in disasm-renderer.ts (so this file cannot pass for the wrong reason)", () => {
+  const src = readFileSync(RENDERER_PATH, "utf8");
+  for (const note of [UNASSEMBLABLE_NOTE, ILLEGAL_NOTE]) {
+    assert.ok(src.includes(note), `disasm-renderer.ts no longer contains the note text this file matches on (${JSON.stringify(note)}) -- update both together, never only one`);
+  }
+});
+
+test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` with a naming comment, and the whole export reassembles byte-identically", { skip: SKIP_REASON }, () => {
+  const origin = 0x1000;
+  const { bytes, addressOf } = everyOpcodeImage(origin);
+  const { dir, storePath, imagePath } = buildStore(freshDir("all-opcodes"), {
+    origin,
+    body: bytes,
+    ranges: [{ start: origin, endInclusive: origin + bytes.length - 1, dataType: "code" }],
+    labels: [],
+  });
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  const originAssert = lines.findIndex((l) => l.startsWith("!if * != ") && l.includes("block origin drifted"));
+  const endAssert = lines.findIndex((l) => l.startsWith("!if * != ") && l.includes("block end drifted"));
+  assert.ok(originAssert >= 0 && endAssert > originAssert, `the block must be bracketed:\n${result.source}`);
+  const content = lines.slice(originAssert + 1, endAssert);
+  assert.equal(content.length, 256, "one emitted line per opcode -- no labels and no comments are in this store, so the mapping is one-to-one");
+
+  // Computed from the table in this same test, never pinned. 35 against the
+  // current table; a correction to `acmeExpressible` moves both sides together.
+  const unexpressibleFromTable = OPCODES.filter((entry) => !entry.acmeExpressible).length;
+  assert.equal(
+    result.unexpressibleCount,
+    unexpressibleFromTable,
+    `every \`acmeExpressible: false\` entry the layout covered must be counted:\n  from OPCODES: ${unexpressibleFromTable}\n  reported: ${result.unexpressibleCount}`,
+  );
+
+  const wrongDirective: string[] = [];
+  const missingBytes: string[] = [];
+  const missingComment: string[] = [];
+
+  for (let op = 0; op <= 0xff; op++) {
+    const entry = OPCODES[op]!;
+    const line = content[op]!;
+    const where = `$${op.toString(16).padStart(2, "0")} (${entry.mnemonic}/${entry.mode}) at $${addressOf[op]!.toString(16)}`;
+    const isByteDirective = /^\s*!byte\b/.test(line);
+
+    if (!entry.acmeExpressible) {
+      if (!isByteDirective) {
+        wrongDirective.push(`${where}: acmeExpressible:false must go out as !byte, got: ${line}`);
+        continue;
+      }
+      // Every one of the instruction's bytes, in the renderer's own spelling.
+      const own = bytes.slice(addressOf[op]! - origin, addressOf[op]! - origin + entry.length).map(byteHex).join(", ");
+      if (!line.includes(own)) missingBytes.push(`${where}: expected all ${entry.length} byte(s) as \`${own}\`, got: ${line}`);
+      // The mnemonic and the note text, in the trailing comment.
+      const comment = line.split("  ; ")[1] ?? "";
+      if (!comment.includes(entry.mnemonic)) missingComment.push(`${where}: the trailing comment must name the mnemonic, got: ${line}`);
+      if (!comment.includes(UNASSEMBLABLE_NOTE)) missingComment.push(`${where}: the trailing comment must carry the fixed note text, got: ${line}`);
+      if (entry.illegal && !comment.includes(ILLEGAL_NOTE)) missingComment.push(`${where}: an illegal opcode's note must say so, got: ${line}`);
+    } else if (isByteDirective) {
+      wrongDirective.push(`${where}: acmeExpressible:true must render as a mnemonic line, got: ${line}`);
+    }
+  }
+
+  assert.deepEqual(wrongDirective, [], `wrong directive for these opcodes:\n${wrongDirective.join("\n")}`);
+  assert.deepEqual(missingBytes, [], `a \`!byte\` substitution must carry EVERY byte, or the following instruction lands at the wrong address:\n${missingBytes.join("\n")}`);
+  assert.deepEqual(missingComment, [], `the mnemonic a human reader needs must move into the trailing comment:\n${missingComment.join("\n")}`);
+
+  // No invented mnemonic anywhere on a `!byte` line: the DIRECTIVE half of
+  // every such line is bytes and nothing else, so an unassemblable mnemonic
+  // cannot have leaked out of the comment and into the assembler's input.
+  const malformed = content.filter((line) => /^\s*!byte\b/.test(line)).filter((line) => !/^\s*!byte \$[0-9a-f]{2}(, \$[0-9a-f]{2})*\s*$/.test(line.split("  ; ")[0] ?? ""));
+  assert.deepEqual(malformed, [], `a \`!byte\` line's directive half must be hex bytes only -- anything else is a mnemonic ACME would reject:\n${malformed.join("\n")}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(
+    verdict.outcome,
+    "ok",
+    "THIS is the control that caught fourteen wrong entries in disasm-opcodes.ts: an internally-verified opcode table still shipped " +
+      `two \`jam\`/\`anc\` duplicate groups and four \`nop\` subgroups wrong, and only a real assembler found them.${context(result, verdict)}`,
+  );
+  assert.equal(verdict.byteDiff?.equal, true, `all 256 opcodes must reassemble byte-identically:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// The duplicate-label refusal, confirmed by real ACME.
+//
+// A REFINEMENT OF RESEARCH.md's ASSUMPTION A5, recorded here rather than left
+// implicit. `anno_label.name` carries a `unique` DDL constraint
+// (`anno-store.ts:266`) ON TOP OF `setLabel()`'s own guard, so the store cannot
+// hold two rows with one name AT ALL and a store-level plant can never reach
+// ACME. The external observation is therefore produced at the SOURCE-TEXT
+// boundary, which is the only place the duplicate can exist.
+//
+// That is a refinement, not a departure from criterion 5: criterion 5 asks for
+// the external oracle to CONFIRM the internal one, and it does -- the store
+// refuses the duplicate by name, and real ACME independently refuses the same
+// duplicate with its own words and its own exit status.
+// ---------------------------------------------------------------------------
+
+const STORE_PATH_ON_DISK = join(HERE, "anno-store.ts");
+
+/** `setLabel()`'s own refusal wording, read out of the module source rather
+ * than retyped from memory -- the `acme-gate.test.ts` technique. Retyping is
+ * how a test ends up passing for the wrong reason: any throw would satisfy an
+ * `assert.throws()` with no message predicate. */
+const SET_LABEL_REFUSAL = "is already bound to address";
+
+test("the store's duplicate-label refusal wording asserted below is really present in anno-store.ts (so this file cannot pass for the wrong reason)", () => {
+  const src = readFileSync(STORE_PATH_ON_DISK, "utf8");
+  assert.ok(
+    src.includes(SET_LABEL_REFUSAL),
+    `anno-store.ts no longer contains the refusal wording this file matches on (${JSON.stringify(SET_LABEL_REFUSAL)}) -- update both together, never only one`,
+  );
+});
+
+test("INTERNAL REFUSAL: setLabel() refuses a name already bound to a DIFFERENT address, and does NOT refuse the same name at the same address", () => {
+  const dir = freshDir("dup-store");
+  const { storePath } = buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+  });
+
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    assert.throws(
+      () => setLabel(handle, { address: 0x0803, name: "entry", kind: "User" }),
+      (e: unknown) => {
+        assert.ok(e instanceof Error);
+        assert.ok(e.message.includes(SET_LABEL_REFUSAL), `the store's OWN refusal must be what fired: ${e.message}`);
+        assert.ok(e.message.includes("$0801"), `the refusal names the address the name is already bound to: ${e.message}`);
+        assert.ok(e.message.includes("$0803"), `and the address it was asked to also name: ${e.message}`);
+        return true;
+      },
+    );
+
+    // THE PAIRED DIRECTION. A guard that refuses everything is indistinguishable
+    // from one that works, so the accepting case is asserted in the same test.
+    assert.doesNotThrow(
+      () => setLabel(handle, { address: 0x0801, name: "entry", kind: "User" }),
+      "rebinding the SAME name to the SAME address is a no-op, not a collision",
+    );
+  } finally {
+    closeStore(handle);
+  }
+});
+
+test("EXTERNAL ORACLE: real ACME refuses the same duplicate at the source-text boundary with `Symbol already defined.` and exit 1", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = shapeFixture("dup-acme");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // The paired direction FIRST: the un-duplicated source assembles and verifies,
+  // so the red below is ONE line of difference and nothing else.
+  const clean = verifyExport(result);
+  assert.equal(clean.outcome, "ok", `the un-duplicated export must verify:${context(result, clean)}`);
+  assert.equal(clean.byteDiff?.equal, true);
+
+  // ONE documented mutation: the same symbol name defined a second time, at a
+  // different address. The store cannot hold this state -- `anno_label.name` is
+  // `unique` -- so the source text is the only place it can exist.
+  const duplicated = result.source.replace("entry = $0801\n", "entry = $0801\nentry = $0900\n");
+  assert.notEqual(duplicated, result.source, "the duplication must change the source");
+
+  const run = assembleRaw(duplicated);
+  assert.equal(run.status, 1, `real ACME must REFUSE a duplicate symbol:\n  stdout: ${run.stdout}\n  stderr: ${run.stderr}`);
+  assert.equal(run.outputExists, false, "a refused assembly writes no output file");
+
+  const diagnostics = parseAcmeDiagnostics(run.stderr);
+  assert.ok(
+    diagnostics.some((d) => d.severity === "Error" && d.message.includes("Symbol already defined.")),
+    `ACME's OWN duplicate-symbol message, in its --msvc spelling, must be what refused it:\n  stderr: ${run.stderr}\n  parsed: ${JSON.stringify(diagnostics)}`,
+  );
 });
