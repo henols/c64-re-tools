@@ -611,7 +611,36 @@ $ node scripts/audit-gate.mjs --json | head -c 60
 
 `allowed: true`, `redGuards: []`, `structuralErrors: []`, nine derived docs guards.
 
-### 6.4 The plan's own `<automated>` command, re-anchored and run
+### 6.4 The automated test suite
+
+```bash
+$ cd src/mcp/vice && npm run test:automated
+# tests 2941 | suites 24 | pass 2934 | fail 1 | skipped 1 | todo 5 | duration_ms 47335
+```
+
+**One failure, and it is the recorded worktree artifact, not a regression:**
+
+```
+not ok 1472 - path agreement (D-3, D-6, THE regression this task exists to catch): the launcher's own
+  repo_root (resources/ and tools/ copies) agrees with Node's supervisorDir()/dirname(EPOCH_FILE),
+  and the agreed path is not under .claude
+  location: src/mcp/vice/repo-root.test.ts:178:1
+  error: 'the agreed directory must not sit under .claude -- got
+    <worktree>/.vice-supervisor'
+```
+
+`repo-root.test.ts:248-251` asserts `!supervisorDir().includes(".claude")`, and a GSD worktree root
+**is** `<repo>/.claude/worktrees/agent-*`. It fails inside every GSD worktree and only inside one;
+plan 32-01 measured, attributed and recorded it in this phase's `deferred-items.md` § 1, and plan
+32-03 hit exactly the same single failure. **The expected floor in the main checkout is 0.** This plan
+touches no source file at all, so it cannot have caused it; the assertion was **not** loosened and the
+test was **not** skipped. No VICE broker was running during the run, so the BACK-05 broker-reddening
+artifact does not apply either.
+
+`npm ci --no-audit --no-fund` was run once from the committed lockfile before the suite (the worktree
+had no `node_modules/`); 237 packages, nothing new resolved.
+
+### 6.5 The plan's own `<automated>` command, re-anchored and run
 
 The plan's task-1 command with `/home/henrik/dev/henrik/git/c64-re-tools` replaced by the worktree
 root (§0), run verbatim:
@@ -626,3 +655,394 @@ cd "$WT_ROOT" \
 
 Output: `N=35`, gate silent (exit 0), and a non-zero `grep -a` occurrence count in this file. The
 assertion `N -eq 35` holds **as measured in this worktree**, not inherited from the plan.
+
+---
+
+## Section A — the discussion-time numbers, re-measured
+
+`32-CONTEXT.md`'s `<specifics>` offered six measurements *"for the researcher to re-verify rather than
+trust"*. Every one was re-run in this worktree. **No figure below is copied from `32-CONTEXT.md` or
+`32-RESEARCH.md`.** Where a figure moved, the tree it was measured against is named — most of these
+were taken before phase 32's own commits landed, so "the same number today" is the wrong test.
+
+| # | `32-CONTEXT.md` said | Re-measured | Unit | Verdict |
+|---|---|---|---|---|
+| A1 | 35 tracked non-`.planning` files contain the literal | **35** (with `-a`) / **34** (without) | FILES | ✅ **reconciles** — but only with `-a` |
+| A2 | `.planning/PROJECT.md` has 46 mentions | **46 lines / 51 occurrences** | both | ✅ **reconciles**, as LINES |
+| A3 | `.planning/PROJECT.md` has 26 `r2000_` occurrences | **26** case-insensitive occurrences at the pre-sweep tree | OCCURRENCES, case-insensitive | ✅ **reconciles** — see A3.1; this **overturns** the research prediction |
+| A4 | `CLAUDE.md` has 0 and 0 | **0 and 0** | LINES and OCCURRENCES | ✅ **reconciles** (`D-11` confirmed) |
+| A5 | no `ARCHITECTURE.md` outside `.planning/` | **none**; 4 copies, all inside | FILES | ✅ **reconciles** |
+| A6 | 126 `*.test.*` files in `src/mcp/vice/` | **126** at the phase base, **127** at HEAD | FILES | ✅ **reconciles** at the tree it was measured against |
+| A7 | *(research, not CONTEXT)* 373 tracked files carry the literal; 338 of them under `.planning/` | **374 / 339** at `12a3a47`; **376 / 341** at `345d5c4` | FILES | ❌ **does not reproduce** — see A7.1 |
+
+### A1 — the 35, and the NUL trap
+
+```bash
+$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done | wc -l); echo "$N"
+35
+$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -q  'regenerator2000' "$f" && echo "$f"; done | wc -l); echo "$N"
+34
+```
+
+Unit: FILES containing at least one occurrence in their **content**. Reconciles exactly with `-a`.
+Without `-a` the answer is 34, and the missing file is `src/mcp/vice/anno-memmap-render.ts` — NUL at
+offset 15097, line 315. Full derivation in §0.2. Under the gate's own path-*and*-content predicate the
+answer is **37**; see §1, sub-clause (a2).
+
+### A2 — `.planning/PROJECT.md`, the subject literal
+
+```bash
+$ grep -ac 'regenerator2000' .planning/PROJECT.md          # LINES
+46
+$ grep -ao 'regenerator2000' .planning/PROJECT.md | wc -l  # OCCURRENCES
+51
+```
+
+`32-CONTEXT.md`'s "46 mentions" is the **LINES** figure. Both are recorded so a later reader picking
+either definition lands on a number this document already published. Unmoved from the pre-sweep tree
+(`git show d6bebb1:.planning/PROJECT.md` gives the same 46 / 51), because plan 32-03's `:311` edit
+replaced an `r2000_*` token, not a subject-literal one.
+
+### A3 — `r2000_`: **CONTEXT.md's 26 reproduces exactly, and research's prediction was wrong**
+
+`32-RESEARCH.md` §5.1 recorded this figure as **disagreeing** — *"Measured 17 lines and 23
+occurrences; neither counting definition yields 26"* — and `32-05-PLAN.md` instructed this ledger to
+record it as a disagreement with a delta of 3, listing three unconfirmed hypotheses. **Measurement
+contradicts the plan, so the measurement is what is recorded.** Research's own *first* hypothesis —
+*"the discussion-time figure counted `r2000_` case-insensitively plus `R2000_`"* — is **confirmed**,
+and it accounts for the delta exactly.
+
+The full grid, both cases × both units × both trees:
+
+| Tree | case-sensitive lines | case-sensitive occurrences | case-**in**sensitive lines | case-**in**sensitive occurrences |
+|---|---|---|---|---|
+| pre-sweep `d6bebb1` | 17 | 23 | 20 | **26** ← `32-CONTEXT.md`'s figure |
+| HEAD `19b2c5c` | 16 | 22 | 19 | 25 |
+
+```bash
+$ git show d6bebb1:.planning/PROJECT.md | grep -ac  'r2000_'            # 17  (cs, LINES)
+$ git show d6bebb1:.planning/PROJECT.md | grep -ao  'r2000_' | wc -l    # 23  (cs, OCCURRENCES)
+$ git show d6bebb1:.planning/PROJECT.md | grep -aci 'r2000_'            # 20  (ci, LINES)
+$ git show d6bebb1:.planning/PROJECT.md | grep -aoi 'r2000_' | wc -l    # 26  (ci, OCCURRENCES)  <-- exact
+```
+
+The three extra occurrences are uppercase, and they are identifier names rather than tool names:
+
+```bash
+$ git show d6bebb1:.planning/PROJECT.md | grep -aoi 'r2000_' | sort | uniq -c
+     23 r2000_
+      3 R2000_
+$ grep -an 'R2000_' .planning/PROJECT.md
+748:  `R2000_TOOL_DEFINITIONS`, so renaming the collection matches nothing, hits a
+751:  `check-skill-tool-coverage.mjs:49` statically imports `CURATED_R2000_TOOLS`
+753:  itself goes red on three tests, one via a hard-coded `R2000_MODULE_FLOOR = 14`
+```
+
+**23 + 3 = 26.** `R2000_TOOL_DEFINITIONS`, `CURATED_R2000_TOOLS` and `R2000_MODULE_FLOOR` are
+SCREAMING_SNAKE_CASE symbol names, which is exactly this repo's constant-naming convention, so a
+case-insensitive count is not a sloppy count — it is the count that sees all the symbols. It is also
+the count **this project's own gate** takes: `subjectHits()` builds its matcher with
+`new RegExp(SUBJECT_NEEDLE, "gi")` — the `i` flag — so case-insensitive occurrences is the gate's
+native definition, not an exotic one.
+
+**Working figures, stated once:**
+
+- For *prose adjudication* (which lines tell a reader to invoke a deleted tool — the `D-08` question),
+  the working figure is **23 case-sensitive occurrences over 17 lines** at the pre-sweep tree. That is
+  the population plan 32-03 adjudicated line-by-line, and all 17 lines carry a recorded verdict (§3).
+  The three uppercase symbols are not tool-call routes; they are names of code identifiers being
+  discussed, so excluding them from the adjudication was correct.
+- For *census reconciliation against `32-CONTEXT.md`*, the figure is **26 case-insensitive
+  occurrences**, and it reconciles exactly.
+
+**What this corrects.** `32-RESEARCH.md` §5.1's ❌ row and Open Question 5's "RESOLVED … recorded as
+DISAGREEING" recommendation are both superseded by this measurement. Recording a reconciling figure as
+a disagreement would have published a false discrepancy into the phase record — the same category of
+error, in the opposite direction, that `D-09` exists to prevent. The three lines above are the
+evidence; anyone can re-run the four `grep` invocations.
+
+### A4 — `CLAUDE.md`
+
+```bash
+$ grep -ac 'regenerator2000' CLAUDE.md   # 0
+$ grep -ac 'r2000_'          CLAUDE.md   # 0
+```
+
+**0 LINES and 0 OCCURRENCES of each**, at HEAD and at the pre-sweep tree alike. Recorded as
+**confirming `D-11`** — *"`CLAUDE.md` is already clean and needs no work … A planner must not re-derive
+this as outstanding"* — and explicitly **not** as reopening it. Row 46 of §2 carries the same fact as a
+"we looked and it is fine" row.
+
+### A5 — the four `ARCHITECTURE.md` copies
+
+```bash
+$ git ls-files | grep -i 'ARCHITECTURE\.md'
+.planning/ARCHITECTURE.md
+.planning/codebase/ARCHITECTURE.md
+.planning/research/ARCHITECTURE.md
+.planning/research/archive-v0.6.0/ARCHITECTURE.md
+$ git ls-files | grep -ic 'ARCHITECTURE\.md'
+4
+```
+
+**Four copies, all inside `.planning/`. None outside it** — `A5` reconciles. Which carry Rule A21:
+
+| Path | `A21` (lines / occurrences) | subject literal (occurrences) | In the swept set? |
+|---|---|---|---|
+| `.planning/ARCHITECTURE.md` | 4 / 4 | 11 | **yes** — clause (b), row 43. `corrected` by plan 32-03 |
+| `.planning/codebase/ARCHITECTURE.md` | 0 / 0 | 0 | no — generated codebase map, carries neither A21 nor the subject |
+| `.planning/research/ARCHITECTURE.md` | 4 / 5 | 12 | no — excluded population, given a named row in §B.3 |
+| `.planning/research/archive-v0.6.0/ARCHITECTURE.md` | 0 / 0 | 22 | no — excluded population, §B.3 |
+
+```bash
+$ grep -ac 'A21' .planning/ARCHITECTURE.md            # 4 LINES
+$ grep -ac 'A21' .planning/research/ARCHITECTURE.md   # 4 LINES
+```
+
+**Two of the four carry A21**: `.planning/ARCHITECTURE.md` and `.planning/research/ARCHITECTURE.md`.
+Note the unit trap again — the research copy has **4 lines but 5 occurrences** of `A21`; a
+`grep -c`-derived "4" and an occurrence-derived "5" are both right and describe the same file.
+`.planning/ARCHITECTURE.md`'s A21 count rose from 1 line to 4 when plan 32-03 converted the rule to a
+dated superseded record (the conversion names the rule several times); the **heading and rule number
+were deliberately preserved**, so `ROADMAP.md` § Phase 32 criterion 2's reference to "`ARCHITECTURE.md`'s
+Rule A21" still resolves.
+
+### A6 — `src/mcp/vice/*.test.*`
+
+```bash
+$ git ls-files 'src/mcp/vice/*.test.*' | wc -l                          # 127  (HEAD)
+$ git ls-tree -r --name-only d6bebb1 src/mcp/vice | grep -c '\.test\.'  # 126  (phase base)
+```
+
+**126 reconciles exactly at the tree `32-CONTEXT.md` measured** (the phase base). HEAD is **127**; the
+one added file is phase 32's own:
+
+```bash
+$ git diff --name-only --diff-filter=A d6bebb1 HEAD -- src/mcp/vice
+src/mcp/vice/guard-fates.test.ts
+```
+
+created by plan 32-01 as the fate guard's colocated non-vacuity proof. `CUT-04`'s historical figure of
+32 is a different set entirely and is reconciled in
+`evidence/32-audited-set-reconciliation.md`, not here.
+
+### A7 — research's own tree-wide totals do **not** reproduce
+
+`32-RESEARCH.md` §5.1 published *"Total tracked files containing the literal (incl. `.planning/`):
+**373**"* and §5.3 derived *"`.planning/` files with `regenerator2000`, total: **338** (373 tracked −
+35 non-`.planning`)"*. Re-measured with the byte-level scanner (§0.3) at the two commits closest to
+when research ran:
+
+| Commit | What it is | tracked total | non-`.planning` matching | `.planning` matching | total matching |
+|---|---|---|---|---|---|
+| `12a3a47` | last commit **before** the research commit | 1378 | 35 | 339 | **374** |
+| `345d5c4` | the research commit itself | 1380 | 35 | 341 | **376** |
+| `d6bebb1` | phase base (pre-execution) | 1390 | 35 | 351 | **386** |
+| `19b2c5c` | this ledger's measurement commit | 1404 | 35 | 356 | **391** |
+
+**Neither 373 nor 338 reproduces at either candidate commit.** The nearest is 374 / 339 — off by
+exactly 1. Recorded as a disagreement rather than smoothed over.
+
+Hypotheses, explicitly **unconfirmed**: research may have measured against an uncommitted working tree
+missing one file; or excluded one path (`.planning/notes/regenerator2000-integration.md` carries the
+literal in its *path*, and a content-only scan that also skipped it would land on 338 — but a
+path-only match does not exist here, since that file's content carries the literal too, so this
+hypothesis does not fully account for it); or ran a slightly different scope predicate. **338 is in any
+case a derived number, not a measured one** — research obtained it by subtracting 35 from 373 — so a
+single error in 373 propagates. **The working figures for this ledger are the measured ones in the
+table above**, and §B.1 uses them.
+
+Two of these numbers are self-referential and it is worth saying so plainly: this ledger is itself a
+file under `.planning/phases/**` that carries the literal, so committing it moves the `.planning`
+matching count from 356 to **357** and the tracked total from 1404 to **1405**. The §B.1 figures are
+measured **after** that commit; the §A7 figures are measured **at** `19b2c5c`, before it. Both are
+correct at their stated commit, and neither is a discrepancy.
+
+---
+
+## Section B — the excluded populations, each an explicit row
+
+`D-09` requires a later reader to distinguish *"we looked and it is fine"* from *"we never looked"*. An
+excluded population that is simply absent from this document is indistinguishable from one nobody
+considered. Every exclusion below therefore carries a **measured size** and a **stated reason**.
+
+All counts are **FILES containing at least one occurrence**, produced with `grep -a`, measured at
+commit `ab14671` (this ledger's own first commit — see the self-reference note in §A7).
+
+### B.1 The measured shape of what was excluded
+
+```bash
+$ git ls-files | wc -l                    # 1405 tracked files
+$ git ls-files '.planning/*' | wc -l      # 1029 under .planning/
+# per-prefix: for f in $(git ls-files '<prefix>'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done | wc -l
+```
+
+| Population | Files carrying the literal | In the swept set? | Reason |
+|---|---|---|---|
+| `.planning/phases/**` | **311** | **no** (0 of 311) | §B.2 |
+| `.planning/research/**` (incl. its archive) | **10** (5 + 5) | **no** (0 of 10) | §B.3 |
+| `.planning/milestones/**` | **9** | no | §B.4 |
+| `.planning/quick/**` | **7** | no | §B.4 |
+| `.planning/todos/**` | **6** | no | §B.4, §B.6 |
+| `.planning/notes/**` | **4** | no | §B.4 |
+| `.planning/seeds/**` | **1** | no | §B.4 |
+| `.planning/codebase/**` | **0** | no | §B.4 — measured zero, nothing to exclude |
+| `.planning/` root documents | **9** | **partly — 4 of 9** | §B.5 |
+| **`.planning/` total** | **357** | **4** | |
+| tracked, outside `.planning/`, content carries the literal | **35** | **yes — all 35** | clause (a1) |
+| tracked, outside `.planning/`, literal in path only | **2** | **yes — both** | clause (a2) |
+| shipped-but-untracked `installer/**` | **4** | **yes — all 4** | clause (a3) |
+| tracked, outside `.planning/`, **zero** occurrences | 339 (376 − 37) | **5 of them** | `CLAUDE.md` + the 4 zero-mention playbooks; the other 334 carry nothing and are named by no criterion |
+
+### B.2 `.planning/phases/**` — 311 files — EXCLUDED
+
+**Reason: phase artifacts are dated records by construction.** A `PLAN.md` states what a phase intended
+to do at the moment it was planned; a `SUMMARY.md` states what it did; a `RESEARCH.md` states what was
+measured on a named tree. Every one is a `D-08` class-1 document — true in the past tense, false to
+rewrite. Correcting them would not remove a route (nobody follows a closed phase's plan); it would
+destroy the record this milestone's provenance corrections were able to *re-derive from*.
+
+They are also **structurally out of the removal gate's reach**: `PLANNING_PREFIX = ".planning/"` is
+applied as a prefix in `trackedFiles()`, so not one of the 311 can move a pinned count.
+
+**We looked**: the population was enumerated and sized, and its exclusion is a class decision about
+dated records, not an oversight. **This ledger is itself one of the 311.**
+
+### B.3 `.planning/research/**` and `.planning/research/archive-v0.6.0/**` — 10 files — EXCLUDED
+
+**Reason: research archives, dated by construction.** Same class-1 argument as §B.2, with an explicit
+archive marker in the path for the five under `archive-v0.6.0/`.
+
+One member is named individually because ROADMAP criterion 2's "Rule A21" phrasing could be read as
+reaching it:
+
+| Path | `A21` | subject occ | Verdict |
+|---|---|---|---|
+| `.planning/research/ARCHITECTURE.md` | 4 lines / 5 occurrences | 12 | **`unchanged` — research archive, dated by construction** |
+
+Cross-reference: **plan 32-03 deliberately left this file byte-identical** while converting the
+`.planning/ARCHITECTURE.md` copy, and proved it mechanically —
+`git diff --exit-code 2eaa136 HEAD -- .planning/research/ARCHITECTURE.md` exits 0
+(`32-03-SUMMARY.md`, § *The `ARCHITECTURE.md` inventory*). Re-confirmed here against the phase base:
+
+```bash
+$ git diff --exit-code d6bebb1 HEAD -- .planning/research/ARCHITECTURE.md ; echo "exit=$?"
+exit=0
+```
+
+`32-RESEARCH.md` §5.3 recommended exactly this ("recommend: yes, verdict `unchanged — research archive,
+dated by construction`"); the recommendation is adopted, and the row is here rather than in §2 because
+the file is in an excluded population, not in the swept set.
+
+`.planning/research/archive-v0.6.0/ARCHITECTURE.md` carries **22** occurrences of the subject and **0**
+of `A21`. Same verdict, same reason, and the `archive-` path segment makes the dating explicit.
+
+### B.4 The remaining `.planning/` sub-trees — 27 files — EXCLUDED
+
+`milestones/` (9), `quick/` (7), `todos/` (6), `notes/` (4), `seeds/` (1); `codebase/` measures **0**.
+
+**Reason: all are dated or generated records, and none is named by ROADMAP criterion 2.** Milestone
+archives and audits are closed records with dates in their filenames; `quick/` holds completed one-off
+plans and summaries; `todos/` holds captured items (see §B.6); `notes/` holds dated investigation
+notes, including `.planning/notes/regenerator2000-integration.md`, which is the *record of the
+integration that was deleted* and is the single most obviously class-1 document in the repository;
+`seeds/` holds an un-started idea. `codebase/` is regenerated by `/gsd-map-codebase` and carries zero
+occurrences, so there is nothing to exclude — a measured zero, recorded so it is not mistaken for an
+unchecked directory.
+
+### B.5 The nine `.planning/` root documents — 4 in the swept set, 5 excluded
+
+| Path | subject occ | In the swept set? | Reason |
+|---|---|---|---|
+| `.planning/PROJECT.md` | 51 | **yes** — row 42 | named by ROADMAP criterion 2 |
+| `.planning/ARCHITECTURE.md` | 11 | **yes** — row 43 | named by ROADMAP criterion 2 (Rule A21) |
+| `.planning/ROADMAP.md` | 24 | **yes** — row 44 | named by clause (b) |
+| `.planning/REQUIREMENTS.md` | 13 | **yes** — row 45 | named by clause (b) |
+| `.planning/STATE.md` | ≥1 | **no** | Machine-maintained position/progress file, rewritten by the GSD state verbs on every plan close. Its mentions are historical decision echoes, not prose a reader routes from. **Also out of this executor's reach by policy**: a worktree executor may not write `STATE.md`; the orchestrator owns it |
+| `.planning/ENGINEERING_RULES.md` | ≥1 | no | Numbered, dated rule record; class 1 |
+| `.planning/MILESTONES.md` | ≥1 | no | Closed-milestone roll-up; class 1 |
+| `.planning/RETROSPECTIVE.md` | ≥1 | no | Dated retrospective; class 1 |
+| `.planning/WINDOWS.md` | ≥1 | no | Cross-phase defect ledger; append-only by construction |
+
+**We looked at all nine.** Four are swept; five are excluded as dated or machine-maintained records,
+and `STATE.md` additionally sits outside what a worktree executor is permitted to write.
+
+### B.6 The two reviewed-but-not-folded todos — considered, measured, and outside `CUT-06`
+
+`32-CONTEXT.md` § *Reviewed Todos (not folded)* names two items that are adjacent to this sweep. They
+are recorded here so a later reader sees they were **considered and rejected**, not missed.
+
+| Todo | Subject occurrences | Verdict |
+|---|---|---|
+| `.planning/todos/pending/2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md.md` | **0** | Out of scope. Document-honesty work about a **corpus claim**, not a deleted route |
+| `.planning/todos/pending/2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability.md` | **0** | Out of scope. Doc-accuracy work in `docs/` about **text-monitor reachability**, unrelated to the subject |
+
+```bash
+$ grep -ac 'regenerator2000' .planning/todos/pending/2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md.md
+0
+$ grep -ac 'regenerator2000' .planning/todos/pending/2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability.md
+0
+```
+
+**Both measure zero occurrences of the subject**, which is the mechanical form of `32-CONTEXT.md`'s
+stated objection: folding them *"would widen the sweep from 'deleted routes' to 'all stale doc
+claims'"*. `CUT-06`'s subject is the deleted route. These are real work and belong in the pending todo
+queue where they already sit; they are not `CUT-06`'s.
+
+`32-CONTEXT.md` also records *"the remaining six keyword matches (`broker` and `capture` area todos) are
+false positives from generic term overlap and were not considered further."* That disposition is
+carried forward unchanged; the pending queue holds nine todos in total, of which the two above plus
+those six account for eight, and the ninth (`back-05-test-fails-deterministically-on-a-live-broker-host`)
+is folded into this phase as `D-13`'s recorded precondition rather than as sweep work.
+
+---
+
+## 7. How to re-derive this document
+
+Run every command from the repository root you want to measure — **not** from a path copied out of a
+plan file. Resolve it first:
+
+```bash
+WT_ROOT=$(git rev-parse --show-toplevel) && cd "$WT_ROOT"
+```
+
+1. **Clause (a1), the 35** — `for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done`
+2. **The NUL proof** — the same loop without `-a`; diff the two lists; the single missing path is the NUL-carrying file.
+3. **Clause (a2), the 2** — the gate's own predicate scans the *path* too:
+   `git ls-files | grep -v '^\.planning/' | grep -i 'regenerator2000'` returns **three** paths —
+   `docs/phase9-regenerator2000-probe-findings.md`, `scripts/check-no-regenerator2000.d.mts`,
+   `scripts/check-no-regenerator2000.mjs`. The first is already in clause (a1) (its *content* carries
+   the literal 43 times as well), so clause (a2) is the other **two**: the ones whose content carries
+   zero. `35 + 2 = 37`.
+4. **Clause (a3), the 4** — `node -e "import('./scripts/check-npm-packages.mjs').then(m=>console.log(m.packFiles('installer').files))"`, then grep the `installer/skills/**` results.
+5. **Clause (c), the 7** — `git ls-files | grep -E '^src/skills/[^/]+/SKILL\.md$'`
+6. **Every verdict** — `git diff --exit-code d6bebb1 HEAD -- <path>`; exit 0 is `unchanged`, non-zero is `corrected`.
+7. **Every pin** — read `EXEMPTION_CLASSES` in `scripts/check-no-regenerator2000.mjs`; the per-class totals print on every successful gate run.
+8. **The gate** — `node scripts/check-no-regenerator2000.mjs`; exit 0, 157 permanently exempt, 0 allow-listed.
+
+**One caveat that will bite the next reader:** running the gate (or anything that calls `packFiles()`)
+executes `npm pack --dry-run`, whose `prepack` hook regenerates `installer/skills/`. That directory is
+gitignored so the working tree stays clean, but a run that has never invoked the gate will find those
+four clause-(a3) paths absent from disk.
+
+---
+
+## 8. Deviation recorded: the plan's own prediction about A3 was wrong
+
+`32-05-PLAN.md` task 2 instructed this ledger to record `32-CONTEXT.md`'s "26 `r2000_` occurrences" as
+**DISAGREEING** — *"Measured 17 lines and 23 occurrences; neither counting definition yields 26. State
+the delta of 3 … Do not smooth this over"* — and its `must_haves.truths` restates the same expectation.
+That instruction was written from `32-RESEARCH.md` §5.1, which tested two counting definitions
+(case-sensitive lines, case-sensitive occurrences) and not the third.
+
+**The third definition reproduces the figure exactly** (§A3): case-insensitive occurrences at the
+pre-sweep tree measure **26**. Recording a disagreement that does not exist would have been the same
+failure as smoothing over one that does — a published figure whose provenance does not reproduce.
+Section A3 therefore records `reconciles`, with all four measurements, the three uppercase lines that
+account for the delta, and the note that case-insensitivity is the removal gate's own native matching
+mode. Everything the plan asked to be *stated* is stated — both units, the delta of 3, the command, and
+the hypothesis — but the verdict follows the measurement rather than the prediction.
+
+The plan's own instruction anticipated this: *"Every number in both sections carries the command that
+produced it. No number is copied from CONTEXT.md or RESEARCH.md without being re-run."* Re-running is
+what produced this correction.
