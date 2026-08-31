@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 11
 waived_count: 12
 fixed_count: 5
-total_count: 27
-last_updated: 2026-08-29T21:14:55.313Z
+total_count: 28
+last_updated: 2026-08-31T18:12:04.785Z
 ---
 
 # Broken Windows Ledger
@@ -42,6 +42,7 @@ last_updated: 2026-08-29T21:14:55.313Z
 | 25 | 28 | deviation | src/mcp/vice/anno-store.ts |  | 28-18's closing gate: deleting step 3b's staged-image validation reddens ONE test (the truncated-image CR-08 test), not the two 28-18 task 3's action text names. The foreign-bytes sibling is absorbed by step 2's snapshotOpenFailure gate one step earlier -- 28-16-SUMMARY.md records the identical re-observation on its own final tree. | waived | Provenance record, not a defect: the plan text was measured false and the implementation is correct. Nothing to fix; kept as history. | 2026-08-28T17:16:14.108Z | 2026-08-29T21:14:55.072Z |
 | 26 | 29 | unrun-verify | src/mcp/vice/vice-proxy.test.ts |  | vice-proxy.test.ts is MANUAL_ONLY (needs a live host VICE server) so the anno_* tools/list wire output after the registration substitution was proven structurally, never observed on a live client | open |  | 2026-08-29T14:09:23.640Z |  |
 | 27 | 29 | deviation | src/mcp/vice/anno-store.ts |  | Plan 29-03's acceptance criterion 'the store revision is unchanged between two identical applyEnumUsage calls' was NOT implemented: it contradicts AnnoWriteResult's documented invariant that every accepted write advances the revision, and the plan's own instruction to copy putXref verbatim. changed:false carries the idempotency claim instead. | waived | Provenance record, not a defect: the plan text was measured false and the implementation is correct. Nothing to fix; kept as history. | 2026-08-29T15:46:45.831Z | 2026-08-29T21:14:55.313Z |
+| 28 | 32 | deviation | scripts/audit-gate.mjs | 1210 | audit-gate.mjs --json ends with process.exit(result.allowed ? 0 : 1), and allowed tracks GATED AUDITS only -- so a structural error (e.g. a DOCS_GUARD_FLOOR breach) is reported inside the JSON payload's structuralErrors array while the process still exits 0. The text-mode branch (:1213-1218) does exit 1 on the same condition. Measured in plan 32-07 when a floor plant came back ZERO-EXIT under --json and red without it. Any caller treating the --json exit status as a structural-health check is reading a signal that cannot go non-zero for a structural error. | open |  | 2026-08-31T18:12:04.785Z |  |
 
 ````json
 [
@@ -368,6 +369,18 @@ last_updated: 2026-08-29T21:14:55.313Z
     "reason": "Provenance record, not a defect: the plan text was measured false and the implementation is correct. Nothing to fix; kept as history.",
     "recorded_at": "2026-08-29T15:46:45.831Z",
     "resolved_at": "2026-08-29T21:14:55.313Z"
+  },
+  {
+    "id": 28,
+    "kind": "deviation",
+    "phase": "32",
+    "file": "scripts/audit-gate.mjs",
+    "line": 1210,
+    "description": "audit-gate.mjs --json ends with process.exit(result.allowed ? 0 : 1), and allowed tracks GATED AUDITS only -- so a structural error (e.g. a DOCS_GUARD_FLOOR breach) is reported inside the JSON payload's structuralErrors array while the process still exits 0. The text-mode branch (:1213-1218) does exit 1 on the same condition. Measured in plan 32-07 when a floor plant came back ZERO-EXIT under --json and red without it. Any caller treating the --json exit status as a structural-health check is reading a signal that cannot go non-zero for a structural error.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T18:12:04.785Z",
+    "resolved_at": null
   }
 ]
 ````
