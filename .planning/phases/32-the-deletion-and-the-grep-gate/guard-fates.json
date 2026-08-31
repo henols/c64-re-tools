@@ -43,6 +43,125 @@
           "excerpt": "TAP version 13\n# Subtest: real-source parse: anno-cli.ts's dispatch switch yields exactly the 3 known verbs, never 'default'\nok 1 - real-source parse: anno-cli.ts's dispatch switch yields exactly the 3 known verbs, never 'default'\n  ---\n  duration_ms: 10.088603\n  type: 'test'\n  ...\n# Subtest: positive control: every real verb is named by at least one real skill file (the Task 1 property, restated mechanically)\nok 2 - positive control: every real verb is named by at least one real skill file (the Task 1 property, restated mechanically)\n  ---\n  duration_ms: 11.260547\n  type: 'test'\n  ...\n# Subtest: planted violation: an extra, genuinely new case is parsed and reported missing, while a real, documented verb is not\nok 3 - planted violation: an extra, genuinely new case is parsed and reported missing, while a real, documented verb is not\n  ---\n  duration_ms: 3.731793\n  type: 'test'\n  ...\n# Subtest: comment hygiene: a case hidden in a block comment or a line comment is never parsed as a verb\nok 4 - comment hygiene: a case hidden in a block comment or a line comment is never parsed as a verb\n  ---\n  duration_ms: 0.310203\n  type: 'test'\n  ...\n# Subtest: non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it\nok 5 - non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it\n  ---\n  duration_ms: 1.891102\n  type: 'test'\n  ...\n# Subtest: the CI script's live execution path: `node scripts/check-skill-tool-coverage.mjs` exits 0 with 'OK' in stdout\nok 6 - the CI script's live execution path: `node scripts/check-skill-tool-coverage.mjs` exits 0 with 'OK' in stdout\n  ---\n  duration_ms: 295.039196\n  type: 'test'\n  ...\n# Subtest: a verb the CLI actually dispatches is never documented as withdrawn, in either skill tree\nok 7 - a verb the CLI actually dispatches is never documented as withdrawn, in either skill tree\n  ---"
         }
       }
+    },
+    {
+      "historicalPath": "scripts/lib/r2000-cli-verbs.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/lib/anno-cli-verbs.mjs",
+      "removalTrigger": "The skill playbooks ceasing to document CLI invocation at all. This module's `verbsMissingFromSkills()` asserts a relation between the dispatch switch's own verbs and the literal token `anno <verb>` in skill prose; once no skill file names an invocation, the relation has no right-hand side and the module -- with `scripts/check-skill-tool-coverage.mjs`'s verb half -- should be removed rather than left asserting over an empty corpus.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/lib/anno-cli-verbs.mjs",
+        "find": "text.includes(`anno ${verb}`)",
+        "replace": "text.includes(`anno-${verb}`)"
+      },
+      "guard": {
+        "argv": [
+          "scripts/check-skill-tool-coverage.mjs"
+        ],
+        "cwd": "."
+      },
+      "note": "Plant target is the INVOCATION LITERAL in `verbsMissingFromSkills()` (`anno ${verb}` -> `anno-${verb}`), deliberately NOT the `ANNO_CLI_VERB_FLOOR` constant the tracer row (`src/mcp/vice/r2000-verb-coverage.test.ts`) already plants. The two rows therefore share a plant FILE but not a plant TARGET and not a guard: the tracer runs `node --test anno-verb-coverage.test.ts`, this row runs the live CI script `scripts/check-skill-tool-coverage.mjs`. Neither can mask the other -- the floor mutation trips an arithmetic non-vacuity assertion, this one trips the skill-coverage relation, and they fail through different code paths. Expected to trip: the verb-coverage relation, reporting every real verb as undocumented because the token the predicate matches no longer matches the token the playbooks carry."
+    },
+    {
+      "historicalPath": "scripts/lib/r2000-cli-verbs.d.mts",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/lib/anno-cli-verbs.d.mts",
+      "removalTrigger": "Its `.mjs` sibling being removed, or `src/mcp/vice/anno-verb-coverage.test.ts` ceasing to import it. This file exists only so that colocated test typechecks under `strict`; it has no runtime role and is excluded from the shipped `files[]`. With no TypeScript importer there is nothing for it to declare and it should be deleted in the same commit as its last consumer.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/lib/anno-cli-verbs.d.mts",
+        "find": "export declare function verbsMissingFromSkills(verbs: string[], skillTexts: string[]): string[];",
+        "replace": "// planted: the verbsMissingFromSkills declaration is removed"
+      },
+      "guard": {
+        "argv": [
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "-p",
+          "tsconfig.json"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "A declaration file has NO runtime behaviour, so no `node --test` run can observe its absence -- the typechecker is the only mechanical observer that exists. The guard is therefore `npm run typecheck` in `src/mcp/vice`, and the plant removes one of the three exported declarations. Expected to trip: `src/mcp/vice/anno-verb-coverage.test.ts:24` imports `verbsMissingFromSkills` from `../../../scripts/lib/anno-cli-verbs.mjs`, which TypeScript resolves through this `.d.mts`; with the declaration gone the import has no exported member and `tsc --noEmit` errors. Note that `skipLibCheck: true` suppresses checking INSIDE declaration files but not export resolution against them, which is exactly the check this plant exercises. GUARD ARGV DEVIATION (recorded, not hidden): the harness's third documented convention, `argv: [\"--run\", \"typecheck\"]`, spawns `npm --run typecheck`, and npm 11 rejects that form (`Unknown command: \"typecheck\"`; it wants `npm run typecheck`). Measured here: the UNPLANTED control exited 1 with that message, so the row came back UNMEASURABLE rather than red -- the green-control rule doing exactly its job, refusing to let a broken invocation be recorded as evidence. This plan modifies no script, so the route around it is the harness's OTHER convention: spawn `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`, which is byte-for-byte the command `package.json`'s `typecheck` script runs. This is a FINDING against `scripts/audit-mutation-harness.mjs` (plan 32-01): the `--run` convention is unusable as documented and is the only one of its three that had never been exercised before this row.",
+      "observedRed": {
+        "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/lib/anno-cli-verbs.d.mts",
+          "find": "export declare function verbsMissingFromSkills(verbs: string[], skillTexts: string[]): string[];",
+          "replace": "// planted: the verbsMissingFromSkills declaration is removed"
+        },
+        "exitStatus": 1,
+        "excerpt": "anno-verb-coverage.test.ts(24,29): error TS2305: Module '\"../../../scripts/lib/anno-cli-verbs.mjs\"' has no exported member 'verbsMissingFromSkills'.",
+        "control": {
+          "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": ""
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/docs-r2000-decisions.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/docs-absorbed-decisions.test.ts",
+      "removalTrigger": "D-36 being retired from `.planning/PROJECT.md`'s Key Decisions table -- which happens if upstream issue #42 is fixed in a released version this project installs, letting the client-side composition be retired in favour of the native tool. At that point the row this guard pins no longer states a live decision and the guard should be removed with it, not re-pointed at whatever replaces it.",
+      "plant": {
+        "kind": "worktree",
+        "file": ".planning/PROJECT.md",
+        "find": "handler.rs:1894",
+        "replace": "handler.rs:1895"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "docs-absorbed-decisions.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Plant is a single-digit change to the ONE occurrence of the cited upstream source location in `.planning/PROJECT.md` (verified: `grep -ac 'handler.rs:1894'` is 1). Expected to trip: test 4, assertion `the D-36 row does not name handler.rs:1894`. `.planning/` is outside the removal gate's scope so no exact-count pin is disturbed, but this IS a mutation of a file plan 32-03 repaired, so the harness's capture-before-write and byte-mode restore are load-bearing here; `git diff --stat -- .planning/PROJECT.md` is asserted empty after the run. Chosen over deleting `supersedes D-32` or the issue url because a one-character edit is the smallest mutation that reaches a real assertion."
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-answer-key.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/absorbed-answer-key.test.ts",
+      "removalTrigger": "The phase-11 criterion-1 blind-answer experiment ceasing to be cited as evidence for the annotation store's query surface. This guard seals a one-shot historical experiment; if a later milestone supersedes that evidence with a live oracle, the seal is asserting the integrity of a record nobody reads and should be removed together with the evidence directory's citation, never silently left green.",
+      "plant": {
+        "kind": "worktree",
+        "file": ".planning/phases/11-annotation-store-enums-and-the-symbol-round-trip/evidence/criterion1/ANSWER.sha256",
+        "find": "e64463d8",
+        "replace": "e64463d9"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "absorbed-answer-key.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Plant is a one-hex-digit change to the SEAL, chosen precisely so it does NOT delete, move or rename anything under `.planning/phases/` -- the phase-11 evidence directory is a design input to this milestone and `--no-archive-phases` is a standing constraint. The mutated value is still 64 lowercase hex characters, so the shape assertion still passes and the failure is unambiguously the drift assertion rather than a format complaint. Expected to trip: `ANSWER.sha256 matches the sha256 recomputed from ANSWER.md's own canonical line (T-11-SEAL-DRIFT)`."
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-spawn-seam.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/spawn-seam.test.ts",
+      "removalTrigger": "The project ceasing to spawn an emulator binary from Node at all -- for instance if backend detection moves entirely into the host launcher and `backend-detect.mts`'s `probeBackend()` is deleted. `EXPECTED_EMULATOR_SPAWN_SITES` would then be empty and the guard's own non-vacuity floor would red rather than pass vacuously, which is the signal to remove it.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/backend-detect.mts",
+        "find": "spawnSync(binPath, [flag], {",
+        "replace": "spawnSync(binPath, flag, {"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "spawn-seam.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Plant removes the argv-array brackets at the ONE real emulator spawn call, turning `spawnSync(binPath, [flag], ...)` into the bare-string form. This is the exact command-injection invariant the seam exists to hold, so the plant is the real violation rather than an arbitrary token swap. Expected to trip: `every discovered emulator spawn site uses the argv-array form and builds no shell command string` (`allCallsUseSafeForm` false) and `backend-detect.mts's own probeBackend() spawnSync(binPath, [flag] call is discovered and reports safe`."
     }
   ]
 }
