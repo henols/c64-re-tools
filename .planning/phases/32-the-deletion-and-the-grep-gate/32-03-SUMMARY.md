@@ -375,3 +375,18 @@ None — no external service configuration required.
 - All three tasks' `<acceptance_criteria>` were re-run after the final commit and all pass; the
   plan-level `<verification>` block was re-run and its results are recorded in the table above,
   with the single `test:automated` failure attributed to the recorded worktree artifact.
+
+## `REQUIREMENTS.md` deliberately not touched (shared-ID gate)
+
+`CUT-06` is declared by **six** plans in this phase — 32-02, 32-03, 32-04, 32-05, 32-07 and 32-09 —
+so it must not read `Complete` until every one of them has produced a SUMMARY. Confirmed
+mechanically rather than assumed:
+
+```
+$ node <gsd-core>/bin/gsd-tools.cjs query requirements.ready-ids \
+    .planning/phases/32-the-deletion-and-the-grep-gate/32-03-PLAN.md CUT-06 --raw
+0/1 requirement(s) ready to mark complete
+```
+
+The ready set is empty, so `.planning/REQUIREMENTS.md` was correctly left unmodified. It becomes
+ready when the last declaring plan finishes.
