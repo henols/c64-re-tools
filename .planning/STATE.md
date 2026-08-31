@@ -927,6 +927,28 @@ forbidden from modifying anything under `src/`.
 
 ### Blockers/Concerns
 
+- **Phase 31 carried items (2026-08-31), none blocking Phase 32.** The phase closed at
+  13/13 on re-verification round 2 after one gap-closure round (31-04), and three
+  residuals ride forward, all recorded rather than silently inherited. (1) **Five review
+  findings stay deferred**: `31-REVIEW-FIX.md` carries `status: partial_fix` — 6 of 11
+  fixed (`CR-01`, `CR-02`, `WR-01`, `WR-03`, `WR-05`, `WR-06`), 5 deferred (`WR-02`,
+  `WR-04`, `IN-01`, `IN-02`, `IN-03`) each with a named trigger rather than a bare
+  postponement. (2) **`31-04-SUMMARY.md`'s coverage entry `D1` miscites its own
+  evidence**: it names `ci-suite-coverage.test.ts` as the integration verification for
+  "ordered before the `Test` step", but that suite asserts only that every committed
+  suite is executed by CI — it does not parse or assert step order. `31-VERIFICATION.md`
+  records this as a Warning-level anti-pattern; no false pass rides on it, because an
+  absent or reordered step now hard-fails through `emptyRootVerdict()`'s CI branch.
+  (3) **No committed assertion pins the `ci.yml` step order itself.** Accepted for the
+  same reason: the CI branch turns a missing sync step into a loud red rather than a
+  silent half-scored pass, and the verifier executed that rather than inferring it.
+
+  Not a residual, but recorded because it cost time twice: `repo-root.test.ts`'s
+  `the agreed path is not under .claude` case **fails inside a worktree executor** and
+  passes on the main checkout — `repoRoot()` resolves to the worktree root, which is
+  itself under `.claude/worktrees/`. Treat that single failure in an executor's
+  self-check as environment-induced and re-measure after merge, not as a regression.
+
 - **Phase 28 carried items (2026-08-29), none blocking Phase 29.** The phase closed
   at 12/12 with `gaps_remaining: []`, but three residuals ride forward. (1) The
   **single-writer property is unenforced**: `retype()` is the only writer of
