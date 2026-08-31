@@ -421,6 +421,329 @@ mentioned the subject was never pinned to it, so it owes no fate.
 
 ---
 
+## 6.1 `CUT-04`'s NAMED list, adjudicated name by name
+
+**Why this section exists.** §2 reconciles `CUT-04`'s **figures** ("32 test files
+… and 11 files under `scripts/`") and §6 reconciles **research §1.5's candidate
+list**. Neither reconciles `CUT-04`'s **NAMES** — the eleven guards the
+requirement lists after "Named explicitly:". One of them, `docs-linerefs`, is
+correctly outside the mechanical predicate, and because no section reconciled
+against the names, it fell out of the audit with no recorded reason. A reader
+could not tell "we looked and it is fine" from "we never looked", which is
+**D-09**'s own test.
+
+Written **2026-09-01**, in gap-closure round 1, after `32-VERIFICATION.md`
+scored `CUT-04` ⚠ SATISFIED WITH ONE NAMED EXCEPTION and recorded this as Gap 1.
+This section is an **insertion**: no existing byte of this document was changed.
+
+### 6.1.1 The eleven names, extracted rather than transcribed
+
+The list is derived from the requirement text by command, so the input to this
+adjudication is reproducible and not a hand-copied list:
+
+```bash
+sed -n '141p' .planning/REQUIREMENTS.md \
+  | sed 's/.*Named explicitly: //' \
+  | sed 's/([^)]*)//g' \
+  | grep -ao '`[^`]*`' | tr -d '`'
+```
+
+The `sed 's/([^)]*)//g'` step is load-bearing and was added after measurement,
+not by anticipation: three of the eleven entries carry a parenthetical aside,
+and those asides themselves contain backticked tokens (`CLAUDE.md`,
+`docs-absorbed-decisions`, `scripts/audit-gate.mjs`, `D-12`). Without the strip,
+the same extraction returns **13** tokens rather than 11, and four of them are
+not names in the list at all. Measured both ways.
+
+Result — **11 names**, in the requirement's own order:
+
+```
+docs-linerefs
+docs-dangling-refs
+docs-r2000-decisions
+hostpath-consumers
+stock-dispatch
+vice-proxy
+capability-registry
+skill-attribution
+tool-support-table
+check-skill-tool-coverage.mjs
+generate-tool-support-table.mjs
+```
+
+### 6.1.2 The resolution rule, and why it is NOT §1.3's rule
+
+Most of the eleven are **bare stems**, not filenames. §1.3's set-C rule resolves
+a token against `git ls-files` requiring `p === token || p.endsWith("/" + token)`.
+Applied to a bare stem that rule returns **zero** paths, because no tracked path
+is *named* `docs-linerefs`. Measured, rather than asserted:
+
+```bash
+$ git ls-files | awk -v t='docs-linerefs' '$0==t || $0 ~ ("/" t "$")' | wc -l
+0
+```
+
+So §1.3's rule is unusable here and this section states a different one.
+
+**The rule used.** Resolve each name against the set of `historicalPath` values
+in `guard-fates.json` — the paths **as they stood at the pinned commits**, not
+against `HEAD`'s `git ls-files`. A name matches a row when the row's
+`historicalPath` **basename** is exactly the name, or exactly the name plus one
+of `.test.ts`, `.test.mjs` or `.mjs`. **Basename EQUALITY, never substring
+containment.**
+
+Re-runnable in full:
+
+```bash
+node --input-type=module -e '
+import { readFileSync } from "node:fs";
+const REG = ".planning/phases/32-the-deletion-and-the-grep-gate/guard-fates.json";
+const rows = JSON.parse(readFileSync(REG, "utf8")).rows;
+const SUFFIXES = ["", ".test.ts", ".test.mjs", ".mjs"];
+const names = readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean);
+for (const name of names) {
+  const hits = rows.filter((r) => {
+    const base = r.historicalPath.slice(r.historicalPath.lastIndexOf("/") + 1);
+    return SUFFIXES.some((s) => base === name + s);
+  });
+  console.log(`${name}\t${hits.length}\t` +
+    (hits.map((h) => `${h.historicalPath} [${h.verdict}]`).join(" | ") || "-"));
+}' names.txt
+```
+
+(where `names.txt` is the eleven-line output of §6.1.1.)
+
+**Why equality and not containment — measured, not argued.** Swapping the
+predicate for `r.historicalPath.includes(name)` and re-running changes exactly
+one resolution:
+
+```
+tool-support-table   2   scripts/generate-tool-support-table.mjs | src/mcp/vice/tool-support-table.test.mjs
+```
+
+Under containment the name `tool-support-table` claims
+`generate-tool-support-table.mjs`'s row as well as its own — one name eating
+another name's row, which would leave a *different* named guard unaudited while
+appearing to resolve. Equality returns one row for each. This is the precise
+failure this section exists to close, so the rule is stated in the form that
+does not commit it.
+
+**Three consequences, handled explicitly rather than smoothed over:**
+
+- A name matching **zero** rows is not a defect in the rule — it is **the
+  finding**. It gets an `EXCLUDED` verdict carrying its measurement (§6.1.4).
+- A name matching **more than one** row is reported `AMBIGUOUS` with every
+  candidate listed and **none picked**. An ambiguity silently resolved by
+  preference is exactly the "name unaudited" failure this section closes.
+  *Measured outcome: no name resolved ambiguously under the equality rule.*
+- `docs-r2000-decisions` resolves to **zero** paths at `HEAD` — the file was
+  renamed to `docs-absorbed-decisions.test.ts` by **plan 29-05** — but resolves
+  cleanly against the pinned-commit `historicalPath` set. Its resolution below
+  is taken at `AUDIT_COMMIT` `0394cbc`, which is what makes the historical name
+  in the requirement resolvable at all.
+
+### 6.1.3 The eleven verdicts
+
+| # | Name as written in `CUT-04` | Resolved path | Verdict | Evidence |
+|---|---|---|---|---|
+| 1 | `docs-linerefs` | *(no registry row)* → `src/mcp/vice/docs-linerefs.test.ts` | **EXCLUDED** | `grep -aic r2000` = **0** at `0394cbc` and **0** at `345d5c4`; not added between the pins. Non-vacuity discharged in-band by plan 32-04 — see §6.1.4 |
+| 2 | `docs-dangling-refs` | `src/mcp/vice/docs-dangling-refs.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/docs-dangling-refs.test.ts`, `verdict` `re-pointed` |
+| 3 | `docs-r2000-decisions` | `src/mcp/vice/docs-r2000-decisions.test.ts` *(at `0394cbc`; renamed to `src/mcp/vice/docs-absorbed-decisions.test.ts` by plan 29-05)* | **CITED** | registry row `historicalPath` `src/mcp/vice/docs-r2000-decisions.test.ts`, `verdict` `re-pointed`, `newSubject` `src/mcp/vice/docs-absorbed-decisions.test.ts` |
+| 4 | `hostpath-consumers` | `src/mcp/vice/hostpath-consumers.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/hostpath-consumers.test.ts`, `verdict` `re-pointed` |
+| 5 | `stock-dispatch` | `src/mcp/vice/stock-dispatch.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/stock-dispatch.test.ts`, `verdict` `re-pointed` |
+| 6 | `vice-proxy` | `src/mcp/vice/vice-proxy.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/vice-proxy.test.ts`, `verdict` `re-pointed` |
+| 7 | `capability-registry` | `src/mcp/vice/capability-registry.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/capability-registry.test.ts`, `verdict` `re-pointed` |
+| 8 | `skill-attribution` | `src/mcp/vice/skill-attribution.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/skill-attribution.test.ts`, `verdict` **`kept-unchanged`** |
+| 9 | `tool-support-table` | `src/mcp/vice/tool-support-table.test.mjs` | **CITED** | registry row `historicalPath` `src/mcp/vice/tool-support-table.test.mjs`, `verdict` `re-pointed`. Resolved by basename equality on the `.test.mjs` suffix — **its own row**, distinct from row 11 |
+| 10 | `check-skill-tool-coverage.mjs` | `scripts/check-skill-tool-coverage.mjs` | **CITED** | registry row `historicalPath` `scripts/check-skill-tool-coverage.mjs`, `verdict` `re-pointed` |
+| 11 | `generate-tool-support-table.mjs` | `scripts/generate-tool-support-table.mjs` | **CITED** | registry row `historicalPath` `scripts/generate-tool-support-table.mjs`, `verdict` `re-pointed` |
+
+**Rows 9 and 11 are two guards, not one guard named twice.** They look like a
+duplicate and are not: under basename equality `tool-support-table` resolves to
+a `src/mcp/vice/*.test.mjs` **guard** and `generate-tool-support-table.mjs` to a
+`scripts/` **generator**, and each holds its own registry row with its own
+`verdict`. They are cited separately and deliberately — collapsing them into one
+citation would turn two independently audited members into one, which is the
+same failure mode as leaving a name unresolved.
+
+**Row 8 is the only `kept-unchanged` among the ten CITED names**, and it is
+recorded as such rather than smoothed to match its neighbours. "Left unchanged"
+is a fate, and D-09 requires it to have a row exactly as a re-pointing does.
+
+### 6.1.4 `docs-linerefs` — the excluded name, in full
+
+This is the guard `CUT-04` names **first** and `ROADMAP.md` Success Criterion 1
+names again. It is the one name with no registry row, so it gets the paragraph
+the table cell cannot hold. Every figure below is the output of the command
+printed beside it.
+
+**1. Resolved path.** `src/mcp/vice/docs-linerefs.test.ts`. The name resolves to
+zero rows under the §6.1.2 rule, so the path is taken from the tree rather than
+from the registry.
+
+**2. Subject-occurrence count at both pins — zero and zero.**
+
+```bash
+$ git show 0394cbc:src/mcp/vice/docs-linerefs.test.ts | grep -aic r2000
+0
+$ git show 345d5c4:src/mcp/vice/docs-linerefs.test.ts | grep -aic r2000
+0
+```
+
+**The `-a` is not optional and its use is stated here deliberately**, exactly as
+`evidence/32-document-sweep.md` does: a plain `grep` silently treats a file
+containing a NUL byte as binary and reports nothing, and this project has
+already recorded **one false decision** taken from a census run without it
+(`src/mcp/vice/anno-memmap-render.ts` is the file that hides). An exclusion is a
+written claim that a number is zero; a zero produced by a predicate that skips
+files is not a measurement.
+
+**3. Not added between the pins.**
+
+```bash
+$ git diff --name-only --diff-filter=A 0394cbc 345d5c4 \
+    | grep -x 'src/mcp/vice/docs-linerefs.test.ts'
+$ echo $?
+1
+```
+
+No output, exit 1 — the path is absent from the added-file list, so it is not a
+set-B candidate either. It existed at `AUDIT_COMMIT` and never named the subject.
+
+**4. Therefore it is outside the mechanical predicate BY CONSTRUCTION, owes no
+registry row, and CANNOT be given one.** Set A admits a `src/mcp/vice/*.test.*`
+path when its basename starts with the subject prefix **or** its content at
+`AUDIT_COMMIT` matches the subject (§1.1). This file does neither: zero
+occurrences at `0394cbc`, and its basename is `docs-linerefs.test.ts`. Adding a
+hand-written row would not repair the gap — it would **red the blocking gate**,
+because the registry's inverse direction rejects a row naming a path the
+derivation does not admit. Re-measured, and quoted from the source rather than
+from memory:
+
+```bash
+$ grep -an 'stranger row' scripts/check-guard-fates.mjs
+672:      `stranger row: ${REGISTRY_REL_PATH} names \`${key}\`, which is NOT in the derived audited ` +
+```
+
+`scripts/check-guard-fates.mjs:672-676`, whose message states the reason
+verbatim: *"stranger row: … names `<path>`, which is NOT in the derived audited
+set. This direction is what stops the registry drifting into a hand-typed second
+list of members: a row nobody derived is either a typo or an audit of something
+outside scope."* That is why this gap is closed by **adjudication** — this
+section — and not by a registry row.
+
+**5. Where its non-vacuity WAS discharged: in band, by plan 32-04.** The guard
+was not left unproven; it was proven somewhere the mechanical sweep does not
+look. Plan 32-04 widened it from one hard-coded path onto a **declared document
+set**, adding `.planning/PROJECT.md` beside `CLAUDE.md`:
+
+```bash
+$ sed -n '64,67p' src/mcp/vice/docs-linerefs.test.ts
+const SCANNED_DOCS = Object.freeze([
+  "CLAUDE.md",
+  ".planning/PROJECT.md",
+]);
+```
+
+Its **per-document non-vacuity floor** — never a sum across documents — is the
+literal comparison at `:192`, with the message that names the offending document
+and states the floor's per-document nature at `:196`:
+
+```bash
+$ grep -an 'meetsFloor\|This floor is per document' src/mcp/vice/docs-linerefs.test.ts
+192:  const meetsFloor = citations.length >= 2;
+193:  if (!meetsFloor) {
+196:        `found ${citations.length}. This floor is per document.`,
+```
+
+Its planted violations drive that real rule from in-memory bodies. The one whose
+own message states that a **globally summed floor would be satisfied here while
+the per-document floor is not** is at `:361-374`:
+
+> `"a GLOBAL summed floor would be SATISFIED here (2 + 0 = 2) -- which is exactly why this guard must never sum across documents"`
+
+and its companion, the one-citation floor plant, at `:376-387`.
+
+**MEASURED CORRECTION — the count and range this section was asked to write do
+not reproduce, and the measurement is recorded rather than the expectation.**
+Plan 32-13 directed this paragraph to cite "its three planted-violation tests at
+`:361-383`". Re-measuring before writing, as this project's line-citation
+discipline requires:
+
+```bash
+$ grep -ac '^test("planted-violation' src/mcp/vice/docs-linerefs.test.ts
+6
+$ grep -an '^test("planted-violation' src/mcp/vice/docs-linerefs.test.ts
+272: … a citation pointing at an unrelated line fails this test's own logic
+339: … a document whose only rewriteArguments() line carries no citation is reported
+361: … the floor is PER DOCUMENT -- a global summed count stays green
+376: … a document whose bullet cites only ONE line number fails the per-document floor
+389: … a document with TWO citation-carrying rewriteArguments() bullets is reported
+405: … a declared document that does not exist FAILS rather than shrinking the scanned set
+```
+
+There are **six** `planted-violation` tests, not three, and the range `:361-383`
+spans **two** of them — it contains `:361-374` whole and cuts `:376-387` at its
+eighth line. The five that plan 32-04 landed and enumerates in `32-04-SUMMARY.md`
+are `:339`, `:361`, `:376`, `:389` and `:405`; the sixth, at `:272`, predates
+that widening. The measured inventory above is what this document records. This
+correction is stated rather than quietly adjusted because a line citation
+written from expectation is the exact class of defect `docs-linerefs.test.ts`
+itself exists to catch, and writing one *into the paragraph adjudicating that
+guard* would be self-refuting.
+
+**6. The statement a later reader needs.** **We looked, and it is fine, and here
+is what we measured.** `docs-linerefs.test.ts` never named the deleted subject —
+zero occurrences at both pinned commits, with `grep -a` — so the deletion could
+not have made it pass vacuously, and the mechanical sweep correctly does not
+admit it. Its non-vacuity was nonetheless established in this phase, by plan
+32-04, through a per-document floor and five planted violations that fail on a
+real document set. Its absence from `guard-fates.json` is a **property of the
+derivation**, not an oversight, and giving it a row would red the gate that
+guarantees the derivation is honest.
+
+### 6.1.5 The measured arithmetic
+
+**Eleven names in, eleven rows out.** Verdict counts, as the resolution produced
+them and not as they were predicted:
+
+```
+CITED       10
+EXCLUDED     1
+AMBIGUOUS    0
+─────────────
+total       11   == the 11 names extracted in §6.1.1
+```
+
+No name is absent, no name is doubled, and **no two names share a citation** —
+rows 9 and 11 each hold their own, per §6.1.3.
+
+**This section adds no member, removes no member and changes no floor.** The
+derived set stands at **61**, exactly as §9 records: `setA=43`, `setB=16`,
+`setC=2`. It touches neither `guard-fates.json` nor any script.
+
+Re-run afterwards, in this task's own working tree:
+
+```bash
+$ node scripts/check-guard-fates.mjs
+check-guard-fates: OK -- setA=43 setB=16 setC=2 total=61 rows=61 (floors setA=43 setB=16 setC=2 total=61)
+  derived from 273 path(s) at 0394cbc; forward map 21 same-path / 15 renamed / 7 gone; set B 22 raw candidate(s) minus 6 already-claimed successor(s); set C parsed from .planning/ROADMAP.md line 830.
+$ echo $?
+0
+```
+
+**Note on `line 830`, so a cross-check does not read it as a regression.** §1.3
+above records the set-C note at `.planning/ROADMAP.md` line **814**, and
+`32-VERIFICATION.md` records 814 as well. Those are **dated records of what the
+gate printed on the day each was written**; `.planning/ROADMAP.md` has grown
+since, and the note has moved down. Neither document is edited to agree with the
+current reading — a dated record that gets rewritten to stay green stops being a
+record. The requirement this section holds itself to is narrower and is met: the
+line the gate printed **before** this section was written and the line it prints
+**after** are the same 830, both taken in the same working tree.
+
+---
+
 ## 7. The adjacency subtraction: 22 raw candidates − 6 already-claimed = 16
 
 The raw set-B candidate list is **22** paths. Six of them are already some set-A
