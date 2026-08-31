@@ -247,3 +247,75 @@ export function parseRootArg(argv, { script, booleanFlags = [] } = {}) {
 
   return { root, flags };
 }
+
+// ---------------------------------------------------------------------------
+// THE SPLIT-READ SEAM (CR-03)
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS: `--root` decides which tree a gate reads its CORPUS from. It
+// cannot decide where that gate's COMPARISON DATA comes from when the
+// comparison data arrives through a static `import` -- a static specifier is
+// resolved against the importing file's own location, and no argv value can
+// move it. Four gates were in exactly that state: they honoured `--root` for
+// the corpus and read the registry from the default root, while three of them
+// carried a docblock sentence forbidding precisely that. Under a synthetic tree
+// they compared the synthetic corpus against the REAL registry, so a violation
+// planted in the synthetic tree was measured against data the plant never
+// touched -- a false green inside the audit instrument itself.
+//
+// The remedy chosen -- of the two the phase-32 verifier named -- is REFUSAL,
+// not root-parameterised dynamic imports. Making the imports follow the root
+// would require every synthetic tree to carry a working `src/mcp/vice/` module
+// graph, at which point it is a copy of the repository rather than a small
+// planted corpus, which is not the thing the flag exists to point at.
+//
+// WHY THE REASON TEXT LIVES HERE AND THE PREFIX LIVES AT THE CALL SITE: the
+// same split `resolveContainedRoot()` already uses. Each consumer writes its
+// own `<script>: SPLIT READ REFUSED --` prefix, so a refusal always names the
+// script that refused; the REASONING -- the part that would otherwise be
+// copy-pasted four times and drift four ways, which is `IN-06` exactly -- is
+// built once, here.
+//
+// WHAT NOT TO DO: do not add a bypass. No env var, no `--allow-split-read`, no
+// waiver file, no allow-list of "harmless" roots. A root that cannot be
+// honoured REFUSES; it is never honoured partially and never degrades into a
+// silent read of the default root.
+
+/**
+ * Builds the reason half of a split-read refusal message.
+ *
+ * @param {{ resolvedRoot: string, defaultRoot: string,
+ *           imports: { name: string, from: string }[] }} options
+ *        `imports` names the identifiers the calling script binds statically
+ *        and the specifier each one comes from -- the concrete reason the root
+ *        cannot be honoured, so an operator is never left guessing which read
+ *        is the split one.
+ * @returns {string} the message body. The caller writes
+ *          `<script>: SPLIT READ REFUSED -- ` in front of it.
+ * @throws {Error} when `imports` is empty: a refusal that cannot say WHAT it
+ *         failed to move is not diagnosable, and a script with no such import
+ *         has no split read to refuse in the first place.
+ */
+export function splitReadRefusalReason({ resolvedRoot, defaultRoot, imports } = {}) {
+  if (!Array.isArray(imports) || imports.length === 0) {
+    throw new Error(
+      "splitReadRefusalReason: `imports` must name at least one statically-bound identifier. " +
+        "A refusal that cannot say WHAT it could not move is not diagnosable, and a script " +
+        "with no such import has no split read to refuse at all.",
+    );
+  }
+  const bound = imports.map((i) => `\`${i.name}\` from \`${i.from}\``).join(", ");
+  const plural = imports.length === 1 ? "identifier is" : "identifiers are";
+  return (
+    `--root resolves to ${resolvedRoot}, which is not this repository's root ${defaultRoot}. ` +
+    "This script reads its CORPUS from the resolved root, but its COMPARISON DATA arrives " +
+    `through static imports that cannot follow a root override: the ${plural} ${bound}. ` +
+    "A static import specifier is resolved against this file's own location, so honouring " +
+    `the root would compare a corpus read from ${resolvedRoot} against comparison data read ` +
+    `from ${defaultRoot} -- a FALSE GREEN rather than a stricter check, because a violation ` +
+    "planted in the resolved tree would be measured against data the plant never touched. " +
+    "Refusing rather than half-honouring it (CR-03). Only a --root that RESOLVES to " +
+    `${defaultRoot} is accepted here. \`scripts/check-skill-description-overlap.mjs\` is the ` +
+    "one skill gate that binds no such import and does honour an arbitrary contained root."
+  );
+}

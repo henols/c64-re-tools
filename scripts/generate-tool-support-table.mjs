@@ -39,7 +39,21 @@ import { fileURLToPath } from "node:url";
 
 import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { DENY_LIST } from "../src/mcp/vice/vice.ts";
-import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
+import {
+  parseRootArg,
+  resolveContainedRoot,
+  splitReadRefusalReason,
+} from "./lib/audit-root.mjs";
+
+/** The identifiers this script binds STATICALLY, named here so the refusal
+ *  below can print them. A static specifier resolves against this file's own
+ *  location and cannot follow `--root`; keeping the list beside the imports is
+ *  what makes a future third import impossible to add without noticing that it
+ *  belongs here too. */
+const STATICALLY_BOUND = [
+  { name: "CAPABILITY_REGISTRY", from: "../src/mcp/vice/capability-registry.ts" },
+  { name: "DENY_LIST", from: "../src/mcp/vice/vice.ts" },
+];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = dirname(HERE);
@@ -59,6 +73,16 @@ const DEFAULT_ROOT = dirname(HERE);
  * the paths reads one tree and writes another, which is worse than no flag at
  * all -- it would make a planted violation silently unobservable while still
  * overwriting the real table.
+ *
+ * WHAT THIS CLAIM DOES *NOT* COVER, stated so it is not read as more than it
+ * is: every PATH here follows `root`, but this script's two comparison inputs
+ * are not paths at all -- `CAPABILITY_REGISTRY` and `DENY_LIST` are STATIC
+ * IMPORTS, resolved against this file's own location, and no argument can move
+ * them. That is `CR-03`, and it is why `main()` refuses any resolved root that
+ * is not `DEFAULT_ROOT` before this function is ever called. The invariant this
+ * paragraph asserts about paths is therefore true AND, since that refusal
+ * landed, vacuously safe: `root` is only ever `DEFAULT_ROOT` by the time
+ * `paths()` runs.
  */
 function paths(root) {
   const viceDir = join(root, "src/mcp/vice");
@@ -309,6 +333,17 @@ export function generateToolSupportTable(options = {}) {
 // override, no `--check` bypass and no waiver file anywhere in it (the
 // no-relaxation-hatch rule recorded in `scripts/audit-gate.mjs`'s header).
 //
+// WHAT THAT SEAM TURNED OUT TO BE WORTH HERE, MEASURED RATHER THAN ASSUMED
+// (`CR-03`): nothing. The flag can point every PATH at a synthetic tree, but
+// the two things this script COMPARES those paths against -- CAPABILITY_REGISTRY
+// and DENY_LIST -- are static imports that cannot follow it, so any non-default
+// root produced a hybrid document: a table rendered from the synthetic
+// manifests against the real registry, written into the synthetic tree and
+// exiting 0 while printing success. Since that is neither tree's truth, the
+// root is now REFUSED rather than half-honoured, and this script can be pointed
+// at no tree but the real one. The refusal is checked before the first read and
+// before the write, so a refused root leaves the filesystem untouched.
+//
 // THIS FILE NO LONGER HAS AN ARGV READER OF ITS OWN. It had one, and it was
 // the same nine lines `scripts/audit-gate.mjs` still carries: match the exact
 // token `--root`, take `argv[i + 1]`. That reader silently discarded
@@ -353,6 +388,31 @@ function main() {
   } catch (e) {
     process.stderr.write(
       `generate-tool-support-table: REFUSED -- ${e?.message ?? String(e)}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  // A SPLIT-READ REFUSAL (CR-03). Third and last failure class, and the
+  // EARLIEST of the three to matter here, because this is the one audited
+  // script that WRITES: it is checked before paths() is built, before any
+  // existsSync, before any read and before any write, so a refused root has no
+  // filesystem consequence at all. Same exit status as the other two,
+  // separated by its message prefix.
+  //
+  // The manifests, the proxy source and the output path all follow `--root`
+  // correctly; CAPABILITY_REGISTRY and DENY_LIST cannot. Honouring the root
+  // would render a table from a SYNTHETIC manifest against the REAL registry
+  // and the REAL deny-list -- a hybrid document that is neither tree's truth
+  // and that reads as authoritative. Verified at 7206f99: exit 0, 8132 bytes
+  // written into the synthetic tree's docs/.
+  if (root !== DEFAULT_ROOT) {
+    process.stderr.write(
+      `generate-tool-support-table: SPLIT READ REFUSED -- ${splitReadRefusalReason({
+        resolvedRoot: root,
+        defaultRoot: DEFAULT_ROOT,
+        imports: STATICALLY_BOUND,
+      })}\n`,
     );
     process.exitCode = 1;
     return;

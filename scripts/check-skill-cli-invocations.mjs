@@ -56,9 +56,22 @@ import {
   FLAG_KINDS,
 } from "./lib/anno-cli-invocations.mjs";
 import { walkSkills } from "./lib/skill-corpus.mjs";
-import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
+import {
+  parseRootArg,
+  resolveContainedRoot,
+  splitReadRefusalReason,
+} from "./lib/audit-root.mjs";
 
 const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+
+/** The identifier this gate binds STATICALLY, named here so the split-read
+ *  refusal below can print it. A static specifier resolves against this file's
+ *  own location and cannot follow `--root`; keeping the list beside the import
+ *  is what makes a future second import impossible to add without noticing that
+ *  it belongs here too. */
+const STATICALLY_BOUND = [
+  { name: "VERB_OPTIONS", from: "../src/mcp/vice/anno-cli.ts" },
+];
 
 /**
  * Every path this gate reads, derived from ONE root, plus the subset that must
@@ -69,11 +82,30 @@ const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
  * arrange that for some rows is to point the whole gate at a synthetic tree
  * via `--root`. That is only sound if EVERY path comes from the one root.
  *
- * WHAT NOT TO DO: do not re-derive a path from `DEFAULT_ROOT` anywhere below.
- * A root threaded through only SOME of the paths reads the synthetic tree for
- * one input and the real repository for another, and a planted violation in
- * the synthetic tree then goes silently unobserved -- a false green, which is
- * the exact failure mode this whole phase exists to rule out.
+ * WHAT THIS GATE ACTUALLY DOES WITH `--root`, AND WHY (`CR-03`): every PATH
+ * below comes from the one root, but not every INPUT to this gate is a path.
+ * `VERB_OPTIONS` -- the declaration table every documented flag, positional and
+ * value-kind is checked against -- arrives through a static import at the top
+ * of this file, and a static specifier is resolved against this file's own
+ * location, so no argument can move it. This gate therefore does NOT support an
+ * arbitrary `--root`: a resolved root that is not `DEFAULT_ROOT` is REFUSED
+ * outright, below, rather than half-honoured.
+ *
+ * A sentence forbidding a re-derived `DEFAULT_ROOT` path stood here until
+ * 2026-09-01. It was deleted because this file contradicted it twenty-nine
+ * lines above itself: the phase-32 verifier reproduced this gate reading a
+ * synthetic corpus and reporting `OK -- 18 documented anno CLI invocation(s)
+ * ... every flag checked against anno-cli.ts's own VERB_OPTIONS` at exit 0,
+ * where the invocations were synthetic and `anno-cli.ts` was the real one. A
+ * rule a file breaks in its own text is worse than no rule, because a reader
+ * trusts it. The remedy chosen -- of the two the verifier named -- is refusal
+ * rather than root-parameterised dynamic imports; the reasoning is recorded in
+ * `scripts/lib/audit-root.mjs`'s "THE SPLIT-READ SEAM" block and in plan
+ * 32-12's objective.
+ *
+ * `scripts/check-skill-description-overlap.mjs` still carries that sentence,
+ * and correctly: it binds no such import, so it honours an arbitrary contained
+ * root for BOTH halves of its comparison.
  */
 function paths(root) {
   const srcSkillsDir = join(root, "src/skills");
@@ -134,6 +166,40 @@ try {
   });
 } catch (err) {
   console.error(`check-skill-cli-invocations: REFUSED -- ${err?.message ?? String(err)}`);
+  process.exit(1);
+}
+
+// A SPLIT-READ REFUSAL (`CR-03`). Third failure class, same exit status as the
+// other two, separated by its message prefix. Checked here -- before paths(),
+// before the existence sweep, before the first read and before the
+// installer/skills regeneration branch below -- so a refused root causes no I/O
+// and spawns no child process at all.
+//
+// Measured at 7206f99, before this landed: `--root <in-repo synthetic tree>`
+// exited 0 and printed a full green report ("18 documented anno CLI
+// invocation(s) ... 3 verb(s) covered") in which the invocations came from the
+// synthetic corpus and the VERB_OPTIONS table they were checked against came
+// from the real repository. A planted violation in that corpus would have been
+// measured against data the plant never touched.
+//
+// KNOWN CONSEQUENCE, recorded rather than tidied away: the `else` arm of the
+// `P.root === DEFAULT_ROOT` branch below -- the one that SKIPS the
+// installer/skills regeneration under a `--root` tree -- is now unreachable,
+// because the only roots that get past this point are `DEFAULT_ROOT` itself. It
+// is deliberately left in place. It is the correct behaviour for a
+// root-honouring version of this gate, its stderr notice is the honest thing to
+// print in that case, and deleting it would make a future re-enabling of an
+// arbitrary root silently spawn `installer/scripts/sync-skills.mjs` from an
+// operator-supplied tree -- which is `T-32-08`, the exact thing that branch
+// exists to prevent.
+if (RESOLVED_ROOT !== DEFAULT_ROOT) {
+  console.error(
+    `check-skill-cli-invocations: SPLIT READ REFUSED -- ${splitReadRefusalReason({
+      resolvedRoot: RESOLVED_ROOT,
+      defaultRoot: DEFAULT_ROOT,
+      imports: STATICALLY_BOUND,
+    })}`,
+  );
   process.exit(1);
 }
 

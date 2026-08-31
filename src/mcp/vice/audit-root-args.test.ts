@@ -34,15 +34,27 @@
 //      same reason.
 //
 //   3. Do NOT add a case that performs a full end-to-end run of a script
-//      beyond the ones already here, and never run the SAME script to
-//      completion twice. Sixteen of the eighteen matrix cases are refusals
-//      that exit before their script reads or writes anything. Exactly three
-//      runs go end to end, one per script and no script twice: the generator
-//      against the repository root (proving an explicit root naming the
-//      repository is byte-for-byte identical to no flag at all), the fate
-//      guard against the repository root, and the description-overlap gate
-//      against the synthetic corpus. Everything else is a refusal by
-//      construction.
+//      beyond the ones already here. Sixteen of the eighteen matrix cases are
+//      refusals that exit before their script reads or writes anything, and
+//      the rule exists to keep this file from becoming a slow re-run of the
+//      whole audit.
+//
+//      PLAN 32-12 WIDENED THIS DELIBERATELY, and the new budget is stated
+//      rather than quietly spent. The rule used to add "and never run the SAME
+//      script to completion twice". It cannot: the `[edge:CUT-04/adjacency]`
+//      accept side has to prove that a root RESOLVING to the repository root
+//      behaves like the unflagged run in every spelling, and "behaves like the
+//      unflagged run" is a claim about a completed run. That is four scripts x
+//      four runs (an unflagged baseline plus three spellings), measured at
+//      194/299/151/353 ms each -- about four seconds, against a file that ran
+//      in six. Total end-to-end runs: 19. Every one of them is load-bearing;
+//      none is a convenience.
+//
+//      The one script with a working-tree side effect under the default root --
+//      the invocations gate, which regenerates `installer/skills/` -- is
+//      idempotent, and plan 32-12's evidence record carries the `git status
+//      --porcelain` before/after proving the tree is byte-identical after a
+//      full run of this file.
 //
 // WHAT THIS FILE DOES *NOT* COVER, stated so no reader infers coverage it does
 // not carry. `[edge:CUT-04/ordering]` has two halves. The first -- where two
@@ -291,14 +303,19 @@ test("--root naming the repository root itself is accepted and writes identical 
  *     equal to the default root is the same tree, never a second one.
  *   - "synthetic-corpus": the gate whose comparison data follows the root.
  *     Runs against a synthetic in-repository tree and REPORTS THAT TREE.
- *   - "refuses": the root is inside the repository but carries none of the
- *     script's inputs, so the run must stop with a diagnostic rather than
- *     silently falling back to the real tree. Asserted as "non-zero plus a
- *     diagnostic naming the script" and NOTHING NARROWER: at HEAD these
- *     report a missing-input TYPO diagnostic, and after plan 32-12 settles
- *     the split read they refuse earlier and for a different reason. Both
- *     satisfy this shape, so the case survives that change unedited. Plan
- *     32-12 pins the specific message; this file deliberately does not. */
+ *   - "refuses": the script binds its comparison data through a static import
+ *     that cannot follow a root override, so ANY contained root that is not
+ *     the default root is refused outright.
+ *
+ *  WHAT CHANGED HERE AND WHY (plan 32-12): plan 32-11 wrote the "refuses"
+ *  expectation deliberately loose -- "non-zero plus a diagnostic naming the
+ *  script" and nothing narrower -- because at that point these four stopped
+ *  for an INCIDENTAL reason (the fixture carried none of their inputs, so the
+ *  missing-input TYPO diagnostic fired) and the plan that would give them a
+ *  principled one had not landed. It has now. The expectation is tightened to
+ *  the specific literal, because the loose shape is satisfied by BOTH the old
+ *  incidental stop and the new principled refusal, and a test that cannot tell
+ *  them apart cannot detect a regression back to the first. */
 type ContainedExpectation = "repo-root" | "synthetic-corpus" | "refuses";
 
 interface MatrixRow {
@@ -321,6 +338,76 @@ function runScript(script: string, args: string[]): RunResult {
     encoding: "utf8",
   });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+}
+
+// ---------------------------------------------------------------------------
+// THE SPLIT-READ CONTRACT and its two text predicates.
+// ---------------------------------------------------------------------------
+//
+// THE RULE, in one sentence a future reader can act on: a script that accepts
+// a `--root` override may NOT statically import its comparison data from the
+// default root unless it also refuses a root that is not the default root.
+//
+// This is the invariant companion to plan 32-10's `<assumption_delta_decision>`
+// -- the promotion that exactly ONE root governs every read in one invocation.
+// That decision says what must be true; this rule is what keeps it true, and
+// the two are findable from each other by name.
+//
+// WHY A TEXT PREDICATE RATHER THAN A BEHAVIOURAL ONE: the antecedent is a
+// property of the module graph ("binds a `../src/` specifier statically"), and
+// a static import is not observable from outside the process. The spawned
+// matrix above proves the CONSEQUENT behaves; this proves the IMPLICATION holds
+// for every member of the population, including ones a future phase adds.
+//
+// The predicates are declared once and driven against BOTH the real files and
+// the planted texts below -- following this repository's planted-violation
+// convention (see `guard-fates.test.ts`): a violation is planted against the
+// REAL predicate, never against a re-implementation of it.
+
+/** The message prefix the four refusing scripts print. Contract surface: it is
+ *  what the matrix above asserts and what the rule below looks for. */
+const SPLIT_READ_REFUSAL = "SPLIT READ REFUSED";
+
+/** Read a script exactly as bytes-to-text, with no transcoding surprises.
+ *  `latin1` matches this phase's document-sweep convention. MEASURED, not
+ *  assumed: none of the six scripts carries a NUL byte (asserted below), so a
+ *  plain text read loses nothing here -- the hazard that motivates `grep -a`
+ *  elsewhere in this repository does not apply to this population. */
+function scriptText(script: string): string {
+  return readFileSync(join(ROOT, "scripts", `${script}.mjs`), "latin1");
+}
+
+/** THE ANTECEDENT. Every `../src/` specifier the text binds through a static
+ *  `import`/`export ... from` statement.
+ *
+ *  The pattern requires WHITESPACE after `from`, which is what distinguishes a
+ *  static import specifier (`from "../src/x.ts"`) from the object property the
+ *  four refusing scripts use to NAME those specifiers (`from: "../src/x.ts"`)
+ *  and from a dynamic `import("../src/x.ts")`, neither of which is a static
+ *  binding. That distinction is stated here rather than left to be rediscovered
+ *  the first time someone wonders why the declaration list does not count
+ *  itself. */
+function staticSrcImports(text: string): string[] {
+  return [...text.matchAll(/\bfrom\s+"(\.\.\/src\/[^"]*)"/g)].map((m) => m[1]!).sort();
+}
+
+/** THE CONSEQUENT. */
+function carriesSplitReadRefusal(text: string): boolean {
+  return text.includes(SPLIT_READ_REFUSAL);
+}
+
+/** THE RULE. True when the text breaks it. */
+function violatesSplitReadContract(text: string): boolean {
+  return staticSrcImports(text).length > 0 && !carriesSplitReadRefusal(text);
+}
+
+/** The specifiers a script DECLARES in its own `STATICALLY_BOUND` list -- the
+ *  list its refusal message prints. Compared against `staticSrcImports()` below
+ *  so a future third import cannot be added without also being named. */
+function declaredSplitReadImports(text: string): string[] {
+  const block = text.match(/const STATICALLY_BOUND = \[([\s\S]*?)\];/);
+  if (!block) return [];
+  return [...block[1]!.matchAll(/from:\s*"([^"]+)"/g)].map((m) => m[1]!).sort();
 }
 
 /** Every top-level `scripts/*.mjs` that calls the shared argv seam. Derived
@@ -387,13 +474,15 @@ for (const { script } of MATRIX) {
 
 // --- Case 3 of 3, per script: a CONTAINED root -----------------------------
 //
-// The four "refuses" scripts share one empty in-repository fixture shape: a
-// root that is contained but carries none of their inputs. The assertion is
-// the SHAPE (non-zero, diagnostic, named script), never the specific message.
+// The four "refuses" scripts share one in-repository fixture shape: a root that
+// is contained but is not the repository root. The refusal fires BEFORE the
+// fixture's contents are ever consulted, so the fixture is deliberately left
+// empty -- if a future change made the refusal depend on what the tree carries,
+// this case would stop passing, which is the point.
 
 for (const { script, contained } of MATRIX) {
   if (contained !== "refuses") continue;
-  test(`${script}: a contained root with none of its inputs stops with a diagnostic`, (t) => {
+  test(`${script}: a contained root that is not the default root is a SPLIT READ refusal`, (t) => {
     const fixture = mkdtempSync(join(ROOT, ".audit-root-synth-"));
     t.after(() => rmSync(fixture, { recursive: true, force: true }));
     try {
@@ -401,19 +490,83 @@ for (const { script, contained } of MATRIX) {
       assert.notEqual(
         r.status,
         0,
-        "a contained root carrying none of this gate's inputs must NOT exit 0 -- exiting 0 " +
-          `here would mean the run silently read the real tree instead (stdout: ${r.stdout})`,
+        "a contained root that is not the default root must NOT exit 0 -- exiting 0 here " +
+          "would mean the run compared a corpus from the resolved root against comparison " +
+          `data from the default root (stdout: ${r.stdout})`,
       );
       assert.ok(
-        r.stderr.includes(`${script}:`),
-        `stderr must carry a diagnostic naming this script, got: ${r.stderr}`,
+        r.stderr.includes(`${script}: ${SPLIT_READ_REFUSAL}`),
+        `stderr must carry the split-read refusal prefix naming this script, got: ${r.stderr}`,
+      );
+      // The refusal must be DIAGNOSABLE: it names the resolved root, the
+      // default root, and at least one identifier it could not move. A refusal
+      // that says only "refused" leaves the operator to re-derive the reason,
+      // which is how the false claim this plan deleted survived so long.
+      assert.ok(
+        r.stderr.includes(fixture),
+        `the refusal must name the resolved root it refused, got: ${r.stderr}`,
       );
       assert.ok(
-        r.stderr.trim().length > `${script}:`.length,
-        `the diagnostic must say something beyond the script's own name, got: ${r.stderr}`,
+        r.stderr.includes(ROOT),
+        `the refusal must name the default root it would have read instead, got: ${r.stderr}`,
+      );
+      for (const specifier of declaredSplitReadImports(scriptText(script))) {
+        assert.ok(
+          r.stderr.includes(specifier),
+          `the refusal must name ${specifier}, the module it could not move, got: ${r.stderr}`,
+        );
+      }
+      // And it must have refused BEFORE reading anything: the missing-input
+      // diagnostic that used to fire on this fixture must no longer appear.
+      assert.ok(
+        !r.stderr.includes("FAIL (--root)"),
+        "the split-read refusal must precede the missing-input sweep -- reaching the sweep " +
+          `means a read happened under a root that cannot be honoured: ${r.stderr}`,
       );
     } finally {
       rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- The `[edge:CUT-04/adjacency]` accept side, per refusing script ---------
+//
+// A root that RESOLVES to the repository root is the same tree, however it is
+// spelled, so it must behave exactly like the unflagged invocation. Three
+// spellings are asserted per script -- `.`, the absolute path, and a path
+// carrying a redundant `scripts/..` segment -- because the refusal compares
+// RESOLVED paths, and a comparison written against the raw argument instead
+// would accept only one of the three.
+//
+// This is the one place this file's "no repeated end-to-end run" discipline is
+// deliberately widened, so the new budget is stated rather than quietly spent:
+// four scripts x four runs (one unflagged baseline plus three spellings) = 16
+// full runs, measured at 194/299/151/353 ms each, ~4 s in total. The rule's
+// purpose is to keep this file from becoming a slow re-run of the whole audit;
+// four seconds against a 6 s file is within that purpose. The one script with a
+// working-tree side effect under the default root -- the invocations gate,
+// which regenerates `installer/skills/` -- is idempotent, and the porcelain
+// check in plan 32-12's evidence record confirms the tree is byte-identical
+// afterwards.
+
+for (const { script, contained } of MATRIX) {
+  if (contained !== "refuses") continue;
+  test(`${script}: every spelling that RESOLVES to the repository root is accepted`, () => {
+    const baseline = runScript(script, []);
+    for (const spelling of [".", ROOT, join(ROOT, "scripts", ".."), "./scripts/.."]) {
+      const r = runScript(script, ["--root", spelling]);
+      assert.equal(
+        r.status,
+        baseline.status,
+        `--root ${spelling} resolves to the repository root and must behave exactly like the ` +
+          `unflagged run (got ${r.status}, unflagged ${baseline.status}); stderr: ${r.stderr}`,
+      );
+      assert.ok(
+        !r.stderr.includes(SPLIT_READ_REFUSAL),
+        `--root ${spelling} resolves to the repository root, so there is no split read to ` +
+          `refuse -- a refusal here means the comparison was written against the raw ` +
+          `argument rather than the resolved path: ${r.stderr}`,
+      );
     }
   });
 }
@@ -517,6 +670,18 @@ test("check-skill-description-overlap: a contained root REDIRECTS the reads, pro
       "a real skill name appeared in a --root run's report, which means the real tree was " +
         `read: ${r.stdout}`,
     );
+
+    // THE TARGETING CONTROL for plan 32-12's refusal. This gate is handed
+    // exactly the kind of root the other four now refuse, and it must NOT
+    // refuse: the new rule is conditioned on binding comparison data through a
+    // static import, and this gate binds none. Without this assertion a future
+    // change could make the refusal blanket -- killing the one root override
+    // that works -- and every other case in this file would still pass.
+    assert.ok(
+      !r.stderr.includes(SPLIT_READ_REFUSAL),
+      "the split-read refusal must be targeted, not blanket: this gate's comparison data " +
+        `follows --root, so there is no split read to refuse. stderr: ${r.stderr}`,
+    );
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -549,5 +714,153 @@ test("a declared boolean flag is never swallowed as the root's value", () => {
   assert.ok(
     swallowed.stderr.includes("--json"),
     `the rejection must name the token it refused to treat as a value, got: ${swallowed.stderr}`,
+  );
+});
+
+// ===========================================================================
+// THE SPLIT-READ CONTRACT -- non-vacuous in BOTH directions.
+//
+// Every assertion in this block drives the predicates declared beside
+// `runScript()` above. The planted cases drive the SAME functions the real
+// files are driven through, so the rule cannot pass because the plant was
+// checked against a copy of it.
+// ===========================================================================
+
+test("the six scripts carry no NUL byte, so a text read of them loses nothing", () => {
+  // Recorded as a MEASURED fact rather than an assumption. A source file in
+  // this repository is known to carry a NUL byte, which hides it from a plain
+  // `grep` and has already produced one false decision; the predicates above
+  // read text, so the population they read must be verified NUL-free rather
+  // than presumed so.
+  for (const { script } of MATRIX) {
+    assert.ok(
+      !scriptText(script).includes("\u0000"),
+      `${script}.mjs carries a NUL byte -- the text predicates above would silently ` +
+        "mis-measure it, and this whole block would need a byte-level read instead",
+    );
+  }
+});
+
+test("split-read contract: every root-accepting script that binds ../src statically refuses", () => {
+  const bound: string[] = [];
+  const clean: string[] = [];
+
+  for (const { script } of MATRIX) {
+    const text = scriptText(script);
+    (staticSrcImports(text).length > 0 ? bound : clean).push(script);
+    assert.equal(
+      violatesSplitReadContract(text),
+      false,
+      `${script}.mjs binds comparison data from the default root through a static import but ` +
+        `carries no "${SPLIT_READ_REFUSAL}" refusal. Under a --root tree it would compare a ` +
+        "corpus read from the resolved root against data read from the default root -- a false " +
+        "green inside the audit instrument itself (CR-03). Either refuse the root, or make the " +
+        "comparison data follow it; do NOT relax this assertion.",
+    );
+  }
+
+  // NON-VACUITY, POSITIVE DIRECTION. A rule that passes because its antecedent
+  // matched nothing proves nothing -- the exact failure mode `CUT-03` exists to
+  // forbid -- so the population the antecedent actually selected is asserted.
+  assert.ok(
+    bound.length >= 4,
+    `the antecedent must select at least the four known split-read scripts; it selected ` +
+      `${bound.length}: ${bound.join(", ")}`,
+  );
+  for (const script of bound) {
+    assert.ok(
+      carriesSplitReadRefusal(scriptText(script)),
+      `${script}.mjs is selected by the antecedent but carries no refusal literal`,
+    );
+  }
+
+  // THE TWO CLEAN CONTROLS, asserted SPECIFICALLY rather than left to pass by
+  // silence. They satisfy the rule by carrying no matching import at all, and
+  // saying so here is what makes a future edit that gives one of them such an
+  // import -- without a refusal -- fail this assertion instead of sliding past
+  // it as "still no violations found".
+  assert.deepEqual(
+    clean.sort(),
+    ["check-guard-fates", "check-skill-description-overlap"],
+    "the clean controls changed. `check-skill-description-overlap` is the one skill gate that " +
+      "honours an arbitrary contained root for BOTH halves of its comparison, and " +
+      "`check-guard-fates` derives everything it needs from a git object store. If either now " +
+      "binds a ../src import, it needs a refusal too; if a THIRD script became clean, its " +
+      "refusal may have been deleted.",
+  );
+  for (const script of clean) {
+    assert.deepEqual(
+      staticSrcImports(scriptText(script)),
+      [],
+      `${script}.mjs must bind no ../src specifier statically -- that is the whole reason it ` +
+        "is exempt from the refusal",
+    );
+  }
+});
+
+test("split-read contract: each refusal NAMES every specifier its script binds statically", () => {
+  // The refusal message is only diagnosable if it enumerates what it could not
+  // move. This ties the printed list to the actual imports, so adding a third
+  // static import without adding it to STATICALLY_BOUND fails here rather than
+  // producing a refusal that quietly under-reports its own reason.
+  for (const { script, contained } of MATRIX) {
+    if (contained !== "refuses") continue;
+    const text = scriptText(script);
+    assert.deepEqual(
+      declaredSplitReadImports(text),
+      staticSrcImports(text),
+      `${script}.mjs's STATICALLY_BOUND list disagrees with the specifiers it actually binds`,
+    );
+    assert.ok(
+      declaredSplitReadImports(text).length > 0,
+      `${script}.mjs must declare at least one bound specifier`,
+    );
+  }
+});
+
+test("split-read contract: the predicate REPORTS a planted violation, and clears a planted fix", () => {
+  // NON-VACUITY, NEGATIVE DIRECTION. Planted against the REAL predicate, per
+  // this repository's convention -- text in place of a registry object.
+  const planted =
+    '#!/usr/bin/env node\nimport { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";\n' +
+    'import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";\n' +
+    "const RESOLVED_ROOT = resolveContainedRoot(parseRootArg(process.argv.slice(2), {}).root, {});\n" +
+    "console.log(RESOLVED_ROOT, CAPABILITY_REGISTRY.length);\n";
+
+  assert.deepEqual(
+    staticSrcImports(planted),
+    ["../src/mcp/vice/capability-registry.ts"],
+    "the planted text must be SELECTED by the antecedent, or the negative control proves " +
+      "nothing about scripts that are",
+  );
+  assert.equal(
+    carriesSplitReadRefusal(planted),
+    false,
+    "the planted text must carry no refusal -- that is the violation being planted",
+  );
+  assert.equal(
+    violatesSplitReadContract(planted),
+    true,
+    "the predicate that clears all six real scripts must REPORT this planted violation; if it " +
+      "does not, the pass above is vacuous",
+  );
+
+  // And the control on the control: the same predicate must CLEAR the same
+  // text once the refusal is added, so it is reporting the missing refusal
+  // rather than merely reporting the import.
+  const fixed = planted.replace(
+    "console.log(",
+    `if (RESOLVED_ROOT !== ".") { console.error("x: ${SPLIT_READ_REFUSAL} -- y"); process.exit(1); }\nconsole.log(`,
+  );
+  assert.deepEqual(
+    staticSrcImports(fixed),
+    ["../src/mcp/vice/capability-registry.ts"],
+    "the fixed text must still be selected by the antecedent",
+  );
+  assert.equal(
+    violatesSplitReadContract(fixed),
+    false,
+    "the predicate must clear a text that carries the refusal -- otherwise it is reporting the " +
+      "import, not the missing refusal, and every refusing script would be a false positive",
   );
 });
