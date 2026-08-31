@@ -197,8 +197,38 @@ function plant(root, row) {
     );
   }
 
+  // CR-02: substitute through a REPLACER FUNCTION, never a replacement STRING.
+  // `String.prototype.replace` interprets `$$`, `$&`, `` $` ``, `$'`, `$n` and
+  // `$<name>` inside a replacement STRING, while the occurrence check above
+  // counts with `split`, which is literal. The two therefore disagreed, and a
+  // descriptor could record one mutation while a different one reached disk.
+  // A replacer function is passed the match and its return value is used
+  // verbatim, so no pattern in it is interpreted.
+  const mutated = text.replace(descriptor.find, () => descriptor.replace);
+
+  // CR-02, the POST-CONDITION -- and WHY it exists, not just what it does. A
+  // plant descriptor is a PROMISE TO A READER that they can reproduce the
+  // mutation by hand: open `file`, find `find`, replace it with `replace`, run
+  // the guard, see the same red. Until this assertion existed the harness could
+  // keep that promise or break it with nobody finding out, because the only
+  // thing checked was that `find` matched -- never that the bytes written were
+  // the bytes recorded. Row `src/mcp/vice/r2000-enum-gen.test.ts` broke it for
+  // an entire phase before a verifier noticed by reading the captured excerpt.
+  // A divergence between record and reality is now a HARD FAILURE, not a quiet
+  // one, and it is caught BEFORE any byte is written.
+  const applied = mutated.split(descriptor.replace).length - 1;
+  if (applied !== 1) {
+    throw new Error(
+      `row ${row.historicalPath}: plant post-condition FAILED for ${descriptor.file} -- the ` +
+        `recorded \`replace\` string occurs ${applied} time(s) in the mutated text, expected ` +
+        "exactly 1. The mutation that would reach disk is not the mutation this descriptor " +
+        "records, so the row would promise a reader a hand-reproducible find/replace it cannot " +
+        "perform. Nothing was written. Fix the descriptor rather than the assertion (CR-02).",
+    );
+  }
+
   if (!originals.has(abs)) originals.set(abs, originalBytes);
-  writeFileSync(abs, Buffer.from(text.replace(descriptor.find, descriptor.replace), "latin1"));
+  writeFileSync(abs, Buffer.from(mutated, "latin1"));
 
   return {
     kind: descriptor.kind,
@@ -292,12 +322,46 @@ function runGuard(root, row, label) {
       timedOut: true,
     };
   }
+  // CR-04: a child TERMINATED BY A SIGNAL never reached a verdict, and must not
+  // be coerced into one. `spawnSync` reports that shape as `status === null`
+  // with `signal` set -- SIGKILL from an out-of-memory reaper, SIGSEGV from a
+  // native crash, SIGBUS -- and the old `result.status ?? 1` turned every one of
+  // them into a recorded exit status of 1, i.e. into a RED.
+  //
+  // WHY that is dangerous rather than merely imprecise: the green false-positive
+  // control runs BEFORE the plant, so a control that passed offers no protection
+  // at all against a kill that happens DURING the planted run. The pair "green
+  // control, red planted run" -- the exact shape this harness treats as proof
+  // that a guard is non-vacuous -- would be manufactured out of a process nobody
+  // measured. And this is a LIVE path, not a theoretical one: this host runs
+  // earlyoom and the guard suites are `node --test` runs that are memory-hungry.
+  //
+  // Kept SEPARATE from the timeout branch above on purpose. A run that exceeded
+  // its budget and a run that was killed are different facts about a run, and
+  // each has to stay independently reportable.
+  if (result.status === null && result.signal !== null && result.signal !== undefined) {
+    return {
+      label,
+      command,
+      cwd: relativeCwd,
+      cwdAbsolute: cwd,
+      status: null,
+      signal: result.signal,
+      terminatedBySignal: true,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+      timedOut: false,
+    };
+  }
+
   return {
     label,
     command,
     cwd: relativeCwd,
     cwdAbsolute: cwd,
     status: result.status ?? 1,
+    signal: null,
+    terminatedBySignal: false,
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
     timedOut: false,
@@ -400,7 +464,12 @@ function measureRow(root, row, baseline) {
     report.reason =
       "the UNPLANTED control did not exit 0, so a subsequent red would prove nothing about the " +
       "plant. Recorded as UNMEASURABLE rather than as an observed red." +
-      (control.timedOut ? " The control TIMED OUT." : "");
+      (control.timedOut ? " The control TIMED OUT." : "") +
+      // CR-04: name the signal rather than reporting "did not exit 0" for a
+      // child that never exited at all.
+      (control.terminatedBySignal
+        ? ` The control was TERMINATED BY ${control.signal} and never exited.`
+        : "");
     report.control = control;
     return report;
   }
@@ -418,6 +487,31 @@ function measureRow(root, row, baseline) {
 
   // 6b. Tree back to baseline.
   assertTreeClean(root, baseline, `after row ${row.historicalPath}`);
+
+  // 3b. CR-04. A PLANTED run that was killed by a signal is UNMEASURABLE, never
+  // a red. Checked BEFORE the zero-exit branch below and before any write-back,
+  // because a signal-terminated child carries no exit status at all: it proves
+  // nothing about the plant in either direction.
+  //
+  // WHY the green control does not already cover this: the control runs BEFORE
+  // the plant, so it says nothing about a kill that lands during the planted
+  // run. On this host that kill is a live possibility -- earlyoom is installed
+  // and the guard suites are memory-hungry `node --test` runs -- and without
+  // this branch it would manufacture exactly the false observed red this phase
+  // exists to prevent. Not retried: a silent retry would hide the kill, and the
+  // fact that a measurement could not be taken is itself the thing to report.
+  if (planted_run.terminatedBySignal) {
+    report.unmeasurable = true;
+    report.reason =
+      `the PLANTED guard run was TERMINATED BY ${planted_run.signal} and never exited, so it ` +
+      "carries no exit status. A signal-killed child proves nothing about the plant: it was " +
+      "killed, not failed. Recorded as UNMEASURABLE rather than as an observed red, and NOT " +
+      "retried -- re-run the row once the cause of the kill (an out-of-memory reaper, a native " +
+      "crash) is understood (CR-04).";
+    report.control = control;
+    report.planted = planted_run;
+    return report;
+  }
 
   // 4. A zero status is a HARD FAILURE of the harness run.
   if (planted_run.status === 0) {
@@ -507,6 +601,24 @@ function evidenceMarkdown({ root, reports, baseline, after, measuredAt }) {
       lines.push(`${report.control.stdout}\n${report.control.stderr}`.trimEnd());
       lines.push("```");
       lines.push("");
+      // CR-04. When the row became UNMEASURABLE because the PLANTED run was
+      // killed, the planted run's captured output is the whole subject of the
+      // record and must not be dropped just because there is no `observedRed`.
+      if (report.planted) {
+        lines.push(`Planted command: \`${report.planted.command}\` (cwd \`${report.planted.cwd}\`)`);
+        lines.push(
+          report.planted.terminatedBySignal
+            ? `Planted run outcome: **TERMINATED BY \`${report.planted.signal}\`** — no exit status.`
+            : `Planted exit status: \`${report.planted.status}\``,
+        );
+        lines.push("");
+        lines.push("Raw planted output:");
+        lines.push("");
+        lines.push("```");
+        lines.push(`${report.planted.stdout}\n${report.planted.stderr}`.trimEnd());
+        lines.push("```");
+        lines.push("");
+      }
       continue;
     }
     if (report.failed) {
