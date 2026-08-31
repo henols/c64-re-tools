@@ -204,6 +204,62 @@ function attributionBlocks(text: string): string[] {
   return [...text.matchAll(/ATTRIBUTION \(ABS-02\)([\s\S]*?)-->/g)].map((m) => m[1]);
 }
 
+/** The `ATTRIBUTION (ABS-02)` opener and the `-->` terminator, named once so
+ * the two extractors below anchor on the SAME two markers rather than on two
+ * hand-typed copies that can drift apart. */
+const ABS02_BLOCK_MARKER = "ATTRIBUTION (ABS-02)";
+const ABS02_BLOCK_CLOSER = "-->";
+
+/** Every attribution block in a file, as the file's own WHOLE PHYSICAL LINES:
+ * from the line carrying the `ATTRIBUTION (ABS-02)` marker through the line
+ * carrying that block's closing `-->`, inclusive.
+ *
+ * WHY THIS EXISTS *BESIDE* `attributionBlocks()` RATHER THAN REPLACING IT
+ * (31-VERIFICATION.md gap 2 / 31-REVIEW.md CR-02). `attributionBlocks()`
+ * returns the regex capture `m[1]`, which begins mid-line immediately after the
+ * marker and ends mid-line immediately before `-->`. The first and last
+ * elements of its `split("\n")` are therefore line FRAGMENTS, not lines --
+ * which is exactly why the `grep -rx` whole-line equivalence documented on
+ * `namingLineCountsIn()` was FALSE at both block boundaries: a naming line
+ * jammed onto the marker's own line, or onto the closing `-->`'s line, scored
+ * as byte-identical where `grep -cx` returns 0. The two extractors keep
+ * DIFFERENT jobs: the capture-based one isolates a block's CONTENT so a
+ * registry row can be matched to the upstream file it names; this line-based
+ * one owns BYTE-EXACTNESS, and it is the only thing that may feed the
+ * naming-line predicate.
+ *
+ * This is NOT the "fresh block regex" 31-PATTERNS.md forbids: it anchors on the
+ * same two markers (`ABS02_BLOCK_MARKER` / `ABS02_BLOCK_CLOSER`) and the two
+ * extractors are asserted to agree on block COUNT per scanned file, so they
+ * cannot drift on where a block begins and ends.
+ *
+ * A block whose marker and `-->` share ONE physical line is a real shape and is
+ * closed on that same line -- leaving it open would swallow every following
+ * line up to the next `-->` anywhere in the file, which is the single-line hole
+ * WR-02 records on the gate's own line-based extractor. */
+function attributionBlockLines(text: string): string[][] {
+  const lines = text.split("\n");
+  const blocks: string[][] = [];
+  let open: number | null = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (open === null) {
+      const markerAt = lines[i].indexOf(ABS02_BLOCK_MARKER);
+      if (markerAt === -1) continue;
+      open = i;
+      if (lines[i].indexOf(ABS02_BLOCK_CLOSER, markerAt + ABS02_BLOCK_MARKER.length) !== -1) {
+        blocks.push(lines.slice(open, i + 1));
+        open = null;
+      }
+      continue;
+    }
+    if (lines[i].includes(ABS02_BLOCK_CLOSER)) {
+      blocks.push(lines.slice(open, i + 1));
+      open = null;
+    }
+  }
+  return blocks;
+}
+
 /** How a header names its own upstream source: the source FILE, without the
  * upstream repository's excluded agent-skills directory prefix. That prefix is
  * deliberately absent from every shipped skill file (see the ABSENCE half of
@@ -285,13 +341,24 @@ function manifestEntryFor(row: AbsorbedFile): { path: string; sha256: string } {
 // on a correct tree. The existing six-field check is order-independent for
 // exactly this reason (`block.indexOf(field)` per field, no ordering).
 //
-// EQUALITY IS BYTES. `namingLineCountsIn()` compares whole lines with `===`,
-// including the two-space leading indent on the repository line, with only a
-// single trailing `\r` stripped so a CRLF checkout behaves identically. No
-// trim, no case folding, no Unicode normalisation, no `includes()`. A
-// substring match would pass a line with trailing whitespace, which is exactly
-// the drift this guard exists to catch -- and task 2's two one-byte plants are
-// what prove the strictness is real rather than claimed.
+// EQUALITY IS BYTES, OVER WHOLE PHYSICAL LINES. `namingLineCountsIn()`
+// compares whole lines with `===`, including the two-space leading indent on
+// the repository line, with only a single trailing `\r` stripped so a CRLF
+// checkout behaves identically. No trim, no case folding, no Unicode
+// normalisation, no `includes()`. A substring match would pass a line with
+// trailing whitespace, which is exactly the drift this guard exists to catch.
+//
+// WHAT MAKES THAT TRUE AT THE BLOCK BOUNDARIES, and not only in a block's
+// interior: the predicate's PARAMETER TYPE. It takes `readonly string[]` -- an
+// array of the file's own whole lines, produced by `attributionBlockLines()` --
+// so a regex capture group, whose first and last `split("\n")` elements are
+// line FRAGMENTS, cannot be handed to it. Until 31-04 it took a string and was
+// fed `attributionBlocks()`'s capture, and a naming line jammed onto the
+// marker's line or onto the closing `-->`'s line scored as byte-identical where
+// `grep -cx` returned 0 (31-VERIFICATION.md gap 2). Four one-byte plants prove
+// the strictness is real rather than claimed: two INTERIOR (a case mutation and
+// a stripped indent) and two BOUNDARY (head and tail), each boundary plant
+// paired with a control that differs from it by exactly one newline.
 //
 // CONCURRENCY. No write, no spawn, no socket. This guard reads files and
 // compares strings, so two concurrent runs cannot interleave into a false pass
@@ -345,10 +412,21 @@ const SKILL_ATTRIBUTION_SOURCE_ROOT = SKILL_ATTRIBUTION_ROOTS[0];
 const SKILL_ATTRIBUTION_SHIPPED_ROOT = SKILL_ATTRIBUTION_ROOTS[1];
 
 /** The per-tree non-vacuity FLOOR on attribution blocks -- a floor, never an
- * equality. Five procedures are absorbed today and each carries one block, so
- * five is what the tree must at least still have; absorbing a sixth must not
- * turn a correct tree red. */
-const ABS02_BLOCKS_PER_TREE_FLOOR = 5;
+ * equality. Each absorbed procedure carries one block, so the manifest's own
+ * procedure count is what the tree must at least still have; absorbing a sixth
+ * must not turn a correct tree red.
+ *
+ * DERIVED FROM THE PINNED MANIFEST, NOT WRITTEN (31-REVIEW.md WR-03). It used
+ * to be the literal `5`, which is not an independent fact -- it is
+ * `manifest.procedures.length`. A literal floor can never RATCHET: absorbing a
+ * sixth procedure and forgetting its attribution block left this guard green at
+ * `blocks = 5 >= 5`. Worse, it was the exact magic-number shape the doctrine
+ * block above disclaims ("Nothing here compares a count against `10`, or
+ * against `5`-as-an-equality"), sitting in the same file as the disclaimer.
+ * Deriving it also keeps this file clear of the pinned-count defect class this
+ * project has already been bitten by twice. The positive-floor assertion in the
+ * scoring test guards a bad derivation. */
+const ABS02_BLOCKS_PER_TREE_FLOOR: number = manifest.procedures.length;
 
 /** How many of each naming line a stretch of text carries. */
 interface NamingLineCounts {
@@ -357,17 +435,33 @@ interface NamingLineCounts {
 }
 
 /** THE NAMING-LINE PREDICATE, pulled out as a named function so it can be
- * handed a planted string and proven to bite (task 2).
+ * handed a planted input and proven to bite.
  *
  * `grep -rx` semantics: EXACT whole-line equality against the two constants. A
  * single trailing `\r` is stripped so a CRLF checkout scores identically, and
  * nothing else is normalised -- no trim, no `toLowerCase()`, no `includes()`.
  * Byte-identity is the claim being scored, so a looser comparison would pass
- * the very drift the guard exists to detect. */
-function namingLineCountsIn(text: string): NamingLineCounts {
+ * the very drift the guard exists to detect.
+ *
+ * THE PARAMETER TYPE IS WHAT MAKES THAT CLAIM TRUE, not a promise in prose.
+ * It takes an array of WHOLE PHYSICAL LINES -- `readonly string[]` -- never a
+ * string this function splits for itself. Until 31-04 it took a string and was
+ * handed `attributionBlocks()`'s regex capture, whose first and last
+ * `split("\n")` elements are line FRAGMENTS; comparing a fragment with `===`
+ * against a whole-line constant behaves like a suffix/prefix match at both
+ * block boundaries, which is precisely the loosening this comment refuses
+ * (31-VERIFICATION.md gap 2 / CR-02). With the parameter retyped, a capture
+ * group is not merely unlikely to reach it -- it cannot be expressed.
+ *
+ * EVERY call site therefore hands it an element of an `attributionBlockLines()`
+ * result or an explicit array literal. Do NOT "fix" a future typecheck error
+ * here with `attributionBlocks(...)[n].split("\n")`: that typechecks, passes on
+ * today's tree (all real blocks have empty boundary fragments) and silently
+ * reinstates the fragment-bearing input this signature exists to remove. */
+function namingLineCountsIn(lines: readonly string[]): NamingLineCounts {
   let adapted = 0;
   let repository = 0;
-  for (const raw of text.split("\n")) {
+  for (const raw of lines) {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
     if (line === ABS02_ADAPTED_LINE) adapted += 1;
     if (line === ABS02_SOURCE_REPOSITORY_LINE) repository += 1;
@@ -957,10 +1051,23 @@ test("both skill trees carry the ABS-02 naming lines byte-identically, in equal 
     let adapted = 0;
     let repository = 0;
     for (const file of files) {
-      // The file's OWN extraction predicate -- the same `ATTRIBUTION (ABS-02)`
-      // anchor the removal gate's `skillAttributionBlocks()` uses. No second
-      // regex is written here.
-      const fileBlocks = attributionBlocks(readFileSync(file, "utf8"));
+      const text = readFileSync(file, "utf8");
+      // The LINE-ANCHORED extractor, because byte-exactness over whole physical
+      // lines is what this guard scores -- the capture-based `attributionBlocks()`
+      // hands out line fragments at both block boundaries (see the doc comments
+      // on both functions). Same `ATTRIBUTION (ABS-02)` anchor the removal gate's
+      // `skillAttributionBlocks()` uses; no second regex is written here.
+      const fileBlocks = attributionBlockLines(text);
+      // The two in-file extractors must agree on WHERE a block begins and ends.
+      // They have different jobs and different implementations, so without this
+      // they can silently drift -- and a scoring pass over a different block set
+      // than the registry matcher sees is a guard scoring the wrong thing.
+      assert.equal(
+        fileBlocks.length,
+        attributionBlocks(text).length,
+        `${relative(ROOT, file)}: the two ABS-02 block extractors disagree -- attributionBlockLines() found ` +
+          `${fileBlocks.length} block(s), attributionBlocks() found ${attributionBlocks(text).length}`
+      );
       for (const [index, block] of fileBlocks.entries()) {
         const counts = namingLineCountsIn(block);
         blocks += 1;
@@ -1053,8 +1160,16 @@ test("the naming-line predicate bites on a planted one-character mutation", () =
   // working tree is never left dirty between runs and a crashed run leaves no
   // partial state (the same reasoning this file's header already records for
   // the absence proof).
-  const clean = attributionBlocks(readDestination(ABSORBED_FILES[0]))[0];
-  assert.ok(clean, `${ABSORBED_FILES[0].destination}: no ATTRIBUTION (ABS-02) block to plant into`);
+  // The block as WHOLE PHYSICAL LINES, straight from the line-anchored
+  // extractor. NOT `attributionBlocks(...)[0].split("\n")`: that typechecks
+  // against the predicate's array parameter and passes on today's tree, while
+  // silently reinstating the fragment-bearing boundary elements the retyping
+  // exists to remove (31-VERIFICATION.md gap 2).
+  const clean = attributionBlockLines(readDestination(ABSORBED_FILES[0]))[0];
+  assert.ok(
+    clean && clean.length > 0,
+    `${ABSORBED_FILES[0].destination}: no ATTRIBUTION (ABS-02) block to plant into`
+  );
   assert.deepEqual(
     namingLineCountsIn(clean),
     { adapted: 1, repository: 1 },
@@ -1062,16 +1177,21 @@ test("the naming-line predicate bites on a planted one-character mutation", () =
       `every proof below would be vacuous`
   );
 
-  // PLANT A -- capitalise exactly ONE character of the adapted line: the first
-  // character of the upstream name. Built by index rather than written out, so
-  // this proof adds no new spelling of the subject to a file whose subject
-  // occurrences the removal gate pins at an exact count.
-  const nameAt = ABS02_ADAPTED_LINE.indexOf(ABS02_UPSTREAM_NAME);
-  assert.ok(nameAt > 0, "the upstream name was not found inside ABS02_ADAPTED_LINE -- this proof would be vacuous");
-  const mutatedAdapted =
-    ABS02_ADAPTED_LINE.slice(0, nameAt) +
-    ABS02_ADAPTED_LINE.charAt(nameAt).toUpperCase() +
-    ABS02_ADAPTED_LINE.slice(nameAt + 1);
+  // PLANT A -- lower-case exactly ONE character of the adapted line: the "A" of
+  // its own fixed prefix, which is part of this constant's literal text.
+  //
+  // WHY THE PREFIX AND NOT THE DERIVED UPSTREAM NAME (31-REVIEW.md WR-06): the
+  // plant used to upper-case the first character of the derived name. If
+  // `manifest.repository`'s last segment ever begins with a character having no
+  // distinct uppercase form -- a digit, a hyphen, an underscore, all legal in a
+  // repository name -- the mutation would be a no-op and this test would go RED
+  // ON A CORRECT TREE from a legitimate manifest change. That is exactly the
+  // failure mode this file's own doctrine block was written against. The fixed
+  // prefix has a guaranteed distinct case, so the plant no longer depends on how
+  // the derived name happens to be spelled -- and, as before, it adds no new
+  // spelling of the subject to a file whose subject occurrences the removal gate
+  // pins at an exact count.
+  const mutatedAdapted = ABS02_ADAPTED_LINE[0].toLowerCase() + ABS02_ADAPTED_LINE.slice(1);
   assert.equal(mutatedAdapted.length, ABS02_ADAPTED_LINE.length, "the mutation changed the line's length -- it must change one byte");
   assert.notEqual(mutatedAdapted, ABS02_ADAPTED_LINE, "the case mutation changed nothing -- this proof would otherwise be vacuous");
   // ... and it must differ in EXACTLY one position. "One character" is the
@@ -1082,8 +1202,13 @@ test("the naming-line predicate bites on a planted one-character mutation", () =
   }
   assert.equal(differingPositions, 1, `the plant differs in ${differingPositions} positions, expected exactly 1`);
 
-  const plantedAdapted = clean.replace(ABS02_ADAPTED_LINE, () => mutatedAdapted);
-  assert.notEqual(plantedAdapted, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
+  // Both plants below mutate the block's LINE ARRAY, not a block string: the
+  // predicate takes whole physical lines, and `String.replace` on a joined
+  // block would reintroduce a string this test then has to split back apart.
+  // Each keeps an assertion that the anchor line was really found, so a plant
+  // whose anchor drifted cannot pass by mutating nothing.
+  const plantedAdapted = clean.map((line) => (line === ABS02_ADAPTED_LINE ? mutatedAdapted : line));
+  assert.notDeepEqual(plantedAdapted, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
   // A one-byte drift must drop the adapted count to zero AND leave the
   // repository count alone -- which makes the two counts UNEQUAL, exactly the
   // relation the scoring test above compares. An `includes()`-style or
@@ -1105,8 +1230,10 @@ test("the naming-line predicate bites on a planted one-character mutation", () =
     ABS02_SOURCE_REPOSITORY_LINE.length - 1,
     "stripping one leading space removed more than one character"
   );
-  const plantedRepository = clean.replace(ABS02_SOURCE_REPOSITORY_LINE, () => dedentedRepository);
-  assert.notEqual(plantedRepository, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
+  const plantedRepository = clean.map((line) =>
+    line === ABS02_SOURCE_REPOSITORY_LINE ? dedentedRepository : line
+  );
+  assert.notDeepEqual(plantedRepository, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
   assert.deepEqual(
     namingLineCountsIn(plantedRepository),
     { adapted: 1, repository: 0 },
@@ -1114,10 +1241,74 @@ test("the naming-line predicate bites on a planted one-character mutation", () =
       "a trimming predicate would pass this, and the two-space indent would be unguarded"
   );
 
-  // ... and the predicate must NOT fire on text that carries neither line, or
-  // "no offenders" in the scoring test above would mean nothing.
+  // --- THE TWO BOUNDARY PLANTS (31-VERIFICATION.md gap 2 / CR-02) -----------
+  // Plants A and B above both land on a block's INTERIOR lines, which is why
+  // neither could ever catch the boundary defect: under the old capture-based
+  // input, the block's FIRST and LAST elements were line fragments, so a naming
+  // line jammed onto the marker's own line or onto the closing `-->`'s line
+  // scored as byte-identical where `grep -cx` returned 0.
+  //
+  // These two plants cover exactly those two positions. Each is paired with a
+  // CONTROL that differs from it by ONE NEWLINE and scores 1, so neither plant
+  // can pass vacuously (e.g. by failing to parse as a block at all), and each
+  // asserts the synthetic text yields exactly one block for the same reason.
+  // Every string is built from the derived constants and the subject-free
+  // marker, adding no new spelling of the subject to this pinned path.
+  const closerLine = ABS02_BLOCK_CLOSER;
+
+  // HEAD PLANT -- the marker and the adapted line share ONE physical line.
+  // The adapted line is then not a whole line, so it must score 0.
+  const headPlant = attributionBlockLines(
+    [`<!-- ${ABS02_BLOCK_MARKER}${ABS02_ADAPTED_LINE}`, ABS02_SOURCE_REPOSITORY_LINE, closerLine].join("\n")
+  );
+  assert.equal(headPlant.length, 1, "the head plant did not parse as exactly one block -- the proof would be vacuous");
   assert.deepEqual(
-    namingLineCountsIn("nothing to see here"),
+    namingLineCountsIn(headPlant[0]),
+    { adapted: 0, repository: 1 },
+    "a naming line jammed onto the ABS-02 marker's own physical line scored as present -- the whole-line " +
+      "(`grep -rx`) claim is false at the block's HEAD boundary"
+  );
+  // HEAD CONTROL -- the same text with ONE newline inserted after the marker.
+  const headControl = attributionBlockLines(
+    [`<!-- ${ABS02_BLOCK_MARKER}`, ABS02_ADAPTED_LINE, ABS02_SOURCE_REPOSITORY_LINE, closerLine].join("\n")
+  );
+  assert.equal(headControl.length, 1, "the head control did not parse as exactly one block -- the proof would be vacuous");
+  assert.deepEqual(
+    namingLineCountsIn(headControl[0]),
+    { adapted: 1, repository: 1 },
+    "the head control -- one newline away from the head plant -- did not score one of each naming line, so " +
+      "the head plant proves nothing"
+  );
+
+  // TAIL PLANT -- the source-repository line shares ONE physical line with the
+  // closing `-->`. It is then not a whole line, so it must score 0.
+  const tailPlant = attributionBlockLines(
+    [`<!-- ${ABS02_BLOCK_MARKER}`, ABS02_ADAPTED_LINE, `${ABS02_SOURCE_REPOSITORY_LINE}${closerLine}`].join("\n")
+  );
+  assert.equal(tailPlant.length, 1, "the tail plant did not parse as exactly one block -- the proof would be vacuous");
+  assert.deepEqual(
+    namingLineCountsIn(tailPlant[0]),
+    { adapted: 1, repository: 0 },
+    "a naming line sharing a physical line with the block's closing marker scored as present -- the " +
+      "whole-line (`grep -rx`) claim is false at the block's TAIL boundary"
+  );
+  // TAIL CONTROL -- the same text with ONE newline inserted before the closer.
+  const tailControl = attributionBlockLines(
+    [`<!-- ${ABS02_BLOCK_MARKER}`, ABS02_ADAPTED_LINE, ABS02_SOURCE_REPOSITORY_LINE, closerLine].join("\n")
+  );
+  assert.equal(tailControl.length, 1, "the tail control did not parse as exactly one block -- the proof would be vacuous");
+  assert.deepEqual(
+    namingLineCountsIn(tailControl[0]),
+    { adapted: 1, repository: 1 },
+    "the tail control -- one newline away from the tail plant -- did not score one of each naming line, so " +
+      "the tail plant proves nothing"
+  );
+
+  // ... and the predicate must NOT fire on text that carries neither line, or
+  // "no offenders" in the scoring test above would mean nothing. An explicit
+  // ARRAY LITERAL of whole lines, never a `.split("\n")` of a string.
+  assert.deepEqual(
+    namingLineCountsIn(["nothing to see here"]),
     { adapted: 0, repository: 0 },
     "the naming-line predicate fired on innocent text"
   );
