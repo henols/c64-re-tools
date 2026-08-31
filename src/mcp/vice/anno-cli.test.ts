@@ -37,6 +37,7 @@ import { dirname, join } from "node:path";
 import {
   runR2000Cli,
   VERB_OPTIONS,
+  checkAcceptedOptions,
   symbolsFromStore,
   commentsFromStore,
   blocksFromStore,
@@ -810,6 +811,84 @@ test("an unaccepted option is refused for every verb it does not belong to (IN-0
     assert.match(stderr, new RegExp(`^${verb}:`), `verb "${verb}"'s refusal must be prefixed with its own name`);
     assert.match(stderr, /--totally-not-a-real-flag/);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW CR-01 -- an `Object.prototype` key used as a verb crashed the CLI
+// with an unhandled `TypeError`, breaking the never-throw contract stated in
+// `anno-cli.ts`'s own header AND in `checkAcceptedOptions()`'s own JSDoc.
+//
+// `VERB_OPTIONS` is an object literal, so `VERB_OPTIONS["hasOwnProperty"]`
+// resolved to a truthy inherited FUNCTION, sailed past the
+// `if (!accepted) return undefined` short-circuit, and `accepted.includes(...)`
+// threw. Reproduced against the committed code before the fix:
+//
+//   $ node -e 'import("./anno-cli.ts").then(m => m.runR2000Cli(["hasOwnProperty","game.prg","--force"]))'
+//   TypeError: accepted.includes is not a function
+//
+// The identical defect was found and fixed one directory over in this same
+// phase (`scripts/lib/anno-cli-invocations.mjs`'s `own()` helper), and
+// `anno-cli-invocations.test.ts:530-596` carries five controls for it -- one
+// quoting THIS file's variable name verbatim. The hardening stopped at the
+// checker and never reached the CLI the checker models.
+//
+// The list is deliberately every inherited key a plausible typo or a hostile
+// argv could produce, not just the one that was reproduced first: a fix that
+// hardened one key would leave the shape armed under the next.
+const OBJECT_PROTOTYPE_KEYS = [
+  "hasOwnProperty",
+  "toString",
+  "constructor",
+  "valueOf",
+  "__proto__",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "toLocaleString",
+] as const;
+
+test("an Object.prototype key used as a verb is refused, not thrown (30-REVIEW CR-01)", async () => {
+  for (const key of OBJECT_PROTOTYPE_KEYS) {
+    let code: number | undefined;
+    let stderr = "";
+    let thrown: unknown;
+    try {
+      const captured = await withCapturedConsole(() => runR2000Cli([key, "game.prg", "--force"]));
+      code = captured.result;
+      stderr = captured.stderr;
+    } catch (err) {
+      thrown = err;
+    }
+    assert.equal(
+      thrown,
+      undefined,
+      `runR2000Cli(["${key}", ...]) threw instead of returning an exit code -- ` +
+        `the never-throw contract is broken for inherited keys again: ${thrown instanceof Error ? thrown.message : String(thrown)}`,
+    );
+    assert.equal(code, 1, `verb "${key}" must return exit code 1`);
+    assert.match(
+      stderr,
+      new RegExp(`unknown verb "${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
+      `verb "${key}" must fall through to the unknown-verb refusal, naming the token the caller typed`,
+    );
+  }
+});
+
+test("checkAcceptedOptions() returns undefined for every inherited key, and never throws (30-REVIEW CR-01)", () => {
+  for (const key of OBJECT_PROTOTYPE_KEYS) {
+    assert.equal(
+      checkAcceptedOptions(key, ["--force", "--not-a-real-flag"]),
+      undefined,
+      `checkAcceptedOptions("${key}", ...) must treat an inherited key as "not a verb I know" and fall through`,
+    );
+  }
+  // Paired positive control: the predicate still refuses for a REAL verb, so a
+  // checkAcceptedOptions() that returned undefined unconditionally would fail
+  // here rather than pass the loop above vacuously.
+  assert.match(
+    checkAcceptedOptions("export-asm", ["--not-a-real-flag"]) ?? "",
+    /--not-a-real-flag/,
+    "a real verb must still have its unaccepted flags refused",
+  );
 });
 
 // ---------------------------------------------------------------------------

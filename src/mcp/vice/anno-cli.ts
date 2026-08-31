@@ -288,10 +288,33 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
  * verb still falls through to `runR2000Cli()`'s own "unknown verb"
  * message). Never throws -- this file's never-throw posture applies here
  * too.
+ *
+ * THE LOOKUP IS AN OWN-PROPERTY READ, AND THAT IS THE WHOLE POINT (30-REVIEW
+ * CR-01, fixed 2026-08-31). `VERB_OPTIONS` is an object literal, so it
+ * inherits from `Object.prototype`; a bare `VERB_OPTIONS[verb]` resolved
+ * `hasOwnProperty`, `toString`, `constructor`, `valueOf` and `__proto__` to
+ * TRUTHY inherited FUNCTIONS. Those sailed past the `if (!accepted) return
+ * undefined` short-circuit and the next line crashed. Reproduced against the
+ * shipped table before this fix:
+ *
+ *   `anno hasOwnProperty game.prg --force` -> TypeError: accepted.includes is not a function
+ *
+ * The call site at `runR2000Cli()` sits OUTSIDE that function's `try`, so the
+ * throw escaped the function entirely and broke the never-throw contract this
+ * file's header states. The identical defect was found and fixed one
+ * directory over in this same phase -- `scripts/lib/anno-cli-invocations.mjs`
+ * reads every verb-keyed table through its `own()` helper, and one of that
+ * file's controls quotes THIS file's variable name verbatim as
+ * `"accepted.includes is not a function"`. The hardening stopped at the
+ * checker and never reached the CLI the checker models; it reaches it now.
+ *
+ * `Array.isArray()` rather than a bare truthiness test is deliberate belt and
+ * braces: an own key whose value is somehow not an array falls through to
+ * "unknown verb" instead of reaching `.includes()`.
  */
 export function checkAcceptedOptions(verb: string, rest: string[]): string | undefined {
-  const accepted = VERB_OPTIONS[verb];
-  if (!accepted) return undefined;
+  const accepted = Object.hasOwn(VERB_OPTIONS, verb) ? VERB_OPTIONS[verb] : undefined;
+  if (!Array.isArray(accepted)) return undefined;
   for (const token of rest) {
     if (token.startsWith("--") && !accepted.includes(token)) {
       const acceptedList = accepted.length > 0 ? accepted.join(", ") : "none";
@@ -1323,19 +1346,27 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
     return 0;
   }
 
-  // IN-06 (D-11.1-04): the single call site for the shared verb-options
-  // check, run BEFORE dispatch so a refused option never reaches any cmd*
-  // function -- one place enforces the closed option set for every verb,
-  // rather than seven places each doing (or, as `verify` proved, NOT doing)
-  // it themselves.
-  const optionError = checkAcceptedOptions(verb, rest);
-  if (optionError) {
-    console.error(optionError);
-    console.log(USAGE);
-    return 1;
-  }
-
   try {
+    // IN-06 (D-11.1-04): the single call site for the shared verb-options
+    // check, run BEFORE dispatch so a refused option never reaches any cmd*
+    // function -- one place enforces the closed option set for every verb,
+    // rather than seven places each doing (or, as `verify` proved, NOT doing)
+    // it themselves.
+    //
+    // INSIDE the try since 2026-08-31 (30-REVIEW CR-01, defence in depth).
+    // It used to sit above this block, so a throw from it escaped
+    // `runR2000Cli()` entirely -- which is exactly what a prototype-key verb
+    // did. `checkAcceptedOptions()` is now own-property-safe and cannot
+    // throw for that reason, but the never-throw contract this file's header
+    // states should not depend on one callee staying careful: every
+    // pre-dispatch check belongs under the last-resort net below.
+    const optionError = checkAcceptedOptions(verb, rest);
+    if (optionError) {
+      console.error(optionError);
+      console.log(USAGE);
+      return 1;
+    }
+
     switch (verb) {
       case "render-memmap":
         return await cmdRenderMemmap(rest);
