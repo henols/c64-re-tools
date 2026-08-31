@@ -240,3 +240,7 @@ None. No stub, placeholder, skipped test or unrun `<verify>` was introduced. Eve
 ---
 *Phase: 32-the-deletion-and-the-grep-gate*
 *Completed: 2026-08-31*
+
+## Self-Check: PASSED
+
+All three artifacts exist on disk; all four commits (`8e89d7d`, `8d6c442`, `c39aee1`, `40cf37b`) resolve in `git log`; the registry holds 15 rows; `git status --porcelain` is empty.
