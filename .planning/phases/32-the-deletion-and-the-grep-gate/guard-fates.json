@@ -578,6 +578,718 @@
           "excerpt": "TAP version 13\n# (node:256671) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: tracer (MCP-05): anno_get_symbols answers a real query against a real store, end to end\nok 1 - tracer (MCP-05): anno_get_symbols answers a real query against a real store, end to end\n  ---\n  duration_ms: 12.332045\n  type: 'test'\n  ...\n# Subtest: anno_get_symbols narrows by address range, and reports truncation as a fact rather than leaving it to be inferred\nok 2 - anno_get_symbols narrows by address range, and reports truncation as a fact rather than leaving it to be inferred\n  ---\n  duration_ms: 11.450299\n  type: 'test'\n  ...\n# Subtest: WR-02 closed: an uncurated name RESOLVES {isError:true} naming both resolution routes -- it does not reject the promise\nok 3 - WR-02 closed: an uncurated name RESOLVES {isError:true} naming both resolution routes -- it does not reject the promise\n  ---\n  duration_ms: 0.675388\n  type: 'test'\n  ...\n# Subtest: a store path outside the workspace root RESOLVES {isError:true} naming AnnoStorePathError (T-29-01)\nok 4 - a store path outside the workspace root RESOLVES {isError:true} naming AnnoStorePathError (T-29-01)\n  ---\n  duration_ms: 2.268089\n  type: 'test'\n  ...\n# Subtest: an absent store is refused, never created -- mustExist is what keeps 'gone' and 'empty' distinguishable\nok 5 - an absent store is refused, never created -- mustExist is what keeps 'gone' and 'empty' distinguishable\n  ---\n  duration_ms: 1.971918\n  type: 'test'\n  ...\n# Subtest: the transport validates nothing, so a missing required argument is refused HERE and named\nok 6 - the transport validates nothing, so a missing required argument is refused HERE and named\n  ---\n  duration_ms: 0.780712\n  type: 'test'\n  ...\n# Subtest: an unprefixed numeric address string is refused by the ONE address parser, not accepted by a second rule here"
         }
       }
+    },
+    {
+      "historicalPath": "scripts/audit-gate.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/audit-gate.mjs",
+      "removalTrigger": "The `docs-*.test.ts` naming convention ceasing to be how this repo marks a documentation guard. This gate's whole subject is the DERIVED set of files matching that glob in `src/mcp/vice/`, checked against `DOCS_GUARD_FLOOR` and `EXPECTED_DOCS_GUARD_NAMES`; once documentation guards are no longer discovered by filename, the derivation has no corpus and the gate should be removed with the convention rather than left asserting over an empty glob.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/audit-gate.mjs",
+        "find": "export const DOCS_GUARD_FLOOR = 7;",
+        "replace": "export const DOCS_GUARD_FLOOR = 10;"
+      },
+      "guard": {
+        "argv": [
+          "scripts/audit-gate.mjs"
+        ],
+        "cwd": "."
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/audit-gate.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 4, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. PLANT ROUTE. The root-override inventory (`evidence/32-root-override-inventory.md` §2) records this script's route as `--root` -- it is the ONE script that had `--root` before this phase. It is nonetheless planted `kind: \"worktree\"`, because `scripts/audit-mutation-harness.mjs`'s `plant()` implements ONLY `\"worktree\"` and THROWS on any other kind ('a synthetic-fixture route lands with the sweep plans that need it'). Plan 32-06 hit and recorded the same limitation. No harness modification was made; this plan measures. ASSERTION TRIPPED: `checkAuditGate()`'s floor assertion (`scripts/audit-gate.mjs:408-413`), `guardFiles.length >= DOCS_GUARD_FLOOR`. Raising the floor from 7 to 8 while the derived glob still yields 7 makes the derived set fall below the floor -- the mirror image of the plan's 'remove one docs-*.test.ts from the synthetic tree' route, which a find/replace plant cannot express because it cannot delete a file. WHY THIS TARGET AND NOT THE NAME LIST: `EXPECTED_DOCS_GUARD_NAMES`'s `\"docs-absorbed-decisions.test.ts\"` entry is the literal Phase 29 actually re-pointed, and it is used as THIS PLAN's plant for the `src/mcp/vice/audit-integrity.test.ts` row, whose CR-02 registry-drift detector is the guard built for exactly that relation. Two rows therefore plant the same FILE with different TARGETS and different GUARDS (plan 32-06's Pattern 2). Neither can mask the other: the floor plant changes no name in the list, and the name plant changes no floor. SECOND PLANT (first attempt recorded, not hidden). ATTEMPT 1 -- plant `DOCS_GUARD_FLOOR = 7` -> `8`, guard `node scripts/audit-gate.mjs --json`: the harness reported ZERO-EXIT, 'the guard exited 0 WITH the violation planted'. TWO independent causes were measured, and BOTH had to be fixed: (a) THE FLOOR IS A `>=` NON-VACUITY FLOOR AND THE DERIVED SET HAS OUTGROWN IT. `node scripts/audit-gate.mjs` reports `9 docs guards green` while `DOCS_GUARD_FLOOR` is pinned at 7, so `guardFiles.length >= 8` was still satisfied. This is not a defect -- the constant's own comment states it is a floor to be RAISED, never lowered, and records that the 29-05 rename deliberately did not move it -- but it means a plant must clear the REAL derived count, not the pinned one. Attempt 2 raises the floor to 10. (b) UNDER `--json`, A STRUCTURAL ERROR DOES NOT REACH THE EXIT STATUS. `main()` ends the `--json` branch with `process.exit(result.allowed ? 0 : 1)` (`scripts/audit-gate.mjs:1210`), and `allowed` tracks GATED AUDITS, not `structuralErrors`. The text-mode branch, by contrast, exits 1 on `result.structuralErrors.length > 0` (`:1213-1218`). So a floor breach is reported in the JSON payload's `structuralErrors` array while the process still exits 0. Attempt 2 therefore drops `--json`. ATTEMPT 2 -- plant `DOCS_GUARD_FLOOR = 7` -> `10`, guard `node scripts/audit-gate.mjs`: control exit 0 ('audit-gate: OK -- 9 docs guards green'), planted exit 1 ('audit-gate: FAIL -- only 9 docs-*.test.ts guard(s) found ... (>= 10 required)'). Same plant FILE and same relation as attempt 1; only the magnitude and the output mode changed. No guard was weakened and nothing was reclassified. FINDING (b) IS RECORDED FOR ITS OWN SAKE: any future caller that treats `audit-gate.mjs --json`'s exit status as a structural-health check is reading a signal that cannot go non-zero for a structural error.",
+      "observedRed": {
+        "command": "node scripts/audit-gate.mjs",
+        "cwd": ".",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/audit-gate.mjs",
+          "find": "export const DOCS_GUARD_FLOOR = 7;",
+          "replace": "export const DOCS_GUARD_FLOOR = 10;"
+        },
+        "exitStatus": 1,
+        "excerpt": "audit-gate: FAIL\n  - only 9 docs-*.test.ts guard(s) found in /home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice (>= 10 required) -- an empty or broken glob must fail loudly here rather than let this gate report green forever",
+        "control": {
+          "command": "node scripts/audit-gate.mjs",
+          "cwd": ".",
+          "exitStatus": 0,
+          "excerpt": "audit-gate: OK -- 9 docs guards green, 7 milestone audits scanned, 5 declaring a gated status"
+        }
+      }
+    },
+    {
+      "historicalPath": "scripts/check-npm-packages.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/check-npm-packages.mjs",
+      "removalTrigger": "`@henols/vice-mcp` ceasing to be published as an npm tarball with a hand-maintained `files[]` array. Every assertion here compares `npm pack --dry-run --json`'s file list against modules reachable from `vice-proxy.ts`; once packaging is derived rather than declared (or the package is no longer published), there is no declared list to diverge from and the gate should be removed with it.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/package.json",
+        "find": "    \"anno-cli.ts\",",
+        "replace": "    \"anno-cliX.ts\","
+      },
+      "guard": {
+        "argv": [
+          "scripts/check-npm-packages.mjs"
+        ],
+        "cwd": "."
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/check-npm-packages.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 11, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. PLANT ROUTE. The inventory (§2) records this script as a `worktree` route -- `packFiles()` shells out to `npm pack --dry-run --json`, so a synthetic root would have to carry two installable npm packages, one with a `prepack` hook. The plant is therefore a working-tree mutation, as recorded. ASSERTION TRIPPED: the `REQUIRED_DERIVED_MODULES` loop at `:222-224`, `need(vice.files.includes(file), ...)`. This is EXACTLY the re-pointed line: `git diff -U0 0394cbc 345d5c4 -- scripts/check-npm-packages.mjs` shows `- [\"r2000-cli.ts\", \"R2000-09\"]` / `+ [\"anno-cli.ts\", \"R2000-09\"]`. WHY THE PACKAGE MANIFEST AND NOT THE GUARD'S OWN MAP: the plan asks for a plant 'against a package-contents assertion rather than against a file the tarball actually ships'. Renaming the guard's own map entry would prove only that the guard reads its own constant. Renaming the entry in `src/mcp/vice/package.json`'s `files[]` removes `anno-cli.ts` from the real tarball contents, so the guard is observed failing against the actual packaging relation it was re-pointed onto. The file itself is never deleted or renamed -- only the declaration -- so nothing else on the tree moves.",
+      "observedRed": {
+        "command": "node scripts/check-npm-packages.mjs",
+        "cwd": ".",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/package.json",
+          "find": "    \"anno-cli.ts\",",
+          "replace": "    \"anno-cliX.ts\","
+        },
+        "exitStatus": 1,
+        "excerpt": "check-npm-packages: FAIL\n  - vice-mcp: missing anno-cli.ts -- R2000-09 would ship a package that throws ERR_MODULE_NOT_FOUND\n  - vice-mcp: anno-cli.ts is imported by vice-proxy.ts but is not in the published tarball -- Rule 2 (see 6801cf5, 897faf6)",
+        "control": {
+          "command": "node scripts/check-npm-packages.mjs",
+          "cwd": ".",
+          "exitStatus": 0,
+          "excerpt": "check-npm-packages: transitive closure from vice-proxy.ts -- 57 modules, clean\ncheck-npm-packages: OK\n  @henols/vice-mcp@0.0.0-dev -- 79 files\n  @henols/c64-re-tools@0.0.0-dev -- 34 files, 7 skills\n\n\n> @henols/c64-re-tools@0.0.0-dev prepack\n> node scripts/sync-skills.mjs\n\nsync-skills: copied 7 skill(s) into /home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/installer/skills: acme-build, c64-memory-mapping, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker, vice-wedge-triage\nsync-skills: excluded 6 non-shipping entries (test files, fixtures/, test-corpus.mjs)"
+        }
+      }
+    },
+    {
+      "historicalPath": "scripts/check-skill-fork-honesty.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/check-skill-fork-honesty.mjs",
+      "removalTrigger": "The `acme-build` skill ceasing to point at a disassembly route at all. The re-pointed assertion asserts that `src/skills/acme-build/SKILL.md` carries a replacement pointer string for the withdrawn route; once the playbook stops claiming a disassembly route exists, there is no claim to keep honest and this half of the gate should be removed with the pointer.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/check-skill-fork-honesty.mjs",
+        "find": "acmeBuildSkillSource.includes(\"anno export-asm\")",
+        "replace": "acmeBuildSkillSource.includes(\"anno export-asmZZ\")"
+      },
+      "guard": {
+        "argv": [
+          "scripts/check-skill-fork-honesty.mjs"
+        ],
+        "cwd": "."
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/check-skill-fork-honesty.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 6, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. PLANT ROUTE. The inventory (§2) records this script as gaining `--root` in plan 32-02, but the harness implements only `kind: \"worktree\"` plants, so the plant is a working-tree mutation (see the `scripts/audit-gate.mjs` row for the full statement of that limitation). ASSERTION TRIPPED: `:631`, `acmeBuildSkillSource.includes(\"anno export-asm\")`. This is precisely the re-pointed assertion -- the diff between the pinned commits removes `acmeBuildSkillSource.includes(\"r2000 export-asm\")` and its message, and the surviving line is its `anno` successor. WHY THE GUARD'S OWN LITERAL AND NOT THE SKILL CORPUS: the assertion is an `includes()` over `src/skills/acme-build/SKILL.md`, which carries the pointer string at FIVE distinct sites (measured: lines 135, 147, 155, 156, 219). The harness requires a plant's `find` to match EXACTLY ONCE, so no single-occurrence worktree plant can falsify an `includes()` over that corpus -- removing one of five leaves the predicate true and the guard green, which would be recorded as a plant that did not bite. Re-pointing the guard's own expected literal is the only mutation that tests the same relation with a single-site edit. SUBJECT-LITERAL SAFETY (T-32-30): this plant touches the string `anno export-asm` only. It does NOT change the real tree's occurrence count of the deleted subject's literal, which the removal gate pins at exactly 2 under the `attribution-guard-test` class. `node scripts/check-no-regenerator2000.mjs` is asserted to exit 0 after the sweep, so a moved pin would surface immediately.",
+      "observedRed": {
+        "command": "node scripts/check-skill-fork-honesty.mjs",
+        "cwd": ".",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/check-skill-fork-honesty.mjs",
+          "find": "acmeBuildSkillSource.includes(\"anno export-asm\")",
+          "replace": "acmeBuildSkillSource.includes(\"anno export-asmZZ\")"
+        },
+        "exitStatus": 1,
+        "excerpt": "check-skill-fork-honesty: FAIL\n  - src/skills/acme-build/SKILL.md is missing the replacement pointer string \"anno export-asm\" -- the deletion must not be \"fixed\" by deleting the pointer to the route too. While the route was withdrawn that pointer was the dated withdrawal notice naming it; since the route returned on 2026-08-31 the same string is the live invocation, which is why this assertion never had to move.",
+        "control": {
+          "command": "node scripts/check-skill-fork-honesty.mjs",
+          "cwd": ".",
+          "exitStatus": 0,
+          "excerpt": "check-skill-fork-honesty: OK -- 11 fork-only mentions across 33 files in 7 skill directories, all section-scoped-compliant; 24 fork-only names policed from CAPABILITY_REGISTRY; no stale phase-deferral prose found; README.md carries all 6 required strings and none of the 2 forbidden ones; docs/stock-vice-parity.md carries all 1 required strings and none of the 5 forbidden ones (08-06's regression guard)."
+        }
+      }
+    },
+    {
+      "historicalPath": "scripts/check-skill-tool-coverage.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/check-skill-tool-coverage.mjs",
+      "removalTrigger": "The `anno_*` MCP tool family ceasing to be a proxy-local surface referenced by skill prose. This gate's anno half asserts that every `anno_*` name a playbook names is in `CURATED_ANNO_TOOLS` and in neither shipped manifest; once no playbook names an `anno_*` tool, the extraction has an empty left-hand side and this half should be removed rather than left asserting over nothing.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/skills/routine-queue-walker/SKILL.md",
+        "find": "anno_set_comment",
+        "replace": "anno_set_commentary"
+      },
+      "guard": {
+        "argv": [
+          "scripts/check-skill-tool-coverage.mjs"
+        ],
+        "cwd": "."
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/check-skill-tool-coverage.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 56, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. PLANT ROUTE. Recorded `--root` in the inventory (§2); planted `worktree` for the harness limitation stated on the `scripts/audit-gate.mjs` row. ASSERTION TRIPPED: `:494-497`, `CURATED_ANNO_TOOLS.includes(name)` -- 'every extracted anno_* name must be curated'. `anno_set_commentary` still matches the extraction regex `ANNO_TOOL_NAME_RE = /\\banno_[a-z0-9_]+/g` (`:182`) but is absent from the curated allow-list, so the gate names the offending file and exits 1. This is the re-pointed relation itself: the diff between the pinned commits rewrites this whole block from `R2000_TOOL_NAME_RE`/`extractedR2000`/`CURATED_R2000_TOOLS` onto its `anno` successors (56 subject-naming lines, the largest re-pointing of the 21). WHY THE SKILL CORPUS AND NOT THE CURATED LIST: `src/mcp/vice/anno-tools.ts` is already the plant file for two OTHER rows in this registry (`src/mcp/vice/stock-dispatch.test.ts` and `src/mcp/vice/vice-proxy.test.ts` in this plan, plus `src/mcp/vice/r2000-tools.test.ts` from plan 32-06), and this gate's re-pointed relation has TWO sides -- the skill prose and the curated list. Planting the prose side exercises the extraction regex as well as the membership check, which the curated side alone would not.",
+      "observedRed": {
+        "command": "node scripts/check-skill-tool-coverage.mjs",
+        "cwd": ".",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/skills/routine-queue-walker/SKILL.md",
+          "find": "anno_set_comment",
+          "replace": "anno_set_commentary"
+        },
+        "exitStatus": 1,
+        "excerpt": "check-skill-tool-coverage: FAIL\n  - anno_set_commentary: referenced by src/skills/routine-queue-walker/SKILL.md but NOT in CURATED_ANNO_TOOLS (anno-tools.ts). Resolve by: (1) implementing it and adding it to ANNO_TOOL_DEFINITIONS with a named criterion, (2) removing the skill reference, or (3) recording it as a scope decision.",
+        "control": {
+          "command": "node scripts/check-skill-tool-coverage.mjs",
+          "cwd": ".",
+          "exitStatus": 0,
+          "excerpt": "check-skill-tool-coverage: OK -- 37 distinct vice_* names extracted from 33 files across 7 skill directories; 31 resolved as advertised on the stock manifest (38 tools total). Classified: 0 proxy-local (neither manifest), 2 proxy-local-with-stock-manifest-entry, 1 deny-listed, 2 not-a-tool-name, 6 fork-only-unrecoverable, 0 pending-later-phase. anno_*: 18 distinct names extracted, all curated (CURATED_ANNO_TOOLS has 19 entries). anno CLI verbs: 3 parsed from anno-cli.ts, 3/3 resolved (named by at least one skill file).\n\n(node:339599) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)"
+        }
+      }
+    },
+    {
+      "historicalPath": "scripts/generate-tool-support-table.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/generate-tool-support-table.mjs",
+      "removalTrigger": "`docs/tool-support.md` ceasing to be a generated, committed artifact. The relation this gate asserts is generator-output equals committed-bytes; once the table is rendered at read time (or dropped), there is no committed copy to go stale and both the generator and its staleness assertion should be removed together.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/generate-tool-support-table.mjs",
+        "find": "ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONS\\s*\\)/",
+        "replace": "ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONZ\\s*\\)/"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "byte-identical to committed",
+          "tool-support-table.test.mjs"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/generate-tool-support-table.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 6, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. PLANT ROUTE. Recorded `--root` in the inventory (§2, added by plan 32-02); planted `worktree` for the harness limitation stated on the `scripts/audit-gate.mjs` row. `docs/tool-support.md` IS NEVER TOUCHED (T-32-29). The plant is inside the generator's own source and the guard is a test that generates IN MEMORY and compares against the committed bytes -- the generator CLI, which is the only writer of `docs/tool-support.md`, is never invoked. `git diff --exit-code -- docs/tool-support.md` is asserted after the sweep. ASSERTION TRIPPED: `tool-support-table.test.mjs:147`, 'generateToolSupportTable() output is byte-identical to committed docs/tool-support.md'. Pointing `ANNO_LOOP_VAR_RE` at a collection name that does not exist in `vice-proxy.ts` makes `annoLoopVar` null, so `discoverSyntheticToolNames()` (`:129-188`) stops excluding the anno loop's own registration identifier and tries to resolve `annoDef` to a `const annoDef: ToolDefinition = {` declaration that does not exist -- the named throw at `:167-175`. WHY THIS TARGET: `ANNO_LOOP_VAR_RE` at `:132` IS the re-pointed line. The diff between the pinned commits removes `R2000_LOOP_VAR_RE`, `r2000LoopVarMatch`, `r2000LoopVar` and the `if (ident === r2000LoopVar) continue;` skip, and the surviving block is their `anno` successor. The guard is scoped with `--test-name-pattern` so it names ONE assertion, keeping it distinct from the `src/mcp/vice/tool-support-table.test.mjs` row, which plants that file's OWN independent witness copy of the same regex and is scoped to a different assertion.",
+      "observedRed": {
+        "command": "node --test --test-name-pattern byte-identical to committed tool-support-table.test.mjs",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/generate-tool-support-table.mjs",
+          "find": "ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONS\\s*\\)/",
+          "replace": "ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONZ\\s*\\)/"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - generateToolSupportTable() output is byte-identical to committed docs/tool-support.md\n  ---\n  duration_ms: 10.572473\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/tool-support-table.test.mjs:148:1'\n  failureType: 'testCodeFailure'\n  error: 'generate-tool-support-table: could not resolve synthetic tool registration identifier \"annoDef\" (from `tools[annoDef.name] = ...`) to a declaration -- expected a `const annoDef: ToolDefinition = { ... }` declaration in vice-proxy.ts. Add the declaration, or if this is not a synthetic proxy-local tool registration, fix the discovery regex explicitly rather than silently dropping the identifier.'\n  code: 'ERR_TEST_FAILURE'\n  stack: |-\n    discoverSyntheticToolNames (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/scripts/generate-tool-support-table.mjs:166:13)\n    generateToolSupportTable (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/scripts/generate-tool-support-table.mjs:222:26)\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/tool-support-table.test.mjs:149:21)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.start (node:internal/test_runner/test:944:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 0\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 270.300864",
+        "control": {
+          "command": "node --test --test-name-pattern byte-identical to committed tool-support-table.test.mjs",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: generateToolSupportTable() output is byte-identical to committed docs/tool-support.md\nok 1 - generateToolSupportTable() output is byte-identical to committed docs/tool-support.md\n  ---\n  duration_ms: 9.751421\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 258.438152"
+        }
+      }
+    },
+    {
+      "historicalPath": "scripts/lib/skill-corpus.d.mts",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/lib/skill-corpus.d.mts",
+      "removalTrigger": "`scripts/lib/skill-corpus.mjs` ceasing to be imported from TypeScript under `strict`. This file has no runtime role at all -- it exists only so a colocated `.test.ts` typechecks against a `.mjs` helper; the day no `.ts` file imports that helper, the declaration should be deleted with the last importer.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/lib/skill-corpus.d.mts",
+        "find": "export declare function walkSkills(dir: string): string[];",
+        "replace": "export declare function walkSkillsX(dir: string): string[];"
+      },
+      "guard": {
+        "argv": [
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "-p",
+          "tsconfig.json"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/lib/skill-corpus.d.mts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 1, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. GUARD SHAPE -- A RECORDED HARNESS DEFECT, ROUTED AROUND. The plan specifies `argv: [\"--run\", \"typecheck\"]`. That convention is UNUSABLE: `resolveBin()` maps `argv[0] === \"--run\"` to the npm client, producing `npm --run typecheck`, which npm 11 rejects with `Unknown command: \"typecheck\"`. Plan 32-06 measured this on the `scripts/lib/r2000-cli-verbs.d.mts` row and routed around it identically; of the harness's three documented argv conventions, `--run` is the only one never successfully exercised. This row uses the same workaround -- byte-for-byte what `src/mcp/vice/package.json`'s `typecheck` script runs -- and reaches the harness through its OTHER documented convention. No script was modified. ASSERTION TRIPPED: `tsc --noEmit`, via `src/mcp/vice/skill-attribution.test.ts:95`, which imports `walkSkills` from `scripts/lib/skill-corpus.mjs`. Renaming the declaration makes that import resolve to no exported member, which is an error under `strict` + `verbatimModuleSyntax`. RE-POINTING HONESTY: the mechanical rule classifies this member `re-pointed` on ONE removed line, and that line is a COMMENT -- `// and scripts/lib/r2000-cli-verbs.d.mts already establish. This file is a`. Phase 29 re-pointed a cross-reference in this file's header, not an assertion; this file declares types and contains no assertion to re-point. The plant therefore targets the only mechanically observable property a declaration file has -- that its consumers typecheck against it -- and the classification is reported as the rule returned it rather than overridden.",
+      "observedRed": {
+        "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/lib/skill-corpus.d.mts",
+          "find": "export declare function walkSkills(dir: string): string[];",
+          "replace": "export declare function walkSkillsX(dir: string): string[];"
+        },
+        "exitStatus": 1,
+        "excerpt": "skill-attribution.test.ts(95,10): error TS2724: '\"../../../scripts/lib/skill-corpus.mjs\"' has no exported member named 'walkSkills'. Did you mean 'walkSkillsX'?\nskill-attribution.test.ts(850,51): error TS7006: Parameter 'f' implicitly has an 'any' type.\nskill-attribution.test.ts(1035,44): error TS7006: Parameter 'f' implicitly has an 'any' type.",
+        "control": {
+          "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": ""
+        }
+      }
+    },
+    {
+      "historicalPath": "scripts/lib/skill-descriptions.d.mts",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/lib/skill-descriptions.d.mts",
+      "removalTrigger": "`scripts/lib/skill-descriptions.mjs` ceasing to be imported from TypeScript under `strict`. Same shape as its `skill-corpus.d.mts` sibling: a CI-only declaration with no runtime role, to be deleted with its last `.ts` importer.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/lib/skill-descriptions.d.mts",
+        "find": "export declare function expectedPairCount(n: number): number;",
+        "replace": "export declare function expectedPairCountX(n: number): number;"
+      },
+      "guard": {
+        "argv": [
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "-p",
+          "tsconfig.json"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.d.mts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 1, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. GUARD SHAPE. Same recorded `--run` harness defect and the same workaround as the `scripts/lib/skill-corpus.d.mts` row. ASSERTION TRIPPED: `tsc --noEmit`, via `src/mcp/vice/skill-description-overlap.test.ts:41`, which imports `expectedPairCount` by name from `scripts/lib/skill-descriptions.mjs`. WHY A DIFFERENT DECLARATION FROM THE SIBLING ROW: the two `.d.mts` rows share a guard (there is exactly one typechecker), so each plants a DIFFERENT declaration in a DIFFERENT file, reached through a DIFFERENT importer -- `skill-attribution.test.ts` for the corpus row, `skill-description-overlap.test.ts` for this one. Neither can mask the other. RE-POINTING HONESTY: as with the sibling, the single subject-naming line the rule matched is a header COMMENT (`// scripts/lib/r2000-cli-verbs.d.mts already establish. This file is a`), not an assertion.",
+      "observedRed": {
+        "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/lib/skill-descriptions.d.mts",
+          "find": "export declare function expectedPairCount(n: number): number;",
+          "replace": "export declare function expectedPairCountX(n: number): number;"
+        },
+        "exitStatus": 1,
+        "excerpt": "skill-description-overlap.test.ts(41,3): error TS2724: '\"../../../scripts/lib/skill-descriptions.mjs\"' has no exported member named 'expectedPairCount'. Did you mean 'expectedPairCountX'?",
+        "control": {
+          "command": "node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": ""
+        }
+      }
+    },
+    {
+      "historicalPath": "scripts/lib/skill-descriptions.mjs",
+      "verdict": "kept-unchanged",
+      "newSubject": "scripts/lib/skill-descriptions.mjs",
+      "removalTrigger": "`scripts/check-skill-description-overlap.mjs` (ABS-03) ceasing to compare skill trigger descriptions for collisions. This module is a pure predicate library with no CLI of its own -- the root-override inventory §2.1 records `check-skill-description-overlap.mjs:70` as its only importer and therefore the only gate that can observe it. The day that gate stops asserting over description overlap, this module should be deleted with it rather than left as an unreferenced export surface.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. EXISTENCE PROOF (D-05): the path is on the working tree, and `git diff --quiet 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.mjs` exits 0 -- the file is BYTE-IDENTICAL between the two pinned commits. Nothing moved, so there is no re-pointing to prove and no `observedRed` is owed. NO STRENGTHENING RED WAS RECORDED for this row. Its consuming gate is measurable (the `scripts/lib/skill-corpus.d.mts` and `scripts/lib/skill-honesty-checks.mjs` rows both exercise gates in the same family), but under D-05 a `kept-unchanged` verdict's evidence IS its `removalTrigger`, and adding an unowed red would invite a later reader to treat it as a contract this verdict does not carry. MEASURED AT EXECUTION TIME: `git diff --quiet 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.mjs` exit 0; path present on the working tree: yes."
+    },
+    {
+      "historicalPath": "scripts/lib/skill-honesty-checks.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "scripts/lib/skill-honesty-checks.mjs",
+      "removalTrigger": "`scripts/check-skill-fork-honesty.mjs` ceasing to check textual claims in skill playbooks. This module is a pure predicate helper with no CLI and no other consumer; the day its single importer stops asserting over playbook prose, the helper should be removed with it rather than left as an unreferenced export.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/lib/skill-honesty-checks.mjs",
+        "find": "if (!content.includes(needle)) {",
+        "replace": "if (content.includes(needle)) {"
+      },
+      "guard": {
+        "argv": [
+          "scripts/check-skill-fork-honesty.mjs"
+        ],
+        "cwd": "."
+      },
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/lib/skill-honesty-checks.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 1, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. GUARD IS THE CONSUMER, NOT THE HELPER. `scripts/lib/skill-honesty-checks.mjs` is a library with no CLI of its own -- the root-override inventory §2.1 tabulates it explicitly as measured through `scripts/check-skill-fork-honesty.mjs:71`, its only importer. The `guard` therefore names that consuming gate, as the plan requires, and not the helper. ASSERTION TRIPPED: `fileClaimViolations()`'s `required` branch at `:47-51`. Inverting the predicate makes every REQUIRED claim that IS present report as absent, so the consuming gate reports the violations it exists to report and exits 1. WHY THIS TARGET: the `required` branch is the half the consuming gate depends on for its positive claims; the `forbidden` branch was left alone so the mutation isolates one direction of the predicate. SHARED GUARD, DIFFERENT PLANT FILE: the `scripts/check-skill-fork-honesty.mjs` row above runs the same gate, but plants that script's OWN expected literal, not this helper. Different files, different targets, one shared runner -- and because the harness measures one row at a time with its own green control, neither plant is ever in the tree while the other is measured. RE-POINTING HONESTY: the one subject-naming line the mechanical rule matched here is a header COMMENT citing `scripts/lib/r2000-cli-verbs.mjs` as a design precedent. No assertion in this file was re-pointed; the classification is reported as the rule returned it.",
+      "observedRed": {
+        "command": "node scripts/check-skill-fork-honesty.mjs",
+        "cwd": ".",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/lib/skill-honesty-checks.mjs",
+          "find": "if (!content.includes(needle)) {",
+          "replace": "if (content.includes(needle)) {"
+        },
+        "exitStatus": 1,
+        "excerpt": "check-skill-fork-honesty: FAIL\n  - src/skills/acme-build/scripts/acme.mjs: required claim \"no libraries needed\" is absent -- WR-11: acme.mjs's own --help claimed the `new` scaffold needs libraries, but plan 10-07 deliberately made the scaffold library-free (local !address/= constants, no !source <cbm/c64/...>) -- the first surface a reader sees about the scaffold must match what it is.",
+        "control": {
+          "command": "node scripts/check-skill-fork-honesty.mjs",
+          "cwd": ".",
+          "exitStatus": 0,
+          "excerpt": "check-skill-fork-honesty: OK -- 11 fork-only mentions across 33 files in 7 skill directories, all section-scoped-compliant; 24 fork-only names policed from CAPABILITY_REGISTRY; no stale phase-deferral prose found; README.md carries all 6 required strings and none of the 2 forbidden ones; docs/stock-vice-parity.md carries all 1 required strings and none of the 5 forbidden ones (08-06's regression guard)."
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/audit-integrity.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/audit-integrity.test.ts",
+      "removalTrigger": "`scripts/audit-gate.mjs` ceasing to keep a hand-maintained `EXPECTED_DOCS_GUARD_NAMES` registry alongside its disk derivation. This file's CR-02 detector exists solely to catch that registry drifting from the derived set; once there is only one list, there are no two lists to diverge and the detector should be removed with the second one.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/audit-integrity.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 1, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/audit-integrity.test.ts` shows exactly one subject-naming line, `-  \"docs-r2000-decisions.test.ts\",` -- the entry in this file's own mirror of `audit-gate.mjs`'s registry (`:60-71`), re-pointed onto `docs-absorbed-decisions.test.ts` by plan 29-05. ASSERTION TRIPPED: `:260`, 'the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the disk-derived set carries -- registry-drift detector (CR-02, 17-REVIEW.md)'. The plant misspells the re-pointed name in `scripts/audit-gate.mjs`'s registry so the runtime list no longer names a guard the disk derivation finds -- exactly the drift CR-02's detector was added for. PLANT IS OUTSIDE THE GUARD: the mutation is in `scripts/audit-gate.mjs`, the registry under audit, not in the test that audits it. GUARD IS SCOPED, AND WHY (MEASURED): the whole file runs in 21483ms against the harness's `GUARD_RUN_TIMEOUT_MS` of 15000ms. An unscoped run would be KILLED, and the harness maps an ETIMEDOUT to status 1 -- exit-status-indistinguishable from a genuine failing assertion, i.e. a FALSE observed red. Scoped to the one assertion the plant targets, the control runs in 1525ms. This is the second instance of the timeout hazard plan 32-06 recorded on `anno-cli.test.ts` (20596ms), and it was found by measuring every control's runtime up front rather than by discovering it as a red. SHARED PLANT FILE: the `scripts/audit-gate.mjs` row plants the same file at a DIFFERENT target (`DOCS_GUARD_FLOOR`) under a DIFFERENT guard. Neither masks the other -- see that row's note.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/audit-gate.mjs",
+        "find": "  \"docs-absorbed-decisions.test.ts\",",
+        "replace": "  \"docs-absorbed-decisionz.test.ts\","
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "registry-drift detector",
+          "audit-integrity.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test --test-name-pattern registry-drift detector audit-integrity.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/audit-gate.mjs",
+          "find": "  \"docs-absorbed-decisions.test.ts\",",
+          "replace": "  \"docs-absorbed-decisionz.test.ts\","
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the disk-derived set carries -- registry-drift detector (CR-02, 17-REVIEW.md)\n  ---\n  duration_ms: 113.49716\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/audit-integrity.test.ts:260:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    scripts/audit-gate.mjs's own EXPECTED_DOCS_GUARD_NAMES registry has drifted from the disk-derived docs-*.test.ts set -- extend EXPECTED_DOCS_GUARD_NAMES (and DOCS_GUARD_FLOOR) in the same commit that adds or removes a docs-*.test.ts guard file (see that array's own comment); registry=[\"docs-linerefs.test.ts\",\"docs-dangling-refs.test.ts\",\"docs-deferred-ledger.test.ts\",\"docs-review-disposition.test.ts\",\"docs-fork-decision.test.ts\",\"docs-core-value-decision.test.ts\",\"docs-absorbed-decisionz.test.ts\",\"docs-uat-abstention.test.ts\",\"docs-worktree-isolation.test.ts\"] disk=[\"docs-absorbed-decisions.test.ts\",\"docs-core-value-decision.test.ts\",\"docs-dangling-refs.test.ts\",\"docs-deferred-ledger.test.ts\",\"docs-fork-decision.test.ts\",\"docs-linerefs.test.ts\",\"docs-review-disposition.test.ts\",\"docs-uat-abstention.test.ts\",\"docs-worktree-isolation.test.ts\"]\n    + actual - expected\n    \n      [\n    +   'docs-absorbed-decisionz.test.ts',\n    -   'docs-absorbed-decisions.test.ts',\n        'docs-core-value-decision.test.ts',\n        'docs-dangling-refs.test.ts',\n        'docs-deferred-ledger.test.ts',\n        'docs-fork-decision.test.ts',\n        'docs-linerefs.test.ts',\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'docs-absorbed-decisions.test.ts'\n    1: 'docs-core-value-decision.test.ts'\n    2: 'docs-dangling-refs.test.ts'\n    3: 'docs-deferred-ledger.test.ts'\n    4: 'docs-fork-decision.test.ts'\n    5: 'docs-linerefs.test.ts'\n    6: 'docs-review-disposition.test.ts'\n    7: 'docs-uat-abstention.test.ts'\n    8: 'docs-worktree-isolation.test.ts'\n  actual:\n    0: 'docs-absorbed-decisionz.test.ts'\n    1: 'docs-core-value-decision.test.ts'\n    2: 'docs-dangling-refs.test.ts'\n    3: 'docs-deferred-ledger.test.ts'\n    4: 'docs-fork-decision.test.ts'\n    5: 'docs-linerefs.test.ts'\n    6: 'docs-review-disposition.test.ts'\n    7: 'docs-uat-abstention.test.ts'",
+        "control": {
+          "command": "node --test --test-name-pattern registry-drift detector audit-integrity.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the disk-derived set carries -- registry-drift detector (CR-02, 17-REVIEW.md)\nok 1 - the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the disk-derived set carries -- registry-drift detector (CR-02, 17-REVIEW.md)\n  ---\n  duration_ms: 992.779768\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1192.478315"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/capability-registry.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/capability-registry.test.ts",
+      "removalTrigger": "`vice-proxy.ts` ceasing to register proxy-local synthetic tools through a `tools[IDENT.name] = ...` site. The whole structural derivation here keys on that shape; once synthetic registration is declarative (or gone), the two-hop walk has nothing to resolve and this half of the guard should be removed with the pattern.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/capability-registry.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 5, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: the diff between the pinned commits removes this file's `r2000LoopVarMatch`/`r2000LoopVar` pair and the `if (ident === r2000LoopVar) continue;` exclusion, replaced by the `annoLoopVar` block now at `:163-176`. That structural exclusion IS the re-pointed assertion. ASSERTION TRIPPED: `:172-179`. Renaming the loop VARIABLE in `vice-proxy.ts` (while the registration site still reads `tools[annoDef.name]`) makes `annoLoopVar` resolve to `annoDefX`, so the exclusion no longer matches and the walk tries to resolve `annoDef` to a `const annoDef: ToolDefinition = { ... }` declaration that does not exist -- the named throw at `:180-186`. This is precisely the failure mode the comment above the exclusion says it exists to prevent ('rather than resolved as a single-const synthetic tool (it isn't one)'). PLANT IS OUTSIDE THE GUARD, IN THE SUBJECT: `vice-proxy.ts` is what this test reads and asserts over; the test's own source is untouched. WHY THE LOOP VARIABLE AND NOT THE COLLECTION: renaming `ANNO_TOOL_DEFINITIONS` would also break the two OTHER independent witnesses of the same relation (`scripts/generate-tool-support-table.mjs` and `tool-support-table.test.mjs`), each of which carries its own copy of the regex and its own row in this registry. Renaming the loop variable keeps the collection name intact, so the three witnesses stay separable and each row's red is attributable to its own plant.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/vice-proxy.ts",
+        "find": "for (const annoDef of ANNO_TOOL_DEFINITIONS)",
+        "replace": "for (const annoDefX of ANNO_TOOL_DEFINITIONS)"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "capability-registry.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test capability-registry.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/vice-proxy.ts",
+          "find": "for (const annoDef of ANNO_TOOL_DEFINITIONS)",
+          "replace": "for (const annoDefX of ANNO_TOOL_DEFINITIONS)"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 10 - mechanical completeness: the registry's name set equals the manifest-derived divergence set\n  ---\n  duration_ms: 6.564619\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/capability-registry.test.ts:119:1'\n  failureType: 'testCodeFailure'\n  error: 'could not resolve synthetic tool registration identifier \"annoDef\" in vice-proxy.ts to a declaration -- silently dropping it would widen the exclusion set and mask a real capability divergence. Fix the pattern rather than skipping the identifier.'\n  code: 'ERR_TEST_FAILURE'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/capability-registry.test.ts:180:13)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n# Subtest: vice_sid_get_state's reason and vice_sid_set_state's reason are not equal (Pitfall 3: read vs write are different losses)\nok 11 - vice_sid_get_state's reason and vice_sid_set_state's reason are not equal (Pitfall 3: read vs write are different losses)\n  ---\n  duration_ms: 0.441405\n  type: 'test'\n  ...\n# Subtest: every entry carrying an `alternative` renders it in capabilityRefusalMessage (CR-01 regression)\nok 12 - every entry carrying an `alternative` renders it in capabilityRefusalMessage (CR-01 regression)\n  ---\n  duration_ms: 0.372393\n  type: 'test'\n  ...\n# Subtest: a hardware entry WITHOUT an alternative does not gain stray text (CR-01 fix is conditional)\nok 13 - a hardware entry WITHOUT an alternative does not gain stray text (CR-01 fix is conditional)\n  ---\n  duration_ms: 0.172034\n  type: 'test'\n  ...\n1..13\n# tests 13\n# suites 0\n# pass 12\n# fail 1",
+        "control": {
+          "command": "node --test capability-registry.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: fork-only hardware tool on stock names the tool, unrecoverable, the fork route, and the hardware reason\nok 1 - fork-only hardware tool on stock names the tool, unrecoverable, the fork route, and the hardware reason\n  ---\n  duration_ms: 3.293293\n  type: 'test'\n  ...\n# Subtest: fork-only hardware tool on stock (vice_keyboard_matrix) names the tool, unrecoverable, the fork route, and the shared alternative (14-02/FORK-02: pinned true on the retain branch, no source edit)\nok 2 - fork-only hardware tool on stock (vice_keyboard_matrix) names the tool, unrecoverable, the fork route, and the shared alternative (14-02/FORK-02: pinned true on the retain branch, no source edit)\n  ---\n  duration_ms: 0.429468\n  type: 'test'\n  ...\n# Subtest: fork-only hardware tool on stock (vice_keyboard_restore) names the tool, unrecoverable, the fork route, and the shared alternative (14-02/FORK-02: pinned true on the retain branch, no source edit)\nok 3 - fork-only hardware tool on stock (vice_keyboard_restore) names the tool, unrecoverable, the fork route, and the shared alternative (14-02/FORK-02: pinned true on the retain branch, no source edit)\n  ---\n  duration_ms: 0.541412\n  type: 'test'\n  ...\n# Subtest: fork-only descoped tool on stock names the tool, not implemented, the fork route, and never says unrecoverable\nok 4 - fork-only descoped tool on stock names the tool, not implemented, the fork route, and never says unrecoverable\n  ---\n  duration_ms: 0.420409\n  type: 'test'\n  ...\n# Subtest: stock-only tool on fork names the stock route\nok 5 - stock-only tool on fork names the stock route\n  ---\n  duration_ms: 0.554094\n  type: 'test'\n  ...\n# Subtest: regression guard: a genuinely unknown tool name yields no refusal at all\nok 6 - regression guard: a genuinely unknown tool name yields no refusal at all\n  ---\n  duration_ms: 0.42402\n  type: 'test'\n  ...\n# Subtest: synthetic-tool guard: vice_diagnose and vice_recycle are absent from the registry and produce no refusal on either backend\nok 7 - synthetic-tool guard: vice_diagnose and vice_recycle are absent from the registry and produce no refusal on either backend\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/disasm-roundtrip.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/disasm-roundtrip.test.ts",
+      "removalTrigger": "The stock backend ceasing to emit a `vice_disassemble` listing that ACME must be able to re-assemble. This guard's subject is the byte-exactness of that round trip; once the listing is no longer claimed to be ACME-re-assemblable, there is no round trip to prove and the suite should be removed with the claim.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/disasm-roundtrip.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 4, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: the subject-naming lines removed here are the import `- import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from \"./r2000-test-gate.ts\";` and its comment; the ACME availability seam moved to `./acme-gate.ts` (SEAM-01). WHY THE PLANT DOES *NOT* TARGET THAT SEAM -- A MEASURED HAZARD. Planting the re-pointed seam turns this guard GREEN, not red. `acme-gate.ts:71`'s `ACME_BIN` feeds `probeAcme()` (`:77-86`), whose result gates every ACME-dependent test in this file through `{ skip: SKIP_REASON }`. Break the seam and `ACME_AVAILABLE` goes false, every suite SKIPS, and the file exits 0 -- the harness would record 'the plant did not bite'. This is exactly the silent skip-degradation `acme-gate.ts`'s own header names as its reason for existing ('a missing ACME degrades from a hard FAIL back into a named SKIP, and CI reports green either way'). A plant that can only produce a green is not a plant. ASSERTION TRIPPED INSTEAD: the round-trip relation the guard exists to assert -- Suite B ('a realistic fragment round-trips byte-exact', `:261`) and Suite D ('the +2 size-force spelling', `:402`). Rendering 16-bit operands as five hex digits instead of four makes the emitted listing no longer re-assemble to the original bytes. `src/mcp/vice/disasm-renderer.ts` is one of the three modules the file imports as its subject (`:50-52`) and is NOT the plant file of any other row in this registry -- plan 32-06's `anno-coverage-grammar.test.ts` row plants the sibling `disasm-decoder.ts` at an unrelated target. ACME PRECONDITION: a real ACME 0.97 is on PATH in the tree that produced this row's evidence, so the ACME-gated suites RAN rather than skipped; the green control's own output is the proof.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/disasm-renderer.ts",
+        "find": "(value & 0xffff).toString(16).padStart(4, \"0\")",
+        "replace": "(value & 0xffff).toString(16).padStart(5, \"0\")"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "disasm-roundtrip.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test disasm-roundtrip.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/disasm-renderer.ts",
+          "find": "(value & 0xffff).toString(16).padStart(4, \"0\")",
+          "replace": "(value & 0xffff).toString(16).padStart(5, \"0\")"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 2 - Suite A: full 256-opcode round-trip through vice_disassemble's own listing (D-13, D-09)\n  ---\n  duration_ms: 12.812555\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/disasm-roundtrip.test.ts:206:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Suite A: the tool's own concatenated listing did not assemble through real ACME:\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 15 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 16 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 17 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 18 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 28 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 30 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 31 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 32 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 33 (Zone <untitled>): Number out of range.\n    Error - File /tmp/disasm-roundtrip-muF7iq/t0.a, line 34 (Zone <untitled>): Number out of range.\n    \n    ---\n    !cpu 6510\n    * = $01000\n            brk\n            ora ($40,x)\n            jam  ; illegal opcode\n            slo ($40,x)  ; illegal opcode\n            nop $40  ; illegal opcode\n            ora $40\n            asl $40\n            slo $40  ; illegal opcode\n            php\n            ora #$40\n            asl\n            anc #$40  ; illegal opcode\n            nop $02000  ; illegal opcode\n            ora $02000\n            asl $02000\n            slo $02000  ; illegal opcode\n            bpl $01027\n            ora ($40),y",
+        "control": {
+          "command": "node --test disasm-roundtrip.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# DISASM-03 !byte substitution set (acmeExpressible=false, verified against installed ACME): $12, $1A, $22, $2B, $32, $34, $3A, $3C, $42, $44, $52, $54, $5A, $5C, $62, $64, $72, $74, $7A, $7C, $82, $89, $92, $B2, $C2, $D2, $D4, $DA, $DC, $E2, $EB, $F2, $F4, $FA, $FC\n# Subtest: ACME availability gate (D-08)\nok 1 - ACME availability gate (D-08)\n  ---\n  duration_ms: 1.169715\n  type: 'test'\n  ...\n# Subtest: Suite A: full 256-opcode round-trip through vice_disassemble's own listing (D-13, D-09)\nok 2 - Suite A: full 256-opcode round-trip through vice_disassemble's own listing (D-13, D-09)\n  ---\n  duration_ms: 13.907728\n  type: 'test'\n  ...\n# Subtest: Suite B: a realistic fragment round-trips byte-exact (branches, D-11 shrink hazard, D-10 page-wrap, jsr, illegal-but-expressible opcodes)\nok 3 - Suite B: a realistic fragment round-trips byte-exact (branches, D-11 shrink hazard, D-10 page-wrap, jsr, illegal-but-expressible opcodes)\n  ---\n  duration_ms: 4.900787\n  type: 'test'\n  ...\n# Subtest: Suite C: the acmeExpressible substitution table is byte-faithful in BOTH directions, driven from OPCODES (D-09)\nok 4 - Suite C: the acmeExpressible substitution table is byte-faithful in BOTH directions, driven from OPCODES (D-09)\n  ---\n  duration_ms: 1159.889921\n  type: 'test'\n  ...\n# Subtest: Suite D: the +2 size-force spelling is understood by ACME and produces the correct wide encoding (D-11)\nok 5 - Suite D: the +2 size-force spelling is understood by ACME and produces the correct wide encoding (D-11)\n  ---\n  duration_ms: 12.588925\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/docs-dangling-refs.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/docs-dangling-refs.test.ts",
+      "removalTrigger": "`anno-cli.ts` ceasing to carry user-facing string literals that can name a phase. This guard scans a frozen set of normative documents plus that CLI's literals for references to work that no longer exists; once the CLI emits no prose, its half of the scan has no corpus and the positive control should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/docs-dangling-refs.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 8, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: every one of this file's eight subject-naming removed lines renames `r2000-cli.ts` to `anno-cli.ts`, including the two `readFileSync(join(HERE, \"r2000-cli.ts\"))` reads now at `:386` and `:454`. The block comment at `:391-398` records a SECOND, deliberate re-pointing by plan 29-07 (D-14): the concatenated-literal control used to name the `.vsf` bootstrap refusal, whose verb was removed when the CLI narrowed to two verbs, and was moved to the overwrite refusal the surviving surface still has. ASSERTION TRIPPED: `:399-402`, the positive control 'the scanner did not capture anno-cli.ts's concatenated overwrite-refusal literal -- the control for multi-part string concatenation'. Altering one character of that literal in `anno-cli.ts` makes the scanner's regex miss it, so the anti-blindness control fails. This is the exact assertion plan 29-07 re-pointed. PLANT SAFETY (T-32-31): the plan warns against planting into a scanned normative document in a way a failed restore would leave behind. This plant is in `src/mcp/vice/anno-cli.ts`, a SOURCE file, not in `.planning/ROADMAP.md` or `CLAUDE.md`; the harness captures its original bytes before writing and restores idempotently on the normal path, on `exit`, and on every signal, and `git status --porcelain` is compared against the baseline after every row.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-cli.ts",
+        "find": "refusing to overwrite the existing file",
+        "replace": "refusing to overwrite the existing FILE"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "docs-dangling-refs.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test docs-dangling-refs.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-cli.ts",
+          "find": "refusing to overwrite the existing file",
+          "replace": "refusing to overwrite the existing FILE"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 6 - positive control: the scanner captures the literals this guard exists to police\n  ---\n  duration_ms: 3.625842\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/docs-dangling-refs.test.ts:382:1'\n  failureType: 'testCodeFailure'\n  error: \"the scanner did not capture anno-cli.ts's concatenated overwrite-refusal literal -- the control for multi-part string concatenation\"\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: false\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/docs-dangling-refs.test.ts:399:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n# Subtest: non-vacuity: the scanned set and the extracted literal volume are real\nok 7 - non-vacuity: the scanned set and the extracted literal volume are real\n  ---\n  duration_ms: 39.347484\n  type: 'test'\n  ...\n# Subtest: planted-violation: the verbatim pre-fix wording is flagged, and the corrected wording is not\nok 8 - planted-violation: the verbatim pre-fix wording is flagged, and the corrected wording is not\n  ---\n  duration_ms: 2.740675\n  type: 'test'\n  ...\n1..8\n# tests 8\n# suites 0\n# pass 7\n# fail 1\n# cancelled 0\n# skipped 0",
+        "control": {
+          "command": "node --test docs-dangling-refs.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: no normative document points at a numbered phase as `.vsf`'s home (T-11-DOC-DANGLE)\nok 1 - no normative document points at a numbered phase as `.vsf`'s home (T-11-DOC-DANGLE)\n  ---\n  duration_ms: 15.036454\n  type: 'test'\n  ...\n# Subtest: the `.vsf` backlog item still exists and still records why it is deferred\nok 2 - the `.vsf` backlog item still exists and still records why it is deferred\n  ---\n  duration_ms: 0.615025\n  type: 'test'\n  ...\n# Subtest: non-vacuity: the scanned document set is non-empty and `.vsf` is actually discussed in it\nok 3 - non-vacuity: the scanned document set is non-empty and `.vsf` is actually discussed in it\n  ---\n  duration_ms: 1.788354\n  type: 'test'\n  ...\n# Subtest: planted-violation: the exact wording that survived plan 11-03 is detected by this guard's own logic\nok 4 - planted-violation: the exact wording that survived plan 11-03 is detected by this guard's own logic\n  ---\n  duration_ms: 0.809383\n  type: 'test'\n  ...\n# Subtest: no shipped src/mcp/vice/ string literal names a phase number (FLOW-02)\nok 5 - no shipped src/mcp/vice/ string literal names a phase number (FLOW-02)\n  ---\n  duration_ms: 68.915809\n  type: 'test'\n  ...\n# Subtest: positive control: the scanner captures the literals this guard exists to police\nok 6 - positive control: the scanner captures the literals this guard exists to police\n  ---\n  duration_ms: 1.056475\n  type: 'test'\n  ...\n# Subtest: non-vacuity: the scanned set and the extracted literal volume are real\nok 7 - non-vacuity: the scanned set and the extracted literal volume are real\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/hop-chain-comments.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/hop-chain-comments.test.ts",
+      "removalTrigger": "`absorbed-answer-key.test.ts` ceasing to carry a legitimate repo-root chain comment. That single line is this guard's in-tree NEGATIVE control -- the proof its extractor sees real chain-shaped comments and still does not flag the legitimate one. If the line goes, the control must be re-pointed onto another real in-tree chain line in the same commit, or this guard keeps only its fixture-driven control and should be reduced deliberately rather than left half-vacuous.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/hop-chain-comments.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 8, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: the diff removes six subject-naming lines, all of them the in-tree negative control's target -- `r2000-answer-key.test.ts` in the test title, in the `chainLines.find(...)` predicate, and in three assertion messages -- re-pointed onto `absorbed-answer-key.test.ts` (the same rename plan 32-06's `r2000-answer-key.test.ts` row records). ASSERTION TRIPPED: `:381-386`, `assert.equal(controlLine!.line, 34, 'expected the legitimate chain line at absorbed-answer-key.test.ts:34, found at line ...')`. The plant inserts one newline before the control comment, shifting it from line 34 to line 35, so the pinned line number no longer matches. WHY A LINE SHIFT AND NOT A TEXT EDIT: the control asserts BOTH that the line is found and that it is found at a specific line number. Editing the comment's text would make `chainLines.find(...)` return undefined and trip the earlier `assert.ok(controlLine, ...)` -- also a red, but one that reads as 'the extractor stopped matching', which is the guard's OWN diagnostic for a broken extractor rather than a moved control. Shifting the line keeps the extractor working and isolates the line-number pin, which is the narrower and more legible failure. PLANT IS OUTSIDE THE GUARD: the mutation is in `absorbed-answer-key.test.ts`, the file the control names, not in `hop-chain-comments.test.ts`.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/absorbed-answer-key.test.ts",
+        "find": "// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1",
+        "replace": "\n// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "hop-chain-comments.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test hop-chain-comments.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/absorbed-answer-key.test.ts",
+          "find": "// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1",
+          "replace": "\n// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 3 - in-tree negative control: absorbed-answer-key.test.ts's legitimate chain line is seen but never flagged\n  ---\n  duration_ms: 129.367555\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/hop-chain-comments.test.ts:374:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    expected the legitimate chain line at absorbed-answer-key.test.ts:34, found at line 35\n    \n    35 !== 34\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 34\n  actual: 35\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/hop-chain-comments.test.ts:382:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n# Subtest: fixture: the committed fixture exists and its extension is neither .ts nor .mts\nok 4 - fixture: the committed fixture exists and its extension is neither .ts nor .mts\n  ---\n  duration_ms: 0.42065\n  type: 'test'\n  ...\n# Subtest: fixture-driven positive control: the fixture's planted half-swept chain line is flagged\nok 5 - fixture-driven positive control: the fixture's planted half-swept chain line is flagged\n  ---\n  duration_ms: 0.573334\n  type: 'test'\n  ...\n# Subtest: fixture-driven negative control: the fixture's legitimate-narration line reports zero violations\nok 6 - fixture-driven negative control: the fixture's legitimate-narration line reports zero violations\n  ---",
+        "control": {
+          "command": "node --test hop-chain-comments.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: non-vacuity: the scan enumerated at least fifty files\nok 1 - non-vacuity: the scan enumerated at least fifty files\n  ---\n  duration_ms: 2.318866\n  type: 'test'\n  ...\n# Subtest: non-vacuity: the extractor found at least three chain-shaped comment lines across the corpus\nok 2 - non-vacuity: the extractor found at least three chain-shaped comment lines across the corpus\n  ---\n  duration_ms: 225.899536\n  type: 'test'\n  ...\n# Subtest: in-tree negative control: absorbed-answer-key.test.ts's legitimate chain line is seen but never flagged\nok 3 - in-tree negative control: absorbed-answer-key.test.ts's legitimate chain line is seen but never flagged\n  ---\n  duration_ms: 209.815559\n  type: 'test'\n  ...\n# Subtest: fixture: the committed fixture exists and its extension is neither .ts nor .mts\nok 4 - fixture: the committed fixture exists and its extension is neither .ts nor .mts\n  ---\n  duration_ms: 0.324917\n  type: 'test'\n  ...\n# Subtest: fixture-driven positive control: the fixture's planted half-swept chain line is flagged\nok 5 - fixture-driven positive control: the fixture's planted half-swept chain line is flagged\n  ---\n  duration_ms: 0.467839\n  type: 'test'\n  ...\n# Subtest: fixture-driven negative control: the fixture's legitimate-narration line reports zero violations\nok 6 - fixture-driven negative control: the fixture's legitimate-narration line reports zero violations\n  ---\n  duration_ms: 0.258331\n  type: 'test'\n  ...\n# Subtest: no shipped src/mcp/vice source comment describes a half-swept repo-root chain (PKG-03)\nok 7 - no shipped src/mcp/vice source comment describes a half-swept repo-root chain (PKG-03)\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/hostpath-consumers.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/hostpath-consumers.test.ts",
+      "removalTrigger": "`hostpath.ts` ceasing to be the single container-to-host path translation seam. Every assertion here is about WHICH modules may import it; once path translation is no longer centralised in one module, there is no consumer set to pin and the guard should be removed with the seam.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/hostpath-consumers.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 24, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: this file carries the largest same-path re-pointing after `check-skill-tool-coverage.mjs` -- 24 subject-naming lines. `r2000ProductionModules()` (filtering `/^r2000-.*\\.ts$/`) became `annoProductionModules()` (filtering `/^anno-.*\\.ts$/`, `:212`), and `R2000_MODULE_FLOOR = 14` was REPLACED by `ANNO_MODULE_FLOOR = 16 + 1` (`:257`), with the two family tests renamed onto the annotation family. ASSERTION TRIPPED: `:319-326`, 'the annotation module family (D-08/R2000-02) is absent from the consumer set' -- one of the two tests Phase 29 re-pointed by name. Adding a static `./hostpath.ts` import to `anno-store.ts` puts an `anno-*.ts` module into `hostpathImporters()`, so `assert.equal(importers.includes(name), false)` fails for it. The plant also trips `:146`'s 'exactly the five declared modules' assertion, which is the same relation seen from the other side. WHY NOT THE FLOOR: the plan suggests 'removing a consumer from the module floor's derived set'. The harness's only implemented plant is a single-occurrence find/replace, which cannot delete a file, so the derived set cannot be shrunk that way; the remaining floor route would be to raise `ANNO_MODULE_FLOOR` inside the guard itself. Planting `anno-store.ts` instead keeps the mutation OUTSIDE the guard and trips a test Phase 29 re-pointed by name, which is the stronger of the two. PLANT IS OUTSIDE THE GUARD, IN A REAL SUBJECT MODULE: `anno-store.ts` is a genuine member of the derived annotation family (it is named in the INT-01 positive control at `:314`).",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-store.ts",
+        "find": "import { randomUUID } from \"node:crypto\";",
+        "replace": "import { randomUUID } from \"node:crypto\";\nimport { hostPath } from \"./hostpath.ts\";"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "hostpath-consumers.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test hostpath-consumers.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-store.ts",
+          "find": "import { randomUUID } from \"node:crypto\";",
+          "replace": "import { randomUUID } from \"node:crypto\";\nimport { hostPath } from \"./hostpath.ts\";"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - hostpath.ts's production consumer set is exactly the five declared modules\n  ---\n  duration_ms: 31.564462\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/hostpath-consumers.test.ts:146:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n    +   'anno-store.ts',\n        'containerpath.ts',\n        'install-resources.ts',\n        'stock-paths.ts',\n        'vice-proxy.ts',\n        'vice-sync.ts'\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'containerpath.ts'\n    1: 'install-resources.ts'\n    2: 'stock-paths.ts'\n    3: 'vice-proxy.ts'\n    4: 'vice-sync.ts'\n  actual:\n    0: 'anno-store.ts'\n    1: 'containerpath.ts'\n    2: 'install-resources.ts'\n    3: 'stock-paths.ts'\n    4: 'vice-proxy.ts'\n    5: 'vice-sync.ts'\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/hostpath-consumers.test.ts:148:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.start (node:internal/test_runner/test:944:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)",
+        "control": {
+          "command": "node --test hostpath-consumers.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: hostpath.ts's production consumer set is exactly the five declared modules\nok 1 - hostpath.ts's production consumer set is exactly the five declared modules\n  ---\n  duration_ms: 47.56632\n  type: 'test'\n  ...\n# Subtest: stock-derived.ts is absent from the hostpath.ts consumer set\nok 2 - stock-derived.ts is absent from the hostpath.ts consumer set\n  ---\n  duration_ms: 32.579174\n  type: 'test'\n  ...\n# Subtest: the disassembler modules (not yet reachable from stock-dispatch.ts in this wave) are absent from the consumer set\nok 3 - the disassembler modules (not yet reachable from stock-dispatch.ts in this wave) are absent from the consumer set\n  ---\n  duration_ms: 33.646452\n  type: 'test'\n  ...\n# Subtest: every module this phase adds is absent from the hostpath.ts consumer set (MCP-02), named before it exists\nok 4 - every module this phase adds is absent from the hostpath.ts consumer set (MCP-02), named before it exists\n  ---\n  duration_ms: 35.339187\n  type: 'test'\n  ...\n# Subtest: the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)\nok 5 - the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)\n  ---\n  duration_ms: 1.916632\n  type: 'test'\n  ...\n# Subtest: MCP-05: the hand-pinned annotation module floor equals the measured count -- a same-wave change to the module set fails HERE with the right diagnosis\nok 6 - MCP-05: the hand-pinned annotation module floor equals the measured count -- a same-wave change to the module set fails HERE with the right diagnosis\n  ---\n  duration_ms: 1.00042\n  type: 'test'\n  ...\n# Subtest: INT-01's positive control: the modules the audit found uncovered are present in the derived annotation set\nok 7 - INT-01's positive control: the modules the audit found uncovered are present in the derived annotation set\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/skill-acme-build-cli.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/skill-acme-build-cli.test.ts",
+      "removalTrigger": "The `acme-build` skill ceasing to ship a CLI this guard can drive. Its subject is that skill's scripts and their documented invocation; once the skill has no executable surface, the CLI acceptance tests have nothing to run and should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/skill-acme-build-cli.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 3, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: `- import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from \"./r2000-test-gate.ts\";`, re-pointed onto `./acme-gate.ts` at `:50` -- the SEAM-01 move, made precisely so a prefix-driven cleanup of the deleted subject could not take the ACME gate with it. ASSERTION TRIPPED: `:288-290`, 'ACME_BIN is the shared seam's binary name, not a second hand-rolled default', `assert.equal(ACME_BIN, process.env.ACME_BIN ?? \"acme\")`. This test is NEVER SKIPPED -- it does not carry `{ skip: SKIP_REASON }` -- so changing the seam's default binary name reds it outright. WHY THIS ROW CAN PLANT THE SEAM AND `disasm-roundtrip.test.ts` CANNOT: the same plant makes `disasm-roundtrip.test.ts` SKIP its way to exit 0 (see that row's note). This file asserts the seam's VALUE in a never-skipped test, so the identical mutation is a red here and a green there. That asymmetry is why the two rows must not share a plant, and it is itself evidence that the re-pointed seam is load-bearing in exactly the way SEAM-01 claims.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/acme-gate.ts",
+        "find": "export const ACME_BIN: string = process.env.ACME_BIN ?? \"acme\";",
+        "replace": "export const ACME_BIN: string = process.env.ACME_BIN ?? \"acmeZZ\";"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "skill-acme-build-cli.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test skill-acme-build-cli.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/acme-gate.ts",
+          "find": "export const ACME_BIN: string = process.env.ACME_BIN ?? \"acme\";",
+          "replace": "export const ACME_BIN: string = process.env.ACME_BIN ?? \"acmeZZ\";"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 15 - ACME_BIN is the shared seam's binary name, not a second hand-rolled default\n  ---\n  duration_ms: 2.391925\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/skill-acme-build-cli.test.ts:288:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    'acmeZZ' !== 'acme'\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 'acme'\n  actual: 'acmeZZ'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/skill-acme-build-cli.test.ts:289:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n1..15\n# tests 15\n# suites 0\n# pass 9\n# fail 1\n# cancelled 0\n# skipped 5\n# todo 0\n# duration_ms 842.353365",
+        "control": {
+          "command": "node --test skill-acme-build-cli.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: ACME availability gate (mirrors disasm-roundtrip.test.ts's D-08 gate) -- always runs, never skips\nok 1 - ACME availability gate (mirrors disasm-roundtrip.test.ts's D-08 gate) -- always runs, never skips\n  ---\n  duration_ms: 1.580945\n  type: 'test'\n  ...\n# Subtest: acme.mjs is resolved at the expected relative path\nok 2 - acme.mjs is resolved at the expected relative path\n  ---\n  duration_ms: 0.424788\n  type: 'test'\n  ...\n# Subtest: no arguments: prints usage and exits 0\nok 3 - no arguments: prints usage and exits 0\n  ---\n  duration_ms: 57.361987\n  type: 'test'\n  ...\n# Subtest: an unknown verb: prints usage and exits 1\nok 4 - an unknown verb: prints usage and exits 1\n  ---\n  duration_ms: 52.108604\n  type: 'test'\n  ...\n# Subtest: the build verb with a missing source path: exits 1 with the documented message\nok 5 - the build verb with a missing source path: exits 1 with the documented message\n  ---\n  duration_ms: 69.493757\n  type: 'test'\n  ...\n# Subtest: the build verb with a path that does not exist: exits 1 with the documented message\nok 6 - the build verb with a path that does not exist: exits 1 with the documented message\n  ---\n  duration_ms: 47.003129\n  type: 'test'\n  ...\n# Subtest: the scaffold verb writes a source file at the requested path; run twice against the same path, the documented (refusal) behaviour is pinned\nok 7 - the scaffold verb writes a source file at the requested path; run twice against the same path, the documented (refusal) behaviour is pinned\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/skill-attribution.test.ts",
+      "verdict": "kept-unchanged",
+      "newSubject": "src/mcp/vice/skill-attribution.test.ts",
+      "removalTrigger": "The two ABS-02 attribution naming lines ceasing to be required in skill playbooks across both the canonical `src/skills/` tree and the generated `installer/skills/` tree. This guard's whole subject is that those lines are present, per block, in both trees; once attribution is no longer claimed in playbook prose, the scoring has nothing to score and the guard should be removed with the requirement.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/skill-attribution.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RESEARCH DIVERGENCE, RECORDED NOT OVERRIDDEN: `32-RESEARCH.md` §CUT-04 lists this file among Phase 29's re-pointed set. The mechanical rule places it at `kept-unchanged`, because its diff between the two pinned commits touches no subject-naming line at all (0 matches). The rule's result stands and the divergence is recorded here with the command, per this plan's instruction not to override the rule. EXISTENCE PROOF (D-05): the path is on the working tree. `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/skill-attribution.test.ts` exits 1 -- so unlike its two `kept-unchanged` siblings this file DID change between the pinned commits, substantially: `git diff --stat` reports 699 insertions and 1 deletion, the addition of a sixth non-vacuity proof scoring the ABS-02 naming lines per block across both skill trees. What it did NOT do is name the deleted subject: the classification command returns 0, i.e. not one added or removed line mentions it. The member therefore grew, but nothing in it was re-pointed onto or off the deleted subject, which is exactly the distinction the mechanical rule measures and the reason no `observedRed` is owed. NO STRENGTHENING RED WAS RECORDED. RESEARCH DIVERGENCE: see the classification note above -- `32-RESEARCH.md` §CUT-04 lists this file among Phase 29's re-pointed set; the rule places it here, and the rule stands. MEASURED AT EXECUTION TIME: `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/skill-attribution.test.ts` exit 1; path present on the working tree: yes."
+    },
+    {
+      "historicalPath": "src/mcp/vice/stock-connect.test.ts",
+      "verdict": "kept-unchanged",
+      "newSubject": "src/mcp/vice/stock-connect.test.ts",
+      "removalTrigger": "The stock backend ceasing to speak the binary monitor over a single-client socket. Every assertion here is about that connection's framing, demux and lifecycle; once the stock backend reaches VICE another way, the protocol this guard pins no longer exists and the file should be deleted with the transport.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/stock-connect.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. EXISTENCE PROOF (D-05): the path is on the working tree, and `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/stock-connect.test.ts` exits 0 -- BYTE-IDENTICAL between the two pinned commits. It entered set A only because its content at `0394cbc` already mentioned the deleted subject, and that mention was never touched. No `observedRed` is owed. NO STRENGTHENING RED WAS RECORDED -- and this row is the one where that restraint matters most: `stock-connect.test.ts` is one of the nine `MANUAL_ONLY_TESTS`, so a red for it would need care that a row owing no evidence has no reason to spend. MEASURED AT EXECUTION TIME: `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/stock-connect.test.ts` exit 0; path present on the working tree: yes."
+    },
+    {
+      "historicalPath": "src/mcp/vice/stock-dispatch.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/stock-dispatch.test.ts",
+      "removalTrigger": "The `anno_*` family ceasing to be dispatched proxy-locally, outside the backend-aware seam. This guard's anno half asserts that the family's registration bypasses the seam DELIBERATELY and that its runner reaches no VICE transport; once the family is served through the seam like every other tool, the documented exception disappears and these assertions should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/stock-dispatch.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 21, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: 21 subject-naming lines, all of them the `r2000_*` family's dispatch assertions re-pointed onto `anno_*` -- `CURATED_R2000_TOOLS` -> `CURATED_ANNO_TOOLS` (`:45`), the `BACKEND_SEAM_BYPASS_KEYS` entry `\"r2000Def.name\"` -> `\"annoDef.name\"` (`:1510`), and the test titled 'the r2000_* loop registration's runner is runR2000Tool' -> 'the anno_* loop registration's runner is runAnnoTool' (`:1555`). ASSERTION TRIPPED: `:1564-1566`, the forbidden-symbol loop -- `runAnnoTool()` must not reach `forwardToVice`, `ensureViceSession` or `rewriteArguments`, 'that is what makes the anno_* family's backend-independence sound'. The plant appends `// forwardToVice` to the first statement of `runAnnoTool`'s body, so the source-slice the test takes from `export async function runAnnoTool(` to the next `\\n}` contains a forbidden token. WHY A COMMENT AND NOT A REAL CALL: the assertion is a source-text `includes()` over the runner's body, so a comment exercises exactly the relation under test while leaving the module semantically loadable -- `stock-dispatch.test.ts` imports `CURATED_ANNO_TOOLS` from this same file at `:45`, and a plant that broke module load would red with an import error instead of the named assertion, which is weaker evidence. Renaming `export async function runAnnoTool(` was rejected for the same reason: `vice-proxy.ts` imports that symbol. SHARED PLANT FILE: `src/mcp/vice/anno-tools.ts` is also the plant file for the `src/mcp/vice/vice-proxy.test.ts` row in this plan (target: the `CURATED_ANNO_TOOLS` derivation at `:944`) and for plan 32-06's `src/mcp/vice/r2000-tools.test.ts` row (target: a registered tool `name:`). Three rows, three distinct targets, three distinct guards; the harness measures one row at a time behind its own green control, so no plant is ever in the tree while another is measured.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-tools.ts",
+        "find": "    assertAnnoTool(name, args);",
+        "replace": "    assertAnnoTool(name, args); // forwardToVice"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "stock-dispatch.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test stock-dispatch.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-tools.ts",
+          "find": "    assertAnnoTool(name, args);",
+          "replace": "    assertAnnoTool(name, args); // forwardToVice"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 72 - structure/proxy (plan 29-01): the anno_* loop registration's runner is runAnnoTool, whose body touches no VICE transport at all\n  ---\n  duration_ms: 2.275829\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/stock-dispatch.test.ts:1555:1'\n  failureType: 'testCodeFailure'\n  error: \"runAnnoTool() must not reach forwardToVice -- that is what makes the anno_* family's backend-independence sound: the runner reaches a proxy-local SQLite store and never the host-path seam\"\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: false\n  operator: '=='\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/stock-dispatch.test.ts:1565:12)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n# Subtest: structure/proxy (plan 29-01): every curated anno_* name is absent from BOTH tools-manifest.json and tools-manifest.stock.json\nok 73 - structure/proxy (plan 29-01): every curated anno_* name is absent from BOTH tools-manifest.json and tools-manifest.stock.json\n  ---\n  duration_ms: 2.471266\n  type: 'test'\n  ...\n# Subtest: structure/proxy (CR-07): buildBackendAwareTool routes the non-fork backend to dispatchStock, and that is the only dispatch site\nok 74 - structure/proxy (CR-07): buildBackendAwareTool routes the non-fork backend to dispatchStock, and that is the only dispatch site\n  ---\n  duration_ms: 0.486825\n  type: 'test'\n  ...\n# Subtest: structure/proxy (CR-07): handleDiagnose and handleRecycle are each referenced by exactly one registration, and it is backend-aware\nok 75 - structure/proxy (CR-07): handleDiagnose and handleRecycle are each referenced by exactly one registration, and it is backend-aware\n  ---\n  duration_ms: 0.937463\n  type: 'test'\n  ...\n# Subtest: structure/proxy: vice-proxy.ts CALLS resolvedBackend() exactly once\nok 76 - structure/proxy: vice-proxy.ts CALLS resolvedBackend() exactly once\n  ---",
+        "control": {
+          "command": "node --test stock-dispatch.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# (node:341232) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: manifest/backend: fork with no override resolves to <hereDir>/tools-manifest.json\nok 1 - manifest/backend: fork with no override resolves to <hereDir>/tools-manifest.json\n  ---\n  duration_ms: 6.494665\n  type: 'test'\n  ...\n# Subtest: manifest/backend: stock with no override resolves to <hereDir>/tools-manifest.stock.json\nok 2 - manifest/backend: stock with no override resolves to <hereDir>/tools-manifest.stock.json\n  ---\n  duration_ms: 0.701536\n  type: 'test'\n  ...\n# Subtest: manifest/backend: VICE_TOOLS_MANIFEST override wins for the fork backend, resolved\nok 3 - manifest/backend: VICE_TOOLS_MANIFEST override wins for the fork backend, resolved\n  ---\n  duration_ms: 0.85374\n  type: 'test'\n  ...\n# Subtest: manifest/backend: VICE_TOOLS_MANIFEST override wins for the stock backend too -- same override, same resolved path\nok 4 - manifest/backend: VICE_TOOLS_MANIFEST override wins for the stock backend too -- same override, same resolved path\n  ---\n  duration_ms: 0.609063\n  type: 'test'\n  ...\n# Subtest: manifest/backend: tools-manifest.stock.json parses and carries the same three top-level keys as the fork manifest\nok 5 - manifest/backend: tools-manifest.stock.json parses and carries the same three top-level keys as the fork manifest\n  ---\n  duration_ms: 4.267769\n  type: 'test'\n  ...\n# Subtest: manifest/backend: tools-manifest.stock.json's tools array contains a vice_ping entry\nok 6 - manifest/backend: tools-manifest.stock.json's tools array contains a vice_ping entry\n  ---\n  duration_ms: 3.268646\n  type: 'test'\n  ...\n# Subtest: manifest/backend (D-03 name coverage): every non-stock-only, non-proxy-local stock tool has a fork counterpart; every STOCK_ONLY_TOOLS name is stock-only"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/tool-support-table.test.mjs",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/tool-support-table.test.mjs",
+      "removalTrigger": "`docs/tool-support.md` ceasing to be a generated, committed artifact -- the same trigger as the generator's own row, because this file is the assertion half of that one relation. If the table stops being committed, both should be removed in the same commit.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/tool-support-table.test.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 6, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: six subject-naming lines, of which the load-bearing pair is this file's OWN independent copy of the loop-exclusion regex (`R2000_LOOP_VAR_RE` -> `ANNO_LOOP_VAR_RE`, now `:84`) and the added `syntheticProxySource(\"R2000_TOOL_DEFINITIONS\")` -> `(\"ANNO_TOOL_DEFINITIONS\")` fixture call at `:364`. ASSERTION TRIPPED: `:270`, 'derived-union equality: the generated document's row set equals an independently-computed union of the three inputs'. Pointing this file's witness at a collection that does not exist in `vice-proxy.ts` makes `independentlyDiscoverSyntheticNames()` (`:73-131`) stop excluding the anno loop's registration identifier, so the independently-computed union diverges from the generator's output. SELF-PLANT, STATED PLAINLY: the mutation is inside the audited file itself. That is deliberate and, here, unavoidable in the useful sense -- the content Phase 29 re-pointed in this member IS the independent witness, and the whole point of the three-witness design (`generate-tool-support-table.mjs:161-166`: 'each is a separate witness proving the other two right ... do not collapse three independent witnesses into one') is that each witness is only observable through its own copy. Breaking a sibling's copy would prove something about the sibling, not about this row. DISTINCT FROM THE GENERATOR ROW: `scripts/generate-tool-support-table.mjs`'s row plants ITS copy of the same regex and is scoped to 'byte-identical to committed'. Two rows, two files, two assertions -- and each red is attributable to the witness its own row owns.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/tool-support-table.test.mjs",
+        "find": "const ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONS\\s*\\)/;",
+        "replace": "const ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONZ\\s*\\)/;"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "derived-union equality",
+          "tool-support-table.test.mjs"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test --test-name-pattern derived-union equality tool-support-table.test.mjs",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/tool-support-table.test.mjs",
+          "find": "const ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONS\\s*\\)/;",
+          "replace": "const ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONZ\\s*\\)/;"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - derived-union equality: the generated document's row set equals an independently-computed union of the three inputs\n  ---\n  duration_ms: 7.456018\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/tool-support-table.test.mjs:270:1'\n  failureType: 'testCodeFailure'\n  error: 'independentlyDiscoverSyntheticNames: could not resolve \"annoDef\" to a declaration'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: ~\n  operator: '=='\n  stack: |-\n    independentlyDiscoverSyntheticNames (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/tool-support-table.test.mjs:106:12)\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/tool-support-table.test.mjs:281:26)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.start (node:internal/test_runner/test:944:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 0\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 222.054143",
+        "control": {
+          "command": "node --test --test-name-pattern derived-union equality tool-support-table.test.mjs",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: derived-union equality: the generated document's row set equals an independently-computed union of the three inputs\nok 1 - derived-union equality: the generated document's row set equals an independently-computed union of the three inputs\n  ---\n  duration_ms: 19.367746\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 286.614042"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/vice-proxy.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/vice-proxy.test.ts",
+      "removalTrigger": "The `anno_*` family ceasing to be advertised on `tools/list` alongside the manifest tools and the three synthetics. The re-pointed expression pins the exact advertised name set and its order; once the family is no longer advertised, the expectation has no right-hand side and should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/vice-proxy.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 18, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: `- import { CURATED_R2000_TOOLS } from \"./r2000-tools.ts\";` -> `+ import { CURATED_ANNO_TOOLS } from \"./anno-tools.ts\";` (`:58`), with the header comment at `:55-57` recording the reason in terms ('Repointed after plan 29-10's merge: CURATED_R2000_TOOLS died with r2000-tools.ts'). The three consuming expressions moved with it: the advertised-count arithmetic at `:542` and the two name-order expectations at `:603` and `:621`. ASSERTION TRIPPED: `:498`, 'tools/list reads the committed snapshot with no emulator' -- which consumes all three re-pointed expressions. Suffixing every name in the `CURATED_ANNO_TOOLS` derivation makes the EXPECTED list diverge from the wire list, because `vice-proxy.ts` registers from `ANNO_TOOL_DEFINITIONS` directly (`tools[annoDef.name]`) while the test expects from `CURATED_ANNO_TOOLS`. Renaming an individual tool's `name:` would NOT bite: `:944` derives the curated list from the definitions, so both sides would move together and the guard would stay green. THE GUARD IS SCOPED, AND THE FULL FILE IS NOT USABLE -- MEASURED, TWICE. (1) `node --test vice-proxy.test.ts` DOES NOT TERMINATE: measured at 300106ms against a deliberately generous 300000ms bound, still running when killed. The harness bounds a guard at 15000ms and maps the resulting ETIMEDOUT to status 1, so an unscoped run of this file would have produced a status-1 result that is exit-status-indistinguishable from a genuine failing assertion -- the precise false red this phase exists to prevent. (2) The obvious scope, `--test-name-pattern \"tools/list's full output matches the manifest exactly\"`, TERMINATES (1665-2095ms) but its UNPLANTED control EXITS 1: the wire surface answers with 58 tools (the stock set) while the assertion expects the 80-name fork manifest, so it is red for a backend reason with no plant present. Under the green-control rule that scope is UNMEASURABLE, and it is recorded here rather than used. The scope this row DOES use was measured green at 1641-1896ms. SCOPE IS NOT A WORKAROUND FOR THE HANG: the hang is real and is NOT diagnosed here -- `ROADMAP.md` states this phase contains no build work by design and `32-CONTEXT.md` lists diagnosing it as a deferred idea. This row measures one re-pointed assertion that can be measured honestly; the file's unscoped behaviour is recorded in the SUMMARY as a phase-level finding. SECOND PLANT (first attempt recorded, not hidden). ATTEMPT 1 -- same plant, guard scoped to 'tools/list reads the committed snapshot with no emulator': harness reported ZERO-EXIT. MEASURED CAUSE: that test consumes the re-pointed expression only as a LENGTH -- `assert.equal(tools.length, 2 + 3 + CURATED_ANNO_TOOLS.length)` at `:540-544`. Suffixing every derived name changes no count, so both sides moved together and the assertion stayed true. The two deep-equals over the NAME LIST (`:603`, `:621`), which are the re-pointed `...CURATED_ANNO_TOOLS` spreads this row is about, live in the NEXT test. ATTEMPT 2 -- same plant, guard re-scoped to 'tools/list survives a missing or corrupt snapshot' (`:570`): control exit 0 in 4562ms, planted exit 1 in 1162ms, and the captured diff names all 19 curated tools with and without the planted suffix, at the assertion the spread feeds. The PLANT is byte-identical between the two attempts; only the scope moved, from a test that reads the expression's length to the test that reads its contents. BOTH ATTEMPTS TERMINATED ON THEIR OWN. Neither was a timeout, and neither exit status was timeout-derived -- which for this file is the distinction that matters, since its unscoped run does not terminate at all.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-tools.ts",
+        "find": "ANNO_TOOL_DEFINITIONS.map((def) => def.name)",
+        "replace": "ANNO_TOOL_DEFINITIONS.map((def) => def.name + \"X\")"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "tools/list survives a missing or corrupt snapshot",
+          "vice-proxy.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test --test-name-pattern tools/list survives a missing or corrupt snapshot vice-proxy.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-tools.ts",
+          "find": "ANNO_TOOL_DEFINITIONS.map((def) => def.name)",
+          "replace": "ANNO_TOOL_DEFINITIONS.map((def) => def.name + \"X\")"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - tools/list survives a missing or corrupt snapshot\n  ---\n  duration_ms: 1555.445267\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/vice-proxy.test.ts:570:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    expected only the synthetic and r2000_* tools for /tmp/vice-proxy-manifest-bad-JGLb1S/does-not-exist.json\n    + actual - expected\n    \n      [\n        'vice_result_continue',\n        'vice_recycle',\n        'vice_diagnose',\n    +   'anno_set_label_name',\n    +   'anno_set_comment',\n    +   'anno_set_data_type',\n    +   'anno_add_scope',\n    +   'anno_remove_scope',\n    +   'anno_get_symbols',\n    +   'anno_get_comments',\n    +   'anno_get_blocks',\n    +   'anno_create_project_enum',\n    +   'anno_update_project_enum',\n    +   'anno_apply_enum_usage',\n    +   'anno_save_project',\n    +   'anno_disassemble',\n    +   'anno_read_region',\n    +   'anno_get_binary_info',\n    +   'anno_get_cross_references',\n    +   'anno_search',\n    +   'anno_get_address_details',\n    +   'anno_batch_execute'\n    -   'anno_set_label_nameX',\n    -   'anno_set_commentX',\n    -   'anno_set_data_typeX',\n    -   'anno_add_scopeX',\n    -   'anno_remove_scopeX',\n    -   'anno_get_symbolsX',\n    -   'anno_get_commentsX',",
+        "control": {
+          "command": "node --test --test-name-pattern tools/list survives a missing or corrupt snapshot vice-proxy.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# (node:341358) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# vice-proxy.test: after() force-closed 0 leaked server(s) and killed 1 leaked child(ren) -- a test threw before its own teardown ran; this is the net, not the fix -- find and repair that test's try/finally shape.\n# Subtest: tools/list survives a missing or corrupt snapshot\nok 1 - tools/list survives a missing or corrupt snapshot\n  ---\n  duration_ms: 4083.123991\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 4630.842698"
+        }
+      }
     }
   ]
 }
