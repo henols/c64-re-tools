@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
-current_phase: 30
-current_phase_name: ACME Export and the Real-ACME Oracle
-status: executing
-stopped_at: Completed 30-06-PLAN.md
-last_updated: "2026-08-30T23:48:35.102Z"
+current_phase: 31
+current_phase_name: Procedure Re-pointing
+status: planning
+stopped_at: Phase 30 complete, ready to plan Phase 31
+last_updated: "2026-08-31T05:43:03.295Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 30 plan 30-06 executed (wave 5, final)
-state_head: d2135b306fe48db0d338ff7e878e4f0db34b5bdc
+last_activity_desc: Phase 30 complete, transitioned to Phase 31
+state_head: be6673edb487a670f76d6a947fffba3e32c0fdfe
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 55
   completed_plans: 55
-  percent: 50
+  percent: 67
 ---
 
 # Project State
@@ -147,16 +147,16 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 30 (ACME Export and the Real-ACME Oracle) — EXECUTING
-Plan: 6 of 6
-Status: All 6 plans executed; ready to verify Phase 30
-Last activity: 2026-08-31 — Phase 30 plan 30-06 executed (wave 5, final)
+Phase: 31 — Procedure Re-pointing
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-31 — Phase 30 complete, transitioned to Phase 31
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 242
+- Total plans completed: 248
 - Average duration: —
 - Total execution time: —
 
@@ -188,6 +188,7 @@ Last activity: 2026-08-31 — Phase 30 plan 30-06 executed (wave 5, final)
 | 27 | 5 | - | - |
 | 28 | 23 | - | - |
 | 29 | 21 | - | - |
+| 30 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -1340,7 +1341,7 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 ## Session Continuity
 
 Last session: 2026-08-30T23:48:34.583Z
-Stopped at: Completed 30-06-PLAN.md
+Stopped at: Phase 30 complete, ready to plan Phase 31
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
