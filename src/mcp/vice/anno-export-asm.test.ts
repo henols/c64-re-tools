@@ -661,6 +661,139 @@ test("a store with ZERO comments emits no comment line, and still round-trips", 
 });
 
 // ---------------------------------------------------------------------------
+// 30-REVIEW WR-07 -- `decode()` was handed an EXCLUSIVE end for a parameter
+// documented as INCLUSIVE.
+//
+// `DecodeOptions.end` is compared with `if (end !== undefined && address >
+// end) break` and documented as "an instruction starting past `end` is dropped
+// ... an instruction starting AT OR BEFORE `end` is emitted in full" -- an
+// inclusive bound. Passing `block.endExclusive` therefore permitted one
+// instruction more than intended.
+//
+// It was INERT, because `slice` is exactly the block's bytes and `decode()`'s
+// own `offset < bytes.length` loop condition bounds it first -- so the guard
+// was doing nothing at all, and the next maintainer to hand `decode()` a wider
+// slice would inherit a silent one-instruction overrun.
+//
+// The test is therefore about `decode()`'s CONTRACT rather than about the
+// exporter's output: it drives the decoder directly with a WIDE slice and both
+// bound spellings, which is the situation the exporter's inert guard would
+// have failed in.
+// ---------------------------------------------------------------------------
+
+test("decode()'s `end` is INCLUSIVE, so the exclusive end permits one instruction too many (30-REVIEW WR-07)", () => {
+  // Six bytes, three two-byte instructions at $0801, $0803, $0805.
+  const bytes = new Uint8Array([0xa9, 0x00, 0xa9, 0x01, 0xa9, 0x02]);
+  const blockStart = 0x0801;
+  const blockEndExclusive = 0x0805; // the block is $0801..$0804, TWO instructions
+
+  const withInclusive = decode(bytes, blockStart, { end: blockEndExclusive - 1 });
+  assert.deepEqual(
+    withInclusive.map((i) => i.address),
+    [0x0801, 0x0803],
+    "the inclusive bound must stop at the block's last byte -- two instructions",
+  );
+
+  const withExclusive = decode(bytes, blockStart, { end: blockEndExclusive });
+  assert.deepEqual(
+    withExclusive.map((i) => i.address),
+    [0x0801, 0x0803, 0x0805],
+    "the EXCLUSIVE bound admits a THIRD instruction starting at the block's exclusive end -- the WR-07 overrun, " +
+      "measured. This is what the exporter's guard would have done the moment its slice stopped being the bound",
+  );
+  assert.notDeepEqual(
+    withInclusive.map((i) => i.address),
+    withExclusive.map((i) => i.address),
+    "if the two spellings ever agree, this test has gone vacuous and WR-07 is unguarded again",
+  );
+});
+
+test("the exporter hands decode() the INCLUSIVE bound (30-REVIEW WR-07)", () => {
+  // Structural, over the module's own source: the two spellings produce
+  // identical output for every store this exporter can build (the slice bounds
+  // it first), so no behavioural test can tell them apart at the exportAsm()
+  // level. That is precisely why the wrong one survived, and why the guard has
+  // to read the call.
+  const source = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
+  assert.match(
+    source,
+    /decode\(slice, block\.start, \{ end: block\.endExclusive - 1 \}\)/,
+    "the ONE decode() call must pass an INCLUSIVE end -- `end: block.endExclusive` is WR-07",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW WR-10 -- an enum variant symbol colliding with a label name was
+// acknowledged in a comment and never checked.
+//
+// That comment named the hazard exactly ("every extra emitted symbol is one
+// more chance to collide with a label name and turn a correct export into
+// ACME's `Symbol already defined.`") and then did not look:
+// `definedEnumSymbols` dedupes enum symbols against EACH OTHER but never
+// against the store's labels. Since the CLI verb runs no assembler, the
+// collision produced a file that exited 0 and failed wherever the user
+// assembled it, with no pointer back to the store rows that caused it.
+// ---------------------------------------------------------------------------
+
+test("an enum variant symbol colliding with a LABEL name is REFUSED, naming both (30-REVIEW WR-10)", () => {
+  // `viccolor_BLACK` as a label name AND as the composed enum variant symbol.
+  const fixture = buildStore(freshDir("enum-label-collision"), {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0806, name: "viccolor_BLACK" }],
+    enums: [{ name: VICCOLOR.name, variants: { ...VICCOLOR.variants } }],
+    enumUsage: [{ address: 0x0801, name: VICCOLOR.name }],
+  });
+  assert.throws(
+    () => exportAsm({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(e.message.includes("viccolor_BLACK"), `the refusal names the colliding SYMBOL: ${e.message}`);
+      assert.ok(e.message.includes("viccolor"), `the refusal names the ENUM: ${e.message}`);
+      assert.ok(e.message.includes("BLACK"), `the refusal names the VARIANT: ${e.message}`);
+      assert.ok(e.message.includes("$0801"), `the refusal names the usage ADDRESS: ${e.message}`);
+      assert.match(e.message, /Symbol already defined/, `the refusal names what ACME would have said: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("EXTERNAL ORACLE: real ACME refuses that same collision with `Symbol already defined.` and exit 1 (30-REVIEW WR-10)", { skip: SKIP_REASON }, () => {
+  // The refusal above is only worth having if the thing it predicts is real.
+  // Hand-composed source carrying both definitions, assembled for real -- the
+  // same shape `anno-export-asm.test.ts` already uses for duplicate labels.
+  const raw = assembleRaw([
+    "!cpu 6510",
+    "viccolor_BLACK = $00",
+    "* = $0801",
+    "        lda #viccolor_BLACK",
+    "viccolor_BLACK = $0806",
+    "        rts",
+  ].join("\n"));
+  assert.equal(raw.status, 1, `real ACME must refuse the collision: ${raw.stderr}`);
+  assert.match(raw.stderr, /Symbol already defined/i, raw.stderr);
+  assert.equal(raw.outputExists, false, "a refused assembly writes no output file");
+});
+
+test("PAIRED DIRECTION: a NON-colliding label and enum still export (30-REVIEW WR-10 non-vacuity)", () => {
+  // An exporter that refused every enum-plus-label store would pass the
+  // refusal test above.
+  const fixture = buildStore(freshDir("enum-label-no-collision"), {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0806, name: "not_a_collision" }],
+    enums: [{ name: VICCOLOR.name, variants: { ...VICCOLOR.variants } }],
+    enumUsage: [{ address: 0x0801, name: VICCOLOR.name }],
+  });
+  const result = exportAsm({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir });
+  assert.equal(result.enumSubstitutionCount, 1);
+  assert.ok(result.source.includes("        lda #viccolor_BLACK"), result.source);
+});
+
+// ---------------------------------------------------------------------------
 // 30-REVIEW WR-04 -- `hexExtent()`'s `$10000` case, the only reason it
 // existed, was untested and rested on an unmeasured assumption. Measured, the
 // assumption was FALSE.

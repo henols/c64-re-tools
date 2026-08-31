@@ -849,6 +849,14 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   }
   const symbolFor = (address: number): string | undefined => labelIndex.get(address);
 
+  /** EVERY store label's NAME, whether it ends up defined in the header or
+   * inline. `labelIndex` cannot serve this: it is keyed by address and holds
+   * only the first name at each, so an ALIASED label would be invisible to a
+   * collision check reading it. ACME has ONE symbol namespace, so an enum
+   * variant symbol colliding with any of these is `Symbol already defined.`
+   * (30-REVIEW WR-10). */
+  const labelSymbolNames = new Set(sortedLabels.map((label) => label.name));
+
   // Comments indexed by the address they annotate, each address's list left in
   // `listComments()`'s own `id` order.
   const commentsByAddress = new Map<number, CommentRow[]>();
@@ -933,7 +941,25 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       // D-11 is inherited UNCHANGED: `renderLine()` decides operand width and
       // refuses to substitute a symbol into an immediate or zeropage-family
       // operand. Do not widen `RenderOptions` and do not bypass `renderLine()`.
-      const instructions = decode(slice, block.start, { end: block.endExclusive });
+      // `end` IS INCLUSIVE, SO IT IS HANDED AN INCLUSIVE VALUE (30-REVIEW
+      // WR-07, corrected 2026-08-31). This used to pass `block.endExclusive`.
+      // `DecodeOptions.end` is compared with `if (end !== undefined && address
+      // > end) break` and documented as "an instruction starting past `end` is
+      // dropped ... an instruction starting AT OR BEFORE `end` is emitted in
+      // full" -- an INCLUSIVE bound. Passing the exclusive end therefore
+      // permitted one instruction more than intended.
+      //
+      // It was INERT, and that is exactly why it needed fixing rather than
+      // leaving: `slice` is exactly the block's bytes and `decode()`'s own
+      // `offset < bytes.length` loop condition bounds it first, so the `end`
+      // guard was doing nothing at all. The next maintainer who passes a WIDER
+      // slice -- to give `decode()` lookahead across a block boundary, say --
+      // inherits a silent one-instruction overrun with no test to catch it.
+      //
+      // THE SLICE IS THE AUTHORITY AND `end` IS THE BELT-AND-BRACES SECOND
+      // BOUND, stated here so the two are not read as one mechanism. Both now
+      // describe the same last byte, `block.endExclusive - 1`.
+      const instructions = decode(slice, block.start, { end: block.endExclusive - 1 });
       for (const instr of instructions) {
         if (!instr.acmeExpressible) unexpressibleCount++;
 
@@ -1097,6 +1123,35 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           // module emits passes through, applied to the COMPOSED name because
           // that is what actually reaches the ACME source.
           assertLegalAcmeIdentifier(symbol, `exportAsm: enum variant symbol for ${hex4(usage.address)}`);
+
+          // THE COLLISION THE COMMENT BELOW NAMES IS NOW CHECKED FOR
+          // (30-REVIEW WR-10, fixed 2026-08-31). That comment identified the
+          // hazard exactly -- "every extra emitted symbol is one more chance to
+          // collide with a label name and turn a correct export into ACME's
+          // `Symbol already defined.`" -- and then did not look.
+          // `definedEnumSymbols` dedupes enum symbols against EACH OTHER but
+          // never against the store's labels.
+          //
+          // Since the `anno export-asm` CLI verb runs no assembler, the
+          // collision produced a file that exited 0 here and failed wherever
+          // the user actually assembled it, with no pointer back to the store
+          // row that caused it. Refusing here names BOTH the enum and the
+          // label, which is what makes it fixable.
+          //
+          // Checked against `labelSymbolNames` -- every store label's name,
+          // whether it ends up defined in the header or inline -- because ACME
+          // has ONE symbol namespace and an inline `=*+$NN` definition
+          // collides exactly as a header one does.
+          if (labelSymbolNames.has(symbol)) {
+            throw new Error(
+              `exportAsm: the enum variant symbol ${JSON.stringify(symbol)} (enum ${JSON.stringify(usage.enumName)}, variant ` +
+                `${JSON.stringify(matched)}, bound at ${hex4(usage.address)}) is ALSO the name of a store label. ACME has one symbol ` +
+                `namespace, so emitting both definitions is \`Symbol already defined.\` and exit 1 -- and this verb assembles ` +
+                `nothing, so without this refusal the export would exit 0 here and fail wherever you assembled it, with no pointer ` +
+                `back to the rows that caused it. REFUSED -- rename the label or the enum variant.`,
+            );
+          }
+
           // ONLY THE MATCHED VARIANT IS DEFINED, not the whole vocabulary. A
           // definition the source never references is clutter a human reader
           // has to discount, and every extra emitted symbol is one more chance
