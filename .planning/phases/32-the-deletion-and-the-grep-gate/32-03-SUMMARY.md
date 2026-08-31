@@ -365,3 +365,13 @@ None — no external service configuration required.
 ---
 *Phase: 32-the-deletion-and-the-grep-gate*
 *Completed: 2026-08-31*
+
+## Self-Check: PASSED
+
+- All four claimed files exist on disk (`.planning/PROJECT.md`, `.planning/ARCHITECTURE.md`,
+  `scripts/check-no-regenerator2000.mjs`, and this SUMMARY).
+- All four claimed commits resolve in `git log --oneline --all`: `11abb71`, `5ff2311`, `c81d2ee`,
+  `ce98f7a`.
+- All three tasks' `<acceptance_criteria>` were re-run after the final commit and all pass; the
+  plan-level `<verification>` block was re-run and its results are recorded in the table above,
+  with the single `test:automated` failure attributed to the recorded worktree artifact.
