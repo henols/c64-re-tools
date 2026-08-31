@@ -333,3 +333,16 @@ None — no external service configuration required.
 ---
 *Phase: 31-procedure-re-pointing*
 *Completed: 2026-08-31*
+
+## Self-Check: PASSED
+
+- `.planning/phases/31-procedure-re-pointing/31-03-SUMMARY.md` — FOUND on disk (this file)
+- `scripts/check-no-regenerator2000.mjs` — FOUND, `node --check` clean, gate exit 0
+- `.planning/STATE.md` — FOUND, frontmatter byte-identical to `409ac1b`
+- Commit `5cfa783` — FOUND in `git log --all`, lists exactly two paths
+- Commit `c291591` — FOUND in `git log --all`, lists exactly one path
+- Commit `0b06a9b` — FOUND in `git log --all` (this SUMMARY)
+- Commit `e27990e` — FOUND in `git log --all` (ROADMAP progress row, hand-repaired after the verb mangled its cell spacing to `In Progress|  |`)
+- All `<acceptance_criteria>` re-run post-commit. Every criterion passes as written except the two recorded as deviations (the `29-09-SUMMARY.md` count, met on intent with the true figure `4` recorded; and the nonexistent `--schema state`, substituted with `frontmatter.get` plus a byte-identical frontmatter diff).
+- Plan-level `<verification>` steps 1-9 all run and recorded in the Verification table. The full automated suite is `# fail 0` (2920 tests, 2914 pass) with the broker `inactive`, re-run a third time after the ROADMAP progress row landed.
+- `git status --short` carries only the four pre-existing untracked files that were present at spawn (`docs/dissambler-workflow.md`, `docs/undocumented-opcodes-ghidra.md`, `docs/vice-mcp-ideas.md`, `skills-lock.json`) — none of them touched.
