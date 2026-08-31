@@ -62,16 +62,30 @@
 //      not an exemption.
 //
 //   4. Do NOT shell out to `grep`, and do NOT skip a file because it looks
-//      binary. `src/mcp/vice/anno-memmap-render.ts` carries a literal NUL
-//      byte at offset 12862 (line 291 -- the "\0" field separator in its
-//      sidecar hash canonicalisation), so GNU grep classifies the whole file
-//      as binary, prints "binary file matches" instead of a count, and skips
-//      it under `grep -c` / `grep -o`. The tree-wide occurrence total is 399
-//      with `-a` and 398 without; that one-hit difference is the provenance
-//      comment at :79, which a grep-backed gate would let survive its own
-//      removal check. This gate reads every file's bytes in-process with
-//      readFileSync() and decodes them as UTF-8, which is binary-safe by
-//      construction. removal-gate.test.ts proves this behaviourally.
+//      binary. `src/mcp/vice/anno-memmap-render.ts` carries two literal NUL
+//      bytes, the first at offset 15097 (line 315 -- the "\0" field separator
+//      in its sidecar hash canonicalisation), so GNU grep classifies the
+//      whole file as binary, prints "binary file matches" instead of a count,
+//      and skips it under `grep -c` / `grep -o`. Re-measured 2026-08-31 (plan
+//      32-03) in THIS GATE'S OWN SCOPE -- tracked files outside ".planning/"
+//      plus the shipped-but-untracked installer paths `packFiles()` supplies,
+//      which is NOT the same set as a plain `git ls-files` sweep -- the
+//      occurrence total is 157 with `-a` and 156 without; that one-hit
+//      difference is the provenance comment at :79, which a grep-backed gate
+//      would let survive its own removal check. This gate reads every file's
+//      bytes in-process with readFileSync() and decodes them as UTF-8, which
+//      is binary-safe by construction. removal-gate.test.ts proves this
+//      behaviourally.
+//
+//      DRIFT, and how to read a mismatch. The offset and line above move
+//      whenever the module grows above them; the two totals move whenever the
+//      tree or the pack list does. All three were stale here until plan 32-03
+//      re-measured them: the offset predated this module's growth, and the
+//      totals were measured at plan 29-02 against the PRE-deletion tree AND
+//      over a narrower scope than the sentence describes. Re-measure and
+//      correct; a mismatch is drift to re-verify, not evidence that rule 4
+//      stopped applying. The load-bearing claim is the ONE-HIT DIFFERENCE and
+//      its identity at :79 -- never the absolute numbers.
 //
 // THE STALENESS CONTRACT FOR EVERY PATH THIS PHASE RENAMES.
 // Every path-scoped entry below -- permanent exemption AND temporary
@@ -817,7 +831,8 @@ for (const rel of scope.paths) {
     continue;
   }
   // Bytes in, decoded here. Never `grep`, never a binary-file skip: see rule 4
-  // of this file's header and the NUL byte at anno-memmap-render.ts:12862.
+  // of this file's header and the NUL bytes at anno-memmap-render.ts:315 (first
+  // at byte offset 15097; re-measure rather than trust these -- see rule 4).
   const text = readFileSync(abs).toString("utf8");
   scanned.push(rel);
 
