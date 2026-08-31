@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
-current_phase: 31
-current_phase_name: Procedure Re-pointing
-status: executing
-stopped_at: Phase 31 gap-closure round 1 executing (31-04, 1 plan) after verification scored 5/7 gaps_found
-last_updated: "2026-08-31T11:04:06.074Z"
+current_phase: 32
+current_phase_name: The Deletion and the Grep Gate
+status: planning
+stopped_at: Phase 31 complete, ready to plan Phase 32
+last_updated: "2026-08-31T11:53:27.144Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 31 gap-closure round 1 execution started (31-04)
-state_head: 494c7d437f5ff140a90ad1858c3533f572bc4e5a
+last_activity_desc: Phase 31 complete, transitioned to Phase 32
+state_head: 7ab5f11333b0912b7d417a83b6e5766eaa087145
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 59
-  completed_plans: 58
-  percent: 67
+  completed_plans: 59
+  percent: 83
 ---
 
 # Project State
@@ -147,16 +147,16 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 31 (Procedure Re-pointing) — EXECUTING
-Plan: 3 of 4 executed — gap-closure round 1 (31-04) now executing
-Status: Executing gap-closure round 1 (31-04) after verification scored 5/7 gaps_found
-Last activity: 2026-08-31 — Phase 31 gap-closure round 1 execution started (31-04)
+Phase: 32 — The Deletion and the Grep Gate
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-31 — Phase 31 complete, transitioned to Phase 32
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 248
+- Total plans completed: 252
 - Average duration: —
 - Total execution time: —
 
@@ -189,6 +189,7 @@ Last activity: 2026-08-31 — Phase 31 gap-closure round 1 execution started (31
 | 28 | 23 | - | - |
 | 29 | 21 | - | - |
 | 30 | 6 | - | - |
+| 31 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -1342,7 +1343,7 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 ## Session Continuity
 
 Last session: 2026-08-30T23:48:34.583Z
-Stopped at: Phase 30 complete, ready to plan Phase 31
+Stopped at: Phase 31 complete, ready to plan Phase 32
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
