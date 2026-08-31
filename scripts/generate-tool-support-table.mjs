@@ -33,21 +33,46 @@
 // function of its inputs, which is what makes
 // src/mcp/vice/tool-support-table.test.mjs's fixture-driven structural
 // tests possible.
-import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { DENY_LIST } from "../src/mcp/vice/vice.ts";
+import { resolveContainedRoot } from "./lib/audit-root.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = dirname(HERE);
-const VICE_DIR = join(ROOT, "src/mcp/vice");
+const DEFAULT_ROOT = dirname(HERE);
 
-const DEFAULT_FORK_MANIFEST_PATH = join(VICE_DIR, "tools-manifest.json");
-const DEFAULT_STOCK_MANIFEST_PATH = join(VICE_DIR, "tools-manifest.stock.json");
-const DEFAULT_PROXY_SOURCE_PATH = join(VICE_DIR, "vice-proxy.ts");
-const OUTPUT_PATH = join(ROOT, "docs/tool-support.md");
+/**
+ * Every path this script reads AND THE ONE IT WRITES, derived from a single
+ * `root`. This is not a tidying-up. The phase-32 audit has to observe this
+ * generator FAILING against a planted subject, and the only safe way to do
+ * that is to point the whole script -- including `outputPath` -- at a
+ * synthetic tree. While the write target was a module-scope constant anchored
+ * on `import.meta.url`, any such measurement would have clobbered the
+ * repository's real `docs/tool-support.md`, a file the milestone close gate
+ * requires byte-identical (and which `tool-support-table.test.mjs` pins).
+ *
+ * WHAT NOT TO DO: do not reintroduce a second path constant derived from
+ * `DEFAULT_ROOT` outside this function. A root threaded through only SOME of
+ * the paths reads one tree and writes another, which is worse than no flag at
+ * all -- it would make a planted violation silently unobservable while still
+ * overwriting the real table.
+ */
+function paths(root) {
+  const viceDir = join(root, "src/mcp/vice");
+  return {
+    root,
+    viceDir,
+    forkManifestPath: join(viceDir, "tools-manifest.json"),
+    stockManifestPath: join(viceDir, "tools-manifest.stock.json"),
+    proxySourcePath: join(viceDir, "vice-proxy.ts"),
+    outputPath: join(root, "docs/tool-support.md"),
+  };
+}
+
+const DEFAULT_PATHS = paths(DEFAULT_ROOT);
 
 const REGEN_COMMAND = "node scripts/generate-tool-support-table.mjs";
 
@@ -171,10 +196,10 @@ export function discoverSyntheticToolNames(proxySource) {
  */
 export function generateToolSupportTable(options = {}) {
   const {
-    forkManifestPath = DEFAULT_FORK_MANIFEST_PATH,
-    stockManifestPath = DEFAULT_STOCK_MANIFEST_PATH,
+    forkManifestPath = DEFAULT_PATHS.forkManifestPath,
+    stockManifestPath = DEFAULT_PATHS.stockManifestPath,
     registry = CAPABILITY_REGISTRY,
-    proxySourcePath = DEFAULT_PROXY_SOURCE_PATH,
+    proxySourcePath = DEFAULT_PATHS.proxySourcePath,
   } = options;
 
   const forkManifest = JSON.parse(readFileSync(forkManifestPath, "utf8"));
@@ -278,11 +303,73 @@ export function generateToolSupportTable(options = {}) {
 }
 
 // -------------------------------------------------------------------- CLI
+//
+// `--root <dir>` is the ONLY new surface here, and it is the only testability
+// seam this script has: there is deliberately no environment-variable
+// override, no `--check` bypass and no waiver file anywhere in it (the
+// no-relaxation-hatch rule recorded in `scripts/audit-gate.mjs`'s header).
+// Same argv shape as that file's own `parseArgs()`.
+function parseArgs(argv) {
+  let root;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--root") {
+      root = argv[i + 1];
+      i += 1;
+    }
+  }
+  return { root };
+}
+
 function main() {
+  const { root: rootArg } = parseArgs(process.argv.slice(2));
+
+  // A REFUSAL (an out-of-repository --root) and a TYPO (a --root inside the
+  // repository that does not exist) exit with the SAME code, so they are
+  // separated by their message -- the WR-03 contract behind audit-gate.mjs's
+  // own try/catch, where a mistyped root used to surface as an uncaught ENOENT
+  // indistinguishable from a legitimate refusal.
+  let root;
   try {
-    const doc = generateToolSupportTable();
-    writeFileSync(OUTPUT_PATH, doc);
-    process.stderr.write(`generate-tool-support-table: wrote docs/tool-support.md\n`);
+    root = resolveContainedRoot(rootArg, { repoRoot: DEFAULT_ROOT });
+  } catch (e) {
+    process.stderr.write(
+      `generate-tool-support-table: REFUSED -- ${e?.message ?? String(e)}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const p = paths(root);
+  try {
+    if (!existsSync(p.root)) {
+      throw new Error(
+        `--root resolves to ${p.root}, which does not exist. This is a TYPO, not a ` +
+          "containment refusal: the path is inside the repository root but there is no such " +
+          "directory.",
+      );
+    }
+    const outputDir = dirname(p.outputPath);
+    if (!existsSync(outputDir)) {
+      throw new Error(
+        `${outputDir} does not exist, so the table cannot be written there. A --root tree must ` +
+          "carry its own docs/ directory; this script never creates one, because a synthetic " +
+          "tree that silently grows directories is not the tree the operator thought they " +
+          "pointed at.",
+      );
+    }
+    const doc = generateToolSupportTable({
+      forkManifestPath: p.forkManifestPath,
+      stockManifestPath: p.stockManifestPath,
+      proxySourcePath: p.proxySourcePath,
+    });
+    writeFileSync(p.outputPath, doc);
+    // The unflagged invocation's message stays byte-identical to the pre-flag
+    // one (`relative()` yields exactly `docs/tool-support.md` for the default
+    // root); the `under --root` clause appears ONLY when a root was supplied,
+    // so an operator can never mistake which tree was written.
+    const rel = relative(p.root, p.outputPath);
+    const where = p.root === DEFAULT_ROOT ? "" : ` under --root ${p.root}`;
+    process.stderr.write(`generate-tool-support-table: wrote ${rel}${where}\n`);
   } catch (e) {
     process.stderr.write(`generate-tool-support-table: FAILED -- ${e.message}\n`);
     process.exitCode = 1;
