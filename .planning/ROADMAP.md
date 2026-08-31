@@ -1147,7 +1147,7 @@ in a milestone archive.
 | 27. Shared Seams Extracted | v0.7.0 | 5/5 | Complete | 2026-08-27 |
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
 | 29. The MCP Surface | v0.7.0 | 21/21 | Complete | 2026-08-30 |
-| 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | In Progress|  |
+| 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | Complete | 2026-08-31 |
 | 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
 
