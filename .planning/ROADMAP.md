@@ -728,8 +728,16 @@ Those criteria are discharged there and are not restated here.
 **Plans**: 3 plans in 3 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 31-01-PLAN.md — Re-sync `upstream-procedure-manifest.json`: seven live stale references re-pointed onto surviving subjects or turned into dated facts, and `r2000_undo` gains `"requirement_id": "STORE-04"` with its `omit` disposition intact. One task, one commit (`REPOINT-04`)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 31-02-PLAN.md — Score criterion 1 with a committed assertion: one new test in `skill-attribution.test.ts` walking **both** skill trees for the two byte-exact naming lines (relations plus a floor, no adjacency, no literal total), plus its in-memory planted-violation proof, plus the recorded `ABS-03` measurement (`REPOINT-03`)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 31-03-PLAN.md — Re-point the three living citations of the criterion `D-01` renumbered (two in the removal gate, one in `STATE.md`), and record this phase's four judgements as a dated `STATE.md` Decisions entry. No requirement status is promoted ahead of the verification verdict (`REPOINT-03`, `REPOINT-04`)
 
 Notes:
