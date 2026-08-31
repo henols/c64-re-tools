@@ -333,3 +333,11 @@ None — no external service configuration required.
 ---
 *Phase: 31-procedure-re-pointing*
 *Completed: 2026-08-31*
+
+## Self-Check: PASSED
+
+- `src/mcp/vice/skill-attribution.test.ts` — FOUND on disk
+- `.planning/phases/31-procedure-re-pointing/31-02-SUMMARY.md` — FOUND on disk
+- Commit `cecf393` — FOUND in `git log --all`
+- Commit `dc66096` — FOUND in `git log --all`
+- `git status --porcelain` — empty (no uncommitted work, no dirtied skill tree)
