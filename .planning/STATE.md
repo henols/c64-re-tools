@@ -6,10 +6,10 @@ current_phase: 31
 current_phase_name: Procedure Re-pointing
 status: executing
 stopped_at: Phase 31 planned — 3 plans in 3 waves, ready to execute
-last_updated: "2026-08-31T08:35:00.187Z"
+last_updated: "2026-08-31T08:51:50.781Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 31 planned — 3 plans in 3 waves
-state_head: e4c048ae78bf3410dfec8f9340d6e221a1c7e069
+last_activity_desc: Phase 31 execution started
+state_head: f6524edf687de5113e91b3193eaa6b8c5e3f9e11
 progress:
   total_phases: 6
   completed_phases: 4
@@ -24,7 +24,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-29 after Phase 28)
 
-**Current focus:** Phase 30 — ACME Export and the Real-ACME Oracle
+**Current focus:** Phase 31 — Procedure Re-pointing
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 31 (Procedure Re-pointing) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-31 — Phase 31 planned — 3 plans in 3 waves
+Phase: 31 (Procedure Re-pointing) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 31
+Last activity: 2026-08-31 — Phase 31 execution started
 
 ## Performance Metrics
 
