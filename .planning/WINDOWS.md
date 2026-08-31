@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 14
 waived_count: 12
 fixed_count: 5
-total_count: 28
-last_updated: 2026-08-31T18:12:04.785Z
+total_count: 31
+last_updated: 2026-08-31T18:47:19.110Z
 ---
 
 # Broken Windows Ledger
@@ -43,6 +43,9 @@ last_updated: 2026-08-31T18:12:04.785Z
 | 26 | 29 | unrun-verify | src/mcp/vice/vice-proxy.test.ts |  | vice-proxy.test.ts is MANUAL_ONLY (needs a live host VICE server) so the anno_* tools/list wire output after the registration substitution was proven structurally, never observed on a live client | open |  | 2026-08-29T14:09:23.640Z |  |
 | 27 | 29 | deviation | src/mcp/vice/anno-store.ts |  | Plan 29-03's acceptance criterion 'the store revision is unchanged between two identical applyEnumUsage calls' was NOT implemented: it contradicts AnnoWriteResult's documented invariant that every accepted write advances the revision, and the plan's own instruction to copy putXref verbatim. changed:false carries the idempotency claim instead. | waived | Provenance record, not a defect: the plan text was measured false and the implementation is correct. Nothing to fix; kept as history. | 2026-08-29T15:46:45.831Z | 2026-08-29T21:14:55.313Z |
 | 28 | 32 | deviation | scripts/audit-gate.mjs | 1210 | audit-gate.mjs --json ends with process.exit(result.allowed ? 0 : 1), and allowed tracks GATED AUDITS only -- so a structural error (e.g. a DOCS_GUARD_FLOOR breach) is reported inside the JSON payload's structuralErrors array while the process still exits 0. The text-mode branch (:1213-1218) does exit 1 on the same condition. Measured in plan 32-07 when a floor plant came back ZERO-EXIT under --json and red without it. Any caller treating the --json exit status as a structural-health check is reading a signal that cannot go non-zero for a structural error. | open |  | 2026-08-31T18:12:04.785Z |  |
+| 29 | 32 | deviation | scripts/check-guard-fates.mjs |  | deriveForwardMap() resolves successors by two mechanisms only -- end-to-end 'git diff -M' and the name-descendant predicate (prefix swap, stem preserved) -- and both miss a rename where the STEM changed and the successor later grew past git's similarity threshold. Measured: 'git show --name-status -M c59fcef' reports R091 src/mcp/vice/r2000-upstream-audit.test.ts -> src/mcp/vice/anno-derivation.test.ts, the successor's own header records the rename, and all five predecessor test names survive verbatim; but the file grew 207 -> 478 lines so end-to-end -M does not score it. Consequence: the predecessor lands in forwardGone and the successor is independently derived into set B, so a truthful 'superseded' verdict would collide with the successor's own row on the duplicate-newSubject check. The relationship is NOT EXPRESSIBLE in the registry. Plan 32-08 recorded 'deleted' with the rename disclosed in full on the row and in evidence/32-deferred-fates.md section 5. Recommended fix (a strengthening, not a relaxation): add a third mechanism that inspects each gone member's removing commit for an R entry naming it as source; consequence is SET_B_FLOOR 16 -> 15 and TOTAL_FLOOR 61 -> 60. | open |  | 2026-08-31T18:46:51.480Z |  |
+| 30 | 32 | deviation | src/mcp/vice/block-class.ts | 196 | The transitional capitalised block-type arm 'if (block.type === "Undefined") return "undefined";' is ALREADY INERT and its recorded justification does not hold for it. The arms' stated reason for surviving their own removal trigger is that 'every committed coverage fixture is still spelled in that vocabulary'. Structural census of the twelve src/mcp/vice/fixtures/coverage/*/store.json (parsed as JSON, not grepped): 11 blocks across 6 of the 12 directories, spelled Code x 5 and Byte x 6. "Undefined" appears ZERO times. So :195 (Code) is load-bearing -- it rescues 5 blocks that would otherwise fall through to data silently -- while :196 matches nothing. The comment at :180 also overstates the impact: it says deleting the arms reclassifies 'every fixture block' as data, but 6 of the 11 already resolve to data by design, so only 5 would change. Measured by plan 32-08 while resolving research assumption A7. Not acted on: deleting a half-inert arm is a change to a live classifier and ROADMAP.md scopes this phase to recording the fate, not performing the re-point. | open |  | 2026-08-31T18:47:06.035Z |  |
+| 31 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/guard-fates.json |  | The fate registry's verdict vocabulary cannot express 'kept-unchanged but its assertions were later re-aimed' for a NET-NEW (set-B) member without overloading 're-pointed', and cannot express a rename whose successor is itself an independently derived member at all. Both surfaced in plan 32-08. (a) A set-B member did not exist at AUDIT_COMMIT, so 'historicalPath -> newSubject' has no historical side; the two genuinely re-aimed set-B guards (anno-derivation.test.ts, module-classification.test.ts) are recorded 're-pointed' with newSubject === historicalPath, which is the same shape the 18 same-path set-A rows already use, but the token now means two different things. (b) The plan text for task 1 invites an OPTIONAL 'strengthening' observedRed on kept-unchanged rows; the committed guard's predicate REJECTS observedRed on that verdict outright, so following the plan text would have redded the registry. Guard won; recorded here so the next registry consumer does not re-derive the same contradiction. | open |  | 2026-08-31T18:47:19.110Z |  |
 
 ````json
 [
@@ -380,6 +383,42 @@ last_updated: 2026-08-31T18:12:04.785Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-31T18:12:04.785Z",
+    "resolved_at": null
+  },
+  {
+    "id": 29,
+    "kind": "deviation",
+    "phase": "32",
+    "file": "scripts/check-guard-fates.mjs",
+    "line": null,
+    "description": "deriveForwardMap() resolves successors by two mechanisms only -- end-to-end 'git diff -M' and the name-descendant predicate (prefix swap, stem preserved) -- and both miss a rename where the STEM changed and the successor later grew past git's similarity threshold. Measured: 'git show --name-status -M c59fcef' reports R091 src/mcp/vice/r2000-upstream-audit.test.ts -> src/mcp/vice/anno-derivation.test.ts, the successor's own header records the rename, and all five predecessor test names survive verbatim; but the file grew 207 -> 478 lines so end-to-end -M does not score it. Consequence: the predecessor lands in forwardGone and the successor is independently derived into set B, so a truthful 'superseded' verdict would collide with the successor's own row on the duplicate-newSubject check. The relationship is NOT EXPRESSIBLE in the registry. Plan 32-08 recorded 'deleted' with the rename disclosed in full on the row and in evidence/32-deferred-fates.md section 5. Recommended fix (a strengthening, not a relaxation): add a third mechanism that inspects each gone member's removing commit for an R entry naming it as source; consequence is SET_B_FLOOR 16 -> 15 and TOTAL_FLOOR 61 -> 60.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T18:46:51.480Z",
+    "resolved_at": null
+  },
+  {
+    "id": 30,
+    "kind": "deviation",
+    "phase": "32",
+    "file": "src/mcp/vice/block-class.ts",
+    "line": 196,
+    "description": "The transitional capitalised block-type arm 'if (block.type === \"Undefined\") return \"undefined\";' is ALREADY INERT and its recorded justification does not hold for it. The arms' stated reason for surviving their own removal trigger is that 'every committed coverage fixture is still spelled in that vocabulary'. Structural census of the twelve src/mcp/vice/fixtures/coverage/*/store.json (parsed as JSON, not grepped): 11 blocks across 6 of the 12 directories, spelled Code x 5 and Byte x 6. \"Undefined\" appears ZERO times. So :195 (Code) is load-bearing -- it rescues 5 blocks that would otherwise fall through to data silently -- while :196 matches nothing. The comment at :180 also overstates the impact: it says deleting the arms reclassifies 'every fixture block' as data, but 6 of the 11 already resolve to data by design, so only 5 would change. Measured by plan 32-08 while resolving research assumption A7. Not acted on: deleting a half-inert arm is a change to a live classifier and ROADMAP.md scopes this phase to recording the fate, not performing the re-point.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T18:47:06.035Z",
+    "resolved_at": null
+  },
+  {
+    "id": 31,
+    "kind": "deviation",
+    "phase": "32",
+    "file": ".planning/phases/32-the-deletion-and-the-grep-gate/guard-fates.json",
+    "line": null,
+    "description": "The fate registry's verdict vocabulary cannot express 'kept-unchanged but its assertions were later re-aimed' for a NET-NEW (set-B) member without overloading 're-pointed', and cannot express a rename whose successor is itself an independently derived member at all. Both surfaced in plan 32-08. (a) A set-B member did not exist at AUDIT_COMMIT, so 'historicalPath -> newSubject' has no historical side; the two genuinely re-aimed set-B guards (anno-derivation.test.ts, module-classification.test.ts) are recorded 're-pointed' with newSubject === historicalPath, which is the same shape the 18 same-path set-A rows already use, but the token now means two different things. (b) The plan text for task 1 invites an OPTIONAL 'strengthening' observedRed on kept-unchanged rows; the committed guard's predicate REJECTS observedRed on that verdict outright, so following the plan text would have redded the registry. Guard won; recorded here so the next registry consumer does not re-derive the same contradiction.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T18:47:19.110Z",
     "resolved_at": null
   }
 ]
