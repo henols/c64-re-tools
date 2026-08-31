@@ -29,6 +29,20 @@ import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/** Every document whose `rewriteArguments()` bullet carries the
+ * `vice-proxy.ts:<N>` citations this guard checks. Paths are relative to the
+ * repo root and are ALL expected to exist -- a missing one FAILS rather than
+ * silently shrinking the scanned set (shape copied from
+ * `docs-dangling-refs.test.ts`'s ALWAYS_PRESENT_NORMATIVE_DOCS).
+ *
+ * `.planning/PROJECT.md` joins the set in phase 32 plan 32-04: its copy of
+ * the same bullet had drifted to `:3029`/`:2964`/`:1508`/`:1484` before the
+ * v0.7.0 open precisely because this guard read only CLAUDE.md. */
+const SCANNED_DOCS = Object.freeze([
+  "CLAUDE.md",
+  ".planning/PROJECT.md",
+]);
+
 /** Matches the literal `vice-proxy.ts:<digits>` citation shape used
  * throughout CLAUDE.md and this project's other docs. Deliberately does
  * NOT anchor to line start -- citations appear mid-sentence. */
@@ -53,35 +67,39 @@ function extractCitations(bullet: string): number[] {
   return citations;
 }
 
-test("CLAUDE.md's rewriteArguments() bullet cites at least two vice-proxy.ts line numbers (non-vacuity)", () => {
-  const claudeMd = readFileSync(join(repoRoot({ from: HERE }), "CLAUDE.md"), "utf8");
-  const bullet = findRewriteArgumentsBullet(claudeMd);
+test("every scanned document's rewriteArguments() bullet cites at least two vice-proxy.ts line numbers (non-vacuity)", () => {
+  for (const doc of SCANNED_DOCS) {
+  const docText = readFileSync(join(repoRoot({ from: HERE }), doc), "utf8");
+  const bullet = findRewriteArgumentsBullet(docText);
   const citations = extractCitations(bullet);
   // Rewording the bullet so this regex matches nothing must FAIL this
   // test, not silently report zero checked citations as a pass -- that is
   // exactly the class of vacuous guard T-11-DOC-DRIFT exists to catch.
-  assert.ok(citations.length >= 2, `expected at least two vice-proxy.ts:<N> citations in the rewriteArguments() bullet, found ${citations.length}`);
+  assert.ok(citations.length >= 2, `${doc}: expected at least two vice-proxy.ts:<N> citations in the rewriteArguments() bullet, found ${citations.length}`);
+  }
 });
 
-test("every vice-proxy.ts:<N> citation in CLAUDE.md's rewriteArguments() bullet points at a real rewriteArguments() call or its enclosing function", () => {
-  const claudeMd = readFileSync(join(repoRoot({ from: HERE }), "CLAUDE.md"), "utf8");
+test("every vice-proxy.ts:<N> citation in a scanned document's rewriteArguments() bullet points at a real rewriteArguments() call or its enclosing function", () => {
+  for (const doc of SCANNED_DOCS) {
+  const docText = readFileSync(join(repoRoot({ from: HERE }), doc), "utf8");
   const viceProxySrc = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
   const viceProxyLines = viceProxySrc.split("\n");
 
-  const bullet = findRewriteArgumentsBullet(claudeMd);
+  const bullet = findRewriteArgumentsBullet(docText);
   const citations = extractCitations(bullet);
   assert.ok(citations.length >= 2, "no citations extracted -- see the non-vacuity test above");
 
   for (const lineNumber of citations) {
     // Citations are 1-indexed in prose; array is 0-indexed.
     const lineText = viceProxyLines[lineNumber - 1];
-    assert.ok(lineText !== undefined, `CLAUDE.md cites vice-proxy.ts:${lineNumber}, but the file has no such line`);
+    assert.ok(lineText !== undefined, `${doc} cites vice-proxy.ts:${lineNumber}, but the file has no such line`);
     const isCallSite = lineText.includes("rewriteArguments(");
     const isFunctionStart = /^\s*(async\s+)?function\s+\w+/.test(lineText);
     assert.ok(
       isCallSite || isFunctionStart,
-      `vice-proxy.ts:${lineNumber} (cited in CLAUDE.md) contains neither a rewriteArguments() call nor a function declaration -- drift. Line reads: ${JSON.stringify(lineText)}`,
+      `vice-proxy.ts:${lineNumber} (cited in ${doc}) contains neither a rewriteArguments() call nor a function declaration -- drift. Line reads: ${JSON.stringify(lineText)}`,
     );
+  }
   }
 });
 
