@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 17
 waived_count: 12
 fixed_count: 5
-total_count: 32
-last_updated: 2026-08-31T19:22:26.336Z
+total_count: 34
+last_updated: 2026-08-31T22:34:07.678Z
 ---
 
 # Broken Windows Ledger
@@ -47,6 +47,8 @@ last_updated: 2026-08-31T19:22:26.336Z
 | 30 | 32 | deviation | src/mcp/vice/block-class.ts | 196 | The transitional capitalised block-type arm 'if (block.type === "Undefined") return "undefined";' is ALREADY INERT and its recorded justification does not hold for it. The arms' stated reason for surviving their own removal trigger is that 'every committed coverage fixture is still spelled in that vocabulary'. Structural census of the twelve src/mcp/vice/fixtures/coverage/*/store.json (parsed as JSON, not grepped): 11 blocks across 6 of the 12 directories, spelled Code x 5 and Byte x 6. "Undefined" appears ZERO times. So :195 (Code) is load-bearing -- it rescues 5 blocks that would otherwise fall through to data silently -- while :196 matches nothing. The comment at :180 also overstates the impact: it says deleting the arms reclassifies 'every fixture block' as data, but 6 of the 11 already resolve to data by design, so only 5 would change. Measured by plan 32-08 while resolving research assumption A7. Not acted on: deleting a half-inert arm is a change to a live classifier and ROADMAP.md scopes this phase to recording the fate, not performing the re-point. | open |  | 2026-08-31T18:47:06.035Z |  |
 | 31 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/guard-fates.json |  | The fate registry's verdict vocabulary cannot express 'kept-unchanged but its assertions were later re-aimed' for a NET-NEW (set-B) member without overloading 're-pointed', and cannot express a rename whose successor is itself an independently derived member at all. Both surfaced in plan 32-08. (a) A set-B member did not exist at AUDIT_COMMIT, so 'historicalPath -> newSubject' has no historical side; the two genuinely re-aimed set-B guards (anno-derivation.test.ts, module-classification.test.ts) are recorded 're-pointed' with newSubject === historicalPath, which is the same shape the 18 same-path set-A rows already use, but the token now means two different things. (b) The plan text for task 1 invites an OPTIONAL 'strengthening' observedRed on kept-unchanged rows; the committed guard's predicate REJECTS observedRed on that verdict outright, so following the plan text would have redded the registry. Guard won; recorded here so the next registry consumer does not re-derive the same contradiction. | open |  | 2026-08-31T18:47:19.110Z |  |
 | 32 | 32 | unrun-verify | src/mcp/vice/fork-live.test.ts |  | fork-live.test.ts cannot be exercised on this development host and its opt-in run is a guaranteed red: the non-upstream fork (the -mcpserver build) is NOT installed here. Measured in plan 32-09's close-gate run at 0d7d328: /usr/bin/x64sc reports 'x64sc (VICE 3.9)', /usr/local/bin/x64sc reports 'x64sc (VICE 3.10)', and '/usr/local/bin/x64sc -help / grep -ci mcpserver' returns 0 -- so BOTH x64sc binaries on PATH are genuine unpatched stock, and the /usr/local one that shadows stock is a locally-built stock 3.10, not the fork. Running 'VICE_LIVE_FORK_BIN=/usr/local/bin/x64sc node --test fork-live.test.ts' gives 6 tests / 0 pass / 6 fail, every one 'waitForEndpointReady: http://127.0.0.1:PORT/mcp (fork binary /usr/local/bin/x64sc) never answered within 20000ms (last error: TypeError: fetch failed)'. Consequence: fork-live.test.ts's 6 tests reach their default-SKIP branch both locally and on CI and have NO exercise route anywhere, so nothing currently proves them. This also corrects a standing assumption that 'the fork shadows stock on PATH' -- at /usr/local/bin it does not, it is a second stock build. Not fixed: installing the fork is out of phase 32's scope (ROADMAP.md scopes this phase to contain no build work by design). | open |  | 2026-08-31T19:22:26.336Z |  |
+| 33 | 32 | unmet-truth | scripts/audit-mutation-harness.mjs | 103 | Restore-on-signal invariant still behaviour-unverified: SIGINT/SIGTERM handlers cannot run mid-plant because main() is wholly synchronous; 10/10 attempts landed in the window and the child still exited 0, not 130 (plan 32-14 Task 3) | open |  | 2026-08-31T22:34:00.734Z |  |
+| 34 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-sweep-renamed-rows.md | 3889 | Plan 32-14's one authorised in-place correction was measured to be a NO-OP: the value the fixed harness applies is byte-identical to the committed Plant line, so numstat is 70 additions / 0 deletions, not the 1 deletion the plan's acceptance criterion anticipated | open |  | 2026-08-31T22:34:07.678Z |  |
 
 ````json
 [
@@ -432,6 +434,30 @@ last_updated: 2026-08-31T19:22:26.336Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-31T19:22:26.336Z",
+    "resolved_at": null
+  },
+  {
+    "id": 33,
+    "kind": "unmet-truth",
+    "phase": "32",
+    "file": "scripts/audit-mutation-harness.mjs",
+    "line": 103,
+    "description": "Restore-on-signal invariant still behaviour-unverified: SIGINT/SIGTERM handlers cannot run mid-plant because main() is wholly synchronous; 10/10 attempts landed in the window and the child still exited 0, not 130 (plan 32-14 Task 3)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T22:34:00.734Z",
+    "resolved_at": null
+  },
+  {
+    "id": 34,
+    "kind": "deviation",
+    "phase": "32",
+    "file": ".planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-sweep-renamed-rows.md",
+    "line": 3889,
+    "description": "Plan 32-14's one authorised in-place correction was measured to be a NO-OP: the value the fixed harness applies is byte-identical to the committed Plant line, so numstat is 70 additions / 0 deletions, not the 1 deletion the plan's acceptance criterion anticipated",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T22:34:07.678Z",
     "resolved_at": null
   }
 ]

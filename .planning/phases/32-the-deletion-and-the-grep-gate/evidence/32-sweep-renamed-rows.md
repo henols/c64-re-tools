@@ -4213,6 +4213,76 @@ ok 28 - anno-enum-gen.ts never references the machine-global save_global_enum() 
 # duration_ms 358.71424
 ```
 
+## CORRECTION — 2026-09-01, gap-closure round 1 (plan 32-14)
+
+**1. Date and provenance.** Written 2026-09-01 during gap-closure round 1 for phase 32,
+plan 32-14, closing Gap 3 of `32-VERIFICATION.md`. It concerns the
+`src/mcp/vice/r2000-enum-gen.test.ts` section immediately above and no other section in
+this file.
+
+**2. What was wrong (`CR-02`).** The recorded replacement was not the replacement applied.
+`plant()` in `scripts/audit-mutation-harness.mjs` counted occurrences of `find` with
+`String.prototype.split`, which is literal, but performed the substitution with
+`text.replace(find, replace)` — a replacement **string**, in which `$$`, `$&`, `` $` ``,
+`$'`, `$n` and `$<name>` are interpreted. This row's `replace` value carries a doubled
+dollar sign, so the pair collapsed to one and the `$` hex sigil was deleted on the way to
+disk. The harness therefore mutated
+`` return `${address.toString(16).toUpperCase().padStart(5, "0")}`; ``
+while recording
+`` return `$${address.toString(16).toUpperCase().padStart(5, "0")}`; ``.
+Verifier reference: `32-VERIFICATION.md` `gaps[2]`, artifact issue
+"`:3889` carries the same non-applied replacement string".
+
+**3. What the raw output BELOW the Plant line is, and why it is left byte-identical.** It is
+the output of the **pre-fix** harness, produced under the mutation that was **actually
+applied** — the one with the sigil deleted. That is why its failing comparison reads
+`'0D011' !== '$D011'`: five characters, no sigil. It is preserved byte-for-byte on purpose.
+A dated record is not edited to make an inconsistency disappear; the inconsistency is
+disclosed here instead. A reader who notices that the Plant line above does not describe the
+mutation that produced the output below is reading the record correctly, and this block is
+the explanation.
+
+**4. MEASURED FINDING — no in-place correction was needed, and none was made.** Plan 32-14
+authorised exactly one in-place edit: the `replace:` value on this row's Plant line, and
+only if the corrected value were the **re-measured** one rather than a retyped one. The row
+was re-run with the fixed harness on 2026-09-01 and the value the fixed harness applies is
+**byte-identical** to the value already on the Plant line above — because the fix's whole
+effect is that the recorded replacement now reaches disk intact. The authorised edit is
+therefore a no-op and was not performed: `git diff --numstat` for this file shows **0
+deletions**, not the 1 the plan anticipated. Writing the *interpreted* string onto that line
+instead would have been a retyped value, which the plan's own prohibition forbids, and would
+have been the fact-laundering the `T-32-09` mitigation exists to prevent. The Plant line is
+correct as a description of the descriptor and of what the fixed harness does; it was only
+ever wrong as a description of what the pre-fix harness did, and item 3 above is the
+disclosure of that.
+
+**5. The conclusion is UNCHANGED, cited rather than re-measured.** `32-VERIFICATION.md`
+`gaps[2].reason` records, under "IMPORTANT SCOPE LIMIT, MEASURED BY ME RATHER THAN
+INFERRED", that the verifier applied the literally-recorded mutation with a replacer
+function and ran the guard: exit 1, 10 failures, including the same named assertion
+`registerKeyFor formats addresses as $XXXX`. The verifier also re-ran the pre-fix harness on
+this row in the main checkout and it reproduced the recorded red exactly — same two failing
+subtests, same `'0D011' !== '$D011'`, same green control. The guard is non-vacuous under
+either mutation. This is a correction to a record, **not** a reversal of a verdict, and it is
+cited here rather than re-measured.
+
+**6. Where the re-measured post-fix run lives.** `evidence/32-gap3-harness-correction.md`,
+in this same directory. Planted run exit status `1`; unplanted control exit status `0`;
+guard `node --test anno-enum-gen.test.ts` in `src/mcp/vice`. Its excerpt differs from the one
+above exactly as predicted: with the recorded replacement reaching disk intact, the guard now
+fails on the padding width **with** the sigil present — `'$0D011' !== '$D011'`, six
+characters — rather than on a missing sigil.
+
+**7. Scope: 1 of 61 rows was affected; the other 60 were deliberately not re-run.** The
+verifier audited the whole registry and found this the only row whose recorded mutation
+diverged from the applied one; the two other `$`-carrying rows (`${verb}`, `$/`) are
+unaffected. Re-running the other 60 would rewrite 60 machine-captured records for no finding
+— and every one of them is already covered by `node scripts/check-guard-fates.mjs`, which is
+green at 61 rows both before and after this correction, with the same measured line. No
+`*-SUMMARY.md` and no `32-VERIFICATION.md` was touched, and no other row in this file was
+reordered, renumbered, retitled or edited.
+
+
 ## `src/mcp/vice/r2000-memmap-render.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
