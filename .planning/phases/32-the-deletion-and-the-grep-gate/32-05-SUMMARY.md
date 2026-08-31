@@ -366,3 +366,17 @@ None — no external service configuration required.
 ---
 *Phase: 32-the-deletion-and-the-grep-gate*
 *Completed: 2026-08-31*
+
+## Self-Check: PASSED
+
+- Both claimed files exist on disk: `evidence/32-document-sweep.md` (61693 bytes, 1048 lines) and this
+  SUMMARY (26164 bytes).
+- All three claimed commits resolve in `git log --oneline --all`: `ab14671`, `c9eb2a5`, `4ddf4ca`.
+- `git diff --name-only 19b2c5c HEAD` lists exactly those two paths and nothing else — no swept
+  document, no `STATE.md`, no `ROADMAP.md`, no `REQUIREMENTS.md`.
+- Both tasks' `<acceptance_criteria>` were re-run after the final content commit. All pass except the
+  task-2 clause requiring `npm run test:automated` to exit 0 with 0 failures, which is **unmet in the
+  worktree** for the recorded `repo-root.test.ts:249` artifact and is reported as unmet above rather
+  than worked around.
+- Ledger row integrity verified mechanically: 50 numbered rows, 50 unique paths, no duplicate, numbers
+  contiguous 1..50, all seven `src/skills/*/SKILL.md` playbooks present.
