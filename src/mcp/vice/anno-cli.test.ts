@@ -846,6 +846,121 @@ const OBJECT_PROTOTYPE_KEYS = [
   "toLocaleString",
 ] as const;
 
+// ---------------------------------------------------------------------------
+// 30-REVIEW WR-09 -- the `*MissingValue` mechanism refused a DOUBLE-dash token
+// and accepted a single-dash one, so `--store -x` swallowed `-x` as the store
+// path. The run then failed downstream as a confinement or not-found error
+// about a file called `-x`, rather than as the "requires a value" refusal the
+// parser was written to produce.
+//
+// Driven over every (verb, value-taking option) pair rather than the one pair
+// it was reported on: the three parsers' own docs each claim they are the same
+// convention, and a fix applied to one would leave the finding armed in the
+// other two.
+// ---------------------------------------------------------------------------
+
+/** Every (verb, option) pair where the option takes a VALUE -- i.e. every
+ * accepted option that is not one of the two booleans. Derived from
+ * `VERB_OPTIONS` so a new value-taking option is covered with no edit. */
+const BOOLEAN_OPTIONS = new Set(["--force", "--check"]);
+const VALUE_TAKING_PAIRS: readonly { verb: string; option: string }[] = Object.entries(VERB_OPTIONS).flatMap(
+  ([verb, options]) => options.filter((o) => !BOOLEAN_OPTIONS.has(o)).map((option) => ({ verb, option })),
+);
+
+test("PRECONDITION: VALUE_TAKING_PAIRS is non-empty and covers every verb (30-REVIEW WR-09)", () => {
+  assert.ok(VALUE_TAKING_PAIRS.length >= 4, `expected at least four value-taking pairs, got ${VALUE_TAKING_PAIRS.length}`);
+  assert.deepEqual(
+    [...new Set(VALUE_TAKING_PAIRS.map((p) => p.verb))].sort(),
+    Object.keys(VERB_OPTIONS).sort(),
+    "every verb must contribute at least one value-taking option, or this control silently skips a parser",
+  );
+});
+
+test("a SINGLE-dash token is refused as a missing value, not swallowed as one (30-REVIEW WR-09)", async () => {
+  for (const { verb, option } of VALUE_TAKING_PAIRS) {
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli([verb, "some.project", option, "-x"]),
+    );
+    assert.notEqual(code, 0, `${verb} ${option} -x must be refused`);
+    assert.match(
+      stderr,
+      new RegExp(`\\${option}`),
+      `the refusal must name the OPTION whose value is missing, not a file called "-x": ${stderr}`,
+    );
+    assert.doesNotMatch(
+      stderr,
+      /-x/,
+      `"-x" must never be reported as a path -- swallowing it as one is the defect: ${stderr}`,
+    );
+  }
+});
+
+test("a BARE dash is refused too -- no verb in this CLI reads stdin (30-REVIEW WR-09)", async () => {
+  for (const { verb, option } of VALUE_TAKING_PAIRS) {
+    const { result: code } = await withCapturedConsole(() => runR2000Cli([verb, "some.project", option, "-"]));
+    assert.notEqual(code, 0, `${verb} ${option} - must be refused`);
+  }
+});
+
+test("PAIRED DIRECTION: an ordinary value is still accepted at every value-taking option (30-REVIEW WR-09 non-vacuity)", async () => {
+  // A parser that refused every value would pass both tests above. This is
+  // what stops that: an ordinary path must NOT produce a missing-value
+  // refusal (it may still fail later for not existing, which is a different
+  // message and a different reason).
+  for (const { verb, option } of VALUE_TAKING_PAIRS) {
+    const { stderr } = await withCapturedConsole(() =>
+      runR2000Cli([verb, "some.project", option, "ordinary-value.txt"]),
+    );
+    assert.doesNotMatch(
+      stderr,
+      /requires a value/,
+      `${verb} ${option} ordinary-value.txt must not be reported as a missing value: ${stderr}`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW WR-08 -- `refuseOverwrite()`'s doc said "ALL THREE verbs" in one
+// paragraph and "the two call sites it actually has" two paragraphs later.
+// The paragraph whose entire point is that a COUNT is checkable where "every"
+// is not was carrying a stale count.
+//
+// The reviewer's own suggestion, taken: assert the count MECHANICALLY, the way
+// `anno-cli-path-consumers.test.ts` already does for the confinement seam, so
+// the next verb to write an output file cannot leave the number behind again.
+// ---------------------------------------------------------------------------
+
+test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08)", () => {
+  const stripped = stripCommentsAndLiterals(readFileSync(R2000_CLI_SOURCE_PATH, "utf8"));
+  // The DECLARATION is not a call site. Counting it is an off-by-one this
+  // test caught on itself the first time it ran, which is the shape of the
+  // defect it exists against.
+  const declarations = (stripped.match(/\bfunction refuseOverwrite\(/g) ?? []).length;
+  assert.equal(declarations, 1, "refuseOverwrite() must be declared exactly once -- it is the ONE shared overwrite check");
+  const callSites = (stripped.match(/\brefuseOverwrite\(/g) ?? []).length - declarations;
+  assert.equal(
+    callSites,
+    3,
+    `refuseOverwrite() has ${callSites} call site(s) in anno-cli.ts. If that is correct, update BOTH paragraphs of its ` +
+      `doc comment -- the one naming the verbs AND the one stating the count. WR-08 was exactly these two disagreeing.`,
+  );
+
+  // And the doc really does say three, in the paragraph that states a count.
+  // Read off disk rather than retyped, so a doc that reverts to "two" fails
+  // here rather than passing because this file has its own copy.
+  const doc = readFileSync(R2000_CLI_SOURCE_PATH, "utf8");
+  assert.match(
+    doc,
+    /stated as the THREE call sites it\s+\* actually has/,
+    "the count-stating paragraph must name the same number the scan just measured",
+  );
+  assert.doesNotMatch(
+    doc,
+    /stated as the two call sites/,
+    "the stale WR-08 wording must not come back",
+  );
+});
+
 test("an Object.prototype key used as a verb is refused, not thrown (30-REVIEW CR-01)", async () => {
   for (const key of OBJECT_PROTOTYPE_KEYS) {
     let code: number | undefined;
@@ -1604,6 +1719,75 @@ test("export-asm: an existing destination is refused without --force, and the fi
       runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", outPath, "--force"]),
     );
     assert.equal(forced.result, 0, forced.stderr);
+    assert.match(readFileSync(outPath, "utf8"), /^!cpu 6510/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW WR-05 -- `--out` was confined and overwrite-checked but never
+// COMPARED to `<image>` or `--store`, so with `--force` the export destroyed
+// its own input.
+//
+// Reproduced against the committed code:
+//   anno export-asm game.raw --store g.annostore --out g.annostore --force
+//     -> the annotation store is replaced by ACME text, exit 0
+//   anno export-asm game.raw --store g.annostore --out game.raw --force
+//     -> the image is replaced by ACME text, exit 0
+//
+// `exportAsm()` has fully read both inputs before the write, so this was
+// user-directed rather than silent -- but a CLI whose header says "Every verb
+// takes EXISTING inputs and refuses rather than guess" should not let its own
+// output destination land on its own input.
+//
+// The refusal is UNCONDITIONAL: `--force` means "yes, replace the file I
+// named", and nobody types it meaning "yes, destroy my annotation store".
+// ---------------------------------------------------------------------------
+
+test("export-asm: --out on the annotation store is refused, and --force does NOT lift it (30-REVIEW WR-05)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const before = readFileSync(storePath);
+
+    for (const argv of [
+      ["export-asm", imagePath, "--store", storePath, "--out", storePath],
+      ["export-asm", imagePath, "--store", storePath, "--out", storePath, "--force"],
+    ]) {
+      const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+      assert.notEqual(code, 0, `argv=${JSON.stringify(argv)} must be refused`);
+      assert.match(stderr, /refusing to write the exported source/i, stderr);
+      assert.match(stderr, /annotation store/i, `the refusal must name WHICH input it would have destroyed: ${stderr}`);
+      assert.deepEqual(readFileSync(storePath), before, `argv=${JSON.stringify(argv)} modified the annotation store`);
+    }
+  });
+});
+
+test("export-asm: --out on the image is refused, and --force does NOT lift it (30-REVIEW WR-05)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const before = readFileSync(imagePath);
+
+    for (const argv of [
+      ["export-asm", imagePath, "--store", storePath, "--out", imagePath],
+      ["export-asm", imagePath, "--store", storePath, "--out", imagePath, "--force"],
+    ]) {
+      const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+      assert.notEqual(code, 0, `argv=${JSON.stringify(argv)} must be refused`);
+      assert.match(stderr, /refusing to write the exported source/i, stderr);
+      assert.match(stderr, /image/i, `the refusal must name WHICH input it would have destroyed: ${stderr}`);
+      assert.deepEqual(readFileSync(imagePath), before, `argv=${JSON.stringify(argv)} modified the image`);
+    }
+  });
+});
+
+test("export-asm: PAIRED DIRECTION -- an --out that is NOT an input still writes (30-REVIEW WR-05 non-vacuity)", async () => {
+  // A verb that refused every --out would pass both tests above.
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const outPath = join(ws, "not-an-input.a");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
+    );
+    assert.equal(code, 0, stderr);
     assert.match(readFileSync(outPath, "utf8"), /^!cpu 6510/);
   });
 });

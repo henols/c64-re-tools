@@ -335,8 +335,18 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
  * SAY, AND IT WAS NOT TRUE. `render-memmap` wrote an output file and had
  * neither `--force` in its option set nor a call to this function anywhere on
  * its path; `29-REVIEW.md` CR-02 reproduced it destroying a pre-existing file
- * silently, exit code 0. The claim is now stated as the two call sites it
+ * silently, exit code 0. The claim is now stated as the THREE call sites it
  * actually has, because a count is checkable where "every" is not.
+ *
+ * "THE TWO CALL SITES" IS WHAT THIS SENTENCE SAID UNTIL 2026-08-31, AFTER
+ * `cmdExportAsm()` BECAME THE THIRD (30-REVIEW WR-08). The paragraph directly
+ * above had been updated to name all three; this one, whose entire point is
+ * that a COUNT is checkable where "every" is not, was left carrying a stale
+ * count -- the failure mode it exists to argue against, reproduced in
+ * miniature two lines below itself. `anno-cli.test.ts` now asserts the count
+ * mechanically, the way `anno-cli-path-consumers.test.ts` already does for the
+ * confinement seam, so the next verb to write an output file cannot leave this
+ * number behind again.
  *
  * `outPath` MUST already be confined through `storePathWithinWorkspace()`.
  * This function performs no confinement of its own and must never be read as
@@ -351,6 +361,35 @@ function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel:
       `pass --force to overwrite it deliberately.`,
   );
   return false;
+}
+
+/**
+ * THE ONE "is this token a value, or the next flag?" TEST, shared by all THREE
+ * option parsers below (30-REVIEW WR-09, fixed 2026-08-31).
+ *
+ * The `*MissingValue` mechanism exists precisely to avoid "silently swallowing
+ * the next token" when an option is given without its value. Until this
+ * helper, each of the SEVEN option-with-a-value sites spelled the test inline
+ * as `value === undefined || value.startsWith("--")` -- which refuses a
+ * DOUBLE-dash token and accepts a single-dash one. So
+ * `anno export-asm g.prg --store -x` took `-x` as the store path, and the run
+ * failed downstream as a confinement or not-found error about a file called
+ * `-x` rather than as the `--store requires a value` refusal the parser was
+ * written to produce. A single-dash token is exactly the case the mechanism
+ * missed.
+ *
+ * ANY leading `-` is refused, including a bare `-`. No verb in this CLI reads
+ * stdin, so `-` has no meaning here, and a path that genuinely begins with a
+ * dash is addressable as `./-x` -- which is also how every other CLI a caller
+ * has used behaves. Refusing beats guessing which of the two a caller meant.
+ *
+ * ONE PREDICATE, SEVEN CALL SITES, deliberately: the three parsers' own docs
+ * each claim they are "the SAME shape ... rather than a third convention", and
+ * an inline copy per site is how that claim quietly stops being true. A fix
+ * applied to one parser would leave the finding armed in the other two.
+ */
+function isMissingOptionValue(value: string | undefined): boolean {
+  return value === undefined || value.startsWith("-");
 }
 
 interface RenderMemmapParsedArgs {
@@ -388,7 +427,7 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
     const a = rest[i]!;
     if (a === "--provenance") {
       const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (isMissingOptionValue(value)) {
         provenanceMissingValue = true;
       } else {
         provenance = value;
@@ -396,7 +435,7 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
       }
     } else if (a === "--out") {
       const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (isMissingOptionValue(value)) {
         outMissingValue = true;
       } else {
         out = value;
@@ -635,7 +674,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
     const a = rest[i]!;
     if (a === "--store") {
       const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (isMissingOptionValue(value)) {
         storeMissingValue = true;
       } else {
         store = value;
@@ -643,7 +682,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
       }
     } else if (a === "--out") {
       const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (isMissingOptionValue(value)) {
         outMissingValue = true;
       } else {
         out = value;
@@ -651,7 +690,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
       }
     } else if (a === "--sample") {
       const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (isMissingOptionValue(value)) {
         sampleMissingValue = true;
       } else {
         sampleRaw = value;
@@ -1140,7 +1179,7 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
     const a = rest[i]!;
     if (a === "--store") {
       const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (isMissingOptionValue(value)) {
         storeMissingValue = true;
       } else {
         store = value;
@@ -1148,7 +1187,7 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
       }
     } else if (a === "--out") {
       const value = rest[i + 1];
-      if (value === undefined || value.startsWith("--")) {
+      if (isMissingOptionValue(value)) {
         outMissingValue = true;
       } else {
         out = value;
@@ -1291,6 +1330,35 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     outPath = storePathWithinWorkspace(out ?? defaultExportAsmOut(imagePath, dirname(storePath)), workspaceRoot);
   } catch (err) {
     console.error(`export-asm: ${errMsg(err)}`);
+    return 1;
+  }
+
+  // THE OUTPUT MAY NOT LAND ON AN INPUT, AND `--force` DOES NOT OVERRIDE THIS
+  // (30-REVIEW WR-05, fixed 2026-08-31). `outPath` was confined and
+  // overwrite-checked but never COMPARED to the two inputs, so
+  // `anno export-asm game.raw --store g.annostore --out g.annostore --force`
+  // overwrote the annotation store with ACME text, and `--out game.raw
+  // --force` overwrote the image. `refuseOverwrite()` blocks both without
+  // `--force` and `exportAsm()` has fully read both inputs before the write
+  // below, so this was user-directed rather than silent -- but a CLI whose
+  // header says "Every verb takes EXISTING inputs and refuses rather than
+  // guess" should not let its own output destination land on its own input.
+  //
+  // SEPARATE FROM `refuseOverwrite()` AND UNCONDITIONAL, deliberately.
+  // `--force` means "yes, replace the file I named"; it cannot mean "yes,
+  // destroy the annotations I spent a month writing", because nobody types it
+  // for that reason. This is the one write refusal in this file `--force`
+  // does not lift.
+  //
+  // All three paths are confined realpaths by this point, so the comparison
+  // is exact rather than a string-shape guess about `..` and symlinks.
+  if (outPath === storePath || outPath === imagePath) {
+    const which = outPath === storePath ? "annotation store (--store)" : "image (<image>)";
+    console.error(
+      `export-asm: refusing to write the exported source to ${outPath} -- that is this run's own ${which}. ` +
+        `The export would destroy the input it was generated from, and --force does not lift this refusal. ` +
+        `Pass a different --out.`,
+    );
     return 1;
   }
 
