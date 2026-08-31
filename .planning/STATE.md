@@ -5,11 +5,11 @@ milestone_name: Own the Annotation Store
 current_phase: 32
 current_phase_name: The Deletion and the Grep Gate
 status: planning
-stopped_at: Phase 31 complete, ready to plan Phase 32
-last_updated: "2026-08-31T11:53:27.144Z"
+stopped_at: Phase 32 context gathered
+last_updated: "2026-08-31T13:24:42.544Z"
 last_activity: 2026-08-31
 last_activity_desc: Phase 31 complete, transitioned to Phase 32
-state_head: 7ab5f11333b0912b7d417a83b6e5766eaa087145
+state_head: 9f77d5b014fda6226f9027f198b66be7823458fe
 progress:
   total_phases: 6
   completed_phases: 5
@@ -24,7 +24,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-29 after Phase 28)
 
-**Current focus:** Phase 31 — Procedure Re-pointing
+**Current focus:** Phase 32 — The Deletion and the Grep Gate
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -1364,8 +1364,8 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-30T23:48:34.583Z
-Stopped at: Phase 31 complete, ready to plan Phase 32
+Last session: 2026-08-31T13:24:41.603Z
+Stopped at: Phase 32 context gathered
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
@@ -1862,7 +1862,7 @@ Earlier still: Milestone **v0.4.0 Debt discharged, decisions settled** closed an
   `.planning/milestones/`), and `r2000-answer-key.test.ts` reads
   `.planning/phases/11-*/evidence/` unguarded — moving them would turn both
   red. Tagged `v0.4.0`.
-Resume file: None
+Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
