@@ -661,6 +661,112 @@ test("a store with ZERO comments emits no comment line, and still round-trips", 
 });
 
 // ---------------------------------------------------------------------------
+// 30-REVIEW WR-04 -- `hexExtent()`'s `$10000` case, the only reason it
+// existed, was untested and rested on an unmeasured assumption. Measured, the
+// assumption was FALSE.
+//
+// `hexExtent()` padded without masking so that a range ending at `$ffff`
+// produced `!if * != $10000`, justified by the claim that `hex4()`'s mask
+// "would render that as `$0000` -- an assertion no assembly can ever satisfy,
+// firing on a correct export". No test in this file used an address above
+// `$d020`; grep for `ffff`/`10000` returned nothing.
+//
+// MEASURED against real ACME 0.97 while fixing this (2026-08-31): ACME's `*`
+// is a 16-bit program counter and WRAPS. After `* = $fffe` and two bytes, `*`
+// is `$0000`. The `$10000` form fails with `!error: end drifted` and writes no
+// output file, so the UNMASKED assertion is the one that fired on a correct
+// export -- for every range touching the top of memory, with a failure that
+// looks like an exporter bug.
+//
+// ACME's own `-v2` line prints the unwrapped extent (`Saving 2 (0x2) bytes
+// (0xfffe - 0x10000 exclusive)`), which is presumably where the assumption
+// came from. That is ACME describing a SEGMENT; `*` is a different thing.
+//
+// These tests are the measurement, kept: the round trip goes through real
+// ACME, so it is the assembler and the byte-diff that settle it, not a string
+// match on the emitted assertion.
+// ---------------------------------------------------------------------------
+
+/** A flat 64K capture whose last two bytes are `$aa $bb`, with the store
+ * carrying the single range `$fffe..$ffff` -- the top-of-memory shape whose
+ * exclusive end is `$10000`. Also exercises `decode()`'s 16-bit address wrap.
+ * `.raw` is the flat-image extension `loadImage()` dispatches on. */
+function topOfMemoryFixture(tag: string, dataType: string): StoreFixture {
+  const dir = freshDir(tag);
+  const imagePath = join(dir, "capture.raw");
+  const flat = Buffer.alloc(65536);
+  flat[0xfffe] = 0xaa;
+  flat[0xffff] = 0xbb;
+  writeFileSync(imagePath, flat);
+
+  const storePath = join(dir, "anno.sqlite");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    setDataType(handle, { start: 0xfffe, endInclusive: 0xffff, dataType });
+  } finally {
+    closeStore(handle);
+  }
+  return { dir, storePath, imagePath };
+}
+
+test("a range ending at $ffff emits the block-end assertion ACME's WRAPPED `*` can satisfy (30-REVIEW WR-04)", () => {
+  const { dir, storePath, imagePath } = topOfMemoryFixture("top-of-memory-shape", "byte");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.ok(
+    result.source.includes('!if * != $0000 { !error "export-asm: block end drifted, expected $0000" }'),
+    `the exclusive end $10000 must be emitted MASKED, because ACME's \`*\` wraps to $0000 there:\n${result.source}`,
+  );
+  assert.equal(
+    result.source.includes("$10000"),
+    false,
+    `an unmasked $10000 is an assertion real ACME never satisfies -- it fires on a CORRECT export:\n${result.source}`,
+  );
+  assert.equal(result.blocks[0]!.endExclusive, 0x10000, "the BLOCK still carries the true exclusive end; only its RENDERING is masked");
+});
+
+test("ROUND TRIP: a range at the very top of memory reassembles byte-identically through real ACME (30-REVIEW WR-04)", { skip: SKIP_REASON }, () => {
+  // The measurement itself, and the only thing that settles it. Before the
+  // fix this exited 1 with `!error: block end drifted, expected $10000` and
+  // wrote no output file, which the verdict layer reports as `failed`.
+  const { dir, storePath, imagePath } = topOfMemoryFixture("top-of-memory-roundtrip", "byte");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `${verdict.reason}\n${result.source}`);
+  assert.equal(verdict.byteDiff?.equal, true, `${verdict.reason}\n${result.source}`);
+});
+
+test("ROUND TRIP: a CODE range at the top of memory reassembles too -- decode()'s 16-bit address wrap (30-REVIEW WR-04)", { skip: SKIP_REASON }, () => {
+  // `$aa $bb` decodes as `ldx #$bb` -- a two-byte instruction that exactly
+  // fills $fffe..$ffff, so the code path reaches the same wrapped end
+  // assertion the data path does.
+  const { dir, storePath, imagePath } = topOfMemoryFixture("top-of-memory-code", "code");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `${verdict.reason}\n${result.source}`);
+  assert.equal(verdict.byteDiff?.equal, true, `${verdict.reason}\n${result.source}`);
+});
+
+test("NON-VACUITY: the top-of-memory end assertion still BITES -- a corrupted byte count is refused by real ACME (30-REVIEW WR-04)", { skip: SKIP_REASON }, () => {
+  // Masking the extent must not make the top-of-memory assertion satisfiable
+  // by anything. One byte removed from the emitted source leaves `*` at
+  // $ffff, and ACME must exit 1 and write NO output file -- measured
+  // separately at the raw-assembly level while fixing WR-04, and asserted
+  // here through the same verdict layer every other planted violation uses.
+  const { dir, storePath, imagePath } = topOfMemoryFixture("top-of-memory-bite", "byte");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const shortened = result.source.replace("!byte $aa, $bb", "!byte $aa");
+  assert.notEqual(shortened, result.source, "the planted violation must actually change the source");
+
+  const verdict = verifyExportText(result, shortened);
+  assert.equal(
+    verdict.outcome,
+    "failed",
+    `a block one byte short at the top of memory must be REFUSED, or the masked assertion is vacuous:\n${shortened}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 30-REVIEW WR-03 -- a store's `dataType` reached emitted ACME source text
 // unvalidated.
 //

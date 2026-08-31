@@ -339,14 +339,47 @@ function hex4(value: number): string {
 }
 
 /**
- * `$XXXX` for an address, and for the ONE value in this module that is not an
- * address: a block's EXCLUSIVE end, which is `$10000` for a range ending at
- * `$ffff`. `hex4()` masks with `0xffff` and would render that as `$0000` -- an
- * assertion no assembly can ever satisfy, firing on a correct export. Padded,
- * never masked.
+ * `$XXXX` FOR A BLOCK'S EXCLUSIVE END, WHICH IS `hex4()` -- MASKED, NOT PADDED.
+ *
+ * THIS FUNCTION USED TO DO THE OPPOSITE, AND IT WAS WRONG (30-REVIEW WR-04,
+ * corrected 2026-08-31). It padded without masking, so a range ending at
+ * `$ffff` produced the end assertion `!if * != $10000`. Its doc justified that
+ * by asserting that `hex4()`'s mask "would render that as `$0000` -- an
+ * assertion no assembly can ever satisfy, firing on a correct export". That
+ * claim was never measured, and it is FALSE in exactly the direction that
+ * matters: ACME's `*` is a 16-BIT program counter and WRAPS.
+ *
+ * MEASURED, real ACME 0.97 "Zem" on this host, 2026-08-31:
+ *
+ *   !cpu 6510
+ *   * = $fffe
+ *   !if * != $fffe { !error "origin drifted, expected $fffe" }
+ *           !byte $aa, $bb
+ *   !if * != $0000 { !error "end drifted, expected $0000" }
+ *
+ *   -> exit 0, output file written, bytes `aa bb`.
+ *
+ * The same source with `!if * != $10000` fails: `!error: end drifted` and no
+ * output file. So the UNMASKED form is the one that "fires on a correct
+ * export", for every range touching the top of memory -- and the failure looks
+ * like an exporter bug rather than an arithmetic one.
+ *
+ * WHY THE ASSUMPTION LOOKED SAFE: ACME's own `-v2` diagnostics DO print the
+ * unwrapped extent, `Saving 2 (0x2) bytes (0xfffe - 0x10000 exclusive)`. That
+ * is ACME describing a SEGMENT; `*` is a different thing and wraps. Do not
+ * reintroduce an unmasked extent on the strength of that line.
+ *
+ * THE GUARD STILL BITES AT THE TOP OF MEMORY, measured the same way: the same
+ * source emitting ONE byte instead of two leaves `*` at `$ffff`, the
+ * assertion fires, ACME exits 1 and writes no output file. The mask does not
+ * make the top-of-memory assertion vacuous.
+ *
+ * Kept as a named function rather than folded into `hex4()` so this record has
+ * somewhere to live, and so the ONE value in this module that is not an
+ * address still reads differently at its call site.
  */
 function hexExtent(value: number): string {
-  return `$${value.toString(16).padStart(4, "0")}`;
+  return hex4(value);
 }
 
 /**
