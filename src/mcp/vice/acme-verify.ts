@@ -213,6 +213,15 @@ const MEASURED_MISSING_BINARY_SPAWNS: readonly SpawnShape[] = Object.freeze([
  * ran". Reproduced with `/bin/sh -c 'kill -SEGV $$'` and
  * `/bin/sleep 5` under a 200ms timeout; see `classifySpawn()`'s doc for the
  * measured field values.
+ *
+ * THE THIRD ROW IS 30-REVIEW WR-06's: a stdout OVERFLOW. Measured the same
+ * way (`spawnSync(..., { maxBuffer: 1024 })` over a child printing 200 000
+ * bytes): `status null, signal "SIGTERM", error.code "ENOBUFS"`. `spawnSync`
+ * KILLS the child on overflow, so the signal rule already classifies it
+ * `"ran"` -- which is right, because it did: the verdict then proceeds on
+ * truncated evidence rather than reporting an absent binary. It is pinned
+ * here so a future change to the signal rule cannot silently reopen WR-06's
+ * false-"no assembler ran" channel.
  */
 const MEASURED_RAN_AND_DIED_SPAWNS: readonly SpawnShape[] = Object.freeze([
   Object.freeze({ status: null, signal: "SIGSEGV" as NodeJS.Signals }),
@@ -220,6 +229,13 @@ const MEASURED_RAN_AND_DIED_SPAWNS: readonly SpawnShape[] = Object.freeze([
     (() => {
       const error = new Error("spawnSync /bin/sleep ETIMEDOUT") as NodeJS.ErrnoException;
       error.code = "ETIMEDOUT";
+      return { error, status: null, signal: "SIGTERM" as NodeJS.Signals };
+    })(),
+  ),
+  Object.freeze(
+    (() => {
+      const error = new Error("spawnSync /bin/sh ENOBUFS") as NodeJS.ErrnoException;
+      error.code = "ENOBUFS";
       return { error, status: null, signal: "SIGTERM" as NodeJS.Signals };
     })(),
   ),
@@ -740,6 +756,27 @@ export function verifyAcmeAssembles(options: AcmeVerifyOptions): AcmeVerifyResul
     const r = spawnSync(assemblerBin, buildArgv(format, outPath, srcPath), {
       encoding: "utf8",
       timeout: 30_000,
+      // AN EXPLICIT, GENEROUS maxBuffer (30-REVIEW WR-06, added 2026-08-31).
+      // Node's default is 1 MiB. `-v2` emits ONE per-segment result line per
+      // block, so a store with enough ranges (roughly 17 000 at ~60 bytes per
+      // line) overflowed stdout, at which point `spawnSync` sets
+      // `error.code = "ENOBUFS"` and kills the child -- and before CR-03's
+      // fix that landed in `"unavailable"` -> `"skipped"`, the same false
+      // "no assembler ran" report as CR-03 from a different cause. Worse,
+      // `refuseOnCompetingAggregates()` and `firstResultLineDisagreement()`
+      // -- the two rules that READ stdout -- would then never run at all, so
+      // a truncated stream could not disagree with anything.
+      //
+      // 64 MiB is chosen to be far past any plausible real store rather than
+      // tuned: this is a test-only oracle run once per verification, and the
+      // cost of a buffer that is never filled is nothing, while the cost of
+      // one that overflows is a verdict about the wrong thing.
+      //
+      // ENOBUFS IS NOW `"ran"` REGARDLESS, via `classifySpawn()`'s
+      // signal/timeout rules: `spawnSync` kills the child on overflow, which
+      // sets `signal`. So an overflow that somehow still happened is a real
+      // observation with truncated evidence, not an absent binary.
+      maxBuffer: 64 * 1024 * 1024,
     });
 
     // Assigned ONCE. Read by nothing below.

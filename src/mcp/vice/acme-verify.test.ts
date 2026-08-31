@@ -366,6 +366,68 @@ test("LIVE MEASUREMENT: a real SIGSEGV and a real timeout both classify as `ran`
   );
 });
 
+// ---------------------------------------------------------------------------
+// 30-REVIEW WR-06 -- `spawnSync`'s default 1 MiB `maxBuffer` turned a large
+// export into a `"skipped"` verdict.
+//
+// `-v2` emits one per-segment result line per block, so a store with enough
+// ranges (roughly 17 000 at ~60 bytes per line) overflows stdout, at which
+// point `spawnSync` sets `error.code = "ENOBUFS"` and kills the child. Before
+// CR-03's fix that landed in `"unavailable"` -> `"skipped"`: the same false
+// "no assembler ran" report, from a different cause. Worse,
+// `refuseOnCompetingAggregates()` and `firstResultLineDisagreement()` -- the
+// two rules that READ stdout -- would never have run.
+//
+// TWO independent guards, because the two halves fail independently: the
+// classification (an overflow that happens anyway is `"ran"`, not `"skipped"`)
+// and the buffer itself (an explicit generous `maxBuffer` so it does not
+// happen).
+// ---------------------------------------------------------------------------
+
+test("LIVE MEASUREMENT: a real stdout overflow classifies as `ran`, not `unavailable` (30-REVIEW WR-06)", () => {
+  // An actual overflowing spawn, so this observes what Node on THIS host
+  // really reports rather than a hand-written literal.
+  const overflow = spawnSync("/bin/sh", ["-c", "head -c 200000 /dev/zero | tr '\\0' 'a'"], { maxBuffer: 1024 });
+  assert.equal(
+    (overflow.error as NodeJS.ErrnoException | undefined)?.code,
+    "ENOBUFS",
+    `precondition: the probe must really overflow (got ${String((overflow.error as NodeJS.ErrnoException | undefined)?.code)})`,
+  );
+  assert.equal(
+    classifySpawn(overflow),
+    "ran",
+    "a process killed for overflowing our own buffer RAN. Scoring it `unavailable` reports `ACME never ran` about a " +
+      "large but perfectly ordinary export, and skips the two verdict rules that read stdout",
+  );
+});
+
+test("verifyAcmeAssembles() sets an EXPLICIT maxBuffer far above Node's 1 MiB default (30-REVIEW WR-06)", () => {
+  // Structural, over the module's own source: the spawn options are not
+  // reachable from a return value, and the store size that would trigger the
+  // real overflow (~17 000 ranges) is not something to build in a unit test.
+  const source = readFileSync(VERIFY_MODULE_PATH, "utf8");
+  // Scoped to the REAL spawn call's options object, not the whole file: the
+  // module's own doc comments quote a `maxBuffer: 1024` probe (the measured
+  // ENOBUFS shape), and a file-wide regex matched THAT first -- which this
+  // test caught on its first run. The value that matters is the one the
+  // spawn actually receives.
+  const spawnAt = source.indexOf("spawnSync(assemblerBin");
+  assert.ok(spawnAt > 0, "the one real spawn site must still be `spawnSync(assemblerBin, ...)`");
+  const optionsEnd = source.indexOf("});", spawnAt);
+  assert.ok(optionsEnd > spawnAt, "could not find the end of the spawn options object");
+  const spawnOptions = source.slice(spawnAt, optionsEnd);
+  const match = /maxBuffer:\s*([0-9_*\s]+?),/.exec(spawnOptions);
+  assert.ok(match, `acme-verify.ts's spawn must set maxBuffer explicitly -- Node's 1 MiB default is WR-06:\n${spawnOptions}`);
+  // eslint-disable-next-line no-eval -- a fixed arithmetic literal read from
+  // our own source, not caller input; evaluating it is what keeps this
+  // assertion about the VALUE rather than about the spelling.
+  const value = Function(`"use strict"; return (${match![1]});`)() as number;
+  assert.ok(
+    value >= 16 * 1024 * 1024,
+    `maxBuffer is ${value}; WR-06 needs it far above the 1 MiB default that a ~17 000-range store overflows`,
+  );
+});
+
 test(
   "a CRASHING assembler is `failed`, not `skipped`, end to end through the acmeBin seam (30-REVIEW CR-03)",
   { skip: existsSync("/bin/sh") ? false : "no /bin/sh on this host" },
