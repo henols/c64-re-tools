@@ -1220,7 +1220,11 @@ cd - && node scripts/check-no-regenerator2000.mjs \
 **Everything else in this document is `[VERIFIED]` against this tree on 2026-08-31**, by
 reading the source-of-truth file and/or executing the command shown.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four are resolved. Each carries a `**RESOLVED:**` line naming the plan and the delta or
+decision that adopted it. **The recommendations themselves are unchanged** — every one was
+adopted verbatim, so nothing here needed revising, only marking.
 
 1. **Should `STORE-04` be the `requirement_id`, or should `r2000_undo` instead get a new field
    recording "criterion arrived, answered otherwise"?**
@@ -1233,6 +1237,12 @@ reading the source-of-truth file and/or executing the command shown.
      3's language) **and** make the justification carry the distinction in prose: the criterion
      arrived, `D2` answered it with whole-store snapshot/restore, the omission stands. Prose is
      where this manifest already records nuance.
+   - **RESOLVED:** adopted verbatim by plan `31-01`, task 1, delta **D3** — `"disposition"` stays
+     `omit`, `"requirement_id": "STORE-04"` is added in the siblings' key slot, and the rewritten
+     `justification` carries the arrived-and-answered distinction in prose (`STORE-04`,
+     `revertTo(handle, revision)`, decision `D2`). No new field was invented. The inference itself
+     is carried forward as a flagged assumption in `31-01-PLAN.md` and recorded as judgement 1 of
+     the dated `- [Phase 31]:` STATE.md entry in plan `31-03`, task 2.
 
 2. **Does `r2000_toggle_splitter`'s justification need correcting now that `STORE-02` closed
    its blocker?**
@@ -1243,6 +1253,10 @@ reading the source-of-truth file and/or executing the command shown.
      doing less leaves a known-false prediction in a record this phase is opening anyway.
    - **Recommendation:** add a one-sentence dated note. Cheap, in the same file, in the same
      commit, and it prevents a future reader acting on a false prediction.
+   - **RESOLVED:** adopted verbatim by plan `31-01`, task 1, delta **D7** — one dated sentence
+     recording that `STORE-02` closed the blocker **by construction**, in the same file and the
+     same single commit, with `requirement_id: DECOMP-01` and `also_required_by: [BUILD-02]` left
+     exactly as they are.
 
 3. **Should the naming-line assertion also cover `installer/skills/`, given
    `skill-attribution.test.ts` is scoped to `src/skills` by design?**
@@ -1250,6 +1264,10 @@ reading the source-of-truth file and/or executing the command shown.
      with block+hit pins. Adding a second root to this test is a small, explicit widening.
    - **Recommendation:** yes, cover both, and say at the point of use *why* this one test
      departs from the file's `src/skills`-only scope — the criterion is about two trees.
+   - **RESOLVED:** adopted verbatim by plan `31-02`, task 1 — `SKILL_ATTRIBUTION_ROOTS` is a
+     two-element tuple (`SKILLS_DIR`, then `join(ROOT, "installer", "skills")`) walked by the one
+     new test, with the scope departure stated in a comment at the point of use and recorded as a
+     `key_links` entry. `SKILLS_DIR` is unchanged and no existing test is re-scoped.
 
 4. **Is a `31-VERIFICATION.md` scoring pass the intended evidence for criterion 1, or does the
    phase need a plan that produces measurements as a deliverable?**
@@ -1259,6 +1277,11 @@ reading the source-of-truth file and/or executing the command shown.
    - **Recommendation:** have a plan **produce the measurement and the assertion**, and let
      `/gsd-verify-work` score it. A committed assertion is stronger evidence than a
      verification-time grep, and it keeps being true.
+   - **RESOLVED:** adopted verbatim as the whole phase's shape — plan `31-02` produces the
+     committed assertion plus its planted-violation proof and records the measured counts in its
+     SUMMARY, and scoring is left to the Phase 31 verification pass. Plan `31-03`, task 2 records
+     the matching non-promotion as judgement 4: `REPOINT-03` and `REPOINT-04` stay `Pending`
+     because a status row does not move ahead of the re-verification verdict that scores it.
 
 ## Environment Availability
 
