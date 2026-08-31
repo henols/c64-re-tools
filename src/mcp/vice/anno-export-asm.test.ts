@@ -84,7 +84,7 @@ import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
-import { assertExportableCommentText, exportAsm, type ExportAsmResult } from "./anno-export-asm.ts";
+import { assertExportableCommentText, exportAsm, substituteImmediateEnum, type ExportAsmResult } from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
@@ -1255,6 +1255,112 @@ test("an enum bound to a NON-IMMEDIATE operand is REFUSED by name, naming the ad
       assert.ok(e.message.includes("viccolor"), `the refusal names the ENUM, so a human can find the row: ${e.message}`);
       return true;
     },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW CR-02 -- an enum bound to an UNEXPRESSIBLE immediate opcode was
+// substituted into the trailing COMMENT and the export reported success.
+//
+// `decode()` assigns `role: "immediate"` from the addressing mode alone,
+// independently of `acmeExpressible`, so the role gate above passed for six
+// opcodes that `renderLine()` emits as a `!byte` DIRECTIVE with the mnemonic
+// and its `#$xx` operand moved into the trailing comment. `indexOf("#$00")`
+// then found the literal in the comment and rewrote it THERE. Reproduced
+// against the committed code before this fix:
+//
+//   !byte $eb, $00  ; sbc #viccolor_BLACK  [illegal opcode | not expressible ...]
+//   === enumSubstitutionCount: 1
+//
+// The enum symbol never reached the assembler, an unreferenced
+// `viccolor_BLACK = $00` went into the header, the usage counted as applied
+// and the CLI exited 0. The BYTES stay correct, so the byte-diff oracle
+// cannot catch it and a round-trip test goes green -- which is precisely why
+// this control asserts the REFUSAL rather than the bytes.
+//
+// All six are covered, not just the one reproduced first: a fix that hardened
+// $eb alone would leave the shape armed under the other five.
+const UNEXPRESSIBLE_IMMEDIATE_OPCODES: readonly { byte: number; mnemonic: string }[] = [
+  { byte: 0x2b, mnemonic: "anc" },
+  { byte: 0x82, mnemonic: "nop" },
+  { byte: 0x89, mnemonic: "nop" },
+  { byte: 0xc2, mnemonic: "nop" },
+  { byte: 0xe2, mnemonic: "nop" },
+  { byte: 0xeb, mnemonic: "sbc" },
+];
+
+test("PRECONDITION: every opcode in UNEXPRESSIBLE_IMMEDIATE_OPCODES really is `mode: immediate` AND `acmeExpressible: false`", () => {
+  // Derived from the real table, so this list cannot silently drift from the
+  // opcodes it claims to cover -- and a SEVENTH such opcode added later fails
+  // here by name instead of going untested.
+  const actual = Object.entries(OPCODES)
+    .filter(([, entry]) => entry !== undefined && entry.mode === "immediate" && entry.acmeExpressible === false)
+    .map(([key]) => Number(key))
+    .sort((a, b) => a - b);
+  assert.deepEqual(
+    actual,
+    UNEXPRESSIBLE_IMMEDIATE_OPCODES.map((o) => o.byte).sort((a, b) => a - b),
+    "the unexpressible-immediate opcode set in disasm-opcodes.ts changed -- update this control's list",
+  );
+});
+
+test("an enum bound to an UNEXPRESSIBLE immediate opcode is REFUSED by name, never substituted into the comment (30-REVIEW CR-02)", () => {
+  for (const { byte, mnemonic } of UNEXPRESSIBLE_IMMEDIATE_OPCODES) {
+    // `<opcode> #$00` then `rts` -- the enum's $00 variant matches the operand,
+    // so every gate ABOVE the expressibility one passes and this test is
+    // exercising exactly the gate it names.
+    const fixture = buildStore(freshDir(`enum-unexpressible-${byte.toString(16)}`), {
+      origin: 0x0801,
+      body: [byte, 0x00, 0x60],
+      ranges: [{ start: 0x0801, endInclusive: 0x0803, dataType: "code" }],
+      enums: [{ name: VICCOLOR.name, variants: { ...VICCOLOR.variants } }],
+      enumUsage: [{ address: 0x0801, name: VICCOLOR.name }],
+    });
+    assert.throws(
+      () => exportAsm({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof Error);
+        assert.match(e.message, /^exportAsm: /);
+        assert.ok(e.message.includes("$0801"), `the refusal names the ADDRESS: ${e.message}`);
+        assert.ok(e.message.includes("viccolor"), `the refusal names the ENUM, so a human can find the row: ${e.message}`);
+        assert.ok(e.message.includes(mnemonic), `the refusal names the MNEMONIC it refused: ${e.message}`);
+        assert.match(
+          e.message,
+          /NOT EXPRESSIBLE/,
+          `the refusal must name expressibility as the reason, not the operand role (which is "immediate" here): ${e.message}`,
+        );
+        return true;
+      },
+      `opcode $${byte.toString(16).padStart(2, "0")} (${mnemonic} #imm) must be REFUSED, not silently substituted into its trailing comment`,
+    );
+  }
+});
+
+test("substituteImmediateEnum() refuses a literal that lives only in the trailing comment (30-REVIEW CR-02, defence in depth)", () => {
+  // The renderer shape the CR-02 reproduction produced, handed to the
+  // substitution directly: the assembler-visible half carries no `#$00` at
+  // all, only the trailing comment does. A search over the WHOLE line finds
+  // it and returns a line whose `!byte` list is untouched; a search confined
+  // to the directive half refuses.
+  const line = "        !byte $eb, $00  ; sbc #$00  [illegal opcode | not expressible in ACME !cpu 6510]";
+  assert.throws(
+    () => substituteImmediateEnum(line, 0x00, "viccolor_BLACK", 0x0801),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /ASSEMBLER-VISIBLE/);
+      assert.ok(e.message.includes("$0801"), `the refusal names the address: ${e.message}`);
+      return true;
+    },
+    "a `#$xx` that exists only in the trailing comment must be refused, not rewritten where the assembler never reads it",
+  );
+
+  // Paired positive control: the ordinary expressible shape still substitutes,
+  // so a substituteImmediateEnum() that threw unconditionally would fail here
+  // rather than pass the refusal above vacuously.
+  assert.equal(
+    substituteImmediateEnum("        lda #$00  ; a note", 0x00, "viccolor_BLACK", 0x0801),
+    "        lda #viccolor_BLACK  ; a note",
+    "the directive half's literal is still substituted, and the trailing comment is left alone",
   );
 });
 

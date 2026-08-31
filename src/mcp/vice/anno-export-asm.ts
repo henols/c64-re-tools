@@ -465,14 +465,47 @@ const MAX_IMMEDIATE_VARIANT_VALUE = 0xff;
  * renderer, and it is refused rather than patched over: a `replace()` that
  * silently matched nothing would emit the hex literal while the count claimed a
  * substitution happened.
+ *
+ * THE SEARCH IS CONFINED TO THE DIRECTIVE HALF OF THE LINE, AND THAT IS THE
+ * SECOND HALF OF 30-REVIEW CR-01's FIX (2026-08-31). `renderLine()` emits a
+ * trailing `"  ; "` comment for notes, and for an instruction whose
+ * `acmeExpressible` is false it emits the whole thing as a `!byte` directive
+ * with the mnemonic AND its `#$xx` operand moved INTO that comment
+ * (`disasm-renderer.ts`'s `!instr.acmeExpressible` branch). A bare
+ * `line.indexOf()` therefore found `#$00` in the COMMENT, rewrote it there,
+ * and returned a line whose assembler-visible half still carried the raw
+ * byte -- while the caller counted a substitution and the export exited 0.
+ * Reproduced against the committed code before this fix, for `$eb`
+ * (`sbc #imm`):
+ *
+ *   !byte $eb, $00  ; sbc #viccolor_BLACK  [illegal opcode | not expressible ...]
+ *
+ * The caller now refuses an unexpressible opcode outright, so this confinement
+ * is defence in depth against the same class of mistake arriving by a
+ * different route -- a future renderer that puts a `#$xx` in a comment for any
+ * other reason gets the "does not contain the literal" refusal below instead
+ * of a silent no-op substitution.
+ *
+ * EXPORTED FOR TEST REACH ONLY, on the same terms as
+ * `assertExportableCommentText()` below: no other module calls it, and the one
+ * that would (`anno-cli.ts`) goes through `exportAsm()`. It is exported
+ * because the caller now refuses an unexpressible opcode BEFORE reaching here,
+ * which makes the confinement above unreachable through `exportAsm()` and
+ * therefore untestable at that level -- an untested guard is the thing that
+ * lets the next route in.
  */
-function substituteImmediateEnum(line: string, value: number, symbol: string, address: number): string {
+export function substituteImmediateEnum(line: string, value: number, symbol: string, address: number): string {
   const literal = `#${hex2(value)}`;
-  const at = line.indexOf(literal);
+  // `"  ; "` is `renderLine()`'s own comment separator, in the one place this
+  // module has to know about it. Everything from it onward is prose for a
+  // human and is never assembler input; a substitution there reaches nobody.
+  const directiveHalf = line.split("  ; ")[0];
+  const at = directiveHalf.indexOf(literal);
   if (at < 0) {
     throw new Error(
-      `exportAsm: the instruction at ${hex4(address)} carries an enum usage, but its rendered line does not contain the immediate ` +
-        `literal ${literal} this module expected to replace. Refusing to emit a line whose substitution silently did nothing.`,
+      `exportAsm: the instruction at ${hex4(address)} carries an enum usage, but the ASSEMBLER-VISIBLE half of its rendered line ` +
+        `does not contain the immediate literal ${literal} this module expected to replace. Refusing to emit a line whose ` +
+        `substitution silently did nothing (or landed in the trailing comment, where the assembler never reads it).`,
     );
   }
   return `${line.slice(0, at)}#${symbol}${line.slice(at + literal.length)}`;
@@ -777,6 +810,44 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
                 `${JSON.stringify(role ?? "none")} -- an enum renders on the IMMEDIATE operand only. Emitting it on any other operand ` +
                 `changes both the bytes and the instruction length while ACME exits 0 (measured on ACME 0.97: \`sta\` on a symbol below ` +
                 `$0100 encodes as zeropage, 2 bytes instead of 3). REFUSED rather than rendered.`,
+            );
+          }
+
+          // ROLE IS NOT ENOUGH: THE OPERAND MUST ALSO BE ASSEMBLER-VISIBLE
+          // (30-REVIEW CR-02, fixed 2026-08-31). `decode()` assigns
+          // `role: "immediate"` from the ADDRESSING MODE alone, independently
+          // of `acmeExpressible`. Six opcodes in `disasm-opcodes.ts` are
+          // `mode: "immediate"` AND `acmeExpressible: false` -- $2b (`anc`),
+          // $82/$89/$c2/$e2 (`nop #imm`) and $eb (`sbc #imm`). For those,
+          // `renderLine()` emits a `!byte` DIRECTIVE and moves the mnemonic
+          // and its `#$xx` operand into the trailing comment
+          // (`disasm-renderer.ts`'s `!instr.acmeExpressible` branch), so the
+          // substitution below reached the COMMENT and never the assembler:
+          // the operand stayed a raw byte in the `!byte` list, an unreferenced
+          // `viccolor_BLACK = $00` was emitted into the header, the usage was
+          // counted as applied, and the CLI printed "1 enum substitution(s)"
+          // and exited 0. The bytes stay correct, so the byte-diff oracle
+          // cannot see it either -- a round-trip test goes green on it.
+          //
+          // Reproduced against the committed code, store: one `code` range
+          // $0801..$0803 over `eb 00 60`, enum `viccolor { $00: BLACK }`
+          // applied at $0801 through the ordinary public `applyEnumUsage()`
+          // route (which performs no opcode validation, so this needs no
+          // hand-edited store):
+          //
+          //   !byte $eb, $00  ; sbc #viccolor_BLACK  [illegal opcode | ...]
+          //   === enumSubstitutionCount: 1
+          //
+          // This is D-30's "an annotation the exporter cannot express is
+          // REFUSED loudly and by name, never silently dropped while the
+          // export reports success" exactly inverted. It is refused now.
+          if (!instr.acmeExpressible) {
+            throw new Error(
+              `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, but that ` +
+                `opcode (${hex2(instr.bytes[0])}, ${instr.mnemonic}) is NOT EXPRESSIBLE in ACME's !cpu 6510 dialect. An unexpressible ` +
+                `opcode goes out as a \`!byte\` directive with its mnemonic and operand in a TRAILING COMMENT, so an enum symbol ` +
+                `substituted there would reach the comment and never the assembler -- the operand would stay a raw byte while this ` +
+                `export reported the substitution as applied. REFUSED rather than counted as applied.`,
             );
           }
 
