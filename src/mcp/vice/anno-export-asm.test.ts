@@ -84,7 +84,7 @@ import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
-import { assertExportableCommentText, exportAsm, substituteImmediateEnum, type ExportAsmResult } from "./anno-export-asm.ts";
+import { assertDataTypeForExport, assertExportableCommentText, exportAsm, substituteImmediateEnum, type ExportAsmResult } from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, listLabels, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
@@ -658,6 +658,82 @@ test("a store with ZERO comments emits no comment line, and still round-trips", 
   const verdict = verifyExport(result);
   assert.equal(verdict.outcome, "ok", `a comment-free export must round-trip:${context(result, verdict)}`);
   assert.equal(verdict.byteDiff?.equal, true, `comment-free byte-diff:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW WR-03 -- a store's `dataType` reached emitted ACME source text
+// unvalidated.
+//
+// `listRanges()` casts `row.data_type as DataType` with no `assertDataType()`
+// call, so a store whose `anno_range.data_type` column was edited on disk
+// carried an ARBITRARY string into `emitDataLines()`, which interpolates it
+// verbatim into the emitted block comment. A value containing a line break
+// emits arbitrary text at column zero of the generated ACME source -- the same
+// mechanism invariant 7 refuses for comment text, through a column nobody had
+// checked.
+//
+// The asymmetry is what made this a defect rather than a theoretical: the very
+// next function, `withComments()`, ALREADY defends the analogous `commentType`
+// case by name, with the comment "Unreachable through the type, and reachable
+// through a store file somebody edited. Refusing beats guessing." The same
+// reasoning applies to `dataType` and had not been applied.
+//
+// DRIVEN AT THE PREDICATE, NOT THROUGH A CORRUPTED STORE, deliberately:
+// `anno-store.ts` is the ONE module in this repo permitted to name
+// `node:sqlite`, so a test cannot manufacture the corrupted row without
+// breaking a stated architectural constraint to prove a point about
+// robustness. The predicate is what the call site calls.
+// ---------------------------------------------------------------------------
+
+test("a range whose dataType is not in the store's vocabulary is REFUSED by name at the export boundary (30-REVIEW WR-03)", () => {
+  // The line-break case is the one that actually corrupts the source: a
+  // dataType carrying a newline puts everything after it at column zero, as
+  // assembler input.
+  const hostile: unknown[] = [
+    "code\n* = $c000\n        jmp $ffd2",
+    "not-a-real-data-type",
+    "",
+    "CODE",
+    undefined,
+    null,
+    42,
+    { toString: () => "code" },
+  ];
+  for (const dataType of hostile) {
+    assert.throws(
+      () => assertDataTypeForExport({ start: 0x0801, endInclusive: 0x0806, dataType }),
+      (e: unknown) => {
+        assert.ok(e instanceof Error);
+        assert.match(e.message, /^exportAsm: /);
+        assert.ok(e.message.includes("$0801"), `the refusal names the range so a human can find the row: ${e.message}`);
+        assert.ok(e.message.includes("$0806"), `the refusal names the range so a human can find the row: ${e.message}`);
+        // The store validator's own message quotes the offending value; this
+        // boundary's must not, for `assertExportableCommentText()`'s reason.
+        assert.equal(
+          e.message.includes("jmp $ffd2"),
+          false,
+          `the refusal must not echo the offending value back -- that is a content-disclosure oracle: ${e.message}`,
+        );
+        return true;
+      },
+      `dataType ${JSON.stringify(dataType)} must be refused, not interpolated into ACME source text`,
+    );
+  }
+});
+
+test("every REAL data type still passes the export boundary, one assertion per type (30-REVIEW WR-03 non-vacuity)", () => {
+  // Built from DATA_TYPES itself -- the store's own vocabulary, its one home --
+  // so a validator that refused everything would fail HERE rather than pass
+  // the refusal test above vacuously, and a thirteenth type added later is
+  // covered with no edit.
+  assert.ok(DATA_TYPES.length > 0, "the vocabulary must be non-empty for this control to mean anything");
+  for (const dataType of DATA_TYPES) {
+    assert.equal(
+      assertDataTypeForExport({ start: 0x0801, endInclusive: 0x0806, dataType }),
+      dataType,
+      `the real data type ${JSON.stringify(dataType)} must pass the export boundary unchanged`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------

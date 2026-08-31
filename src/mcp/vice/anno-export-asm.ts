@@ -91,8 +91,8 @@ import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
 import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage } from "./anno-store.ts";
-import { AnnoCommentError, COMMENT_TYPES, assertCommentText, parseVariantKey } from "./anno-types.ts";
-import type { CommentRow, EnumUsageRow, LabelRow, ProjectEnumRow, RangeRow } from "./anno-types.ts";
+import { AnnoCommentError, COMMENT_TYPES, DATA_TYPES, assertCommentText, assertDataType, parseVariantKey } from "./anno-types.ts";
+import type { CommentRow, DataType, EnumUsageRow, LabelRow, ProjectEnumRow, RangeRow } from "./anno-types.ts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 // The eleven typed auto-name prefixes, IMPORTED FROM THEIR ONE HOME rather than
 // restated. This is the first cross-module PRODUCTION importer of that
@@ -593,6 +593,45 @@ export function assertExportableCommentText(text: string, address: number): stri
   }
 }
 
+/**
+ * Re-checks, at the EXPORT boundary, that a stored range's `dataType` is one
+ * the store's own vocabulary defines (30-REVIEW WR-03).
+ *
+ * The sibling of `assertExportableCommentText()` below, on the same terms and
+ * for the same reason: `listRanges()` casts the column with no validator, so
+ * this is the last place before that string is interpolated into ACME source
+ * text. See the call site in `exportAsm()` for the full record.
+ *
+ * The store validator's own message is deliberately DISCARDED and replaced,
+ * again for `assertExportableCommentText()`'s reason: `assertDataType()`
+ * interpolates the offending value, and an exporter error that quotes a
+ * file's contents back is a content-disclosure oracle. What survives is the
+ * ADDRESS RANGE and the valid list -- facts about the row and about this
+ * module's own vocabulary, never a byte read off disk.
+ *
+ * EXPORTED FOR TEST REACH ONLY, on the same terms as
+ * `assertExportableCommentText()`: the state it guards against is reachable
+ * only through a store file edited outside `anno-store.ts`, and
+ * `anno-store.ts` is the ONE module in this repo permitted to name
+ * `node:sqlite` -- so a test cannot manufacture the row and can only drive the
+ * predicate. An unreachable-through-the-type guard with no test is how the
+ * next such column goes unchecked.
+ */
+export function assertDataTypeForExport(row: { start: number; endInclusive: number; dataType: unknown }): DataType {
+  try {
+    return assertDataType(row.dataType);
+  } catch {
+    throw new Error(
+      `exportAsm: the range ${hex4(row.start)}..${hex4(row.endInclusive)} (inclusive) carries a data type that is not one of the ` +
+        `${DATA_TYPES.length} the store defines (${DATA_TYPES.join(", ")}) -- refusing to guess what it meant. This module copies a ` +
+        `range's data type VERBATIM into the emitted source's block comment, so an unvalidated value reaches ACME as text: one ` +
+        `containing a line break would put everything after it at column zero, as assembler input rather than as a comment. ` +
+        `The offending value is deliberately NOT quoted here -- an exporter error that echoes a file's contents is a ` +
+        `content-disclosure oracle.`,
+    );
+  }
+}
+
 /** Where the comments live while a block is being emitted, and which of them
  * have found a line to attach to. Anything still unplaced when the last block
  * is done is REFUSED by name rather than dropped. */
@@ -692,7 +731,30 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   const blocks: ExportBlock[] = sortedRanges.map((row) => ({
     start: row.start,
     endExclusive: row.endInclusive + 1,
-    dataType: row.dataType as string,
+    // THE STORE'S `dataType` IS RE-CHECKED AT THIS BOUNDARY (30-REVIEW WR-03,
+    // fixed 2026-08-31), for exactly the reason `withComments()` re-checks
+    // `commentType` a few functions up: "Unreachable through the type, and
+    // reachable through a store file somebody edited. Refusing beats
+    // guessing." That reasoning applies here and had not been applied.
+    //
+    // `listRanges()` casts `row.data_type as DataType` with no validator call
+    // (`anno-store.ts`), so a store whose `anno_range.data_type` column was
+    // edited on disk carried an ARBITRARY string into `emitDataLines()`, which
+    // interpolates it verbatim into the emitted block comment. A value
+    // containing a line break would put everything after it into the ACME
+    // source at COLUMN ZERO, as assembler input rather than as a comment --
+    // the same mechanism `assertExportableCommentText()` refuses for comment
+    // text, arriving through a column nobody had checked.
+    //
+    // The block-end `!if` assertion would catch the resulting drift at
+    // ASSEMBLY time, but the `anno export-asm` CLI verb assembles nothing: it
+    // would write the corrupted file and exit 0. This is the last boundary
+    // before those bytes become assembler input, so it asks the question here.
+    //
+    // RE-CHECKS rather than RE-DEFINES: the predicate is `assertDataType()`'s,
+    // called here, never a second list of the twelve types that could drift
+    // from it.
+    dataType: assertDataTypeForExport(row) as string,
     lineCount: 0,
   }));
 
