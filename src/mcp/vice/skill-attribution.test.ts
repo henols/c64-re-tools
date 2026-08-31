@@ -233,6 +233,150 @@ function manifestEntryFor(row: AbsorbedFile): { path: string; sha256: string } {
 }
 
 // ===========================================================================
+// THE TWO-NAMING-LINES GUARD (plan 31-02) -- REPOINT-03's own sentence,
+// scored instead of measured in prose.
+//
+// WHY THIS EXISTS. ROADMAP Phase 31's first success criterion says the ABS-02
+// attribution chain survives the retired analyser's deletion as "10 instances
+// across two trees, each with its two naming lines byte-identical". That
+// sentence was TRUE on disk when it was written and it was covered NOWHERE as
+// a sentence: the removal gate (`scripts/check-no-<subject>.mjs`, named the way
+// that gate names itself) pins how many attribution BLOCKS and how many subject
+// HITS each of the six files carries, and `diff -r`
+// says the two trees agree -- both proxies, neither the claim. A proxy passes
+// for a reason of its own. Pin the block count and the two naming lines could
+// be rewritten inside a block that still counts as one block; pin the hits and
+// the same two lines could be reflowed, re-indented or re-cased while the
+// occurrence total holds. A recorded grep is evidence for one commit; an
+// assertion is evidence forever, which is this project's registry-and-assertion
+// doctrine rather than measurement-in-prose.
+//
+// TWO TREES, NOT ONE -- the one place this file departs from its own scope.
+// Everything above is `src/skills`-only by design and stays that way. This ONE
+// guard reads BOTH trees because the requirement it scores is about both, and
+// the shipped tree is precisely the one no tracked-file gate can see.
+//
+// RELATIONS AND A FLOOR, NEVER THE MEASURED TOTAL. Nothing here compares a
+// count against `10`, or against `5`-as-an-equality. Per tree the two line
+// counts must equal the block count; per tree the block count must clear a
+// floor; and when both trees were scanned their three counts must deep-equal
+// each other. That shape survives a sixth procedure being absorbed. The
+// alternative has already cost this project once -- `ABSORBED_FILES.length ===
+// manifest.procedures.length` above carries the comment "Deliberately not a
+// literal 5", and `check-skill-description-overlap.mjs` records the installer
+// skill-count pin that went red on a correct tree.
+//
+// NO ADJACENCY, DELIBERATELY. Four of the five source blocks put the two lines
+// on consecutive lines; `src/skills/c64-program-recon/SKILL.md`'s SECOND block
+// does not -- its `Adapted from ...` line sits at :571 and its
+// `  Source repository: ...` at :577, with `Source path:` between them. Any
+// assertion about their relative position, ordering or adjacency would go red
+// on a correct tree. The existing six-field check is order-independent for
+// exactly this reason (`block.indexOf(field)` per field, no ordering).
+//
+// EQUALITY IS BYTES. `namingLineCountsIn()` compares whole lines with `===`,
+// including the two-space leading indent on the repository line, with only a
+// single trailing `\r` stripped so a CRLF checkout behaves identically. No
+// trim, no case folding, no Unicode normalisation, no `includes()`. A
+// substring match would pass a line with trailing whitespace, which is exactly
+// the drift this guard exists to catch -- and task 2's two one-byte plants are
+// what prove the strictness is real rather than claimed.
+//
+// CONCURRENCY. No write, no spawn, no socket. This guard reads files and
+// compares strings, so two concurrent runs cannot interleave into a false pass
+// and an interrupted run leaves no partial state. Every planted violation is
+// an in-memory string, never a plant-and-revert against the real tree.
+
+/** The upstream project's own name, as the pinned record spells it: the last
+ * path segment of `manifest.repository`.
+ *
+ * DERIVED, NOT RETYPED, and for TWO reasons. The first is the one the header
+ * tests above already act on -- the one name in the pinned record must stay the
+ * one name, and a second hand-typed copy is a copy that can drift from the
+ * record it claims to quote. The second is mechanical and specific to THIS
+ * file: the removal gate pins the number of subject occurrences in this path at
+ * an exact, measured count (its `attribution-guard-test` exemption), so a new
+ * literal spelling of the name here would red that gate, and the gate is not
+ * this plan's to edit. Deriving costs nothing -- a wrong derivation makes the
+ * corpus scan below report every block as an offender, which is a louder
+ * failure than a mistyped literal would have been. */
+const ABS02_UPSTREAM_NAME: string = String(manifest.repository).replace(/^.*\//, "");
+
+/** The first naming line, byte-exact. Present once in every ABS-02 block in
+ * both trees. A whole-line constant, not a fragment: it is compared with
+ * `===` against a whole line. */
+const ABS02_ADAPTED_LINE = `Adapted from ${ABS02_UPSTREAM_NAME}.`;
+
+/** The second naming line, byte-exact -- INCLUDING its two-space leading
+ * indent, which is part of the string and must not be trimmed away. Built FROM
+ * `manifest.repository` rather than retyped, so the one URL in the pinned
+ * record stays the one URL, exactly as the header tests above already do with
+ * `manifest.repository`. Retyping it here would create a second copy that can
+ * drift from the record it claims to quote. */
+const ABS02_SOURCE_REPOSITORY_LINE = `  Source repository: ${manifest.repository}`;
+
+/** Both skill trees. `installer/skills/` is GENERATED and GITIGNORED yet
+ * SHIPPED in the published tarball (`git ls-files installer/skills` returns 0),
+ * so any gate scoped to tracked files is structurally blind to the copy users
+ * actually receive. Scanning only `src/skills/` would leave the shipped tree
+ * unguarded for exactly as long as it takes someone to forget the sync.
+ *
+ * NOTE THE SCOPE DEPARTURE, stated at the point of use: this file is
+ * `src/skills`-only by design and `SKILLS_DIR` above stays so. This ONE guard
+ * reads both roots because the requirement it scores (REPOINT-03) is a claim
+ * about two trees. No existing test is re-scoped and `SKILLS_DIR` is
+ * unchanged. */
+const SKILL_ATTRIBUTION_ROOTS = [SKILLS_DIR, join(ROOT, "installer", "skills")] as const;
+
+/** `src/skills/` -- the SOURCE tree, always present, never generated. */
+const SKILL_ATTRIBUTION_SOURCE_ROOT = SKILL_ATTRIBUTION_ROOTS[0];
+/** `installer/skills/` -- the GENERATED, gitignored, but SHIPPED tree. */
+const SKILL_ATTRIBUTION_SHIPPED_ROOT = SKILL_ATTRIBUTION_ROOTS[1];
+
+/** The per-tree non-vacuity FLOOR on attribution blocks -- a floor, never an
+ * equality. Five procedures are absorbed today and each carries one block, so
+ * five is what the tree must at least still have; absorbing a sixth must not
+ * turn a correct tree red. */
+const ABS02_BLOCKS_PER_TREE_FLOOR = 5;
+
+/** How many of each naming line a stretch of text carries. */
+interface NamingLineCounts {
+  readonly adapted: number;
+  readonly repository: number;
+}
+
+/** THE NAMING-LINE PREDICATE, pulled out as a named function so it can be
+ * handed a planted string and proven to bite (task 2).
+ *
+ * `grep -rx` semantics: EXACT whole-line equality against the two constants. A
+ * single trailing `\r` is stripped so a CRLF checkout scores identically, and
+ * nothing else is normalised -- no trim, no `toLowerCase()`, no `includes()`.
+ * Byte-identity is the claim being scored, so a looser comparison would pass
+ * the very drift the guard exists to detect. */
+function namingLineCountsIn(text: string): NamingLineCounts {
+  let adapted = 0;
+  let repository = 0;
+  for (const raw of text.split("\n")) {
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    if (line === ABS02_ADAPTED_LINE) adapted += 1;
+    if (line === ABS02_SOURCE_REPOSITORY_LINE) repository += 1;
+  }
+  return { adapted, repository };
+}
+
+/** THE EMPTY-ROOT CLASSIFIER, a named predicate rather than an inline
+ * condition so both of its branches can be asserted directly instead of only
+ * being exercised incidentally by whichever tree happens to exist.
+ *
+ * True ONLY for a zero-file SHIPPED root: a fresh clone has never run the
+ * installer's `prepack`, so the generated tree legitimately does not exist yet.
+ * A zero-file SOURCE root is never skippable -- that is a traversal that
+ * silently shrank to nothing, and it must fail. */
+function skippableEmptyRoot(root: string, fileCount: number): boolean {
+  return fileCount === 0 && root === SKILL_ATTRIBUTION_SHIPPED_ROOT;
+}
+
+// ===========================================================================
 // THE NOTICES GUARD (plan 19-07) -- ABS-02's OTHER mechanical half: the
 // elected licence's own inclusion condition, discharged by shipped text.
 //
@@ -614,6 +758,168 @@ test("the absence predicate bites on a planted re-insertion", () => {
   );
   assert.notEqual(planted, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
   assert.equal(namesUpstreamAgentSkillsPath(planted), true, "the absence predicate did NOT report a planted upstream agent-skills path");
+});
+
+// --- THE TWO-NAMING-LINES GUARD, tests (plan 31-02) ------------------------
+// See the block comment beside `ABS02_ADAPTED_LINE` above for why this guard
+// exists, why it is the one place this file reads both trees, why every count
+// is a relation or a floor, and why nothing here asserts adjacency.
+//
+// ROT GUARD 6 for this file (the header enumerates five; this is the sixth).
+// Its planted-violation proof is the NEXT test -- the one-character mutation --
+// so the file's header doctrine and its body stay in agreement: no predicate in
+// this file is trusted without a plant that proves it bites.
+
+test("both skill trees carry the ABS-02 naming lines byte-identically, in equal numbers", () => {
+  // Non-vacuity for the constants themselves: an emptied constant must FAIL
+  // rather than make every comparison below trivially true.
+  // The derived upstream name is the one piece of these constants that is
+  // computed rather than written, so its derivation is asserted directly: a
+  // non-empty single path segment that the pinned repository URL really ends
+  // with. A derivation that silently produced "" or the whole URL would
+  // otherwise turn both naming-line constants into nonsense that the corpus
+  // scan reports as a corpus-wide failure without ever saying why.
+  assert.ok(ABS02_UPSTREAM_NAME.length > 0, "ABS02_UPSTREAM_NAME derived to the empty string from manifest.repository");
+  assert.ok(
+    !/[/\s]/.test(ABS02_UPSTREAM_NAME),
+    `ABS02_UPSTREAM_NAME derived to "${ABS02_UPSTREAM_NAME}", which is not a single path segment`
+  );
+  assert.ok(
+    String(manifest.repository).endsWith(`/${ABS02_UPSTREAM_NAME}`),
+    `ABS02_UPSTREAM_NAME "${ABS02_UPSTREAM_NAME}" is not the last segment of manifest.repository ${manifest.repository}`
+  );
+  assert.match(
+    ABS02_ADAPTED_LINE,
+    /^Adapted from \S+\.$/,
+    `ABS02_ADAPTED_LINE is "${ABS02_ADAPTED_LINE}", which is not the shape "Adapted from <name>."`
+  );
+  assert.ok(ABS02_ADAPTED_LINE.length > 0, "ABS02_ADAPTED_LINE is empty -- an emptied constant cannot be allowed to pass");
+  assert.ok(
+    ABS02_SOURCE_REPOSITORY_LINE.length > 0,
+    "ABS02_SOURCE_REPOSITORY_LINE is empty -- an emptied constant cannot be allowed to pass"
+  );
+  assert.ok(
+    ABS02_SOURCE_REPOSITORY_LINE.startsWith("  "),
+    "ABS02_SOURCE_REPOSITORY_LINE lost its two-space leading indent -- the indent is part of the byte-exact line"
+  );
+  assert.ok(
+    ABS02_SOURCE_REPOSITORY_LINE.includes(manifest.repository),
+    `ABS02_SOURCE_REPOSITORY_LINE does not carry the manifest's repository ${manifest.repository} -- ` +
+      `the constant must be built FROM the pinned record, never retyped beside it`
+  );
+  assert.ok(ABS02_BLOCKS_PER_TREE_FLOOR > 0, "ABS02_BLOCKS_PER_TREE_FLOOR is not positive -- a zero floor is no floor");
+
+  // Non-vacuity for the empty-input edge: BOTH branches of the classifier are
+  // asserted directly, so a corpus that silently shrank to zero cannot pass by
+  // taking the skip branch, and the skip branch cannot rot into "skip
+  // everything".
+  assert.equal(
+    skippableEmptyRoot(SKILL_ATTRIBUTION_SHIPPED_ROOT, 0),
+    true,
+    "a zero-file SHIPPED root must be skippable -- a fresh clone has never run the installer's prepack"
+  );
+  assert.equal(
+    skippableEmptyRoot(SKILL_ATTRIBUTION_SOURCE_ROOT, 0),
+    false,
+    "a zero-file SOURCE root must NOT be skippable -- that is a traversal that shrank to nothing"
+  );
+  assert.equal(
+    skippableEmptyRoot(SKILL_ATTRIBUTION_SHIPPED_ROOT, 1),
+    false,
+    "a NON-empty shipped root must not be skippable -- the skip is for absence, not for convenience"
+  );
+
+  const offenders: string[] = [];
+  const totals = new Map<string, { blocks: number; adapted: number; repository: number }>();
+
+  for (const root of SKILL_ATTRIBUTION_ROOTS) {
+    // The already-imported corpus walker, filtered the same way this file
+    // already filters at the deferred-BASIC test. No second walker is derived
+    // -- that is the WR-12 lesson `scripts/lib/skill-corpus.mjs` exists for.
+    const files = walkSkills(root).filter((f) => f.endsWith("SKILL.md"));
+    if (skippableEmptyRoot(root, files.length)) {
+      // A fresh clone has never run the installer's prepack, so the generated
+      // tree legitimately does not exist yet. Skipping it is safe ONLY because
+      // it is a pure copy of the source tree, which was just scanned in full.
+      continue;
+    }
+    // Non-vacuity, per root: a scan whose corpus silently shrank to zero
+    // passes everything. The SOURCE root must always really have been read.
+    assert.ok(files.length > 0, `no SKILL.md found under ${root} -- the scanned set shrank to zero`);
+
+    let blocks = 0;
+    let adapted = 0;
+    let repository = 0;
+    for (const file of files) {
+      // The file's OWN extraction predicate -- the same `ATTRIBUTION (ABS-02)`
+      // anchor the removal gate's `skillAttributionBlocks()` uses. No second
+      // regex is written here.
+      const fileBlocks = attributionBlocks(readFileSync(file, "utf8"));
+      for (const [index, block] of fileBlocks.entries()) {
+        const counts = namingLineCountsIn(block);
+        blocks += 1;
+        adapted += counts.adapted;
+        repository += counts.repository;
+        // PER BLOCK, not per file. "Each block carries its two naming lines"
+        // is the claim; "the file has some" is a weaker, different claim that
+        // a block whose lines were stripped could still satisfy by sitting
+        // beside a correct sibling.
+        if (counts.adapted !== 1 || counts.repository !== 1) {
+          offenders.push(`${relative(ROOT, file)}#${index}: adapted=${counts.adapted} repository=${counts.repository}`);
+        }
+      }
+    }
+    totals.set(root, { blocks, adapted, repository });
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `these ABS-02 attribution blocks do not carry exactly one byte-exact "${ABS02_ADAPTED_LINE}" and one ` +
+      `byte-exact "${ABS02_SOURCE_REPOSITORY_LINE}" -- the two naming lines are where the upstream project is ` +
+      `named, and the attribution obligation is discharged by those bytes: ${offenders.join(", ")}`
+  );
+
+  // The source tree is never optional. If it produced no totals at all, the
+  // loop above skipped the one root that may never be skipped.
+  const source = totals.get(SKILL_ATTRIBUTION_SOURCE_ROOT);
+  assert.ok(source, `the source tree ${SKILL_ATTRIBUTION_SOURCE_ROOT} yielded no totals -- it must always be scanned`);
+
+  for (const [root, tally] of totals) {
+    // The two lines travel together: one of each, per block. Asserted as a
+    // relation against the block count rather than against any total.
+    assert.equal(
+      tally.adapted,
+      tally.blocks,
+      `${root}: ${tally.blocks} attribution blocks but ${tally.adapted} "${ABS02_ADAPTED_LINE}" lines`
+    );
+    assert.equal(
+      tally.repository,
+      tally.blocks,
+      `${root}: ${tally.blocks} attribution blocks but ${tally.repository} byte-exact source-repository lines`
+    );
+    // A floor, never an equality -- see ABS02_BLOCKS_PER_TREE_FLOOR.
+    assert.ok(
+      tally.blocks >= ABS02_BLOCKS_PER_TREE_FLOOR,
+      `${root}: ${tally.blocks} attribution blocks, expected at least ${ABS02_BLOCKS_PER_TREE_FLOOR}`
+    );
+  }
+
+  // The "across two trees" half. A RELATION between two independently-
+  // maintained trees, which is the only shape that does not go red the day a
+  // sixth procedure is absorbed. Conditioned on the shipped tree having been
+  // scanned at all, because on a fresh clone it does not exist yet.
+  const shipped = totals.get(SKILL_ATTRIBUTION_SHIPPED_ROOT);
+  if (shipped) {
+    assert.deepEqual(
+      source,
+      shipped,
+      `the two skill trees disagree: ${SKILL_ATTRIBUTION_SOURCE_ROOT} has ` +
+        `${source.blocks}/${source.adapted}/${source.repository} (blocks/adapted/repository) while ` +
+        `${SKILL_ATTRIBUTION_SHIPPED_ROOT} has ${shipped.blocks}/${shipped.adapted}/${shipped.repository} -- ` +
+        `the shipped tree is a generated pure copy, so a divergence means the sync did not run`
+    );
+  }
 });
 
 // --- THE NOTICES GUARD, tests (plan 19-07) ---------------------------------
