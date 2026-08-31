@@ -775,14 +775,34 @@ not exist until the last guard has moved.
 **Plans**: 9 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 32-01-PLAN.md — TRACER: the fate machinery proven end-to-end on one audited-set member (registry, derive-from-disk guard, mutation harness, observed red, D-02's set reconciliation)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 32-02-PLAN.md — D-07's ordering boundary: `--root` added to the five audited scripts that lack it, plus the measured root-override inventory
 - [ ] 32-03-PLAN.md — CUT-06 part A: PROJECT.md's citations and `r2000_*` pointer, ARCHITECTURE.md's Rule A21 dated, and the removal gate's stale NUL-offset header
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 32-04-PLAN.md — D-10: widen `docs-linerefs.test.ts` onto PROJECT.md with a per-document non-vacuity floor and a citation-aware bullet predicate
 - [ ] 32-05-PLAN.md — CUT-06 part B: the document sweep ledger, one verdict row per swept file, with the discussion-time numbers reconciled
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 32-06-PLAN.md — The sweep, first half: plant descriptors and control-gated observed reds for the 16 renamed members
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 32-07-PLAN.md — The sweep, second half: the 21 same-path members classified mechanically, with the `vice-proxy.test.ts` hang recorded rather than laundered
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 32-08-PLAN.md — The 6 deleted rows, the 15 set-B rows, both deferred fates against their new triggers, and the fate guard taken green
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 32-09-PLAN.md — D-16's named CI step with `fetch-depth: 0`, and D-12..D-15's close-gate re-run recorded with its broker state
 
 Notes:
