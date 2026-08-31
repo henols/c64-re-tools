@@ -725,12 +725,12 @@ Those criteria are discharged there and are not restated here.
   1. The `ABS-02` attribution chain is intact after the change: **10 instances across two trees**, each with its two naming lines byte-identical, while `routine-queue-walker/SKILL.md:3`'s YAML `description:` — trigger text, **not** attribution, and therefore not exempt — changes **substantively** rather than being worked around. `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions passes on the rewritten text.
   2. `upstream-procedure-manifest.json` is updated in the **same commit** that changes what it describes — its own third re-sync trigger requires it — including a criterion for `r2000_undo`'s `omit` disposition, so the justification assertion in `anno-derivation.test.ts` (the re-pointed successor to `r2000-upstream-audit.test.ts`) cannot end up recording a reversed decision.
 
-**Plans**: 3 plans in 3 waves
+**Plans**: 1/3 plans executed in 3 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 31-01-PLAN.md — Re-sync `upstream-procedure-manifest.json`: seven live stale references re-pointed onto surviving subjects or turned into dated facts, and `r2000_undo` gains `"requirement_id": "STORE-04"` with its `omit` disposition intact. One task, one commit (`REPOINT-04`)
+- [x] 31-01-PLAN.md — Re-sync `upstream-procedure-manifest.json`: seven live stale references re-pointed onto surviving subjects or turned into dated facts, and `r2000_undo` gains `"requirement_id": "STORE-04"` with its `omit` disposition intact. One task, one commit (`REPOINT-04`)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -1161,7 +1161,7 @@ in a milestone archive.
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
 | 29. The MCP Surface | v0.7.0 | 21/21 | Complete | 2026-08-30 |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | Complete | 2026-08-31 |
-| 31. Procedure Re-pointing | v0.7.0 | — | Not started | - |
+| 31. Procedure Re-pointing | v0.7.0 | 1/3 | In Progress | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
