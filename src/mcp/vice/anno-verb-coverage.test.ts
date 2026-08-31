@@ -254,8 +254,52 @@ const WITHDRAWAL_PHRASES = ["WITHDRAWN", "withdrawn", "does not exist"] as const
  * plan repaired) must NOT discharge anything: "is WITHDRAWN and returns in a
  * later phase" is precisely the claim this guard exists to catch, and it is the
  * sentence the non-vacuity control below reinstates.
+ *
+ * A MARKER ONLY DISCHARGES A CLAIM ABOUT THE VERB IT IS IN A SENTENCE WITH
+ * (30-REVIEW WR-11, fixed 2026-08-31). It used to be enough for a marker to
+ * appear ANYWHERE in the paragraph, which made the bare word `returned` a
+ * loophole: "the tool returned an error" or "the call returned nothing"
+ * discharged a genuinely stale withdrawal claim several lines away. The
+ * `WITHDRAWAL_PHRASES` side above is documented as deliberately narrow ("DO NOT
+ * WIDEN THIS LIST"); the discharge side had no equivalent discipline, and it is
+ * the direction that produces false NEGATIVES -- which is the failure mode this
+ * whole guard exists to prevent. See `isDischargedFor()`.
  */
 const RETURN_MARKERS = ["returned", "RETURNED", "came back", "has come back"] as const;
+
+/**
+ * True when a return marker and the `anno <verb>` mention are in the SAME
+ * SENTENCE (30-REVIEW WR-11).
+ *
+ * "Same sentence" is expressed checkably as: some occurrence of some marker and
+ * some occurrence of `anno <verb>` with NO sentence terminator in the text
+ * between them. That is what turns the discharge from "this paragraph contains
+ * an English word" into "this paragraph says THIS VERB came back", which is the
+ * claim the guard actually needs.
+ *
+ * A CHARACTER RADIUS ALONE WOULD NOT DO. The real discharge in this tree reads
+ * "was WITHDRAWN on 2026-08-29 and returned on 2026-08-31 as `anno
+ * export-asm`" -- marker and verb about twenty characters apart -- but so
+ * would "the call returned nothing. `anno export-asm` is WITHDRAWN", which must
+ * NOT discharge. The sentence boundary is what separates them, and it is
+ * planted as a control below.
+ */
+function isDischargedFor(block: string, verb: string): boolean {
+  const needle = `anno ${verb}`;
+  for (const marker of RETURN_MARKERS) {
+    for (let mi = block.indexOf(marker); mi !== -1; mi = block.indexOf(marker, mi + 1)) {
+      for (let vi = block.indexOf(needle); vi !== -1; vi = block.indexOf(needle, vi + 1)) {
+        const from = mi < vi ? mi + marker.length : vi + needle.length;
+        const to = mi < vi ? vi : mi;
+        const between = block.slice(from, to);
+        // `. ` and `.\n` are sentence ends; a bare `.` is not, so dates and
+        // version numbers do not split a sentence.
+        if (!/\.[\s]/.test(between)) return true;
+      }
+    }
+  }
+  return false;
+}
 
 /** A withdrawal claim this scan reports, with everything a reader needs to find it. */
 interface WithdrawalClaim {
@@ -289,11 +333,15 @@ function withdrawalClaimsFor(markdown: string, verbs: readonly string[]): Withdr
   const claims: WithdrawalClaim[] = [];
   for (const paragraph of markdown.split(/\n[ \t]*\n/)) {
     const block = paragraph.slice(0, PARAGRAPH_CAP);
-    if (RETURN_MARKERS.some((m) => block.includes(m))) continue;
     const phrase = WITHDRAWAL_PHRASES.find((p) => block.includes(p));
     if (phrase === undefined) continue;
     for (const verb of verbs) {
       if (!block.includes(`anno ${verb}`)) continue;
+      // PER-VERB, NOT PER-PARAGRAPH (30-REVIEW WR-11). The discharge check
+      // moved inside this loop because it is a claim ABOUT A VERB: a paragraph
+      // recording that `anno export-asm` came back says nothing about a
+      // different verb it also mentions as withdrawn.
+      if (isDischargedFor(block, verb)) continue;
       claims.push({ verb, phrase, excerpt: block.replace(/\s+/g, " ").trim().slice(0, 200) });
     }
   }
@@ -320,17 +368,25 @@ function walkSkillMarkdown(dir: string, acc: string[] = []): string[] {
   return acc;
 }
 
-test("a verb the CLI actually dispatches is never documented as withdrawn, in either skill tree", () => {
-  // The shipped tree is generated; regenerate it first so this scans the copy
-  // users receive rather than a stale one. Exactly what
-  // `scripts/check-skill-cli-invocations.mjs` does, for exactly the same reason,
-  // and the only child process either of them starts is this first-party script.
-  const sync = spawnSync(process.execPath, [join(ROOT, "installer", "scripts", "sync-skills.mjs")], {
-    encoding: "utf8",
-    cwd: ROOT,
-  });
-  assert.equal(sync.status, 0, `sync-skills.mjs failed, so the shipped tree cannot be scanned: ${sync.stderr}`);
+/** `src/skills/` -- the SOURCE tree, always present, never generated. */
+const SKILL_MARKDOWN_SOURCE_ROOT = SKILL_MARKDOWN_ROOTS[0];
+/** `installer/skills/` -- the GENERATED, gitignored, but SHIPPED tree. */
+const SKILL_MARKDOWN_SHIPPED_ROOT = SKILL_MARKDOWN_ROOTS[1];
 
+test("a verb the CLI actually dispatches is never documented as withdrawn, in either skill tree", () => {
+  // THIS TEST NO LONGER REGENERATES `installer/skills/` (30-REVIEW WR-11,
+  // fixed 2026-08-31). It used to spawn `sync-skills.mjs` with `cwd: ROOT`,
+  // rebuilding the shipped tree as a SIDE EFFECT OF RUNNING THE TEST SUITE.
+  // The tree is gitignored so nothing went red, but a test that writes into
+  // the repository under test is a surprise for anyone running `npm test` and
+  // makes test ordering matter. `scripts/check-skill-cli-invocations.mjs` is a
+  // CI SCRIPT and may regenerate; a test may not.
+  //
+  // The shipped tree is still guarded, by a different route: it is scanned AS
+  // IT IS ON DISK, and the companion test below asserts it is byte-identical
+  // to the source tree. A stale shipped copy is then reported as a named sync
+  // failure rather than silently papered over -- which is strictly more
+  // information than regenerating gave.
   const verbs = parseAnnoCliVerbs(readFileSync(join(HERE, "anno-cli.ts"), "utf8"));
   assert.ok(verbs.length >= ANNO_CLI_VERB_FLOOR, "the verb parse itself is broken; this scan would be vacuous");
 
@@ -338,8 +394,14 @@ test("a verb the CLI actually dispatches is never documented as withdrawn, in ei
   let filesScanned = 0;
   for (const root of SKILL_MARKDOWN_ROOTS) {
     const files = walkSkillMarkdown(root);
+    if (root === SKILL_MARKDOWN_SHIPPED_ROOT && files.length === 0) {
+      // A fresh clone has never run the installer's prepack, so the generated
+      // tree legitimately does not exist yet. Skipping it is safe ONLY because
+      // it is a pure copy of the source tree, which was just scanned in full.
+      continue;
+    }
     // Non-vacuity, per root: a scan whose corpus silently shrank to zero
-    // passes everything. Both roots must really have been read.
+    // passes everything. The SOURCE root must always really have been read.
     assert.ok(files.length > 0, `no markdown found under ${root} -- the scanned set shrank to zero`);
     filesScanned += files.length;
     for (const file of files) {
@@ -353,8 +415,50 @@ test("a verb the CLI actually dispatches is never documented as withdrawn, in ei
     }
   }
 
-  assert.ok(filesScanned >= 20, `expected both skill trees scanned, got only ${filesScanned} markdown file(s)`);
+  assert.ok(filesScanned >= 10, `expected the source skill tree scanned, got only ${filesScanned} markdown file(s)`);
   assert.deepEqual(problems, [], problems.join("\n"));
+});
+
+test("the shipped skill tree's markdown is byte-identical to the source tree's -- asserted, never regenerated (30-REVIEW WR-11)", () => {
+  // The replacement for the sync-as-a-side-effect the test above used to do.
+  // Reporting a stale shipped copy BY NAME is more useful than regenerating
+  // it silently: regenerating hides the fact that somebody forgot, and hides
+  // it in exactly the tree users receive.
+  const shipped = walkSkillMarkdown(SKILL_MARKDOWN_SHIPPED_ROOT);
+  if (shipped.length === 0) {
+    // Nothing generated yet (fresh clone). Nothing to be out of sync WITH,
+    // and the source tree is fully scanned above either way.
+    return;
+  }
+
+  const source = walkSkillMarkdown(SKILL_MARKDOWN_SOURCE_ROOT);
+  assert.ok(source.length > 0, "the source skill tree must exist for this comparison to mean anything");
+
+  const rel = (root: string, p: string) => p.slice(root.length + 1);
+  const sourceByRel = new Map(source.map((p) => [rel(SKILL_MARKDOWN_SOURCE_ROOT, p), p]));
+
+  const drift: string[] = [];
+  for (const shippedPath of shipped) {
+    const key = rel(SKILL_MARKDOWN_SHIPPED_ROOT, shippedPath);
+    const sourcePath = sourceByRel.get(key);
+    if (sourcePath === undefined) {
+      drift.push(`installer/skills/${key} has no counterpart under src/skills/ -- a removed or renamed skill file is lingering in the SHIPPED tree`);
+      continue;
+    }
+    if (readFileSync(shippedPath, "utf8") !== readFileSync(sourcePath, "utf8")) {
+      drift.push(`installer/skills/${key} differs from src/skills/${key}`);
+    }
+    sourceByRel.delete(key);
+  }
+  for (const key of sourceByRel.keys()) {
+    drift.push(`src/skills/${key} is missing from the SHIPPED tree`);
+  }
+
+  assert.deepEqual(
+    drift,
+    [],
+    "the shipped skill tree has drifted from its source. Run `node installer/scripts/sync-skills.mjs`.\n" + drift.join("\n"),
+  );
 });
 
 test("planted violation: the same predicate reports a dispatched verb documented as withdrawn, and stays silent for one the CLI does not dispatch", () => {
@@ -389,4 +493,45 @@ test("planted violation: the same predicate reports a dispatched verb documented
   const discharged =
     "Whole-program static disassembly was WITHDRAWN on 2026-08-29 and returned on 2026-08-31 as `anno export-asm`.";
   assert.deepEqual(withdrawalClaimsFor(discharged, verbs), []);
+});
+
+test("planted control: an UNRELATED `returned` does not discharge a stale withdrawal claim (30-REVIEW WR-11)", () => {
+  const verbs = parseAnnoCliVerbs(readFileSync(join(HERE, "anno-cli.ts"), "utf8"));
+
+  // THE LOOPHOLE, PLANTED. `RETURN_MARKERS` contains the bare word `returned`,
+  // and the discharge used to fire if it appeared ANYWHERE in the paragraph.
+  // Both of these paragraphs say a live verb is withdrawn and stop there; the
+  // `returned` in each is about something else entirely. Before the fix both
+  // were silently discharged -- a FALSE NEGATIVE, which is the failure mode
+  // this guard exists to prevent.
+  const loopholes = [
+    "The tool returned an error. Whole-program static disassembly is WITHDRAWN; `anno export-asm` does not exist.",
+    "The call returned nothing.\n`anno export-asm` is WITHDRAWN on this surface.",
+    "`anno export-asm` is WITHDRAWN and does not exist. The probe returned no rows.",
+  ];
+  for (const markdown of loopholes) {
+    const claims = withdrawalClaimsFor(markdown, verbs);
+    assert.equal(
+      claims.length,
+      1,
+      `an unrelated "returned" must not discharge a stale claim about a live verb; got ${JSON.stringify(claims)} for:\n${markdown}`,
+    );
+    assert.equal(claims[0]?.verb, "export-asm");
+  }
+
+  // PAIRED DIRECTION, so the tightening did not simply break the discharge:
+  // a marker in the SAME SENTENCE as the verb still discharges. Three real
+  // spellings, including one where the marker FOLLOWS the verb.
+  const realDischarges = [
+    "Whole-program static disassembly was WITHDRAWN on 2026-08-29 and returned on 2026-08-31 as `anno export-asm`.",
+    "`anno export-asm` was WITHDRAWN in Phase 29 and came back in Phase 30.",
+    "WITHDRAWN 2026-08-29; `anno export-asm` returned behind a real-ACME byte-diff oracle.",
+  ];
+  for (const markdown of realDischarges) {
+    assert.deepEqual(
+      withdrawalClaimsFor(markdown, verbs),
+      [],
+      `a genuine same-sentence discharge must still be honoured:\n${markdown}`,
+    );
+  }
 });
