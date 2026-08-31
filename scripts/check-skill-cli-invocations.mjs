@@ -56,7 +56,7 @@ import {
   FLAG_KINDS,
 } from "./lib/anno-cli-invocations.mjs";
 import { walkSkills } from "./lib/skill-corpus.mjs";
-import { resolveContainedRoot } from "./lib/audit-root.mjs";
+import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
 
 const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -89,17 +89,37 @@ function paths(root) {
 // `--root <dir>` is the ONLY new surface, and it is this gate's only
 // testability seam: there is deliberately no environment-variable override, no
 // skip flag and no waiver file anywhere in it (the no-relaxation-hatch rule
-// recorded in `scripts/audit-gate.mjs`'s header). Same argv shape as that
-// file's own `parseArgs()`.
-function parseArgs(argv) {
-  let root;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--root") {
-      root = argv[i + 1];
-      i += 1;
-    }
-  }
-  return { root };
+// recorded in `scripts/audit-gate.mjs`'s header). A root that cannot be
+// honoured REFUSES; it never degrades into a silent read of the default root.
+//
+// THIS FILE HAS NO ARGV READER OF ITS OWN, BY DESIGN. It had one, and the
+// comment that stood here claimed it was the "same argv shape as
+// `scripts/audit-gate.mjs`'s own `parseArgs()`". That claim was accurate, and
+// that was precisely the defect: the same nine lines were copy-pasted verbatim
+// into six scripts, so ONE bug shipped six times (`IN-06`) -- the loop matched
+// only the exact token `--root` and took `argv[i + 1]`, so `--root=<dir>`, a
+// valueless `--root` and every typo were SILENTLY DISCARDED and the run fell
+// through to the default root while reporting success. `parseRootArg()` in
+// `lib/audit-root.mjs` is now the single argv seam, as `resolveContainedRoot()`
+// is the single containment seam.
+//
+// The old claim is now false, deliberately: this file uses the shared strict
+// parser and `scripts/audit-gate.mjs` still carries its own copy. That file was
+// NOT migrated in this round (`WR-13`) because it carries five further flags
+// with their own exactly-one-selector rule, and no verifier finding asks this
+// round to touch them.
+
+// An ARGUMENT REJECTION. Reported before anything is resolved or read, and
+// kept at exit 1 like the refusal below: the two are separated by their
+// message (`BAD ARGUMENTS --` versus `REFUSED --`), never by their status.
+let ROOT_ARG;
+try {
+  ({ root: ROOT_ARG } = parseRootArg(process.argv.slice(2), {
+    script: "check-skill-cli-invocations",
+  }));
+} catch (err) {
+  console.error(`check-skill-cli-invocations: ${err?.message ?? String(err)}`);
+  process.exit(1);
 }
 
 // A REFUSAL (an out-of-repository --root) and a TYPO (a --root inside the
@@ -109,7 +129,7 @@ function parseArgs(argv) {
 // to surface as an uncaught ENOENT indistinguishable from a refusal.
 let RESOLVED_ROOT;
 try {
-  RESOLVED_ROOT = resolveContainedRoot(parseArgs(process.argv.slice(2)).root, {
+  RESOLVED_ROOT = resolveContainedRoot(ROOT_ARG, {
     repoRoot: DEFAULT_ROOT,
   });
 } catch (err) {
