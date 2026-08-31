@@ -5,10 +5,10 @@ milestone_name: Own the Annotation Store
 current_phase: 31
 current_phase_name: Procedure Re-pointing
 status: executing
-stopped_at: Phase 31 planned — 3 plans in 3 waves, ready to execute
+stopped_at: Phase 31 executed 3/3 plans; verification gaps_found — next is /gsd-plan-phase 31 --gaps
 last_updated: "2026-08-31T08:51:50.781Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 31 execution started
+last_activity_desc: Phase 31 executed 3/3 plans; verification found 2 gaps
 state_head: f6524edf687de5113e91b3193eaa6b8c5e3f9e11
 progress:
   total_phases: 6
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 31 (Procedure Re-pointing) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 31
-Last activity: 2026-08-31 — Phase 31 execution started
+Phase: 31 (Procedure Re-pointing) — GAPS FOUND
+Plan: 3 of 3 executed
+Status: Verification returned gaps_found (5/7 must-haves) — awaiting gap closure
+Last activity: 2026-08-31 — Phase 31 executed 3/3 plans; verification found 2 gaps
 
 ## Performance Metrics
 
