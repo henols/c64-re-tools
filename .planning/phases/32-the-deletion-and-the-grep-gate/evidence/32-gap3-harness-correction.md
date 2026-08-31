@@ -644,3 +644,120 @@ ok 28 - anno-enum-gen.ts never references the machine-global save_global_enum() 
 # duration_ms 641.121634
 ```
 
+
+---
+
+## Restore-on-signal: the verifier's human check, attempted mechanically — 2026-09-01
+
+**Outcome in one line: the invariant is NOT observed, and it remains
+behaviour-unverified — but for a newly-measured reason that is stronger than "we could not
+land the signal in time".** The signal was landed inside the window on 10 attempts out of
+10. The handler still did not run.
+
+### What was attempted and why this row
+
+`32-VERIFICATION.md`'s `behavior_unverified_items[0]` routed this to a human: the
+`SIGINT`/`SIGTERM`/`uncaughtException`/`exit` handlers at
+`scripts/audit-mutation-harness.mjs:103-114` are present and wired, the NORMAL path is
+proven across four live runs with the tree byte-identical each time, but nothing in the
+repository imports the harness — it has no exports — so the signal path cannot be driven
+in-process, and the verifier's four timed attempts (2.2 s / 2.6 s / 3.0 s / 4.0 s) all
+arrived after `main()` had already returned.
+
+**Row chosen: `src/mcp/vice/skill-acme-build-cli.test.ts`**, recorded planted-run duration
+**842.4 ms** (its `observedRed.excerpt` reaches the TAP summary line
+`# duration_ms 842.353365`), guard `node --test skill-acme-build-cli.test.ts` in
+`src/mcp/vice`, plant `src/mcp/vice/acme-gate.ts`: `"acme"` → `"acmeZZ"`.
+
+The registry's longest recorded planted run is **`src/mcp/vice/vice-proxy.test.ts` at
+1555.4 ms** (a lower bound: its excerpt is truncated at the first failing line, so the figure
+is the one subtest duration the excerpt captured rather than a TAP summary), and it was measured and REJECTED rather than skipped: its guard's UNPLANTED
+control fails in this worktree because `src/mcp/vice/node_modules` is absent (measured:
+`node --test --test-name-pattern "tools/list survives a missing or corrupt snapshot"
+vice-proxy.test.ts` → `# fail 1`, `# duration_ms 8509.6`). A failing control makes the
+harness record the row UNMEASURABLE and **never plant it at all**, so that row offers no
+window of any width. The chosen row is the longest-recorded row whose control is green on
+this tree; its control measured `# duration_ms 1655.4` here, 15/15 passing.
+
+### The vehicle: an observable, not a timer
+
+The harness was spawned as a child process. A poller then read
+`src/mcp/vice/acme-gate.ts` every **2 ms** until its bytes contained `acmeZZ` — the
+plant, observed directly on disk — and only then sent the signal. This is what the
+verifier's four timed attempts lacked. **Nothing was added to the harness**: no pause flag,
+no test hook, no export, no widened window. `grep -c 'export' scripts/audit-mutation-harness.mjs`
+returns `0`, the same value it returned before this task.
+
+Ten attempts, five per signal:
+
+| Attempt | Landed inside window | Polls | Signal sent at | Child lifetime | Child exit code | Child killed by | `main()` completed | Planted file byte-identical | `git status --porcelain` byte-identical |
+|---|---|---|---|---|---|---|---|---|---|
+| SIGINT 1 | **yes** | 590 | 1404 ms | 2183 ms | `0` | null | **yes** | yes | yes |
+| SIGINT 2 | **yes** | 645 | 1557 ms | 2384 ms | `0` | null | **yes** | yes | yes |
+| SIGINT 3 | **yes** | 707 | 1603 ms | 2386 ms | `0` | null | **yes** | yes | yes |
+| SIGINT 4 | **yes** | 649 | 1462 ms | 2121 ms | `0` | null | **yes** | yes | yes |
+| SIGINT 5 | **yes** | 587 | 1326 ms | 2149 ms | `0` | null | **yes** | yes | yes |
+| SIGTERM 1 | **yes** | 693 | 1591 ms | 2512 ms | `0` | null | **yes** | yes | yes |
+| SIGTERM 2 | **yes** | 711 | 1617 ms | 2435 ms | `0` | null | **yes** | yes | yes |
+| SIGTERM 3 | **yes** | 593 | 1360 ms | 2059 ms | `0` | null | **yes** | yes | yes |
+| SIGTERM 4 | **yes** | 686 | 1552 ms | 2251 ms | `0` | null | **yes** | yes | yes |
+| SIGTERM 5 | **yes** | 767 | 1816 ms | 2770 ms | `0` | null | **yes** | yes | yes |
+
+Pre-run `git status --porcelain` was empty; post-run `git status --porcelain` was empty
+after every one of the ten attempts. Each completed run rewrote the chosen row's
+`observedRed` back into `guard-fates.json`; that one file was restored with
+`git checkout -- <that path>` after each attempt, so this task changed no dated record.
+
+### What was actually observed, stated as a finding
+
+**1. The signal landed inside the window every time.** `landed = true` on 10 of 10
+attempts, at 1.33 s–1.82 s after spawn, after 587–767 polls — i.e. the poller had read the
+mutated bytes off disk immediately before the signal was sent. The window is not narrow.
+
+**2. The handler did not run anyway.** The child's exit code was **`0`**, not `130`, on
+all ten attempts, and the harness's full completion output
+(`audit-mutation-harness: measured 1 row(s)`) was present on stdout every time. The
+`process.exit(130)` inside the `SIGINT`/`SIGTERM` handler never executed.
+
+**3. The measured cause.** `main()` and everything it calls are **wholly synchronous**:
+`grep -c 'await\|async \|\.then(' scripts/audit-mutation-harness.mjs` returns **`0`**,
+and every subprocess and git call in the file is `spawnSync` (`:292`) or `execFileSync`
+(`:123`, `:553`). Node cannot dispatch a JavaScript signal handler while synchronous
+JavaScript is on the stack, so a signal delivered during the blocking planted `spawnSync`
+is queued, not handled; by the time the stack unwinds, `measureRow`'s
+`finally { revert(...) }` and `main`'s `finally { restoreAll() }` have already run and
+the process exits normally with the queued callback undelivered.
+**The verifier's four attempts did not miss a narrow window. There is no window.** The
+handlers are unreachable mid-plant by construction, not by timing.
+
+**4. What this does and does not settle.**
+
+- **The safety property HELD, every time.** The planted file came back byte-identical and
+  the working tree came back byte-identical on all ten attempts. A mid-plant `SIGINT` or
+  `SIGTERM` did not leave a mutation on disk. But the restore that produced that result
+  was the ordinary `finally` path, **not** the signal handler.
+- **The advertised invariant is NOT observed.** "A run interrupted by `SIGINT` or
+  `SIGTERM` while a plant is on disk restores every captured original and exits 130" did
+  not happen: the run was not interrupted, and it did not exit 130. It is recorded here as
+  **still behaviour-unverified**, in those words.
+- **`WR-03`'s doubt about the `restored` latch is likewise NOT settled.** The plan
+  anticipated that the double restore — the signal handler's, then the exit handler's —
+  would be exercised by construction on every one of these runs, making byte-identity
+  afterwards the observation that settles it. It was not: the signal handler never ran, so
+  only the `finally` restore and the `exit` restore fired, and their pairing is the
+  normal path the verifier had already proven. No claim is made about the latch under a
+  handler-driven restore, because the harness exports nothing and that path cannot be
+  driven in isolation.
+- **No assertion was weakened to produce a pass**, and no flag or hook was added to the
+  harness to widen the window. An honest "not settled" is the outcome, and the mechanism
+  above is the reason it cannot be settled without changing the instrument — which is
+  exactly the shape of defect this round exists to close.
+
+**Residual risk, recorded rather than fixed.** Because the handlers cannot fire mid-plant,
+the protection against a mutation surviving an interrupt is the synchronous `finally`
+path, plus the `exit` handler, plus the dirty-tree evidence void at
+`scripts/audit-mutation-harness.mjs:766`. A `SIGKILL` — which no handler can catch —
+would still leave a plant on disk; that is unchanged by this task and is not in any
+`gaps[].missing` line. Making the signal path genuinely reachable would mean making
+`main()` asynchronous, which is a change to the instrument well outside this plan's scope
+and is left OPEN.
