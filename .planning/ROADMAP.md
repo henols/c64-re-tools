@@ -725,7 +725,7 @@ Those criteria are discharged there and are not restated here.
   1. The `ABS-02` attribution chain is intact after the change: **10 instances across two trees**, each with its two naming lines byte-identical, while `routine-queue-walker/SKILL.md:3`'s YAML `description:` — trigger text, **not** attribution, and therefore not exempt — changes **substantively** rather than being worked around. `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions passes on the rewritten text.
   2. `upstream-procedure-manifest.json` is updated in the **same commit** that changes what it describes — its own third re-sync trigger requires it — including a criterion for `r2000_undo`'s `omit` disposition, so the justification assertion in `anno-derivation.test.ts` (the re-pointed successor to `r2000-upstream-audit.test.ts`) cannot end up recording a reversed decision.
 
-**Plans**: 3/3 plans executed in 3 waves
+**Plans**: 3/3 original plans executed in 3 waves, then **verified at 5/7 — `gaps_found`**, so **one gap-closure plan (31-04, in a fourth wave) was added and is not yet executed**. The verification report is explicit that **both ROADMAP success criteria are VERIFIED by independent direct measurement rather than read from the SUMMARYs** — the 10 ABS-02 instances across two trees with both naming lines byte-identical in every one, all three shared files byte-identical between trees, the description rewrite substantive with `ABS-03` green at a 0.250-versus-0.35 margin, and the manifest landing in exactly one commit (`7adcbaf`, 1 file, 9+/8−) with `r2000_undo`'s `omit` intact and `STORE-04` attached. The two gaps are narrowly about the **durability of the guard plan 31-02 committed**, and the report fences them to two files: (1) `installer/skills/` is gitignored and materialised only by `prepack`, and CI's `Test` step precedes every step that generates it, so the two-tree assertion silently scores ONE tree and reports a clean pass with zero skips (reproduced by relocating the tree); (2) the naming-line predicate is exact but is handed a mid-line-anchored regex capture, so its documented `grep -rx` whole-line equality is false at both block boundaries — latent today, because all 10 real blocks have empty boundary fragments, but a false-ACCEPT hole plus a code comment the tree falsifies. `REPOINT-03` and `REPOINT-04` both stay **`Pending`**: `REPOINT-04` is scored ✓ SATISFIED on the merits and moves with `REPOINT-03` on the re-verification verdict, per the standing four-sites-one-edit rule, not ahead of it.
 
 Plans:
 **Wave 1**
@@ -739,6 +739,10 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 31-03-PLAN.md — Re-point the three living citations of the criterion `D-01` renumbered (two in the removal gate, one in `STATE.md`), and record this phase's four judgements as a dated `STATE.md` Decisions entry. No requirement status is promoted ahead of the verification verdict (`REPOINT-03`, `REPOINT-04`)
+
+**Wave 4** *(gap-closure round 1 — `31-VERIFICATION.md` scored 5/7 must-haves with BOTH success criteria VERIFIED; the two gaps are the guard's reach in CI and its whole-line claim at block boundaries. Scoped by the report itself to `src/mcp/vice/skill-attribution.test.ts` and `.github/workflows/ci.yml`, plus the durable disposition record. The plan's own frontmatter carries `wave: 1` — the round holds a single plan, so its round-local wave is 1; this heading numbers waves cumulatively across the phase)*
+
+- [ ] 31-04-PLAN.md — Close both durability gaps at the root cause, tracer-first: a CI step ordered before `Test` materialises the gitignored shipped tree through the one existing producer (`installer/scripts/sync-skills.mjs`, the command `prepack` already runs), and the empty-root classifier becomes a three-valued verdict keyed on **absence** rather than emptiness, refusing to skip under CI, recording a named reason and announcing every unscored root with a `t.diagnostic()` plus an unconditional scored-of-declared summary — so a one-tree run can no longer read as a two-tree run (gap 1, `CR-01`, `WR-01`). Then the naming-line predicate's parameter becomes an array of whole physical lines fed by a line-anchored block extractor, making the `grep -rx` claim true by construction, with both boundary positions the interior plants cannot reach planted in memory and paired with one-newline controls (gap 2, `CR-02`). `WR-03` (a magic floor derived from `manifest.procedures.length`) and `WR-06` (a plant no longer depending on the derived upstream name's casing) are fixed on their merits; all eleven review findings get a durable disposition in a new `31-REVIEW-FIX.md`, which is what clears the already-red `docs-review-disposition.test.ts` and its `audit-integrity.test.ts` cascade. Both removal-gate per-path pins are held (12 for the test file, 1 for the workflow) and no manifest, gate, `STATE.md`, `ROADMAP.md` or `REQUIREMENTS.md` content is touched (`REPOINT-03`, `REPOINT-04`)
 
 Notes:
 
@@ -1161,7 +1165,7 @@ in a milestone archive.
 | 28. The Store Core | v0.7.0 | 23/23 | Complete | 2026-08-29 |
 | 29. The MCP Surface | v0.7.0 | 21/21 | Complete | 2026-08-30 |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | Complete | 2026-08-31 |
-| 31. Procedure Re-pointing | v0.7.0 | 3/3 | In Progress | - |
+| 31. Procedure Re-pointing | v0.7.0 | 3/4 | In Progress | - |
 | 32. The Deletion and the Grep Gate | v0.7.0 | — | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
