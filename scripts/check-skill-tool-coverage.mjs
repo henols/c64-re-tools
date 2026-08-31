@@ -51,9 +51,23 @@ import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { CURATED_ANNO_TOOLS } from "../src/mcp/vice/anno-tools.ts";
 import { parseAnnoCliVerbs, verbsMissingFromSkills, ANNO_CLI_VERB_FLOOR } from "./lib/anno-cli-verbs.mjs";
 import { walkSkills, MCP_PREFIX_RE, extractToolNames, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
-import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
+import {
+  parseRootArg,
+  resolveContainedRoot,
+  splitReadRefusalReason,
+} from "./lib/audit-root.mjs";
 
 const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+
+/** The identifiers this gate binds STATICALLY, named here so the split-read
+ *  refusal below can print them. A static specifier resolves against this
+ *  file's own location and cannot follow `--root`; keeping the list beside the
+ *  imports is what makes a future third import impossible to add without
+ *  noticing that it belongs here too. */
+const STATICALLY_BOUND = [
+  { name: "CAPABILITY_REGISTRY", from: "../src/mcp/vice/capability-registry.ts" },
+  { name: "CURATED_ANNO_TOOLS", from: "../src/mcp/vice/anno-tools.ts" },
+];
 
 /**
  * Every path this gate reads, derived from ONE root, plus the subset that must
@@ -64,11 +78,28 @@ const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
  * arrange that for some rows is to point the whole gate at a synthetic tree
  * via `--root`. That is only sound if EVERY path comes from the one root.
  *
- * WHAT NOT TO DO: do not re-derive a path from `DEFAULT_ROOT` anywhere below.
- * A root threaded through only SOME of the paths reads the synthetic tree for
- * one input and the real repository for another, and a planted violation in
- * the synthetic tree then goes silently unobserved -- a false green, which is
- * the exact failure mode this whole phase exists to rule out.
+ * WHAT THIS GATE ACTUALLY DOES WITH `--root`, AND WHY (`CR-03`): every PATH
+ * below comes from the one root, but not every INPUT to this gate is a path.
+ * `CAPABILITY_REGISTRY` and `CURATED_ANNO_TOOLS` -- the two tables the corpus
+ * is measured AGAINST -- arrive through static imports at the top of this file,
+ * and a static specifier is resolved against this file's own location, so no
+ * argument can move them. This gate therefore does NOT support an arbitrary
+ * `--root`: a resolved root that is not `DEFAULT_ROOT` is REFUSED outright,
+ * below, rather than half-honoured.
+ *
+ * A sentence forbidding a re-derived `DEFAULT_ROOT` path stood here until
+ * 2026-09-01. It was deleted because this file contradicted it two lines above
+ * itself: the phase-32 verifier reproduced this gate reading a synthetic corpus
+ * and reporting `OK` against the real registry, at exit 0. A rule a file breaks
+ * in its own text is worse than no rule, because a reader trusts it. The remedy
+ * chosen -- of the two the verifier named -- is refusal rather than
+ * root-parameterised dynamic imports; the reasoning is recorded in
+ * `scripts/lib/audit-root.mjs`'s "THE SPLIT-READ SEAM" block and in plan
+ * 32-12's objective.
+ *
+ * `scripts/check-skill-description-overlap.mjs` still carries that sentence,
+ * and correctly: it binds no such import, so it honours an arbitrary contained
+ * root for BOTH halves of its comparison.
  */
 function paths(root) {
   const viceDir = join(root, "src/mcp/vice");
@@ -139,6 +170,28 @@ try {
   });
 } catch (err) {
   console.error(`check-skill-tool-coverage: REFUSED -- ${err?.message ?? String(err)}`);
+  process.exit(1);
+}
+
+// A SPLIT-READ REFUSAL (`CR-03`). Third failure class, same exit status as the
+// other two, separated by its message prefix. Checked here -- before paths(),
+// before the existence sweep and before the first read -- so a refused root
+// causes no I/O at all.
+//
+// Measured at 7206f99, before this landed: `--root <in-repo synthetic tree>`
+// exited 0 and printed a full green report ("37 distinct vice_* names ... all
+// curated") in which the NAMES came from the synthetic corpus and the two
+// tables they were checked against came from the real repository. A planted
+// violation in that corpus would have been measured against data the plant
+// never touched. That is the false green this refusal removes.
+if (RESOLVED_ROOT !== DEFAULT_ROOT) {
+  console.error(
+    `check-skill-tool-coverage: SPLIT READ REFUSED -- ${splitReadRefusalReason({
+      resolvedRoot: RESOLVED_ROOT,
+      defaultRoot: DEFAULT_ROOT,
+      imports: STATICALLY_BOUND,
+    })}`,
+  );
   process.exit(1);
 }
 
