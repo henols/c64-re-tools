@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 15
 waived_count: 12
 fixed_count: 5
-total_count: 31
-last_updated: 2026-08-31T18:47:19.110Z
+total_count: 32
+last_updated: 2026-08-31T19:22:26.336Z
 ---
 
 # Broken Windows Ledger
@@ -46,6 +46,7 @@ last_updated: 2026-08-31T18:47:19.110Z
 | 29 | 32 | deviation | scripts/check-guard-fates.mjs |  | deriveForwardMap() resolves successors by two mechanisms only -- end-to-end 'git diff -M' and the name-descendant predicate (prefix swap, stem preserved) -- and both miss a rename where the STEM changed and the successor later grew past git's similarity threshold. Measured: 'git show --name-status -M c59fcef' reports R091 src/mcp/vice/r2000-upstream-audit.test.ts -> src/mcp/vice/anno-derivation.test.ts, the successor's own header records the rename, and all five predecessor test names survive verbatim; but the file grew 207 -> 478 lines so end-to-end -M does not score it. Consequence: the predecessor lands in forwardGone and the successor is independently derived into set B, so a truthful 'superseded' verdict would collide with the successor's own row on the duplicate-newSubject check. The relationship is NOT EXPRESSIBLE in the registry. Plan 32-08 recorded 'deleted' with the rename disclosed in full on the row and in evidence/32-deferred-fates.md section 5. Recommended fix (a strengthening, not a relaxation): add a third mechanism that inspects each gone member's removing commit for an R entry naming it as source; consequence is SET_B_FLOOR 16 -> 15 and TOTAL_FLOOR 61 -> 60. | open |  | 2026-08-31T18:46:51.480Z |  |
 | 30 | 32 | deviation | src/mcp/vice/block-class.ts | 196 | The transitional capitalised block-type arm 'if (block.type === "Undefined") return "undefined";' is ALREADY INERT and its recorded justification does not hold for it. The arms' stated reason for surviving their own removal trigger is that 'every committed coverage fixture is still spelled in that vocabulary'. Structural census of the twelve src/mcp/vice/fixtures/coverage/*/store.json (parsed as JSON, not grepped): 11 blocks across 6 of the 12 directories, spelled Code x 5 and Byte x 6. "Undefined" appears ZERO times. So :195 (Code) is load-bearing -- it rescues 5 blocks that would otherwise fall through to data silently -- while :196 matches nothing. The comment at :180 also overstates the impact: it says deleting the arms reclassifies 'every fixture block' as data, but 6 of the 11 already resolve to data by design, so only 5 would change. Measured by plan 32-08 while resolving research assumption A7. Not acted on: deleting a half-inert arm is a change to a live classifier and ROADMAP.md scopes this phase to recording the fate, not performing the re-point. | open |  | 2026-08-31T18:47:06.035Z |  |
 | 31 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/guard-fates.json |  | The fate registry's verdict vocabulary cannot express 'kept-unchanged but its assertions were later re-aimed' for a NET-NEW (set-B) member without overloading 're-pointed', and cannot express a rename whose successor is itself an independently derived member at all. Both surfaced in plan 32-08. (a) A set-B member did not exist at AUDIT_COMMIT, so 'historicalPath -> newSubject' has no historical side; the two genuinely re-aimed set-B guards (anno-derivation.test.ts, module-classification.test.ts) are recorded 're-pointed' with newSubject === historicalPath, which is the same shape the 18 same-path set-A rows already use, but the token now means two different things. (b) The plan text for task 1 invites an OPTIONAL 'strengthening' observedRed on kept-unchanged rows; the committed guard's predicate REJECTS observedRed on that verdict outright, so following the plan text would have redded the registry. Guard won; recorded here so the next registry consumer does not re-derive the same contradiction. | open |  | 2026-08-31T18:47:19.110Z |  |
+| 32 | 32 | unrun-verify | src/mcp/vice/fork-live.test.ts |  | fork-live.test.ts cannot be exercised on this development host and its opt-in run is a guaranteed red: the non-upstream fork (the -mcpserver build) is NOT installed here. Measured in plan 32-09's close-gate run at 0d7d328: /usr/bin/x64sc reports 'x64sc (VICE 3.9)', /usr/local/bin/x64sc reports 'x64sc (VICE 3.10)', and '/usr/local/bin/x64sc -help / grep -ci mcpserver' returns 0 -- so BOTH x64sc binaries on PATH are genuine unpatched stock, and the /usr/local one that shadows stock is a locally-built stock 3.10, not the fork. Running 'VICE_LIVE_FORK_BIN=/usr/local/bin/x64sc node --test fork-live.test.ts' gives 6 tests / 0 pass / 6 fail, every one 'waitForEndpointReady: http://127.0.0.1:PORT/mcp (fork binary /usr/local/bin/x64sc) never answered within 20000ms (last error: TypeError: fetch failed)'. Consequence: fork-live.test.ts's 6 tests reach their default-SKIP branch both locally and on CI and have NO exercise route anywhere, so nothing currently proves them. This also corrects a standing assumption that 'the fork shadows stock on PATH' -- at /usr/local/bin it does not, it is a second stock build. Not fixed: installing the fork is out of phase 32's scope (ROADMAP.md scopes this phase to contain no build work by design). | open |  | 2026-08-31T19:22:26.336Z |  |
 
 ````json
 [
@@ -419,6 +420,18 @@ last_updated: 2026-08-31T18:47:19.110Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-31T18:47:19.110Z",
+    "resolved_at": null
+  },
+  {
+    "id": 32,
+    "kind": "unrun-verify",
+    "phase": "32",
+    "file": "src/mcp/vice/fork-live.test.ts",
+    "line": null,
+    "description": "fork-live.test.ts cannot be exercised on this development host and its opt-in run is a guaranteed red: the non-upstream fork (the -mcpserver build) is NOT installed here. Measured in plan 32-09's close-gate run at 0d7d328: /usr/bin/x64sc reports 'x64sc (VICE 3.9)', /usr/local/bin/x64sc reports 'x64sc (VICE 3.10)', and '/usr/local/bin/x64sc -help / grep -ci mcpserver' returns 0 -- so BOTH x64sc binaries on PATH are genuine unpatched stock, and the /usr/local one that shadows stock is a locally-built stock 3.10, not the fork. Running 'VICE_LIVE_FORK_BIN=/usr/local/bin/x64sc node --test fork-live.test.ts' gives 6 tests / 0 pass / 6 fail, every one 'waitForEndpointReady: http://127.0.0.1:PORT/mcp (fork binary /usr/local/bin/x64sc) never answered within 20000ms (last error: TypeError: fetch failed)'. Consequence: fork-live.test.ts's 6 tests reach their default-SKIP branch both locally and on CI and have NO exercise route anywhere, so nothing currently proves them. This also corrects a standing assumption that 'the fork shadows stock on PATH' -- at /usr/local/bin it does not, it is a second stock build. Not fixed: installing the fork is out of phase 32's scope (ROADMAP.md scopes this phase to contain no build work by design).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-31T19:22:26.336Z",
     "resolved_at": null
   }
 ]
