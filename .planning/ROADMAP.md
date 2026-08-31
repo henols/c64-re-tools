@@ -772,7 +772,7 @@ not exist until the last guard has moved.
   1. **Every guard and CI script pinned to the deleted subject has a recorded fate, and none passes vacuously — audited over the whole re-pointed set at once, retrospectively.** This is `CUT-04`, and it is the one cut requirement Phase 29 deliberately did **not** pull forward; see the note below for why. Each re-pointed guard's own planted violation is re-run against its **new** subject and observed red — a guard that cannot be made to fail has not been re-pointed. The three that went red **by construction** (`docs-linerefs`, `docs-dangling-refs`, and `docs-absorbed-decisions` — renamed from `docs-r2000-decisions` by plan 29-05, in the same commit as `scripts/audit-gate.mjs`'s registry entry, per `D-12`) were **pre-declared before the deletion**, so an unpredicted red stayed distinguishable from a predicted one, and each was discharged by rewriting content rather than by loosening the guard; this phase re-checks that judgement over the settled tree rather than re-taking it. `check-skill-fork-honesty.mjs`'s direct contradiction is **already resolved** — plan 29-09 named the *skill* as the side that moves, replacing the live `"r2000 export-asm"` instruction with a dated withdrawal notice and re-pointing the guard's positive check at that notice's literal (`CUT-05`, recorded against Phase 29).
   2. **No living document points a user at a deleted route** (`CUT-06`): install documentation, `CLAUDE.md`'s regenerator2000 constraint bullets and its `r2000_*` clause, `PROJECT.md`'s constraints and Key Decisions rows — including its already-stale `vice-proxy.ts` line citations and its `D-36` row's pointer at the **pre-rename** guard file name `docs-r2000-decisions.test.ts`, which no longer exists on disk — `ARCHITECTURE.md`'s Rule A21, `THIRD-PARTY-NOTICES.md`'s dual-licence notice — which **remains true** for the retained prose — and all seven skill playbooks. The **phase-close gate half** of this criterion (full `npm test` over the whole glob with the **broker stopped**, both `check-*.mjs` CI scripts, `docs/tool-support.md` byte-identical, and every `docs-*.test.ts` guard green — the last a precondition of recording any milestone-audit status, enforced by a real `PreToolUse` hook rather than by convention) was first carried out at **Phase 29's** close and is **re-run** here rather than established here.
 
-**Plans**: 9/9 plans executed
+**Plans**: 9/9 plans executed, plus 5 gap-closure plans (round 1) not yet executed
 
 Plans:
 **Wave 1**
@@ -804,6 +804,22 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 
 - [x] 32-09-PLAN.md — D-16's named CI step with `fetch-depth: 0`, and D-12..D-15's close-gate re-run recorded with its broker state
+
+**Gap closure, round 1** *(planned 2026-08-31 from `32-VERIFICATION.md`, `status: gaps_found`, 10/13 must-haves. Run with `/gsd-execute-phase 32 --gaps-only`; these five carry `gap_closure: true` and the nine above are untouched. Their wave numbers are their own, independent of Waves 1–7 above.)*
+
+**Gap-closure wave 1**
+
+- [ ] 32-10-PLAN.md — TRACER for Gap 2: `parseRootArg()` extracted into `scripts/lib/audit-root.mjs`, wired into the one WRITING script, proven to refuse a mistyped root without touching the real `docs/tool-support.md`. Leads with a `checkpoint:decision` on the verifier's fix-versus-revert fork
+- [ ] 32-13-PLAN.md — Gap 1: `evidence/32-audited-set-reconciliation.md` §6.1 adjudicates every guard `CUT-04` names by NAME, with `docs-linerefs`'s measured exclusion and its in-band discharge; and the non-demotion decision recorded beside `CUT-04`'s row
+- [ ] 32-14-PLAN.md — Gap 3: the harness writes what it records (`CR-02`, replacer function plus post-condition) and stops turning a signal-killed child into a red (`CR-04`); one row re-measured, one authorised dated line correction, and the restore-on-signal invariant attempted mechanically
+
+**Gap-closure wave 2** *(blocked on gap-closure wave 1)*
+
+- [ ] 32-11-PLAN.md — Gap 2 expansion: the five remaining argv readers deleted, all six scripts on the shared strict parser, and the full per-script spawned matrix `gaps[1].missing[2]` asks for
+
+**Gap-closure wave 3** *(blocked on gap-closure wave 2)*
+
+- [ ] 32-12-PLAN.md — Gap 2, second half (`CR-03`): the split read settled — four gates refuse a root their statically-imported comparison data cannot follow, the false docblock claim deleted, and a contract assertion that reds if it ever returns
 
 Notes:
 
