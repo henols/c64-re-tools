@@ -726,8 +726,8 @@
       "historicalPath": "scripts/lib/skill-descriptions.mjs",
       "verdict": "kept-unchanged",
       "newSubject": "scripts/lib/skill-descriptions.mjs",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "`scripts/check-skill-description-overlap.mjs` (ABS-03) ceasing to compare skill trigger descriptions for collisions. This module is a pure predicate library with no CLI of its own -- the root-override inventory §2.1 records `check-skill-description-overlap.mjs:70` as its only importer and therefore the only gate that can observe it. The day that gate stops asserting over description overlap, this module should be deleted with it rather than left as an unreferenced export surface.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. EXISTENCE PROOF (D-05): the path is on the working tree, and `git diff --quiet 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.mjs` exits 0 -- the file is BYTE-IDENTICAL between the two pinned commits. Nothing moved, so there is no re-pointing to prove and no `observedRed` is owed. NO STRENGTHENING RED WAS RECORDED for this row. Its consuming gate is measurable (the `scripts/lib/skill-corpus.d.mts` and `scripts/lib/skill-honesty-checks.mjs` rows both exercise gates in the same family), but under D-05 a `kept-unchanged` verdict's evidence IS its `removalTrigger`, and adding an unowed red would invite a later reader to treat it as a contract this verdict does not carry. MEASURED AT EXECUTION TIME: `git diff --quiet 0394cbc 345d5c4 -- scripts/lib/skill-descriptions.mjs` exit 0; path present on the working tree: yes."
     },
     {
       "historicalPath": "scripts/lib/skill-honesty-checks.mjs",
@@ -752,85 +752,221 @@
       "historicalPath": "src/mcp/vice/audit-integrity.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/audit-integrity.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/audit-integrity.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 1, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "`scripts/audit-gate.mjs` ceasing to keep a hand-maintained `EXPECTED_DOCS_GUARD_NAMES` registry alongside its disk derivation. This file's CR-02 detector exists solely to catch that registry drifting from the derived set; once there is only one list, there are no two lists to diverge and the detector should be removed with the second one.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/audit-integrity.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 1, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/audit-integrity.test.ts` shows exactly one subject-naming line, `-  \"docs-r2000-decisions.test.ts\",` -- the entry in this file's own mirror of `audit-gate.mjs`'s registry (`:60-71`), re-pointed onto `docs-absorbed-decisions.test.ts` by plan 29-05. ASSERTION TRIPPED: `:260`, 'the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the disk-derived set carries -- registry-drift detector (CR-02, 17-REVIEW.md)'. The plant misspells the re-pointed name in `scripts/audit-gate.mjs`'s registry so the runtime list no longer names a guard the disk derivation finds -- exactly the drift CR-02's detector was added for. PLANT IS OUTSIDE THE GUARD: the mutation is in `scripts/audit-gate.mjs`, the registry under audit, not in the test that audits it. GUARD IS SCOPED, AND WHY (MEASURED): the whole file runs in 21483ms against the harness's `GUARD_RUN_TIMEOUT_MS` of 15000ms. An unscoped run would be KILLED, and the harness maps an ETIMEDOUT to status 1 -- exit-status-indistinguishable from a genuine failing assertion, i.e. a FALSE observed red. Scoped to the one assertion the plant targets, the control runs in 1525ms. This is the second instance of the timeout hazard plan 32-06 recorded on `anno-cli.test.ts` (20596ms), and it was found by measuring every control's runtime up front rather than by discovering it as a red. SHARED PLANT FILE: the `scripts/audit-gate.mjs` row plants the same file at a DIFFERENT target (`DOCS_GUARD_FLOOR`) under a DIFFERENT guard. Neither masks the other -- see that row's note.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/audit-gate.mjs",
+        "find": "  \"docs-absorbed-decisions.test.ts\",",
+        "replace": "  \"docs-absorbed-decisionz.test.ts\","
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "registry-drift detector",
+          "audit-integrity.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/capability-registry.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/capability-registry.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/capability-registry.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 5, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "`vice-proxy.ts` ceasing to register proxy-local synthetic tools through a `tools[IDENT.name] = ...` site. The whole structural derivation here keys on that shape; once synthetic registration is declarative (or gone), the two-hop walk has nothing to resolve and this half of the guard should be removed with the pattern.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/capability-registry.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 5, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: the diff between the pinned commits removes this file's `r2000LoopVarMatch`/`r2000LoopVar` pair and the `if (ident === r2000LoopVar) continue;` exclusion, replaced by the `annoLoopVar` block now at `:163-176`. That structural exclusion IS the re-pointed assertion. ASSERTION TRIPPED: `:172-179`. Renaming the loop VARIABLE in `vice-proxy.ts` (while the registration site still reads `tools[annoDef.name]`) makes `annoLoopVar` resolve to `annoDefX`, so the exclusion no longer matches and the walk tries to resolve `annoDef` to a `const annoDef: ToolDefinition = { ... }` declaration that does not exist -- the named throw at `:180-186`. This is precisely the failure mode the comment above the exclusion says it exists to prevent ('rather than resolved as a single-const synthetic tool (it isn't one)'). PLANT IS OUTSIDE THE GUARD, IN THE SUBJECT: `vice-proxy.ts` is what this test reads and asserts over; the test's own source is untouched. WHY THE LOOP VARIABLE AND NOT THE COLLECTION: renaming `ANNO_TOOL_DEFINITIONS` would also break the two OTHER independent witnesses of the same relation (`scripts/generate-tool-support-table.mjs` and `tool-support-table.test.mjs`), each of which carries its own copy of the regex and its own row in this registry. Renaming the loop variable keeps the collection name intact, so the three witnesses stay separable and each row's red is attributable to its own plant.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/vice-proxy.ts",
+        "find": "for (const annoDef of ANNO_TOOL_DEFINITIONS)",
+        "replace": "for (const annoDefX of ANNO_TOOL_DEFINITIONS)"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "capability-registry.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/disasm-roundtrip.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/disasm-roundtrip.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/disasm-roundtrip.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 4, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "The stock backend ceasing to emit a `vice_disassemble` listing that ACME must be able to re-assemble. This guard's subject is the byte-exactness of that round trip; once the listing is no longer claimed to be ACME-re-assemblable, there is no round trip to prove and the suite should be removed with the claim.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/disasm-roundtrip.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 4, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: the subject-naming lines removed here are the import `- import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from \"./r2000-test-gate.ts\";` and its comment; the ACME availability seam moved to `./acme-gate.ts` (SEAM-01). WHY THE PLANT DOES *NOT* TARGET THAT SEAM -- A MEASURED HAZARD. Planting the re-pointed seam turns this guard GREEN, not red. `acme-gate.ts:71`'s `ACME_BIN` feeds `probeAcme()` (`:77-86`), whose result gates every ACME-dependent test in this file through `{ skip: SKIP_REASON }`. Break the seam and `ACME_AVAILABLE` goes false, every suite SKIPS, and the file exits 0 -- the harness would record 'the plant did not bite'. This is exactly the silent skip-degradation `acme-gate.ts`'s own header names as its reason for existing ('a missing ACME degrades from a hard FAIL back into a named SKIP, and CI reports green either way'). A plant that can only produce a green is not a plant. ASSERTION TRIPPED INSTEAD: the round-trip relation the guard exists to assert -- Suite B ('a realistic fragment round-trips byte-exact', `:261`) and Suite D ('the +2 size-force spelling', `:402`). Rendering 16-bit operands as five hex digits instead of four makes the emitted listing no longer re-assemble to the original bytes. `src/mcp/vice/disasm-renderer.ts` is one of the three modules the file imports as its subject (`:50-52`) and is NOT the plant file of any other row in this registry -- plan 32-06's `anno-coverage-grammar.test.ts` row plants the sibling `disasm-decoder.ts` at an unrelated target. ACME PRECONDITION: a real ACME 0.97 is on PATH in the tree that produced this row's evidence, so the ACME-gated suites RAN rather than skipped; the green control's own output is the proof.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/disasm-renderer.ts",
+        "find": "(value & 0xffff).toString(16).padStart(4, \"0\")",
+        "replace": "(value & 0xffff).toString(16).padStart(5, \"0\")"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "disasm-roundtrip.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/docs-dangling-refs.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/docs-dangling-refs.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/docs-dangling-refs.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 8, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "`anno-cli.ts` ceasing to carry user-facing string literals that can name a phase. This guard scans a frozen set of normative documents plus that CLI's literals for references to work that no longer exists; once the CLI emits no prose, its half of the scan has no corpus and the positive control should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/docs-dangling-refs.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 8, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: every one of this file's eight subject-naming removed lines renames `r2000-cli.ts` to `anno-cli.ts`, including the two `readFileSync(join(HERE, \"r2000-cli.ts\"))` reads now at `:386` and `:454`. The block comment at `:391-398` records a SECOND, deliberate re-pointing by plan 29-07 (D-14): the concatenated-literal control used to name the `.vsf` bootstrap refusal, whose verb was removed when the CLI narrowed to two verbs, and was moved to the overwrite refusal the surviving surface still has. ASSERTION TRIPPED: `:399-402`, the positive control 'the scanner did not capture anno-cli.ts's concatenated overwrite-refusal literal -- the control for multi-part string concatenation'. Altering one character of that literal in `anno-cli.ts` makes the scanner's regex miss it, so the anti-blindness control fails. This is the exact assertion plan 29-07 re-pointed. PLANT SAFETY (T-32-31): the plan warns against planting into a scanned normative document in a way a failed restore would leave behind. This plant is in `src/mcp/vice/anno-cli.ts`, a SOURCE file, not in `.planning/ROADMAP.md` or `CLAUDE.md`; the harness captures its original bytes before writing and restores idempotently on the normal path, on `exit`, and on every signal, and `git status --porcelain` is compared against the baseline after every row.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-cli.ts",
+        "find": "refusing to overwrite the existing file",
+        "replace": "refusing to overwrite the existing FILE"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "docs-dangling-refs.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/hop-chain-comments.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/hop-chain-comments.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/hop-chain-comments.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 8, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "`absorbed-answer-key.test.ts` ceasing to carry a legitimate repo-root chain comment. That single line is this guard's in-tree NEGATIVE control -- the proof its extractor sees real chain-shaped comments and still does not flag the legitimate one. If the line goes, the control must be re-pointed onto another real in-tree chain line in the same commit, or this guard keeps only its fixture-driven control and should be reduced deliberately rather than left half-vacuous.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/hop-chain-comments.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 8, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: the diff removes six subject-naming lines, all of them the in-tree negative control's target -- `r2000-answer-key.test.ts` in the test title, in the `chainLines.find(...)` predicate, and in three assertion messages -- re-pointed onto `absorbed-answer-key.test.ts` (the same rename plan 32-06's `r2000-answer-key.test.ts` row records). ASSERTION TRIPPED: `:381-386`, `assert.equal(controlLine!.line, 34, 'expected the legitimate chain line at absorbed-answer-key.test.ts:34, found at line ...')`. The plant inserts one newline before the control comment, shifting it from line 34 to line 35, so the pinned line number no longer matches. WHY A LINE SHIFT AND NOT A TEXT EDIT: the control asserts BOTH that the line is found and that it is found at a specific line number. Editing the comment's text would make `chainLines.find(...)` return undefined and trip the earlier `assert.ok(controlLine, ...)` -- also a red, but one that reads as 'the extractor stopped matching', which is the guard's OWN diagnostic for a broken extractor rather than a moved control. Shifting the line keeps the extractor working and isolates the line-number pin, which is the narrower and more legible failure. PLANT IS OUTSIDE THE GUARD: the mutation is in `absorbed-answer-key.test.ts`, the file the control names, not in `hop-chain-comments.test.ts`.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/absorbed-answer-key.test.ts",
+        "find": "// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1",
+        "replace": "\n// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "hop-chain-comments.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/hostpath-consumers.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/hostpath-consumers.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/hostpath-consumers.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 24, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "`hostpath.ts` ceasing to be the single container-to-host path translation seam. Every assertion here is about WHICH modules may import it; once path translation is no longer centralised in one module, there is no consumer set to pin and the guard should be removed with the seam.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/hostpath-consumers.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 24, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: this file carries the largest same-path re-pointing after `check-skill-tool-coverage.mjs` -- 24 subject-naming lines. `r2000ProductionModules()` (filtering `/^r2000-.*\\.ts$/`) became `annoProductionModules()` (filtering `/^anno-.*\\.ts$/`, `:212`), and `R2000_MODULE_FLOOR = 14` was REPLACED by `ANNO_MODULE_FLOOR = 16 + 1` (`:257`), with the two family tests renamed onto the annotation family. ASSERTION TRIPPED: `:319-326`, 'the annotation module family (D-08/R2000-02) is absent from the consumer set' -- one of the two tests Phase 29 re-pointed by name. Adding a static `./hostpath.ts` import to `anno-store.ts` puts an `anno-*.ts` module into `hostpathImporters()`, so `assert.equal(importers.includes(name), false)` fails for it. The plant also trips `:146`'s 'exactly the five declared modules' assertion, which is the same relation seen from the other side. WHY NOT THE FLOOR: the plan suggests 'removing a consumer from the module floor's derived set'. The harness's only implemented plant is a single-occurrence find/replace, which cannot delete a file, so the derived set cannot be shrunk that way; the remaining floor route would be to raise `ANNO_MODULE_FLOOR` inside the guard itself. Planting `anno-store.ts` instead keeps the mutation OUTSIDE the guard and trips a test Phase 29 re-pointed by name, which is the stronger of the two. PLANT IS OUTSIDE THE GUARD, IN A REAL SUBJECT MODULE: `anno-store.ts` is a genuine member of the derived annotation family (it is named in the INT-01 positive control at `:314`).",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-store.ts",
+        "find": "import { randomUUID } from \"node:crypto\";",
+        "replace": "import { randomUUID } from \"node:crypto\";\nimport { hostPath } from \"./hostpath.ts\";"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "hostpath-consumers.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/skill-acme-build-cli.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/skill-acme-build-cli.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/skill-acme-build-cli.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 3, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "The `acme-build` skill ceasing to ship a CLI this guard can drive. Its subject is that skill's scripts and their documented invocation; once the skill has no executable surface, the CLI acceptance tests have nothing to run and should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/skill-acme-build-cli.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 3, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: `- import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from \"./r2000-test-gate.ts\";`, re-pointed onto `./acme-gate.ts` at `:50` -- the SEAM-01 move, made precisely so a prefix-driven cleanup of the deleted subject could not take the ACME gate with it. ASSERTION TRIPPED: `:288-290`, 'ACME_BIN is the shared seam's binary name, not a second hand-rolled default', `assert.equal(ACME_BIN, process.env.ACME_BIN ?? \"acme\")`. This test is NEVER SKIPPED -- it does not carry `{ skip: SKIP_REASON }` -- so changing the seam's default binary name reds it outright. WHY THIS ROW CAN PLANT THE SEAM AND `disasm-roundtrip.test.ts` CANNOT: the same plant makes `disasm-roundtrip.test.ts` SKIP its way to exit 0 (see that row's note). This file asserts the seam's VALUE in a never-skipped test, so the identical mutation is a red here and a green there. That asymmetry is why the two rows must not share a plant, and it is itself evidence that the re-pointed seam is load-bearing in exactly the way SEAM-01 claims.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/acme-gate.ts",
+        "find": "export const ACME_BIN: string = process.env.ACME_BIN ?? \"acme\";",
+        "replace": "export const ACME_BIN: string = process.env.ACME_BIN ?? \"acmeZZ\";"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "skill-acme-build-cli.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/skill-attribution.test.ts",
       "verdict": "kept-unchanged",
       "newSubject": "src/mcp/vice/skill-attribution.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/skill-attribution.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RESEARCH DIVERGENCE, RECORDED NOT OVERRIDDEN: `32-RESEARCH.md` §CUT-04 lists this file among Phase 29's re-pointed set. The mechanical rule places it at `kept-unchanged`, because its diff between the two pinned commits touches no subject-naming line at all (0 matches). The rule's result stands and the divergence is recorded here with the command, per this plan's instruction not to override the rule."
+      "removalTrigger": "The two ABS-02 attribution naming lines ceasing to be required in skill playbooks across both the canonical `src/skills/` tree and the generated `installer/skills/` tree. This guard's whole subject is that those lines are present, per block, in both trees; once attribution is no longer claimed in playbook prose, the scoring has nothing to score and the guard should be removed with the requirement.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/skill-attribution.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RESEARCH DIVERGENCE, RECORDED NOT OVERRIDDEN: `32-RESEARCH.md` §CUT-04 lists this file among Phase 29's re-pointed set. The mechanical rule places it at `kept-unchanged`, because its diff between the two pinned commits touches no subject-naming line at all (0 matches). The rule's result stands and the divergence is recorded here with the command, per this plan's instruction not to override the rule. EXISTENCE PROOF (D-05): the path is on the working tree. `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/skill-attribution.test.ts` exits 1 -- so unlike its two `kept-unchanged` siblings this file DID change between the pinned commits, substantially: `git diff --stat` reports 699 insertions and 1 deletion, the addition of a sixth non-vacuity proof scoring the ABS-02 naming lines per block across both skill trees. What it did NOT do is name the deleted subject: the classification command returns 0, i.e. not one added or removed line mentions it. The member therefore grew, but nothing in it was re-pointed onto or off the deleted subject, which is exactly the distinction the mechanical rule measures and the reason no `observedRed` is owed. NO STRENGTHENING RED WAS RECORDED. RESEARCH DIVERGENCE: see the classification note above -- `32-RESEARCH.md` §CUT-04 lists this file among Phase 29's re-pointed set; the rule places it here, and the rule stands. MEASURED AT EXECUTION TIME: `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/skill-attribution.test.ts` exit 1; path present on the working tree: yes."
     },
     {
       "historicalPath": "src/mcp/vice/stock-connect.test.ts",
       "verdict": "kept-unchanged",
       "newSubject": "src/mcp/vice/stock-connect.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/stock-connect.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "The stock backend ceasing to speak the binary monitor over a single-client socket. Every assertion here is about that connection's framing, demux and lifecycle; once the stock backend reaches VICE another way, the protocol this guard pins no longer exists and the file should be deleted with the transport.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/stock-connect.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 0, so this member is `kept-unchanged`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. EXISTENCE PROOF (D-05): the path is on the working tree, and `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/stock-connect.test.ts` exits 0 -- BYTE-IDENTICAL between the two pinned commits. It entered set A only because its content at `0394cbc` already mentioned the deleted subject, and that mention was never touched. No `observedRed` is owed. NO STRENGTHENING RED WAS RECORDED -- and this row is the one where that restraint matters most: `stock-connect.test.ts` is one of the nine `MANUAL_ONLY_TESTS`, so a red for it would need care that a row owing no evidence has no reason to spend. MEASURED AT EXECUTION TIME: `git diff --quiet 0394cbc 345d5c4 -- src/mcp/vice/stock-connect.test.ts` exit 0; path present on the working tree: yes."
     },
     {
       "historicalPath": "src/mcp/vice/stock-dispatch.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/stock-dispatch.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/stock-dispatch.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 21, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "The `anno_*` family ceasing to be dispatched proxy-locally, outside the backend-aware seam. This guard's anno half asserts that the family's registration bypasses the seam DELIBERATELY and that its runner reaches no VICE transport; once the family is served through the seam like every other tool, the documented exception disappears and these assertions should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/stock-dispatch.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 21, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: 21 subject-naming lines, all of them the `r2000_*` family's dispatch assertions re-pointed onto `anno_*` -- `CURATED_R2000_TOOLS` -> `CURATED_ANNO_TOOLS` (`:45`), the `BACKEND_SEAM_BYPASS_KEYS` entry `\"r2000Def.name\"` -> `\"annoDef.name\"` (`:1510`), and the test titled 'the r2000_* loop registration's runner is runR2000Tool' -> 'the anno_* loop registration's runner is runAnnoTool' (`:1555`). ASSERTION TRIPPED: `:1564-1566`, the forbidden-symbol loop -- `runAnnoTool()` must not reach `forwardToVice`, `ensureViceSession` or `rewriteArguments`, 'that is what makes the anno_* family's backend-independence sound'. The plant appends `// forwardToVice` to the first statement of `runAnnoTool`'s body, so the source-slice the test takes from `export async function runAnnoTool(` to the next `\\n}` contains a forbidden token. WHY A COMMENT AND NOT A REAL CALL: the assertion is a source-text `includes()` over the runner's body, so a comment exercises exactly the relation under test while leaving the module semantically loadable -- `stock-dispatch.test.ts` imports `CURATED_ANNO_TOOLS` from this same file at `:45`, and a plant that broke module load would red with an import error instead of the named assertion, which is weaker evidence. Renaming `export async function runAnnoTool(` was rejected for the same reason: `vice-proxy.ts` imports that symbol. SHARED PLANT FILE: `src/mcp/vice/anno-tools.ts` is also the plant file for the `src/mcp/vice/vice-proxy.test.ts` row in this plan (target: the `CURATED_ANNO_TOOLS` derivation at `:944`) and for plan 32-06's `src/mcp/vice/r2000-tools.test.ts` row (target: a registered tool `name:`). Three rows, three distinct targets, three distinct guards; the harness measures one row at a time behind its own green control, so no plant is ever in the tree while another is measured.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-tools.ts",
+        "find": "    assertAnnoTool(name, args);",
+        "replace": "    assertAnnoTool(name, args); // forwardToVice"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "stock-dispatch.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/tool-support-table.test.mjs",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/tool-support-table.test.mjs",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/tool-support-table.test.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 6, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "`docs/tool-support.md` ceasing to be a generated, committed artifact -- the same trigger as the generator's own row, because this file is the assertion half of that one relation. If the table stops being committed, both should be removed in the same commit.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/tool-support-table.test.mjs | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 6, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: six subject-naming lines, of which the load-bearing pair is this file's OWN independent copy of the loop-exclusion regex (`R2000_LOOP_VAR_RE` -> `ANNO_LOOP_VAR_RE`, now `:84`) and the added `syntheticProxySource(\"R2000_TOOL_DEFINITIONS\")` -> `(\"ANNO_TOOL_DEFINITIONS\")` fixture call at `:364`. ASSERTION TRIPPED: `:270`, 'derived-union equality: the generated document's row set equals an independently-computed union of the three inputs'. Pointing this file's witness at a collection that does not exist in `vice-proxy.ts` makes `independentlyDiscoverSyntheticNames()` (`:73-131`) stop excluding the anno loop's registration identifier, so the independently-computed union diverges from the generator's output. SELF-PLANT, STATED PLAINLY: the mutation is inside the audited file itself. That is deliberate and, here, unavoidable in the useful sense -- the content Phase 29 re-pointed in this member IS the independent witness, and the whole point of the three-witness design (`generate-tool-support-table.mjs:161-166`: 'each is a separate witness proving the other two right ... do not collapse three independent witnesses into one') is that each witness is only observable through its own copy. Breaking a sibling's copy would prove something about the sibling, not about this row. DISTINCT FROM THE GENERATOR ROW: `scripts/generate-tool-support-table.mjs`'s row plants ITS copy of the same regex and is scoped to 'byte-identical to committed'. Two rows, two files, two assertions -- and each red is attributable to the witness its own row owns.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/tool-support-table.test.mjs",
+        "find": "const ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONS\\s*\\)/;",
+        "replace": "const ANNO_LOOP_VAR_RE = /for\\s*\\(\\s*const\\s+(\\w+)\\s+of\\s+ANNO_TOOL_DEFINITIONZ\\s*\\)/;"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "derived-union equality",
+          "tool-support-table.test.mjs"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     },
     {
       "historicalPath": "src/mcp/vice/vice-proxy.test.ts",
       "verdict": "re-pointed",
       "newSubject": "src/mcp/vice/vice-proxy.test.ts",
-      "removalTrigger": "TASK 2",
-      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/vice-proxy.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 18, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged."
+      "removalTrigger": "The `anno_*` family ceasing to be advertised on `tools/list` alongside the manifest tools and the three synthetics. The re-pointed expression pins the exact advertised name set and its order; once the family is no longer advertised, the expectation has no right-hand side and should be removed with it.",
+      "note": "CLASSIFICATION (mechanical, not judgement): `git diff -U0 0394cbc 345d5c4 -- src/mcp/vice/vice-proxy.test.ts | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` returns 18, so this member is `re-pointed`. The rule: a same-path set-A member is `re-pointed` when the diff between the two pinned commits carries an added or removed line naming the deleted subject, `kept-unchanged` otherwise. Measured over all 21 same-path members at execution time: 18 re-pointed / 3 kept-unchanged. RE-POINTED HUNK: `- import { CURATED_R2000_TOOLS } from \"./r2000-tools.ts\";` -> `+ import { CURATED_ANNO_TOOLS } from \"./anno-tools.ts\";` (`:58`), with the header comment at `:55-57` recording the reason in terms ('Repointed after plan 29-10's merge: CURATED_R2000_TOOLS died with r2000-tools.ts'). The three consuming expressions moved with it: the advertised-count arithmetic at `:542` and the two name-order expectations at `:603` and `:621`. ASSERTION TRIPPED: `:498`, 'tools/list reads the committed snapshot with no emulator' -- which consumes all three re-pointed expressions. Suffixing every name in the `CURATED_ANNO_TOOLS` derivation makes the EXPECTED list diverge from the wire list, because `vice-proxy.ts` registers from `ANNO_TOOL_DEFINITIONS` directly (`tools[annoDef.name]`) while the test expects from `CURATED_ANNO_TOOLS`. Renaming an individual tool's `name:` would NOT bite: `:944` derives the curated list from the definitions, so both sides would move together and the guard would stay green. THE GUARD IS SCOPED, AND THE FULL FILE IS NOT USABLE -- MEASURED, TWICE. (1) `node --test vice-proxy.test.ts` DOES NOT TERMINATE: measured at 300106ms against a deliberately generous 300000ms bound, still running when killed. The harness bounds a guard at 15000ms and maps the resulting ETIMEDOUT to status 1, so an unscoped run of this file would have produced a status-1 result that is exit-status-indistinguishable from a genuine failing assertion -- the precise false red this phase exists to prevent. (2) The obvious scope, `--test-name-pattern \"tools/list's full output matches the manifest exactly\"`, TERMINATES (1665-2095ms) but its UNPLANTED control EXITS 1: the wire surface answers with 58 tools (the stock set) while the assertion expects the 80-name fork manifest, so it is red for a backend reason with no plant present. Under the green-control rule that scope is UNMEASURABLE, and it is recorded here rather than used. The scope this row DOES use was measured green at 1641-1896ms. SCOPE IS NOT A WORKAROUND FOR THE HANG: the hang is real and is NOT diagnosed here -- `ROADMAP.md` states this phase contains no build work by design and `32-CONTEXT.md` lists diagnosing it as a deferred idea. This row measures one re-pointed assertion that can be measured honestly; the file's unscoped behaviour is recorded in the SUMMARY as a phase-level finding.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-tools.ts",
+        "find": "ANNO_TOOL_DEFINITIONS.map((def) => def.name)",
+        "replace": "ANNO_TOOL_DEFINITIONS.map((def) => def.name + \"X\")"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "tools/list reads the committed snapshot with no emulator",
+          "vice-proxy.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      }
     }
   ]
 }
