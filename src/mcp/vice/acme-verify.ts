@@ -118,11 +118,21 @@ export type AcmeOutcome = "ok" | "failed" | "skipped";
  * -- whatever its exit status -- is a real observation about the source. */
 export type SpawnClassification = "unavailable" | "ran";
 
+/** The spawn fields a classifier may legitimately read. `signal` joined the
+ * two originals on 2026-08-31 (30-REVIEW CR-03) because it is the ONE field
+ * that separates "no process ever ran" from "a process ran and died", and it
+ * was previously read nowhere in this module. A classifier still cannot reach
+ * stdout, stderr or the output file. */
+export interface SpawnShape {
+  error?: unknown;
+  status: number | null;
+  signal?: NodeJS.Signals | null;
+}
+
 /** The shape of the classification decision, named so a test can drive the
  * SAME property predicate with a deliberately wrong implementation and watch it
- * report a pass. Only the two fields the decision may legitimately read appear
- * here; a classifier cannot reach stdout, stderr or the output file. */
-export type SpawnClassifier = (r: { error?: unknown; status: number | null }) => SpawnClassification;
+ * report a pass. */
+export type SpawnClassifier = (r: SpawnShape) => SpawnClassification;
 
 /**
  * The ONE spawn classification in this module.
@@ -142,24 +152,77 @@ export type SpawnClassifier = (r: { error?: unknown; status: number | null }) =>
  * TRUE -- which is exactly how a missing assembler was scored as a pass. That
  * one recorded false pass is why this function exists and why nothing else in
  * this module decides availability.
+ *
+ * A PROCESS THAT RAN AND DIED IS `"ran"`, AND THAT IS 30-REVIEW CR-03's FIX
+ * (2026-08-31). Both of the original disjuncts are satisfied by a run that
+ * genuinely happened, so a CRASHED or TIMED-OUT ACME was scored
+ * `"unavailable"` -> `"skipped"`, and the returned reason read `ACME never
+ * ran: ...`. That statement was FALSE, and it is the exact category error
+ * `SpawnClassification` and `AcmeOutcome` above are defined to prevent: a
+ * crash or a hang is a real observation ABOUT THE SOURCE, not an absent
+ * toolchain. A consumer that treats `"skipped"` as an environment condition
+ * (which is the whole reason `"skipped"` exists as a third outcome) would
+ * silently absorb a crashing assembler.
+ *
+ * MEASURED on this host, the two ran-and-died shapes:
+ *
+ *   spawnSync("/bin/sh", ["-c", "kill -SEGV $$"])
+ *     -> status null, signal "SIGSEGV", error undefined
+ *   spawnSync("/bin/sleep", ["5"], { timeout: 200 })
+ *     -> status null, signal "SIGTERM", error ETIMEDOUT
+ *
+ * The crash row is caught by `signal`; the timeout row carries BOTH a signal
+ * and an error, and is checked on `ETIMEDOUT` as well so the rule still reads
+ * correctly if a future Node reports a timeout with no signal. Both then fall
+ * through to the ordinary rules, where -- with no output file present -- rule
+ * 5 already produces `"failed"` with an actionable message.
+ *
+ * ORDER MATTERS: the ran-and-died checks come FIRST, because the timeout row's
+ * `error` would otherwise be consumed by the missing-binary disjunct below.
  */
-export const classifySpawn: SpawnClassifier = (r) =>
-  r.error !== undefined || r.status === null ? "unavailable" : "ran";
+export const classifySpawn: SpawnClassifier = (r) => {
+  if (r.signal != null) return "ran";
+  if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") return "ran";
+  return r.error !== undefined || r.status === null ? "unavailable" : "ran";
+};
 
 /** A missing-binary spawn shape as MEASURED, not as imagined -- the three
  * missing-assembler rows of RESEARCH.md Pitfall 2's table, reproduced live on
  * this host against ACME 0.97. */
-function measuredMissingBinarySpawn(code: string, syscallTarget: string): { error?: unknown; status: number | null } {
+function measuredMissingBinarySpawn(code: string, syscallTarget: string): SpawnShape {
   const error = new Error(`spawnSync ${syscallTarget} ${code}`) as NodeJS.ErrnoException;
   error.code = code;
-  return { error, status: null };
+  return { error, status: null, signal: null };
 }
 
 /** The three measured missing-binary shapes, in the table's own order. */
-const MEASURED_MISSING_BINARY_SPAWNS: readonly { error?: unknown; status: number | null }[] = Object.freeze([
+const MEASURED_MISSING_BINARY_SPAWNS: readonly SpawnShape[] = Object.freeze([
   measuredMissingBinarySpawn("ENOENT", "acme-does-not-exist"),
   measuredMissingBinarySpawn("ENOENT", "/nonexistent/acme"),
   measuredMissingBinarySpawn("EACCES", "/etc/hostname"),
+]);
+
+/**
+ * The two RAN-AND-DIED spawn shapes, as MEASURED on this host rather than as
+ * imagined -- the sibling of `MEASURED_MISSING_BINARY_SPAWNS` above, added for
+ * 30-REVIEW CR-03.
+ *
+ * These are the shapes `MEASURED_MISSING_BINARY_SPAWNS` could not see: it pins
+ * only the three MISSING-BINARY rows, so `missingAssemblerIsNeverAPass()` was
+ * green throughout the window in which a SIGSEGV'd ACME reported "ACME never
+ * ran". Reproduced with `/bin/sh -c 'kill -SEGV $$'` and
+ * `/bin/sleep 5` under a 200ms timeout; see `classifySpawn()`'s doc for the
+ * measured field values.
+ */
+const MEASURED_RAN_AND_DIED_SPAWNS: readonly SpawnShape[] = Object.freeze([
+  Object.freeze({ status: null, signal: "SIGSEGV" as NodeJS.Signals }),
+  Object.freeze(
+    (() => {
+      const error = new Error("spawnSync /bin/sleep ETIMEDOUT") as NodeJS.ErrnoException;
+      error.code = "ETIMEDOUT";
+      return { error, status: null, signal: "SIGTERM" as NodeJS.Signals };
+    })(),
+  ),
 ]);
 
 /**
@@ -179,6 +242,26 @@ const MEASURED_MISSING_BINARY_SPAWNS: readonly { error?: unknown; status: number
  */
 export function missingAssemblerIsNeverAPass(classify: SpawnClassifier): boolean {
   return MEASURED_MISSING_BINARY_SPAWNS.every((shape) => classify(shape) === "unavailable");
+}
+
+/**
+ * THE PAIRED PREDICATE: does `classify` recognise every measured ran-and-died
+ * spawn shape as having RUN? (30-REVIEW CR-03.)
+ *
+ * `missingAssemblerIsNeverAPass()` above closes one direction -- an absent
+ * assembler is never scored as a pass. This closes the other, which was open:
+ * a CRASHED or TIMED-OUT assembler must never be scored as ABSENT. Both
+ * failures are the same category error in opposite directions, and both are
+ * expressed here as one predicate driven from both sides, for the same reason
+ * stated above: two copies drift, and the copy that drifts is always the
+ * control.
+ *
+ * A classifier that returned `"unavailable"` for these shapes reports "ACME
+ * never ran" about a run that happened, which is the false statement
+ * 30-REVIEW CR-03 reproduced against the committed code.
+ */
+export function deadAssemblerIsNeverASkip(classify: SpawnClassifier): boolean {
+  return MEASURED_RAN_AND_DIED_SPAWNS.every((shape) => classify(shape) === "ran");
 }
 
 /** The verdict's actual basis: an octet-level comparison, never a string

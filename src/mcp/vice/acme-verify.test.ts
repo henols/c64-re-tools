@@ -74,6 +74,7 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 import {
   ACME_VERIFY_ARGV_FLAGS,
   classifySpawn,
+  deadAssemblerIsNeverASkip,
   firstResultLineDisagreement,
   missingAssemblerIsNeverAPass,
   parseAcmeAggregateLines,
@@ -293,6 +294,123 @@ test("classifySpawn maps the three measured shapes: no exit status is `unavailab
       "`unavailable` would hide a genuine assembly failure behind the outcome that means `no claim exists`"
   );
 });
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW CR-03 -- the OTHER direction of the same category error. A
+// CRASHED or TIMED-OUT ACME was scored `"unavailable"` -> `"skipped"`, and
+// the returned reason read `ACME never ran: ...`. That statement is false: the
+// assembler ran, and its crash or hang is a real observation about the source.
+//
+// `MEASURED_MISSING_BINARY_SPAWNS` pins only the three MISSING-BINARY rows, so
+// `missingAssemblerIsNeverAPass()` was green throughout the window in which
+// this hole was open -- which is why this needs its own paired predicate
+// rather than a widening of that one.
+//
+// Both spawn shapes below are MEASURED live in this file (not hand-written
+// literals), so a Node version that reports a crash or a timeout differently
+// fails HERE by name instead of silently reopening the hole.
+// ---------------------------------------------------------------------------
+
+/**
+ * A DELIBERATE PLANTED VIOLATION, the mirror of `SHORTCUT_CLASSIFIER` above:
+ * the pre-CR-03 rule, in its own words. It reads only `error` and `status`,
+ * never `signal`, so both measured ran-and-died shapes land in `"unavailable"`
+ * -- and `deadAssemblerIsNeverASkip()` must REPORT it, or the control cannot
+ * bite and the guard is not a guard.
+ */
+const PRE_CR03_CLASSIFIER: SpawnClassifier = (r) =>
+  r.error !== undefined || r.status === null ? "unavailable" : "ran";
+
+test("MANDATORY RED 2 (in process): a dead assembler is never a skip, and the pre-CR-03 rule says it is (30-REVIEW CR-03)", () => {
+  assert.equal(
+    deadAssemblerIsNeverASkip(classifySpawn),
+    true,
+    "the real classifier must recognise BOTH measured ran-and-died spawn shapes (a SIGSEGV crash and a timeout " +
+      "kill) as having RUN. Either one classified as `unavailable` reports `ACME never ran` about a run that " +
+      "happened -- a real failed observation laundered into the outcome that means `no claim exists`"
+  );
+  assert.equal(
+    deadAssemblerIsNeverASkip(PRE_CR03_CLASSIFIER),
+    false,
+    "the PRE-CR-03 error-or-null-status classifier must be REPORTED by this same predicate. Both directions call " +
+      "deadAssemblerIsNeverASkip(), so there is exactly one definition of the property"
+  );
+});
+
+test("LIVE MEASUREMENT: a real SIGSEGV and a real timeout both classify as `ran` (30-REVIEW CR-03)", () => {
+  // Not fixture literals -- actual spawns, so this test observes what Node on
+  // THIS host really reports rather than what the fix's author believed it
+  // reported. The two rows are exactly the reproduction recorded in
+  // 30-REVIEW.md.
+  const crash = spawnSync("/bin/sh", ["-c", "kill -SEGV $$"]);
+  assert.equal(crash.status, null, `precondition: a SIGSEGV'd child reports no exit status (got ${crash.status})`);
+  assert.equal(crash.signal, "SIGSEGV", `precondition: the crash is reported through \`signal\` (got ${crash.signal})`);
+  assert.equal(
+    classifySpawn(crash),
+    "ran",
+    "a process killed by a signal RAN. Scoring it `unavailable` makes acme-verify report `ACME never ran` about a crash",
+  );
+
+  const hang = spawnSync("/bin/sleep", ["5"], { timeout: 200 });
+  assert.equal(hang.status, null, `precondition: a timed-out child reports no exit status (got ${hang.status})`);
+  assert.equal(
+    (hang.error as NodeJS.ErrnoException | undefined)?.code,
+    "ETIMEDOUT",
+    "precondition: our own timeout is reported as an ETIMEDOUT spawn error",
+  );
+  assert.equal(
+    classifySpawn(hang),
+    "ran",
+    "a process killed by OUR OWN timeout RAN. Scoring it `unavailable` makes a hanging assembler indistinguishable " +
+      "from an absent one, which is the distinction `skipped` exists to carry",
+  );
+});
+
+test(
+  "a CRASHING assembler is `failed`, not `skipped`, end to end through the acmeBin seam (30-REVIEW CR-03)",
+  { skip: existsSync("/bin/sh") ? false : "no /bin/sh on this host" },
+  () => {
+    // The classification observed at the VERDICT boundary rather than only at
+    // the predicate, through the same `acmeBin` seam the missing-binary and
+    // `/bin/true` directions above use. A real executable that really runs and
+    // really dies on SIGSEGV: it must reach the ordinary rules, where rule 8
+    // (unanimity, nothing on stdout) names an actionable failure. `skipped`
+    // here would mean a consumer treating that outcome as an environment
+    // condition silently absorbs a crashing toolchain -- which is exactly the
+    // false-negative channel 30-REVIEW CR-03 reproduced.
+    const dir = mkdtempSync(join(tmpdir(), "acme-verify-crash-"));
+    try {
+      const crashingBin = join(dir, "crashing-acme");
+      writeFileSync(crashingBin, "#!/bin/sh\nkill -SEGV $$\n", { mode: 0o755 });
+
+      const verdict = verifyAcmeAssembles({
+        source: TRIVIAL_SOURCE,
+        expectedBytes: TRIVIAL_BYTES,
+        expectedSegments: TRIVIAL_SEGMENTS,
+        acmeBin: crashingBin,
+      });
+
+      assert.equal(
+        verdict.outcome,
+        "failed",
+        `a crashing assembler RAN, so its death is a real failed observation, not an absent toolchain; ` +
+          `got ${JSON.stringify(verdict.outcome)} with reason ${JSON.stringify(verdict.reason)}`,
+      );
+      assert.notEqual(
+        verdict.outcome,
+        "skipped",
+        "`skipped` must be reachable ONLY from a spawn that did not run -- a SIGSEGV'd process ran",
+      );
+      assert.doesNotMatch(
+        verdict.reason,
+        /never ran/,
+        `the reason must not claim the assembler never ran, because it did: ${verdict.reason}`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 /** The gate's own refusal wording, read out of `acme-gate.ts` at run time
  * rather than retyped here. Retyping it is how the child-process observation
