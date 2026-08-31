@@ -228,13 +228,40 @@ the other's internal representation directly.
 
 ### Rule A21 — One long-lived regenerator2000 child per project path, per proxy process
 
-At most one live regenerator2000 child exists per `vice-proxy.ts` process,
-keyed on `resolveStorePath()`'s output (D18-04). It is opened lazily on the
-first `r2000_*` call that needs it and never at tool-registration time
-(D18-03). It is killed only through the retained `ChildProcess` handle, never
-by a stored pid (D18-21). It is never spawned from a module other than
-`r2000-mcp-client.ts` (D18-02). Rule A18's `--vice` prohibition is unchanged
-and unaffected by this rule.
+⚠ **SUPERSEDED 2026-08-30 (Phase 29, plan 29-10, commit `1d40ad0`) — this rule governed a
+subsystem that no longer exists.** Kept as a dated record rather than deleted, on the same
+keep-dated precedent as `CORE-01` and `D-36`: the rule number is cross-referenced by number
+(`.planning/ROADMAP.md` § Phase 32 names "Rule A21"), and deleting it would erase the record
+that this project once chose a long-lived child process and then reversed that choice on
+measured grounds.
+
+**What the rule said, in the past tense.** At most one live regenerator2000 child existed per
+`vice-proxy.ts` process, keyed on `resolveStorePath()`'s output (D18-04). It was opened lazily
+on the first `r2000_*` call that needed it and never at tool-registration time (D18-03). It was
+killed only through the retained `ChildProcess` handle, never by a stored pid (D18-21). It was
+never spawned from a module other than `r2000-mcp-client.ts` (D18-02). Rule A18's `--vice`
+prohibition was unchanged and unaffected by this rule, and still stands on its own.
+
+**Why it is superseded.** Phase 29 deleted the binary-driving glue, `r2000-mcp-client.ts`
+included, and `resolveStorePath()` went with it — so every clause above now names a symbol or a
+module that is not on disk. Phase 29's own `D-06` reversed this rule explicitly and on the
+record, choosing open/close per call with an explicit store-path argument on every verb
+(`openStore(path, { workspaceRoot })` and `closeStore` in a `finally`, no cross-call state
+anywhere). A21's whole premise was avoiding a per-call child-process respawn; Phase 29's `D-01`
+and `D-02` deleted the child process, so the premise is gone rather than outweighed.
+
+**What replaced it: nothing of the same kind.** The successor `anno_*` family reaches a
+proxy-local SQLite annotation store in-process, opened and closed inside the runner itself.
+There is no child process to keep alive, so there is no one-per-project-path invariant left to
+state. Two Phase 28 hazard classes A21's session model exposed — `revertTo` returning a new
+handle, and a `transactionStateUnknown` connection being reused — became unreachable across
+calls by construction rather than guarded.
+
+**Reversal condition.** This rule returns only if a long-lived child process is reintroduced
+behind the annotation surface — for instance if per-call open/close is measured to be the
+dominant cost of a real recon session and a cached handle is added back, which Phase 29's `D-06`
+records as reversible ("adding a cache later is local"). A reintroduced child would need these
+four clauses restated against the new module rather than inherited from this record.
 
 ## Dependency Direction
 
