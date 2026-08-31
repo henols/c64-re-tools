@@ -5,15 +5,15 @@ milestone_name: Own the Annotation Store
 current_phase: 31
 current_phase_name: Procedure Re-pointing
 status: executing
-stopped_at: Phase 31 executed 3/3 plans; verification gaps_found — next is /gsd-plan-phase 31 --gaps
-last_updated: "2026-08-31T08:51:50.781Z"
+stopped_at: Phase 31 gap-closure round 1 planned (31-04, 1 plan) after verification scored 5/7 gaps_found — next is /gsd-execute-phase 31 --gaps-only
+last_updated: "2026-08-31T10:59:50.884Z"
 last_activity: 2026-08-31
-last_activity_desc: Phase 31 executed 3/3 plans; verification found 2 gaps
-state_head: f6524edf687de5113e91b3193eaa6b8c5e3f9e11
+last_activity_desc: Phase 31 gap-closure round 1 planned — 31-04 verified by plan-checker (2 warnings closed, 0 remaining)
+state_head: e5d4bcf661085f34440b97324a1862094429dc86
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 58
+  total_plans: 59
   completed_plans: 55
   percent: 67
 ---
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 31 (Procedure Re-pointing) — GAPS FOUND
-Plan: 3 of 3 executed
-Status: Verification returned gaps_found (5/7 must-haves) — awaiting gap closure
-Last activity: 2026-08-31 — Phase 31 executed 3/3 plans; verification found 2 gaps
+Phase: 31 (Procedure Re-pointing) — READY TO EXECUTE
+Plan: 3 of 4 executed (31-04 is the gap-closure plan, not yet executed)
+Status: Gap-closure round 1 planned and plan-checker-verified (2 warnings closed, 0 issues) — ready to execute
+Last activity: 2026-08-31 — Phase 31 gap-closure round 1 planned; 31-04 plan-checker verified
 
 ## Performance Metrics
 
