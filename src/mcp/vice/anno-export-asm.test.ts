@@ -86,7 +86,7 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import { assertExportableCommentText, exportAsm, substituteImmediateEnum, type ExportAsmResult } from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
-import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, setComment, setDataType, setLabel } from "./anno-store.ts";
+import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, listLabels, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 import { decode } from "./disasm-decoder.ts";
 import { OPCODES } from "./disasm-opcodes.ts";
@@ -988,6 +988,155 @@ test("a store with no mid-instruction label reports `midInstructionLabelCount` z
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
   assert.equal(result.midInstructionLabelCount, 0);
   assert.equal(result.source.includes("=*+$"), false, `no inline definition may be emitted when no label sits inside an instruction:\n${result.source}`);
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW WR-01 and WR-02 -- two ExportAsmResult counters that did not mean
+// what their own JSDoc said, printed verbatim to the user as the CLI's success
+// summary.
+//
+// The doc comments in this tree ARE the maintenance contract, so a counter
+// contradicting its own doc is a defect, not a style note.
+//
+// This ONE fixture is the only shape where all three readings diverge: two
+// labels at ONE mid-instruction address, plus an enum (whose definition is a
+// header line but not a store label). Before the fix it produced
+//   symbolCount 3            (doc: "definitions the header carries"; header had 1)
+//   midInstructionLabelCount 1  (doc: "labels EXCLUDED from the header"; 2 were)
+//
+// `anno_label` is `unique` on NAME only and `setLabel()` refuses only a name
+// already bound to a DIFFERENT address, so two names at one address is a
+// SUPPORTED store state reached through the ordinary public write verbs -- this
+// needs no hand-edited store.
+// ---------------------------------------------------------------------------
+
+/** Two labels at the one mid-instruction address $0802, plus an enum on the
+ * immediate operand at $0801 so a header definition exists that is NOT a store
+ * label. The one shape where `symbolCount`, `headerDefinitionCount` and
+ * `midInstructionLabelCount` all differ. */
+function aliasedSmcFixture(tag: string): StoreFixture {
+  return buildStoreOverImage(tag, SMC_PRG_PATH, {
+    ranges: [{ start: 0x0801, endInclusive: 0x080b, dataType: "code" }],
+    labels: [
+      { address: 0x0801, name: "entry" },
+      { address: 0x0802, name: "smc_operand" },
+      { address: 0x0802, name: "smc_alias" },
+    ],
+    enums: [{ name: VICCOLOR.name, variants: { ...VICCOLOR.variants } }],
+    enumUsage: [{ address: 0x0801, name: VICCOLOR.name }],
+  });
+}
+
+test("PRECONDITION: two labels at ONE address really is a supported store state, reached through setLabel() (30-REVIEW WR-02)", () => {
+  // If the store ever starts refusing this, the divergence tests below become
+  // vacuous -- so the precondition is asserted rather than assumed.
+  const { dir, storePath, imagePath } = aliasedSmcFixture("alias-precondition");
+  assert.ok(existsSync(storePath) && existsSync(imagePath));
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    const atAddress = listLabels(handle).filter((l) => l.address === 0x0802).map((l) => l.name).sort();
+    assert.deepEqual(atAddress, ["smc_alias", "smc_operand"], "both names must really be in the store at $0802");
+  } finally {
+    closeStore(handle);
+  }
+});
+
+test("`midInstructionLabelCount` counts EMITTED INLINE DEFINITIONS, not distinct addresses (30-REVIEW WR-02)", () => {
+  const { dir, storePath, imagePath } = aliasedSmcFixture("alias-mid-count");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  const inline = lines.filter((line) => line.includes("=*+$"));
+  assert.equal(inline.length, 2, `both labels at $0802 must be defined inline:\n${result.source}`);
+  assert.equal(
+    result.midInstructionLabelCount,
+    2,
+    "the doc says this is 'equal to the number of labels EXCLUDED from the header' -- two were excluded, so it is 2. " +
+      "It reported 1 before the fix, because it was `midInstructionLabelAddresses.size`, a set of ADDRESSES",
+  );
+
+  // The doc's own claim, asserted directly: exactly the inline-defined labels
+  // are missing from the header.
+  const headerDefinitions = lines.filter((line) => /^[A-Za-z_][A-Za-z0-9_]* = \$/.test(line));
+  assert.equal(
+    headerDefinitions.some((l) => l.startsWith("smc_operand ") || l.startsWith("smc_alias ")),
+    false,
+    `an inline-defined label must not ALSO be defined in the header -- that is ACME's \`Symbol already defined.\`:\n${result.source}`,
+  );
+});
+
+test("`symbolCount` and `headerDefinitionCount` are separate numbers, and each matches its own doc (30-REVIEW WR-01)", () => {
+  const { dir, storePath, imagePath } = aliasedSmcFixture("alias-symbol-count");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  assert.equal(
+    result.symbolCount,
+    3,
+    "`symbolCount` is documented as every STORE LABEL the export carries, header and inline together -- entry, smc_operand, smc_alias",
+  );
+
+  // Counted off the EMITTED TEXT, so this asserts the field against the source
+  // rather than against another copy of the same expression.
+  const headerDefinitions = lines.filter((line) => /^[A-Za-z_][A-Za-z0-9_]* = \$/.test(line));
+  assert.equal(
+    result.headerDefinitionCount,
+    headerDefinitions.length,
+    `\`headerDefinitionCount\` must equal the definition lines the header really carries:\n${result.source}`,
+  );
+  assert.deepEqual(
+    headerDefinitions.map((l) => l.split(" ")[0]).sort(),
+    ["entry", "viccolor_BLACK"],
+    `the header carries the ordinary label and the enum variant, and neither inline label:\n${result.source}`,
+  );
+  assert.notEqual(
+    result.symbolCount,
+    result.headerDefinitionCount,
+    "this fixture exists BECAUSE the two numbers differ -- if they stop differing the test has gone vacuous",
+  );
+});
+
+test("an ALIASED address records the collision and the pick in the emitted source, rather than choosing in silence (30-REVIEW WR-02)", () => {
+  const { dir, storePath, imagePath } = aliasedSmcFixture("alias-marker");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const marked = result.source.split("\n").filter((line) => line.includes("ALIAS: this address also carries"));
+  assert.equal(marked.length, 2, `BOTH definitions at the aliased address carry the marker:\n${result.source}`);
+  for (const line of marked) {
+    assert.ok(line.includes("smc_operand"), `the marker names every colliding label: ${line}`);
+    assert.ok(line.includes("smc_alias"), `the marker names every colliding label: ${line}`);
+    assert.match(
+      line,
+      /references render through smc_operand/,
+      `the marker states WHICH name references resolve to, so the pick is not invisible: ${line}`,
+    );
+  }
+
+  // And the pick itself is the FIRST name, stably -- not whichever sorted last.
+  assert.ok(
+    result.source.includes("        inc smc_operand"),
+    `the reference renders through the first-indexed name:\n${result.source}`,
+  );
+
+  // Paired negative control: an UNALIASED store emits no marker at all, so the
+  // assertions above cannot pass for a marker that is always present.
+  const plain = smcFixture("alias-marker-control");
+  const plainResult = exportAsm({ storePath: plain.storePath, imagePath: plain.imagePath, workspaceRoot: plain.dir });
+  assert.equal(
+    plainResult.source.includes("ALIAS:"),
+    false,
+    `a store with one label per address must carry no alias marker:\n${plainResult.source}`,
+  );
+});
+
+test("ROUND TRIP: the ALIASED store still reassembles byte-identically -- a marker is a comment, not a byte", { skip: SKIP_REASON }, () => {
+  // The markers and the second inline definition are both text. If either
+  // changed a byte, this is where it shows -- and the byte-diff, not any
+  // string match above, is what settles it.
+  const { dir, storePath, imagePath } = aliasedSmcFixture("alias-roundtrip");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `${verdict.reason}\n${result.source}`);
 });
 
 // ---------------------------------------------------------------------------

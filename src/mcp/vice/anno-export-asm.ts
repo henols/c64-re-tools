@@ -176,8 +176,28 @@ export interface ExportAsmResult {
   /** The blocks emitted, ascending by start. Passed straight to the verify
    * primitive as its `expectedSegments`. */
   blocks: ExportBlock[];
-  /** How many symbol definitions the header carries. */
+  /** How many STORE LABELS the export carries, header and inline together --
+   * i.e. `sortedLabels.length`, one per `anno_label` row in range.
+   *
+   * THIS DOC USED TO SAY "how many symbol definitions the header carries",
+   * AND THAT WAS NOT WHAT IT COUNTED (30-REVIEW WR-01, corrected 2026-08-31).
+   * The two readings diverge in BOTH directions: a mid-instruction label is
+   * defined inline and skipped by the header loop yet still counted here,
+   * and every `enumDefinitionLines` entry IS a header definition yet is not.
+   * Reproduced: a store with `start`@$0801 plus `smc_operand`/`smc_alias`
+   * both at the mid-instruction address $0802 emits a header carrying exactly
+   * ONE definition while this field reported 3 -- a number the CLI prints
+   * verbatim to the user as "3 symbol(s)".
+   *
+   * The header count is now its own field (`headerDefinitionCount` below)
+   * rather than this one being redefined, because both numbers have a real
+   * consumer and collapsing them into one is what produced the divergence. */
   symbolCount: number;
+  /** How many definition lines the HEADER block actually carries -- enum
+   * variant definitions plus every store label NOT defined inline. Computed
+   * from `headerLines` itself, so it cannot drift from the emitted text the
+   * way a separately-maintained count did (30-REVIEW WR-01). */
+  headerDefinitionCount: number;
   /** How many decoded instructions ACME's `!cpu 6510` cannot express, and
    * which therefore went out as `!byte` directives with their mnemonic moved
    * into a trailing comment. */
@@ -195,7 +215,16 @@ export interface ExportAsmResult {
    * instruction. `midInstructionLabelLine()` is the one place that spelling
    * exists. Equal to the number of labels that were therefore EXCLUDED from the
    * header definition block, because such a label is defined inline and
-   * defining it twice is ACME's `Symbol already defined.` */
+   * defining it twice is ACME's `Symbol already defined.`
+   *
+   * COUNTED PER EMITTED DEFINITION, NOT PER ADDRESS (30-REVIEW WR-02,
+   * corrected 2026-08-31). It used to be `midInstructionLabelAddresses.size`,
+   * a set of ADDRESSES, while the inline loop emits one line per LABEL.
+   * `anno_label` is `unique` on `name` only and `setLabel()` refuses only a
+   * name already bound to a DIFFERENT address, so two names at one address is
+   * a supported store state -- and in it, two inline definitions were emitted
+   * and two labels excluded from the header while this field reported 1,
+   * contradicting the sentence directly above. */
   midInstructionLabelCount: number;
   /** How many emitted symbol definitions carry an AUTO-GENERATED name, decided
    * by `AUTO_NAME_PREFIX_RE` -- the eleven typed prefixes, read from their one
@@ -438,6 +467,18 @@ const MID_INSTRUCTION_LABEL_FLOOR = 0x100;
 const AUTO_NAME_MARKER = "  ; auto-generated name -- still in the annotation backlog";
 
 /**
+ * The fixed trailing comment that marks a definition at an address carrying
+ * MORE THAN ONE store label (30-REVIEW WR-02). ONE spelling, in one place, for
+ * the same reason `AUTO_NAME_MARKER` is: a second wording makes it ungreppable
+ * for the only reader it exists for.
+ *
+ * The full marker is this prefix, the colliding names in `sortedLabels` order,
+ * and which of them references actually render through -- so the arbitrary
+ * pick `symbolFor()` used to make in silence is stated in the artefact.
+ */
+const ALIAS_MARKER_PREFIX = "  ; ALIAS: this address also carries ";
+
+/**
  * The largest value an enum variant may carry to be substitutable into an
  * IMMEDIATE operand.
  *
@@ -671,9 +712,45 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   // validated BEFORE it can reach the source text -- REJECT, never sanitise.
   const sortedLabels = [...labels].sort((a, b) => a.address - b.address);
   const labelIndex = new Map<number, string>();
+  /** Every address carrying MORE THAN ONE store label, with all their names in
+   * `sortedLabels` order. See the loop below for why this is recorded rather
+   * than refused. */
+  const aliasedAddresses = new Map<number, string[]>();
   for (const label of sortedLabels) {
     assertLegalAcmeIdentifier(label.name, `exportAsm: label at ${hex4(label.address)}`);
-    labelIndex.set(label.address, label.name);
+    // TWO NAMES AT ONE ADDRESS IS RECORDED IN THE EMITTED SOURCE, NOT RESOLVED
+    // IN SILENCE (30-REVIEW WR-02, second half, fixed 2026-08-31).
+    //
+    // `labelIndex` is a `Map<number, string>` while `anno_label` is `unique`
+    // on NAME only -- `setLabel()` refuses only a name already bound to a
+    // DIFFERENT address -- so two names at one address is a SUPPORTED store
+    // state (an alias). In it, this `set()` silently overwrote the first and
+    // `symbolFor()` returned whichever name sorted last. Reproduced: with
+    // `smc_operand` and `smc_alias` both at $0802, the emitted `inc`
+    // referenced `smc_alias` with no diagnostic anywhere.
+    //
+    // NOT REFUSED, DELIBERATELY, and this is the one place in this module that
+    // records rather than refuses. Every other refusal here is for something
+    // the exporter CANNOT express; an alias it CAN -- both definitions go into
+    // the header (or inline), ACME accepts two symbols with one value, and the
+    // bytes are unaffected. The only thing that was wrong is that the arbitrary
+    // pick for REFERENCES was invisible. Refusing instead would delete a
+    // supported store state to fix a diagnostic problem.
+    //
+    // FIRST NAME WINS, not last: `sortedLabels` is ascending by address and
+    // otherwise in `listLabels()` order, so keeping the first makes the pick
+    // stable rather than an artefact of a sort that never promised a
+    // tiebreak. The comment emitted with the definitions names every
+    // candidate, so a human reading the source can see what was chosen and
+    // what was not.
+    const existing = labelIndex.get(label.address);
+    if (existing === undefined) {
+      labelIndex.set(label.address, label.name);
+    } else {
+      const names = aliasedAddresses.get(label.address);
+      if (names) names.push(label.name);
+      else aliasedAddresses.set(label.address, [existing, label.name]);
+    }
   }
   const symbolFor = (address: number): string | undefined => labelIndex.get(address);
 
@@ -718,12 +795,38 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     return `${line}${AUTO_NAME_MARKER}`;
   };
 
+  // THE ALIAS PICK IS MADE VISIBLE IN THE SOURCE (30-REVIEW WR-02, second
+  // half). Two store labels at one address are BOTH defined -- ACME accepts
+  // two symbols with one value and the bytes are unaffected -- but a
+  // REFERENCE to that address can render through only one of them. Which one
+  // was previously invisible. Marking both definitions with the same fixed
+  // wording means the human reading the generated assembly can see the
+  // collision and the choice, from either definition line, without having to
+  // reconstruct the exporter's sort order. Applied at BOTH definition sites,
+  // header and inline, for the reason `markIfAutoNamed()` is: an aliased
+  // self-modifying-code operand is exactly the shape this was reproduced on.
+  const markIfAliased = (address: number, line: string): string => {
+    const names = aliasedAddresses.get(address);
+    if (names === undefined) return line;
+    return `${line}${ALIAS_MARKER_PREFIX}${names.join(", ")} -- references render through ${labelIndex.get(address)}`;
+  };
+
   // The addresses of every label emitted INLINE as `name =*+$NN`. They are
   // collected during block emission and read afterwards by the header, which
   // is why the header is built AFTER this loop even though it is emitted
   // BEFORE it: a label defined inline must not ALSO be defined in the header,
   // or ACME refuses the whole source with `Symbol already defined.`
   const midInstructionLabelAddresses = new Set<number>();
+
+  // ONE PER EMITTED INLINE DEFINITION, not one per address (30-REVIEW WR-02).
+  // The set above answers the HEADER's question ("is this address defined
+  // inline already?"), which is per-address by nature. This counter answers
+  // the RESULT's question ("how many inline definitions does the source
+  // carry?"), which is per-label -- and two labels at one address is a
+  // supported store state, so the two questions have different answers.
+  // Incremented beside the `content.push()` that emits the line it counts,
+  // so it cannot drift from the emitted text.
+  let midInstructionLabelCount = 0;
 
   const blockLines: string[] = [];
 
@@ -794,7 +897,8 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           }
 
           midInstructionLabelAddresses.add(label.address);
-          content.push(markIfAutoNamed(label.name, midInstructionLabelLine(label.name, label.address - instr.address)));
+          content.push(markIfAliased(label.address, markIfAutoNamed(label.name, midInstructionLabelLine(label.name, label.address - instr.address))));
+          midInstructionLabelCount++;
           block.lineCount++;
         }
 
@@ -959,7 +1063,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   const headerLines: string[] = [...enumDefinitionLines];
   for (const label of sortedLabels) {
     if (midInstructionLabelAddresses.has(label.address)) continue;
-    headerLines.push(markIfAutoNamed(label.name, formatSymbolDefinition(label.name, label.address)));
+    headerLines.push(markIfAliased(label.address, markIfAutoNamed(label.name, formatSymbolDefinition(label.name, label.address))));
   }
 
   // An enum usage this export never reached is REFUSED BY NAME, for the reason
@@ -1007,10 +1111,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     expectedBytes,
     blocks,
     symbolCount: sortedLabels.length,
+    headerDefinitionCount: headerLines.length,
     unexpressibleCount,
     dataByteCount,
     commentCount: placement.placed.size,
-    midInstructionLabelCount: midInstructionLabelAddresses.size,
+    midInstructionLabelCount,
     autoNamedSymbolCount,
     enumSubstitutionCount: appliedEnumUsage.size,
   };
