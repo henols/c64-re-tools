@@ -59,7 +59,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveContainedRoot } from "./lib/audit-root.mjs";
+import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(HERE);
@@ -833,25 +833,47 @@ export function checkGuardFates({ derived, registry, exists } = {}) {
 // object-store walk and a process.exit() from inside an `import` statement.
 // ===========================================================================
 
-function parseArgs(argv) {
-  let root;
-  let json = false;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--root") {
-      root = argv[i + 1];
-      i += 1;
-    } else if (argv[i] === "--json") {
-      json = true;
-    }
-  }
-  return { root, json };
-}
+// THIS FILE HAS NO ARGV READER OF ITS OWN, BY DESIGN. It had one -- the same
+// nine lines that were copy-pasted verbatim into six scripts, so the same
+// defect shipped six times (`IN-06`): the loop matched only the exact token
+// `--root` and took `argv[i + 1]`, which meant `--root=<dir>`, a valueless
+// `--root` and every typo were SILENTLY DISCARDED and the invocation fell
+// through to the default root. On THIS file -- the blocking CI fate gate --
+// that meant `--root=/tmp` produced a full green report about the REAL
+// repository: the audit instrument vouching for a tree it was told not to
+// read. `parseRootArg()` in `lib/audit-root.mjs` is now the single argv seam,
+// as `resolveContainedRoot()` is the single containment seam.
+//
+// `scripts/audit-gate.mjs` was deliberately NOT migrated in this round
+// (`WR-13`): it carries five further flags with their own exactly-one-selector
+// rule, and no verifier finding asks for them to be touched here.
+//
+// `--root <dir>` and `--json` remain this gate's only surface: there is
+// deliberately no environment-variable override, no skip flag and no waiver
+// file anywhere in it (the no-relaxation-hatch rule recorded in
+// `scripts/audit-gate.mjs`'s header). A root that cannot be honoured REFUSES;
+// it never degrades into a silent read of the default root.
 
 const IS_ENTRY_POINT =
   process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (IS_ENTRY_POINT) {
-  const { root: rootArg, json } = parseArgs(process.argv.slice(2));
+  let rootArg;
+  let json = false;
+  try {
+    const parsed = parseRootArg(process.argv.slice(2), {
+      script: "check-guard-fates",
+      booleanFlags: ["--json"],
+    });
+    rootArg = parsed.root;
+    json = parsed.flags["--json"] === true;
+  } catch (err) {
+    // An ARGUMENT REJECTION. Reported before anything is derived or read, and
+    // kept at exit 1 like the refusal below: the two are separated by their
+    // message (`BAD ARGUMENTS --` versus `REFUSED --`), never by their status.
+    console.error(`check-guard-fates: ${err?.message ?? String(err)}`);
+    process.exit(1);
+  }
 
   // A REFUSAL (an out-of-repository --root) and a TYPO (a --root that is
   // inside the repository but does not exist, or a tree with no git object

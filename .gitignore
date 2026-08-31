@@ -45,6 +45,15 @@ dist/
 # npm pack output
 *.tgz
 
+# Synthetic --root fixture trees built by src/mcp/vice/audit-root-args.test.ts.
+# They MUST live inside the repository (resolveContainedRoot() refuses anything
+# outside it), and they are removed in a `finally` and again in a `t.after`.
+# Ignored anyway because a crashed test that left one behind would dirty the
+# working tree, and a dirty tree VOIDS the mutation harness's evidence
+# (scripts/audit-mutation-harness.mjs:654) -- so this entry makes a test crash a
+# test failure instead of a corruption of the next harness run.
+/.audit-root-synth-*/
+
 # Local editor config, machine-specific, never shared.
 /.vscode/
 
