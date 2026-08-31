@@ -148,7 +148,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 32 (The Deletion and the Grep Gate) — EXECUTING
-Plan: 12 of 14 (gap closure round 1 — 32-10, 32-13, 32-14 done; 32-11 and 32-12 remain)
+Plan: 13 of 14 (gap closure round 1 — 32-10, 32-11, 32-13, 32-14 done; 32-12 remains)
 Status: Executing Phase 32 gap-closure round 1
 Last activity: 2026-09-01 — Phase 32 execution started
 
