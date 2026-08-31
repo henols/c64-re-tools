@@ -462,10 +462,23 @@ function loadImage(imagePath: string): { origin: number; bytes: Uint8Array } {
  * Getting this wrong ships an export that ACME accepts and that produces the
  * wrong bytes -- the single most likely way for this module to be quietly
  * incorrect.
+ *
+ * THE HEX CASE IS LOWER, MATCHING EVERY OTHER EMITTER IN THIS DOCUMENT
+ * (30-REVIEW IN-03, corrected 2026-08-31). This function used to emit
+ * uppercase (`start = $C000`) while `hex2()`, `hex4()` and `hexExtent()` all
+ * emit lowercase (`* = $0801`, `!byte $a9`), so one generated file carried two
+ * conventions. Both assemble identically -- ACME is case-insensitive for hex
+ * digits, and the round-trip byte-diff is unchanged by this -- so the only
+ * cost was that the artefact read as if two tools had written it. Lower is
+ * chosen because it is what the other three emitters, and the golden witness
+ * disassembly they were matched to, already use: one emitter changes rather
+ * than three.
+ *
+ * The WIDTH rule above is untouched by this and is not a matter of taste.
  */
 function formatSymbolDefinition(name: string, address: number): string {
   const digits = address < 0x100 ? 2 : 4;
-  return `${name} = $${address.toString(16).toUpperCase().padStart(digits, "0")}`;
+  return `${name} = $${address.toString(16).padStart(digits, "0")}`;
 }
 
 /**
@@ -681,14 +694,39 @@ interface CommentPlacement {
  * Multiple comments at one address emit in `id` order, which is the order
  * `listComments()` returns them in -- so two people's notes at one address keep
  * the order they were written in rather than an order this module invented.
+ *
+ * A COMMENT ON A MULTI-ADDRESS LINE IS QUALIFIED WITH ITS OWN ADDRESS
+ * (30-REVIEW IN-02, added 2026-08-31). The CODE path calls this with a span of
+ * exactly ONE address (`[instr.address, instr.address + 1)`), so a comment
+ * there is unambiguous and is emitted unchanged -- nothing about the existing
+ * output moves. The DATA path calls it with a span of up to
+ * `BYTES_PER_DATA_LINE` addresses, and there `n` comments on `n` DISTINCT data
+ * bytes emitted as `n` indistinguishable lines above one `!byte` directive: a
+ * human reading the generated assembly could not tell which byte each note was
+ * about, and the information was not recoverable from the artefact.
+ *
+ * QUALIFIED RATHER THAN SPLIT. Splitting the `!byte` line at each commented
+ * address was the other candidate and is worse here: it changes the emitted
+ * TEXT's structure for a presentation problem, and every extra directive is
+ * another line whose width and origin the byte-diff has to keep agreeing
+ * about. A prefix changes nothing an assembler reads.
+ *
+ * GATED ON AMBIGUITY, not applied always: prefixing every code-path comment
+ * with an address it already sits next to is noise, and it would rewrite every
+ * existing expected line in the test suite for nothing.
  */
 function withComments(text: string, start: number, endExclusive: number, ctx: CommentPlacement): string[] {
   const before: string[] = [];
   let line = text;
 
+  // One emitted line covering more than one address cannot say WHICH address a
+  // comment belongs to unless the comment says so itself.
+  const spanIsAmbiguous = endExclusive - start > 1;
+
   for (let address = start; address < endExclusive; address++) {
     for (const row of ctx.byAddress.get(address) ?? []) {
-      const safe = assertExportableCommentText(row.text, row.address);
+      const checked = assertExportableCommentText(row.text, row.address);
+      const safe = spanIsAmbiguous ? `${hex4(row.address)}: ${checked}` : checked;
       ctx.placed.add(row.id);
       if (row.commentType === LINE_COMMENT) {
         before.push(`${INDENT}; ${safe}`);

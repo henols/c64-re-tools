@@ -661,6 +661,153 @@ test("a store with ZERO comments emits no comment line, and still round-trips", 
 });
 
 // ---------------------------------------------------------------------------
+// 30-REVIEW IN-02 -- data-line comments lost their address.
+//
+// For a `!byte` line covering up to 16 addresses, every `line` comment in that
+// span was pushed above the directive with no record of WHICH address it
+// annotated, so `n` comments on `n` distinct data bytes emitted as `n`
+// indistinguishable lines. The information was not recoverable from the
+// artefact. The code path attaches each comment to its own instruction and is
+// unaffected -- it calls `withComments()` with a span of exactly one address.
+// ---------------------------------------------------------------------------
+
+test("comments on DIFFERENT bytes of one `!byte` line are distinguishable by address (30-REVIEW IN-02)", () => {
+  const fixture = buildStore(freshDir("data-comment-addresses"), {
+    origin: 0x0801,
+    body: [0x11, 0x22, 0x33, 0x44],
+    ranges: [{ start: 0x0801, endInclusive: 0x0804, dataType: "byte" }],
+    comments: [
+      { address: 0x0801, commentType: "line", text: "the first byte" },
+      { address: 0x0803, commentType: "line", text: "the third byte" },
+    ],
+  });
+  const result = exportAsm({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir });
+  const lines = result.source.split("\n");
+
+  // Precondition: all four bytes really are on ONE directive, or the finding
+  // does not apply to this fixture and the assertions below are vacuous.
+  const directives = lines.filter((l) => l.trimStart().startsWith("!byte"));
+  assert.equal(directives.length, 1, `this fixture must produce ONE !byte line:\n${result.source}`);
+
+  assert.ok(lines.includes(`        ; $0801: the first byte`), `the comment must carry its own address:\n${result.source}`);
+  assert.ok(lines.includes(`        ; $0803: the third byte`), `the comment must carry its own address:\n${result.source}`);
+  assert.equal(result.commentCount, 2);
+});
+
+test("a comment on a CODE line is NOT address-qualified -- the span is one address and already unambiguous (30-REVIEW IN-02)", () => {
+  // The paired direction. Qualifying every code comment with an address it
+  // already sits next to is noise, and this is what pins that the change is
+  // scoped to the ambiguous case.
+  const fixture = buildStore(freshDir("code-comment-unqualified"), {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    comments: [{ address: 0x0801, commentType: "line", text: "set the border" }],
+  });
+  const result = exportAsm({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir });
+  assert.ok(
+    result.source.split("\n").includes("        ; set the border"),
+    `a code-path comment stays exactly as written:\n${result.source}`,
+  );
+  assert.equal(
+    result.source.includes("; $0801: set the border"),
+    false,
+    `a one-address span must not be qualified:\n${result.source}`,
+  );
+});
+
+test("ROUND TRIP: address-qualified data comments are still just comments (30-REVIEW IN-02)", { skip: SKIP_REASON }, () => {
+  const fixture = buildStore(freshDir("data-comment-roundtrip"), {
+    origin: 0x0801,
+    body: [0x11, 0x22, 0x33, 0x44],
+    ranges: [{ start: 0x0801, endInclusive: 0x0804, dataType: "byte" }],
+    comments: [
+      { address: 0x0801, commentType: "line", text: "the first byte" },
+      { address: 0x0804, commentType: "side", text: "the last byte" },
+    ],
+  });
+  const result = exportAsm({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir });
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `${verdict.reason}\n${result.source}`);
+  assert.equal(verdict.byteDiff?.equal, true, `${verdict.reason}\n${result.source}`);
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW IN-03 -- hex case was inconsistent within one emitted document:
+// `formatSymbolDefinition()` emitted uppercase (`start = $C000`) while
+// `hex2()`/`hex4()`/`hexExtent()` emit lowercase (`* = $0801`, `!byte $a9`).
+// Both assemble identically; the mixed casing in one generated file was the
+// only cost. Lowercase is chosen because three emitters already use it.
+// ---------------------------------------------------------------------------
+
+test("every hex literal in one emitted document uses ONE case (30-REVIEW IN-03)", () => {
+  // Deliberately over a store with symbol definitions ABOVE $0100 carrying
+  // letter digits -- the only shape where the two conventions were visibly
+  // different. `$0801` is all digits and would pass either way.
+  const fixture = buildStore(freshDir("hex-case"), {
+    origin: 0xc000,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0xc000, endInclusive: 0xc005, dataType: "code" }],
+    labels: [{ address: 0xc000, name: "entry" }],
+  });
+  const result = exportAsm({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir });
+
+  const uppercase = result.source.match(/\$[0-9a-fA-F]*[A-F][0-9a-fA-F]*/g) ?? [];
+  assert.deepEqual(
+    uppercase,
+    [],
+    `every emitted hex literal must be lowercase, matching hex2()/hex4()/hexExtent():\n${result.source}`,
+  );
+
+  // Non-vacuity: the document really does contain a letter-bearing literal, so
+  // a scan finding nothing is finding nothing FOR THE RIGHT REASON.
+  assert.ok(
+    result.source.includes("entry = $c000"),
+    `this fixture exists to carry a letter-bearing definition; if it stops, the scan above is vacuous:\n${result.source}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 30-REVIEW IN-04 -- the fixture generator's ACME probe was narrower than the
+// gate's: it accepted only `acme --version` exiting 0, while `acme-gate.ts`
+// falls back to `--help` because "ACME 0.97 prints its banner to either
+// depending on build". On such a build the generator refused to regenerate a
+// fixture that would have assembled fine.
+//
+// The generator cannot IMPORT the gate (the gate is test-only and asserts its
+// own absence from `files[]`; the generator sits under a path the packer
+// walks), so the ladder is mirrored -- and this is what keeps the two mirrors
+// in step.
+// ---------------------------------------------------------------------------
+
+test("the fixture generator's ACME probe ladder matches the gate's (30-REVIEW IN-04)", () => {
+  const gate = readFileSync(join(HERE, "acme-gate.ts"), "utf8");
+  const generator = readFileSync(join(SMC_DIR, "make-export-asm-fixtures.mjs"), "utf8");
+
+  // Both rungs of the ladder, and the banner test, present on both sides.
+  for (const [label, needle] of [
+    ["the --version rung", /\["--version"\]/],
+    ["the --help fallback rung", /\["--help"\]/],
+    ["the case-insensitive acme banner test", /\/acme\/i/],
+  ] as const) {
+    assert.match(gate, needle, `precondition: acme-gate.ts must still have ${label}`);
+    assert.match(
+      generator,
+      needle,
+      `make-export-asm-fixtures.mjs is missing ${label} -- its probe is narrower than the gate's again (IN-04)`,
+    );
+  }
+
+  // And the narrow form the finding was about must not come back: a bare
+  // `status !== 0` verdict on the --version probe.
+  assert.doesNotMatch(
+    generator,
+    /probe\.error \|\| probe\.status !== 0/,
+    "the generator must not go back to accepting only `--version` exiting 0 (IN-04)",
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 30-REVIEW WR-07 -- `decode()` was handed an EXCLUSIVE end for a parameter
 // documented as INCLUSIVE.
 //

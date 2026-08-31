@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // acme-verify.ts -- the ONE place this package spawns a real ACME and turns
 // its behaviour into a three-outcome verdict (EXPORT-03).
 //

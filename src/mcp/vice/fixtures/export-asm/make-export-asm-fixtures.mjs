@@ -62,9 +62,39 @@ function fail(reason) {
 // Probe first, and refuse before writing anything. The probe is the argv-array
 // form, never a shell-interpreted command string: `ACME_BIN` is externally
 // supplied and reaches a process launch here.
-const probe = spawnSync(ACME_BIN, ["--version"], { encoding: "utf8", timeout: 30_000 });
-if (probe.error || probe.status !== 0) {
-  fail(`no usable ACME at ${JSON.stringify(ACME_BIN)} (set ACME_BIN, or put \`acme\` on PATH): ${probe.error ? String(probe.error.message) : `exit ${String(probe.status)}`}`);
+//
+// THE FALLBACK LADDER MIRRORS `acme-gate.ts`'s `probeAcme()` (30-REVIEW
+// IN-04, 2026-08-31). This probe used to accept only `acme --version` exiting
+// 0, while the gate falls back to `--help` because "ACME 0.97 prints its
+// banner to either depending on build". On a build where `--version` is not
+// zero-exiting, this generator refused to regenerate a fixture that would
+// have assembled fine -- two probes for one question, disagreeing.
+//
+// MIRRORED RATHER THAN IMPORTED, and that is not a preference. `acme-gate.ts`
+// is TEST-ONLY and asserts its own absence from `package.json`'s `files[]`;
+// this generator lives under `fixtures/` and cannot import it without
+// dragging a test-only module into a path the packer walks. The header above
+// records that constraint. What CAN be kept in step is the LADDER, and the
+// two are asserted to agree in `anno-export-asm.test.ts`.
+//
+// The banner check is the gate's too -- a case-insensitive "acme" in the
+// combined streams -- because "exit 0" alone is satisfied by any binary at
+// all under a misconfigured ACME_BIN.
+function probeAcmeBanner() {
+  let r = spawnSync(ACME_BIN, ["--version"], { encoding: "utf8", timeout: 30_000 });
+  let banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  if (r.error || !/acme/i.test(banner)) {
+    r = spawnSync(ACME_BIN, ["--help"], { encoding: "utf8", timeout: 30_000 });
+    banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  }
+  if (r.error) return { ok: false, detail: String(r.error.message) };
+  if (!/acme/i.test(banner)) return { ok: false, detail: `neither --version nor --help printed an ACME banner (exit ${String(r.status)})` };
+  return { ok: true, detail: "" };
+}
+
+const probe = probeAcmeBanner();
+if (!probe.ok) {
+  fail(`no usable ACME at ${JSON.stringify(ACME_BIN)} (set ACME_BIN, or put \`acme\` on PATH): ${probe.detail}`);
 }
 
 const workDir = mkdtempSync(join(tmpdir(), "make-export-asm-fixtures-"));
