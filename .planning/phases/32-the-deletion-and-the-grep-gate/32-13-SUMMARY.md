@@ -274,3 +274,17 @@ schema change. `T-32-09` (record tampering) was mitigated structurally by the as
 zero-deletion insertions; `T-32-10` (NUL-byte grep) by `grep -a` throughout, stated in the
 document; `T-32-11` (redding the CI gate) by taking the adjudication remedy and re-measuring
 the stranger-row rule that rules out the alternative.
+
+## Self-Check: PASSED
+
+Verified at commit `a1ce5df`:
+
+- `.planning/phases/32-the-deletion-and-the-grep-gate/32-13-SUMMARY.md` — FOUND
+- `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-audited-set-reconciliation.md` — FOUND, +323/-0
+- `.planning/REQUIREMENTS.md` — FOUND, +2/-0
+- Commit `27b695d` — FOUND (Task 1)
+- Commit `b08bdbc` — FOUND (Task 2)
+- Commit `a1ce5df` — FOUND (SUMMARY)
+- `git status --porcelain` — clean
+
+No missing items.
