@@ -922,6 +922,84 @@ test("both skill trees carry the ABS-02 naming lines byte-identically, in equal 
   }
 });
 
+test("the naming-line predicate bites on a planted one-character mutation", () => {
+  // Rot guard 6's proof. The scoring test above passes on a clean corpus
+  // either because the corpus is clean or because the predicate is broken.
+  // Both plants below are ONE BYTE from correct and both live only in memory
+  // -- nothing is written under src/skills/ or installer/skills/, so the
+  // working tree is never left dirty between runs and a crashed run leaves no
+  // partial state (the same reasoning this file's header already records for
+  // the absence proof).
+  const clean = attributionBlocks(readDestination(ABSORBED_FILES[0]))[0];
+  assert.ok(clean, `${ABSORBED_FILES[0].destination}: no ATTRIBUTION (ABS-02) block to plant into`);
+  assert.deepEqual(
+    namingLineCountsIn(clean),
+    { adapted: 1, repository: 1 },
+    `${ABSORBED_FILES[0].destination}: the clean block does not already score one of each naming line -- ` +
+      `every proof below would be vacuous`
+  );
+
+  // PLANT A -- capitalise exactly ONE character of the adapted line: the first
+  // character of the upstream name. Built by index rather than written out, so
+  // this proof adds no new spelling of the subject to a file whose subject
+  // occurrences the removal gate pins at an exact count.
+  const nameAt = ABS02_ADAPTED_LINE.indexOf(ABS02_UPSTREAM_NAME);
+  assert.ok(nameAt > 0, "the upstream name was not found inside ABS02_ADAPTED_LINE -- this proof would be vacuous");
+  const mutatedAdapted =
+    ABS02_ADAPTED_LINE.slice(0, nameAt) +
+    ABS02_ADAPTED_LINE.charAt(nameAt).toUpperCase() +
+    ABS02_ADAPTED_LINE.slice(nameAt + 1);
+  assert.equal(mutatedAdapted.length, ABS02_ADAPTED_LINE.length, "the mutation changed the line's length -- it must change one byte");
+  assert.notEqual(mutatedAdapted, ABS02_ADAPTED_LINE, "the case mutation changed nothing -- this proof would otherwise be vacuous");
+  // ... and it must differ in EXACTLY one position. "One character" is the
+  // claim; a broader edit would prove a weaker property.
+  let differingPositions = 0;
+  for (let i = 0; i < ABS02_ADAPTED_LINE.length; i += 1) {
+    if (mutatedAdapted[i] !== ABS02_ADAPTED_LINE[i]) differingPositions += 1;
+  }
+  assert.equal(differingPositions, 1, `the plant differs in ${differingPositions} positions, expected exactly 1`);
+
+  const plantedAdapted = clean.replace(ABS02_ADAPTED_LINE, () => mutatedAdapted);
+  assert.notEqual(plantedAdapted, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
+  // A one-byte drift must drop the adapted count to zero AND leave the
+  // repository count alone -- which makes the two counts UNEQUAL, exactly the
+  // relation the scoring test above compares. An `includes()`-style or
+  // case-folding predicate would report 1 here and the byte-exactness claim
+  // would be decoration.
+  assert.deepEqual(
+    namingLineCountsIn(plantedAdapted),
+    { adapted: 0, repository: 1 },
+    "the naming-line predicate did NOT report a one-character case mutation of the adapted line -- " +
+      "the byte-exactness the scoring test claims is not real"
+  );
+
+  // PLANT B -- the mirror, on the other line: strip ONE of its two leading
+  // spaces. Indentation is part of the byte-exact string, and this is the
+  // assertion that says so.
+  const dedentedRepository = ABS02_SOURCE_REPOSITORY_LINE.slice(1);
+  assert.equal(
+    dedentedRepository.length,
+    ABS02_SOURCE_REPOSITORY_LINE.length - 1,
+    "stripping one leading space removed more than one character"
+  );
+  const plantedRepository = clean.replace(ABS02_SOURCE_REPOSITORY_LINE, () => dedentedRepository);
+  assert.notEqual(plantedRepository, clean, "the plant anchor was not found -- this proof would otherwise be vacuous");
+  assert.deepEqual(
+    namingLineCountsIn(plantedRepository),
+    { adapted: 1, repository: 0 },
+    "the naming-line predicate did NOT report a source-repository line missing one leading space -- " +
+      "a trimming predicate would pass this, and the two-space indent would be unguarded"
+  );
+
+  // ... and the predicate must NOT fire on text that carries neither line, or
+  // "no offenders" in the scoring test above would mean nothing.
+  assert.deepEqual(
+    namingLineCountsIn("nothing to see here"),
+    { adapted: 0, repository: 0 },
+    "the naming-line predicate fired on innocent text"
+  );
+});
+
 // --- THE NOTICES GUARD, tests (plan 19-07) ---------------------------------
 // See the block comment beside `NOTICES_FILES` above for why this section
 // exists, why the list is named rather than globbed, why equality is bytes,
