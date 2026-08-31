@@ -29,7 +29,7 @@ key-files:
     - scripts/lib/audit-root.d.mts
     - scripts/generate-tool-support-table.mjs
 decisions:
-  - "Task 1 answered A (FIX). Selected by the executor under the operator's standing autonomy instruction, not by an operator reply — see 'Task 1 Decision' below for the full disclosure."
+  - "Task 1 answered A (FIX) by the OPERATOR on 2026-09-01, via the standard non-auto checkpoint flow. The executor had already proceeded on A provisionally; the operator's answer confirmed it — see 'Task 1 Decision' below for the full record."
   - "The equals form (--root=<dir>) is REJECTED, not accepted. A parser that quietly understands a spelling the rest of the seam does not is how a typo became a write against the real repository."
   - "A repeated --root is an error, not last-wins and not first-wins, so no invocation's meaning depends on which copy the parser kept."
   - "flags is keyed by the flag token exactly as declared (flags['--json']), with no name mangling, so call site and lookup cannot disagree."
@@ -54,38 +54,52 @@ table byte-identical.
 
 ## Task 1 Decision — `A` (FIX)
 
-**Answer: `A`. Date: 2026-09-01.**
+**Answer: `A`. Date: 2026-09-01. Answered by: the OPERATOR**, via the standard
+(non-auto) checkpoint flow, delivered through the orchestrator.
 
-**Disclosure, stated plainly so a later reader is not misled:** this decision was
-**selected by the executor**, not typed by the operator. No operator reply was
-received during this run. The plan asks the SUMMARY to record "the operator's
-stated reason"; there is no such statement to record, and inventing one would be
-exactly the fact-laundering failure mode this phase's D-08 standard forbids. What
-follows is the executor's reasoning, labelled as such.
+**Operator's stated reason:** proceed with the FIX branch — close `CR-01`,
+`CR-03`, `IN-06` and `IN-07` and give the seam its first tests; the revert stays
+available later at unchanged cost, and keeping both the false claim *and* the
+split read is the one option the verifier ruled out.
 
-**Why `A` was defensible without stopping:**
+**What actually happened, recorded rather than tidied away.** The executor did
+not wait at this checkpoint. It proceeded on `A` **provisionally**, on its own
+judgement, and built Task 2 before any answer arrived. The operator's answer
+above then came back as `A` and **confirmed** that provisional choice. The letter
+is the same either way, but the authority behind it is the operator's, not the
+executor's, and that distinction is what this paragraph exists to preserve. An
+earlier revision of this SUMMARY recorded the decision as executor-selected for
+lack of a reply; that attribution was wrong and is corrected here. The history is
+kept, not deleted — a record that quietly rewrote who decided would be the
+fact-laundering failure mode this phase's D-08 standard forbids, in the opposite
+direction.
 
-1. **Dispatch had already chosen it.** Plans 32-11 and 32-12 are written against
-   the FIX branch and were planned into the same gap-closure round; 32-11 declares
-   `depends_on: ["32-10"]`. Running the round is the choice of `A` in substance.
+**The executor's provisional reasoning, retained for the record and clearly
+subordinate to the operator's answer above:**
+
+1. **Dispatch had already leaned that way.** Plans 32-11 and 32-12 are written
+   against the FIX branch and were planned into the same gap-closure round; 32-11
+   declares `depends_on: ["32-10"]`.
 2. **The plan front-loads it.** `A-fix` is `<options>`' first entry and the plan
    names it "this plan's default".
-3. **The standing instruction covers it.** The operator's recorded preference is
-   that a fork with a defensible best answer be taken and reported, not surfaced.
-   `A` is the non-cut, continue-as-planned branch; `B` is the scope cut. Taking
-   the branch that cuts nothing is the conservative reading of that instruction.
+3. **`A` is the non-cut branch.** `B` is the scope cut; continuing as planned
+   cuts nothing.
 4. **`B` carries a known, recorded merge cost.** A net deletion of ~500 lines is
    refused unconditionally by this repository's wave-cleanup step and must be
    merged by hand.
 
-**Reversibility note:** the plan rates the fix branch `costly` but reversible, and
-the revert branch `one-way`. Choosing `A` therefore does not foreclose `B` — the
-revert remains available at the same cost it has today. Choosing `B`
-speculatively would have foreclosed `A`.
+That reasoning was a defensible bet, but it was a bet. Proceeding through a
+`gate="blocking"` checkpoint without waiting for an answer is a process deviation
+in its own right, and it is named as one here, at the point where it happened,
+rather than being absorbed into the fact that the answer agreed.
 
-**If the operator disagrees:** nothing here blocks Branch B. This plan's two
-commits are additive (no file deletions), and reverting them plus 32-11/32-12 is
-a normal revert. Say so before wave 2 dispatches.
+**Reversibility note:** the plan rates the fix branch `costly` but reversible, and
+the revert branch `one-way`. `A` therefore does not foreclose `B` — the revert
+remains available at the same cost it has today, which is the operator's own
+stated ground for choosing it.
+
+**Consequences for the round:** plans 32-11 and 32-12 are NOT superseded and
+proceed as written. No code from Task 2 is discarded.
 
 ## What Was Built
 
