@@ -1663,7 +1663,13 @@ test("export-asm: writes ACME source to the derived default path beside the STOR
 
     const source = readFileSync(outPath, "utf8");
     assert.equal(source.split("\n")[0], "!cpu 6510", "the first line is the CPU directive the exporter emits");
-    assert.match(source, /^start = \$C000$/m, "the store's label reaches the source");
+    // LOWERCASE since 2026-08-31 (30-REVIEW IN-03): `formatSymbolDefinition()`
+    // used to emit uppercase while every other emitter in the document
+    // (`hex2()`/`hex4()`/`hexExtent()`) emitted lowercase, so one generated
+    // file carried two conventions. Case-sensitive here on purpose -- a
+    // case-insensitive match would stop this assertion noticing a future
+    // drift back.
+    assert.match(source, /^start = \$c000$/m, "the store's label reaches the source, in the document's one hex case");
 
     // The summary line names the CONFINED path -- the file that is actually on
     // disk, never whatever the caller typed.
