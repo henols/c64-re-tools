@@ -855,27 +855,41 @@ The proof-of-untouched for `D-05` is the 12-file count plus the fact that the fi
 | A6 | `check-npm-packages.mjs` is inert to a new `scripts/` file | §4.3 | If wrong, the new guard reds it; caught immediately by running it |
 | A7 | The twelve `project.regen2000proj` fixtures are spelled in the capitalised vocabulary | §8.1 | If they are already lowercase, `block-class.ts`'s arm's new trigger is already satisfied and the row's verdict changes |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does CI's checkout have full history?**
+All five were resolved during planning; each carries the plan that resolves it. None is open at
+execution time.
+
+1. **Does CI's checkout have full history?** — **RESOLVED by plan 32-09** (the CI step sets
+   `fetch-depth: 0` on the job that runs the fate guard, so the two pinned commits are in the
+   runner's object store; the regenerate-and-diff fallback is not needed).
    - Known: the derivation needs `0394cbc` in the object store.
    - Unclear: whether `.github/workflows/ci.yml`'s `actions/checkout` sets `fetch-depth: 0`.
    - Recommendation: read it in Wave 0; if shallow, either set `fetch-depth: 0` for the build job or use the regenerate-and-diff manifest fallback (§1.3).
 
-2. **How many `PROJECT.md` lines contain `rewriteArguments()`?**
+2. **How many `PROJECT.md` lines contain `rewriteArguments()`?** — **RESOLVED by plan 32-04**
+   (measured: six lines carry it, not one; the widening is written against the measured six).
    - Known: `:311` is one.
    - Unclear: whether there is a second (a Key Decisions row).
    - Recommendation: measure before widening; `findRewriteArgumentsBullet` uses `.find()` and would silently check only the first.
 
-3. **Does `ci-suite-coverage.test.ts` demand a CI step for a new `scripts/*.test.mjs`?**
+3. **Does `ci-suite-coverage.test.ts` demand a CI step for a new `scripts/*.test.mjs`?** —
+   **RESOLVED by plan 32-01** (the question is made moot by colocating the fate guard's test as
+   `src/mcp/vice/guard-fates.test.ts`, already covered by the existing `npm test` step; no new test
+   directory under `scripts/` is created).
    - Known: it walks for test-containing directories and cross-references `ci.yml`; it skips `.planning`.
    - Recommendation: prefer colocating the fate guard's test as `src/mcp/vice/guard-fates.test.ts` (already covered by the existing `npm test` step) rather than creating a new test directory under `scripts/`.
 
-4. **What exactly is the `D-09` "swept set"?**
+4. **What exactly is the `D-09` "swept set"?** — **RESOLVED by plan 32-05** (the swept set is
+   defined there, with the single recorded row explaining why `.planning/phases/**` artifacts are
+   dated-by-construction and out of scope).
    - Known: 35 tracked non-`.planning` files + 338 `.planning` files carry the literal.
    - Recommendation: define it as the 35 plus the named living documents, and record a single row explaining why `.planning/phases/**` artifacts are dated-by-construction and out of scope.
 
-5. **Where did CONTEXT.md's "26 `r2000_` occurrences" come from?**
+5. **Where did CONTEXT.md's "26 `r2000_` occurrences" come from?** — **RESOLVED by plan 32-05,
+   Section A** (recorded as DISAGREEING with CONTEXT.md's 26: 17 lines / 23 occurrences, each with
+   the command that produced it, 23 named as the working figure and the hypotheses for the 26 marked
+   unconfirmed rather than asserted).
    - Measured: 23 occurrences / 17 lines in `.planning/PROJECT.md`.
    - Recommendation: state both, cite the command, and treat 23 as the working figure.
 
