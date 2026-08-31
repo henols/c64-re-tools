@@ -725,7 +725,12 @@ Those criteria are discharged there and are not restated here.
   1. The `ABS-02` attribution chain is intact after the change: **10 instances across two trees**, each with its two naming lines byte-identical, while `routine-queue-walker/SKILL.md:3`'s YAML `description:` — trigger text, **not** attribution, and therefore not exempt — changes **substantively** rather than being worked around. `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions passes on the rewritten text.
   2. `upstream-procedure-manifest.json` is updated in the **same commit** that changes what it describes — its own third re-sync trigger requires it — including a criterion for `r2000_undo`'s `omit` disposition, so the justification assertion in `anno-derivation.test.ts` (the re-pointed successor to `r2000-upstream-audit.test.ts`) cannot end up recording a reversed decision.
 
-**Plans**: TBD
+**Plans**: 3 plans in 3 waves
+
+Plans:
+- [ ] 31-01-PLAN.md — Re-sync `upstream-procedure-manifest.json`: seven live stale references re-pointed onto surviving subjects or turned into dated facts, and `r2000_undo` gains `"requirement_id": "STORE-04"` with its `omit` disposition intact. One task, one commit (`REPOINT-04`)
+- [ ] 31-02-PLAN.md — Score criterion 1 with a committed assertion: one new test in `skill-attribution.test.ts` walking **both** skill trees for the two byte-exact naming lines (relations plus a floor, no adjacency, no literal total), plus its in-memory planted-violation proof, plus the recorded `ABS-03` measurement (`REPOINT-03`)
+- [ ] 31-03-PLAN.md — Re-point the three living citations of the criterion `D-01` renumbered (two in the removal gate, one in `STATE.md`), and record this phase's four judgements as a dated `STATE.md` Decisions entry. No requirement status is promoted ahead of the verification verdict (`REPOINT-03`, `REPOINT-04`)
 
 Notes:
 
