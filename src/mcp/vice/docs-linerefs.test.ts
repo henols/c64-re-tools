@@ -128,6 +128,19 @@ function extractCitations(bullet: string): number[] {
  *     commit of 32-04, which failed with "found 0" for precisely this
  *     reason. The citations live at `:311`.
  *
+ * SCOPE, and a real fragility: a "bullet" here is ONE LINE. Both scanned
+ * documents keep their whole Architecture bullet on a single unwrapped
+ * line today (`CLAUDE.md:26`, `.planning/PROJECT.md:311`), which is what
+ * makes a line-based predicate correct for them. If a future editor
+ * HARD-WRAPS one of those bullets, the citations split across lines and
+ * this guard reds with "found 1" or "found 0" on a document that is
+ * factually RIGHT. The fix in that case is to UNWRAP the bullet, never to
+ * loosen this predicate into a multi-line scan -- a paragraph-scoped
+ * window would start sweeping in neighbouring prose, including the dated
+ * drift record discussed on CITATION_RE above. The synthetic plant bodies
+ * at the bottom of this file are single-line for exactly this reason, and
+ * a wrapped first draft of them is what surfaced this note.
+ *
  * Then asserts EXACTLY ONE qualifying line. Exactly-one, not at-least-one:
  * a second citation-carrying bullet appearing later would otherwise be
  * checked by nobody while this guard reported success, which is the
@@ -268,4 +281,151 @@ test("planted-violation: a citation pointing at an unrelated line fails this tes
   const isCallSite = lineText.includes("rewriteArguments(");
   const isFunctionStart = /^\s*(async\s+)?function\s+\w+/.test(lineText);
   assert.equal(isCallSite || isFunctionStart, false, "line 1 of vice-proxy.ts must not look like a rewriteArguments() call site or function start -- if it does, this planted-violation check itself is broken");
+});
+
+// ---------------------------------------------------------------------------
+// Planted violations for the failure modes the WIDENING introduced (32-04).
+//
+// Every plant below drives the REAL predicates defined above -- with an
+// in-memory document body and a declared name, so there are no fixture
+// files and no filesystem writes. That matters twice over: a plant proved
+// against a re-implementation of the rule proves nothing about the rule the
+// real checks apply (`scripts/check-no-<subject>.mjs:149-154`), and no new
+// file may appear under `src/mcp/vice/fixtures/planted-` because that
+// prefix carries an exact hit-count pin in the removal gate.
+// ---------------------------------------------------------------------------
+
+/** Synthetic body: the only `rewriteArguments()` line carries NO
+ * `vice-proxy.ts:<N>` citation. This is the shape a well-meaning rewording
+ * produces, and the shape a GLOBAL summed floor would hide. */
+const ZERO_CITATION_BODY = [
+  "# Synthetic document",
+  "",
+  "- **Architecture**: derived tools must be intercepted before forwardToVice(), and `rewriteArguments()` is where that happens. (A rewording dropped the line numbers that used to be here.)",
+  "",
+].join("\n");
+
+/** Synthetic body: one qualifying bullet carrying ONE citation -- above the
+ * isolation predicate's bar, below the per-document floor. */
+const ONE_CITATION_BODY = [
+  "# Synthetic document",
+  "",
+  "- **Architecture**: `rewriteArguments()` runs at `vice-proxy.ts:3050`.",
+  "",
+].join("\n");
+
+/** Synthetic body: one qualifying bullet carrying TWO citations. The
+ * control for the plants below -- if this one is not clean, they prove
+ * nothing. */
+const TWO_CITATION_BODY = [
+  "# Synthetic document",
+  "",
+  "- **Architecture**: `rewriteArguments()` runs at `vice-proxy.ts:3050`, and at `vice-proxy.ts:1529` for the second call site.",
+  "",
+].join("\n");
+
+/** Synthetic body: TWO citation-carrying `rewriteArguments()` bullets. The
+ * former first-match predicate would have silently checked the first and
+ * left the second guarded by nobody. */
+const AMBIGUOUS_BODY = [
+  "# Synthetic document",
+  "",
+  "- **Architecture**: `rewriteArguments()` runs at `vice-proxy.ts:3050`, and at `vice-proxy.ts:1529` for the second call site.",
+  "",
+  "- **Appendix**: a later bullet also mentioning `rewriteArguments()` and citing `vice-proxy.ts:3050` and `vice-proxy.ts:1529`, added by a copy-paste nobody noticed.",
+  "",
+].join("\n");
+
+test("planted-violation: a document whose only rewriteArguments() line carries no citation is reported, and the message NAMES the document", () => {
+  const isolation = isolateCitationBullet("synthetic/zero-citations.md", ZERO_CITATION_BODY);
+
+  assert.equal(isolation.qualifyingCount, 0, "a line mentioning rewriteArguments() but citing nothing must not qualify");
+  assert.equal(isolation.bullet, null);
+  assert.deepEqual(isolation.citations, []);
+  assert.equal(isolation.problems.length, 1, "exactly one problem expected for a zero-citation document");
+  const problem = isolation.problems[0] as string;
+  assert.ok(
+    problem.startsWith("synthetic/zero-citations.md "),
+    `the failure must NAME the offending document -- in a multi-document set an unnamed message is unactionable. Got: ${JSON.stringify(problem)}`,
+  );
+  assert.match(problem, /T-11-DOC-DRIFT/, "the message must still point at the vacuous-guard class it belongs to");
+
+  // Self-non-vacuity, in `removal-gate.test.ts:58-75`'s idiom: if the real
+  // predicate were ever refactored into one that always reports "clean",
+  // THIS is the assertion that catches it. Without it, every plant in this
+  // file would pass against a neutered rule.
+  const stubbedAlwaysClean = (): string[] => [];
+  assert.notDeepEqual(stubbedAlwaysClean(), isolation.problems);
+});
+
+test("planted-violation: the floor is PER DOCUMENT -- a global summed count stays green while one document is reworded to zero", () => {
+  const good = isolateCitationBullet("synthetic/two-citations.md", TWO_CITATION_BODY);
+  const bad = isolateCitationBullet("synthetic/zero-citations.md", ZERO_CITATION_BODY);
+
+  assert.deepEqual(good.problems, [], "the two-citation control must be clean, or this plant proves nothing");
+  assert.deepEqual(good.citations, [3050, 1529]);
+
+  const summedAcrossDocuments = good.citations.length + bad.citations.length;
+  assert.ok(
+    summedAcrossDocuments >= 2,
+    "a GLOBAL summed floor would be SATISFIED here (2 + 0 = 2) -- which is exactly why this guard must never sum across documents",
+  );
+  assert.equal(bad.problems.length, 1, "...and the per-document check must nonetheless report the reworded document");
+});
+
+test("planted-violation: a document whose bullet cites only ONE line number fails the per-document floor", () => {
+  const isolation = isolateCitationBullet("synthetic/one-citation.md", ONE_CITATION_BODY);
+
+  assert.equal(isolation.qualifyingCount, 1, "one citation is still a qualifying bullet -- the floor, not the isolation, is what must reject it");
+  assert.deepEqual(isolation.citations, [3050]);
+  assert.equal(isolation.problems.length, 1);
+  const problem = isolation.problems[0] as string;
+  assert.ok(problem.startsWith("synthetic/one-citation.md:"), `the floor failure must name the document. Got: ${JSON.stringify(problem)}`);
+  assert.match(problem, /expected at least 2 /, "the floor must state the number it wanted");
+  assert.match(problem, /found 1/, "the floor must state the number it found");
+  assert.match(problem, /per document/, "the message must say the floor is per document, so nobody 'fixes' it by summing");
+});
+
+test("planted-violation: a document with TWO citation-carrying rewriteArguments() bullets is reported, and the message states the count", () => {
+  const isolation = isolateCitationBullet("synthetic/ambiguous.md", AMBIGUOUS_BODY);
+
+  assert.equal(isolation.qualifyingCount, 2);
+  assert.equal(
+    isolation.bullet,
+    null,
+    "an ambiguous document must yield NO bullet -- silently picking one of the two is precisely the drift this widening exists to end",
+  );
+  assert.equal(isolation.problems.length, 1);
+  const problem = isolation.problems[0] as string;
+  assert.ok(problem.startsWith("synthetic/ambiguous.md "), `the ambiguity failure must name the document. Got: ${JSON.stringify(problem)}`);
+  assert.match(problem, /has 2 lines/, "the failure must report HOW MANY qualifying bullets were found, so a reader knows what to fold together");
+  assert.match(problem, /expected exactly 1/);
+});
+
+test("planted-violation: a declared document that does not exist FAILS rather than shrinking the scanned set", () => {
+  const missing = ".planning/THIS-DOCUMENT-DOES-NOT-EXIST-32-04-PLANT.md";
+  assert.equal(
+    existsSync(join(repoRoot({ from: HERE }), missing)),
+    false,
+    "the plant path must genuinely not exist on disk, or this test proves nothing",
+  );
+
+  const read = readScannedDoc(missing);
+  assert.equal(read.text, null, "a missing document must not be read as empty text -- empty text would sail through the isolation predicate as 'no citations'");
+  assert.equal(read.problems.length, 1);
+  const problem = read.problems[0] as string;
+  assert.ok(problem.startsWith(`${missing} `), `the missing-document failure must name the path. Got: ${JSON.stringify(problem)}`);
+  assert.match(problem, /is in the scanned set but does not exist/);
+  assert.match(
+    problem,
+    /update SCANNED_DOCS rather than letting the scanned set shrink silently/,
+    "the message must instruct the reader to update the DECLARED set -- not a skip, not a shrunken set, not a pass",
+  );
+
+  // Control: every genuinely declared document reads clean, so the plant
+  // above is the only absent one and this test cannot pass for the wrong
+  // reason (e.g. a broken repoRoot() making everything look missing).
+  for (const doc of SCANNED_DOCS) {
+    assert.deepEqual(readScannedDoc(doc).problems, [], `${doc} is declared in SCANNED_DOCS and must exist`);
+  }
 });
