@@ -70,12 +70,107 @@ import { dirname, join } from "node:path";
 import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { fileClaimViolations, isStandaloneDisasmToken } from "./lib/skill-honesty-checks.mjs";
 import { walkSkills, MCP_PREFIX_RE, TOOL_NAME_RE, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
+import { resolveContainedRoot } from "./lib/audit-root.mjs";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const VICE_DIR = join(ROOT, "src/mcp/vice");
-const SKILLS_DIR = join(ROOT, "src/skills");
-const README_PATH = join(ROOT, "README.md");
-const PARITY_DOC_PATH = join(ROOT, "docs/stock-vice-parity.md");
+const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+
+/**
+ * Every path this gate reads, derived from ONE root, plus the subset that must
+ * EXIST for the run to mean anything.
+ *
+ * WHY THIS FUNCTION EXISTS (phase 32, D-07): the phase-32 audit has to observe
+ * this gate FAILING against a planted violation, and the only safe way to
+ * arrange that for some rows is to point the whole gate at a synthetic tree
+ * via `--root`. That is only sound if EVERY path comes from the one root.
+ *
+ * WHAT NOT TO DO: do not re-derive a path from `DEFAULT_ROOT` anywhere below.
+ * A root threaded through only SOME of the paths reads the synthetic tree for
+ * one input and the real repository for another, and a planted violation in
+ * the synthetic tree then goes silently unobserved -- a false green, which is
+ * the exact failure mode this whole phase exists to rule out.
+ */
+function paths(root) {
+  const skillsDir = join(root, "src/skills");
+  const readmePath = join(root, "README.md");
+  const parityDocPath = join(root, "docs/stock-vice-parity.md");
+  const acmeBuildSkillPath = join(skillsDir, "acme-build", "SKILL.md");
+  return {
+    root,
+    viceDir: join(root, "src/mcp/vice"),
+    skillsDir,
+    readmePath,
+    parityDocPath,
+    acmeBuildSkillPath,
+    // Every file this gate readFileSync()s at a FIXED path with no existsSync()
+    // of its own. (SKILL_FILE_CLAIMS entries are deliberately NOT here: each is
+    // already existence-asserted as a first-class check, so a missing one must
+    // stay a reported claim failure rather than becoming a --root diagnostic.)
+    required: [skillsDir, readmePath, parityDocPath, acmeBuildSkillPath],
+  };
+}
+
+// `--root <dir>` is the ONLY new surface, and it is this gate's only
+// testability seam: there is deliberately no environment-variable override, no
+// skip flag and no waiver file anywhere in it (the no-relaxation-hatch rule
+// recorded in `scripts/audit-gate.mjs`'s header). Same argv shape as that
+// file's own `parseArgs()`.
+function parseArgs(argv) {
+  let root;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--root") {
+      root = argv[i + 1];
+      i += 1;
+    }
+  }
+  return { root };
+}
+
+// A REFUSAL (an out-of-repository --root) and a TYPO (a --root inside the
+// repository that does not exist, or a tree missing this gate's inputs) exit
+// with the SAME code, so they are separated by their message -- the WR-03
+// contract behind audit-gate.mjs's own try/catch, where a mistyped root used
+// to surface as an uncaught ENOENT indistinguishable from a refusal.
+let RESOLVED_ROOT;
+try {
+  RESOLVED_ROOT = resolveContainedRoot(parseArgs(process.argv.slice(2)).root, {
+    repoRoot: DEFAULT_ROOT,
+  });
+} catch (err) {
+  console.error(`check-skill-fork-honesty: REFUSED -- ${err?.message ?? String(err)}`);
+  process.exit(1);
+}
+
+const P = paths(RESOLVED_ROOT);
+
+// The ONE try/catch around every call below that can throw on a bad root.
+// `P.required` enumerates them: topLevelSkillDirs() throws on a missing skills
+// directory, and README.md / docs/stock-vice-parity.md / acme-build's SKILL.md
+// are readFileSync()d with no existence check of their own.
+try {
+  for (const required of [P.root, ...P.required]) {
+    if (!existsSync(required)) {
+      throw new Error(
+        `--root resolves to ${P.root}, but ${required} does not exist. This is a TYPO or an ` +
+          "incomplete synthetic tree, NOT a containment refusal: the path is inside the " +
+          "repository root. Reported here rather than left to surface as an uncaught ENOENT (or, " +
+          "worse, as one of this gate's own non-vacuity failures pointing at the corpus).",
+      );
+    }
+  }
+} catch (err) {
+  console.error(`check-skill-fork-honesty: FAIL (--root) -- ${err?.message ?? String(err)}`);
+  process.exit(1);
+}
+
+// ROOT and the derived paths below are the RESOLVED root's, never
+// DEFAULT_ROOT's. Any new path this gate needs goes inside paths() above.
+const {
+  root: ROOT,
+  viceDir: VICE_DIR,
+  skillsDir: SKILLS_DIR,
+  readmePath: README_PATH,
+  parityDocPath: PARITY_DOC_PATH,
+} = P;
 
 const errors = [];
 const need = (cond, msg) => {
@@ -530,7 +625,7 @@ need(
 // the comment above says is unchanged in force: deleting the notice fails this
 // check, so the cut still cannot be "fixed" by deleting the pointer to the
 // route.
-const ACME_BUILD_SKILL_PATH = join(SKILLS_DIR, "acme-build", "SKILL.md");
+const ACME_BUILD_SKILL_PATH = P.acmeBuildSkillPath;
 const acmeBuildSkillSource = readFileSync(ACME_BUILD_SKILL_PATH, "utf8");
 need(
   acmeBuildSkillSource.includes("anno export-asm"),
