@@ -162,6 +162,350 @@
         "cwd": "src/mcp/vice"
       },
       "note": "Plant removes the argv-array brackets at the ONE real emulator spawn call, turning `spawnSync(binPath, [flag], ...)` into the bare-string form. This is the exact command-injection invariant the seam exists to hold, so the plant is the real violation rather than an arbitrary token swap. Expected to trip: `every discovered emulator spawn site uses the argv-array form and builds no shell command string` (`allCallsUseSafeForm` false) and `backend-detect.mts's own probeBackend() spawnSync(binPath, [flag] call is discovered and reports safe`."
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-cli.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-cli.test.ts",
+      "removalTrigger": "The `anno` CLI ceasing to be a supported entry point -- if the three surviving verbs move behind MCP tools only and `anno-cli.ts` is deleted, this guard has no subject. It must be removed with that file, never left asserting over a CLI nobody can invoke.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-cli.ts",
+        "find": "\"export-asm\": [\"--store\", \"--out\", \"--force\"],",
+        "replace": "\"export-asmX\": [\"--store\", \"--out\", \"--force\"],"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "--test-name-pattern",
+          "VERB_OPTIONS carries exactly the surviving verbs",
+          "anno-cli.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Plant renames one key of `VERB_OPTIONS` so the map no longer carries exactly the surviving verbs. GUARD ARGV DEVIATION (recorded): the guard is scoped with `--test-name-pattern` rather than running the whole file. MEASURED REASON, not a convenience -- the full `node --test anno-cli.test.ts` takes 20596ms and the harness's `GUARD_RUN_TIMEOUT_MS` is 15000ms; a timeout is mapped to status 1, which would have recorded a TIMEOUT as an observed red while the green control timed out too and the row went UNMEASURABLE. Scoped, the run takes 2675ms. The command still names the row's `newSubject` and still runs that guard's own assertion. Expected to trip: `VERB_OPTIONS carries exactly the surviving verbs`.",
+      "observedRed": {
+        "command": "node --test --test-name-pattern VERB_OPTIONS carries exactly the surviving verbs anno-cli.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-cli.ts",
+          "find": "\"export-asm\": [\"--store\", \"--out\", \"--force\"],",
+          "replace": "\"export-asmX\": [\"--store\", \"--out\", \"--force\"],"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - VERB_OPTIONS carries exactly the surviving verbs\n  ---\n  duration_ms: 10.649318\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-cli.test.ts:331:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n        'coverage',\n    +   'export-asmX',\n    -   'export-asm',\n        'render-memmap'\n      ]\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'coverage'\n    1: 'export-asm'\n    2: 'render-memmap'\n  actual:\n    0: 'coverage'\n    1: 'export-asmX'\n    2: 'render-memmap'\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-cli.test.ts:332:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 0\n# fail 1\n# cancelled 0",
+        "control": {
+          "command": "node --test --test-name-pattern VERB_OPTIONS carries exactly the surviving verbs anno-cli.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# (node:253382) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: VERB_OPTIONS carries exactly the surviving verbs\nok 1 - VERB_OPTIONS carries exactly the surviving verbs\n  ---\n  duration_ms: 6.224769\n  type: 'test'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 2459.71105"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-confidence.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-confidence.test.ts",
+      "removalTrigger": "The confidence-grade vocabulary ceasing to be a closed set written down in one place -- for instance if grades become free-form user text. `CONFIDENCE_GRADES` is the ONE place the vocabulary is recorded; with no closed set there is no five-member shape to pin and the guard should be removed rather than relaxed.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-confidence.ts",
+        "find": "phrase: \"probable code\",",
+        "replace": "phrase: \"probable-code\","
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-confidence.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Research (32-RESEARCH.md Sec 2.3) identifies this member as ALREADY carrying an in-test non-vacuity assertion, via `anno-derive`. That assertion is used here only as a MAP of where a reusable plant shape exists -- it is NOT the evidence. Per D-04 the evidence is the harness's machine-captured non-zero exit against the real subject, recorded in `observedRed` below. Plant swaps a space for a hyphen in one grade's `phrase`, the same class of violation the in-test assertion describes, applied to the REAL `CONFIDENCE_GRADES` table. Expected to trip: `CONFIDENCE_GRADES has exactly five members with the exact five phrases from the template`.",
+      "observedRed": {
+        "command": "node --test anno-confidence.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-confidence.ts",
+          "find": "phrase: \"probable code\",",
+          "replace": "phrase: \"probable-code\","
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - CONFIDENCE_GRADES has exactly five members with the exact five phrases from the template\n  ---\n  duration_ms: 4.385809\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-confidence.test.ts:20:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n        'confirmed code',\n    +   'probable-code',\n    -   'probable code',\n        'confirmed data',\n        'probable data',\n        'unknown'\n      ]\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'confirmed code'\n    1: 'probable code'\n    2: 'confirmed data'\n    3: 'probable data'\n    4: 'unknown'\n  actual:\n    0: 'confirmed code'\n    1: 'probable-code'\n    2: 'confirmed data'\n    3: 'probable data'\n    4: 'unknown'\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-confidence.test.ts:23:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.start (node:internal/test_runner/test:944:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)",
+        "control": {
+          "command": "node --test anno-confidence.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: CONFIDENCE_GRADES has exactly five members with the exact five phrases from the template\nok 1 - CONFIDENCE_GRADES has exactly five members with the exact five phrases from the template\n  ---\n  duration_ms: 2.767556\n  type: 'test'\n  ...\n# Subtest: CONFIDENCE_GRADES tokens and brackets are the five canonical bracket tokens\nok 2 - CONFIDENCE_GRADES tokens and brackets are the five canonical bracket tokens\n  ---\n  duration_ms: 0.304561\n  type: 'test'\n  ...\n# Subtest: every grade round-trips through formatConfidenceComment -> parseConfidencePrefix\nok 3 - every grade round-trips through formatConfidenceComment -> parseConfidencePrefix\n  ---\n  duration_ms: 0.540726\n  type: 'test'\n  ...\n# Subtest: parseConfidencePrefix returns grade: null for a plain comment, without throwing\nok 4 - parseConfidencePrefix returns grade: null for a plain comment, without throwing\n  ---\n  duration_ms: 0.226343\n  type: 'test'\n  ...\n# Subtest: parseConfidencePrefix returns grade: null for an empty comment\nok 5 - parseConfidencePrefix returns grade: null for an empty comment\n  ---\n  duration_ms: 0.327437\n  type: 'test'\n  ...\n# Subtest: parseConfidencePrefix returns grade: null for a comment with an unclosed bracket\nok 6 - parseConfidencePrefix returns grade: null for a comment with an unclosed bracket\n  ---\n  duration_ms: 0.177791\n  type: 'test'\n  ...\n# Subtest: parseConfidencePrefix throws on a plain typo, naming the offending token and all five valid ones\nok 7 - parseConfidencePrefix throws on a plain typo, naming the offending token and all five valid ones\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-coverage-grammar.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-coverage-grammar.test.ts",
+      "removalTrigger": "The synthetic 6502 grammar corpus ceasing to be the way dispatch-table detection is exercised -- if `anno-coverage.ts`'s scanner is retired or replaced by a measurement against real captured programs, the generated alphabet has nothing to prove and the guard should be deleted with the generator.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/disasm-decoder.ts",
+        "find": "case \"absolute_y\": {\n        const value = b1! | (b2! << 8);",
+        "replace": "case \"absolute_y\": {\n        const value = b1! | (b2! << 9);"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-coverage-grammar.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Research (Sec 2.3) lists this member as already carrying an in-test non-vacuity assertion; that is a map, not the evidence (D-04). Plant corrupts the high-byte shift for the `absolute_y` addressing mode only (`<< 8` -> `<< 9`), inside the one case block, so every y-indexed absolute operand decodes to a wrong address. Plant file is `disasm-decoder.ts`, deliberately NOT `anno-coverage.ts` -- the sibling row `r2000-coverage.test.ts` plants there, and giving the two rows different files means neither can mask the other even though both tests import both modules. Expected to trip: `every y-indexed load the alphabet emits renders to the absolute_y opcode and never the zeropage_y one`, and the payload/decode assertions downstream of it.",
+      "observedRed": {
+        "command": "node --test anno-coverage-grammar.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/disasm-decoder.ts",
+          "find": "case \"absolute_y\": {\n        const value = b1! | (b2! << 8);",
+          "replace": "case \"absolute_y\": {\n        const value = b1! | (b2! << 9);"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 15 - the set of arrangements the instrument PROVES equals exactly the set the oracle says carries a proven link\n  ---\n  duration_ms: 13.757452\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-coverage-grammar.test.ts:1964:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    the instrument and the oracle disagree over 2000 composed payloads.\n      PROVEN but NOT expected (0) -- false positives of the kind that has failed this criterion three times:\n      EXPECTED but NOT proven (22) -- an over-tightening that would make the instrument measure nothing:\n        xx-hi-first/adjacent-stores#0  `lda $0838,x : sta $fc : lda $0830,x : sta $fb : jmp ($00fb)`  [oracle: LINKED by R1..R6 class-3 zeropage-vector-jumped-through]\n        xx-hi-first/adjacent-stores#6  `lda $0838,x : sta $fc : nop : nop : lda $0830,x : sta $fb : jmp ($00fb)`  [oracle: LINKED by R1..R6 class-3 zeropage-vector-jumped-through]\n        xx-hi-first/adjacent-stores-and-indirect-read#0  `lda $0838,x : sta $fc : lda $0830,x : nop : nop : sta $fb : lda ($fb),y : jmp ($00fb)`  [oracle: LINKED by R1..R6 class-3 zeropage-vector-jumped-through]\n        xx-hi-first/adjacent-stores-and-indirect-read#3  `lda $0838,x : sta $fc : lda $0830,x : sta $fb : lda ($fb),y : jmp ($00fb)`  [oracle: LINKED by R1..R6 class-3 zeropage-vector-jumped-through]\n        xx-hi-first/adjacent-stores-and-indirect-read#9  `lda $0838,x : sta $fc : lda ($fb),y : lda $0830,x : sta $fb : nop : nop : jmp ($00fb)`  [oracle: LINKED by R1..R6 class-3 zeropage-vector-jumped-through]\n        xx-hi-first/pushes-and-adjacent-stores#6  `lda $0838,x : sta $fc : lda $0830,x : pha : sta $fb : pha : jmp ($00fb)`  [oracle: LINKED by R1..R6 class-3 zeropage-vector-jumped-through]\n        xx-hi-first/two-pushes#pin0  `lda $0838,x : pha : lda $0830,x : pha : rts`  [oracle: LINKED by R2+R6 class-4 window published]\n        xx-lo-first/adjacent-stores#3  `lda $0830,x : sta $fb : lda $0838,x : sta $fc : nop : jmp ($00fb)`  [oracle: LINKED by R1..R6 class-3 zeropage-vector-jumped-through]\n        ... and 14 more\n    + actual - expected\n    \n      {\n    +   expectedNotProven: [\n    +     'xx-hi-first/adjacent-stores#0',\n    +     'xx-hi-first/adjacent-stores#6',\n    +     'xx-hi-first/adjacent-stores-and-indirect-read#0',\n    +     'xx-hi-first/adjacent-stores-and-indirect-read#3',\n    +     'xx-hi-first/adjacent-stores-and-indirect-read#9',\n    +     'xx-hi-first/pushes-and-adjacent-stores#6',\n    +     'xx-hi-first/two-pushes#pin0',\n    +     'xx-lo-first/adjacent-stores#3',\n    +     'xx-lo-first/adjacent-stores#pin1',\n    +     'xx-lo-first/adjacent-stores-and-indirect-read#6',\n    +     'xx-lo-first/four-stores-two-pairs#7',\n    +     'xx-lo-first/pushes-and-adjacent-stores#0',\n    +     'xx-lo-first/pushes-and-adjacent-stores#6',\n    +     'xx-lo-first/pushes-and-adjacent-stores#pin0',\n    +     'yy-hi-first/four-stores-two-pairs#7',\n    +     'yy-hi-first/pushes-and-adjacent-stores#3',\n    +     'yy-hi-first/two-pushes#0',",
+        "control": {
+          "command": "node --test anno-coverage-grammar.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: the composed corpus is bounded, stratified across every family, and large enough to be a population\nok 1 - the composed corpus is bounded, stratified across every family, and large enough to be a population\n  ---\n  duration_ms: 1.946149\n  type: 'test'\n  ...\n# Subtest: every family contributed at least MIN_PER_FAMILY members, so the corpus cap is not a prefix of one family\nok 2 - every family contributed at least MIN_PER_FAMILY members, so the corpus cap is not a prefix of one family\n  ---\n  duration_ms: 0.773158\n  type: 'test'\n  ...\n# Subtest: building the corpus twice yields byte-identical payloads in identical order\nok 3 - building the corpus twice yields byte-identical payloads in identical order\n  ---\n  duration_ms: 126.847976\n  type: 'test'\n  ...\n# Subtest: every payload is exactly 64 bytes with an intact data tail, and no two indexed arrangements are byte-identical\nok 4 - every payload is exactly 64 bytes with an intact data tail, and no two indexed arrangements are byte-identical\n  ---\n  duration_ms: 22.897415\n  type: 'test'\n  ...\n# Subtest: a twin differs from its own indexed member, and two members share a twin only when they differ solely in index register\nok 5 - a twin differs from its own indexed member, and two members share a twin only when they differ solely in index register\n  ---\n  duration_ms: 17.238115\n  type: 'test'\n  ...\n# Subtest: no generated payload contains the JAM opcode at any offset\nok 6 - no generated payload contains the JAM opcode at any offset\n  ---\n  duration_ms: 39.348347\n  type: 'test'\n  ...\n# Subtest: every arrangement carries exactly one terminator and it is the last fragment\nok 7 - every arrangement carries exactly one terminator and it is the last fragment\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-coverage.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-coverage.test.ts",
+      "removalTrigger": "The coverage report shape ceasing to be consumed by a second party. `COVERAGE_SCHEMA_VERSION` exists because Phase 20's sweep and Phase 21's dispatch reuse both read this shape; when no consumer outside this module reads it, the version pin is ceremony and the guard should be removed with the last consumer.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-coverage.ts",
+        "find": "export const COVERAGE_SCHEMA_VERSION = 2;",
+        "replace": "export const COVERAGE_SCHEMA_VERSION = 3;"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-coverage.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Research (Sec 2.3) lists this member as already carrying an in-test non-vacuity assertion; used as a map only, never as the proof (D-04). Plant bumps the schema version by one. This is the cleanest possible plant in this file because the test pins the version to a LITERAL `2` alongside the imported constant, precisely so a bump is always deliberate -- so the mutation cannot be absorbed self-consistently the way a change to `MAX_TABLE_ENTRIES` or `SPLIT_TABLE_WINDOW` would be (both are used by the walk AND by the assertion, so both sides move together and the plant would not bite). Expected to trip: the `assert.equal(COVERAGE_SCHEMA_VERSION, 2, ...)` literal pin.",
+      "observedRed": {
+        "command": "node --test anno-coverage.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-coverage.ts",
+          "find": "export const COVERAGE_SCHEMA_VERSION = 2;",
+          "replace": "export const COVERAGE_SCHEMA_VERSION = 3;"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - the report's top-level key set is exactly the pinned set, in order, and carries the schema version\n  ---\n  duration_ms: 24.61899\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-coverage.test.ts:577:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    the schema version is pinned to a LITERAL here so a bump is always deliberate. It moved 1 -> 2 in 19-08: the top-level key set above is UNCHANGED, but the `dispatch` sub-object's target vocabulary changed -- `discoveredTargets` narrowed to evidence-backed targets only, and the ungated split lo/hi pairings it used to include moved to the advisory sibling `splitTableCandidates`. A consumer reading `discoveredTargets` gets a smaller, honest set than at version 1, and this number is the only signal it gets. Accepted by a human at 19-08's decision checkpoint (option `narrow-and-add-sibling`).\n    \n    3 !== 2\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 2\n  actual: 3\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-coverage.test.ts:586:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.start (node:internal/test_runner/test:944:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)\n  ...\n# Subtest: COV-01: no key anywhere in the report matches a combined-figure vocabulary\nok 2 - COV-01: no key anywhere in the report matches a combined-figure vocabulary\n  ---\n  duration_ms: 9.131221\n  type: 'test'\n  ...\n# Subtest: independence: rewriting every block entry to one type leaves every census byte count unchanged and moves only the divergence sub-report\nok 3 - independence: rewriting every block entry to one type leaves every census byte count unchanged and moves only the divergence sub-report\n  ---\n  duration_ms: 4.541924\n  type: 'test'\n  ...\n# Subtest: the production block-spelling list is the DERIVED union of BOTH accepted vocabularies, with no duplicates\nok 4 - the production block-spelling list is the DERIVED union of BOTH accepted vocabularies, with no duplicates\n  ---\n  duration_ms: 0.762978\n  type: 'test'",
+        "control": {
+          "command": "node --test anno-coverage.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "# Subtest: RE-DERIVED-ANSWER.md's canonical line hashes to the sealed ANSWER.sha256, and a missing or empty fence FAILS rather than skips (T-19-RETROFIT / T-19-VACUOUS-CHECK)\nok 115 - RE-DERIVED-ANSWER.md's canonical line hashes to the sealed ANSWER.sha256, and a missing or empty fence FAILS rather than skips (T-19-RETROFIT / T-19-VACUOUS-CHECK)\n  ---\n  duration_ms: 0.199219\n  type: 'test'\n  ...\n# Subtest: LIVE non-vacuity: both routes are recomputed from the committed fixture and both reproduce the sealed line\nok 116 - LIVE non-vacuity: both routes are recomputed from the committed fixture and both reproduce the sealed line\n  ---\n  duration_ms: 1.844198\n  type: 'test'\n  ...\n# Subtest: CR-05 (A): a real .prg is censused -- payload decoded, origin from its own load address, non-zero byte count\nok 117 - CR-05 (A): a real .prg is censused -- payload decoded, origin from its own load address, non-zero byte count\n  ---\n  duration_ms: 1.609528\n  type: 'test'\n  ...\n# Subtest: CR-05 (B): an exactly-65536-byte flat capture with a .raw extension decodes at origin 0\nok 118 - CR-05 (B): an exactly-65536-byte flat capture with a .raw extension decodes at origin 0\n  ---\n  duration_ms: 191.147495\n  type: 'test'\n  ...\n# Subtest: CR-05 (C, WR-07): a SHORT flat .raw is refused BY NAME, never parsed as a load address plus payload\nok 119 - CR-05 (C, WR-07): a SHORT flat .raw is refused BY NAME, never parsed as a load address plus payload\n  ---\n  duration_ms: 1.380688\n  type: 'test'\n  ...\n# Subtest: CR-05 (D): the retired JSON project form still loads, so an existing project file is not broken\nok 120 - CR-05 (D): the retired JSON project form still loads, so an existing project file is not broken\n  ---\n  duration_ms: 1.338679\n  type: 'test'\n  ...\n# Subtest: CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer identically for one .prg and one flat capture\nok 121 - CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer identically for one .prg and one flat capture\n  ---\n  duration_ms: 22.176986"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-d64.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-d64.test.ts",
+      "removalTrigger": "`.d64` images ceasing to be an accepted input form for the annotation pipeline. If projects are only ever loaded from `.prg`, `anno-d64.ts` has no caller and both it and this guard should go, rather than the guard being kept green over a parser nothing reaches.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-d64.ts",
+        "find": "if (image.length !== 174848) {",
+        "replace": "if (image.length !== 174847) {"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-d64.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "PLANT DESIGNED FROM SCRATCH -- research (Sec 2.3) records this member as having no reusable in-test non-vacuity assertion. The pinned constant broken is the plain-1541-image length `174848` in `assertPlainImage()`, the ONE place the documented input limit is enforced. Off by one, so the oversize-variant refusal at 175531 bytes still fires and the failure is unambiguously the acceptance side. Expected to trip: `assertPlainImage: passes for exactly 174848 bytes`.",
+      "observedRed": {
+        "command": "node --test anno-d64.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-d64.ts",
+          "find": "if (image.length !== 174848) {",
+          "replace": "if (image.length !== 174847) {"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 9 - assertPlainImage: passes for exactly 174848 bytes\n  ---\n  duration_ms: 1.207232\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-d64.test.ts:191:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Got unwanted exception.\n    Actual message: \"assertPlainImage: expected a plain 174848-byte, 35-track .d64 image with no error-info bytes, got 174848 bytes\"\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  actual:\n  error: 'assertPlainImage: expected a plain 174848-byte, 35-track .d64 image with no error-info bytes, got 174848 bytes'\n  stack: |-\n    assertPlainImage (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-d64.ts:306:11)\n    file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-d64.test.ts:192:29\n    getActual (node:assert:609:5)\n    Function.doesNotThrow (node:assert:777:32)\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-d64.test.ts:192:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n  operator: 'doesNotThrow'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-d64.test.ts:192:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n# Subtest: extractEntry: a valid image truncated into the file's own sector throws naming the sector and the actual image length (WR-05)\nok 10 - extractEntry: a valid image truncated into the file's own sector throws naming the sector and the actual image length (WR-05)\n  ---\n  duration_ms: 1.05291\n  type: 'test'\n  ...",
+        "control": {
+          "command": "node --test anno-d64.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: listEntries: returns both entry names, types, and starting track/sector\nok 1 - listEntries: returns both entry names, types, and starting track/sector\n  ---\n  duration_ms: 4.830471\n  type: 'test'\n  ...\n# Subtest: extractEntry: returns exactly the written payload bytes, including the load address, honouring the final sector's used-byte count\nok 2 - extractEntry: returns exactly the written payload bytes, including the load address, honouring the final sector's used-byte count\n  ---\n  duration_ms: 1.866561\n  type: 'test'\n  ...\n# Subtest: extractEntry: case-insensitive name match returns the same bytes\nok 3 - extractEntry: case-insensitive name match returns the same bytes\n  ---\n  duration_ms: 0.728313\n  type: 'test'\n  ...\n# Subtest: extractEntry: unknown name throws, naming both the requested name and the available entries\nok 4 - extractEntry: unknown name throws, naming both the requested name and the available entries\n  ---\n  duration_ms: 1.087326\n  type: 'test'\n  ...\n# Subtest: extractEntry: an ambiguous name (two entries sharing it) throws naming the ambiguity and returns nothing\nok 5 - extractEntry: an ambiguous name (two entries sharing it) throws naming the ambiguity and returns nothing\n  ---\n  duration_ms: 0.63631\n  type: 'test'\n  ...\n# Subtest: extractEntry: a self-referential (corrupt) chain throws naming the revisited track/sector rather than looping\nok 6 - extractEntry: a self-referential (corrupt) chain throws naming the revisited track/sector rather than looping\n  ---\n  duration_ms: 0.464991\n  type: 'test'\n  ...\n# Subtest: extractEntry: an out-of-image pointer throws naming the offending pointer rather than reading past the buffer\nok 7 - extractEntry: an out-of-image pointer throws naming the offending pointer rather than reading past the buffer\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-enum-gen.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-enum-gen.test.ts",
+      "removalTrigger": "The ACME enum export ceasing to be a shipped capability. These identifiers only matter because generated source must assemble under a real ACME; if `export-asm` and the enum generator are withdrawn again (they were once already, in plan 29-07/D-14), the legality rules have no consumer and this guard should be removed with them.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-enum-gen.ts",
+        "find": "return `$${address.toString(16).toUpperCase().padStart(4, \"0\")}`;",
+        "replace": "return `$${address.toString(16).toUpperCase().padStart(5, \"0\")}`;"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-enum-gen.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "PLANT DESIGNED FROM SCRATCH -- research (Sec 2.3) records this member as needing one. The declared shape broken is `registerKeyFor()`'s `$XXXX` format: four uppercase hex digits, zero-padded. `padStart(4` occurs TWICE in this module (lines 159 and 273), so the `find` string carries the whole `return` expression to stay unique -- the harness rejects a `find` that matches other than exactly once, which is what caught the ambiguity. Expected to trip: `registerKeyFor formats addresses as $XXXX (uppercase, 4-hex-digit)`.",
+      "observedRed": {
+        "command": "node --test anno-enum-gen.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-enum-gen.ts",
+          "find": "return `$${address.toString(16).toUpperCase().padStart(4, \"0\")}`;",
+          "replace": "return `$${address.toString(16).toUpperCase().padStart(5, \"0\")}`;"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - variantNameFor(0xd011, 0x1b) === 'YSCROLL3_ROW25_SCREENON_TEXT' (the pinned criterion-3 target)\n  ---\n  duration_ms: 4.028296\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-enum-gen.test.ts:79:1'\n  failureType: 'testCodeFailure'\n  error: 'variantNameFor: no bit-name table entry for register 0D011 -- anno-regbits.json has no fields for this address (add an OVERRIDES entry in anno-regbits-gen.ts, or exclude it from generation).'\n  code: 'ERR_TEST_FAILURE'\n  stack: |-\n    variantNameFor (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-enum-gen.ts:190:11)\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-enum-gen.test.ts:80:16)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.start (node:internal/test_runner/test:944:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)\n  ...\n# Subtest: registerKeyFor formats addresses as $XXXX (uppercase, 4-hex-digit)\nnot ok 2 - registerKeyFor formats addresses as $XXXX (uppercase, 4-hex-digit)\n  ---\n  duration_ms: 1.461841\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-enum-gen.test.ts:83:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    '0D011' !== '$D011'\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: '$D011'\n  actual: '0D011'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-enum-gen.test.ts:84:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)",
+        "control": {
+          "command": "node --test anno-enum-gen.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: variantNameFor(0xd011, 0x1b) === 'YSCROLL3_ROW25_SCREENON_TEXT' (the pinned criterion-3 target)\nok 1 - variantNameFor(0xd011, 0x1b) === 'YSCROLL3_ROW25_SCREENON_TEXT' (the pinned criterion-3 target)\n  ---\n  duration_ms: 4.531647\n  type: 'test'\n  ...\n# Subtest: registerKeyFor formats addresses as $XXXX (uppercase, 4-hex-digit)\nok 2 - registerKeyFor formats addresses as $XXXX (uppercase, 4-hex-digit)\n  ---\n  duration_ms: 0.220494\n  type: 'test'\n  ...\n# Subtest: variantNameFor is injective across all 256 values for $D011\nok 3 - variantNameFor is injective across all 256 values for $D011\n  ---\n  duration_ms: 1.219563\n  type: 'test'\n  ...\n# Subtest: variantNameFor is injective across all 256 values for $D016\nok 4 - variantNameFor is injective across all 256 values for $D016\n  ---\n  duration_ms: 1.843078\n  type: 'test'\n  ...\n# Subtest: variantNameFor is injective across all 256 values for $D018\nok 5 - variantNameFor is injective across all 256 values for $D018\n  ---\n  duration_ms: 0.901926\n  type: 'test'\n  ...\n# Subtest: variantNameFor is injective across all 256 values for $D015\nok 6 - variantNameFor is injective across all 256 values for $D015\n  ---\n  duration_ms: 0.97786\n  type: 'test'\n  ...\n# Subtest: assertLegalAcmeIdentifier rejects '1BAD', 'has space', 'has-dash', '' and accepts a legal identifier\nok 7 - assertLegalAcmeIdentifier rejects '1BAD', 'has space', 'has-dash', '' and accepts a legal identifier\n  ---"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-memmap-render.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-memmap-render.test.ts",
+      "removalTrigger": "The rendered memory map ceasing to carry a provenance sidecar. The header parser exists so a rendered map can never claim a capture it cannot name; if provenance moves into the annotation store itself, `parseProvenanceHeader` and this guard go together.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-memmap-render.ts",
+        "find": "if (!/^[0-9a-fA-F]{64}$/.test(sha.trim())) {",
+        "replace": "if (!/^[0-9a-fA-F]{63}$/.test(sha.trim())) {"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-memmap-render.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "PLANT DESIGNED FROM SCRATCH -- research (Sec 2.3) records this member as needing one. The pinned constant broken is the SHA-256 hex length in `parseProvenanceHeader()`'s `captureSha256` check (64 -> 63), so a genuine 64-character digest is now rejected. NUL-TAINT DISCLOSURE, as the plan requires: the plant target IS the NUL-carrying module (`anno-memmap-render.ts` carries a NUL at offset 15097 / line 315). This is safe, and the safety is a property of the harness rather than of the choice: `plant()` captures the original with `readFileSync(abs)` and NO encoding, then does the find/replace over a `latin1` round-trip, which is byte-preserving for every code unit including NUL, and `revert()` writes the captured Buffer back verbatim. The plant site (line 221) is far ahead of the NUL, and `git diff --stat` over this file is asserted empty after the run, which is the mechanical check that the round-trip really was byte-identical. Expected to trip: `parseProvenanceHeader accepts a fully-filled valid header`.",
+      "observedRed": {
+        "command": "node --test anno-memmap-render.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-memmap-render.ts",
+          "find": "if (!/^[0-9a-fA-F]{64}$/.test(sha.trim())) {",
+          "replace": "if (!/^[0-9a-fA-F]{63}$/.test(sha.trim())) {"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - parseProvenanceHeader accepts a fully-filled valid header\n  ---\n  duration_ms: 3.970502\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.test.ts:65:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    provenance sidecar has 1 problem(s):\n      - captureSha256: must be exactly 64 hex characters, got \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" (length 64)\n  code: 'ERR_TEST_FAILURE'\n  name: 'R2000ProvenanceHeaderError'\n  stack: |-\n    parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.test.ts:66:18)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.start (node:internal/test_runner/test:944:17)\n    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)\n  ...\n# Subtest: parseProvenanceHeader accepts an optional rasterPositions array\nnot ok 2 - parseProvenanceHeader accepts an optional rasterPositions array\n  ---\n  duration_ms: 0.574185\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.test.ts:73:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    provenance sidecar has 1 problem(s):\n      - captureSha256: must be exactly 64 hex characters, got \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" (length 64)\n  code: 'ERR_TEST_FAILURE'\n  name: 'R2000ProvenanceHeaderError'\n  stack: |-\n    parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.test.ts:74:18)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)",
+        "control": {
+          "command": "node --test anno-memmap-render.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# (node:253773) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: parseProvenanceHeader accepts a fully-filled valid header\nok 1 - parseProvenanceHeader accepts a fully-filled valid header\n  ---\n  duration_ms: 3.92365\n  type: 'test'\n  ...\n# Subtest: parseProvenanceHeader accepts an optional rasterPositions array\nok 2 - parseProvenanceHeader accepts an optional rasterPositions array\n  ---\n  duration_ms: 1.941854\n  type: 'test'\n  ...\n# Subtest: parseProvenanceHeader({}) throws listing ALL missing required keys in one message\nok 3 - parseProvenanceHeader({}) throws listing ALL missing required keys in one message\n  ---\n  duration_ms: 2.043957\n  type: 'test'\n  ...\n# Subtest: parseProvenanceHeader refuses a template-placeholder captureSha256 and videoStandard, naming both\nok 4 - parseProvenanceHeader refuses a template-placeholder captureSha256 and videoStandard, naming both\n  ---\n  duration_ms: 0.848932\n  type: 'test'\n  ...\n# Subtest: parseProvenanceHeader refuses a bad hash length\nok 5 - parseProvenanceHeader refuses a bad hash length\n  ---\n  duration_ms: 0.933142\n  type: 'test'\n  ...\n# Subtest: parseProvenanceHeader refuses a videoStandard value that is neither a placeholder nor PAL/NTSC\nok 6 - parseProvenanceHeader refuses a videoStandard value that is neither a placeholder nor PAL/NTSC\n  ---\n  duration_ms: 0.730451\n  type: 'test'\n  ...\n# Subtest: parseProvenanceHeader refuses a malformed rasterPositions"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-regbits.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-regbits.test.ts",
+      "removalTrigger": "`anno-regbits.json` ceasing to be generated from `memmap.json`. The whole guard is a drift relation between a generated artifact and its source; if the bit tables become hand-maintained, there is no generator to drift from and the guard must be removed rather than re-pointed at a hand-edited file it cannot regenerate.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-regbits.json",
+        "find": "\"memmapSha256\": \"60a517c1",
+        "replace": "\"memmapSha256\": \"60a517c2"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-regbits.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Research (Sec 2.3) lists this member as already carrying an in-test non-vacuity assertion -- the committed planted-violation test that appends a byte to a SCRATCH COPY of `memmap.json`. That is a map of where the plant shape lives, NOT the evidence (D-04): the committed test mutates a copy, whereas this row mutates the REAL generated artifact and captures the guard's own exit status. Plant changes one hex digit of the generated banner's `memmapSha256`. Expected to trip: `drift guard: the committed banner's memmapSha256 equals memmap.json's current digest`.",
+      "observedRed": {
+        "command": "node --test anno-regbits.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-regbits.json",
+          "find": "\"memmapSha256\": \"60a517c1",
+          "replace": "\"memmapSha256\": \"60a517c2"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 4 - drift guard: the committed banner's memmapSha256 equals memmap.json's current digest\n  ---\n  duration_ms: 5.407139\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-regbits.test.ts:58:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    + actual - expected\n    \n    + '60a517c2833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe'\n    - '60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe'\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: '60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe'\n  actual: '60a517c2833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-regbits.test.ts:61:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n# Subtest: drift guard: buildRegBitsDocument() emits the SAME banner shape twice in a row (no timestamp, so the comparison stays total)\nok 5 - drift guard: buildRegBitsDocument() emits the SAME banner shape twice in a row (no timestamp, so the comparison stays total)\n  ---\n  duration_ms: 8.694122\n  type: 'test'\n  ...\n# Subtest: non-vacuous drift guard: appending a byte to a SCRATCH COPY of memmap.json makes the drift assertion FAIL (planted violation, ENGINEERING_RULES.md Sec 6)\nok 6 - non-vacuous drift guard: appending a byte to a SCRATCH COPY of memmap.json makes the drift assertion FAIL (planted violation, ENGINEERING_RULES.md Sec 6)\n  ---\n  duration_ms: 16.987549\n  type: 'test'\n  ...\n# committed memmap.json digest: 60a517c2833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe",
+        "control": {
+          "command": "node --test anno-regbits.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "# Subtest: non-vacuous drift guard: appending a byte to a SCRATCH COPY of memmap.json makes the drift assertion FAIL (planted violation, ENGINEERING_RULES.md Sec 6)\nok 6 - non-vacuous drift guard: appending a byte to a SCRATCH COPY of memmap.json makes the drift assertion FAIL (planted violation, ENGINEERING_RULES.md Sec 6)\n  ---\n  duration_ms: 25.210726\n  type: 'test'\n  ...\n# committed memmap.json digest: 60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe\n# mutated (planted-violation) memmap.json digest: 9d1cd787afc983a7309269cfd3b730c8052fb3cdc2845ef2e1e45af78f9faaa1\n# Subtest: every field name in anno-regbits.json matches ^[A-Za-z_][A-Za-z0-9_]*$\nok 7 - every field name in anno-regbits.json matches ^[A-Za-z_][A-Za-z0-9_]*$\n  ---\n  duration_ms: 1.806701\n  type: 'test'\n  ...\n# Subtest: no field name or token contains the OCR-damage artifacts NMls or a bare letter-O-for-zero pattern\nok 8 - no field name or token contains the OCR-damage artifacts NMls or a bare letter-O-for-zero pattern\n  ---\n  duration_ms: 1.22577\n  type: 'test'\n  ...\n# Subtest: $D011's six fields match the plan's pinned criterion-3 shape exactly\nok 9 - $D011's six fields match the plan's pinned criterion-3 shape exactly\n  ---\n  duration_ms: 2.938744\n  type: 'test'\n  ...\n# Subtest: the six override-supplied (memmap-absent) registers are present: $D015, $D017, $D01A, $D01B, $D01C, $D01D\nok 10 - the six override-supplied (memmap-absent) registers are present: $D015, $D017, $D01A, $D01B, $D01C, $D01D\n  ---\n  duration_ms: 2.022198\n  type: 'test'\n  ...\n# Subtest: the table also contains $D011 and $01 (address 1)\nok 11 - the table also contains $D011 and $01 (address 1)\n  ---\n  duration_ms: 0.909545\n  type: 'test'\n  ...\n# Subtest: OVERRIDES: every field/register override entry carries a WHY comment (grep-counted, not eyeballed)\nok 12 - OVERRIDES: every field/register override entry carries a WHY comment (grep-counted, not eyeballed)"
+        }
+      }
+    },
+    {
+      "historicalPath": "src/mcp/vice/r2000-tools.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-tools.test.ts",
+      "removalTrigger": "The `anno_*` MCP tool family being withdrawn from the advertised surface. These tools are curated by name at one seam; if the family is removed from the manifest, the set-membership check has an empty set and the guard should be deleted with the last tool rather than passing over nothing.",
+      "plant": {
+        "kind": "worktree",
+        "file": "src/mcp/vice/anno-tools.ts",
+        "find": "name: \"anno_get_symbols\",",
+        "replace": "name: \"anno_get_symbolz\","
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-tools.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "note": "Research (Sec 2.3) lists this member as already carrying an in-test non-vacuity assertion, via `anno-register`; used as a map only, never as the proof (D-04). Plant misspells the tool's own registered `name` at its single definition site (verified: one occurrence), so the curated name and the registered name diverge. Expected to trip: `tracer (MCP-05): anno_get_symbols answers a real query against a real store, end to end`, and the set-membership assertions that follow it.",
+      "observedRed": {
+        "command": "node --test anno-tools.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "src/mcp/vice/anno-tools.ts",
+          "find": "name: \"anno_get_symbols\",",
+          "replace": "name: \"anno_get_symbolz\","
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 1 - tracer (MCP-05): anno_get_symbols answers a real query against a real store, end to end\n  ---\n  duration_ms: 19.453213\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-tools.test.ts:75:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    expected a successful result, got: anno_get_symbols failed: [AnnoUncuratedToolError] \"anno_get_symbols\" is not part of the curated anno_* tool surface. Resolution routes: implement it and add it to ANNO_TOOL_DEFINITIONS with a named criterion, or remove the caller reference.\n    \n    true !== false\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: false\n  actual: true\n  operator: 'strictEqual'\n  stack: |-\n    file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-tools.test.ts:82:14\n    async withStore (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-tools.test.ts:63:5)\n    async TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-tools.test.ts:76:3)\n    async Test.run (node:internal/test_runner/test:1054:7)\n    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)\n  ...\n# Subtest: anno_get_symbols narrows by address range, and reports truncation as a fact rather than leaving it to be inferred\nnot ok 2 - anno_get_symbols narrows by address range, and reports truncation as a fact rather than leaving it to be inferred\n  ---\n  duration_ms: 14.351638\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-tools.test.ts:100:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    true !== false\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: false\n  actual: true\n  operator: 'strictEqual'",
+        "control": {
+          "command": "node --test anno-tools.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# (node:253929) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: tracer (MCP-05): anno_get_symbols answers a real query against a real store, end to end\nok 1 - tracer (MCP-05): anno_get_symbols answers a real query against a real store, end to end\n  ---\n  duration_ms: 19.986832\n  type: 'test'\n  ...\n# Subtest: anno_get_symbols narrows by address range, and reports truncation as a fact rather than leaving it to be inferred\nok 2 - anno_get_symbols narrows by address range, and reports truncation as a fact rather than leaving it to be inferred\n  ---\n  duration_ms: 19.715084\n  type: 'test'\n  ...\n# Subtest: WR-02 closed: an uncurated name RESOLVES {isError:true} naming both resolution routes -- it does not reject the promise\nok 3 - WR-02 closed: an uncurated name RESOLVES {isError:true} naming both resolution routes -- it does not reject the promise\n  ---\n  duration_ms: 1.242451\n  type: 'test'\n  ...\n# Subtest: a store path outside the workspace root RESOLVES {isError:true} naming AnnoStorePathError (T-29-01)\nok 4 - a store path outside the workspace root RESOLVES {isError:true} naming AnnoStorePathError (T-29-01)\n  ---\n  duration_ms: 4.389982\n  type: 'test'\n  ...\n# Subtest: an absent store is refused, never created -- mustExist is what keeps 'gone' and 'empty' distinguishable\nok 5 - an absent store is refused, never created -- mustExist is what keeps 'gone' and 'empty' distinguishable\n  ---\n  duration_ms: 4.105695\n  type: 'test'\n  ...\n# Subtest: the transport validates nothing, so a missing required argument is refused HERE and named\nok 6 - the transport validates nothing, so a missing required argument is refused HERE and named\n  ---\n  duration_ms: 1.360965\n  type: 'test'\n  ...\n# Subtest: an unprefixed numeric address string is refused by the ONE address parser, not accepted by a second rule here"
+        }
+      }
     }
   ]
 }
