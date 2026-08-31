@@ -340,6 +340,17 @@ None — no external service configuration required.
 - **One thing to re-measure on main:** the `repo-root.test.ts` failure above, to confirm it is
   absent outside the worktree as analysed.
 
+## Self-Check: PASSED
+
+- Files claimed created/modified all present on disk: `31-REVIEW-FIX.md`, `31-04-SUMMARY.md`,
+  `.github/workflows/ci.yml`, `src/mcp/vice/skill-attribution.test.ts`.
+- All four commits present in `git log`: `20b6a2d`, `66d2743`, `8e5d307`, `90634b1`.
+- `git status --porcelain` clean; `git diff --name-only <base>..HEAD` lists exactly the three
+  files this plan declared, plus this SUMMARY.
+- Every task's `<acceptance_criteria>` re-run and passing; the plan-level `<verification>`
+  sequence re-run end-to-end, with the single environment-induced `repo-root.test.ts` failure
+  documented under Issues Encountered rather than absorbed into a total.
+
 ---
 *Phase: 31-procedure-re-pointing*
 *Completed: 2026-08-31*
