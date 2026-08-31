@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 
 import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { DENY_LIST } from "../src/mcp/vice/vice.ts";
-import { resolveContainedRoot } from "./lib/audit-root.mjs";
+import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = dirname(HERE);
@@ -308,20 +308,39 @@ export function generateToolSupportTable(options = {}) {
 // seam this script has: there is deliberately no environment-variable
 // override, no `--check` bypass and no waiver file anywhere in it (the
 // no-relaxation-hatch rule recorded in `scripts/audit-gate.mjs`'s header).
-// Same argv shape as that file's own `parseArgs()`.
-function parseArgs(argv) {
-  let root;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--root") {
-      root = argv[i + 1];
-      i += 1;
-    }
-  }
-  return { root };
-}
-
+//
+// THIS FILE NO LONGER HAS AN ARGV READER OF ITS OWN. It had one, and it was
+// the same nine lines `scripts/audit-gate.mjs` still carries: match the exact
+// token `--root`, take `argv[i + 1]`. That reader silently discarded
+// `--root=<dir>`, a valueless `--root` and every typo, so the invocation fell
+// through to the default root -- and because THIS is the one audited script
+// that WRITES, a mistyped root overwrote the real `docs/tool-support.md` and
+// exited 0 while printing success. The reader is deleted; `parseRootArg()` in
+// `lib/audit-root.mjs` is now the single argv seam, as `resolveContainedRoot()`
+// is the single containment seam.
+//
+// The old comment here claimed "same argv shape as `scripts/audit-gate.mjs`'s
+// own `parseArgs()`". That is now false, deliberately: this file uses the
+// shared strict parser and that file still has its own copy. `WR-13` is the
+// reason it was NOT migrated in this round -- `audit-gate.mjs` carries five
+// further flags, and no verifier finding asks for them to be touched here.
+// Plan 32-11 migrates the remaining consumers.
 function main() {
-  const { root: rootArg } = parseArgs(process.argv.slice(2));
+  let rootArg;
+  try {
+    ({ root: rootArg } = parseRootArg(process.argv.slice(2), {
+      script: "generate-tool-support-table",
+    }));
+  } catch (e) {
+    // An ARGUMENT REJECTION. Reported before anything is read or written, and
+    // kept at exit 1 like the refusal below: the two are separated by their
+    // message (`BAD ARGUMENTS --` versus `REFUSED --`), never by their status.
+    process.stderr.write(
+      `generate-tool-support-table: ${e?.message ?? String(e)}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   // A REFUSAL (an out-of-repository --root) and a TYPO (a --root inside the
   // repository that does not exist) exit with the SAME code, so they are

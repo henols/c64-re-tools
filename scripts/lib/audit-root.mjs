@@ -33,6 +33,15 @@
 //    `realpathSync` would make the function throw on a not-yet-created
 //    directory, which several callers legitimately pass.
 
+// PARSING VERSUS RESOLUTION, and why both live here:
+// `resolveContainedRoot()` answers "is this value allowed to be the root?".
+// `parseRootArg()` answers the question BEFORE it: "did the operator actually
+// supply a root at all?". Those are two failure classes and they stay two
+// functions, so a containment REFUSAL and an argv REJECTION can never blur
+// into one another -- but they belong in ONE file, because the defect that
+// motivated `parseRootArg()` was six consumers each answering the second
+// question for themselves (IN-06).
+
 import { isAbsolute, resolve, sep } from "node:path";
 
 /**
@@ -90,4 +99,151 @@ export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}
       "convention. Note that a sibling directory whose name merely shares the root's prefix " +
       "(e.g. a `-evil` suffix) is refused here too -- the comparison is segment-wise.",
   );
+}
+
+// ---------------------------------------------------------------------------
+// THE ARGV SEAM
+// ---------------------------------------------------------------------------
+//
+// WHY THIS LIVES HERE RATHER THAN IN SIX CONSUMERS (IN-06): the reader this
+// replaces was copy-pasted verbatim into six scripts. It matched only the
+// exact token `--root` and took `argv[i + 1]` as its value, so `--root=<dir>`,
+// a valueless `--root` and any typo were all SILENTLY DISCARDED -- the loop
+// simply never fired and the invocation fell through to the default root. The
+// same defect therefore shipped six times, and on the one consumer that
+// WRITES it meant `--root=/tmp/definitely-not-here` overwrote the REAL
+// `docs/tool-support.md` and exited 0 while printing success. A parser that
+// guesses is what produced that, so this one never guesses: every malformed
+// form is a hard, named error.
+//
+// The shape and the error style are taken from
+// `scripts/audit-mutation-harness.mjs`'s reader -- the one copy that DID throw
+// on an unrecognised token and printed a usage line with it. That is the model
+// that was not reused; it is reused here.
+//
+// WHAT NOT TO DO:
+//  - Do not add a permissive mode. No env var, no `--lenient`, no "warn and
+//    continue" branch, no allow-list of tolerated typos. The no-relaxation-
+//    hatch rule that governs the rest of this seam governs its argv half too:
+//    a root that cannot be honoured REFUSES, and never degrades into a silent
+//    read of the default root.
+//  - Do not return `undefined` (or a partial result) on a parse error. A
+//    caller that cannot tell "no flag" from "a flag I could not read" is the
+//    original defect wearing a different shape.
+//  - Do not resolve the value here. Resolution and containment are
+//    `resolveContainedRoot()`'s job. Keeping them apart is what lets a caller
+//    report an argument REJECTION and a containment REFUSAL as distinct
+//    messages at the same exit code -- the convention four of the consuming
+//    scripts already state verbatim in their preambles.
+//  - Do not mint a new exit code for an argv rejection. Every message below
+//    begins with the literal `BAD ARGUMENTS --` precisely so the two classes
+//    are separated by their MESSAGE, not by their status.
+
+/** Every message this function throws begins with this, so a caller can tell
+ *  an argv rejection from a containment refusal by reading the message. */
+const BAD = "BAD ARGUMENTS --";
+
+/** The usage line quoted back with every rejection, so a refusal always shows
+ *  the operator the accepted spelling rather than only the rejected one. */
+function usageLine(script, booleanFlags) {
+  const extras = booleanFlags.map((f) => ` [${f}]`).join("");
+  return `Usage: node scripts/${script}.mjs [--root <dir>]${extras}`;
+}
+
+/**
+ * Reads a `--root` argument (and any declared value-less flags) STRICTLY.
+ *
+ * @param {string[]} argv  normally `process.argv.slice(2)`.
+ * @param {{ script: string, booleanFlags?: string[] }} options
+ *        `script` is the invoking script's own base name, used ONLY in error
+ *        messages so a refusal names its source -- this repository's guards
+ *        are invoked as their own file names (D-12-11) and their errors read
+ *        the same way. `booleanFlags` lists the value-less flags the caller
+ *        also accepts; they are supplied in code, never from argv.
+ * @returns {{ root: string | undefined, flags: Record<string, boolean> }}
+ *          `root` is the RAW string value, or `undefined` when the flag was
+ *          absent (the normal, unflagged invocation). `flags` carries one
+ *          `true` entry per declared boolean flag that actually appeared,
+ *          keyed by the flag token exactly as declared -- no name mangling,
+ *          so a reader of the call site and a reader of the lookup cannot
+ *          disagree about the key.
+ * @throws {Error} on ANY malformed form. Never warns, never continues, never
+ *         falls back to the default root.
+ */
+export function parseRootArg(argv, { script, booleanFlags = [] } = {}) {
+  if (typeof script !== "string" || script.length === 0) {
+    throw new Error(
+      "parseRootArg: `script` is required and must be a non-empty base name -- a rejection " +
+        "that cannot name the script it came from is not diagnosable, which is the whole " +
+        "point of rejecting.",
+    );
+  }
+
+  const usage = usageLine(script, booleanFlags);
+  const tokens = Array.isArray(argv) ? argv : [];
+
+  /** @type {string | undefined} */
+  let root;
+  /** @type {Record<string, boolean>} */
+  const flags = {};
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+
+    if (booleanFlags.includes(token)) {
+      flags[token] = true;
+      continue;
+    }
+
+    // The equals form is REJECTED rather than accepted, because the defect
+    // being fixed is an operator typo reaching a filesystem write: a parser
+    // that quietly understands a spelling the rest of the seam does not is
+    // how a mistyped root became an overwrite of the real repository.
+    if (token.startsWith("--root=")) {
+      throw new Error(
+        `${BAD} ${JSON.stringify(token)} uses the equals form. The space-separated spelling ` +
+          "`--root <dir>` is the ONLY accepted one. Write: node scripts/" +
+          `${script}.mjs --root ${JSON.stringify(token.slice("--root=".length))}. ${usage}`,
+      );
+    }
+
+    if (token !== "--root") {
+      throw new Error(`${BAD} unrecognised argument ${JSON.stringify(token)}. ${usage}`);
+    }
+
+    const value = tokens[i + 1];
+
+    // A following token that is itself a flag is a MISSING value, not a value.
+    // Treating `--root --json` as "root is --json" is exactly the kind of
+    // guess that turns a typo into a write against the wrong tree.
+    if (value === undefined || value.startsWith("--")) {
+      const why =
+        value === undefined
+          ? "the last argument"
+          : `followed by ${JSON.stringify(value)}, which is itself a flag`;
+      throw new Error(`${BAD} \`--root\` requires a directory, but it was ${why}. ${usage}`);
+    }
+
+    if (value === "") {
+      throw new Error(
+        `${BAD} \`--root\` was given an empty value. An empty string is not a directory, and ` +
+          "it is specifically NOT a request for the default root -- silently falling back to " +
+          `the default root is the defect this parser exists to remove. ${usage}`,
+      );
+    }
+
+    if (root !== undefined) {
+      throw new Error(
+        `${BAD} \`--root\` was given more than once: ${JSON.stringify(root)} and ` +
+          `${JSON.stringify(value)}. A repeated flag is rejected rather than resolved by ` +
+          "position, so no invocation's meaning depends on which copy the parser happened to " +
+          `keep. ${usage}`,
+      );
+    }
+
+    root = value;
+    i += 1;
+  }
+
+  return { root, flags };
 }
