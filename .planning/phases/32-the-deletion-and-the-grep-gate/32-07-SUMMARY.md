@@ -329,3 +329,10 @@ One finding recorded to `.planning/WINDOWS.md` (`deviation`, `scripts/audit-gate
 ---
 *Phase: 32-the-deletion-and-the-grep-gate*
 *Completed: 2026-08-31*
+
+## Self-Check: PASSED
+
+All three artifacts exist on disk (`32-07-SUMMARY.md`, `evidence/32-sweep-same-path-rows.md`,
+`guard-fates.json`); all four commits (`fa74f47`, `95e9b0c`, `d68ec96`, `6ca0bd4`) resolve in
+`git log`; the registry holds 36 rows; `git status --porcelain` is empty; `git diff
+--diff-filter=D dc26a11..HEAD` reports no deletions.
