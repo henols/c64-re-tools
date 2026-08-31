@@ -133,7 +133,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
 
 - [x] **CUT-02**: The grep gate's scope is chosen against measured blast radius and defended in both directions. 291 tracked files mention regenerator2000, **55 outside `.planning/`**, so ~236 legitimately keep the word permanently: a whole-tree gate produces 236 false fires and gets switched off, while the `toacme` precedent's real scope (`src/skills/` + `README.md` + `src/mcp/vice/` + `docs/stock-vice-parity.md`) is blind to `docs/`, `scripts/`, `installer/` and both tarballs. Proven by **three plants** — a `.ts`, a `docs/` file and a `scripts/` file — each observed biting
 - [x] **CUT-03**: The gate's exemption set carries its own **non-vacuity assertion**: deleting an attribution block must trip it. An exemption nothing can violate is not an exemption
-- [ ] **CUT-04**: Every guard and CI script pinned to the deleted subject has a recorded fate and none passes **vacuously** — measured mechanically at the v0.7.0 open, resolving the research documents'
+- [x] **CUT-04**: Every guard and CI script pinned to the deleted subject has a recorded fate and none passes **vacuously** — measured mechanically at the v0.7.0 open, resolving the research documents'
   disagreement: **32 test files** (19 `r2000-`named plus 13 non-`r2000-`named that
   reference it) and **11 files under `scripts/`**, not the 2 CI scripts first
   named — the extras include `scripts/lib/r2000-cli-verbs.mjs` and two `.d.mts`
@@ -143,7 +143,7 @@ text is superseded here rather than carried. `SEAM-*`, `MCP-*`, `EXPORT-*` and
   - **Why this requirement STAYED in Phase 32 when `CUT-01`, `CUT-02`, `CUT-03` and `CUT-05` were pulled forward into Phase 29 — a recorded decision, not an omission.** `CUT-04` is a **retrospective vacuity audit**, and its subject does not exist until the last guard has moved. Phase 29 re-pointed a large guard set — `hostpath-consumers.test.ts`'s module floor, `check-skill-tool-coverage.mjs`'s CLI-verb and skill-coverage floors, `anno-derivation.test.ts`'s manifest-versus-surface non-vacuity relation, the `docs-absorbed-decisions` / `audit-gate.mjs` pair, `check-skill-fork-honesty.mjs`'s re-pointed README assertion, and `spawn-seam.test.ts` re-pointed onto the emulator spawn seam — and proved each non-vacuous **individually, at the commit that moved it**, under that phase's own standing prohibition. What `CUT-04` adds is the **mechanical sweep over the whole set at once, measured after the dust settles**, which is a different check and one that cannot be run before the last guard has moved. Phase 32 is therefore the only place it can be honest, and **Phase 29 is the source of most of the guards it will audit** — this requirement's scope grew rather than shrank. Stated in agreement with the same reason recorded in `ROADMAP.md` § Phase 32's notes.
 
 - [x] **CUT-05**: `check-skill-fork-honesty.mjs:504`'s direct contradiction is resolved in one change — it asserts `acme-build/SKILL.md` still contains `"r2000 export-asm"`, so cleansing the skills fails its `need()` while keeping the string fires the new gate. The resolution names which side is correct
-- [ ] **CUT-06**: Every living document naming regenerator2000 as a **required prerequisite** is corrected — install documentation, `CLAUDE.md`'s three constraint bullets, `PROJECT.md`'s constraints and Key Decisions rows, `THIRD-PARTY-NOTICES.md`'s dual-licence notice (which remains true for the retained prose), and all seven skill playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
+- [x] **CUT-06**: Every living document naming regenerator2000 as a **required prerequisite** is corrected — install documentation, `CLAUDE.md`'s three constraint bullets, `PROJECT.md`'s constraints and Key Decisions rows, `THIRD-PARTY-NOTICES.md`'s dual-licence notice (which remains true for the retained prose), and all seven skill playbooks — because a skill pointing at a deleted route is worse than one pointing at nothing
 
 ## Held for v0.8.0
 
@@ -243,9 +243,9 @@ over them.
 | CUT-01 | Phase 29 | Complete |
 | CUT-02 | Phase 29 | Complete |
 | CUT-03 | Phase 29 | Complete |
-| CUT-04 | Phase 32 | Pending |
+| CUT-04 | Phase 32 | Complete |
 | CUT-05 | Phase 29 | Complete |
-| CUT-06 | Phase 32 | Pending |
+| CUT-06 | Phase 32 | Complete |
 
 **SIX ROWS MOVED TO PHASE 29 ON 2026-08-30, by `D-01` — MOVED, NOT DUPLICATED.** `D-01` put the deletion inside Phase 29 rather than Phase 32, and the re-pointing that had to precede it came with it. `REPOINT-01`, `REPOINT-02`, `CUT-01`, `CUT-02`, `CUT-03` and `CUT-05` therefore now map to **Phase 29**; Phases 31 and 32 no longer name them on their own `**Requirements**:` lines, so every requirement still maps to **exactly one** phase and this table remains what it says it is — the index over the roadmap's per-phase lines, not a second opinion about them. Phases 30 to 32 were **narrowed, not renumbered**: phase numbers are cited from tracked, guarded files, so a renumber rewrites every row while a narrow rewrites only the rows whose phase actually moved.
 

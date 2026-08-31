@@ -26,7 +26,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Blocking: the audited-guard fate gate near the end of this job derives
+      # its member set from the git object store at two pinned commits. The
+      # default `actions/checkout@v4` clone is SHALLOW (depth 1) and contains
+      # NEITHER of them, and that gate fails closed on a missing pinned object
+      # rather than degrading to a smaller, quietly-correct-looking set -- so
+      # this job needs full history. The other checkouts in this file belong to
+      # jobs that do not run the gate and stay shallow.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -233,6 +242,20 @@ jobs:
       # Phase 29 and were found only by driving the CLI by hand.
       - name: Validate documented anno CLI invocations argument-by-argument (REPOINT-01/02)
         run: node scripts/check-skill-cli-invocations.mjs
+
+      # Blocking (CUT-04): the previous milestone re-pointed a large set of
+      # guards off a subject it then deleted, and each move was proven
+      # non-vacuous one guard at a time, at the commit that moved it. Nothing
+      # swept the whole set afterwards. Without this gate a guard can silently
+      # drop out of the audited set -- a vacuous guard asserts nothing and is
+      # therefore GREEN, invisible to every other check here -- and the
+      # recorded fate of every audited member decays into unenforced prose.
+      # That is the 4f048bb failure mode: a milestone closed with a guard
+      # already red and nothing forcing anyone to notice. It runs against the
+      # full-history checkout at the top of this job, which the derivation
+      # requires.
+      - name: Validate every audited guard has a recorded, non-vacuous fate (CUT-04)
+        run: node scripts/check-guard-fates.mjs
 
       - name: Build installable package
         run: bash scripts/package.sh
