@@ -772,7 +772,18 @@ not exist until the last guard has moved.
   1. **Every guard and CI script pinned to the deleted subject has a recorded fate, and none passes vacuously — audited over the whole re-pointed set at once, retrospectively.** This is `CUT-04`, and it is the one cut requirement Phase 29 deliberately did **not** pull forward; see the note below for why. Each re-pointed guard's own planted violation is re-run against its **new** subject and observed red — a guard that cannot be made to fail has not been re-pointed. The three that went red **by construction** (`docs-linerefs`, `docs-dangling-refs`, and `docs-absorbed-decisions` — renamed from `docs-r2000-decisions` by plan 29-05, in the same commit as `scripts/audit-gate.mjs`'s registry entry, per `D-12`) were **pre-declared before the deletion**, so an unpredicted red stayed distinguishable from a predicted one, and each was discharged by rewriting content rather than by loosening the guard; this phase re-checks that judgement over the settled tree rather than re-taking it. `check-skill-fork-honesty.mjs`'s direct contradiction is **already resolved** — plan 29-09 named the *skill* as the side that moves, replacing the live `"r2000 export-asm"` instruction with a dated withdrawal notice and re-pointing the guard's positive check at that notice's literal (`CUT-05`, recorded against Phase 29).
   2. **No living document points a user at a deleted route** (`CUT-06`): install documentation, `CLAUDE.md`'s regenerator2000 constraint bullets and its `r2000_*` clause, `PROJECT.md`'s constraints and Key Decisions rows — including its already-stale `vice-proxy.ts` line citations and its `D-36` row's pointer at the **pre-rename** guard file name `docs-r2000-decisions.test.ts`, which no longer exists on disk — `ARCHITECTURE.md`'s Rule A21, `THIRD-PARTY-NOTICES.md`'s dual-licence notice — which **remains true** for the retained prose — and all seven skill playbooks. The **phase-close gate half** of this criterion (full `npm test` over the whole glob with the **broker stopped**, both `check-*.mjs` CI scripts, `docs/tool-support.md` byte-identical, and every `docs-*.test.ts` guard green — the last a precondition of recording any milestone-audit status, enforced by a real `PreToolUse` hook rather than by convention) was first carried out at **Phase 29's** close and is **re-run** here rather than established here.
 
-**Plans**: TBD
+**Plans**: 9 plans
+
+Plans:
+- [ ] 32-01-PLAN.md — TRACER: the fate machinery proven end-to-end on one audited-set member (registry, derive-from-disk guard, mutation harness, observed red, D-02's set reconciliation)
+- [ ] 32-02-PLAN.md — D-07's ordering boundary: `--root` added to the five audited scripts that lack it, plus the measured root-override inventory
+- [ ] 32-03-PLAN.md — CUT-06 part A: PROJECT.md's citations and `r2000_*` pointer, ARCHITECTURE.md's Rule A21 dated, and the removal gate's stale NUL-offset header
+- [ ] 32-04-PLAN.md — D-10: widen `docs-linerefs.test.ts` onto PROJECT.md with a per-document non-vacuity floor and a citation-aware bullet predicate
+- [ ] 32-05-PLAN.md — CUT-06 part B: the document sweep ledger, one verdict row per swept file, with the discussion-time numbers reconciled
+- [ ] 32-06-PLAN.md — The sweep, first half: plant descriptors and control-gated observed reds for the 16 renamed members
+- [ ] 32-07-PLAN.md — The sweep, second half: the 21 same-path members classified mechanically, with the `vice-proxy.test.ts` hang recorded rather than laundered
+- [ ] 32-08-PLAN.md — The 6 deleted rows, the 15 set-B rows, both deferred fates against their new triggers, and the fate guard taken green
+- [ ] 32-09-PLAN.md — D-16's named CI step with `fetch-depth: 0`, and D-12..D-15's close-gate re-run recorded with its broker state
 
 Notes:
 

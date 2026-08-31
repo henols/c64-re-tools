@@ -44,8 +44,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
 
 ### The fate ledger
 
-- **D-01 — The recorded fate lives in a committed registry with a
-  derive-from-disk guard, not in a one-time evidence document.** The guard
+- **D-01 — The recorded fate lives in a committed registry with a derive-from-disk guard, not in a one-time evidence document.** The guard
   derives the audited set from disk and fails if any member lacks a fate row.
   This follows `scripts/audit-gate.mjs`'s `D-12-07` — *"Do not hand-type a second
   list of guard file names anywhere else in this repo. The guard set below is
@@ -58,9 +57,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   — **Reversibility:** costly — the registry becomes an artifact later phases
   must keep fed, and its guard will red on any future guard rename.
 
-- **D-02 — The audited set is re-derived on the settled tree and then reconciled
-  against the requirement's historical list, with every addition and removal
-  given a reason.** `CUT-04`'s "**32 test files** … and **11 files under
+- **D-02 — The audited set is re-derived on the settled tree and then reconciled against the requirement's historical list, with every addition and removal given a reason.** `CUT-04`'s "**32 test files** … and **11 files under
   `scripts/`**" was measured at the v0.7.0 open, against a tree Phase 29's
   renames and deletions have since reshaped. Measured at discussion time: 126
   `*.test.*` files now sit in `src/mcp/vice/`, `scripts/lib/` is fully renamed to
@@ -71,8 +68,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   keeps both honest.
   — **Reversibility:** reversible.
 
-- **D-03 — A fate row records four fields: verdict, new subject, observed-red
-  evidence, and new removal trigger.** Verdict is one of `re-pointed`, `deleted`,
+- **D-03 — A fate row records four fields: verdict, new subject, observed-red evidence, and new removal trigger.** Verdict is one of `re-pointed`, `deleted`,
   `superseded`, `kept-unchanged`. "New subject" is what the guard now asserts
   against. "Observed-red evidence" is the raw command and its output. "New
   removal trigger" is required wherever a guard survives its own original removal
@@ -84,8 +80,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
 
 ### The vacuity proof
 
-- **D-04 — A committed, re-runnable mutation harness produces the observed-red
-  evidence, rather than a hand-worked transcript.** Per registry row it plants
+- **D-04 — A committed, re-runnable mutation harness produces the observed-red evidence, rather than a hand-worked transcript.** Per registry row it plants
   that guard's violation, runs only that guard, asserts a non-zero exit, and
   reverts. This is what makes the sweep a *measurement* rather than a transcript,
   which is precisely the increment `CUT-04` adds over Phase 29's per-commit
@@ -107,17 +102,13 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   against, and this repo's gate design deliberately carries no relaxation
   hatches (`audit-gate.mjs`, `D-12-14`).
 
-- **D-06 — Planted violations live in committed fixtures and the guard is pointed
-  at a synthetic tree; the real working tree is not mutated where that is
-  avoidable.** This is `audit-gate.mjs`'s existing `--root <dir>` pattern —
+- **D-06 — Planted violations live in committed fixtures and the guard is pointed at a synthetic tree; the real working tree is not mutated where that is avoidable.** This is `audit-gate.mjs`'s existing `--root <dir>` pattern —
   *"Testability comes from the `--root <dir>` CLI flag instead, which points this
   whole script at a synthetic tree without touching any real behaviour"* — and
   the shape `src/mcp/vice/fixtures/planted-removal-fixture.ts.txt` and
   `.md.txt` already follow.
 
-- **D-07 — Guards with no root override get one where the change is cheap and
-  self-contained; the rest fall back to guarded working-tree mutation with a
-  restore-on-exit handler.** **Ordering constraint:** any such `--root` addition
+- **D-07 — Guards with no root override get one where the change is cheap and self-contained; the rest fall back to guarded working-tree mutation with a restore-on-exit handler.** **Ordering constraint:** any such `--root` addition
   must land in a commit **before** the sweep measures that guard, never in the
   same change — the auditor must not be modifying the audited guard while
   measuring it.
@@ -125,8 +116,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
 
 ### The living-document sweep (`CUT-06`)
 
-- **D-08 — Only text that tells a reader to use, install or invoke a deleted
-  route is corrected. Everything historical stays byte-identical.** Measured at
+- **D-08 — Only text that tells a reader to use, install or invoke a deleted route is corrected. Everything historical stays byte-identical.** Measured at
   discussion time: 35 tracked non-`.planning` files still contain the literal
   `regenerator2000`, in three classes — dated findings documents
   (`docs/phase9-regenerator2000-probe-findings.md`,
@@ -146,8 +136,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   and 26 `r2000_` occurrences, which is exactly where a silent omission would
   bite.
 
-- **D-10 — `PROJECT.md`'s stale `vice-proxy.ts` line citations are repaired AND
-  brought under `docs-linerefs.test.ts`.** `CLAUDE.md`'s equivalents are already
+- **D-10 — `PROJECT.md`'s stale `vice-proxy.ts` line citations are repaired AND brought under `docs-linerefs.test.ts`.** `CLAUDE.md`'s equivalents are already
   mechanically checked; `PROJECT.md`'s are not, and CLAUDE.md's own bullet
   records that these numbers drift every phase. Widening the existing guard's
   scanned set is a small change to a guard this phase is auditing anyway — and it
@@ -164,8 +153,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
 
 ### The close-gate re-run
 
-- **D-12 — The whole-glob claim is honoured by `test:automated` to a real zero
-  plus `test:manual` worked file-by-file, and the union is the whole glob.** No
+- **D-12 — The whole-glob claim is honoured by `test:automated` to a real zero plus `test:manual` worked file-by-file, and the union is the whole glob.** No
   single local command produces it: `npm test` is `node --test '*.test.*'` over
   the full glob including nine `MANUAL_ONLY_TESTS`
   (`src/mcp/vice/test-gate.mjs:95-104`), one of which hangs locally and six of
@@ -175,15 +163,13 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   timeout runner was rejected — a new runner inside an auditing phase, whose
   results would match neither existing npm script.
 
-- **D-13 — Broker-down is an asserted, recorded precondition of the gate run, not
-  a prose instruction and not a scripted kill.** The run checks the broker is
+- **D-13 — Broker-down is an asserted, recorded precondition of the gate run, not a prose instruction and not a scripted kill.** The run checks the broker is
   down before starting and records that state beside the results, so a red is
   never ambiguous between a real failure and a live broker. A scripted stop was
   rejected: the broker runs as a systemd unit in this project, and an audit
   script that tears down the developer's environment is the wrong shape.
 
-- **D-14 — The evidence cites CI's whole-glob green AND the local legs, and
-  states the SKIP nuance plainly.** `.github/workflows/ci.yml:130-161` already
+- **D-14 — The evidence cites CI's whole-glob green AND the local legs, and states the SKIP nuance plainly.** `.github/workflows/ci.yml:130-161` already
   runs `npm test` — the **full** glob, deliberately, decided from run
   32517575905 (2026-08-21) — and records that all nine manual-only files reach
   their default-SKIP branches on the runner. So CI's green proves they **did not
@@ -192,16 +178,14 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   which is the exact shape of claim this milestone has already had to correct
   once.
 
-- **D-15 — The evidence artifact carries raw commands, raw output, broker state
-  and the commit measured** — under the phase's `evidence/` directory, matching
+- **D-15 — The evidence artifact carries raw commands, raw output, broker state and the commit measured** — under the phase's `evidence/` directory, matching
   how `29-21-SUMMARY.md` recorded its measurements. That is the record this
   milestone's provenance corrections were able to **re-derive from**; a summary
   table of exit codes is not.
 
 ### Wiring the new artifacts
 
-- **D-16 — The fate-registry guard gets its own named CI step and its own file
-  name, and stays OUT of `src/mcp/vice/package.json`'s `scripts` block.**
+- **D-16 — The fate-registry guard gets its own named CI step and its own file name, and stays OUT of `src/mcp/vice/package.json`'s `scripts` block.**
   `audit-gate.mjs`'s `D-12-11` states the prohibition and its reason: guard files
   must be invoked directly, as their own file names, never through the broader
   automated-suite entry point. It sits alongside the six existing named steps
