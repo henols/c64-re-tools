@@ -141,8 +141,8 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **9 open** pending todos (it read 0 at the
-v0.4.0 close; all nine were filed after it); the suppressed/acknowledged rows are
+The Deferred Items ledger below reads **10 open** pending todos (it read 0 at the
+v0.4.0 close; all ten were filed after it); the suppressed/acknowledged rows are
 recorded in their own sections.
 
 ## Current Position
@@ -1233,9 +1233,10 @@ by `.planning/quick/260823-kf6`.
 | docs | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability | major | Pending |
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
+| audit | 2026-08-31-phase-32-review-twenty-five-open-findings | blocker | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
-close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28), the first of
+close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31), the first of
 them the first pending todo since Phase 17 plan 17-01 emptied the tree. Two rows
 filed on 2026-08-29 (`uat-unverified-disposition`, `reopen-phase-28-uat-false-passes`)
 were removed the same day: both are complete on disk under
