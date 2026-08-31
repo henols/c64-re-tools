@@ -1,0 +1,48 @@
+{
+  "auditCommit": "0394cbc",
+  "auditEnd": "345d5c4",
+  "setAFloor": 43,
+  "setBFloor": 16,
+  "setCFloor": 2,
+  "totalFloor": 61,
+  "derivationNote": "Set A is derived over `git ls-tree -r --full-tree --name-only 0394cbc -- src/mcp/vice scripts`: an in-scope test path whose basename carries the subject prefix or whose content at that commit mentions the subject, or any `scripts/` path whose path or content mentions it. Set B is derived over `git diff --name-only --diff-filter=A 0394cbc 345d5c4`, restricted to in-scope test paths, the planted-fixture prefix and `scripts/`, matched on the same subject predicate, then reduced by the adjacency subtraction that removes every path already claimed as a set-A member's mechanically-derived successor. Set C is parsed out of `.planning/ROADMAP.md`'s Phase 32 deferred-fates note. Every member path is derived; none is typed by hand.",
+  "rows": [
+    {
+      "historicalPath": "src/mcp/vice/r2000-verb-coverage.test.ts",
+      "verdict": "re-pointed",
+      "newSubject": "src/mcp/vice/anno-verb-coverage.test.ts",
+      "removalTrigger": "The anno CLI verb table ceasing to be the skill playbooks' documented surface. While the playbooks document the verbs, this guard is the only thing that fails when a verb is added to the CLI and never documented; once the playbooks stop naming verbs at all, the guard is asserting a relation nobody depends on and should be removed with the last verb reference.",
+      "plant": {
+        "kind": "worktree",
+        "file": "scripts/lib/anno-cli-verbs.mjs",
+        "find": "ANNO_CLI_VERB_FLOOR = 3",
+        "replace": "ANNO_CLI_VERB_FLOOR = 4"
+      },
+      "guard": {
+        "argv": [
+          "--test",
+          "anno-verb-coverage.test.ts"
+        ],
+        "cwd": "src/mcp/vice"
+      },
+      "observedRed": {
+        "command": "node --test anno-verb-coverage.test.ts",
+        "cwd": "src/mcp/vice",
+        "plant": {
+          "kind": "worktree",
+          "file": "scripts/lib/anno-cli-verbs.mjs",
+          "find": "ANNO_CLI_VERB_FLOOR = 3",
+          "replace": "ANNO_CLI_VERB_FLOOR = 4"
+        },
+        "exitStatus": 1,
+        "excerpt": "not ok 5 - non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it\n  ---\n  duration_ms: 2.145079\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-adc0e44067665a83e/src/mcp/vice/anno-verb-coverage.test.ts:184:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    4 !== 3\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 3\n  actual: 4\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-adc0e44067665a83e/src/mcp/vice/anno-verb-coverage.test.ts:185:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1047:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:744:18)\n    Test.postRun (node:internal/test_runner/test:1173:19)\n    Test.run (node:internal/test_runner/test:1101:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)\n  ...\n# Subtest: the CI script's live execution path: `node scripts/check-skill-tool-coverage.mjs` exits 0 with 'OK' in stdout\nnot ok 6 - the CI script's live execution path: `node scripts/check-skill-tool-coverage.mjs` exits 0 with 'OK' in stdout\n  ---\n  duration_ms: 394.730146\n  type: 'test'\n  location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-adc0e44067665a83e/src/mcp/vice/anno-verb-coverage.test.ts:191:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    expected exit 0, got 1. stderr: check-skill-tool-coverage: FAIL\n      - non-vacuity: expected at least 4 anno CLI verbs parsed from anno-cli.ts's dispatch switch, got 3 -- the parser or the switch statement itself may be broken\n    \n    \n    1 !== 0\n    \n  code: 'ERR_ASSERTION'",
+        "control": {
+          "command": "node --test anno-verb-coverage.test.ts",
+          "cwd": "src/mcp/vice",
+          "exitStatus": 0,
+          "excerpt": "TAP version 13\n# Subtest: real-source parse: anno-cli.ts's dispatch switch yields exactly the 3 known verbs, never 'default'\nok 1 - real-source parse: anno-cli.ts's dispatch switch yields exactly the 3 known verbs, never 'default'\n  ---\n  duration_ms: 10.088603\n  type: 'test'\n  ...\n# Subtest: positive control: every real verb is named by at least one real skill file (the Task 1 property, restated mechanically)\nok 2 - positive control: every real verb is named by at least one real skill file (the Task 1 property, restated mechanically)\n  ---\n  duration_ms: 11.260547\n  type: 'test'\n  ...\n# Subtest: planted violation: an extra, genuinely new case is parsed and reported missing, while a real, documented verb is not\nok 3 - planted violation: an extra, genuinely new case is parsed and reported missing, while a real, documented verb is not\n  ---\n  duration_ms: 3.731793\n  type: 'test'\n  ...\n# Subtest: comment hygiene: a case hidden in a block comment or a line comment is never parsed as a verb\nok 4 - comment hygiene: a case hidden in a block comment or a line comment is never parsed as a verb\n  ---\n  duration_ms: 0.310203\n  type: 'test'\n  ...\n# Subtest: non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it\nok 5 - non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it\n  ---\n  duration_ms: 1.891102\n  type: 'test'\n  ...\n# Subtest: the CI script's live execution path: `node scripts/check-skill-tool-coverage.mjs` exits 0 with 'OK' in stdout\nok 6 - the CI script's live execution path: `node scripts/check-skill-tool-coverage.mjs` exits 0 with 'OK' in stdout\n  ---\n  duration_ms: 295.039196\n  type: 'test'\n  ...\n# Subtest: a verb the CLI actually dispatches is never documented as withdrawn, in either skill tree\nok 7 - a verb the CLI actually dispatches is never documented as withdrawn, in either skill tree\n  ---"
+        }
+      }
+    }
+  ]
+}
