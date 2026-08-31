@@ -107,6 +107,26 @@ jobs:
           fi
           echo "scaffold assembled: ${PRG} loads at \$0801"
 
+      # Phase 31 gap closure (31-04, verification gap 1 / code review CR-01):
+      # `installer/skills/` is a GENERATED, GITIGNORED tree -- `git ls-files
+      # installer/skills` returns 0 -- and its ONE producer is
+      # `installer/scripts/sync-skills.mjs`, the exact command the installer
+      # package's own `prepack` hook runs. This step reuses that single
+      # producer rather than introducing a second sync path.
+      #
+      # IT MUST STAY ORDERED BEFORE `Test`. The two steps further down that
+      # also materialise the tree (`Validate npm package contents` via
+      # check-npm-packages.mjs's packFiles(), and the removal gate) run AFTER
+      # the suite and are therefore too late to help it. The specific defect
+      # this closes: `src/mcp/vice/skill-attribution.test.ts` carries the one
+      # guard in this repository that scores the two ABS-02 naming lines
+      # across BOTH skill trees, and in CI the shipped tree did not exist when
+      # it ran -- so it scored ONE tree and reported a clean pass with zero
+      # skips, which is indistinguishable from having scored two.
+      - name: Generate the shipped skills tree (scored by skill-attribution.test.ts)
+        working-directory: installer
+        run: node scripts/sync-skills.mjs
+
       - name: Test
         working-directory: src/mcp/vice
         env:

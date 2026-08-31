@@ -45,7 +45,7 @@
 // capability's trigger vocabulary reaches one. The section body may -- must --
 // use those words; only descriptions are policed.
 //
-// NON-VACUITY, five ways, because each covers a different way this file
+// NON-VACUITY, six ways, because each covers a different way this file
 // could rot into a no-op:
 //   1. The registry's own length is asserted non-zero, so an emptied registry
 //      FAILS rather than passing with nothing to check.
@@ -62,6 +62,17 @@
 //      FAILS instead of leaving an unattributed file unchecked.
 //   5. The deferred-BASIC phrase set is asserted non-empty AND proven to bite
 //      on a planted description, also held only in memory.
+//   6. The two ABS-02 naming lines are scored per BLOCK across BOTH skill
+//      trees, and that scoring is proven to bite on one-byte plants held only
+//      in memory -- including two BOUNDARY plants that jam a naming line onto
+//      a block's opening or closing line. This is the ONE guard in this file
+//      that reads `installer/skills/` as well as `src/skills/` -- see the
+//      block comment beside `ABS02_ADAPTED_LINE` for why. That shipped tree is
+//      generated and gitignored, so the CI step named `Generate the shipped
+//      skills tree (scored by skill-attribution.test.ts)` in
+//      `.github/workflows/ci.yml`, ordered before the `Test` step, is what
+//      makes the shipped half reachable where this guard runs unattended; and
+//      no root may go unscored in silence -- see `emptyRootVerdict()`.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Do not replace the registry with a corpus scan for "files containing an
@@ -364,16 +375,72 @@ function namingLineCountsIn(text: string): NamingLineCounts {
   return { adapted, repository };
 }
 
-/** THE EMPTY-ROOT CLASSIFIER, a named predicate rather than an inline
- * condition so both of its branches can be asserted directly instead of only
- * being exercised incidentally by whichever tree happens to exist.
+/** A root's scan verdict: whether it may go unscored, and the specific reason
+ * either way. The reason is not decoration -- it is what the diagnostic and
+ * the failure message below both print, so a run that scored one tree says so
+ * in its own output. */
+interface EmptyRootVerdict {
+  readonly skippable: boolean;
+  readonly reason: string;
+}
+
+/** Everything the verdict needs to know about the world, passed IN rather than
+ * read inside. That is the whole point of the shape: every branch below can be
+ * asserted deterministically on any machine, instead of only the one branch
+ * whichever tree happens to exist locally exercises. */
+interface EmptyRootProbe {
+  /** Does the root directory exist on disk at all? */
+  readonly rootExists: boolean;
+  /** Is this an automated CI run? */
+  readonly ci: boolean;
+}
+
+/** THE EMPTY-ROOT VERDICT, a named function rather than an inline condition so
+ * every one of its branches can be asserted directly instead of only being
+ * exercised incidentally by whichever tree happens to exist.
  *
- * True ONLY for a zero-file SHIPPED root: a fresh clone has never run the
- * installer's `prepack`, so the generated tree legitimately does not exist yet.
- * A zero-file SOURCE root is never skippable -- that is a traversal that
- * silently shrank to nothing, and it must fail. */
-function skippableEmptyRoot(root: string, fileCount: number): boolean {
-  return fileCount === 0 && root === SKILL_ATTRIBUTION_SHIPPED_ROOT;
+ * REPLACES `skippableEmptyRoot(root, fileCount)`, the boolean predicate plan
+ * 31-02 committed and `31-VERIFICATION.md` gap 1 cites by that name. Two
+ * things were wrong with a boolean, and the shape change fixes both:
+ *
+ *   - A bare `true` carried no reason, so the caller's `continue` was silent.
+ *     A run that scored ONE tree was byte-identical in its output to a run
+ *     that scored two -- an unfalsifiable record, which is the repudiation
+ *     this guard exists to prevent. Every verdict now carries a specific,
+ *     non-empty sentence, and the caller prints it.
+ *   - It keyed the skip on EMPTINESS (`fileCount === 0`), so a shipped root
+ *     that EXISTS but yields nothing -- an interrupted or half-run sync --
+ *     read as "never generated". The skip is now keyed on ABSENCE (code
+ *     review WR-01).
+ *
+ * `probe` is explicit for the reason stated on `EmptyRootProbe`: nothing here
+ * calls `existsSync` or reads `process.env`. */
+function emptyRootVerdict(root: string, fileCount: number, probe: EmptyRootProbe): EmptyRootVerdict {
+  if (fileCount > 0) {
+    return { skippable: false, reason: `${root} yielded ${fileCount} SKILL.md file(s) and was scanned in full` };
+  }
+  if (root !== SKILL_ATTRIBUTION_SHIPPED_ROOT) {
+    return {
+      skippable: false,
+      reason: `${root} is the SOURCE tree, which is never optional -- a source traversal that shrank to zero is a failure, not an absence`,
+    };
+  }
+  if (probe.ci) {
+    return {
+      skippable: false,
+      reason: `${root} is absent under CI, where an explicit workflow step materialises it before the suite runs -- an absent tree here means that step did not run, and letting the skip fire in CI is what made the two-tree half of this guard vacuous exactly where it gates`,
+    };
+  }
+  if (probe.rootExists) {
+    return {
+      skippable: false,
+      reason: `${root} EXISTS but yields no SKILL.md -- that is an interrupted or partial sync, not an un-run one, so it must fail rather than skip`,
+    };
+  }
+  return {
+    skippable: true,
+    reason: `${root} does not exist: a fresh clone has never run the installer's prepack, so the generated tree legitimately is not there yet. Skipping it is safe ONLY because it is a pure copy of the source tree, which was just scanned in full`,
+  };
 }
 
 // ===========================================================================
@@ -765,12 +832,12 @@ test("the absence predicate bites on a planted re-insertion", () => {
 // exists, why it is the one place this file reads both trees, why every count
 // is a relation or a floor, and why nothing here asserts adjacency.
 //
-// ROT GUARD 6 for this file (the header enumerates five; this is the sixth).
+// ROT GUARD 6 for this file, enumerated as item 6 in the header above.
 // Its planted-violation proof is the NEXT test -- the one-character mutation --
 // so the file's header doctrine and its body stay in agreement: no predicate in
 // this file is trusted without a plant that proves it bites.
 
-test("both skill trees carry the ABS-02 naming lines byte-identically, in equal numbers", () => {
+test("both skill trees carry the ABS-02 naming lines byte-identically, in equal numbers", (t) => {
   // Non-vacuity for the constants themselves: an emptied constant must FAIL
   // rather than make every comparison below trivially true.
   // The derived upstream name is the one piece of these constants that is
@@ -809,43 +876,82 @@ test("both skill trees carry the ABS-02 naming lines byte-identically, in equal 
   );
   assert.ok(ABS02_BLOCKS_PER_TREE_FLOOR > 0, "ABS02_BLOCKS_PER_TREE_FLOOR is not positive -- a zero floor is no floor");
 
-  // Non-vacuity for the empty-input edge: BOTH branches of the classifier are
-  // asserted directly, so a corpus that silently shrank to zero cannot pass by
-  // taking the skip branch, and the skip branch cannot rot into "skip
-  // everything".
+  // Non-vacuity for the empty-input edge: ALL FIVE branches of the verdict are
+  // asserted directly, from an INJECTED probe, so none of them depends on
+  // whether the generated shipped tree happens to exist on the machine running
+  // this suite. A corpus that silently shrank to zero cannot pass by taking the
+  // skip branch, and the skip branch cannot rot into "skip everything".
+  const absentOutsideCi = emptyRootVerdict(SKILL_ATTRIBUTION_SHIPPED_ROOT, 0, { rootExists: false, ci: false });
+  const absentUnderCi = emptyRootVerdict(SKILL_ATTRIBUTION_SHIPPED_ROOT, 0, { rootExists: false, ci: true });
+  const existsButEmpty = emptyRootVerdict(SKILL_ATTRIBUTION_SHIPPED_ROOT, 0, { rootExists: true, ci: false });
+  const emptySource = emptyRootVerdict(SKILL_ATTRIBUTION_SOURCE_ROOT, 0, { rootExists: true, ci: false });
+  const nonEmptyShipped = emptyRootVerdict(SKILL_ATTRIBUTION_SHIPPED_ROOT, 1, { rootExists: true, ci: false });
   assert.equal(
-    skippableEmptyRoot(SKILL_ATTRIBUTION_SHIPPED_ROOT, 0),
+    absentOutsideCi.skippable,
     true,
-    "a zero-file SHIPPED root must be skippable -- a fresh clone has never run the installer's prepack"
+    "an ABSENT shipped root outside CI must be skippable -- a fresh clone has never run the installer's prepack"
   );
   assert.equal(
-    skippableEmptyRoot(SKILL_ATTRIBUTION_SOURCE_ROOT, 0),
+    absentUnderCi.skippable,
+    false,
+    "an absent shipped root UNDER CI must NOT be skippable -- CI materialises it in an explicit step, so absence there means that step did not run"
+  );
+  assert.equal(
+    existsButEmpty.skippable,
+    false,
+    "a shipped root that EXISTS but yields no SKILL.md must NOT be skippable -- that is an interrupted sync, not an absent tree (WR-01)"
+  );
+  assert.equal(
+    emptySource.skippable,
     false,
     "a zero-file SOURCE root must NOT be skippable -- that is a traversal that shrank to nothing"
   );
   assert.equal(
-    skippableEmptyRoot(SKILL_ATTRIBUTION_SHIPPED_ROOT, 1),
+    nonEmptyShipped.skippable,
     false,
     "a NON-empty shipped root must not be skippable -- the skip is for absence, not for convenience"
   );
+  // ... and every one of those verdicts must carry a real reason. An empty
+  // reason would take the diagnostic's whole meaning with it while every
+  // `skippable` assertion above still passed.
+  for (const [label, verdict] of [
+    ["absent outside CI", absentOutsideCi],
+    ["absent under CI", absentUnderCi],
+    ["exists but empty", existsButEmpty],
+    ["empty source", emptySource],
+    ["non-empty shipped", nonEmptyShipped],
+  ] as const) {
+    assert.ok(
+      verdict.reason.trim().length > 0,
+      `the "${label}" verdict carries an empty reason -- the recorded-reason ledger and the diagnostic both print it`
+    );
+  }
 
   const offenders: string[] = [];
   const totals = new Map<string, { blocks: number; adapted: number; repository: number }>();
+  /** The recorded-reason ledger behind the loud skip: every declared root that
+   * went unscored, with the verdict's own sentence. A bare `continue` with no
+   * record is what made a one-tree run indistinguishable from a two-tree one. */
+  const unscoredRoots: string[] = [];
 
   for (const root of SKILL_ATTRIBUTION_ROOTS) {
     // The already-imported corpus walker, filtered the same way this file
     // already filters at the deferred-BASIC test. No second walker is derived
     // -- that is the WR-12 lesson `scripts/lib/skill-corpus.mjs` exists for.
     const files = walkSkills(root).filter((f) => f.endsWith("SKILL.md"));
-    if (skippableEmptyRoot(root, files.length)) {
-      // A fresh clone has never run the installer's prepack, so the generated
-      // tree legitimately does not exist yet. Skipping it is safe ONLY because
-      // it is a pure copy of the source tree, which was just scanned in full.
+    const verdict = emptyRootVerdict(root, files.length, {
+      rootExists: existsSync(root),
+      ci: Boolean(process.env.CI),
+    });
+    if (verdict.skippable) {
+      unscoredRoots.push(`${relative(ROOT, root)}: ${verdict.reason}`);
+      t.diagnostic(`ABS-02 naming lines: root ${relative(ROOT, root)} NOT scored -- ${verdict.reason}`);
       continue;
     }
     // Non-vacuity, per root: a scan whose corpus silently shrank to zero
-    // passes everything. The SOURCE root must always really have been read.
-    assert.ok(files.length > 0, `no SKILL.md found under ${root} -- the scanned set shrank to zero`);
+    // passes everything. The verdict's own reason is the failure message, so
+    // the run says WHY this root could not be skipped.
+    assert.ok(files.length > 0, verdict.reason);
 
     let blocks = 0;
     let adapted = 0;
@@ -871,6 +977,23 @@ test("both skill trees carry the ABS-02 naming lines byte-identically, in equal 
     }
     totals.set(root, { blocks, adapted, repository });
   }
+
+  // UNCONDITIONAL, and that is the point: a one-tree run must say so in its
+  // own output rather than looking identical to a two-tree run. Printed
+  // whether or not anything was skipped.
+  const scoredRoots = [...totals.keys()].map((root) => relative(ROOT, root));
+  t.diagnostic(
+    `ABS-02 naming lines: scored ${scoredRoots.length} of ${SKILL_ATTRIBUTION_ROOTS.length} declared root(s) ` +
+      `[${scoredRoots.join(", ")}]; ${unscoredRoots.length} unscored`
+  );
+  // Every declared root is either scored or recorded as skipped. A root that is
+  // neither is a silence, and a silence is what gap 1 was.
+  assert.equal(
+    totals.size + unscoredRoots.length,
+    SKILL_ATTRIBUTION_ROOTS.length,
+    `${totals.size} root(s) scored + ${unscoredRoots.length} recorded as unscored does not account for all ` +
+      `${SKILL_ATTRIBUTION_ROOTS.length} declared roots -- a root that is neither scored nor recorded went unnoticed`
+  );
 
   assert.deepEqual(
     offenders,
