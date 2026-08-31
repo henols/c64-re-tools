@@ -290,10 +290,13 @@ export function isInsideAttributionBlock(text, line) {
  * A skill playbook's ABS-02 attribution header is the CUT-03 class exactly:
  * prose that legitimately keeps the upstream project's name forever, naming an
  * UPSTREAM PROJECT rather than this repository's integration of it, and which
- * ROADMAP Phase 31 criterion 4 requires to survive the re-pointing with its
- * two naming lines byte-identical. It is not a route and no plan discharges
- * it, so it is a permanent exemption rather than an allow-list entry a later
- * plan would have to discharge by deleting an attribution.
+ * ROADMAP Phase 31 criterion 1 requires to survive the re-pointing with its
+ * two naming lines byte-identical. (Cited as criterion 4 until 2026-08-30,
+ * when `D-01` narrowed Phase 31 to two criteria and this clause became the
+ * first of them -- the number moved, the requirement did not.) It is not a
+ * route and no plan discharges it, so it is a permanent exemption rather than
+ * an allow-list entry a later plan would have to discharge by deleting an
+ * attribution.
  *
  * ANCHORED ON THE SAME MARKER `skill-attribution.test.ts` USES -- the
  * `ATTRIBUTION (ABS-02)` opener up to that HTML comment's own `-->` close --
@@ -520,8 +523,10 @@ const EXEMPTION_CLASSES = [
     id: "skill-attribution-headers",
     why:
       "the ABS-02 attribution headers in the absorbed skill playbooks -- the CUT-03 class, naming an UPSTREAM " +
-      "PROJECT rather than this repository's integration of it, required by ROADMAP Phase 31 criterion 4 to " +
-      "survive the re-pointing with their two naming lines byte-identical. BLOCK-scoped on the same " +
+      "PROJECT rather than this repository's integration of it, required by ROADMAP Phase 31 criterion 1 to " +
+      "survive the re-pointing with their two naming lines byte-identical (cited as criterion 4 until " +
+      "2026-08-30, when `D-01` narrowed Phase 31 to two criteria and this clause became the first of them -- " +
+      "the number moved, the requirement did not). BLOCK-scoped on the same " +
       "`ATTRIBUTION (ABS-02)` marker skill-attribution.test.ts anchors on: an occurrence inside a header is " +
       "exempt, the same occurrence one line outside one is not. Opened 2026-08-29 by plan 29-09, which removed " +
       "every LIVE mention from these files and left only the headers -- so these entries replace temporary " +
