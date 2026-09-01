@@ -359,26 +359,73 @@ export function plant(root, row) {
   // `replace` form already occurs once elsewhere in the same file, so an HONEST
   // descriptor computed 2 and threw. That aborted every whole-set sweep at that
   // row and, worse, told the operator to edit the recorded evidence to satisfy
-  // the check. The count is now INTRODUCED occurrences -- post-mutation minus
-  // pre-existing -- which is the quantity the assertion always meant. The
-  // narrowing costs nothing: a `replace` that never reaches the mutated text
-  // still computes 0 and a write that introduces it more than once still
-  // computes > 1, and both still throw before any byte is written.
-  const preExisting = text.split(descriptor.replace).length - 1;
-  const afterMutation = mutated.split(descriptor.replace).length - 1;
-  const introduced = afterMutation - preExisting;
-  if (introduced !== 1) {
+  // the check. The count became INTRODUCED occurrences -- post-mutation minus
+  // pre-existing -- which is the quantity the assertion always meant.
+  //
+  // CR-09 (2026-09-01, plan 32-21): AND THAT SECOND FORM WAS BLIND IN ITS TURN.
+  // A subtraction of whole-file TOTALS cannot see a replacement that textually
+  // OVERLAPS its own pre-existing occurrence: the two share bytes rather than
+  // merely coinciding in value, so the total does not move and the difference
+  // comes out 0. The measured case is the committed row
+  // `src/mcp/vice/hop-chain-comments.test.ts`, which plants into
+  // `src/mcp/vice/absorbed-answer-key.test.ts` with a recorded replacement equal
+  // to its recorded `find` with one newline prepended. Measured: `find` occurs
+  // 1 time, the replacement occurs 1 time BEFORE the mutation and 1 time AFTER
+  // it, the difference is 0 -- and the mutation is REAL, changing the file by
+  // exactly +1 byte. So an HONEST descriptor was REFUSED; and because a refused
+  // plant sets the run's hard-failure flag, the whole-set registry write-back
+  // could not be reached at all while that row stood.
+  //
+  // WHERE THAT DEFECT CAME FROM, recorded rather than quietly corrected. The
+  // sentence that used to close the paragraph above -- asserting that the
+  // narrowing to introduced occurrences was free of cost -- was adopted VERBATIM
+  // from round 2's own gap text, which promised the overlap case was still
+  // caught by that form. It was not caught; it was REFUSED. The defect is
+  // INHERITED from the gap text rather than invented by the executor who applied
+  // it, and it was that executor who found it, recorded it in this file's own
+  // refusal comment and filed it as an open `unmet-truth` (`.planning/WINDOWS.md`
+  // entry 35) before any review existed. The sentence is DELETED rather than
+  // reworded, and it is deliberately not re-quoted here, because this file's own
+  // census greps for it.
+  //
+  // THE PER-SITE FORM BELOW IS EXACT UNDER OVERLAP. It stops counting totals and
+  // measures the introduction AT ITS SITE, from two facts that hold for an
+  // overlapping and a non-overlapping replacement alike: the mutated text begins
+  // with the recorded replacement at the unique match position, and the length
+  // delta is exactly the replacement's length minus the find's. Both are
+  // computed BEFORE any byte is written and both remain HARD throws.
+  //
+  // AND IT IS NOT A TAUTOLOGY, though a reader could reasonably suspect one.
+  // While the substitution goes through a replacer FUNCTION both facts hold BY
+  // CONSTRUCTION -- which is the point rather than an objection, because the
+  // check is a standing PIN on the CR-02 fix immediately above it. Revert that
+  // fix to a replacement STRING, and give a descriptor a replacement carrying a
+  // match-substitution pattern, and the position assertion goes FALSE while the
+  // length delta diverges from the expected one, so this post-condition is what
+  // reports the regression. The standing guard is the `substitution-is-verbatim`
+  // case in `src/mcp/vice/audit-harness-restore.test.ts`, watched failing
+  // against exactly that reverted form before it was trusted.
+  //
+  // The occurrence check above has already asserted that `find` matches exactly
+  // once, so the position below is unique BY CONSTRUCTION. It is taken with the
+  // literal index-of operation and never with a regular expression: a pattern
+  // here would reopen the very interpretation hole CR-02 closed.
+  const matchIndex = text.indexOf(descriptor.find);
+  const expectedLengthDelta = descriptor.replace.length - descriptor.find.length;
+  const actualLengthDelta = mutated.length - text.length;
+  const landedAtMatchIndex = mutated.startsWith(descriptor.replace, matchIndex);
+  if (!landedAtMatchIndex || actualLengthDelta !== expectedLengthDelta) {
     throw new Error(
       `row ${row.historicalPath}: plant post-condition FAILED for ${descriptor.file} -- the ` +
-        `recorded \`replace\` string occurs ${preExisting} time(s) in that file BEFORE the ` +
-        `mutation and ${afterMutation} time(s) after it, so the mutation would INTRODUCE it ` +
-        `${introduced} time(s); exactly 1 is required. A mismatch means the bytes this harness ` +
-        "would write are not the bytes this row records, so the row would promise a reader a " +
-        "hand-reproducible find/replace that does not reproduce. Nothing was written. The three " +
-        "counts are reported separately so the divergence can be located: whether the " +
-        "replacement reaches the mutated text at all, whether the write lands it more than " +
-        "once, and how many times it was already present independently of this mutation " +
-        "(CR-02, CR-06).",
+        "recorded `replace` string did not land verbatim at the unique match position. At index " +
+        `${matchIndex} the mutated text ${landedAtMatchIndex ? "DOES" : "does NOT"} begin with ` +
+        `the recorded replacement, and the mutation changes the text by ${actualLengthDelta} ` +
+        `character(s) where an exact substitution would change it by ${expectedLengthDelta}. ` +
+        "Either fact failing means the bytes this harness would write are not the bytes this row " +
+        "records -- the CR-02 divergence class -- so the row would promise a reader a " +
+        "hand-reproducible find/replace that does not reproduce. Nothing was written. Do NOT " +
+        "edit the recorded evidence to satisfy this check: the descriptor is the record and the " +
+        "instrument is what moves (CR-02, CR-06, CR-09).",
     );
   }
 
