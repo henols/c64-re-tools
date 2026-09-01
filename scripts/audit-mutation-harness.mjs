@@ -524,7 +524,33 @@ function measureRow(root, row, baseline) {
   }
 
   // 2. Plant.
-  const planted = plant(root, row);
+  //
+  // A REFUSED plant is a HARD FAILURE of the run, and it stays one: nothing was
+  // written (every throw in `plant()` fires before the write), the registry
+  // write-back is suppressed, and the process still exits 1. What changed is its
+  // BLAST RADIUS. Thrown out of the row loop, one bad descriptor aborted the
+  // whole sweep at its own index and left every later row unmeasured AND
+  // unreported -- so a whole-set run could never complete, and the state of the
+  // other 60 rows was hidden behind the first refusal (IN-10; and measured again
+  // in plan 32-15, where a THIRD row -- `src/mcp/vice/hop-chain-comments.test.ts`,
+  // whose `replace` is its own `find` prefixed with a newline, so the introduced
+  // occurrence textually OVERLAPS the pre-existing one and the difference comes
+  // out 0 -- aborted the sweep even after the post-condition arithmetic was
+  // corrected). Reported against the row instead, with the refusal's own message
+  // carried verbatim. The assertion is not weakened and the row is not skipped:
+  // it is attempted, refused, and named.
+  let planted;
+  try {
+    planted = plant(root, row);
+  } catch (err) {
+    report.failed = true;
+    report.plantRefused = true;
+    report.reason =
+      "the plant descriptor was REFUSED before any byte was written, so no guard run was " +
+      `attempted for this row and no evidence can be recorded from it: ${err?.message ?? String(err)}`;
+    report.control = control;
+    return report;
+  }
   let planted_run;
   try {
     // 3. Run only that guard.
@@ -686,6 +712,22 @@ function evidenceMarkdown({ root, reports, baseline, after, measuredAt }) {
       lines.push(`**HARNESS FAILURE.** ${report.reason}`);
       lines.push("");
     }
+    // A refused plant has a green control and NO planted run. Render what exists
+    // rather than dereferencing a run that was never made.
+    if (report.plantRefused) {
+      lines.push(`Control command: \`${report.control.command}\` (cwd \`${report.control.cwd}\`)`);
+      lines.push(`Control exit status: \`${report.control.status}\` (must be 0)`);
+      lines.push("");
+      lines.push("Raw control output:");
+      lines.push("");
+      lines.push("\`\`\`");
+      lines.push(`${report.control.stdout}\n${report.control.stderr}`.trimEnd());
+      lines.push("\`\`\`");
+      lines.push("");
+      lines.push("**No planted run was made.** The plant was refused, so there is nothing to report.");
+      lines.push("");
+      continue;
+    }
     const red = report.observedRed;
     lines.push("### Green false-positive control (run BEFORE any plant)");
     lines.push("");
@@ -802,6 +844,17 @@ function main() {
   const allSkipped = reports.length > 0 && measuredCount === 0;
   if (allSkipped) hardFailure = true;
 
+  // The line that reports the SUPPRESSED write-back has to name the reason that
+  // actually fired. There are now four, and printing one of them for all four
+  // would be the instrument stating something it did not measure.
+  const suppressionCauses = [];
+  if (allSkipped) suppressionCauses.push("every selected row was skipped");
+  if (reports.some((r) => r.plantRefused)) suppressionCauses.push("a row's plant was refused");
+  if (reports.some((r) => r.unmeasurable)) suppressionCauses.push("a row was unmeasurable");
+  if (reports.some((r) => r.failed && !r.plantRefused)) {
+    suppressionCauses.push("a row's guard exited 0 with the violation planted");
+  }
+
   // Registry write-back. Only reached when every selected row produced a
   // captured, non-zero-exit observed red.
   if (!hardFailure) {
@@ -830,6 +883,10 @@ function main() {
       console.log(`  UNMEASURABLE  ${report.historicalPath}: ${report.reason}`);
       continue;
     }
+    if (report.plantRefused) {
+      console.log(`  PLANT REFUSED ${report.historicalPath}: ${report.reason}`);
+      continue;
+    }
     if (report.failed) {
       console.log(`  ZERO-EXIT     ${report.historicalPath}: ${report.reason}`);
       continue;
@@ -856,11 +913,7 @@ function main() {
   console.log(`  evidence: ${outPath}`);
   console.log(
     `  registry: ${
-      hardFailure
-        ? `NOT written (${
-            allSkipped ? "every selected row was skipped" : "a row was unmeasurable or exited 0"
-          })`
-        : registryPath
+      hardFailure ? `NOT written (${suppressionCauses.join("; ")})` : registryPath
     }`,
   );
   console.log(
