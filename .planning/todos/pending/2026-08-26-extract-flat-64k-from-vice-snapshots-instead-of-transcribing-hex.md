@@ -4,8 +4,13 @@ title: Extract flat 64K from VICE snapshots instead of transcribing hex
 area: capture
 severity: major
 files:
+
   - src/skills/c64-ram-capture/SKILL.md
+
 resolves_phase:
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 ## What

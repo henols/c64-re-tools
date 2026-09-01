@@ -4,10 +4,15 @@ title: Phase 7 Pitfall 5 overgeneralizes "text monitor unreachable" and is why t
 area: docs
 severity: major
 files:
+
   - .planning/phases/07-cycle-timing-and-wedge-triage/07-RESEARCH.md
   - CLAUDE.md
   - .planning/notes/stock-vice-migration-revised-loss-ledger.md
+
 resolves_phase:
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 ## Problem

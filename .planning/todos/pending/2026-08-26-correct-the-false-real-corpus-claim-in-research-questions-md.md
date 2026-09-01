@@ -4,9 +4,14 @@ title: Correct the false real-corpus claim in research/questions.md
 area: planning
 severity: major
 files:
+
   - .planning/research/questions.md:14-16
   - .planning/ROADMAP.md (Phase 23 Notes — the contradicting, correct statement)
   - src/skills/c64-provenance-diff/SKILL.md:31-32
+
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 ## Problem

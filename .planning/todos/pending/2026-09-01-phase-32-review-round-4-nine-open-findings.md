@@ -7,6 +7,9 @@ source: phase-32 code review round 4 (32-REVIEW.md at de598f2), the nine finding
   see "The CR-07 record" below.
 severity: blocker
 resolves_phase:
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 # Phase 32 review round 4 — 9 findings, disposition: OPEN, not fixed

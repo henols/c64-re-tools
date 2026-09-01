@@ -25,6 +25,7 @@ isolation.
 
 **Not fixed here:** outside plan 27-02's `files_modified`, and it touches the
 r2000 session/spawn family that plan 27-04 owns.
+  status: acknowledged
 
 ## D-27-02-B — `vice-proxy.test.ts` needs a live host, and the whole-glob run does not know that
 
@@ -71,6 +72,7 @@ say so in any evidence taken this way.
 `files_modified`, it is on `test-gate.mjs`'s frozen nine-file
 `MANUAL_ONLY_TESTS` list, and closing the leaked handles is stdio-proxy test
 behaviour with no requirement in this phase.
+  status: acknowledged
 
 ## D-27-05-B — `contested` is prose-only and Direction 4's prefix scan exempts `note`
 
@@ -98,3 +100,4 @@ later maintainer could add, not about what the record now says.
 classification record's schema and every consumer of it, and extending
 Direction 4 to `note` needs the prose-exemption rationale revisited — both
 outside plan 27-05's `files_modified`.
+  status: acknowledged

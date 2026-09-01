@@ -22,6 +22,7 @@ executor of a different phase editing it on its own reading. Route it to a Phase
 28 verification pass or a milestone audit.
 
 *Logged 2026-08-30 by plan 29-11.*
+  status: acknowledged
 
 ## 2. `repo-root.test.ts`'s "not under `.claude`" assertion fails inside a GSD worktree
 

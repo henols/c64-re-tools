@@ -1,12 +1,7 @@
 ---
-created: 2026-08-31
-source: phase-32 code review (32-REVIEW.md), all 25 findings CR-01..CR-04, WR-01..WR-14,
-  IN-01..IN-07 — none fixed, recorded here so every id has a disposition and none is
-  silently lost. WR-03 is included deliberately: the guard already counted it
-  dispositioned because the literal string "WR-03" occurs in unrelated phase-32 SUMMARY
-  and evidence text, which is a coincidence, not a decision.
-severity: blocker
-resolves_phase:
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 # Phase 32 review — 25 findings, disposition: OPEN, not fixed

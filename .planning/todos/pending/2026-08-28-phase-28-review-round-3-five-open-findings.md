@@ -5,6 +5,9 @@ source: phase-28 code review round 3 (28-REVIEW.md), findings CR-05, CR-06, CR-0
   disposition and none is silently lost between gap-closure rounds
 severity: blocker
 resolves_phase:
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 # Phase 28 review round 3 — five new findings, disposition: OPEN, not fixed

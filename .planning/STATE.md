@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Own the Annotation Store
-current_phase: 32
-current_phase_name: The Deletion and the Grep Gate
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 32 complete — all phases complete
-last_updated: "2026-09-01T14:06:37.178Z"
+last_updated: "2026-09-01T16:17:56.657Z"
 last_activity: 2026-09-01
-last_activity_desc: Phase 32 complete
-state_head: f9621c0eb447511b698240e9947bb805cd44d7d6
+last_activity_desc: Milestone v0.7.0 completed and archived
+state_head: 83112c1d3b402a86b26276d6fd08998c8de56710
 progress:
   total_phases: 6
-  completed_phases: 6
-  total_plans: 80
-  completed_plans: 80
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+current_phase: 32
+current_phase_name: The Deletion and the Grep Gate
 ---
 
 # Project State
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 32 (The Deletion and the Grep Gate) — COMPLETE
-Plan: 21 of 21 executed — 9 original, plus 5 + 5 + 2 across three gap-closure rounds
-Status: Milestone v0.7.0 complete — all 6 phases, 80/80 plans. Phase 32 verified (17/17 must-haves), UAT passed, security threats_open: 0, nyquist_compliant
-Last activity: 2026-09-01 — Phase 32 closed: UAT test 1 dispositioned (option a), 32-SECURITY.md and 32-VALIDATION.md written, verification canonicalized to passed
+Phase: Milestone v0.7.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-01 — Milestone v0.7.0 completed and archived
 
 ## Performance Metrics
 
@@ -1398,6 +1398,88 @@ CLI cannot map an entry back to an exact source span safely. The marker is the
 per-entry `status:` field itself, so it self-invalidates identically. The other
 13 were written by the CLI.
 
+### Acknowledged at the v0.7.0 close (2026-09-01)
+
+The pre-close artifact audit reported **23** open items against **21** already
+suppressed by earlier closes. **15 were newly acknowledged through
+`query audit-open acknowledge`** — 10 pending todos and 5 phase deferred items.
+The remaining **8 could not be acknowledged by any CLI path** and are disclosed
+below rather than suppressed; see the writer note.
+
+Acknowledgment is verdict-preserving and self-invalidating: it never rewrites an
+artifact's own verdict, and the suppression lapses the moment the artifact's
+observed state changes again.
+
+**Counts:** 15 newly acknowledged, 21 carried forward from prior closes, 8
+disclosed-but-unsuppressable. `closeout_type=override_closeout`.
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| todos | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-26-frame-exact-emulator-stop-is-unowned.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-28-phase-28-review-round-3-five-open-findings.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-08-31-phase-32-review-twenty-five-open-findings.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| todos | 2026-09-01-phase-32-review-round-4-nine-open-findings.md | (presence-only) | 2026-09-01 | v0.7.0 |
+| deferred_items | 27/deferred-items.md: D-27-02-A — `r2000-session.test.ts`'s five plan-18-06 queue tests are ungated | acknowledged | 2026-09-01 | v0.7.0 |
+| deferred_items | 27/deferred-items.md: D-27-05-A — `vice-proxy.test.ts` leaks two LISTEN sockets and prevents `node --test` from exiting | acknowledged | 2026-09-01 | v0.7.0 |
+| deferred_items | 27/deferred-items.md: D-27-05-B — `contested` is prose-only and Direction 4's prefix scan exempts `note` | acknowledged | 2026-09-01 | v0.7.0 |
+| deferred_items | 29/deferred-items.md: `STORE-03`'s traceability status contradicts its own prose (Phase 28, pre-existing) | acknowledged | 2026-09-01 | v0.7.0 |
+| deferred_items | 30/deferred-items.md: `repo-root.test.ts` "path agreement" fails inside a `.claude/worktrees/` worktree | acknowledged | 2026-09-01 | v0.7.0 |
+
+**On the 10 todos.** All are real, unfixed, and stay pending — acknowledging a
+todo is presence-only and asserts nothing about the work. Two carry milestone
+weight rather than bookkeeping weight and are named here so a v0.8.0 planner
+finds them without re-reading the ledger:
+`2026-08-26-frame-exact-emulator-stop-is-unowned.md` is the blocker STATE.md
+already cites for the held Phases 24 and 26, and
+`2026-08-31-phase-32-review-twenty-five-open-findings.md` plus
+`2026-09-01-phase-32-review-round-4-nine-open-findings.md` are this milestone's
+own code-review residue, filed by the final phase rather than fixed in it.
+
+**On the 5 acknowledged `deferred_items`.** None is a requirement gap. Phase 27's
+`D-27-02-A` is moot on its own terms — the ungated `r2000-session.test.ts` queue
+tests it describes were removed with the analyser in Phase 32 — but it is recorded
+`acknowledged` rather than `resolved` because promoting a verdict is a stronger
+claim than this close is entitled to make on a phase's behalf. Phase 29's entry
+routes `STORE-03`'s row/prose contradiction to a Phase 28 verification pass or a
+milestone audit; this close ran neither, so it carries forward as stated. Phase
+30's is the standing `.claude/worktrees/` limitation already recorded at the
+v0.4.0 close as `08.2 D-1` — a third sighting of one defect, not a new one.
+
+**Writer note — the 8 that could not be acknowledged.** All 8 are reported against
+`.planning/phases/23-the-real-release-gate-go-degrade-no-go/deferred-items.md`,
+and **none of them is a deferred item.** They are the data rows of two GFM
+evidence tables *inside* that file's narrative entries: the four-run flake tally
+in item 3 (`| Run | fail count | failing tests |`) and the orchestrator's
+four-test timing verdict table (`| test | observed during | broker live? |
+verdict |`). `uat.cjs`'s `parseDeferredTableItems` reads any table row in the
+file as an entry — that file's title is an `#` heading, so with no `## Deferred
+Items` level-2 heading the whole document is scanned — while its own doc comment
+states these are "permanently un-acknowledgeable via the CLI writer — a known,
+deliberate limitation", because a table row has no representable `status:` field
+to write. `query audit-open acknowledge` refuses each with `not_found`.
+
+The two escapes the parser does offer were both rejected. Entity-encoding the
+pipes destroys the rendered tables. Planting a cell reading `resolved` — the move
+taken at the v0.5.0 close against Phase 19's guard-exit-code and round-4 flake
+tables, which had no verdict column to collide with — would here contradict the
+adjacent cells: that same table records `159` and `2410` as **unresolved**, and
+the file states one green run "does not *prove*" they are broker-caused. Writing
+`resolved` beside `unresolved` in one row would falsify a v0.6.0 evidence record
+to quiet a scanner. It was not done.
+
+These 8 will resurface at every future milestone close for as long as Phase 23
+sits in `.planning/phases/` — it is not archived here, because v0.6.0 closed
+incomplete with Phases 24 and 26 held. A future close should recognise them by
+this note and re-disclose rather than re-investigate. The concerns the two tables
+actually describe are separately tracked and were acknowledged above:
+`2408`/BACK-05 as `2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host.md`.
+
 ### Carried forward from earlier closes
 
 | Category | Item | Status | Deferred At |
@@ -1913,12 +1995,4 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Plan the gate: `/gsd-plan-phase 23` — The Real-Release Gate (Go/Degrade/No-Go)
-- Before planning: secure the Phase 23 corpus. `c64-provenance-diff` runs against
-  a *consuming* project's `recovery/` tree (`RELEASES.json` plus `.bin` dumps and
-  their `.map.json` manifests); nothing in this repository is a real cracked
-  release. If real releases cannot be obtained, that fact is a gate input, not a
-  footnote — measuring on another self-authored fixture reproduces the exact
-  defect `PROOF-01` exists to remove.
-
-- Do not plan Phases 24, 25 or 26 until Phase 23's verdict is recorded.
+- Start the next milestone with /gsd-new-milestone

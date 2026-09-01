@@ -4,6 +4,9 @@ source: phase-28 code review (28-REVIEW.md), finding IN-02 — informational tie
   accepted for the hosts this tree targets, recorded here so the id has a
   disposition that survives a VERIFICATION.md rewrite
 severity: minor
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 # Phase 28 review, IN-02 — disposition: accepted, not fixed

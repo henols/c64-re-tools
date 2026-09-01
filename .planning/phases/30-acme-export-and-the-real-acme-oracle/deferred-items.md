@@ -32,3 +32,4 @@ change.
   worktree for this one reason. Read the floor as "0 failures other than
   `repo-root.test.ts`'s path-agreement test", and re-check it in the main
   checkout after the wave merges.
+  status: acknowledged

@@ -4,6 +4,7 @@ title: Run VICE headless and in warp mode when the run allows it
 area: broker
 severity: minor
 files:
+
   - src/mcp/vice/broker-launch.mts:153-218
   - src/mcp/vice/broker-launch.mts:850
   - src/mcp/vice/broker-launch.mts:953
@@ -15,6 +16,10 @@ files:
   - src/mcp/vice/capability-registry.ts:283-285
   - src/mcp/vice/resources/broker-launch.mjs:165
   - src/mcp/vice/broker-state.mts:117-141
+
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 ## Problem

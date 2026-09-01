@@ -4,8 +4,13 @@ title: Frame-exact emulator stop is the single gate on a real corpus, and nothin
 area: capture
 severity: major
 files:
+
   - src/mcp/vice/vice-sync.ts
+
 resolves_phase:
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 ## What

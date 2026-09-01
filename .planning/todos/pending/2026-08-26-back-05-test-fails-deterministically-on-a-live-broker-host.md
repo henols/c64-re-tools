@@ -4,8 +4,13 @@ title: BACK-05 D-G ordering test fails deterministically on a live-broker host
 area: testing
 severity: major
 files:
+
   - src/mcp/vice/vice-proxy.test.ts:6382
+
 resolves_phase:
+audit_acknowledged:
+  milestone: v0.7.0
+  at: 2026-09-01
 ---
 
 ## What
