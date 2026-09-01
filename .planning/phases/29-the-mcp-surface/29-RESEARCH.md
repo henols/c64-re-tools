@@ -19,10 +19,10 @@
 
 Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decisions>`.
 
-**The r2000 exit (supersedes ROADMAP criterion 2 and MCP-05's coexistence clause)**
+**The anno exit (supersedes ROADMAP criterion 2 and MCP-05's coexistence clause)**
 
-- **D-01 — r2000 is deleted in Phase 29, not unregistered and not deferred to
-  Phase 32.** The user's directive: *"The r2000 usage is decided to be removed
+- **D-01 — anno is deleted in Phase 29, not unregistered and not deferred to
+  Phase 32.** The user's directive: *"The anno usage is decided to be removed
   and if it can't be removed right now everything about it must be disabled and
   never be included in any tests."* Presented with unregister-and-quarantine
   (files kept, tests gated off, structural guards live) as the recommended
@@ -30,8 +30,8 @@ Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decis
   `MCP-05`'s coexistence clauses, and the Phase 31/32 scope statements are edited
   in this phase to match — the record is not left describing a plan that was
   abandoned.
-  — **Reversibility:** one-way — 26,023 lines of `r2000-*.ts` and the
-  regenerator2000 dependency. Restoring the route means restoring a deleted
+  — **Reversibility:** one-way — 26,023 lines of `anno-*.ts` and the
+  the external analyser dependency. Restoring the route means restoring a deleted
   external integration and its pinned 0.9.20 crate, and the safety property
   criterion 2 was written to buy ("the replacement is demonstrably ready before
   anything is removed") cannot be re-bought after the fact.
@@ -39,15 +39,15 @@ Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decis
 - **D-02 — Scope of the cut: only the binary-driving glue is deleted; the CLI is
   renamed and keeps its capability-backed verbs.** The user answered "You decide"
   on what rides forward, and this is the call. **Deleted:**
-  `r2000-launch.ts`, `r2000-mcp-client.ts`, `r2000-session.ts`, `r2000-tools.ts`,
-  `r2000-project.ts`, `scripts/lib/r2000-cli-verbs.mjs`,
-  `scripts/lib/r2000-cli-verbs.d.mts` — every module `module-classification.ts`
-  verdicts `glue`. **Renamed, not deleted:** `r2000-cli.ts`, dropping only the
+  `anno-launch.ts`, `anno-mcp-client.ts`, `anno-session.ts`, `anno-tools.ts`,
+  `anno-project.ts`, `scripts/lib/anno-cli-verbs.mjs`,
+  `scripts/lib/anno-cli-verbs.d.mts` — every module `module-classification.ts`
+  verdicts `glue`. **Renamed, not deleted:** `anno-cli.ts`, dropping only the
   three verbs that reach the spawn (`bootstrap`, `export-asm`, `verify`) and
   keeping the five that import capability modules only (`gen-enums`,
   `export-lbl`, `import-lbl`, `render-memmap`, `coverage`). Verified at
   discussion time by reading the CLI's own import list: `bootstrap`/`export-asm`/
-  `verify` are the only verbs reaching `r2000-launch.ts`. This is what lets the
+  `verify` are the only verbs reaching `anno-launch.ts`. This is what lets the
   external dependency go in Phase 29 **without** inventing an export route ahead
   of Phase 30's oracle, so ordering constraint 2 is honoured rather than broken.
   — **Reversibility:** one-way — see D-01.
@@ -56,19 +56,19 @@ Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decis
   BEFORE anything is deleted, and the deletion is driven by
   `module-classification.ts`, never by a prefix sweep.** Measured at discussion
   time: Phase 27 delivered the classification registry and the ACME-gate
-  extraction, but all 19 classified modules still carry `r2000-` on disk. The
-  survivors are `r2000-acme-ident.ts`, `r2000-confidence.ts`, `r2000-coverage.ts`,
-  `r2000-d64.ts`, `r2000-enum-gen.ts`, `r2000-memmap-render.ts`,
-  `r2000-regbits-gen.ts`, `r2000-regbits.json`, `r2000-symbols.ts`,
-  `r2000-test-gate.ts`, `r2000-verify.ts`. A prefix sweep would take
-  `R2000-14`/`R2000-15`'s ✓ Validated symbol round trip and `COV-01`/`COV-02`'s
+  extraction, but all 19 classified modules still carry `anno-` on disk. The
+  survivors are `anno-acme-ident.ts`, `anno-confidence.ts`, `anno-coverage.ts`,
+  `anno-d64.ts`, `anno-enum-gen.ts`, `anno-memmap-render.ts`,
+  `anno-regbits-gen.ts`, `anno-regbits.json`, `anno-symbols.ts`,
+  `anno-test-gate.ts`, `anno-verify.ts`. A prefix sweep would take
+  `ANNO-14`/`ANNO-15`'s ✓ Validated symbol round trip and `COV-01`/`COV-02`'s
   census with it — the exact hazard Phase 27 exists to have removed.
   — **Reversibility:** costly — renames touch every importer; the registry is the
   evidence the rename set is complete.
 
 - **D-04 — `parsePrg`/`flatImageOrigin` need no extraction work.** Measured: they
   already live in `src/mcp/vice/prg-image.ts`. `module-classification.ts` records
-  `r2000-project.ts`'s `glue-with-extractable` obligation as **discharged**, and
+  `anno-project.ts`'s `glue-with-extractable` obligation as **discharged**, and
   its verdict is now plain `glue`. A planner must not re-derive this as
   outstanding work.
 
@@ -79,7 +79,7 @@ Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decis
   module prefix is established and derivable by `readdirSync` plus a stable
   name-prefix regex — which is what the removal gate's rule ("a **single stable
   prefix derivable from disk**") requires, and what `hostpath-consumers.test.ts`
-  and `r2000-spawn-seam.test.ts` are shaped for. `c64_` and `re_` were rejected:
+  and `spawn-seam.test.ts` are shaped for. `c64_` and `re_` were rejected:
   each costs a second prefix, makes the mechanical derivation read two names, and
   `re_` is a weak namespace token in an agent's tool list. Accepted cost: `anno_`
   reads narrow for the read verbs (`anno_disassemble`, `anno_get_binary_info`),
@@ -94,8 +94,8 @@ Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decis
   cached to swap), and `transactionStateUnknown` wedging a connection (nothing
   reused). This deliberately **reverses Phase 18's Rule A21**, which chose a
   long-lived session — that decision existed to avoid respawning a
-  regenerator2000 child process per call, and D-02 deletes the child process, so
-  its premise is gone. The argument mirrors r2000's `project` shape.
+  the external analyser child process per call, and D-02 deletes the child process, so
+  its premise is gone. The argument mirrors anno's `project` shape.
   Workspace-derived defaulting was rejected: it would make Phase 28's
   `unconfinedModuleDerivedPath` escape the normal path rather than the exception.
   — **Reversibility:** reversible — adding a cache later is local.
@@ -121,22 +121,22 @@ Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decis
   asserts three things against
   `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`:
   every verb classified `curated` or `adapt-to-address-input` has a route, every
-  verb classified `omit` is absent, and `r2000_delete_project_enum` is absent.
+  verb classified `omit` is absent, and `anno_delete_project_enum` is absent.
   Measured at discussion time: the manifest classifies **20** verbs — 15
-  `curated`, 1 `adapt-to-address-input` (`r2000_get_disassembly_cursor`), 4 `omit`
+  `curated`, 1 `adapt-to-address-input` (`anno_get_disassembly_cursor`), 4 `omit`
   (`set_immediate_format`, `toggle_splitter`, `undo`, `unpack_binary`). Three
-  verbs in `CURATED_R2000_TOOLS` appear in **no** manifest procedure —
-  `r2000_search_disassembly`, `r2000_add_scope`, `r2000_update_project_enum` — and
+  verbs in `CURATED_ANNO_TOOLS` appear in **no** manifest procedure —
+  `anno_search_disassembly`, `anno_add_scope`, `anno_update_project_enum` — and
   criterion 5 / `STORE-06` positively require search. Those go in a register
   modelled on `module-classification.ts`, each entry citing a requirement id
   (`STORE-06` for search), so a verb added later with no named consumer **fails**
   rather than being reviewed. Amending the manifest was rejected: it describes
-  upstream regenerator2000 at commit `493f840` and carries its own re-sync trigger
+  upstream the external analyser at commit `493f840` and carries its own re-sync trigger
   and per-procedure sha256s — writing our verbs into it makes it describe us and
-  breaks what `r2000-upstream-audit.test.ts` says.
+  breaks what `anno-derivation.test.ts` says.
   — **Reversibility:** reversible.
 
-- **D-09 — `r2000_get_disassembly_cursor` is folded into the disassemble verb's
+- **D-09 — `anno_get_disassembly_cursor` is folded into the disassemble verb's
   address argument, not carried as a verb.** That is what
   `adapt-to-address-input` means here, and it agrees with the roadmap's recorded
   anti-feature (upstream's own procedure text says *"NEVER use the 'current
@@ -146,30 +146,30 @@ Copied verbatim from `.planning/phases/29-the-mcp-surface/29-CONTEXT.md` `<decis
 
 - **D-10 — `check-skill-fork-honesty.mjs:504`: the skill loses the route and the
   assertion is re-pointed.** It asserts `acme-build/SKILL.md` still contains the
-  literal `"r2000 export-asm"`; D-02 deletes that verb, so the guard goes red
+  literal `"anno export-asm"`; D-02 deletes that verb, so the guard goes red
   either way. The route is stripped from the skill and the assertion re-pointed at
   the renamed CLI, with Phase 30 restoring an export route under that name. Named
   by ROADMAP Phase 32 criterion 4 as needing resolution "in **one change that
   names which side is correct**" — this is that change, and the skill is the side
   that moves.
 
-- **D-11 — `r2000-answer-key.test.ts` is renamed and kept, never deleted.** It
+- **D-11 — `absorbed-answer-key.test.ts` is renamed and kept, never deleted.** It
   reads `.planning/phases/11-*/evidence/` with no existence guard and is the
   second leg of the "do not archive phase directories" decision. Deleting it would
   silently discharge that constraint. ROADMAP Phase 32's note requires this be an
   explicit recorded choice rather than a side effect; it is recorded here.
 
-- **D-12 — `docs-r2000-decisions.test.ts` and `scripts/audit-gate.mjs:136` move
+- **D-12 — `docs-absorbed-decisions.test.ts` and `scripts/audit-gate.mjs:136` move
   together, in one commit.** Their own comment records that they were added in one
   commit for exactly this reason: removing the name from `audit-gate.mjs` without
   removing the test, or the reverse, **breaks the audit gate**.
 
 - **D-13 — The registration-time guards move in the registering commit
   (`MCP-05`), and their re-pointing is now a rename rather than a duplication.**
-  `generate-tool-support-table.mjs:104`'s hard-coded `R2000_TOOL_DEFINITIONS`
+  `generate-tool-support-table.mjs:104`'s hard-coded `ANNO_TOOL_DEFINITIONS`
   regex and its two deliberate duplicate witnesses move together and none is
   refactored into a shared helper. `hostpath-consumers.test.ts`'s
-  `R2000_MODULE_FLOOR` (currently `14`) is re-expressed over the `anno-` prefix at
+  `ANNO_MODULE_FLOOR` (currently `14`) is re-expressed over the `anno-` prefix at
   the measured new count, **raised not lowered**, and its positive control — today
   the four `INT-01` filenames — is replaced with real new filenames.
   `check-skill-tool-coverage.mjs`'s floor is re-expressed the same way (pulled
@@ -190,8 +190,8 @@ questions; each is answered in `## Discretion Items — Answered` below.
   existing project convention, to be matched rather than invented.
 - The batch verb's recursive inner-name pre-validation — the shape is already
   fixed by `assertCuratedTool()`'s D-33 batch recursion; carry the discipline.
-- How `coverage` / `COV-01`'s census re-points off the r2000 project-JSON shapes
-  (`R2000Comment`, `R2000CrossReference`, `R2000Symbol`) onto the new store.
+- How `coverage` / `COV-01`'s census re-points off the anno project-JSON shapes
+  (`AnnoComment`, `AnnoCrossReference`, `AnnoSymbol`) onto the new store.
 - Whether Phases 30–32 are renumbered or merely narrowed after D-01's roadmap
   edit.
 
@@ -202,7 +202,7 @@ questions; each is answered in `## Discretion Items — Answered` below.
   D-02 scoped the cut the way it did.
 - **Automatic annotation** — Phase 26, held for v0.8.0 behind the same corpus gate
   as Phase 24.
-- **`packer-finding.mjs`'s `entropySource = "r2000_get_binary_info"`** — a stored
+- **`packer-finding.mjs`'s `entropySource = "anno_get_binary_info"`** — a stored
   fact about a past run, not a route. ROADMAP Phase 31 requires its fate be
   decided explicitly rather than string-replaced; it rides with the skill
   re-pointing pulled forward into this phase.
@@ -222,7 +222,7 @@ questions; each is answered in `## Discretion Items — Answered` below.
 
 | ID | Description (from REQUIREMENTS.md) | Research Support |
 |----|-------------|------------------|
-| **MCP-01** | The tool surface is **derived from Phase 19's `upstream-procedure-manifest.json`** rather than chosen — every `curated`/`adapt-to-address-input` verb has a route, every `omit` verb is absent, `r2000_delete_project_enum` is not carried, checked mechanically. | `## The Verb List, Derived and Mapped` gives the full 20-verb manifest inventory verbatim from the JSON, the 19-entry `CURATED_R2000_TOOLS` set, the exact 3-way delta, and the name-mapping function the mechanical check needs. `## Pitfall 1` names the one `curated` verb (`save_project`) that collides with a ROADMAP anti-feature. |
+| **MCP-01** | The tool surface is **derived from Phase 19's `upstream-procedure-manifest.json`** rather than chosen — every `curated`/`adapt-to-address-input` verb has a route, every `omit` verb is absent, `anno_delete_project_enum` is not carried, checked mechanically. | `## The Verb List, Derived and Mapped` gives the full 20-verb manifest inventory verbatim from the JSON, the 19-entry `CURATED_ANNO_TOOLS` set, the exact 3-way delta, and the name-mapping function the mechanical check needs. `## Pitfall 1` names the one `curated` verb (`save_project`) that collides with a ROADMAP anti-feature. |
 | **MCP-02** | The family registers proxy-locally through `buildViceTool()` and never reaches `forwardToVice()`; pinned by the existing body-slice assertion. | `## Architecture Patterns → Pattern 1` gives the exact two-line substitution at `vice-proxy.ts:194` and `:3401`, and `## The Registration Seam` quotes the body-slice assertion at `stock-dispatch.test.ts:1551-1562` that must be re-pointed. |
 | **MCP-03** | Backend-agnosticism is structural, expressed in `stock-dispatch.test.ts`'s **ordered** `BACKEND_SEAM_BYPASS_KEYS`, not by a `capability-registry.ts` entry; neither manifest nor `docs/tool-support.md` gains an entry. | `## The Registration Seam` quotes `BACKEND_SEAM_BYPASS_KEYS` verbatim and names all four re-pointing sites in that file. `## Verified: `docs/tool-support.md` regenerates byte-identical` is an executed proof, not an assumption. |
 | **MCP-04** | Shaped for an agent, not a cursor: explicit-address addressing, batchable + idempotent edits, refuse-by-name as `{available:false, reason}` per the project's existing convention. | `## Discretion 2` locates the convention at `stock-recycle.ts:86` / `vice-proxy.ts:1461` / `stock-cia.ts:494` with verbatim quotes. `## Discretion 3` reconciles D-33's whole-batch refusal with criterion 5's per-item status. Idempotency is `AnnoWriteResult.changed` (`anno-store.ts:193`). |
@@ -247,7 +247,7 @@ pulled a CLI rebuild forward with it. Measured against the tree, the work has
 Three things dominate the plan and none of them is optional:
 
 1. **The derivation is nearly free; the *implementations behind it* are not.**
-   The manifest's 20 verbs and `CURATED_R2000_TOOLS`'s 19 entries are exactly as
+   The manifest's 20 verbs and `CURATED_ANNO_TOOLS`'s 19 entries are exactly as
    `29-CONTEXT.md` records them — I re-derived both from the JSON and the source.
    But mapping each surviving verb onto Phase 28's store shows **four verbs with
    no backing implementation at all**: `anno_get_cross_references` and
@@ -259,23 +259,23 @@ Three things dominate the plan and none of them is optional:
 
 2. **D-02's "keep five CLI verbs" is falsified transitively.** D-02 verified the
    CLI's *own* import list, which is correct as far as it goes. But
-   `r2000-symbols.ts` (verdict `capability`) statically imports `runR2000()`,
-   `withR2000Session()` and `runR2000Tool()`; `r2000-enum-gen.ts` (verdict
-   `capability`) statically imports `runR2000Tool()`; and the `coverage` verb
-   calls `runR2000Tool` four times plus `resolveStorePath`. **Four of the five
+   `anno-symbols.ts` (verdict `capability`) statically imports `runAnno()`,
+   `withAnnoSession()` and `runAnnoTool()`; `anno-enum-gen.ts` (verdict
+   `capability`) statically imports `runAnnoTool()`; and the `coverage` verb
+   calls `runAnnoTool` four times plus `resolveStorePath`. **Four of the five
    "kept" verbs require a substantive rebuild in this phase, not a rename.** Only
    `render-memmap` is genuinely free — its module has zero local imports.
 
    > **[CORRECTED 2026-08-29 — this last sentence is FALSE. See D-17.]** The
    > "zero local imports" measurement was taken with a plain `grep`, which is
-   > blind to `r2000-memmap-render.ts`: the file carries a literal NUL byte at
+   > blind to `anno-memmap-render.ts`: the file carries a literal NUL byte at
    > offset 12862 (line 291, the `"\0"` separator in the sidecar hash
    > canonicalisation), so GNU grep classifies it as binary and prints
    > `binary file matches` in place of the matching lines. Re-measured with
-   > `grep -a`: the module imports `runR2000Tool` from `r2000-tools.ts` at
-   > `:69`, uses it at `:106` inside `queryR2000Json()`, and `renderMemoryMap()`
-   > calls that three times at `:353-355` (`r2000_get_blocks`,
-   > `r2000_get_symbols`, `r2000_get_comments`); `checkRenderedMemoryMap()` at
+   > `grep -a`: the module imports `runAnnoTool` from `anno-tools.ts` at
+   > `:69`, uses it at `:106` inside `queryAnnoJson()`, and `renderMemoryMap()`
+   > calls that three times at `:353-355` (`anno_get_blocks`,
+   > `anno_get_symbols`, `anno_get_comments`); `checkRenderedMemoryMap()` at
    > `:499` reaches the same three calls through `renderMemoryMap()`. So **five
    > of the five** kept verbs required a rebuild and none was free. The error is
    > left in place rather than deleted because its *cause* is a standing hazard
@@ -290,7 +290,7 @@ Three things dominate the plan and none of them is optional:
 3. **The registration-time guards are cheap and provable, and I proved the
    headline one.** `docs/tool-support.md` regenerates **byte-identical** (7,874
    bytes, both before and after) under the two-line loop substitution provided the
-   `R2000_TOOL_DEFINITIONS` regex moves in the same change; and if the regex is
+   `ANNO_TOOL_DEFINITIONS` regex moves in the same change; and if the regex is
    *not* moved the generator **throws by name** rather than emitting a different
    table. The whole 10-file structural-guard set this phase touches runs green in
    **1.24 s** — a per-task verification loop is realistic.
@@ -329,13 +329,13 @@ plan; three of them bind it hard.
 
 | # | Directive | Bearing on this phase |
 |---|-----------|----------------------|
-| P-1 | **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`.** `rewriteArguments()` runs at `vice-proxy.ts:3052`; second site `gatherWedgeEvidence()` at `:1531`. Line numbers "drift between phases; treat a mismatch as drift to re-verify". `docs-linerefs.test.ts` mechanically checks the two citations. | Satisfied **by construction**: the `anno_*` runner is never wired to `forwardToVice()`. `docs-linerefs.test.ts` reads CLAUDE.md's bullet and checks each cited `vice-proxy.ts:<N>` still contains `rewriteArguments(` or a `function` keyword [VERIFIED: src/mcp/vice/docs-linerefs.test.ts:66-83]. **Deleting the r2000 import at `:194` and substituting the loop at `:3401` shifts nothing above `:3052`** if the substitution is line-count-neutral — but an import line deletion at `:194` shifts *everything*. See `## Pitfall 4`. |
+| P-1 | **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`.** `rewriteArguments()` runs at `vice-proxy.ts:3052`; second site `gatherWedgeEvidence()` at `:1531`. Line numbers "drift between phases; treat a mismatch as drift to re-verify". `docs-linerefs.test.ts` mechanically checks the two citations. | Satisfied **by construction**: the `anno_*` runner is never wired to `forwardToVice()`. `docs-linerefs.test.ts` reads CLAUDE.md's bullet and checks each cited `vice-proxy.ts:<N>` still contains `rewriteArguments(` or a `function` keyword [VERIFIED: src/mcp/vice/docs-linerefs.test.ts:66-83]. **Deleting the anno import at `:194` and substituting the loop at `:3401` shifts nothing above `:3052`** if the substitution is line-count-neutral — but an import line deletion at `:194` shifts *everything*. See `## Pitfall 4`. |
 | P-2 | **The stdio MCP surface is trimmed per backend**; a tool advertised on both keeps the same name and a backward-compatible argument shape. | The `anno_*` family is proxy-local and advertised on **both** backends identically — no trimming. This is why `buildViceTool()` and not `buildBackendAwareTool()`. |
 | P-3 | **Node ≥ 22.18 (native type-stripping — the shipped server has no build step).** Host-bound `.mts` files must be compiled by `build.ts` into committed `resources/*.mjs`; `resources-sync.test.ts` fails CI on drift. | All new modules are `.ts` under `src/mcp/vice/`, never `.mts` — no `build.ts` involvement, no `resources/` churn. |
 | P-4 | **Any host-facing path or hostname must go through `hostpath.ts` / `containerpath.ts` / `container-guard.mts`. The project maintains a tested closed consumer set for host-path logic.** | The `anno_*` family must NOT import any of them. This is `MCP-02` and it is enforced by `hostpath-consumers.test.ts`'s exact-five `assert.deepEqual`. |
 | P-5 | **The broker's single-owner `inFlight` launch guard must stay a synchronous check-and-set with no `await` between.** | Untouched by this phase. |
 | P-6 | **`vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested.** | Untouched by this phase. |
-| P-7 | *(CUT-06 obligation)* CLAUDE.md itself carries a `regenerator2000` mention and a derived-tool bullet naming `r2000_*`. | `git grep -c regenerator2000 CLAUDE.md` → **1**. `docs-dangling-refs.test.ts` asserts its scanned doc set exists, so CLAUDE.md must be *edited*, never deleted. |
+| P-7 | *(CUT-06 obligation)* CLAUDE.md itself carries a `the external analyser` mention and a derived-tool bullet naming `anno_*`. | `git grep -c the external analyser CLAUDE.md` → **1**. `docs-dangling-refs.test.ts` asserts its scanned doc set exists, so CLAUDE.md must be *edited*, never deleted. |
 
 ---
 
@@ -346,24 +346,24 @@ the planner; do not let a stale one drive a floor.**
 
 | Claim | Source | Measured 2026-08-29 | Command |
 |---|---|---|---|
-| "291 tracked files mention the word" | CONTEXT `<decisions>`, CUT-02, ROADMAP P32 c1 | **339** | `git grep -il regenerator2000 -- . \| wc -l` |
-| "**55** outside `.planning/`" | same | **61** | `git grep -il regenerator2000 -- . ':!.planning/**' \| wc -l` |
-| "9 skill files naming 18 `r2000_*` tools" | CONTEXT in-scope item 5 | **5 files naming 17 distinct tool names**; **10 files** mention `r2000` at all | `grep -rloE '\br2000_[a-z0-9_]+' src/skills/` and `grep -rlI r2000 src/skills/` |
+| "291 tracked files mention the word" | CONTEXT `<decisions>`, CUT-02, ROADMAP P32 c1 | **339** | `git grep -il the external analyser -- . \| wc -l` |
+| "**55** outside `.planning/`" | same | **61** | `git grep -il the external analyser -- . ':!.planning/**' \| wc -l` |
+| "9 skill files naming 18 `anno_*` tools" | CONTEXT in-scope item 5 | **5 files naming 17 distinct tool names**; **10 files** mention `anno` at all | `grep -rloE '\banno_[a-z0-9_]+' src/skills/` and `grep -rlI anno src/skills/` |
 | "10 files under `src/skills/` … **18** distinct tool names" | REPOINT-01, ROADMAP P31 c1 | 10 files ✓, **17** tool names ✗ | as above |
-| "`R2000_TOOL_DEFINITIONS` is an array of 17" | `capability-registry.test.ts:154-156` (comment) | **19** | `grep -c 'name: "r2000_' r2000-tools.ts` |
-| "16 `r2000` entries in `files[]`" | CONTEXT `<canonical_refs>` | **16** ✓ (15 `.ts` + `r2000-regbits.json`) | `grep -c r2000 src/mcp/vice/package.json` |
-| "`generate-tool-support-table.mjs:104`" | CONTEXT, D-13, MCP-05 | the regex is at **`:107`**; the header prose naming it is at `:95` | `grep -n R2000_TOOL_DEFINITIONS scripts/generate-tool-support-table.mjs` |
+| "`ANNO_TOOL_DEFINITIONS` is an array of 17" | `capability-registry.test.ts:154-156` (comment) | **19** | `grep -c 'name: "anno_' anno-tools.ts` |
+| "16 `anno` entries in `files[]`" | CONTEXT `<canonical_refs>` | **16** ✓ (15 `.ts` + `anno-regbits.json`) | `grep -c anno src/mcp/vice/package.json` |
+| "`generate-tool-support-table.mjs:104`" | CONTEXT, D-13, MCP-05 | the regex is at **`:107`**; the header prose naming it is at `:95` | `grep -n ANNO_TOOL_DEFINITIONS scripts/generate-tool-support-table.mjs` |
 | "`check-skill-fork-honesty.mjs:504`" | CONTEXT, D-10, CUT-05 | ✓ — the `need(` spans `:500-504`, the literal is at `:501` | `sed -n '495,505p'` |
 | "`hostpath-consumers.test.ts:188` / `:199`" | CONTEXT | ✓ both exact | `sed -n '188p;199p'` |
 | "`stock-dispatch.test.ts:1505`" | CONTEXT | ✓ exact | `sed -n '1505p'` |
 | "`vice-proxy.ts:3263` / `:3401-3402`" | CONTEXT | ✓ `buildViceTool` at `:3263`; loop at `:3401`, body at `:3402` | `grep -n` |
-| "`scripts/audit-gate.mjs:136`" | CONTEXT, D-12 | ✓ — `"docs-r2000-decisions.test.ts"` inside `EXPECTED_DOCS_GUARD_NAMES` | `sed -n '129,137p'` |
-| "26,023 lines of `r2000-*.ts`" | D-01 | not re-measured (not load-bearing for any gate) | — |
+| "`scripts/audit-gate.mjs:136`" | CONTEXT, D-12 | ✓ — `"docs-absorbed-decisions.test.ts"` inside `EXPECTED_DOCS_GUARD_NAMES` | `sed -n '129,137p'` |
+| "26,023 lines of `anno-*.ts`" | D-01 | not re-measured (not load-bearing for any gate) | — |
 
 **The two duplicate witnesses D-13 names, found and cited:**
 
-1. `src/mcp/vice/tool-support-table.test.mjs:66` — `const R2000_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/;` inside `independentlyDiscoverSyntheticNames()`. Its own comment: *"deliberately a DIFFERENT bounding technique … so a bug in one bounding technique is caught by the other two independent witnesses. This is load-bearing (see this file's header): do not collapse the three scans into one shared helper."* [VERIFIED: src/mcp/vice/tool-support-table.test.mjs:60-88]
-2. `src/mcp/vice/capability-registry.test.ts:161` — `const r2000LoopVarMatch = proxySource.match(/for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/);`. Its own comment: *"deliberately a THIRD, different bounding technique … Load-bearing (see this file's header): do not collapse the three scans into one shared helper."* [VERIFIED: src/mcp/vice/capability-registry.test.ts:155-174]
+1. `src/mcp/vice/tool-support-table.test.mjs:66` — `const ANNO_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+ANNO_TOOL_DEFINITIONS\s*\)/;` inside `independentlyDiscoverSyntheticNames()`. Its own comment: *"deliberately a DIFFERENT bounding technique … so a bug in one bounding technique is caught by the other two independent witnesses. This is load-bearing (see this file's header): do not collapse the three scans into one shared helper."* [VERIFIED: src/mcp/vice/tool-support-table.test.mjs:60-88]
+2. `src/mcp/vice/capability-registry.test.ts:161` — `const annoLoopVarMatch = proxySource.match(/for\s*\(\s*const\s+(\w+)\s+of\s+ANNO_TOOL_DEFINITIONS\s*\)/);`. Its own comment: *"deliberately a THIRD, different bounding technique … Load-bearing (see this file's header): do not collapse the three scans into one shared helper."* [VERIFIED: src/mcp/vice/capability-registry.test.ts:155-174]
 
 The authoritative implementation is `scripts/generate-tool-support-table.mjs:107`.
 All three must be re-pointed to `ANNO_TOOL_DEFINITIONS` (or whatever the array is
@@ -381,43 +381,43 @@ Union across all five, quoted verbatim:
 
 ```
 CURATED (15):
-  r2000_apply_enum_usage       r2000_get_blocks             r2000_save_project
-  r2000_batch_execute          r2000_get_comments           r2000_set_comment
-  r2000_create_project_enum    r2000_get_cross_references   r2000_set_data_type
-  r2000_disassemble            r2000_get_symbols            r2000_set_label_name
-  r2000_get_address_details    r2000_read_region
-  r2000_get_binary_info
+  anno_apply_enum_usage       anno_get_blocks             anno_save_project
+  anno_batch_execute          anno_get_comments           anno_set_comment
+  anno_create_project_enum    anno_get_cross_references   anno_set_data_type
+  anno_disassemble            anno_get_symbols            anno_set_label_name
+  anno_get_address_details    anno_read_region
+  anno_get_binary_info
 
 ADAPT-TO-ADDRESS-INPUT (1):
-  r2000_get_disassembly_cursor
+  anno_get_disassembly_cursor
 
 OMIT (4):
-  r2000_set_immediate_format   r2000_toggle_splitter
-  r2000_undo                   r2000_unpack_binary
+  anno_set_immediate_format   anno_toggle_splitter
+  anno_undo                   anno_unpack_binary
 ```
 [VERIFIED: .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json — enumerated by `node -e` over `m.procedures[].tools` this session; 15 + 1 + 4 = 20, matching CONTEXT D-08 exactly]
 
-### `CURATED_R2000_TOOLS` — the 19 names on the surface today
+### `CURATED_ANNO_TOOLS` — the 19 names on the surface today
 
 ```
-r2000_set_label_name      r2000_get_cross_references   r2000_delete_project_enum
-r2000_set_comment         r2000_search_disassembly     r2000_apply_enum_usage
-r2000_set_data_type       r2000_disassemble            r2000_save_project
-r2000_add_scope           r2000_get_binary_info        r2000_batch_execute
-r2000_get_symbols         r2000_create_project_enum    r2000_read_region
-r2000_get_comments        r2000_update_project_enum    r2000_get_address_details
-r2000_get_blocks
+anno_set_label_name      anno_get_cross_references   anno_delete_project_enum
+anno_set_comment         anno_search_disassembly     anno_apply_enum_usage
+anno_set_data_type       anno_disassemble            anno_save_project
+anno_add_scope           anno_get_binary_info        anno_batch_execute
+anno_get_symbols         anno_create_project_enum    anno_read_region
+anno_get_comments        anno_update_project_enum    anno_get_address_details
+anno_get_blocks
 ```
-[VERIFIED: src/mcp/vice/r2000-tools.ts:233,257,279,320,337,364,390,405,417,440,454,467,481,496,511,526,544,572,604 — 19 `name: "r2000_…"` literals inside `R2000_TOOL_DEFINITIONS`]
+[VERIFIED: src/mcp/vice/anno-tools.ts:233,257,279,320,337,364,390,405,417,440,454,467,481,496,511,526,544,572,604 — 19 `name: "anno_…"` literals inside `ANNO_TOOL_DEFINITIONS`]
 
 `19 = 15 manifest-curated + 4 unclassified` (`add_scope`, `search_disassembly`,
-`update_project_enum`, `delete_project_enum`). `r2000_get_disassembly_cursor` is
+`update_project_enum`, `delete_project_enum`). `anno_get_disassembly_cursor` is
 **not** in the set — it is HELD upstream-side (D18-26), which is exactly why the
 manifest disposes it `adapt-to-address-input`.
 
 ### The 18 verbs the `anno_` family must expose, with their backing implementation
 
-The mapping rule the mechanical test needs: **`r2000_<suffix>` ⟼ `anno_<suffix>`**,
+The mapping rule the mechanical test needs: **`anno_<suffix>` ⟼ `anno_<suffix>`**,
 with two documented departures (`get_disassembly_cursor` folded into
 `anno_disassemble`'s `address`; `search_disassembly` shortened to `anno_search`).
 
@@ -438,9 +438,9 @@ with two documented departures (`get_disassembly_cursor` folded into
 | 13 | `anno_update_project_enum` | *(unclassified → register)* | `updateProjectEnum()` `:3124` | ✅ exists |
 | 14 | `anno_apply_enum_usage` | **curated** | **nothing — no table in the DDL** | ❌ **BLOCKING GAP — see F-1** |
 | 15 | `anno_save_project` | **curated** | nothing — and the ROADMAP names an explicit save verb an **anti-feature** | ⚠️ **CONFLICT — see C-2** |
-| 16 | `anno_batch_execute` | curated | nothing; the discipline is `assertCuratedBatch()` `r2000-tools.ts:801` | ❌ build (pattern given below) |
-| 17 | `anno_read_region` | curated | `parsePrg()` + `decode()`; cap pattern at `r2000-tools.ts:207` | ✅ decoders exist; composition new |
-| 18 | `anno_get_address_details` | curated | composition of 4 reads; template at `r2000-tools.ts:1121` (`composeAddressDetails`) | ❌ rewrite over the store |
+| 16 | `anno_batch_execute` | curated | nothing; the discipline is `assertCuratedBatch()` `anno-tools.ts:801` | ❌ build (pattern given below) |
+| 17 | `anno_read_region` | curated | `parsePrg()` + `decode()`; cap pattern at `anno-tools.ts:207` | ✅ decoders exist; composition new |
+| 18 | `anno_get_address_details` | curated | composition of 4 reads; template at `anno-tools.ts:1121` (`composeAddressDetails`) | ❌ rewrite over the store |
 
 **Absent by construction (the check's negative half):** `anno_set_immediate_format`,
 `anno_toggle_splitter`, `anno_undo`, `anno_unpack_binary`,
@@ -497,7 +497,7 @@ split layout contributes at all.
 `anno_search` is derivable as: search `listLabels()` names, `listComments()` texts,
 and the rendered instruction text from `render()` — three corpora, three
 independently disableable flags, exactly the argument shape
-`r2000_search_disassembly` already advertises (below).
+`anno_search_disassembly` already advertises (below).
 
 **Both must be computed on every query and never written to disk.** That is
 `putXref`'s stated contract *and* ROADMAP's `anno-xref`-class note *and*
@@ -512,13 +512,13 @@ These are the load-bearing discoveries. Each is measured, not inferred.
 
 ### F-1 (BLOCKING) — `anno_apply_enum_usage` has no store shape, and `openStore` cannot migrate to one
 
-`r2000_apply_enum_usage` is disposed **`curated`** in the manifest, so D-08's
+`anno_apply_enum_usage` is disposed **`curated`** in the manifest, so D-08's
 mechanical check *requires* it to have a route. Its upstream contract:
 
 > *"Applies an enum definition to format the immediate operand or constant
 > reference at a specific address. If name is omitted or empty, clears the enum
 > usage."* — required args `["project", "address"]`
-> [VERIFIED: src/mcp/vice/r2000-tools.ts:510-524]
+> [VERIFIED: src/mcp/vice/anno-tools.ts:510-524]
 
 The store's DDL has eight tables and **none of them associates an enum with an
 address**:
@@ -546,7 +546,7 @@ makes every existing v2 store permanently unopenable — the one-way move D-07
 already flagged.
 
 This also **breaks the `gen-enums` CLI verb** D-02 keeps: `createOrUpdateEnum()`
-calls `runR2000Tool("r2000_apply_enum_usage", …)` [VERIFIED: src/mcp/vice/r2000-enum-gen.ts:446].
+calls `runAnnoTool("anno_apply_enum_usage", …)` [VERIFIED: src/mcp/vice/anno-enum-gen.ts:446].
 
 **Three options, none free — the planner must pick one explicitly:**
 
@@ -563,37 +563,37 @@ should route it to a `checkpoint:human-verify` task, not decide it in a plan.
 
 ### F-2 (MAJOR) — four of D-02's five "kept" CLI verbs reach deleted modules transitively
 
-D-02 verified `r2000-cli.ts`'s own import list and concluded only
-`bootstrap`/`export-asm`/`verify` reach `r2000-launch.ts`. **That is true and
+D-02 verified `anno-cli.ts`'s own import list and concluded only
+`bootstrap`/`export-asm`/`verify` reach `anno-launch.ts`. **That is true and
 insufficient.** The `capability`-verdict modules the surviving verbs import
 themselves import the glue:
 
 ```
-r2000-symbols.ts:72  import { buildExportLblArgs, buildImportLblArgs, runR2000 } from "./r2000-launch.ts";
-r2000-symbols.ts:73  import { withR2000Session, saveAndVerify } from "./r2000-mcp-client.ts";
-r2000-symbols.ts:74  import { runR2000Tool } from "./r2000-tools.ts";
-r2000-enum-gen.ts:84 import { runR2000Tool } from "./r2000-tools.ts";
-r2000-verify.ts:46   import { buildVerifyArgs, runR2000 } from "./r2000-launch.ts";
+anno-symbols.ts:72  import { buildExportLblArgs, buildImportLblArgs, runAnno } from "./anno-launch.ts";
+anno-symbols.ts:73  import { withAnnoSession, saveAndVerify } from "./anno-mcp-client.ts";
+anno-symbols.ts:74  import { runAnnoTool } from "./anno-tools.ts";
+anno-enum-gen.ts:84 import { runAnnoTool } from "./anno-tools.ts";
+anno-verify.ts:46   import { buildVerifyArgs, runAnno } from "./anno-launch.ts";
 ```
-[VERIFIED: exact import lines, `grep -n '^import' src/mcp/vice/r2000-{symbols,enum-gen,verify}.ts`]
+[VERIFIED: exact import lines, `grep -n '^import' src/mcp/vice/anno-{symbols,enum-gen,verify}.ts`]
 
 Use sites, all inside functions the surviving verbs call:
 
-- `exportLabels()` → `runR2000(buildExportLblArgs(...))` [VERIFIED: r2000-symbols.ts:131-132]
-- `importLabels()` → `withR2000Session(projectPath, (call) => saveAndVerify(projectPath, call), { argv })` [VERIFIED: r2000-symbols.ts:284-285]
-- `r2000-symbols.ts:378` → `runR2000Tool("r2000_set_label_name", …)`
-- `generateEnums()` → `runR2000Tool("r2000_search_disassembly" ×2, "r2000_create_project_enum", "r2000_update_project_enum", "r2000_apply_enum_usage")` [VERIFIED: r2000-enum-gen.ts:304,318,419,431,446]
-- `coverage` verb → `resolveStorePath()` [VERIFIED: r2000-cli.ts:1365] and `queryR2000Json` ×3 + per-address xref lookups [VERIFIED: r2000-cli.ts:1384-1386]
+- `exportLabels()` → `runAnno(buildExportLblArgs(...))` [VERIFIED: anno-symbols.ts:131-132]
+- `importLabels()` → `withAnnoSession(projectPath, (call) => saveAndVerify(projectPath, call), { argv })` [VERIFIED: anno-symbols.ts:284-285]
+- `anno-symbols.ts:378` → `runAnnoTool("anno_set_label_name", …)`
+- `generateEnums()` → `runAnnoTool("anno_search_disassembly" ×2, "anno_create_project_enum", "anno_update_project_enum", "anno_apply_enum_usage")` [VERIFIED: anno-enum-gen.ts:304,318,419,431,446]
+- `coverage` verb → `resolveStorePath()` [VERIFIED: anno-cli.ts:1365] and `queryAnnoJson` ×3 + per-address xref lookups [VERIFIED: anno-cli.ts:1384-1386]
 
 | Kept verb | Reaches | Real work in this phase |
 |---|---|---|
-| `render-memmap` | ~~nothing local (`r2000-memmap-render.ts` has **zero** local imports)~~ — **CORRECTED, see D-17:** `runR2000Tool` ×3 via `r2000-memmap-render.ts:69,106,353-355`; the original figure was a plain-`grep` miss caused by the file's NUL byte at offset 12862 | ~~rename only ✅~~ **rebuild** over `listRanges`/`listLabels`/`listComments` (plan 29-12) |
-| `gen-enums` | `runR2000Tool` ×5 via `r2000-enum-gen.ts` | rebuild over `createProjectEnum`/`updateProjectEnum` + `anno_search`; blocked on F-1 |
-| `export-lbl` | `runR2000()` spawn via `r2000-symbols.ts` | rebuild over `listLabels()` → `.lbl` writer |
-| `import-lbl` | `runR2000()` + `withR2000Session`/`saveAndVerify` | rebuild over `parseViceLabelFile` (`stock-symbols.ts`) → `setLabel()` |
-| `coverage` | `runR2000Tool` ×3 + `resolveStorePath` | re-point (this is Discretion 4) |
+| `render-memmap` | ~~nothing local (`anno-memmap-render.ts` has **zero** local imports)~~ — **CORRECTED, see D-17:** `runAnnoTool` ×3 via `anno-memmap-render.ts:69,106,353-355`; the original figure was a plain-`grep` miss caused by the file's NUL byte at offset 12862 | ~~rename only ✅~~ **rebuild** over `listRanges`/`listLabels`/`listComments` (plan 29-12) |
+| `gen-enums` | `runAnnoTool` ×5 via `anno-enum-gen.ts` | rebuild over `createProjectEnum`/`updateProjectEnum` + `anno_search`; blocked on F-1 |
+| `export-lbl` | `runAnno()` spawn via `anno-symbols.ts` | rebuild over `listLabels()` → `.lbl` writer |
+| `import-lbl` | `runAnno()` + `withAnnoSession`/`saveAndVerify` | rebuild over `parseViceLabelFile` (`stock-symbols.ts`) → `setLabel()` |
+| `coverage` | `runAnnoTool` ×3 + `resolveStorePath` | re-point (this is Discretion 4) |
 
-**`export-lbl`/`import-lbl` are `R2000-14`/`R2000-15`'s ✓ Validated symbol round
+**`export-lbl`/`import-lbl` are `ANNO-14`/`ANNO-15`'s ✓ Validated symbol round
 trip** — the exact capability D-03 exists to protect. They cannot ride forward on
 a rename; they need a new implementation and a re-earned round-trip proof.
 
@@ -603,9 +603,9 @@ D-03 lists 11 `capability` modules to rename and keep. The registry's own `note`
 fields — which the registry exists to be read for — flag two of them as
 **CONTESTED** and say plainly not to read the verdict as survival:
 
-**`r2000-test-gate.ts`:**
+**`anno-test-gate.ts`:**
 > *"CONTESTED, flagged rather than smoothed over … every one of the ten measured
-> importers is an `r2000-*.test.ts` file, so every consumer of this module dies
+> importers is an `anno-*.test.ts` file, so every consumer of this module dies
 > with the substrate it gates; and the substrate-INDEPENDENT half of its
 > discipline has already been extracted, in this same phase, under a different
 > name (`acme-gate.ts`). … **Do NOT read this verdict as a claim that the module
@@ -614,12 +614,12 @@ fields — which the registry exists to be read for — flag two of them as
 > [VERIFIED: src/mcp/vice/module-classification.ts:475-490]
 
 Corroborated: the two *surviving* ACME-gated tests both import `acme-gate.ts`,
-not `r2000-test-gate.ts` —
+not `anno-test-gate.ts` —
 `disasm-roundtrip.test.ts:57` and `skill-acme-build-cli.test.ts:50` both read
 `import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";`
-[VERIFIED]. After the deletion `r2000-test-gate.ts` has **zero** surviving importers.
+[VERIFIED]. After the deletion `anno-test-gate.ts` has **zero** surviving importers.
 
-**`r2000-verify.ts`:**
+**`anno-verify.ts`:**
 > *"CONTESTED, flagged rather than smoothed over. … EXPORT-01's preamble states
 > verbatim that the existing verify seam invokes the external analyser and parses
 > ITS transcript, and that only the discipline survives. So what a later phase
@@ -628,14 +628,14 @@ not `r2000-test-gate.ts` —
 > route survives."*
 > [VERIFIED: src/mcp/vice/module-classification.ts:516-524]
 
-Its **only** import is `r2000-launch.ts`; its whole body is that spawn.
+Its **only** import is `anno-launch.ts`; its whole body is that spawn.
 ROADMAP Phase 30's own note agrees: *"it never invokes ACME, and it dies with its
 subject. Only the discipline survives. Plan this as a rebuild, not a rename."*
 
-**Recommendation:** the rename set is **9**, not 11 — `r2000-acme-ident.ts`,
-`r2000-confidence.ts`, `r2000-coverage.ts`, `r2000-d64.ts`, `r2000-enum-gen.ts`,
-`r2000-memmap-render.ts`, `r2000-regbits-gen.ts`, `r2000-regbits.json`,
-`r2000-symbols.ts`. `r2000-test-gate.ts` and `r2000-verify.ts` are **deleted**, with
+**Recommendation:** the rename set is **9**, not 11 — `anno-acme-ident.ts`,
+`anno-confidence.ts`, `anno-coverage.ts`, `anno-d64.ts`, `anno-enum-gen.ts`,
+`anno-memmap-render.ts`, `anno-regbits-gen.ts`, `anno-regbits.json`,
+`anno-symbols.ts`. `anno-test-gate.ts` and `anno-verify.ts` are **deleted**, with
 their two pinned false-pass transcripts carried forward as fixtures for Phase 30.
 The registry's `note` fields are the authority for this, exactly as designed — this
 is the registry working, not a research contradiction of it.
@@ -700,14 +700,14 @@ verbatim, not re-litigate them.**
 ### Discretion 1 — The grep gate's scope predicate
 
 **Measured blast radius (2026-08-29):** 339 tracked files mention
-`regenerator2000` case-insensitively; **61** outside `.planning/`. Of those 61,
+`the external analyser` case-insensitively; **61** outside `.planning/`. Of those 61,
 by inspection of `grep -ic` per file:
 
 | Class | Count | Examples |
 |---|---|---|
-| Modules/tests deleted in this phase | ~24 | `r2000-tools.ts` (19 hits), `r2000-launch.ts` (19), `r2000-mcp-client.ts` (18), `r2000-spawn-seam.test.ts` (38), the six glue tests |
-| Files edited/renamed in this phase | ~19 | `vice-proxy.ts` (6), `r2000-cli.ts` (13), `r2000-symbols.ts` (7), the 5 skill files, the 3 CI scripts |
-| **Legitimately keep the word forever** | **~18** | `docs/phase9-regenerator2000-probe-findings.md` (41), `docs/phase23-real-release-gate-findings.md` (2), `THIRD-PARTY-NOTICES.md` × **3 trees** (16/7/3), `skill-attribution.test.ts` (12), `docs/stock-vice-parity.md` (1), `README.md` (7) |
+| Modules/tests deleted in this phase | ~24 | `anno-tools.ts` (19 hits), `anno-launch.ts` (19), `anno-mcp-client.ts` (18), `spawn-seam.test.ts` (38), the six glue tests |
+| Files edited/renamed in this phase | ~19 | `vice-proxy.ts` (6), `anno-cli.ts` (13), `anno-symbols.ts` (7), the 5 skill files, the 3 CI scripts |
+| **Legitimately keep the word forever** | **~18** | `docs/phase9-external-analyser-probe-findings.md` (41), `docs/phase23-real-release-gate-findings.md` (2), `THIRD-PARTY-NOTICES.md` × **3 trees** (16/7/3), `skill-attribution.test.ts` (12), `docs/stock-vice-parity.md` (1), `README.md` (7) |
 
 So a whole-tree gate outside `.planning/` fires ~18 times, not ~236 — the 236
 figure in `CUT-02` counts `.planning/` too. **This makes a whole-tree-minus-planning
@@ -716,7 +716,7 @@ gate genuinely viable**, which is the opposite of what `CUT-02`'s framing implie
 **The `installer/skills/` hole is real and measured:**
 `git ls-files installer/skills | wc -l` → **0**. The directory is gitignored at
 `.gitignore:43` (`/installer/skills/`), yet 7 skills totalling 8 files mentioning
-`regenerator2000` are on disk and **are shipped**: `check-npm-packages.mjs`
+`the external analyser` are on disk and **are shipped**: `check-npm-packages.mjs`
 reports `@henols/c64-re-tools@0.0.0-dev -- 34 files, 7 skills`. A `git ls-files`
 predicate is structurally blind to exactly what users receive.
 
@@ -758,7 +758,7 @@ The project's discipline is a **planted violation observed red and reverted**
 (`29-CONTEXT.md` `<code_context>` → Established Patterns). Concretely, and in this
 order, all **before** any `git rm`:
 
-1. Land the gate as a `scripts/check-no-r2000.mjs` (or a `*.test.ts` — either;
+1. Land the gate as a `scripts/check-no-anno.mjs` (or a `*.test.ts` — either;
    the CI scripts are the closer precedent) with its exemption set and its
    non-vacuity counter, over a tree where the deletion has **not** happened.
    It must be **green** at this point over the exemption set only, which means the
@@ -829,7 +829,7 @@ interface ToolCallResult { content: { type: "text"; text: string }[]; isError: b
 function okText(text: string): ToolCallResult  { return { content: [{ type: "text", text }], isError: false }; }
 function errText(text: string): ToolCallResult { return { content: [{ type: "text", text }], isError: true  }; }
 ```
-[VERIFIED: src/mcp/vice/r2000-tools.ts:133-148]
+[VERIFIED: src/mcp/vice/anno-tools.ts:133-148]
 
 and the family's runner is the **never-throw boundary**, catching everything and
 naming the error class:
@@ -841,7 +841,7 @@ naming the error class:
   return errText(`${name} failed: [${errName}] ${errMessage}`);
 }
 ```
-[VERIFIED: src/mcp/vice/r2000-tools.ts:1205-1213]
+[VERIFIED: src/mcp/vice/anno-tools.ts:1205-1213]
 
 **The rule the planner should write down:**
 
@@ -867,50 +867,50 @@ today, but a new error class added in this phase must do the same.
 
 ### Discretion 3 — The batch verb's recursive inner-name pre-validation
 
-**Read before it dies.** `assertCuratedBatch()` at `r2000-tools.ts:801-835`, with
+**Read before it dies.** `assertCuratedBatch()` at `anno-tools.ts:801-835`, with
 its doc block at `:792-800`:
 
-> *"Walks a `r2000_batch_execute` payload's `calls` array and refuses the WHOLE
-> batch if any inner call's name is outside `CURATED_R2000_TOOLS`, or if a `calls`
+> *"Walks a `anno_batch_execute` payload's `calls` array and refuses the WHOLE
+> batch if any inner call's name is outside `CURATED_ANNO_TOOLS`, or if a `calls`
 > entry is malformed (not an object, or missing a string `name`) — a malformed
 > payload is a REFUSAL, never treated as an empty batch that passes through.
-> **Recurses into a nested `r2000_batch_execute`** (upstream permits arbitrary
+> **Recurses into a nested `anno_batch_execute`** (upstream permits arbitrary
 > tool names inside a batch, including another batch call) so a two-level
 > smuggling attempt is caught the same way a one-level one is. Also refuses WHOLE
-> on an illegal `r2000_set_label_name` name (T-11-NAME-INJECT), naming the
+> on an illegal `anno_set_label_name` name (T-11-NAME-INJECT), naming the
 > offending `calls[i]`."*
-> [VERIFIED: src/mcp/vice/r2000-tools.ts:792-800]
+> [VERIFIED: src/mcp/vice/anno-tools.ts:792-800]
 
 The discipline, in five checkable rules, each with its site:
 
 1. **A malformed payload is a refusal, never an empty batch.**
    `if (!isPlainObject(args) || !Array.isArray(args.calls)) throw …` — `:802-808`
 2. **A malformed entry names its index and refuses the whole batch.**
-   `` `r2000_batch_execute refused WHOLE: calls[${i}] is malformed (missing a string "name")` `` — `:812-817`
+   `` `anno_batch_execute refused WHOLE: calls[${i}] is malformed (missing a string "name")` `` — `:812-817`
 3. **An uncurated inner name refuses the whole batch, by index and by name.**
    `` `…calls[${i}].name "${call.name}" is outside the curated … (D-33)` `` — `:818-823`
 4. **Per-verb argument validators fire identically inside and outside a batch.**
    `assertLegalLabelArg(call.arguments, i)` / `assertReadRegionArgs(call.arguments, i)` — `:825-830`; the same two functions are called from `assertCuratedTool()` at `:864-869` with `batchIndex` undefined. Every one takes an optional `batchIndex` and interpolates ` (calls[N])` into the message.
-5. **Recursion.** `if (call.name === "r2000_batch_execute") { assertCuratedBatch(call.arguments); }` — `:831-833`, exactly mirroring `assertCuratedTool`'s own `:868-870`.
+5. **Recursion.** `if (call.name === "anno_batch_execute") { assertCuratedBatch(call.arguments); }` — `:831-833`, exactly mirroring `assertCuratedTool`'s own `:868-870`.
 
 Plus the invariant that makes it sound: **pre-validation runs before anything
-executes.** `runR2000Tool`'s doc says *"First statement: `assertCuratedTool`"*
-and the body confirms it [VERIFIED: r2000-tools.ts:1159-1160].
+executes.** `runAnnoTool`'s doc says *"First statement: `assertCuratedTool`"*
+and the body confirms it [VERIFIED: anno-tools.ts:1159-1160].
 
 **The reconciliation ROADMAP criterion 5 needs, which is already written down.**
 Criterion 5 says the batch *"pre-validates every inner name and returns per-item
 status without aborting on the first failure"*, which reads as contradicting
 "refused WHOLE". It does not. The module's own measured header settles it:
 
-> *"MEASURED: `r2000_batch_execute`'s partial-failure semantics
+> *"MEASURED: `anno_batch_execute`'s partial-failure semantics
 > (`handler.rs:506-542`, read at execution time against the installed
-> regenerator2000-core-0.9.20 crate source). The batch does NOT abort on the first
+> external-analyser-core-0.9.20 crate source). The batch does NOT abort on the first
 > failing inner call — … each outcome (`Ok`/`Err`) is pushed into a `results`
 > array as `{"status":"success","result":...}` or `{"status":"error","error":...}`;
 > the loop always runs to completion … This is PER-CALL status reporting … —
 > orthogonal to (and irrelevant to) D-33's OWN refusal, which happens entirely on
 > our side, before any request reaches the child at all."*
-> [VERIFIED: src/mcp/vice/r2000-tools.ts:63-75]
+> [VERIFIED: src/mcp/vice/anno-tools.ts:63-75]
 
 **So the replacement is two phases, and the planner should specify it as two:**
 
@@ -931,24 +931,24 @@ status without aborting on the first failure"*, which reads as contradicting
   `tools_call`-shaped smuggling hole. The module header names this in terms the
   replacement must inherit verbatim: *"Never add a `tools_call`-shaped meta-tool
   to this surface — that is exactly the nested-argument smuggling shape
-  `vice.ts`'s `DENY_LIST` exists to close."* [VERIFIED: r2000-tools.ts:88-92]
+  `vice.ts`'s `DENY_LIST` exists to close."* [VERIFIED: anno-tools.ts:88-92]
 
 ### Discretion 4 — How `coverage` / `COV-01`'s census re-points
 
 **The boundary is already named and narrow — SEAM-03 did this work.**
-`r2000-coverage.ts` declares three input shapes and its own header states it never
+`anno-coverage.ts` declares three input shapes and its own header states it never
 calls a tool:
 
 ```ts
-export interface R2000Symbol        { address: number; name: string; kind: string; type?: string; }
-export interface R2000Comment       { address: number; type: string; comment: string; }
-export interface R2000CrossReference{ address: number; callers: readonly number[]; }
+export interface AnnoSymbol        { address: number; name: string; kind: string; type?: string; }
+export interface AnnoComment       { address: number; type: string; comment: string; }
+export interface AnnoCrossReference{ address: number; callers: readonly number[]; }
 ```
 > *"Input shapes -- exactly what the curated read tools return … This module never
 > calls those tools itself; a caller fetches and hands the data in. That is what
 > keeps it pure, keeps it session-free, and keeps it testable with no child
 > process."*
-> [VERIFIED: src/mcp/vice/r2000-coverage.ts:195-227]
+> [VERIFIED: src/mcp/vice/anno-coverage.ts:195-227]
 
 The block-entry shape is deliberately elsewhere:
 `export interface BlockEntry { start_address: number; end_address: number; type: string; }`
@@ -956,19 +956,19 @@ The block-entry shape is deliberately elsewhere:
 function allowed to interpret `type`.
 
 **So the re-point is a four-function adapter in the CLI, not a change to
-`r2000-coverage.ts`.** Only the *caller* changes: `r2000-cli.ts:1384-1386` stops
-doing `queryR2000Json<T>("r2000_get_symbols", …)` and instead opens the store once
+`anno-coverage.ts`.** Only the *caller* changes: `anno-cli.ts:1384-1386` stops
+doing `queryAnnoJson<T>("anno_get_symbols", …)` and instead opens the store once
 and maps:
 
 | Census input | Store source | Mapping |
 |---|---|---|
-| `R2000Symbol[]` | `listLabels()` → `LabelRow{id,address,name,kind,bank}` | `{address, name, kind}`; drop `id`/`bank`; `type` is `undefined` (the store has no `LabelType`). **`kind` is already the same four-token vocabulary** — `LABEL_KINDS = ["User","Auto","System","Platform"]` [VERIFIED: anno-types.ts:261], and `computeLabelRatio` filters on exactly `"System"`/`"Platform"` [VERIFIED: r2000-cli.ts:1393-1394]. No translation needed. |
-| `R2000Comment[]` | `listComments()` → `CommentRow{id,address,commentType,text,bank}` | `{address, type: commentType, comment: text}`. `COMMENT_TYPES = ["line","side"]` [VERIFIED: anno-types.ts:239] matches `R2000Comment.type`'s documented `"line"`/`"side"` exactly. |
+| `AnnoSymbol[]` | `listLabels()` → `LabelRow{id,address,name,kind,bank}` | `{address, name, kind}`; drop `id`/`bank`; `type` is `undefined` (the store has no `LabelType`). **`kind` is already the same four-token vocabulary** — `LABEL_KINDS = ["User","Auto","System","Platform"]` [VERIFIED: anno-types.ts:261], and `computeLabelRatio` filters on exactly `"System"`/`"Platform"` [VERIFIED: anno-cli.ts:1393-1394]. No translation needed. |
+| `AnnoComment[]` | `listComments()` → `CommentRow{id,address,commentType,text,bank}` | `{address, type: commentType, comment: text}`. `COMMENT_TYPES = ["line","side"]` [VERIFIED: anno-types.ts:239] matches `AnnoComment.type`'s documented `"line"`/`"side"` exactly. |
 | `BlockEntry[]` | `listRanges()` → `RangeRow{id,start,endInclusive,dataType,bank}` | `{start_address: start, end_address: endInclusive, type: dataType}` — **⚠️ verify the `type` vocabulary against `blockClassAt()`.** `DATA_TYPES` is the frozen twelve `["code","byte","word","address","petscii","screencode","lo_hi_address","hi_lo_address","lo_hi_word","hi_lo_word","external_file","undefined"]` [VERIFIED: anno-types.ts:181-194]; `block-class.ts`'s classifier was written against *upstream's* `Display` strings. `SEAM-03` says the census must pass against the new store; this mapping is the one place it can silently not. |
-| `R2000CrossReference[]` | `anno_get_cross_references`'s **derived** answer (F-1's `STORE-06` work) | `{address, callers: sorted-deduped from-addresses}`. This is the only input that depends on new code. |
+| `AnnoCrossReference[]` | `anno_get_cross_references`'s **derived** answer (F-1's `STORE-06` work) | `{address, callers: sorted-deduped from-addresses}`. This is the only input that depends on new code. |
 
 Two further edits in the same verb: `resolveStorePath()` (deleted with
-`r2000-tools.ts`) is replaced by `storePathWithinWorkspace()`
+`anno-tools.ts`) is replaced by `storePathWithinWorkspace()`
 [VERIFIED: anno-types.ts:1140], and the per-address xref loop
 (`MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS` round trips) collapses into **one**
 derivation pass — the round-trip cap becomes vestigial and should be removed
@@ -985,17 +985,17 @@ census-versus-store boundary test passes against the new store."*
 
 | Phase | Survives D-01? | What is left |
 |---|---|---|
-| **30 — ACME Export and the Real-ACME Oracle** | **Yes, entirely.** | All three requirements (`EXPORT-01/02/03`) and all five criteria are about building a *new* ACME oracle. The ROADMAP's own note already says `r2000-verify.ts` *"dies with its subject. Only the discipline survives. Plan this as a rebuild, not a rename."* Nothing in Phase 30 depended on r2000 surviving. **Only its note about ordering constraint 2 needs a sentence.** |
+| **30 — ACME Export and the Real-ACME Oracle** | **Yes, entirely.** | All three requirements (`EXPORT-01/02/03`) and all five criteria are about building a *new* ACME oracle. The ROADMAP's own note already says `anno-verify.ts` *"dies with its subject. Only the discipline survives. Plan this as a rebuild, not a rename."* Nothing in Phase 30 depended on anno surviving. **Only its note about ordering constraint 2 needs a sentence.** |
 | **31 — Procedure Re-pointing** | **Substantially consumed.** | `REPOINT-01` (5 files, 17 names) and `REPOINT-02` (`installer/skills/`) are pulled into 29 by in-scope item 5. `REPOINT-03` (the `ABS-02` attribution chain, `routine-queue-walker/SKILL.md:3`'s YAML description, `ABS-03`'s pairwise trigger-collision check) and `REPOINT-04` (`upstream-procedure-manifest.json`'s own re-sync trigger) are **not** — they are prose/attribution work with their own guards and are cleanly separable. |
-| **32 — The Deletion and the Grep Gate** | **Substantially consumed.** | `CUT-01`/`CUT-02`/`CUT-03`/`CUT-05` land in 29. `CUT-04` (every guard's recorded, non-vacuously-verified fate — 32 test files and 11 `scripts/` files) and `CUT-06` (every living document naming r2000 as a required prerequisite) are large and are **not** in 29's seven streams. |
+| **32 — The Deletion and the Grep Gate** | **Substantially consumed.** | `CUT-01`/`CUT-02`/`CUT-03`/`CUT-05` land in 29. `CUT-04` (every guard's recorded, non-vacuously-verified fate — 32 test files and 11 `scripts/` files) and `CUT-06` (every living document naming anno as a required prerequisite) are large and are **not** in 29's seven streams. |
 
 **Why not renumber:**
 
 1. **`ROADMAP.md` phase numbers are cited from tracked, guarded files.**
-   `r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no
-   existence guard (D-11); `r2000-upstream-audit.test.ts` resolves
+   `absorbed-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no
+   existence guard (D-11); `anno-derivation.test.ts` resolves
    `"../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json"`
-   as a **literal path** [VERIFIED: src/mcp/vice/r2000-upstream-audit.test.ts:46];
+   as a **literal path** [VERIFIED: src/mcp/vice/anno-derivation.test.ts:46];
    `comment-phase-pointers.test.ts` exists specifically to police phase pointers.
    Renumbering 30→30 is fine but a cascade is not, and the value bought is zero.
 2. **`REQUIREMENTS.md`'s Traceability table maps every requirement to exactly one
@@ -1037,11 +1037,11 @@ line edit does not.
 
 ```ts
 // vice-proxy.ts:194
-import { R2000_TOOL_DEFINITIONS, runR2000Tool } from "./r2000-tools.ts";
+import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
 
 // vice-proxy.ts:3401-3403
-for (const r2000Def of R2000_TOOL_DEFINITIONS) {
-  tools[r2000Def.name] = buildViceTool(r2000Def, (args) => runR2000Tool(r2000Def.name, args));
+for (const annoDef of ANNO_TOOL_DEFINITIONS) {
+  tools[annoDef.name] = buildViceTool(annoDef, (args) => runAnnoTool(annoDef.name, args));
 }
 ```
 [VERIFIED: src/mcp/vice/vice-proxy.ts:194 and :3401-3403, quoted verbatim]
@@ -1067,30 +1067,30 @@ So the replacement variable must be a distinct name (`annoDef`) and the
 
 ```ts
 // :1505 — ORDERED; source-order of registrations must match
-const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "r2000Def.name"];
+const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "annoDef.name"];
 ```
 [VERIFIED: src/mcp/vice/stock-dispatch.test.ts:1505]
 
 1. `:1505` — the allow-list itself. **Rename the second entry in place.**
 2. `:1507-1517` — the "every registered tool whose runner can touch a transport
    goes through `buildBackendAwareTool`" test; also asserts
-   `registrations.length >= 5` with a message naming "the r2000 loop registration".
+   `registrations.length >= 5` with a message naming "the anno loop registration".
 3. `:1519-1531` — `assert.deepEqual(bypassing, BACKEND_SEAM_BYPASS_KEYS, …)` —
    **order-sensitive**, and it is the non-vacuity half.
 4. `:1549-1563` — **the body-slice assertion `MCP-02` names.** Verbatim:
    ```ts
-   const start = R2000_TOOLS_SOURCE.indexOf("export async function runR2000Tool(");
-   assert.ok(start > 0, "runR2000Tool() must still exist in r2000-tools.ts");
-   const body = R2000_TOOLS_SOURCE.slice(start, R2000_TOOLS_SOURCE.indexOf("\n}", start));
+   const start = ANNO_TOOLS_SOURCE.indexOf("export async function runAnnoTool(");
+   assert.ok(start > 0, "runAnnoTool() must still exist in anno-tools.ts");
+   const body = ANNO_TOOLS_SOURCE.slice(start, ANNO_TOOLS_SOURCE.indexOf("\n}", start));
    for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
-     assert.ok(!body.includes(forbidden), `runR2000Tool() must not reach ${forbidden} -- that is what makes the r2000_* family's backend-independence sound`);
+     assert.ok(!body.includes(forbidden), `runAnnoTool() must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound`);
    }
    ```
    [VERIFIED: src/mcp/vice/stock-dispatch.test.ts:1549-1562]
-   Note `const R2000_TOOLS_SOURCE = readFileSync(join(…, "r2000-tools.ts"), "utf8");`
+   Note `const ANNO_TOOLS_SOURCE = readFileSync(join(…, "anno-tools.ts"), "utf8");`
    at `:1547` — the file path must move with the module.
-5. `:1564-1575` — "every curated `r2000_*` name is absent from BOTH manifests",
-   iterating `CURATED_R2000_TOOLS`. Re-point to the `anno_*` set. **This is
+5. `:1564-1575` — "every curated `anno_*` name is absent from BOTH manifests",
+   iterating `CURATED_ANNO_TOOLS`. Re-point to the `anno_*` set. **This is
    `MCP-03`'s "neither manifest gains an entry" half.**
 
 ### Verified: `docs/tool-support.md` regenerates byte-identical
@@ -1104,7 +1104,7 @@ Method (no tree mutation — scratch copies only):
    `=== readFileSync("docs/tool-support.md")` → **true**, 7,874 bytes.
 2. Wrote a scratch `vice-proxy-swapped.ts` applying exactly the substitution above
    (`annoDef` / `ANNO_TOOL_DEFINITIONS` / `runAnnoTool` / `./anno-tools.ts`).
-3. Wrote a scratch generator with `R2000_TOOL_DEFINITIONS` → `ANNO_TOOL_DEFINITIONS`.
+3. Wrote a scratch generator with `ANNO_TOOL_DEFINITIONS` → `ANNO_TOOL_DEFINITIONS`.
 4. `genNew.generateToolSupportTable({ proxySourcePath: <scratch> })` → **byte-identical
    to (1)**, 7,874 bytes.
 5. `discoverSyntheticToolNames` returns `["vice_diagnose","vice_recycle","vice_result_continue"]`
@@ -1132,28 +1132,28 @@ its exact location as of 2026-08-29, and what this phase owes it.
 
 | Guard | Location (verified) | Current value | Owed |
 |---|---|---|---|
-| `R2000_MODULE_FLOOR` | `src/mcp/vice/hostpath-consumers.test.ts:188` | `const R2000_MODULE_FLOOR = 14;` | Re-express over `anno-` at the measured new count. **See C-3 for the arithmetic problem.** |
-| `INT-01` positive control | `hostpath-consumers.test.ts:199-206` | `["r2000-acme-ident.ts","r2000-regbits-gen.ts","r2000-symbols.ts","r2000-test-gate.ts"]` | Replace with **real new filenames**; note `r2000-test-gate.ts` is proposed for deletion (F-3) so it cannot be one of them under any name. |
-| `r2000ProductionModules()` | `hostpath-consumers.test.ts:180-182` | `topLevelProductionModules().filter((name) => /^r2000-.*\.ts$/.test(name))` | Re-point the regex to `/^anno-.*\.ts$/`. Note `topLevelProductionModules()` filters `/\.(ts\|mts)$/` — `anno-durability-mutator.mjs` is **not** counted. |
+| `ANNO_MODULE_FLOOR` | `src/mcp/vice/hostpath-consumers.test.ts:188` | `const ANNO_MODULE_FLOOR = 14;` | Re-express over `anno-` at the measured new count. **See C-3 for the arithmetic problem.** |
+| `INT-01` positive control | `hostpath-consumers.test.ts:199-206` | `["anno-acme-ident.ts","anno-regbits-gen.ts","anno-symbols.ts","anno-test-gate.ts"]` | Replace with **real new filenames**; note `anno-test-gate.ts` is proposed for deletion (F-3) so it cannot be one of them under any name. |
+| `annoProductionModules()` | `hostpath-consumers.test.ts:180-182` | `topLevelProductionModules().filter((name) => /^anno-.*\.ts$/.test(name))` | Re-point the regex to `/^anno-.*\.ts$/`. Note `topLevelProductionModules()` filters `/\.(ts\|mts)$/` — `anno-durability-mutator.mjs` is **not** counted. |
 | `EXPECTED_IMPORTERS` (hostpath) | `hostpath-consumers.test.ts:143` | `["containerpath.ts","install-resources.ts","stock-paths.ts","vice-proxy.ts","vice-sync.ts"]` — exact `deepEqual`, length 5 | **Must remain exactly 5.** `MCP-02`'s "no new module imports `hostpath.ts`" is this assertion. |
-| `BACKEND_SEAM_BYPASS_KEYS` | `stock-dispatch.test.ts:1505` | `["RESULT_CONTINUE_TOOL.name", "r2000Def.name"]` — **ordered** | Rename entry 2 in place; keep position. |
+| `BACKEND_SEAM_BYPASS_KEYS` | `stock-dispatch.test.ts:1505` | `["RESULT_CONTINUE_TOOL.name", "annoDef.name"]` — **ordered** | Rename entry 2 in place; keep position. |
 | body-slice assertion | `stock-dispatch.test.ts:1549-1562` | forbids `forwardToVice` / `ensureViceSession` / `rewriteArguments` in the runner's body | Re-point the file read and the function name. |
-| `R2000_TOOL_DEFINITIONS` regex (authoritative) | `scripts/generate-tool-support-table.mjs:107` (**not :104**) | `/for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/` | Rename the array. Prose at `:95` too. |
+| `ANNO_TOOL_DEFINITIONS` regex (authoritative) | `scripts/generate-tool-support-table.mjs:107` (**not :104**) | `/for\s*\(\s*const\s+(\w+)\s+of\s+ANNO_TOOL_DEFINITIONS\s*\)/` | Rename the array. Prose at `:95` too. |
 | duplicate witness 1 | `src/mcp/vice/tool-support-table.test.mjs:66` | identical regex, brace-depth bounding | Rename. **Never share a helper.** |
 | duplicate witness 2 | `src/mcp/vice/capability-registry.test.ts:161` | identical regex, line-oriented bounding | Rename. **Never share a helper.** Also fix its stale `"an array of 17"` comment at `:154` — it is **19**. |
-| `files[]` r2000 entries | `src/mcp/vice/package.json:56-71` | 16 entries (15 `.ts` + `r2000-regbits.json`) | Every deleted file must leave `files[]` **in the same commit**; `check-npm-packages.mjs` fails on a stale entry. |
-| `shippedTsModules()` floor | `src/mcp/vice/r2000-spawn-seam.test.ts:251` | `assert.ok(modules.length >= 40, …)` | Safe: 65 `.ts`/`.mts` in `files[]` today → 60 after deleting 5 glue modules. |
+| `files[]` anno entries | `src/mcp/vice/package.json:56-71` | 16 entries (15 `.ts` + `anno-regbits.json`) | Every deleted file must leave `files[]` **in the same commit**; `check-npm-packages.mjs` fails on a stale entry. |
+| `shippedTsModules()` floor | `src/mcp/vice/spawn-seam.test.ts:251` | `assert.ok(modules.length >= 40, …)` | Safe: 65 `.ts`/`.mts` in `files[]` today → 60 after deleting 5 glue modules. |
 | `check-npm-packages.mjs` closure | run this session | `transitive closure from vice-proxy.ts -- 60 modules, clean`; `@henols/vice-mcp -- 80 files`; `@henols/c64-re-tools -- 34 files, 7 skills` | Re-run; it is the only proof `installer/skills/` is right. |
-| `extractedR2000.size` floor | `scripts/check-skill-tool-coverage.mjs:446` | `assert(extractedR2000.size >= 10, …)`; **measured today: 17** | Re-express over `anno_`. D-13's "raised": with 17 names re-pointed, a floor of 17 is a raise. ✅ |
-| `R2000_CLI_VERB_FLOOR` | `scripts/lib/r2000-cli-verbs.mjs:44` | `export const R2000_CLI_VERB_FLOOR = 8;` — comment says *"never lower it to make a regression pass"* | **The module is `glue` and D-02 deletes it.** The floor is therefore *replaced*, not lowered: a new parser module over the renamed CLI with a floor of **5**. Recording it as a replacement rather than a lowering is what keeps the discipline honest. |
-| `parseR2000CliVerbs` consumers | `scripts/check-skill-tool-coverage.mjs:50,464-468` and `src/mcp/vice/r2000-verb-coverage.test.ts` | 8/8 verbs resolved | Both re-point. The test hard-pins `assert.equal(verbs.length, 8)` at `:158` and names `export-asm` at `:163`. |
-| `verbsMissingFromSkills` | `scripts/lib/r2000-cli-verbs.mjs:146-148` | matches the literal `` `r2000 ${verb}` `` | The literal changes with the CLI's new name. **The CLI's new name is an unmade decision — see C-4.** |
-| `check-skill-fork-honesty.mjs` `"r2000 export-asm"` | `scripts/check-skill-fork-honesty.mjs:500-504` | `need(acmeBuildSkillSource.includes("r2000 export-asm"), …)` | D-10: strip the route from `acme-build/SKILL.md`, re-point the assertion at the renamed CLI. |
+| `extractedAnno.size` floor | `scripts/check-skill-tool-coverage.mjs:446` | `assert(extractedAnno.size >= 10, …)`; **measured today: 17** | Re-express over `anno_`. D-13's "raised": with 17 names re-pointed, a floor of 17 is a raise. ✅ |
+| `ANNO_CLI_VERB_FLOOR` | `scripts/lib/anno-cli-verbs.mjs:44` | `export const ANNO_CLI_VERB_FLOOR = 8;` — comment says *"never lower it to make a regression pass"* | **The module is `glue` and D-02 deletes it.** The floor is therefore *replaced*, not lowered: a new parser module over the renamed CLI with a floor of **5**. Recording it as a replacement rather than a lowering is what keeps the discipline honest. |
+| `parseAnnoCliVerbs` consumers | `scripts/check-skill-tool-coverage.mjs:50,464-468` and `src/mcp/vice/anno-verb-coverage.test.ts` | 8/8 verbs resolved | Both re-point. The test hard-pins `assert.equal(verbs.length, 8)` at `:158` and names `export-asm` at `:163`. |
+| `verbsMissingFromSkills` | `scripts/lib/anno-cli-verbs.mjs:146-148` | matches the literal `` `anno ${verb}` `` | The literal changes with the CLI's new name. **The CLI's new name is an unmade decision — see C-4.** |
+| `check-skill-fork-honesty.mjs` `"anno export-asm"` | `scripts/check-skill-fork-honesty.mjs:500-504` | `need(acmeBuildSkillSource.includes("anno export-asm"), …)` | D-10: strip the route from `acme-build/SKILL.md`, re-point the assertion at the renamed CLI. |
 | `toacme` walk (the precedent) | `check-skill-fork-honesty.mjs:452-480`, corpus at `scripts/lib/skill-corpus.mjs:39-62` | per-line, whole-tree over `src/skills/`, `/\.(md\|mjs)$/`; exactly one line-scoped exemption with `exemptionHits === 1` non-vacuity | **The template for the grep gate's exemption discipline.** Its scope is too narrow to copy directly (see Discretion 1). |
-| `EXPECTED_DOCS_GUARD_NAMES` | `scripts/audit-gate.mjs:129-137` (the r2000 entry at `:136`) | 7 names incl. `"docs-r2000-decisions.test.ts"`; `DOCS_GUARD_FLOOR = 7` at `:109` | D-12: the test file and this entry move **in one commit**. If the file is renamed rather than deleted the floor is unchanged; if deleted, `DOCS_GUARD_FLOOR` must drop to 6 **and** `audit-integrity.test.ts`'s registry-vs-disk cross-check re-run. |
-| `docs-r2000-decisions.test.ts` content pins | `src/mcp/vice/docs-r2000-decisions.test.ts:48` | `GUARD_FILENAMES = ["r2000-session.test.ts", "r2000-spawn-seam.test.ts"]` | `r2000-session.test.ts` is deleted. Re-point or the guard goes red on its own content. |
+| `EXPECTED_DOCS_GUARD_NAMES` | `scripts/audit-gate.mjs:129-137` (the anno entry at `:136`) | 7 names incl. `"docs-absorbed-decisions.test.ts"`; `DOCS_GUARD_FLOOR = 7` at `:109` | D-12: the test file and this entry move **in one commit**. If the file is renamed rather than deleted the floor is unchanged; if deleted, `DOCS_GUARD_FLOOR` must drop to 6 **and** `audit-integrity.test.ts`'s registry-vs-disk cross-check re-run. |
+| `docs-absorbed-decisions.test.ts` content pins | `src/mcp/vice/docs-absorbed-decisions.test.ts:48` | `GUARD_FILENAMES = ["anno-session.test.ts", "spawn-seam.test.ts"]` | `anno-session.test.ts` is deleted. Re-point or the guard goes red on its own content. |
 | `docs-linerefs.test.ts` | `src/mcp/vice/docs-linerefs.test.ts:37-99` | reads CLAUDE.md's `rewriteArguments()` bullet, ≥2 `vice-proxy.ts:<N>` citations, each must land on a `rewriteArguments(` call or a `function` line | **Any net line-count change above `vice-proxy.ts:3052` reds this.** See Pitfall 4. |
-| `MANUAL_ONLY_TESTS` | `src/mcp/vice/test-gate.mjs:95-105` | 9 files, exact-set asserted by `test-gate.test.ts:16-22` | Every `*.test.*` on disk must land in exactly one of automated/manual. Adding or deleting a test file changes the derived automated set; the exact-set assertion is on `MANUAL_ONLY_TESTS` only, so deletions of r2000 tests are fine. |
+| `MANUAL_ONLY_TESTS` | `src/mcp/vice/test-gate.mjs:95-105` | 9 files, exact-set asserted by `test-gate.test.ts:16-22` | Every `*.test.*` on disk must land in exactly one of automated/manual. Adding or deleting a test file changes the derived automated set; the exact-set assertion is on `MANUAL_ONLY_TESTS` only, so deletions of anno tests are fine. |
 
 ---
 
@@ -1178,7 +1178,7 @@ manifest, and `stock-dispatch.test.ts:1564-1575` asserts exactly that.
 ### Pitfall 3 — Deriving the module set from a hand-typed list
 
 `INT-01` found four uncovered modules in the ten-name hard-coded array
-`r2000ProductionModules()` replaced. The comment at `hostpath-consumers.test.ts:182-187`
+`annoProductionModules()` replaced. The comment at `hostpath-consumers.test.ts:182-187`
 is explicit: *"an empty or broken glob (e.g. a typo'd filter regex, or a directory
 walk that silently resolves to the wrong path) must fail this test rather than pass
 vacuously."* Every derived set in this phase — the module glob, the verb set, the
@@ -1204,7 +1204,7 @@ to re-verify."*
 
 `wrapPossiblyChunked()` (`vice-proxy.ts:2108-2125`) splits results over
 `OUTPUT_CHAR_CAP` (default **500,000**, `VICE_MAX_RESULT_CHARS`-overridable,
-`:436-439`) into a `vice_result_continue` sequence. **The r2000 loop registration
+`:436-439`) into a `vice_result_continue` sequence. **The anno loop registration
 does not go through it** — `buildViceTool(def, run)` calls `run` directly.
 
 The measured client ceiling is far lower: the proxy's own comment records
@@ -1213,16 +1213,16 @@ The measured client ceiling is far lower: the proxy's own comment records
 [VERIFIED: vice-proxy.ts:443-448].
 
 **Mitigations, both already conventions here:**
-- `anno_read_region`'s range cap. `R2000_READ_REGION_MAX_BYTES = 4096`, whose
+- `anno_read_region`'s range cap. `ANNO_READ_REGION_MAX_BYTES = 4096`, whose
   comment reads: *"A full-64K disassembly view dumped into an LLM's context is the
   hazard this cap exists to prevent … ONE cap, both views, so there is no per-view
-  rule to get subtly wrong."* [VERIFIED: r2000-tools.ts:196-207]
+  rule to get subtly wrong."* [VERIFIED: anno-tools.ts:196-207]
 - `max_results` **required, no default**, on every list-returning verb, with the
   count returned so truncation is detectable. The existing description is the
   wording to carry: *"`max_results` is REQUIRED on this surface (no default):
-  regenerator2000's own default is 50, which would silently truncate a full-program
+  The external analyser's own default is 50, which would silently truncate a full-program
   pass -- pass an explicit ceiling and compare the returned count against it to
-  detect truncation."* [VERIFIED: r2000-tools.ts:419-424]
+  detect truncation."* [VERIFIED: anno-tools.ts:419-424]
 
 ### Pitfall 6 — Trusting `inputSchema`
 
@@ -1287,7 +1287,7 @@ destroys the property. **Rename in three places; share nothing.**
 | PRG parsing | a 2-byte read | `parsePrg()` / `flatImageOrigin()` `prg-image.ts:69,86` | D-04: already extracted, prefix-free, and the obligation is recorded discharged. |
 | Skill corpus walking | a fresh `readdirSync` | `walkSkills()` / `topLevelSkillDirs()` `scripts/lib/skill-corpus.mjs` | One corpus, three consumers. |
 | Shipped-file enumeration | a glob over `files[]` | `packFiles()` `scripts/check-npm-packages.mjs:140` | It runs `prepack`, so the installer sync cannot be forgotten. |
-| Comment stripping for a source scan | a regex | the character-scanner `stripComments()` in `scripts/lib/r2000-cli-verbs.mjs:56-93` | *"`docs-dangling-refs.test.ts` measured a regex-alternation extractor silently missing a literal at the exact site a real defect lived."* Carry the function into the replacement module; do not re-derive it. |
+| Comment stripping for a source scan | a regex | the character-scanner `stripComments()` in `scripts/lib/anno-cli-verbs.mjs:56-93` | *"`docs-dangling-refs.test.ts` measured a regex-alternation extractor silently missing a literal at the exact site a real defect lived."* Carry the function into the replacement module; do not re-derive it. |
 
 **Key insight:** this codebase's whole quality posture is *one seam per concern,
 derived from disk, with a floor that only rises and a planted violation observed
@@ -1310,7 +1310,7 @@ guard list) survives untouched, and D-13 says so explicitly.
 
 ### C-2 — `anno_save_project`: a `curated` manifest verb that is a named anti-feature
 
-The manifest disposes `r2000_save_project` **`curated`**, so D-08's mechanical check
+The manifest disposes `anno_save_project` **`curated`**, so D-08's mechanical check
 demands a route. ROADMAP Phase 29's anti-feature list names *"an explicit save verb
 that governs durability (durability is the store's, not the caller's)"*.
 
@@ -1330,7 +1330,7 @@ mistake for an oversight.
 
 ### C-3 — D-13's "raised not lowered" may be arithmetically unsatisfiable
 
-`R2000_MODULE_FLOOR = 14`. D-13 says it is *"re-expressed over the `anno-` prefix
+`ANNO_MODULE_FLOOR = 14`. D-13 says it is *"re-expressed over the `anno-` prefix
 at the measured new count, **raised not lowered**"*.
 
 **The arithmetic.** `topLevelProductionModules()` counts `.ts`/`.mts` only.
@@ -1361,9 +1361,9 @@ the reading it adopts in the plan rather than let a number decide a naming polic
 
 ### C-4 — The renamed CLI has no name yet
 
-D-02 says `r2000-cli.ts` is "renamed"; D-10 says the fork-honesty assertion is
+D-02 says `anno-cli.ts` is "renamed"; D-10 says the fork-honesty assertion is
 "re-pointed at the renamed CLI"; `verbsMissingFromSkills` matches the literal
-`` `r2000 ${verb}` ``, so **every skill file's invocation prose changes with it**,
+`` `anno ${verb}` ``, so **every skill file's invocation prose changes with it**,
 and Phase 30 will restore `export-asm` "under that name".
 
 Nothing names it. Candidates: `anno-cli.ts` invoking as `anno <verb>` (consistent
@@ -1375,16 +1375,16 @@ D-05's single-prefix rule is the binding decision and this is downstream of it.
 ### C-5 — `check-skill-tool-coverage.mjs` will find `anno_*` names it cannot classify
 
 The script has two independent sections: `vice_*` names (classified against the two
-manifests + `capability-registry.ts`) and `r2000_*` names (classified against
-`CURATED_R2000_TOOLS`). `MCP_PREFIX_RE`/`TOOL_NAME_RE` in `skill-corpus.mjs` extract
-`vice_*`; `R2000_TOOL_NAME_RE = /\br2000_[a-z0-9_]+/g` at `:88` extracts the other
+manifests + `capability-registry.ts`) and `anno_*` names (classified against
+`CURATED_ANNO_TOOLS`). `MCP_PREFIX_RE`/`TOOL_NAME_RE` in `skill-corpus.mjs` extract
+`vice_*`; `ANNO_TOOL_NAME_RE = /\banno_[a-z0-9_]+/g` at `:88` extracts the other
 family into its own map, *"Kept in its OWN map rather than …"* [VERIFIED:
 scripts/check-skill-tool-coverage.mjs:83-88].
 
 Re-pointing is a mechanical rename of that regex and its floor — **but the
 `anno_*` names have no manifest at all**, so the "absent from BOTH manifests"
 assertion at `:407-421` becomes the *only* structural check on them, and the
-non-vacuity control at `:423-431` (which pins `r2000_get_address_details` as
+non-vacuity control at `:423-431` (which pins `anno_get_address_details` as
 curated) needs a new subject. Pick one that is load-bearing, not arbitrary:
 `anno_search` (it is `STORE-06`'s named requirement and lives in the D-08 register,
 so if it silently leaves the surface both checks should fire).
@@ -1398,22 +1398,22 @@ Stated here rather than planned around.
 
 ### CD-1 — D-02's "keeping the five that import capability modules only" is false
 
-**Locked text:** *"Renamed, not deleted: `r2000-cli.ts`, dropping only the three
+**Locked text:** *"Renamed, not deleted: `anno-cli.ts`, dropping only the three
 verbs that reach the spawn (`bootstrap`, `export-asm`, `verify`) and keeping the
 five that import capability modules only (`gen-enums`, `export-lbl`, `import-lbl`,
 `render-memmap`, `coverage`). Verified at discussion time by reading the CLI's own
 import list."*
 
 **Evidence:** the verification was one level deep. See **F-2**. Four of the five
-kept verbs reach `r2000-launch.ts` or `r2000-tools.ts` **through the capability
+kept verbs reach `anno-launch.ts` or `anno-tools.ts` **through the capability
 modules themselves** — five verbatim import lines quoted there, plus eight use
 sites.
 
 **Consequence:** D-02's *conclusion* (the external dependency can go in Phase 29
-without inventing an export route ahead of Phase 30) still holds — `r2000-verify.ts`
+without inventing an export route ahead of Phase 30) still holds — `anno-verify.ts`
 was never going to be reused, as ROADMAP Phase 30's own note says. **But its
 *sizing* does not.** `export-lbl`/`import-lbl`/`gen-enums`/`coverage` are four
-rebuilds, and `export-lbl`/`import-lbl` carry the ✓ Validated `R2000-14`/`R2000-15`
+rebuilds, and `export-lbl`/`import-lbl` carry the ✓ Validated `ANNO-14`/`ANNO-15`
 round trip whose proof does not transfer.
 
 **What the planner must do:** either plan the four rebuilds as first-class work in
@@ -1426,15 +1426,15 @@ large one.
 ### CD-2 — D-03's eleven-module rename set includes two modules the registry itself says will not survive
 
 **Locked text:** *"The 11 `capability` modules are renamed out from under the prefix
-… The survivors are … `r2000-test-gate.ts`, `r2000-verify.ts`."*
+… The survivors are … `anno-test-gate.ts`, `anno-verify.ts`."*
 
 **Evidence:** see **F-3**. `module-classification.ts`'s own `note` fields say, in
 its own words, *"Do NOT read this verdict as a claim that the module survives a
 prefix deletion"* (`:487-488`) and *"what a later phase inherits is the discipline
 … NOT the route"* (`:520-522`). Corroborated by import measurement:
-`r2000-test-gate.ts` has zero surviving importers (both live ACME-gated tests use
-`acme-gate.ts`), and `r2000-verify.ts`'s only import is the deleted
-`r2000-launch.ts`.
+`anno-test-gate.ts` has zero surviving importers (both live ACME-gated tests use
+`acme-gate.ts`), and `anno-verify.ts`'s only import is the deleted
+`anno-launch.ts`.
 
 **Note this is not research overruling the registry — it is research reading the
 registry as designed.** D-03's own text says the deletion is *"driven by
@@ -1442,7 +1442,7 @@ registry as designed.** D-03's own text says the deletion is *"driven by
 field plus its `note` field are one record. Reading only the verdict is the
 name-based shortcut D-03 exists to prevent, one level up.
 
-**Recommendation:** rename **9**, delete **2**, and carry `r2000-verify.ts`'s two
+**Recommendation:** rename **9**, delete **2**, and carry `anno-verify.ts`'s two
 pinned false-pass transcripts forward as Phase 30 fixtures — the registry names them
 as the thing that must survive.
 
@@ -1524,13 +1524,13 @@ src/mcp/vice/
 ├── anno-derive.ts        # NEW: STORE-06 — derived xrefs + search over the
 │                         #      disasm-* decoders. NEVER writes.
 ├── anno-details.ts       # NEW: anno_get_address_details' composition
-│                         #      (template: r2000-tools.ts:1121)
-├── anno-cli.ts           # RENAMED from r2000-cli.ts, 5 verbs, 4 rebuilt
+│                         #      (template: anno-tools.ts:1121)
+├── anno-cli.ts           # RENAMED from anno-cli.ts, 5 verbs, 4 rebuilt
 └── <9 renamed capability modules>   # naming per C-3
 scripts/
-├── lib/anno-cli-verbs.mjs        # REPLACES scripts/lib/r2000-cli-verbs.mjs
+├── lib/anno-cli-verbs.mjs        # REPLACES scripts/lib/anno-cli-verbs.mjs
 │                                 # (carry stripComments() verbatim)
-└── check-no-regenerator2000.mjs  # NEW: the grep gate (Discretion 1)
+└── check-no-analyser.mjs  # NEW: the grep gate (Discretion 1)
 ```
 
 Splitting the surface across `anno-tools` / `anno-derive` / `anno-details` is not
@@ -1573,14 +1573,14 @@ export async function runAnnoTool(name: string, args: unknown): Promise<ToolCall
   }
 }
 ```
-Source: `src/mcp/vice/r2000-tools.ts:1158-1213` (the try/catch and `errText`
+Source: `src/mcp/vice/anno-tools.ts:1158-1213` (the try/catch and `errText`
 wording verbatim); `openStore`/`closeStore` signatures from
 `src/mcp/vice/anno-store.ts:413,550`.
 
 **Note the deliberate difference from the original:** `assertAnnoTool` is inside
 the `try`. The original leaves it outside, which makes a refusal **reject the
 promise** rather than resolve `{isError:true}` — filed as WR-02 and explicitly
-called *"out of scope for this plan"* at `r2000-tools.ts:772-774`. This phase is
+called *"out of scope for this plan"* at `anno-tools.ts:772-774`. This phase is
 the natural place to close it, and closing it makes every refusal reach the caller
 through one shape.
 
@@ -1603,7 +1603,7 @@ being rejected", already built.
 - **A cursor / "current address" concept.** Upstream's own text: *"**NEVER** use
   the 'current cursor address' or rely on the active cursor location in the
   editor"* [VERIFIED: the `upstream_citation` field of
-  `disposition_rationale["r2000_get_disassembly_cursor"]` in the manifest].
+  `disposition_rationale["anno_get_disassembly_cursor"]` in the manifest].
 - **Rejecting no-op writes.** Breaks idempotency; agents retry on timeout.
 - **Nested scopes.** `ScopeRow`'s doc comment and the schema both say unsupported;
   `add_scope` has exactly one site in the whole skill tree
@@ -1684,10 +1684,10 @@ inventory applies. **Every category answered explicitly.**
 
 | Category | Items Found | Action Required |
 |---|---|---|
-| **Stored data** | **None.** The regenerator2000 integration's only persistent artefact is a `.regen2000proj` JSON file in a *user's* project, never in this repo (`git ls-files '*.regen2000proj'` → 0). The new store is a fresh `*.annostore` SQLite file with `SCHEMA_VERSION = 2` and no migration path (F-1). **No data migration is owed by this repo**; a consuming project's `.regen2000proj` is simply orphaned, which is the documented consequence of D-01's one-way call. | none (repo-side); **document the orphaning** in the CUT-06 documentation edits |
-| **Live service config** | **None.** This project drives a local VICE process through a broker; there is no external service holding a `r2000` string in a UI or database. The broker's state dir (`.vice-supervisor/`) holds ports and epochs, not tool names — verified by inspection of `broker-state.mts`'s subject. | none |
-| **OS-registered state** | **One, and it is the user's, not the repo's:** the `regenerator2000` binary itself must be on `$PATH` for the deleted verbs. After this phase nothing looks for it. No systemd unit, launchd plist, Task Scheduler entry or pm2 process in this repo names it (`git grep -l 'regenerator2000' -- '*.service' '*.plist' '*.yml'` → only `.github/workflows` is a candidate and **it returns nothing**). | none; the user may uninstall the binary |
-| **Secrets / env vars** | **Three env var names die with their modules**, and none is a secret: `R2000_UPSTREAM_CLONE` (read by `r2000-upstream-audit.test.ts:73-74` to enable the optional re-hash check — **survives**, the test is re-pointed not deleted), `R2000_READ_REGION_MAX_BYTES` (`r2000-tools.ts:216`), and `R2000_BIN` (`r2000-test-gate.ts`, consumed only by dying tests). `ACME_BIN` and `VICE_REQUIRE_ACME` are **byte-identical and must stay so** — `ci.yml:45-140` binds them by name (SEAM-01). No `.env` file exists in this repo. | rename the two dying ones with their modules; **do not touch `ACME_BIN`/`VICE_REQUIRE_ACME`**; keep `R2000_UPSTREAM_CLONE` or rename it in the same commit as its only reader |
+| **Stored data** | **None.** the external analyser integration's only persistent artefact is a `.regen2000proj` JSON file in a *user's* project, never in this repo (`git ls-files '*.regen2000proj'` → 0). The new store is a fresh `*.annostore` SQLite file with `SCHEMA_VERSION = 2` and no migration path (F-1). **No data migration is owed by this repo**; a consuming project's `.regen2000proj` is simply orphaned, which is the documented consequence of D-01's one-way call. | none (repo-side); **document the orphaning** in the CUT-06 documentation edits |
+| **Live service config** | **None.** This project drives a local VICE process through a broker; there is no external service holding a `anno` string in a UI or database. The broker's state dir (`.vice-supervisor/`) holds ports and epochs, not tool names — verified by inspection of `broker-state.mts`'s subject. | none |
+| **OS-registered state** | **One, and it is the user's, not the repo's:** the `the external analyser` binary itself must be on `$PATH` for the deleted verbs. After this phase nothing looks for it. No systemd unit, launchd plist, Task Scheduler entry or pm2 process in this repo names it (`git grep -l 'the external analyser' -- '*.service' '*.plist' '*.yml'` → only `.github/workflows` is a candidate and **it returns nothing**). | none; the user may uninstall the binary |
+| **Secrets / env vars** | **Three env var names die with their modules**, and none is a secret: `ANNO_UPSTREAM_CLONE` (read by `anno-derivation.test.ts:73-74` to enable the optional re-hash check — **survives**, the test is re-pointed not deleted), `ANNO_READ_REGION_MAX_BYTES` (`anno-tools.ts:216`), and `ANNO_BIN` (`anno-test-gate.ts`, consumed only by dying tests). `ACME_BIN` and `VICE_REQUIRE_ACME` are **byte-identical and must stay so** — `ci.yml:45-140` binds them by name (SEAM-01). No `.env` file exists in this repo. | rename the two dying ones with their modules; **do not touch `ACME_BIN`/`VICE_REQUIRE_ACME`**; keep `ANNO_UPSTREAM_CLONE` or rename it in the same commit as its only reader |
 | **Build artifacts / installed packages** | **Two.** (1) `installer/skills/` — gitignored, regenerated by `installer/scripts/sync-skills.mjs` on `prepack`; it holds 8 files mentioning the word and **is shipped**. It must be re-synced and re-verified via `check-npm-packages.mjs`, and it is the grep gate's blind spot (Discretion 1). (2) `src/mcp/vice/resources/*.mjs` — compiled from `.mts` by `build.ts`; **none of the touched modules is `.mts`**, so no artefact drift (`resources-sync.test.ts` unaffected). `node_modules/` is not committed. | re-sync `installer/skills/` and re-run `check-npm-packages.mjs` in the same commit as the skill re-pointing |
 
 **The canonical question — after every file in the repo is updated, what runtime
@@ -1707,7 +1707,7 @@ pack file list.
 | npm | `npm pack --dry-run` in the grep gate + `check-npm-packages.mjs` | ✓ | bundled with Node 22 | — |
 | git | `git ls-files` in the grep gate | ✓ | repo is a git repo | — |
 | ACME cross-assembler | `disasm-roundtrip.test.ts`, `skill-acme-build-cli.test.ts` (gated by `acme-gate.ts`) | not probed this session | — | the gate **skips** unless `VICE_REQUIRE_ACME=1`, in which case it **hard-fails** (SEAM-01's whole point). Not needed by this phase's own work. |
-| regenerator2000 (`r2000` binary) | the modules being deleted | irrelevant | — | **This phase removes the requirement.** Its absence must not be treated as a blocker. |
+| the external analyser (`anno` binary) | the modules being deleted | irrelevant | — | **This phase removes the requirement.** Its absence must not be treated as a blocker. |
 | A running VICE / broker | nothing in this phase | — | — | **Relevant warning:** a *live* broker makes `BACK-05`'s test fail deterministically (recorded in project memory). Stop the broker before trusting any `npm test` result. |
 
 **Missing dependencies with no fallback:** none.
@@ -1735,8 +1735,8 @@ pack file list.
 
 | Command | Result | Wall time |
 |---|---|---|
-| `node --test hostpath-consumers stock-dispatch tool-support-table capability-registry module-classification r2000-upstream-audit r2000-verb-coverage docs-r2000-decisions docs-linerefs test-gate` (the **10 files this phase touches**) | **201 tests, 200 pass, 0 fail, 1 skipped** | **1.24 s** |
-| `node scripts/check-skill-tool-coverage.mjs` | `OK` — 37 `vice_*` names / 33 files / 7 dirs; **17** `r2000_*` names, all curated (19 in `CURATED_R2000_TOOLS`); **8** CLI verbs, 8/8 resolved | < 5 s |
+| `node --test hostpath-consumers stock-dispatch tool-support-table capability-registry module-classification anno-upstream-audit anno-verb-coverage docs-anno-decisions docs-linerefs test-gate` (the **10 files this phase touches**) | **201 tests, 200 pass, 0 fail, 1 skipped** | **1.24 s** |
+| `node scripts/check-skill-tool-coverage.mjs` | `OK` — 37 `vice_*` names / 33 files / 7 dirs; **17** `anno_*` names, all curated (19 in `CURATED_ANNO_TOOLS`); **8** CLI verbs, 8/8 resolved | < 5 s |
 | `node scripts/check-skill-fork-honesty.mjs` | `OK` — 11 fork-only mentions / 33 files / 7 dirs; 24 names policed from `CAPABILITY_REGISTRY` | < 5 s |
 | `node scripts/check-npm-packages.mjs` | `OK` — closure 60 modules; `@henols/vice-mcp` 80 files; `@henols/c64-re-tools` 34 files, 7 skills | ~15 s |
 | `npm pack --dry-run --json` in `src/mcp/vice` | success | **1.30 s** |
@@ -1750,7 +1750,7 @@ seconds**. There is no reason to defer them to a phase gate. Per-task is afforda
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| MCP-01 | manifest-derived surface: every `curated`/`adapt` verb routed, every `omit` absent, `delete_project_enum` absent, checked mechanically | unit | `node --test anno-derivation.test.ts` | ❌ Wave 0 (re-point `r2000-upstream-audit.test.ts`, which exists) |
+| MCP-01 | manifest-derived surface: every `curated`/`adapt` verb routed, every `omit` absent, `delete_project_enum` absent, checked mechanically | unit | `node --test anno-derivation.test.ts` | ❌ Wave 0 (re-point `anno-derivation.test.ts`, which exists) |
 | MCP-01 | verbs the manifest does not classify appear in the committed register with a requirement id | unit | `node --test anno-register.test.ts` | ❌ Wave 0 (model on `module-classification.test.ts`) |
 | MCP-02 | the runner's body contains none of `forwardToVice`/`ensureViceSession`/`rewriteArguments` | structural | `node --test stock-dispatch.test.ts` | ✅ re-point `:1549-1562` |
 | MCP-02 | no new module imports `hostpath.ts` (consumer set stays exactly 5) | structural | `node --test hostpath-consumers.test.ts` | ✅ `:141-145` |
@@ -1758,17 +1758,17 @@ seconds**. There is no reason to defer them to a phase gate. Per-task is afforda
 | MCP-03 | no `anno_*` name in either manifest | structural | `node --test stock-dispatch.test.ts` | ✅ re-point `:1564-1575` |
 | MCP-03 | `docs/tool-support.md` byte-identical | structural | `node --test tool-support-table.test.mjs` | ✅ **proven byte-identical this session** |
 | MCP-04 | idempotent write: same edit twice → second returns `changed: false`, `isError: false` | unit | `node --test anno-tools.test.ts` | ❌ Wave 0 |
-| MCP-04 | batch pre-validates recursively and refuses WHOLE on an uncurated inner name at any depth | unit | `node --test anno-tools.test.ts` | ❌ Wave 0 (port `r2000-tools.test.ts`'s batch cases) |
+| MCP-04 | batch pre-validates recursively and refuses WHOLE on an uncurated inner name at any depth | unit | `node --test anno-tools.test.ts` | ❌ Wave 0 (port `anno-tools.test.ts`'s batch cases) |
 | MCP-04 | batch execution returns per-item status and does not abort on the first failure | unit | `node --test anno-tools.test.ts` | ❌ Wave 0 |
 | MCP-04 | an ambiguous/unsupported request returns `{available:false, reason}` with `reason.length >= 40`, never `[]` and never `0` | unit | `node --test anno-tools.test.ts` | ❌ Wave 0 |
-| MCP-05 | the three `R2000_TOOL_DEFINITIONS` witnesses all moved; the generator throws (not silently differs) if one did not | structural | `node --test tool-support-table.test.mjs capability-registry.test.ts` | ✅ re-point |
-| MCP-05 | `R2000_MODULE_FLOOR` re-expressed with a real positive control | structural | `node --test hostpath-consumers.test.ts` | ✅ re-point `:188,199` |
+| MCP-05 | the three `ANNO_TOOL_DEFINITIONS` witnesses all moved; the generator throws (not silently differs) if one did not | structural | `node --test tool-support-table.test.mjs capability-registry.test.ts` | ✅ re-point |
+| MCP-05 | `ANNO_MODULE_FLOOR` re-expressed with a real positive control | structural | `node --test hostpath-consumers.test.ts` | ✅ re-point `:188,199` |
 | STORE-06 | `anno_get_cross_references(to)` returns every deriving address, union'd with stored non-derivable rows | unit | `node --test anno-derive.test.ts` | ❌ Wave 0 |
 | STORE-06 | search finds a term in a label, in a comment, and in an instruction; each corpus independently disableable | unit | `node --test anno-derive.test.ts` | ❌ Wave 0 |
 | STORE-06 | `max_results` is required and the returned count makes truncation detectable | unit | `node --test anno-derive.test.ts` | ❌ Wave 0 |
 | STORE-06 | **nothing is cached:** after any derived query, `anno_xref` row count is unchanged and the store file mtime/bytes are unchanged | structural | `node --test anno-derive.test.ts` | ❌ Wave 0 |
-| *(D-01 / CUT-02)* | the grep gate bites on 4 plants and is green over the untouched exemption set | structural + planted | `node scripts/check-no-regenerator2000.mjs` | ❌ Wave 0 |
-| *(D-02 / FLOW-01)* | the renamed CLI's verbs are parsed from its own switch, floor 5, and every one is named by a skill file | structural | `node --test anno-verb-coverage.test.ts` | ❌ Wave 0 (port `r2000-verb-coverage.test.ts` — it is already a planted-violation test) |
+| *(D-01 / CUT-02)* | the grep gate bites on 4 plants and is green over the untouched exemption set | structural + planted | `node scripts/check-no-analyser.mjs` | ❌ Wave 0 |
+| *(D-02 / FLOW-01)* | the renamed CLI's verbs are parsed from its own switch, floor 5, and every one is named by a skill file | structural | `node --test anno-verb-coverage.test.ts` | ❌ Wave 0 (port `anno-verb-coverage.test.ts` — it is already a planted-violation test) |
 
 ### Sampling Rate
 
@@ -1785,12 +1785,12 @@ full glob as a per-task loop.
 ### Wave 0 Gaps
 
 - [ ] `src/mcp/vice/anno-tools.test.ts` — MCP-04 (idempotency, batch, refusal shape)
-- [ ] `src/mcp/vice/anno-derivation.test.ts` — MCP-01 (the manifest check; re-points `r2000-upstream-audit.test.ts`)
+- [ ] `src/mcp/vice/anno-derivation.test.ts` — MCP-01 (the manifest check; re-points `anno-derivation.test.ts`)
 - [ ] `src/mcp/vice/anno-register.test.ts` — MCP-01 (the second register; models `module-classification.test.ts`)
 - [ ] `src/mcp/vice/anno-derive.test.ts` — STORE-06 (xrefs, search, **the never-cached control**)
-- [ ] `src/mcp/vice/anno-verb-coverage.test.ts` — FLOW-01 over the renamed CLI (ports `r2000-verb-coverage.test.ts`)
-- [ ] `scripts/lib/anno-cli-verbs.mjs` — replaces the deleted `r2000-cli-verbs.mjs`; carry `stripComments()` verbatim
-- [ ] `scripts/check-no-regenerator2000.mjs` — the grep gate + its exemption non-vacuity counter
+- [ ] `src/mcp/vice/anno-verb-coverage.test.ts` — FLOW-01 over the renamed CLI (ports `anno-verb-coverage.test.ts`)
+- [ ] `scripts/lib/anno-cli-verbs.mjs` — replaces the deleted `anno-cli-verbs.mjs`; carry `stripComments()` verbatim
+- [ ] `scripts/check-no-analyser.mjs` — the grep gate + its exemption non-vacuity counter
 - [ ] No framework install needed.
 
 ---
@@ -1808,7 +1808,7 @@ full glob as a per-task loop.
 | V3 Session Management | no | D-06 removes all cross-call state by design |
 | V4 Access Control | **yes** | Workspace confinement. `storePathWithinWorkspace()` (`anno-types.ts:1140`) is the one seam; the image path needs the same treatment (D-07). |
 | V5 Input Validation | **yes — the dominant category** | Every argument is LLM-supplied and the transport validates nothing (`vice-proxy.ts:3230`). The `anno-types.ts` assertion family is the control; see Pitfall 6's table. |
-| V6 Cryptography | no | none used; `createHash` in `r2000-regbits-gen.ts` is a content fingerprint, not a security control |
+| V6 Cryptography | no | none used; `createHash` in `anno-regbits-gen.ts` is a content fingerprint, not a security control |
 | V12 File & Resources | **yes** | Path traversal via the store/image arguments; resource exhaustion via an uncapped `anno_disassemble`/`anno_search`. |
 | V13 API & Web Service | **yes** | Nested-argument smuggling through `anno_batch_execute` — the one sanctioned exception to `DENY_LIST`'s rule. |
 
@@ -1816,11 +1816,11 @@ full glob as a per-task loop.
 
 | Pattern | STRIDE | Standard Mitigation |
 |---------|--------|---------------------|
-| Path traversal via the `store` / `image` argument | Tampering / Information Disclosure | `storePathWithinWorkspace()`. **Carry WR-01's finding forward:** containment must be enforced against the deepest *existing* ancestor's realpath, with every remaining segment `lstat`-guarded against being an unresolved symlink — a not-yet-existing leaf under a directory symlink bypassed containment entirely in the r2000 implementation [VERIFIED: r2000-tools.ts:874-887 header] |
+| Path traversal via the `store` / `image` argument | Tampering / Information Disclosure | `storePathWithinWorkspace()`. **Carry WR-01's finding forward:** containment must be enforced against the deepest *existing* ancestor's realpath, with every remaining segment `lstat`-guarded against being an unresolved symlink — a not-yet-existing leaf under a directory symlink bypassed containment entirely in the anno implementation [VERIFIED: anno-tools.ts:874-887 header] |
 | Nested-name smuggling through the batch verb | Elevation of Privilege | Recursive pre-validation, whole-batch refusal, **plus a depth cap** (new — see Discretion 3) |
 | Label-name injection into generated ACME source | Tampering | `assertLegalLabel()` (`anno-types.ts:1217`) — **REJECT, never sanitize or quote**; the store's printed name must never diverge from the exported symbol (T-11-NAME-INJECT's recorded posture) |
 | SQL injection into the store | Tampering | Every statement in `anno-store.ts` is `db.prepare(...)` with bound parameters; `STORE-07` confines `node:sqlite` to one module. A structural test asserting no string-concatenated SQL is cheap and worth adding. |
-| Context exhaustion / resource exhaustion via an unbounded read | Denial of Service | `max_results` required with no default; a range cap on `anno_read_region` (`R2000_READ_REGION_MAX_BYTES = 4096`'s pattern); note the family is **not** chunked (Pitfall 5) |
+| Context exhaustion / resource exhaustion via an unbounded read | Denial of Service | `max_results` required with no default; a range cap on `anno_read_region` (`ANNO_READ_REGION_MAX_BYTES = 4096`'s pattern); note the family is **not** chunked (Pitfall 5) |
 | A refusal that reads as an empty success | *(not STRIDE — a correctness/trust failure)* | `{available:false, reason}`, never `[]` and never `0`. This is `MCP-04`. |
 | Argument-error masquerading as data corruption | *(correctness)* | WR-22: validate `revision` at the entry so SQLite's column affinity cannot turn `"0001"` into CR-08's corrupt-snapshot refusal |
 
@@ -1837,7 +1837,7 @@ fails the affinity conversion and the pointer-row gate refuses first
 ### The manifest derivation check (MCP-01, D-08)
 
 ```ts
-// Source pattern: src/mcp/vice/r2000-upstream-audit.test.ts:96-155 (the
+// Source pattern: src/mcp/vice/anno-derivation.test.ts:96-155 (the
 // existing manifest-vs-surface agreement test this replaces), plus the
 // disposition vocabulary read from the manifest itself.
 const MANIFEST_PATH = join(HERE, "../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json");
@@ -1846,9 +1846,9 @@ const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
 /** The ONE mapping from an upstream verb name to this surface's name.
  *  Total over the manifest's 20; two documented departures. */
 function annoNameFor(upstream: string): string | null {
-  if (upstream === "r2000_get_disassembly_cursor") return "anno_disassemble";   // D-09
-  if (upstream === "r2000_search_disassembly")     return "anno_search";
-  return "anno_" + upstream.slice("r2000_".length);
+  if (upstream === "anno_get_disassembly_cursor") return "anno_disassemble";   // D-09
+  if (upstream === "anno_search_disassembly")     return "anno_search";
+  return "anno_" + upstream.slice("anno_".length);
 }
 
 test("MCP-01: every curated/adapt verb has a route and every omit verb is absent", () => {
@@ -1889,7 +1889,7 @@ test("MCP-01: every surface name is either manifest-classified or in the committ
 ### The recursive batch pre-validator (MCP-04, carrying D-33)
 
 ```ts
-// Source: src/mcp/vice/r2000-tools.ts:801-835 (assertCuratedBatch), read
+// Source: src/mcp/vice/anno-tools.ts:801-835 (assertCuratedBatch), read
 // before deletion. Adds a depth cap the original did not have.
 const MAX_BATCH_DEPTH = 4;
 
@@ -2004,17 +2004,17 @@ export function crossReferencesTo(handle: AnnoStoreHandle, image: Uint8Array, or
 
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
-| A long-lived regenerator2000 session (Rule A21, Phase 18) | Open/close per call (D-06) | this phase | Rule A21's premise — avoiding a child-process respawn — is deleted with the child process. `ARCHITECTURE.md`'s Rule A21 must be edited (ROADMAP Phase 32 c5 names it). |
+| A long-lived the external analyser session (Rule A21, Phase 18) | Open/close per call (D-06) | this phase | Rule A21's premise — avoiding a child-process respawn — is deleted with the child process. `ARCHITECTURE.md`'s Rule A21 must be edited (ROADMAP Phase 32 c5 names it). |
 | Store state rented from a `.regen2000proj` JSON file | `node:sqlite` `*.annostore` with a 32-revision snapshot ring | Phase 28 | `D1`: chosen because its planted violation reliably reddens |
-| A per-edit inverse-command undo journal | Whole-store snapshot/restore | Phase 28 (`D2`) | Node's `sqlite` does not expose `sqlite3changeset_invert`; `r2000_undo` was already disposed `omit` |
+| A per-edit inverse-command undo journal | Whole-store snapshot/restore | Phase 28 (`D2`) | Node's `sqlite` does not expose `sqlite3changeset_invert`; `anno_undo` was already disposed `omit` |
 | An entry in `capability-registry.ts` for the family | The ordered `BACKEND_SEAM_BYPASS_KEYS` allow-list | v0.7.0 open (`D3`) | v0.6.0's `STORE-03` required an entry; that clause *"was factually wrong and is replaced"* |
 | A hand-typed module array | `readdirSync` + a stable prefix regex + a floor that only rises | Phase 11.1 (`INT-01`) | The hand-typed array missed four modules; this is now the project-wide pattern |
 
 **Deprecated / outdated in this repo:**
-- `capability-registry.test.ts:154-156`'s comment says `R2000_TOOL_DEFINITIONS` is *"an array of 17"*. It is **19**. Fix while re-pointing.
+- `capability-registry.test.ts:154-156`'s comment says `ANNO_TOOL_DEFINITIONS` is *"an array of 17"*. It is **19**. Fix while re-pointing.
 - `CUT-02`/ROADMAP's `291` / `55` blast-radius figures. Now **339** / **61**.
 - `REPOINT-01`/ROADMAP P31's `18 distinct tool names`. Now **17**.
-- `29-CONTEXT.md`'s `9 skill files naming 18 r2000_* tools`. Measured: **5 files, 17 names** (10 files mention `r2000` at all).
+- `29-CONTEXT.md`'s `9 skill files naming 18 anno_* tools`. Measured: **5 files, 17 names** (10 files mention `anno` at all).
 
 ---
 
@@ -2071,7 +2071,7 @@ naming the decision or plan that closed it.
      `render-memmap` and `coverage` survive into Phase 29; `gen-enums`,
      `export-lbl` and `import-lbl` follow the export route into Phase 30. Carried
      out by plan **29-07**, which also records the temporary withdrawal of
-     `R2000-14` / `R2000-15`'s symbol round trip.
+     `ANNO-14` / `ANNO-15`'s symbol round trip.
 
 3. **C-3's reading of "raised not lowered".**
    - *Recommendation:* adopt the charitable reading (floor = measured count, then
@@ -2109,11 +2109,11 @@ naming the decision or plan that closed it.
      later, in plan **29-09**, in the same commit as the skill files that spell
      them — changing either half alone reds the FLOW-01 guard from the wrong side.
 
-6. **Whether `docs-r2000-decisions.test.ts` is renamed or deleted (D-12).**
+6. **Whether `docs-absorbed-decisions.test.ts` is renamed or deleted (D-12).**
    - *What we know:* D-12 says it and `audit-gate.mjs:136` move together; ROADMAP
      Phase 32 says *"Keep the **D-36** decision row as dated history rather than
      deleting it, and give its guard an explicit superseded-by fate."* Its content
-     pins `GUARD_FILENAMES = ["r2000-session.test.ts", "r2000-spawn-seam.test.ts"]`,
+     pins `GUARD_FILENAMES = ["anno-session.test.ts", "spawn-seam.test.ts"]`,
      the first of which is deleted.
    - *Recommendation:* **rename and re-point**, not delete — it keeps
      `DOCS_GUARD_FLOOR = 7` and `audit-integrity.test.ts`'s registry-vs-disk
@@ -2131,7 +2131,7 @@ naming the decision or plan that closed it.
 ### Primary (HIGH confidence) — read this session with `Read`/`sed`/`grep`
 
 - `src/mcp/vice/vice-proxy.ts` — `:194`, `:436-448`, `:1461,1484`, `:2101-2125`, `:3224-3237`, `:3263-3276`, `:3386-3405`, `:3420-3490`
-- `src/mcp/vice/r2000-tools.ts` — `:53-95`, `:133-148`, `:196-232`, `:233-620` (all 19 `name:` literals), `:628-641`, `:692-760`, `:763-835`, `:837-871`, `:1141-1213`
+- `src/mcp/vice/anno-tools.ts` — `:53-95`, `:133-148`, `:196-232`, `:233-620` (all 19 `name:` literals), `:628-641`, `:692-760`, `:763-835`, `:837-871`, `:1141-1213`
 - `src/mcp/vice/anno-store.ts` — `:193`, `:235-305`, `:413`, `:521-523`, `:550-555`, `:2291-2340`, `:2341`, `:2439`, `:2768`, `:2801-3010`, `:3084-3190`, `:3191-3270`
 - `src/mcp/vice/anno-types.ts` — `:150-197`, `:225-296`, `:322-460`, `:474-800`, `:810-880`, `:1140`, `:1174-1400`, `:1476`
 - `src/mcp/vice/anno-index.ts` — `:59-142`
@@ -2141,15 +2141,15 @@ naming the decision or plan that closed it.
 - `src/mcp/vice/stock-dispatch.test.ts` — `:1486-1600`
 - `src/mcp/vice/tool-support-table.test.mjs` — `:55-90`; `capability-registry.test.ts` — `:145-180`
 - `src/mcp/vice/stock-recycle.ts` — `:75-140`; `stock-cia.ts` — `:85-124`, `:195-215`, `:480-510`
-- `src/mcp/vice/r2000-upstream-audit.test.ts` — `:1-165`; `r2000-verb-coverage.test.ts` — `:140-185`
-- `src/mcp/vice/docs-linerefs.test.ts` — `:1-99`; `docs-r2000-decisions.test.ts` — `:1-60`
-- `src/mcp/vice/r2000-cli.ts` — `:51-84` (imports), `:1340-1400` (the `coverage` verb), `:1478-1493` (the dispatch switch)
-- `src/mcp/vice/r2000-symbols.ts` — `:68-76`, `:116-135`, `:209-305`, `:330-380`
-- `src/mcp/vice/r2000-enum-gen.ts` — `:80-86`, `:296-450`, `:509`
-- `src/mcp/vice/r2000-coverage.ts` — `:141-145`, `:195-232`
-- `src/mcp/vice/r2000-verify.ts` — `:46`; `r2000-test-gate.ts` — `:34`; `r2000-memmap-render.ts` (no imports)
+- `src/mcp/vice/anno-derivation.test.ts` — `:1-165`; `anno-verb-coverage.test.ts` — `:140-185`
+- `src/mcp/vice/docs-linerefs.test.ts` — `:1-99`; `docs-absorbed-decisions.test.ts` — `:1-60`
+- `src/mcp/vice/anno-cli.ts` — `:51-84` (imports), `:1340-1400` (the `coverage` verb), `:1478-1493` (the dispatch switch)
+- `src/mcp/vice/anno-symbols.ts` — `:68-76`, `:116-135`, `:209-305`, `:330-380`
+- `src/mcp/vice/anno-enum-gen.ts` — `:80-86`, `:296-450`, `:509`
+- `src/mcp/vice/anno-coverage.ts` — `:141-145`, `:195-232`
+- `src/mcp/vice/anno-verify.ts` — `:46`; `anno-test-gate.ts` — `:34`; `anno-memmap-render.ts` (no imports)
 - `src/mcp/vice/block-class.ts` — `:113-128`; `prg-image.ts` — `:69-100`
-- `src/mcp/vice/shipped-modules.ts` — `:1-160`; `r2000-spawn-seam.test.ts` — `:245-260`
+- `src/mcp/vice/shipped-modules.ts` — `:1-160`; `spawn-seam.test.ts` — `:245-260`
 - `src/mcp/vice/test-gate.mjs` — `:95-113`; `test-gate.test.ts` — `:12-55`
 - `src/mcp/vice/package.json` — `:1-128` (bin, files[], scripts, deps)
 - `scripts/generate-tool-support-table.mjs` — `:1-260`
@@ -2157,7 +2157,7 @@ naming the decision or plan that closed it.
 - `scripts/check-skill-fork-honesty.mjs` — `:1-80`, `:400-515`
 - `scripts/check-npm-packages.mjs` — `:1-145`
 - `scripts/audit-gate.mjs` — `:84-150`, `:360-390`, `:850-870`
-- `scripts/lib/r2000-cli-verbs.mjs` — whole file; `scripts/lib/skill-corpus.mjs` — `:39-70`
+- `scripts/lib/anno-cli-verbs.mjs` — whole file; `scripts/lib/skill-corpus.mjs` — `:39-70`
 - `.planning/phases/19-.../upstream-procedure-manifest.json` — enumerated programmatically
 - `.planning/phases/28-the-store-core/28-VERIFICATION.md` — `:77`, `:160-250`, `:488-505`
 - `.planning/phases/28-the-store-core/28-REVIEW.md` — `:44-250`, `:655-700`, `:1780-1815`
@@ -2169,12 +2169,12 @@ naming the decision or plan that closed it.
 - `discoverSyntheticToolNames` against an un-re-pointed regex → **throws by name**, does not silently differ
 - `node --test` over the 10 touched guard files → **201 tests, 200 pass, 0 fail, 1 skip, 1.24 s**
 - `node scripts/check-skill-tool-coverage.mjs` / `check-skill-fork-honesty.mjs` / `check-npm-packages.mjs` → all `OK`
-- `git grep -il regenerator2000` with and without `':!.planning/**'` → 339 / 61
-- `git ls-files installer/skills | wc -l` → 0; `grep -ril regenerator2000 installer/skills | wc -l` → 8
+- `git grep -il the external analyser` with and without `':!.planning/**'` → 339 / 61
+- `git ls-files installer/skills | wc -l` → 0; `grep -ril the external analyser installer/skills | wc -l` → 8
 - `time npm pack --dry-run --json` in `src/mcp/vice` → 1.30 s
 - manifest verb enumeration via `node -e` over `procedures[].tools` → 15 curated / 1 adapt / 4 omit
-- `grep -c 'name: "r2000_' r2000-tools.ts` → 19
-- `grep -rhoE '\br2000_[a-z0-9_]+' src/skills/ | sort -u | wc -l` → 17
+- `grep -c 'name: "anno_' anno-tools.ts` → 19
+- `grep -rhoE '\banno_[a-z0-9_]+' src/skills/ | sort -u | wc -l` → 17
 
 ### Secondary (MEDIUM confidence)
 
@@ -2199,7 +2199,7 @@ naming the decision or plan that closed it.
 | `docs/tool-support.md` byte-identity | **HIGH** | Executed proof, both directions (identical when re-pointed; throws when not) |
 | The verb list and its manifest derivation | **HIGH** | Enumerated programmatically from the JSON and from the source's `name:` literals |
 | The `{available:false, reason}` convention | **HIGH** | Four independent in-repo sites quoted verbatim, plus the ≥40-char reason-length rule already enforced in CI |
-| The batch pre-validation discipline | **HIGH** | Read from `r2000-tools.ts` before deletion, including the measured upstream partial-failure semantics that reconcile criterion 5 with D-33 |
+| The batch pre-validation discipline | **HIGH** | Read from `anno-tools.ts` before deletion, including the measured upstream partial-failure semantics that reconcile criterion 5 with D-33 |
 | CD-1 (D-02's transitive falsification) | **HIGH** | Five verbatim import lines plus eight use sites |
 | CD-2 (the two contested rename entries) | **HIGH** | The registry's own `note` fields, quoted; corroborated by import measurement |
 | The grep gate's scope predicate | **MEDIUM** | The blast radius and the `installer/skills/` hole are measured; the *choice* of predicate is a recommendation, and A5 flags one unverified reuse detail |

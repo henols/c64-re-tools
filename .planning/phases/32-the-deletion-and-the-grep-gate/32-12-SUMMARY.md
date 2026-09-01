@@ -342,7 +342,7 @@ was edited.
 | 6 | `npm run typecheck` (in `src/mcp/vice`) | exit 0, no diagnostics |
 | 7 | `npm run test:automated` (in `src/mcp/vice`) | 2994 tests, 2987 pass, **1 fail**, 1 skipped, 5 todo — see below. Broker: NOT running |
 | 8 | `node scripts/check-guard-fates.mjs` | exit 0 — blocking CI gate green after all three Gap-2 plans |
-| 9 | `node scripts/check-no-regenerator2000.mjs` | exit 0 |
+| 9 | `node scripts/check-no-analyser.mjs` | exit 0 |
 | 10 | the nine `docs-*.test.ts` guards, individually | 9/9 exit 0 |
 | 11 | `git status --porcelain` before/after | byte-identical; no `.audit-root-synth-*` survived |
 

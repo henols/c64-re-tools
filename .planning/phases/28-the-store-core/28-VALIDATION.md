@@ -43,7 +43,7 @@ created: 2026-08-27
 - **After every task commit:** `cd src/mcp/vice && node --test anno-*.test.ts && npm run typecheck`
 - **After every plan wave:** `cd src/mcp/vice && npm run test:automated` — includes every
   regression guard below (`hostpath-consumers`, `comment-phase-pointers`,
-  `docs-dangling-refs`, `block-class`, `r2000-coverage`, `shipped-modules`)
+  `docs-dangling-refs`, `block-class`, `anno-coverage`, `shipped-modules`)
 - **Before `/gsd-verify-work`:** `npm run test:automated` green **and** `npm run typecheck`
   green **and** `node scripts/check-npm-packages.mjs` green **and** one whole-glob
   `npm test` evidence run with the broker stopped and the baseline reconciled
@@ -93,7 +93,7 @@ block on `high`).
 | (regression) No new module imports `hostpath.ts` | — | — | The store file never leaves the container | structural | `node --test hostpath-consumers.test.ts` | ✅ exists | ⬜ pending |
 | (regression) No new shipped comment hands work to a numbered phase; no shipped literal names one | — | — | N/A | structural | `node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts` | ✅ exists | ⬜ pending |
 | (regression) `block-class.ts` maps **every one** of the twelve members correctly — derived from the vocabulary, total, not a spot check | STORE-01 | — | The census cannot silently reclassify every block as `data` | unit | `node --test block-class.test.ts` | ✅ exists (extend) | ⬜ pending |
-| (regression) The census's label-kind spelling and the store's agree (or the second boundary is extracted) | STORE-01 | — | A measured census number cannot silently go to zero | unit | `node --test r2000-coverage.test.ts` | ✅ exists (extend) | ⬜ pending |
+| (regression) The census's label-kind spelling and the store's agree (or the second boundary is extracted) | STORE-01 | — | A measured census number cannot silently go to zero | unit | `node --test anno-coverage.test.ts` | ✅ exists (extend) | ⬜ pending |
 | (regression) `shippedTsModules()` does not throw — every new `files[]` entry is on disk | STORE-07 | — | N/A | structural | `node --test shipped-modules.test.ts` | ✅ exists | ⬜ pending |
 | (regression) Tarball closure and packaging clean with the new shipped modules | STORE-07 | — | N/A | CI script | `node scripts/check-npm-packages.mjs` | ✅ exists | ⬜ pending |
 | (regression) Typecheck | — | — | N/A | typecheck | `cd src/mcp/vice && npm run typecheck` | ✅ exists | ⬜ pending |
@@ -110,11 +110,11 @@ block on `high`).
 - [ ] `anno-durability.test.ts` — STORE-04 (the ONE combined test) **plus a sibling mutator script** the test spawns and `SIGKILL`s
 - [ ] `anno-seam.test.ts` — STORE-07 (structural single-seam + four plantings + the `files[]` non-vacuity pairing)
 - [ ] Extend `block-class.test.ts` — total derived mapping over the twelve members (closes research finding C-6/§"Named Boundary Left Half-Open" (a))
-- [ ] Extend `r2000-coverage.test.ts` — label-kind spelling agreement (closes the same finding, part (b))
+- [ ] Extend `anno-coverage.test.ts` — label-kind spelling agreement (closes the same finding, part (b))
 - [ ] Framework install: **none** — `node --test` is built in and every new `*.test.ts` joins both globs automatically
 
 *Module names carry research assumption A1 (`anno-*` prefix) — the planner may rename
-freely, but every hard constraint on the name was verified: no `r2000` substring
+freely, but every hard constraint on the name was verified: no `anno` substring
 (Phase 32's grep gate), outside `module-classification.ts`'s glob, a single stable
 prefix derivable from disk, and the names are free.*
 

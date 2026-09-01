@@ -2,13 +2,13 @@
 
 **Plan:** 19-01, task 3
 **Date:** 2026-08-24
-**Binary:** `regenerator2000` at `/home/henrik/.cargo/bin/regenerator2000`
-**`--version` output:** `regenerator2000 0.9.20`
-**Upstream pin for the source citations:** `ricardoquesada/regenerator2000` @ `493f840418f1450a342bb220c2fe3d2585dd0525` (v0.9.20, 2026-07-11)
+**Binary:** `the external analyser` at `/home/henrik/.cargo/bin/analyser`
+**`--version` output:** `the external analyser 0.9.20`
+**Upstream pin for the source citations:** `an upstream repository` @ `493f840418f1450a342bb220c2fe3d2585dd0525` (v0.9.20, 2026-07-11)
 
 ## Question
 
-`r2000-session.ts`'s concurrency model is a **coarse FIFO mutex**: exactly one
+`anno-session.ts`'s concurrency model is a **coarse FIFO mutex**: exactly one
 logical operation per session is in flight at a time, and contention is
 answered by a bounded FIFO wait rather than a refuse-while-busy error (decided
 in Phase 18, plan 18-06). D18-16 recorded a **reader-writer upgrade** of that
@@ -16,13 +16,13 @@ seam as *deferred, not rejected* — concurrent reads, exclusive writes — with
 explicit precondition attached:
 
 > A reader-writer upgrade remains deferred pending measurement of whether
-> regenerator2000's stdio handler actually multiplexes concurrent requests
+> the external analyser's stdio handler actually multiplexes concurrent requests
 > rather than reading stdin serially. Before considering any concurrent-read /
 > exclusive-write lock, Phase 19 must run and record that measurement as
 > evidence, the same way Phase 18 recorded the stdin-EOF measurement.
 
 So: **when two requests are sitting in the child's stdin pipe at the same
-time, does `regenerator2000 --mcp-server-stdio` work on them concurrently, or
+time, does `analyser --mcp-server-stdio` work on them concurrently, or
 does it finish the first before it even looks at the second?**
 
 That is the whole question. A reader-writer lock is only worth building if the
@@ -34,26 +34,26 @@ binary, not assumed either way.
 ## Method
 
 The measurement isolates the **child's** behaviour at the OS level, not this
-project's, so it goes nowhere near `vice-proxy.ts` or `r2000-session.ts`:
+project's, so it goes nowhere near `vice-proxy.ts` or `anno-session.ts`:
 
 1. Synthesize a scratch `.regen2000proj` with the real, shipped
-   `synthesizeProject()` from `src/mcp/vice/r2000-project.ts` — 8192 bytes of
+   `synthesizeProject()` from `src/mcp/vice/anno-project.ts` — 8192 bytes of
    `$EA` NOPs terminated by `$60 RTS`, origin `$0810`. Using the shipped
    writer rather than a hand-built project file means the child is analysing
    exactly the shape this project really produces.
-2. Spawn `regenerator2000 --mcp-server-stdio <project>` with
+2. Spawn `analyser --mcp-server-stdio <project>` with
    `stdio: ["pipe", "pipe", "pipe"]` — the same three-pipe shape
-   `openR2000Session()` uses. The binary is spawned with an argv **array**,
+   `openAnnoSession()` uses. The binary is spawned with an argv **array**,
    never a shell string.
 3. Perform the `initialize` handshake, send `notifications/initialized`, then
    wait a fixed 400ms settle so the measurement is not racing the child's own
    startup.
 4. Write **ONE burst** — a single `write()` carrying two newline-terminated
    requests back to back:
-   - `id: "SLOW-BATCH"` — `r2000_batch_execute` with N × `r2000_set_comment`.
+   - `id: "SLOW-BATCH"` — `anno_batch_execute` with N × `anno_set_comment`.
      Each inner call triggers a re-analysis inside the child, so the batch
      takes seconds.
-   - `id: "FAST-INFO"` — `r2000_get_binary_info`, which does essentially no
+   - `id: "FAST-INFO"` — `anno_get_binary_info`, which does essentially no
      work.
 
    **Why one burst is the thing that isolates the child.** Writing request A,
@@ -84,10 +84,10 @@ general:
 `src/main.rs:388` dispatches the flag to the loop:
 
 ```rust
-regenerator2000_core::mcp::stdio::run_headless_stdio_loop(app_state, view_state).await;
+regeneratoanno_core::mcp::stdio::run_headless_stdio_loop(app_state, view_state).await;
 ```
 
-and `crates/regenerator2000-core/src/mcp/stdio.rs:67-98`:
+and `crates/external-analyser-core/src/mcp/stdio.rs:67-98`:
 
 ```rust
 pub async fn run_headless_stdio_loop(mut app_state: AppState, mut view_state: CoreViewState) {
@@ -118,16 +118,16 @@ span a pretty-printed payload.
 ## Exact command sequence
 
 ```bash
-regenerator2000 --version
-# regenerator2000 0.9.20
+The external analyser --version
+# the external analyser 0.9.20
 
 cd /home/henrik/dev/henrik/git/c64-re-tools
 node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs
 node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs
-R2000_MEASURE_INNER_CALLS=6000 node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs
+ANNO_MEASURE_INNER_CALLS=6000 node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs
 
 # and the failure path, to confirm an unusable binary cannot record a result:
-R2000_BIN=/nonexistent-binary node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs
+ANNO_BIN=/nonexistent-binary node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs
 # {"ok":false,"reason":"cannot spawn \"/nonexistent-binary --version\": spawnSync /nonexistent-binary ENOENT","bin":"/nonexistent-binary"}
 # exit=1
 ```
@@ -142,7 +142,7 @@ Three runs, two batch sizes:
 | 2 | 3000 | 416ms | 6364ms | **6365ms** | 5949ms | +1ms | serial |
 | 3 | 6000 | 420ms | 13457ms | **13460ms** | 13040ms | +3ms | serial |
 
-The trivial `r2000_get_binary_info` — a call that does essentially no work, and
+The trivial `anno_get_binary_info` — a call that does essentially no work, and
 which had been sitting in the child's stdin pipe since roughly t=415ms —
 received no reply until **1–3 milliseconds after** the batch ahead of it
 finished, every time. Doubling the batch size doubled the wait: the trivial
@@ -153,17 +153,17 @@ multiplexing interpretation.
 Raw JSON from run 1 (representative), exactly as the driver printed it:
 
 ```json
-{"ok":true,"bin":"regenerator2000","version":"regenerator2000 0.9.20","innerCalls":3000,"origin":2064,"payloadBytes":8192,"settleMs":400,"burstBoundMs":180000,"burstWrittenAtMs":414,"responses":[{"id":"SLOW-BATCH","arrivedAtMs":6351,"isError":false},{"id":"FAST-INFO","arrivedAtMs":6352,"isError":false}],"fastWaitedMs":5938,"fastMinusSlowMs":1,"multiplexes":false,"verdict":"serial-one-request-at-a-time","date":"2026-08-24T15:55:22.358Z"}
+{"ok":true,"bin":"the external analyser","version":"the external analyser 0.9.20","innerCalls":3000,"origin":2064,"payloadBytes":8192,"settleMs":400,"burstBoundMs":180000,"burstWrittenAtMs":414,"responses":[{"id":"SLOW-BATCH","arrivedAtMs":6351,"isError":false},{"id":"FAST-INFO","arrivedAtMs":6352,"isError":false}],"fastWaitedMs":5938,"fastMinusSlowMs":1,"multiplexes":false,"verdict":"serial-one-request-at-a-time","date":"2026-08-24T15:55:22.358Z"}
 ```
 
 And run 3, the doubled batch:
 
 ```json
-{"ok":true,"bin":"regenerator2000","version":"regenerator2000 0.9.20","innerCalls":6000,"origin":2064,"payloadBytes":8192,"settleMs":400,"burstBoundMs":180000,"burstWrittenAtMs":420,"responses":[{"id":"SLOW-BATCH","arrivedAtMs":13457,"isError":false},{"id":"FAST-INFO","arrivedAtMs":13460,"isError":false}],"fastWaitedMs":13040,"fastMinusSlowMs":3,"multiplexes":false,"verdict":"serial-one-request-at-a-time","date":"2026-08-24T15:55:48.909Z"}
+{"ok":true,"bin":"the external analyser","version":"the external analyser 0.9.20","innerCalls":6000,"origin":2064,"payloadBytes":8192,"settleMs":400,"burstBoundMs":180000,"burstWrittenAtMs":420,"responses":[{"id":"SLOW-BATCH","arrivedAtMs":13457,"isError":false},{"id":"FAST-INFO","arrivedAtMs":13460,"isError":false}],"fastWaitedMs":13040,"fastMinusSlowMs":3,"multiplexes":false,"verdict":"serial-one-request-at-a-time","date":"2026-08-24T15:55:48.909Z"}
 ```
 
 **Conclusion, HIGH confidence — two independent methods agreeing:**
-`regenerator2000 0.9.20`'s `--mcp-server-stdio` handler reads stdin serially
+`the external analyser 0.9.20`'s `--mcp-server-stdio` handler reads stdin serially
 and processes exactly one request at a time, in arrival order. **It does not
 multiplex.**
 
@@ -174,7 +174,7 @@ deferral named has been met, and the answer removes the motivation:
 
 1. **The child does not multiplex.** Measured three times, corroborated by the
    upstream source, where it is true by construction rather than by scheduling.
-2. **A reader-writer upgrade at `r2000-session.ts` would buy exactly zero
+2. **A reader-writer upgrade at `anno-session.ts` would buy exactly zero
    parallelism.** Concurrent readers admitted at this project's seam would
    re-serialise inside the child microseconds later. The only thing gained
    would be a more complicated invariant to hold and a harder-to-read failure
@@ -190,13 +190,13 @@ deferral named has been met, and the answer removes the motivation:
    session.** Several agents may usefully think in parallel over answers
    already fetched. Fanning several *writers* at the session buys nothing.
    Absorbed procedure text must not promise otherwise: upstream's
-   `r2000-analyze-program` prescribes a parallel subagent fan-out with a fixed
+   `analyze-program` prescribes a parallel subagent fan-out with a fixed
    slot count, and this measurement is why `src/skills/routine-queue-walker/`
    walks its queue one entry at a time instead, with that deviation named in
    its attribution header.
 
 **What would reopen it:** a change to upstream's stdio dispatch — specifically,
-`run_headless_stdio_loop()` in `crates/regenerator2000-core/src/mcp/stdio.rs`
+`run_headless_stdio_loop()` in `crates/external-analyser-core/src/mcp/stdio.rs`
 gaining a `tokio::spawn`, a `select!`, or any other route that stops calling
 `handle_request` synchronously on `&mut AppState` in the loop body. That is a
 structural change to the function cited above, visible in a source diff, and it
@@ -212,8 +212,8 @@ cd /home/henrik/dev/henrik/git/c64-re-tools
 node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs
 ```
 
-Requires `regenerator2000` on `PATH` (or `R2000_BIN` pointing at it).
-`R2000_MEASURE_INNER_CALLS` sets the slow batch's size (default 3000); raising
+Requires `the external analyser` on `PATH` (or `ANNO_BIN` pointing at it).
+`ANNO_MEASURE_INNER_CALLS` sets the slow batch's size (default 3000); raising
 it should raise `fastWaitedMs` proportionally, which is itself a check that the
 measurement is measuring what it claims to.
 

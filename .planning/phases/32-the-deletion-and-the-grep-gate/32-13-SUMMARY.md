@@ -86,7 +86,7 @@ Task 2's edit that the `:141` anchor still yields the same eleven.
 |---|---|---|---|
 | 1 | `docs-linerefs` | `src/mcp/vice/docs-linerefs.test.ts` *(no registry row)* | **EXCLUDED** |
 | 2 | `docs-dangling-refs` | `src/mcp/vice/docs-dangling-refs.test.ts` | CITED — `re-pointed` |
-| 3 | `docs-r2000-decisions` | `src/mcp/vice/docs-r2000-decisions.test.ts` @ `0394cbc` | CITED — `re-pointed` |
+| 3 | `docs-anno-decisions` | `src/mcp/vice/docs-absorbed-decisions.test.ts` @ `0394cbc` | CITED — `re-pointed` |
 | 4 | `hostpath-consumers` | `src/mcp/vice/hostpath-consumers.test.ts` | CITED — `re-pointed` |
 | 5 | `stock-dispatch` | `src/mcp/vice/stock-dispatch.test.ts` | CITED — `re-pointed` |
 | 6 | `vice-proxy` | `src/mcp/vice/vice-proxy.test.ts` | CITED — `re-pointed` |
@@ -151,9 +151,9 @@ correction inside new prose, not a re-derivation.
 **`docs-linerefs` occurrence counts (the exclusion's basis):**
 
 ```bash
-$ git show 0394cbc:src/mcp/vice/docs-linerefs.test.ts | grep -aic r2000
+$ git show 0394cbc:src/mcp/vice/docs-linerefs.test.ts | grep -aic anno
 0
-$ git show 345d5c4:src/mcp/vice/docs-linerefs.test.ts | grep -aic r2000
+$ git show 345d5c4:src/mcp/vice/docs-linerefs.test.ts | grep -aic anno
 0
 $ git diff --name-only --diff-filter=A 0394cbc 345d5c4 | grep -x 'src/mcp/vice/docs-linerefs.test.ts'
 $ echo $?   # -> 1 (no output; not added between the pins)
@@ -212,9 +212,9 @@ files — no `*-SUMMARY.md`, no `32-VERIFICATION.md`, no other `evidence/*.md`.
 | Adjudication rows in §6.1.3 | **11** — one per name, none doubled, none sharing a citation |
 | Verdicts in those rows | 10 CITED / 1 EXCLUDED / 0 AMBIGUOUS |
 | Documented rule re-run verbatim by hand | reproduces all **11** resolutions |
-| `git show 0394cbc:… \| grep -aic r2000` re-run | **0**, matches the written figure |
+| `git show 0394cbc:… \| grep -aic anno` re-run | **0**, matches the written figure |
 | `node scripts/check-guard-fates.mjs` | exit **0**, same measured line before and after |
-| `node scripts/check-no-regenerator2000.mjs` | exit **0** |
+| `node scripts/check-no-analyser.mjs` | exit **0** |
 | Nine `docs-*.test.ts` guards, run individually | all exit **0** (5/6/8/6/6/12/7/8/5 passing) |
 | `grep -c '\- \[x\] \*\*CUT-04\*\*'` | **1** — checkbox unchanged |
 | `grep -c '\| CUT-04 \| Phase 32 \| Complete \|'` | **1** — row unmoved |
@@ -226,10 +226,10 @@ files — no `*-SUMMARY.md`, no `32-VERIFICATION.md`, no other `evidence/*.md`.
 **Confirmed: the finished section was re-read against the "does it route a reader at
 something deleted" test before committing.** Every occurrence of the deleted subject's short
 form inside §6.1 sits in one of exactly two permitted places — a quoted measurement command
-(`grep -aic r2000`) or a dated historical path (`docs-r2000-decisions.test.ts` at
+(`grep -aic anno`) or a dated historical path (`docs-absorbed-decisions.test.ts` at
 `0394cbc`, explicitly annotated with its rename to `docs-absorbed-decisions.test.ts` by plan
 29-05). The document never, in its own voice, tells a reader to use, install or invoke
-anything that no longer exists. `node scripts/check-no-regenerator2000.mjs` exits 0 with the
+anything that no longer exists. `node scripts/check-no-analyser.mjs` exits 0 with the
 temporary allow-list still empty, which is the mechanical confirmation.
 
 ## Deviations from Plan

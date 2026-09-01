@@ -2,11 +2,11 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 08
 subsystem: analysis-tooling
-tags: [regenerator2000, coverage, dispatch-scan, false-positives, negative-control, schema-version, 6502]
+tags: [the external analyser, coverage, dispatch-scan, false-positives, negative-control, schema-version, 6502]
 
 requires:
   - phase: 19-absorbed-procedures-and-the-coverage-instrument
-    provides: "the coverage instrument (r2000-coverage.ts), its widened four-class dispatch scan, and 19-06's anchored multi-caller rule in the same two files"
+    provides: "the coverage instrument (anno-coverage.ts), its widened four-class dispatch scan, and 19-06's anchored multi-caller rule in the same two files"
 provides:
   - "A dispatch-context GATE on the Class-3 split lo/hi table scan: same index register, a dispatch consumer in evidence, every reconstructed target in-image AND decodable, and a lo/hi orientation resolved by the pairing's own store construction"
   - "`splitTableCandidates` — the advisory sibling where ungated pairings survive, reported beside the proven classes and never summed into them (COV-01)"
@@ -33,11 +33,11 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
 
 key-decisions:
-  - "Checkpoint option `narrow-and-add-sibling` implemented exactly as chosen: `discoveredTargets` narrowed to proven-only, `splitTableCandidates` added as an advisory sibling, ungated pairings preserved there. `discoveredTargets` was NOT renamed, no `provenTargets`/`advisoryTargets` pair was introduced, and `r2000-cli.ts` was NOT modified — all three were consequences of the rejected `rename-both` option."
+  - "Checkpoint option `narrow-and-add-sibling` implemented exactly as chosen: `discoveredTargets` narrowed to proven-only, `splitTableCandidates` added as an advisory sibling, ungated pairings preserved there. `discoveredTargets` was NOT renamed, no `provenTargets`/`advisoryTargets` pair was introduced, and `anno-cli.ts` was NOT modified — all three were consequences of the rejected `rename-both` option."
   - "COVERAGE_SCHEMA_VERSION bumped 1 -> 2 with the authorised, deliberate edit to the test's version assertion. The nine-entry top-level COVERAGE_REPORT_KEYS set is unchanged; only the nested `dispatch` sub-object changed."
   - "A PROVEN class-3 pairing additionally requires a RESOLVED lo/hi orientation, decided by the pairing's own store construction (the load reaching the lower of two consecutive zero-page addresses holds the low byte). A pairing with dispatch context but no resolvable orientation is ADVISORY, not proven — otherwise the orientation would fall back to `Math.min`, which is precisely WR-01's defect."
   - "The `SPLIT_TABLE` positive-control fixture was extended with a genuine dispatch consumer rather than the gate being weakened. As committed it had NO consumer at all — it was a positive control for a heuristic that fired on anything."
@@ -55,7 +55,7 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#an ordinary indexed copy loop does not inflate the census over its immediate twin"
+        ref: "src/mcp/vice/anno-coverage.test.ts#an ordinary indexed copy loop does not inflate the census over its immediate twin"
         status: pass
     human_judgment: false
   - id: D2
@@ -63,10 +63,10 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 3 DECLINES an ordinary two-table indexed read loop"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 3 DECLINES an ordinary two-table indexed read loop"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#an advisory split-table candidate never reaches the census"
+        ref: "src/mcp/vice/anno-coverage.test.ts#an advisory split-table candidate never reaches the census"
         status: pass
     human_judgment: false
   - id: D3
@@ -74,7 +74,7 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the class-4 stack-return idiom is not also reported as a class-3 split table"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the class-4 stack-return idiom is not also reported as a class-3 split table"
         status: pass
     human_judgment: false
   - id: D4
@@ -82,7 +82,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a census whose origin plus size would leave the 16-bit space is bounded"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a census whose origin plus size would leave the 16-bit space is bounded"
         status: pass
     human_judgment: false
   - id: D5
@@ -90,7 +90,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#idempotency: two consecutive reports over the same fixture are deeply equal once the timestamp is removed"
+        ref: "src/mcp/vice/anno-coverage.test.ts#idempotency: two consecutive reports over the same fixture are deeply equal once the timestamp is removed"
         status: pass
     human_judgment: false
   - id: D6
@@ -98,7 +98,7 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 3: a PROVEN split lo/hi table pair is reconstructed from its two bases"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 3: a PROVEN split lo/hi table pair is reconstructed from its two bases"
         status: pass
     human_judgment: false
   - id: D7
@@ -149,14 +149,14 @@ questions.
 **2. Schema/keys confirmation — CONFIRMED, both:**
 
 - `COVERAGE_SCHEMA_VERSION` **1 → 2 APPROVED**, together with the deliberate, authorised edit to
-  `r2000-coverage.test.ts`'s exact top-level key-set / version assertion that
-  `r2000-coverage.ts`'s own doc comment requires. That test edit was authorised — it is not a
+  `anno-coverage.test.ts`'s exact top-level key-set / version assertion that
+  `anno-coverage.ts`'s own doc comment requires. That test edit was authorised — it is not a
   guard that was worked around.
 - The nine-entry `COVERAGE_REPORT_KEYS` top-level set **ACCEPTED AS-IS, unchanged**:
   `["schemaVersion", "generatedAt", "project", "structural", "dispatch", "labels", "commentVacuity", "reproducibility", "divergence"]`.
 
 **Consequences of the REJECTED options that were deliberately NOT applied:** `discoveredTargets`
-was not renamed; no `provenTargets`/`advisoryTargets` pair was introduced; `r2000-cli.ts` was not
+was not renamed; no `provenTargets`/`advisoryTargets` pair was introduced; `anno-cli.ts` was not
 modified; ungated pairings were not discarded.
 
 ### Discharge of `19-VERIFICATION.md` `human_verification` item 2
@@ -282,12 +282,12 @@ scratchpad instead:
 
 ```
 git archive HEAD src/mcp/vice .planning/phases/19-.../evidence | tar -x -C <scratch>/shadow
-cp src/mcp/vice/r2000-coverage.test.ts  <scratch>/shadow/src/mcp/vice/   # the NEW tests
-# + a recorded NULL-HYPOTHESIS SHIM appended to the shadow's PRE-fix r2000-coverage.ts:
+cp src/mcp/vice/anno-coverage.test.ts  <scratch>/shadow/src/mcp/vice/   # the NEW tests
+# + a recorded NULL-HYPOTHESIS SHIM appended to the shadow's PRE-fix anno-coverage.ts:
 #     export function provenDispatchTargets(scan: IndirectDispatchScan): number[] {
 #       return scan.discoveredTargets;
 #     }
-cd <scratch>/shadow/src/mcp/vice && node --test --test-name-pattern '<the two controls>' r2000-coverage.test.ts
+cd <scratch>/shadow/src/mcp/vice && node --test --test-name-pattern '<the two controls>' anno-coverage.test.ts
 ```
 
 The shim expresses the **pre-fix behaviour through the post-fix API** — the "seam" is simply the
@@ -326,10 +326,10 @@ actually produced. No substitution was needed — the option's own spelling was 
 
 | # | Purpose | Command | Identifier named | Observed |
 |---|---------|---------|------------------|----------|
-| 1 | The advisory field's declaration | `grep -c 'splitTableCandidates: SplitTableFinding\[\];' r2000-coverage.ts` | `splitTableCandidates` | **1** (line 584) |
-| 2 | The proven-seam `extraSeeds:` assignment (POSITIVE form) | `grep -c 'extraSeeds: provenDispatchTargets(dispatch),' r2000-coverage.ts` | `provenDispatchTargets` | **1** (line 1659) |
-| 3 | No `extraSeeds:` assignment reads the raw list | `grep -c 'extraSeeds:.*discoveredTargets\|extraSeeds:.*splitTableCandidates' r2000-coverage.ts` | `discoveredTargets` | **0** |
-| 4 | No bare membership test in `classFromBytes()` | `sed -n '/^function classFromBytes/,/^}/p' r2000-coverage.ts \| grep -c 'discoveredTargets\|splitTableCandidates'` | `discoveredTargets` | **0** |
+| 1 | The advisory field's declaration | `grep -c 'splitTableCandidates: SplitTableFinding\[\];' anno-coverage.ts` | `splitTableCandidates` | **1** (line 584) |
+| 2 | The proven-seam `extraSeeds:` assignment (POSITIVE form) | `grep -c 'extraSeeds: provenDispatchTargets(dispatch),' anno-coverage.ts` | `provenDispatchTargets` | **1** (line 1659) |
+| 3 | No `extraSeeds:` assignment reads the raw list | `grep -c 'extraSeeds:.*discoveredTargets\|extraSeeds:.*splitTableCandidates' anno-coverage.ts` | `discoveredTargets` | **0** |
+| 4 | No bare membership test in `classFromBytes()` | `sed -n '/^function classFromBytes/,/^}/p' anno-coverage.ts \| grep -c 'discoveredTargets\|splitTableCandidates'` | `discoveredTargets` | **0** |
 
 Pattern 3 additionally confirmed by listing **every** `extraSeeds:` occurrence in the file: three
 hits, of which two are prose in doc comments (lines 45 and 942, both asserting the invariant) and
@@ -337,7 +337,7 @@ exactly one is an assignment (line 1659), and that assignment reads the seam.
 
 ## What happened to the existing class-3 positive control
 
-It **failed** the moment Task 2 landed — `node --test r2000-coverage.test.ts` reported
+It **failed** the moment Task 2 landed — `node --test anno-coverage.test.ts` reported
 `# tests 46 / # pass 45 / # fail 1`, the single failure being
 `dispatch class 3: a split lo/hi table pair is reconstructed from its two bases`.
 
@@ -389,7 +389,7 @@ both-directions doctrine holds inside a single test as well as across the pair.
 **Shape chosen:** the idempotency extension was authored as **extra assertions inside the existing
 test**, not as its own test. The delta is therefore **exactly 5**, the plan's primary shape.
 
-| | `cd src/mcp/vice && node --test r2000-coverage.test.ts` |
+| | `cd src/mcp/vice && node --test anno-coverage.test.ts` |
 |---|---|
 | 19-06 baseline (recorded in 19-06-SUMMARY) | `# tests 46`, `# pass 46`, `# fail 0` |
 | Observed after 19-08 | `# tests 51`, `# pass 51`, `# fail 0` |
@@ -414,21 +414,21 @@ comment.
 | # | Command | Result |
 |---|---------|--------|
 | 1 | `cd src/mcp/vice && npx tsc --noEmit -p tsconfig.json` | exit **0** |
-| 2 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | exit **0** — `# tests 51`, `# pass 51`, **`# fail 0`** |
+| 2 | `cd src/mcp/vice && node --test anno-coverage.test.ts` | exit **0** — `# tests 51`, `# pass 51`, **`# fail 0`** |
 | 3 | `cd src/mcp/vice && npm test` (FULL suite, not `test:automated`) | exit **0** — `# tests 2560`, `# pass 2515`, **`# fail 0`**, `# skipped 40`, `# todo 5` |
 | 4 | `node scripts/check-npm-packages.mjs` | exit **0** |
 | 4 | `node scripts/check-skill-tool-coverage.mjs` | exit **0** |
 | 4 | `node scripts/check-skill-description-overlap.mjs` | exit **0** |
 | 5 | Pre-fix / post-fix census numbers with reproduction script | recorded above |
 | 6 | The two RED observations, plus the explicit not-red-observed statement | recorded above |
-| 7 | `node src/mcp/vice/vice-proxy.ts r2000 coverage src/mcp/vice/fixtures/coverage/nc5-well-documented/project.regen2000proj` | exit **0** — prints `schema version 2`, `MEASURE 1 of 3`, `MEASURE 2 of 3`, `MEASURE 3 of 3`, and no combined figure. The CLI survived the schema change unmodified. |
+| 7 | `node src/mcp/vice/vice-proxy.ts anno coverage src/mcp/vice/fixtures/coverage/nc5-well-documented/project.regen2000proj` | exit **0** — prints `schema version 2`, `MEASURE 1 of 3`, `MEASURE 2 of 3`, `MEASURE 3 of 3`, and no combined figure. The CLI survived the schema change unmodified. |
 
 **Inherited-suite note.** The orchestrator measured the full suite green at the wave-1 boundary
 (`# tests 2555, # pass 2510, # fail 0`). It is green here at `# tests 2560, # pass 2515, # fail 0`
 — exactly `+5 tests / +5 pass`, the delta this plan authored. Nothing was attributed to
 pre-existing breakage, because there was none.
 
-**Artifact floors held:** `r2000-coverage.ts` **1794** lines (floor 1480), `r2000-coverage.test.ts`
+**Artifact floors held:** `anno-coverage.ts` **1794** lines (floor 1480), `anno-coverage.test.ts`
 **1158** lines (floor 850).
 
 **COV-01 prohibition honoured:** no single combined coverage figure is computed, emitted, stored or
@@ -443,7 +443,7 @@ new nested field.
 
 **1. [Rule 3 — Blocking] `git stash` replaced by a null-hypothesis shadow tree**
 - **Found during:** Task 3
-- **Issue:** Task 3's acceptance criterion prescribes "stashing ONLY the `r2000-coverage.ts`
+- **Issue:** Task 3's acceptance criterion prescribes "stashing ONLY the `anno-coverage.ts`
   change". Project rule 6 forbids `git stash` outright — the stash ref is shared across worktrees
   in this repository.
 - **Fix:** A disposable `git archive HEAD` shadow tree in the scratchpad, with a recorded shim
@@ -461,7 +461,7 @@ new nested field.
 - **Fix:** `resolveSplitOrientation()` was added and a `null` result makes the pairing advisory
   however good its other evidence is. `SplitTableFinding` and `StackReturnFinding` both carry an
   explicit `orientationResolved` field so the distinction is in the report, not just in the code.
-- **Files modified:** `src/mcp/vice/r2000-coverage.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.ts`
 - **Commit:** `1706d8b`
 
 **3. [Plan-sanctioned] The `SPLIT_TABLE` positive-control fixture gained a dispatch consumer**
@@ -478,7 +478,7 @@ new nested field.
 **5. [Consequential] `StructuralCensus.rangeBytes` is now the censused count, not the payload length**
 - They are equal for every well-formed payload and differ only when `origin + size` leaves the
   16-bit space, which is the malformed case IN-04 addresses. `size` still reports the payload's own
-  length, so the truncation is visible. `r2000-cli.ts`'s "the four classes sum to N of M censused
+  length, so the truncation is visible. `anno-cli.ts`'s "the four classes sum to N of M censused
   byte(s)" line reads `rangeBytes` and remains correct.
 
 **6. [Rule 1 — Bug] `requirements.mark-complete COV-01 COV-02` reverted as a false claim**
@@ -515,7 +515,7 @@ new nested field.
 ### Not applied (rejected checkpoint options)
 
 `discoveredTargets` was **not** renamed; `provenTargets`/`advisoryTargets` were **not** introduced;
-`r2000-cli.ts` was **not** modified; ungated pairings were **not** discarded.
+`anno-cli.ts` was **not** modified; ungated pairings were **not** discarded.
 
 ## Review disposition table, restated as shipped fact
 
@@ -525,17 +525,17 @@ new nested field.
 | **IN-04** | `computeStructuralCensus` never checks that `origin + size` stays inside the 16-bit space | **FOLDED IN** | **Done.** Effective end bounded at `0x10000`; `inRange`, the class array, the count loop and the linear sweep all use it. Regression-tested by *a census whose origin plus size would leave the 16-bit space is bounded*. |
 | **WR-03** | The descent walk counts illegal/JAM opcodes as instructions while the linear sweep skips them | **DEFERRED, not rejected** | Not addressed here. The correct fix is gated on the project's `use_illegal_opcodes` setting (Phase 18 forces it on, deliberately), making it a behaviour decision needing its own record. Not in VERIFICATION.md's gap list. Carry into Phase 20's first use of the instrument. |
 | **WR-04** | The cross-reference bound is printed but never recorded in the JSON report | **DEFERRED** | Not addressed. A report-shape addition that would widen the schema change this plan already makes, for a reporting nicety no gap depends on. |
-| **WR-05** | `--sample` silently accepts and truncates non-integer input | **DEFERRED (CLI cluster)** | Not addressed. `r2000-cli.ts` is untouched and is not in `files_modified`. |
+| **WR-05** | `--sample` silently accepts and truncates non-integer input | **DEFERRED (CLI cluster)** | Not addressed. `anno-cli.ts` is untouched and is not in `files_modified`. |
 | **WR-06** | The entire coverage CLI surface is untested | **DEFERRED (CLI cluster)** | Not addressed. Closing it means authoring a CLI test suite — a scope expansion beyond the two reproduced instrument defects. |
 | **WR-07** | `parseCoverageArgs`'s `unknownOption` branch is unreachable | **DEFERRED (CLI cluster)** | Not addressed. Same file, same reason. |
 | **WR-10** | `--entropy` is neither range-checked nor refused when its value is missing | **DEFERRED (CLI cluster)** | Not addressed. Same file, same reason. |
 | **WR-08** | The oracle's raw stdout reaches a second, unsanitised report field | **DEFERRED**, recorded in this plan's threat register as `T-19G-08-06` / **accept** | Not addressed. Lives in `src/skills/c64-program-recon/scripts/packer-finding.mjs`, untouched here. Both `spawnSync` sites already pass an argument array with `shell: false`; the field is JSON data with no markup or shell sink downstream. Carried with WR-09 into Phase 20. |
 | **WR-09** | `probeUnp64()` ignores a non-zero exit status | **DEFERRED** | Not addressed. Same module, carried with WR-08. |
 | **WR-11**, **WR-12** | — | Dispositions recorded in **19-07** (same file family) | Untouched here. |
-| **IN-01** | `r2000-coverage.ts` carries a shebang but is a pure library | **REJECTED as out-of-scope cosmetics** | Shebang retained. Harmless; removing it risks nothing but gains nothing. |
+| **IN-01** | `anno-coverage.ts` carries a shebang but is a pure library | **REJECTED as out-of-scope cosmetics** | Shebang retained. Harmless; removing it risks nothing but gains nothing. |
 | **IN-02** | Fixture regeneration is host-dependent despite the stated determinism contract | **DEFERRED to 19-09** | Not addressed. 19-09 is the plan that edits the generator. |
 | **IN-03** | `stripComments()` has no regex-literal awareness | **DEFERRED** | Not addressed. Different module family; no gap depends on it. |
-| **IN-06** | — | **DOES NOT EXIST** | Confirmed as shipped fact. `19-REVIEW.md:477` cross-references "`r2000-cli.ts`'s WR-08/IN-06" inside WR-10's prose, but the review's real informational sections are IN-01 … IN-04, and WR-08 is a `packer-finding.mjs` finding rather than a CLI one. The citation is a **phantom in the upstream review document**. Nothing is dispositioned against IN-06 because there is nothing to dispose of; the row exists so this table is a complete accounting of every ID the review names. |
+| **IN-06** | — | **DOES NOT EXIST** | Confirmed as shipped fact. `19-REVIEW.md:477` cross-references "`anno-cli.ts`'s WR-08/IN-06" inside WR-10's prose, but the review's real informational sections are IN-01 … IN-04, and WR-08 is a `packer-finding.mjs` finding rather than a CLI one. The citation is a **phantom in the upstream review document**. Nothing is dispositioned against IN-06 because there is nothing to dispose of; the row exists so this table is a complete accounting of every ID the review names. |
 
 ## Release discipline
 
@@ -560,8 +560,8 @@ accepted and remain accepted. No dependency was added; `package-lock.json` is un
 
 ## Self-Check: PASSED
 
-- `src/mcp/vice/r2000-coverage.ts` — FOUND (1794 lines, floor 1480)
-- `src/mcp/vice/r2000-coverage.test.ts` — FOUND (1158 lines, floor 850)
+- `src/mcp/vice/anno-coverage.ts` — FOUND (1794 lines, floor 1480)
+- `src/mcp/vice/anno-coverage.test.ts` — FOUND (1158 lines, floor 850)
 - Commit `1706d8b` — FOUND (`fix(19-08): gate the split-table scan …`)
 - Commit `9c9166d` — FOUND (`test(19-08): the negative controls …`)
 - Neither commit deleted a tracked file (`git diff --diff-filter=D` empty for both)

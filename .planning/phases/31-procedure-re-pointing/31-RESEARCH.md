@@ -26,17 +26,17 @@ rather than by proxy — no instrument currently asserts that exact sentence.
 
 Criterion 2 is **genuinely stale and nothing in this repository can see it.**
 `upstream-procedure-manifest.json` carries **seven live references to modules, symbols and
-test files that Phase 29 deleted or renamed** — four to `r2000-tools.ts`, one to
-`CURATED_R2000_TOOLS`, one to `r2000-session.ts`, one to `r2000-upstream-audit.test.ts` —
+test files that Phase 29 deleted or renamed** — four to `anno-tools.ts`, one to
+`CURATED_ANNO_TOOLS`, one to `anno-session.ts`, one to `anno-derivation.test.ts` —
 including inside its **third re-sync trigger's own mechanism**, the instruction criterion 2
 turns on. The manifest lives under `.planning/`, which the removal gate excludes by prefix
 and which `docs-dangling-refs.test.ts` deliberately does not scan, so the drift is invisible
-to CI. `r2000_undo`'s `omit` entry has **no `requirement_id` at all**, and the criterion
+to CI. `anno_undo`'s `omit` entry has **no `requirement_id` at all**, and the criterion
 v0.7.0 supplies for it (`STORE-04` + decision `D2`) points **toward keeping the omission**,
 not reversing it — the trap the criterion's own wording warns about.
 
 **Primary recommendation:** Plan this as **two plans, not one**. Plan A: re-point the
-manifest's stale prose and add `r2000_undo`'s `requirement_id`, in one commit, with the
+manifest's stale prose and add `anno_undo`'s `requirement_id`, in one commit, with the
 direction of the decision stated explicitly and `anno-derivation.test.ts` re-run. Plan B:
 the verification/scoring pass — measure the `ABS-02` chain, add the naming-line assertion,
 score `ABS-03`, and move `REPOINT-03`/`REPOINT-04` to `Complete` in `REQUIREMENTS.md`, the
@@ -70,10 +70,10 @@ reproduced here verbatim-in-substance as the planner's decision floor:
    chain's byte-identity across both trees.
 4. **`packer-finding.mjs`'s recorded provenance fate is CLOSED.** Do not re-open it. Its
    residual mention sits under the removal gate's `surviving-provenance` permanent exemption.
-5. **`grep -rail 'regenerator2000' installer/skills` → 0 is UNSATISFIABLE BY DESIGN.** The
+5. **`grep -rail 'the external analyser' installer/skills` → 0 is UNSATISFIABLE BY DESIGN.** The
    `ABS-02` headers are protected in both directions and both trees. Deleting a header
    **fails** the gate rather than silencing it. Never attempt to drive that grep to zero.
-6. **`R2000-14`/`R2000-15`'s symbol round trip is WITHDRAWN and not this phase's work.**
+6. **`ANNO-14`/`ANNO-15`'s symbol round trip is WITHDRAWN and not this phase's work.**
    No phase currently owns its return.
 
 ### Claude's Discretion
@@ -85,7 +85,7 @@ reproduced here verbatim-in-substance as the planner's decision floor:
   and `toggle_splitter`'s blocker that `STORE-02` closed) are corrected in the same plan or
   left as dated history. (Recommendation below: correct the *live instructions*, date the
   *past-tense facts*.)
-- Whether `scripts/check-no-regenerator2000.mjs`'s two "ROADMAP Phase 31 criterion 4"
+- Whether `scripts/check-no-analyser.mjs`'s two "ROADMAP Phase 31 criterion 4"
   citations are corrected in this phase.
 
 ### Deferred Ideas (OUT OF SCOPE)
@@ -99,8 +99,8 @@ reproduced here verbatim-in-substance as the planner's decision floor:
 
 | ID | Description (verbatim from `.planning/REQUIREMENTS.md`) | Research Support |
 |----|-------------|------------------|
-| REPOINT-03 | *"The `ABS-02` attribution chain survives the code's deletion, because the prose remains adapted from regenerator2000 — 5 blocks in 3 files under `src/skills/` plus their 5 synced twins, 10 instances across two trees, each carrying two naming lines. Separately, `routine-queue-walker/SKILL.md:3`'s YAML `description:` names regenerator2000 and must change **substantively** rather than be exempted, which re-triggers `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions"* [VERIFIED: .planning/REQUIREMENTS.md:120] | §1 (the chain as measured), §2 (the description, already rewritten), §3 (ABS-03's instrument and its verdict), §8 (what is left) |
-| REPOINT-04 | *"`upstream-procedure-manifest.json` is updated in the same commit that changes what it describes — its own third re-sync trigger requires it, and `r2000_undo`'s `omit` disposition is one v0.7.0 supplies a criterion for"* [VERIFIED: .planning/REQUIREMENTS.md:121] | §4 (the manifest and its drift), §5 (`r2000_undo`'s direction), §6 (the same-commit question), §8 |
+| REPOINT-03 | *"The `ABS-02` attribution chain survives the code's deletion, because the prose remains adapted from the external analyser — 5 blocks in 3 files under `src/skills/` plus their 5 synced twins, 10 instances across two trees, each carrying two naming lines. Separately, `routine-queue-walker/SKILL.md:3`'s YAML `description:` names the external analyser and must change **substantively** rather than be exempted, which re-triggers `ABS-03`'s pairwise trigger-collision check across all seven skill descriptions"* [VERIFIED: .planning/REQUIREMENTS.md:120] | §1 (the chain as measured), §2 (the description, already rewritten), §3 (ABS-03's instrument and its verdict), §8 (what is left) |
+| REPOINT-04 | *"`upstream-procedure-manifest.json` is updated in the same commit that changes what it describes — its own third re-sync trigger requires it, and `anno_undo`'s `omit` disposition is one v0.7.0 supplies a criterion for"* [VERIFIED: .planning/REQUIREMENTS.md:121] | §4 (the manifest and its drift), §5 (`anno_undo`'s direction), §6 (the same-commit question), §8 |
 
 Both rows currently read `Pending` against `Phase 31`
 [VERIFIED: .planning/REQUIREMENTS.md:241-242 — `| REPOINT-03 | Phase 31 | Pending |` and
@@ -112,7 +112,7 @@ Both rows currently read `Pending` against `Phase 31`
 |------------|-------------|----------------|-----------|
 | The `ABS-02` attribution chain (per-file headers) | Shipped skill prose (`src/skills/**/SKILL.md`) | Synced twin (`installer/skills/**`) | The attribution must travel *inside* each file, because a consumer may copy one playbook out of the tarball. The twin is generated by `installer/scripts/sync-skills.mjs`, so it is a derived tier, never hand-edited |
 | Enforcing the chain (presence, six fields, digest equality) | Test tier (`src/mcp/vice/skill-attribution.test.ts`) | — | A named registry, not a corpus scan — a file with no absorbed content owes no header |
-| Protecting the chain from deletion | CI-gate tier (`scripts/check-no-regenerator2000.mjs`) | — | Bidirectional block+hit pins in **both** trees; deleting a header trips the gate |
+| Protecting the chain from deletion | CI-gate tier (`scripts/check-no-analyser.mjs`) | — | Bidirectional block+hit pins in **both** trees; deleting a header trips the gate |
 | `ABS-03` trigger uniqueness | CI-gate tier (`scripts/check-skill-description-overlap.mjs`) | Test tier (`skill-description-overlap.test.ts` over the shared predicate module) | The runner runs at import time; the predicates live in `scripts/lib/skill-descriptions.mjs` so the test can drive them |
 | The upstream snapshot record | Planning-artifact tier (`.planning/phases/19-…/upstream-procedure-manifest.json`) | — | Deliberately under `.planning/` and therefore **outside** the removal gate's scope and outside `docs-dangling-refs.test.ts`'s scan set |
 | Manifest ↔ surface agreement | Test tier (`src/mcp/vice/anno-derivation.test.ts`) | — | The only mechanical link between the planning artifact and the live surface, in both directions |
@@ -164,7 +164,7 @@ No new dependencies. Everything this phase needs already exists in the repositor
 ### Supporting
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
-| `scripts/check-no-regenerator2000.mjs` | The removal gate; bidirectional `ABS-02` header protection | Every commit of this phase |
+| `scripts/check-no-analyser.mjs` | The removal gate; bidirectional `ABS-02` header protection | Every commit of this phase |
 | `scripts/check-skill-description-overlap.mjs` | `ABS-03`'s instrument | Criterion 1's scoring |
 | `scripts/check-npm-packages.mjs` | Proves the **shipped** twin tree matches | Any claim about `installer/skills/` |
 | `installer/scripts/sync-skills.mjs` | Regenerates the twin tree | Runs automatically via `prepack` |
@@ -210,7 +210,7 @@ per-file counts from `grep -rc` as tabulated]
 removal gate's own pin table, which names all six paths:
 
 ```js
-// VERBATIM from scripts/check-no-regenerator2000.mjs:353-360
+// VERBATIM from scripts/check-no-analyser.mjs:353-360
 const SKILL_ATTRIBUTION_PINS = {
   "src/skills/c64-memory-mapping/SKILL.md": { blocks: 2, hits: 5 },
   "src/skills/c64-program-recon/SKILL.md": { blocks: 2, hits: 4 },
@@ -220,24 +220,24 @@ const SKILL_ATTRIBUTION_PINS = {
   "installer/skills/routine-queue-walker/SKILL.md": { blocks: 1, hits: 3 },
 };
 ```
-[VERIFIED: scripts/check-no-regenerator2000.mjs:353-360]
+[VERIFIED: scripts/check-no-analyser.mjs:353-360]
 
 Note `2+2+1 = 5` per tree and `5+4+3 = 12` hits per tree, `24` across both — which is exactly
 what the gate reports for the class (`skill-attribution-headers 24`).
 
 ### What "its two naming lines" are
 
-The two lines in each block that **name regenerator2000**:
+The two lines in each block that **name the external analyser**:
 
 ```
-Adapted from regenerator2000.
-  Source repository: https://github.com/ricardoquesada/regenerator2000
+Adapted from the external analyser.
+  Source repository: an upstream repository
 ```
 
 Measured across **both** trees:
 
-- `grep -rx "Adapted from regenerator2000." src/skills installer/skills | wc -l` → **10**
-- `grep -rx "  Source repository: https://github.com/ricardoquesada/regenerator2000" src/skills installer/skills | wc -l` → **10**
+- `grep -rx "Adapted from the external analyser." src/skills installer/skills | wc -l` → **10**
+- `grep -rx "  Source repository: an upstream repository" src/skills installer/skills | wc -l` → **10**
 
 [VERIFIED: both commands run 2026-08-31; both returned `10`]
 
@@ -294,7 +294,7 @@ proxy — the removal gate's per-file hit/block pins in both trees, plus `diff -
 **YES.** `node --test skill-attribution.test.ts skill-description-overlap.test.ts
 anno-derivation.test.ts` → **53 tests, 52 pass, 0 fail, 1 skipped** (the skip is
 `anno-derivation.test.ts`'s live-gated upstream re-hash, which SKIPs when
-`R2000_UPSTREAM_CLONE` is unset — by design). The removal gate exits **0** with
+`ANNO_UPSTREAM_CLONE` is unset — by design). The removal gate exits **0** with
 `skill-attribution-headers 24` on its exact pins [VERIFIED: both runs, 2026-08-31].
 
 ## Finding 2 — `routine-queue-walker/SKILL.md:3`'s `description:`
@@ -304,10 +304,10 @@ anno-derivation.test.ts` → **53 tests, 52 pass, 0 fail, 1 skipped** (the skip 
 > `description: Drive an existing C64 annotation store's backlog of undocumented routines and auto-named symbols to closure — build the candidate queue from labels and comments, work it one entry at a time against explicit addresses, rebuild it after every pass, and report every leftover. Use when asked to annotate every remaining routine in a project, document all undocumented subroutines left in an annotation project, rename the leftover auto-generated labels, clear a backlog of unnamed symbols, drive an annotation pass to completion, or list what is still unannotated after a pass.`
 
 **It is already substantively rewritten.** It names *"an existing C64 annotation store"* and
-carries **zero** mentions of the retired analyser. The file's only three `regenerator2000`
-mentions are at `:8`, `:9` (the two naming lines) and `:35` (*"installed regenerator2000 from
+carries **zero** mentions of the retired analyser. The file's only three `the external analyser`
+mentions are at `:8`, `:9` (the two naming lines) and `:35` (*"installed the external analyser from
 the crate"*, inside the attribution block's deviation list)
-[VERIFIED: `grep -n "regenerator2000" src/skills/routine-queue-walker/SKILL.md` → lines 8, 9, 35].
+[VERIFIED: `grep -n "the external analyser" src/skills/routine-queue-walker/SKILL.md` → lines 8, 9, 35].
 
 **So this phase only has to confirm and score it.** Do not rewrite it. The ROADMAP Notes say
 so, and 29-09-SUMMARY.md records the rewrite plus the CLAUDE.md row that had to move in the
@@ -388,16 +388,16 @@ Top-level keys, all read by at least one test:
 
 | Key | Type | Asserted by |
 |-----|------|-------------|
-| `repository` | string | `anno-derivation.test.ts:104` (exact equality to `"https://github.com/ricardoquesada/regenerator2000"`); `skill-attribution.test.ts:497-500` (header must contain it) |
+| `repository` | string | `anno-derivation.test.ts:104` (exact equality to `"an upstream repository"`); `skill-attribution.test.ts:497-500` (header must contain it) |
 | `commit` | 40 lowercase hex | `assert.match(manifest.commit, /^[0-9a-f]{40}$/)` — abbreviation is explicitly forbidden |
 | `commit_date`, `upstream_version` | string | `upstream_version` pinned `assert.equal(manifest.upstream_version, "0.9.20")` |
 | `licence` | string | `assert.equal(manifest.licence, "MIT OR Apache-2.0")` |
-| `licence_copyright` | string | `assert.match(…, /Ricardo Quesada/)` |
+| `licence_copyright` | string | `assert.match(…, /the upstream author/)` |
 | `elected_licence` | string | must be in `["MIT", "Apache-2.0"]` |
 | `resync_trigger` | string (legacy, singular) | *"the original resync_trigger string must be preserved"* — must stay non-empty |
 | `resync_triggers` | array of `{trigger, mechanism}` | array, `length >= 2`, every entry's `trigger` and `mechanism` non-empty |
 | `disposition_rationale` | object keyed by upstream verb name → `{disposition, justification, upstream_citation, sites, requirement_id?, also_required_by?}` | see below |
-| `procedures` | array of 5 `{path, sha256, bytes, destination, tools}` | `length === 5` exactly; `path` matches `/^\.agent\/skills\/r2000-analyze-/`; `sha256` 64-hex; `bytes` positive integer; `destination` must not include `.agent/skills`; every value in `tools` must be a known disposition |
+| `procedures` | array of 5 `{path, sha256, bytes, destination, tools}` | `length === 5` exactly; `path` matches `/^\.agent\/skills\/anno-analyze-/`; `sha256` 64-hex; `bytes` positive integer; `destination` must not include `.agent/skills`; every value in `tools` must be a known disposition |
 
 `KNOWN_DISPOSITIONS` is the only union in play:
 ```ts
@@ -409,15 +409,15 @@ const KNOWN_DISPOSITIONS: readonly string[] = ["curated", "omit", "adapt-to-addr
 
 ### The re-sync triggers — enumerated
 
-**Trigger 1** — `"The installed regenerator2000 is upgraded past 0.9.20."`
+**Trigger 1** — `"The installed the external analyser is upgraded past 0.9.20."`
 Mechanism reads the new crate's `.cargo_vcs_info.json`, re-fetches the five paths, sha256s
 each, diffs against the manifest. Its last sentence names the performer:
-*"**r2000-upstream-audit.test.ts**'s live-gated re-hash check performs the comparison half
-when R2000_UPSTREAM_CLONE points at a clone of the pinned tree."*
-[VERIFIED: manifest:13] — **`r2000-upstream-audit.test.ts` does not exist** (renamed to
+*"**anno-derivation.test.ts**'s live-gated re-hash check performs the comparison half
+when ANNO_UPSTREAM_CLONE points at a clone of the pinned tree."*
+[VERIFIED: manifest:13] — **`anno-derivation.test.ts` does not exist** (renamed to
 `anno-derivation.test.ts` by plan 29-05). **STALE.**
 
-**Trigger 2** — `"r2000_get_binary_info's response field set changes."`
+**Trigger 2** — `"anno_get_binary_info's response field set changes."`
 Mechanism cites `SURF-03`'s packer finding and `19-RESEARCH.md` §2.2(a) [VERIFIED: manifest:17].
 `SURF-03` is not in the current `REQUIREMENTS.md` [VERIFIED: `grep -n "SURF-01\|SURF-03"
 .planning/REQUIREMENTS.md` → no matches]. Historical citation; lower priority.
@@ -426,12 +426,12 @@ Mechanism cites `SURF-03`'s packer finding and `19-RESEARCH.md` §2.2(a) [VERIFI
 
 > `"trigger": "A future phase needs an upstream call this manifest currently disposes of as omitted."`
 >
-> `"mechanism": "Every non-curated call has a disposition_rationale entry below carrying the reason it was left out. Two of them (r2000_toggle_splitter, r2000_set_immediate_format) already name the requirement that would supply their criterion. Adding one to CURATED_R2000_TOOLS requires updating that entry's disposition in the same commit, so the manifest cannot silently disagree with r2000-tools.ts."`
+> `"mechanism": "Every non-curated call has a disposition_rationale entry below carrying the reason it was left out. Two of them (anno_toggle_splitter, anno_set_immediate_format) already name the requirement that would supply their criterion. Adding one to CURATED_ANNO_TOOLS requires updating that entry's disposition in the same commit, so the manifest cannot silently disagree with anno-tools.ts."`
 
 [VERIFIED: .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json:20-21]
 
-**Both of its named anchors are gone.** `CURATED_R2000_TOOLS` and `r2000-tools.ts` do not
-exist [VERIFIED: `[ -f src/mcp/vice/r2000-tools.ts ]` → GONE]. The surviving equivalents are
+**Both of its named anchors are gone.** `CURATED_ANNO_TOOLS` and `anno-tools.ts` do not
+exist [VERIFIED: `[ -f src/mcp/vice/anno-tools.ts ]` → GONE]. The surviving equivalents are
 `CURATED_ANNO_TOOLS` and `anno-tools.ts`
 [VERIFIED: src/mcp/vice/anno-tools.ts:944 —
 `export const CURATED_ANNO_TOOLS: readonly string[] = ANNO_TOOL_DEFINITIONS.map((def) => def.name);`].
@@ -451,14 +451,14 @@ Two, with different jobs — a plan must run **both**:
 
 | Manifest line | Stale reference | Reality |
 |---|---|---|
-| `:13` | `r2000-upstream-audit.test.ts` | Renamed → `anno-derivation.test.ts` (29-05) |
+| `:13` | `anno-derivation.test.ts` | Renamed → `anno-derivation.test.ts` (29-05) |
 | `:17` | `SURF-03` | Not a current requirement id |
-| `:21` | `CURATED_R2000_TOOLS` | Deleted → `CURATED_ANNO_TOOLS` |
-| `:21` | `r2000-tools.ts` | Deleted → `anno-tools.ts` |
-| `:27` | `r2000-tools.ts`, `SURF-01` | Deleted / not current |
-| `:33` | `r2000-tools.ts` | Deleted |
+| `:21` | `CURATED_ANNO_TOOLS` | Deleted → `CURATED_ANNO_TOOLS` |
+| `:21` | `anno-tools.ts` | Deleted → `anno-tools.ts` |
+| `:27` | `anno-tools.ts`, `SURF-01` | Deleted / not current |
+| `:33` | `anno-tools.ts` | Deleted |
 | `:39` | `SURF-01`, `Phase 20`, `Phase 20/21`, and a blocker `STORE-02` **closed by construction** | See below |
-| `:47` | `r2000-tools.ts`, `r2000-session.ts`, `Phase 21` | `r2000-session.ts` deleted; no FIFO-mutex module of that name exists |
+| `:47` | `anno-tools.ts`, `anno-session.ts`, `Phase 21` | `anno-session.ts` deleted; no FIFO-mutex module of that name exists |
 | `:54` | `SURF-03` | Not current |
 
 [VERIFIED: `grep -n` for each token against the manifest, results as tabulated; existence of
@@ -469,7 +469,7 @@ each named file checked with `[ -f … ]`]
 merged on adjacency**, so no splitter concept is needed and none is introduced — the
 manifest's named blocker for `DECOMP-01` and `BUILD-02`, and the over-merge bias it predicts
 for `COV-01`, are designed out by construction rather than worked around"*
-[VERIFIED: .planning/REQUIREMENTS.md:83]. So `r2000_toggle_splitter`'s justification names a
+[VERIFIED: .planning/REQUIREMENTS.md:83]. So `anno_toggle_splitter`'s justification names a
 blocker that this milestone **closed**. And `DECOMP-01..04`/`BUILD-01..06` were *"Re-mapped
 from v0.7.0 to v0.9.0 on 2026-08-26"* [VERIFIED: .planning/REQUIREMENTS.md:180-181] — so the
 `requirement_id`s in those entries are still **live** requirement ids, just in a later
@@ -478,33 +478,33 @@ are from a superseded roadmap.
 
 **Nothing in this repository can see any of this.** The removal gate's scope is
 *"( git ls-files , minus the `".planning/"` PREFIX ) UNION packFiles("installer").files"*
-[VERIFIED: scripts/check-no-regenerator2000.mjs:12-14], and `docs-dangling-refs.test.ts`
+[VERIFIED: scripts/check-no-analyser.mjs:12-14], and `docs-dangling-refs.test.ts`
 deliberately excludes `.planning/phases/**` — *"Executed-phase artifacts under
 `.planning/phases/**` are historical records that legitimately quote the wrong wording while
 describing its removal … so neither is scanned"* [VERIFIED: docs-dangling-refs.test.ts:19-24].
 That exclusion is correct and must not be widened; it is *why* this drift needs a phase.
 
-## Finding 5 — `r2000_undo`'s `omit` disposition
+## Finding 5 — `anno_undo`'s `omit` disposition
 
 ### Where the disposition is recorded — two places, both must agree
 
-1. **In the procedure's `tools` map:** `.agent/skills/r2000-analyze-blocks/SKILL.md`'s entry
-   carries `"r2000_undo":"omit"` [VERIFIED: manifest:61].
+1. **In the procedure's `tools` map:** `an upstream blocks procedure`'s entry
+   carries `"anno_undo":"omit"` [VERIFIED: manifest:61].
 2. **In `disposition_rationale`,** as its own entry [VERIFIED: manifest:31-36]:
 
 ```json
-"r2000_undo": {
+"anno_undo": {
   "disposition": "omit",
-  "justification": "r2000_set_data_type is idempotent over a range, so upstream's 'if a conversion was wrong, undo it and redo it correctly' collapses to 'set it correctly'. r2000-tools.ts records undo/redo as earning no place under this surface's own discipline even now that a session persists. Omitting it costs nothing and adds no surface.",
-  "upstream_citation": ".agent/skills/r2000-analyze-blocks/SKILL.md:85 -- \"if a conversion was wrong, use `r2000_undo` to revert\"",
-  "sites": [".agent/skills/r2000-analyze-blocks/SKILL.md:85"]
+  "justification": "anno_set_data_type is idempotent over a range, so upstream's 'if a conversion was wrong, undo it and redo it correctly' collapses to 'set it correctly'. anno-tools.ts records undo/redo as earning no place under this surface's own discipline even now that a session persists. Omitting it costs nothing and adds no surface.",
+  "upstream_citation": "an upstream blocks procedure:85 -- \"if a conversion was wrong, use `anno_undo` to revert\"",
+  "sites": ["an upstream blocks procedure:85"]
 }
 ```
 
-**There is currently NO `requirement_id` on this entry.** Only `r2000_toggle_splitter`
-(`"requirement_id": "DECOMP-01"`, manifest:41) and `r2000_set_immediate_format`
+**There is currently NO `requirement_id` on this entry.** Only `anno_toggle_splitter`
+(`"requirement_id": "DECOMP-01"`, manifest:41) and `anno_set_immediate_format`
 (`"requirement_id": "BUILD-03"`, manifest:49) carry one — exactly as trigger 3's mechanism
-says. **Adding one to `r2000_undo` is criterion 2's named delta.**
+says. **Adding one to `anno_undo` is criterion 2's named delta.**
 
 ### Which direction the decision actually goes
 
@@ -515,7 +515,7 @@ was answered. `D2` verbatim:
 
 > **`D2` undo → whole-store snapshot/restore, not a per-edit inverse journal.**
 > Measured: zero callers anywhere, and the Phase 19 manifest already disposes
-> `r2000_undo` as `omit` because idempotent range typing collapses "undo the wrong
+> `anno_undo` as `omit` because idempotent range typing collapses "undo the wrong
 > conversion" into "set it correctly". Node's `sqlite` surface also does not expose
 > `sqlite3changeset_invert`, confirmed two independent ways. `STORE-04` is scoped
 > to what a planted-violation test can actually prove.
@@ -528,7 +528,7 @@ fresh process → reopen → read returns the mutation → revert returns the pr
 [VERIFIED: .planning/REQUIREMENTS.md:85, recorded `Complete` against Phase 28 at :227].
 
 And the Out-of-Scope table:
-> `| A per-edit inverse-command undo journal | `D2`. Zero callers measured; the Phase 19 manifest disposes `r2000_undo` as `omit`; Node's `sqlite` does not expose `sqlite3changeset_invert`. Whole-store snapshot/restore serves the requirement that has a consumer |`
+> `| A per-edit inverse-command undo journal | `D2`. Zero callers measured; the Phase 19 manifest disposes `anno_undo` as `omit`; Node's `sqlite` does not expose `sqlite3changeset_invert`. Whole-store snapshot/restore serves the requirement that has a consumer |`
 
 [VERIFIED: .planning/REQUIREMENTS.md:202]
 
@@ -614,7 +614,7 @@ plus, in `derivationVerdict()`:
 }
 ```
 
-**Flipping `r2000_undo` to `"curated"` goes red immediately** at `:159` — the surface has no
+**Flipping `anno_undo` to `"curated"` goes red immediately** at `:159` — the surface has no
 `anno_undo`, so `curated` is `false` while `disposition === "curated"` is `true`. That is the
 mechanical protection against the reversal criterion 2 warns about. Note also
 `MEASURED_OMITTED_MINIMUM = 4` [VERIFIED: anno-derivation.test.ts:403] — dropping an omit
@@ -628,20 +628,20 @@ it, not build it.**
 - No script or test inspects a commit diff for co-changed files. The only `execFileSync("git",…)`
   in the checked set is the removal gate's `git ls-files` scope query [VERIFIED: `grep -rln`
   across `src/mcp/vice/*.test.ts` and `scripts/*.mjs` → only
-  `scripts/check-no-regenerator2000.mjs`].
+  `scripts/check-no-analyser.mjs`].
 - What *does* exist is a **state invariant that must hold at every commit**:
   `anno-derivation.test.ts:159-163` and `derivationVerdict()` fail whenever the manifest and
   the surface disagree, in either direction. Because CI runs on every commit and the project's
   own doctrine is that each commit must be green, that invariant **forces** manifest and
   surface changes into the same commit — indirectly and only for changes the invariant can
   see (dispositions vs. surface verb names).
-- **It cannot see prose.** A stale `r2000-tools.ts` reference inside a `mechanism` or
+- **It cannot see prose.** A stale `anno-tools.ts` reference inside a `mechanism` or
   `justification` string satisfies every assertion (`typeof … === "string" && .trim().length > 0`,
   and a `/:\d+/` match on `upstream_citation`). Which is precisely why the drift in Finding 4
   survived Phase 29 in full.
 - Nearby precedents to imitate rather than reinvent: the removal gate's own message —
   *"a mention that moved must move its pin in the same commit, and a mention that multiplied
-  is a reintroduction"* [VERIFIED: scripts/check-no-regenerator2000.mjs:912] — and
+  is a reintroduction"* [VERIFIED: scripts/check-no-analyser.mjs:912] — and
   `MCP-05`'s *"each guard moved in the commit that broke it"*.
 
 **Recommendation for the planner:** encode it as a **single-task, single-commit** plan whose
@@ -709,7 +709,7 @@ Every other repository gate, same tree, same session:
 | Gate | Result |
 |------|--------|
 | `npm run typecheck` | exit 0 |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 — 400 files scanned, 157 exempt, temporary allow-list **empty** |
+| `node scripts/check-no-analyser.mjs` | exit 0 — 400 files scanned, 157 exempt, temporary allow-list **empty** |
 | `node scripts/check-skill-description-overlap.mjs` | exit 0 |
 | `node scripts/check-skill-tool-coverage.mjs` | exit 0 |
 | `node scripts/check-skill-fork-honesty.mjs` | exit 0 |
@@ -732,14 +732,14 @@ before treating it as a regression.
 | Test | Will it react to this phase? | Why |
 |------|------------------------------|-----|
 | `docs-linerefs.test.ts` | **No, unless CLAUDE.md's Architecture bullet is touched.** It extracts `vice-proxy.ts:<N>` citations from CLAUDE.md and asserts each cited line contains `rewriteArguments(` or a `function` keyword [VERIFIED: docs-linerefs.test.ts header]. This phase touches neither file. Currently green |
-| `removal-gate.test.ts` | **Only if `check-no-regenerator2000.mjs` is edited.** It imports the gate's real exported predicates and drives four planted evasion routes through them. Editing an exemption's `why` string is inert to it; editing `SKILL_ATTRIBUTION_PINS`, `isInsideSkillAttributionBlock` or `SUBJECT_NEEDLE` is not. Currently green |
+| `removal-gate.test.ts` | **Only if `check-no-analyser.mjs` is edited.** It imports the gate's real exported predicates and drives four planted evasion routes through them. Editing an exemption's `why` string is inert to it; editing `SKILL_ATTRIBUTION_PINS`, `isInsideSkillAttributionBlock` or `SUBJECT_NEEDLE` is not. Currently green |
 | `audit-integrity.test.ts` | **Low risk.** Its numeric checks are floors and relations (`json.auditFiles.length >= 6`), not growing census pins [VERIFIED: `grep` for numeric assertions]. It drives `scripts/audit-gate.mjs`'s real CLI. It reacts if a `docs-*.test.ts` file is **added** (then `EXPECTED_DOCS_GUARD_NAMES` and `DOCS_GUARD_FLOOR` must move in the same commit — its own message says so at `:266`). **So: do not name any new test file `docs-*.test.ts`** |
 | `docs-review-disposition.test.ts` | **Yes, at code-review time.** It derives every finding id from every `*-REVIEW.md` under `.planning/phases/` and requires each to be mentioned in a recognised disposition source. A first-time `31-REVIEW.md` reddens it until dispositions exist. Known remedy: run the code-review disposition fix with `--fix --all` so Info-severity ids also get dispositions |
 
 Also worth knowing: **running the removal gate regenerates `installer/skills/`** as a side
 effect (it calls `packFiles()` → `npm pack --dry-run` → `prepack` → `sync-skills.mjs`). That
 is by design — *"the list is post-sync BY CONSTRUCTION, and a 'remember to sync first'
-predicate can forget"* [VERIFIED: scripts/check-no-regenerator2000.mjs:20-24] — and it never
+predicate can forget"* [VERIFIED: scripts/check-no-analyser.mjs:20-24] — and it never
 dirties git, because `installer/skills` is gitignored. `git status --porcelain` after all the
 above showed only four pre-existing untracked files, none of them under `installer/` or
 `src/skills/` [VERIFIED].
@@ -761,7 +761,7 @@ command locally.
 | The `ABS-02` headers' permanent, bidirectional exemption | `skill-attribution-headers` class with `blocks` **and** `hits` pins in both trees |
 | `packer-finding.mjs`'s provenance fate | `surviving-provenance` exemption, 1 hit each tree |
 | The `installer/skills/` twin's re-pointing, proven against the **shipped** copy | `check-npm-packages.mjs` exit 0; `diff -rq` clean |
-| The `R2000-14`/`R2000-15` withdrawal-note correction | Already present and dated 2026-08-31 in **both** `PROJECT.md:141` and `REQUIREMENTS.md:73` [VERIFIED] — the ROADMAP Note's "corrected in the same change" is true; **nothing to do** |
+| The `ANNO-14`/`ANNO-15` withdrawal-note correction | Already present and dated 2026-08-31 in **both** `PROJECT.md:141` and `REQUIREMENTS.md:73` [VERIFIED] — the ROADMAP Note's "corrected in the same change" is true; **nothing to do** |
 | `scripts/check-skill-tool-coverage.mjs`'s raised floor over the new prefix | exit 0 |
 
 ### Criterion 1 — already TRUE on disk; the work is producing the evidence
@@ -792,14 +792,14 @@ named constants with a comment saying they are *the* naming lines. **Do not** as
 
 | # | Delta | File:line | Kind |
 |---|---|---|---|
-| 1 | `r2000-upstream-audit.test.ts` → `anno-derivation.test.ts` in trigger 1's mechanism | manifest:13 | live instruction — **must** re-point |
-| 2 | `CURATED_R2000_TOOLS` → `CURATED_ANNO_TOOLS`; `r2000-tools.ts` → `anno-tools.ts` in **trigger 3's mechanism** | manifest:21 | live instruction — **must** re-point (this is the criterion's own anchor) |
-| 3 | Add `"requirement_id": "STORE-04"` to `r2000_undo`, and rewrite its justification to state the direction: criterion arrived, answered by whole-store snapshot/restore (`anno-store.ts` `revertTo`), **omission stands** | manifest:31-36 | new field + prose |
-| 4 | Re-point `r2000-tools.ts` in the three other justifications | manifest:27, :33, :47 | prose |
-| 5 | Re-point `r2000-session.ts`'s FIFO-mutex sentence — no module of that name exists; state the store's actual single-writer discipline or mark the sentence dated | manifest:47 | prose |
+| 1 | `anno-derivation.test.ts` → `anno-derivation.test.ts` in trigger 1's mechanism | manifest:13 | live instruction — **must** re-point |
+| 2 | `CURATED_ANNO_TOOLS` → `CURATED_ANNO_TOOLS`; `anno-tools.ts` → `anno-tools.ts` in **trigger 3's mechanism** | manifest:21 | live instruction — **must** re-point (this is the criterion's own anchor) |
+| 3 | Add `"requirement_id": "STORE-04"` to `anno_undo`, and rewrite its justification to state the direction: criterion arrived, answered by whole-store snapshot/restore (`anno-store.ts` `revertTo`), **omission stands** | manifest:31-36 | new field + prose |
+| 4 | Re-point `anno-tools.ts` in the three other justifications | manifest:27, :33, :47 | prose |
+| 5 | Re-point `anno-session.ts`'s FIFO-mutex sentence — no module of that name exists; state the store's actual single-writer discipline or mark the sentence dated | manifest:47 | prose |
 | 6 | Decide the fate of `SURF-01`/`SURF-03` and `Phase 20`/`Phase 20/21`/`Phase 21`: these are **dated historical citations**, and the project's own convention is *keep the fact, date it, retire the live token*. Recommend a short dated parenthetical rather than deletion | manifest:17, :27, :39, :47, :54 | prose (discretionary) |
-| 7 | Note that `r2000_toggle_splitter`'s named blocker was closed by `STORE-02` "by construction" — the entry's `DECOMP-01`/`BUILD-02` ids stay (re-mapped to v0.9.0, still live) | manifest:39 | prose (discretionary) |
-| 8 | Correct the two `"ROADMAP Phase 31 criterion 4"` citations — Phase 31 now has **two** criteria and the attribution one is **criterion 1** (`D-01` narrowed the phase) | `scripts/check-no-regenerator2000.mjs:293`, `:523`; also `.planning/STATE.md:718` | prose (discretionary but cheap; editing an exemption's `why` string is inert to `removal-gate.test.ts`) |
+| 7 | Note that `anno_toggle_splitter`'s named blocker was closed by `STORE-02` "by construction" — the entry's `DECOMP-01`/`BUILD-02` ids stay (re-mapped to v0.9.0, still live) | manifest:39 | prose (discretionary) |
+| 8 | Correct the two `"ROADMAP Phase 31 criterion 4"` citations — Phase 31 now has **two** criteria and the attribution one is **criterion 1** (`D-01` narrowed the phase) | `scripts/check-no-analyser.mjs:293`, `:523`; also `.planning/STATE.md:718` | prose (discretionary but cheap; editing an exemption's `why` string is inert to `removal-gate.test.ts`) |
 
 ### Status records to move (the phase's own bookkeeping)
 
@@ -825,7 +825,7 @@ phases have their own analogue of runtime state — *derived* and *shipped* copi
 | Stored data | **None.** No database, no store, no `.annostore` is read or written by anything this phase changes. Verified: the manifest is a JSON planning artifact with two test readers; no runtime module imports it (`grep -rln "upstream-procedure-manifest"` over `src/mcp/vice/*.ts` returns only `anno-derivation.test.ts`) | none |
 | Live service config | **None.** No emulator, broker, MCP server or external service is involved. `systemctl --user is-active vice-broker` → `inactive` | none |
 | OS-registered state | **None.** No task, unit, plist or registered process names anything this phase changes | none |
-| Secrets / env vars | **None changed.** Two env var names are *read* by the tests this phase runs — `R2000_UPSTREAM_CLONE` and `VICE_REQUIRE_R2000_UPSTREAM` — and both are **deliberately left byte-identical** even across the family rename: *"an environment variable is a name CI binds by, so renaming one silently turns a hard-gated check into a skipped one"* [VERIFIED: anno-derivation.test.ts:6-10]. **Do not rename either.** Neither is set in `ci.yml` [VERIFIED: anno-derivation.test.ts:91-92 states this; `grep` of ci.yml confirms] | none — and a hard prohibition on renaming |
+| Secrets / env vars | **None changed.** Two env var names are *read* by the tests this phase runs — `ANNO_UPSTREAM_CLONE` and `VICE_REQUIRE_ANNO_UPSTREAM` — and both are **deliberately left byte-identical** even across the family rename: *"an environment variable is a name CI binds by, so renaming one silently turns a hard-gated check into a skipped one"* [VERIFIED: anno-derivation.test.ts:6-10]. **Do not rename either.** Neither is set in `ci.yml` [VERIFIED: anno-derivation.test.ts:91-92 states this; `grep` of ci.yml confirms] | none — and a hard prohibition on renaming |
 | **Derived / shipped copies** (this phase's real analogue) | **`installer/skills/` is gitignored yet shipped.** `git ls-files installer/skills` returns 0 while the tarball carries it. It is regenerated by `installer/scripts/sync-skills.mjs` via `prepack`, and any consumer of `packFiles()` triggers that regeneration. Currently byte-identical to `src/skills/` for all three absorbed playbooks | If any `src/skills/` file were edited, prove the twin with `node scripts/check-npm-packages.mjs`, never with `git status`. **This phase should not edit `src/skills/` at all** |
 | Build artifacts | **None.** No `.mts` → `resources/*.mjs` compilation is involved (`build.ts` is untouched), so `resources-sync.test.ts` cannot drift. No `egg-info`/binary equivalents in this stack | none |
 
@@ -835,7 +835,7 @@ phases have their own analogue of runtime state — *derived* and *shipped* copi
 
 ```
                      ┌──────────────────────────────────────────┐
-                     │  UPSTREAM (regenerator2000, PINNED)      │
+                     │  UPSTREAM (the external analyser, PINNED)      │
                      │  commit 493f8404…  v0.9.20  2026-07-11   │
                      │  5 procedure files, sha256 each          │
                      └───────────────┬──────────────────────────┘
@@ -874,7 +874,7 @@ phases have their own analogue of runtime state — *derived* and *shipped* copi
      │          └──► skill-attribution.test.ts  (src/skills ONLY)
      │                 6 fields · digest · adaptation stmt · absence
      │
-     └──► check-no-regenerator2000.mjs  (BOTH trees, BLOCK-scoped)
+     └──► check-no-analyser.mjs  (BOTH trees, BLOCK-scoped)
             scope = (git ls-files − ".planning/") ∪ packFiles("installer")
             blocks pin + hits pin per file → deleting a header FAILS
                                                     │
@@ -895,10 +895,10 @@ phases have their own analogue of runtime state — *derived* and *shipped* copi
 
 ```
 Plan 31-01  (worktree OK — no ROADMAP/STATE content)
-  └─ ONE task, ONE commit: the manifest re-point + r2000_undo's requirement_id
+  └─ ONE task, ONE commit: the manifest re-point + anno_undo's requirement_id
        edits:  .planning/phases/19-…/upstream-procedure-manifest.json
        verify: node --test anno-derivation.test.ts skill-attribution.test.ts
-               node scripts/check-no-regenerator2000.mjs
+               node scripts/check-no-analyser.mjs
                git show --stat  (proves the same-commit property)
 
 Plan 31-02  (worktree OK)
@@ -920,7 +920,7 @@ past run**.
 **Example — the project's own precedent, stated in its own words:**
 
 ```
-// VERBATIM from scripts/check-no-regenerator2000.mjs:496-502
+// VERBATIM from scripts/check-no-analyser.mjs:496-502
 "packer-finding.mjs joined this class on 2026-08-29 (plan 29-09): its remaining mention
 is a DATED past-tense provenance paragraph recording that the retired analyser computed
 a packer identity and threw it away before any machine-readable surface … Its
@@ -928,7 +928,7 @@ tool-name-shaped literal was RETIRED in the same commit, so what is left is a fa
 not a route."
 ```
 
-Applied here: trigger 3's `CURATED_R2000_TOOLS` / `r2000-tools.ts` are a **route** → re-point.
+Applied here: trigger 3's `CURATED_ANNO_TOOLS` / `anno-tools.ts` are a **route** → re-point.
 `SURF-01`'s "in SURF-01's pattern" is a **fact about what was decided in Phase 19** → date it,
 don't delete it.
 
@@ -977,7 +977,7 @@ leave the working tree dirty between runs"* [VERIFIED: skill-attribution.test.ts
 
 - **Rewriting `routine-queue-walker`'s `description:`.** It is done. Rewriting it re-triggers
   `ABS-03` **and** breaks CLAUDE.md's byte-identity assertion, for no gain.
-- **Driving `grep -rail 'regenerator2000' installer/skills` toward 0.** Unsatisfiable by
+- **Driving `grep -rail 'the external analyser' installer/skills` toward 0.** Unsatisfiable by
   design. It requires deleting attributions from the shipped tarball, which `CUT-03`, the
   removal gate's bidirectional pins, and `skill-attribution.test.ts` all forbid.
 - **Replacing the frozen registry with a corpus scan.** *"That check is circular: a file whose
@@ -987,7 +987,7 @@ leave the working tree dirty between runs"* [VERIFIED: skill-attribution.test.ts
   load-bearing; `docs-dangling-refs.test.ts` states the same reasoning for
   `.planning/phases/**`. Widening either produces false positives on historical records and the
   guard gets switched off.
-- **Flipping `r2000_undo` to `"curated"`.** The reversal criterion 2 exists to prevent. It
+- **Flipping `anno_undo` to `"curated"`.** The reversal criterion 2 exists to prevent. It
   goes red at `anno-derivation.test.ts:159` — but *only if the test is run*, which is why it
   must be in the plan's verify block.
 - **Deleting a re-sync trigger instead of re-pointing its mechanism.**
@@ -1024,11 +1024,11 @@ note both exist against.
 
 ## Common Pitfalls
 
-### Pitfall 1: Reading "v0.7.0 supplies a criterion for `r2000_undo`" as "add undo"
+### Pitfall 1: Reading "v0.7.0 supplies a criterion for `anno_undo`" as "add undo"
 
 **What goes wrong:** A plan adds `anno_undo` to the surface, or flips the manifest disposition
 to `"curated"`, or writes a justification saying undo is now needed.
-**Why it happens:** The requirement text *"`r2000_undo`'s `omit` disposition is one v0.7.0
+**Why it happens:** The requirement text *"`anno_undo`'s `omit` disposition is one v0.7.0
 supplies a criterion for"* reads, at a glance, like "the criterion has now been met, so add
 it". The two sibling entries reinforce it — `toggle_splitter` and `set_immediate_format` both
 name a requirement that *would* justify adding them.
@@ -1038,12 +1038,12 @@ delivered, but as **whole-store snapshot/restore at the store layer** (`revertTo
 journal"* is explicitly Out of Scope. The criterion's arrival is what lets the omission
 become a *decided* one — it does not reverse it.
 **Warning signs:** any diff adding a verb name containing `undo`; any manifest diff changing
-`"disposition": "omit"` on `r2000_undo`; `anno-derivation.test.ts` going red at the
+`"disposition": "omit"` on `anno_undo`; `anno-derivation.test.ts` going red at the
 `assert.equal(disposition === "curated", curated, …)` line.
 
 ### Pitfall 2: Deleting a stale citation instead of dating it
 
-**What goes wrong:** `SURF-01`, `SURF-03`, `Phase 20/21` and the `r2000-session.ts` sentence
+**What goes wrong:** `SURF-01`, `SURF-03`, `Phase 20/21` and the `anno-session.ts` sentence
 are simply removed, taking with them the record of *why* each disposition was decided.
 **Why it happens:** They are unambiguously stale, and deletion is the shortest diff.
 **How to avoid:** This project's convention, stated repeatedly and enforced by
@@ -1056,7 +1056,7 @@ own stated rationale for requiring justifications at all).
 
 ### Pitfall 3: Asserting adjacency of the two naming lines
 
-**What goes wrong:** A new assertion requires `Adapted from regenerator2000.` to be
+**What goes wrong:** A new assertion requires `Adapted from the external analyser.` to be
 immediately followed by `  Source repository: …`. It goes red on
 `src/skills/c64-program-recon/SKILL.md`'s second block, where `Source path:` sits between them
 (`:571` and `:577`).
@@ -1096,7 +1096,7 @@ test still passes.
 **Why it happens:** `anno-derivation.test.ts` only checks that each `mechanism` is a non-empty
 string. It has no opinion about whether the mechanism names anything real.
 **How to avoid:** Grep the manifest for every deleted symbol and module name explicitly —
-`r2000-tools`, `r2000-session`, `r2000-upstream-audit`, `CURATED_R2000_TOOLS` — and make each
+`anno-tools`, `anno-session`, `anno-upstream-audit`, `CURATED_ANNO_TOOLS` — and make each
 hit an acceptance criterion of the plan, so the *plan* is the reader the manifest lacks.
 **Warning signs:** a re-point diff that touched only line 21.
 
@@ -1117,8 +1117,8 @@ too.
 grep -ro "ATTRIBUTION (ABS-02)" src/skills installer/skills | wc -l          # → 10
 
 # the two naming lines, exact-line match, across both trees
-grep -rx "Adapted from regenerator2000." src/skills installer/skills | wc -l  # → 10
-grep -rx "  Source repository: https://github.com/ricardoquesada/regenerator2000" \
+grep -rx "Adapted from the external analyser." src/skills installer/skills | wc -l  # → 10
+grep -rx "  Source repository: an upstream repository" \
      src/skills installer/skills | wc -l                                      # → 10
 
 # byte-identity of the three absorbed playbooks between the trees
@@ -1142,20 +1142,20 @@ function attributionBlocks(text: string): string[] {
 ```
 
 ```js
-// Source: scripts/check-no-regenerator2000.mjs:326-328 (exported)
+// Source: scripts/check-no-analyser.mjs:326-328 (exported)
 export function isInsideSkillAttributionBlock(text, line) {
   return skillAttributionBlocks(text).some((b) => line >= b.firstLine && line <= b.lastLine);
 }
 ```
 
 The gate anchors on *"the same `ATTRIBUTION (ABS-02)` marker `skill-attribution.test.ts`
-anchors on"* [VERIFIED: scripts/check-no-regenerator2000.mjs:524-526] — that shared anchor is
+anchors on"* [VERIFIED: scripts/check-no-analyser.mjs:524-526] — that shared anchor is
 the pattern. A new assertion should use the same marker.
 
 ### The bidirectional protection, so a plan does not accidentally weaken it
 
 ```js
-// Source: scripts/check-no-regenerator2000.mjs:987-996
+// Source: scripts/check-no-analyser.mjs:987-996
 for (const [rel, pin] of Object.entries(SKILL_ATTRIBUTION_PINS)) {
   const abs = join(ROOT, rel);
   const blocks = existsSync(abs) ? skillAttributionBlocks(readFileSync(abs).toString("utf8")).length : -1;
@@ -1176,7 +1176,7 @@ node --test anno-derivation.test.ts skill-attribution.test.ts
 # expect: 53 tests / 0 fail / 1 skipped   (the skip is the live-gated upstream re-hash)
 
 # to run the skipped half too, if a pinned clone is available:
-R2000_UPSTREAM_CLONE=/path/to/clone VICE_REQUIRE_R2000_UPSTREAM=1 \
+ANNO_UPSTREAM_CLONE=/path/to/clone VICE_REQUIRE_ANNO_UPSTREAM=1 \
   node --test anno-derivation.test.ts
 ```
 
@@ -1184,7 +1184,7 @@ Full local gate ladder for a `<verify>` block:
 
 ```bash
 cd src/mcp/vice && npm run typecheck && npm run test:automated
-cd - && node scripts/check-no-regenerator2000.mjs \
+cd - && node scripts/check-no-analyser.mjs \
       && node scripts/check-skill-description-overlap.mjs \
       && node scripts/check-npm-packages.mjs
 ```
@@ -1193,18 +1193,18 @@ cd - && node scripts/check-no-regenerator2000.mjs \
 
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
-| `r2000-tools.ts` / `CURATED_R2000_TOOLS` | `anno-tools.ts` / `CURATED_ANNO_TOOLS` (19 verbs) | Phase 29, plans 29-05/29-10 | **The manifest still names the old pair** — the phase's central edit |
-| `r2000-upstream-audit.test.ts` | `anno-derivation.test.ts` (renamed 29-05, gained the surface-derivation half in 29-08) | Phase 29 | **Trigger 1's mechanism still names the old file** |
-| `r2000-session.ts` FIFO mutex | No module of that name; the store is a single writer with per-write optional `base_revision` compare-and-swap | Phases 28-29 | `set_immediate_format`'s justification names a mutex that no longer exists |
+| `anno-tools.ts` / `CURATED_ANNO_TOOLS` | `anno-tools.ts` / `CURATED_ANNO_TOOLS` (19 verbs) | Phase 29, plans 29-05/29-10 | **The manifest still names the old pair** — the phase's central edit |
+| `anno-derivation.test.ts` | `anno-derivation.test.ts` (renamed 29-05, gained the surface-derivation half in 29-08) | Phase 29 | **Trigger 1's mechanism still names the old file** |
+| `anno-session.ts` FIFO mutex | No module of that name; the store is a single writer with per-write optional `base_revision` compare-and-swap | Phases 28-29 | `set_immediate_format`'s justification names a mutex that no longer exists |
 | A splitter concept was needed to distinguish adjacent same-type tables | `STORE-02`: ranges are never merged on adjacency — *"designed out by construction rather than worked around"* | v0.7.0 / Phase 28 | `toggle_splitter`'s named blocker is closed; its `DECOMP-01`/`BUILD-02` ids remain live (re-mapped to v0.9.0) |
-| Per-edit undo journal as the answer to "an edit can be reverted" | Whole-store snapshot/restore — `revertTo(handle, revision)` at the store layer, no surface verb | `D2`, v0.7.0 | The criterion for `r2000_undo`'s omission — and it points at **keeping** the omission |
-| `SURF-01`, `SURF-03`, `R2000-*` requirement families | `STORE-*`, `SEAM-*`, `MCP-*`, `EXPORT-*`, `REPOINT-*`, `CUT-*` | v0.7.0 | Cited ids in the manifest no longer resolve against current `REQUIREMENTS.md` |
+| Per-edit undo journal as the answer to "an edit can be reverted" | Whole-store snapshot/restore — `revertTo(handle, revision)` at the store layer, no surface verb | `D2`, v0.7.0 | The criterion for `anno_undo`'s omission — and it points at **keeping** the omission |
+| `SURF-01`, `SURF-03`, `ANNO-*` requirement families | `STORE-*`, `SEAM-*`, `MCP-*`, `EXPORT-*`, `REPOINT-*`, `CUT-*` | v0.7.0 | Cited ids in the manifest no longer resolve against current `REQUIREMENTS.md` |
 | Phase 31 had 4+ success criteria | Phase 31 has **2**, narrowed by `D-01` | 2026-08-30 | Two live citations of "Phase 31 criterion 4" are now stale |
 | `test:automated` carried a failure baseline | No baseline; clean floor is **0** | superseded | Plan against 0 failures, not 5/7/44 |
 
 **Deprecated/outdated — do not cite:**
-- `r2000-tools.ts`, `r2000-session.ts`, `r2000-upstream-audit.test.ts`, `CURATED_R2000_TOOLS`: gone.
-- `SURF-01`, `SURF-03`, `R2000-*`: not in current `REQUIREMENTS.md`.
+- `anno-tools.ts`, `anno-session.ts`, `anno-derivation.test.ts`, `CURATED_ANNO_TOOLS`: gone.
+- `SURF-01`, `SURF-03`, `anno-*`: not in current `REQUIREMENTS.md`.
 - "ROADMAP Phase 31 criterion 4": the attribution criterion is now **criterion 1**.
 - Phase numbers `20`, `21`, `20/21` in the manifest: superseded roadmap.
 
@@ -1212,7 +1212,7 @@ cd - && node scripts/check-no-regenerator2000.mjs \
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | The criterion v0.7.0 supplies for `r2000_undo` is **`STORE-04`** specifically (rather than, say, `STORE-01` or a bare `D2` reference). `D2` is titled *"undo → whole-store snapshot/restore"* and its last sentence is *"`STORE-04` is scoped to what a planted-violation test can actually prove"*, and `STORE-04` is the only requirement whose text contains *"an edit can be reverted"* — so `STORE-04` is the strongly-indicated id, but no document says "the criterion for `r2000_undo` is STORE-04" in those words | Finding 5 | Low. The **direction** (omission stands) is verified from three independent places; only the exact id is inferred. If wrong, the fix is a one-token edit. **Worth a confirmation from the owner or an explicit note in the plan.** |
+| A1 | The criterion v0.7.0 supplies for `anno_undo` is **`STORE-04`** specifically (rather than, say, `STORE-01` or a bare `D2` reference). `D2` is titled *"undo → whole-store snapshot/restore"* and its last sentence is *"`STORE-04` is scoped to what a planted-violation test can actually prove"*, and `STORE-04` is the only requirement whose text contains *"an edit can be reverted"* — so `STORE-04` is the strongly-indicated id, but no document says "the criterion for `anno_undo` is STORE-04" in those words | Finding 5 | Low. The **direction** (omission stands) is verified from three independent places; only the exact id is inferred. If wrong, the fix is a one-token edit. **Worth a confirmation from the owner or an explicit note in the plan.** |
 | A2 | The two `"ROADMAP Phase 31 criterion 4"` citations *should* be corrected in this phase rather than left as dated history. They are live cross-references in a script comment and in STATE.md, and criterion numbering changed under them — but the phase's own criteria do not name them | Findings 8 / Locked Decisions | Low. Discretionary either way. If left, note it explicitly so a later reader knows it was seen and decided, not missed |
 | A3 | `SURF-01`/`SURF-03`/`Phase 20-21` should be **dated** rather than re-pointed, because no current requirement is their successor | Finding 4, Pitfall 2 | Low. A judgement call about a historical record; both readings are defensible |
 | A4 | The naming-line assertion belongs in `skill-attribution.test.ts` rather than a new file | Standard Stack, Finding 8 | Low. A new `docs-*`-prefixed file would red `audit-integrity.test.ts`; a differently-prefixed new file just costs a CI wiring step |
@@ -1226,11 +1226,11 @@ All four are resolved. Each carries a `**RESOLVED:**` line naming the plan and t
 decision that adopted it. **The recommendations themselves are unchanged** — every one was
 adopted verbatim, so nothing here needed revising, only marking.
 
-1. **Should `STORE-04` be the `requirement_id`, or should `r2000_undo` instead get a new field
+1. **Should `STORE-04` be the `requirement_id`, or should `anno_undo` instead get a new field
    recording "criterion arrived, answered otherwise"?**
    - What we know: `requirement_id` is optional, shape-validated only, and its two existing
      uses mean *"the requirement that would supply the criterion for adding this"*. For
-     `r2000_undo` the criterion **has** arrived and was answered a different way — a slightly
+     `anno_undo` the criterion **has** arrived and was answered a different way — a slightly
      different semantic than the two siblings.
    - What's unclear: whether overloading `requirement_id` here muddies its meaning.
    - **Recommendation:** use `"requirement_id": "STORE-04"` (no schema risk, matches trigger
@@ -1244,12 +1244,12 @@ adopted verbatim, so nothing here needed revising, only marking.
      is carried forward as a flagged assumption in `31-01-PLAN.md` and recorded as judgement 1 of
      the dated `- [Phase 31]:` STATE.md entry in plan `31-03`, task 2.
 
-2. **Does `r2000_toggle_splitter`'s justification need correcting now that `STORE-02` closed
+2. **Does `anno_toggle_splitter`'s justification need correcting now that `STORE-02` closed
    its blocker?**
    - What we know: `STORE-02`'s text explicitly names *"the manifest's named blocker for
      `DECOMP-01` and `BUILD-02`"* and says it is designed out by construction. The manifest
      still predicts a systematic over-merge bias that cannot occur.
-   - What's unclear: criterion 2 names only `r2000_undo`. Doing more is arguably scope creep;
+   - What's unclear: criterion 2 names only `anno_undo`. Doing more is arguably scope creep;
      doing less leaves a known-false prediction in a record this phase is opening anyway.
    - **Recommendation:** add a one-sentence dated note. Cheap, in the same file, in the same
      commit, and it prevents a future reader acting on a false prediction.
@@ -1294,7 +1294,7 @@ adopted verbatim, so nothing here needed revising, only marking.
 | GNU grep | measurement commands | ✓ | — | reads must use `-a` for `anno-memmap-render.ts` |
 | A running VICE broker | **must be ABSENT** | ✓ absent | `systemctl --user is-active vice-broker` → `inactive`; no `x64sc` process | n/a — a live broker reddens BACK-05 |
 | ACME cross-assembler | only under `VICE_REQUIRE_ACME=1` (CI) | not probed | — | Local `test:automated` does not set it; `disasm-roundtrip.test.ts` SKIPs |
-| `R2000_UPSTREAM_CLONE` (a pinned upstream clone) | the live-gated re-hash test | ✗ absent | — | The test SKIPs by design; **this is correct** and CI never sets it. Do not make its absence a failure |
+| `ANNO_UPSTREAM_CLONE` (a pinned upstream clone) | the live-gated re-hash test | ✗ absent | — | The test SKIPs by design; **this is correct** and CI never sets it. Do not make its absence a failure |
 
 **Missing dependencies with no fallback:** none.
 **Missing dependencies with fallback:** the upstream clone (SKIPs by design); ACME (SKIPs
@@ -1310,7 +1310,7 @@ locally, hard-required only in CI).
 | Config file | none — `src/mcp/vice/test-gate.mjs` is the file-selection seam; `src/mcp/vice/tsconfig.json` for typecheck |
 | Quick run command | `cd src/mcp/vice && node --test skill-attribution.test.ts anno-derivation.test.ts skill-description-overlap.test.ts` (~0.5 s) |
 | Full suite command | `cd src/mcp/vice && npm run test:automated` (2918 tests, ~47 s, exit 0 on a clean tree) |
-| Gate ladder (non-test) | `node scripts/check-no-regenerator2000.mjs`, `check-skill-description-overlap.mjs`, `check-npm-packages.mjs` |
+| Gate ladder (non-test) | `node scripts/check-no-analyser.mjs`, `check-skill-description-overlap.mjs`, `check-npm-packages.mjs` |
 
 ### Phase Requirements → Test Map
 
@@ -1318,23 +1318,23 @@ locally, hard-required only in CI).
 |--------|----------|-----------|-------------------|-------------|
 | REPOINT-03 | The `ABS-02` chain is intact: 5 blocks / 3 files / 6 fields / digest equality / adaptation statement, over `src/skills` | unit | `node --test skill-attribution.test.ts` | ✅ `src/mcp/vice/skill-attribution.test.ts` |
 | REPOINT-03 | **10 instances across two trees, each with its two naming lines byte-identical** | unit | `node --test skill-attribution.test.ts` (new test) | ❌ **Wave 0** — no assertion covers this claim today |
-| REPOINT-03 | Deleting an attribution header FAILS rather than silences (both trees, block + hit pins) | integration | `node scripts/check-no-regenerator2000.mjs` | ✅ + `removal-gate.test.ts` |
+| REPOINT-03 | Deleting an attribution header FAILS rather than silences (both trees, block + hit pins) | integration | `node scripts/check-no-analyser.mjs` | ✅ + `removal-gate.test.ts` |
 | REPOINT-03 | The twin tree carries the same headers, proven against the **shipped** copy | integration | `node scripts/check-npm-packages.mjs` | ✅ `scripts/check-npm-packages.mjs` |
 | REPOINT-03 | `description:` is substantively rewritten (names the annotation store, not the analyser) | manual-only | — | ⚠️ **Human judgment.** "Substantively rather than worked around" is editorial. Score it by reading the text plus 29-09's record; no test can assert substance |
 | REPOINT-03 | `ABS-03`'s pairwise trigger-collision check passes over all seven descriptions | integration | `node scripts/check-skill-description-overlap.mjs` | ✅ + `skill-description-overlap.test.ts` (incl. its live-execution control) |
 | REPOINT-03 | CLAUDE.md's project-skills table stays byte-identical to every `description:` | integration | same command (failure mode #7) | ✅ |
 | REPOINT-04 | The manifest's schema survives the edit (pin shape, 5 procedures, known dispositions, licence, triggers with mechanisms) | unit | `node --test anno-derivation.test.ts` | ✅ `src/mcp/vice/anno-derivation.test.ts` |
 | REPOINT-04 | Every non-curated call still carries a justification **and** a citation naming a file line | unit | same | ✅ (`:144-222`) |
-| REPOINT-04 | `r2000_undo`'s `requirement_id` is a well-formed requirement id | unit | same | ✅ (`:207-213`) — optional field, shape-gated |
+| REPOINT-04 | `anno_undo`'s `requirement_id` is a well-formed requirement id | unit | same | ✅ (`:207-213`) — optional field, shape-gated |
 | REPOINT-04 | The omission is **not reversed**: `omit` verbs absent under any spelling; manifest ↔ surface agree in both directions | unit | same (`derivationVerdict`, `:405-425`, `:451-478`) | ✅ |
 | REPOINT-04 | The manifest ↔ attribution-header agreement survives the edit (procedure count, path set, digests) | unit | `node --test skill-attribution.test.ts` (`:419-459`, `:475-507`) | ✅ |
 | REPOINT-04 | The manifest is edited **in the same commit** as what it describes | manual-only | `git show --stat <sha>` | ⚠️ **No mechanical enforcement exists.** See Finding 6. Score by inspecting the commit |
-| REPOINT-04 | No manifest prose names a deleted module or symbol | manual-only | `grep -n "r2000-tools\|r2000-session\|r2000-upstream-audit\|CURATED_R2000_TOOLS" <manifest>` → 0 | ❌ **Wave 0 (optional)** — could become an assertion; currently a plan-level grep criterion |
+| REPOINT-04 | No manifest prose names a deleted module or symbol | manual-only | `grep -n "anno-tools\|anno-session\|anno-upstream-audit\|CURATED_ANNO_TOOLS" <manifest>` → 0 | ❌ **Wave 0 (optional)** — could become an assertion; currently a plan-level grep criterion |
 
 ### Sampling Rate
 
-- **Per task commit:** `cd src/mcp/vice && node --test skill-attribution.test.ts anno-derivation.test.ts skill-description-overlap.test.ts` **plus** `node scripts/check-no-regenerator2000.mjs`
-- **Per wave merge:** `cd src/mcp/vice && npm run typecheck && npm run test:automated`, then the full gate ladder (`check-no-regenerator2000`, `check-skill-description-overlap`, `check-skill-tool-coverage`, `check-skill-fork-honesty`, `check-skill-cli-invocations`, `check-npm-packages`)
+- **Per task commit:** `cd src/mcp/vice && node --test skill-attribution.test.ts anno-derivation.test.ts skill-description-overlap.test.ts` **plus** `node scripts/check-no-analyser.mjs`
+- **Per wave merge:** `cd src/mcp/vice && npm run typecheck && npm run test:automated`, then the full gate ladder (`check-no-analyser`, `check-skill-description-overlap`, `check-skill-tool-coverage`, `check-skill-fork-honesty`, `check-skill-cli-invocations`, `check-npm-packages`)
 - **Phase gate:** full suite green (0 failures — the clean floor is 0, no baseline) with **no VICE broker running**, before `/gsd-verify-work`
 
 ### Wave 0 Gaps
@@ -1364,14 +1364,14 @@ repository. The deliverables are a JSON planning artifact, a test file, and Mark
 | V5 Input Validation | **partially — and already enforced** | The only parsed input is `upstream-procedure-manifest.json`, and `anno-derivation.test.ts` is its validator: 40-lowercase-hex commit, 64-hex digests, positive-integer byte counts, `KNOWN_DISPOSITIONS` closed union with an unknown value failing **outright**, `requirement_id` shape-gated, `upstream_citation` required to match `/:\d+/`. Do not weaken any of these to make an edit fit |
 | V6 Cryptography | **yes, in the "never hand-roll and never weaken" sense** | `node:crypto` `createHash("sha256")` only, used as an integrity pin: five per-procedure digests, and the upstream MIT notice at `e2579ce7…` / 1072 bytes. Never re-compute a pin to make a check pass; never loosen the commit regex back to `/^[0-9a-f]{7,40}$/` — *"Plan 19-01 demonstrated the abbreviation failure deliberately … that demonstration is the whole point of the tightened pattern"* [VERIFIED: anno-derivation.test.ts:35-38] |
 | V12 Files & Resources | **yes, weakly** | Skill content is treated as **untrusted first-party prose**: *"read as a string and matched, never executed"*. A new test must not `import()`, `require()`, `eval()` or spawn anything under `src/skills/` |
-| V14 Configuration | **yes, weakly** | `R2000_UPSTREAM_CLONE` and `VICE_REQUIRE_R2000_UPSTREAM` must keep their **exact** spellings — renaming one silently converts a hard-gated check into a skipped one in whatever CI binds the old name |
+| V14 Configuration | **yes, weakly** | `ANNO_UPSTREAM_CLONE` and `VICE_REQUIRE_ANNO_UPSTREAM` must keep their **exact** spellings — renaming one silently converts a hard-gated check into a skipped one in whatever CI binds the old name |
 
 ### Known Threat Patterns for this stack
 
 | Pattern | STRIDE | Standard Mitigation |
 |---------|--------|---------------------|
 | A licence/attribution obligation silently dropped from a **shipped** tarball | Repudiation | `skill-attribution.test.ts` (presence, six fields, digest equality) + the removal gate's bidirectional block+hit pins in **both** trees + `check-npm-packages.mjs` against the shipped file list |
-| An integrity pin quietly re-computed so a drifted source "matches" | Tampering | Pins are committed constants compared by string equality; the live re-hash is env-gated and hard-fails under `VICE_REQUIRE_R2000_UPSTREAM=1` rather than silently passing |
+| An integrity pin quietly re-computed so a drifted source "matches" | Tampering | Pins are committed constants compared by string equality; the live re-hash is env-gated and hard-fails under `VICE_REQUIRE_ANNO_UPSTREAM=1` rather than silently passing |
 | A missing oracle read as agreement (silent pass) | Tampering / Repudiation | The `D-11` pattern: absence SKIPs loudly with a message naming the env var, and an opt-in switch turns absence into a FAILURE. *"Do not let an ABSENT upstream clone read as agreement"* |
 | A gate weakened to silence a false fire (exemption widening) | Tampering | Every exemption is path- or block-scoped with an **exact** hit count; *"A count that has grown is the shape of 'an exemption used to hide a reintroduction' and fails the gate"* |
 | Untrusted prose executed by a checker | Elevation of Privilege | Read-and-match only; planted violations live in memory or in `.txt`-suffixed fixtures no runner loads |
@@ -1387,7 +1387,7 @@ the above while editing the records they protect.
 - `src/mcp/vice/skill-attribution.test.ts` (full, 747 lines) — the `ABS-02` registry, the six fields, the notices guard
 - `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json` (full, 67 lines) — schema, three re-sync triggers, five disposition rationales, five procedures
 - `src/mcp/vice/anno-derivation.test.ts` (lines 1-260, 276-478) — both halves: upstream integrity and surface derivation
-- `scripts/check-no-regenerator2000.mjs` (lines 1-160, 320-560, 965-1014) — scope predicate, pins, exemption classes
+- `scripts/check-no-analyser.mjs` (lines 1-160, 320-560, 965-1014) — scope predicate, pins, exemption classes
 - `.planning/REQUIREMENTS.md` (lines 36-65, 112-125, 174-203) — `D1`/`D2`/`D3`, the `REPOINT-*` family, Future/Out-of-Scope
 - `src/mcp/vice/anno-store.ts` (lines 2440-2464) — `revertTo`'s signature and revision-argument gate
 - Executed: `npm run test:automated` (2918 tests / 0 fail / exit 0); `npm run typecheck`; `node --test` over the three relevant files (53 / 0 fail / 1 skip); all seven CI gate scripts (all exit 0); `node -e` against the live `anno-tools.ts` (19 verbs, no undo/revert under any spelling); `gsd-tools query init.phase-op 31`
@@ -1426,12 +1426,12 @@ the above while editing the records they protect.
   recorded conventions and prior incidents.
 - **What is left to do: HIGH** — criterion 1 was measured true, criterion 2's drift was
   enumerated line by line, and every status record needing a move was located by line number.
-- **The `r2000_undo` criterion's exact requirement id: MEDIUM** — see assumption A1. The
+- **The `anno_undo` criterion's exact requirement id: MEDIUM** — see assumption A1. The
   *direction* of the decision is HIGH (three independent sources); only the id is inferred.
 
 **Research date:** 2026-08-31
 **Valid until:** 2026-09-14 (14 days). Short, and deliberately so: this document pins line
-numbers in `upstream-procedure-manifest.json`, `check-no-regenerator2000.mjs` and
+numbers in `upstream-procedure-manifest.json`, `check-no-analyser.mjs` and
 `.planning/REQUIREMENTS.md`, and any commit touching those files drifts them. Treat a line-number
 mismatch as **drift to re-verify**, never as evidence the finding itself changed — the same
 convention CLAUDE.md's Architecture bullet states for its own citations.

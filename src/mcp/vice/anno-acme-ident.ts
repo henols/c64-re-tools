@@ -7,9 +7,9 @@
 // WHY THIS MODULE EXISTS: this policy started life inside anno-enum-gen.ts,
 // consumed only by its own `createOrUpdateEnum()`/`sanitizeVariantMap()`.
 // T-11-NAME-INJECT widened the finding to a SECOND entry route --
-// `r2000_set_label_name` (both outer and batch-inner) in r2000-tools.ts, and
+// `anno_set_label_name` (both outer and batch-inner) in anno-tools.ts, and
 // `importLabels()` in anno-symbols.ts -- and `anno-enum-gen.ts` statically
-// imports `runR2000Tool` FROM `r2000-tools.ts`, so `r2000-tools.ts` cannot
+// imports `runAnnoTool` FROM `anno-tools.ts`, so `anno-tools.ts` cannot
 // import the policy back from `anno-enum-gen.ts` without forming a module
 // cycle. This module has no import from anywhere else in this repo, so
 // every one of those consumers (and any future one) can import it directly.
@@ -34,8 +34,8 @@
 //     caller-visible name must never diverge from what actually gets
 //     exported into ACME source.
 //   - Never import anything from this repo into this module. It must stay
-//     importable by both `r2000-tools.ts` and `anno-enum-gen.ts` (which
-//     imports `runR2000Tool` FROM `r2000-tools.ts`) without a cycle.
+//     importable by both `anno-tools.ts` and `anno-enum-gen.ts` (which
+//     imports `runAnnoTool` FROM `anno-tools.ts`) without a cycle.
 export const MAX_ACME_IDENTIFIER_LENGTH = 200;
 
 const ACME_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -65,15 +65,15 @@ const ACME_RESERVED_MNEMONICS: ReadonlySet<string> = new Set([
  * `ACME_RESERVED_MNEMONICS`'s own header comment for how that specific list
  * was measured, not assumed).
  *
- * T-11-ENUM-NAME (the highest-value threat in this phase): regenerator2000
+ * T-11-ENUM-NAME (the highest-value threat in this phase): The external analyser
  * validates only the ENUM name server-side
  * (`app_state.rs:443`, `validate_new_enum_name`) and performs ZERO
  * validation on variant names -- they flow straight into
  * `format!("{}_{}", enum_name, variant)` at export time
  * (`formatter_acme.rs:367-369`). This function is called on BOTH the enum
  * name and every variant name, and is called BEFORE any
- * `r2000_create_project_enum`/`r2000_update_project_enum` call reaches
- * `runR2000Tool()` -- proven zero-spawn in `anno-enum-gen.test.ts`.
+ * `anno_create_project_enum`/`anno_update_project_enum` call reaches
+ * `runAnnoTool()` -- proven zero-spawn in `anno-enum-gen.test.ts`.
  */
 export function assertLegalAcmeIdentifier(id: string, what: string): void {
   if (id.length === 0) {

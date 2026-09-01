@@ -30,7 +30,7 @@ ends, so a later wave reads a file that still exists.
 | `criterion1-*.txt` | **NEVER PRODUCED.** Plans 23-06 and 23-07 were not dispatched, for the same D-03 reason | That criterion 1 is `could-not-run`: there is **no** data-recovery rate, no false-positive count, no window, no denominator and no adjudicated fraction for any release. Whether the fixture flattered dxa remains unanswered against a real release — though `fixture/fixture-baseline.txt` shows the published partition itself flattered it |
 | `criterion2-*.txt` | **NEVER PRODUCED.** Plan 23-08 was not dispatched, for the same D-03 reason | That criterion 2 is `could-not-run` and explicitly **not** `not-exercised`: zero sites were enumerated and zero tested, so nothing is known either way about Ghidra on a computed-index dispatch in real code |
 | `criterion3-*.txt` | **NEVER PRODUCED.** Plan 23-09 was not dispatched, for the same D-03 reason | That criterion 3 is `could-not-run`. The single-forward-carried-`$01` model is left **unvalidated** — neither confirmed nor broken — at exactly the risk the ROADMAP names as the highest on the pivot's own record |
-| `criterion4-analyzer-audit.md` | All 26 `analyzer.rs` capabilities (8 entry points, 11 `LabelType`, 7 `BlockType`), each carrying exactly one disposition: `C4_CAPABILITIES_AUDITED: 26`, `C4_REPLACED: 23`, `C4_LOST_ACCEPTED: 3`, `C4_UNREPLACED_CAPABILITIES: 0`. Three `## ACCEPTED LIMIT` blocks and seven research corrections | That **nothing in `analyzer.rs` blocks the milestone** — `R8`'s input is `0` — derived from the real crate source with no regenerator2000 process started (D-01), and that the one row a re-run could move (E6 `follow_indirect_jumps`) is named with the exact condition that would move it |
+| `criterion4-analyzer-audit.md` | All 26 `analyzer.rs` capabilities (8 entry points, 11 `LabelType`, 7 `BlockType`), each carrying exactly one disposition: `C4_CAPABILITIES_AUDITED: 26`, `C4_REPLACED: 23`, `C4_LOST_ACCEPTED: 3`, `C4_UNREPLACED_CAPABILITIES: 0`. Three `## ACCEPTED LIMIT` blocks and seven research corrections | That **nothing in `analyzer.rs` blocks the milestone** — `R8`'s input is `0` — derived from the real crate source with no the external analyser process started (D-01), and that the one row a re-run could move (E6 `follow_indirect_jumps`) is named with the exact condition that would move it |
 | `docs/phase23-real-release-gate-findings.md` *(outside this directory, at the repository root's `docs/`)* | The durable verdict artifact (23-10): machine-readable frontmatter, the derivation, the rule reproduced verbatim, one section per criterion, the collected accepted limits and corrections | That the verdict `no-go` / `R1` is **re-derivable from the document alone**, without trusting any summary and without a plan file surviving |
 
 ---
@@ -53,7 +53,7 @@ rather than restating it.
 3. **Argv arrays, never shell strings.** Any spawn from a probe script uses an argv array.
    Never interpolate a path, a filename, or any string recovered from the corpus image
    into a shell command string.
-4. **regenerator2000 is never executed** — not the binary, not `r2000-coverage.ts`, not as
+4. **the external analyser is never executed** — not the binary, not `anno-coverage.ts`, not as
    an oracle, a baseline or a screening tool (D-01). Reading `analyzer.rs` source offline
    is permitted and is PROOF-04's subject.
 5. **Do NOT spawn a nested `claude` / `claude -p` session.** Nested sessions stall

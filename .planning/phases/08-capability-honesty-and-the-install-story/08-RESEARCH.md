@@ -22,7 +22,7 @@ Phase 8 has no `CONTEXT.md` (D-A) — the ROADMAP's Phase 8 section is the locke
 Copied verbatim from the phase-research task brief, since no `CONTEXT.md` exists for this phase and these decisions play the same "do not re-open" role a locked `CONTEXT.md` decision would:
 
 - **D-A**: No `CONTEXT.md` for this phase. Plan from ROADMAP notes + `REQUIREMENTS.md` + this research. The ROADMAP Phase 8 section carries the locked decisions.
-- **D-B**: Phase 8 stays regenerator2000-free. `R2000-16` is NOT pulled forward. Do not research regenerator2000, do not name it in install docs or playbooks, do not treat v0.3.0 as a dependency. (Confirmed: this research names no regenerator2000 content anywhere below.)
+- **D-B**: Phase 8 stays external-analyser-free. `ANNO-16` is NOT pulled forward. Do not research the external analyser, do not name it in install docs or playbooks, do not treat v0.3.0 as a dependency. (Confirmed: this research names no the external analyser content anywhere below.)
 - **D-C**: `VERIF-03` (two-process cross-backend parity harness) is out of scope. Byte-identical parity is an explicit non-goal in `PROJECT.md`.
 - **D-D**: Criterion 4 must be **derived** from `tools-manifest.json` / `tools-manifest.stock.json`, not hand-written. This research confirms `resources-sync.test.ts`'s generate-and-byte-diff pattern is the right shape and that no comparable guardrail test already exists (the two files README.md claims exist do not — see Summary).
 

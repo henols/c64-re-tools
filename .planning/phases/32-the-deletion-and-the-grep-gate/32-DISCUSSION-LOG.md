@@ -28,7 +28,7 @@
 |--------|-------------|----------|
 | BACK-05 live-broker test | D-G ordering test fails deterministically on a live-broker host | ✓ (Claude's call) |
 | research/questions.md false claim | Corpus-claim honesty work | |
-| Phase 7 Pitfall 5 overgeneralization | docs/ accuracy, unrelated to regenerator2000 | |
+| Phase 7 Pitfall 5 overgeneralization | docs/ accuracy, unrelated to the external analyser | |
 | Fold none | Keep phase to CUT-04 and CUT-06 | |
 
 **User's choice:** "You decide what's best."

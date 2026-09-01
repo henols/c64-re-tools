@@ -43,7 +43,7 @@ key-files:
 
 key-decisions:
   - "Only the build job's actions/checkout@v4 got fetch-depth: 0; the three at :257, :298 and :348 belong to release/publish jobs that never run the fate guard and stay shallow."
-  - "The new CI step names the audited set by role in its name, run line and comment, so grep -ac 'regenerator2000' .github/workflows/ci.yml stayed at exactly 1 and the gate-self === pin did not move."
+  - "The new CI step names the audited set by role in its name, run line and comment, so grep -ac 'the external analyser' .github/workflows/ci.yml stayed at exactly 1 and the gate-self === pin did not move."
   - "The whole-glob npm test was NOT run and is NOT claimed. vice-proxy.test.ts was bounded at 180 s, exited 124, and the timeout is recorded as the measured result with plan 32-07's 300106 ms citation beside it."
   - "audit-gate was run WITHOUT --json first, because :1210 exits on `allowed` alone and cannot report a structural error (broken window #28); the --json payload's structuralErrors was then read directly."
   - "The one automated-leg failure (repo-root.test.ts's !includes('.claude')) was disclosed as a worktree artifact with three independent proofs, and neither fixed nor loosened (D-12-14)."
@@ -85,7 +85,7 @@ coverage:
     requirement: CUT-04
     verification:
       - kind: other
-        ref: "grep -ac 'regenerator2000' .github/workflows/ci.yml == 1; node scripts/check-no-regenerator2000.mjs -> exit 0, gate-self pin still 5"
+        ref: "grep -ac 'the external analyser' .github/workflows/ci.yml == 1; node scripts/check-no-analyser.mjs -> exit 0, gate-self pin still 5"
         status: pass
     human_judgment: false
   - id: D4
@@ -246,11 +246,11 @@ None — no external service configuration required.
 
 ## Self-Check: PASSED
 
-- `.github/workflows/ci.yml` — FOUND, `fetch-depth: 0` ×1, `run: node scripts/check-guard-fates.mjs` ×1, `regenerator2000` ×1 (`grep -a`).
+- `.github/workflows/ci.yml` — FOUND, `fetch-depth: 0` ×1, `run: node scripts/check-guard-fates.mjs` ×1, `the external analyser` ×1 (`grep -a`).
 - `.planning/phases/32-the-deletion-and-the-grep-gate/COVERAGE.md` — FOUND, 40 lines, one `^No external API integration:` line with a reason.
 - `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-close-gate.md` — FOUND, 621 lines (min 120), all six required greps present.
 - Commits `0d7d328`, `3883ec8`, `6586f0a` — all FOUND in `git log`.
-- `node scripts/check-guard-fates.mjs` and `node scripts/check-no-regenerator2000.mjs` — both exit 0 with every artifact of this plan committed.
+- `node scripts/check-guard-fates.mjs` and `node scripts/check-no-analyser.mjs` — both exit 0 with every artifact of this plan committed.
 - `git diff 90b5a0a HEAD --stat` — 700 insertions, 3 deletions, **no file deletions**.
 
 ---

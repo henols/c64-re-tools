@@ -129,17 +129,17 @@ coverage:
         ref: "src/mcp/vice/anno-derivation.test.ts -- # tests 9 / # pass 8 / # fail 0 / # skipped 1 (the pre-existing expected skip)"
         status: pass
       - kind: other
-        ref: "git status --porcelain over upstream-procedure-manifest.json, check-no-regenerator2000.mjs, STATE.md, ROADMAP.md, REQUIREMENTS.md -> empty"
+        ref: "git status --porcelain over upstream-procedure-manifest.json, check-no-analyser.mjs, STATE.md, ROADMAP.md, REQUIREMENTS.md -> empty"
         status: pass
     human_judgment: false
   - id: D7
     description: "Both removal-gate per-path subject-token pins are unmoved and no pin, needle or scope predicate in the gate was edited"
     verification:
       - kind: other
-        ref: "grep -o 'regenerator2000' src/mcp/vice/skill-attribution.test.ts | wc -l -> 12; grep -c 'regenerator2000' .github/workflows/ci.yml -> 1"
+        ref: "grep -o 'the external analyser' src/mcp/vice/skill-attribution.test.ts | wc -l -> 12; grep -c 'the external analyser' .github/workflows/ci.yml -> 1"
         status: pass
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs -> exit 0, still printing 'attribution-guard-test 14' and 'skill-attribution-headers 24'"
+        ref: "node scripts/check-no-analyser.mjs -> exit 0, still printing 'attribution-guard-test 14' and 'skill-attribution-headers 24'"
         status: pass
     human_judgment: false
 
@@ -308,7 +308,7 @@ be re-measured on main after the worktree merges.
 Everything else was green throughout: typecheck clean, `ci-suite-coverage.test.ts` 10/10,
 `docs-review-disposition.test.ts` 7/7, `audit-integrity.test.ts` 44/44, `anno-derivation.test.ts`
 8 pass / 1 expected skip, and the whole gate ladder
-(`check-no-regenerator2000.mjs`, `check-npm-packages.mjs`,
+(`check-no-analyser.mjs`, `check-npm-packages.mjs`,
 `check-skill-description-overlap.mjs`, `check-skill-tool-coverage.mjs`,
 `check-skill-fork-honesty.mjs`) exit 0.
 

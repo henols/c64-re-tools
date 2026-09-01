@@ -10,8 +10,8 @@ requires:
     provides: the relocated src/mcp/vice tree (plan 16-04), comment-phase-pointers.test.ts's extractor/scan-set/fixture conventions (plan 16-07's PKG-03 phase-pointer half) this plan's guard follows
 provides:
   - hop-chain-comments.test.ts, a committed structural guard against comments that splice a current path-chain starting segment onto pre-relocation intermediate segments
-  - the two corrected repo-root hop-chain comments in r2000-symbol-roundtrip.test.ts (16-REVIEW.md WR-02)
-  - behaviour-neutral renamed scratch trees in r2000-regbits.test.ts and a corrected .gitignore comment naming the source sync-skills.mjs actually reads
+  - the two corrected repo-root hop-chain comments in anno-symbol-roundtrip.test.ts (16-REVIEW.md WR-02)
+  - behaviour-neutral renamed scratch trees in anno-regbits.test.ts and a corrected .gitignore comment naming the source sync-skills.mjs actually reads
 affects: [16-10, 16-11]
 
 # Actuals (#2632)
@@ -32,8 +32,8 @@ key-files:
     - src/mcp/vice/hop-chain-comments.test.ts
     - src/mcp/vice/fixtures/planted-hop-chain-fixture.ts.txt
   modified:
-    - src/mcp/vice/r2000-symbol-roundtrip.test.ts
-    - src/mcp/vice/r2000-regbits.test.ts
+    - src/mcp/vice/anno-symbol-roundtrip.test.ts
+    - src/mcp/vice/anno-regbits.test.ts
     - .gitignore
 
 key-decisions:
@@ -57,22 +57,22 @@ coverage:
         status: pass
     human_judgment: false
   - id: D2
-    description: "Both real WR-02 violations in r2000-symbol-roundtrip.test.ts corrected to name only real ancestors of the module directory, with the in-tree negative control (r2000-answer-key.test.ts:34) and the deliberate pre-move-shape test (repo-root.test.ts) both staying green with no exemption"
+    description: "Both real WR-02 violations in anno-symbol-roundtrip.test.ts corrected to name only real ancestors of the module directory, with the in-tree negative control (absorbed-answer-key.test.ts:34) and the deliberate pre-move-shape test (repo-root.test.ts) both staying green with no exemption"
     requirement: PKG-03
     verification:
       - kind: unit
-        ref: "node --test hop-chain-comments.test.ts r2000-symbol-roundtrip.test.ts r2000-answer-key.test.ts repo-root.test.ts (38 tests, 0 fail)"
+        ref: "node --test hop-chain-comments.test.ts anno-symbol-roundtrip.test.ts absorbed-answer-key.test.ts repo-root.test.ts (38 tests, 0 fail)"
         status: pass
       - kind: other
         ref: "git diff --quiet -- src/mcp/vice/repo-root.test.ts (exit 0)"
         status: pass
     human_judgment: false
   - id: D3
-    description: "r2000-regbits.test.ts's two synthetic scratch trees renamed to the current src/mcp/vice shape at unchanged depth, proven behaviour-neutral by the drift guard's own unequal digests; .gitignore's comment corrected to name src/skills/"
+    description: "anno-regbits.test.ts's two synthetic scratch trees renamed to the current src/mcp/vice shape at unchanged depth, proven behaviour-neutral by the drift guard's own unequal digests; .gitignore's comment corrected to name src/skills/"
     requirement: PKG-03
     verification:
       - kind: unit
-        ref: "node --test r2000-regbits.test.ts (20 tests, 0 fail; two unequal digest diagnostics recorded below)"
+        ref: "node --test anno-regbits.test.ts (20 tests, 0 fail; two unequal digest diagnostics recorded below)"
         status: pass
       - kind: other
         ref: "git check-ignore -q installer/skills (exit 0); git diff -U0 .gitignore shows only comment lines added"
@@ -86,7 +86,7 @@ status: complete
 
 # Phase 16 Plan 09: Repo-root hop-chain comment guard (16-REVIEW.md WR-02) plus behaviour-neutral scratch-tree/gitignore renames Summary
 
-**Built `hop-chain-comments.test.ts` -- a committed, fixture-pinned guard against comments that splice a current path-chain starting segment onto pre-relocation intermediate segments -- demonstrated it RED against both real `r2000-symbol-roundtrip.test.ts` violations (16-REVIEW.md's WR-02 finding), fixed them, then renamed two synthetic scratch trees in `r2000-regbits.test.ts` and corrected a stale `.gitignore` comment, all three previously self-contradictory about the same phase 16-04 relocation.**
+**Built `hop-chain-comments.test.ts` -- a committed, fixture-pinned guard against comments that splice a current path-chain starting segment onto pre-relocation intermediate segments -- demonstrated it RED against both real `anno-symbol-roundtrip.test.ts` violations (16-REVIEW.md's WR-02 finding), fixed them, then renamed two synthetic scratch trees in `anno-regbits.test.ts` and corrected a stale `.gitignore` comment, all three previously self-contradictory about the same phase 16-04 relocation.**
 
 ## Performance
 
@@ -97,10 +97,10 @@ status: complete
 ## Accomplishments
 
 - `hop-chain-comments.test.ts` scans every `*.ts`/`*.mts` file in `src/mcp/vice` (`readdirSync(HERE)`-derived, not `package.json`'s `files[]`) for a comment line carrying a chain arrow, the phrase "repo root", and the frozen pre-relocation-root segment `.claude` all on one physical line -- exactly the shape WR-02 described.
-- Calibrated against the real corpus (measured, not assumed): exactly three comment lines in the whole module directory carry both a chain arrow and the "repo root" phrase; one (`r2000-answer-key.test.ts:34`) is a legitimate in-tree negative control asserted seen-but-not-flagged; the other two (`r2000-symbol-roundtrip.test.ts:55` and `:467`) are WR-02's violations.
+- Calibrated against the real corpus (measured, not assumed): exactly three comment lines in the whole module directory carry both a chain arrow and the "repo root" phrase; one (`absorbed-answer-key.test.ts:34`) is a legitimate in-tree negative control asserted seen-but-not-flagged; the other two (`anno-symbol-roundtrip.test.ts:55` and `:467`) are WR-02's violations.
 - Non-vacuity is asserted, not assumed: a >=50-file scan floor, a >=3-chain-line corpus floor, the real in-tree negative control, and a committed positive fixture (`fixtures/planted-hop-chain-fixture.ts.txt`, `.txt` extension so the scan can never pick it up) that keeps the detector's teeth asserted on every run.
-- The guard was demonstrated RED first (guard added, violations untouched), then both comment lines in `r2000-symbol-roundtrip.test.ts` were corrected to `` `src/mcp/vice` -> `src/mcp` -> `src` -> repo root. `` -- matching the unchanged three `".."` hops in the code directly below each, and changing no code anywhere in that file.
-- `r2000-regbits.test.ts`'s two synthetic scratch MCP-directory segment lists renamed from the pre-relocation `claude/mcp/vice` shape to the current `src/mcp/vice` shape (matching the sibling scratch skills tree's own root); both comments corrected to stop claiming to mirror "the real repo shape" while naming the pre-move shape. Depth unchanged (three segments below the scratch root), proven behaviour-neutral by the drift guard's own unequal before/after digests.
+- The guard was demonstrated RED first (guard added, violations untouched), then both comment lines in `anno-symbol-roundtrip.test.ts` were corrected to `` `src/mcp/vice` -> `src/mcp` -> `src` -> repo root. `` -- matching the unchanged three `".."` hops in the code directly below each, and changing no code anywhere in that file.
+- `anno-regbits.test.ts`'s two synthetic scratch MCP-directory segment lists renamed from the pre-relocation `claude/mcp/vice` shape to the current `src/mcp/vice` shape (matching the sibling scratch skills tree's own root); both comments corrected to stop claiming to mirror "the real repo shape" while naming the pre-move shape. Depth unchanged (three segments below the scratch root), proven behaviour-neutral by the drift guard's own unequal before/after digests.
 - `.gitignore`'s comment above the ignored generated-skills-copy entry now names `src/skills/` (what `installer/scripts/sync-skills.mjs`'s `SRC` constant actually reads today) instead of the no-longer-existing `.claude/skills/`.
 - `repo-root.test.ts`'s deliberate pre-move-shape test and historical narration (lines 107-119, 133-149) stay green with **no exemption** -- proven by the guard's own per-line matching (line 113 has the phrase but not the arrow; line 114 has the arrow but not the phrase) and by `git diff --quiet` on that file after this plan.
 
@@ -115,8 +115,8 @@ Each task was committed atomically:
 
 - `src/mcp/vice/hop-chain-comments.test.ts` - new guard: readdirSync-derived scan, per-line arrow+repo-root+pre-relocation-segment detector, 7 tests (2 non-vacuity floors, 1 in-tree negative control, 3 fixture-driven, 1 main assertion)
 - `src/mcp/vice/fixtures/planted-hop-chain-fixture.ts.txt` - new committed positive fixture (`.txt` extension, deliberately outside the scanned/shipped set), one planted violation line and one planted legitimate-narration near-miss line
-- `src/mcp/vice/r2000-symbol-roundtrip.test.ts` - both hop-chain comments (lines 55, 467) corrected to name real ancestors of the module directory
-- `src/mcp/vice/r2000-regbits.test.ts` - both scratch MCP-directory segment lists renamed `claude/mcp/vice` -> `src/mcp/vice`; both adjacent comments corrected to name the current shape (kept the generator hop-count-formula sentence and the plan-16-01 parenthetical, per the plan's own must-have)
+- `src/mcp/vice/anno-symbol-roundtrip.test.ts` - both hop-chain comments (lines 55, 467) corrected to name real ancestors of the module directory
+- `src/mcp/vice/anno-regbits.test.ts` - both scratch MCP-directory segment lists renamed `claude/mcp/vice` -> `src/mcp/vice`; both adjacent comments corrected to name the current shape (kept the generator hop-count-formula sentence and the plan-16-01 parenthetical, per the plan's own must-have)
 - `.gitignore` - the comment above `/installer/skills/` now names `src/skills/`
 
 ## Decisions Made
@@ -141,8 +141,8 @@ not ok 7 - no shipped src/mcp/vice source comment describes a half-swept repo-ro
   error: |-
     half-swept repo-root chain comment(s) found -- correct the segment names so the chain names only real
     ancestors of the module directory, ending at the repository root; do not add a per-file exemption instead:
-      r2000-symbol-roundtrip.test.ts:55: // `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
-      r2000-symbol-roundtrip.test.ts:467: // `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
+      anno-symbol-roundtrip.test.ts:55: // `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
+      anno-symbol-roundtrip.test.ts:467: // `src/mcp/vice` -> `.claude/mcp` -> `.claude` -> repo root.
 1..7
 # tests 7
 # pass 6
@@ -162,7 +162,7 @@ Exit code: 1. Both real violation sites named at the exact plan-cited lines (55,
 
 ### Task 2 -- unequal digest diagnostics (scratch-tree rename proven behaviour-neutral)
 
-Command: `cd src/mcp/vice && node --test r2000-regbits.test.ts`
+Command: `cd src/mcp/vice && node --test anno-regbits.test.ts`
 
 ```
 # committed memmap.json digest: 60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe
@@ -172,7 +172,7 @@ Both digests differ, and all 20 tests pass -- the rename did not change where th
 
 ## Guard Status: `docs-review-disposition.test.ts`
 
-`16-REVIEW.md` carries two currently-open findings under review: the WR-02 finding this plan fixes (self-contradictory relocation comments describing the repo-root hop count in `r2000-symbol-roundtrip.test.ts`), and one other finding about generic reuse advice in `acme-build/SKILL.md` pointing outside Claude Code's skill-discovery path, owned by plan 16-10.
+`16-REVIEW.md` carries two currently-open findings under review: the WR-02 finding this plan fixes (self-contradictory relocation comments describing the repo-root hop count in `anno-symbol-roundtrip.test.ts`), and one other finding about generic reuse advice in `acme-build/SKILL.md` pointing outside Claude Code's skill-discovery path, owned by plan 16-10.
 
 **IMPORTANT -- read before re-running this guard or writing 16-10's SUMMARY:** `docs-review-disposition.test.ts`'s "every REVIEW.md finding id ... has a recorded disposition (AUDIT-01, self-applied)" check does not parse disposition semantics -- it only tests whether a finding's bare id string appears ANYWHERE (case-sensitive, word-bounded) in any recognised disposition source for that finding's phase (any `*-SUMMARY.md`/`*-VERIFICATION.md`/`*-REVIEW-FIX.md` in the phase's own directory, or a matching pending/completed todo, or the phase's milestone-audit tech-debt block). It does not check whether the mention represents an actual fix. **This means merely typing the other finding's id anywhere in a phase-16 SUMMARY -- even in a sentence explaining that it is explicitly out of scope -- would cause this guard to incorrectly report it as dispositioned.** This SUMMARY was rewritten specifically to avoid that: it describes the other finding by its content only, never by its literal id token, so plan 16-10's own closure of it stays independently verifiable.
 
@@ -192,7 +192,7 @@ Both digests differ, and all 20 tests pass -- the rename did not change where th
 
 `cd src/mcp/vice && npm run typecheck`: exit 0.
 `node scripts/check-npm-packages.mjs`: OK (`@henols/vice-mcp` 73 files, `@henols/c64-re-tools` 31 files/6 skills) -- the new fixture does not leak into either tarball.
-`node scripts/check-skill-tool-coverage.mjs`: OK (37 `vice_*`, 10 `r2000_*`).
+`node scripts/check-skill-tool-coverage.mjs`: OK (37 `vice_*`, 10 `anno_*`).
 `node scripts/check-skill-fork-honesty.mjs`: OK.
 `bash scripts/package.sh`: OK, 981 files.
 `cd installer && npm test`: 18/18 pass.
@@ -211,7 +211,7 @@ None - no external service configuration required.
 
 - WR-02 fixed at source and dispositioned via this SUMMARY; `hop-chain-comments.test.ts` ships as a standing, fixture-pinned guard against this defect class recurring.
 - `docs-review-disposition.test.ts`'s undispositioned-findings list for `16-REVIEW.md` should drop from two ids to one once this plan's commits (including this SUMMARY) land -- plan 16-10 is expected to close the remaining one.
-- `r2000-regbits.test.ts`'s scratch-tree rename and `.gitignore`'s comment fix are both behaviour-neutral and independent of 16-10/16-11's remaining work.
+- `anno-regbits.test.ts`'s scratch-tree rename and `.gitignore`'s comment fix are both behaviour-neutral and independent of 16-10/16-11's remaining work.
 - The measured baseline (2373 tests, 2 pre-existing fails, all four repo-root validators exit 0) is unregressed and ready for plan 16-10.
 
 ---
@@ -221,8 +221,8 @@ None - no external service configuration required.
 ## Self-Check: PASSED
 
 All key files confirmed present on disk (`src/mcp/vice/hop-chain-comments.test.ts`,
-`src/mcp/vice/fixtures/planted-hop-chain-fixture.ts.txt`, `src/mcp/vice/r2000-symbol-roundtrip.test.ts`,
-`src/mcp/vice/r2000-regbits.test.ts`, `.gitignore`, this SUMMARY). Both task commit hashes
+`src/mcp/vice/fixtures/planted-hop-chain-fixture.ts.txt`, `src/mcp/vice/anno-symbol-roundtrip.test.ts`,
+`src/mcp/vice/anno-regbits.test.ts`, `.gitignore`, this SUMMARY). Both task commit hashes
 (`59c8ca4`, `7571c47`) confirmed in `git log`. Every acceptance criterion in `16-09-PLAN.md`
 re-run live and recorded above with observed output. `docs-review-disposition.test.ts` and
 `audit-integrity.test.ts` are confirmed still red on the OTHER open `16-REVIEW.md` finding

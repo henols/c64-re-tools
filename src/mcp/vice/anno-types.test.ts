@@ -15,7 +15,7 @@
 //     make the pin read its own subject: a silent edit to the vocabulary would
 //     silently edit its own expectation and the test would keep passing. So
 //     the twelve strings below are typed out by hand, in the
-//     `r2000_set_data_type` schema's own order, and any edit to `DATA_TYPES`
+//     `anno_set_data_type` schema's own order, and any edit to `DATA_TYPES`
 //     must be accompanied by a deliberate edit HERE.
 //
 // The decision this pins is irreversible in a specific way: split-table
@@ -103,10 +103,10 @@ test("SPLIT_DATA_TYPES is exactly the four split layouts, frozen, and every memb
   }
 });
 
-test("the twelve members are pairwise distinct and none contains the substring r2000, so the rented-analyser removal gate (CUT-02) is unaffected by the vocabulary", () => {
+test("the twelve members are pairwise distinct and none contains the substring anno, so the rented-analyser removal gate (CUT-02) is unaffected by the vocabulary", () => {
   assert.equal(new Set(DATA_TYPES).size, 12, "a duplicated member would make one of the twelve unreachable");
   for (const member of DATA_TYPES) {
-    assert.equal(member.includes("r2000"), false, `${member} contains the substring a removal gate greps for`);
+    assert.equal(member.includes("anno"), false, `${member} contains the substring a removal gate greps for`);
     assert.equal(member, member.toLowerCase(), `${member} must be lowercase -- the schema's spellings are lowercase snake_case`);
   }
 });

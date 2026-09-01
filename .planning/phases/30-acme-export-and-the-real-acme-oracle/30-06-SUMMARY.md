@@ -215,8 +215,8 @@ status: complete
 |---|---|---|
 | `REQUIREMENTS.md` SEAM-02 ⚠ block and `PROJECT.md:140` (one sentence, two places) | "**It returns in Phase 30**, rebuilt over the Phase 28 annotation store alongside the ACME export oracle, which is the same route `export-asm` takes for the same reason. Until then, a reader checking whether the symbol round trip works should read this line as: it does not, and the reason is a deliberate sequencing choice rather than a defect." | "**It does NOT return in the phase this note used to name.** That phase rebuilt the ACME export route only — `export-asm` returned on 2026-08-31 behind a real-ACME byte-diff oracle — and no requirement and no success criterion of it covered `export-lbl` or `import-lbl`, so **no phase currently owns the symbol round trip's return**. Until one does, a reader checking whether the symbol round trip works should read this line as: it does not, the reason is a superseded sequencing forecast rather than a defect, and that forecast is corrected here rather than deleted, because deleting the notice would erase the record that a Validated capability went missing." |
 | `ROADMAP.md:737` (Phase 31 note) | "Its route was removed in Phase 29 (D-14) and **it returns in Phase 30**, rebuilt over the Phase 28 store alongside the ACME export oracle." | "Its route was removed in Phase 29 (D-14). An earlier version of this note forecast that it would come back alongside the ACME export oracle; the ACME export route did return on 2026-08-31 as `anno export-asm`, but the work that rebuilt it covered that route only, so **no phase currently owns the symbol round trip's return**." |
-| `PROJECT.md` R2000-13 (`gen-enums`) | *(no withdrawal note existed)* | New ⚠ sub-note: withdrawn 2026-08-29, heuristics survive in `anno-enum-gen.ts`, **no phase currently owns its return**, by-hand route open. |
-| `PROJECT.md` R2000-06 (`export-asm`) | *(no withdrawal note existed; the line still claimed "verified by reassembly")* | New ⚠ sub-note: withdrawn 2026-08-29, **returned 2026-08-31**, real invocation, and "the verb writes source text and runs no assembler … the \"verified by reassembly\" claim above therefore describes the removed route". |
+| `PROJECT.md` ANNO-13 (`gen-enums`) | *(no withdrawal note existed)* | New ⚠ sub-note: withdrawn 2026-08-29, heuristics survive in `anno-enum-gen.ts`, **no phase currently owns its return**, by-hand route open. |
+| `PROJECT.md` ANNO-06 (`export-asm`) | *(no withdrawal note existed; the line still claimed "verified by reassembly")* | New ⚠ sub-note: withdrawn 2026-08-29, **returned 2026-08-31**, real invocation, and "the verb writes source text and runs no assembler … the \"verified by reassembly\" claim above therefore describes the removed route". |
 
 **The shared sentence is byte-identical**, verified by extracting it from both files and comparing: 660 characters each, `True`.
 
@@ -302,7 +302,7 @@ See `key-decisions` in the frontmatter. The load-bearing one is the guard's disc
 **3. [Rule 1 - Bug] `PROJECT.md` did not carry the withdrawal notes the plan assumed it carried**
 
 - **Found during:** Task 3
-- **Issue:** Task 3's `read_first` names "the shipped-capability list and its dated withdrawal notes for `export-asm`, `gen-enums`, `export-lbl` and `import-lbl`". Only the `export-lbl`/`import-lbl` note exists. `R2000-06`'s line still claimed the capability was "**verified by reassembly**" — a claim whose route was removed on 2026-08-29 — and `R2000-13`'s line claimed enum generation with no note that `gen-enums` was gone.
+- **Issue:** Task 3's `read_first` names "the shipped-capability list and its dated withdrawal notes for `export-asm`, `gen-enums`, `export-lbl` and `import-lbl`". Only the `export-lbl`/`import-lbl` note exists. `ANNO-06`'s line still claimed the capability was "**verified by reassembly**" — a claim whose route was removed on 2026-08-29 — and `ANNO-13`'s line claimed enum generation with no note that `gen-enums` was gone.
 - **Fix:** rather than silently skipping the missing sites, two new dated ⚠ sub-notes were added — `gen-enums` (withdrawn, no owner, heuristics survive, by-hand route open) and `export-asm` (withdrawn 2026-08-29, returned 2026-08-31, real invocation, oracle test-only, and an explicit statement that the "verified by reassembly" line above describes the *removed* route).
 - **Files modified:** `.planning/PROJECT.md`
 - **Verification:** `node --test docs-dangling-refs.test.ts audit-integrity.test.ts docs-deferred-ledger.test.ts comment-phase-pointers.test.ts` — 74/74.
@@ -346,7 +346,7 @@ None beyond the deviations above. The full automated suite ran 0 failures on eve
 | `node scripts/check-skill-description-overlap.mjs` | OK — 21 pairs, max 0.250 vs threshold 0.35 |
 | `node scripts/check-skill-tool-coverage.mjs` | OK — anno CLI verbs: 3 parsed, 3/3 resolved |
 | `node scripts/check-npm-packages.mjs` | OK — vice-mcp 79 files, c64-re-tools 34 files / 7 skills |
-| `node scripts/check-no-regenerator2000.mjs` | OK |
+| `node scripts/check-no-analyser.mjs` | OK |
 | `cd src/mcp/vice && VICE_REQUIRE_ACME=1 node --test acme-verify.test.ts acme-gate.test.ts anno-export-asm.test.ts skill-acme-build-cli.test.ts anno-cli.test.ts` | 182 tests, **0 fail** — the ACME hard-fail gate green with a real assembler |
 
 **The phase gate `VICE_REQUIRE_ACME=1 npm test` (full glob) is deliberately NOT run here.** The plan schedules it "after this plan merges", and the full glob is recorded in this environment as blocking indefinitely on `vice-proxy.test.ts`. The ACME-gated subset above is the substitute evidence for this plan; the full-glob run belongs to the phase boundary.

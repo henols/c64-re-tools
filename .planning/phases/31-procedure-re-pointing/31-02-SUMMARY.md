@@ -40,7 +40,7 @@ key-files:
 
 key-decisions:
   - "`ABS02_ADAPTED_LINE` is DERIVED from `manifest.repository`'s last path segment rather than written as a literal. A new literal spelling of the subject in this file would move the removal gate's `attribution-guard-test` exact occurrence pin (12) for this path, and the plan forbids editing that gate — 31-03 owns its one edit, and 31-03's own criteria restrict its diff to a comment block. Deriving keeps the gate green, keeps `files_modified` at exactly one file, and is the same rationale the plan already mandates for the URL line."
-  - "The `installer/skills/` tree is absent in a fresh worktree (generated + gitignored). It was materialised by the project's OWN generator as the documented side effect of running `check-no-regenerator2000.mjs` / `check-npm-packages.mjs`, so the two-tree relation branch was exercised for real rather than left to the fresh-clone skip. Both states were run and both are green."
+  - "The `installer/skills/` tree is absent in a fresh worktree (generated + gitignored). It was materialised by the project's OWN generator as the documented side effect of running `check-no-analyser.mjs` / `check-npm-packages.mjs`, so the two-tree relation branch was exercised for real rather than left to the fresh-clone skip. Both states were run and both are green."
   - "The plant test's mutation is built by index (`charAt(nameAt).toUpperCase()`), not written out, for the same occurrence-pin reason — and it is asserted to differ in exactly one position, so 'one character' is a checked claim rather than a description."
 
 patterns-established:
@@ -119,7 +119,7 @@ coverage:
     requirement: "REPOINT-03"
     verification:
       - kind: integration
-        ref: "node scripts/check-no-regenerator2000.mjs -> exit 0, `skill-attribution-headers 24`"
+        ref: "node scripts/check-no-analyser.mjs -> exit 0, `skill-attribution-headers 24`"
         status: pass
       - kind: integration
         ref: "node scripts/check-npm-packages.mjs -> exit 0 (vice-mcp 79 files; c64-re-tools 34 files, 7 skills)"
@@ -195,7 +195,7 @@ Per-file, source tree: `c64-memory-mapping/SKILL.md` 2, `c64-program-recon/SKILL
 
 `src/skills/c64-program-recon/SKILL.md`:
 
-- `Adapted from regenerator2000.` at lines **369** and **571**
+- `Adapted from the external analyser.` at lines **369** and **571**
 - `  Source repository: …` at lines **370** and **577**
 
 Block 1's two lines are consecutive (369/370). **Block 2's are not** — 571 and 577, with `Source path:` between them. The test passes with this file in the corpus, and asserts nothing about the two lines' relative position, ordering or adjacency. An adjacency assertion would have gone red on a correct tree (RESEARCH Pitfall 3).
@@ -219,7 +219,7 @@ Run from the worktree root unless noted. `systemctl --user is-active vice-broker
 | 3 | `cd src/mcp/vice && npm run typecheck` | exit 0 (`tsc --noEmit`, clean) |
 | 4 | `node scripts/check-skill-description-overlap.mjs` | exit 0 — OK line above |
 | 5 | `cd src/mcp/vice && node --test skill-description-overlap.test.ts` | exit 0 — `# tests 32`, `# fail 0`, incl. its live-execution control |
-| 6 | `node scripts/check-no-regenerator2000.mjs` | exit 0 — 400 files scanned, 157 permanently exempt, 0 temporarily allow-listed, **`skill-attribution-headers 24`** |
+| 6 | `node scripts/check-no-analyser.mjs` | exit 0 — 400 files scanned, 157 permanently exempt, 0 temporarily allow-listed, **`skill-attribution-headers 24`** |
 | 7 | `node scripts/check-npm-packages.mjs` | exit 0 — `@henols/vice-mcp` 79 files, `@henols/c64-re-tools` 34 files / 7 skills |
 | 8 | `cd src/mcp/vice && npm run test:automated` | `# tests 2920`, `# pass 2913`, **`# fail 1`**, `# skipped 1`, `# todo 5` — the one failure is the documented worktree artefact, see Issues Encountered |
 | 9 | `git status --porcelain src/skills installer/skills CLAUDE.md` | empty |
@@ -275,18 +275,18 @@ The shipped tree does not exist in a fresh worktree, so the fresh-clone skip bra
 - **Committed in:** n/a (untracked, gitignored)
 
 **2. [Rule 3 - Blocking] `ABS02_ADAPTED_LINE` derived from `manifest.repository` instead of written as a byte literal**
-- **Found during:** Task 1, when `node scripts/check-no-regenerator2000.mjs` went red immediately after the first draft
-- **Issue:** the removal gate's `attribution-guard-test` exemption pins subject occurrences in **`src/mcp/vice/skill-attribution.test.ts` at exactly `12`** (`check-no-regenerator2000.mjs:399`). The gate reported `got 15`. Its own message is explicit that a **higher** count is a failure, not a nuisance. Any new literal spelling of the upstream name in this file — which the plan's `must_haves.artifacts[0].contains` asks for — necessarily moves that pin. The plan **prohibits** editing that gate (`read only; plan 31-03 owns the one edit to this file`), and 31-03's own acceptance criteria restrict its diff to a comment block, so 31-03 will not move the pin either. The plan is internally inconsistent on this point.
+- **Found during:** Task 1, when `node scripts/check-no-analyser.mjs` went red immediately after the first draft
+- **Issue:** the removal gate's `attribution-guard-test` exemption pins subject occurrences in **`src/mcp/vice/skill-attribution.test.ts` at exactly `12`** (`check-no-analyser.mjs:399`). The gate reported `got 15`. Its own message is explicit that a **higher** count is a failure, not a nuisance. Any new literal spelling of the upstream name in this file — which the plan's `must_haves.artifacts[0].contains` asks for — necessarily moves that pin. The plan **prohibits** editing that gate (`read only; plan 31-03 owns the one edit to this file`), and 31-03's own acceptance criteria restrict its diff to a comment block, so 31-03 will not move the pin either. The plan is internally inconsistent on this point.
 - **Fix:** derive the upstream project name as `String(manifest.repository).replace(/^.*\//, "")` and build **both** naming-line constants from the pinned record. Two other new mentions (a gate filename in a comment, an illustrative line in the adjacency comment) were rephrased to `<subject>`-style wording. Occurrence count back to **12**; gate exit 0 with `skill-attribution-headers 24`. The plant test's mutation is likewise built by index rather than written out.
 - **Why this is the right resolution, not a dodge:** the constant still **evaluates** to the byte-exact line, so the assertion's strength is unchanged — and a wrong derivation makes the corpus scan report every block as an offender, which is a louder failure than a mistyped literal. It applies to line 1 exactly the rationale the plan already mandates for line 2 (*"do not reconstruct the URL by hand — build the constant from `manifest.repository` so the one URL in the record stays the one URL"*). And it preserves two acceptance criteria the alternative would have broken: `git diff --name-only` listing exactly one file, and not touching the gate.
-- **Consequence to flag for the verifier:** the plan's `must_haves.artifacts[0].contains: "Adapted from regenerator2000."` is **not** satisfied as a literal grep of the new code. The string is produced at runtime and is asserted, via `assert.match(ABS02_ADAPTED_LINE, /^Adapted from \S+\.$/)`, plus a check that the derived name is the manifest URL's last path segment, plus the corpus scan that fails outright if the constant is wrong. The literal *does* still appear in this file at line 4 and line 37 (pre-existing header prose) — a grep of the file will therefore still hit, but not on this plan's code.
+- **Consequence to flag for the verifier:** the plan's `must_haves.artifacts[0].contains: "Adapted from the external analyser."` is **not** satisfied as a literal grep of the new code. The string is produced at runtime and is asserted, via `assert.match(ABS02_ADAPTED_LINE, /^Adapted from \S+\.$/)`, plus a check that the derived name is the manifest URL's last path segment, plus the corpus scan that fails outright if the constant is wrong. The literal *does* still appear in this file at line 4 and line 37 (pre-existing header prose) — a grep of the file will therefore still hit, but not on this plan's code.
 - **Files modified:** `src/mcp/vice/skill-attribution.test.ts`
-- **Verification:** `node scripts/check-no-regenerator2000.mjs` → exit 0, `skill-attribution-headers 24`; `node --test skill-attribution.test.ts` → 14/14
+- **Verification:** `node scripts/check-no-analyser.mjs` → exit 0, `skill-attribution-headers 24`; `node --test skill-attribution.test.ts` → 14/14
 - **Committed in:** `cecf393` (task 1) and `dc66096` (task 2)
 
 **3. [Rule 3 - Blocking] `installer/skills/` absent in the worktree**
 - **Found during:** Task 1
-- **Issue:** the shipped tree is generated and gitignored (`.gitignore:43`), so a fresh worktree has none. Left alone, the two-tree half of the assertion would only ever have taken the fresh-clone skip branch here, and `check-no-regenerator2000.mjs` could not have reported `skill-attribution-headers 24` (12 hits per tree × 2).
+- **Issue:** the shipped tree is generated and gitignored (`.gitignore:43`), so a fresh worktree has none. Left alone, the two-tree half of the assertion would only ever have taken the fresh-clone skip branch here, and `check-no-analyser.mjs` could not have reported `skill-attribution-headers 24` (12 hits per tree × 2).
 - **Fix:** none authored — the tree is materialised by the project's own generator as the **documented side effect** of running the gates (`packFiles()` → `npm pack --dry-run` → `prepack` → `sync-skills.mjs`, reporting `copied 7 skill(s) … excluded 6 non-shipping entries`). No file under either skill tree was edited or written by hand, and `installer/skills` is gitignored so nothing was committed.
 - **Files modified:** none tracked
 - **Verification:** `git status --porcelain src/skills installer/skills CLAUDE.md` → empty; both root states run green
@@ -324,9 +324,9 @@ None — no external service configuration required.
 
 ## Next Phase Readiness
 
-- **Ready for `31-03`.** That plan re-points two prose citations in `scripts/check-no-regenerator2000.mjs` and one in `.planning/STATE.md`. Two things it should know:
+- **Ready for `31-03`.** That plan re-points two prose citations in `scripts/check-no-analyser.mjs` and one in `.planning/STATE.md`. Two things it should know:
   1. This plan did **not** touch that gate, and the gate is green (`skill-attribution-headers 24`) with the `attribution-guard-test` pin still at `12`. 31-03's `git diff -U0` comment-only criterion is unaffected.
-  2. 31-03's criterion `grep -c 'two naming lines byte-identical' scripts/check-no-regenerator2000.mjs` → `2` refers to the gate's own prose. The *assertion* those citations describe now exists, in `skill-attribution.test.ts`, and 31-03 may cite it by test name: `"both skill trees carry the ABS-02 naming lines byte-identically, in equal numbers"`.
+  2. 31-03's criterion `grep -c 'two naming lines byte-identical' scripts/check-no-analyser.mjs` → `2` refers to the gate's own prose. The *assertion* those citations describe now exists, in `skill-attribution.test.ts`, and 31-03 may cite it by test name: `"both skill trees carry the ABS-02 naming lines byte-identically, in equal numbers"`.
 - **For the verifier:** deviation #2's `must_haves.artifacts.contains` miss is the one item that needs a judgement call. Everything else in `must_haves.truths` is asserted mechanically and recorded above.
 - **No blockers.**
 

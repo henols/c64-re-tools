@@ -42,11 +42,11 @@ key-files:
     - .planning/PROJECT.md
     - .claude/mcp/vice/docs-dangling-refs.test.ts
     - .claude/mcp/vice/docs-deferred-ledger.test.ts
-    - .claude/mcp/vice/r2000-cli.ts
-    - .claude/mcp/vice/r2000-project.ts
+    - .claude/mcp/vice/anno-cli.ts
+    - .claude/mcp/vice/anno-project.ts
 
 key-decisions:
-  - "Moving the .vsf-bootstrap-input todo to completed/ was not a pure documentation move: docs-dangling-refs.test.ts's VSF_BACKLOG_ITEM constant and two shipped runtime/comment string literals in r2000-cli.ts/r2000-project.ts all hardcode the exact pending/ path as the r2000 CLI's own user-facing refusal message. All three updated to completed/ in the same commit as the move (Rule 3 blocking-issue fix) — leaving them stale would have shipped a refusal message pointing users at a file that no longer exists at that path, and failed the guard."
+  - "Moving the .vsf-bootstrap-input todo to completed/ was not a pure documentation move: docs-dangling-refs.test.ts's VSF_BACKLOG_ITEM constant and two shipped runtime/comment string literals in anno-cli.ts/anno-project.ts all hardcode the exact pending/ path as the anno CLI's own user-facing refusal message. All three updated to completed/ in the same commit as the move (Rule 3 blocking-issue fix) — leaving them stale would have shipped a refusal message pointing users at a file that no longer exists at that path, and failed the guard."
   - "The keyboard-fallback-load todo was promoted with a named owner, not closed wont-fix or closed on new evidence: plan 15-08's live UAT work exercised neither the same tool (vice_keyboard_petscii, not the keyboard-typed LOAD route) nor the same failure mode (no LOAD command was ever issued in scenario 2), so neither of the plan's two closing conditions was met. Closing on inference from either result would have been exactly the kind of unproven disposition this phase exists to stop."
   - "13-REVIEW.md's IN-02 promotion (named to this plan by plan 15-05) was recorded with a real forward-looking owner (the GSD toolkit itself / code-review.md's files: derivation), not re-promoted back to 'plan 15-12' — this plan is the terminal owner the promotion was handed to, and a Future Requirements bullet naming a now-finished plan as its own owner would be a promotion with no real future action attached."
   - "docs-deferred-ledger.test.ts's positive-control stem and non-vacuity floor were updated in Task 1's own commit (not deferred to Task 3): closing 2026-08-20-vsf-as-a-bootstrap-input.md removed the exact stem the guard's positive control hardcoded, and reducing pending to 2 tripped the pre-existing >=5 floor. Both were fixed immediately so the guard was never left red between commits."
@@ -155,9 +155,9 @@ Promoted the pre-existing 2026-08-12 user decision into the Resolution rather th
 
 **`.vsf`-as-bootstrap-input todo** (`.planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md`) — closed **`wont-fix`**, quoted rationale (`REQUIREMENTS.md`'s own pre-existing Out of Scope line, verbatim):
 
-> `.vsf` as a regenerator2000 bootstrap input | Covered by `DEBT-01` as a disposition, not as a build. D-34 stands unless a consumer has `.vsf` captures and cannot re-capture as `.raw`.
+> `.vsf` as an external analyser bootstrap input | Covered by `DEBT-01` as a disposition, not as a build. D-34 stands unless a consumer has `.vsf` captures and cannot re-capture as `.raw`.
 
-Moving this file required a wider sweep than a pure documentation move: `docs-dangling-refs.test.ts`'s `VSF_BACKLOG_ITEM` constant, and two shipped runtime/comment string literals in `r2000-cli.ts` (the CLI's own user-facing `.vsf` refusal message, two sites) and `r2000-project.ts` (a header comment) all hardcoded the exact `pending/` path. All three updated to `completed/` in the same commit — a real user running the shipped `r2000 bootstrap` CLI against a `.vsf` file would otherwise have been told to look at a file that no longer existed at that path.
+Moving this file required a wider sweep than a pure documentation move: `docs-dangling-refs.test.ts`'s `VSF_BACKLOG_ITEM` constant, and two shipped runtime/comment string literals in `anno-cli.ts` (the CLI's own user-facing `.vsf` refusal message, two sites) and `anno-project.ts` (a header comment) all hardcoded the exact `pending/` path. All three updated to `completed/` in the same commit — a real user running the shipped `anno bootstrap` CLI against a `.vsf` file would otherwise have been told to look at a file that no longer existed at that path.
 
 **Keyboard-fallback-load todo** (`.planning/todos/completed/2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll.md`) — **promoted with a named owner**, neither wont-fix nor closed on new evidence. Checked plan 15-08's live UAT work directly: scenario 1 used `vice_autostart` (not the keyboard-typed `LOAD` route); scenario 2 used `vice_keyboard_petscii` (proves keyboard injection works, but never issues a `LOAD` command, so it never exercises the IEC-emulated disk-load timing this todo is about). Neither of the plan's two closing conditions was met — closing on inference from either result would have been unproven. Owner: whichever future plan or milestone next touches `c64-ram-capture`'s keyboard-typed-fallback load path (no v0.4.0 phase does).
 
@@ -231,8 +231,8 @@ Each task was committed atomically:
 - `.planning/todos/completed/2026-08-19-keyboard-fallback-load-does-not-progress-within-bounded-poll.md` - renamed from `pending/`; promoted-with-owner Resolution added
 - `.claude/mcp/vice/docs-dangling-refs.test.ts` - `VSF_BACKLOG_ITEM` constant updated `pending/` → `completed/` to match the move
 - `.claude/mcp/vice/docs-deferred-ledger.test.ts` - positive-control stem switched to a todo that stays pending; non-vacuity floor lowered 5 → 2
-- `.claude/mcp/vice/r2000-cli.ts` - two shipped runtime refusal-message string literals updated `pending/` → `completed/`
-- `.claude/mcp/vice/r2000-project.ts` - one header comment updated `pending/` → `completed/`
+- `.claude/mcp/vice/anno-cli.ts` - two shipped runtime refusal-message string literals updated `pending/` → `completed/`
+- `.claude/mcp/vice/anno-project.ts` - one header comment updated `pending/` → `completed/`
 - `.planning/PROJECT.md` - `.vsf` Out of Scope bullet's path reference and closure status updated
 - `.planning/REQUIREMENTS.md` - `### Promoted by DEBT-01` filled in (4 bullets with owners); GATE-02/DEBT-01/DEBT-02/DEBT-03 flipped Complete with closure notes in both the checklist and Traceability table
 - `.planning/STATE.md` - Deferred Items table regenerated (2 pending, 0 UAT gaps); Current Position, Operator Next Steps, frontmatter, and one stale WR-13 paragraph corrected for Phase 15's close
@@ -248,10 +248,10 @@ See `key-decisions` in frontmatter. In summary: (1) the `.vsf` todo move require
 
 **1. [Rule 3 - Blocking] Moving the `.vsf` todo to `completed/` broke a guard constant and two shipped user-facing strings**
 - **Found during:** Task 1, immediately after `git mv`, before writing the Resolution
-- **Issue:** `docs-dangling-refs.test.ts`'s `VSF_BACKLOG_ITEM` constant and `r2000-cli.ts`'s two runtime refusal-message string literals (plus `r2000-project.ts`'s one header comment) all hardcoded the exact `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md` path. Left unfixed, `docs-dangling-refs.test.ts` would fail (`existsSync` check against the stale path) and the shipped CLI's own `.vsf` refusal message would point a real user at a file that no longer existed there.
+- **Issue:** `docs-dangling-refs.test.ts`'s `VSF_BACKLOG_ITEM` constant and `anno-cli.ts`'s two runtime refusal-message string literals (plus `anno-project.ts`'s one header comment) all hardcoded the exact `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md` path. Left unfixed, `docs-dangling-refs.test.ts` would fail (`existsSync` check against the stale path) and the shipped CLI's own `.vsf` refusal message would point a real user at a file that no longer existed there.
 - **Fix:** Updated all three references from `pending/` to `completed/` in the same commit as the move.
-- **Files modified:** `.claude/mcp/vice/docs-dangling-refs.test.ts`, `.claude/mcp/vice/r2000-cli.ts`, `.claude/mcp/vice/r2000-project.ts`
-- **Verification:** `node --test docs-dangling-refs.test.ts` (8/8 pass); `node --test r2000-cli.test.ts` (64/64 pass, including the test asserting the refusal message names the backlog item)
+- **Files modified:** `.claude/mcp/vice/docs-dangling-refs.test.ts`, `.claude/mcp/vice/anno-cli.ts`, `.claude/mcp/vice/anno-project.ts`
+- **Verification:** `node --test docs-dangling-refs.test.ts` (8/8 pass); `node --test anno-cli.test.ts` (64/64 pass, including the test asserting the refusal message names the backlog item)
 - **Committed in:** `68b26c6`
 
 **2. [Rule 1 - Bug] `docs-deferred-ledger.test.ts`'s positive-control stem hardcoded the exact todo this plan closes**
@@ -328,7 +328,7 @@ None. This plan installs no packages, adds no dependency, and introduces no new 
 
 ## Self-Check: PASSED
 
-- All twelve key-files (four completed todos, `REQUIREMENTS.md`, `STATE.md`, `ROADMAP.md`, `docs-dangling-refs.test.ts`, `docs-deferred-ledger.test.ts`, `r2000-cli.ts`, `r2000-project.ts`, this SUMMARY) confirmed present on disk with `[ -f ]`.
+- All twelve key-files (four completed todos, `REQUIREMENTS.md`, `STATE.md`, `ROADMAP.md`, `docs-dangling-refs.test.ts`, `docs-deferred-ledger.test.ts`, `anno-cli.ts`, `anno-project.ts`, this SUMMARY) confirmed present on disk with `[ -f ]`.
 - All three task commits confirmed in `git log --oneline --all`: `68b26c6`, `601a53c`, `3dbf749`.
 - Plan-level `<verification>` re-run clean immediately before this check: `npm run typecheck` exits 0; all five `docs-*.test.ts` guards exit 0 (28/28 combined); `npm run test:automated` exits 0 (2112/2107/0/5, unchanged baseline); both skill-lint scripts and `check-npm-packages.mjs` exit 0 (see Task 3 output above, re-run identically).
 - `git status --porcelain` on `.planning/todos/` shows exactly the four expected renames, zero deletions.

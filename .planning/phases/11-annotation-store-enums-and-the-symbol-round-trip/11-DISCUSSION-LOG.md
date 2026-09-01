@@ -26,7 +26,7 @@
 | Todo | Selected |
 |------|----------|
 | `2026-08-20-npm-closure-walk-blind-to-dynamic-imports.md` | ✓ |
-| `2026-08-20-r2000-review-residual-findings.md` (WR-02..WR-07) | ✓ |
+| `2026-08-20-anno-review-residual-findings.md` (WR-02..WR-07) | ✓ |
 
 ---
 
@@ -36,14 +36,14 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Proxy through our MCP server | `vice-proxy.ts` advertises `r2000_*`, drives `--mcp-server-stdio` as a child. One MCP surface, D-07's guard stays load-bearing, per-call project path. Cost: we become an MCP client for the first time. | ✓ |
+| Proxy through our MCP server | `vice-proxy.ts` advertises `anno_*`, drives `--mcp-server-stdio` as a child. One MCP surface, D-07's guard stays load-bearing, per-call project path. Cost: we become an MCP client for the first time. | ✓ |
 | Second MCP server in the manifest | Near-zero code, but MCP server config is static so the project path freezes at session start; 28 tools land outside our gates | |
-| CLI verbs only, no MCP | Cheapest and most testable, but criterion 2's xrefs and search would mean reimplementing r2000's analysis engine | |
+| CLI verbs only, no MCP | Cheapest and most testable, but criterion 2's xrefs and search would mean reimplementing anno's analysis engine | |
 
 **User's choice:** Proxy through our MCP server (recommended).
 **Notes:** → **D-16**. Evidence presented: `--mcp-server-stdio` measured speaking MCP 2024-11-05 with 28 tools.
 
-### Q2 — What lifecycle should the r2000 child have?
+### Q2 — What lifecycle should the anno child have?
 
 | Option | Description | Selected |
 |--------|-------------|----------|
@@ -52,9 +52,9 @@
 | You decide | | |
 
 **User's choice:** Per-call spawn (recommended).
-**Notes:** → **D-17**. Makes `r2000_batch_execute` the efficiency lever, which drove Q on batch gating later.
+**Notes:** → **D-17**. Makes `anno_batch_execute` the efficiency lever, which drove Q on batch gating later.
 
-### Q3 — Which r2000 tools should the surface expose?
+### Q3 — Which anno tools should the surface expose?
 
 | Option | Description | Selected |
 |--------|-------------|----------|
@@ -101,7 +101,7 @@ list into the header (measured), and an unmatched value falls back to bare
 | Option | Description | Selected |
 |--------|-------------|----------|
 | Project-level, inside the `.regen2000proj` | Proven working end to end; self-contained, diffable, no machine-global write | ✓ |
-| r2000's global config dir as `enum-*.toml` | Reusable across projects, but an invisible machine-wide side effect shared with the human's own TUI usage | |
+| anno's global config dir as `enum-*.toml` | Reusable across projects, but an invisible machine-wide side effect shared with the human's own TUI usage | |
 | You decide | | |
 
 **User's choice:** Project-level (recommended).
@@ -117,7 +117,7 @@ list into the header (measured), and an unmatched value falls back to bare
 | You decide | | |
 
 **User's choice:** 29 structured plus a curated table (recommended).
-**Notes:** → **D-22**. Also surfaced that `R2000-13`'s `--dump-enum-files` claim is wrong — that flag dumps three built-ins and exits.
+**Notes:** → **D-22**. Also surfaced that `ANNO-13`'s `--dump-enum-files` claim is wrong — that flag dumps three built-ins and exits.
 
 ### Q4 — How wide should the `lda #imm` → `sta register` pairing look?
 
@@ -134,7 +134,7 @@ list into the header (measured), and an unmatched value falls back to bare
 
 ## Store vs. prose in recon
 
-Evidence presented: r2000's twelve block types carry classification but **no
+Evidence presented: anno's twelve block types carry classification but **no
 confidence axis** — `Code` cannot distinguish observed-executing from
 reachable-never-run.
 
@@ -196,8 +196,8 @@ parser verbatim.
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| `--import_lbl` + stdio MCP + `save_project` | Proven live; uses r2000's own parser, no third copy of the format; satisfies R2000-15's literal wording | ✓ |
-| Parse the `.lbl` ourselves, then `set_label_name` per name | Full control, but a third parser copy and R2000-15 names `--import_lbl` explicitly | |
+| `--import_lbl` + stdio MCP + `save_project` | Proven live; uses anno's own parser, no third copy of the format; satisfies ANNO-15's literal wording | ✓ |
+| Parse the `.lbl` ourselves, then `set_label_name` per name | Full control, but a third parser copy and ANNO-15 names `--import_lbl` explicitly | |
 | You decide | | |
 
 **User's choice:** `--import_lbl` + stdio MCP + `save_project` (recommended).
@@ -240,23 +240,23 @@ parser verbatim.
 
 ## Residual scope items
 
-### Q1 — `r2000_get_address_details` is broken for every 64K project
+### Q1 — `anno_get_address_details` is broken for every 64K project
 
 | Option | Description | Selected |
 |--------|-------------|----------|
 | Exclude it; cover the need with the working tools | Its answer is a composite of tools measured working on 64K; capability honesty | |
 | Include it with a guard refusing 64K projects | Available where it works, but refusal is the common case here | |
-| Include it plus a client-side reimplementation for 64K | Full capability, but a second implementation of r2000's analysis | |
-| **Other (free text)** | "you decide and create an issue in r2000 GitHub project" | ✓ |
+| Include it plus a client-side reimplementation for 64K | Full capability, but a second implementation of anno's analysis | |
+| **Other (free text)** | "you decide and create an issue in anno GitHub project" | ✓ |
 
 **User's choice:** free text — delegated the disposition, and asked for an upstream issue.
 **Notes:** → **D-32**. Claude chose *exclude*; filed
-<https://github.com/ricardoquesada/regenerator2000/issues/42> with the
+an upstream repositoryissues/42> with the
 reproduction, the affected/unaffected tool table and a suggested fix. Also
 recorded that `analyzer.rs`/`html.rs` share the pattern and that `flow_analyze`
 survives by accident.
 
-### Q2 — `r2000_batch_execute` dispatches by inner tool name
+### Q2 — `anno_batch_execute` dispatches by inner tool name
 
 | Option | Description | Selected |
 |--------|-------------|----------|
@@ -271,7 +271,7 @@ survives by accident.
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Explicitly out of Phase 11; correct the roadmap wording | No requirement covers it; Phase 9 found auto-detection unreliable; synthesis never hands r2000 a container | ✓ |
+| Explicitly out of Phase 11; correct the roadmap wording | No requirement covers it; Phase 9 found auto-detection unreliable; synthesis never hands anno a container | ✓ |
 | Pick it up as scope here | Closes the loose end, but a VICE snapshot parser for a partly-unreliable payoff in the riskiest phase | |
 | You decide | | |
 
@@ -282,8 +282,8 @@ survives by accident.
 
 ## Claude's Discretion
 
-- **D-32** — excluding `r2000_get_address_details` and filing upstream issue #42.
-  Explicitly delegated ("you decide and create an issue in r2000 GitHub project").
+- **D-32** — excluding `anno_get_address_details` and filing upstream issue #42.
+  Explicitly delegated ("you decide and create an issue in anno GitHub project").
 - **D-35** — correcting `stock-symbols.ts`'s "STATED ASSUMPTION, NOT A VERIFIED
   FACT" note about `--export_lbl`, now verified live and scoped to 0.9.20 plus
   this fixture. Not asked; recorded because the file forbids claiming verified
@@ -303,9 +303,9 @@ the CLI verb names, and the module split inside the directory D-06 fixes.
 - Non-ACME export formats (`64tass`, `ca65`, `kick`).
 - Two-project-limit detection — and the observation that D-19 plus stdio may make
   the limit itself moot, so D-15's documented limitation may need narrowing.
-- `r2000_undo` / `r2000_redo` — unusable under D-17; git revert of the project
+- `anno_undo` / `anno_redo` — unusable under D-17; git revert of the project
   file is the substitute.
-- `r2000_set_immediate_format`'s `low_byte`/`high_byte` modes — strongest
+- `anno_set_immediate_format`'s `low_byte`/`high_byte` modes — strongest
   candidate for a later surface addition (pointer tables).
 - The fork-backend removal todo (semver-major) and the plugin-payload relocation
   todo (would invalidate every path in CONTEXT.md) — both reviewed, neither folded.

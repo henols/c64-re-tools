@@ -2,15 +2,15 @@
 phase: 09-the-assumption-probe-go-no-go
 plan: 07
 subsystem: infra
-tags: [regenerator2000, go-no-go, verdict, probe-findings, decision-rule]
+tags: [the external analyser, go-no-go, verdict, probe-findings, decision-rule]
 
 requires:
   - phase: 09-the-assumption-probe-go-no-go
-    provides: "All six evidence transcripts (waves 1-3) and five SUMMARY files (09-01 through 09-06) answering the five R2000-16 sub-assumptions against a real regenerator2000 0.9.20 build"
+    provides: "All six evidence transcripts (waves 1-3) and five SUMMARY files (09-01 through 09-06) answering the five ANNO-16 sub-assumptions against a real analyser 0.9.20 build"
 provides:
-  - "docs/phase9-regenerator2000-probe-findings.md: the durable, normative findings document consolidating all five criteria, with a machine-readable verdict in its frontmatter"
+  - "docs/phase9-external-analyser-probe-findings.md: the durable, normative findings document consolidating all five criteria, with a machine-readable verdict in its frontmatter"
   - "The go/no-go verdict: degrade, rule R4 fired (c3_4_vsf_load = partial), mechanically derived from the plan's own binding decision rule"
-  - "Two scope amendments for Phase 10/11: machine-type auto-detection from a stock-VICE .vsf must not be trusted (Phase 10 criterion 3 / the ROADMAP's .vsf-over-.raw constraint); use_illegal_opcodes must be set explicitly in generated project files (R2000-09 / Phase 10 criterion 4)"
+  - "Two scope amendments for Phase 10/11: machine-type auto-detection from a stock-VICE .vsf must not be trusted (Phase 10 criterion 3 / the ROADMAP's .vsf-over-.raw constraint); use_illegal_opcodes must be set explicitly in generated project files (ANNO-09 / Phase 10 criterion 4)"
   - "09-RESEARCH.md corrected in one pass: rustc floor >=1.90 (superseding >=1.88), Assumptions A1-A4 closed, Open Questions 1-3 closed, Pitfall 3 strengthened, Pitfall 4 corrected with measured numbers and the Debian-release glibc finding"
   - "09-VALIDATION.md signed off: nyquist_compliant: true, every criterion has a recorded real outcome (four pass, one partial), Per-Task Verification Map filled"
 affects: [09-08]
@@ -21,7 +21,7 @@ tech-stack:
 
 key-files:
   created:
-    - docs/phase9-regenerator2000-probe-findings.md
+    - docs/phase9-external-analyser-probe-findings.md
   modified:
     - .planning/phases/09-the-assumption-probe-go-no-go/09-RESEARCH.md
     - .planning/phases/09-the-assumption-probe-go-no-go/09-VALIDATION.md
@@ -30,9 +30,9 @@ key-decisions:
   - "Verdict is degrade via rule R4, not R3 or R5: criteria 2a/2b (pty tolerance, keystroke bootstrap) both passed cleanly, so the ROADMAP's 'documented one-time interactive step' half of the degrade route does not apply; what applies is the 'Phase 10/11 scope amended' half, via the two live scope amendments (criterion 3(2)'s use_illegal_opcodes default, criterion 3(4)'s machine-type coincidental default)"
   - "Criterion 1(5) (container toolchain cost) was fully measured (SINGLE_STAGE_BYTES/MULTI_STAGE_BYTES both numeric) and, per the plan's decision rule, never changes the verdict regardless of outcome -- recorded as measured, not scored as an accepted limit"
   - "Did not touch .planning/STATE.md or .planning/ROADMAP.md, per this plan's own explicit instruction -- plan 09-08 owns those two files and runs outside worktree isolation for exactly that reason"
-  - "Carried forward four out-of-scope findings with no other home (r2000_get_address_details u16-overflow defect, the broker's cross-connection session-continuity gap, the harness's own cargo-install classifier denial, and the two self-caught first-attempt discards) under a new '## Other findings' section, rather than dropping them or forcing them into the Accepted limits section where they do not belong (none of the four is a criterion failure)"
+  - "Carried forward four out-of-scope findings with no other home (anno_get_address_details u16-overflow defect, the broker's cross-connection session-continuity gap, the harness's own cargo-install classifier denial, and the two self-caught first-attempt discards) under a new '## Other findings' section, rather than dropping them or forcing them into the Accepted limits section where they do not belong (none of the four is a criterion failure)"
 
-requirements-completed: [R2000-16]
+requirements-completed: [ANNO-16]
 
 duration: ~45min
 completed: 2026-08-20
@@ -53,7 +53,7 @@ decision rule's first non-`reconsider` non-`proceed` match.**
 ## Accomplishments
 
 - Consolidated all six evidence transcripts from waves 1-3 into one durable,
-  normative document (`docs/phase9-regenerator2000-probe-findings.md`), matching the
+  normative document (`docs/phase9-external-analyser-probe-findings.md`), matching the
   shape this repo already uses for probe evidence (`docs/phase1-probe-results.md`,
   `docs/phase2-backend-probe-evidence.md`), with a deliberate frontmatter departure to
   carry the machine-readable verdict.
@@ -64,7 +64,7 @@ decision rule's first non-`reconsider` non-`proceed` match.**
 - Named two live scope amendments against specific Phase 10/11 targets (not merged,
   not generic): machine-type auto-detection from a `.vsf` must not be trusted (Phase 10
   criterion 3 / the ROADMAP's standing `.vsf`-over-`.raw` constraint), and
-  `use_illegal_opcodes` must be set explicitly in generated project files (`R2000-09` /
+  `use_illegal_opcodes` must be set explicitly in generated project files (`ANNO-09` /
   Phase 10 criterion 4's deletion decision, which is still earned since criterion 3(2)
   itself passed against real illegal opcodes).
 - Applied every `## RESEARCH CORRECTIONS` block from the six evidence files to
@@ -87,7 +87,7 @@ Each task was committed atomically:
 
 ## Files Created/Modified
 
-- `docs/phase9-regenerator2000-probe-findings.md` - the durable, normative go/no-go
+- `docs/phase9-external-analyser-probe-findings.md` - the durable, normative go/no-go
   document: `## Verdict` (first body section, decision rule reproduced verbatim), run
   date/host/build, summary table, one section per criterion (1, 1(5), 2a, 2b, 3(2),
   3(3), 3(4)), `## Accepted limits`, `## Other findings`, `## Corrections to prior
@@ -117,7 +117,7 @@ Each task was committed atomically:
   those two files and needs to run outside worktree isolation to do it.
 - **Four out-of-scope findings were carried forward under a new `## Other findings`
   section** rather than dropped or force-fit into Accepted limits (none is a criterion
-  failure): the `r2000_get_address_details` u16-overflow defect, the broker's
+  failure): the `anno_get_address_details` u16-overflow defect, the broker's
   cross-connection session-continuity gap, this agent harness's own `cargo install`
   classifier denial, and the two self-caught first-attempt discards (09-05's
   fork-vs-stock PATH shadowing, 09-06's cross-connection snapshot) — recorded as evidence
@@ -147,14 +147,14 @@ paths, or schema changes were added; the document is read-only evidence consolid
 
 - Plan 09-08 makes the `degrade` verdict discoverable from `.planning/STATE.md` and
   `.planning/ROADMAP.md` (a decision entry and ROADMAP pointers), completing criterion 5.
-- Phase 10 planning must read `docs/phase9-regenerator2000-probe-findings.md`'s
-  frontmatter `verdict` key before any plan is written, per `R2000-16`'s own wording,
+- Phase 10 planning must read `docs/phase9-external-analyser-probe-findings.md`'s
+  frontmatter `verdict` key before any plan is written, per `ANNO-16`'s own wording,
   and must apply the two named scope amendments (machine-type trust, explicit
   `use_illegal_opcodes` setting) at their named targets.
 
 ## Self-Check: PASSED
 
-- FOUND: `docs/phase9-regenerator2000-probe-findings.md`
+- FOUND: `docs/phase9-external-analyser-probe-findings.md`
 - FOUND: `.planning/phases/09-the-assumption-probe-go-no-go/09-07-SUMMARY.md`
 - FOUND commit `ed2bef0` (Task 1: findings document)
 - FOUND commit `a4b86c0` (Task 2: verdict set)

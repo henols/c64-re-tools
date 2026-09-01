@@ -229,7 +229,7 @@ conclusion.
 - **IN-02 — Still live, and now more likely to matter.** It names Phase 5's
   `DERIV-04` symbol store as its trigger, and `DERIV-04` **survived the cut**
   (it remains in Phase 5's requirement list, and gains a second reason to
-  exist as the consumer half of the regenerator2000 symbol round trip). Carried
+  exist as the consumer half of the external analyser symbol round trip). Carried
   forward as something Phase 5 must handle in its own tests: assert
   `symbolFor()` is injective per listing, or have `render()` warn / fall back
   to the numeric form on a detected name collision rather than silently

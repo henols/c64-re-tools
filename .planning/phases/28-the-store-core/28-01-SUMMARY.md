@@ -65,7 +65,7 @@ requirements-completed: [STORE-01, STORE-02, STORE-03, STORE-04, STORE-05, STORE
 
 coverage:
   - id: D1
-    description: "The data-type vocabulary is frozen at exactly twelve members in the r2000_set_data_type schema's own order and spelling, with the four split layouts derived rather than re-typed, and both arrays frozen"
+    description: "The data-type vocabulary is frozen at exactly twelve members in the anno_set_data_type schema's own order and spelling, with the four split layouts derived rather than re-typed, and both arrays frozen"
     requirement: "STORE-01"
     verification:
       - kind: unit
@@ -75,7 +75,7 @@ coverage:
         ref: "src/mcp/vice/anno-types.test.ts#SPLIT_DATA_TYPES is exactly the four split layouts, frozen, and every member of it is also a member of DATA_TYPES"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/anno-types.test.ts#the twelve members are pairwise distinct and none contains the substring r2000, so the rented-analyser removal gate (CUT-02) is unaffected by the vocabulary"
+        ref: "src/mcp/vice/anno-types.test.ts#the twelve members are pairwise distinct and none contains the substring anno, so the rented-analyser removal gate (CUT-02) is unaffected by the vocabulary"
         status: pass
       - kind: other
         ref: "planted violation OBSERVED: swapping lo_hi_address and hi_lo_address in DATA_TYPES reddened 2 of 3 tests; reverted before commit 5e1903f"
@@ -238,7 +238,7 @@ status: complete
 ## Accomplishments
 
 - **The whole store vertical works end to end on one range.** `setDataType(store, { start: 0x0810, endInclusive: 0x084f, dataType: "lo_hi_address" })` validates, persists, survives `closeStore` plus a reopen through a **fresh handle**, and reads back by value — `start` 0x0810, `endInclusive` 0x084F, `dataType` `"lo_hi_address"`, `bank` null — with the paint index resolving that row's id at 0x0820 and `NO_ROW` one past the inclusive end. `revertTo(handle, 0)` returns an empty `listRanges()` and revision 0.
-- **The milestone's one irreversible decision is frozen and pinned.** Twelve members in the `r2000_set_data_type` schema's own order and spelling, four split layouts **derived** by filtering rather than re-typed, both arrays `Object.freeze`d, and the pin **hand-written** so a silent vocabulary edit cannot silently edit its own expectation. Observed reddening: swapping `lo_hi_address` and `hi_lo_address` failed 2 of 3 tests.
+- **The milestone's one irreversible decision is frozen and pinned.** Twelve members in the `anno_set_data_type` schema's own order and spelling, four split layouts **derived** by filtering rather than re-typed, both arrays `Object.freeze`d, and the pin **hand-written** so a silent vocabulary edit cannot silently edit its own expectation. Observed reddening: swapping `lo_hi_address` and `hi_lo_address` failed 2 of 3 tests.
 - **`STORE-07`'s confinement is asserted, not promised.** `node:sqlite` is named by exactly one module of `shippedTsModules()`, proven with a `deepEqual` **and** a length assertion **and** a separate non-vacuity test. All four working access routes — single-line static, multi-line static, dynamic `import()`, `process.getBuiltinModule` — are proven catchable by the same `namesNodeSqlite()` predicate the real scan calls. Observed reddening: a real static import planted in `anno-index.ts` failed the assertion.
 - **The corrupt-file refusal SQLite will not give you.** A zero-length file, a non-database file, a foreign `schema_version` and a mid-file truncation are each refused with `AnnoStoreCorruptError` — because a zero-length file *opens*, reports `integrity_check` `ok` and returns an empty `sqlite_master`, making "your annotations are gone" and "there are no annotations" indistinguishable without the store's own refusal.
 - **The write sequence is pinned in both directions.** Behaviourally: three successive writes each advance the revision by exactly one, and a write based on a stale revision is refused with **both** numbers and leaves the revision untouched. Structurally, from the seam's own source: `begin immediate`, the CAS `update ... where id = 1 and revision = ?`, the changes-must-equal-1 check, the rollback, and exactly **one** `commit` statement in the module.
@@ -325,7 +325,7 @@ Recorded so a later reader does not mistake absence for oversight. Each is scope
 
 ## Issues Encountered
 
-- **`npm run test:automated` exits 1 on a clean tree, as the plan documents.** The gate is the failure list, not the exit code. Reconciled item by item with the broker confirmed stopped: **6 failures, all in `r2000-session.test.ts`** — the five named `plan 18-06:` tests (`R2000SpawnError: regenerator2000 was not found on PATH`; `R2000_BIN` is the documented alternative) plus the named load-sensitive flake at `r2000-session.test.ts:615`, confirmed at that exact line. Across three runs the flake appeared in two and not in the third (5 fail / 6 fail / 6 fail), exactly the behaviour the plan predicted. **No failure in any other file.** Test count rose 2517 → 2548, which is the 31 tests this plan adds.
+- **`npm run test:automated` exits 1 on a clean tree, as the plan documents.** The gate is the failure list, not the exit code. Reconciled item by item with the broker confirmed stopped: **6 failures, all in `anno-session.test.ts`** — the five named `plan 18-06:` tests (`AnnoSpawnError: The external analyser was not found on PATH`; `ANNO_BIN` is the documented alternative) plus the named load-sensitive flake at `anno-session.test.ts:615`, confirmed at that exact line. Across three runs the flake appeared in two and not in the third (5 fail / 6 fail / 6 fail), exactly the behaviour the plan predicted. **No failure in any other file.** Test count rose 2517 → 2548, which is the 31 tests this plan adds.
 - **`state.update-progress` could not find its target** (`"Progress field not found in STATE.md"`) — this project keeps its plan counters in STATE.md frontmatter rather than as a body progress bar. `completed_plans` was corrected by hand from 5 to 6; `percent` tracks phases and correctly stays at 17.
 - **`state.add-decision --summary-file` rejects a path outside the repo.** Worked around with a temporary directory under `.planning/`, removed afterwards. Not a defect in this plan's work.
 

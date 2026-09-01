@@ -475,7 +475,7 @@ case, which is the specific defect this criterion exists to remove" and correctl
 it. Criterion 4 says E6 is written `replaced-by:` "because Ghidra was *observed* resolving a
 strictly harder indirect dispatch".
 
-Both are defensible against different comparanda — harder than r2000's E6 precondition (which
+Both are defensible against different comparanda — harder than anno's E6 precondition (which
 required the pointer already typed `BlockType::Address`, whereas the fixture's `$00fb` pointer is
 written at runtime, per `criterion4-analyzer-audit.md:74`), easier than a real computed-index
 dispatch. But neither sentence names its comparand, so a reader moving between the two sections
@@ -486,7 +486,7 @@ The document does disclose the tension honestly at `:596-601` by naming the exac
 would flip E6 — this is a clarity issue, not a soundness one.
 
 **Fix:** Name the comparand in the criterion-4 sentence: "…resolving a dispatch strictly harder
-*than the one r2000's E6 preconditions admit* — the fixture's `$00fb` pointer is written at
+*than the one anno's E6 preconditions admit* — the fixture's `$00fb` pointer is written at
 runtime, where E6 requires it already typed `BlockType::Address`. It remains an easy case relative
 to a real computed-index dispatch, which is criterion 2's question and is `could-not-run`."
 

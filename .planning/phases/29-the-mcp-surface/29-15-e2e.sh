@@ -38,7 +38,7 @@
 #      it, because they fire late and name the wrong cause.
 #
 # LOCATION: this file lives under `.planning/`, deliberately. It greps for the
-# retired vocabulary by name, and `scripts/check-no-regenerator2000.mjs`'s
+# retired vocabulary by name, and `scripts/check-no-analyser.mjs`'s
 # scope is `git ls-files` minus the `.planning/` PREFIX -- so no allow-list
 # entry is needed and that gate's "temporary allow-list is empty" assertion
 # stays true. Its `phasePlanIds()` reader of this directory filters

@@ -2,7 +2,7 @@
 phase: 28-the-store-core
 plan: 03
 subsystem: testing
-tags: [block-class, r2000-coverage, anno-types, vocabulary-boundary, derived-cross-check, seam-03]
+tags: [block-class, anno-coverage, anno-types, vocabulary-boundary, derived-cross-check, seam-03]
 
 requires:
   - phase: 28-the-store-core
@@ -10,7 +10,7 @@ requires:
   - phase: 28-the-store-core
     provides: "anno-types.ts's LABEL_KINDS — the store's frozen four capitalised label kinds (plan 28-04)"
   - phase: 27-shared-seams-extracted
-    provides: "block-class.ts — the ONE store-vocabulary boundary, and r2000-coverage.test.ts's substitutability proof (SEAM-03)"
+    provides: "block-class.ts — the ONE store-vocabulary boundary, and anno-coverage.test.ts's substitutability proof (SEAM-03)"
 provides:
   - "blockClassAt accepts BOTH vocabularies: the store's lowercase code/undefined and the external analyser's capitalised Code/Undefined, with the transitional arm labelled and its removal condition stated as CUT-01"
   - "A derived TOTAL cross-check over all twelve DATA_TYPES members, with four non-vacuity assertions, replacing the header rationale that became false"
@@ -37,7 +37,7 @@ key-files:
   modified:
     - src/mcp/vice/block-class.ts
     - src/mcp/vice/block-class.test.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.test.ts
 
 key-decisions:
   - "The boundary accepts BOTH vocabularies rather than flipping to lowercase, because the live census input and all six committed coverage fixtures still carry the analyser's capitalised spellings — a flip would silently reclassify every one of them as data"
@@ -90,7 +90,7 @@ coverage:
     requirement: "STORE-01"
     verification:
       - kind: integration
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a lowercase label kind collapses the user tally to zero with no error -- the silent zero, made loud"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a lowercase label kind collapses the user tally to zero with no error -- the silent zero, made loud"
         status: pass
     human_judgment: false
   - id: D5
@@ -98,7 +98,7 @@ coverage:
     requirement: "STORE-01"
     verification:
       - kind: integration
-        ref: "src/mcp/vice/r2000-coverage.test.ts#derived agreement: every member of the store's label-kind vocabulary appears as a literal in the census's source"
+        ref: "src/mcp/vice/anno-coverage.test.ts#derived agreement: every member of the store's label-kind vocabulary appears as a literal in the census's source"
         status: pass
       - kind: other
         ref: "planted red: LABEL_KINDS reduced to three members -> 'the label-kind vocabulary has 3 members, not the four this agreement check is total over'"
@@ -111,20 +111,20 @@ coverage:
     description: "PRODUCTION_BLOCK_SPELLINGS is the derived, de-duplicated union of both accepted vocabularies, so the zero-overlap disjointness assertion stays a measurement"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the production block-spelling list is the DERIVED union of BOTH accepted vocabularies, with no duplicates"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the production block-spelling list is the DERIVED union of BOTH accepted vocabularies, with no duplicates"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#substitutability: the substituted vocabulary shares no string with EITHER accepted production vocabulary"
+        ref: "src/mcp/vice/anno-coverage.test.ts#substitutability: the substituted vocabulary shares no string with EITHER accepted production vocabulary"
         status: pass
     human_judgment: false
   - id: D7
-    description: "No measured census number, no fixture byte and no line of r2000-coverage.ts moved — the block-type change is additive acceptance, not a vocabulary migration"
+    description: "No measured census number, no fixture byte and no line of anno-coverage.ts moved — the block-type change is additive acceptance, not a vocabulary migration"
     verification:
       - kind: other
-        ref: "git diff --stat src/mcp/vice/fixtures/ src/mcp/vice/r2000-coverage.ts -> empty across all three task commits"
+        ref: "git diff --stat src/mcp/vice/fixtures/ src/mcp/vice/anno-coverage.ts -> empty across all three task commits"
         status: pass
       - kind: integration
-        ref: "src/mcp/vice/r2000-coverage.test.ts (all four census byte-count assertions and both substitutability proofs, unchanged) -> 116/116 pass"
+        ref: "src/mcp/vice/anno-coverage.test.ts (all four census byte-count assertions and both substitutability proofs, unchanged) -> 116/116 pass"
         status: pass
     human_judgment: false
   - id: D8
@@ -140,7 +140,7 @@ status: complete
 
 # Phase 28 Plan 03: Dual-Vocabulary Block Boundary and the Label-Kind Pin Summary
 
-**`blockClassAt` now accepts the store's lowercase twelve alongside the external analyser's capitalised four, with the false header rationale replaced and both vocabularies pinned by derived total cross-checks whose reddening was observed — no census number, fixture byte or line of `r2000-coverage.ts` moved.**
+**`blockClassAt` now accepts the store's lowercase twelve alongside the external analyser's capitalised four, with the false header rationale replaced and both vocabularies pinned by derived total cross-checks whose reddening was observed — no census number, fixture byte or line of `anno-coverage.ts` moved.**
 
 ## Performance
 
@@ -173,13 +173,13 @@ Each task was committed atomically:
 
 - `src/mcp/vice/block-class.ts` — comparison block accepts both vocabularies with the transitional arm labelled (`CUT-01` as its removal condition); header rationale paragraph replaced; `BlockClass`'s doc comment corrected; `blockClassAt`'s "total by construction" paragraph extended to both vocabularies. Import list still empty, signature still two arguments, traps 1–4 unchanged.
 - `src/mcp/vice/block-class.test.ts` — `STORE_*` constants renamed to `ANALYSER_*` (they always were the analyser's spellings); new section 2b with the derived total cross-check, its non-vacuity assertions and the recorded rationale reversal; analyser-arm pin; not-case-insensitive pin. New import: `DATA_TYPES` from `./anno-types.ts`.
-- `src/mcp/vice/r2000-coverage.test.ts` — `PRODUCTION_BLOCK_SPELLINGS` becomes the derived union; new `ANALYSER_BLOCK_SPELLINGS` and `CENSUS_FORBIDDEN_BLOCK_LITERALS`; new section 2c with the silent-zero test and the derived label-kind agreement; derived-union assertions. New imports: `DATA_TYPES` and `LABEL_KINDS` from `./anno-types.ts`.
+- `src/mcp/vice/anno-coverage.test.ts` — `PRODUCTION_BLOCK_SPELLINGS` becomes the derived union; new `ANALYSER_BLOCK_SPELLINGS` and `CENSUS_FORBIDDEN_BLOCK_LITERALS`; new section 2c with the silent-zero test and the derived label-kind agreement; derived-union assertions. New imports: `DATA_TYPES` and `LABEL_KINDS` from `./anno-types.ts`.
 
 ## Decisions Made
 
 - **Dual acceptance, not a flip.** The live census input and all six committed coverage fixtures carry the analyser's capitalised spellings. A straight flip to lowercase would reclassify every one as `data` — silently, which is the exact failure this plan exists against — and would force a fixture migration no criterion asks for. The capitalised arm is labelled TRANSITIONAL with its removal condition stated as a requirement id (`CUT-01`), never a phase number.
-- **The label-kind check partitions by measurement.** The plan specified "every member of `LABEL_KINDS` appears as a literal in `r2000-coverage.ts`". Measured: `"Auto"` does not, and correctly so — `computeLabelRatio` tests `System`/`Platform` then `User` and infers auto from neither matching, so it never needs to spell it. See Deviations.
-- **The absence supplement's exemption is derived and its size is asserted.** `"code"` and `"undefined"` are byte-identical to two neutral `BlockClass` tokens the census legitimately holds, so their presence in `r2000-coverage.ts` proves nothing either way — which is precisely the protection `block-class.ts`'s header records as lost. Exempting exactly those two, with the exemption list's contents asserted, is the honest measurement; a wider exemption would be a lowered floor.
+- **The label-kind check partitions by measurement.** The plan specified "every member of `LABEL_KINDS` appears as a literal in `anno-coverage.ts`". Measured: `"Auto"` does not, and correctly so — `computeLabelRatio` tests `System`/`Platform` then `User` and infers auto from neither matching, so it never needs to spell it. See Deviations.
+- **The absence supplement's exemption is derived and its size is asserted.** `"code"` and `"undefined"` are byte-identical to two neutral `BlockClass` tokens the census legitimately holds, so their presence in `anno-coverage.ts` proves nothing either way — which is precisely the protection `block-class.ts`'s header records as lost. Exempting exactly those two, with the exemption list's contents asserted, is the honest measurement; a wider exemption would be a lowered floor.
 - **Both constant forms kept.** Hand-written is right for the analyser (external, no importable home in this tree); derived is right for the store (exactly one home, and divergence from it IS the failure). The reversal is recorded beside the comment it reverses.
 
 ## Deviations from Plan
@@ -189,18 +189,18 @@ Each task was committed atomically:
 **1. [Rule 1 - Bug] The plan's Task 3 Test 3 premise was false against the tree: the census never spells `"Auto"`**
 
 - **Found during:** Task 3
-- **Issue:** The plan's behaviour spec said "every member of `LABEL_KINDS` appears as a literal in `r2000-coverage.ts`'s source read through `codeOnly(src, true)`". Written that way it failed immediately and correctly: `"User"`, `"System"` and `"Platform"` appear; `"Auto"` does not. `computeLabelRatio` tests `kind === "System" || kind === "Platform"` at `:1430` and `kind === "User"` at `:1432`, then infers auto from its `else` branch — so `"Auto"` is a first-class store member the census deliberately never spells. Asserting its presence would have forced either a pointless edit to the census (which the plan forbids) or a weakened assertion.
+- **Issue:** The plan's behaviour spec said "every member of `LABEL_KINDS` appears as a literal in `anno-coverage.ts`'s source read through `codeOnly(src, true)`". Written that way it failed immediately and correctly: `"User"`, `"System"` and `"Platform"` appear; `"Auto"` does not. `computeLabelRatio` tests `kind === "System" || kind === "Platform"` at `:1430` and `kind === "User"` at `:1432`, then infers auto from its `else` branch — so `"Auto"` is a first-class store member the census deliberately never spells. Asserting its presence would have forced either a pointless edit to the census (which the plan forbids) or a weakened assertion.
 - **Fix:** The check now PARTITIONS `LABEL_KINDS` by measurement into the members the census compares explicitly and the one it infers, and asserts the partition sizes (3 and 1). A behavioural half then drives each spelled member through a real report (`User` → user tally, `System`/`Platform` → `systemExcluded`) and proves the unspelled one genuinely IS the fallthrough by landing in the auto tally — so "absent" cannot be confused with "drifted". This is strictly stronger than the specified form: a re-spelt store member moves out of `spelled`, a census that starts comparing the fallthrough explicitly moves it in, and either direction moves a count. Both planted reds were observed against it.
-- **Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
-- **Verification:** `node --test r2000-coverage.test.ts` → 116/116; both planted reds observed and reverted.
+- **Files modified:** `src/mcp/vice/anno-coverage.test.ts`
+- **Verification:** `node --test anno-coverage.test.ts` → 116/116; both planted reds observed and reverted.
 - **Committed in:** `9f8f583`
 
 **2. [Rule 3 - Blocking] Widening `PRODUCTION_BLOCK_SPELLINGS` broke a second consumer the plan did not name**
 
 - **Found during:** Task 3
-- **Issue:** The plan named only the zero-overlap disjointness assertion at `:688-697` as a consumer of `PRODUCTION_BLOCK_SPELLINGS`. It has a second: the `SUPPLEMENT (not the proof)` test at `:818` iterates the same constant asserting `r2000-coverage.ts` contains no `"<spelling>"` literal. Measured before editing: `"code"` and `"undefined"` DO appear as literals in `r2000-coverage.ts` — they are the neutral `BlockClass` tokens the census legitimately holds — so the naive widening the plan specified would have turned that supplement red for a reason unrelated to its invariant.
+- **Issue:** The plan named only the zero-overlap disjointness assertion at `:688-697` as a consumer of `PRODUCTION_BLOCK_SPELLINGS`. It has a second: the `SUPPLEMENT (not the proof)` test at `:818` iterates the same constant asserting `anno-coverage.ts` contains no `"<spelling>"` literal. Measured before editing: `"code"` and `"undefined"` DO appear as literals in `anno-coverage.ts` — they are the neutral `BlockClass` tokens the census legitimately holds — so the naive widening the plan specified would have turned that supplement red for a reason unrelated to its invariant.
 - **Fix:** Split the two concerns. `PRODUCTION_BLOCK_SPELLINGS` is the full derived union (16 entries) and drives the disjointness assertion, as the plan requires. A new derived `CENSUS_FORBIDDEN_BLOCK_LITERALS` — the union minus the members byte-identical to a neutral `BlockClass` token — drives the absence supplement, with a comment recording that the subtraction IS the protection `block-class.ts`'s header just recorded as lost, and with `assert.deepEqual(..., ["code", "undefined"])` on the exemption so it cannot widen unnoticed. Neither guard's floor was lowered: the exempted pair is defended by the derived total cross-check and the substitutability proof, neither of which depends on a spelling being unspelled.
-- **Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.test.ts`
 - **Verification:** the supplement still runs over 14 spellings and passes; the exemption's exact contents are asserted.
 - **Committed in:** `9f8f583`
 
@@ -210,22 +210,22 @@ Each task was committed atomically:
 - **Issue:** The plan said "do not touch `BlockEntry`, `BlockClass` or `BlockClassifier`", meaning the declarations. But `BlockClass`'s doc comment carried the same claim the header rationale was being replaced for — "deliberately distinct from any store's own capitalised spelling … a left-behind comparison against a raw store string is meant to be observable, not accidentally compatible." Leaving it would have left a measurably-false rationale in the file, which the plan's own `T-28-staleguard` prohibition forbids.
 - **Fix:** Rewrote that comment's rationale sentence to record that two of the store's twelve members now do collide and to point at the header for the loss and the replacement guards. The type declaration itself is byte-identical; no export added, removed or renamed.
 - **Files modified:** `src/mcp/vice/block-class.ts`
-- **Verification:** 162 tests green across `block-class`, `r2000-coverage`, `comment-phase-pointers`, `docs-dangling-refs` and `shipped-modules`.
+- **Verification:** 162 tests green across `block-class`, `anno-coverage`, `comment-phase-pointers`, `docs-dangling-refs` and `shipped-modules`.
 - **Committed in:** `bc1fecd`
 
 ---
 
 **Total deviations:** 3 auto-fixed (1 bug, 1 blocking, 1 missing critical)
-**Impact on plan:** All three were necessary for correctness and each made the delivered guard stronger than the specified one. No scope creep: no new file, no install, no change to `r2000-coverage.ts`, no fixture touched.
+**Impact on plan:** All three were necessary for correctness and each made the delivered guard stronger than the specified one. No scope creep: no new file, no install, no change to `anno-coverage.ts`, no fixture touched.
 
 ## Verification
 
 | Gate | Result |
 |---|---|
-| `node --test block-class.test.ts r2000-coverage.test.ts` | 131/131 pass (baseline was 125; +6 new tests) |
-| `npm run test:automated`, VICE broker STOPPED | 2588 tests, 6 failures — **all six inside the named baseline**: the five `plan 18-06:` tests in `r2000-session.test.ts` (`regenerator2000` absent from `PATH`) plus the documented load-sensitive flake at `:615`. Zero failures outside the baseline. |
+| `node --test block-class.test.ts anno-coverage.test.ts` | 131/131 pass (baseline was 125; +6 new tests) |
+| `npm run test:automated`, VICE broker STOPPED | 2588 tests, 6 failures — **all six inside the named baseline**: the five `plan 18-06:` tests in `anno-session.test.ts` (`the external analyser` absent from `PATH`) plus the documented load-sensitive flake at `:615`. Zero failures outside the baseline. |
 | `npm run typecheck` | clean |
-| `git diff --stat src/mcp/vice/fixtures/ src/mcp/vice/r2000-coverage.ts` | empty |
+| `git diff --stat src/mcp/vice/fixtures/ src/mcp/vice/anno-coverage.ts` | empty |
 | `grep -vE '^\s*//' block-class.ts \| grep -c 'block.type ==='` | 4 |
 | `grep -c "store's vocabulary is" block-class.ts` | 1 |
 | `grep -cE "STORE_(CODE\|UNDEFINED\|OTHER)" block-class.test.ts` | 0 |
@@ -255,14 +255,14 @@ None — no external service configuration required. Zero installs; every import
 
 - `STORE-01`'s twelve-member block vocabulary now has a total, derived cross-check against the one interpreter of it, so a later store-vocabulary change reddens rather than moving a published figure.
 - **Open for `CUT-01`:** the transitional capitalised arm in `blockClassAt`, and the fixtures under `fixtures/coverage/` that require it. Its removal condition is stated in the module header — no capitalised-vocabulary producer remaining — and `block-class.test.ts`'s analyser-arm pin makes the removal a deliberate reddening edit.
-- **Recorded, not delivered (available larger alternative):** the label-kind boundary is still four inline comparisons in `r2000-coverage.ts` (`:1430`, `:1432`, `:1869`, `:2180`). This plan pins the agreement and makes the failure loud; extracting a `labelKindClassAt` and repointing all four sites remains available and is recorded in the new section's comment.
+- **Recorded, not delivered (available larger alternative):** the label-kind boundary is still four inline comparisons in `anno-coverage.ts` (`:1430`, `:1432`, `:1869`, `:2180`). This plan pins the agreement and makes the failure loud; extracting a `labelKindClassAt` and repointing all four sites remains available and is recorded in the new section's comment.
 - Wave 3 sibling `28-05` touches a disjoint file set (`anno-types.ts`, `anno-store.ts`, `anno-overlap.test.ts`); nothing here blocks it.
 
 ## Self-Check: PASSED
 
 - `src/mcp/vice/block-class.ts` — FOUND
 - `src/mcp/vice/block-class.test.ts` — FOUND
-- `src/mcp/vice/r2000-coverage.test.ts` — FOUND
+- `src/mcp/vice/anno-coverage.test.ts` — FOUND
 - `bc1fecd` — FOUND in git log
 - `c576367` — FOUND in git log
 - `9f8f583` — FOUND in git log

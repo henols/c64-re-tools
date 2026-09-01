@@ -11,9 +11,9 @@ requires:
   - phase: 29-07
     provides: "the two-verb CLI, `storePathWithinWorkspace()` already wired into `coverage`, and `block-class.test.ts`'s proof that `blockClassAt()` is total over the frozen twelve `DATA_TYPES`"
   - phase: 29-09
-    provides: "the `r2000` -> `anno` subcommand rename the generated banner had not caught up with"
+    provides: "the `anno` -> `anno` subcommand rename the generated banner had not caught up with"
 provides:
-  - "A `render-memmap` verb that renders from a Phase 28 annotation store with no regenerator2000 child anywhere on its path (D-17)"
+  - "A `render-memmap` verb that renders from a Phase 28 annotation store with no the external analyser child anywhere on its path (D-17)"
   - "`renderMemoryMap()`/`checkRenderedMemoryMap()` taking `{ storePath, provenancePath, workspaceRoot }`, opening ONE store handle per render with `mustExist` and closing it in a `finally`"
   - "Block kind interpreted in exactly one place: `blockClassAt()`. The renderer's second spelling of the store's block vocabulary is gone"
   - "`RENDERER_VERSION = \"3\"`, bumped in the same commit that changed the digest's canonical input"
@@ -41,10 +41,10 @@ key-files:
     - src/mcp/vice/anno-memmap-render.test.ts
     - src/mcp/vice/anno-cli.ts
     - src/mcp/vice/anno-cli.test.ts
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
 
 key-decisions:
-  - "The renderer's three `r2000_get_*` queries became `listRanges()`/`listLabels()`/`listComments()` on one handle, with the line-comment filter moved to the read boundary through `COMMENT_TYPES` rather than a re-typed `\"line\"` literal."
+  - "The renderer's three `anno_get_*` queries became `listRanges()`/`listLabels()`/`listComments()` on one handle, with the line-comment filter moved to the read boundary through `COMMENT_TYPES` rather than a re-typed `\"line\"` literal."
   - "The block kind goes through `blockClassAt()` and nowhere else; the Range/Contents column prints the store's own `dataType` spelling verbatim."
   - "`RenderMemoryMapOptions`/`CheckRenderedMemoryMapOptions` gained a REQUIRED `workspaceRoot` beyond the planned `projectPath` -> `storePath` rename, because T-29-52's mitigation (explicit root plus `mustExist`) cannot be expressed without it and `openStore()`'s default behaviour is to CREATE the file."
   - "The CLI's `render-memmap` positional is documented and refused as a `<store>`: it goes through `storePathWithinWorkspace()` against `repoRoot()` -- the same seam `coverage` uses -- and an absent store is refused by name rather than created."
@@ -60,7 +60,7 @@ requirements-completed: [CUT-01]
 
 coverage:
   - id: D1
-    description: "`render-memmap` renders a memory map from an annotation store with no regenerator2000 child on any path it reaches (D-17)"
+    description: "`render-memmap` renders a memory map from an annotation store with no the external analyser child on any path it reaches (D-17)"
     requirement: CUT-01
     verification:
       - kind: unit
@@ -70,7 +70,7 @@ coverage:
         ref: "src/mcp/vice/anno-cli.test.ts (47 tests, render-memmap argument contract + WR-09 write guard against a REAL store)"
         status: pass
       - kind: other
-        ref: "grep -a 'from \"./' over anno-memmap-render.ts and each of its four local imports: no anno-tools/anno-launch/anno-session/anno-mcp-client (or their r2000-* predecessors)"
+        ref: "grep -a 'from \"./' over anno-memmap-render.ts and each of its four local imports: no anno-tools/anno-launch/anno-session/anno-mcp-client (or their anno-* predecessors)"
         status: pass
     human_judgment: false
   - id: D2
@@ -107,11 +107,11 @@ coverage:
         status: pass
     human_judgment: false
   - id: D5
-    description: "Every regenerator2000 count this plan moved is re-pinned in the same commit, and the removal gate is green at this wave"
+    description: "Every the external analyser count this plan moved is re-pinned in the same commit, and the removal gate is green at this wave"
     requirement: CUT-01
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs -> exit 0 (module at 1/line 79, test file re-pinned 4 -> 2 and re-cited to 29-10)"
+        ref: "node scripts/check-no-analyser.mjs -> exit 0 (module at 1/line 79, test file re-pinned 4 -> 2 and re-cited to 29-10)"
         status: pass
       - kind: unit
         ref: "src/mcp/vice/removal-gate.test.ts#binary safety: the one occurrence in the NUL-carrying memmap renderer is reported, in-process (deepEqual hits, [79])"
@@ -137,7 +137,7 @@ status: complete
 
 # Phase 29 Plan 12: Rebuild `render-memmap` onto the Phase 28 store Summary
 
-**The memory-map renderer now reads `listRanges`/`listLabels`/`listComments` on one confined store handle instead of driving a regenerator2000 child through three `r2000_get_*` queries, with block kind routed through `blockClassAt()`, `RENDERER_VERSION` bumped "2" -> "3" alongside the digest's changed input, and the three previously-gated render tests converted to ungated store-backed tests rather than deleted.**
+**The memory-map renderer now reads `listRanges`/`listLabels`/`listComments` on one confined store handle instead of driving an external analyser child through three `anno_get_*` queries, with block kind routed through `blockClassAt()`, `RENDERER_VERSION` bumped "2" -> "3" alongside the digest's changed input, and the three previously-gated render tests converted to ungated store-backed tests rather than deleted.**
 
 ## Performance
 
@@ -149,12 +149,12 @@ status: complete
 
 ## Accomplishments
 
-- **D-17 discharged.** `renderMemoryMap()`'s three queries at the old `:353-355` are three store reads on a single handle opened once per render with an explicit `workspaceRoot` plus `mustExist` and closed in a `finally`. `queryR2000Json()` and the `runR2000Tool` import are gone; `checkRenderedMemoryMap()` reaches the same reads, so BOTH CLI entry points are clean. Neither the module nor any of its four local imports (`anno-store.ts`, `anno-types.ts`, `anno-confidence.ts`, `block-class.ts`) reaches `anno-tools.ts`, `anno-launch.ts`, `anno-session.ts` or `anno-mcp-client.ts`. **Plan 29-10 can now delete `anno-tools.ts` rather than discovering it is still load-bearing.**
+- **D-17 discharged.** `renderMemoryMap()`'s three queries at the old `:353-355` are three store reads on a single handle opened once per render with an explicit `workspaceRoot` plus `mustExist` and closed in a `finally`. `queryAnnoJson()` and the `runAnnoTool` import are gone; `checkRenderedMemoryMap()` reaches the same reads, so BOTH CLI entry points are clean. Neither the module nor any of its four local imports (`anno-store.ts`, `anno-types.ts`, `anno-confidence.ts`, `block-class.ts`) reaches `anno-tools.ts`, `anno-launch.ts`, `anno-session.ts` or `anno-mcp-client.ts`. **Plan 29-10 can now delete `anno-tools.ts` rather than discovering it is still load-bearing.**
 - **One spelling of the block vocabulary.** The renderer's `b.type === "Code"` test — a second interpretation of exactly what `block-class.ts` says is "interpreted HERE and nowhere else" — is replaced by `blockClassAt()`, whose totality over the frozen twelve `DATA_TYPES` 29-07 established by test. The Range/Contents column prints the store's own `dataType` verbatim (`code`, `lo_hi_address`, …).
-- **The digest's version moved with its input.** `computeRenderDigest()` canonicalises `RangeRow`/`LabelRow`/`CommentRow`; `RENDERER_VERSION` is `"3"`, pinned by a test naming the store re-point. `R2000Block`, `R2000Symbol` and `R2000Comment` are deleted — nothing in the build would have flagged them (`tsconfig.json` sets no `noUnusedLocals`), which is why their fate was stated rather than left to be discovered.
+- **The digest's version moved with its input.** `computeRenderDigest()` canonicalises `RangeRow`/`LabelRow`/`CommentRow`; `RENDERER_VERSION` is `"3"`, pinned by a test naming the store re-point. `AnnoBlock`, `AnnoSymbol` and `AnnoComment` are deleted — nothing in the build would have flagged them (`tsconfig.json` sets no `noUnusedLocals`), which is why their fate was stated rather than left to be discovered.
 - **The gated half was converted, not deleted.** The golden render, the `[unknown]`-grade case and the pipe-plus-newline cell-escaping case each build their input by writing ranges, labels and comments into a real store through `withRenderFixture()`, then drop their skip condition. The file reports **24 tests, 24 pass, 0 skipped** (it previously reported 3 skipped). The golden expectation now encodes store rows a reader can check by hand instead of what a disassembler would have produced.
 - **The `[unknown]` test finally makes the assertion its own name always made.** Its title has claimed since Phase 11 that "a malformed store comment throws rather than rendering silently"; its body never asserted it. A near-miss bracket token (`[confirmed_code]`) written straight into the store now makes `renderMemoryMap()` reject.
-- **Every moved count was re-pinned in the same commit.** The module stayed at exactly 1 occurrence on exactly line 79; the test file went 4 -> 2 (measured with `grep -ac`) and its allow-list entry was re-cited from 29-12 to 29-10, the plan that now ends it. `node scripts/check-no-regenerator2000.mjs` and `node scripts/audit-gate.mjs` both exit 0.
+- **Every moved count was re-pinned in the same commit.** The module stayed at exactly 1 occurrence on exactly line 79; the test file went 4 -> 2 (measured with `grep -ac`) and its allow-list entry was re-cited from 29-12 to 29-10, the plan that now ends it. `node scripts/check-no-analyser.mjs` and `node scripts/audit-gate.mjs` both exit 0.
 
 ## Task Commits
 
@@ -171,7 +171,7 @@ No REFACTOR commit: the GREEN edit left nothing to clean up.
 - `src/mcp/vice/anno-memmap-render.test.ts` — `withRenderFixture()` store builder; five digest tests; a provenance-liveness test that names no subject; the three gated render tests converted and unskipped.
 - `src/mcp/vice/anno-cli.ts` — `render-memmap` positional documented and refused as a `<store>`, confined through `storePathWithinWorkspace()` against `repoRoot()`, absent store refused rather than created, both calls pass `{ storePath, workspaceRoot }`.
 - `src/mcp/vice/anno-cli.test.ts` — the render-memmap refusal tests moved inside the workspace (a tmpdir path is now refused BY DESIGN), a new confinement-escape test, and the WR-09 write guard rebuilt over a REAL store so it still observes the write failure.
-- `scripts/check-no-regenerator2000.mjs` — the temporary allow-list entry for `anno-memmap-render.test.ts` re-pinned 4 -> 2 and re-cited to 29-10.
+- `scripts/check-no-analyser.mjs` — the temporary allow-list entry for `anno-memmap-render.test.ts` re-pinned 4 -> 2 and re-cited to 29-10.
 
 ## Decisions Made
 
@@ -187,7 +187,7 @@ See `key-decisions` in the frontmatter. The one worth restating here is the **es
 - **Issue:** The plan's Task 1 `<done>` says the three wire interfaces should end Task 1 "referenced only by `computeRenderDigest()`'s signature", i.e. that signature keeps the old types until Task 2. But Task 1's own `<verify>` gate is `npm run typecheck`, and once `renderMemoryMap()` reads store rows, passing them to a digest typed on the wire shapes does not compile. Keeping the old signature would have required hand-building wire-shaped objects — including a `type` field `LabelRow` has no equivalent for — which is the exact dishonesty Task 2 forbids.
 - **Fix:** Task 1 re-typed `computeRenderDigest()`'s three parameters to `RangeRow`/`LabelRow`/`CommentRow` and left the three `interface` declarations in place, unreferenced but still described by the comment above them. Task 2 deleted them together with the version bump and the comment re-anchor, exactly as planned. The plan's stated *reason* for deferring ("`computeRenderDigest()`'s signature would stop naming a type that exists and this task's typecheck gate would fail") is backwards: deleting them never failed typecheck; keeping the old signature did.
 - **Files modified:** `src/mcp/vice/anno-memmap-render.ts`
-- **Verification:** `npm run typecheck` green at every commit; `R2000Block`/`R2000Symbol`/`R2000Comment` absent from the module after `4447e17`, asserted by the co-located provenance test.
+- **Verification:** `npm run typecheck` green at every commit; `AnnoBlock`/`AnnoSymbol`/`AnnoComment` absent from the module after `4447e17`, asserted by the co-located provenance test.
 - **Committed in:** `1221202` (Task 1) and `4447e17` (Task 2)
 - **Consequence, stated rather than hidden:** for one intermediate commit (`1221202`) `RENDERER_VERSION` read `"2"` while the digest's input had already changed. `4447e17` closes that window; nothing shipped in between.
 
@@ -221,7 +221,7 @@ See `key-decisions` in the frontmatter. The one worth restating here is the **es
 **5. [Rule 1 - Bug] The generated banner named a subcommand that no longer exists**
 
 - **Found during:** Task 1 (the tracer's human-check, reading real rendered output)
-- **Issue:** Every generated memory map's banner read ``GENERATED by `vice-mcp r2000 render-memmap` ``. Plan 29-09 renamed that subcommand to `anno` at wave 5, so the banner instructed a reader to run a command that no longer exists — in a file whose whole purpose is telling a human how to regenerate it.
+- **Issue:** Every generated memory map's banner read ``GENERATED by `vice-mcp anno render-memmap` ``. Plan 29-09 renamed that subcommand to `anno` at wave 5, so the banner instructed a reader to run a command that no longer exists — in a file whose whole purpose is telling a human how to regenerate it.
 - **Fix:** The banner names `vice-mcp anno render-memmap`; the golden expectation moved with it.
 - **Files modified:** `src/mcp/vice/anno-memmap-render.ts`, `src/mcp/vice/anno-memmap-render.test.ts`
 - **Verification:** end-to-end run of the verb against a hand-built store; golden test asserts the new line exactly.
@@ -242,16 +242,16 @@ See `key-decisions` in the frontmatter. The one worth restating here is the **es
 - **Issue:** Three separate line pins sit on files this plan rewrites: the gate's `lines: { "anno-memmap-render.ts": [79] }` and `removal-gate.test.ts`'s `deepEqual(hits, [79])`; and `module-classification.ts`'s structured citations `anno-cli.ts:63` (`renderMemoryMap`), `anno-cli.ts:169` (`checkAcceptedOptions`) and `anno-memmap-render.test.ts:21` (`formatConfidenceComment`), all verified by containment in `module-classification.test.ts` Direction 9.
 - **Fix:** Every edit above those lines was made line-count-neutral — the import block was laid out so the provenance comment still starts where it must, the USAGE rewording preserved its line count, and the new store imports were placed so `formatConfidenceComment` stayed on line 21. No pin was rewritten to accommodate an edit; `module-classification.ts` was not touched at all.
 - **Files modified:** `src/mcp/vice/anno-memmap-render.ts`, `src/mcp/vice/anno-memmap-render.test.ts`, `src/mcp/vice/anno-cli.ts`
-- **Verification:** `node --test removal-gate.test.ts module-classification.test.ts` -> all pass; `node scripts/check-no-regenerator2000.mjs` -> exit 0.
+- **Verification:** `node --test removal-gate.test.ts module-classification.test.ts` -> all pass; `node scripts/check-no-analyser.mjs` -> exit 0.
 - **Committed in:** all four commits
 
 **8. [Rule 3 - Blocking] The gate script's own comment must not spell the subject**
 
 - **Found during:** Task 3
-- **Issue:** The re-pin comment explaining which two mentions remain named the `regenerator2000 availability gate (D-11)` test literally. `check-no-regenerator2000.mjs` allows itself exactly one occurrence (the `gate-self` exemption), by design: "a gate that exempts its own body is one edit away from exempting anything". The gate went red on its own new comment.
+- **Issue:** The re-pin comment explaining which two mentions remain named the `the external analyser availability gate (D-11)` test literally. `check-no-analyser.mjs` allows itself exactly one occurrence (the `gate-self` exemption), by design: "a gate that exempts its own body is one edit away from exempting anything". The gate went red on its own new comment.
 - **Fix:** The comment uses the `<subject>` placeholder and says why.
-- **Files modified:** `scripts/check-no-regenerator2000.mjs`
-- **Verification:** `node scripts/check-no-regenerator2000.mjs` -> exit 0.
+- **Files modified:** `scripts/check-no-analyser.mjs`
+- **Verification:** `node scripts/check-no-analyser.mjs` -> exit 0.
 - **Committed in:** `14a2b19`
 
 ---
@@ -280,14 +280,14 @@ Both of the plan's `<prohibitions>` carried `status: unverified, verification: f
 | tests | 2761 | 2836 |
 | pass | 2720 | 2805 |
 | fail | 7 | **6** |
-| Failing-file SET | `audit-integrity.test.ts` (2) + `r2000-session.test.ts` (5) | **`r2000-session.test.ts` only (6)** |
+| Failing-file SET | `audit-integrity.test.ts` (2) + `anno-session.test.ts` (5) | **`anno-session.test.ts` only (6)** |
 
 - **No file entered the set.** No regression attributable to this plan.
 - **`audit-integrity.test.ts` left the set**, and not because of this plan — it was repaired earlier in this phase (its census assertions were re-expressed as relations rather than pinned totals). Recorded here as an explained set change, per the baseline's own rule, not banked as an improvement.
-- `r2000-session.test.ts` at 6 rather than 5 is the documented load-sensitive variance ("5 in isolation, 6 under load"); the file is on plan 29-10's deletion set.
+- `anno-session.test.ts` at 6 rather than 5 is the documented load-sensitive variance ("5 in isolation, 6 under load"); the file is on plan 29-10's deletion set.
 - `vice-proxy.test.ts` is `MANUAL_ONLY_TESTS` and is excluded from this gate by construction; it was not run (the full glob does not terminate on this host).
 
-Single-command gates: `npm run typecheck` **0**, `node scripts/check-no-regenerator2000.mjs` **0**, `node scripts/audit-gate.mjs` **0**.
+Single-command gates: `npm run typecheck` **0**, `node scripts/check-no-analyser.mjs` **0**, `node scripts/audit-gate.mjs` **0**.
 
 ## User Setup Required
 
@@ -296,14 +296,14 @@ None - no external service configuration required.
 ## Next Phase Readiness
 
 - **Plan 29-10 (wave 7) is unblocked in the way this plan existed to unblock it.** Nothing reachable from the `render-memmap` verb imports the retired runner, so `anno-tools.ts` is deletable rather than load-bearing. 29-10's own `files_modified` already names `anno-memmap-render.test.ts` and the gate script, so re-citing this file's allow-list entry to 29-10 satisfies the reachability rule.
-- **Two things 29-10 should expect to find changed from what its plan text describes.** (a) This file's remaining `regenerator2000` count is **2**, not 4 — the two mentions belonging to the availability-gate test (the section comment above it and the test's own name). (b) The file's render half is no longer gated, so 29-10's "removes the gated half" is now only the availability-gate test plus its `skipReasonFor`/`assertR2000RequiredIfEnvSet` imports and the now-consumerless `SKIP_REASON` constant, which carries a comment saying exactly that.
+- **Two things 29-10 should expect to find changed from what its plan text describes.** (a) This file's remaining `the external analyser` count is **2**, not 4 — the two mentions belonging to the availability-gate test (the section comment above it and the test's own name). (b) The file's render half is no longer gated, so 29-10's "removes the gated half" is now only the availability-gate test plus its `skipReasonFor`/`assertAnnoRequiredIfEnvSet` imports and the now-consumerless `SKIP_REASON` constant, which carries a comment saying exactly that.
 - **Nothing in this plan touched 29-05 row 11.** It stays PERMANENT at 1, line 79, and both its enforcement points (the gate's `lines` pin and `removal-gate.test.ts`'s `deepEqual(hits, [79])`) are green.
 
 ## Self-Check: PASSED
 
-- Files claimed as modified, all present on disk: `src/mcp/vice/anno-memmap-render.ts`, `src/mcp/vice/anno-memmap-render.test.ts`, `src/mcp/vice/anno-cli.ts`, `src/mcp/vice/anno-cli.test.ts`, `scripts/check-no-regenerator2000.mjs`.
+- Files claimed as modified, all present on disk: `src/mcp/vice/anno-memmap-render.ts`, `src/mcp/vice/anno-memmap-render.test.ts`, `src/mcp/vice/anno-cli.ts`, `src/mcp/vice/anno-cli.test.ts`, `scripts/check-no-analyser.mjs`.
 - Commits present in `git log`: `1221202`, `5f94d38`, `4447e17`, `14a2b19`.
-- Plan-level `<verification>` re-run at HEAD: typecheck **0**; `node --test anno-memmap-render.test.ts anno-cli.test.ts block-class.test.ts removal-gate.test.ts module-classification.test.ts anno-store.test.ts` -> **213 pass, 0 fail, 0 skipped**; `check-no-regenerator2000.mjs` **0**; `audit-gate.mjs` **0**; every count taken against `anno-memmap-render.ts` used `grep -a`.
+- Plan-level `<verification>` re-run at HEAD: typecheck **0**; `node --test anno-memmap-render.test.ts anno-cli.test.ts block-class.test.ts removal-gate.test.ts module-classification.test.ts anno-store.test.ts` -> **213 pass, 0 fail, 0 skipped**; `check-no-analyser.mjs` **0**; `audit-gate.mjs` **0**; every count taken against `anno-memmap-render.ts` used `grep -a`.
 - No stubs, no skipped tests introduced, no `<verify>` left unrun. Nothing appended to `.planning/WINDOWS.md`.
 
 ---

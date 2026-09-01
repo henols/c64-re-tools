@@ -45,7 +45,7 @@
 // column with the default (binary) collation [...] No case folding, no Unicode
 // normalisation, no trimming." A search that case-folded would report a hit on
 // a label the store itself considers a DIFFERENT name, so the search and the
-// store would disagree about identity. `r2000_search_disassembly`'s
+// store would disagree about identity. `anno_search_disassembly`'s
 // case-insensitive default is the shape this deliberately does not copy, and
 // the divergence is named in the tool description rather than left for a caller
 // to discover from a missing hit.
@@ -168,7 +168,7 @@ export const ANNO_DERIVE_MAX_IMAGE_BYTES = ADDRESS_MAX - ADDRESS_MIN + 1;
 /** The default ceiling on how many bytes `searchAnnotations` will decode to
  * build its instruction corpus. Overridable through the environment variable of
  * the same name, READ AT CALL TIME (never frozen at module load) -- the same
- * read-at-call-time convention `r2000-tools.ts`'s `R2000_READ_REGION_MAX_BYTES`
+ * read-at-call-time convention `anno-tools.ts`'s `ANNO_READ_REGION_MAX_BYTES`
  * override uses, so one `node --test` process can point several different caps
  * at this code within a single run. */
 export const ANNO_SEARCH_MAX_CORPUS_BYTES = ADDRESS_MAX - ADDRESS_MIN + 1;
@@ -454,7 +454,7 @@ function assertMaxResults(request: SearchRequest | undefined): number {
 }
 
 /** True when the request did not explicitly disable this corpus. Enabled is the
- * default for all three, matching `r2000_search_disassembly`'s advertised
+ * default for all three, matching `anno_search_disassembly`'s advertised
  * shape. */
 function corpusEnabled(request: SearchRequest, corpus: CorpusName): boolean {
   const flag = request[`search_${corpus}`];

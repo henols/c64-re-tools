@@ -10,11 +10,11 @@ requires:
     provides: "plan 10-02/10-03/10-04's shipped bootstrap input set (.prg/.d64/flat 64K), plan 10-08's correct THIRD-PARTY-NOTICES.md notice, and 10-01's --vice guard -- this plan's four corrections all cite those plans' actual shipped outcomes"
 provides:
   - "ROADMAP.md criterion 3 and the standing .vsf constraint matching what shipped, not what was originally scoped"
-  - "REQUIREMENTS.md (R2000-03, R2000-08 fold note, R2000-09) and .planning/notes/regenerator2000-integration.md carrying the true dual MIT OR Apache-2.0 licence throughout, with no stray single-licence mentions left in either living document"
+  - "REQUIREMENTS.md (ANNO-03, ANNO-08 fold note, ANNO-09) and .planning/notes/external-analyser-integration.md carrying the true dual MIT OR Apache-2.0 licence throughout, with no stray single-licence mentions left in either living document"
   - "10-RESEARCH.md's Open Questions section, retitled (RESOLVED), each of the three questions annotated with the plan that settled it -- including Q2's departure from its own recommendation, stated explicitly for Phase 11"
   - "vice-wedge-triage/SKILL.md's contention discriminator and named causes, extending (not duplicating) the existing monitor_held_elsewhere material"
   - "Both folded todos moved to .planning/todos/completed/ with their resolving plan(s) recorded"
-affects: ["phase-11-r2000-mcp-surface (inherits Q2's package-boundary reasoning as annotated here)"]
+affects: ["phase-11-anno-mcp-surface (inherits Q2's package-boundary reasoning as annotated here)"]
 
 # Tech tracking
 tech-stack:
@@ -28,7 +28,7 @@ key-files:
   modified:
     - .planning/ROADMAP.md
     - .planning/REQUIREMENTS.md
-    - .planning/notes/regenerator2000-integration.md
+    - .planning/notes/external-analyser-integration.md
     - .planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-RESEARCH.md
     - .claude/skills/vice-wedge-triage/SKILL.md
     - .planning/todos/completed/2026-08-17-document-second-binmon-client-as-a-wedge-lookalike.md
@@ -61,10 +61,10 @@ completed: 2026-08-20
 
 ## Accomplishments
 
-- **ROADMAP.md**: Phase 10 criterion 3 now names all three shipped inputs (`.prg`, `.d64` with a named entry, flat 64K) instead of the original `.prg`-or-`.vsf` wording, with a bracketed note recording `.vsf`'s deferral to Phase 11's `c64-ram-capture` extension and the reason (D-03). The standing "prefer `.vsf` over `.raw`" constraint gained a sentence marking it as not applying to Phase 10, citing `docs/phase9-regenerator2000-probe-findings.md` § Accepted limits entry 2. Both edits confined to their two regions (`git diff --stat` showed 8 insertions / 2 deletions in one file, two hunks). A follow-up fix corrected two further Apache-2.0-only mentions in the same file (Overview prose, criterion 5) that the plan's own whole-tree verification grep would otherwise have caught.
-- **REQUIREMENTS.md / regenerator2000-integration.md**: `R2000-03`'s text, the folded `R2000-08` note (found to directly contradict the corrected `R2000-09` and fixed for consistency, Rule 1), `R2000-09`'s input-set wording, and the integration note's "Licensing" line all now say `MIT OR Apache-2.0`, each with a citation to Phase 9's correction. Two additional descriptive-prose mentions (`REQUIREMENTS.md`'s opening paragraph, the integration note's own opening description) were also corrected since the plan's verification greps every "Apache-2.0" occurrence in both files, not just the requirement text. No requirement checkbox was touched.
-- **10-RESEARCH.md**: Retitled `## Open Questions` to `## Open Questions (RESOLVED)`. Each of the three questions gained an inline `RESOLVED: plan 10-0X — <outcome>` line directly under its bolded title, original "What we know"/"What's unclear"/"Recommendation" prose left intact: Q1 (package-boundary reach) resolved by plan 10-04 as recommended; Q2 (`.d64` extraction) resolved by plan 10-03 **against** the research's own recommendation — a fresh `r2000-d64.ts` beside the seam rather than extending `d64-parse.mjs`, because `.claude/skills/**` is outside `@henols/vice-mcp`'s published `files[]`; Q3 (verb names) resolved by plan 10-04 (`bootstrap`, `export-asm`) and plan 10-05 (`verify`).
-- **vice-wedge-triage/SKILL.md**: Added one paragraph (in "## Two traps that read as a wedge and are not") stating the cheap tell (a socket that accepts a connection but never answers is contention, not a wedge) and naming the concrete causes (a hand-run `nc` session, a second Claude Code session, VICE's own `-remotemonitor`, any other 6502 debugger including regenerator2000's own `--vice`) — plus the explicit statement that this plugin's own r2000 route can never be one of them, since `--vice` is refused by construction and by a throwing scan (`R2000-01`, plan 10-01), not by documentation alone. No new table row or verdict entry added — verified the `monitor_held_elsewhere` literal count in the file is unchanged (6 before, 6 after).
+- **ROADMAP.md**: Phase 10 criterion 3 now names all three shipped inputs (`.prg`, `.d64` with a named entry, flat 64K) instead of the original `.prg`-or-`.vsf` wording, with a bracketed note recording `.vsf`'s deferral to Phase 11's `c64-ram-capture` extension and the reason (D-03). The standing "prefer `.vsf` over `.raw`" constraint gained a sentence marking it as not applying to Phase 10, citing `docs/phase9-external-analyser-probe-findings.md` § Accepted limits entry 2. Both edits confined to their two regions (`git diff --stat` showed 8 insertions / 2 deletions in one file, two hunks). A follow-up fix corrected two further Apache-2.0-only mentions in the same file (Overview prose, criterion 5) that the plan's own whole-tree verification grep would otherwise have caught.
+- **REQUIREMENTS.md / external-analyser-integration.md**: `ANNO-03`'s text, the folded `ANNO-08` note (found to directly contradict the corrected `ANNO-09` and fixed for consistency, Rule 1), `ANNO-09`'s input-set wording, and the integration note's "Licensing" line all now say `MIT OR Apache-2.0`, each with a citation to Phase 9's correction. Two additional descriptive-prose mentions (`REQUIREMENTS.md`'s opening paragraph, the integration note's own opening description) were also corrected since the plan's verification greps every "Apache-2.0" occurrence in both files, not just the requirement text. No requirement checkbox was touched.
+- **10-RESEARCH.md**: Retitled `## Open Questions` to `## Open Questions (RESOLVED)`. Each of the three questions gained an inline `RESOLVED: plan 10-0X — <outcome>` line directly under its bolded title, original "What we know"/"What's unclear"/"Recommendation" prose left intact: Q1 (package-boundary reach) resolved by plan 10-04 as recommended; Q2 (`.d64` extraction) resolved by plan 10-03 **against** the research's own recommendation — a fresh `anno-d64.ts` beside the seam rather than extending `d64-parse.mjs`, because `.claude/skills/**` is outside `@henols/vice-mcp`'s published `files[]`; Q3 (verb names) resolved by plan 10-04 (`bootstrap`, `export-asm`) and plan 10-05 (`verify`).
+- **vice-wedge-triage/SKILL.md**: Added one paragraph (in "## Two traps that read as a wedge and are not") stating the cheap tell (a socket that accepts a connection but never answers is contention, not a wedge) and naming the concrete causes (a hand-run `nc` session, a second Claude Code session, VICE's own `-remotemonitor`, any other 6502 debugger including the external analyser's own `--vice`) — plus the explicit statement that this plugin's own anno route can never be one of them, since `--vice` is refused by construction and by a throwing scan (`ANNO-01`, plan 10-01), not by documentation alone. No new table row or verdict entry added — verified the `monitor_held_elsewhere` literal count in the file is unchanged (6 before, 6 after).
 - **Both folded todos** moved from `.planning/todos/pending/` to `.planning/todos/completed/` via `git mv`, each with an appended `## Resolved 2026-08-20` block naming the resolving plan(s) and file(s): the wedge-lookalike todo across plans 10-09 (item 1), 10-08 (item 2), 10-01 (item 3); the acme scaffold todo entirely by plan 10-07.
 
 ## Task Commits
@@ -87,25 +87,25 @@ Each task was committed atomically:
 - **Files modified:** `.planning/ROADMAP.md`
 - **Commit:** `592ce87`
 
-**2. [Rule 1 - Bug] Folded `R2000-08` note contradicted the just-corrected `R2000-09`**
+**2. [Rule 1 - Bug] Folded `ANNO-08` note contradicted the just-corrected `ANNO-09`**
 - **Found during:** Task 2 (reading REQUIREMENTS.md's "Out of Scope" section for context)
-- **Issue:** The `R2000-08` fold note (a historical "Out of Scope" entry) still said "Prefer `.vsf`" as the note's own guidance, directly contradicting `R2000-09`'s newly-corrected text stating `.vsf` was dropped from Phase 10 entirely
-- **Fix:** Amended the note to state the original preference, then mark it superseded by D-03 with the same reasoning `R2000-09` now carries
+- **Issue:** The `ANNO-08` fold note (a historical "Out of Scope" entry) still said "Prefer `.vsf`" as the note's own guidance, directly contradicting `ANNO-09`'s newly-corrected text stating `.vsf` was dropped from Phase 10 entirely
+- **Fix:** Amended the note to state the original preference, then mark it superseded by D-03 with the same reasoning `ANNO-09` now carries
 - **Files modified:** `.planning/REQUIREMENTS.md`
 - **Commit:** `a0a57e7`
 
 ### Self-collision avoidance (not a deviation, documented per prior plans' convention)
 
-Both `REQUIREMENTS.md` and `regenerator2000-integration.md`'s correction-annotation text originally used the literal substring "Apache-2.0-only", which would have tripped the task's own acceptance-criteria grep (`grep -n 'Apache-2.0' ... | grep -v 'MIT OR Apache-2.0'`). Reworded to "single-licence reading" before committing — same class of issue plans 10-01/10-04/10-05/10-07 each hit and documented.
+Both `REQUIREMENTS.md` and `external-analyser-integration.md`'s correction-annotation text originally used the literal substring "Apache-2.0-only", which would have tripped the task's own acceptance-criteria grep (`grep -n 'Apache-2.0' ... | grep -v 'MIT OR Apache-2.0'`). Reworded to "single-licence reading" before committing — same class of issue plans 10-01/10-04/10-05/10-07 each hit and documented.
 
 ## Verification
 
-- `grep -c 'd64'` / `grep -c 'phase9-regenerator2000-probe-findings'` on ROADMAP.md: 2 / 6, both present
-- `! grep -n 'Apache-2.0' .planning/REQUIREMENTS.md .planning/notes/regenerator2000-integration.md | grep -v 'MIT OR Apache-2.0'`: passes (exit 0)
+- `grep -c 'd64'` / `grep -c 'phase9-external-analyser-probe-findings'` on ROADMAP.md: 2 / 6, both present
+- `! grep -n 'Apache-2.0' .planning/REQUIREMENTS.md .planning/notes/external-analyser-integration.md | grep -v 'MIT OR Apache-2.0'`: passes (exit 0)
 - `grep -rn 'Apache-2.0' .planning/ | grep -v 'MIT OR Apache-2.0'`: after the follow-up fix, all remaining hits are inside archived/append-only history (`.planning/milestones/v0.2.0-*`, `09-RESEARCH.md`, `evidence/*`, `CONTEXT.md`, other plans' `PLAN.md`/`SUMMARY.md` files, and one plan-title mention describing the correction itself) or unrelated (`research/SCREENSHOT.md`'s `sharp` library entry) — none is a live false claim in a document this plan owns
 - `grep -c '^## Open Questions (RESOLVED)$'` / `'^## Open Questions$'` on 10-RESEARCH.md: 1 / 0
 - `grep -c 'RESOLVED: plan 10-0'` on 10-RESEARCH.md: exactly 3
-- `grep -c 'r2000-d64'` on 10-RESEARCH.md: ≥ 1 (Q2 names it)
+- `grep -c 'anno-d64'` on 10-RESEARCH.md: ≥ 1 (Q2 names it)
 - Q3's RESOLVED line names `bootstrap`, `export-asm` and `verify`
 - `git diff --numstat` on 10-RESEARCH.md: 4 insertions / 1 deletion (the retitled heading), no other line removed — original question text intact
 - `test ! -e` on both pending todo paths, `test -e` on both completed paths: all four pass
@@ -131,7 +131,7 @@ None — this plan's threat register (T-10-15, T-10-17, T-10-18, T-10-01, T-10-S
 
 - FOUND: `.planning/ROADMAP.md` (git show HEAD~3:.planning/ROADMAP.md through HEAD, all four commits present)
 - FOUND: `.planning/REQUIREMENTS.md`
-- FOUND: `.planning/notes/regenerator2000-integration.md`
+- FOUND: `.planning/notes/external-analyser-integration.md`
 - FOUND: `.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-RESEARCH.md`
 - FOUND: `.claude/skills/vice-wedge-triage/SKILL.md`
 - FOUND: `.planning/todos/completed/2026-08-17-document-second-binmon-client-as-a-wedge-lookalike.md`

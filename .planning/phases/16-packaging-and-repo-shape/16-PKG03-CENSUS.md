@@ -104,7 +104,7 @@ scope.
 
 The complete unflagged remainder (109 lines) is accurate historical
 narration: citations of a completed phase's decision or delivery ("Phase
-3's D-05", "Phase 5's DERIV-04 store", "verified Phase 9, R2000-16(c)"),
+3's D-05", "Phase 5's DERIV-04 store", "verified Phase 9, ANNO-16(c)"),
 cross-references to a phase's own criterion or requirement ("Phase 2's
 BACK-04 capability resolution routes"), and the relocation-history entries
 in `repo-root.ts`/`repo-root.test.ts` narrating this project's four prior

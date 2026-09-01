@@ -192,7 +192,7 @@ exactly `{@mastra/mcp, @mastra/core}` and `files[]` is still 44 entries.
 | T-05-08-02 | Repudiation | mitigate | absent-from-stock assertions `:222,228-230`; live-allowlist assertion `:237-240` |
 | T-05-08-03 | Tampering | mitigate | only `readdirSync`/`readFileSync`/`statSync` imported `:25`; `vice-proxy.ts` and `vice.ts` read as text `:184,195`; zero `import()`/`require()`/`eval`/`spawn` of skill content |
 | T-05-08-04 | DoS | mitigate | walk rooted at `.claude/skills/`, `node_modules` segment skipped `:50`, no symlink descent out of tree |
-| T-05-08-05 | Info disclosure | mitigate | `docs/stock-vice-parity.md:93-96` splits VERIFIED (wire body) from ASSUMED (emulator read path); `R2000-16` recorded as an assumption `:196` |
+| T-05-08-05 | Info disclosure | mitigate | `docs/stock-vice-parity.md:93-96` splits VERIFIED (wire body) from ASSUMED (emulator read path); `ANNO-16` recorded as an assumption `:196` |
 | T-05-08-06 | Repudiation | mitigate | `vice_keyboard_restore` allowlisted with reason/route `check-skill-tool-coverage.mjs:164`; the ROADMAP discrepancy written into `docs/stock-vice-parity.md:206` and not silently rewritten |
 | T-05-08-07 | DoS | **accept** | see accepted-risks log AR-1 |
 

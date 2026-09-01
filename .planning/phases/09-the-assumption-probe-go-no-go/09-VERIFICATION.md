@@ -8,7 +8,7 @@ overrides_applied: 0
 
 # Phase 9: The Assumption Probe (Go/No-Go) Verification Report
 
-**Phase Goal:** The five load-bearing assumptions are answered against a real regenerator2000
+**Phase Goal:** The five load-bearing assumptions are answered against a real analyser
 build, and a recorded verdict says whether v0.3.0 proceeds as scoped, degrades, or should be
 reconsidered.
 **Verified:** 2026-08-20
@@ -18,7 +18,7 @@ reconsidered.
 ## What This Phase Is
 
 A probe/gate phase. It deliberately produces no product code — evidence transcripts under
-`evidence/`, one durable findings document (`docs/phase9-regenerator2000-probe-findings.md`),
+`evidence/`, one durable findings document (`docs/phase9-external-analyser-probe-findings.md`),
 and a machine-readable verdict. Absence of source changes and new tests is by design and is not
 treated as a gap.
 
@@ -28,11 +28,11 @@ treated as a gap.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | A real regenerator2000 build is present, version recorded, container-side toolchain cost measured rather than estimated | VERIFIED | `evidence/criterion1-install-and-version.txt:186` `INSTALLED_VERSION: regenerator2000 0.9.20`; `evidence/criterion1-container-toolchain-cost.txt:344,346` `SINGLE_STAGE_BYTES: 1256576420`, `MULTI_STAGE_BYTES: 250820636` (both numeric, both measured, not estimated) |
+| 1 | A real the external analyser build is present, version recorded, container-side toolchain cost measured rather than estimated | VERIFIED | `evidence/criterion1-install-and-version.txt:186` `INSTALLED_VERSION: The external analyser 0.9.20`; `evidence/criterion1-container-toolchain-cost.txt:344,346` `SINGLE_STAGE_BYTES: 1256576420`, `MULTI_STAGE_BYTES: 250820636` (both numeric, both measured, not estimated) |
 | 2 | The pty question is answered by running it, with the Save-As bootstrap outcome recorded with its transcript | VERIFIED | `evidence/criterion2-pty-transcript.txt`: `PTY_TOLERANCE: pass`, `BOOTSTRAP_AUTOMATABLE: pass` — a real tmux pty session drove Alt+S, confirmed the resulting `.regen2000proj` loads in a **separate, freshly-started, non-pty** `--headless` invocation (exit 0, label export succeeded) |
 | 3 | The three downstream assumptions (reassembly, `--export_lbl`, `.vsf` load) are each answered against real artifacts | VERIFIED | `evidence/criterion3-reassembly.txt:395` `REASSEMBLY: pass`; `evidence/criterion3-export-lbl.txt:630` `EXPORT_LBL: pass`; `evidence/criterion4-vsf-load.txt:862` `VSF_LOAD: partial` — a genuine mixed result, recorded honestly rather than rounded up |
-| 4 | Every answer recorded as re-readable evidence; every failure recorded as an accepted limit naming what it breaks | VERIFIED | `docs/phase9-regenerator2000-probe-findings.md` `## Accepted limits` (line 436) names two live limits, each tied to a specific requirement/criterion (`R2000-09`/Phase 10 criterion 4 for the illegal-opcode default; Phase 10 criterion 3 + the ROADMAP's `.vsf`-over-`.raw` constraint for the machine-type default) |
-| 5 | A go/no-go verdict is recorded naming one of proceed/degrade/reconsider, machine-readable, at a stated location | VERIFIED (see adjudication below) | `docs/phase9-regenerator2000-probe-findings.md` frontmatter `verdict: degrade`, `verdict_rule_applied: R4`; discoverable from `.planning/STATE.md:137` and `.planning/ROADMAP.md` Phase 9/10/11 Notes |
+| 4 | Every answer recorded as re-readable evidence; every failure recorded as an accepted limit naming what it breaks | VERIFIED | `docs/phase9-external-analyser-probe-findings.md` `## Accepted limits` (line 436) names two live limits, each tied to a specific requirement/criterion (`ANNO-09`/Phase 10 criterion 4 for the illegal-opcode default; Phase 10 criterion 3 + the ROADMAP's `.vsf`-over-`.raw` constraint for the machine-type default) |
+| 5 | A go/no-go verdict is recorded naming one of proceed/degrade/reconsider, machine-readable, at a stated location | VERIFIED (see adjudication below) | `docs/phase9-external-analyser-probe-findings.md` frontmatter `verdict: degrade`, `verdict_rule_applied: R4`; discoverable from `.planning/STATE.md:137` and `.planning/ROADMAP.md` Phase 9/10/11 Notes |
 
 **Score:** 5/5 truths verified
 
@@ -40,7 +40,7 @@ treated as a gap.
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `docs/phase9-regenerator2000-probe-findings.md` | Durable findings doc, verdict in frontmatter, ≥90 lines, cites ≥5 evidence files | VERIFIED | 606 lines; frontmatter has `verdict`, `verdict_rule_applied`, seven `criteria:` keys; body has `## Verdict` (first section), `### Scope amendments`, `## Accepted limits`, `## Corrections to prior documents`, `## Reproducing this`; cites all six `evidence/criterion*` files |
+| `docs/phase9-external-analyser-probe-findings.md` | Durable findings doc, verdict in frontmatter, ≥90 lines, cites ≥5 evidence files | VERIFIED | 606 lines; frontmatter has `verdict`, `verdict_rule_applied`, seven `criteria:` keys; body has `## Verdict` (first section), `### Scope amendments`, `## Accepted limits`, `## Corrections to prior documents`, `## Reproducing this`; cites all six `evidence/criterion*` files |
 | `.planning/phases/09-the-assumption-probe-go-no-go/09-VALIDATION.md` | Signed off, `nyquist_compliant: true` | VERIFIED | Frontmatter `status: complete`, `nyquist_compliant: true`, `wave_0_complete: true`; sign-off checklist fully checked with evidence citations per line |
 | `evidence/criterion{0,1,2,3,4}*.txt` (6 transcripts) + harness scripts | Raw evidence for every criterion | VERIFIED | All six transcripts present and readable; outcome lines match what the findings document and 09-07-SUMMARY report |
 | `.planning/STATE.md` decision entry | Points at the findings doc, disambiguates the verdict | VERIFIED | Line 137: verdict + rule + triggering input + path. Line 40-45 "Current Position" explicitly states "not a documented manual bootstrap step, since criteria 2a/2b both passed cleanly" |
@@ -59,9 +59,9 @@ treated as a gap.
 
 | Requirement | Source Plans | Description | Status | Evidence |
 |-------------|--------------|--------------|--------|----------|
-| R2000-16 | 09-01 through 09-08 (all eight) | Five load-bearing assumptions checked against a real build before further planning, evidence recorded, failures as accepted limits | SATISFIED | All five sub-parts (1)-(5) have recorded, evidence-backed outcomes; verdict recorded and discoverable per criteria above |
+| ANNO-16 | 09-01 through 09-08 (all eight) | Five load-bearing assumptions checked against a real build before further planning, evidence recorded, failures as accepted limits | SATISFIED | All five sub-parts (1)-(5) have recorded, evidence-backed outcomes; verdict recorded and discoverable per criteria above |
 
-No orphaned requirements: REQUIREMENTS.md maps only `R2000-16` to Phase 9, and all eight plans declare `requirements: [R2000-16]`.
+No orphaned requirements: REQUIREMENTS.md maps only `ANNO-16` to Phase 9, and all eight plans declare `requirements: [ANNO-16]`.
 
 ### Anti-Patterns Found
 
@@ -95,7 +95,7 @@ bootstrap criteria (`c2a`, `c2b`) both passed?
 this phase's execution — and this phase's own artifacts identify and correct it explicitly, in
 three independent places:**
 
-1. **The findings document itself** (`docs/phase9-regenerator2000-probe-findings.md`, `## Verdict`)
+1. **The findings document itself** (`docs/phase9-external-analyser-probe-findings.md`, `## Verdict`)
    quotes the ROADMAP's exact words for `degrade`, then states directly: *"except this phase's
    own `R4` (not `R3`) is what fired: the bootstrap itself (criteria 2a/2b) passed cleanly, so
    the 'documented one-time interactive step' half of that ROADMAP sentence does **not** apply

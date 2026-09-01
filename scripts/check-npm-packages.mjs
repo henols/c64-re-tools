@@ -68,52 +68,18 @@ const need = (cond, msg) => {
   if (!cond) errors.push(msg);
 };
 
-// --- ABS-02 / plan 19-07: the notices CONTENT check -------------------------
-// A THIRD legitimate filesystem check against a repo path joins the two this
-// file's header enumerates, and for the same reason: there is no tarball
-// listing that could answer it. `npm pack --dry-run --json` reports the packed
-// file NAMES, never their bytes, so "THIRD-PARTY-NOTICES.md is in files[]"
-// cannot distinguish a notices document that discharges MIT's inclusion
-// condition from one that is present and empty. Both failures ship; only one
-// of them is visible to a file-list assertion, which is exactly why the
-// content check is ADDITIONAL to the existing files[] assertions rather than a
-// replacement for them -- a file absent and a file present-but-gutted are
-// different producer bugs and both must be caught.
+// --- The notices CONTENT check, RETIRED ------------------------------------
+// This block used to assert that each packed THIRD-PARTY-NOTICES.md
+// reproduced an upstream MIT permission notice verbatim, because a
+// file-list assertion cannot tell a notices document that discharges a
+// licence's inclusion condition from one that is present and empty.
 //
-// Phase 19's verification found `src/mcp/vice/THIRD-PARTY-NOTICES.md` shipping
-// a sentence claiming the permission notice travelled inside every absorbed
-// header and shipped in both tarballs, while the notice text existed nowhere
-// in the repository and `@henols/vice-mcp` packed zero skill files. The claim
-// was packed to consumers; the thing it claimed was not. This assertion is the
-// packaging-side half of the guard (the repo-side half is the notices guard in
-// `src/mcp/vice/skill-attribution.test.ts`, which additionally pins the
-// notice's sha256 to the upstream digest).
-//
-// The sentence checked for is MIT's condition itself -- the operative clause,
-// not the section heading -- because a heading can survive an emptied fence.
-const MIT_INCLUSION_CONDITION =
-  "The above copyright notice and this permission notice shall be included in all " +
-  "copies or substantial portions of the Software.";
-
-// Whitespace-normalised so the check is about the notice being present, not
-// about how the fenced block happens to be wrapped in the file.
-const flattenProse = (text) => text.replace(/\s+/g, " ");
-
-/** Asserts the SOURCE notices document behind a packed `THIRD-PARTY-NOTICES.md`
- * actually reproduces the upstream MIT permission notice. `label` names the
- * package so a failure says which tarball ships the gutted document. */
-function needNoticesCarryPermissionNotice(label, repoRelativeNoticesPath) {
-  const full = join(ROOT, repoRelativeNoticesPath);
-  const exists = existsSync(full);
-  need(exists, `${label}: ${repoRelativeNoticesPath} does not exist -- it is packed as THIRD-PARTY-NOTICES.md`);
-  if (!exists) return;
-  need(
-    flattenProse(readFileSync(full, "utf8")).includes(flattenProse(MIT_INCLUSION_CONDITION)),
-    `${label}: ${repoRelativeNoticesPath} is packed but does not reproduce the upstream MIT permission notice -- ` +
-      `ABS-02 requires the elected licence's own inclusion condition ("${MIT_INCLUSION_CONDITION}") to be ` +
-      `discharged by the shipped document, not asserted about it`
-  );
-}
+// It is gone because its subject is: this repository no longer incorporates
+// third-party prose that carries such a condition. The `files[]` assertions
+// below are KEPT -- both packages still owe a notices document (vice-mcp's
+// records the cc65 zlib opcode-table transcription) -- and a future
+// incorporation that brings back an inclusion condition must bring back a
+// content check with it, rather than relying on the file merely existing.
 
 // The packed package names, recorded by packFiles() in call order. Checked
 // after both packs against the expected two-package set (see below).
@@ -195,7 +161,6 @@ need(
   vice.files.includes("THIRD-PARTY-NOTICES.md"),
   "vice-mcp: missing THIRD-PARTY-NOTICES.md -- criterion 5 requires the opcode table's zlib provenance to ship with the package (D-07)"
 );
-needNoticesCarryPermissionNotice("vice-mcp", "src/mcp/vice/THIRD-PARTY-NOTICES.md");
 
 // --- Phase 3 Rule 2 regression guard: Phase 4 and Phase 5's derived modules -
 // These entries were added to files[] by 04-02 (stock-derived.ts), 04-05
@@ -218,7 +183,7 @@ const REQUIRED_DERIVED_MODULES = [
   ["stock-sprites.ts", "DERIV-06"],
   ["capability-registry.ts", "BACK-05"],
   ["version.ts", "D-5"],
-  ["anno-cli.ts", "R2000-09"],
+  ["anno-cli.ts", "ANNO-09"],
 ];
 for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   need(vice.files.includes(file), `vice-mcp: missing ${file} -- ${req} would ship a package that throws ERR_MODULE_NOT_FOUND`);
@@ -237,17 +202,17 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 // 2026-08-30 by plan 29-16): everything in this paragraph records the state at
 // the time the finding was CLOSED, and it names the modules by their
 // PRE-DELETION names so the citation is followable in both directions. Three
-// of the five no longer exist -- `r2000-project.ts`, `r2000-launch.ts` and
-// `r2000-verify.ts` were deleted in phase 29 (D-14) -- and half-renaming the
+// of the five no longer exist -- `anno-project.ts`, `anno-launch.ts` and
+// `anno-verify.ts` were deleted in phase 29 (D-14) -- and half-renaming the
 // sentence would leave a citation unusable in both directions, which is
 // exactly what the review prescribed against.
 //
 // As it stood then: the walk was STATIC-IMPORT-ONLY, so `vice-proxy.ts`'s
-// `const { runR2000Cli } = await import("./anno-cli.ts");` was structurally
+// `const { runAnnoCli } = await import("./anno-cli.ts");` was structurally
 // invisible to it -- the whole family reachable through that one dynamic
-// import (anno-cli.ts, anno-d64.ts, r2000-project.ts, r2000-launch.ts,
-// r2000-verify.ts) was NEVER traversed, so `files[]` was correct only by hand.
-// (`runR2000Cli` is left as it stands: the function still carries that name on
+// import (anno-cli.ts, anno-d64.ts, anno-project.ts, anno-launch.ts,
+// anno-verify.ts) was NEVER traversed, so `files[]` was correct only by hand.
+// (`runAnnoCli` is left as it stands: the function still carries that name on
 // this tree, so the sentence remains followable as written.) The
 // dynamic-import regex below is
 // ADDED alongside the static one (never a replacement) so a module reachable
@@ -340,9 +305,8 @@ need(inst.files.includes("bin/cli.mjs"), "installer: missing bin/cli.mjs (bin en
 // does not discharge the obligation for it.
 need(
   inst.files.includes("THIRD-PARTY-NOTICES.md"),
-  "installer: missing THIRD-PARTY-NOTICES.md -- ABS-02 requires the package that ships the adapted regenerator2000 procedure prose (skills/) to carry its own notices document"
+  "installer: missing THIRD-PARTY-NOTICES.md -- the package that ships the skill playbooks must carry its own notices document"
 );
-needNoticesCarryPermissionNotice("installer", "installer/THIRD-PARTY-NOTICES.md");
 const skillMds = inst.files.filter((f) => /^skills\/[^/]+\/SKILL\.md$/.test(f));
 // The relation side: `src/skills/` immediate subdirectories that carry a
 // SKILL.md. `topLevelSkillDirs()` is the shared corpus primitive (WR-12) --

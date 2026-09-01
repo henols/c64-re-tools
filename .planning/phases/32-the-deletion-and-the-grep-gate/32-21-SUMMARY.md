@@ -164,7 +164,7 @@ coverage:
     requirement: "CUT-06"
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs -> exit 0, 412 files scanned, 157 occurrences permanently exempt, `0 temporarily allow-listed across 0 entries`. This round adds no entry. Before-state derived: this plan's whole diff against 01894b9 contains 0 occurrences of the gate's subject."
+        ref: "node scripts/check-no-analyser.mjs -> exit 0, 412 files scanned, 157 occurrences permanently exempt, `0 temporarily allow-listed across 0 entries`. This round adds no entry. Before-state derived: this plan's whole diff against 01894b9 contains 0 occurrences of the gate's subject."
         status: pass
     human_judgment: false
   - id: D12
@@ -545,10 +545,10 @@ See `key-decisions` in the frontmatter. The load-bearing one: **the refused-plan
 **3. [Rule 1 - Bug] The removal gate's "before" reading was taken by an INVALID method, detected, and replaced**
 
 - **Found during:** Task 3, action F
-- **Issue:** To read `check-no-regenerator2000.mjs` at the plan's base I parked this plan's three files out of the working tree and ran the gate. That measurement is **invalid**: the new driver is *tracked at HEAD*, so removing it from the worktree made the gate fail with `scope: src/mcp/vice/fixtures/harness-signal/plant-contract-driver.mjs is in the scope set but is not on disk -- the walk or the pack list is stale` plus a non-vacuity error. It measured the experiment, not the tree. Recording it as a before-reading would have been a fabricated figure.
-- **Fix:** The files were restored (`git restore --staged` on the two tracked paths — index only, working tree untouched — after a path-scoped `git checkout <base> -- ...` had staged base content), the gate returned to exit 0, and the before-state was established by **derivation** instead: `git diff 01894b9 -- .` is 933 lines and `grep -aci 'regenerator2000'` over it returns **0**, and none of the three files appears in any of the twelve exact-pin exemption groups — so the 412/157/0/0 figures are unchanged by construction.
+- **Issue:** To read `check-no-analyser.mjs` at the plan's base I parked this plan's three files out of the working tree and ran the gate. That measurement is **invalid**: the new driver is *tracked at HEAD*, so removing it from the worktree made the gate fail with `scope: src/mcp/vice/fixtures/harness-signal/plant-contract-driver.mjs is in the scope set but is not on disk -- the walk or the pack list is stale` plus a non-vacuity error. It measured the experiment, not the tree. Recording it as a before-reading would have been a fabricated figure.
+- **Fix:** The files were restored (`git restore --staged` on the two tracked paths — index only, working tree untouched — after a path-scoped `git checkout <base> -- ...` had staged base content), the gate returned to exit 0, and the before-state was established by **derivation** instead: `git diff 01894b9 -- .` is 933 lines and `grep -aci 'the external analyser'` over it returns **0**, and none of the three files appears in any of the twelve exact-pin exemption groups — so the 412/157/0/0 figures are unchanged by construction.
 - **Files modified:** none (net)
-- **Verification:** `node scripts/check-no-regenerator2000.mjs` exit 0 after the restore; `git status --porcelain` back to exactly this plan's own tracked edits
+- **Verification:** `node scripts/check-no-analyser.mjs` exit 0 after the restore; `git status --porcelain` back to exactly this plan's own tracked edits
 - **Committed in:** nothing — the invalid experiment left no residue. Recorded here and in the evidence file §4 rather than dropped.
 
 **4. [Rule 2 - Missing Critical] The Task-2 driver cases were held back out of Task 1's commit**

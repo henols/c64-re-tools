@@ -5,7 +5,7 @@
 Answering this question is permitted to use **only** these two files:
 
 - `recon-subject.regen2000proj` (this phase's committed annotation store — query it with the
-  curated `r2000_*` tools, do not open it as raw text and pattern-match it by eye)
+  curated `anno_*` tools, do not open it as raw text and pattern-match it by eye)
 - this file, `QUESTION.md`
 
 **Explicitly forbidden**, and reading any of them invalidates the result:
@@ -18,7 +18,7 @@ Answering this question is permitted to use **only** these two files:
 
 ## The question
 
-Using only the curated `r2000_*` tools against `recon-subject.regen2000proj`, answer all four
+Using only the curated `anno_*` tools against `recon-subject.regen2000proj`, answer all four
 parts:
 
 1. **Label.** What user-defined label name did session A give to memory address `2124` (decimal;
@@ -26,9 +26,9 @@ parts:
 2. **Confidence.** Session A recorded a D-25 confidence-prefix comment on the memory block that
    spans addresses `2156`-`2163` (decimal; `$086C`-`$0873`). What is the confidence grade — the
    bracketed token's contents, without the brackets — recorded in that comment?
-3. **Block type.** What block type does `r2000_get_blocks` report for that same block,
+3. **Block type.** What block type does `anno_get_blocks` report for that same block,
    `2156`-`2163` (lowercased)?
-4. **Cross-references.** How many distinct addresses does `r2000_get_cross_references` return for
+4. **Cross-references.** How many distinct addresses does `anno_get_cross_references` return for
    address `2128` (decimal; `$0850`)?
 
 ## Canonical answer format
@@ -42,14 +42,14 @@ label=<label-name> confidence=<confidence-grade> blocktype=<block-type> xrefcoun
 
 Field rules:
 
-- `<label-name>` — exactly as stored, case-sensitive, exactly as `r2000_get_symbols` returns it in
+- `<label-name>` — exactly as stored, case-sensitive, exactly as `anno_get_symbols` returns it in
   its `name` field. Do not lowercase it even though the rest of the line is lowercase.
 - `<confidence-grade>` — the bracketed prefix token's contents, lowercased, with any spaces
   replaced by hyphens (e.g. a comment beginning `[confirmed-code]` yields `confirmed-code`; one
   beginning `[unknown]` yields `unknown`).
-- `<block-type>` — the block type string `r2000_get_blocks` returns for that range, lowercased
+- `<block-type>` — the block type string `anno_get_blocks` returns for that range, lowercased
   (e.g. `Byte` → `byte`, `Address` → `address`, `Code` → `code`).
-- `<integer>` — the number of entries in the array `r2000_get_cross_references` returns, as a bare
+- `<integer>` — the number of entries in the array `anno_get_cross_references` returns, as a bare
   decimal integer with no leading zeros (`0` if the array is empty).
 
 **Worked example** (dummy values — this is not the real answer):
@@ -68,7 +68,7 @@ grammar, which is what lets `ANSWER.sha256` check a submitted answer mechanicall
   (`fixture/recon-subject.a` is forbidden reading anyway) determines what session A decided to
   call it in `recon-subject.regen2000proj` — it is an arbitrary, independent judgement, not a
   derivation.
-- **Part 2 (confidence).** regenerator2000's own block-type mechanism has no confidence axis at
+- **Part 2 (confidence).** the external analyser's own block-type mechanism has no confidence axis at
   all (D-25) — "probable" versus "confirmed" is not a property any disassembler, human or
   automated, can read off raw bytes. It records what session A had or had not yet established,
   which exists only inside the comment text session A chose to write.
@@ -76,7 +76,7 @@ grammar, which is what lets `ANSWER.sha256` check a submitted answer mechanicall
   fact. The eight bytes at `2156`-`2163` decode as a syntactically valid 6502 instruction stream —
   a byte-level classifier that trusts opcode validity alone would call this range code. Session
   A's actual classification came from a reachability judgement (nothing in the program's own
-  control flow ever jumps or calls into this range) recorded as a deliberate `r2000_set_data_type`
+  control flow ever jumps or calls into this range) recorded as a deliberate `anno_set_data_type`
   call, not from the bytes' own shape.
 - **Part 4 (cross-references)** exercises criterion 2's query layer as well. Taken alone it is, in
   principle, recoverable from the raw bytes (both a call instruction and an address-table entry

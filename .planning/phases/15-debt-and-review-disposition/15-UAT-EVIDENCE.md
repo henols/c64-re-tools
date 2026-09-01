@@ -140,10 +140,10 @@ absent after the run:
 
 ```
 $ ls .vice-snapshots/
-r2000_probe_vsf.json  r2000_probe_vsf.vsf  r2000_probe_vsf_v2.json  r2000_probe_vsf_v2.vsf
+anno_probe_vsf.json  anno_probe_vsf.vsf  anno_probe_vsf_v2.json  anno_probe_vsf_v2.vsf
 ```
 
-(the two `r2000_probe_vsf*` files are pre-existing, unrelated artifacts from earlier regenerator2000
+(the two `anno_probe_vsf*` files are pre-existing, unrelated artifacts from earlier the external analyser
 work -- `brokerlive_roundtrip.vsf`/`.json` are not present.)
 
 ### Process/scratch cleanup, whole opt-in run

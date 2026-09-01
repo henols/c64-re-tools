@@ -23,7 +23,7 @@ actuals:
 tech-stack:
   added: []
   patterns:
-    - "Single-seam corpus module: scripts/lib/skill-corpus.mjs exports walkSkills()/MCP_PREFIX_RE/TOOL_NAME_RE/extractToolNames()/topLevelSkillDirs(), following the scripts/lib/r2000-cli-verbs.mjs and scripts/lib/skill-honesty-checks.mjs precedent (shared logic in scripts/lib/, out of .claude/mcp/vice/package.json's files[] allow-list, still git-tracked for scripts/package.sh's git archive)"
+    - "Single-seam corpus module: scripts/lib/skill-corpus.mjs exports walkSkills()/MCP_PREFIX_RE/TOOL_NAME_RE/extractToolNames()/topLevelSkillDirs(), following the scripts/lib/anno-cli-verbs.mjs and scripts/lib/skill-honesty-checks.mjs precedent (shared logic in scripts/lib/, out of .claude/mcp/vice/package.json's files[] allow-list, still git-tracked for scripts/package.sh's git archive)"
     - "Registry-derived cardinality assertion (WR-06 style): assert a projection's length equals an INDEPENDENTLY-computed count from the same source, rather than echoing the projection's own filter predicate back at itself"
     - "Citation-strip-before-test: PHASE_CITATION_RE strips a recognized 'quoting a third party, not deferring' shape before testing a widened pattern, so widening a lint does not resurrect a known false positive"
 

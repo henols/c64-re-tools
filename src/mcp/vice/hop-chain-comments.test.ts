@@ -4,7 +4,7 @@
 // .planning/todos/pending/2026-08-21-stale-phase-pointers-in-stock-cia-and-
 // stock-dispatch-comments.md's path-reference half -- see 16-09-PLAN.md's
 // "Flagged Assumptions" section): `16-REVIEW.md`'s WR-02 found that
-// `r2000-symbol-roundtrip.test.ts:55` and `:467` both describe the directory
+// `anno-symbol-roundtrip.test.ts:55` and `:467` both describe the directory
 // chain from this module directory to the repository root using the NEW
 // starting segment (`src/mcp/vice`, since phase 16-04's relocation) spliced
 // onto the OLD intermediate segments (`.claude/mcp`, `.claude`) -- a chain
@@ -61,7 +61,7 @@
 // jobs. The full stripper blanks string-literal bodies; the line filters
 // must NOT, because the literals they search for are themselves strings; and
 // this file's extractor COLLECTS comment text rather than blanking it, the
-// inverse operation. `r2000-tools.test.ts:193-201` states that reasoning in
+// inverse operation. `anno-tools.test.ts:193-201` states that reasoning in
 // code. A future reader should read those, not re-copy a helper that now has
 // one home.
 //

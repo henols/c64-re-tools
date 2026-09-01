@@ -4,11 +4,11 @@
 **Milestone:** v0.5.0 — "The rebuild half — absorbed playbooks, modifiable source"
 **Domain:** Persistent MCP session lifecycle + binary-to-rebuildable-source pipeline (C64/6502 reverse engineering)
 **Researched:** 2026-08-23
-**Confidence:** HIGH for everything grounded in a live source read this session (installed `regenerator2000` 0.9.20 crate, ACME 0.97, this repo's own source); MEDIUM for community feature/prior-art conclusions; MEDIUM for the exact packer-identification mechanism and the persistent-session daemon's full failure surface.
+**Confidence:** HIGH for everything grounded in a live source read this session (installed `the external analyser` 0.9.20 crate, ACME 0.97, this repo's own source); MEDIUM for community feature/prior-art conclusions; MEDIUM for the exact packer-identification mechanism and the persistent-session daemon's full failure surface.
 
 ## Executive Summary
 
-v0.5.0 turns an annotated `regenerator2000` project into rebuildable, subsystem-split, symbol-only ACME source and demonstrates it is actually modifiable — by absorbing regenerator2000's own upstream analyze procedures into this project's skills, and by holding a project open across a session instead of respawning the binary per tool call. No new runtime dependency is needed for either half: the persistent session is a straightforward extension of the existing hand-rolled `r2000-mcp-client.ts` stdio client, and the multi-file ACME emission is entirely new TypeScript reading regenerator2000's existing structured-query tools and rendering ACME text through the already-supported `!source` mechanism — `acme.mjs` needs zero code changes. The right home for the persistent session is a new sibling module inside the already-running `vice-proxy.ts` process, not the host-side VICE broker and not a new supervisor process. The right home for the rebuild pipeline is new CLI verbs following the existing `r2000-cli.ts` verb precedent, not new `r2000_*` MCP tools.
+v0.5.0 turns an annotated `the external analyser` project into rebuildable, subsystem-split, symbol-only ACME source and demonstrates it is actually modifiable — by absorbing the external analyser's own upstream analyze procedures into this project's skills, and by holding a project open across a session instead of respawning the binary per tool call. No new runtime dependency is needed for either half: the persistent session is a straightforward extension of the existing hand-rolled `anno-mcp-client.ts` stdio client, and the multi-file ACME emission is entirely new TypeScript reading the external analyser's existing structured-query tools and rendering ACME text through the already-supported `!source` mechanism — `acme.mjs` needs zero code changes. The right home for the persistent session is a new sibling module inside the already-running `vice-proxy.ts` process, not the host-side VICE broker and not a new supervisor process. The right home for the rebuild pipeline is new CLI verbs following the existing `anno-cli.ts` verb precedent, not new `anno_*` MCP tools.
 
 The single most consequential finding across all four researchers is structural, not stylistic: this project cannot define byte-identity as an acceptance bar even if it wanted to, because unlike every named prior-art disassembly project it has no clean original binary — only a provenance-graded composite with some ranges `HIGH` confidence and others honestly `UNKNOWN`. Behavioural equivalence in VICE via `compare.mjs` is therefore the only well-defined target. But `compare.mjs` itself is unproven for this job: it was built and validated only for same-binary reproducibility, and several of its design choices will produce a false PASS on a real regression or a false FAIL on the milestone's own required modifiability demo. Extending it is first-class scoped work, not a "just call it" integration.
 
@@ -18,11 +18,11 @@ The second consequential finding is that relocation-hazard detection — jump ta
 
 ### Recommended Stack
 
-Everything needed is already a declared dependency, a Node built-in, or an already-installed external binary — no `npm install` required. `regenerator2000 --mcp-server-stdio` (not `--mcp-server`/HTTP) is the only collision-free transport: `main.rs:397` hardcodes HTTP to port 3000 with no `--mcp-port`/`--mcp-bind` flag, confirmed by direct source read, while stdio is a private per-caller pipe with no listener at all. The existing hand-rolled client is extended to persist rather than replaced by `@mastra/mcp`'s `MCPClient`, which lacks exit-code-after-close. ACME 0.97 needs no version change: `!source`, `!zone`, and `*=` (confirmed directly against ACME's own shipped `AllPOs.txt`/`QuickRef.txt`) already support exactly the multi-file, cross-referencing, forward-resolving project shape this milestone needs.
+Everything needed is already a declared dependency, a Node built-in, or an already-installed external binary — no `npm install` required. `analyser --mcp-server-stdio` (not `--mcp-server`/HTTP) is the only collision-free transport: `main.rs:397` hardcodes HTTP to port 3000 with no `--mcp-port`/`--mcp-bind` flag, confirmed by direct source read, while stdio is a private per-caller pipe with no listener at all. The existing hand-rolled client is extended to persist rather than replaced by `@mastra/mcp`'s `MCPClient`, which lacks exit-code-after-close. ACME 0.97 needs no version change: `!source`, `!zone`, and `*=` (confirmed directly against ACME's own shipped `AllPOs.txt`/`QuickRef.txt`) already support exactly the multi-file, cross-referencing, forward-resolving project shape this milestone needs.
 
 **Core technologies:**
-- `regenerator2000 --mcp-server-stdio` (0.9.20, installed) — persistent-session transport, only mode with no port/collision surface
-- Extended `r2000-mcp-client.ts` — session primitive, reuses the existing four-way error taxonomy (`R2000TimeoutError`/`R2000ChildExitError`/`R2000SessionFailedError`)
+- `analyser --mcp-server-stdio` (0.9.20, installed) — persistent-session transport, only mode with no port/collision surface
+- Extended `anno-mcp-client.ts` — session primitive, reuses the existing four-way error taxonomy (`AnnoTimeoutError`/`AnnoChildExitError`/`AnnoSessionFailedError`)
 - ACME 0.97 "Zem" — assembles the subsystem-split rebuild via `!source`, zero changes needed to `acme.mjs`
 
 **Do not add:** HTTP mode (structurally disqualified by hardcoded port), `@mastra/mcp`'s `MCPClient`, a direct `@modelcontextprotocol/sdk` import, routing the session through `vice-broker.mts`, a general pluggable hazard-detection framework, multi-assembler output, or BASIC token decoding.
@@ -35,7 +35,7 @@ Cross-checked against mature disassembly-to-rebuild practice (pret/pokered, s1di
 - One file per subsystem, wired by the assembler's own include mechanism
 - Symbol-only references everywhere — no raw addresses
 - Data extracted to its own file(s), separate from code
-- Coverage measured, not asserted — directly computable today from existing `r2000_get_*` queries
+- Coverage measured, not asserted — directly computable today from existing `anno_get_*` queries
 - A relocation-hazard report enumerating what blocks movement, rather than attempting automatic relocation
 
 **Should have:** explicit padding/alignment as a systematic hazard-report entry; a relocation-hazard report as a first-class artifact — no named prior-art project produces one.
@@ -44,13 +44,13 @@ Cross-checked against mature disassembly-to-rebuild practice (pret/pokered, s1di
 
 ### Architecture Approach
 
-The persistent session lives as a new sibling module (`r2000-session.ts`) holding module-level mutable state inside `vice-proxy.ts` — the same pattern `vice.ts` already establishes — built on an extended `r2000-mcp-client.ts`, never a second spawn site. The rebuild pipeline is new CLI verbs (`export-source`, `hazard-report`) following the existing `render-memmap`/`gen-enums` shape: read structured data via a session, render ACME text in pure Node, write files — not post-processing regenerator2000's own single-file `--export_asm` output (a named design fork resolved in favor of structured-read-and-render, lower risk than depending on an undocumented private text format).
+The persistent session lives as a new sibling module (`anno-session.ts`) holding module-level mutable state inside `vice-proxy.ts` — the same pattern `vice.ts` already establishes — built on an extended `anno-mcp-client.ts`, never a second spawn site. The rebuild pipeline is new CLI verbs (`export-source`, `hazard-report`) following the existing `render-memmap`/`gen-enums` shape: read structured data via a session, render ACME text in pure Node, write files — not post-processing the external analyser's own single-file `--export_asm` output (a named design fork resolved in favor of structured-read-and-render, lower risk than depending on an undocumented private text format).
 
 **Major components:**
-1. `r2000-session.ts` (NEW) — single-owner, long-lived session handle: spawn-on-first-use, crash detection between calls, transparent restart, serialization. Does not own save timing.
-2. `r2000-tools.ts` (MODIFIED) — `runR2000Tool()` rewired to call through the session, save-per-mutation invariant preserved byte-for-byte.
-3. `r2000-rebuild-export.ts` / `r2000-hazards.ts` / `r2000-provenance-carry.ts` (NEW) — subsystem-split exporter, hazard reporter, provenance-carry adapter.
-4. Two new skills — routine-queue-walker (absorbs `r2000-analyze-routine`) and rebuild orchestrator (`c64-rebuild`, sequencing export → hazard-report → provenance-carry → `acme-build` → VICE → `compare.mjs`) — with `c64-program-recon`/`c64-memory-mapping` absorbing `-analyze-blocks`/`-analyze-symbol`.
+1. `anno-session.ts` (NEW) — single-owner, long-lived session handle: spawn-on-first-use, crash detection between calls, transparent restart, serialization. Does not own save timing.
+2. `anno-tools.ts` (MODIFIED) — `runAnnoTool()` rewired to call through the session, save-per-mutation invariant preserved byte-for-byte.
+3. `anno-rebuild-export.ts` / `anno-hazards.ts` / `anno-provenance-carry.ts` (NEW) — subsystem-split exporter, hazard reporter, provenance-carry adapter.
+4. Two new skills — routine-queue-walker (absorbs `analyze-routine`) and rebuild orchestrator (`c64-rebuild`, sequencing export → hazard-report → provenance-carry → `acme-build` → VICE → `compare.mjs`) — with `c64-program-recon`/`c64-memory-mapping` absorbing `-analyze-blocks`/`-analyze-symbol`.
 
 ### Critical Pitfalls
 
@@ -66,13 +66,13 @@ Phase numbering continues from 17; this milestone starts at **Phase 18**. Two "i
 
 ### Phase 18: The enabler — persistent session, proven before anything depends on it
 **Rationale:** Every later phase's skills assume a session that survives across many small calls; building them against the old per-call lifecycle first means rewriting them a second time.
-**Delivers:** `r2000-session.ts`, extended `r2000-mcp-client.ts`, `runR2000Tool()` rewired with save-per-mutation preserved byte-for-byte, `r2000_read_region` curated, D-32 re-decided, `r2000-spawn-seam.test.ts` updated.
+**Delivers:** `anno-session.ts`, extended `anno-mcp-client.ts`, `runAnnoTool()` rewired with save-per-mutation preserved byte-for-byte, `anno_read_region` curated, D-32 re-decided, `spawn-seam.test.ts` updated.
 **Must include as its own go/no-go gate:** the planted-violation save-discipline test (mutate → kill the child → reopen/re-read from disk → assert persisted; then remove the internal save and prove the test goes red).
 **Avoids:** Pitfall 3.
 
 ### Phase 19: Absorb the procedures; build the coverage instrument before running the sweep
 **Rationale:** A binary partially decomposed under a coverage/hazard instrument that doesn't exist yet cannot be retroactively checked cheaply.
-**Delivers:** Five `.agent/skills/` procedures absorbed at a pinned GitHub tag with per-file attribution headers; `c64-program-recon`/`c64-memory-mapping` modified; new `c64-annotate-routines` skill (serialized writes, not the 7-way concurrent model as-authored); `r2000-coverage.ts` with Auto/User ratio as a first-class output; packer-identification mechanism spike resolved.
+**Delivers:** Five `.agent/skills/` procedures absorbed at a pinned GitHub tag with per-file attribution headers; `c64-program-recon`/`c64-memory-mapping` modified; new `c64-annotate-routines` skill (serialized writes, not the 7-way concurrent model as-authored); `anno-coverage.ts` with Auto/User ratio as a first-class output; packer-identification mechanism spike resolved.
 **Depends on:** Phase 18.
 **Avoids:** Pitfalls 4, 5, 10.
 
@@ -82,7 +82,7 @@ Phase numbering continues from 17; this milestone starts at **Phase 18**. Two "i
 
 ### Phase 21: The rebuild/export pipeline, and its own gate, before Phase 22 needs it
 **Rationale:** Second instrument-before-work application — the reassembly-plus-clean-hazard-report mechanism must exist as the gate Phase 22 runs under.
-**Delivers:** `r2000-rebuild-export.ts` (`export-source` — one `.a` per r2000 scope in its own `!zone`, cross-subsystem symbols global; data tables separate), `r2000-hazards.ts` (`hazard-report` — the four named hazard detectors), `r2000-provenance-carry.ts` (consuming `c64-provenance-diff`'s existing `recovery/RELEASES.json`/`PROVENANCE.md`).
+**Delivers:** `anno-rebuild-export.ts` (`export-source` — one `.a` per anno scope in its own `!zone`, cross-subsystem symbols global; data tables separate), `anno-hazards.ts` (`hazard-report` — the four named hazard detectors), `anno-provenance-carry.ts` (consuming `c64-provenance-diff`'s existing `recovery/RELEASES.json`/`PROVENANCE.md`).
 **Depends on:** Phase 20.
 **Avoids:** Pitfall 2, Pitfall 7.
 
@@ -114,7 +114,7 @@ Standard patterns, likely skip deep research:
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Verified live this session against the installed `regenerator2000` 0.9.20 source, its live `--help`, and ACME 0.97's own shipped docs. |
+| Stack | HIGH | Verified live this session against the installed `the external analyser` 0.9.20 source, its live `--help`, and ACME 0.97's own shipped docs. |
 | Features | MEDIUM | Community/GitHub sources, cross-checked across 3+ named projects; no primary-vendor docs exist for this domain. The byte-identity-vs-behavioural finding is HIGH within this file. |
 | Architecture | HIGH for source-grounded claims; MEDIUM for packer-identification mechanism and the ACME-render-vs-post-process fork (resolved, named explicitly rather than silently picked). |
 | Pitfalls | HIGH for 6502/C64 hardware facts and this project's own documented incidents; MEDIUM for the persistent-session daemon's exact failure surface (inferred from the broker precedent, not observed live). |
@@ -133,11 +133,11 @@ Standard patterns, likely skip deep research:
 ## Sources
 
 ### Primary (HIGH confidence)
-- `regenerator2000` 0.9.20 installed crate source, read directly: `main.rs`, `mcp/{http,stdio,handler}.rs`, `state/types.rs`, `exporter/asm.rs`, `analyzer.rs`, `packer_signatures.rs`, `Cargo.toml`.
-- Live probes: `regenerator2000 --help`/`--version`, live `tools/list` (28 tools confirmed), `acme --version`.
+- `the external analyser` 0.9.20 installed crate source, read directly: `main.rs`, `mcp/{http,stdio,handler}.rs`, `state/types.rs`, `exporter/asm.rs`, `analyzer.rs`, `packer_signatures.rs`, `Cargo.toml`.
+- Live probes: `analyser --help`/`--version`, live `tools/list` (28 tools confirmed), `acme --version`.
 - ACME 0.97 shipped documentation (`/usr/share/doc/acme/{QuickRef,AllPOs}.txt`).
-- This repo's own source: `r2000-mcp-client.ts`, `r2000-tools.ts`, `r2000-cli.ts`, `r2000-launch.ts`, `r2000-project.ts`, `r2000-spawn-seam.test.ts`, all six `SKILL.md` files, `c64-ram-capture/scripts/compare.mjs`.
-- `.planning/PROJECT.md`, `.planning/ARCHITECTURE.md`, `CLAUDE.md`, `.planning/RETROSPECTIVE.md`, `docs/phase9-regenerator2000-probe-findings.md`.
+- This repo's own source: `anno-mcp-client.ts`, `anno-tools.ts`, `anno-cli.ts`, `anno-launch.ts`, `anno-project.ts`, `spawn-seam.test.ts`, all six `SKILL.md` files, `c64-ram-capture/scripts/compare.mjs`.
+- `.planning/PROJECT.md`, `.planning/ARCHITECTURE.md`, `CLAUDE.md`, `.planning/RETROSPECTIVE.md`, `docs/phase9-external-analyser-probe-findings.md`.
 
 ### Secondary (MEDIUM confidence)
 - [mwenge/gridrunner](https://github.com/mwenge/gridrunner), [mwenge/iridisalpha](https://github.com/mwenge/iridisalpha), [Piddewitt/C64-Game-Source-Code](https://github.com/Piddewitt/C64-Game-Source-Code)

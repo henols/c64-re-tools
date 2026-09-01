@@ -20,7 +20,7 @@ provides:
   - "src/mcp/vice/module-classification.test.ts — nine directions, a planted violation driving the SAME named predicates as the real scan, and a non-vacuity threshold DERIVED from the registry rather than pinned"
   - "Criterion 4's evidence: the full-glob command named verbatim, the broker state, the runner's own counts, and the zero-deletions query as command output"
   - "Three newly measured line-citation drifts, and one measured correction to which module EXPORT-02's typed-label clause actually anchors"
-affects: [phase-32-r2000-deletion, phase-28-store-core, npm-packaging]
+affects: [phase-32-anno-deletion, phase-28-store-core, npm-packaging]
 
 tech-stack:
   added: []
@@ -42,7 +42,7 @@ key-decisions:
   - "Consumer paths are ALWAYS repository-root-relative, uniformly, rather than directory-relative-with-exceptions: consumers legitimately live under scripts/ and src/skills/ as well as beside the registry"
   - "Direction 4's prohibition is PHRASE-based, not substring-based: every honest citation in this family contains the family's own naming, so a bare substring test would reject the whole record and be switched off within a milestone"
   - "The three `SEAM-02`-anchored entries plus the data file are NAMED as the weakest basis shape in the header, rather than left to look as well-grounded as the rest"
-  - "Direction 6's threshold is derived from the registry, explicitly superseding hostpath-consumers.test.ts's `R2000_MODULE_FLOOR = 14` growing-literal pattern, with the reason recorded at the assertion so a later reader does not 'restore' the literal"
+  - "Direction 6's threshold is derived from the registry, explicitly superseding hostpath-consumers.test.ts's `ANNO_MODULE_FLOOR = 14` growing-literal pattern, with the reason recorded at the assertion so a later reader does not 'restore' the literal"
 
 requirements-completed: [SEAM-02]
 
@@ -55,7 +55,7 @@ coverage:
         ref: "grep -cE '^export (type|interface|const|function) (ModuleVerdict|ModuleClassificationEntry|MODULE_CLASSIFICATION|classificationFor)' => 4; grep -c 'module: \"' => 19; grep -c 'EXCLUDED, DELIBERATELY' => 1; grep -c 'glue-with-extractable' => 5; grep -c 'out-of-enumeration' => 8"
         status: pass
       - kind: other
-        ref: "grep -c on r2000-regbits.json => 4, scripts/lib/r2000-cli-verbs => 3, docs-r2000-decisions.test.ts => 1, acmeVerdict => 2, prg-image.ts => 3, acme-gate.ts => 1, block-class.ts => 1"
+        ref: "grep -c on anno-regbits.json => 4, scripts/lib/anno-cli-verbs => 3, docs-absorbed-decisions.test.ts => 1, acmeVerdict => 2, prg-image.ts => 3, acme-gate.ts => 1, block-class.ts => 1"
         status: pass
       - kind: other
         ref: "grep -ciE '(prefix|because of its name)' => 6 matches, ALL in header comment lines 40/44/52/133/134 and interface doc comment 214; zero inside any basis object (three occurrences were rewritten out of a basis and two notes to reach this)"
@@ -84,13 +84,13 @@ coverage:
         ref: "each of the nine named predicates appears >= 2 times (8/4/5/5/9/6/7/5/8) — the real scan and the planted test drive the SAME functions"
         status: pass
       - kind: other
-        ref: "PROBE A (Direction 1 fires on a real absence): empty src/mcp/vice/r2000-planted-probe.ts planted => 15 pass / 1 fail, message names the file; deleted => 16 pass / 0 fail"
+        ref: "PROBE A (Direction 1 fires on a real absence): empty src/mcp/vice/anno-planted-probe.ts planted => 15 pass / 1 fail, message names the file; deleted => 16 pass / 0 fail"
         status: pass
       - kind: other
-        ref: "PROBE B (Direction 6 fires on a narrowed glob): enumeration filter narrowed to r2000-c* => 12 pass / 4 fail, Direction 6 reporting '3 paths on disk but the registry declares 17 in-enumeration entries'; restored byte-identical => 16 pass / 0 fail"
+        ref: "PROBE B (Direction 6 fires on a narrowed glob): enumeration filter narrowed to anno-c* => 12 pass / 4 fail, Direction 6 reporting '3 paths on disk but the registry declares 17 in-enumeration entries'; restored byte-identical => 16 pass / 0 fail"
         status: pass
       - kind: other
-        ref: "node -e '...files.includes(\"module-classification.ts\")' exits 0; git diff --stat -- r2000-verify.test.ts hostpath-consumers.test.ts empty; git diff --stat -- test-gate.mjs empty; node --test test-gate.test.ts => 3 pass, 0 fail"
+        ref: "node -e '...files.includes(\"module-classification.ts\")' exits 0; git diff --stat -- anno-verify.test.ts hostpath-consumers.test.ts empty; git diff --stat -- test-gate.mjs empty; node --test test-gate.test.ts => 3 pass, 0 fail"
         status: pass
     human_judgment: false
   - id: D3
@@ -101,7 +101,7 @@ coverage:
         ref: "pgrep -f 'vice-brok[e]r' finds no process; pgrep -x x64sc finds no process (the bare pattern the plan names self-matched this shell's own command line — see Deviation 2)"
         status: pass
       - kind: other
-        ref: "cd src/mcp/vice && npm test (node --test '*.test.*') => 2636 tests, 2520 pass, 44 fail, 0 cancelled, 67 skipped, 5 todo, 1,880,048 ms; EXIT 1. All 44 are the dispositioned pre-existing failures (5 r2000-session.test.ts + 39 vice-proxy.test.ts) — see Issues Encountered"
+        ref: "cd src/mcp/vice && npm test (node --test '*.test.*') => 2636 tests, 2520 pass, 44 fail, 0 cancelled, 67 skipped, 5 todo, 1,880,048 ms; EXIT 1. All 44 are the dispositioned pre-existing failures (5 anno-session.test.ts + 39 vice-proxy.test.ts) — see Issues Encountered"
         status: fail
       - kind: other
         ref: "cd src/mcp/vice && npm run typecheck => exit 0"
@@ -110,10 +110,10 @@ coverage:
         ref: "node scripts/check-npm-packages.mjs => 'transitive closure from vice-proxy.ts -- 60 modules, clean' / 'check-npm-packages: OK' / '@henols/vice-mcp@0.0.0-dev -- 77 files'; exit 0"
         status: pass
       - kind: other
-        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c r2000)\" = \"0\" => exit 0; the count prints 0 and the UNFILTERED deletion list for that range is also 0 lines"
+        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c anno)\" = \"0\" => exit 0; the count prints 0 and the UNFILTERED deletion list for that range is also 0 lines"
         status: pass
       - kind: other
-        ref: "ls src/mcp/vice/r2000-*.ts | grep -vc '\\.test\\.ts$' => 16, recorded as a floor (>= 16), never an equality"
+        ref: "ls src/mcp/vice/anno-*.ts | grep -vc '\\.test\\.ts$' => 16, recorded as a floor (>= 16), never an equality"
         status: pass
       - kind: other
         ref: "git diff 6c1f569..HEAD -- src/mcp/vice/package.json => exactly two added lines, +\"block-class.ts\" and +\"prg-image.ts\", zero removed; the three test-only new modules absent (node -e exits 0)"
@@ -159,7 +159,7 @@ stale paragraph.**
 ## Accomplishments
 
 1. **`src/mcp/vice/module-classification.ts` (698 lines)** holds nineteen
-   entries: the sixteen non-test modules, the generated `r2000-regbits.json`
+   entries: the sixteen non-test modules, the generated `anno-regbits.json`
    data file, and both `scripts/lib/` files carried as data with an explicit
    `out-of-enumeration` marker. Four exports match the plan's contract
    (`ModuleVerdict`, `ModuleClassificationEntry`, `MODULE_CLASSIFICATION`,
@@ -184,7 +184,7 @@ stale paragraph.**
 6. **Criterion 4's evidence was produced with the broker confirmed stopped**,
    and it is recorded honestly: the full-glob run exits 1 on 44 pre-existing,
    already-dispositioned failures, with zero failures anywhere in this phase's
-   own files, zero `r2000` deletions and the module family intact.
+   own files, zero `anno` deletions and the module family intact.
 
 ## Task Commits
 
@@ -276,14 +276,14 @@ subtests inside the 24 suites; both numbers are recorded rather than
 reconciled away.)
 
 **The skip count did not drop.** 67 skips, all pre-existing availability gates
-(`regenerator2000` absent, `R2000_BIN` unset). A skip count that *fell* would
+(`the external analyser` absent, `ANNO_BIN` unset). A skip count that *fell* would
 be as much a signal as a failure, which is why it is recorded.
 
 **The 44 failures, decomposed by owning file:**
 
 | Count | File | Cause |
 |---|---|---|
-| 5 | `r2000-session.test.ts` | `D-27-02-A`. The plan-18-06 queue tests spawn a real child with no availability gate, so on a host without `regenerator2000` they FAIL where every sibling in the same file SKIPs cleanly. Last modified in phase 18; in no phase-27 plan's `files_modified`; **open and unclaimed by any plan, including this one**. |
+| 5 | `anno-session.test.ts` | `D-27-02-A`. The plan-18-06 queue tests spawn a real child with no availability gate, so on a host without `the external analyser` they FAIL where every sibling in the same file SKIPs cleanly. Last modified in phase 18; in no phase-27 plan's `files_modified`; **open and unclaimed by any plan, including this one**. |
 | 39 | `vice-proxy.test.ts` | `D-27-02-B`. Needs a reachable host/broker; it is entry 2 of the frozen `MANUAL_ONLY_TESTS` list precisely for that reason, and no broker was running because starting one would deterministically redden `BACK-05`. `npm test`'s bare glob does not consult that list. |
 
 Both are recorded in this phase's own `deferred-items.md` and were **not
@@ -328,20 +328,20 @@ is what the criterion asks.
 ### 5. The zero-deletions query — criterion 4's actual substance
 
 ```
-test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c r2000)" = "0"
+test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c anno)" = "0"
 -> exit 0
 ```
 
 Output of the inner pipeline: `0`. And the **unfiltered** deletion list for
 that range is `0` lines — nothing at all was deleted in either directory across
-the whole phase, not merely nothing `r2000`-named. The wrapped `test "$(…)"`
+the whole phase, not merely nothing `anno`-named. The wrapped `test "$(…)"`
 form matters: the bare pipeline prints `0` but *exits 1*, because `grep -c`
 returns no-match status even when its count is the count we want.
 
 ### 6. The module family is intact, stated as a floor
 
 ```
-ls src/mcp/vice/r2000-*.ts | grep -vc '\.test\.ts$'
+ls src/mcp/vice/anno-*.ts | grep -vc '\.test\.ts$'
 -> 16          (floor: >= 16, satisfied)
 ```
 
@@ -372,7 +372,7 @@ into the entry itself rather than only into a planning document.
 
 **The verdict** is `capability`, because criterion 2 is the phase's own binding
 text and a registry should not overrule it. **The basis** is the discipline:
-`acmeVerdict()` at `r2000-verify.ts:116` derives its result only from parsed
+`acmeVerdict()` at `anno-verify.ts:116` derives its result only from parsed
 assembler result lines — unanimity required, no passing line may hide a later
 failing one, a refusal to guess when two are present, a skipped assembler read
 as a failure rather than an absence of evidence, and the aggregate summary line
@@ -391,7 +391,7 @@ a verdict it would contest.
 
 Resolved as the research recommended. The enforcing test's **enumeration** stays
 inside `src/mcp/vice/` (respecting D-09), and both
-`scripts/lib/r2000-cli-verbs.mjs` and its `.d.mts` declaration are carried in
+`scripts/lib/anno-cli-verbs.mjs` and its `.d.mts` declaration are carried in
 the registry **data** with `scope: "out-of-enumeration"` plus a `note` stating
 that the enumeration does not reach them. `CUT-04` names the former explicitly
 as a guard whose fate must be recorded, so this closes that blind spot five
@@ -402,9 +402,9 @@ case inside the loop: removing every out-of-enumeration entry changes neither
 completeness direction's result.
 
 The third scope decision a reader will look for is recorded in the same place:
-`docs-r2000-decisions.test.ts` is named in the `EXCLUDED, DELIBERATELY` section
+`docs-absorbed-decisions.test.ts` is named in the `EXCLUDED, DELIBERATELY` section
 because a reader will expect it and the enumeration does not match it (its name
-begins `docs-`), and the nineteen `r2000-*.test.ts` files are excluded because a
+begins `docs-`), and the nineteen `anno-*.test.ts` files are excluded because a
 test file's fate follows its module's and a committed drift guard already
 ensures every on-disk test file lands in exactly one of the automated or
 manual-only sets.
@@ -419,10 +419,10 @@ recorded in the module's own `note` or in the header:
 
 | Candidate | Site | Why not an extractable |
 |---|---|---|
-| `parseR2000TimeoutMs` | `r2000-launch.ts:251` | Pure parser with a range refusal, but its subject is the analyser's own spawn-timeout env var and it has no consumer outside the family |
-| `checkAcceptedOptions` | `r2000-cli.ts:330` | Generic argv option checker, used only by the CLI it lives in and that CLI's own test |
-| `resolveStorePath`, `composeAddressDetails` | `r2000-tools.ts:972`, `:1121` | Both exist to work around specific behaviours of the analyser's own tool surface |
-| the single-flight session queue | `r2000-session.ts:294` onward | Generic *discipline*, but an implementation bound to the analyser child process, and no consumer outside the family |
+| `parseAnnoTimeoutMs` | `anno-launch.ts:251` | Pure parser with a range refusal, but its subject is the analyser's own spawn-timeout env var and it has no consumer outside the family |
+| `checkAcceptedOptions` | `anno-cli.ts:330` | Generic argv option checker, used only by the CLI it lives in and that CLI's own test |
+| `resolveStorePath`, `composeAddressDetails` | `anno-tools.ts:972`, `:1121` | Both exist to work around specific behaviours of the analyser's own tool surface |
+| the single-flight session queue | `anno-session.ts:294` onward | Generic *discipline*, but an implementation bound to the analyser child process, and no consumer outside the family |
 
 The one genuine instance was the project builder, and `27-03` discharged it in
 full: `parsePrg`, `flatImageOrigin` and `decodeRawData` all moved into
@@ -440,8 +440,8 @@ plan's. Each was broken deliberately, observed RED, and restored.
 | 2 | 27-02 | One raw-string block-type comparison planted back at the census's divergence loop | 110 pass / **2** fail — the substitutability proof's non-vacuity assertion *and* the structural supplement, two independent detectors | `git diff --stat` empty against `d5b7e3c`; 112 pass / 0 fail |
 | 3 | 27-03 | `parsePrg`'s minimum length loosened from 3 to 2 | `not ok 2 — parsePrg: a 2-byte or shorter input throws`; 7 pass / 1 fail | byte-identical to `56b7d0d`; 8 pass / 0 fail |
 | 4 | 27-04 | The `files[]`-entry existence check removed from `shippedTsModules()` | `not ok 2 — planted violation: a files[] entry missing from disk THROWS a named error`; 8 pass / 1 fail | `diff` against the pristine copy empty; 9 pass / 0 fail |
-| 5 | **27-05** | An empty `src/mcp/vice/r2000-planted-probe.ts` planted in the enumeration scope | `not ok 2 — DIRECTION 1 (completeness)`, message reading `these in-scope files have no capability-or-glue verdict: r2000-planted-probe.ts`; 15 pass / 1 fail | file deleted; 16 pass / 0 fail |
-| 6 | **27-05** | The enumeration filter narrowed with `.filter((name) => name.startsWith("r2000-c"))` | `not ok 1 — DIRECTION 6 (non-vacuity)`, message reading `the in-scope enumeration found 3 paths on disk but the registry declares 17 in-enumeration entries`; 12 pass / 4 fail | restored from a pristine copy, `diff` empty; 16 pass / 0 fail |
+| 5 | **27-05** | An empty `src/mcp/vice/anno-planted-probe.ts` planted in the enumeration scope | `not ok 2 — DIRECTION 1 (completeness)`, message reading `these in-scope files have no capability-or-glue verdict: anno-planted-probe.ts`; 15 pass / 1 fail | file deleted; 16 pass / 0 fail |
+| 6 | **27-05** | The enumeration filter narrowed with `.filter((name) => name.startsWith("anno-c"))` | `not ok 1 — DIRECTION 6 (non-vacuity)`, message reading `the in-scope enumeration found 3 paths on disk but the registry declares 17 in-enumeration entries`; 12 pass / 4 fail | restored from a pristine copy, `diff` empty; 16 pass / 0 fail |
 
 Probe 6's three additional reds (Direction 2's two tests and the completeness
 planted violation) are informative rather than noise: a narrowed glob is caught
@@ -462,7 +462,7 @@ identifier module.**
 The plan directs that "the ACME-identifier module rests on the typed-label-prefix
 requirement, its only unprefixed-surviving basis". Measured:
 `AUTO_NAME_PREFIX_RE` — the symbol `EXPORT-02` names verbatim — is declared at
-`r2000-coverage.ts:1392`, not in the ACME identifier module. So `EXPORT-02` was
+`anno-coverage.ts:1392`, not in the ACME identifier module. So `EXPORT-02` was
 recorded on the census's entry, and the ACME identifier module's basis is
 `EXPORT-01` and `EXPORT-03` instead (identifier legality is a precondition of
 source a real assembler accepts). Both entries carry the correction in their own
@@ -474,10 +474,10 @@ the registry was written, which is what caught them:
 
 | Citation the planning documents give | Measured site | Drift |
 |---|---|---|
-| the confidence-grade import into the census, `r2000-coverage.ts:133` | `:144` | +11 (27-02 inserted the block-boundary import above it) |
-| the CLI's first description of the verify verdict, `r2000-cli.ts:83` | `:91` | +8 |
-| the CLI's second description, `r2000-cli.ts:623` | `:631` | +8 |
-| `openR2000Session` in `r2000-session.ts:102` | `:554` | `:102` is the closing brace of a multi-line import statement; the symbol is not on it |
+| the confidence-grade import into the census, `anno-coverage.ts:133` | `:144` | +11 (27-02 inserted the block-boundary import above it) |
+| the CLI's first description of the verify verdict, `anno-cli.ts:83` | `:91` | +8 |
+| the CLI's second description, `anno-cli.ts:623` | `:631` | +8 |
+| `openAnnoSession` in `anno-session.ts:102` | `:554` | `:102` is the closing brace of a multi-line import statement; the symbol is not on it |
 
 This is exactly the liability the plan predicted, now measured three more
 times, and it is why `line` is optional and verified by containment rather than
@@ -498,7 +498,7 @@ real filesystem, which made an observed RED unattributable**
 
 - **Found during:** Task 2, on the first run of Probe A.
 - **Issue:** the planted-violation test built its synthetic disk list as
-  `[...inEnumerationOnDisk(), "r2000-planted-probe.ts"]`. When Probe A planted a
+  `[...inEnumerationOnDisk(), "anno-planted-probe.ts"]`. When Probe A planted a
   real file of that name on disk, the same name appeared twice in the list, so
   the test went red *alongside* Direction 1 — 14 pass / 2 fail. Renaming the
   synthetic entry alone did not fix it: the real enumeration still contained the
@@ -506,14 +506,14 @@ real filesystem, which made an observed RED unattributable**
   that reddens two tests for two different reasons is an observation a reader
   cannot attribute, which is the whole point of a probe.
 - **Fix:** the synthetic disk list is now **fully synthetic** —
-  `["r2000-cli.ts", "r2000-regbits.json", "r2000-synthetic-unclassified.ts"]` —
+  `["anno-cli.ts", "anno-regbits.json", "anno-synthetic-unclassified.ts"]` —
   two names the registry classifies plus one it does not. A predicate test
   should exercise the predicate, not the filesystem. The measurement and the
   reason are recorded in a comment at the site so a later reader does not
   "simplify" it back to appending onto the real enumeration.
 - **Files modified:** `src/mcp/vice/module-classification.test.ts`
 - **Verification:** Probe A re-run → **15 pass / 1 fail**, red on exactly
-  Direction 1, with the message naming `r2000-planted-probe.ts`; restored →
+  Direction 1, with the message naming `anno-planted-probe.ts`; restored →
   16 pass / 0 fail. Typecheck exit 0.
 - **Commit:** `157c480` (fixed before the commit; the probe gate blocked it
   until the attribution was clean)
@@ -595,7 +595,7 @@ rather than papered over with a narrower green.
 claims.** Decomposed by file above; both items were already recorded in
 `deferred-items.md` before this plan ran, and `D-27-02-A` is explicitly noted
 there as open and unclaimed — `27-04`'s SUMMARY corrects the ledger's guess that
-it belonged to that plan (it owns `r2000-spawn-seam.test.ts`, a guard *about*
+it belonged to that plan (it owns `spawn-seam.test.ts`, a guard *about*
 spawn sites, not the session module). This plan does not claim it either: it
 lies outside `files_modified` and outside every task's scope.
 
@@ -609,7 +609,7 @@ file set.
 ## Known Stubs
 
 None. No stub, placeholder or unrun `<verify>` was introduced. The 67 skips in
-the whole-glob run are all pre-existing `regenerator2000` availability gates
+the whole-glob run are all pre-existing `the external analyser` availability gates
 (an expected-forever SKIP by D-11's design) and the 5 `todo` entries are
 `vice-sync.ts`'s documented, deliberately-untested checkpoint-wait invariants —
 neither count moved because of this plan.
@@ -650,7 +650,7 @@ planned:
 ## Next Phase Readiness
 
 **Phase 27 is complete.** All three requirements have a named artifact, zero
-`r2000` modules were deleted or renamed across the whole phase, and the
+`anno` modules were deleted or renamed across the whole phase, and the
 extraction is demonstrably a move: the unfiltered deletion list for
 `6c1f569..HEAD` is empty in both `src/mcp/vice` and `scripts`.
 
@@ -664,7 +664,7 @@ deletion pressure:
 - **The third verdict has zero instances today**, and the survey that
   established that is written into the header with its four rejected candidates.
 - **Two live gaps remain open and unclaimed:** `D-27-02-A` (five ungated queue
-  tests in `r2000-session.test.ts`) and the new `D-27-05-A` (the
+  tests in `anno-session.test.ts`) and the new `D-27-05-A` (the
   `vice-proxy.test.ts` listener leak that prevents the whole-glob suite from
   terminating). Neither is a phase-27 regression; both are in
   `deferred-items.md`.

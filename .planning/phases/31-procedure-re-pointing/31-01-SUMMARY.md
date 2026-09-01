@@ -14,7 +14,7 @@ requires:
     provides: "CURATED_ANNO_TOOLS / anno-tools.ts and the anno-derivation.test.ts rename — the surviving subjects trigger 1 and trigger 3 now name"
 provides:
   - "The re-synced snapshot record: three re-sync triggers whose mechanisms name live subjects"
-  - "r2000_undo's omit disposition carrying requirement_id STORE-04 as a decided, not reversed, omission"
+  - "anno_undo's omit disposition carrying requirement_id STORE-04 as a decided, not reversed, omission"
   - "Every retired requirement id and phase number preserved as a dated past-tense fact"
 affects: [phase-31-verification, future-upstream-resync, milestone-audit]
 
@@ -38,10 +38,10 @@ key-files:
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
 
 key-decisions:
-  - "r2000_undo's disposition stays `omit`: STORE-04's arrival makes the omission DECIDED, it does not reverse it — the criterion was discharged at the store layer by revertTo(handle, revision), deliberately not as a surface verb, per D2"
+  - "anno_undo's disposition stays `omit`: STORE-04's arrival makes the omission DECIDED, it does not reverse it — the criterion was discharged at the store layer by revertTo(handle, revision), deliberately not as a surface verb, per D2"
   - "The three justifications citing the deleted tool registry were converted to dated past-tense facts rather than re-pointed onto anno-tools.ts — that module records none of the three things (no HELD marker, no D18-26, no 'no criterion in this phase' note), so re-pointing would have manufactured a false citation"
-  - "The r2000-session.ts FIFO-mutex sentence was re-pointed onto the discipline that actually applies (the Phase 28 store's single-writer, open/close-per-call model plus the optional base_revision compare-and-swap) rather than deleted"
-  - "Trigger 3's 'Two of them ... already name the requirement' count was corrected to distinguish the two future-surface proposals from r2000_undo's arrived-and-discharged criterion — leaving it unqualified would have made an adjacent sentence false by this plan's own edit"
+  - "The anno-session.ts FIFO-mutex sentence was re-pointed onto the discipline that actually applies (the Phase 28 store's single-writer, open/close-per-call model plus the optional base_revision compare-and-swap) rather than deleted"
+  - "Trigger 3's 'Two of them ... already name the requirement' count was corrected to distinguish the two future-surface proposals from anno_undo's arrived-and-discharged criterion — leaving it unqualified would have made an adjacent sentence false by this plan's own edit"
 
 patterns-established:
   - "Occurrence-count hardening: a token asserted at `grep -c` 1 was rewritten so an occurrence-based re-check also reads 1, removing a false drift signal"
@@ -55,7 +55,7 @@ coverage:
     requirement: "REPOINT-04"
     verification:
       - kind: other
-        ref: "grep -c 'r2000-tools' / 'r2000-session' / 'r2000-upstream-audit' / 'CURATED_R2000_TOOLS' over the manifest → 0 0 0 0 (was 5 lines before)"
+        ref: "grep -c 'anno-tools' / 'anno-session' / 'anno-upstream-audit' / 'CURATED_ANNO_TOOLS' over the manifest → 0 0 0 0 (was 5 lines before)"
         status: pass
     human_judgment: false
   - id: D2
@@ -67,19 +67,19 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
-    description: "Trigger 1's mechanism names anno-derivation.test.ts, with R2000_UPSTREAM_CLONE byte-identical"
+    description: "Trigger 1's mechanism names anno-derivation.test.ts, with ANNO_UPSTREAM_CLONE byte-identical"
     requirement: "REPOINT-04"
     verification:
       - kind: other
-        ref: "grep -c 'anno-derivation.test.ts' → 1; grep -o 'R2000_UPSTREAM_CLONE' | wc -l → 1"
+        ref: "grep -c 'anno-derivation.test.ts' → 1; grep -o 'ANNO_UPSTREAM_CLONE' | wc -l → 1"
         status: pass
     human_judgment: false
   - id: D4
-    description: "r2000_undo reads `omit` with requirement_id STORE-04 in the documented key slot, and a justification naming STORE-04, revertTo and D2"
+    description: "anno_undo reads `omit` with requirement_id STORE-04 in the documented key slot, and a justification naming STORE-04, revertTo and D2"
     requirement: "REPOINT-04"
     verification:
       - kind: unit
-        ref: "node -e '...r2000_undo...' prints `omit STORE-04 disposition,justification,upstream_citation,requirement_id,sites`"
+        ref: "node -e '...anno_undo...' prints `omit STORE-04 disposition,justification,upstream_citation,requirement_id,sites`"
         status: pass
       - kind: unit
         ref: "src/mcp/vice/anno-derivation.test.ts#every non-curated upstream call carries a justification and a citation (requirement_id shape gate + manifest-to-surface agreement)"
@@ -122,7 +122,7 @@ status: complete
 
 # Phase 31 Plan 01: Upstream Procedure Manifest Re-sync Summary
 
-**Eight prose deltas re-syncing Phase 19's upstream snapshot record onto surviving subjects — trigger 3 now names `CURATED_ANNO_TOOLS`/`anno-tools.ts`, trigger 1 names `anno-derivation.test.ts`, and `r2000_undo` carries `requirement_id: STORE-04` as a decided omission discharged by `revertTo(handle, revision)` per `D2`.**
+**Eight prose deltas re-syncing Phase 19's upstream snapshot record onto surviving subjects — trigger 3 now names `CURATED_ANNO_TOOLS`/`anno-tools.ts`, trigger 1 names `anno-derivation.test.ts`, and `anno_undo` carries `requirement_id: STORE-04` as a decided omission discharged by `revertTo(handle, revision)` per `D2`.**
 
 ## Performance
 
@@ -133,9 +133,9 @@ status: complete
 
 ## Accomplishments
 
-- **The drift no gate could see is gone.** All four retired tokens (`r2000-tools`, `r2000-session`, `r2000-upstream-audit`, `CURATED_R2000_TOOLS`) return zero hits. They survived all of Phase 29 because the removal gate excludes the `.planning/` prefix and `docs-dangling-refs.test.ts` deliberately excludes `.planning/phases/**` — the manifest's prose has no mechanical reader, so this plan was that reader.
+- **The drift no gate could see is gone.** All four retired tokens (`anno-tools`, `anno-session`, `anno-upstream-audit`, `CURATED_ANNO_TOOLS`) return zero hits. They survived all of Phase 29 because the removal gate excludes the `.planning/` prefix and `docs-dangling-refs.test.ts` deliberately excludes `.planning/phases/**` — the manifest's prose has no mechanical reader, so this plan was that reader.
 - **Trigger 3 — the instruction `REPOINT-04` turns on — points at live subjects again**, with its "in the same commit" clause intact.
-- **`r2000_undo`'s omission is now a decided one**, carrying `STORE-04` and a justification stating the criterion arrived and was discharged at the store layer, deliberately not as a surface verb. The disposition stayed `omit`.
+- **`anno_undo`'s omission is now a decided one**, carrying `STORE-04` and a justification stating the criterion arrived and was discharged at the store layer, deliberately not as a surface verb. The disposition stayed `omit`.
 - **Every retired id and phase number survives as a dated fact** — `SURF-01`, `SURF-03`, `Phase 20/21`, `Phase 21` — and `STORE-02`'s by-construction closure of the splitter blocker is recorded.
 - **A third manifest reader was found that the plan did not name:** `anno-register.test.ts`. It was run and is green (13/13).
 
@@ -157,13 +157,13 @@ Broker confirmed `inactive` before every suite run (a live broker deterministica
 |---|---|
 | `grep -c` the four retired tokens | `0` `0` `0` `0` (was 5 matching lines) |
 | `CURATED_ANNO_TOOLS` / `anno-tools.ts` / `anno-derivation.test.ts` | `1` / `4` / `1` |
-| `R2000_UPSTREAM_CLONE` occurrences | `1` — spelling unchanged |
+| `ANNO_UPSTREAM_CLONE` occurrences | `1` — spelling unchanged |
 | `STORE-04` / `revertTo` / `\bD2\b` | `2` / `1` / `1` — all three were `0` before (false-before/true-after) |
-| `r2000_undo` shape | `omit STORE-04 disposition,justification,upstream_citation,requirement_id,sites` |
+| `anno_undo` shape | `omit STORE-04 disposition,justification,upstream_citation,requirement_id,sites` |
 | Pins and counts | `3 5 493f840418f1450a342bb220c2fe3d2585dd0525 0.9.20 MIT OR Apache-2.0 MIT` — unchanged |
 | `node --test anno-derivation.test.ts skill-attribution.test.ts` | `# fail 0` (21 tests, 1 expected skip) |
 | `node --test anno-register.test.ts` (third reader) | `# fail 0` (13 tests) |
-| `node scripts/check-no-regenerator2000.mjs` | exit `0`, `skill-attribution-headers 24` |
+| `node scripts/check-no-analyser.mjs` | exit `0`, `skill-attribution-headers 24` |
 | `npm run typecheck` | exit `0` (no-op — zero TypeScript changed) |
 | `npm run test:automated` | `# fail 1` — see Issues Encountered |
 | `git show --stat HEAD` | 1 file changed, 9 insertions(+), 8 deletions(-) |
@@ -171,7 +171,7 @@ Broker confirmed `inactive` before every suite run (a live broker deterministica
 
 ## Decisions Made
 
-- **The omission stands.** `STORE-04` arriving is what makes `r2000_undo`'s omission *decided* rather than unexamined; it does not reverse it. Flipping to `curated` would have gone red at `anno-derivation.test.ts`'s `assert.equal(disposition === "curated", curated, …)` because the surface carries no undo route under any spelling.
+- **The omission stands.** `STORE-04` arriving is what makes `anno_undo`'s omission *decided* rather than unexamined; it does not reverse it. Flipping to `curated` would have gone red at `anno-derivation.test.ts`'s `assert.equal(disposition === "curated", curated, …)` because the surface carries no undo route under any spelling.
 - **Three justifications were dated, not re-pointed.** `anno-tools.ts` records none of the three things the manifest attributed to its deleted predecessor (no `HELD` marker, no `D18-26`, no "no criterion in this phase" note). Re-pointing would have manufactured a false citation — worse than the stale one.
 - **The FIFO-mutex sentence was re-pointed onto the real discipline**: the Phase 28 store's single-writer, open/close-per-call model (`D-06`) plus the optional `base_revision` compare-and-swap argument, whose validator refuses a non-integer by name.
 
@@ -182,8 +182,8 @@ Broker confirmed `inactive` before every suite run (a live broker deterministica
 **1. [Rule 1 - Bug] Trigger 3's "Two of them" count was made false by this plan's own edit**
 
 - **Found during:** Task 1 (delta D2)
-- **Issue:** Trigger 3's mechanism reads *"Two of them (r2000_toggle_splitter, r2000_set_immediate_format) already name the requirement that would supply their criterion."* Delta D3 adds a `requirement_id` to a third entry, which would have left that sentence stating a false count — freshly-introduced staleness of exactly the class this plan exists to remove.
-- **Fix:** Kept the two-item claim (still exactly true of the two *future-surface* proposals) and added that a third, `r2000_undo`, names the criterion that ARRIVED and was discharged without a surface verb. This preserves the distinction between "a criterion that would justify adding it" and "a criterion already answered elsewhere" rather than collapsing them into a count of three.
+- **Issue:** Trigger 3's mechanism reads *"Two of them (anno_toggle_splitter, anno_set_immediate_format) already name the requirement that would supply their criterion."* Delta D3 adds a `requirement_id` to a third entry, which would have left that sentence stating a false count — freshly-introduced staleness of exactly the class this plan exists to remove.
+- **Fix:** Kept the two-item claim (still exactly true of the two *future-surface* proposals) and added that a third, `anno_undo`, names the criterion that ARRIVED and was discharged without a surface verb. This preserves the distinction between "a criterion that would justify adding it" and "a criterion already answered elsewhere" rather than collapsing them into a count of three.
 - **Files modified:** the manifest (trigger 3's mechanism)
 - **Verification:** `anno-derivation.test.ts` green; the mechanism still names `CURATED_ANNO_TOOLS` and the same-commit clause
 - **Committed in:** `7adcbaf`
@@ -230,15 +230,15 @@ None — no new security-relevant surface. No runtime code path, dependency, net
 | Threat ID | Disposition | Outcome |
 |---|---|---|
 | T-31-01 | mitigate | **Held.** The rewritten justification states the criterion's arrival AND the omission's survival in the same paragraph; `STORE-04`, `revertTo` and `D2` all assert present |
-| T-31-02 | mitigate | **Held.** `disposition` compared against `HEAD~1` — all five unchanged, `r2000_undo` still `omit` |
+| T-31-02 | mitigate | **Held.** `disposition` compared against `HEAD~1` — all five unchanged, `anno_undo` still `omit` |
 | T-31-03 | mitigate | **Held.** `procedures` array JSON-identical to `HEAD~1`; the two pin-pattern hits in the diff are prose mentions of the words "sha256"/"commit" inside trigger 1's mechanism, not pin values |
 | T-31-04 | mitigate | **Held.** 9 insertions vs 8 deletions; every retired id and phase number retained with a dated parenthetical |
-| T-31-05 | mitigate | **Held.** `R2000_UPSTREAM_CLONE` occurrence count is exactly 1 and byte-identical; `VICE_REQUIRE_R2000_UPSTREAM` untouched |
+| T-31-05 | mitigate | **Held.** `ANNO_UPSTREAM_CLONE` occurrence count is exactly 1 and byte-identical; `VICE_REQUIRE_ANNO_UPSTREAM` untouched |
 | T-31-06, T-31-07, T-31-SC | accept | Unchanged — no install task, no execution, nothing secret |
 
 ## Flagged Assumptions Carried Forward
 
-- **`STORE-04` remains an inferred id, not a quoted one.** No document says "the criterion for `r2000_undo` is `STORE-04`" verbatim. The justification therefore carries the *reasoning* in words (revert answered by whole-store snapshot/restore at the store layer, per `D2`) rather than leaning on the id alone. If the id is wrong, the fix is a one-token edit.
+- **`STORE-04` remains an inferred id, not a quoted one.** No document says "the criterion for `anno_undo` is `STORE-04`" verbatim. The justification therefore carries the *reasoning* in words (revert answered by whole-store snapshot/restore at the store layer, per `D2`) rather than leaning on the id alone. If the id is wrong, the fix is a one-token edit.
 - **The `unclassified` edge-probe category stays unresolved, deliberately.** The residual risk is a stale reference of a shape outside the four-token grep set. The D8 sweep plus a full read of the file covered what could be covered; a human reading at review time is the only remaining coverage, recorded here as `human_judgment: true` on deliverable D6.
 
 ## User Setup Required
@@ -248,7 +248,7 @@ None — no external service configuration required.
 ## Next Phase Readiness
 
 - `REPOINT-04`'s manifest half is complete and green. The plan did **not** touch `REQUIREMENTS.md`, `ROADMAP.md` or `STATE.md`; the orchestrator owns those writes post-wave.
-- **For plan 31-03 (or whoever owns delta 8):** the two stale `"ROADMAP Phase 31 criterion 4"` citations in `scripts/check-no-regenerator2000.mjs` (`:293`, `:523`) and the third at `.planning/STATE.md:718` are **still present** — deliberately out of this plan's scope (`files_modified` names the manifest alone).
+- **For plan 31-03 (or whoever owns delta 8):** the two stale `"ROADMAP Phase 31 criterion 4"` citations in `scripts/check-no-analyser.mjs` (`:293`, `:523`) and the third at `.planning/STATE.md:718` are **still present** — deliberately out of this plan's scope (`files_modified` names the manifest alone).
 - **For the verifier:** `31-VALIDATION.md` names two manifest readers; there are **three**. Add `anno-register.test.ts` to the per-task verification map.
 - **Note for anyone running suites in a worktree:** `node_modules/` must be provisioned first via `scripts/ensure-mcp-deps.sh`, and `repo-root.test.ts:1451` fails by construction inside `.claude/worktrees/`.
 

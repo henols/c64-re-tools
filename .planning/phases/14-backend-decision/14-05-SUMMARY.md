@@ -278,12 +278,12 @@ skipped visibly, not silently.
   plan. All 13 non-passing cases were individually diagnosed, not waved
   off: `audit-integrity.test.ts`'s D-12-02 case (1), `broker-control.test.ts`'s
   two singleton cases (2), `broker-e2e.test.ts`'s SIGTERM/SIGINT cases (2),
-  `r2000-cli.test.ts`'s six `--help`/verb-options-map cases (6), and
-  `r2000-mcp-client.test.ts`'s one timeout Property case (1) — all match
+  `anno-cli.test.ts`'s six `--help`/verb-options-map cases (6), and
+  `anno-mcp-client.test.ts`'s one timeout Property case (1) — all match
   this session's pre-named known-flaky-under-full-suite-load set exactly,
   and each was individually re-run focused and confirmed clean: `audit-integrity.test.ts`
   43/43, `broker-control.test.ts` 45/45, `broker-e2e.test.ts` 11/11 pass + 1
-  skip, `r2000-cli.test.ts` 64/64, `r2000-mcp-client.test.ts` 23/23.
+  skip, `anno-cli.test.ts` 64/64, `anno-mcp-client.test.ts` 23/23.
   **One case was NOT on the pre-named list by file name:**
   `broker-kill.test.ts`'s `registerShutdownHandlers: an injected uncaught
   exception...` case (16.9s duration under load). Diagnosed rather than

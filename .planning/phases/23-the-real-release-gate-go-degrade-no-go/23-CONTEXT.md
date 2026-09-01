@@ -26,13 +26,13 @@ planned before this phase closes.
 
 ### Instruments (what this phase is allowed to use)
 
-- **D-01: regenerator2000 is excluded entirely.** No r2000 binary, no
-  `r2000-coverage.ts` structural census, no r2000 output as an oracle, a
+- **D-01: The external analyser is excluded entirely.** No anno binary, no
+  `anno-coverage.ts` structural census, no anno output as an oracle, a
   baseline or a screening tool anywhere in this phase. It is `CUT-01` scope and
   is being deleted in Phase 25; building the gate on the thing being removed
   would make the gate worthless the moment the cutover lands. This overrides the
-  otherwise-tempting reuse of `r2000-coverage.ts`'s widened
-  `scanIndirectDispatch()`. *(User decision, verbatim intent: "Don't use r2000
+  otherwise-tempting reuse of `anno-coverage.ts`'s widened
+  `scanIndirectDispatch()`. *(User decision, verbatim intent: "Don't use anno
   for anything, it has to be removed.")*
   — **Reversibility:** reversible — nothing is built on the exclusion; it only
   narrows which tools a probe plan may invoke.
@@ -130,7 +130,7 @@ planned before this phase closes.
   badly can be superseded at verdict time, but only by recording the override
   explicitly, which weakens the pre-commitment it exists to provide.
 
-- **D-10: The verdict is machine-readable frontmatter in a durable findings document**, mirroring `docs/phase9-regenerator2000-probe-findings.md`:
+- **D-10: The verdict is machine-readable frontmatter in a durable findings document**, mirroring `docs/phase9-external-analyser-probe-findings.md`:
   `verdict: go|degrade|no-go` plus `verdict_rule_applied: R<N>`. The document
   reproduces the full rule and walks the actual outcome values through it, so a
   reader can mechanically re-derive the verdict rather than take it on trust.
@@ -161,9 +161,9 @@ being put to the user, and a planner may revisit any of them on evidence:
   (Phase 24) vendors it and must vendor the same one the gate measured.
 - **`PROOF-04` audit depth:** a source read of `analyzer.rs` (1,506 lines),
   function by function, each matched to a dxa/Ghidra replacement or accepted as
-  lost with its cost. **No r2000 execution** (follows from D-01). The source is
+  lost with its cost. **No anno execution** (follows from D-01). The source is
   available offline at
-  `~/.cargo/registry/src/*/regenerator2000-core-0.9.20/src/analyzer.rs` — no
+  `~/.cargo/registry/src/*/external-analyser-core-0.9.20/src/analyzer.rs` — no
   network needed.
 - **Ghidra pre-scripts:** reuse `BankProbe3.java`'s `getBlock()`-first guard
   pattern verbatim; it exists specifically to stop an unhandled
@@ -214,7 +214,7 @@ being put to the user, and a planner may revisit any of them on evidence:
   read the ROADMAP Phase 23 Notes as authoritative instead.
 
 ### The verdict precedent (the bar to match)
-- `docs/phase9-regenerator2000-probe-findings.md` — the durable verdict
+- `docs/phase9-external-analyser-probe-findings.md` — the durable verdict
   artifact: frontmatter `verdict: degrade` / `verdict_rule_applied: R4`, with
   the rule reproduced and walked through in the body
 - `.planning/phases/09-the-assumption-probe-go-no-go/09-07-PLAN.md` — the
@@ -262,12 +262,12 @@ being put to the user, and a planner may revisit any of them on evidence:
   Not chosen for the inventory (D-06 picked runtime observation) but available
   if a plan needs to render a disassembly excerpt as evidence without invoking
   either engine under test.
-- **`r2000-d64.ts`** (310 lines, also a `CUT-02` survivor) — `.d64` parsing, if
+- **`anno-d64.ts`** (310 lines, also a `CUT-02` survivor) — `.d64` parsing, if
   the supplied corpus is a disk image and a plan needs file-level access rather
   than autostart.
-- **`~/.cargo/registry/src/*/regenerator2000-core-0.9.20/src/analyzer.rs`** —
+- **`~/.cargo/registry/src/*/external-analyser-core-0.9.20/src/analyzer.rs`** —
   `PROOF-04`'s subject, present offline. Reading it does not violate D-01;
-  *running* r2000 would.
+  *running* anno would.
 
 ### Established Patterns
 - **Verdict-as-artifact** — a machine-readable field in a durable `docs/` file,
@@ -297,7 +297,7 @@ being put to the user, and a planner may revisit any of them on evidence:
 ## Specific Ideas
 
 - **Corpus format:** "disk image or a prg" — both are already reachable (VICE
-  autostarts either; `r2000-d64.ts` parses `.d64` if file-level access is
+  autostarts either; `anno-d64.ts` parses `.d64` if file-level access is
   wanted).
 - **Criterion 1 carries an open method question the researcher must close.**
   The 72%/0-FP claim was measured against `fixture.lbl`, a ground-truth symbol
@@ -324,10 +324,10 @@ being put to the user, and a planner may revisit any of them on evidence:
 <deferred>
 ## Deferred Ideas
 
-- **`r2000-coverage.ts` is not in `CUT-02`'s survivor list.** The bytes-derived
+- **`anno-coverage.ts` is not in `CUT-02`'s survivor list.** The bytes-derived
   coverage census v0.5.0 just shipped appears to fall inside `CUT-01`'s 19,181
   deleted lines. Consistent with D-01 and with the owner's stated intent that
-  r2000 "has to be removed", so it is not raised as a defect — but Phase 25's
+  anno "has to be removed", so it is not raised as a defect — but Phase 25's
   planner should confirm the deletion is intended rather than incidental.
 - **Fetching a corpus from public archives** (CSDb / Internet Archive) — offered
   and not taken. Would give third-party reproducibility; revisit only if the

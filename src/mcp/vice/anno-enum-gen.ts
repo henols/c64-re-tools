@@ -2,7 +2,7 @@
 // anno-enum-gen.ts -- the ONE authoritative place in this repo for value ->
 // variant naming, the adjacent-pair rule, identifier sanitization, the
 // per-register enum plan and the coverage report's wording contract
-// (D-20/D-22/D-23, R2000-13).
+// (D-20/D-22/D-23, ANNO-13).
 //
 // WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS (plan 29-10, D-01,
 // 2026-08-30). Read this paragraph before looking for a function that is not
@@ -70,7 +70,7 @@
 //   - Creating an enum FAILED with "Enum '<name>' already exists"
 //     (`app_state.rs:443-457`'s `validate_new_enum_name`) if the name was
 //     already taken -- there was no upsert. That is why `EnumInstallAction`
-//     has two values and why R2000-13's re-runnability needed a documented
+//     has two values and why ANNO-13's re-runnability needed a documented
 //     create-then-update precedence rather than a single call. A rebuilt
 //     installer that cannot express "updated" has lost that requirement.
 //   - The disassembly search matched its `query` regex against the
@@ -396,12 +396,12 @@ export function sanitizeVariantMap(regKey: string, variants: ReadonlyMap<number,
  *
  * KEPT ACROSS THE CUT (plan 29-10) even though nothing in this repo installs
  * an enum today. Creating an enum whose name already existed FAILED outright
- * on the retired producer -- there was no upsert -- so R2000-13's
+ * on the retired producer -- there was no upsert -- so ANNO-13's
  * "re-runnable" requirement was met by a documented precedence: try CREATE
  * first, and only on an already-exists failure fall back to UPDATE, which
  * replaces the variant map wholesale. That precedence, and this two-valued
  * result, are the requirement's whole observable content. A rebuilt installer
- * that can only ever report "created" has quietly dropped R2000-13.
+ * that can only ever report "created" has quietly dropped ANNO-13.
  */
 export type EnumInstallAction = "created" | "updated";
 

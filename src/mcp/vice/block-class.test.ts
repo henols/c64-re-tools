@@ -15,7 +15,7 @@
 //   - the `files[]` INCLUSION assertion. This is the exact inverse of the
 //     test-only-module assertions elsewhere in this suite: the classifier is
 //     production runtime code reachable from the published entry point's
-//     relative-import closure, so it MUST ship. `r2000-verify.test.ts`'s
+//     relative-import closure, so it MUST ship. `anno-verify.test.ts`'s
 //     absence assertion is the shape; only the polarity differs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -360,7 +360,7 @@ test("block-class.ts imports nothing census-side, disassembler-side, transport-s
   // `assert.deepEqual` is a type-narrowing assertion, so an empty-array
   // expectation narrows `specifiers` to `never[]` and every later read of it
   // becomes a typecheck error. Ordering, not a cast, is the fix.
-  for (const family of ["./r2000-", "./disasm-", "./stock-", "./vice", "./hostpath", "./containerpath"]) {
+  for (const family of ["./anno-", "./disasm-", "./stock-", "./vice", "./hostpath", "./containerpath"]) {
     assert.equal(
       specifiers.some((specifier) => specifier.startsWith(family)),
       false,

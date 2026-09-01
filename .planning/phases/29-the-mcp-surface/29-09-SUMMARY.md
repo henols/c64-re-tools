@@ -49,7 +49,7 @@ key-files:
     - scripts/lib/anno-cli-verbs.mjs
     - scripts/check-skill-tool-coverage.mjs
     - scripts/check-skill-fork-honesty.mjs
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
     - src/mcp/vice/vice-proxy.ts
     - src/mcp/vice/vice-proxy.test.ts
     - src/mcp/vice/anno-cli.ts
@@ -62,7 +62,7 @@ key-files:
 key-decisions:
   - "The re-pointing is a PROCEDURE rewrite, not a name substitution. `anno_disassemble` renders and writes nothing, so classification became read-then-record; `anno_save_project` performs no write; every call names its own `store` and every derived read its `image`; `max_results` is REQUIRED with no default on five reads. A playbook that had only its names swapped would have read correctly and been unexecutable."
   - "The `.regen2000proj` adjacent-table limitation is recorded as CLOSED rather than carried. The new store never joins two rows of its own accord (STORE-02), so the over-merge caveat is false here and repeating it would be a stale warning masquerading as care."
-  - "The ABS-02 attribution headers moved to a PERMANENT exemption rather than being scrubbed. The plan's Task 2 criterion `grep -rail 'regenerator2000' installer/skills | wc -l` returns 0 is unsatisfiable without deleting them, which CUT-03 and ROADMAP Phase 31 criterion 4 both forbid — recorded below as a criterion met in substance, with the substitute measurement."
+  - "The ABS-02 attribution headers moved to a PERMANENT exemption rather than being scrubbed. The plan's Task 2 criterion `grep -rail 'the external analyser' installer/skills | wc -l` returns 0 is unsatisfiable without deleting them, which CUT-03 and ROADMAP Phase 31 criterion 4 both forbid — recorded below as a criterion met in substance, with the substitute measurement."
   - "`packer-finding.mjs`'s `entropySource` names the CHANNEL (`caller-supplied`), not a verb. `--entropy` is caller-supplied and the code cannot know who produced the number; naming a current verb would claim a run that never happened, and naming the retired one leaves a tool-name-shaped token forever."
   - "The README's sixth required-substring assertion was RE-POINTED, not dropped: it asserted a prerequisite claim that is now false, and now asserts the CUT-03 attribution, which is the obligation that outlives the integration."
 
@@ -78,7 +78,7 @@ coverage:
     requirement: REPOINT-01
     verification:
       - kind: other
-        ref: "grep -arloE '\\br2000_[a-z0-9_]+' src/skills/ (no files) and over installer/skills (0 occurrences)"
+        ref: "grep -arloE '\\banno_[a-z0-9_]+' src/skills/ (no files) and over installer/skills (0 occurrences)"
         status: pass
       - kind: other
         ref: "node scripts/check-skill-tool-coverage.mjs (exit 0; 'anno_*: 18 distinct names extracted, all curated')"
@@ -137,7 +137,7 @@ coverage:
         ref: "planted red: filtering anno_search out of CURATED_ANNO_TOOLS makes node scripts/check-skill-tool-coverage.mjs exit 1 on TWO assertions (the per-name curation check and the non-vacuity control); reverted to an empty diff and exit 0"
         status: pass
       - kind: other
-        ref: "grep -av '^[[:space:]]*//' scripts/check-skill-tool-coverage.mjs | grep -ac 'r2000-tools' → 0"
+        ref: "grep -av '^[[:space:]]*//' scripts/check-skill-tool-coverage.mjs | grep -ac 'anno-tools' → 0"
         status: pass
       - kind: unit
         ref: "src/mcp/vice/anno-register.test.ts + anno-derivation.test.ts + module-classification.test.ts (41/41)"
@@ -148,7 +148,7 @@ coverage:
     requirement: REPOINT-02
     verification:
       - kind: other
-        ref: "grep -an '\\br2000' src/skills/c64-program-recon/scripts/packer-finding.mjs → no tool-name-shaped token; one dated prose provenance line naming the retired analyser"
+        ref: "grep -an '\\banno' src/skills/c64-program-recon/scripts/packer-finding.mjs → no tool-name-shaped token; one dated prose provenance line naming the retired analyser"
         status: pass
       - kind: unit
         ref: "src/skills/c64-program-recon/scripts/packer-finding.test.mjs (16 pass, 1 skipped — the oracle-gated case)"
@@ -159,7 +159,7 @@ coverage:
     requirement: CUT-05
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs (exit 0; 21 entries, NO 29-09 citation; 29-09's temporary total 65 -> 11 -> 0)"
+        ref: "node scripts/check-no-analyser.mjs (exit 0; 21 entries, NO 29-09 citation; 29-09's temporary total 65 -> 11 -> 0)"
         status: pass
     human_judgment: false
 
@@ -170,7 +170,7 @@ status: complete
 
 # Phase 29 Plan 09: Procedure Re-pointing Summary
 
-**Every absorbed analysis procedure now executes on the owned annotation surface in both trees a user can receive it from — 17 old-family tool names re-pointed onto 18 verbs that actually exist, six withdrawn CLI verbs each described as withdrawn with a dated return condition, the `r2000` subcommand renamed to `anno` across its three halves in one commit, and the one guard that contradicted the cut resolved with the skill named as the side that moved.**
+**Every absorbed analysis procedure now executes on the owned annotation surface in both trees a user can receive it from — 17 old-family tool names re-pointed onto 18 verbs that actually exist, six withdrawn CLI verbs each described as withdrawn with a dated return condition, the `anno` subcommand renamed to `anno` across its three halves in one commit, and the one guard that contradicted the cut resolved with the skill named as the side that moved.**
 
 ## Performance
 
@@ -189,7 +189,7 @@ Re-measured at execution, as the plan instructed, because `29-CONTEXT.md` and `R
 | Distinct such tokens | **17** | 17 | 18 — **wrong** |
 | Files mentioning the retired analyser at all | **10** | 10 | 10 |
 
-The plan's corrected counts are confirmed exactly. ROADMAP Phase 31's "18 distinct tool names" is the figure that is wrong; the tree carried **17**. Coincidentally the post-re-pointing count *is* 18, because the rewrite introduced `anno_remove_scope` (which the old surface had no equivalent for) while `r2000_search_disassembly` and `r2000_get_binary_info` both mapped onto existing names.
+The plan's corrected counts are confirmed exactly. ROADMAP Phase 31's "18 distinct tool names" is the figure that is wrong; the tree carried **17**. Coincidentally the post-re-pointing count *is* 18, because the rewrite introduced `anno_remove_scope` (which the old surface had no equivalent for) while `anno_search_disassembly` and `anno_get_binary_info` both mapped onto existing names.
 
 ## Accomplishments
 
@@ -215,7 +215,7 @@ The plan's corrected counts are confirmed exactly. ROADMAP Phase 31's "18 distin
 
 ROADMAP Phase 31 requires this fate be **decided**. The field recorded where a caller-supplied entropy number came from, and named the retired analyser's binary-info verb in that verb's own tool-name shape.
 
-**Decision: keep the fact, retire the literal, and name the CHANNEL rather than a producer.** Two things were wrong with carrying the shape forward under any spelling. It is a fact about a past run, so renaming it to a verb on the current surface would claim a run that never happened. And the branch **cannot know** who produced the number — `--entropy` is caller-supplied, and the caller may equally have measured it, read it from a derived binary-info call, or copied it out of a report. So `entropySource` is now `"caller-supplied"`, which the code can actually observe, and the historical producer moved into a dated past-tense paragraph in the file header with no token an extractor could mistake for a live route. The `unknownFinding` reason, which named "the pinned regenerator2000 surface", now names this project's own surfaces.
+**Decision: keep the fact, retire the literal, and name the CHANNEL rather than a producer.** Two things were wrong with carrying the shape forward under any spelling. It is a fact about a past run, so renaming it to a verb on the current surface would claim a run that never happened. And the branch **cannot know** who produced the number — `--entropy` is caller-supplied, and the caller may equally have measured it, read it from a derived binary-info call, or copied it out of a report. So `entropySource` is now `"caller-supplied"`, which the code can actually observe, and the historical producer moved into a dated past-tense paragraph in the file header with no token an extractor could mistake for a live route. The `unknownFinding` reason, which named "the pinned analyser surface", now names this project's own surfaces.
 
 ### The ABS-02 attribution headers are a PERMANENT exemption, not an allow-list discharge
 
@@ -228,13 +228,13 @@ A new **BLOCK-scoped `skill-attribution-headers` class** covers the headers, anc
 
 ### The README's required-substring assertion was re-pointed, not dropped
 
-`check-skill-fork-honesty.mjs`'s sixth required README string asserted (Phase 10, R2000-03) that the README named the analyser as a **required prerequisite**. That claim died with the integration. Deleting the assertion was the wrong repair: the obligation that survives the cut is CUT-03's attribution. The string stays and its **reason** moves — what a reader loses if it goes is no longer an install step, it is the attribution being findable from the README instead of only from a notices file. The guard's two remaining mentions joined `attribution-guard-test`, the class that already exists for a guard that must name the subject to police prose about it.
+`check-skill-fork-honesty.mjs`'s sixth required README string asserted (Phase 10, ANNO-03) that the README named the analyser as a **required prerequisite**. That claim died with the integration. Deleting the assertion was the wrong repair: the obligation that survives the cut is CUT-03's attribution. The string stays and its **reason** moves — what a reader loses if it goes is no longer an install step, it is the attribution being findable from the README instead of only from a notices file. The guard's two remaining mentions joined `attribution-guard-test`, the class that already exists for a guard that must name the subject to police prose about it.
 
 ### README, sentence by sentence
 
 | Class | Sentences |
 |---|---|
-| **CORRECTED** (claim a prerequisite that no longer exists) | the `## Installing regenerator2000` heading; the "requires … It is a **required prerequisite**, not an optional accelerator" sentence; the `cargo install` row; the rustc **>= 1.90** floor; both container-cost rows; the "verified against 0.9.20" row; the whole one-project-per-network-namespace paragraph (that limit belonged to an HTTP MCP route this project never used); and the two monitor-contention sentences about a `--vice` pass-through on a launch path that is gone |
+| **CORRECTED** (claim a prerequisite that no longer exists) | the `## Installing the external analyser` heading; the "requires … It is a **required prerequisite**, not an optional accelerator" sentence; the `cargo install` row; the rustc **>= 1.90** floor; both container-cost rows; the "verified against 0.9.20" row; the whole one-project-per-network-namespace paragraph (that limit belonged to an HTTP MCP route this project never used); and the two monitor-contention sentences about a `--vice` pass-through on a launch path that is gone |
 | **KEPT** (attribution and history, true after the deletion) | the upstream repository link, the dual `MIT OR Apache-2.0` licence, the pinned commit `493f840…` / `v0.9.20`, and the pointer to `THIRD-PARTY-NOTICES.md` — now standing in a dated section of their own rather than inside an install section |
 
 The Licence table row was the README's only pre-existing attribution sentence and it lived *inside* the deleted install section, so the attribution was **relocated and expanded** rather than left byte-identical. That is a deliberate departure from the plan's "unchanged" wording, recorded here because it is exactly the judgement a later reader will want to check: deleting the whole section would have removed the README's only attribution pointer while the shipped packages still incorporate the upstream prose.
@@ -250,16 +250,16 @@ The Licence table row was the README's only pre-existing attribution sentence an
 **1. [Rule 3 - Blocker] Task 1's re-pointing reds `check-skill-tool-coverage.mjs`, whose file the plan assigns to Task 3**
 
 - **Found during:** Task 1
-- **Issue:** The plan's Task 1 acceptance criteria require BOTH `grep -arloE '\br2000_[a-z0-9_]+' src/skills/` to return no files AND `node scripts/check-skill-tool-coverage.mjs` to exit 0. Those are incompatible while the script still extracts the old prefix: emptying the skill tree of old-family names drives `extractedR2000.size` to 0 and fails the `>= 10` floor. The script is listed only in Task 3's `<files>`.
+- **Issue:** The plan's Task 1 acceptance criteria require BOTH `grep -arloE '\banno_[a-z0-9_]+' src/skills/` to return no files AND `node scripts/check-skill-tool-coverage.mjs` to exit 0. Those are incompatible while the script still extracts the old prefix: emptying the skill tree of old-family names drives `extractedAnno.size` to 0 and fails the `>= 10` floor. The script is listed only in Task 3's `<files>`.
 - **Fix:** Task 1 made the **minimum functional** re-point needed to keep the guard green in its own commit — the extraction regex, the classification set (importing `CURATED_ANNO_TOOLS` **alongside** the retired one, not replacing it), the floor number, and the CLI-verb section's naming, which belongs to the invocation rename anyway. Task 3 then delivered everything the plan actually assigns to it and which was still outstanding: the full raise record, the "no manifest at all" structural note, the non-vacuity subject swap, the retired import's removal and its last use site, and the report-line wording.
 - **Files modified:** `scripts/check-skill-tool-coverage.mjs`
-- **Verification:** the guard exits 0 at `d6ba750`, `b89b010` and `c3f68e4`; Task 3's own grep criterion (`r2000-tools` outside comment lines) reports 0 only after `c3f68e4`.
+- **Verification:** the guard exits 0 at `d6ba750`, `b89b010` and `c3f68e4`; Task 3's own grep criterion (`anno-tools` outside comment lines) reports 0 only after `c3f68e4`.
 - **Committed in:** `d6ba750` and `c3f68e4`
 
 **2. [Rule 3 - Blocker] The acme-build withdrawal notice and the fork-honesty positive check had to move in Task 1, not Task 2**
 
 - **Found during:** Task 1
-- **Issue:** Task 1's criterion 3 requires *every* CLI invocation under `src/skills/` to name a surviving verb or sit in a withdrawal sentence — which includes `acme-build/SKILL.md`'s `r2000 export-asm`. But the fork-honesty guard asserts that exact literal is present, so removing it without re-pointing the guard leaves a red guard at Task 1's commit.
+- **Issue:** Task 1's criterion 3 requires *every* CLI invocation under `src/skills/` to name a surviving verb or sit in a withdrawal sentence — which includes `acme-build/SKILL.md`'s `anno export-asm`. But the fork-honesty guard asserts that exact literal is present, so removing it without re-pointing the guard leaves a red guard at Task 1's commit.
 - **Fix:** the withdrawal notice **and** the guard's positive-check re-point landed together in `d6ba750`, preserving this phase's "green at every commit" discipline. Task 2 then did the README correction, the required-substring re-pointing, the installer proof, the planted-red observation and the final allow-list discharge — all of which the plan assigns to it.
 - **Files modified:** `src/skills/acme-build/SKILL.md`, `scripts/check-skill-fork-honesty.mjs`
 - **Verification:** `node scripts/check-skill-fork-honesty.mjs` exits 0 at all three commits.
@@ -288,7 +288,7 @@ The Licence table row was the README's only pre-existing attribution sentence an
 - **Found during:** Task 1
 - **Issue:** `check-skill-description-overlap.mjs` asserts CLAUDE.md's table is byte-identical to each SKILL.md's frontmatter `description:`. Rewriting `routine-queue-walker`'s description (required substantively by ROADMAP Phase 31 criterion 4) broke that.
 - **Fix:** the row was regenerated from the SKILL.md frontmatter, and CLAUDE.md's allow-list entry — whose single occurrence was that row — was deleted with its reason recorded. See "Decisions Made".
-- **Files modified:** `CLAUDE.md`, `scripts/check-no-regenerator2000.mjs`
+- **Files modified:** `CLAUDE.md`, `scripts/check-no-analyser.mjs`
 - **Verification:** `node scripts/check-skill-description-overlap.mjs` → `CLAUDE.md project-skills table: 7 rows, all byte-identical to their SKILL.md`.
 - **Committed in:** `d6ba750`
 
@@ -296,7 +296,7 @@ The Licence table row was the README's only pre-existing attribution sentence an
 
 - **Found during:** Tasks 1 and 3
 - **Issue:** `module-classification.test.ts` Direction 9 asserts every structured `line` citation resolves to a line CONTAINING the cited symbol, and 9b does the same for `path:NN` prose citations. Adding an import to `check-skill-tool-coverage.mjs` moved two citations (Task 1); removing it moved one back and orphaned another (Task 3); rewriting `c64-program-recon/SKILL.md` moved a prose citation from `:250` to `:255`.
-- **Fix:** all four re-pointed. In Task 3, `r2000-tools.ts`'s `CURATED_R2000_TOOLS` consumer citation was **re-pointed onto `anno-derivation.test.ts:55`** — the one out-of-family consumer still importing that set — rather than deleted, so the `glue` verdict keeps a live basis instead of an empty one, and its rationale now records that all three out-of-family imports are gone. A wording fix was also needed: the rationale's phrase "over the anno_* prefix" tripped Direction 4's name-as-justification prohibition.
+- **Fix:** all four re-pointed. In Task 3, `anno-tools.ts`'s `CURATED_ANNO_TOOLS` consumer citation was **re-pointed onto `anno-derivation.test.ts:55`** — the one out-of-family consumer still importing that set — rather than deleted, so the `glue` verdict keeps a live basis instead of an empty one, and its rationale now records that all three out-of-family imports are gone. A wording fix was also needed: the rationale's phrase "over the anno_* prefix" tripped Direction 4's name-as-justification prohibition.
 - **Files modified:** `src/mcp/vice/module-classification.ts`
 - **Verification:** `node --test module-classification.test.ts` — 20/20 pass.
 - **Committed in:** `d6ba750`, `c3f68e4`
@@ -304,7 +304,7 @@ The Licence table row was the README's only pre-existing attribution sentence an
 **7. [Rule 3 - Blocker] The invocation rename rippled into `anno-cli.ts` and three test files**
 
 - **Found during:** Task 1
-- **Issue:** the CLI's own `--help` advertised `vice-mcp r2000 <verb>` in `NPX_INVOCATION`/`PLUGIN_INVOCATION`, and three test files spawned or matched the old token (`anno-cli.test.ts`, `vice-proxy.test.ts`, `anno-verb-coverage.test.ts`'s live-execution regex). None is in the plan's `files_modified`, but leaving them would have shipped a `--help` naming a subcommand that no longer dispatches.
+- **Issue:** the CLI's own `--help` advertised `vice-mcp anno <verb>` in `NPX_INVOCATION`/`PLUGIN_INVOCATION`, and three test files spawned or matched the old token (`anno-cli.test.ts`, `vice-proxy.test.ts`, `anno-verb-coverage.test.ts`'s live-execution regex). None is in the plan's `files_modified`, but leaving them would have shipped a `--help` naming a subcommand that no longer dispatches.
 - **Fix:** all four re-pointed in the same commit as the token itself, including `anno-verb-coverage.test.ts`'s negative-control comment, which explains *why* `render-memmap` is the load-bearing control.
 - **Files modified:** `src/mcp/vice/anno-cli.ts`, `anno-cli.test.ts`, `vice-proxy.test.ts`, `anno-verb-coverage.test.ts`
 - **Verification:** `node --test anno-cli.test.ts anno-verb-coverage.test.ts` green.
@@ -312,7 +312,7 @@ The Licence table row was the README's only pre-existing attribution sentence an
 
 ### Acceptance criteria met in substance but not in literal form
 
-**Task 2, criterion:** *"`grep -rail 'regenerator2000' installer/skills | wc -l` returns 0 after the sync."*
+**Task 2, criterion:** *"`grep -rail 'the external analyser' installer/skills | wc -l` returns 0 after the sync."*
 
 **This criterion is unsatisfiable as written, and satisfying it would have been the defect the plan's own D-10 reasoning forbids.** The shipped skill tree carries the ABS-02 attribution headers, which name the upstream repository twice per header. ROADMAP Phase 31 criterion 4 requires those "10 instances across two trees, each with its two naming lines byte-identical", and CUT-03 exists precisely so the attribution prose is *not* what pays for the removal. Driving that grep to 0 requires deleting attributions from the shipped tarball.
 
@@ -320,8 +320,8 @@ What the criterion was protecting is fully delivered, and measured three ways:
 
 | Measurement | Result |
 |---|---|
-| `grep -aroE '\br2000_[a-z0-9_]+' installer/skills \| wc -l` — the old-family tool names, which is what "the same re-pointing" means | **0** |
-| `grep -rail 'regenerator2000' installer/skills \| wc -l` | **4**, and every one is accounted for: 3 files' ABS-02 headers (5, 4, 3 occurrences) plus `packer-finding.mjs`'s dated provenance line (1) |
+| `grep -aroE '\banno_[a-z0-9_]+' installer/skills \| wc -l` — the old-family tool names, which is what "the same re-pointing" means | **0** |
+| `grep -rail 'the external analyser' installer/skills \| wc -l` | **4**, and every one is accounted for: 3 files' ABS-02 headers (5, 4, 3 occurrences) plus `packer-finding.mjs`'s dated provenance line (1) |
 | Per-file counts, `installer/skills` vs `src/skills` | **identical, file for file** — 5 / 4 / 3 / 1 in both trees |
 
 The removal gate independently confirms the classification: all 24 header occurrences fall inside `skill-attribution-headers` and both `packer-finding.mjs` copies inside `surviving-provenance`, with **zero** unclassified hits anywhere under `installer/skills`. A grep count is the weaker instrument here; the gate reads bytes in-process and classifies every occurrence.
@@ -343,10 +343,10 @@ The removal gate independently confirms the classification: all 24 header occurr
 
 | Check | Result |
 |---|---|
-| `cd src/mcp/vice && npm run test:automated` | 2829 tests, 2796 pass, **5 fail** — all `r2000-session.test.ts` (the `plan 18-06` FIFO-queue tests). **Failing-file SET unchanged** from 29-07's close; no new file entered it. Broker confirmed down before the run (`systemctl --user status vice-broker` → unit not found; no `x64sc`/`vice-broker` processes), so the BACK-05 phantom is not in play. |
+| `cd src/mcp/vice && npm run test:automated` | 2829 tests, 2796 pass, **5 fail** — all `anno-session.test.ts` (the `plan 18-06` FIFO-queue tests). **Failing-file SET unchanged** from 29-07's close; no new file entered it. Broker confirmed down before the run (`systemctl --user status vice-broker` → unit not found; no `x64sc`/`vice-broker` processes), so the BACK-05 phantom is not in play. |
 | `cd src/mcp/vice && npm run typecheck` | exit 0 |
 | `node scripts/check-skill-tool-coverage.mjs` | exit 0 — `anno_*: 18 distinct names extracted, all curated (CURATED_ANNO_TOOLS has 19 entries)`; `anno CLI verbs: 2 parsed from anno-cli.ts, 2/2 resolved` |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 — 401 files scanned, **21 entries, no 29-09 citation** |
+| `node scripts/check-no-analyser.mjs` | exit 0 — 401 files scanned, **21 entries, no 29-09 citation** |
 | `node scripts/check-skill-fork-honesty.mjs` | exit 0 — `no stale phase-deferral prose found`; README carries all 6 required strings |
 | `node scripts/check-skill-description-overlap.mjs` | exit 0 — CLAUDE.md table 7/7 byte-identical |
 | `node scripts/check-npm-packages.mjs` | exit 0 — `@henols/vice-mcp` **84 files**; `@henols/c64-re-tools` **34 files, 7 skills** |
@@ -393,11 +393,11 @@ None — no external service configuration required. (This plan **removes** a us
 
 ## Next Phase Readiness
 
-- **Plan 29-10 (wave 7)** inherits a skill tree and a README free of every live route into the deletion set, so nothing it deletes is still documented as reachable. Its own allow-list burden is unchanged at 166 occurrences, and CLAUDE.md's entry is already gone — one fewer file for it to touch. `module-classification.ts`'s `r2000-tools.ts` verdict now cites `anno-derivation.test.ts:55`, so 29-10 must move that citation (or the verdict) when it deletes the module and that import.
+- **Plan 29-10 (wave 7)** inherits a skill tree and a README free of every live route into the deletion set, so nothing it deletes is still documented as reachable. Its own allow-list burden is unchanged at 166 occurrences, and CLAUDE.md's entry is already gone — one fewer file for it to touch. `module-classification.ts`'s `anno-tools.ts` verdict now cites `anno-derivation.test.ts:55`, so 29-10 must move that citation (or the verdict) when it deletes the module and that import.
 - **Plan 29-11** inherits an allow-list with **no 29-09 citation**, two plans closer to the emptiness assertion it makes. It also inherits one recorded ROADMAP correction to make: Phase 31 criterion 1's "18 distinct tool names" measured as **17**, and criterion 3's `git grep` proof is superseded by the packaging proof recorded above.
 - **Plan 29-12 (wave 6)** still owns `render-memmap`'s rebuild. Its CLI invocation is now spelled `anno render-memmap` in three skill files, and the playbook carries a dated note that the verb's project input has no producer — so 29-12's rebuild has both a name to keep and a stated gap to close.
 - **Phase 30** inherits four dated withdrawal notices that name it by number and name the byte-diff oracle by shape: `anno export-asm` (asserted by `check-skill-fork-honesty.mjs`, and the same literal becomes the live invocation on restoration), the `.lbl` round trip's `export-lbl`/`import-lbl`, and `gen-enums` with its specification preserved. Each verb that lands there also raises `ANNO_CLI_VERB_FLOOR`.
-- **Phase 31** is substantially discharged early by this plan. Its criteria 1, 2 and 3 are met and measured; criterion 4's attribution chain is intact and now mechanically protected in both directions by `skill-attribution-headers`; criterion 5 (`upstream-procedure-manifest.json` and the `r2000_undo` disposition) is untouched and remains that phase's work.
+- **Phase 31** is substantially discharged early by this plan. Its criteria 1, 2 and 3 are met and measured; criterion 4's attribution chain is intact and now mechanically protected in both directions by `skill-attribution-headers`; criterion 5 (`upstream-procedure-manifest.json` and the `anno_undo` disposition) is untouched and remains that phase's work.
 
 ---
 *Phase: 29-the-mcp-surface*

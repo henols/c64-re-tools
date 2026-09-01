@@ -9,7 +9,7 @@ requires:
   - phase: 19-absorbed-procedures-and-the-coverage-instrument
     provides: "hasDispatchContext()'s pairing parameter and branch-A proven push link (19-15); SplitOrientation.vectorLow and branch B's single membership test (19-16); the committed twin-pair fixture pattern and the class-3/class-4 gate structure (19-08..19-11)"
 provides:
-  - "src/mcp/vice/r2000-coverage-grammar.test.ts — a composed corpus of 1000 indexed arrangements plus 1000 immediate twins, generated from a ten-fragment 6502 alphabet across 72 stratified families"
+  - "src/mcp/vice/anno-coverage-grammar.test.ts — a composed corpus of 1000 indexed arrangements plus 1000 immediate twins, generated from a ten-fragment 6502 alphabet across 72 stratified families"
   - "expectedProvenLink() — one computed oracle of six numbered structural rules deciding every arrangement's expected verdict from its symbolic fragment list, with no hand-declared boolean anywhere in the corpus"
   - "the corpus-wide set equality: the set the instrument PROVES equals exactly the set the oracle says carries a proven data-flow link, asserted in both directions as one statement"
   - "the oracle-isolation source pin — a mechanical assertion that the oracle's own source span never names decode(), scanIndirectDispatch(), computeStructuralCensus() or provenDispatchTargets()"
@@ -36,7 +36,7 @@ tech-stack:
 
 key-files:
   created:
-    - src/mcp/vice/r2000-coverage-grammar.test.ts
+    - src/mcp/vice/anno-coverage-grammar.test.ts
   modified:
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md
 
@@ -63,16 +63,16 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#the composed corpus is bounded, stratified across every family, and large enough to be a population"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#the composed corpus is bounded, stratified across every family, and large enough to be a population"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#every family contributed at least MIN_PER_FAMILY members, so the corpus cap is not a prefix of one family"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#every family contributed at least MIN_PER_FAMILY members, so the corpus cap is not a prefix of one family"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#the corpus reaches every generative dimension: order, interleaving, gap placement and length"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#the corpus reaches every generative dimension: order, interleaving, gap placement and length"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#building the corpus twice yields byte-identical payloads in identical order"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#building the corpus twice yields byte-identical payloads in identical order"
         status: pass
     human_judgment: false
   - id: D2
@@ -80,16 +80,16 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#every payload is exactly 64 bytes with an intact data tail, and no two indexed arrangements are byte-identical"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#every payload is exactly 64 bytes with an intact data tail, and no two indexed arrangements are byte-identical"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#no generated payload contains the JAM opcode at any offset"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#no generated payload contains the JAM opcode at any offset"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#every arrangement carries exactly one terminator and it is the last fragment"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#every arrangement carries exactly one terminator and it is the last fragment"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#every y-indexed load the alphabet emits renders to the absolute_y opcode and never the zeropage_y one"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#every y-indexed load the alphabet emits renders to the absolute_y opcode and never the zeropage_y one"
         status: pass
     human_judgment: false
   - id: D3
@@ -97,10 +97,10 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#the oracle never reaches the instrument: no decode, no scan, no census inside the oracle section"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#the oracle never reaches the instrument: no decode, no scan, no census inside the oracle section"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#the oracle's SCOPE is honest: no corpus payload reaches classes 1 or 2, so the oracle may be silent about them"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#the oracle's SCOPE is honest: no corpus payload reaches classes 1 or 2, so the oracle may be silent about them"
         status: pass
       - kind: integration
         ref: "cd src/mcp/vice && npx tsc --noEmit"
@@ -111,10 +111,10 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#all nine pinned regression members are present in the corpus by byte identity"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#all nine pinned regression members are present in the corpus by byte identity"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#the computed oracle AGREES with all nine hand-declared pinned verdicts"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#the computed oracle AGREES with all nine hand-declared pinned verdicts"
         status: pass
     human_judgment: false
   - id: D5
@@ -122,7 +122,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#the set of arrangements the instrument PROVES equals exactly the set the oracle says carries a proven link"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#the set of arrangements the instrument PROVES equals exactly the set the oracle says carries a proven link"
         status: pass
     human_judgment: false
   - id: D6
@@ -130,13 +130,13 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#an arrangement the oracle says is unlinked moves not one byte into the seed set or the table-entry class"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#an arrangement the oracle says is unlinked moves not one byte into the seed set or the table-entry class"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#an unlinked arrangement's census reaches exactly its own prologue and classifies no table byte as code"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#an unlinked arrangement's census reaches exactly its own prologue and classifies no table byte as code"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#twins: an unlinked pair reports the same census, and a LINKED indexed member reaches strictly more than its twin"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#twins: an unlinked pair reports the same census, and a LINKED indexed member reaches strictly more than its twin"
         status: pass
     human_judgment: false
   - id: D7
@@ -144,7 +144,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#the instrument is NOT quietly measuring nothing: the corpus carries a population of genuinely linked arrangements"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#the instrument is NOT quietly measuring nothing: the corpus carries a population of genuinely linked arrangements"
         status: pass
     human_judgment: false
   - id: D8
@@ -152,10 +152,10 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#degenerate inputs produce empty dispatch collections and no throw"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#degenerate inputs produce empty dispatch collections and no throw"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage-grammar.test.ts#every address list the scan publishes is strictly ascending and free of duplicates, and scanning twice is stable"
+        ref: "src/mcp/vice/anno-coverage-grammar.test.ts#every address list the scan publishes is strictly ascending and free of duplicates, and scanning twice is stable"
         status: pass
     human_judgment: false
   - id: D9
@@ -163,7 +163,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: manual_procedural
-        ref: "branch A reverted in the working tree; node --test r2000-coverage-grammar.test.ts observed exit 1, 18 pass / 4 fail of 22, falsely-proven population 3. Branch B reverted; exit 1, 18 pass / 4 fail of 22, falsely-proven population 6. Both restored to 22 pass / 0 fail with git diff --quiet clean"
+        ref: "branch A reverted in the working tree; node --test anno-coverage-grammar.test.ts observed exit 1, 18 pass / 4 fail of 22, falsely-proven population 3. Branch B reverted; exit 1, 18 pass / 4 fail of 22, falsely-proven population 6. Both restored to 22 pass / 0 fail with git diff --quiet clean"
         status: pass
     human_judgment: true
     rationale: >-
@@ -237,7 +237,7 @@ status: complete
   2000 payloads each decoded, scanned and censused. The full package suite moved 2589 → 2611 tests
   with **2566 pass, 0 fail**.
 
-- **Nothing shipped changed.** `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0: this plan
+- **Nothing shipped changed.** `git diff --quiet -- src/mcp/vice/anno-coverage.ts` exits 0: this plan
   wrote no production code. The new suite is not in `package.json`'s `files[]`, so neither published
   tarball gained a byte, and `check-npm-packages.mjs` reports the same 75 / 34 file counts.
 
@@ -256,7 +256,7 @@ own demonstrations, in the mechanism task 3 exists to exercise.
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage-grammar.test.ts` (new, 2169 lines) — the module header stating why the
+- `src/mcp/vice/anno-coverage-grammar.test.ts` (new, 2169 lines) — the module header stating why the
   file exists and four named things not to do; the geometry constants shared with every committed
   coverage fixture; `type Fragment` and its ten variants with `FRAGMENT_BYTES()`, `loadX()`,
   `loadY()`, `loadImm()`, `storeZp()`, `jmpInd()`, `ldaIndY()`, `PHA`/`TXA`/`TYA`/`NOP`/`RTS`;
@@ -330,7 +330,7 @@ own demonstrations, in the mechanism task 3 exists to exercise.
 - **Fix:** `MAX_FRAGMENTS` is 8, defined as the cap on the COMPOSED core (two loads plus the
   attachment multiset) with the `nop` LENGTH dimension bounded separately at two. The arithmetic and
   the reason are written into the constant's own doc comment.
-- **Files modified:** `src/mcp/vice/r2000-coverage-grammar.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage-grammar.test.ts`
 - **Verification:** All 72 families contribute 11–15 members; all nine pinned members are present.
 - **Committed in:** `99b9f54` (Task 1 commit)
 
@@ -345,7 +345,7 @@ own demonstrations, in the mechanism task 3 exists to exercise.
   collapse is stated as a checked relation instead: two members share a twin only when their fragment
   lists are identical apart from the loads' `register` field, and every twin is asserted to differ
   from its own indexed member.
-- **Files modified:** `src/mcp/vice/r2000-coverage-grammar.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage-grammar.test.ts`
 - **Verification:** 1000 distinct indexed byte strings asserted; the shared-twin relation asserted
   over every group.
 - **Committed in:** `99b9f54` (Task 1 commit)
@@ -363,7 +363,7 @@ own demonstrations, in the mechanism task 3 exists to exercise.
   a proven TABLE ENTRY — as `classAt($0830) ∈ {unreached, referenced-as-data}`, with the reasoning and
   the fourth class's separate status written beside it. `classAt($0840) === "unreached"` is asserted
   unchanged.
-- **Files modified:** `src/mcp/vice/r2000-coverage-grammar.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage-grammar.test.ts`
 - **Verification:** Green over all 1978 unlinked payloads; still red under both planted violations,
   which is the discrimination the assertion exists for.
 - **Committed in:** `6ea7a49` (Task 2 commit)
@@ -388,7 +388,7 @@ own demonstrations, in the mechanism task 3 exists to exercise.
   progression on the output. Seeding by FAMILY additionally stopped the eight core combos of one
   attachment set drawing identical permutations — seven eighths of the corpus's ORDER coverage had
   been duplicated.
-- **Files modified:** `src/mcp/vice/r2000-coverage-grammar.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage-grammar.test.ts`
 - **Verification:** Plant 19 falsely proves 3 (was 1), plant 20 falsely proves 6 (was 1); the
   determinism test still passes, all 72 families still contribute 11–15 members, and the corpus still
   reaches every generative dimension including load separations of 9. The three designs and their
@@ -415,12 +415,12 @@ as a carried item rather than being declared fixed on the strength of two green 
 
 | Check | Result |
 |---|---|
-| `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | **22 pass, 0 fail**, `duration_ms 449` (30 000 budget, asserted in-suite) |
-| `cd src/mcp/vice && node --test r2000-coverage.test.ts` | **80 pass, 0 fail** — unchanged; the grammar suite JOINS the per-case controls |
+| `cd src/mcp/vice && node --test anno-coverage-grammar.test.ts` | **22 pass, 0 fail**, `duration_ms 449` (30 000 budget, asserted in-suite) |
+| `cd src/mcp/vice && node --test anno-coverage.test.ts` | **80 pass, 0 fail** — unchanged; the grammar suite JOINS the per-case controls |
 | `cd src/mcp/vice && npx tsc --noEmit` | exit 0 |
 | `cd src/mcp/vice && node --test ci-suite-coverage.test.ts` | 10 pass, 0 fail — no CI wiring change |
 | `node scripts/check-npm-packages.mjs` | exit 0 — 75 / 34 files, unchanged |
-| `grep -c 'r2000-coverage-grammar' src/mcp/vice/package.json` | **0** — not in `files[]` |
+| `grep -c 'anno-coverage-grammar' src/mcp/vice/package.json` | **0** — not in `files[]` |
 | `cd src/mcp/vice && node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts` | 24 pass, 0 fail |
 | `cd src/mcp/vice && node --test docs-linerefs.test.ts` | 3 pass, 0 fail |
 | Full suite `cd src/mcp/vice && npm test` | 2611 tests, **2566 pass, 0 fail**, 40 skipped, 5 todo |
@@ -428,7 +428,7 @@ as a carried item rather than being declared fixed on the strength of two green 
 | Generative reach | separations 1–9, prologue lengths 7–19, 55 terminators outside the window, all registers / base orders / terminators / nop counts |
 | Planted violation 19 (branch A presence-only) | exit 1, 18 pass / 4 fail of 22, **3 falsely proven**; restored to 22 pass / 0 fail, source diff clean |
 | Planted violation 20 (branch B window-wide) | exit 1, 18 pass / 4 fail of 22, **6 falsely proven**; restored to 22 pass / 0 fail, source diff clean |
-| `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` | exit 0 — no production code changed, neither revert survived |
+| `git diff --quiet -- src/mcp/vice/anno-coverage.ts` | exit 0 — no production code changed, neither revert survived |
 | `git diff --numstat` on `19-VALIDATION.md` | 95 insertions, **0 deletions** |
 
 ## Prohibitions Observed
@@ -453,7 +453,7 @@ as a carried item rather than being declared fixed on the strength of two green 
 - No scope-reduction language (`v1`, `for now`, `simplified`, `placeholder`, `future phase`) and no
   phase-number hand-off in any comment or assertion message this plan wrote; the three documentation
   guards pass.
-- `r2000-session.ts`'s 200 ms call timeout was not widened; no runtime dependency was added to either
+- `anno-session.ts`'s 200 ms call timeout was not widened; no runtime dependency was added to either
   published package; `COVERAGE_SCHEMA_VERSION` was not touched.
 
 ## Known Stubs
@@ -488,7 +488,7 @@ None — no external service configuration required.
 
 ## Self-Check: PASSED
 
-- `src/mcp/vice/r2000-coverage-grammar.test.ts` — FOUND
+- `src/mcp/vice/anno-coverage-grammar.test.ts` — FOUND
 - `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md` — FOUND
 - Commits `99b9f54`, `6ea7a49`, `c2449df`, `a69e1f6`, `bed4e94` — all FOUND in `git log --all`
 - All three tasks' `<acceptance_criteria>` re-run and passing; the plan's `<verification>` block

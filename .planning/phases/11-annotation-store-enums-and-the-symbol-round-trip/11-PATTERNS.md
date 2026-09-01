@@ -8,34 +8,34 @@
 
 | New/Modified File | Role | Data Flow | Closest Analog | Match Quality |
 |---|---|---|---|---|
-| `.claude/mcp/vice/r2000-mcp-client.ts` (new) | service (MCP client seam) | request-response (stdio JSON-RPC, one child per call) | **No exact analog** — this repo has never been an MCP client. Closest constituent precedents: `r2000-launch.ts` (fixed-argv spawn), `vice.ts`'s `call()` (retry/timeout ladder over a transport), `vice-sync.ts`/stock binary-monitor client (request-id-first demux invariant) | no analog (constituent match only) |
-| `.claude/mcp/vice/r2000-tools.ts` (new) | route/tool-registration | request-response | `vice-proxy.ts`'s `RESULT_CONTINUE_TOOL` + its registration site (line 3245) | exact — same "proxy-local synthetic tool, never touches `forwardToVice()`" shape |
-| `.claude/mcp/vice/r2000-enum-gen.ts` (new) | utility/generator | batch/transform | `.claude/skills/c64-memory-mapping/scripts/driver.mjs` (`lookup()`, `annotate()`, `SRC_RANK`) for the bit-name/address resolution half; **no analog** in this repo for "re-runnable generator that calls out to an external MCP tool and writes results back into that same external store" | partial (role-match on the memmap side only) |
-| `.claude/mcp/vice/r2000-memmap-render.ts` (new) | utility (template renderer) | transform (query results → Markdown) | **No analog.** No existing module in this repo renders a Markdown artifact from queried data — `driver.mjs`'s `annotate()` renders per-line disassembly comments, a much narrower shape. State this gap plainly. | no analog |
-| `.claude/mcp/vice/r2000-confidence.ts` (new) | utility (parse/validate/render a string convention) | transform | **No analog for the parse+typo-detection shape.** Closest structural precedent for "convention pinned by a must-fail-on-typo test" is `r2000-launch.ts`'s `assertNoViceFlag()`/`R2000ViceFlagError` (throws a named error on a bad token) | partial (error-shape precedent only) |
-| `.claude/mcp/vice/r2000-launch.ts` (modified — add builders) | utility (fixed-argv builder module) | file-I/O (spawn) | itself — extend `buildExportAsmArgs()`/`buildVerifyArgs()` with `buildMcpServerStdioArgs()`, `buildExportLblArgs()`, `buildImportLblArgs()` | exact (extend in place) |
-| `.claude/mcp/vice/r2000-launch.test.ts` (modified — WR-02 fix) | test | — | itself — `stripCommentLines()` at lines 39-56 | exact |
+| `.claude/mcp/vice/anno-mcp-client.ts` (new) | service (MCP client seam) | request-response (stdio JSON-RPC, one child per call) | **No exact analog** — this repo has never been an MCP client. Closest constituent precedents: `anno-launch.ts` (fixed-argv spawn), `vice.ts`'s `call()` (retry/timeout ladder over a transport), `vice-sync.ts`/stock binary-monitor client (request-id-first demux invariant) | no analog (constituent match only) |
+| `.claude/mcp/vice/anno-tools.ts` (new) | route/tool-registration | request-response | `vice-proxy.ts`'s `RESULT_CONTINUE_TOOL` + its registration site (line 3245) | exact — same "proxy-local synthetic tool, never touches `forwardToVice()`" shape |
+| `.claude/mcp/vice/anno-enum-gen.ts` (new) | utility/generator | batch/transform | `.claude/skills/c64-memory-mapping/scripts/driver.mjs` (`lookup()`, `annotate()`, `SRC_RANK`) for the bit-name/address resolution half; **no analog** in this repo for "re-runnable generator that calls out to an external MCP tool and writes results back into that same external store" | partial (role-match on the memmap side only) |
+| `.claude/mcp/vice/anno-memmap-render.ts` (new) | utility (template renderer) | transform (query results → Markdown) | **No analog.** No existing module in this repo renders a Markdown artifact from queried data — `driver.mjs`'s `annotate()` renders per-line disassembly comments, a much narrower shape. State this gap plainly. | no analog |
+| `.claude/mcp/vice/anno-confidence.ts` (new) | utility (parse/validate/render a string convention) | transform | **No analog for the parse+typo-detection shape.** Closest structural precedent for "convention pinned by a must-fail-on-typo test" is `anno-launch.ts`'s `assertNoViceFlag()`/`AnnoViceFlagError` (throws a named error on a bad token) | partial (error-shape precedent only) |
+| `.claude/mcp/vice/anno-launch.ts` (modified — add builders) | utility (fixed-argv builder module) | file-I/O (spawn) | itself — extend `buildExportAsmArgs()`/`buildVerifyArgs()` with `buildMcpServerStdioArgs()`, `buildExportLblArgs()`, `buildImportLblArgs()` | exact (extend in place) |
+| `.claude/mcp/vice/anno-launch.test.ts` (modified — WR-02 fix) | test | — | itself — `stripCommentLines()` at lines 39-56 | exact |
 | `.claude/mcp/vice/vice-proxy.ts` (modified — tool registration) | route (MCP dispatch) | request-response | itself — `RESULT_CONTINUE_TOOL` (lines 398-413) + registration (line 3245); `RECYCLE_TOOL`/`DIAGNOSE_TOOL` (lines 422-462, 3255-3256) as the backend-aware counter-example to avoid copying | exact |
 | `.claude/mcp/vice/stock-symbols.ts` (modified — D-35 comment fix) | model (symbol store) | file-I/O | itself — header comment lines 26-31 | exact |
-| `.claude/mcp/vice/hostpath-consumers.test.ts` (modified — add new modules to absence list) | test | — | itself — the existing r2000-family absence block, lines 105-115 | exact |
+| `.claude/mcp/vice/hostpath-consumers.test.ts` (modified — add new modules to absence list) | test | — | itself — the existing anno-family absence block, lines 105-115 | exact |
 | `tools-manifest.json` / `tools-manifest.stock.json` (decision point, likely NOT modified) | config | — | itself — generated JSON shape (`generated_at`/`endpoint`/`tools[]`), regenerated by `refresh-manifest.ts` from the live host's own `tools/list` | exact (structural understanding, not a copy target) |
 | `scripts/check-npm-packages.mjs` (modified — folded todo 1) | utility (build/CI validation script) | batch | itself — the transitive-closure walk, lines ~110-138 | exact |
 | `.claude/skills/c64-program-recon/templates/memory-map.template.md` (modified — becomes render target, not hand-authored) | config (Markdown template) | transform | itself | exact (reshaped, not replaced) |
 | `.claude/skills/c64-program-recon/SKILL.md` (modified — prose pointing at the store) | config (skill doc) | — | itself | exact |
-| `.claude/mcp/vice/r2000-*.test.ts` (new tests, e.g. `r2000-mcp-client.test.ts`, `r2000-tools.test.ts`, `r2000-enum-gen.test.ts`, `r2000-symbol-roundtrip.test.ts`) | test | — | `r2000-verify.test.ts` / `r2000-project.test.ts` — the `probeR2000()`/`SKIP_REASON`/`VICE_REQUIRE_R2000` availability-gate shape | exact |
+| `.claude/mcp/vice/anno-*.test.ts` (new tests, e.g. `anno-mcp-client.test.ts`, `anno-tools.test.ts`, `anno-enum-gen.test.ts`, `anno-symbol-roundtrip.test.ts`) | test | — | `anno-verify.test.ts` / `anno-project.test.ts` — the `probeAnno()`/`SKIP_REASON`/`VICE_REQUIRE_ANNO` availability-gate shape | exact |
 | `.claude/mcp/vice/package.json` (`files[]`, decision point) | config | — | itself — `REQUIRED_DERIVED_MODULES` table in `check-npm-packages.mjs` | exact (mechanical addition once file names are fixed) |
 
 ## Pattern Assignments
 
-### `.claude/mcp/vice/r2000-mcp-client.ts` (service, request-response) — NO DIRECT ANALOG
+### `.claude/mcp/vice/anno-mcp-client.ts` (service, request-response) — NO DIRECT ANALOG
 
 **Honest gap:** this repo has never been an MCP *client*. There is no file to copy the overall shape from. RESEARCH.md's own recommendation (`@mastra/mcp`'s `MCPClient`, already a declared dependency, zero new footprint) is the primary path; the fallback is a ~120-line hand-rolled client. Either way, borrow these three *constituent* precedents:
 
-**Constituent precedent 1 — fixed-argv spawn (`r2000-launch.ts`, lines 149-166):**
+**Constituent precedent 1 — fixed-argv spawn (`anno-launch.ts`, lines 149-166):**
 ```typescript
-export function runR2000(argv: readonly string[], opts: RunR2000Options = {}): RunR2000Result {
+export function runAnno(argv: readonly string[], opts: RunAnnoOptions = {}): RunAnnoResult {
   assertNoViceFlag(argv);
-  const r = spawnSync(R2000_BIN, [...argv], {
+  const r = spawnSync(ANNO_BIN, [...argv], {
     encoding: "utf8",
     cwd: opts.cwd,
     timeout: opts.timeoutMs,
@@ -43,8 +43,8 @@ export function runR2000(argv: readonly string[], opts: RunR2000Options = {}): R
   if (r.error) {
     if ((r.error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(
-        `regenerator2000 was not found on PATH -- install it with \`cargo install regenerator2000\` and ` +
-          `ensure \`regenerator2000\` is on $PATH (or set R2000_BIN to its full path).`
+        `the external analyser was not found on PATH -- install it with \`cargo install analyser\` and ` +
+          `ensure \`the external analyser\` is on $PATH (or set ANNO_BIN to its full path).`
       );
     }
     throw r.error;
@@ -66,13 +66,13 @@ export async function call(toolName: string, args: Record<string, unknown> = {},
 ```
 The "check the deny/refusal condition as the literal first statement of the function body, before any I/O" discipline is the one to copy for the curated-tool gate (see Shared Patterns below).
 
-**Constituent precedent 3 — request-id-first demux invariant.** No single file to excerpt (the binary-monitor client is spread across `vice-sync.ts` and CLAUDE.md's own protocol notes), but the rule is explicit in CLAUDE.md: "demux must key on request-id and never resolve a pending request with an event." For the r2000 stdio client this generalizes to: **key every response on the JSON-RPC `id` field; never assume line N of stdout answers request N** (regenerator2000's `mcp/stdio.rs:67-122` is confirmed synchronous one-request-one-response, per RESEARCH.md, which relaxes this risk but does not eliminate the need to check `id` explicitly — do not assume synchrony as a substitute for correlation).
+**Constituent precedent 3 — request-id-first demux invariant.** No single file to excerpt (the binary-monitor client is spread across `vice-sync.ts` and CLAUDE.md's own protocol notes), but the rule is explicit in CLAUDE.md: "demux must key on request-id and never resolve a pending request with an event." For the anno stdio client this generalizes to: **key every response on the JSON-RPC `id` field; never assume line N of stdout answers request N** (the external analyser's `mcp/stdio.rs:67-122` is confirmed synchronous one-request-one-response, per RESEARCH.md, which relaxes this risk but does not eliminate the need to check `id` explicitly — do not assume synchrony as a substitute for correlation).
 
-**Never-trust-a-misleading-success precedent (`r2000-verify.ts` header, lines 1-16):** apply the same posture to `r2000_save_project`'s response — RESEARCH.md's own Anti-Pattern section already names this: the response is a string, not a checksum, so a fresh re-read (or a second child-process query against the saved path) is required before a plan step may claim persistence succeeded.
+**Never-trust-a-misleading-success precedent (`anno-verify.ts` header, lines 1-16):** apply the same posture to `anno_save_project`'s response — RESEARCH.md's own Anti-Pattern section already names this: the response is a string, not a checksum, so a fresh re-read (or a second child-process query against the saved path) is required before a plan step may claim persistence succeeded.
 
 ---
 
-### `.claude/mcp/vice/r2000-tools.ts` (route, request-response)
+### `.claude/mcp/vice/anno-tools.ts` (route, request-response)
 
 **Analog:** `.claude/mcp/vice/vice-proxy.ts` — `RESULT_CONTINUE_TOOL` definition and registration (the pattern to copy), with `RECYCLE_TOOL`/`DIAGNOSE_TOOL` as the shape to explicitly AVOID.
 
@@ -104,10 +104,10 @@ const RESULT_CONTINUE_TOOL: ToolDefinition = {
 // through dispatchStock (which would refuse the continuation mechanism itself).
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
 ```
-Every `r2000_*` tool should register the same way — `buildViceTool()`, never `buildBackendAwareTool()`:
+Every `anno_*` tool should register the same way — `buildViceTool()`, never `buildBackendAwareTool()`:
 ```typescript
-for (const def of R2000_TOOL_DEFINITIONS) {
-  tools[def.name] = buildViceTool(def, (args) => runR2000Tool(def.name, args));
+for (const def of ANNO_TOOL_DEFINITIONS) {
+  tools[def.name] = buildViceTool(def, (args) => runAnnoTool(def.name, args));
 }
 ```
 
@@ -132,23 +132,23 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
 **Explicit anti-pattern, named at the site (`vice-proxy.ts:3189-3218`, `WHAT NOT TO DO` block):**
 > "never register a tool whose runner can reach `call()` / `forwardToVice()` / `ensureViceSession()` without going through this function [`buildBackendAwareTool()`]. The one legitimate exception is a runner that touches no transport at all (`vice_result_continue` ...) — and that exception is asserted, by name, in `stock-dispatch.test.ts`'s structural section."
 
-Every `r2000_*` runner is the SAME kind of exception (it opens a *child process*, not the VICE transport at all) — the planner should add the equivalent structural assertion (by name) alongside the existing `vice_result_continue` one, not silently assume the existing test covers it.
+Every `anno_*` runner is the SAME kind of exception (it opens a *child process*, not the VICE transport at all) — the planner should add the equivalent structural assertion (by name) alongside the existing `vice_result_continue` one, not silently assume the existing test covers it.
 
 **Dynamic-import integration point** (`vice-proxy.ts:218`):
 ```typescript
-const { runR2000Cli } = await import("./r2000-cli.ts");
+const { runAnnoCli } = await import("./anno-cli.ts");
 ```
-`r2000-tools.ts`/`r2000-mcp-client.ts` should be reached the same way (dynamic import), consistent with the existing pattern and with folded-todo-1's constraint that every dynamic-import target must join `files[]`.
+`anno-tools.ts`/`anno-mcp-client.ts` should be reached the same way (dynamic import), consistent with the existing pattern and with folded-todo-1's constraint that every dynamic-import target must join `files[]`.
 
 **`rewriteArguments()` call sites — re-verified this session, both drifted from CLAUDE.md's cited numbers, matching RESEARCH.md's own re-verification:**
 - Inside `forwardToVice()` (which itself starts at line 2878): the call is at **line 2943** (`const rewritten = rewriteArguments(args, name);`).
 - Inside `gatherWedgeEvidence()` (which itself starts at line 1398): the call is at **line 1422** (`const { args: translated } = rewriteArguments({ path: screenshotContainerPath }, "vice_display_screenshot");`).
 
-Since every `r2000_*` runner is registered via `buildViceTool()` directly (never `buildBackendAwareTool()`, never `forwardToVice()`), **neither call site is reachable from the new tools** — this makes CLAUDE.md's "derived tools must be intercepted before `forwardToVice()`" constraint moot by construction, exactly as RESEARCH.md states. The planner should record this as the reason no interception code is needed, not merely assume it.
+Since every `anno_*` runner is registered via `buildViceTool()` directly (never `buildBackendAwareTool()`, never `forwardToVice()`), **neither call site is reachable from the new tools** — this makes CLAUDE.md's "derived tools must be intercepted before `forwardToVice()`" constraint moot by construction, exactly as RESEARCH.md states. The planner should record this as the reason no interception code is needed, not merely assume it.
 
 ---
 
-### `.claude/mcp/vice/r2000-enum-gen.ts` (utility/generator, batch/transform)
+### `.claude/mcp/vice/anno-enum-gen.ts` (utility/generator, batch/transform)
 
 **Analog (bit-name/address side):** `.claude/skills/c64-memory-mapping/scripts/driver.mjs`
 
@@ -177,12 +177,12 @@ function annotate(lines, { maxSpan = INLINE_SPAN_MAX, noHeader = false } = {}) {
 **No analog for:** the "query an external MCP tool twice, pair results by address arithmetic, then call the SAME external tool to install a derived artifact back into it" shape. This is genuinely new — RESEARCH.md's own Pattern 2 (Code Examples section) is the only worked example, not a real file in this repo:
 ```typescript
 // Pass 1: every "lda #..." instruction anywhere in the disassembly.
-const ldas = await callR2000("r2000_search_disassembly", {
+const ldas = await callAnno("anno_search_disassembly", {
   query: "^lda #", use_regex: true, search_instructions: true,
   search_labels: false, search_comments: false, max_results: 10000, // default 50 -- MUST override
 });
 // Pass 2: every store to a register this repo's curated bit-name table knows.
-const stores = await callR2000("r2000_search_disassembly", {
+const stores = await callAnno("anno_search_disassembly", {
   query: `^sta \\$(${knownRegisterHexAlternation})`, use_regex: true,
   search_instructions: true, search_labels: false, search_comments: false, max_results: 10000,
 });
@@ -194,11 +194,11 @@ for (const store of stores) {
 ```
 **Pitfall to carry into the plan (verbatim from RESEARCH.md):** `max_results` defaults to 50 (`handler.rs:1074-1077`) — always pass an explicit `max_results` and log a possible-truncation signal when the returned count equals the cap (D-23's "report coverage explicitly" rule).
 
-**"No silent caps" precedent to copy the STYLE of** (not the content) — `r2000-launch.ts`'s own commitment to naming a limit explicitly rather than degrading silently is the nearest in-repo tone match; see also `stock-symbols.ts`'s `MAX_SYMBOLS`/`MAX_LABEL_FILE_LINES` ceilings below, which throw a named, count-bearing error rather than truncating quietly.
+**"No silent caps" precedent to copy the STYLE of** (not the content) — `anno-launch.ts`'s own commitment to naming a limit explicitly rather than degrading silently is the nearest in-repo tone match; see also `stock-symbols.ts`'s `MAX_SYMBOLS`/`MAX_LABEL_FILE_LINES` ceilings below, which throw a named, count-bearing error rather than truncating quietly.
 
 ---
 
-### `.claude/mcp/vice/r2000-memmap-render.ts` (utility, transform) — NO ANALOG
+### `.claude/mcp/vice/anno-memmap-render.ts` (utility, transform) — NO ANALOG
 
 State plainly: no existing module in this repo renders a Markdown artifact from queried structured data. `driver.mjs`'s `annotate()` (line 357) is the closest thing — it renders per-bit prose into a disassembly comment — but that is line-level, not document-level, and it consumes a static JSON file, not a live query result set. The planner should design this fresh, using `.claude/skills/c64-program-recon/templates/memory-map.template.md` (62 lines, read in full below) purely as the TARGET SHAPE, not as an existing renderer to extend.
 
@@ -220,7 +220,7 @@ the evidence, so the record of when something stopped being a guess survives.
 D-27's reconciliation: the provenance header (capture SHA-256, `$01`, `$DD00`, video standard) is an **input** to the renderer (hand-authored or supplied by `c64-ram-capture`'s own output, e.g. `RELEASES.json`), not a hand-edited region of the generated file — the planner must pick and document the exact interface shape (e.g. a small JSON/YAML sidecar the renderer reads alongside the store), per D-24/D-27's reconciliation instruction.
 
 **Generated-artifact discipline (ENGINEERING_RULES.md §11, applies directly):**
-1. update the generator/source of truth (the store, via `r2000_*` queries, plus the provenance input);
+1. update the generator/source of truth (the store, via `anno_*` queries, plus the provenance input);
 2. regenerate the artifact;
 3. run the drift guard;
 4. verify the generated delta is expected.
@@ -228,24 +228,24 @@ No hand-editing of the rendered `memory-map.md` once this lands — exactly the 
 
 ---
 
-### `.claude/mcp/vice/r2000-confidence.ts` (utility, transform) — PARTIAL ANALOG
+### `.claude/mcp/vice/anno-confidence.ts` (utility, transform) — PARTIAL ANALOG
 
-**Analog for the "throw a named, specific error on a malformed token" shape:** `r2000-launch.ts`'s `assertNoViceFlag()`/`R2000ViceFlagError` (lines 60-105):
+**Analog for the "throw a named, specific error on a malformed token" shape:** `anno-launch.ts`'s `assertNoViceFlag()`/`AnnoViceFlagError` (lines 60-105):
 ```typescript
-export class R2000ViceFlagError extends Error {
+export class AnnoViceFlagError extends Error {
   argv: readonly string[];
-  constructor(message: string, { argv }: R2000ViceFlagErrorOptions) {
+  constructor(message: string, { argv }: AnnoViceFlagErrorOptions) {
     super(message);
-    this.name = "R2000ViceFlagError";
+    this.name = "AnnoViceFlagError";
     this.argv = argv;
   }
 }
 
 export function assertNoViceFlag(argv: readonly string[]): void {
   for (const arg of argv) {
-    for (const flag of FORBIDDEN_R2000_FLAGS) {
+    for (const flag of FORBIDDEN_ANNO_FLAGS) {
       if (arg === flag || arg.startsWith(`${flag}=`)) {
-        throw new R2000ViceFlagError(viceFlagRefusalMessage(argv), { argv });
+        throw new AnnoViceFlagError(viceFlagRefusalMessage(argv), { argv });
       }
     }
   }
@@ -255,7 +255,7 @@ D-25's vocabulary to hardcode: `confirmed code`, `probable code`, `confirmed dat
 
 ---
 
-### `.claude/mcp/vice/r2000-launch.ts` (utility, extend in place)
+### `.claude/mcp/vice/anno-launch.ts` (utility, extend in place)
 
 **Analog:** itself. Existing builder shape to match exactly (lines 107-126):
 ```typescript
@@ -276,11 +276,11 @@ export function buildVerifyArgs({ projectPath }: BuildVerifyArgsOptions): string
   return ["--verify", "--assembler", "acme", projectPath];
 }
 ```
-New builders (`buildMcpServerStdioArgs()`, `buildExportLblArgs()`, `buildImportLblArgs()`) must follow the SAME shape: a named `Options` interface, no rest parameter, no field that forwards caller-supplied tokens, and must still flow through `runR2000()`'s `assertNoViceFlag()` gate (or the new stdio-spawn function's equivalent first-statement guard). Per D-28's measured trap, `buildImportLblArgs()` must ALWAYS include `--mcp-server-stdio` alongside `--import_lbl` — the fixed-builder shape is exactly what prevents a caller from ever getting the discard-prone flag combination.
+New builders (`buildMcpServerStdioArgs()`, `buildExportLblArgs()`, `buildImportLblArgs()`) must follow the SAME shape: a named `Options` interface, no rest parameter, no field that forwards caller-supplied tokens, and must still flow through `runAnno()`'s `assertNoViceFlag()` gate (or the new stdio-spawn function's equivalent first-statement guard). Per D-28's measured trap, `buildImportLblArgs()` must ALWAYS include `--mcp-server-stdio` alongside `--import_lbl` — the fixed-builder shape is exactly what prevents a caller from ever getting the discard-prone flag combination.
 
 ---
 
-### `.claude/mcp/vice/r2000-launch.test.ts` (WR-02 fix)
+### `.claude/mcp/vice/anno-launch.test.ts` (WR-02 fix)
 
 **The exact vacuous-guard code to fix** (lines 39-56):
 ```typescript
@@ -308,9 +308,9 @@ function stripCommentLines(src: string): string {
 **The three assertions this guards (all in the same file):**
 ```typescript
 // test at lines 98-105
-test("r2000-launch.ts contains no filter(...) call over the deny list -- the flag is never silently stripped", ...);
+test("anno-launch.ts contains no filter(...) call over the deny list -- the flag is never silently stripped", ...);
 // test at lines 143-157
-test("D-07 construction half: r2000-launch.ts source contains no rest-parameter or pass-through-named field ...", ...);
+test("D-07 construction half: anno-launch.ts source contains no rest-parameter or pass-through-named field ...", ...);
 ```
 **Non-vacuous fix per ENGINEERING_RULES.md §6:** fix `stripCommentLines()` to detect `*/` anywhere in the remaining text (not only as a line-ending suffix), continue scanning the remainder of that line as code, then plant EXACTLY the reviewer's demonstrated violation (a rest-param pass-through hidden after a `*/ code` closing line), prove the existing test FAILS before the fix and PASSES after.
 
@@ -324,10 +324,10 @@ test("D-07 construction half: r2000-launch.ts source contains no rest-parameter 
 // line per symbol, verified against ACME's `--vicelabels` output via
 // acme-build/scripts/acme.mjs's own parser (curateLabels(),
 // `/^al\s+C:[0-9a-f]+\s+\.(\S+)/i`). STATED ASSUMPTION, NOT A VERIFIED FACT:
-// regenerator2000's `--export_lbl` is *expected* to emit the same syntax,
-// but R2000-16(c) has never been run -- hence the parser below SKIPS
+// the external analyser's `--export_lbl` is *expected* to emit the same syntax,
+// but ANNO-16(c) has never been run -- hence the parser below SKIPS
 // unrecognised lines rather than refusing the whole file, and no comment or
-// doc here may claim "regenerator2000-compatible" as verified.
+// doc here may claim "external-analyser-compatible" as verified.
 ```
 D-35's replacement must: (a) state that `--export_lbl` compatibility IS now verified, (b) cite the exact measured output (`al C:0810 .init_screen`, matching the parser regex below exactly), (c) scope the claim to "0.9.20 and this fixture" — explicitly not "all inputs forever" (same scoping caveat ROADMAP.md already applies to Phase 9 criterion 3(3)).
 
@@ -360,24 +360,24 @@ if (size > MAX_LABEL_FILE_BYTES) {
 
 ### `.claude/mcp/vice/hostpath-consumers.test.ts` (add new modules to the "must be absent" list)
 
-**Analog:** itself — the existing r2000-family absence assertion (lines 105-115):
+**Analog:** itself — the existing anno-family absence assertion (lines 105-115):
 ```typescript
-test("the r2000 module family (D-08/R2000-02) is absent from the consumer set -- regenerator2000 runs container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
+test("the anno module family (D-08/ANNO-02) is absent from the consumer set -- the external analyser runs container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
   const importers = hostpathImporters();
   for (const name of [
-    "r2000-launch.ts",
-    "r2000-project.ts",
-    "r2000-d64.ts",
-    "r2000-cli.ts",
-    "r2000-verify.ts",
+    "anno-launch.ts",
+    "anno-project.ts",
+    "anno-d64.ts",
+    "anno-cli.ts",
+    "anno-verify.ts",
   ]) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
 });
 ```
-**Concrete finding:** this list does NOT yet include the new Phase 11 modules (`r2000-mcp-client.ts`, `r2000-tools.ts`, `r2000-enum-gen.ts`, `r2000-memmap-render.ts`, `r2000-confidence.ts`). The plan must extend this exact array with the five new filenames — same test, same assertion shape, mirroring how Phase 10's D-08 originally added the five names above.
+**Concrete finding:** this list does NOT yet include the new Phase 11 modules (`anno-mcp-client.ts`, `anno-tools.ts`, `anno-enum-gen.ts`, `anno-memmap-render.ts`, `anno-confidence.ts`). The plan must extend this exact array with the five new filenames — same test, same assertion shape, mirroring how Phase 10's D-08 originally added the five names above.
 
-The five-member `EXPECTED_IMPORTERS` list (lines 76, unchanged by this phase per Rule A15/A16 — regenerator2000 stays container-side):
+The five-member `EXPECTED_IMPORTERS` list (lines 76, unchanged by this phase per Rule A15/A16 — the external analyser stays container-side):
 ```typescript
 const EXPECTED_IMPORTERS = ["containerpath.ts", "install-resources.ts", "stock-paths.ts", "vice-proxy.ts", "vice-sync.ts"];
 ```
@@ -390,7 +390,7 @@ const EXPECTED_IMPORTERS = ["containerpath.ts", "install-resources.ts", "stock-p
 ```javascript
 for (const m of src.matchAll(/^\s*import\s[^;]*?from\s+"(\.\/[^"]+)"/gm)) {
 ```
-This walk starts from `vice-proxy.ts` (the `stack = ["vice-proxy.ts"]` seed) and only follows STATIC `import ... from "./x.ts"` statements. `vice-proxy.ts:218`'s `await import("./r2000-cli.ts")` is a dynamic import and is never traversed — confirmed none of the five existing r2000 modules are reachable through this closure walk today. This phase adds several MORE dynamically-imported r2000 modules (the MCP client seam, tool registration, enum generator, renderer), so the miss becomes materially likelier. Fix options (both named in CONTEXT.md's folded todo 1, planner's choice):
+This walk starts from `vice-proxy.ts` (the `stack = ["vice-proxy.ts"]` seed) and only follows STATIC `import ... from "./x.ts"` statements. `vice-proxy.ts:218`'s `await import("./anno-cli.ts")` is a dynamic import and is never traversed — confirmed none of the five existing anno modules are reachable through this closure walk today. This phase adds several MORE dynamically-imported anno modules (the MCP client seam, tool registration, enum generator, renderer), so the miss becomes materially likelier. Fix options (both named in CONTEXT.md's folded todo 1, planner's choice):
 1. widen the regex to also match `import\s*\(\s*"\.\/([^"]+)"\s*\)`, or
 2. add an explicit assertion enumerating the dynamic-import entry points that must be present in `files[]`.
 
@@ -405,45 +405,45 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
 
 ### Manifest files (`tools-manifest.json` / `tools-manifest.stock.json`)
 
-**Structural understanding (not a copy target):** both files share the shape `{ generated_at, endpoint, tools: [{ name, description, inputSchema }, ...] }`, and both are REGENERATED from a live host server's own `tools/list` response by `refresh-manifest.ts`. This confirms RESEARCH.md's finding: a hand-added `r2000_*` entry in either manifest would be silently wiped on the next `refresh-manifest.ts` run, since that script only writes what the live host answers — an r2000 child process is never that host. **The `vice_result_continue` pattern (proxy-local synthetic tool, Pattern 1 above) bypasses the manifest question entirely**, which is very likely the right call here too — flag this to the planner as the strong default, consistent with RESEARCH.md's own recommendation.
+**Structural understanding (not a copy target):** both files share the shape `{ generated_at, endpoint, tools: [{ name, description, inputSchema }, ...] }`, and both are REGENERATED from a live host server's own `tools/list` response by `refresh-manifest.ts`. This confirms RESEARCH.md's finding: a hand-added `anno_*` entry in either manifest would be silently wiped on the next `refresh-manifest.ts` run, since that script only writes what the live host answers — an anno child process is never that host. **The `vice_result_continue` pattern (proxy-local synthetic tool, Pattern 1 above) bypasses the manifest question entirely**, which is very likely the right call here too — flag this to the planner as the strong default, consistent with RESEARCH.md's own recommendation.
 
 ---
 
-### New tests (`r2000-tools.test.ts`, `r2000-mcp-client.test.ts`, `r2000-enum-gen.test.ts`, `r2000-symbol-roundtrip.test.ts`)
+### New tests (`anno-tools.test.ts`, `anno-mcp-client.test.ts`, `anno-enum-gen.test.ts`, `anno-symbol-roundtrip.test.ts`)
 
-**Analog:** `.claude/mcp/vice/r2000-verify.test.ts` and `.claude/mcp/vice/r2000-project.test.ts` — the `VICE_REQUIRE_R2000` availability gate is ALREADY IMPLEMENTED (D-11), so new Phase 11 tests should import/reuse this convention, not reinvent it.
+**Analog:** `.claude/mcp/vice/anno-verify.test.ts` and `.claude/mcp/vice/anno-project.test.ts` — the `VICE_REQUIRE_ANNO` availability gate is ALREADY IMPLEMENTED (D-11), so new Phase 11 tests should import/reuse this convention, not reinvent it.
 
-**Exact gate shape to copy (`r2000-verify.test.ts:145-174`):**
+**Exact gate shape to copy (`anno-verify.test.ts:145-174`):**
 ```typescript
-const R2000_BIN = process.env.R2000_BIN ?? "regenerator2000";
+const ANNO_BIN = process.env.ANNO_BIN ?? "the external analyser";
 
-function probeR2000(): boolean {
-  const r = spawnSync(R2000_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
+function probeAnno(): boolean {
+  const r = spawnSync(ANNO_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
   if (r.error) return false;
   const banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  return /regenerator2000/i.test(banner);
+  return /analyser/i.test(banner);
 }
 
-const R2000_AVAILABLE = probeR2000();
+const ANNO_AVAILABLE = probeAnno();
 
-const SKIP_REASON: string | false = R2000_AVAILABLE
+const SKIP_REASON: string | false = ANNO_AVAILABLE
   ? false
-  : `r2000-verify.test.ts's regenerator2000-dependent tests are skipped -- no real regenerator2000 was ` +
-    `found at R2000_BIN="${R2000_BIN}". Set R2000_BIN to an absolute path to a real "regenerator2000" ` +
-    `binary, or install one (cargo install regenerator2000 ...). D-11 deliberately keeps CI from setting ` +
-    `VICE_REQUIRE_R2000, so this is an expected SKIP there -- never a CI failure.`;
+  : `anno-verify.test.ts's external-analyser-dependent tests are skipped -- no real the external analyser was ` +
+    `found at ANNO_BIN="${ANNO_BIN}". Set ANNO_BIN to an absolute path to a real "the external analyser" ` +
+    `binary, or install one (cargo install analyser ...). D-11 deliberately keeps CI from setting ` +
+    `VICE_REQUIRE_ANNO, so this is an expected SKIP there -- never a CI failure.`;
 
-test("regenerator2000 availability gate (D-11)", () => {
-  if (process.env.VICE_REQUIRE_R2000) {
+test("the external analyser availability gate (D-11)", () => {
+  if (process.env.VICE_REQUIRE_ANNO) {
     assert.ok(
-      R2000_AVAILABLE,
-      `VICE_REQUIRE_R2000 is set but no real regenerator2000 was found at R2000_BIN="${R2000_BIN}" -- a ` +
+      ANNO_AVAILABLE,
+      `VICE_REQUIRE_ANNO is set but no real the external analyser was found at ANNO_BIN="${ANNO_BIN}" -- a ` +
         `maintainer who sets this variable expects a hard FAIL, never a SKIP, when the binary is actually missing.`,
     );
   }
 });
 ```
-Every dependent test in a new file must be marked `{ skip: SKIP_REASON }` — never a hand-rolled `if (!available) return`, which reports a false PASS instead of a SKIP. Do NOT add `VICE_REQUIRE_R2000` to `.github/workflows/ci.yml` (D-11's deliberate asymmetry with `VICE_REQUIRE_ACME`, `cargo install regenerator2000` measured 4m48s-5m39s on a fresh build).
+Every dependent test in a new file must be marked `{ skip: SKIP_REASON }` — never a hand-rolled `if (!available) return`, which reports a false PASS instead of a SKIP. Do NOT add `VICE_REQUIRE_ANNO` to `.github/workflows/ci.yml` (D-11's deliberate asymmetry with `VICE_REQUIRE_ACME`, `cargo install analyser` measured 4m48s-5m39s on a fresh build).
 
 ---
 
@@ -453,7 +453,7 @@ Every dependent test in a new file must be marked `{ skip: SKIP_REASON }` — ne
 
 **Source:** `.claude/mcp/vice/vice.ts`, `DENY_LIST` (lines 201-207) + `denyListRefusalMessage()` (lines 229-243) + the enforcement call site (lines 697-700).
 
-**Apply to:** `r2000-tools.ts`'s curated-set gate and its `r2000_batch_execute` inner-name check.
+**Apply to:** `anno-tools.ts`'s curated-set gate and its `anno_batch_execute` inner-name check.
 
 ```typescript
 export const DENY_LIST: readonly string[] = [
@@ -482,42 +482,42 @@ export async function call(toolName: string, args: Record<string, unknown> = {},
   }
   ...
 ```
-For D-33, the mirrored shape is: an **allow-list** (`CURATED_R2000_TOOLS`, the D-18 named subset) rather than a deny-list, checked BOTH at the outer tool-name dispatch AND recursively against every inner `name` field inside an `r2000_batch_execute` payload's `calls` array — "a batch is refused whole if any inner name is outside the curated set" (D-33's own wording). The existing smuggling test to mirror is `vice-proxy.test.ts:5174` (`tools_call carrying a nested vice_disk_list argument is now refused before any request reaches the stand-in host`) — write the r2000 equivalent as a new test asserting a batch containing one curated call plus one non-curated inner name (e.g. `get_address_details`, itself excluded by D-32) is refused whole, with the refusal happening BEFORE any call reaches the regenerator2000 child.
+For D-33, the mirrored shape is: an **allow-list** (`CURATED_ANNO_TOOLS`, the D-18 named subset) rather than a deny-list, checked BOTH at the outer tool-name dispatch AND recursively against every inner `name` field inside an `anno_batch_execute` payload's `calls` array — "a batch is refused whole if any inner name is outside the curated set" (D-33's own wording). The existing smuggling test to mirror is `vice-proxy.test.ts:5174` (`tools_call carrying a nested vice_disk_list argument is now refused before any request reaches the stand-in host`) — write the anno equivalent as a new test asserting a batch containing one curated call plus one non-curated inner name (e.g. `get_address_details`, itself excluded by D-32) is refused whole, with the refusal happening BEFORE any call reaches the external analyser child.
 
 ### Pattern B: Proxy-local synthetic tool registration
 
 **Source:** `.claude/mcp/vice/vice-proxy.ts:398-413` (`RESULT_CONTINUE_TOOL`), `:3142-3155` (`buildViceTool()`), `:3241-3245` (registration).
 
-**Apply to:** every `r2000_*` tool in `r2000-tools.ts`. See full excerpt above under that file's Pattern Assignment.
+**Apply to:** every `anno_*` tool in `anno-tools.ts`. See full excerpt above under that file's Pattern Assignment.
 
 ### Pattern C: Fixed-argv builder, no passthrough (D-06/D-07)
 
-**Source:** `.claude/mcp/vice/r2000-launch.ts:107-126` (full excerpt above).
+**Source:** `.claude/mcp/vice/anno-launch.ts:107-126` (full excerpt above).
 
-**Apply to:** every new r2000 builder (`buildMcpServerStdioArgs`, `buildExportLblArgs`, `buildImportLblArgs`). Never a bespoke `spawnSync`/`spawn` call anywhere else in the new modules — everything routes through `r2000-launch.ts`.
+**Apply to:** every new anno builder (`buildMcpServerStdioArgs`, `buildExportLblArgs`, `buildImportLblArgs`). Never a bespoke `spawnSync`/`spawn` call anywhere else in the new modules — everything routes through `anno-launch.ts`.
 
 ### Pattern D: Availability-gated live test (D-11)
 
-**Source:** `.claude/mcp/vice/r2000-verify.test.ts:145-174` (full excerpt above under New Tests).
+**Source:** `.claude/mcp/vice/anno-verify.test.ts:145-174` (full excerpt above under New Tests).
 
-**Apply to:** all new `r2000-*.test.ts` files with any regenerator2000-dependent assertion.
+**Apply to:** all new `anno-*.test.ts` files with any external-analyser-dependent assertion.
 
 ### Pattern E: Closed host-path consumer set (Rule A15/A16)
 
 **Source:** `.claude/mcp/vice/hostpath-consumers.test.ts:105-115` (excerpt above).
 
-**Apply to:** all new r2000 modules must be added to the "must be absent" assertion, never to `EXPECTED_IMPORTERS`.
+**Apply to:** all new anno modules must be added to the "must be absent" assertion, never to `EXPECTED_IMPORTERS`.
 
 ## No Analog Found
 
 | File | Role | Data Flow | Reason |
 |---|---|---|---|
-| `.claude/mcp/vice/r2000-mcp-client.ts` | service | request-response | This repo has never been an MCP client before this phase. No existing file speaks JSON-RPC as a client over a spawned child's stdio. Constituent precedents (spawn discipline, retry/deny discipline, request-id demux discipline) are named above and should be composed, not a single file copied wholesale. |
-| `.claude/mcp/vice/r2000-memmap-render.ts` | utility (renderer) | transform | No existing module in this repo renders a Markdown document from queried/structured data at document granularity — `driver.mjs`'s `annotate()` is line-granularity only. Design fresh against `memory-map.template.md`'s target shape. |
-| `.claude/mcp/vice/r2000-confidence.ts` | utility (convention) | transform | No existing "string-prefix convention, parsed and validated, pinned by a must-fail-on-typo test" module exists. The closest STRUCTURAL precedent (throw-a-named-error-on-a-bad-token) is `assertNoViceFlag()`, but the domain (label text convention vs. argv flag) does not transfer directly — flagged as a partial match above, not force-fit as exact. |
+| `.claude/mcp/vice/anno-mcp-client.ts` | service | request-response | This repo has never been an MCP client before this phase. No existing file speaks JSON-RPC as a client over a spawned child's stdio. Constituent precedents (spawn discipline, retry/deny discipline, request-id demux discipline) are named above and should be composed, not a single file copied wholesale. |
+| `.claude/mcp/vice/anno-memmap-render.ts` | utility (renderer) | transform | No existing module in this repo renders a Markdown document from queried/structured data at document granularity — `driver.mjs`'s `annotate()` is line-granularity only. Design fresh against `memory-map.template.md`'s target shape. |
+| `.claude/mcp/vice/anno-confidence.ts` | utility (convention) | transform | No existing "string-prefix convention, parsed and validated, pinned by a must-fail-on-typo test" module exists. The closest STRUCTURAL precedent (throw-a-named-error-on-a-bad-token) is `assertNoViceFlag()`, but the domain (label text convention vs. argv flag) does not transfer directly — flagged as a partial match above, not force-fit as exact. |
 
 ## Metadata
 
 **Analog search scope:** `.claude/mcp/vice/` (all `.ts`/`.mts` production and test files), `.claude/skills/c64-memory-mapping/scripts/driver.mjs`, `.claude/skills/c64-program-recon/templates/memory-map.template.md`, `.claude/skills/c64-program-recon/SKILL.md`, `scripts/check-npm-packages.mjs`, `tools-manifest.json`, `tools-manifest.stock.json`.
-**Files scanned (read in full or targeted):** `vice-proxy.ts` (targeted: lines 390-465, 1398-1428, 2868-2967, 3125-3260), `vice.ts` (targeted: lines 175-244, 685-704), `r2000-launch.ts` (full, 166 lines), `r2000-launch.test.ts` (full, 227 lines), `r2000-verify.test.ts` (targeted: lines 1-50, 140-180), `stock-symbols.ts` (targeted: lines 1-60 + grep hits), `hostpath-consumers.test.ts` (full, 168 lines), `stock-derived.ts` (targeted: lines 1-135), `driver.mjs` (grep-targeted), `memory-map.template.md` (lines 1-70 of 62 total — full), `check-npm-packages.mjs` (targeted: lines 100-145), `r2000-cli.ts` (targeted: lines 1-50), `tools-manifest.json`/`tools-manifest.stock.json` (structural probe).
+**Files scanned (read in full or targeted):** `vice-proxy.ts` (targeted: lines 390-465, 1398-1428, 2868-2967, 3125-3260), `vice.ts` (targeted: lines 175-244, 685-704), `anno-launch.ts` (full, 166 lines), `anno-launch.test.ts` (full, 227 lines), `anno-verify.test.ts` (targeted: lines 1-50, 140-180), `stock-symbols.ts` (targeted: lines 1-60 + grep hits), `hostpath-consumers.test.ts` (full, 168 lines), `stock-derived.ts` (targeted: lines 1-135), `driver.mjs` (grep-targeted), `memory-map.template.md` (lines 1-70 of 62 total — full), `check-npm-packages.mjs` (targeted: lines 100-145), `anno-cli.ts` (targeted: lines 1-50), `tools-manifest.json`/`tools-manifest.stock.json` (structural probe).
 **Pattern extraction date:** 2026-08-20

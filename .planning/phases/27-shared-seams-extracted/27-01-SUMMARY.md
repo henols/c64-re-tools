@@ -5,17 +5,17 @@ subsystem: mcp-vice-test-seams
 tags: [seam-extraction, test-gate, acme, ci-hard-fail]
 
 requires:
-  - "src/mcp/vice/r2000-test-gate.ts (the ACME half's origin)"
+  - "src/mcp/vice/anno-test-gate.ts (the ACME half's origin)"
   - ".github/workflows/ci.yml:140 (VICE_REQUIRE_ACME binding, read-only)"
 provides:
-  - "src/mcp/vice/acme-gate.ts — the ONE ACME-availability seam, under a non-r2000 name"
+  - "src/mcp/vice/acme-gate.ts — the ONE ACME-availability seam, under a non-anno name"
   - "ACME_BIN / probeAcme / ACME_AVAILABLE / acmeSkipReasonFor / assertAcmeRequiredIfEnvSet (byte-identical names)"
   - "src/mcp/vice/acme-gate.test.ts — the committed, two-direction observation of the ACME hard-FAIL"
 affects:
   - "src/mcp/vice/disasm-roundtrip.test.ts"
   - "src/mcp/vice/skill-acme-build-cli.test.ts"
-  - "src/mcp/vice/r2000-cli.test.ts"
-  - "src/mcp/vice/r2000-answer-key.test.ts"
+  - "src/mcp/vice/anno-cli.test.ts"
+  - "src/mcp/vice/absorbed-answer-key.test.ts"
 
 tech-stack:
   added: []
@@ -29,16 +29,16 @@ key-files:
     - src/mcp/vice/acme-gate.ts
     - src/mcp/vice/acme-gate.test.ts
   modified:
-    - src/mcp/vice/r2000-test-gate.ts
+    - src/mcp/vice/anno-test-gate.ts
     - src/mcp/vice/disasm-roundtrip.test.ts
     - src/mcp/vice/skill-acme-build-cli.test.ts
-    - src/mcp/vice/r2000-cli.test.ts
-    - src/mcp/vice/r2000-answer-key.test.ts
+    - src/mcp/vice/anno-cli.test.ts
+    - src/mcp/vice/absorbed-answer-key.test.ts
 
 key-decisions:
   - "The ACME gate stands under its own name (`acme-gate.ts`) with NO re-export shim in the module it left — a shim would leave the prefix-deletion hazard fully intact, which is the failure SEAM-01 exists to remove."
   - "`ACME_BIN` and `VICE_REQUIRE_ACME` keep byte-identical names, so `.github/workflows/ci.yml` needed no edit at all; SEAM-01's 'repointed in the same commit' clause is discharged by CONFIRMING the env-var names did not move."
-  - "`r2000-cli.test.ts`'s mixed import statement was SPLIT into two (one per source module) rather than rewritten, keeping the regenerator2000 half in place."
+  - "`anno-cli.test.ts`'s mixed import statement was SPLIT into two (one per source module) rather than rewritten, keeping the external analyser half in place."
   - "The gate's proof is a child process, not an in-process test: `ACME_AVAILABLE` is a module-load `const`, so no in-process assignment to `process.env.ACME_BIN` can affect it."
   - "`NODE_TEST_CONTEXT` must be deleted from the child environment — inherited, a child `node --test` skips every file and exits ZERO, which would fake a passing gate."
 
@@ -52,22 +52,22 @@ coverage:
         ref: "grep -cE '^export (const|function) (ACME_BIN|probeAcme|ACME_AVAILABLE|acmeSkipReasonFor|assertAcmeRequiredIfEnvSet)' src/mcp/vice/acme-gate.ts == 5"
         status: pass
       - kind: command
-        ref: "grep -ci acme src/mcp/vice/r2000-test-gate.ts == 0"
+        ref: "grep -ci acme src/mcp/vice/anno-test-gate.ts == 0"
         status: pass
       - kind: command
         ref: "cd src/mcp/vice && npm run typecheck"
         status: pass
-  - deliverable: "All four importers resolve against the new module, with r2000-cli.test.ts's mixed statement split rather than rewritten"
+  - deliverable: "All four importers resolve against the new module, with anno-cli.test.ts's mixed statement split rather than rewritten"
     human_judgment: false
     verification:
       - kind: command
-        ref: "grep -c 'from \"./acme-gate.ts\"' over the four importers == 1 each; grep -c 'from \"./r2000-test-gate.ts\"' r2000-cli.test.ts == 1"
+        ref: "grep -c 'from \"./acme-gate.ts\"' over the four importers == 1 each; grep -c 'from \"./anno-test-gate.ts\"' anno-cli.test.ts == 1"
         status: pass
       - kind: command
-        ref: "grep -rc 'from \"./r2000-test-gate.ts\"' src/mcp/vice/*.test.ts | grep -c ':1$' == 10"
+        ref: "grep -rc 'from \"./anno-test-gate.ts\"' src/mcp/vice/*.test.ts | grep -c ':1$' == 10"
         status: pass
       - kind: test
-        ref: "src/mcp/vice/disasm-roundtrip.test.ts, skill-acme-build-cli.test.ts, r2000-cli.test.ts, r2000-answer-key.test.ts (94 tests, 0 fail, ACME-gated tests executing)"
+        ref: "src/mcp/vice/disasm-roundtrip.test.ts, skill-acme-build-cli.test.ts, anno-cli.test.ts, absorbed-answer-key.test.ts (94 tests, 0 fail, ACME-gated tests executing)"
         status: pass
   - deliverable: "A committed child-process test observes the ACME hard-FAIL and its non-vacuity control, so a silent degrade into a skip is caught by a test rather than inferred from a green CI log"
     human_judgment: false
@@ -99,14 +99,14 @@ coverage:
       - kind: command
         ref: "git diff --stat -- .github/workflows/ci.yml (empty); grep -c ACME_BIN ci.yml == 0; grep -n VICE_REQUIRE_ACME ci.yml == 140"
         status: pass
-  - deliverable: "No r2000 module deleted or renamed; r2000-verify.test.ts and hostpath-consumers.test.ts untouched and green"
+  - deliverable: "No anno module deleted or renamed; anno-verify.test.ts and hostpath-consumers.test.ts untouched and green"
     human_judgment: false
     verification:
       - kind: command
-        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c r2000)\" = \"0\""
+        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c anno)\" = \"0\""
         status: pass
       - kind: command
-        ref: "git diff --stat -- src/mcp/vice/r2000-verify.test.ts src/mcp/vice/hostpath-consumers.test.ts (empty)"
+        ref: "git diff --stat -- src/mcp/vice/anno-verify.test.ts src/mcp/vice/hostpath-consumers.test.ts (empty)"
         status: pass
   - deliverable: "Every comment that named the old module as the ACME seam now names acme-gate.ts, with each block's other claims intact"
     human_judgment: false
@@ -115,7 +115,7 @@ coverage:
         ref: "src/mcp/vice/docs-dangling-refs.test.ts, comment-phase-pointers.test.ts, hop-chain-comments.test.ts, docs-linerefs.test.ts, ci-guardrails.test.mjs"
         status: pass
       - kind: command
-        ref: "grep -c 'ACME_BIN/VICE_REQUIRE_ACME' disasm-roundtrip.test.ts >= 1; grep -c '10s spawnSync timeout' r2000-cli.test.ts >= 1"
+        ref: "grep -c 'ACME_BIN/VICE_REQUIRE_ACME' disasm-roundtrip.test.ts >= 1; grep -c '10s spawnSync timeout' anno-cli.test.ts >= 1"
         status: pass
 
 metrics:
@@ -132,14 +132,14 @@ status: complete
 
 # Phase 27 Plan 01: ACME Gate Extracted to acme-gate.ts Summary
 
-The ACME cross-assembler availability gate now stands in `src/mcp/vice/acme-gate.ts` under its own non-`r2000` name with byte-identical symbol and env-var names, and its hard-FAIL under `VICE_REQUIRE_ACME` is proven by a committed two-direction child-process observation instead of a green CI log that would look identical if the gate had silently degraded into a skip.
+The ACME cross-assembler availability gate now stands in `src/mcp/vice/acme-gate.ts` under its own non-`anno` name with byte-identical symbol and env-var names, and its hard-FAIL under `VICE_REQUIRE_ACME` is proven by a committed two-direction child-process observation instead of a green CI log that would look identical if the gate had silently degraded into a skip.
 
 ## What Shipped
 
 - **`src/mcp/vice/acme-gate.ts` (123 lines)** — `ACME_BIN`, `probeAcme`, `ACME_AVAILABLE`, `acmeSkipReasonFor`, `assertAcmeRequiredIfEnvSet`, moved with their doc comments and declaration order preserved, plus a three-part single-seam header (one-line "the ONE place…", `WHY THIS FILE EXISTS`, explicit `WHAT NOT TO DO`).
 - **`src/mcp/vice/acme-gate.test.ts` (188 lines)** — six tests: the refusal-wording self-check, the FAIL direction (non-zero exit), the FAIL direction's wording match, the non-vacuity control (zero exit), the unset-`ACME_BIN` default resolution, and the `files[]`-absence guard.
-- **`src/mcp/vice/r2000-test-gate.ts`** — truncated from 166 to 95 lines. The ACME banner and all five definitions are gone; `grep -ci acme` returns `0`, so there is no re-export shim and no courtesy pointer either.
-- **Four importers repointed.** Three single-specifier rewrites; `r2000-cli.test.ts`'s mixed statement SPLIT into two statements, one per source module.
+- **`src/mcp/vice/anno-test-gate.ts`** — truncated from 166 to 95 lines. The ACME banner and all five definitions are gone; `grep -ci acme` returns `0`, so there is no re-export shim and no courtesy pointer either.
+- **Four importers repointed.** Three single-specifier rewrites; `anno-cli.test.ts`'s mixed statement SPLIT into two statements, one per source module.
 - **Prose corrected** in all four importers so no comment still names the old module as the ACME seam, with each block's other load-bearing claims (origination of the `ACME_BIN`/`VICE_REQUIRE_ACME` convention, the seam-value-not-a-second-default claim, the `10s spawnSync timeout` bounded-probe rationale, CI's hard-FAIL condition) preserved verbatim.
 
 ## ci.yml Binding Audit (stated finding, not assumed)
@@ -165,14 +165,14 @@ Required by Task 2's acceptance criteria — a gate that cannot be made to fail 
 |---|---|
 | `command -v acme && acme --version` | `/home/henrik/.local/bin/acme`, `This is ACME, release 0.97 ("Zem"), 31 Jan 2021` — Task 1's precondition met |
 | `cd src/mcp/vice && npm run typecheck` | exit 0 (run after each of the three tasks) |
-| `VICE_REQUIRE_ACME=1 node --test disasm-roundtrip.test.ts skill-acme-build-cli.test.ts r2000-cli.test.ts r2000-answer-key.test.ts` | 94 tests, **116→88 pass, 0 fail, 6 skipped** — all six skips are pre-existing regenerator2000 gates (`R2000_AVAILABLE=false`), and the skip message on the combined D-11+D-08 test reads `ACME_AVAILABLE=true`, proving the ACME-gated tests ran rather than skipped |
-| `node --test r2000-verify.test.ts hostpath-consumers.test.ts assumption-label-discipline.test.ts` | 30 tests, 28 pass, 0 fail, 2 skipped (pre-existing r2000 gates) |
+| `VICE_REQUIRE_ACME=1 node --test disasm-roundtrip.test.ts skill-acme-build-cli.test.ts anno-cli.test.ts absorbed-answer-key.test.ts` | 94 tests, **116→88 pass, 0 fail, 6 skipped** — all six skips are pre-existing the external analyser gates (`ANNO_AVAILABLE=false`), and the skip message on the combined D-11+D-08 test reads `ACME_AVAILABLE=true`, proving the ACME-gated tests ran rather than skipped |
+| `node --test anno-verify.test.ts hostpath-consumers.test.ts assumption-label-discipline.test.ts` | 30 tests, 28 pass, 0 fail, 2 skipped (pre-existing anno gates) |
 | `node --test acme-gate.test.ts` | 6 tests, **6 pass, 0 fail**, ~760ms |
 | `node --test test-gate.test.ts` | 3 pass, 0 fail — the new `*.test.ts` lands cleanly in the auto-discovered automated set, no `MANUAL_ONLY_TESTS` edit |
-| `VICE_REQUIRE_ACME=1 node --test docs-dangling-refs.test.ts comment-phase-pointers.test.ts hop-chain-comments.test.ts docs-linerefs.test.ts ci-guardrails.test.mjs disasm-roundtrip.test.ts skill-acme-build-cli.test.ts r2000-cli.test.ts r2000-answer-key.test.ts` | 148 tests, 142 pass, **0 fail**, 6 skipped |
-| **Plan gate:** `VICE_REQUIRE_ACME=1 node --test acme-gate.test.ts disasm-roundtrip.test.ts skill-acme-build-cli.test.ts r2000-cli.test.ts r2000-answer-key.test.ts r2000-verify.test.ts hostpath-consumers.test.ts test-gate.test.ts docs-dangling-refs.test.ts comment-phase-pointers.test.ts hop-chain-comments.test.ts assumption-label-discipline.test.ts ci-guardrails.test.mjs` | **184 tests, 176 pass, 0 fail, 8 skipped, exit 0** |
-| `test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts \| grep -c r2000)" = "0"` | exit 0 — zero deletions of any kind in that range |
-| `perl -0777 -ne '…' r2000-cli.test.ts` (the must-not-appear guard) | prints nothing, as required, after the split |
+| `VICE_REQUIRE_ACME=1 node --test docs-dangling-refs.test.ts comment-phase-pointers.test.ts hop-chain-comments.test.ts docs-linerefs.test.ts ci-guardrails.test.mjs disasm-roundtrip.test.ts skill-acme-build-cli.test.ts anno-cli.test.ts absorbed-answer-key.test.ts` | 148 tests, 142 pass, **0 fail**, 6 skipped |
+| **Plan gate:** `VICE_REQUIRE_ACME=1 node --test acme-gate.test.ts disasm-roundtrip.test.ts skill-acme-build-cli.test.ts anno-cli.test.ts absorbed-answer-key.test.ts anno-verify.test.ts hostpath-consumers.test.ts test-gate.test.ts docs-dangling-refs.test.ts comment-phase-pointers.test.ts hop-chain-comments.test.ts assumption-label-discipline.test.ts ci-guardrails.test.mjs` | **184 tests, 176 pass, 0 fail, 8 skipped, exit 0** |
+| `test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts \| grep -c anno)" = "0"` | exit 0 — zero deletions of any kind in that range |
+| `perl -0777 -ne '…' anno-cli.test.ts` (the must-not-appear guard) | prints nothing, as required, after the split |
 
 `npm run test:automated` was **not** used as evidence anywhere, per the plan's explicit prohibition. The whole-glob `npm test` belongs to `27-05-PLAN.md`; this plan's gate is the targeted file list above.
 
@@ -208,14 +208,14 @@ Required by Task 2's acceptance criteria — a gate that cannot be made to fail 
 
 ## Confirmations (no edit required, verified line by line)
 
-- **`r2000-test-gate.ts:1-33` header** — opens with "the ONE place the D-11 regenerator2000 availability gate is implemented", already describing exactly one gate. No two-halves sentence exists, so no narrowing was needed, and deliberately **no** pointer at `acme-gate.ts` was added: the `grep -ci acme … == 0` shim detector makes no exception for a courtesy pointer, and its value is that it needs no judgement.
+- **`anno-test-gate.ts:1-33` header** — opens with "the ONE place the D-11 the external analyser availability gate is implemented", already describing exactly one gate. No two-halves sentence exists, so no narrowing was needed, and deliberately **no** pointer at `acme-gate.ts` was added: the `grep -ci acme … == 0` shim detector makes no exception for a courtesy pointer, and its value is that it needs no judgement.
 - **`.github/workflows/ci.yml`** — untouched (see the audit above).
-- **`r2000-verify.test.ts`** and **`hostpath-consumers.test.ts`** — untouched; `git diff --stat` empty for both, both green. `acme-gate.ts` was deliberately **not** added to the hostpath consumer set (its assertion is membership in an `r2000-*` glob, which the new module can never match) and **not** given an entry in `r2000-verify.test.ts` (its own test file owns its structural guard, per D-04).
+- **`anno-verify.test.ts`** and **`hostpath-consumers.test.ts`** — untouched; `git diff --stat` empty for both, both green. `acme-gate.ts` was deliberately **not** added to the hostpath consumer set (its assertion is membership in an `anno-*` glob, which the new module can never match) and **not** given an entry in `anno-verify.test.ts` (its own test file owns its structural guard, per D-04).
 - **Reader wayfinding from the old name** is served from the other end, as the plan directs: `acme-gate.ts`'s header narrates where the half came from and why it moved, and all four importers' corrected prose names `acme-gate.ts` as the seam.
 
 ## Known Stubs
 
-None. No stub, placeholder, skipped test or unrun `<verify>` was introduced. The 8 skips in the plan gate are all pre-existing regenerator2000 availability skips (`R2000_AVAILABLE=false`, an expected-forever SKIP by D-11's design), unchanged by this plan.
+None. No stub, placeholder, skipped test or unrun `<verify>` was introduced. The 8 skips in the plan gate are all pre-existing the external analyser availability skips (`ANNO_AVAILABLE=false`, an expected-forever SKIP by D-11's design), unchanged by this plan.
 
 ## Threat Flags
 
@@ -223,7 +223,7 @@ None. No new network endpoint, auth path, file-access pattern or schema change a
 
 ## Next Phase Readiness
 
-No blockers. Zero `r2000` modules deleted or renamed, so Wave 1's siblings are unaffected. Ready for the next plan in phase 27.
+No blockers. Zero `anno` modules deleted or renamed, so Wave 1's siblings are unaffected. Ready for the next plan in phase 27.
 
 ## Self-Check: PASSED
 

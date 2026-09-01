@@ -173,7 +173,7 @@ naming a finding counts as a disposition source. It was genuinely red at
   `.planning/phases/12-audit-integrity-instrument/`, following
   `08.1-WALKTHROUGH-EVIDENCE.md`. `docs/` is reserved in this repo for durable
   cross-milestone findings (`phase0-binmon-findings.md`,
-  `phase9-regenerator2000-probe-findings.md`); a gate proof is phase evidence,
+  `phase9-external-analyser-probe-findings.md`); a gate proof is phase evidence,
   not a standing finding.
 
 - **D-12-20:** The transcript must record the **revert** as explicitly as the

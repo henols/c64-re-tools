@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 // measure-stdio-multiplexing.mjs -- plan 19-01 task 3 (D18-16). Answers, by
-// measurement against the real binary, whether regenerator2000's
+// measurement against the real binary, whether the external analyser's
 // `--mcp-server-stdio` handler multiplexes concurrent requests or reads its
 // stdin serially. D18-16 deferred a reader-writer upgrade of
-// `r2000-session.ts`'s coarse FIFO mutex "pending measurement"; this is that
+// `anno-session.ts`'s coarse FIFO mutex "pending measurement"; this is that
 // measurement.
 //
 // THE SHAPE THAT MAKES THE ANSWER MEAN SOMETHING: both requests are written
 // in ONE burst, back to back, into the child's stdin pipe -- so both are
 // sitting in the child's own buffer simultaneously before it has answered
 // either. Anything less (write, await, write) would measure THIS client's
-// serialism, not the child's. A trivial `r2000_get_binary_info` queued behind
-// a long `r2000_batch_execute` either comes back in single-digit milliseconds
+// serialism, not the child's. A trivial `anno_get_binary_info` queued behind
+// a long `anno_batch_execute` either comes back in single-digit milliseconds
 // (the child multiplexes) or cannot come back until the batch finishes (it
 // does not).
 //
 // Usage: node measure-stdio-multiplexing.mjs
-//   R2000_BIN                    -- binary to spawn (default: regenerator2000)
-//   R2000_MEASURE_INNER_CALLS    -- inner calls in the slow batch (default 3000)
+//   ANNO_BIN                    -- binary to spawn (default: The external analyser)
+//   ANNO_MEASURE_INNER_CALLS    -- inner calls in the slow batch (default 3000)
 //
 // Prints EXACTLY ONE JSON line on stdout. Exits non-zero with an explicit
 // `{"ok": false, "reason": ...}` when the binary cannot be spawned or a
@@ -50,8 +50,8 @@ const SETTLE_MS = 400;
  * this must comfortably exceed the observed 6-14s. */
 const BURST_BOUND_MS = 180_000;
 
-const bin = process.env.R2000_BIN || "regenerator2000";
-const innerCalls = Number(process.env.R2000_MEASURE_INNER_CALLS || 3000);
+const bin = process.env.ANNO_BIN || "the external analyser";
+const innerCalls = Number(process.env.ANNO_MEASURE_INNER_CALLS || 3000);
 
 /** Origin and payload of the scratch project: NOPs terminated by RTS, the
  * same trivially-analysable shape Phase 18's drivers used. */
@@ -69,7 +69,7 @@ function sleep(ms) {
 
 async function main() {
   if (!Number.isInteger(innerCalls) || innerCalls < 1) {
-    fail(`R2000_MEASURE_INNER_CALLS must be a positive integer, got "${process.env.R2000_MEASURE_INNER_CALLS}"`);
+    fail(`ANNO_MEASURE_INNER_CALLS must be a positive integer, got "${process.env.ANNO_MEASURE_INNER_CALLS}"`);
     return;
   }
 
@@ -81,8 +81,8 @@ async function main() {
     return;
   }
 
-  const r2000ProjectPath = join(HERE, "..", "..", "..", "..", "src", "mcp", "vice", "r2000-project.ts");
-  const { synthesizeProject } = await import(pathToFileURL(r2000ProjectPath).href);
+  const annoProjectPath = join(HERE, "..", "..", "..", "..", "src", "mcp", "vice", "anno-project.ts");
+  const { synthesizeProject } = await import(pathToFileURL(annoProjectPath).href);
 
   const dir = mkdtempSync(join(tmpdir(), "d18-16-stdio-mux-"));
   const projectPath = join(dir, "measure.regen2000proj");
@@ -173,7 +173,7 @@ async function main() {
     const calls = [];
     for (let i = 0; i < innerCalls; i += 1) {
       calls.push({
-        name: "r2000_set_comment",
+        name: "anno_set_comment",
         arguments: { address: ORIGIN + (i % (PAYLOAD_BYTES - 1)), comment: `d18-16 probe ${i}`, type: "line" },
       });
     }
@@ -181,13 +181,13 @@ async function main() {
       jsonrpc: "2.0",
       id: "SLOW-BATCH",
       method: "tools/call",
-      params: { name: "r2000_batch_execute", arguments: { calls } },
+      params: { name: "anno_batch_execute", arguments: { calls } },
     };
     const fast = {
       jsonrpc: "2.0",
       id: "FAST-INFO",
       method: "tools/call",
-      params: { name: "r2000_get_binary_info", arguments: {} },
+      params: { name: "anno_get_binary_info", arguments: {} },
     };
     const burstAtMs = Date.now() - spawnedAt;
     child.stdin.write(JSON.stringify(slow) + "\n" + JSON.stringify(fast) + "\n");

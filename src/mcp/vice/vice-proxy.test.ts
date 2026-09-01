@@ -51,8 +51,8 @@ import { DENY_LIST } from "./vice.ts";
 // same reason DENY_LIST above is -- these tests must stay correct as the
 // curated set grows or shrinks, rather than drifting the moment a name
 // changes and this file's own copy is not updated in lockstep.
-// Repointed after plan 29-10's merge: `CURATED_R2000_TOOLS` died with
-// `r2000-tools.ts`; `CURATED_ANNO_TOOLS` (anno-tools.ts) is its successor,
+// Repointed after plan 29-10's merge: `CURATED_ANNO_TOOLS` died with
+// `anno-tools.ts`; `CURATED_ANNO_TOOLS` (anno-tools.ts) is its successor,
 // derived the same way (from ANNO_TOOL_DEFINITIONS) and carrying the renamed
 // anno_* surface.
 import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
@@ -534,13 +534,13 @@ test("tools/list reads the committed snapshot with no emulator", async () => {
     const tools = resp.result.tools;
     // Both fixture tools, PLUS the always-present synthetic
     // vice_result_continue tool (task 3), vice_recycle (plan 01.3-01),
-    // vice_diagnose (plan 01.3-02), and the 19 curated r2000_* tools (plan
+    // vice_diagnose (plan 01.3-02), and the 19 curated anno_* tools (plan
     // 11-05, registered proxy-locally and unconditionally, independent of
-    // any manifest) -- tools/list never omits any synthetic or r2000_* tool.
+    // any manifest) -- tools/list never omits any synthetic or anno_* tool.
     assert.equal(
       tools.length,
       2 + 3 + CURATED_ANNO_TOOLS.length,
-      "both fixture tools plus all three synthetic tools plus every curated r2000_* tool must come back",
+      "both fixture tools plus all three synthetic tools plus every curated anno_* tool must come back",
     );
 
     const byName = Object.fromEntries(tools.map((t: any) => [t.name, t]));
@@ -595,13 +595,13 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
         // "Empty tools array" means empty of MANIFEST-derived tools -- the
         // always-present synthetic tools (vice_result_continue, task 3;
         // vice_recycle, plan 01.3-01; and vice_diagnose, plan 01.3-02) and
-        // the 19 curated r2000_* tools (plan 11-05) are not sourced from the
+        // the 19 curated anno_* tools (plan 11-05) are not sourced from the
         // manifest at all, so a broken manifest can't take any of them down
         // with it.
         assert.deepEqual(
           resp.result.tools.map((t: any) => t.name),
           ["vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS],
-          `expected only the synthetic and r2000_* tools for ${manifestFile}`
+          `expected only the synthetic and anno_* tools for ${manifestFile}`
         );
 
         // The child must still be alive and answer a SUBSEQUENT
@@ -859,14 +859,14 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
     assert.deepEqual(
       new Set(actualNames),
       new Set(expectedOrder),
-      "the wire tools/list name set must be exactly the manifest (minus DENY_LIST) plus the three synthetics plus the 19 curated r2000_* tools -- no tool missing, none extra"
+      "the wire tools/list name set must be exactly the manifest (minus DENY_LIST) plus the three synthetics plus the 19 curated anno_* tools -- no tool missing, none extra"
     );
     // (a) ORDER parity -- manifest order preserved, synthetics appended next
-    // in their own fixed order, then the r2000_* loop registration last,
+    // in their own fixed order, then the anno_* loop registration last,
     // matching [...manifestTools, RESULT_CONTINUE_TOOL, RECYCLE_TOOL,
-    // DIAGNOSE_TOOL, ...R2000_TOOL_DEFINITIONS]'s insertion order (plan
+    // DIAGNOSE_TOOL, ...ANNO_TOOL_DEFINITIONS]'s insertion order (plan
     // 11-05's own key_link).
-    assert.deepEqual(actualNames, expectedOrder, "the wire tools/list order must match the manifest's own order, synthetics then r2000_* appended last");
+    assert.deepEqual(actualNames, expectedOrder, "the wire tools/list order must match the manifest's own order, synthetics then anno_* appended last");
 
     // (b) per-tool inputSchema deep-equal against the manifest's own raw
     // schema, for EVERY manifest-derived tool, not just vice_ping.
@@ -6430,7 +6430,7 @@ test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a 
 });
 
 // ---------------------------------------------------------------------------
-// IN-01 (10-REVIEW.md; 11.1-CONTEXT.md AUDIT-01, D-11.1-04): a piped `r2000`
+// IN-01 (10-REVIEW.md; 11.1-CONTEXT.md AUDIT-01, D-11.1-04): a piped `anno`
 // invocation must not lose output to `process.exit()` discarding an
 // undrained async write, and the bounded drain that fixes it must not turn
 // a truncation into a hang.
@@ -6456,7 +6456,7 @@ test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a 
 // neither route can deterministically clear "well above 128 KiB" without a
 // real, large capture this plan is explicitly not allowed to require. The
 // fix therefore ships a narrow, clearly-labelled test-only escape hatch,
-// `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`, gated behind an env var name no
+// `VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES`, gated behind an env var name no
 // real caller would ever set, that writes a deterministic filler payload
 // through the SAME drained-exit code path a real `anno <verb>` call uses
 // -- see that hatch's own comment in vice-proxy.ts for the measurements
@@ -6465,7 +6465,7 @@ const FILL_PAYLOAD_BYTES = 512000; // well above the 65536-byte truncation point
 
 test("IN-01: a piped anno invocation delivers the whole payload, well above the OS pipe capacity, with an exact byte count", () => {
   const result = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"], {
-    env: { ...process.env, VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES) },
+    env: { ...process.env, VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES) },
     maxBuffer: FILL_PAYLOAD_BYTES * 2,
   });
   assert.equal(result.status, 0);
@@ -6475,7 +6475,7 @@ test("IN-01: a piped anno invocation delivers the whole payload, well above the 
 test("IN-01: the drain is bounded -- a piped invocation whose reader never drains still exits promptly (no hang)", () => {
   const start = Date.now();
   const result = spawnSync(process.execPath, [PROXY_PATH, "anno", "--help"], {
-    env: { ...process.env, VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES * 10) },
+    env: { ...process.env, VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES: String(FILL_PAYLOAD_BYTES * 10) },
     // No stdio pipe consumer attached at all -- 'ignore' means the OS pipe
     // fills and is never drained by anything, the exact "nobody reads the
     // pipe" scenario T-11.1-EXITHANG guards against.

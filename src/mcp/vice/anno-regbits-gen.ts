@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // anno-regbits-gen.ts -- the ONE authoritative place in this repo that turns
 // c64-memory-mapping's memmap.json into the curated address->bit-name table
-// anno-enum-gen.ts decodes register values against (D-22, R2000-13).
+// anno-enum-gen.ts decodes register values against (D-22, ANNO-13).
 //
 // WHY THIS EXISTS (D-22): neither register the phase's own pinned criterion-3
 // target needs ($D011) nor the registers a real game writes to constantly

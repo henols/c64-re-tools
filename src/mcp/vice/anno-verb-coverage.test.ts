@@ -1,9 +1,9 @@
 // anno-verb-coverage.test.ts -- the non-vacuity/planted-violation proof for
 // the FLOW-01 guard (11.1-CONTEXT.md, D-11.1-02).
 //
-// `scripts/check-skill-tool-coverage.mjs` checked `r2000_*` MCP TOOL names
-// in skill prose, but nothing checked `r2000` CLI VERBS at all -- so
-// `gen-enums`, `export-lbl` and `import-lbl` (R2000-13/-14/-15's own
+// `scripts/check-skill-tool-coverage.mjs` checked `anno_*` MCP TOOL names
+// in skill prose, but nothing checked `anno` CLI VERBS at all -- so
+// `gen-enums`, `export-lbl` and `import-lbl` (ANNO-13/-14/-15's own
 // delivery path) reached `main` documented in zero skill files, with
 // nothing catching it. `scripts/lib/anno-cli-verbs.mjs` closes that gap by
 // PARSING the verb list from `anno-cli.ts`'s own dispatch switch, and this
@@ -107,7 +107,7 @@ function realSkillTexts(): string[] {
 // names: `src/skills/c64-program-recon/SKILL.md`, its
 // `templates/memory-map.template.md` and `src/skills/c64-ram-capture/SKILL.md`
 // all carry the literal `anno render-memmap` (the subcommand was renamed
-// from `r2000` by plan 29-09, in the same commit as the skill prose and
+// from `anno` by plan 29-09, in the same commit as the skill prose and
 // the proxy's own dispatch token). Plan 29-07 re-pointed this
 // control off `export-asm`, which the same plan removed -- a control naming a
 // verb that no longer exists proves nothing about a guard that only ever fires

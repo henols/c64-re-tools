@@ -1,7 +1,7 @@
 # Carried-forward verify transcripts — the SHAPE Phase 30 must reproduce, not the content it may reuse
 
 > Moved here by **plan 29-10** (2026-08-30), in the commit that deletes
-> `src/mcp/vice/r2000-verify.ts` and `src/mcp/vice/r2000-verify.test.ts`.
+> `src/mcp/vice/anno-verify.ts` and `src/mcp/vice/anno-verify.test.ts`.
 
 ## Why these two files exist at all
 
@@ -39,13 +39,13 @@ is the one that lied here.
 
 ## Provenance
 
-- **Producer:** `regenerator2000 0.9.20`'s own `--verify` output, against
+- **Producer:** `the external analyser 0.9.20`'s own `--verify` output, against
   `ACME 0.97 "Zem"` and `ca65`, captured on this host during **Phase 10**.
 - **Original capture, unedited, with both live runs' exit codes:**
   `.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/evidence/10-verify-transcript.txt`
 - **Immediate source of the bytes in this directory:** the
   `HONEST_PASS_TRANSCRIPT` and `TRAP_TRANSCRIPT` string constants in
-  `src/mcp/vice/r2000-verify.test.ts`, copied verbatim in the commit that
+  `src/mcp/vice/anno-verify.test.ts`, copied verbatim in the commit that
   deleted that file. Requirement anchors: `EXPORT-01`, `EXPORT-03`.
 
 ## Phase 30's obligation — read this before using either file

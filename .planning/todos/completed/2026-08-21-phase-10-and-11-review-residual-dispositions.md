@@ -11,7 +11,7 @@ resolves_phase: 11.1
 `v0.3.0-MILESTONE-AUDIT.md`'s AUDIT-01 finding was not "these findings are wrong." It was
 **"WR-09, WR-10, WR-11, WR-12 and IN-01 through IN-07 appear in no todo, no STATE.md
 entry, and no SUMMARY."** The Phase 10 residual-findings todo
-(`2026-08-20-r2000-review-residual-findings.md`) enumerated WR-02 through WR-07 without
+(`2026-08-20-anno-review-residual-findings.md`) enumerated WR-02 through WR-07 without
 saying why the rest were excluded. This ledger closes that silence: every one of the
 eleven `10-REVIEW.md` findings below, plus `11-REVIEW.md`'s IN-02, now has an explicit
 disposition — fixed (naming the plan, task and SUMMARY) or deferred (naming the todo and
@@ -27,26 +27,26 @@ for `fixed` entries, the cited commit hash was confirmed present in `git log`.
 
 > "the function's own doc comment... states 'Never throws for an expected, user-facing
 > failure...' Every other `parsePrg` call is wrapped... but the `.d64` one... is not, and
-> the write... is not wrapped at all." (`r2000-cli.ts:199`, `:220`)
+> the write... is not wrapped at all." (`anno-cli.ts:199`, `:220`)
 
 **Disposition: fixed.** Plan `11.1-06` Task 1 (commit `c74617e`). `bootstrapProject()`'s
 `.d64` `parsePrg()` call is now caught and reworded in the caller's own vocabulary
 (entry name, byte count); both `bootstrapProject()`'s and `cmdRenderMemmap()`'s
 `writeFileSync()` calls are now guarded. Pinned structurally by a brace-depth backward
-scan in `r2000-cli.test.ts` proven non-vacuous by a planted violation and a real,
+scan in `anno-cli.test.ts` proven non-vacuous by a planted violation and a real,
 reverted demonstration against the file itself.
 See: `11.1-06-SUMMARY.md` § Accomplishments, § Verification Evidence (Task 1).
 
-### WR-10: `runR2000()` has no default timeout and no `maxBuffer`, on a synchronous spawn
+### WR-10: `runAnno()` has no default timeout and no `maxBuffer`, on a synchronous spawn
 
-> "`RunR2000Options.timeoutMs` exists but no caller sets it... `spawnSync` has no default
-> timeout... `maxBuffer` is likewise unset..." (`r2000-launch.ts:142-158`)
+> "`RunAnnoOptions.timeoutMs` exists but no caller sets it... `spawnSync` has no default
+> timeout... `maxBuffer` is likewise unset..." (`anno-launch.ts:142-158`)
 
-**Disposition: fixed.** Plan `11.1-04` Task 1 (commit `b915913`). `runR2000()` now bounds
-its `spawnSync` with `R2000_TIMEOUT_MS` (120s default, env-overridable via
-`parseR2000TimeoutMs()`, which never yields `NaN`) and `R2000_MAX_BUFFER` (32 MiB), both
+**Disposition: fixed.** Plan `11.1-04` Task 1 (commit `b915913`). `runAnno()` now bounds
+its `spawnSync` with `ANNO_TIMEOUT_MS` (120s default, env-overridable via
+`parseAnnoTimeoutMs()`, which never yields `NaN`) and `ANNO_MAX_BUFFER` (32 MiB), both
 translated to named, argv-naming errors; `opts.timeoutMs` caller override preserved.
-Proven live against real `regenerator2000 0.9.20` (38/38 pass) and the timeout proven
+Proven live against real `the external analyser 0.9.20` (38/38 pass) and the timeout proven
 real by driving it through a genuinely separate Node child process.
 See: `11.1-04-SUMMARY.md` § Accomplishments, § Live Verification Evidence.
 
@@ -67,12 +67,12 @@ See: `11.1-05-SUMMARY.md` § Accomplishments, § Evidence (WR-11 bidirectional p
 
 > "the fixture writes `usedByte = payloadLen + 1`; the implementation reads `payloadLen =
 > usedByte - 1`. Those are the same equation, so the round-trip test... is a tautology..."
-> (`r2000-d64.test.ts:50-76`, and the duplicate at `r2000-cli.test.ts:87-92`)
+> (`anno-d64.test.ts:50-76`, and the duplicate at `anno-cli.test.ts:87-92`)
 
 **Disposition: fixed (primary site); duplicate left as accepted debt (see "Found while
 dispositioning" below).** Plan `11.1-06` Task 3 (commit `d9c339e`). Two hand-written,
 literal `.d64` final-sector fixtures pin the DOS used-byte convention independently of
-`writeChain()`'s own formula in `r2000-d64.test.ts`. A live joint-mutation demonstration
+`writeChain()`'s own formula in `anno-d64.test.ts`. A live joint-mutation demonstration
 proved the tautology `writeChain()`'s own round-trip test could not catch (inverting only
 the read side still breaks the round trip too; only a self-consistent joint mutation of
 both write and read formulas reproduces the actual tautology, and the two new literal
@@ -83,11 +83,11 @@ See: `11.1-06-SUMMARY.md` § Accomplishments, § Verification Evidence (Task 3).
 
 ### IN-01: `process.exit()` immediately after `console.log` can truncate piped output
 
-> "the dispatch ends the process the instant `runR2000Cli()` resolves. On a pipe,
+> "the dispatch ends the process the instant `runAnnoCli()` resolves. On a pipe,
 > `console.log`/`console.error` writes are asynchronous, and `process.exit()` discards
 > whatever has not drained." (`vice-proxy.ts:217-221`)
 
-**Disposition: fixed.** Plan `11.1-05` Task 3 (commit `d5e01a8`). `vice-proxy.ts`'s `r2000`
+**Disposition: fixed.** Plan `11.1-05` Task 3 (commit `d5e01a8`). `vice-proxy.ts`'s `anno`
 CLI dispatch now explicitly drains `process.stdout`/`process.stderr` (bounded to 300ms)
 before `process.exit()`. Measured on this host: pre-fix, a 512000-byte piped payload
 truncated at exactly 65536 bytes; post-fix, all 512000 bytes are delivered, and a
@@ -126,20 +126,20 @@ exact same-line hole (`cmdDisasm`/`toacme` reintroduced on the one exempted line
 both still caught live (re-verified unchanged after the edit).
 See: `11.1-05-SUMMARY.md` § Accomplishments, § Evidence (IN-03 live scratch-file checks).
 
-### IN-04: two near-vacuous assertions in `r2000-launch.test.ts`
+### IN-04: two near-vacuous assertions in `anno-launch.test.ts`
 
-> "the test sets `process.env.R2000_BIN` at test time, but `R2000_BIN` is resolved at
+> "the test sets `process.env.ANNO_BIN` at test time, but `ANNO_BIN` is resolved at
 > module load... so the mutation cannot affect the spawn... The following test asserts
-> only `typeof R2000_BIN === "string"`..., which the `?? "regenerator2000"` default makes
-> unfalsifiable." (`r2000-launch.test.ts:116-137`)
+> only `typeof ANNO_BIN === "string"`..., which the `?? "the external analyser"` default makes
+> unfalsifiable." (`anno-launch.test.ts:116-137`)
 
 **Disposition: fixed.** Plan `11.1-04` Task 1 (commit `b915913`, the same commit as
-WR-10 -- both touch `r2000-launch.ts`/`r2000-launch.test.ts`'s top-of-file region). The
-dead `process.env.R2000_BIN` mutation was removed and the test retitled to what it
+WR-10 -- both touch `anno-launch.ts`/`anno-launch.test.ts`'s top-of-file region). The
+dead `process.env.ANNO_BIN` mutation was removed and the test retitled to what it
 actually proves (`assertNoViceFlag` runs before any spawn attempt); the unfalsifiable
 `typeof` assertion was replaced with a real equality check guarded on the env var being
-unset. This same lesson was applied preemptively to `R2000_TIMEOUT_MS` (WR-10's new
-env-derived constant), via a pure `parseR2000TimeoutMs()` helper and a real
+unset. This same lesson was applied preemptively to `ANNO_TIMEOUT_MS` (WR-10's new
+env-derived constant), via a pure `parseAnnoTimeoutMs()` helper and a real
 separate-child-process test rather than a same-process env mutation.
 See: `11.1-04-SUMMARY.md` § Accomplishments ("IN-04 fixed"), key-decisions.
 
@@ -158,10 +158,10 @@ See: `11.1-05-SUMMARY.md` § Accomplishments, key-decisions (IN-05 entry).
 
 > "`parseArgs()` returns `out` for every verb, `cmdVerify` destructures only
 > `{ positional, entry }`... A caller who passes it gets no error and no effect."
-> (`r2000-cli.ts:294`)
+> (`anno-cli.ts:294`)
 
 **Disposition: fixed.** Plan `11.1-06` Task 2 (commit `03e71e9`). One frozen
-`VERB_OPTIONS` map plus `checkAcceptedOptions()`, wired at `runR2000Cli()`'s single
+`VERB_OPTIONS` map plus `checkAcceptedOptions()`, wired at `runAnnoCli()`'s single
 pre-dispatch call site, refuses any `--flag` a verb does not accept, for all seven verbs
 -- not just `verify`. Building the map from ground-truth code behaviour (not from USAGE
 text) also caught and closed the identical shape for `verify --force` (silently parsed
@@ -170,25 +170,25 @@ and discarded, same as `--out`) and surfaced a real, separate documentation gap
 fixed as a documentation-only correction in the same commit.
 See: `11.1-06-SUMMARY.md` § Accomplishments, § Decisions Made, § Deviations.
 
-### IN-07: `probeR2000()` / `SKIP_REASON` / the availability-gate test are duplicated verbatim in three test files
+### IN-07: `probeAnno()` / `SKIP_REASON` / the availability-gate test are duplicated verbatim in three test files
 
-> "three identical copies, each spawning `regenerator2000 --version` at module scope...
-> and two tests with the identical name 'regenerator2000 availability gate (D-11)'."
-> (`r2000-cli.test.ts:274-303`, `r2000-verify.test.ts:145-174`, `r2000-project.test.ts`)
+> "three identical copies, each spawning `analyser --version` at module scope...
+> and two tests with the identical name 'the external analyser availability gate (D-11)'."
+> (`anno-cli.test.ts:274-303`, `anno-verify.test.ts:145-174`, `anno-project.test.ts`)
 
 **Disposition: deferred.** Lives at
-`.planning/todos/pending/2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md`.
+`.planning/todos/pending/2026-08-21-migrate-hand-copied-acme-gates-to-anno-test-gate.md`.
 This is IN-07's **only** deferral in this ledger -- stated plainly: plan 11-01 already
-created `r2000-test-gate.ts` and six of the eight r2000/ACME-gated test files import it;
-two hand-copied gates remain (`r2000-cli.test.ts`, `r2000-project.test.ts`). Converting
+created `anno-test-gate.ts` and six of the eight anno/ACME-gated test files import it;
+two hand-copied gates remain (`anno-cli.test.ts`, `anno-project.test.ts`). Converting
 them is behaviour-preserving churn on files whose gate semantics are load-bearing for
 Phase 11's already-verified criterion-3 evidence (`11-VERIFICATION.md` cites
-`r2000-cli.test.ts`'s test 35 by name) -- the reason the existing migration todo already
+`anno-cli.test.ts`'s test 35 by name) -- the reason the existing migration todo already
 gave. **Amended during this ledger's own dispositioning pass:** the todo's `files:` list
-was missing `r2000-project.test.ts` (which carries the same hand-copied
-`probeR2000()`/`SKIP_REASON` block, confirmed live at `r2000-project.test.ts:133-175`) --
+was missing `anno-project.test.ts` (which carries the same hand-copied
+`probeAnno()`/`SKIP_REASON` block, confirmed live at `anno-project.test.ts:133-175`) --
 10-REVIEW.md's own IN-07 wording named all three files, but the todo only ever tracked
-two. Added `r2000-project.test.ts` to the `files:` list and a line to "What to do" naming
+two. Added `anno-project.test.ts` to the `files:` list and a line to "What to do" naming
 the third copy, so IN-07's home is complete rather than approximately right.
 
 ## `11-REVIEW.md` finding
@@ -197,14 +197,14 @@ the third copy, so IN-07's home is complete rather than approximately right.
 
 > "This function is exported and described as 'the store is the merge point for a
 > live-discovered name,' but it is referenced nowhere outside its own module and its test
-> file..." (`r2000-symbols.ts:301-317`)
+> file..." (`anno-symbols.ts:301-317`)
 
 **Disposition: fixed (marked library-only, not given an invented caller).** Plan
 `11.1-04` Task 3 (commit `0ff3440`). `regenerateAndReload()`'s doc comment now carries a
 `LIBRARY-ONLY (Phase 11 IN-02, D-11.1-06)` marker naming the proven live path
-(`export-lbl` -> `vice_symbols_load` -> live discovery -> `r2000_set_label_name` ->
+(`export-lbl` -> `vice_symbols_load` -> live discovery -> `anno_set_label_name` ->
 `import-lbl`, per `c64-program-recon/SKILL.md`) and the adoption condition. A
-biconditional guard in `r2000-symbol-roundtrip.test.ts` ties the marker to the real
+biconditional guard in `anno-symbol-roundtrip.test.ts` ties the marker to the real
 production-caller count (across `.claude/mcp/vice/`, `.claude/skills/`, `scripts/`) in
 both directions -- demonstrated live: a scratch production caller makes the guard fail
 naming the caller; deleting the marker with zero callers also fails.
@@ -217,13 +217,13 @@ Two were already known from planning and are recorded here as instructed. Two mo
 found during this pass and are recorded for the same reason -- leaving any of them
 unstated would be the exact AUDIT-01 defect this ledger exists to close.
 
-**1. The test-only env hatch `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES` (11.1-05, Task 3),
+**1. The test-only env hatch `VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES` (11.1-05, Task 3),
 in shipped code.**
-`vice-proxy.ts`'s `r2000` CLI dispatch now carries a narrow, clearly-named env-var escape
+`vice-proxy.ts`'s `anno` CLI dispatch now carries a narrow, clearly-named env-var escape
 hatch that writes a deterministic filler payload through the real drained-exit code path.
 It exists because neither of the plan-named payload-generation routes (`--help`'s fixed
 ~5.6 KB USAGE text; `cmdExportAsm`'s error path fed garbage input) could deterministically
-produce a payload anywhere near 128 KiB against real `regenerator2000 0.9.20` on this
+produce a payload anywhere near 128 KiB against real `the external analyser 0.9.20` on this
 host -- both were measured directly and neither scales with input size at all.
 **Disposition: accepted debt.** It is gated behind an env-var name no real caller would
 ever set, is inert unless explicitly set, never appears in `--help` or any user-facing
@@ -236,13 +236,13 @@ The guard (`docs-dangling-refs.test.ts`'s `extractStringLiterals()`/
 `danglingPhaseLiterals()`) is string-literal-only by deliberate design -- a comment-scoped
 guard would be self-invalidated by the fix's own explanatory comments (this repo's fixes
 routinely name the old, banned wording in a "what NOT to do" comment). Consequence:
-`r2000-project.ts`'s third FLOW-02 site (a header comment, not a string literal) was fixed
+`anno-project.ts`'s third FLOW-02 site (a header comment, not a string literal) was fixed
 by hand in plan 11.1-01 Task 1 and is permanently outside the guard's reach.
 **Disposition: accepted debt**, already documented as a "Known Limitation" in
 `11.1-01-SUMMARY.md` and restated here so it is not closed by living only in one plan's
 SUMMARY.
 
-**3. Two stale phase pointers in comments, outside the r2000 family:**
+**3. Two stale phase pointers in comments, outside the anno family:**
 `stock-cia.ts:39` ("is Phase 8's business," for full stock keyboard-matrix recovery) and
 `stock-dispatch.ts:614-615` (a "Phase 7" routing note for `vice_disk_detach` and
 `vice_joystick_tap`). Both hand work to phases that have since completed; the
@@ -251,20 +251,20 @@ permanent-exclusion decision. **Disposition: filed as a pending todo** --
 `.planning/todos/pending/2026-08-21-stale-phase-pointers-in-stock-cia-and-stock-dispatch-comments.md`
 -- because `vice_disk_detach`'s half is genuine, unclaimed backlog work (not merely a
 stale comment), not accepted debt. Out of scope to fix here: neither file is in this
-phase's r2000/audit-closure scope, and `stock-cia.ts`/`stock-dispatch.ts` are Phase 3
+phase's anno/audit-closure scope, and `stock-cia.ts`/`stock-dispatch.ts` are Phase 3
 family, not the Phase 4 disassembler family this milestone protects -- but leaving the
 pointer unstated would itself be the AUDIT-01 defect.
 
-**4. `r2000-cli.test.ts:87-92`'s `writeSingleSectorEntry()` duplicates `writeChain()`'s
+**4. `anno-cli.test.ts:87-92`'s `writeSingleSectorEntry()` duplicates `writeChain()`'s
 used-byte formula (noted while closing WR-12, plan 11.1-06 Task 3).**
 Read directly: this duplicate is used only to build `.d64` fixtures for CLI-level
 behavioural tests (e.g. `bootstrap`'s malformed-entry path) -- it never independently
-verifies the DOS used-byte convention the way `r2000-d64.test.ts`'s round-trip test does.
+verifies the DOS used-byte convention the way `anno-d64.test.ts`'s round-trip test does.
 **Disposition: accepted debt.** WR-12's actual defect (a round-trip *correctness* test
 that is a tautology with respect to the convention) does not recur here, because nothing
-in `r2000-cli.test.ts` asserts the convention against this fixture writer's own formula --
+in `anno-cli.test.ts` asserts the convention against this fixture writer's own formula --
 it only uses the formula to construct realistic-looking `.d64` bytes for unrelated
-assertions. The independent literal pin correctly lives in `r2000-d64.test.ts` instead
+assertions. The independent literal pin correctly lives in `anno-d64.test.ts` instead
 (11.1-06-SUMMARY.md's own stated reason). No further action needed.
 
 **5. `07-REVIEW.md`'s WR-15 through WR-19 (v0.2.0 Phase 7, all five marked "carryover")
@@ -319,7 +319,7 @@ ledger did not originally cover:
   `.planning/todos/pending/2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned.md`.
   Unlike Phase 01's, these are confirmed (three spot-checked directly against current
   source: WR-04, WR-08, WR-12) still genuinely unfixed -- not merely undocumented. Out of
-  this plan's scope (a v0.2.0 phase, not the r2000/regenerator2000 family), so filed
+  this plan's scope (a v0.2.0 phase, not the anno/analyser family), so filed
   rather than fixed.
 
 **7. `11-REVIEW.md`'s WR-01 (`resolveStorePath()`'s symlink guard misses a not-yet-existing
@@ -359,17 +359,17 @@ dispositioning are recorded above rather than left implicit.
 
 - CR-01, CR-02, WR-01 — fixed at Phase 10 close-out.
 - WR-02 through WR-07 — filed as
-  `.planning/todos/completed/2026-08-20-r2000-review-residual-findings.md`, closed by
+  `.planning/todos/completed/2026-08-20-anno-review-residual-findings.md`, closed by
   plans `11-01`/`11-02` (see that todo's own `## Resolution`).
-- WR-08 — **checked directly, and NOT fixed.** `r2000-cli.ts`'s `parseArgs()` still has
+- WR-08 — **checked directly, and NOT fixed.** `anno-cli.ts`'s `parseArgs()` still has
   `if (a === "--entry") entry = rest[++i];` / `else if (a === "--out") out = rest[++i];`
   with no value validation; live-reproduced on 2026-08-21
-  (`node vice-proxy.ts r2000 bootstrap /tmp/wr08test.prg --out` silently wrote
+  (`node vice-proxy.ts anno bootstrap /tmp/wr08test.prg --out` silently wrote
   `wr08test.regen2000proj` instead of refusing the missing value). WR-08 fell through the
   gap between "fixed at close-out" (CR-01/CR-02/WR-01) and the residual-findings todo
   (WR-02..WR-07) — never named in either. This is itself a small AUDIT-01-class miss,
   found while dispositioning the four already-named ones. **Disposition: deferred**, filed
-  as `.planning/todos/pending/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md`
+  as `.planning/todos/pending/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md`
   rather than fixed here — found while writing this ledger, not while executing an
   in-scope code-change task, so per this project's deviation-scope rule it is logged, not
   silently fixed inside an unrelated plan.
@@ -394,7 +394,7 @@ the thrown `MachineRestartedError` message still begins `stockConnect: reconnect
 target...`. Never fixed by `02-REVIEW-FIX.md` (which covers only `02-REVIEW.md`'s CR/WR
 findings, not its INFO findings), never filed as a todo, never mentioned in
 `02-VERIFICATION.md`. A trivial one-line fix (`stockConnect:` -> `stockReconnect:`), but
-`stock-connect.ts` is out of this phase's scope (Phase 2 family, not r2000, not the
+`stock-connect.ts` is out of this phase's scope (Phase 2 family, not anno, not the
 protected Phase 4 disassembler family) — recorded as accepted debt, a genuine v0.2.0
 inheritance, rather than fixed here. Per this phase's explicit instruction: dispositioned,
 not exempted, and not silently fixed in a plan whose stated scope is closing the v0.3.0

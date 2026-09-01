@@ -63,7 +63,7 @@ completed: 2026-08-18
 
 - Wrote a new `## VICE install and backend selection` section in `README.md`: a dated (2026-08-18) per-ecosystem version table (Debian trixie/forky, Ubuntu multiverse, Arch, Fedora/RPM Fusion, Alpine edge, Homebrew, official Windows zips), the `VICE_BACKEND` config switch with its real default-fallback behaviour, the two fork-only tools (`vice_sid_get_state`, `vice_keyboard_matrix`) named explicitly, a link to the generated `docs/tool-support.md`, and a live-verified stock launch command.
 - Deleted two false claims from `README.md`: the non-existent `skill-docs.test.ts` / `vice-mcp-selector-docs.test.ts` "guardrail tests" assertion, and the unqualified "screenshots" bullet that overstated what the stock backend can do.
-- Extended `scripts/check-skill-fork-honesty.mjs` with README presence assertions (5 required substrings, 3 forbidden substrings including the `regenerator2000` canary) sharing the script's existing `need()` accumulator.
+- Extended `scripts/check-skill-fork-honesty.mjs` with README presence assertions (5 required substrings, 3 forbidden substrings including the `the external analyser` canary) sharing the script's existing `need()` accumulator.
 - Wired `check-skill-fork-honesty.mjs` into `.github/workflows/ci.yml` as a blocking step between the existing skill-tool-coverage check and the package build.
 - Created `08-HUMAN-UAT.md` recording the phase's one manual verification item, in the same frontmatter/body shape as `07-HUMAN-UAT.md`.
 - **Live-verified the install-only half of that manual item during Task 3's execution**, which is the substantive finding of this plan:

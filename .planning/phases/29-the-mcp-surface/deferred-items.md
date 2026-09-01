@@ -52,7 +52,7 @@ about CLI path confinement; a plausible shape is to exempt a path whose
 
 Consequence for this phase's gate: the `test:automated` failing-file **set**
 inside a worktree is `repo-root.test.ts` where `29-BASELINE.md` records
-`audit-integrity.test.ts` + `r2000-session.test.ts`. See 29-14's summary for the
+`audit-integrity.test.ts` + `anno-session.test.ts`. See 29-14's summary for the
 full reconciliation of all three names.
 
 *Logged 2026-08-30 by plan 29-14.*

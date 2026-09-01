@@ -220,7 +220,7 @@ status: complete
 ## Files Created/Modified
 
 - `src/mcp/vice/anno-tools.ts` — grew from one tracer verb to the full 19-verb table, its per-verb validators, the single `assertVerbArgs()` dispatch, the image loader, the region/disassemble cap, `assertAnnoBatch()` and the two-phase batch runner. The header now records D-07, D-09, the two refusal channels, and the one-sanctioned-nested-argument-verb rule.
-- `src/mcp/vice/anno-tools.test.ts` — 30 new tests across the three tasks, including the ported `r2000-tools.test.ts` batch cases and a shared single-pass comment-and-string stripper used by every structural guard.
+- `src/mcp/vice/anno-tools.test.ts` — 30 new tests across the three tasks, including the ported `anno-tools.test.ts` batch cases and a shared single-pass comment-and-string stripper used by every structural guard.
 - `src/mcp/vice/anno-store.ts` — `removeScope()`, the module's fourth row-deleting statement, with its doc block superseding `clearEnumUsage`'s "third" count and stating the new one in prose that deliberately does not spell the SQL prefix a census greps for.
 - `src/mcp/vice/anno-derive.test.ts` — the named SQL-write-site expected set gained `anno-store.ts#removeScope`, with the reason recorded in the set's own doc block.
 
@@ -288,10 +288,10 @@ See `key-decisions` in the frontmatter. The three that a later reader is most li
 | `node --test anno-tools.test.ts anno-derive.test.ts anno-store.test.ts anno-types.test.ts stock-dispatch.test.ts` | **green** — 0 fail |
 | `npm run typecheck` | **clean** |
 | `node scripts/check-npm-packages.mjs` | **OK** — `@henols/vice-mcp` 83 files, `@henols/c64-re-tools` 34 files / 7 skills |
-| `node scripts/check-no-regenerator2000.mjs` | **exit 0** — allow-list unchanged (29-07: 27, 29-09: 65, 29-10: 167, 29-12: 4) |
+| `node scripts/check-no-analyser.mjs` | **exit 0** — allow-list unchanged (29-07: 27, 29-09: 65, 29-10: 167, 29-12: 4) |
 | `node scripts/generate-tool-support-table.mjs` | **no drift** — `docs/tool-support.md` unchanged; the `anno_*` family is proxy-local and not in either backend manifest |
 | Regression sweep (`anno-seam`, `anno-confinement`, `anno-durability`, `anno-overlap`, `anno-index`, `anno-derivation`, `hostpath-consumers`, `module-classification`, `capability-registry`, `docs-linerefs`, `spawn-seam`, `tool-support-table`) | **green** — 0 fail |
-| `npm run test:automated` | **failing FILE set unchanged**: `{r2000-session.test.ts}` — 6 failures under load, 5 in isolation (re-measured this run), matching `29-BASELINE.md`'s recorded load-sensitive character. `audit-integrity.test.ts` remains out of the set, as 29-05 recorded. No new file entered the set. |
+| `npm run test:automated` | **failing FILE set unchanged**: `{anno-session.test.ts}` — 6 failures under load, 5 in isolation (re-measured this run), matching `29-BASELINE.md`'s recorded load-sensitive character. `audit-integrity.test.ts` remains out of the set, as 29-05 recorded. No new file entered the set. |
 
 ## User Setup Required
 
@@ -303,7 +303,7 @@ None — no external service configuration required.
 - **What 29-08 must carry in the D-08 register**, each with a named consumer and requirement id: `anno_search` (`STORE-06`), `anno_add_scope`, `anno_update_project_enum`, and `anno_remove_scope` (cited to `28-VERIFICATION.md` WR-28 / `28-REVIEW.md:1788-1814`). All four are on the surface and none appears in any manifest procedure.
 - **Exported names 29-08 and 29-11 will want:** `ANNO_TOOL_DEFINITIONS`, `CURATED_ANNO_TOOLS`, `assertAnnoTool`, `assertAnnoBatch`, `runAnnoTool`, `ANNO_READ_REGION_MAX_BYTES`, `ANNO_READ_REGION_MAX_BYTES_ENV`, `ANNO_MAX_BATCH_DEPTH`, `AnnoUncuratedToolError`, `AnnoToolArgumentError`, `AnnoRegionRangeError`.
 - **Carried forward unchanged, and NOT closed by anything here** (28-18 P3 forbids closing, dropping or re-filing them): `openStore`'s `integrity_check could not be run at all` throw arm remains `behavior_unverified` with no reachable input absent fault injection, and 28-17's host-crash durability bound across `stageSnapshot` fsync → `publishSnapshot` rename → pointer-row commit remains abstained as `insufficient_spec`. Nothing in this plan touches either: `removeScope` runs inside the existing write sequence's transaction and adds no new durability claim.
-- **One note for 29-10:** `r2000-tools.test.ts`'s batch cases are now ported into `anno-tools.test.ts`, so deleting that file loses no D-33 coverage.
+- **One note for 29-10:** `anno-tools.test.ts`'s batch cases are now ported into `anno-tools.test.ts`, so deleting that file loses no D-33 coverage.
 
 ---
 *Phase: 29-the-mcp-surface*
@@ -314,4 +314,4 @@ None — no external service configuration required.
 - All four modified files present on disk.
 - All three task commits present in `git log`: `a8126be`, `9a2d111`, `84b7d67`.
 - Every task's `<acceptance_criteria>` re-run and green (see Verification Results).
-- Plan-level `<verification>` commands re-run: test suites green, typecheck clean, `check-npm-packages.mjs` OK, `check-no-regenerator2000.mjs` exit 0, `test:automated` failing FILE set unchanged against `29-BASELINE.md`.
+- Plan-level `<verification>` commands re-run: test suites green, typecheck clean, `check-npm-packages.mjs` OK, `check-no-analyser.mjs` exit 0, `test:automated` failing FILE set unchanged against `29-BASELINE.md`.

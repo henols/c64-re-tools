@@ -16,7 +16,7 @@ Names carry research assumption A1 (`anno-*`); map by **role**, not by name.
 
 | New/Modified File | Role | Data Flow | Closest Analog | Match Quality |
 |-------------------|------|-----------|----------------|---------------|
-| `anno-types.ts` (vocabulary, row types, validators, errors) | model / utility (pure data definition) | transform (validate-or-throw) | `r2000-confidence.ts` (frozen vocabulary) + `vice.ts:245-290` (error classes) + `stock-address.ts:99-180` (parser) | exact for vocabulary + errors; **diverge** for parser |
+| `anno-types.ts` (vocabulary, row types, validators, errors) | model / utility (pure data definition) | transform (validate-or-throw) | `anno-confidence.ts` (frozen vocabulary) + `vice.ts:245-290` (error classes) + `stock-address.ts:99-180` (parser) | exact for vocabulary + errors; **diverge** for parser |
 | `anno-index.ts` (narrowest-wins paint index) | utility (pure) | transform (rows → Int32Array → O(1) lookup) | `block-class.ts` (pure, no-import, two-arg lookup module) | role-match (both are pure address→class lookups) |
 | `anno-store.ts` (the ONLY `node:sqlite` importer) | service / persistence | CRUD + file-I/O | `hostpath.ts` (a confined single-seam module) header-wise; `prg-image.ts` / `acme-gate.ts` for the header convention | role-match; **no existing persistence analog in the tree** |
 | `anno-types.test.ts` | test (unit) | transform | `block-class.test.ts` (vocabulary + structural assertions in one file) | exact |
@@ -24,9 +24,9 @@ Names carry research assumption A1 (`anno-*`); map by **role**, not by name.
 | `anno-store.test.ts` | test (unit + structural) | CRUD + file-I/O | `build-atomic.test.ts` (`mkdtempSync` + `finally` cleanup) | role-match |
 | `anno-durability.test.ts` | test (integration, `SIGKILL`) | file-I/O + process spawn | `build-atomic.test.ts:153-158` (spawn a sibling script with `process.execPath`) + `broker-kill.test.ts:77-86` (`process.kill(pid,"SIGKILL")` in a `try`/ignore) | partial — **no existing test SIGKILLs a self-killing child**; composite analog |
 | sibling mutator script (spawned + self-`SIGKILL`ed) | script (test helper) | file-I/O | `build.ts` invoked as a child by `build-atomic.test.ts:153`; `acme-gate.ts` for the "test-only, never in `files[]`" header clause | role-match |
-| `anno-seam.test.ts` | test (structural) | transform | `hostpath-consumers.test.ts:130-150, 220-260` **plus** `r2000-spawn-seam.test.ts:53, 183` for the scanned set | exact (this is the direct template) |
+| `anno-seam.test.ts` | test (structural) | transform | `hostpath-consumers.test.ts:130-150, 220-260` **plus** `spawn-seam.test.ts:53, 183` for the scanned set | exact (this is the direct template) |
 | `block-class.test.ts` (extend) | test (unit) | transform | itself — `:26-50` and `:218-230` | exact |
-| `r2000-coverage.test.ts` (extend) | test (unit) | transform | itself — `:614-620` | exact |
+| `anno-coverage.test.ts` (extend) | test (unit) | transform | itself — `:614-620` | exact |
 | `block-class.ts` (modify 2 literals + header) | utility (pure) | transform | itself — `:126-137`, header `:32-35` | exact |
 | `package.json` `files[]` (add 3 entries) | config | — | the `block-class.ts` / `prg-image.ts` entries at the tail of the array | exact |
 
@@ -36,7 +36,7 @@ Names carry research assumption A1 (`anno-*`); map by **role**, not by name.
 
 ### `anno-types.ts` — the frozen vocabulary (model, transform)
 
-**Analog:** `src/mcp/vice/r2000-confidence.ts:81-112` — **pattern to replicate**
+**Analog:** `src/mcp/vice/anno-confidence.ts:81-112` — **pattern to replicate**
 
 Read at `:81-112`. The house shape for a frozen, single-home vocabulary is a
 `readonly` array of records with `as const`, plus derived `.map()` projections
@@ -61,11 +61,11 @@ form for `DATA_TYPES`.
 `DATA_TYPES.filter(...)`, exactly as `VALID_BRACKETS` is a `.map()` — never a second
 literal array. RESEARCH.md's Pattern 1 prescribes the same.
 
-**Do NOT copy `R2000ConfidenceGradeError`'s base class.** Read at
-`r2000-confidence.ts:139`:
+**Do NOT copy `AnnoConfidenceGradeError`'s base class.** Read at
+`anno-confidence.ts:139`:
 
 ```typescript
-export class R2000ConfidenceGradeError extends Error {
+export class AnnoConfidenceGradeError extends Error {
 ```
 
 It extends `Error`, **not** `ViceError`. RESEARCH.md flags this as an asymmetry the
@@ -359,9 +359,9 @@ Note the comment at `:196-201`: a `let`-only grep already let a real offender th
 
 ---
 
-### `r2000-coverage.test.ts` (extend) — the label-kind agreement
+### `anno-coverage.test.ts` (extend) — the label-kind agreement
 
-**Analog:** `r2000-coverage.test.ts:614-620` — **pattern to replicate and widen**
+**Analog:** `anno-coverage.test.ts:614-620` — **pattern to replicate and widen**
 
 Read verbatim; this is the test RESEARCH.md says covers **blocks only**:
 
@@ -459,7 +459,7 @@ shape, and never a phase number in a shipped string literal.
 
 ### `anno-seam.test.ts` — the structural single-seam assertion (test, structural)
 
-**Analog:** `src/mcp/vice/hostpath-consumers.test.ts` — **pattern to replicate, widened**; scanned set from `r2000-spawn-seam.test.ts`; enumerator/stripper from `shipped-modules.ts`
+**Analog:** `src/mcp/vice/hostpath-consumers.test.ts` — **pattern to replicate, widened**; scanned set from `spawn-seam.test.ts`; enumerator/stripper from `shipped-modules.ts`
 
 **The non-vacuity pairing**, read at `hostpath-consumers.test.ts:143-150`:
 
@@ -526,7 +526,7 @@ narrower access-position detector with the full control. **The plan must state w
 — the hostpath guard records having made the opposite trade, and this one must record
 its own.
 
-**Scanned set** — from `r2000-spawn-seam.test.ts:53, 178-187` (read verbatim):
+**Scanned set** — from `spawn-seam.test.ts:53, 178-187` (read verbatim):
 
 ```typescript
 import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
@@ -680,8 +680,8 @@ why.**
 Read from `src/mcp/vice/package.json`, the tail of `files[]`:
 
 ```json
-    "r2000-memmap-render.ts",
-    "r2000-coverage.ts",
+    "anno-memmap-render.ts",
+    "anno-coverage.ts",
     "block-class.ts",
     "prg-image.ts",
     "resources",
@@ -691,17 +691,17 @@ Read from `src/mcp/vice/package.json`, the tail of `files[]`:
     "THIRD-PARTY-NOTICES.md"
 ```
 
-Non-`r2000-` modules go **after** the `r2000-*` run and **before** `"resources"`, in
+Non-`anno-` modules go **after** the `anno-*` run and **before** `"resources"`, in
 the position `block-class.ts` and `prg-image.ts` occupy. The three new entries join
 there. `acme-gate.ts` is deliberately absent — the mutator script must be too.
 
 **Precondition confirmed:** `module-classification.test.ts:73-78` (read verbatim)
-enumerates only `startsWith("r2000-")`, so `anno-*` needs **no** classification entry:
+enumerates only `startsWith("anno-")`, so `anno-*` needs **no** classification entry:
 
 ```typescript
 function inEnumerationOnDisk(dir: string = HERE): string[] {
   return readdirSync(dir)
-    .filter((name) => name.startsWith("r2000-"))
+    .filter((name) => name.startsWith("anno-"))
     .filter((name) => /\.(ts|json)$/.test(name))
     .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name))
     .sort();
@@ -778,15 +778,15 @@ Every RESEARCH.md line citation touched by this pass was re-read. **No drift fou
 | `vice.ts:245-259` (`ViceError`), `:281-290` (`MachineRestartedError`), `:14-18` (imports) | ✅ exact |
 | `block-class.ts:32-35` (lowercase rationale), `:126-137` (`blockClassAt`), `:41-52` (traps 1–2) | ✅ exact — the capitalised-literal defect at `:130-131` is real and present |
 | `block-class.test.ts:34` (`STORE_CODE = "Code"`), `:186-191` (empty-import `deepEqual`) | ✅ exact (the `deepEqual` call spans `:187-192`; the assertion is at `:186-192`) |
-| `r2000-coverage.ts:1430, 1432, 1869, 2180` (label-kind literals) | ✅ all four exact |
-| `r2000-coverage.test.ts:616` (`oneType` block rewrite) | ✅ exact |
-| `r2000-confidence.ts:81-114` (`CONFIDENCE_GRADES`), `:139` (`extends Error`, not `ViceError`) | ✅ exact |
+| `anno-coverage.ts:1430, 1432, 1869, 2180` (label-kind literals) | ✅ all four exact |
+| `anno-coverage.test.ts:616` (`oneType` block rewrite) | ✅ exact |
+| `anno-confidence.ts:81-114` (`CONFIDENCE_GRADES`), `:139` (`extends Error`, not `ViceError`) | ✅ exact |
 | `shipped-modules.ts:151-162` (`shippedTsModules`), `:198-205` (`keepLiteralBodies` doc) | ✅ exact |
 | `hostpath-consumers.test.ts:50, 60` (the two regexes), `:124-127` (local enumerator), `:143-150` (the pairing), `:220-260` (plantings) | ✅ exact |
-| `r2000-spawn-seam.test.ts:53, 183` (`shippedTsModules()` scan) | ✅ exact |
+| `spawn-seam.test.ts:53, 183` (`shippedTsModules()` scan) | ✅ exact |
 | `stock-address.ts:35` (import specifier), `:52-76` (module-level resolver state), `:82-87` (`StockAddressError`), `:100-105` (doc), `:155-160` (bare-decimal branch) | ✅ exact — C-4's divergence is fully justified by the tree |
 | `disasm-opcodes.ts:183-201` (`OpcodeEntry`, no access field), `:207-215` (`OPCODES`) | ✅ exact |
-| `module-classification.test.ts:72-78` (`startsWith("r2000-")`) | ✅ exact (`:73-78`) |
+| `module-classification.test.ts:72-78` (`startsWith("anno-")`) | ✅ exact (`:73-78`) |
 | `package.json` `files[]` includes `block-class.ts` + `prg-image.ts`, excludes `acme-gate.ts` | ✅ exact |
 
 ---
@@ -796,8 +796,8 @@ Every RESEARCH.md line citation touched by this pass was re-read. **No drift fou
 **Analog search scope:** `src/mcp/vice/` (all `*.ts`, `*.mts`, `*.test.ts`,
 `fixtures/`, `package.json`), `scripts/`
 **Files opened this pass:** 16 (`vice.ts`, `block-class.ts`, `block-class.test.ts`,
-`r2000-coverage.ts`, `r2000-coverage.test.ts`, `r2000-confidence.ts`,
-`shipped-modules.ts`, `hostpath-consumers.test.ts`, `r2000-spawn-seam.test.ts`,
+`anno-coverage.ts`, `anno-coverage.test.ts`, `anno-confidence.ts`,
+`shipped-modules.ts`, `hostpath-consumers.test.ts`, `spawn-seam.test.ts`,
 `comment-phase-pointers.test.ts`, `stock-address.ts`, `disasm-opcodes.ts`,
 `prg-image.ts`, `acme-gate.ts`, `module-classification.test.ts`, `package.json`) plus
 targeted greps over `build-atomic.test.ts`, `broker-kill.test.ts`, `repo-root.test.ts`,

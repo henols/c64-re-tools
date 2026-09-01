@@ -356,7 +356,7 @@ test("extractEntry: a hand-written final sector at the one-payload-byte boundary
 //      package.json's files[]" -- i.e. the condition can only be false when
 //      the checkout is broken. A skip REPORTS GREEN, so the gate turned a
 //      broken checkout into a pass. That is the precise degradation
-//      `acme-gate.ts:61-63` and `r2000-test-gate.ts` both name as the
+//      `acme-gate.ts:61-63` and `anno-test-gate.ts` both name as the
 //      failure their whole design exists to prevent, and it is the opposite
 //      of the availability-gate convention it cited: that convention gates
 //      on an EXTERNAL dependency (a binary that may genuinely be absent),

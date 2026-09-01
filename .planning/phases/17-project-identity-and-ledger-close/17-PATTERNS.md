@@ -144,8 +144,8 @@ Outcome: ⚠️ Revisit — pinned by the committed guard `docs-fork-decision.te
 - An explicit verdict word (restate / keep-as-is).
 - Named evidence citations — reuse these exact anchors, all independently verified this session:
   - "Phase 11's two-session sealed-question test" / hash `e64463d8…` (`PROJECT.md:275`)
-  - "the symbol round trip" (`PROJECT.md:81`, R2000-14/R2000-15)
-  - "the 17 curated `r2000_*` tools" (`PROJECT.md:79-80`)
+  - "the symbol round trip" (`PROJECT.md:81`, ANNO-14/ANNO-15)
+  - "the 17 curated `anno_*` tools" (`PROJECT.md:79-80`)
 - If kept: a named reversal/revisit condition, in the same voice as FORK-01's "This decision reverses if UP-01 lands: ..." sentence.
 
 **Out of Scope cross-reference pattern** (only if CORE-01 verdict is "kept" and a symmetric guard is built) — mirror the fork-backend bullet at `PROJECT.md:109`:

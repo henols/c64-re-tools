@@ -106,7 +106,7 @@ constraints: SUMMARY.md/STATE.md/PLAN.md are not committed here)._
 ## Files Created/Modified
 
 - `.planning/ROADMAP.md` - Corrected three disk-detach sites (D4-2) and the
-  D-07 standing-constraint bullet + regenerator2000 overlap prose (NEW-1)
+  D-07 standing-constraint bullet + the external analyser overlap prose (NEW-1)
 
 - `.planning/intel/decisions.md` - Corrected `DEC-preserve-mcp-surface`'s
   superseded-part mirror of D-07

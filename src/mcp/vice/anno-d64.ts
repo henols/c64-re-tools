@@ -16,7 +16,7 @@
 // `scripts/check-npm-packages.mjs`'s transitive-closure walk over `files[]`
 // would fail the pack the moment a reachable module sat outside the listed
 // set. So this is a SECOND, independent copy of the sector-chain-walk
-// algorithm, container-side, scoped to exactly what the r2000 bootstrap
+// algorithm, container-side, scoped to exactly what the anno bootstrap
 // needs -- not a shared library and not an import of the skill-side module.
 //
 // `d64-parse.mjs` REMAINS the skill-side owner of the algorithm and is left

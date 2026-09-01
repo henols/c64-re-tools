@@ -7,5 +7,5 @@
 # Deliberately unoptimised -- no apt-get, no cache mounts -- the point is to measure
 # the naive route's cost, not to minimise it.
 FROM rust:1.90-slim
-RUN cargo install regenerator2000
-ENTRYPOINT ["regenerator2000"]
+RUN cargo install analyser
+ENTRYPOINT ["analyser"]

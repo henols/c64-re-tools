@@ -34,7 +34,7 @@ key-files:
   created:
     - .planning/phases/31-procedure-re-pointing/31-03-SUMMARY.md
   modified:
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
     - .planning/STATE.md
 
 key-decisions:
@@ -52,11 +52,11 @@ requirements-completed: []
 # Coverage metadata (#1602)
 coverage:
   - id: D1
-    description: "No living guard or state record cites the criterion ordinal `D-01` removed: both `scripts/check-no-regenerator2000.mjs` sites and the `.planning/STATE.md` decision line name ROADMAP Phase 31 criterion 1"
+    description: "No living guard or state record cites the criterion ordinal `D-01` removed: both `scripts/check-no-analyser.mjs` sites and the `.planning/STATE.md` decision line name ROADMAP Phase 31 criterion 1"
     requirement: "REPOINT-03"
     verification:
       - kind: other
-        ref: "grep -c 'Phase 31 criterion 4' scripts/check-no-regenerator2000.mjs -> 0 (was 2); same over .planning/STATE.md -> 0 (was 1); grep -c 'Phase 31 criterion 1' -> 2 and 1 respectively (both were 0)"
+        ref: "grep -c 'Phase 31 criterion 4' scripts/check-no-analyser.mjs -> 0 (was 2); same over .planning/STATE.md -> 0 (was 1); grep -c 'Phase 31 criterion 1' -> 2 and 1 respectively (both were 0)"
         status: pass
     human_judgment: false
   - id: D2
@@ -64,7 +64,7 @@ coverage:
     requirement: "REPOINT-03"
     verification:
       - kind: other
-        ref: "grep -c 'two naming lines byte-identical' scripts/check-no-regenerator2000.mjs -> 2 (unchanged from 2); grep -c 'D-01' -> 3 (was 1, so >= 2 satisfied)"
+        ref: "grep -c 'two naming lines byte-identical' scripts/check-no-analyser.mjs -> 2 (unchanged from 2); grep -c 'D-01' -> 3 (was 1, so >= 2 satisfied)"
         status: pass
     human_judgment: false
   - id: D3
@@ -72,10 +72,10 @@ coverage:
     requirement: "REPOINT-03"
     verification:
       - kind: other
-        ref: "node --check scripts/check-no-regenerator2000.mjs -> exit 0; git diff -U0 token scan for SKILL_ATTRIBUTION_PINS / blocks: / hits: / SUBJECT_NEEDLE / isInsideSkillAttributionBlock / git ls-files over changed lines -> no match"
+        ref: "node --check scripts/check-no-analyser.mjs -> exit 0; git diff -U0 token scan for SKILL_ATTRIBUTION_PINS / blocks: / hits: / SUBJECT_NEEDLE / isInsideSkillAttributionBlock / git ls-files over changed lines -> no match"
         status: pass
       - kind: integration
-        ref: "node scripts/check-no-regenerator2000.mjs -> exit 0, `skill-attribution-headers 24`, 0 temporarily allow-listed across 0 entries"
+        ref: "node scripts/check-no-analyser.mjs -> exit 0, `skill-attribution-headers 24`, 0 temporarily allow-listed across 0 entries"
         status: pass
       - kind: unit
         ref: "cd src/mcp/vice && node --test removal-gate.test.ts -> # tests 8, # pass 8, # fail 0"
@@ -143,7 +143,7 @@ status: complete
 
 ## Accomplishments
 
-- **An exemption nobody could audit is auditable again.** `scripts/check-no-regenerator2000.mjs`'s `skill-attribution-headers` class is **permanent** precisely because a ROADMAP criterion requires the ABS-02 headers to survive with their two naming lines byte-identical. Both places that justification is written — the `SKILL_ATTRIBUTION_PINS` doc comment and the exemption's `why` string — cited **criterion 4**, an ordinal `D-01` removed on 2026-08-30 when it narrowed Phase 31 to two criteria. Both now cite **criterion 1**, the ordinal the attribution clause actually carries, read off `ROADMAP.md § "### Phase 31"` rather than guessed.
+- **An exemption nobody could audit is auditable again.** `scripts/check-no-analyser.mjs`'s `skill-attribution-headers` class is **permanent** precisely because a ROADMAP criterion requires the ABS-02 headers to survive with their two naming lines byte-identical. Both places that justification is written — the `SKILL_ATTRIBUTION_PINS` doc comment and the exemption's `why` string — cited **criterion 4**, an ordinal `D-01` removed on 2026-08-30 when it narrowed Phase 31 to two criteria. Both now cite **criterion 1**, the ordinal the attribution clause actually carries, read off `ROADMAP.md § "### Phase 31"` rather than guessed.
 - **The move is dated, not silent.** Each of the three sites gained a short parenthetical recording that the phase was narrowed by `D-01` on 2026-08-30 and this clause became the first of the two — *"the number moved, the requirement did not"*. A bare `4 -> 1` edit inside a permanent exemption's justification is indistinguishable from a typo fix; the parenthetical is what keeps the renumbering in the record.
 - **The citation's content survived verbatim.** `grep -c 'two naming lines byte-identical'` reads **2** before and after. Only the ordinal moved and the parenthetical was added — the clause that *is* the exemption's justification is byte-identical.
 - **Nothing executable moved, and that is asserted rather than described.** `node --check` clean over the `+`-concatenated `why` string; a token scan of every changed line finds no `SKILL_ATTRIBUTION_PINS` entry, `blocks:`, `hits:`, `SUBJECT_NEEDLE`, `isInsideSkillAttributionBlock` or `git ls-files`; `removal-gate.test.ts` re-drives the real exported predicates over its four planted evasion routes at 8/8; and the gate still reports `skill-attribution-headers 24` on its six unchanged per-file pins with an **empty** temporary allow-list.
@@ -163,7 +163,7 @@ status: complete
 ```
 5cfa783 docs(31-03): re-point the three living citations of the narrowed Phase 31 criterion
  .planning/STATE.md                   |  2 +-
- scripts/check-no-regenerator2000.mjs | 17 +++++++++++------
+ scripts/check-no-analyser.mjs | 17 +++++++++++------
  2 files changed, 12 insertions(+), 7 deletions(-)
 ```
 
@@ -177,7 +177,7 @@ Task 1's commit lists **exactly two** paths; task 2's lists **exactly one**. Nei
 
 ## Files Created/Modified
 
-- `scripts/check-no-regenerator2000.mjs` — +11 / −6, entirely inside one comment block and one `why:` string. `SKILL_ATTRIBUTION_PINS`' six entries, the bidirectional pin loop, `isInsideSkillAttributionBlock`, `SUBJECT_NEEDLE`, every exemption `id` / scope / path / hit count and the `.planning/` prefix in the scope predicate are all byte-identical.
+- `scripts/check-no-analyser.mjs` — +11 / −6, entirely inside one comment block and one `why:` string. `SKILL_ATTRIBUTION_PINS`' six entries, the bidirectional pin loop, `isInsideSkillAttributionBlock`, `SUBJECT_NEEDLE`, every exemption `id` / scope / path / hit count and the `.planning/` prefix in the scope predicate are all byte-identical.
 - `.planning/STATE.md` — one line modified (task 1: the `- [Phase 29]:` citation) and one line added (task 2: the `- [Phase 31]:` entry). Frontmatter, Current Position, Performance Metrics and Deferred Items untouched.
 
 ## The measurements this plan was required to record
@@ -186,11 +186,11 @@ Task 1's commit lists **exactly two** paths; task 2's lists **exactly one**. Nei
 
 | File | `Phase 31 criterion 4` before | after | `Phase 31 criterion 1` before | after |
 |---|---|---|---|---|
-| `scripts/check-no-regenerator2000.mjs` | **2** | **0** | **0** | **2** |
+| `scripts/check-no-analyser.mjs` | **2** | **0** | **0** | **2** |
 | `.planning/STATE.md` | **1** | **0** | **0** | **1** |
 | `.planning/phases/29-the-mcp-surface/29-09-SUMMARY.md` (must be **unchanged**) | **4** | **4** | 3 | 3 |
 
-Supporting counts over `scripts/check-no-regenerator2000.mjs`:
+Supporting counts over `scripts/check-no-analyser.mjs`:
 
 | Token | Before | After | Required |
 |---|---|---|---|
@@ -240,10 +240,10 @@ Run from the repository root unless noted.
 | # | Command | Result |
 |---|---|---|
 | 1 | `systemctl --user is-active vice-broker` | `inactive` — checked first, and again before each suite run |
-| 2 | `node --check scripts/check-no-regenerator2000.mjs` | exit 0 — the concatenated `why` string was not broken |
-| 3 | `node scripts/check-no-regenerator2000.mjs` | exit 0 — 400 files scanned (370 tracked + 30 shipped-but-untracked, floor 350), 157 permanently exempt, **`skill-attribution-headers 24`**, **0 temporarily allow-listed across 0 entries** |
+| 2 | `node --check scripts/check-no-analyser.mjs` | exit 0 — the concatenated `why` string was not broken |
+| 3 | `node scripts/check-no-analyser.mjs` | exit 0 — 400 files scanned (370 tracked + 30 shipped-but-untracked, floor 350), 157 permanently exempt, **`skill-attribution-headers 24`**, **0 temporarily allow-listed across 0 entries** |
 | 4 | `cd src/mcp/vice && node --test removal-gate.test.ts` | exit 0 — `# tests 8`, `# pass 8`, **`# fail 0`** |
-| 5 | `git diff -U0 scripts/check-no-regenerator2000.mjs` token scan | no changed line contains `SKILL_ATTRIBUTION_PINS` entries, `blocks:`, `hits:`, `SUBJECT_NEEDLE`, `isInsideSkillAttributionBlock` or `git ls-files` |
+| 5 | `git diff -U0 scripts/check-no-analyser.mjs` token scan | no changed line contains `SKILL_ATTRIBUTION_PINS` entries, `blocks:`, `hits:`, `SUBJECT_NEEDLE`, `isInsideSkillAttributionBlock` or `git ls-files` |
 | 6 | `cd src/mcp/vice && npm run typecheck` | exit 0 (`tsc --noEmit`, clean) |
 | 7 | `cd src/mcp/vice && npm run test:automated` | `# tests 2920`, `# pass 2914`, **`# fail 0`**, `# skipped 1`, `# todo 5` — run after **both** task commits, identical both times |
 | 8 | `git status --porcelain .planning/REQUIREMENTS.md .planning/ROADMAP.md src/skills installer/skills` | empty at both task commits |
@@ -321,7 +321,7 @@ None — no external service configuration required.
 
 ## Next Phase Readiness
 
-- **Phase 31's three plans are executed.** The phase's two success criteria both have their evidence on disk: criterion 1 is scored by `skill-attribution.test.ts`'s committed two-tree assertion (plan 31-02) and criterion 2 by the re-synced manifest with `r2000_undo`'s `requirement_id` (plan 31-01). This plan closed the record around them.
+- **Phase 31's three plans are executed.** The phase's two success criteria both have their evidence on disk: criterion 1 is scored by `skill-attribution.test.ts`'s committed two-tree assertion (plan 31-02) and criterion 2 by the re-synced manifest with `anno_undo`'s `requirement_id` (plan 31-01). This plan closed the record around them.
 - **For the Phase 31 verifier — the two items that need a judgement call:**
   1. `REPOINT-03` / `REPOINT-04` are `Pending` **by decision**, recorded as judgement 4. Promoting them is this verification pass's call, and when it happens all four sites (both checkboxes, both traceability rows, and the promotion paragraph) move in ONE edit per `REQUIREMENTS.md`'s four-sites-one-edit rule.
   2. Plan 31-02's `must_haves.artifacts[0].contains` miss (the derived rather than literal `ABS02_ADAPTED_LINE`) is still the one open editorial item in this phase, flagged in its own SUMMARY. Nothing in this plan changes it — the removal gate's `attribution-guard-test` exemption remains at **14** (note: 31-02-SUMMARY.md's deviation #2 states that pin as `12`; the gate's own output reports `14`, and the figure in this SUMMARY is the one read from the live gate run).
@@ -337,7 +337,7 @@ None — no external service configuration required.
 ## Self-Check: PASSED
 
 - `.planning/phases/31-procedure-re-pointing/31-03-SUMMARY.md` — FOUND on disk (this file)
-- `scripts/check-no-regenerator2000.mjs` — FOUND, `node --check` clean, gate exit 0
+- `scripts/check-no-analyser.mjs` — FOUND, `node --check` clean, gate exit 0
 - `.planning/STATE.md` — FOUND, frontmatter byte-identical to `409ac1b`
 - Commit `5cfa783` — FOUND in `git log --all`, lists exactly two paths
 - Commit `c291591` — FOUND in `git log --all`, lists exactly one path

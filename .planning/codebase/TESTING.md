@@ -112,7 +112,7 @@ on every run — `git checkout --` that exact path afterwards.
 - `src/skills/*/scripts/*.test.mjs` — 5 files: `d64-parse`, `watch-loads`, `dump-artifacts`
   (c64-ram-capture), `diff-images` (c64-provenance-diff), `packer-finding` (c64-program-recon).
 - `scripts/lib/` helpers are proven by test files under `src/mcp/vice/` (e.g. `removal-gate.test.ts`
-  proves `scripts/check-no-regenerator2000.mjs`, `guard-fates.test.ts` proves
+  proves `scripts/check-no-analyser.mjs`, `guard-fates.test.ts` proves
   `scripts/check-guard-fates.mjs`).
 
 `ci-suite-coverage.test.ts` exists to keep this from drifting: it derives the set of directories
@@ -320,7 +320,7 @@ rule and assert the real rule rejects it. Two flavours:
 - **Fixture file** — `fixtures/planted-*.txt` / `.md`, used when the rule must see a real file.
 
 Re-implementing the rule inside the test proves nothing about the rule the guard applies; that
-lesson is recorded at `scripts/check-no-regenerator2000.mjs:149-154`.
+lesson is recorded at `scripts/check-no-analyser.mjs:149-154`.
 
 ## Test Types
 

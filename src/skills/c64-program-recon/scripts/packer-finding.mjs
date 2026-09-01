@@ -7,7 +7,7 @@
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
 // DATED PROVENANCE (2026-08-29): the retired static analyser this project once
-// rented -- regenerator2000, pinned at 0.9.20 -- computed packer identity on
+// rented -- the external analyser, pinned at 0.9.20 -- computed packer identity on
 // EVERY load and then threw it away before it reached any machine-readable
 // surface. That analyser is GONE from this repository; nothing below calls it,
 // and this paragraph is history in the past tense, not a route. It is kept

@@ -12,7 +12,7 @@ files_reviewed_list:
   - scripts/audit-mutation-harness.mjs
   - scripts/check-guard-fates.d.mts
   - scripts/check-guard-fates.mjs
-  - scripts/check-no-regenerator2000.mjs
+  - scripts/check-no-analyser.mjs
   - scripts/check-skill-cli-invocations.mjs
   - scripts/check-skill-description-overlap.mjs
   - scripts/check-skill-fork-honesty.mjs

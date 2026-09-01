@@ -2,20 +2,20 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 03
 subsystem: testing
-tags: [coverage, 6502, static-analysis, regenerator2000, recursive-descent, dispatch-tables, sealed-answer-key]
+tags: [coverage, 6502, static-analysis, the external analyser, recursive-descent, dispatch-tables, sealed-answer-key]
 
 # Dependency graph
 requires:
   - phase: 04-disassembler
     provides: "disasm-decoder.ts's bounded, never-throwing decode() -- the independent instruction stream the census walks"
   - phase: 10-adoption-boundaries
-    provides: "r2000-project.ts's synthesizeProject()/decodeRawData() symmetric writer and reader for the on-disk payload"
+    provides: "anno-project.ts's synthesizeProject()/decodeRawData() symmetric writer and reader for the on-disk payload"
   - phase: 11-annotation-store-enums
-    provides: "r2000-confidence.ts's five-grade vocabulary, the sealed-answer-key mechanism, and the previously-unseen recon-subject fixture"
+    provides: "anno-confidence.ts's five-grade vocabulary, the sealed-answer-key mechanism, and the previously-unseen recon-subject fixture"
   - phase: 19-absorbed-procedures-and-the-coverage-instrument
     provides: "19-01/19-02 absorbed the upstream analyze procedures whose own reachability walk this census deliberately does not reuse"
 provides:
-  - "src/mcp/vice/r2000-coverage.ts -- the coverage instrument: a byte census, a widened indirect-dispatch scan, two label figures, a comment-vacuity measure, a sampled reproducibility result and a divergence sub-report, under a pinned schema"
+  - "src/mcp/vice/anno-coverage.ts -- the coverage instrument: a byte census, a widened indirect-dispatch scan, two label figures, a comment-vacuity measure, a sampled reproducibility result and a divergence sub-report, under a pinned schema"
   - "COVERAGE_SCHEMA_VERSION = 1 and COVERAGE_REPORT_KEYS -- the field-set contract Phase 20 reads and Phase 21 reuses"
   - "scanIndirectDispatch() -- the four-class widened scan Phase 21's hazard report (BUILD-04) consumes without re-deriving it"
   - "Six committed synthetic control fixtures plus a deterministic generator"
@@ -37,8 +37,8 @@ tech-stack:
 
 key-files:
   created:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
     - src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs
     - src/mcp/vice/fixtures/coverage/README.md
     - src/mcp/vice/fixtures/coverage/nc1-all-auto/{project.regen2000proj,store.json}
@@ -59,7 +59,7 @@ key-decisions:
   - "coverageFindings() lives OUTSIDE the report object: a boolean verdict with per-measure reasons is not a combined coverage figure, and keeping it out of the schema keeps the no-aggregate key scan honest"
   - "The census marks exactly one byte per data reference, never a guessed extent -- the length of an indexed access is not determinable from the bytes, so guessing would manufacture coverage that was never proven"
   - "An absent block listing reports divergence as explicitly UNAVAILABLE with a stated reason rather than letting an all-null block lookup read as `the store classified none of it` (COV-02)"
-  - "A near-miss confidence token is caught rather than propagated: r2000-confidence.ts throws by design, but a measurement pass must never throw, so the near-miss is reported as the measured defect it is"
+  - "A near-miss confidence token is caught rather than propagated: anno-confidence.ts throws by design, but a measurement pass must never throw, so the near-miss is reported as the measured defect it is"
 
 patterns-established:
   - "Store-derived-census refusal: any future measure added to this module must state which of the six named traps it avoids, and the block listing stays at one call site"
@@ -74,21 +74,21 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the report's top-level key set is exactly the pinned set, in order, and carries the schema version"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the report's top-level key set is exactly the pinned set, in order, and carries the schema version"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#COV-01: no key anywhere in the report matches a combined-figure vocabulary"
+        ref: "src/mcp/vice/anno-coverage.test.ts#COV-01: no key anywhere in the report matches a combined-figure vocabulary"
         status: pass
     human_judgment: false
   - id: D2
-    description: "The structural census is a pure function of the raw bytes and the seed set -- regenerator2000's own block table cannot move a census byte"
+    description: "The structural census is a pure function of the raw bytes and the seed set -- the external analyser's own block table cannot move a census byte"
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#independence: rewriting every block entry to one type leaves every census byte count unchanged and moves only the divergence sub-report"
+        ref: "src/mcp/vice/anno-coverage.test.ts#independence: rewriting every block entry to one type leaves every census byte count unchanged and moves only the divergence sub-report"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#NC3 earns its place: the census does not move by one byte under a mass block-type set, only the divergence does"
+        ref: "src/mcp/vice/anno-coverage.test.ts#NC3 earns its place: the census does not move by one byte under a mass block-type set, only the divergence does"
         status: pass
     human_judgment: false
   - id: D3
@@ -96,7 +96,7 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#decodability: removing the seed set collapses the reached count, so a census that barely responds to its seeds would fail here"
+        ref: "src/mcp/vice/anno-coverage.test.ts#decodability: removing the seed set collapses the reached count, so a census that barely responds to its seeds would fail here"
         status: pass
     human_judgment: false
   - id: D4
@@ -104,16 +104,16 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 1: an indirect jump through a ZERO-PAGE vector is found and reported, with a null target"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 1: an indirect jump through a ZERO-PAGE vector is found and reported, with a null target"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 2: a multi-entry table yields every entry, not the single entry upstream reads"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 2: a multi-entry table yields every entry, not the single entry upstream reads"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 3: a split lo/hi table pair is reconstructed from its two bases"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 3: a split lo/hi table pair is reconstructed from its two bases"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 4: the stack-return dispatch idiom is found even though it contains no indirect-jump opcode"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 4: the stack-return dispatch idiom is found even though it contains no indirect-jump opcode"
         status: pass
     human_judgment: false
   - id: D5
@@ -121,13 +121,13 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#bounded walk: a table whose entries would chain indefinitely reports truncation and terminates (T-19-12)"
+        ref: "src/mcp/vice/anno-coverage.test.ts#bounded walk: a table whose entries would chain indefinitely reports truncation and terminates (T-19-12)"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#bounded walk: the descent walker honours an explicit step bound and reports truncation rather than looping"
+        ref: "src/mcp/vice/anno-coverage.test.ts#bounded walk: the descent walker honours an explicit step bound and reports truncation rather than looping"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#emptiness: a zero-byte, a one-byte and a seedless payload each report zero reached and unreached == range, with no thrown error"
+        ref: "src/mcp/vice/anno-coverage.test.ts#emptiness: a zero-byte, a one-byte and a seedless payload each report zero reached and unreached == range, with no thrown error"
         status: pass
     human_judgment: false
   - id: D6
@@ -135,10 +135,10 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#NC1b earns its place: the kind figure alone would pass the auto-renamed-in-place control, the name figure catches it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#NC1b earns its place: the kind figure alone would pass the auto-renamed-in-place control, the name figure catches it"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#AUTO_NAME_PREFIX_RE deliberately excludes the prefix upstream shares between predefined and user-defined label types"
+        ref: "src/mcp/vice/anno-coverage.test.ts#AUTO_NAME_PREFIX_RE deliberately excludes the prefix upstream shares between predefined and user-defined label types"
         status: pass
     human_judgment: false
   - id: D7
@@ -146,13 +146,13 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#normalisation pins the exact rules: ASCII lowercase, backticks and emphasis stripped, whitespace runs collapsed, trimmed"
+        ref: "src/mcp/vice/anno-coverage.test.ts#normalisation pins the exact rules: ASCII lowercase, backticks and emphasis stripped, whitespace runs collapsed, trimmed"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#two identical normalised comments at different addresses count as ONE distinct comment"
+        ref: "src/mcp/vice/anno-coverage.test.ts#two identical normalised comments at different addresses count as ONE distinct comment"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a zero-comment project reports a NULL distinct-comment ratio with a zero commented-address count, never a division"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a zero-comment project reports a NULL distinct-comment ratio with a zero commented-address count, never a division"
         status: pass
     human_judgment: false
   - id: D8
@@ -160,10 +160,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the cross-reference rule engages at strictly MORE THAN ONE caller, and not at one"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the cross-reference rule engages at strictly MORE THAN ONE caller, and not at one"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#control NC4 (nc4-multi-caller-unnamed): produces a non-clean result naming reproducibility"
+        ref: "src/mcp/vice/anno-coverage.test.ts#control NC4 (nc4-multi-caller-unnamed): produces a non-clean result naming reproducibility"
         status: pass
     human_judgment: false
   - id: D9
@@ -171,10 +171,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#control NC1 .. NC5 (six data-driven control tests)"
+        ref: "src/mcp/vice/anno-coverage.test.ts#control NC1 .. NC5 (six data-driven control tests)"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#NON-VACUITY: the well-documented control passes, so the instrument is not merely a machine that fails everything"
+        ref: "src/mcp/vice/anno-coverage.test.ts#NON-VACUITY: the well-documented control passes, so the instrument is not merely a machine that fails everything"
         status: pass
       - kind: manual_procedural
         ref: "demonstrated: flipping every nc5 label to kind Auto makes the false-positive control test exit non-zero, then restored"
@@ -185,13 +185,13 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#ANSWER.sha256 matches the sha256 recomputed from ANSWER.md's own canonical line (T-19-SEAL-DRIFT)"
+        ref: "src/mcp/vice/anno-coverage.test.ts#ANSWER.sha256 matches the sha256 recomputed from ANSWER.md's own canonical line (T-19-SEAL-DRIFT)"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#QUESTION.md does not contain either canonical answer line, nor any of its compound field assignments (T-19-LEAK)"
+        ref: "src/mcp/vice/anno-coverage.test.ts#QUESTION.md does not contain either canonical answer line, nor any of its compound field assignments (T-19-LEAK)"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#LIVE non-vacuity: both routes are recomputed from the committed fixture and both reproduce the sealed line"
+        ref: "src/mcp/vice/anno-coverage.test.ts#LIVE non-vacuity: both routes are recomputed from the committed fixture and both reproduce the sealed line"
         status: pass
       - kind: manual_procedural
         ref: "demonstrated: emptying ANSWER.sha256 exits 1; blanking RE-DERIVED-ANSWER.md's marker fence exits 1 (2 failures, not a skip); both restored"
@@ -202,10 +202,10 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#idempotency: two consecutive reports over the same fixture are deeply equal once the timestamp is removed"
+        ref: "src/mcp/vice/anno-coverage.test.ts#idempotency: two consecutive reports over the same fixture are deeply equal once the timestamp is removed"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#ordering: every offending-address list in every fixture's report is in ascending numeric order"
+        ref: "src/mcp/vice/anno-coverage.test.ts#ordering: every offending-address list in every fixture's report is in ascending numeric order"
         status: pass
     human_judgment: false
   - id: D12
@@ -213,10 +213,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the coverage module contains no file-write call, no project-save call and no live-session import"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the coverage module contains no file-write call, no project-save call and no live-session import"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/hostpath-consumers.test.ts#the r2000 module family (D-08/R2000-02) is absent from the consumer set"
+        ref: "src/mcp/vice/hostpath-consumers.test.ts#the anno module family (D-08/ANNO-02) is absent from the consumer set"
         status: pass
     human_judgment: false
   - id: D13
@@ -224,7 +224,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the previously-unseen Phase 11 fixture -- authored for a different phase, never used to write these rules -- produces a well-formed report"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the previously-unseen Phase 11 fixture -- authored for a different phase, never used to write these rules -- produces a well-formed report"
         status: pass
     human_judgment: false
   - id: D14
@@ -247,7 +247,7 @@ status: complete
 
 # Phase 19 Plan 03: The Coverage Instrument Summary
 
-**A derived-from-bytes coverage census that regenerator2000's own block table cannot move by a single byte, with a four-class widened dispatch scan, two label figures, a comment-vacuity measure, a bytes-versus-store reproducibility seal, and six committed controls — five that must fail for a named reason, one that must pass.**
+**A derived-from-bytes coverage census that the external analyser's own block table cannot move by a single byte, with a four-class widened dispatch scan, two label figures, a comment-vacuity measure, a bytes-versus-store reproducibility seal, and six committed controls — five that must fail for a named reason, one that must pass.**
 
 ## Performance
 
@@ -275,8 +275,8 @@ status: complete
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` (1446 lines) — the instrument. `COVERAGE_SCHEMA_VERSION`, `COVERAGE_REPORT_KEYS`, `buildCoverageReport()`, `computeStructuralCensus()`, `scanIndirectDispatch()`, `computeLabelRatio()`, `computeCommentVacuity()`, `computeReproducibility()`, `classAt()`, `normaliseComment()`, `coverageFindings()`, `AUTO_NAME_PREFIX_RE`, `BANNED_GENERIC_COMMENTS`, `MAX_WALK_STEPS`, `MAX_TABLE_ENTRIES`, `R2000CoverageInputError`, plus the input/output types.
-- `src/mcp/vice/r2000-coverage.test.ts` (755 lines, 42 tests) — schema, independence, decodability, emptiness, idempotency, ordering, normalisation, the cross-reference rule, both bounds, four dispatch classes, the six controls, the previously-unseen fixture, the read-only source assertion, and four seal guards.
+- `src/mcp/vice/anno-coverage.ts` (1446 lines) — the instrument. `COVERAGE_SCHEMA_VERSION`, `COVERAGE_REPORT_KEYS`, `buildCoverageReport()`, `computeStructuralCensus()`, `scanIndirectDispatch()`, `computeLabelRatio()`, `computeCommentVacuity()`, `computeReproducibility()`, `classAt()`, `normaliseComment()`, `coverageFindings()`, `AUTO_NAME_PREFIX_RE`, `BANNED_GENERIC_COMMENTS`, `MAX_WALK_STEPS`, `MAX_TABLE_ENTRIES`, `AnnoCoverageInputError`, plus the input/output types.
+- `src/mcp/vice/anno-coverage.test.ts` (755 lines, 42 tests) — schema, independence, decodability, emptiness, idempotency, ordering, normalisation, the cross-reference rule, both bounds, four dispatch classes, the six controls, the previously-unseen fixture, the read-only source assertion, and four seal guards.
 - `src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs` (247 lines) — the deterministic generator, with the shared 64-byte control program disassembled line by line in its header.
 - `src/mcp/vice/fixtures/coverage/README.md` — what each fixture is a control for, the regeneration command, and why the filename carries no test suffix.
 - `src/mcp/vice/fixtures/coverage/{nc1-all-auto,nc1b-auto-renamed-in-place,nc2-generic-comments,nc3-all-data-blocks,nc4-multi-caller-unnamed,nc5-well-documented}/` — six fixture directories, each a `project.regen2000proj` written by the real `synthesizeProject()` plus a `store.json` in exactly the curated tools' response shape.
@@ -303,26 +303,26 @@ status: complete
 - **Found during:** Task 1 (smoke test against the Phase 11 fixture)
 - **Issue:** With no `blocks` supplied, every block lookup returned `null`, so `censusCodeStoreNotCode` counted every reached byte and the divergence measure reported a large, confident-looking number derived from nothing. COV-02 requires an unavailable check to report an explicit unknown carrying a reason, never a figure that reads as a finding.
 - **Fix:** Added `blocksSupplied: boolean` and `reason: string | null` to `DivergenceReport`; `coverageFindings()` now reports divergence as explicitly *unavailable* with its stated reason when no listing was supplied, instead of firing the census-versus-store comparison.
-- **Files modified:** `src/mcp/vice/r2000-coverage.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.ts`
 - **Verification:** The Phase 11 fixture (no store data) now reports `divergence: unavailable`; the six controls, which all supply blocks, are unaffected.
 - **Committed in:** `d4e9c16` (Task 1 commit)
 
 **2. [Rule 2 — Missing Critical] A near-miss confidence token would have thrown out of a measurement pass**
 
 - **Found during:** Task 1 (`computeCommentVacuity` design)
-- **Issue:** `parseConfidencePrefix()` throws on a near-miss bracket token by deliberate design — that is the whole point of `r2000-confidence.ts`. But the plan's own truth requires the census never to throw on malformed input, so a single typo'd grade in a real project would have crashed the whole report.
-- **Fix:** The call is wrapped, and the near-miss is recorded in a new `malformedGradeAddresses` list and surfaced as a `commentVacuity` finding — reported as the measured defect it is rather than silently degraded to "ungraded" (which is precisely the drift `r2000-confidence.ts`'s header forbids).
-- **Files modified:** `src/mcp/vice/r2000-coverage.ts`
-- **Verification:** `r2000-coverage.test.ts#a near-miss confidence token is reported as a measured defect, never thrown and never degraded to ungraded`
+- **Issue:** `parseConfidencePrefix()` throws on a near-miss bracket token by deliberate design — that is the whole point of `anno-confidence.ts`. But the plan's own truth requires the census never to throw on malformed input, so a single typo'd grade in a real project would have crashed the whole report.
+- **Fix:** The call is wrapped, and the near-miss is recorded in a new `malformedGradeAddresses` list and surfaced as a `commentVacuity` finding — reported as the measured defect it is rather than silently degraded to "ungraded" (which is precisely the drift `anno-confidence.ts`'s header forbids).
+- **Files modified:** `src/mcp/vice/anno-coverage.ts`
+- **Verification:** `anno-coverage.test.ts#a near-miss confidence token is reported as a measured defect, never thrown and never degraded to ungraded`
 - **Committed in:** `d4e9c16` (Task 1 commit)
 
 **3. [Rule 3 — Blocking] The module header could not name the path-translation guard file**
 
 - **Found during:** Task 1 (acceptance-criteria run)
-- **Issue:** The repo's module-header doctrine (copied from `r2000-verify.ts`) names the absence-assertion test file by name, but this plan's own acceptance criterion greps `r2000-coverage.ts` for `hostpath|containerpath` and fails on any match — including a comment. The two requirements were in direct conflict.
+- **Issue:** The repo's module-header doctrine (copied from `anno-verify.ts`) names the absence-assertion test file by name, but this plan's own acceptance criterion greps `anno-coverage.ts` for `hostpath|containerpath` and fails on any match — including a comment. The two requirements were in direct conflict.
 - **Fix:** The header states the rule and names the guard by description rather than by filename, and says explicitly why the filename is omitted so a future editor does not "fix" it back and break the check.
-- **Files modified:** `src/mcp/vice/r2000-coverage.ts`
-- **Verification:** `! grep -Eq "hostpath|containerpath" src/mcp/vice/r2000-coverage.ts` succeeds; `hostpath-consumers.test.ts` passes 11/11 with the new module inside its derived `r2000-*.ts` set.
+- **Files modified:** `src/mcp/vice/anno-coverage.ts`
+- **Verification:** `! grep -Eq "hostpath|containerpath" src/mcp/vice/anno-coverage.ts` succeeds; `hostpath-consumers.test.ts` passes 11/11 with the new module inside its derived `anno-*.ts` set.
 - **Committed in:** `d4e9c16` (Task 1 commit)
 
 ---
@@ -340,7 +340,7 @@ None.
 
 ## Issues Encountered
 
-- **`R2000_MODULE_FLOOR` interaction:** `hostpath-consumers.test.ts` asserts a floor of 14 derived `r2000-*.ts` production modules and forbids any of them importing the path-translation modules. Adding `r2000-coverage.ts` raises the derived count and puts the new module under the absence assertion automatically — no test edit was needed, and the floor is a `>=` so it stays satisfied. Confirmed by running that suite.
+- **`ANNO_MODULE_FLOOR` interaction:** `hostpath-consumers.test.ts` asserts a floor of 14 derived `anno-*.ts` production modules and forbids any of them importing the path-translation modules. Adding `anno-coverage.ts` raises the derived count and puts the new module under the absence assertion automatically — no test edit was needed, and the floor is a `>=` so it stays satisfied. Confirmed by running that suite.
 - **`ci-suite-coverage.test.ts` and the fixture directory:** the guard registers a directory as a suite only when it directly contains a committed test file. `make-coverage-fixtures.mjs` deliberately carries no test suffix, so `fixtures/coverage` never registers and needs no CI step. Verified: 10/10 pass.
 - **cwd drift during a demonstration:** one shell demonstration `cd`'d into `src/mcp/vice` and a follow-up relative-path restore failed. Re-run with absolute paths; the evidence file was restored and re-verified byte-for-byte against its hash before committing.
 
@@ -350,16 +350,16 @@ None — no external service configuration required.
 
 ## Next Phase Readiness
 
-**Ready for 19-04.** That plan adds `cmdCoverage()` and the `coverage` verb to `r2000-cli.ts`. Two concrete handoffs it must pick up:
+**Ready for 19-04.** That plan adds `cmdCoverage()` and the `coverage` verb to `anno-cli.ts`. Two concrete handoffs it must pick up:
 
-1. **`r2000-coverage.ts` is not in `src/mcp/vice/package.json`'s `files[]`.** Nothing shipped imports it yet, so `scripts/check-npm-packages.mjs` passes today (verified, exit 0). The moment `r2000-cli.ts` imports it, that script's reachable-module assertion will require the entry. Adding it is 19-04's job; this plan deliberately did not touch `package.json`, which is outside its `files_modified`.
+1. **`anno-coverage.ts` is not in `src/mcp/vice/package.json`'s `files[]`.** Nothing shipped imports it yet, so `scripts/check-npm-packages.mjs` passes today (verified, exit 0). The moment `anno-cli.ts` imports it, that script's reachable-module assertion will require the entry. Adding it is 19-04's job; this plan deliberately did not touch `package.json`, which is outside its `files_modified`.
 2. **The CLI's report writer must not become a combined-figure display.** COV-01's prohibition covers "not as a headline number derived at the point of display". `coverageFindings()` is available for a verdict line; there is no numeric aggregate to print and none should be computed in the CLI.
 
 Phase 20's decomposition sweep can read `COVERAGE_SCHEMA_VERSION = 1` and the nine top-level keys as a stable contract. Phase 21's hazard report (BUILD-04) can consume `scanIndirectDispatch()`'s four separately-reported classes — in particular `stackReturnDispatch`, which is its own named class — without re-deriving them.
 
 ## Self-Check: PASSED
 
-All 20 created files verified present on disk; both task commits (`d4e9c16`, `d13862f`) verified present in `git log`; all Task 1 and Task 2 acceptance criteria re-run and passing; the plan-level verification block re-run in full (`r2000-coverage.test.ts` 42/42, `hostpath-consumers.test.ts` 11/11, `ci-suite-coverage.test.ts` 10/10, `tsc --noEmit` exit 0, `npm test` 2469/2469 with 0 failures, `scripts/check-npm-packages.mjs` exit 0).
+All 20 created files verified present on disk; both task commits (`d4e9c16`, `d13862f`) verified present in `git log`; all Task 1 and Task 2 acceptance criteria re-run and passing; the plan-level verification block re-run in full (`anno-coverage.test.ts` 42/42, `hostpath-consumers.test.ts` 11/11, `ci-suite-coverage.test.ts` 10/10, `tsc --noEmit` exit 0, `npm test` 2469/2469 with 0 failures, `scripts/check-npm-packages.mjs` exit 0).
 
 ---
 *Phase: 19-absorbed-procedures-and-the-coverage-instrument*

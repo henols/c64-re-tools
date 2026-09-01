@@ -43,7 +43,7 @@ deferred:
   - truth: "WR-15 -- the removal gate's `exemptionFor()` short-circuits inside the class loop"
     addressed_in: "deferred on record"
     evidence: "`29-16-PLAN.md:138` names it 'explicitly NOT folded in'. Correct today by array order only."
-  - truth: "WR-16 -- retired vocabulary survives in two internal identifiers (`runR2000Cli`, `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`)"
+  - truth: "WR-16 -- retired vocabulary survives in two internal identifiers (`runAnnoCli`, `VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES`)"
     addressed_in: "deferred on record"
     evidence: "`29-16-PLAN.md` § `<wr14_scope_decision>`. Their real consumer set is a ~26-call-site rename in `anno-cli.test.ts`; their home is a pass that owns that file."
   - truth: "STORE-03's traceability status contradicts its own prose (Phase 28, pre-existing)"
@@ -91,12 +91,12 @@ The six must-haves are the ROADMAP's five Success Criteria plus `CUT-01`, a requ
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | **SC-1** Every `curated`/`adapt-to-address-input` verb has a route, every `omit` verb is absent, `r2000_delete_project_enum` is not carried, and the derivation is checked **mechanically** | ✓ VERIFIED | Regression: `node --test anno-derivation.test.ts` → **8 pass / 0 fail / 1 gated skip** (the live upstream re-hash behind `R2000_UPSTREAM_CLONE`, reported with its reason). `check-skill-tool-coverage` independently: 18 distinct `anno_*` names extracted from the skill trees, **all curated**, against 19 entries in `CURATED_ANNO_TOOLS`. Unchanged by both gap rounds. |
+| 1 | **SC-1** Every `curated`/`adapt-to-address-input` verb has a route, every `omit` verb is absent, `anno_delete_project_enum` is not carried, and the derivation is checked **mechanically** | ✓ VERIFIED | Regression: `node --test anno-derivation.test.ts` → **8 pass / 0 fail / 1 gated skip** (the live upstream re-hash behind `ANNO_UPSTREAM_CLONE`, reported with its reason). `check-skill-tool-coverage` independently: 18 distinct `anno_*` names extracted from the skill trees, **all curated**, against 19 entries in `CURATED_ANNO_TOOLS`. Unchanged by both gap rounds. |
 | 2 | **SC-2** The family is registered and the retired one deleted in this same phase, gate built and observed biting first, each guard moved with the change that broke it, **both skill trees re-pointed onto verbs that exist proven against the shipped copy**, no interception to forget | ✓ **VERIFIED (was FAILED)** | The blocker that held this down is **closed and re-executed**: identical bytes at a different absolute path now report `in sync`, exit 0, and the three real drift causes still bite. The gate that was blind to an omitted REQUIRED flag now bites on the verifier's own plant. All three falsified user-facing texts are corrected and were checked by *executing each cause they name*. Detail below. |
 | 3 | **SC-3** Backend-agnosticism reads out of the ordered `BACKEND_SEAM_BYPASS_KEYS`; neither manifest gains an entry; `docs/tool-support.md` regenerates byte-identical | ✓ VERIFIED | Re-measured at HEAD: `stock-dispatch.test.ts:1510` is still the ordered two-entry array; `capability-registry.ts` and `tools-manifest.json` each contain **0** `anno_` occurrences; regenerated the table — md5 `bb4744890855e58887142e5a97f44fc0` **identical before and after**, `git diff` empty. |
 | 4 | **SC-4** Registration-time gates move in the registering commit; the three named gates green with nothing deleted; the generator regex and its two duplicate witnesses move together; the module floor re-pointed and **raised** | ✓ VERIFIED | `git show --diff-filter=D --name-only 65a28f3` is **empty** — the registering commit still deletes nothing. `ANNO_MODULE_FLOOR = 15 + 1` at `hostpath-consumers.test.ts:245` with its pinned-equals-measured companion at `:279`. All three named gates exit 0 (table below). |
 | 5 | **SC-5** Derived-not-cached xref/search; `max_results` required with no default; count returned; explicit address, no cursor; a repeated edit **succeeds** reporting no change; a batch pre-validates and returns per-item status; an ambiguous request **refuses by name** rather than a plausible-looking zero | ✓ VERIFIED | All seven clauses re-executed this pass through `runAnnoTool()` against a real store and a real `.prg` (spot-check table). Notably: `changed:true` then `changed:false` on the repeated edit; `max_results` refused as `REQUIRED and has no default`; `{returned, matched, truncated}` returned; `{available:false, reason}` from **both** read verbs on an out-of-image address; batch depth cap with a working positive control at 4 and refusal-by-name at 5 and 6. |
-| 6 | **CUT-01** The r2000 surface's sizing claim is stated in figures that re-derive from the record's own predicate | ✓ **VERIFIED (was FAILED)** | **Re-measured independently, not accepted from 29-21.** Both ends now re-derive exactly, and so does the subtraction. Full derivation below. |
+| 6 | **CUT-01** The anno surface's sizing claim is stated in figures that re-derive from the record's own predicate | ✓ **VERIFIED (was FAILED)** | **Re-measured independently, not accepted from 29-21.** Both ends now re-derive exactly, and so does the subtraction. Full derivation below. |
 
 **Score:** 6/6 truths verified (0 present-but-behaviour-unverified, 0 overrides applied)
 
@@ -108,7 +108,7 @@ The predicate is the requirement's own, quoted from `.planning/REQUIREMENTS.md:1
 
 | Measurement | Command | Result | Entry's claim | Agrees |
 |---|---|---|---|---|
-| Pre-phase file set | `git ls-tree -r --name-only 8f21d77 -- src/mcp/vice` filtered `^src/mcp/vice/r2000-.*\.ts$` | **35 files** | 35 | ✓ |
+| Pre-phase file set | `git ls-tree -r --name-only 8f21d77 -- src/mcp/vice` filtered `^src/mcp/vice/anno-.*\.ts$` | **35 files** | 35 | ✓ |
 | Pre-phase lines | `git show 8f21d77:<path> \| wc -l`, summed | **26,023** = 10,035 non-test + 15,988 test | 26,023 / 10,035 / 15,988 | ✓ |
 | Surviving at `f16d0b1` | the `anno-*` name-descendants + `absorbed-answer-key.test.ts`, `spawn-seam.test.ts`, `docs-absorbed-decisions.test.ts` | **19,714** across **23 files** (20 descendants = **18,728**, three named = **986**) | 19,714 / 23 / 18,728 / 986 | ✓ |
 | Net removal | 26,023 − 19,714 | **6,309** | 6,309 | ✓ |
@@ -116,9 +116,9 @@ The predicate is the requirement's own, quoted from `.planning/REQUIREMENTS.md:1
 | Same predicate at `6715a75` | — | **20,960** | 20,960 | ✓ |
 | Injectivity of the descendant map | 20 survive + 15 removed outright | **= 35**, no survivor counted twice | injective | ✓ |
 
-The fifteen removed outright, enumerated so the split is checkable rather than asserted: `r2000-answer-key.test.ts`, `r2000-launch.test.ts`, `r2000-launch.ts`, `r2000-mcp-client.test.ts`, `r2000-mcp-client.ts`, `r2000-project.test.ts`, `r2000-project.ts`, `r2000-session.test.ts`, `r2000-session.ts`, `r2000-spawn-seam.test.ts`, `r2000-symbol-roundtrip.test.ts`, `r2000-test-gate.ts`, `r2000-upstream-audit.test.ts`, `r2000-verify.test.ts`, `r2000-verify.ts`.
+The fifteen removed outright, enumerated so the split is checkable rather than asserted: `absorbed-answer-key.test.ts`, `anno-launch.test.ts`, `anno-launch.ts`, `anno-mcp-client.test.ts`, `anno-mcp-client.ts`, `anno-project.test.ts`, `anno-project.ts`, `anno-session.test.ts`, `anno-session.ts`, `spawn-seam.test.ts`, `anno-symbol-roundtrip.test.ts`, `anno-test-gate.ts`, `anno-derivation.test.ts`, `anno-verify.test.ts`, `anno-verify.ts`.
 
-**Why this now passes where round 2 failed it.** Round 2's objection was never the substantive claim — it was that a requirement whose whole stated purpose is *"its numbers are the measured ones"* carried, under a `Complete` checkbox, two numbers the same entry admitted did not reproduce. `7a49a3d` replaced them with figures that do, in one commit touching only `.planning/REQUIREMENTS.md` and moving the checkbox, the sizing sentence, both provenance paragraphs and the traceability row together. The sentence now **names its commit** (`f16d0b1`) rather than floating with HEAD — which is what makes it re-derivable by a later reader at all, since the same predicate returns 20,960 at `6715a75` and **21,372 at today's HEAD** (measured here; the `anno-*` files keep growing with ordinary work, exactly as the entry says). **No `overrides:` entry was written, and that was correct**: round 2 offered one and the owner declined it, because accepting a non-reproducing figure as decided would defeat this requirement's own purpose. The substantive claim is unchanged and re-confirmed: **zero** `r2000-*.ts` under `src/mcp/vice/` (`ls` reports no match), removal gate exit 0 with the temporary allow-list asserted **empty**.
+**Why this now passes where round 2 failed it.** Round 2's objection was never the substantive claim — it was that a requirement whose whole stated purpose is *"its numbers are the measured ones"* carried, under a `Complete` checkbox, two numbers the same entry admitted did not reproduce. `7a49a3d` replaced them with figures that do, in one commit touching only `.planning/REQUIREMENTS.md` and moving the checkbox, the sizing sentence, both provenance paragraphs and the traceability row together. The sentence now **names its commit** (`f16d0b1`) rather than floating with HEAD — which is what makes it re-derivable by a later reader at all, since the same predicate returns 20,960 at `6715a75` and **21,372 at today's HEAD** (measured here; the `anno-*` files keep growing with ordinary work, exactly as the entry says). **No `overrides:` entry was written, and that was correct**: round 2 offered one and the owner declined it, because accepting a non-reproducing figure as decided would defeat this requirement's own purpose. The substantive claim is unchanged and re-confirmed: **zero** `anno-*.ts` under `src/mcp/vice/` (`ls` reports no match), removal gate exit 0 with the temporary allow-list asserted **empty**.
 
 ---
 
@@ -194,7 +194,7 @@ Both copy-forward texts are byte-identical to their `installer/skills/` twins (`
 | 1 | WR-14 — five shipped modules with no production consumer | Phase 30 | `scripts/lib/anno-cli-verbs.mjs:57-60` names the return in terms; ROADMAP Phase 30 is the ACME export rebuild. Re-confirmed unchanged. |
 | 2 | CUT-06 — no living document points a user at a deleted route | Phase 32 | ROADMAP Phase 32 criterion 2. Round 2 held the CR-01 texts out of this deferral because they misdescribed a **live** verb; those texts are now correct, so nothing rides on the distinction any more. |
 | 3 | WR-15 — `exemptionFor()` short-circuits inside the class loop | deferred on record | `29-16-PLAN.md:138`. Correct today by array order only. |
-| 4 | WR-16 — retired vocabulary in two internal identifiers | deferred on record | `29-16-PLAN.md` § `<wr14_scope_decision>`. `runR2000Cli` still at `vice-proxy.ts:307`, so the remainder is real and correctly described. |
+| 4 | WR-16 — retired vocabulary in two internal identifiers | deferred on record | `29-16-PLAN.md` § `<wr14_scope_decision>`. `runAnnoCli` still at `vice-proxy.ts:307`, so the remainder is real and correctly described. |
 | 5 | STORE-03's row contradicts its own prose | Phase 28 / milestone audit | `deferred-items.md` item 1. A Phase-29 executor may not move a Phase-28 row. |
 | 6 | `repo-root.test.ts` fails inside a GSD worktree | owner of `repo-root.test.ts` | `deferred-items.md` item 2. Confirmed a worktree artifact — **0 failures** in the primary checkout this pass. |
 
@@ -212,7 +212,7 @@ Both copy-forward texts are byte-identical to their `installer/skills/` twins (`
 | `scripts/lib/anno-cli-invocations.mjs` + `scripts/check-skill-cli-invocations.mjs` | Argument-check every documented CLI invocation | ✓ **VERIFIED (was PARTIAL)** | Six problem kinds in a declared `PROBLEM_ORDER`; `REQUIRED_FLAGS` / `POSITIONAL_KINDS` / `FLAG_KINDS` all in the import-safe lib the committed test reads; own-property reads at all three verb-keyed lookups. Four plants observed biting, all reverted. Wired into CI at `.github/workflows/ci.yml`. |
 | `src/mcp/vice/anno-cli-path-consumers.test.ts` | Closed consumer set for the CLI's paths | ✓ VERIFIED (limit named) | Now derives positionals from each verb's `--help` synopsis (direction 3b) as well as flags from `VERB_OPTIONS`, both directions. The aggregate-count limit is stated in the file's own header rather than credited away — WR-02's substance. |
 | `src/mcp/vice/anno-coverage.ts` | Coverage reads the live image forms | ✓ VERIFIED | Documented invocation run end to end on a real `.prg`: exit 0, `payload decoded`, full three-measure census. |
-| `scripts/check-no-regenerator2000.mjs` | The removal gate | ✓ VERIFIED | exit 0; temporary allow-list printed and **empty**. Still cites the NUL offset as `:12862 (line 291)`; measured at HEAD it is **byte 15097, line 315** (WR-04, warning — the citation drifted further this round). |
+| `scripts/check-no-analyser.mjs` | The removal gate | ✓ VERIFIED | exit 0; temporary allow-list printed and **empty**. Still cites the NUL offset as `:12862 (line 291)`; measured at HEAD it is **byte 15097, line 315** (WR-04, warning — the citation drifted further this round). |
 | `docs/tool-support.md` | Regenerates byte-identical, no `anno_` entry | ✓ VERIFIED | md5 `bb474489…` identical before/after; `git diff` empty. |
 | `src/skills/**` + `installer/skills/**` | Re-pointed onto verbs that exist, proven against the SHIPPED copy | ✓ **VERIFIED (was PARTIAL)** | Both documented invocations executed end to end; all three drift texts corrected; both trees `diff`-clean on all three changed files; `check-npm-packages` exit 0 (78 / 34 files, 7 skills). |
 | `.planning/REQUIREMENTS.md` (CUT-01) | Figures that re-derive | ✓ **VERIFIED (was FAILED)** | All six figures re-derived independently this pass. |
@@ -285,7 +285,7 @@ No `scripts/*/tests/probe-*.sh` exist in this repository. The phase's declared r
 | Probe / Gate | Command | Result | Status |
 |---|---|---|---|
 | Documented-invocation e2e | `bash .planning/phases/29-the-mcp-surface/29-15-e2e.sh` | `ALL CHECKS PASSED`, exit **0** | ✓ PASS |
-| Removal gate | `node scripts/check-no-regenerator2000.mjs` | exit **0** — temporary allow-list printed **EMPTY** | ✓ PASS |
+| Removal gate | `node scripts/check-no-analyser.mjs` | exit **0** — temporary allow-list printed **EMPTY** | ✓ PASS |
 | Skill tool coverage | `node scripts/check-skill-tool-coverage.mjs` | exit **0** — 18 `anno_*` names, all curated | ✓ PASS |
 | Skill CLI invocations | `node scripts/check-skill-cli-invocations.mjs` | exit **0** — 10 invocations, 2 verbs, 2 trees, four checks named | ✓ PASS |
 | npm package contents | `node scripts/check-npm-packages.mjs` | exit **0** — 78 / 34 files, 7 skills, 55-module closure clean | ✓ PASS |
@@ -297,7 +297,7 @@ No `scripts/*/tests/probe-*.sh` exist in this repository. The phase's declared r
 | Regression suite (run **once**) | `npm run test:automated` | **2771 tests / 2765 pass / 0 fail** / 1 skipped / 5 todo | ✓ PASS |
 | Derivation check | `node --test anno-derivation.test.ts` | 8 pass / 0 fail / 1 gated skip | ✓ PASS |
 
-**On the suite baseline.** Round 2 had to discharge two red assertions caused by its own not-yet-written report. That condition does not recur: `29-REVIEW-FIX.md` dispositions `WR-17`..`WR-21` (four fixed, WR-17 deferred and now adjudicated here), so `docs-review-disposition.test.ts` and `audit-integrity.test.ts` were already green before this report existed. `29-BASELINE.md`'s two failing files are accounted for: `r2000-session.test.ts` is gone **by construction** (29-10 deleted it) and `audit-integrity.test.ts` is green. `vice-proxy.test.ts` is in `MANUAL_ONLY_TESTS` and is not measured — the full glob does not terminate on this host. `repo-root.test.ts` is green here because this is the primary checkout, exactly as `deferred-items.md` item 2 predicts.
+**On the suite baseline.** Round 2 had to discharge two red assertions caused by its own not-yet-written report. That condition does not recur: `29-REVIEW-FIX.md` dispositions `WR-17`..`WR-21` (four fixed, WR-17 deferred and now adjudicated here), so `docs-review-disposition.test.ts` and `audit-integrity.test.ts` were already green before this report existed. `29-BASELINE.md`'s two failing files are accounted for: `anno-session.test.ts` is gone **by construction** (29-10 deleted it) and `audit-integrity.test.ts` is green. `vice-proxy.test.ts` is in `MANUAL_ONLY_TESTS` and is not measured — the full glob does not terminate on this host. `repo-root.test.ts` is green here because this is the primary checkout, exactly as `deferred-items.md` item 2 predicts.
 
 ---
 
@@ -332,7 +332,7 @@ Non-blocking gate. `gsd-tools query check.decision-coverage-verify` over `29-CON
 
 | Area | Finding | Verdict |
 |---|---|---|
-| Disabled tests on requirements | Zero `it.skip` / `describe.skip` / `todo` in any `anno-*.test.ts`. The single skip in the 2771-test run is `anno-derivation.test.ts`'s live upstream re-hash, gated on `R2000_UPSTREAM_CLONE` and reported with its reason. The 5 `todo` entries are outside this phase's files. | ✓ CLEAN |
+| Disabled tests on requirements | Zero `it.skip` / `describe.skip` / `todo` in any `anno-*.test.ts`. The single skip in the 2771-test run is `anno-derivation.test.ts`'s live upstream re-hash, gated on `ANNO_UPSTREAM_CLONE` and reported with its reason. The 5 `todo` entries are outside this phase's files. | ✓ CLEAN |
 | Circular expected values | `writeFileSync` in the `anno-*` tests builds temp stores and fixture images only; no generator script imports a system under test to produce assertions. `FLAG_KINDS`, `REQUIRED_FLAGS` and `POSITIONAL_KINDS` are grounded in the code they mirror, entry by entry, with the grounding written beside each entry. | ✓ CLEAN |
 | Assertion strength | Value- and behaviour-level. This round's new tests assert verdicts and absences, not shapes: *"the identical tree at a different absolute path is in-sync, not drifted"*, and an explicit ABSENCE assertion naming CR-01 that no absolute path appears in the banner. | ✓ STRONG |
 | **The test that pinned the defect** | Round 2's 🛑 BLOCKER — `anno-memmap-render.test.ts:378`/`:439` asserting the absolute path into the banner — is **gone**, replaced by the absence assertion at `:485-490` and the two cross-root regressions at `:559`/`:642`. | ✓ **RESOLVED** |
@@ -348,7 +348,7 @@ Non-blocking gate. `gsd-tools query check.decision-coverage-verify` over `29-CON
 |---|---|---|---|---|
 | every non-`.planning/` file changed in `8f21d77..HEAD` | — | `TBD` / `FIXME` / `XXX` | — | **None found.** Every `XXX` hit is a `$XXXX` hex-address placeholder in a skill playbook or a hex-format doc comment. Debt-marker gate clean. |
 | `src/mcp/vice/anno-memmap-render.ts` | 290 | `RENDERER_VERSION` not bumped across an output-shape change, contrary to its own doc rule | ⚠️ WARNING | **WR-17 — adjudicated above.** Follow-up named; not blocking. |
-| `src/mcp/vice/anno-memmap-render.ts` | 315 (byte **15097**) | A literal NUL byte in a shipped source file; `check-no-regenerator2000.mjs:66` and `:815` both cite it as `:12862 (line 291)` | ⚠️ WARNING | WR-04. Re-measured this pass — the citation drifted **further** (was 15074 in round 2). A plain `grep` silently skips this file; use `grep -a`. |
+| `src/mcp/vice/anno-memmap-render.ts` | 315 (byte **15097**) | A literal NUL byte in a shipped source file; `check-no-analyser.mjs:66` and `:815` both cite it as `:12862 (line 291)` | ⚠️ WARNING | WR-04. Re-measured this pass — the citation drifted **further** (was 15074 in round 2). A plain `grep` silently skips this file; use `grep -a`. |
 | `src/mcp/vice/anno-cli-path-consumers.test.ts` | 281-294 | Aggregate call-site count, no per-argument association | ⚠️ WARNING | WR-02. Now named in the file's own header and in all three citing headers. |
 | `scripts/check-npm-packages.mjs` | 161-171, 394 | Whole gate behind an unasserted entry-point heuristic whose failure mode is silence + exit 0 | ⚠️ WARNING | WR-03. Verified passing today (exit 0). |
 | `src/mcp/vice/anno-derive.ts` | 459-462 | `corpusEnabled()` returns `flag !== false`, so the string `"false"` ENABLES a corpus | ⚠️ WARNING | WR-06. |
@@ -360,8 +360,8 @@ Non-blocking gate. `gsd-tools query check.decision-coverage-verify` over `29-CON
 | `src/mcp/vice/anno-tools.ts` | 1495-1514 | Inode guard compares `ino` without `dev` | ⚠️ WARNING | WR-12. |
 | `src/mcp/vice/prg-image.ts` | 69-78 | `parsePrg()` accepts a load address whose payload runs past `$FFFF` | ⚠️ WARNING | WR-13. |
 | `src/mcp/vice/package.json` | 56-73 | Five modules with no production consumer still in `files[]` | ⚠️ WARNING | WR-14 — deferred to Phase 30 on shipped evidence. |
-| `scripts/check-no-regenerator2000.mjs` | 782-789 | `exemptionFor()` `return null`s inside the class loop instead of `continue`ing | ⚠️ WARNING | WR-15 — deferred on record. |
-| `src/mcp/vice/vice-proxy.ts`, `src/mcp/vice/anno-cli.ts` | `:307`, the `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES` hatch | Retired vocabulary in two INTERNAL identifiers | ⚠️ WARNING | WR-16 — deferred on record. |
+| `scripts/check-no-analyser.mjs` | 782-789 | `exemptionFor()` `return null`s inside the class loop instead of `continue`ing | ⚠️ WARNING | WR-15 — deferred on record. |
+| `src/mcp/vice/vice-proxy.ts`, `src/mcp/vice/anno-cli.ts` | `:307`, the `VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES` hatch | Retired vocabulary in two INTERNAL identifiers | ⚠️ WARNING | WR-16 — deferred on record. |
 
 **Blockers: 0** (round 2 had 4). **Warnings: 15.** **Debt markers: 0.**
 

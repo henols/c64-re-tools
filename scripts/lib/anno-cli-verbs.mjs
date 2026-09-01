@@ -3,7 +3,7 @@
 // verb list, PARSED from `anno-cli.ts`'s own dispatch `switch (verb)` --
 // never a hand-typed array.
 //
-// THE SUBCOMMAND IS `anno`, RENAMED FROM `r2000` on 2026-08-29 (phase 29 plan
+// THE SUBCOMMAND IS `anno`, RENAMED FROM `anno` on 2026-08-29 (phase 29 plan
 // 29-09). Three halves spell that name and they move together, in one commit,
 // or this module's own predicate reds from the wrong side: the skill prose
 // that tells a reader how to invoke the CLI, the invocation literal
@@ -12,9 +12,9 @@
 // verb as undocumented while the documentation is in fact correct.
 //
 // FLOW-01 (11.1-CONTEXT.md, D-11.1-02): `scripts/check-skill-tool-coverage.mjs`
-// checked `r2000_*` MCP TOOL names in skill prose but never CLI VERBS at
+// checked `anno_*` MCP TOOL names in skill prose but never CLI VERBS at
 // all, so `gen-enums`, `export-lbl` and `import-lbl` -- the delivery path
-// for R2000-13/-14/-15 -- reached `main` documented in zero skill files
+// for ANNO-13/-14/-15 -- reached `main` documented in zero skill files
 // with nothing catching it. A hard-coded verb array in the checker would
 // have been the same defect deferred (the guard-first organising principle
 // 11.1-CONTEXT.md states explicitly), so this module reads the verb list
@@ -76,7 +76,7 @@
  * `check-skill-tool-coverage.mjs` is the precedent this mirrors, and it is a
  * DIFFERENT guard over a DIFFERENT subject -- MCP tool names, not CLI verbs --
  * so the two numbers never move together. WR-14 site 4, corrected 2026-08-30
- * (plan 29-16): this parenthetical cited that floor as `extractedR2000.size >=
+ * (plan 29-16): this parenthetical cited that floor as `extractedAnno.size >=
  * 10`, and BOTH halves had since changed -- the identifier was renamed with
  * the subcommand on 2026-08-29 (29-09) and the floor was raised 10 -> 18 in
  * the same plan -- so a reader following the cross-reference found nothing.

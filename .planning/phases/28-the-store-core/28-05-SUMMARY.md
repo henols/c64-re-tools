@@ -10,8 +10,8 @@ requires:
     provides: "plan 28-01's split-and-preserve retype(), the anno_range/anno_comment DDL, applyWrite's BEGIN IMMEDIATE write sequence, and the paint index — the overlap behaviour was IMPLEMENTED there and flagged unproven on coverage entry D11"
   - phase: 28-the-store-core
     provides: "plan 28-04's AnnoWriteResult { revision, changed } shape, the AnnoCommentError precedent for a non-identifier refusal class, and runWriteSequence's rollback-on-throwing-mutation"
-  - phase: 18-r2000-annotation-surface
-    provides: "r2000-confidence.ts's CONFIDENCE_GRADES five-grade vocabulary, parseConfidencePrefix()'s throw-on-near-miss path, and R2000ConfidenceGradeError"
+  - phase: 18-anno-annotation-surface
+    provides: "anno-confidence.ts's CONFIDENCE_GRADES five-grade vocabulary, parseConfidencePrefix()'s throw-on-near-miss path, and AnnoConfidenceGradeError"
 provides:
   - "contradictedCommentsFor() — the ONE definition of 'a retype makes this comment false', derived from CONFIDENCE_GRADES by token suffix, with the rejected broad alternative recorded beside it"
   - "SetDataTypeResult — setDataType's widened result carrying an always-present contradictedComments array; the contradiction is data on a SUCCESSFUL write, never an error and never a refusal"
@@ -146,11 +146,11 @@ coverage:
         ref: "src/mcp/vice/anno-store.test.ts#an unknown-graded comment and an ungraded comment are never reported, under any retype"
         status: pass
       - kind: other
-        ref: "grep gate: `grep -c 'from \"./r2000-confidence.ts\"' anno-store.ts` = 1, `grep -c CONFIDENCE_GRADES` = 3, and no confidence bracket string appears on a non-comment line (`grep -vE '^\\s*(//|\\*|/\\*)' | grep -c confirmed-code` = 0)"
+        ref: "grep gate: `grep -c 'from \"./anno-confidence.ts\"' anno-store.ts` = 1, `grep -c CONFIDENCE_GRADES` = 3, and no confidence bracket string appears on a non-comment line (`grep -vE '^\\s*(//|\\*|/\\*)' | grep -c confirmed-code` = 0)"
         status: pass
     human_judgment: false
   - id: D7
-    description: "An unparseable bracket token is refused as a named ViceError subclass rather than swallowed into 'ungraded', with the original R2000ConfidenceGradeError message preserved verbatim inside the wrapper and the original error on `cause`"
+    description: "An unparseable bracket token is refused as a named ViceError subclass rather than swallowed into 'ungraded', with the original AnnoConfidenceGradeError message preserved verbatim inside the wrapper and the original error on `cause`"
     requirement: "STORE-03"
     verification:
       - kind: unit
@@ -236,7 +236,7 @@ RED was observed before each GREEN: Task 1's first run failed at module load (`d
 ## Files Created/Modified
 
 - `src/mcp/vice/anno-overlap.test.ts` (created, 588 lines) — the five-case table as a header comment with case 3 marked load-bearing and the equality warning; both invariants computed the same way for every case; case 3's row shape; planting A with its selectivity measured through the same harness as the production path; the naive-metric false negative as its own test; planting B; adjacency behavioural and structural; empty and non-overlapping; post-split ordering across a reopen. 14 tests.
-- `src/mcp/vice/anno-store.ts` (+128/-5) — `CODE_GRADE_BRACKETS`/`DATA_GRADE_BRACKETS` derived from `CONFIDENCE_GRADES`; `contradictedCommentsFor()`; `collectContradictedComments()`; `SetDataTypeResult`; `setDataType` widened; header trap 9; the one new import specifier `"./r2000-confidence.ts"`.
+- `src/mcp/vice/anno-store.ts` (+128/-5) — `CODE_GRADE_BRACKETS`/`DATA_GRADE_BRACKETS` derived from `CONFIDENCE_GRADES`; `contradictedCommentsFor()`; `collectContradictedComments()`; `SetDataTypeResult`; `setDataType` widened; header trap 9; the one new import specifier `"./anno-confidence.ts"`.
 - `src/mcp/vice/anno-types.ts` (+62) — `ContradictedComment`, `AnnoCommentGradeErrorOptions`, `AnnoCommentGradeError`.
 - `src/mcp/vice/anno-store.test.ts` (+174) — eight tests over the contradiction rule, including the boundary-inclusive out-of-range check and the malformed-bracket refusal.
 
@@ -299,7 +299,7 @@ None. The one live risk — the project warning that plan 28-04 lost a task's un
 | `node --test anno-overlap.test.ts anno-store.test.ts anno-types.test.ts anno-seam.test.ts` | 74 tests / 74 pass |
 | `npm run typecheck` | exit 0 |
 | `node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts test-gate.test.ts shipped-modules.test.ts` | 40 tests / 40 pass |
-| `npm run test:automated` (broker stopped) | 2610 tests / **5 failures, all inside the named baseline** — the five `plan 18-06:` failures in `r2000-session.test.ts` (`regenerator2000` absent from `PATH`). The load-sensitive `:615` flake appeared in the Task 1 run (6 failures) and not the Task 2 run (5). No failure in any other file. Exit 1 on that baseline alone; the failure list is the gate. |
+| `npm run test:automated` (broker stopped) | 2610 tests / **5 failures, all inside the named baseline** — the five `plan 18-06:` failures in `anno-session.test.ts` (`the external analyser` absent from `PATH`). The load-sensitive `:615` flake appeared in the Task 1 run (6 failures) and not the Task 2 run (5). No failure in any other file. Exit 1 on that baseline alone; the failure list is the gate. |
 | `automatedTestFiles()` membership | 112 files, `anno-overlap.test.ts` present, `MANUAL_ONLY_TESTS` unedited |
 | `package.json` `files[]` | `anno-overlap` absent (a test file must not be listed) |
 | Planting A observed | 5 of 14 red (cases 3, 4, 5 + row shape + ordering), reverted before commit |
@@ -317,7 +317,7 @@ None. No new network endpoint, auth path, file access pattern or schema change: 
 
 ## Carried Forward
 
-- **`CUT-04`'s enumerated task list** gains one entry as the plan required: `anno-store.ts` now imports `"./r2000-confidence.ts"`, which becomes an edit when that module is renamed. It is a real dependency on the single-seam vocabulary, deliberately not avoided by copying the five grades.
+- **`CUT-04`'s enumerated task list** gains one entry as the plan required: `anno-store.ts` now imports `"./anno-confidence.ts"`, which becomes an edit when that module is renamed. It is a real dependency on the single-seam vocabulary, deliberately not avoided by copying the five grades.
 
 ## User Setup Required
 

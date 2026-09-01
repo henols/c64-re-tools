@@ -9,7 +9,7 @@ import {
   parseConfidencePrefix,
   formatConfidenceComment,
   searchQueryForGrade,
-  R2000ConfidenceGradeError,
+  AnnoConfidenceGradeError,
 } from "./anno-confidence.ts";
 
 // ---------------------------------------------------------------------------
@@ -93,8 +93,8 @@ test("parseConfidencePrefix throws on a plain typo, naming the offending token a
   assert.throws(
     () => parseConfidencePrefix("[confimed-code] foo"),
     (err: unknown) => {
-      assert.ok(err instanceof R2000ConfidenceGradeError);
-      const typed = err as R2000ConfidenceGradeError;
+      assert.ok(err instanceof AnnoConfidenceGradeError);
+      const typed = err as AnnoConfidenceGradeError;
       assert.equal(typed.offendingToken, "confimed-code");
       assert.match(typed.message, /confimed-code/);
       for (const grade of CONFIDENCE_GRADES) {
@@ -106,24 +106,24 @@ test("parseConfidencePrefix throws on a plain typo, naming the offending token a
 });
 
 test("parseConfidencePrefix throws on wrong case", () => {
-  assert.throws(() => parseConfidencePrefix("[CONFIRMED-CODE] foo"), R2000ConfidenceGradeError);
+  assert.throws(() => parseConfidencePrefix("[CONFIRMED-CODE] foo"), AnnoConfidenceGradeError);
 });
 
 test("parseConfidencePrefix throws on an underscore instead of a hyphen", () => {
-  assert.throws(() => parseConfidencePrefix("[confirmed_code] foo"), R2000ConfidenceGradeError);
+  assert.throws(() => parseConfidencePrefix("[confirmed_code] foo"), AnnoConfidenceGradeError);
 });
 
 test("parseConfidencePrefix throws on a plural", () => {
-  assert.throws(() => parseConfidencePrefix("[confirmed-codes] foo"), R2000ConfidenceGradeError);
+  assert.throws(() => parseConfidencePrefix("[confirmed-codes] foo"), AnnoConfidenceGradeError);
 });
 
 test("parseConfidencePrefix throws on extra whitespace inside the brackets", () => {
-  assert.throws(() => parseConfidencePrefix("[ confirmed-code] foo"), R2000ConfidenceGradeError);
-  assert.throws(() => parseConfidencePrefix("[confirmed-code ] foo"), R2000ConfidenceGradeError);
+  assert.throws(() => parseConfidencePrefix("[ confirmed-code] foo"), AnnoConfidenceGradeError);
+  assert.throws(() => parseConfidencePrefix("[confirmed-code ] foo"), AnnoConfidenceGradeError);
 });
 
 test("parseConfidencePrefix throws on a near-miss single-word grade", () => {
-  assert.throws(() => parseConfidencePrefix("[unkown] foo"), R2000ConfidenceGradeError);
+  assert.throws(() => parseConfidencePrefix("[unkown] foo"), AnnoConfidenceGradeError);
 });
 
 // ---------------------------------------------------------------------------
@@ -133,11 +133,11 @@ test("parseConfidencePrefix throws on a near-miss single-word grade", () => {
 // ---------------------------------------------------------------------------
 
 test("formatConfidenceComment throws on an invalid grade token", () => {
-  assert.throws(() => formatConfidenceComment("confimed-code", "x"), R2000ConfidenceGradeError);
+  assert.throws(() => formatConfidenceComment("confimed-code", "x"), AnnoConfidenceGradeError);
 });
 
 test("searchQueryForGrade throws on an invalid grade token", () => {
-  assert.throws(() => searchQueryForGrade("confimed-code"), R2000ConfidenceGradeError);
+  assert.throws(() => searchQueryForGrade("confimed-code"), AnnoConfidenceGradeError);
 });
 
 // ---------------------------------------------------------------------------

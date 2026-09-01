@@ -6,7 +6,7 @@ execution, judged unrelated to this plan's own file changes, not fixed.
 **Item 1 was subsequently disproven and fixed** at phase 18 wave 2's
 post-merge gate — see its own entry. Item 2 stands as recorded.
 
-## 1. ~~A literal `npm test` never exits when regenerator2000 is installed~~
+## 1. ~~A literal `npm test` never exits when the external analyser is installed~~
    — RESOLVED at wave 2's post-merge gate; the "pre-existing" attribution
    was WRONG
 
@@ -18,28 +18,28 @@ every result, that it was pre-existing, that it was unrelated to plan 18-03,
 and that `--test-force-exit` was an acceptable local workaround.
 
 **What was actually true:** plan 18-03 introduced it. Rewiring
-`runR2000Tool()` through `r2000-session.ts`'s HELD single slot means the
-retained `regenerator2000` child — and its three `stdio: "pipe"` sockets, all
+`runAnnoTool()` through `anno-session.ts`'s HELD single slot means the
+retained `the external analyser` child — and its three `stdio: "pipe"` sockets, all
 ref'd libuv handles — keep the event loop alive in every host that is not
-`vice-proxy.ts`. `r2000-cli.test.ts:1303` calls `runR2000Tool(...)` exactly
-once and never closes the session (only `r2000-session.test.ts` has the
-`__resetR2000SessionForTest()` seam), so its `node --test` worker printed all
+`vice-proxy.ts`. `anno-cli.test.ts:1303` calls `runAnnoTool(...)` exactly
+once and never closes the session (only `anno-session.test.ts` has the
+`__resetAnnoSessionForTest()` seam), so its `node --test` worker printed all
 64 `ok` lines and then hung forever. Three sibling files hung for the same
 reason. The hazard was never test-only: any CLI verb or one-shot host reaching
-`runR2000Tool()` once would also never exit.
+`runAnnoTool()` once would also never exit.
 
 **How the original conclusion went wrong — the transferable lesson:** it was
-reached by *inspecting the import chain* (`r2000-cli.ts` imports neither
-`r2000-mcp-client.ts` nor `r2000-session.ts`, therefore not caused by this
+reached by *inspecting the import chain* (`anno-cli.ts` imports neither
+`anno-mcp-client.ts` nor `anno-session.ts`, therefore not caused by this
 plan) and never by *running the suite against an unmodified checkout*. The
 import chain was read correctly and the inference from it was still false: the
-coupling runs through a dynamic `await import("./r2000-tools.ts")` inside the
+coupling runs through a dynamic `await import("./anno-tools.ts")` inside the
 test body, which a static chain walk does not see. A single measurement
 settled it — the same file exits in 2s at the wave-1 tip `ebe90f8` and hung at
 `f6a5b03`. **An "it predates me" claim about a suite is cheap to measure and
 must be measured, never inferred.**
 
-**The fix (commit at the wave-2 gate):** `openR2000Session()` now calls
+**The fix (commit at the wave-2 gate):** `openAnnoSession()` now calls
 `child.unref()` plus an `unrefStream()` on each of `stdin`/`stdout`/`stderr`,
 immediately after a successful handshake. A held session stops being a reason
 for its host process to live, while staying fully usable — every `request()`
@@ -53,10 +53,10 @@ other three). Plain `npm test` now exits 0 in ~88s: 2425 tests, 2381 pass,
 **Consequence handed to plan 18-04, deliberately:** a host that exits while a
 session is still held now orphans that child until it observes stdin EOF.
 Bounding that is 18-04's own charter (`18-STDIN-EOF-EVIDENCE.md` and the
-synchronous `vice-proxy.ts` teardown calling `closeR2000SessionSync()`). The
+synchronous `vice-proxy.ts` teardown calling `closeAnnoSessionSync()`). The
 unref is the complement that keeps every *other* host exitable, not a
 substitute for that teardown. Measured at this gate: no
-`regenerator2000 --mcp-server-stdio` process survived any of the seven test
+`analyser --mcp-server-stdio` process survived any of the seven test
 files run individually, nor the full suite.
 
 ## 2. Two flaky (non-reproducible) failures observed during a full-suite run
@@ -75,11 +75,11 @@ did **not** reproduce on isolated re-runs of the same test files:
   run; a *different* test in the same file (`"wired warm floor..."`) failed
   on a subsequent isolated re-run, and the file's own re-run also timed out
   at 60s under `--test-force-exit` alone. This file has **zero** import
-  dependency on `r2000-mcp-client.ts`/`r2000-session.ts`/`r2000-tools.ts` —
+  dependency on `anno-mcp-client.ts`/`anno-session.ts`/`anno-tools.ts` —
   confirmed by direct import inspection. Broker process-supervision timing
   tests are inherently sensitive to host scheduling latency; this reads as
   pre-existing flakiness under load, not a regression from this plan.
-- `r2000-mcp-client.test.ts` — `"Task 3 mid-call exit: ... distinguishable
+- `anno-mcp-client.test.ts` — `"Task 3 mid-call exit: ... distinguishable
   BY CLASS ..."` failed once with `"expected a fast failure, took 811ms"`
   (asserts `< 750ms`, a hard-coded wall-clock threshold against a stub
   child process). Re-run in isolation 3 times immediately after: 0 failures
@@ -87,9 +87,9 @@ did **not** reproduce on isolated re-runs of the same test files:
   plan's own Task 1 acceptance criterion requires to pass with **zero
   edits** (confirmed: `git diff --stat` on it is empty) — the flake is
   scheduling jitter from dozens of concurrent `node --test` worker
-  processes and real regenerator2000/stub children competing for CPU on
-  this host, not a logic defect in the promoted `openR2000Session()`/
-  `withR2000Session()` pair.
+  processes and real the external analyser/stub children competing for CPU on
+  this host, not a logic defect in the promoted `openAnnoSession()`/
+  `withAnnoSession()` pair.
 
 Neither failure reproduces the same way twice, both live in test bodies
 this plan does not modify, and both are timing-sensitive assertions —

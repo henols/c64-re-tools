@@ -13,8 +13,8 @@ provides:
   - "`.planning/PROJECT.md:311` — four re-verified `vice-proxy.ts` line citations and the surviving `anno_*` tool family, matching CLAUDE.md:26"
   - "`.planning/PROJECT.md:396` — the D-36 row's guard pointer now names a file that exists on disk"
   - "`.planning/ARCHITECTURE.md` Rule A21 — a dated, superseded record with its number, all five citations and its reversal condition intact"
-  - "`scripts/check-no-regenerator2000.mjs` — rule 4's NUL offset and tree-wide totals re-measured, dated, scope-defined, with a drift clause"
-  - "An explicit correct-or-keep verdict for every one of the 17 `r2000_`-carrying lines in `.planning/PROJECT.md`, with the D-08 clause that decided each"
+  - "`scripts/check-no-analyser.mjs` — rule 4's NUL offset and tree-wide totals re-measured, dated, scope-defined, with a drift clause"
+  - "An explicit correct-or-keep verdict for every one of the 17 `anno_`-carrying lines in `.planning/PROJECT.md`, with the D-08 clause that decided each"
 affects: [32-04, 32-05, 32-08]
 
 actuals:
@@ -34,12 +34,12 @@ key-files:
   modified:
     - .planning/PROJECT.md
     - .planning/ARCHITECTURE.md
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
 
 key-decisions:
   - "Chose option (a) for the removal gate's tree-wide totals — re-measure in the gate's OWN scope and state that scope — rather than option (b) attributing the stale pair to plan 29-02. The gate prints its own scope and its own totals on every successful run, so a figure taken from that line is self-refreshing evidence, whereas an attributed stale pair would have to be re-read against a tree it no longer describes."
   - "Left PROJECT.md:311's dated parenthetical and self-recorded drift history byte-identical, and did NOT append a phase-29-10 `-2` drift note of the kind CLAUDE.md:26 carries. The plan's acceptance criterion requires byte-identity for that clause, and CLAUDE.md:26 already records the shift; the correction is recorded here instead."
-  - "Resolved three ambiguous `r2000_`-carrying lines (143, 668, 715) to KEEP and recorded the ambiguity, per the plan's own tie-break. All three are present-tense clauses sitting inside milestone- or phase-scoped blocks, and none tells a reader to use, install or invoke a deleted route."
+  - "Resolved three ambiguous `anno_`-carrying lines (143, 668, 715) to KEEP and recorded the ambiguity, per the plan's own tie-break. All three are present-tense clauses sitting inside milestone- or phase-scoped blocks, and none tells a reader to use, install or invoke a deleted route."
 
 patterns-established:
   - "Pattern: adjudicate-then-record — every candidate line gets an explicit `correct` or `keep` verdict with the deciding rule clause written down, so a later reader can distinguish 'we looked and it is fine' from 'we never looked' (D-09)"
@@ -58,7 +58,7 @@ coverage:
         ref: "src/mcp/vice/docs-linerefs.test.ts + docs-dangling-refs.test.ts (11/11)"
         status: pass
       - kind: other
-        ref: "grep -ac 'vice-proxy.ts:3052' == 0; ':2987' == 0; 'vice-proxy.ts:1531' == 0; ':1507' == 0; 'docs-r2000-decisions' == 0; 'vice-proxy.ts:3050' >= 1; 'vice-proxy.ts:1529' >= 1"
+        ref: "grep -ac 'vice-proxy.ts:3052' == 0; ':2987' == 0; 'vice-proxy.ts:1531' == 0; ':1507' == 0; 'docs-anno-decisions' == 0; 'vice-proxy.ts:3050' >= 1; 'vice-proxy.ts:1529' >= 1"
         status: pass
       - kind: other
         ref: "sed -n '3050p;2985p;1529p;1505p' src/mcp/vice/vice-proxy.ts — each line read and matched to its claimed construct"
@@ -69,7 +69,7 @@ coverage:
     requirement: "CUT-06"
     verification:
       - kind: integration
-        ref: "src/mcp/vice/docs-absorbed-decisions.test.ts#3 (Rule A21 body names resolveStorePath, ChildProcess, r2000-mcp-client.ts)"
+        ref: "src/mcp/vice/docs-absorbed-decisions.test.ts#3 (Rule A21 body names resolveStorePath, ChildProcess, anno-mcp-client.ts)"
         status: pass
       - kind: other
         ref: "git diff --exit-code 2eaa136 HEAD -- .planning/research/ARCHITECTURE.md exits 0"
@@ -83,7 +83,7 @@ coverage:
     requirement: "CUT-06"
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs exits 0 (406 files, 157 exempt, 0 allow-listed)"
+        ref: "node scripts/check-no-analyser.mjs exits 0 (406 files, 157 exempt, 0 allow-listed)"
         status: pass
       - kind: integration
         ref: "src/mcp/vice/removal-gate.test.ts (8/8)"
@@ -92,7 +92,7 @@ coverage:
         ref: "python3 byte scan of src/mcp/vice/anno-memmap-render.ts — 31604 bytes, 2 NULs, first at offset 15097 = line 315"
         status: pass
       - kind: other
-        ref: "git diff -- scripts/check-no-regenerator2000.mjs shows no changed line that is not a comment"
+        ref: "git diff -- scripts/check-no-analyser.mjs shows no changed line that is not a comment"
         status: pass
     human_judgment: false
 
@@ -103,7 +103,7 @@ status: complete
 
 # Phase 32 Plan 03: CUT-06 part A — living pointers corrected, history preserved Summary
 
-**Four `vice-proxy.ts` citations re-verified and un-staled by +2, the deleted `r2000_*` family swapped for the surviving `anno_*` one, a nonexistent guard filename repaired, Rule A21 converted from a live invariant into a dated superseded record, and the removal gate's own false NUL offset and pre-deletion occurrence totals re-measured with their scope and a drift clause.**
+**Four `vice-proxy.ts` citations re-verified and un-staled by +2, the deleted `anno_*` family swapped for the surviving `anno_*` one, a nonexistent guard filename repaired, Rule A21 converted from a live invariant into a dated superseded record, and the removal gate's own false NUL offset and pre-deletion occurrence totals re-measured with their scope and a drift clause.**
 
 ## Performance
 
@@ -116,10 +116,10 @@ status: complete
 ## Accomplishments
 
 - **`.planning/PROJECT.md:311` — four line citations corrected and independently re-verified in the same run.** `3052→3050`, `2987→2985`, `1531→1529`, `1507→1505`. Every one was stale by exactly `+2`, which is precisely the `−2` shift `CLAUDE.md:26` records for phase 29 plan 29-10. Each target line was read before writing: `:3050` is `const rewritten = rewriteArguments(args, name);`, `:2985` is `async function forwardToVice(...)`, `:1529` is `const { args: translated } = rewriteArguments({ path: screenshotContainerPath }, "vice_display_screenshot");`, `:1505` is `async function gatherWedgeEvidence(...)`. All four matched the plan's expectation, so no measured-value substitution was needed. Note that only two of the four (`vice-proxy.ts:3050`, `vice-proxy.ts:1529`) are in the form `docs-linerefs.test.ts`'s `CITATION_RE` matches; the bare `:2985` / `:1505` shorthands were repaired anyway, because the guard checks two and the reader reads four.
-- **The same line's live pointer at a deleted tool family replaced.** `The r2000_* family (v0.3.0 Phase 11) is registered through buildViceTool()…` became `The anno_* family is registered through buildViceTool()…`, matching `CLAUDE.md:26` and tagged `(MCP-02)` in the same idiom as the `(SKILL-01)` bullet immediately above it. Confirmed against source rather than inherited from CLAUDE.md: `vice-proxy.ts:3388-3390` registers `ANNO_TOOL_DEFINITIONS` through `buildViceTool()` directly, and the block's own comment states the constraint is satisfied by construction because the runner is never wired to `forwardToVice()`.
-- **`.planning/PROJECT.md:396` — the D-36 row's guard pointer now resolves.** `docs-r2000-decisions.test.ts` does not exist (`ls` confirms); plan 29-05 renamed it to `docs-absorbed-decisions.test.ts` per D-12. Only that filename changed. The row still states "supersedes D-32", names `handler.rs:1894`, names `issues/42` and carries a reversal-trigger phrase — all four asserted by `docs-absorbed-decisions.test.ts` test 4, plus row uniqueness, and all five of its tests pass.
-- **`.planning/ARCHITECTURE.md` Rule A21 converted to a dated, superseded record.** It had asserted, in the present tense, that "At most one live regenerator2000 child exists per `vice-proxy.ts` process", keyed on `resolveStorePath()` — a symbol that no longer exists — and that the child "is never spawned from a module other than `r2000-mcp-client.ts`", a module deleted by commit `1d40ad0` on 2026-08-30. The heading and number are unchanged, the body is past tense, all five citations survive (`D18-04`, `D18-03`, `D18-21`, `D18-02`, `r2000-mcp-client.ts`), and the record now names phase 29's own `D-06` as the decision that reversed A21 explicitly and on the record, states that nothing of the same kind replaced it (the `anno_*` store is in-process, so there is no child to govern), and carries a reversal condition. The diff contains no heading line and touches no other rule.
-- **`scripts/check-no-regenerator2000.mjs` rule 4 — both false numbers re-measured, both sites repaired.** Comment-only edit; the gate still exits 0 and `removal-gate.test.ts` still passes 8/8.
+- **The same line's live pointer at a deleted tool family replaced.** `The anno_* family (v0.3.0 Phase 11) is registered through buildViceTool()…` became `The anno_* family is registered through buildViceTool()…`, matching `CLAUDE.md:26` and tagged `(MCP-02)` in the same idiom as the `(SKILL-01)` bullet immediately above it. Confirmed against source rather than inherited from CLAUDE.md: `vice-proxy.ts:3388-3390` registers `ANNO_TOOL_DEFINITIONS` through `buildViceTool()` directly, and the block's own comment states the constraint is satisfied by construction because the runner is never wired to `forwardToVice()`.
+- **`.planning/PROJECT.md:396` — the D-36 row's guard pointer now resolves.** `docs-absorbed-decisions.test.ts` does not exist (`ls` confirms); plan 29-05 renamed it to `docs-absorbed-decisions.test.ts` per D-12. Only that filename changed. The row still states "supersedes D-32", names `handler.rs:1894`, names `issues/42` and carries a reversal-trigger phrase — all four asserted by `docs-absorbed-decisions.test.ts` test 4, plus row uniqueness, and all five of its tests pass.
+- **`.planning/ARCHITECTURE.md` Rule A21 converted to a dated, superseded record.** It had asserted, in the present tense, that "At most one live the external analyser child exists per `vice-proxy.ts` process", keyed on `resolveStorePath()` — a symbol that no longer exists — and that the child "is never spawned from a module other than `anno-mcp-client.ts`", a module deleted by commit `1d40ad0` on 2026-08-30. The heading and number are unchanged, the body is past tense, all five citations survive (`D18-04`, `D18-03`, `D18-21`, `D18-02`, `anno-mcp-client.ts`), and the record now names phase 29's own `D-06` as the decision that reversed A21 explicitly and on the record, states that nothing of the same kind replaced it (the `anno_*` store is in-process, so there is no child to govern), and carries a reversal condition. The diff contains no heading line and touches no other rule.
+- **`scripts/check-no-analyser.mjs` rule 4 — both false numbers re-measured, both sites repaired.** Comment-only edit; the gate still exits 0 and `removal-gate.test.ts` still passes 8/8.
 
 ## Task Commits
 
@@ -133,7 +133,7 @@ status: complete
 
 - `.planning/PROJECT.md` — two lines changed (`:311`, `:396`); 2 insertions / 2 deletions
 - `.planning/ARCHITECTURE.md` — Rule A21 block only; 34 insertions / 7 deletions
-- `scripts/check-no-regenerator2000.mjs` — comments only, at rule 4 in the header and at the `readFileSync()` call site; 26 insertions / 11 deletions
+- `scripts/check-no-analyser.mjs` — comments only, at rule 4 in the header and at the `readFileSync()` call site; 26 insertions / 11 deletions
 
 ## Worktree re-anchoring (required by this plan's execution context)
 
@@ -148,7 +148,7 @@ WT_ROOT=/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4d3cd6
 Actual commands run (from `$WT_ROOT`, or from `$WT_ROOT/src/mcp/vice` where the plan says `cd src/mcp/vice`):
 
 ```
-node scripts/check-no-regenerator2000.mjs                       # exit 0
+node scripts/check-no-analyser.mjs                       # exit 0
 node scripts/audit-gate.mjs --json                              # allowed:true, redGuards:[], 9 guards
 cd $WT_ROOT/src/mcp/vice && node --test docs-absorbed-decisions.test.ts docs-dangling-refs.test.ts \
     docs-linerefs.test.ts removal-gate.test.ts                  # 24 tests / 24 pass / 0 fail
@@ -167,7 +167,7 @@ before.
 
 | Check | Result |
 |---|---|
-| `node scripts/check-no-regenerator2000.mjs` | **exit 0** — `OK -- scanned 406 files (376 tracked outside ".planning/" + 30 shipped-but-untracked installer paths, floor 350); 157 occurrence(s) permanently exempt, 0 temporarily allow-listed across 0 entries.` Identical before and after the Task 3 edit. |
+| `node scripts/check-no-analyser.mjs` | **exit 0** — `OK -- scanned 406 files (376 tracked outside ".planning/" + 30 shipped-but-untracked installer paths, floor 350); 157 occurrence(s) permanently exempt, 0 temporarily allow-listed across 0 entries.` Identical before and after the Task 3 edit. |
 | `node --test docs-absorbed-decisions.test.ts docs-dangling-refs.test.ts docs-linerefs.test.ts removal-gate.test.ts` | **24 tests / 24 pass / 0 fail** |
 | `node scripts/audit-gate.mjs --json` | `allowed: true`, `redGuards: []`, `guardFiles` = 9 derived docs guards, `structuralErrors: []` |
 | `npm run test:automated` | **2941 tests / 2934 pass / 1 fail / 1 skipped / 5 todo**, exit 1. The single failure is the recorded worktree artifact — see below. |
@@ -195,11 +195,11 @@ the assertion was **not** loosened. No VICE broker was running during the run (`
 BACK-05 broker-reddening artifact does not apply either. **In the main checkout the expected floor
 for this suite is 0 failures.**
 
-## The `r2000_` adjudication ledger for `.planning/PROJECT.md` (D-08 / D-09)
+## The `anno_` adjudication ledger for `.planning/PROJECT.md` (D-08 / D-09)
 
-Measured with `grep -a` before the edits: **17 lines carrying `r2000_`, 23 occurrences**, and **46
+Measured with `grep -a` before the edits: **17 lines carrying `anno_`, 23 occurrences**, and **46
 lines carrying the full subject literal, 51 occurrences** — both reproducing the plan's plan-time
-figures exactly, so no census drift. After the edits: **16 lines / 22 occurrences** of `r2000_`
+figures exactly, so no census drift. After the edits: **16 lines / 22 occurrences** of `anno_`
 (line 311 dropped out) and **46 lines / 51 occurrences** of the full literal (unchanged).
 
 Every one of the 17 has a verdict. Nothing was swept.
@@ -208,26 +208,26 @@ Every one of the 17 has a verdict. Nothing was swept.
 |---|---|---|
 | 24 | keep | Paragraph opens "**As of v0.3.0 recon findings are state, not prose.**" — explicitly scoped to a named past milestone. |
 | 91 | keep | "every item weighed for restating is Phase 11 (v0.3.0) evidence … re-weighed one milestone later, not new" — named phase and milestone scope. |
-| 137 | keep | `✓` validated-outcome row closed "— Phase 11 (`R2000-11`; the 17 curated `r2000_*` tools)" — named phase scope. |
-| 143 | keep *(ambiguity recorded)* | `✓` row closed "— v0.3.0 Phase 10 (`R2000-02`; …)". Its inner clause is present tense ("the `r2000_*` family registers proxy-locally"), but it sits inside a dated achievement record whose scope marker is the phase tag. Ambiguous → KEEP. |
+| 137 | keep | `✓` validated-outcome row closed "— Phase 11 (`ANNO-11`; the 17 curated `anno_*` tools)" — named phase scope. |
+| 143 | keep *(ambiguity recorded)* | `✓` row closed "— v0.3.0 Phase 10 (`ANNO-02`; …)". Its inner clause is present tense ("the `anno_*` family registers proxy-locally"), but it sits inside a dated achievement record whose scope marker is the phase tag. Ambiguous → KEEP. |
 | 159 | keep | `✓` row closed "— v0.5.0 Phase 18 (`SURF-01`..`SURF-03`)" — named milestone and phase scope. |
 | 163 | keep | `✓` row closed "— v0.7.0 Phase 28 (`STORE-01`; …)" — named milestone and phase scope. |
 | 198 | keep | Non-goal item tagged "*(added v0.3.0, D-R1/D-07)*" — decision-scoped. |
 | 223 | keep | Inside "## Context → **Current codebase state.**", a dated milestone-close snapshot ("this milestone", per-milestone comparisons, "Test suite at close"). |
-| **311** | **correct** | Live pointer: asserted in the present tense that the deleted `r2000_*` family is a currently-registered surface. Replaced with `anno_*` `(MCP-02)`. The bullet's dated parenthetical and self-recorded drift history are byte-identical. |
+| **311** | **correct** | Live pointer: asserted in the present tense that the deleted `anno_*` family is a currently-registered surface. Replaced with `anno_*` `(MCP-02)`. The bullet's dated parenthetical and self-recorded drift history are byte-identical. |
 | 381 | keep | Key Decisions data row — decision-scoped historical record with an Outcome verdict. |
 | 384 | keep | Key Decisions data row — decision-scoped historical record with an Outcome verdict. |
-| **396** | **correct (partial — Outcome cell only)** | Key Decisions D-36 row. The decision text is dated (2026-08-24) and stays byte-identical; only the Outcome cell's live pointer at a guard file that is not on disk was corrected (`docs-r2000-decisions.test.ts` → `docs-absorbed-decisions.test.ts`). D-36's verdict was not restated and the row was not deleted. |
-| 465 | keep | "**Prior milestone — v0.3.0 regenerator2000 static-analysis backend**, 2026-08-21" close record — dated. |
+| **396** | **correct (partial — Outcome cell only)** | Key Decisions D-36 row. The decision text is dated (2026-08-24) and stays byte-identical; only the Outcome cell's live pointer at a guard file that is not on disk was corrected (`docs-absorbed-decisions.test.ts` → `docs-absorbed-decisions.test.ts`). D-36's verdict was not restated and the row was not deleted. |
+| 465 | keep | "**Prior milestone — v0.3.0 the external analyser static-analysis backend**, 2026-08-21" close record — dated. |
 | 668 | keep *(ambiguity recorded)* | Inside "## Current Milestone: v0.7.0 … **Opened 2026-08-26.**" target-features list. It is a provenance claim about where the 12-member vocabulary was read from, not a use/install/invoke instruction. Ambiguous → KEEP. |
-| 715 | keep *(ambiguity recorded — flagged for 32-05)* | "every absorbed step is written against `r2000_*` tool calls". Present tense, and arguably outdated now that phases 29/31 re-pointed the skills — but it is a claim about what the skill *prose* contains, framed as this milestone's own motivating problem, inside a v0.7.0-scoped block ("Measured at the v0.7.0 open" two lines below). It points no reader at a tool to call. Ambiguous → KEEP, and explicitly surfaced here so plan 32-05 can re-adjudicate it with the whole sweep in view. |
+| 715 | keep *(ambiguity recorded — flagged for 32-05)* | "every absorbed step is written against `anno_*` tool calls". Present tense, and arguably outdated now that phases 29/31 re-pointed the skills — but it is a claim about what the skill *prose* contains, framed as this milestone's own motivating problem, inside a v0.7.0-scoped block ("Measured at the v0.7.0 open" two lines below). It points no reader at a tool to call. Ambiguous → KEEP, and explicitly surfaced here so plan 32-05 can re-adjudicate it with the whole sweep in view. |
 | 1254 | keep | Inside "**Phase 11 complete — …** 2026-08-21" dated phase-close record. |
 | 1270 | keep | Same dated Phase 11 close record ("Open and recorded, non-blocking: `T-11-NAME-INJECT`"). |
 
 **Totals: 15 keep (3 with a recorded ambiguity), 2 correct.**
 
 `.planning/` is excluded from the removal gate by PREFIX at
-`scripts/check-no-regenerator2000.mjs`'s `PLANNING_PREFIX`, so none of these edits could move an
+`scripts/check-no-analyser.mjs`'s `PLANNING_PREFIX`, so none of these edits could move an
 exact-count exemption — confirmed by re-running the gate, whose reported totals are unchanged.
 
 ## The `ARCHITECTURE.md` inventory (confirming `D-11`, not re-deriving it)
@@ -256,7 +256,7 @@ The header had said one NUL at offset 12862 / line 291, and the in-body comment 
 `readFileSync()` call site repeated `anno-memmap-render.ts:12862`. Both sites now state the measured
 values. The gate's own `memmap-measurement-provenance` pin (exactly 1 occurrence, at line 79) was
 already correct and was not touched — line 79 still reads
-`// measured LIVE against a real regenerator2000-core-0.9.20`.
+`// measured LIVE against a real external-analyser-core-0.9.20`.
 
 **Tree-wide totals — option (a), re-measured in the gate's own scope.** The stale pair ("399 with
 `-a` and 398 without") was measured at plan 29-02 against the pre-deletion tree AND over a narrower
@@ -268,8 +268,8 @@ exempt + 0 allow-listed; the gate fails on anything else, so that sum *is* the i
 explicitly that this is not the same set as a plain `git ls-files` sweep.
 
 **The one-hit difference — rule 4's load-bearing claim — cross-checked independently.**
-`grep -aoc 'regenerator2000' src/mcp/vice/anno-memmap-render.ts` reports **1**; plain
-`grep -oc 'regenerator2000'` on the same file **exits 1 and reports nothing**, because GNU grep
+`grep -aoc 'the external analyser' src/mcp/vice/anno-memmap-render.ts` reports **1**; plain
+`grep -oc 'the external analyser'` on the same file **exits 1 and reports nothing**, because GNU grep
 classifies the file as binary and skips it. So the difference is exactly one hit and that hit is the
 provenance comment at `:79` — precisely what a grep-backed gate would let survive its own removal
 check.
@@ -283,7 +283,7 @@ acceptance criteria require `grep -c '12862'`, `grep -c 'line 291'` and `grep -c
 
 Not touched, per `D-07` and the plan: no exemption id, no `hits:` / `lines:` / `prefixHits:` value, no
 `need()` call, no scope predicate, no assertion. `git diff` on the file contains **no changed line
-that is not a comment**, verified mechanically. `grep -ac 'regenerator2000'` on the gate is still
+that is not a comment**, verified mechanically. `grep -ac 'the external analyser'` on the gate is still
 **0** — it composes every occurrence from `SUBJECT_NEEDLE`, so a prose edit cannot move an
 exact-count pin.
 
@@ -353,10 +353,10 @@ None — no external service configuration required.
   (`vice-proxy.ts:3050`, `vice-proxy.ts:1529`) and the two bare shorthands it does not. Widening the
   guard onto this file should land green rather than red, which is what ordering constraint 5 and the
   `4f048bb` precedent require.
-- **Plan 32-05's sweep ledger has three inputs waiting.** The 17-row `r2000_` verdict table above,
+- **Plan 32-05's sweep ledger has three inputs waiting.** The 17-row `anno_` verdict table above,
   the four-path `ARCHITECTURE.md` inventory (with `.planning/research/ARCHITECTURE.md`'s A21 recorded
   as a deliberate no-edit), and the specific flag on `.planning/PROJECT.md:715`.
-- **Plan 32-08 (wave 4) can measure `scripts/check-no-regenerator2000.mjs` as-is.** Per `D-07`, this
+- **Plan 32-08 (wave 4) can measure `scripts/check-no-analyser.mjs` as-is.** Per `D-07`, this
   plan's edit to that audited guard landed in wave 2 and the file will not be touched again by this
   plan. Its header numbers are now measured, dated and scope-defined, and it exits 0.
 - **No blockers.** `.planning/STATE.md` and `.planning/ROADMAP.md` were deliberately not modified —
@@ -369,7 +369,7 @@ None — no external service configuration required.
 ## Self-Check: PASSED
 
 - All four claimed files exist on disk (`.planning/PROJECT.md`, `.planning/ARCHITECTURE.md`,
-  `scripts/check-no-regenerator2000.mjs`, and this SUMMARY).
+  `scripts/check-no-analyser.mjs`, and this SUMMARY).
 - All four claimed commits resolve in `git log --oneline --all`: `11abb71`, `5ff2311`, `c81d2ee`,
   `ce98f7a`.
 - All three tasks' `<acceptance_criteria>` were re-run after the final commit and all pass; the

@@ -2,7 +2,7 @@
 
 **Researched:** 2026-08-17
 **Domain:** Client-side MCP tool derivation over stock VICE's binary monitor (TypeScript/Node) — memory scanning, a pure client-side symbol table, memory-mapped chip-state decoding, and sprite pointer arithmetic + ASCII rendering
-**Confidence:** HIGH (seam mechanics, opcode absence, register maps — all confirmed live against this repo's own source and `memmap.json`) / MEDIUM (exact fork answer shapes — the fork ships no `outputSchema`, so nothing is reproducible to check against) / LOW (regenerator2000 `.lbl` format compatibility, `vice_memory_compare`'s `mode: 'snapshot'` semantics — both genuinely unresolved upstream)
+**Confidence:** HIGH (seam mechanics, opcode absence, register maps — all confirmed live against this repo's own source and `memmap.json`) / MEDIUM (exact fork answer shapes — the fork ships no `outputSchema`, so nothing is reproducible to check against) / LOW (the external analyser `.lbl` format compatibility, `vice_memory_compare`'s `mode: 'snapshot'` semantics — both genuinely unresolved upstream)
 
 ## Summary
 
@@ -29,8 +29,8 @@ The one genuinely open design question this research could not close from
 in-repo evidence is `vice_memory_compare`'s `mode: 'snapshot'` — the fork's own
 schema names a `snapshot_name` with no corresponding memory-only snapshot tool
 anywhere in either manifest, and no skill calls that mode. The second open
-item is DERIV-04's second producer: regenerator2000's `--export_lbl` format has
-not been probed against a real build (`R2000-16(c)` is unanswered), so the
+item is DERIV-04's second producer: The external analyser's `--export_lbl` format has
+not been probed against a real build (`ANNO-16(c)` is unanswered), so the
 symbol-file parser should be built against the one format this repo can
 verify today (ACME's own `--vicelabels` output, confirmed byte-for-byte via
 `acme-build/scripts/acme.mjs`'s own parser) and kept defensive rather than
@@ -75,7 +75,7 @@ across the wire — none of these eight do).
 | ID | Description | Research Support |
 |----|-------------|------------------|
 | DERIV-01 | User can search and compare memory ranges on the stock backend (narrowed: `fill` cut) | No `MEMORY_SEARCH`/`MEMORY_COMPARE` opcode exists (confirmed absent from `docs/phase0-binmon-findings.md`'s command set and independently classified as client-side derivation in `docs/roadmap-stock-vice.md`). Client-side scan over one `MEM_GET(sidefx:false)` read per range — the whole 64K address space fits one call (`memGetBody`'s start/end are each 0..0xffff). Fork schema for both tools captured verbatim below. |
-| DERIV-04 | User can load a symbol file and have addresses resolved to symbol names | Pure client-side state (roadmap: "symbols load/lookup (pure client state)"). Installs into `stock-address.ts`'s existing `SymbolResolver` holder via `setSymbolResolver()` — the SAME holder Phase 4's `vice_disassemble` already reads from (`resolve`) and was widened for (`nameFor`). VICE label-file format (`al C:xxxx .Name`) confirmed live from `acme-build/scripts/acme.mjs:85`'s own parser regex. Second producer (regenerator2000 `--export_lbl`) is UNVERIFIED — `R2000-16(c)` has not been run. |
+| DERIV-04 | User can load a symbol file and have addresses resolved to symbol names | Pure client-side state (roadmap: "symbols load/lookup (pure client state)"). Installs into `stock-address.ts`'s existing `SymbolResolver` holder via `setSymbolResolver()` — the SAME holder Phase 4's `vice_disassemble` already reads from (`resolve`) and was widened for (`nameFor`). VICE label-file format (`al C:xxxx .Name`) confirmed live from `acme-build/scripts/acme.mjs:85`'s own parser regex. Second producer (the external analyser `--export_lbl`) is UNVERIFIED — `ANNO-16(c)` has not been run. |
 | DERIV-05 (read side) | User can read decoded VIC-II and CIA state, with unavailable internal fields explicitly marked unavailable, never zero | No opcode; client-side decode of one `MEM_GET(sidefx:false)` per chip (VIC-II $D000-$D02E, 47 bytes; CIA1 $DC00-$DC0F / CIA2 $DD00-$DD0F, 16 bytes each — all four ranges cross-verified against `memmap.json` and against the fork's own `*_set_state` tool descriptions' stated offset ranges). `sidefx:false` is what makes this read safer than the fork's own documented-as-unverified read path (`docs/stock-vice-parity.md` item 5) — a genuine stock advantage, not merely a port. Internal-only fields (raster-IRQ latch, timer latches, flip-flops) are enumerated and their unavailability representation is proposed below. |
 | DERIV-06 (read side) | User can read and inspect sprites, including ASCII rendering | No opcode; pointer-chain arithmetic (`$DD00` bank → `$D018` screen base → sprite pointer table at screen+`$03F8` → `pointer*64` data address) already implemented and tested client-side in `c64-ram-capture/scripts/dump-artifacts.mjs` — reuse those formulas verbatim, do not re-derive. ASCII legend confirmed byte-for-byte from the fork's own tool description in `tools-manifest.json`. |
 </phase_requirements>
@@ -475,16 +475,16 @@ flag on").
 correct shape is ONE `sidefx:false` read per chip covering every offset,
 never a per-register side-effect decision.
 
-### Pitfall 5: Assuming regenerator2000's `--export_lbl` output is byte-compatible with the parser this phase writes
+### Pitfall 5: Assuming the external analyser's `--export_lbl` output is byte-compatible with the parser this phase writes
 **What goes wrong:** Building `vice_symbols_load`'s `'vice'` format parser
-against an assumption of regenerator2000's exact output (whitespace,
+against an assumption of the external analyser's exact output (whitespace,
 comments, memspace-letter casing) rather than against the one format actually
 observed in this repo (ACME's `--vicelabels` output).
-**Why it happens:** `.planning/notes/regenerator2000-integration.md` states
-"r2000's `--export_lbl` emits VICE label files" as a design premise, but its
-own "Verification owed before planning" section (`R2000-16(c)`) explicitly
+**Why it happens:** `.planning/notes/external-analyser-integration.md` states
+"anno's `--export_lbl` emits VICE label files" as a design premise, but its
+own "Verification owed before planning" section (`ANNO-16(c)`) explicitly
 lists this as UNVERIFIED, and no probe has been run in this repo (confirmed:
-no regenerator2000 artifacts, fixtures, or probe scripts exist anywhere in the
+no the external analyser artifacts, fixtures, or probe scripts exist anywhere in the
 tree).
 **How to avoid:** Build the parser against the CONFIRMED format
 (`^al\s+C:[0-9a-f]+\s+\.(\S+)`, case-insensitive on the hex, confirmed live
@@ -494,12 +494,12 @@ tolerate blank lines and any line that does not match the `al` pattern by
 skipping it silently (VICE's own text-monitor "add label" script format is
 line-oriented and typically permits other commands interleaved), rather than
 refusing the whole file on the first unrecognized line. Do not claim
-compatibility with regenerator2000's output beyond "should work if it emits
+compatibility with the external analyser's output beyond "should work if it emits
 the same `al C:xxxx .Name` syntax" — record this explicitly as an assumption
-(see Assumptions Log) so `R2000-16(c)` running later either confirms or
+(see Assumptions Log) so `ANNO-16(c)` running later either confirms or
 contradicts a stated bet, not a silent one.
 **Warning signs:** A `THIRD-PARTY-NOTICES.md` or parity-doc entry claiming
-"regenerator2000-compatible" as a verified fact rather than an assumption.
+"external-analyser-compatible" as a verified fact rather than an assumption.
 
 ## Code Examples
 
@@ -603,7 +603,7 @@ globally.
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | regenerator2000's `--export_lbl` output is compatible with the `al C:xxxx .Name` VICE label-file parser this phase builds against ACME's confirmed output | Common Pitfalls Pitfall 5, Phase Requirements DERIV-04 | Medium — if the real format differs (different memspace letter, different comment syntax, different whitespace), the v0.3.0 symbol round trip (`R2000-14`) silently fails to load real regenerator2000 exports even though this phase's own tests (built against ACME output) all pass. Mitigation already built in: defensive line-skipping rather than whole-file refusal, and this assumption is flagged rather than asserted as verified. `R2000-16(c)` should be run before v0.3.0 Phase 10 relies on this. |
+| A1 | the external analyser's `--export_lbl` output is compatible with the `al C:xxxx .Name` VICE label-file parser this phase builds against ACME's confirmed output | Common Pitfalls Pitfall 5, Phase Requirements DERIV-04 | Medium — if the real format differs (different memspace letter, different comment syntax, different whitespace), the v0.3.0 symbol round trip (`ANNO-14`) silently fails to load real the external analyser exports even though this phase's own tests (built against ACME output) all pass. Mitigation already built in: defensive line-skipping rather than whole-file refusal, and this assumption is flagged rather than asserted as verified. `ANNO-16(c)` should be run before v0.3.0 Phase 10 relies on this. |
 | A2 | `$D019`/`$D01A` do not clear or otherwise side-effect on read (standard 6567/6569 VIC-II hardware behaviour: `$D019` is cleared only by WRITING a 1 to a bit; `$D01A` is a plain enable mask) | Common Pitfalls Pitfall 4 | Low — this is well-established 6502/VIC-II hardware knowledge, not sourced from VICE's own source in this session, but consistent with this project's own in-repo skill docs which name ONLY `$D01E`/`$D01F`/`$DC0D`/`$DD0D` as read-hazards and never mention `$D019`/`$D01A` in that context. Even if this assumption were somehow wrong, the unconditional `sidefx:false` read this phase recommends for the ENTIRE chip block would still protect it — the assumption only affects whether a future single-register fast-path could safely skip `sidefx:false`, which this research does not recommend building anyway. |
 | A3 | `vice_memory_compare`'s fork `mode: 'snapshot'` has no dedicated memory-only snapshot producer and is genuinely unreachable without either a destructive restore or an unverified `.vsf` parse | Common Pitfalls Pitfall 2 | Low — confirmed by grepping BOTH manifests for any snapshot-producing tool besides `vice_snapshot_save` (a whole-machine `.vsf` dump) and confirming zero skill callers of `mode:'snapshot'`. If a producer does exist that this research missed, the cost of being wrong is simply that the refusal text undersells a buildable feature — not a correctness bug. |
 | A4 | The VIC-II/CIA bit-field names transcribed from `memmap.json` into the new TS modules will be transcribed correctly and stay in sync if `memmap.json` is later revised | Standard Stack Alternatives, Don't Hand-Roll | Low — the SAME risk class Phase 4's D-06 already accepted for the opcode table (a committed literal, cross-checked once, not re-verified automatically against its source on every change). No automated drift check is proposed; a manual note in the new modules' header comments pointing at the exact `memmap.json` entries checked is the mitigation, matching this codebase's existing provenance-comment convention. |
@@ -641,7 +641,7 @@ globally.
 
    - What we know: no skill or script in this repo produces a KickAssembler
      label file or names a "simple" format anywhere; only ACME
-     (`--vicelabels`) and regenerator2000 (`--export_lbl`, unverified format)
+     (`--vicelabels`) and the external analyser (`--export_lbl`, unverified format)
      are named producers, and both are stated as "VICE label files."
    - What's unclear: whether `'auto'` should attempt to sniff KickAssembler
      syntax and refuse it BY NAME ("this looks like a KickAssembler label
@@ -830,9 +830,9 @@ decision.
   carried-forward decision cited above.
 
 ### Secondary (MEDIUM confidence)
-- `.planning/notes/regenerator2000-integration.md` (read live) — the
+- `.planning/notes/external-analyser-integration.md` (read live) — the
   `--export_lbl` "VICE label files" claim is the note's own premise, marked
-  by the note itself as unverified (`R2000-16(c)`).
+  by the note itself as unverified (`ANNO-16(c)`).
 
 ### Tertiary (LOW confidence)
 - Standard 6502/VIC-II hardware knowledge for `$D019`/`$D01A`'s non-clearing
@@ -853,8 +853,8 @@ decision.
   already-fixture-verified formula from this repo's own `c64-ram-capture`
   skill.
 - VICE label-file format: HIGH for the ACME-producer direction (confirmed
-  live against this repo's own parser); LOW for the regenerator2000-producer
-  direction (explicitly unverified upstream, `R2000-16(c)`).
+  live against this repo's own parser); LOW for the external analyser-producer
+  direction (explicitly unverified upstream, `ANNO-16(c)`).
 - `vice_memory_compare`'s `mode:'snapshot'` semantics: LOW — no in-repo
   evidence of how the fork implements it, no skill calls it; recommendation
   is to refuse rather than guess.
@@ -865,7 +865,7 @@ decision.
 
 **Research date:** 2026-08-17
 **Valid until:** Effectively indefinite for the hardware-register-map and
-opcode-absence facts (do not change). 30 days for the regenerator2000-format
-assumption (re-check once `R2000-16` actually runs) and for anything
+opcode-absence facts (do not change). 30 days for the external analyser-format
+assumption (re-check once `ANNO-16` actually runs) and for anything
 describing this repo's own in-progress code shape (module names, exact line
 numbers).

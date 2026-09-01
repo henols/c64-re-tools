@@ -33,17 +33,17 @@ The five upstream analyze procedures are absorbed as a **snapshot** of upstream'
 at one pinned commit, not as a tracked dependency. There is no live link back to
 upstream and no automatic notification when upstream edits them.
 
-**The snapshot:** `ricardoquesada/regenerator2000` @
+**The snapshot:** `an upstream repository` @
 `493f840418f1450a342bb220c2fe3d2585dd0525` (v0.9.20, 2026-07-11) —
 **53,392 bytes across five paths**:
 
 | Upstream path | Bytes | sha256 (first 12) | Absorbed into |
 |---|---:|---|---|
-| `.agent/skills/r2000-analyze-basic/SKILL.md` | 4,457 | `8fc662ce52a1` | `src/skills/c64-program-recon` |
-| `.agent/skills/r2000-analyze-blocks/SKILL.md` | 14,674 | `3fad6193466a` | `src/skills/c64-memory-mapping` |
-| `.agent/skills/r2000-analyze-program/SKILL.md` | 15,308 | `2d1c91bcc612` | `src/skills/routine-queue-walker` |
-| `.agent/skills/r2000-analyze-routine/SKILL.md` | 9,248 | `6fd26337de42` | `src/skills/c64-program-recon` |
-| `.agent/skills/r2000-analyze-symbol/SKILL.md` | 9,705 | `d57d9c2fdfa1` | `src/skills/c64-memory-mapping` |
+| `an upstream basic procedure` | 4,457 | `8fc662ce52a1` | `src/skills/c64-program-recon` |
+| `an upstream blocks procedure` | 14,674 | `3fad6193466a` | `src/skills/c64-memory-mapping` |
+| `an upstream program procedure` | 15,308 | `2d1c91bcc612` | `src/skills/routine-queue-walker` |
+| `an upstream routine procedure` | 9,248 | `6fd26337de42` | `src/skills/c64-program-recon` |
+| `an upstream symbol procedure` | 9,705 | `d57d9c2fdfa1` | `src/skills/c64-memory-mapping` |
 
 **Evidence.** The pin is corroborated two independent ways: the clone at that commit,
 and the installed crate's own `.cargo_vcs_info.json`, whose recorded sha1 equals it
@@ -51,7 +51,7 @@ and the installed crate's own `.cargo_vcs_info.json`, whose recorded sha1 equals
 `Cargo.toml.orig:31-42`'s `exclude` list drops `.agent/**/*` from the published crate,
 so there is no version-pinned package to diff against automatically (§1.1, §1.2).
 Digests and byte counts above are re-verified byte-exact by
-`src/mcp/vice/r2000-upstream-audit.test.ts` whenever a clone is reachable, and that test
+`src/mcp/vice/anno-derivation.test.ts` whenever a clone is reachable, and that test
 rejects an abbreviated or floating ref outright (19-01-SUMMARY.md D5).
 
 **Alternatives weighed.**
@@ -73,10 +73,10 @@ upstream moved costs five hashes and a diff, not five readings.
 which carries each trigger together with the mechanism that answers it. Both triggers
 below are entries in that array, not prose here.
 
-Re-sync condition: EITHER (a) the installed `regenerator2000` moves off `0.9.20` — at
+Re-sync condition: EITHER (a) the installed `the external analyser` moves off `0.9.20` — at
 which point read the NEW crate's own `.cargo_vcs_info.json` for the commit it was
 published from (no guessing at a tag), fetch the five paths at that commit, sha256 each,
-and diff against this manifest's five digests; OR (b) `r2000_get_binary_info`'s response
+and diff against this manifest's five digests; OR (b) `anno_get_binary_info`'s response
 field set changes — `AppState::file_info()` already computes `packer_name` and `is_packed`
 and discards them before the handler's `json!` block, so the day either reaches that
 block, decision 3's whole negative result collapses to a one-field read. Trigger (b) is
@@ -89,13 +89,13 @@ shape, which a single live `tools/call` answers.
 
 **Decided:** 2026-08-24 (plan 19-05)
 
-`r2000_toggle_splitter` and `r2000_set_immediate_format` are **proposed** now, with the
+`anno_toggle_splitter` and `anno_set_immediate_format` are **proposed** now, with the
 requirement each serves named, and **implemented at the start of Phase 20**. Neither is
-added to `CURATED_R2000_TOOLS` in Phase 19.
+added to `CURATED_ANNO_TOOLS` in Phase 19.
 
 **Why this is a decision and not a backlog note.** The absorption diff turned out to be
 a **requirements-discovery instrument**. Both calls were previously recorded in
-`src/mcp/vice/r2000-tools.ts`'s header as having *no criterion* — the exact words were
+`src/mcp/vice/anno-tools.ts`'s header as having *no criterion* — the exact words were
 "`toggle_splitter` has no criterion" and "`set_immediate_format` [has] no criterion in
 this phase". Reading upstream's procedures against this project's own requirements gave
 each of them one. That is precisely the class of consequence ABS-04 exists to stop being
@@ -103,7 +103,7 @@ discovered at a milestone close, so it is dated here, in the phase that produced
 
 **What each one serves.**
 
-- **`r2000_toggle_splitter` → DECOMP-01 and BUILD-02.** DECOMP-01 requires that nothing
+- **`anno_toggle_splitter` → DECOMP-01 and BUILD-02.** DECOMP-01 requires that nothing
   remain `Undefined` — every byte resolved to a type *including a table*. BUILD-02
   requires data tables extracted to their own files so graphics, levels and music can be
   swapped without touching code. Without a splitter, **two adjacent tables merge into
@@ -112,7 +112,7 @@ discovered at a milestone close, so it is dated here, in the phase that produced
   splitters" (`handler.rs:188`), which is the other half of the same fact — the block
   view a caller reads is already splitter-aware, so a caller with no way to set one is
   reading a view it cannot influence.
-- **`r2000_set_immediate_format` → BUILD-03.** This one does not merely *serve*
+- **`anno_set_immediate_format` → BUILD-03.** This one does not merely *serve*
   BUILD-03, it **IS** BUILD-03's mechanism. BUILD-03 requires that every branch, `JSR`/
   `JMP` and data reference go through a symbol so code can move; a 16-bit address loaded
   as two immediate bytes (`LDA #<label` / `LDA #>label`) is the one construct where that
@@ -121,7 +121,7 @@ discovered at a milestone close, so it is dated here, in the phase that produced
   turns a split immediate load into a symbol reference.
 
 **Constraints that ride with them.** Both are **mutating**, so both must go through the
-existing session seam (`r2000-session.ts`'s single held child, Rule A21) if added —
+existing session seam (`anno-session.ts`'s single held child, Rule A21) if added —
 neither may introduce a second child-launch site. Both are **additive** under the
 precedent SURF-01 already set for adding a curated tool with a named criterion, so
 neither is a breaking change to the advertised surface.
@@ -139,9 +139,9 @@ Notes both point here.
 Reversal condition: if Phase 20's first decomposition pass reaches DECOMP-01 on the
 committed fixtures **without** ever needing a table boundary the splitter would set — i.e.
 the coverage instrument reports zero `Undefined` bytes and zero merged-table findings with
-the tool absent — then `r2000_toggle_splitter`'s criterion did not survive contact and the
+the tool absent — then `anno_toggle_splitter`'s criterion did not survive contact and the
 proposal is withdrawn rather than implemented. The same test applies to
-`r2000_set_immediate_format` against BUILD-03: if no split immediate load appears in the
+`anno_set_immediate_format` against BUILD-03: if no split immediate load appears in the
 fixtures, its criterion is theoretical and it waits for one that is not.
 
 ---
@@ -161,8 +161,8 @@ among them (`handler.rs:798-826`); `UnpackResult` (`unpacker.rs:50-70`) carries 
 detection but is not serialised out; `LoadedProjectData.detected_packer`
 (`state/project.rs:98-115`) is TUI-consumed only; and the whole consumer set of
 `detect_packer` (`packer_signatures.rs:1-14`) is internal. Two live executions agree:
-`regenerator2000 --help` offers 13 options, none of which reports file info or a packer,
-and a live `tools/call r2000_get_binary_info` against the Phase 11 fixture returned
+`analyser --help` offers 13 options, none of which reports file info or a packer,
+and a live `tools/call anno_get_binary_info` against the Phase 11 fixture returned
 exactly the seven documented fields.
 
 **What was built instead** (19-04): `src/skills/c64-program-recon/scripts/packer-finding.mjs`
@@ -177,11 +177,11 @@ else by accident.
   claim about the world that this project cannot re-verify and would then have to
   maintain; it would also convert a licence-attributed prose absorption into a data
   absorption with a different provenance story.
-- **No library linkage was added.** Linking regenerator2000-core to reach an internal
+- **No library linkage was added.** Linking external-analyser-core to reach an internal
   function would make a private, unversioned symbol a load-bearing dependency.
-- **No invented tool name was placed on the upstream-prefixed surface.** The `r2000_`
-  prefix means "regenerator2000 serves this". No such tool exists upstream, so a
-  project-invented `r2000_get_packer` would be a *fabricated upstream tool* that this
+- **No invented tool name was placed on the upstream-prefixed surface.** The `anno_`
+  prefix means "the external analyser serves this". No such tool exists upstream, so a
+  project-invented `anno_get_packer` would be a *fabricated upstream tool* that this
   repository's own gates would thereafter treat as legitimate. That is why the finding is
   a skill script (19-04's own recorded decision).
 
@@ -207,16 +207,16 @@ outcome and would retire the oracle branch entirely.
 
 ---
 
-## Decision 4 — MIT is elected from regenerator2000's dual `MIT OR Apache-2.0`
+## Decision 4 — MIT is elected from the external analyser's dual `MIT OR Apache-2.0`
 
 **Decided:** 2026-08-24 (plan 19-01 wrote it; recorded 19-05)
 
-For all absorbed prose, this project elects **MIT** from regenerator2000's dual
+For all absorbed prose, this project elects **MIT** from the external analyser's dual
 `MIT OR Apache-2.0` offer.
 
 **Evidence.** `license = "MIT OR Apache-2.0"` read verbatim from
-`regenerator2000-0.9.20/Cargo.toml.orig:28` in the installed crate **and** from
-`crates/regenerator2000-core/Cargo.toml:5` at the pin — two independent copies agreeing
+`the external analyser-0.9.20/Cargo.toml.orig:28` in the installed crate **and** from
+`crates/external-analyser-core/Cargo.toml:5` at the pin — two independent copies agreeing
 (19-RESEARCH.md §5.1). The election is published in
 `src/mcp/vice/THIRD-PARTY-NOTICES.md`, in `installer/THIRD-PARTY-NOTICES.md`, and in
 every per-file attribution header, and the headers' commit and digest are asserted equal
@@ -258,21 +258,21 @@ a lawyer's review says otherwise.
 
 **Decided:** 2026-08-24 (measured in plan 19-01; recorded 19-05)
 
-D18-16 — the reader-writer upgrade of `r2000-session.ts`'s coarse FIFO mutex — is
+D18-16 — the reader-writer upgrade of `anno-session.ts`'s coarse FIFO mutex — is
 **CLOSED**. Not re-deferred, not deferred with extra words: its own named precondition has
 been met and answered.
 
 **The precondition, in the deferral's own words:** *"A reader-writer upgrade remains
-deferred pending measurement of whether regenerator2000's stdio handler actually
+deferred pending measurement of whether the external analyser's stdio handler actually
 multiplexes concurrent requests rather than reading stdin serially."* That measurement was
 required to be run and recorded as evidence, the way Phase 18 recorded the stdin-EOF
 measurement.
 
 **Evidence.** `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-STDIO-MULTIPLEXING-EVIDENCE.md`
 — three runs against the real installed binary, all agreeing, with the command sequence,
-run table and raw JSON captured, plus a negative control (`R2000_BIN=/nonexistent-binary`
+run table and raw JSON captured, plus a negative control (`ANNO_BIN=/nonexistent-binary`
 exits 1 with a non-empty reason, so the measurement cannot pass vacuously). Independently
-corroborated at source: `run_headless_stdio_loop` (`crates/regenerator2000-core/src/mcp/stdio.rs:67-98`)
+corroborated at source: `run_headless_stdio_loop` (`crates/external-analyser-core/src/mcp/stdio.rs:67-98`)
 reads stdin line by line and calls `handle_request` **synchronously on `&mut AppState`**,
 spawning nothing. Two independent methods, one answer.
 
@@ -295,7 +295,7 @@ A methodological note worth keeping: the measurement scores same-millisecond arr
 is a queue draining, not concurrency — a looser scoring rule would have produced a false
 positive here.
 
-**Also closed under this decision — the cursor-tool invitation.** `src/mcp/vice/r2000-tools.ts`'s
+**Also closed under this decision — the cursor-tool invitation.** `src/mcp/vice/anno-tools.ts`'s
 header carried a standing offer: the held TUI cursor trio (`get_disassembly_cursor`,
 `jump_to_address`, `read_selected`) would be justified by *"a real caller appearing in
 Phase 19's absorption diff"*. A real caller **did** appear — and its own upstream text
@@ -310,7 +310,7 @@ exchange for a measured zero. *Re-defer pending a "better" measurement.* Rejecte
 deferral named its own precondition, the precondition was met, and re-deferring a met
 precondition is how a deferral becomes permanent.
 
-Reversal condition: regenerator2000's stdio loop stops being serial — concretely, either
+Reversal condition: The external analyser's stdio loop stops being serial — concretely, either
 `run_headless_stdio_loop` gains a spawn/task per request at some future pin (visible in the
 same source read decision 1's re-sync trigger (a) already performs), or a re-run of
 `node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs`
@@ -322,7 +322,7 @@ observation reopens the reader-writer question with a real reason behind it.
 **Decided:** 2026-08-25 (measured and implemented in plan 19-20)
 
 `computeStructuralCensus()`'s recursive descent **stops at an illegal opcode and does not
-claim its bytes**. The three places in `src/mcp/vice/r2000-coverage.ts` that answer "is this
+claim its bytes**. The three places in `src/mcp/vice/anno-coverage.ts` that answer "is this
 byte an instruction a program executes" now read ONE predicate,
 `isDecodableAsInstruction()`, and that predicate is the standard the linear sweep and
 `isPlausibleEntryPoint()` **already used**. The descent was brought up to them; they were
@@ -403,16 +403,16 @@ sealed reproducibility answer still holds with `ANSWER.md`, `ANSWER.sha256` and
 
 | Decision | Requirement served | Evidence artifact | Where the next phase sees it |
 |---|---|---|---|
-| 1 — snapshot vs drift | ABS-04 | `upstream-procedure-manifest.json` (`resync_triggers`), `r2000-upstream-audit.test.ts` | ROADMAP §19 Notes |
-| 2 — two proposed tools | ABS-04; serves DECOMP-01, BUILD-02, BUILD-03 | `r2000-tools.ts` header; `upstream-procedure-manifest.json` (`disposition_rationale`) | ROADMAP §20 and §21 Notes |
+| 1 — snapshot vs drift | ABS-04 | `upstream-procedure-manifest.json` (`resync_triggers`), `anno-derivation.test.ts` | ROADMAP §19 Notes |
+| 2 — two proposed tools | ABS-04; serves DECOMP-01, BUILD-02, BUILD-03 | `anno-tools.ts` header; `upstream-procedure-manifest.json` (`disposition_rationale`) | ROADMAP §20 and §21 Notes |
 | 3 — packer-identity bar | SURF-03 | `packer-finding.mjs` + `packer-finding.test.mjs`; 19-RESEARCH.md §2.2 | ROADMAP §19 Notes |
 | 4 — MIT election | ABS-02 | both `THIRD-PARTY-NOTICES.md` files; `skill-attribution.test.ts` | — (human-judgment item, carried to the phase verifier) |
 | 5 — concurrency deferral closed | ABS-04 (D18-16) | `19-STDIO-MULTIPLEXING-EVIDENCE.md`; `stdio.rs:67-98` | ROADMAP §19 Notes |
-| 6 — the descent stops at an illegal opcode | COV-01 (serves COV-02) | `r2000-coverage.test.ts` WR-03 minimal pair + PINs 5-8; `19-VALIDATION.md` round-4 plan 19-20 section | ROADMAP §20 — the report Phase 20 runs under |
+| 6 — the descent stops at an illegal opcode | COV-01 (serves COV-02) | `anno-coverage.test.ts` WR-03 minimal pair + PINs 5-8; `19-VALIDATION.md` round-4 plan 19-20 section | ROADMAP §20 — the report Phase 20 runs under |
 
 **Note on FUT-01.** ABS-01's "five procedures absorbed" and FUT-01's deferral of BASIC
 token decoding are reconciled deliberately rather than tacitly (19-02 Task 1(b)):
-`r2000-analyze-basic` is absorbed as **attributed reference material** whose first line
+`analyze-basic` is absorbed as **attributed reference material** whose first line
 names `FUT-01` and states the capability is deferred, and **every one of its trigger
 phrases is kept out of every skill's `description:` frontmatter** so the section can be
 read but can never fire. That is checked, not asserted —

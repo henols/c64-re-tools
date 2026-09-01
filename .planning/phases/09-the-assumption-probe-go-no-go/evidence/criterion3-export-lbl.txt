@@ -1,8 +1,8 @@
-## Criterion 3(3) -- R2000-16(3): does --export_lbl emit a format vice_symbols_load
+## Criterion 3(3) -- ANNO-16(3): does --export_lbl emit a format vice_symbols_load
 ## consumes as-is?
 ##
 ## Qualified by plan 09-01's verbatim version line:
-INSTALLED_VERSION: regenerator2000 0.9.20
+INSTALLED_VERSION: The external analyser 0.9.20
 
 ## PROJECT_FILE (from 09-03-SUMMARY.md / criterion2-pty-transcript.txt):
 PROJECT_FILE: /home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj
@@ -31,7 +31,7 @@ al C:c010 .probe_illegal_block$
 evidence/exports/seed.lbl written in the exact grammar stock-symbols.ts documents
 (al C:xxxx .name, one line per symbol, trailing newline, nothing else).
 
-$ regenerator2000 --headless --import_lbl "<repo>/evidence/exports/seed.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+$ analyser --headless --import_lbl "<repo>/evidence/exports/seed.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Labels Imported
 EXIT_CODE=0
@@ -47,7 +47,7 @@ dda82fee5bc64e067046c0ecca5aedaf  /home/henrik/.cache/c64-re-tools/phase9/probe-
 Both mtime and checksum are IDENTICAL to the pre-flight values above -- the import did
 NOT write to disk. Confirmed independently with a completely fresh, separate process:
 
-$ regenerator2000 --headless --export_lbl "$HOME/.cache/c64-re-tools/phase9/persistence-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+$ analyser --headless --export_lbl "$HOME/.cache/c64-re-tools/phase9/persistence-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Labels exported to "/home/henrik/.cache/c64-re-tools/phase9/persistence-check.lbl"
 EXIT_CODE=0
@@ -73,7 +73,7 @@ Route B").
 only):** running --import_lbl and --export_lbl together in ONE invocation shows the
 imported labels ARE held in memory and DO round-trip back out in the same request:
 
-$ regenerator2000 --headless --import_lbl "<repo>/evidence/exports/seed.lbl" --export_lbl "$HOME/.cache/c64-re-tools/phase9/same-process-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+$ analyser --headless --import_lbl "<repo>/evidence/exports/seed.lbl" --export_lbl "$HOME/.cache/c64-re-tools/phase9/same-process-check.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Labels Imported
 Labels exported to "/home/henrik/.cache/c64-re-tools/phase9/same-process-check.lbl"
@@ -93,7 +93,7 @@ import/export code paths themselves are format-compatible in memory; it is NOT t
 as "seeding into the project" (the project file itself is untouched), so Route A alone
 is not used as LABEL_SEED_ROUTE.
 
-### Route B -- HTTP MCP r2000_set_label_name + r2000_save_project
+### Route B -- HTTP MCP anno_set_label_name + anno_save_project
 
 Convention 10 live-resource protocol, checked before touching port 3000 or launching an
 emulator/TUI process:
@@ -101,28 +101,28 @@ emulator/TUI process:
 $ ss -ltn | grep ':3000'; echo "grep-exit=$?"
 grep-exit=1
 
-$ pgrep -af regenerator2000
-(no regenerator2000 process running)
+$ pgrep -af the external analyser
+(no the external analyser process running)
 
 $ pgrep -af x64sc
 (no x64sc process running)
 
 Port free, no contention. Proceeding with Route B.
 
-$ tmux kill-session -t r2000probe5 2>/dev/null; echo done
+$ tmux kill-session -t annoprobe5 2>/dev/null; echo done
 done
 
-$ tmux new-session -d -s r2000probe5 -x 200 -y 50 regenerator2000 --mcp-server "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+$ tmux new-session -d -s annoprobe5 -x 200 -y 50 the external analyser --mcp-server "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 launched, exit=0
 
 Loaded the PROJECT FILE this time (not the raw .prg), so 09-03's "Import Context Setup"
 modal did not appear -- the pane went straight to the already-analysed disassembly view
 with the MCP server status line active immediately:
 
-$ tmux has-session -t r2000probe5 && echo ALIVE || echo DEAD
+$ tmux has-session -t annoprobe5 && echo ALIVE || echo DEAD
 ALIVE
 
-$ tmux capture-pane -t r2000probe5 -p
+$ tmux capture-pane -t annoprobe5 -p
 (full pane shows: menu bar, Disassembly pane with real mnemonics -- lda #$00 at $C000
 labelled "start", sta $d020, ldx #$05, lda f_C021,x, the illegal-opcode bytes at $C00A/
 $C00D/etc rendered as ".byte $xx ; Invalid or partial instruction" -- matching 09-03's
@@ -130,9 +130,9 @@ observation that use_illegal_opcodes did not auto-flip -- Hex Dump pane, and sta
 "MCP Server active on http://127.0.0.1:3000/mcp" / "Commodore 64 | 64tass | Code:
 $C000-$C020 | Cursor: $C000 | File: \"probe-illegal.regen2000proj\"". No modal this time.)
 
-$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_set_label_name '{"address":49179,"name":"probe_user_label"}'
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" anno_set_label_name '{"address":49179,"name":"probe_user_label"}'
 LIST_TOOLS_RESULT:
-(28-tool r2000_* list, unchanged from 09-03 -- includes r2000_set_label_name with
+(28-tool anno_* list, unchanged from 09-03 -- includes anno_set_label_name with
 inputSchema { address: integer (decimal), name: string }, both required)
 CALL_TOOL_RESULT:
 {
@@ -151,7 +151,7 @@ live process -- a genuine LabelKind::User label, set the same way any real user 
 tool would set one (there is no other production code path that calls
 create_set_user_label_command with a caller-supplied name and address, confirmed below).
 
-$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" r2000_save_project '{}'
+$ node "$HOME/.cache/c64-re-tools/phase9/mcp-harness.mjs" anno_save_project '{}'
 LIST_TOOLS_RESULT:
 (unchanged, omitted)
 CALL_TOOL_RESULT:
@@ -164,31 +164,31 @@ CALL_TOOL_RESULT:
   ]
 }
 
-LABEL_SEED_ROUTE: B (HTTP MCP r2000_set_label_name + r2000_save_project against the live
+LABEL_SEED_ROUTE: B (HTTP MCP anno_set_label_name + anno_save_project against the live
 TUI process, loaded from the project file -- Route A's --import_lbl was attempted first
 per the plan's preferred ordering and recorded above, but does not persist across process
 launches and has no save flag, so it did not seed a label INTO the project; Route B did.)
 
 **Teardown before the headless confirmation:**
 
-$ tmux kill-session -t r2000probe5
+$ tmux kill-session -t annoprobe5
 kill_exit=0
 
-$ tmux has-session -t r2000probe5
+$ tmux has-session -t annoprobe5
 no server running on /tmp/tmux-1000/default
 has-session exit=1
 
 $ ss -ltn | grep ':3000'; echo "grep-exit=$?"
 grep-exit=1
 
-$ pgrep -af 'regenerator2000 --mcp-server'
+$ pgrep -af 'the external analyser --mcp-server'
 (no match -- process gone)
 
 Teardown confirmed clean before the fresh headless export.
 
 **Fresh, non-pty --headless export against the now-persisted project file:**
 
-$ regenerator2000 --headless --export_lbl "<repo>/evidence/exports/probe-illegal.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
+$ analyser --headless --export_lbl "<repo>/evidence/exports/probe-illegal.lbl" "$HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Loaded: "/home/henrik/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj"
 Labels exported to "<repo>/evidence/exports/probe-illegal.lbl"
 EXIT_CODE=0
@@ -204,7 +204,7 @@ EXPORT_LBL_LINES: 2
 
 The export is non-empty and carries a real, MCP-set label (.probe_user_label) alongside
 the pre-existing ".start" label. This file is NOT modified anywhere after this point --
-it reaches Task 2 and Task 3 byte-for-byte as regenerator2000 wrote it.
+it reaches Task 2 and Task 3 byte-for-byte as the external analyser wrote it.
 
 ## Is ".start" a genuine LabelKind::User label, or an auto-generated entry-point
 ## artifact? (the trap named in the inherited findings)
@@ -213,16 +213,16 @@ it reaches Task 2 and Task 3 byte-for-byte as regenerator2000 wrote it.
 Both, precisely -- established by reading the ACTUALLY-INSTALLED source (not the
 upstream git clone 09-RESEARCH.md read), located via the cargo registry cache:
 
-$ find "$HOME/.cargo/registry/src" -maxdepth 2 -iname "*regenerator2000*"
-/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-0.9.20
-/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-tui-0.9.20
-/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20
+$ find "$HOME/.cargo/registry/src" -maxdepth 2 -iname "*the external analyser*"
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/analyser-0.9.20
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/external-analyser-tui-0.9.20
+/home/henrik/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/external-analyser-core-0.9.20
 
 This is the exact 0.9.20 source `cargo install` actually fetched and built for THIS
 host's binary -- stronger evidence than the upstream git clone 09-RESEARCH.md read at
 commit df4bc94, since Evidence Integrity Rule 3 asks for what actually ran.
 
-$ grep -n 'fn export_vice_labels' -A 12 regenerator2000-core-0.9.20/src/state/file_io.rs
+$ grep -n 'fn export_vice_labels' -A 12 external-analyser-core-0.9.20/src/state/file_io.rs
     pub fn export_vice_labels(&self, path: PathBuf) -> anyhow::Result<String> {
         let mut export_list = Vec::new();
         for (addr, labels) in &self.labels {
@@ -238,15 +238,15 @@ $ grep -n 'fn export_vice_labels' -A 12 regenerator2000-core-0.9.20/src/state/fi
     }
 
 Confirms 09-RESEARCH.md's citation of the User-only filter, now against the real
-installed source: `regenerator2000-core-0.9.20/src/state/file_io.rs:692-705`.
+installed source: `external-analyser-core-0.9.20/src/state/file_io.rs:692-705`.
 
-$ grep -n '"start"' -r regenerator2000-tui-0.9.20/src/ regenerator2000-core-0.9.20/src/
-regenerator2000-tui-0.9.20/src/ui/dialog_import_context.rs:454:  // Label the entry point as "start"
-regenerator2000-tui-0.9.20/src/ui/dialog_import_context.rs:456:      .create_set_user_label_command(entry_addr, "start", false)
-regenerator2000-core-0.9.20/src/mcp/handler.rs:867:  app_state.create_set_user_label_command(entry_addr, "start", false)
+$ grep -n '"start"' -r external-analyser-tui-0.9.20/src/ external-analyser-core-0.9.20/src/
+external-analyser-tui-0.9.20/src/ui/dialog_import_context.rs:454:  // Label the entry point as "start"
+external-analyser-tui-0.9.20/src/ui/dialog_import_context.rs:456:      .create_set_user_label_command(entry_addr, "start", false)
+external-analyser-core-0.9.20/src/mcp/handler.rs:867:  app_state.create_set_user_label_command(entry_addr, "start", false)
 (plus unrelated test fixtures/assertions in vice_lbl.rs and file_io.rs)
 
-$ sed -n '440,459p' regenerator2000-tui-0.9.20/src/ui/dialog_import_context.rs
+$ sed -n '440,459p' external-analyser-tui-0.9.20/src/ui/dialog_import_context.rs
                             // 3. Disassemble entry sequence if requested
                             if self.disassemble_sequence {
                                 let entry_addr = Addr(new_start);
@@ -275,11 +275,11 @@ it is produced by the "Import Context Setup" modal's Confirm handler (the exact 
 Address" checkbox checked, confirmed in 09-03's transcript) -- but it is internally
 classified LabelKind::User, by deliberate tool design: the dialog calls
 `create_set_user_label_command`, the IDENTICAL constructor function a genuine
-`r2000_set_label_name` MCP call uses (compare mcp/handler.rs's r2000_set_label_name
+`anno_set_label_name` MCP call uses (compare mcp/handler.rs's anno_set_label_name
 handler, which calls the same `create_set_user_label_command`, with a caller-supplied
 name/address instead of the hardcoded "start"/entry_addr). There is no separate
 "auto"/"synthetic" label kind involved -- the tool deliberately treats "name the entry
-point" as equivalent to a user action, indistinguishably from a real `r2000_set_label_name`
+point" as equivalent to a user action, indistinguishably from a real `anno_set_label_name`
 call, at the data-model level. This is NOT the empty-export trap the inherited findings
 warned about (that trap is TRUE auto-analysis artifacts like the cross-reference names
 "f_C021"/"zpp_C0"/"zpa_0F" visible in this same fixture's disassembly, none of which
@@ -287,7 +287,7 @@ appear in the exported .lbl file above -- confirming those really are excluded b
 LabelKind::User filter, unlike "start").
 
 The exported file therefore carries ONE genuinely human-initiated label
-(.probe_user_label, from this task's own r2000_set_label_name MCP call) and ONE
+(.probe_user_label, from this task's own anno_set_label_name MCP call) and ONE
 tool-synthesized-but-User-kind label (.start, from the Import Context dialog). Both
 exercise the identical export code path and format, so both are valid evidence for the
 format question this criterion asks -- but only .probe_user_label answers "did a real
@@ -449,7 +449,7 @@ symbolCount, skippedLines, duplicateNames, lineCount, replaced` for load; `query
 symbolCount, name, address` for lookup). **This run exercised the fork's OWN
 implementation, forwarded via `forwardToVice()`, not this repo's stock consumer.**
 Discarded as evidence for THIS criterion (which is specifically about `stock-symbols.ts`
-consuming regenerator2000's export) and corrected below -- not scored as SYMBOLS_LOAD,
+consuming the external analyser's export) and corrected below -- not scored as SYMBOLS_LOAD,
 recorded here only as a transparent account of the correction path taken.
 
 **Correction: force the stock backend for both the broker and the client, and clean up
@@ -541,7 +541,7 @@ the earlier `x64sc --version` check).
   this test environment; `hostpath.ts` is never invoked by `stock-symbols.ts` per its
   own header comment, confirmed).
 - `vice_symbols_lookup`: `found: true`, `address: 49179` (== 0xC01B decimal, exactly
-  the address `r2000_set_label_name` set in Task 1) -- the symbol is genuinely
+  the address `anno_set_label_name` set in Task 1) -- the symbol is genuinely
   resolvable after load, not merely accepted at parse time.
 
 SYMBOLS_LOAD: pass
@@ -599,23 +599,23 @@ $ grep -n -- '--vice' evidence/vice-tool-harness.mjs evidence/criterion3-export-
 ## ACCEPTED LIMIT
 None needed -- this criterion reached `EXPORT_LBL: pass` below, not a degraded outcome.
 For completeness: this result is qualified to a SINGLE fixture (2 symbols, 63 bytes) and
-a SINGLE regenerator2000 version (0.9.20); a much larger label set or a future
-regenerator2000 release could still diverge from this grammar. Phase 11's `R2000-14`/
-`R2000-15` should treat this as "compatible for the format observed", not "compatible
+a SINGLE the external analyser version (0.9.20); a much larger label set or a future
+The external analyser release could still diverge from this grammar. Phase 11's `ANNO-14`/
+`ANNO-15` should treat this as "compatible for the format observed", not "compatible
 for all inputs, forever".
 
 ## RESEARCH CORRECTIONS
 - 09-RESEARCH.md's Architecture Patterns section cites `generate_vice_labels()` at
   `parser/vice_lbl.rs:36-42` from the upstream git clone (commit df4bc94). The ACTUALLY
   INSTALLED 0.9.20 crate (via `cargo install`, source at
-  `~/.cargo/registry/src/index.crates.io-*/regenerator2000-core-0.9.20/src/parser/vice_lbl.rs:35-41`)
+  `~/.cargo/registry/src/index.crates.io-*/external-analyser-core-0.9.20/src/parser/vice_lbl.rs:35-41`)
   emits the identical format (`al C:{addr:04x} .{name}\n`) -- no drift found, Evidence
   Integrity Rule 2 satisfied by direct re-verification against the actually-running
   binary's own source, not merely the git clone.
 - 09-RESEARCH.md does not mention that `.start` is created via
   `create_set_user_label_command` (the SAME constructor as a real
-  `r2000_set_label_name` call) inside the "Import Context Setup" dialog's Confirm
-  handler (`regenerator2000-tui-0.9.20/src/ui/dialog_import_context.rs:451-458`,
+  `anno_set_label_name` call) inside the "Import Context Setup" dialog's Confirm
+  handler (`external-analyser-tui-0.9.20/src/ui/dialog_import_context.rs:451-458`,
   gated on the "[X] Disassemble from Entry Point Address" checkbox 09-03 observed
   checked). This is a refinement of the Pitfall-2 warning, not a contradiction of it:
   the pitfall is about TRUE auto-analysis-only artifacts (confirmed distinct, since
@@ -633,5 +633,5 @@ MCP-set user label; `GRAMMAR_MATCH: 2/2` -- every exported line matches this rep
 real consumer regex, control-verified; and `SYMBOLS_LOAD: pass` -- the real
 `vice_symbols_load`/`vice_symbols_lookup` tools, against a genuinely live stock VICE
 3.9.0.0 instance, accepted the byte-for-byte unmodified file and correctly resolved the
-symbol. Criterion 3(3) (`R2000-16(3)`) is answered on both halves the ROADMAP asks for:
+symbol. Criterion 3(3) (`ANNO-16(3)`) is answered on both halves the ROADMAP asks for:
 the static grammar and the actual consumption.

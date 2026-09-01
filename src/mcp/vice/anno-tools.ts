@@ -116,7 +116,7 @@
 //     sees it, or the human never sees it. A success that quietly drops it is
 //     exactly the plausible-looking clean answer this surface forbids.
 //   - Never move `assertAnnoTool()` out of `runAnnoTool()`'s `try`. That
-//     asymmetry is WR-02, recorded as out of scope at `r2000-tools.ts:772-774`
+//     asymmetry is WR-02, recorded as out of scope at `anno-tools.ts:772-774`
 //     and CLOSED here: inside the `try`, a refusal RESOLVES `{isError:true}`
 //     like every other failure instead of REJECTING the returned promise, so
 //     the caller has one shape to handle rather than two.
@@ -272,7 +272,7 @@ export class AnnoToolArgumentError extends AnnoStoreError {
 // one refusal message serves both call routes: `anno_set_label_name refused:`
 // when the verb was called directly, `anno_set_label_name refused (calls[3]):`
 // when it was smuggled inside a batch payload. That is the shared-validator
-// discipline `r2000-tools.ts:790-800` records -- one validator per verb, called
+// discipline `anno-tools.ts:790-800` records -- one validator per verb, called
 // from both sites, so a refusal fires identically either way.
 // ---------------------------------------------------------------------------
 
@@ -1284,7 +1284,7 @@ function assertAddressDetailsArgs(args: unknown, batchIndex?: number): void {
 // `isError: true` through the runner's own catch and means "this batch should
 // never have been sent". An inner call failing in phase two becomes an error
 // ENTRY inside a successful outer result and means "this call in the batch did
-// not work". The measured upstream note at `r2000-tools.ts:63-75` establishes
+// not work". The measured upstream note at `anno-tools.ts:63-75` establishes
 // the second half: the loop always runs to completion and each outcome is
 // pushed with its own status.
 //
@@ -1442,7 +1442,7 @@ export function assertAnnoTool(name: string, args?: unknown): void {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace path validation (T-29-01). The same posture `r2000-tools.ts` took
+// Workspace path validation (T-29-01). The same posture `anno-tools.ts` took
 // for a caller-supplied project path and `stock-symbols.ts` takes for a `.lbl`
 // file: an LLM-supplied path reaching the filesystem. Resolved against
 // `repoRoot()` through `storePathWithinWorkspace()`, which carries WR-01's
@@ -2075,9 +2075,9 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
  * naming the error CLASS. Nothing rejects the returned promise.
  *
  * `assertAnnoTool` is INSIDE the `try`, deliberately and unlike
- * `r2000-tools.ts`'s `runR2000Tool`, whose gate sits outside it so a refusal
+ * `anno-tools.ts`'s `runAnnoTool`, whose gate sits outside it so a refusal
  * REJECTS instead of resolving. That asymmetry is WR-02, recorded as out of
- * scope at `r2000-tools.ts:772-774`; it is closed here.
+ * scope at `anno-tools.ts:772-774`; it is closed here.
  *
  * NO VERB EVER CREATES THE STORE IT WAS ASKED TO USE (D-06): "the annotations
  * are gone" and "there are no annotations" must not read the same. A read-only

@@ -2,7 +2,7 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 11
 subsystem: testing
-tags: [r2000, coverage-instrument, dispatch-scan, 6502, stack-return-idiom, split-tables, negative-controls]
+tags: [anno, coverage-instrument, dispatch-scan, 6502, stack-return-idiom, split-tables, negative-controls]
 
 # Dependency graph
 requires:
@@ -40,8 +40,8 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/deferred-items.md
 
 key-decisions:
@@ -65,7 +65,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 4 DECLINES a pha/pha/rts window whose two loads use different index registers"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 4 DECLINES a pha/pha/rts window whose two loads use different index registers"
         status: pass
       - kind: other
         ref: "observed RED against the unfixed scan before the fix — pre-fix values recorded in ## Fail-First Record below"
@@ -76,7 +76,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 4 DECLINES a window whose reconstructed entry point does not decode as a legal instruction"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 4 DECLINES a window whose reconstructed entry point does not decode as a legal instruction"
         status: pass
       - kind: other
         ref: "observed RED against the unfixed scan before the fix — a $02 (jam) target changed nothing pre-fix"
@@ -87,7 +87,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 4: the stack-return dispatch idiom is found even though it contains no indirect-jump opcode"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 4: the stack-return dispatch idiom is found even though it contains no indirect-jump opcode"
         status: pass
     human_judgment: false
   - id: D4
@@ -95,13 +95,13 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as the zero-page vector shape's interior control"
+        ref: "src/mcp/vice/anno-coverage.test.ts#NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as the zero-page vector shape's interior control"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every shape the dispatch predicate accepts is claimed by an interior declaration"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every shape the dispatch predicate accepts is claimed by an interior declaration"
         status: pass
     human_judgment: false
   - id: D5
@@ -109,7 +109,7 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a PROVEN split table survives an unrelated indexed load between its two halves (WR-15)"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a PROVEN split table survives an unrelated indexed load between its two halves (WR-15)"
         status: pass
       - kind: other
         ref: "observed RED against the unfixed loop before the fix — proven 0 / advisory 2 / proven targets 0, recorded in ## Fail-First Record"
@@ -120,13 +120,13 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#only a PROVEN pairing consumes its leading load, and at most one advisory candidate is emitted per leading load"
+        ref: "src/mcp/vice/anno-coverage.test.ts#only a PROVEN pairing consumes its leading load, and at most one advisory candidate is emitted per leading load"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 3 DECLINES an ordinary two-table indexed read loop"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 3 DECLINES an ordinary two-table indexed read loop"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a false-positive control fixture is committed for the census, and the census declines to inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a false-positive control fixture is committed for the census, and the census declines to inflate on it"
         status: pass
     human_judgment: false
   - id: D7
@@ -134,10 +134,10 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the coverage module contains no file-write call, no project-save call and no live-session import"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the coverage module contains no file-write call, no project-save call and no live-session import"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
         status: pass
     human_judgment: false
 
@@ -188,8 +188,8 @@ Both are recorded **fixed-and-cited**:
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` — the gated class-4 scan, the extracted `isPlausibleEntryPoint()` predicate, and the corrected class-3 leading-load consumption rule
-- `src/mcp/vice/r2000-coverage.test.ts` — the class-4 negative controls with their interior declarations, the rebuilt `STACK_RETURN` fixture, the WR-15 two-payload comparison, the multi-advisory non-vacuity payload, and the `polarity` field on every declaration row
+- `src/mcp/vice/anno-coverage.ts` — the gated class-4 scan, the extracted `isPlausibleEntryPoint()` predicate, and the corrected class-3 leading-load consumption rule
+- `src/mcp/vice/anno-coverage.test.ts` — the class-4 negative controls with their interior declarations, the rebuilt `STACK_RETURN` fixture, the WR-15 two-payload comparison, the multi-advisory non-vacuity payload, and the `polarity` field on every declaration row
 - `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/deferred-items.md` — item 3, the load-sensitive session timeout test
 
 ## Fail-First Record
@@ -232,7 +232,7 @@ This plan changed a **committed assertion**, deliberately, and the change is a c
 | | value |
 |---|---|
 | **Old** table bytes | hi `c0 c0 c0` at `$c010`, lo `05 05 05` at `$c013` |
-| **Old** asserted `idiom.targets` | `[0xc006, 0xc006, 0xc006]` (`r2000-coverage.test.ts:764` pre-fix) |
+| **Old** asserted `idiom.targets` | `[0xc006, 0xc006, 0xc006]` (`anno-coverage.test.ts:764` pre-fix) |
 | **New** table bytes | hi `c0 c0 c0` at `$c010`, lo `09 0b 0d` at `$c013` |
 | **New** asserted `idiom.targets` | `[0xc00a, 0xc00c, 0xc00e]` |
 
@@ -292,7 +292,7 @@ The shape-coverage test now counts only `negative` interior rows, so 19-10's rul
 
 | check | result |
 |---|---|
-| `cd src/mcp/vice && node --test r2000-coverage.test.ts` | exit 0 — `# tests 69 / # pass 69 / # fail 0` (was 66 before this plan) |
+| `cd src/mcp/vice && node --test anno-coverage.test.ts` | exit 0 — `# tests 69 / # pass 69 / # fail 0` (was 66 before this plan) |
 | `cd src/mcp/vice && npm test` (FULL suite, not `test:automated`) | **`# tests 2578 / # suites 24 / # pass 2533 / # fail 0 / # skipped 40 / # todo 5`** |
 | `cd src/mcp/vice && npx tsc --noEmit -p tsconfig.json` | exit 0 |
 | `node scripts/check-npm-packages.mjs` | exit 0 |
@@ -303,7 +303,7 @@ The shape-coverage test now counts only `negative` interior rows, so 19-10's rul
 | `git diff` on `COVERAGE_SCHEMA_VERSION` / `COVERAGE_REPORT_KEYS` | no change; schema stays at version 2 |
 | `19-REVIEW.md` byte-unchanged | confirmed — `git status --porcelain` on it is empty |
 | every commit subject carries `[skip release]` | confirmed (3 commits) |
-| source-level read-only assertion over `r2000-coverage.ts` | passes — COV-01 / concurrency unaffected |
+| source-level read-only assertion over `anno-coverage.ts` | passes — COV-01 / concurrency unaffected |
 | FP2 interior control from 19-10 | still `splitTables` empty, `provenDispatchTargets` empty, `classAt($0840)` unreached |
 
 ## Decisions Made
@@ -320,7 +320,7 @@ See `key-decisions` in the frontmatter. The two that most change how the module 
 - **Found during:** Task 1
 - **Issue:** The plan said to "port" class 3's conditions (b) and (e) to class 4 and explicitly "do not re-derive them". Condition (e) was an inline arrow function inside the class-3 loop, so a literal port would have produced a second copy of the same four lines. WR-14 existed for exactly as long as that test lived in only one of the two halves of the seam; two copies would let them drift apart again.
 - **Fix:** Extracted the predicate to a single `isPlausibleEntryPoint()` closure alongside `wordAt()`, read by class 3's condition (e) and class 4's condition (d). Class 3's behaviour is byte-identical (`targets.every(isPlausibleEntryPoint)` is the same computation).
-- **Files modified:** `src/mcp/vice/r2000-coverage.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.ts`
 - **Verification:** full suite green; every pre-existing class-3 control (`ORDINARY_INDEXED_COPY`, FP1/FP1b, FP2/FP2b, `SPLIT_TABLE`) unchanged in outcome.
 - **Committed in:** `c95bdaf`
 
@@ -329,7 +329,7 @@ See `key-decisions` in the frontmatter. The two that most change how the module 
 - **Found during:** Task 2
 - **Issue:** The plan requires "at most ONE advisory candidate is emitted per leading load" to be asserted. Neither WR-15 payload has a leading load with more than one candidate pairing in its window, so asserting the property over them would have been vacuous — satisfied by an implementation that could only ever produce one candidate anyway. That is precisely the vacuity class this gap-closure run exists to eliminate.
 - **Fix:** Added a third payload — three indexed loads, no consumer — whose leading load has two possible second loads, and asserted the non-vacuity precondition by counting indexed loads in the decoded window inside the test.
-- **Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.test.ts`
 - **Verification:** the test asserts `indexedLoadsInWindow.length >= 2` before asserting the property.
 - **Committed in:** `084f17a`
 
@@ -338,7 +338,7 @@ See `key-decisions` in the frontmatter. The two that most change how the module 
 - **Found during:** Task 2
 - **Issue:** The WR-15 fix makes the inner loop evaluate more pairings per leading load. The global `truncated = true` was set at `MAX_TABLE_ENTRIES` clamp time, i.e. for pairings that are now discarded — so the fix would have manufactured truncation noise on payloads whose reported findings were never truncated.
 - **Fix:** Moved the global flag set to emission time (proven push, or advisory emission). Behaviour-preserving for the pre-fix path, where the first pairing was always emitted.
-- **Files modified:** `src/mcp/vice/r2000-coverage.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.ts`
 - **Verification:** full suite green; `bounded walk: a table whose entries would chain indefinitely reports truncation and terminates (T-19-12)` still passes.
 - **Committed in:** `084f17a`
 
@@ -347,7 +347,7 @@ See `key-decisions` in the frontmatter. The two that most change how the module 
 - **Found during:** Task 2
 - **Issue:** The plan requires the two WR-15 payloads to be added to `GATE_INTERIOR_DECLARATIONS` "as POSITIVE controls rather than negative ones — record that distinction honestly in the row rather than mislabelling them". The table's own doc comment read "one row per **negative** dispatch control", and the shape-coverage test computed its `claimed` set from *every* interior row. Adding two positive rows without narrowing that filter would have let a positive control silently satisfy a shape's need for an interior negative one — displacing 19-10's rule rather than extending it.
 - **Fix:** Added an explicit `polarity: "negative" | "positive"` field; `claimed` now counts negative interior rows only, the stale-row reverse check spans both polarities, and a new test asserts every declared positive control is actually accepted.
-- **Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.test.ts`
 - **Verification:** `every shape the dispatch predicate accepts is claimed by an interior declaration` and `the declared shape count equals the number of true-returning sites in hasDispatchContext()'s own source` both still pass.
 - **Committed in:** `084f17a`
 
@@ -358,7 +358,7 @@ See `key-decisions` in the frontmatter. The two that most change how the module 
 
 ## Issues Encountered
 
-**A load-sensitive failure in an unrelated test file, on one of two full-suite runs.** `r2000-session.test.ts`'s `stub: a child that answers nothing within the call timeout rejects with R2000TimeoutError, is killed, and the crash counter increases by 1` failed once (`# fail 1`), then passed standalone (`# tests 25 / # pass 25 / # fail 0`) and on an immediate full-suite re-run (`# fail 0`). The test drives a real child process against a wall-clock timeout, so it is sensitive to machine load. This plan touched only `r2000-coverage.ts` and `r2000-coverage.test.ts`, neither of which `r2000-session.test.ts` reads. Logged as `deferred-items.md` item 3 (commit `109231e`) rather than fixed — widening the timeout would be a change to a file outside this plan's scope fence, made on one observation. **The recorded full-suite result is the clean run: `# tests 2578 / # pass 2533 / # fail 0`.**
+**A load-sensitive failure in an unrelated test file, on one of two full-suite runs.** `anno-session.test.ts`'s `stub: a child that answers nothing within the call timeout rejects with AnnoTimeoutError, is killed, and the crash counter increases by 1` failed once (`# fail 1`), then passed standalone (`# tests 25 / # pass 25 / # fail 0`) and on an immediate full-suite re-run (`# fail 0`). The test drives a real child process against a wall-clock timeout, so it is sensitive to machine load. This plan touched only `anno-coverage.ts` and `anno-coverage.test.ts`, neither of which `anno-session.test.ts` reads. Logged as `deferred-items.md` item 3 (commit `109231e`) rather than fixed — widening the timeout would be a change to a file outside this plan's scope fence, made on one observation. **The recorded full-suite result is the clean run: `# tests 2578 / # pass 2533 / # fail 0`.**
 
 ## Known Stubs
 

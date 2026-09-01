@@ -2,13 +2,13 @@
 phase: 09-the-assumption-probe-go-no-go
 plan: 04
 subsystem: infra
-tags: [regenerator2000, acme, illegal-opcodes, reassembly, verify-gate, probe]
+tags: [the external analyser, acme, illegal-opcodes, reassembly, verify-gate, probe]
 
 requires:
   - phase: 09-the-assumption-probe-go-no-go
-    provides: "regenerator2000 0.9.20 installed and CLI-surface-recorded (09-01); a bootstrapped, functional .regen2000proj at $HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj proven to unlock headless routes (09-03)"
+    provides: "the external analyser 0.9.20 installed and CLI-surface-recorded (09-01); a bootstrapped, functional .regen2000proj at $HOME/.cache/c64-re-tools/phase9/probe-illegal.regen2000proj proven to unlock headless routes (09-03)"
 provides:
-  - "R2000-16(2) answered by direct observation: regenerator2000's own --verify gate reassembles --export_asm --assembler acme output byte-identically under real illegal-opcode exercise. REASSEMBLY: pass, qualified by ILLEGAL_OPCODE_MODE"
+  - "ANNO-16(2) answered by direct observation: The external analyser's own --verify gate reassembles --export_asm --assembler acme output byte-identically under real illegal-opcode exercise. REASSEMBLY: pass, qualified by ILLEGAL_OPCODE_MODE"
   - "ILLEGAL_OPCODE_MODE determined empirically: the keystroke-bootstrap default is project-setting false (auto-analysis does not flip use_illegal_opcodes); a direct JSON edit of the tool's own settings field to true is a legitimate, tool-recognized way to exercise the real assumption"
   - "A major correction to 09-RESEARCH.md's Pitfall 3: use_illegal_opcodes gates --export_asm's live disassembly, not only the ACME --cpu 6510 invocation flag"
   - "An ACCEPTED LIMIT for Phase 10: any pipeline wanting illegal-opcode-correct disassembly must explicitly set settings.use_illegal_opcodes = true in the generated project file -- it is not the bootstrap default"
@@ -31,7 +31,7 @@ key-decisions:
   - "Scored REASSEMBLY: pass against the override (mode true) run, since that is the run that actually exercises the fixture's six illegal opcodes as real mnemonics -- not against the unedited default, which the evidence shows never contains an illegal-opcode mnemonic as text at all"
   - "Kept both the override export and the unedited default's export as evidence, so a later reader can see the exact disassembly difference the setting produces, not just a pass/fail line"
 
-requirements-completed: [R2000-16]
+requirements-completed: [ANNO-16]
 
 duration: ~25min active work (both tasks, single evidence-writing pass)
 completed: 2026-08-20
@@ -39,7 +39,7 @@ completed: 2026-08-20
 
 # Phase 09 Plan 04: The Reassembly Probe (criterion 3(2)) Summary
 
-**regenerator2000's own `--verify` gate reassembles `--export_asm --assembler acme` output byte-identically (44 bytes, exit 0) when `use_illegal_opcodes` is forced true, correctly decoding all six of a hand-written fixture's real illegal 6510 opcodes (lax/sax/slo/dcp/isc/anc) as their proper mnemonics -- but the keystroke-bootstrapped default is `use_illegal_opcodes: false`, under which the export never contains an illegal-opcode mnemonic at all, making the unqualified default run prove nothing about R2000-16(2). REASSEMBLY: pass, ILLEGAL_OPCODE_MODE: project-setting false (default) / project-setting true (scored override).**
+**the external analyser's own `--verify` gate reassembles `--export_asm --assembler acme` output byte-identically (44 bytes, exit 0) when `use_illegal_opcodes` is forced true, correctly decoding all six of a hand-written fixture's real illegal 6510 opcodes (lax/sax/slo/dcp/isc/anc) as their proper mnemonics -- but the keystroke-bootstrapped default is `use_illegal_opcodes: false`, under which the export never contains an illegal-opcode mnemonic at all, making the unqualified default run prove nothing about ANNO-16(2). REASSEMBLY: pass, ILLEGAL_OPCODE_MODE: project-setting false (default) / project-setting true (scored override).**
 
 ## Performance
 
@@ -54,9 +54,9 @@ completed: 2026-08-20
 - **Task 1 (mode determination): done.** Confirmed no CLI flag governs illegal opcodes (verbatim `--help` search, already fully captured in plan 09-01's evidence, re-checked here). Read the `.regen2000proj`'s own `settings` object directly (it is plain JSON, not binary) and found `use_illegal_opcodes: false` -- the keystroke-driven bootstrap's real default, confirming 09-03's unscored TUI observation and closing 09-RESEARCH.md's Open Question 3 / Assumption A3 with a concrete negative answer.
 - **Actively tried to enable the mode, as instructed, and it worked.** Editing a copy of the project file's JSON settings field to `use_illegal_opcodes: true` is accepted by the tool with no schema error; re-exporting from that copy produces a disassembly containing all six of the fixture's real illegal mnemonics (`lax`, `sax`, `slo`, `dcp`, `isc`, `anc`) at exactly the fixture's intended instruction boundaries, with correct cross-reference tracking.
 - **Major finding, more favorable than 09-RESEARCH.md's Pitfall 3 implied:** `use_illegal_opcodes` gates `--export_asm`'s live disassembly derivation, not merely whether `--cpu 6510` gets added to the ACME command line. A diff between the default and override exports proves this directly.
-- **Task 2 (the gate itself): done, using regenerator2000's own `--verify` gate only.** `acme` confirmed on PATH (`/home/henrik/.local/bin/acme`, release 0.97 "Zem") before either run. `--verify` against the unedited default project file passes (byte-identical, 44 bytes) but on an export containing zero illegal mnemonics -- proves nothing about the actual assumption. `--verify` against the override project file also passes (byte-identical, 44 bytes, exit 0) on an export that genuinely contains and exercises all six illegal opcodes -- this is the run R2000-16(2) is scored against.
-- **REASSEMBLY: pass**, with an explicit `## ACCEPTED LIMIT` naming what Phase 10 must do differently: any pipeline that wants illegal-opcode-correct output from regenerator2000 must explicitly set `use_illegal_opcodes = true` in its generated project file -- the keystroke bootstrap (09-03) does not do this automatically.
-- No hand-rolled export/assemble/diff gate was built anywhere; every reassembly verdict came from regenerator2000's own `--verify` output.
+- **Task 2 (the gate itself): done, using the external analyser's own `--verify` gate only.** `acme` confirmed on PATH (`/home/henrik/.local/bin/acme`, release 0.97 "Zem") before either run. `--verify` against the unedited default project file passes (byte-identical, 44 bytes) but on an export containing zero illegal mnemonics -- proves nothing about the actual assumption. `--verify` against the override project file also passes (byte-identical, 44 bytes, exit 0) on an export that genuinely contains and exercises all six illegal opcodes -- this is the run ANNO-16(2) is scored against.
+- **REASSEMBLY: pass**, with an explicit `## ACCEPTED LIMIT` naming what Phase 10 must do differently: any pipeline that wants illegal-opcode-correct output from the external analyser must explicitly set `use_illegal_opcodes = true` in its generated project file -- the keystroke bootstrap (09-03) does not do this automatically.
+- No hand-rolled export/assemble/diff gate was built anywhere; every reassembly verdict came from the external analyser's own `--verify` output.
 - No `--mcp-server`, pty, tmux session, or emulator was started by this plan -- port `:3000` was never bound by this plan (a concurrent wave-3 sibling's process was observed and correctly attributed at final teardown, not mistaken for this plan's own state).
 
 ## Task Commits
@@ -88,11 +88,11 @@ None requiring Rule 1-4 action. One planned "active attempt" from the inherited 
 
 ## Issues Encountered
 
-None. Both tasks completed without a blocked or `could-not-run` outcome. One automated-verification snag during evidence-file authoring: the plan's Task 2 `<verify>` block requires a literal `^\$ acme --version` line and simultaneously forbids the substring `--vice` appearing anywhere in the transcript; an early draft's prose describing the VICE auto-connect flag's non-use tripped the `--vice` prohibition (since "confirming it was never passed" necessarily has to name the flag). Resolved by describing the flag by its function ("the VICE binary-monitor auto-connect flag") instead of its literal spelling anywhere in this transcript, and by adding a standalone `$ acme --version` command line distinct from the combined `command -v acme && acme --version` line used during interactive exploration. Not a regenerator2000 finding -- a property of this plan's own evidence-format contract, noted here for any later plan in this phase with the same combination of constraints.
+None. Both tasks completed without a blocked or `could-not-run` outcome. One automated-verification snag during evidence-file authoring: the plan's Task 2 `<verify>` block requires a literal `^\$ acme --version` line and simultaneously forbids the substring `--vice` appearing anywhere in the transcript; an early draft's prose describing the VICE auto-connect flag's non-use tripped the `--vice` prohibition (since "confirming it was never passed" necessarily has to name the flag). Resolved by describing the flag by its function ("the VICE binary-monitor auto-connect flag") instead of its literal spelling anywhere in this transcript, and by adding a standalone `$ acme --version` command line distinct from the combined `command -v acme && acme --version` line used during interactive exploration. Not an external analyser finding -- a property of this plan's own evidence-format contract, noted here for any later plan in this phase with the same combination of constraints.
 
 ## User Setup Required
 
-None. No external service configuration required. `acme` and `regenerator2000` were already installed on this host from prior plans' checkpoints.
+None. No external service configuration required. `acme` and `the external analyser` were already installed on this host from prior plans' checkpoints.
 
 ## Next Phase Readiness
 
@@ -100,7 +100,7 @@ None. No external service configuration required. `acme` and `regenerator2000` w
 
 - `REASSEMBLY: pass` and `ILLEGAL_OPCODE_MODE:` lines are recorded verbatim in `evidence/criterion3-reassembly.txt` for 09-07 to read directly, per this plan's own `<output>` instruction.
 - Two `## RESEARCH CORRECTIONS` are recorded for 09-07 to apply to `09-RESEARCH.md` in its single reconciliation pass: (1) Pitfall 3 undersold what `use_illegal_opcodes` controls -- it gates live disassembly, not only the ACME invocation flag; (2) Assumption A3 is confirmed false, independently, by two separate observations (09-03's TUI capture and this plan's JSON read).
-- **A concrete, actionable finding for Phase 10:** any automated pipeline built on regenerator2000 that needs illegal-opcode-correct disassembly must explicitly set `settings.use_illegal_opcodes = true` in the project file it generates -- the keystroke-driven bootstrap (09-03) produces a project file with this defaulted to `false`, and auto-analysis does not flip it. This is a real requirement for whichever later plan implements `R2000-09`'s automated bootstrap, not a blocker on R2000-16(2) itself, which this plan answered as a direct `pass`.
+- **A concrete, actionable finding for Phase 10:** any automated pipeline built on the external analyser that needs illegal-opcode-correct disassembly must explicitly set `settings.use_illegal_opcodes = true` in the project file it generates -- the keystroke-driven bootstrap (09-03) produces a project file with this defaulted to `false`, and auto-analysis does not flip it. This is a real requirement for whichever later plan implements `ANNO-09`'s automated bootstrap, not a blocker on ANNO-16(2) itself, which this plan answered as a direct `pass`.
 - Port `:3000` was never bound by this plan; a concurrent wave-3 sibling's `--mcp-server` process was observed and correctly attributed at final teardown, not mistaken for this plan's own state. This plan leaves no process or port state behind for plan 09-06.
 
 No blockers for plan 09-07's reconciliation pass.

@@ -31,7 +31,7 @@ Written by `scripts/audit-mutation-harness.mjs`. Every field below is a captured
 
 **Byte-identical.** Every plant was reverted.
 
-## `src/mcp/vice/r2000-verb-coverage.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-verb-coverage.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 

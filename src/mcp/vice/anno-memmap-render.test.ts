@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   parseProvenanceHeader,
-  R2000ProvenanceHeaderError,
+  AnnoProvenanceHeaderError,
   renderMemoryMap,
   checkRenderedMemoryMap,
   escapeMarkdownCell,
@@ -79,8 +79,8 @@ test("parseProvenanceHeader({}) throws listing ALL missing required keys in one 
   assert.throws(
     () => parseProvenanceHeader({}),
     (err: unknown) => {
-      assert.ok(err instanceof R2000ProvenanceHeaderError);
-      const typed = err as R2000ProvenanceHeaderError;
+      assert.ok(err instanceof AnnoProvenanceHeaderError);
+      const typed = err as AnnoProvenanceHeaderError;
       const requiredKeys = [
         "capturePath",
         "captureSha256",
@@ -107,8 +107,8 @@ test("parseProvenanceHeader refuses a template-placeholder captureSha256 and vid
   assert.throws(
     () => parseProvenanceHeader({ ...VALID_HEADER, captureSha256: "<hash>", videoStandard: "<PAL/NTSC>" }),
     (err: unknown) => {
-      assert.ok(err instanceof R2000ProvenanceHeaderError);
-      const typed = err as R2000ProvenanceHeaderError;
+      assert.ok(err instanceof AnnoProvenanceHeaderError);
+      const typed = err as AnnoProvenanceHeaderError;
       assert.match(typed.message, /captureSha256:.*placeholder/);
       assert.match(typed.message, /videoStandard:.*placeholder/);
       return true;
@@ -120,7 +120,7 @@ test("parseProvenanceHeader refuses a bad hash length", () => {
   assert.throws(
     () => parseProvenanceHeader({ ...VALID_HEADER, captureSha256: "deadbeef" }),
     (err: unknown) => {
-      assert.ok(err instanceof R2000ProvenanceHeaderError);
+      assert.ok(err instanceof AnnoProvenanceHeaderError);
       assert.match((err as Error).message, /captureSha256:.*64 hex/);
       return true;
     },
@@ -131,7 +131,7 @@ test("parseProvenanceHeader refuses a videoStandard value that is neither a plac
   assert.throws(
     () => parseProvenanceHeader({ ...VALID_HEADER, videoStandard: "SECAM" }),
     (err: unknown) => {
-      assert.ok(err instanceof R2000ProvenanceHeaderError);
+      assert.ok(err instanceof AnnoProvenanceHeaderError);
       assert.match((err as Error).message, /videoStandard:.*PAL.*NTSC/);
       return true;
     },
@@ -139,14 +139,14 @@ test("parseProvenanceHeader refuses a videoStandard value that is neither a plac
 });
 
 test("parseProvenanceHeader refuses a malformed rasterPositions", () => {
-  assert.throws(() => parseProvenanceHeader({ ...VALID_HEADER, rasterPositions: "not-an-array" }), R2000ProvenanceHeaderError);
-  assert.throws(() => parseProvenanceHeader({ ...VALID_HEADER, rasterPositions: [1, 2] }), R2000ProvenanceHeaderError);
+  assert.throws(() => parseProvenanceHeader({ ...VALID_HEADER, rasterPositions: "not-an-array" }), AnnoProvenanceHeaderError);
+  assert.throws(() => parseProvenanceHeader({ ...VALID_HEADER, rasterPositions: [1, 2] }), AnnoProvenanceHeaderError);
 });
 
 test("parseProvenanceHeader refuses a non-object payload", () => {
-  assert.throws(() => parseProvenanceHeader(null), R2000ProvenanceHeaderError);
-  assert.throws(() => parseProvenanceHeader([1, 2]), R2000ProvenanceHeaderError);
-  assert.throws(() => parseProvenanceHeader("a string"), R2000ProvenanceHeaderError);
+  assert.throws(() => parseProvenanceHeader(null), AnnoProvenanceHeaderError);
+  assert.throws(() => parseProvenanceHeader([1, 2]), AnnoProvenanceHeaderError);
+  assert.throws(() => parseProvenanceHeader("a string"), AnnoProvenanceHeaderError);
 });
 
 // ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ test("RENDERER_VERSION is bumped to \"3\" for the store re-point -- the digest's
   // Version 2 pinned the Markdown-cell-escaping output-shape change (WR-04).
   // Version 3 pins D-17: `computeRenderDigest()` canonicalises the store's own
   // `RangeRow`/`LabelRow`/`CommentRow` instead of the three
-  // `r2000_get_*` wire shapes, so the SAME underlying annotations hash
+  // `anno_get_*` wire shapes, so the SAME underlying annotations hash
   // differently either side of that commit. An unchanged version across that
   // boundary would let two incompatible renderings compare as ordinary drift.
   assert.equal(RENDERER_VERSION, "3");
@@ -321,10 +321,9 @@ test("the surviving measurement-provenance paragraph STATES the version-2 wire s
   // Read as BYTES and search in-process. This module carries a literal NUL, so
   // GNU grep classifies it as binary and prints "binary file matches" instead
   // of lines -- the blindness that produced three false "zero local imports"
-  // measurements before D-17. The COUNT and LINE of the one exempted mention
-  // are pinned by the removal gate and by removal-gate.test.ts; what is pinned
-  // HERE is that the paragraph still has a live subject, which is the only
-  // thing that entitles it to a permanent exemption.
+  // measurements before D-17. What is pinned HERE is that the paragraph still
+  // has a live subject; the removal gate that separately pinned the count and
+  // line of its one exempted mention has since been retired.
   const bytes = readFileSync(join(HERE, "anno-memmap-render.ts"));
   assert.ok(bytes.includes(0x00), "the NUL byte that makes this a grep-blind file must still be here");
   const source = bytes.toString("utf8");
@@ -335,16 +334,16 @@ test("the surviving measurement-provenance paragraph STATES the version-2 wire s
   // It must CARRY the three shapes, because the three `interface` blocks it
   // used to sit above are gone -- a comment above a hole is not a record.
   for (const spelling of [
-    "r2000_get_blocks",
+    "anno_get_blocks",
     "{start_address, end_address, type}",
-    "r2000_get_symbols",
+    "anno_get_symbols",
     "{address, name, kind, type}",
-    "r2000_get_comments",
+    "anno_get_comments",
     "{address, comment, type}",
   ]) {
     assert.ok(source.includes(spelling), `the paragraph must state ${spelling} inline`);
   }
-  for (const declaration of ["interface R2000Block", "interface R2000Symbol", "interface R2000Comment"]) {
+  for (const declaration of ["interface AnnoBlock", "interface AnnoSymbol", "interface AnnoComment"]) {
     assert.ok(!source.includes(declaration), `${declaration} must be gone -- the digest no longer names it`);
   }
 

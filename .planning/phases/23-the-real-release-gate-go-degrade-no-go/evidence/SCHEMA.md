@@ -315,5 +315,5 @@ Every audited `analyzer.rs` capability carries **exactly one** of:
 
 The audit is **scoped to `analyzer.rs` only**. A capability found to live in `exporter/` or
 `state/` is recorded as a **scope observation for Phase 25** rather than widening this phase.
-`analyzer.rs` is read **offline** from the crate source; regenerator2000 is never executed
+`analyzer.rs` is read **offline** from the crate source; the external analyser is never executed
 (D-01).

@@ -2,15 +2,15 @@
 phase: 10-adoption-boundaries-automated-bootstrap-and-the-removal
 plan: 06
 subsystem: skills
-tags: [acme-build, c64-program-recon, r2000, deletion, toacme, regenerator2000, d-12]
+tags: [acme-build, c64-program-recon, anno, deletion, toacme, the external analyser, d-12]
 
 # Dependency graph
 requires:
   - phase: 10-adoption-boundaries-automated-bootstrap-and-the-removal
-    provides: "r2000-cli.ts's export-asm/verify verbs (10-04), r2000-verify.ts and the live reassembly evidence transcript (10-05) -- the proven replacement route this plan earns the right to delete toacme against"
+    provides: "anno-cli.ts's export-asm/verify verbs (10-04), anno-verify.ts and the live reassembly evidence transcript (10-05) -- the proven replacement route this plan earns the right to delete toacme against"
 provides:
   - "acme-build's three-verb acme.mjs (new/build/sym), wrapping acme alone, no toacme dependency anywhere in the tool surface"
-  - "One documented replacement route (vice-mcp r2000 export-asm/verify), pointed at from both acme-build/SKILL.md and c64-program-recon/SKILL.md, neither carrying a duplicate copy of the other's wording (D-12)"
+  - "One documented replacement route (vice-mcp anno export-asm/verify), pointed at from both acme-build/SKILL.md and c64-program-recon/SKILL.md, neither carrying a duplicate copy of the other's wording (D-12)"
   - "A widened whole-tree completeness gate (--include='*.md' --include='*.mjs' across .claude/skills), proven live to catch a reintroduced reference in a references/ page a narrower --include=SKILL.md gate could not see"
 affects: ["10-07", "10-08 (owns the permanent CI regression assertion for this deletion)"]
 
@@ -31,21 +31,21 @@ key-files:
     - .claude/skills/c64-provenance-diff/SKILL.md
 
 key-decisions:
-  - "Kept the `## Disassembly` heading in acme-build/SKILL.md rather than removing it -- replaced its body with a short pointer (route, why the old caveats no longer apply, and the r2000 verify evidence path) rather than deleting the section entirely, so a reader following the file's existing structure still lands somewhere relevant"
-  - "Placed c64-program-recon's new pointer section (## Static disassembly) before ## Before you touch the emulator, distinguishing the static r2000 route from the live-RAM vice_disassemble route already in the tool-selection.md table, per D-12's 'one implementation, referenced from wherever needed' rule"
-  - "Folded tool-selection.md's two competing rows (the stale toacme 'fast first-pass listing' row and the regenerator2000 'still MEDIUM' row) into one row naming the proven route and citing the live verify evidence, rather than editing the two rows separately -- the plan's own instruction, to avoid ending up with two disassembly options where one names a deleted verb"
+  - "Kept the `## Disassembly` heading in acme-build/SKILL.md rather than removing it -- replaced its body with a short pointer (route, why the old caveats no longer apply, and the anno verify evidence path) rather than deleting the section entirely, so a reader following the file's existing structure still lands somewhere relevant"
+  - "Placed c64-program-recon's new pointer section (## Static disassembly) before ## Before you touch the emulator, distinguishing the static anno route from the live-RAM vice_disassemble route already in the tool-selection.md table, per D-12's 'one implementation, referenced from wherever needed' rule"
+  - "Folded tool-selection.md's two competing rows (the stale toacme 'fast first-pass listing' row and the external analyser 'still MEDIUM' row) into one row naming the proven route and citing the live verify evidence, rather than editing the two rows separately -- the plan's own instruction, to avoid ending up with two disassembly options where one names a deleted verb"
   - "Reworded one explanatory sentence in acme-build/SKILL.md's replacement pointer ('a flat linear decoder' instead of naming toacme) to avoid tripping the file's own zero-toacme-references acceptance criterion -- the same grep-gate hygiene issue plans 10-01/10-04/10-05 each documented for their own literal-substring collisions"
 
-requirements-completed: [R2000-05]
+requirements-completed: [ANNO-05]
 
 # Metrics
 duration: ~20min
 completed: 2026-08-20
 ---
 
-# Phase 10 Plan 06: Delete cmdDisasm, point both skills at the proven r2000 route Summary
+# Phase 10 Plan 06: Delete cmdDisasm, point both skills at the proven anno route Summary
 
-**The 14-line `toacme` wrapper (`cmdDisasm`), its dispatch entry, its usage line, and ~50 lines of SKILL.md caveats structural to a flat linear decoder are gone; `acme-build` and `c64-program-recon` now both point at the single, live-verified `vice-mcp r2000 export-asm`/`verify` route, and a widened whole-tree grep gate — proven to bite on a non-`SKILL.md` file — confirms zero `disasm`/`toacme` references survive anywhere under `.claude/skills/`.**
+**The 14-line `toacme` wrapper (`cmdDisasm`), its dispatch entry, its usage line, and ~50 lines of SKILL.md caveats structural to a flat linear decoder are gone; `acme-build` and `c64-program-recon` now both point at the single, live-verified `vice-mcp anno export-asm`/`verify` route, and a widened whole-tree grep gate — proven to bite on a non-`SKILL.md` file — confirms zero `disasm`/`toacme` references survive anywhere under `.claude/skills/`.**
 
 ## Performance
 
@@ -58,7 +58,7 @@ completed: 2026-08-20
 
 - Deleted `cmdDisasm()` from `acme.mjs` in full (the function, its `toacme` header comment, its `VERBS` dispatch entry, and its usage line). The script's three surviving verbs (`new`, `build`, `sym`) still run correctly; `readFileSync` stayed imported since `cmdNew` and `build()` still use it. Verified live: bare `node acme.mjs` prints a three-verb usage and exits 0; `node acme.mjs disasm foo.prg` now exits 1 as an unknown verb; `node acme.mjs new <tmp>.a` still exits 0.
 - Stripped `acme-build/SKILL.md` of every sentence that existed only because of `toacme`'s flat linear decode: the frontmatter description's dangling verb clause, the `disasm` synopsis line, the entire ~50-line `## Disassembly` caveat section (out-of-range labels, illegal-opcode re-indentation, the `.dis.a`→`.dis.asm` Read-tool workaround), the `toacme` half of the Setup paragraph, and the stale "and a first-pass dead listing back" clause in the cross-skill table.
-- Replaced the vacated `## Disassembly` section with a short pointer: names regenerator2000 as a **required prerequisite**, quotes both invocation forms verbatim from `10-04-SUMMARY.md` (`npx -y @henols/vice-mcp r2000 export-asm game.prg` and the in-repo `vice-proxy.ts r2000 export-asm` form), states in one sentence why the caveats are gone (a recursive-descent disassembler with an auto-analyzer doesn't render strings/tables/the BASIC stub as instructions), and points at `vice-mcp r2000 verify` plus the committed live evidence transcript from plan 10-05 — without restating the route's mechanics (D-12).
+- Replaced the vacated `## Disassembly` section with a short pointer: names the external analyser as a **required prerequisite**, quotes both invocation forms verbatim from `10-04-SUMMARY.md` (`npx -y @henols/vice-mcp anno export-asm game.prg` and the in-repo `vice-proxy.ts anno export-asm` form), states in one sentence why the caveats are gone (a recursive-descent disassembler with an auto-analyzer doesn't render strings/tables/the BASIC stub as instructions), and points at `vice-mcp anno verify` plus the committed live evidence transcript from plan 10-05 — without restating the route's mechanics (D-12).
 - Added a `## Static disassembly` section to `c64-program-recon/SKILL.md` — the skill's first mention of the route at all — distinguishing it from the live-RAM `vice_disassemble` route already named in `references/tool-selection.md` (static, over a file on disk, vs. reading a running emulator's RAM at a checkpoint), and stating the D-02 `.d64` rule (name the entry file explicitly; the tool lists the directory and refuses rather than guess).
 - Corrected all **four** stale cross-skill rows, not just the two PATTERNS.md's blast-radius table enumerated: the three "Assembling, or a first-pass dead listing | `acme-build`" rows in `c64-program-recon/SKILL.md`, `c64-ram-capture/SKILL.md` and `c64-provenance-diff/SKILL.md` (now "Assembling | `acme-build`", plus a new dedicated disassembly row in the recon file), and the `references/tool-selection.md` row that survived every earlier `--include=SKILL.md` pass because it is a `.md` file not literally named `SKILL.md` — folded its stale `toacme`/"still MEDIUM" rows into one row naming the proven route and citing the live `--verify` evidence.
 - Ran the widened whole-tree gate (`grep -rniE 'disasm|toacme' .claude/skills --include='*.md' --include='*.mjs'`, excluding `c64-provenance-diff`'s `evidence: "disasm"` provenance-ledger string) — zero lines. Then proved the gate itself is not vacuous: temporarily appended a `toacme` marker line to `tool-selection.md`, re-ran the gate, confirmed it failed naming exactly that file and line, and reverted the file to its clean, intentional state (confirmed via `git diff` showing only the intended one-row fold, no stray marker).
@@ -76,7 +76,7 @@ Each task was committed atomically:
 ## Files Created/Modified
 
 - `.claude/skills/acme-build/scripts/acme.mjs` - `cmdDisasm()` deleted in full, `VERBS` table down to `{ new, build, sym }`, usage block's `disasm` line removed
-- `.claude/skills/acme-build/SKILL.md` - frontmatter description, synopsis, scope sentence, `## Disassembly` section, Setup paragraph and cross-skill table all corrected; short r2000 pointer added in the vacated section
+- `.claude/skills/acme-build/SKILL.md` - frontmatter description, synopsis, scope sentence, `## Disassembly` section, Setup paragraph and cross-skill table all corrected; short anno pointer added in the vacated section
 - `.claude/skills/c64-program-recon/SKILL.md` - new `## Static disassembly` section; cross-skill table row split into "Assembling" + a new disassembly row
 - `.claude/skills/c64-program-recon/references/tool-selection.md` - the stale `toacme`/"still MEDIUM" rows folded into one row naming the proven route
 - `.claude/skills/c64-ram-capture/SKILL.md` - cross-skill table row corrected
@@ -126,13 +126,13 @@ None. `acme` (0.97 "Zem") was already installed on this host; `toacme` is no lon
 
 ## Next Phase Readiness
 
-- The deletion this milestone earned (criterion 4, R2000-05) is complete: `acme-build` wraps `acme` alone, both consuming skills point at the same proven route, and all four stale cross-skill rows (three `SKILL.md` rows plus the `references/tool-selection.md` row a narrow gate could not see) are corrected.
+- The deletion this milestone earned (criterion 4, ANNO-05) is complete: `acme-build` wraps `acme` alone, both consuming skills point at the same proven route, and all four stale cross-skill rows (three `SKILL.md` rows plus the `references/tool-selection.md` row a narrow gate could not see) are corrected.
 - Plan 10-08 still owns the permanent CI regression assertion (`scripts/check-skill-fork-honesty.mjs`-style guard) for this deletion — nothing in this plan duplicates that file.
 - No blockers.
 
 ## Threat Flags
 
-None. This plan only deletes stale documentation/tooling references and adds pointer prose to an already-existing, already-guarded route (`vice-mcp r2000 …`); it introduces no new network endpoint, auth path, file-access pattern, or schema change at a trust boundary beyond what plans 10-04/10-05 already covered in their own threat models.
+None. This plan only deletes stale documentation/tooling references and adds pointer prose to an already-existing, already-guarded route (`vice-mcp anno …`); it introduces no new network endpoint, auth path, file-access pattern, or schema change at a trust boundary beyond what plans 10-04/10-05 already covered in their own threat models.
 
 ---
 *Phase: 10-adoption-boundaries-automated-bootstrap-and-the-removal*
@@ -144,4 +144,4 @@ None. This plan only deletes stale documentation/tooling references and adds poi
 - FOUND: `.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-06-SUMMARY.md`
 - FOUND commit `f519f53` (feat: delete cmdDisasm)
 - FOUND commit `e224ac7` (docs: strip acme-build SKILL.md caveats)
-- FOUND commit `4c30f01` (docs: point c64-program-recon at r2000 route, fix stale rows)
+- FOUND commit `4c30f01` (docs: point c64-program-recon at anno route, fix stale rows)

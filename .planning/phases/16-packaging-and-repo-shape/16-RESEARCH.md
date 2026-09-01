@@ -101,7 +101,7 @@ literal/comment extraction pattern already proven in `docs-dangling-refs.test.ts
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
 | `node:test` (built-in) | Node ≥22.18 (bundled) | Test runner for the three new CLI-script test files and the new PKG-03 comment-gate test | Already the sole test framework in this repo; no alternative was ever considered here |
-| `node:child_process` `spawnSync` (built-in) | bundled | Exercising `acme.mjs`/`driver.mjs`/`derive.mjs` as real subprocesses (they export no functions except `driver.mjs`'s `lookup`) | Matches the argv-array-never-shell-string discipline `test-gate.mjs`/`r2000-cli.test.ts` already use throughout this repo |
+| `node:child_process` `spawnSync` (built-in) | bundled | Exercising `acme.mjs`/`driver.mjs`/`derive.mjs` as real subprocesses (they export no functions except `driver.mjs`'s `lookup`) | Matches the argv-array-never-shell-string discipline `test-gate.mjs`/`anno-cli.test.ts` already use throughout this repo |
 
 ### Supporting
 | Library | Version | Purpose | When to Use |
@@ -177,7 +177,7 @@ user-facing string — as opposed to a comment mentioning it for narrative purpo
 | `installer/scripts/sync-skills.mjs` | `const SRC = join(REPO_ROOT, ".claude", "skills")` | Update to `join(REPO_ROOT, "src", "skills")` |
 | `.claude/mcp/vice/assumption-label-discipline.test.ts:71` | `const VICE_DIR = join(ROOT, ".claude/mcp/vice")` | Update literal (file itself also moves) |
 | `.claude/mcp/vice/version.test.ts:352` | `readFileSync(join(root, ".claude/mcp/vice/vice-proxy.ts"), "utf8")` — note this hardcodes the directory even though the test lives *inside* it; should arguably become `join(HERE, "vice-proxy.ts")` while being touched anyway | Update literal (prefer `HERE`-relative) |
-| `.claude/mcp/vice/r2000-cli.ts:64` | `PLUGIN_INVOCATION = "node <plugin-root>/.claude/mcp/vice/vice-proxy.ts r2000 <verb>"` — a **user-facing** string shown in CLI usage text | Update literal |
+| `.claude/mcp/vice/anno-cli.ts:64` | `PLUGIN_INVOCATION = "node <plugin-root>/.claude/mcp/vice/vice-proxy.ts anno <verb>"` — a **user-facing** string shown in CLI usage text | Update literal |
 | `.claude/mcp/vice/package.json` `repository.directory` | `"directory": ".claude/mcp/vice"` (npm registry metadata) | Update to `"src/mcp/vice"` |
 | `installer/package.json` `repository.directory` | `"directory": "installer"` | Unchanged (installer itself doesn't move) |
 | `CLAUDE.md` | Dozens of prose mentions of `.claude/mcp/vice/*` throughout every section | Sweep as part of this phase; **the D-07 constraint's `vice-proxy.ts:2889`/`vice-proxy.ts:1368`-style citations are bare filenames, not full paths** (confirmed — see PKG-01 mechanics section below), so line numbers are unaffected by the directory move, only the prose around them |
@@ -424,7 +424,7 @@ hop count against whatever final layout is chosen).
 
 ### Recommended shape: three new test files, subprocess-based
 
-Following this repo's own established pattern (`r2000-cli.test.ts` and
+Following this repo's own established pattern (`anno-cli.test.ts` and
 `disasm-roundtrip.test.ts` both spawn real subprocesses/binaries and gate on an
 availability check), add:
 - `skill-acme-build-cli.test.ts` — spawns `acme.mjs new`/`build`/`sym` against a scratch dir
@@ -438,14 +438,14 @@ availability check), add:
 
 `acme.mjs build`/`sym` need the real `acme` binary. This repo already has exactly this
 problem solved for `disasm-roundtrip.test.ts`, which imports
-`ACME_BIN`/`acmeSkipReasonFor`/`assertAcmeRequiredIfEnvSet` from `r2000-test-gate.ts` (a
+`ACME_BIN`/`acmeSkipReasonFor`/`assertAcmeRequiredIfEnvSet` from `anno-test-gate.ts` (a
 test-only module, deliberately excluded from `package.json`'s `files[]`), and CI already
 sets `VICE_REQUIRE_ACME: "1"` on the `Test` step (turning "ACME absent" from a silent skip
 into a hard failure) after a dedicated CI step installs `acme` via `apt` — see
 `.github/workflows/ci.yml`'s `Install ACME cross-assembler (DISASM-03 round-trip gate)`
 step. **Reuse this exact seam for the new `acme.mjs` test** rather than writing a second,
 parallel ACME-availability check — this is precisely the kind of duplication
-`r2000-test-gate.ts`'s own header warns against (a shared seam existing for exactly this
+`anno-test-gate.ts`'s own header warns against (a shared seam existing for exactly this
 reason).
 
 ### Does the new test belong in `MANUAL_ONLY_TESTS`?
@@ -713,7 +713,7 @@ Fork Backend Follow-on section work) rather than building it now.
 |---------|-------------|-------------|-----|
 | `.mcp.json` merge semantics | A second merge implementation for the plugin route | `wireMcp()` (`installer/bin/cli.mjs:168-201`) | Already correct, already tested by use (npm install route), and the todo's own Solution step 3 says so explicitly |
 | Comment/string extraction for PKG-03 | A regex-based extractor | The existing character-state-machine (`docs-dangling-refs.test.ts:194-294`), inverted to capture comments | A regex extractor was *measured* in this repo to miss a real violation sitting inside a template literal; the state machine is the proven-correct approach |
-| ACME availability gating for the new `acme.mjs` test | A second `command -v acme` check | `r2000-test-gate.ts`'s `ACME_BIN`/`acmeSkipReasonFor`/`assertAcmeRequiredIfEnvSet`, already used by `disasm-roundtrip.test.ts` and already wired into CI via `VICE_REQUIRE_ACME` | One seam, one CI wiring; a second implementation risks the two gates disagreeing about ACME's presence |
+| ACME availability gating for the new `acme.mjs` test | A second `command -v acme` check | `anno-test-gate.ts`'s `ACME_BIN`/`acmeSkipReasonFor`/`assertAcmeRequiredIfEnvSet`, already used by `disasm-roundtrip.test.ts` and already wired into CI via `VICE_REQUIRE_ACME` | One seam, one CI wiring; a second implementation risks the two gates disagreeing about ACME's presence |
 | Repo-root resolution after the move | A fresh relative-path calculation in any new or touched module | `repo-root.ts`'s `repoRoot()`, already depth-aware via its documented branch-4 hop count | This is the exact class of bug the file's own header describes fixing twice before ("a broken invariant with no error anywhere") |
 
 **Key insight:** almost everything this phase needs already exists in this codebase, proven
@@ -901,7 +901,7 @@ relocates and extends.
 | Dependency | Required By | Available | Version | Fallback |
 |------------|------------|-----------|---------|----------|
 | Node.js | Everything in this phase | ✓ | v22.22.0 (verified this session) | — |
-| `acme` cross-assembler | New `acme.mjs` test (build/sym verbs) | Not verified on this exact host this session (the acme-build skill probes `$ACME`/`/usr/local/share/acme`/etc.; CI installs it via `apt` in a dedicated step) | — | The existing `r2000-test-gate.ts` ACME-gate seam already degrades gracefully (skip locally without `VICE_REQUIRE_ACME`, hard-fail in CI where it's provisioned) |
+| `acme` cross-assembler | New `acme.mjs` test (build/sym verbs) | Not verified on this exact host this session (the acme-build skill probes `$ACME`/`/usr/local/share/acme`/etc.; CI installs it via `apt` in a dedicated step) | — | The existing `anno-test-gate.ts` ACME-gate seam already degrades gracefully (skip locally without `VICE_REQUIRE_ACME`, hard-fail in CI where it's provisioned) |
 | Network access | `driver.mjs memmap` verb only | Not needed for the recommended tests (which use `lookup`/`annotate` against the already-committed `memmap.json`) | — | N/A — tests should not invoke `memmap` |
 | A running VICE emulator / broker | None of PKG-01..04 | N/A | — | Not needed this phase |
 

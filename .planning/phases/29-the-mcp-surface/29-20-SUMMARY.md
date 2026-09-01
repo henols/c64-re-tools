@@ -370,7 +370,7 @@ Direction B fires and names the ghost; direction A stays green. **The second red
 | `node scripts/check-npm-packages.mjs` | exit 0 — **78 files / 34 files, 7 skills** | identical to `29-VERIFICATION.md` § Probe Execution |
 | `node scripts/check-skill-fork-honesty.mjs` | exit 0 — 11 fork-only mentions, no stale phase-deferral prose | see deviation 2 |
 | `node scripts/check-skill-description-overlap.mjs` | exit 0 — 21 pairs, max 0.250, threshold 0.35; CLAUDE.md table 7 rows byte-identical | the `description:` YAML was untouched, proven rather than assumed |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 — 392 files, **0 temporarily allow-listed across 0 entries** | unchanged |
+| `node scripts/check-no-analyser.mjs` | exit 0 — 392 files, **0 temporarily allow-listed across 0 entries** | unchanged |
 | `node scripts/generate-tool-support-table.mjs` | wrote `docs/tool-support.md`; `git status --porcelain` **empty** | byte-identical — this plan changes no tool name |
 | `npm --prefix src/mcp/vice run typecheck` | exit 0 | — |
 | `npm --prefix src/mcp/vice run test:automated` | 2752 tests, **2745 pass, 1 fail**, 1 skipped, 5 todo | see below |

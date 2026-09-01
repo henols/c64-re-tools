@@ -39,12 +39,12 @@ Three things stay owned code, deliberately, because measurement says the librari
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
 | `node:sqlite` (`DatabaseSync`) | Built-in. Bundles **SQLite 3.50.4** on the Node 22.22.0 on this host (`SELECT sqlite_version()`, run live). Added Node v22.5.0; flag removed v22.13.0 / v23.4.0 (nodejs/node PR #55890) | The durable store: symbols, comments, typed ranges, scopes, enums, edit journal | The only option that satisfies **all** of: no build step, no dependency, no prerequisite-story change, crash-safe transactions, and a real query language for the search/xref surface. Live-verified: mutate → `SIGKILL` with no `close()` → reopen returns the mutation, `PRAGMA integrity_check` = `ok`. Also verified working under Node's native type-stripping from a `.ts` file, and typechecking clean against the project's already-installed `@types/node` 24.13.3 (`node_modules/@types/node/sqlite.d.ts` exists). |
-| Owned paint-array interval index | new, ~60–120 lines | Narrowest-range-wins address → range lookup over the 64K space | O(1) lookup at **0.018 µs**; full rebuild for 2,700 ranges costs **7.5 ms**, so rebuild-on-mutation is affordable and no incremental-maintenance code is needed. The pattern already exists in this repo: `r2000-coverage.ts`'s `toRuns()` paints a `Uint8Array` then run-length-compacts it. Extend an established seam rather than adding a parallel one (`ENGINEERING_RULES.md` §1). |
+| Owned paint-array interval index | new, ~60–120 lines | Narrowest-range-wins address → range lookup over the 64K space | O(1) lookup at **0.018 µs**; full rebuild for 2,700 ranges costs **7.5 ms**, so rebuild-on-mutation is affordable and no incremental-maintenance code is needed. The pattern already exists in this repo: `anno-coverage.ts`'s `toRuns()` paints a `Uint8Array` then run-length-compacts it. Extend an established seam rather than adding a parallel one (`ENGINEERING_RULES.md` §1). |
 | Owned inverse-command journal | new, one SQLite table | Undo / redo across process restart | Satisfies the milestone's exact durability wording — *mutate → kill → reopen returns the mutation* — because the mutation and its inverse commit in **one** transaction. Measured **1.16 ms/edit** on ext4/NVMe with `synchronous=FULL`, i.e. the same order as a bare `fsync()`: transactional integrity costs nothing above the durability floor. |
 | `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts` | existing, 1,042 lines | The typed decode the store annotates, and the ACME rendering | Already model `illegal-opcode` and `acme-unassemblable` as `DisasmNote`s and already round-trip byte-exact through real ACME (`disasm-roundtrip.test.ts`). `decode(bytes, startAddress, opts)` is the seam the store's typed-range engine calls per `code` range. |
-| `memmap.json` + `r2000-regbits-gen.ts` + `r2000-enum-gen.ts` | existing, 995 lines + 959 address entries | Machine knowledge and project enum generation | Retarget, do not rewrite. `r2000-enum-gen.ts` already owns `registerKeyFor()`, `variantNameFor()`, `pairImmediateLoadsToStores()`, `createOrUpdateEnum()` — the whole enum pipeline. Only its I/O tail (which currently talks to a regenerator2000 project) changes. Note `memmap.json` is **duplicated** at `src/skills/c64-memory-mapping/memmap.json` and `installer/skills/c64-memory-mapping/memmap.json`; the installer copy is synced by `installer/scripts/sync-skills.mjs`, so a retarget must not read the installer copy. |
-| ACME | 0.97 "Zem" (31 Jan 2021), at `/home/henrik/.local/bin/acme` on this host | External oracle for the ACME export | The reassembly gate. **See the correction below** — the route is *not* `r2000-verify.ts`. |
-| `r2000-test-gate.ts` → rename | existing, 166 lines | The shared ACME-availability seam (`ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()`) | This is the surviving ACME gate. It carries an `r2000-` name but is **not** regenerator2000 glue — it must be renamed and kept, and the whole-tree grep gate must not eat it. |
+| `memmap.json` + `anno-regbits-gen.ts` + `anno-enum-gen.ts` | existing, 995 lines + 959 address entries | Machine knowledge and project enum generation | Retarget, do not rewrite. `anno-enum-gen.ts` already owns `registerKeyFor()`, `variantNameFor()`, `pairImmediateLoadsToStores()`, `createOrUpdateEnum()` — the whole enum pipeline. Only its I/O tail (which currently talks to an external analyser project) changes. Note `memmap.json` is **duplicated** at `src/skills/c64-memory-mapping/memmap.json` and `installer/skills/c64-memory-mapping/memmap.json`; the installer copy is synced by `installer/scripts/sync-skills.mjs`, so a retarget must not read the installer copy. |
+| ACME | 0.97 "Zem" (31 Jan 2021), at `/home/henrik/.local/bin/acme` on this host | External oracle for the ACME export | The reassembly gate. **See the correction below** — the route is *not* `anno-verify.ts`. |
+| `anno-test-gate.ts` → rename | existing, 166 lines | The shared ACME-availability seam (`ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()`) | This is the surviving ACME gate. It carries an `anno-` name but is **not** the external analyser glue — it must be renamed and kept, and the whole-tree grep gate must not eat it. |
 
 ### Supporting Libraries
 
@@ -52,9 +52,9 @@ Three things stay owned code, deliberately, because measurement says the librari
 
 | Library | Version present | Status for this milestone |
 |---------|---------|-------------|
-| `@mastra/mcp` | 1.15.0 (declared) | Unchanged. Serves the stdio surface; the store's tools register through `buildViceTool()` at `vice-proxy.ts:3263`, exactly as the 17 `r2000_*` tools do at `:3402`. |
+| `@mastra/mcp` | 1.15.0 (declared) | Unchanged. Serves the stdio surface; the store's tools register through `buildViceTool()` at `vice-proxy.ts:3263`, exactly as the 17 `anno_*` tools do at `:3402`. |
 | `@mastra/core` | 1.55.0 (declared) | Unchanged, untouched. |
-| `@modelcontextprotocol/sdk` | 1.30.0 (transitive) | **Precision correction to a carried belief:** the repo *does* already import it directly — `vice-proxy.ts:174` imports `CallToolRequestSchema` from `@modelcontextprotocol/sdk/types.js`. The prohibition in `r2000-mcp-client.ts`'s header is scoped to that module (a *client* transport), not repo-wide. Do not widen the direct-import surface for the store; it needs nothing from the SDK. |
+| `@modelcontextprotocol/sdk` | 1.30.0 (transitive) | **Precision correction to a carried belief:** the repo *does* already import it directly — `vice-proxy.ts:174` imports `CallToolRequestSchema` from `@modelcontextprotocol/sdk/types.js`. The prohibition in `anno-mcp-client.ts`'s header is scoped to that module (a *client* transport), not repo-wide. Do not widen the direct-import surface for the store; it needs nothing from the SDK. |
 | `zod` | 4.4.3 (transitive, via `@mastra`) | **Do not import.** Undeclared transitive. See "What NOT to Use". |
 | `@types/node` | 24.13.3 (dev) | Already ships `sqlite.d.ts`. No bump needed. Confirmed: `createSession` / `applyChangeset` typed; **no `invert`** anywhere in it. |
 | `typescript` | 7.0.2 (dev) | Typechecks `node:sqlite` usage clean under `--strict --module nodenext`. Verified. |
@@ -64,7 +64,7 @@ Three things stay owned code, deliberately, because measurement says the librari
 | Tool | Purpose | Notes |
 |------|---------|-------|
 | `node --test '*.test.*'` | All store tests | No new framework. Colocated `*.test.ts`. |
-| Real ACME 0.97 | The reassembly oracle for the export | Extend `disasm-roundtrip.test.ts`'s pattern: spawn `acme` with an **argv array** (never a shell string), byte-diff the result, and never treat an ACME stderr *warning* as failure (ACME 0.97 documents warnings on stderr). Gate through `r2000-test-gate.ts`'s `acmeSkipReasonFor()` / `VICE_REQUIRE_ACME`, so CI fails on a missing ACME while a local run skips visibly. |
+| Real ACME 0.97 | The reassembly oracle for the export | Extend `disasm-roundtrip.test.ts`'s pattern: spawn `acme` with an **argv array** (never a shell string), byte-diff the result, and never treat an ACME stderr *warning* as failure (ACME 0.97 documents warnings on stderr). Gate through `anno-test-gate.ts`'s `acmeSkipReasonFor()` / `VICE_REQUIRE_ACME`, so CI fails on a missing ACME while a local run skips visibly. |
 | `--disable-warning=ExperimentalWarning` | Silences the Node-22-only `node:sqlite` warning | Verified working on 22.22.0. **Do not make any test assert stderr is empty** as a proxy for success — see "Version Compatibility". |
 | `db.exec("PRAGMA integrity_check")` | Post-crash assertion in the durability test | Returns `{ integrity_check: 'ok' }` after an uncommitted-close `SIGKILL`. Live-verified. |
 | `node:sqlite`'s exported `backup()` | Pre-destructive safety copy | Mirrors the existing `incident-record.ts` "write evidence before any destructive action" precedent. Not the undo mechanism. |
@@ -151,7 +151,7 @@ PRAGMA foreign_keys = ON;       -- already the default; state it explicitly
 
 **One honest cost of WAL:** it leaves `<name>.db-wal` and `<name>.db-shm` alongside the database. On a clean `close()` they are removed; after a `SIGKILL` they **persist** (observed: 12,392-byte `-wal`, 32,768-byte `-shm`). So the store is *not* single-file at rest after an unclean exit. If single-file-at-rest matters more than throughput, `journal_mode = DELETE` + `synchronous = FULL` gives one file with the same crash guarantee at higher per-commit cost. **Recommendation: keep WAL** and treat the sidecars as what they are — recovery state that the next `open()` consumes.
 
-**Where the file lives.** Not `.vice-supervisor/` — that is gitignored, host-synchronised, and owned by the broker's lifecycle. Mirror the existing `r2000_*` convention instead: the store path is an **explicit tool argument**, resolved through `repo-root.ts`'s `repoRoot()` when relative. Add `*.db-wal` / `*.db-shm` to `.gitignore`.
+**Where the file lives.** Not `.vice-supervisor/` — that is gitignored, host-synchronised, and owned by the broker's lifecycle. Mirror the existing `anno_*` convention instead: the store path is an **explicit tool argument**, resolved through `repo-root.ts`'s `repoRoot()` when relative. Add `*.db-wal` / `*.db-shm` to `.gitignore`.
 
 **Commit the export, not the database.** This project has already decided the shape of this problem — Key Decisions: *"Make the store canonical and the Markdown memory map a generated view … `render-memmap --check` plus a render-digest drift guard makes the divergence mechanical rather than a review item."* Apply the same pattern: SQLite is the working store; a deterministic, sorted, newline-stable text export (written with the atomic-rename technique) is the git-diffable artifact, guarded by an `--check` digest comparison. This is the correct home for the JSON/atomic-rename technique that lost as the primary store.
 
@@ -167,7 +167,7 @@ Domain: 2,500 narrow ranges (16 bytes each) plus 200 wide overlapping ranges (2,
 |---|---|---|---|---|
 | **Paint array (`Int32Array(65536)` of winning range ids)** | **0.018 µs** | **1.2 ms** | 256 KB | 7.5 ms for 2,700 ranges |
 | Sorted-by-`lo` array + binary search + bounded forward walk | 0.31 µs | 20 ms | ~0 | O(n log n) sort |
-| Naive O(n) scan over all ranges — *the shape `r2000-coverage.ts`'s `classAt()` already has* | 4.6 µs | **301 ms** | 0 | none |
+| Naive O(n) scan over all ranges — *the shape `anno-coverage.ts`'s `classAt()` already has* | 4.6 µs | **301 ms** | 0 | none |
 | SQL `WHERE lo<=? AND hi>=? ORDER BY (hi-lo) LIMIT 1`, index on `lo` | 42.6 µs | **2.8 s** | 0 | none |
 
 The paint array and the sorted+binary-search implementation were cross-checked against each other on **all 65,536 addresses: 0 disagreements.** That is two independently written implementations agreeing, not one implementation agreeing with itself.
@@ -184,7 +184,7 @@ Design, concretely, so a planner does not re-derive it:
 - Build: `Int32Array(65536).fill(-1)` for winner range-id, plus a parallel `Int32Array(65536).fill(0x7fffffff)` for winner width. For each range, for each address in it, overwrite iff `width < currentWidth`. **Narrowest-wins is resolved at paint time, not at query time.** Tie-break for equal widths must be explicit (recommend: higher `range.id`, i.e. the more recent edit wins) and pinned by a test — an unspecified tie-break is exactly the kind of thing that produces a non-reproducible export.
 - Rebuild cost is 7.5 ms, so **rebuild on mutation**. Do not write incremental-maintenance code; it is the classic source of index-drift bugs and it buys single-digit milliseconds.
 - Queries the paint array does **not** serve — *"list every range covering address X"*, *"list ranges intersecting [a,b]"* — go against the SQLite table. The paint array answers exactly one question: *which range wins at X*.
-- Run-length compaction for the JSON/tool-response surface: reuse `r2000-coverage.ts`'s `toRuns()` shape (`{start, end, class}`), which already exists and is already tested. Its header states the reason ("the census reports runs rather than a per-byte array so the report stays JSON-safe and stays deep-comparable between two runs") and it applies unchanged.
+- Run-length compaction for the JSON/tool-response surface: reuse `anno-coverage.ts`'s `toRuns()` shape (`{start, end, class}`), which already exists and is already tested. Its header states the reason ("the census reports runs rather than a per-byte array so the report stays JSON-safe and stays deep-comparable between two runs") and it applies unchanged.
 - **If the domain ever exceeds 64K** (banked ROM/RAM under I/O, an REU): switch to the sorted+binary-search variant at 0.31 µs and ~0 memory, or paint per bank. Both were measured; neither needs a library. State this so a later banking milestone does not reach for a package.
 
 ### Libraries surveyed — all rejected, with dates
@@ -251,18 +251,18 @@ So SQLite is the better choice on *evidence quality*, independent of speed. Wort
 
 ### A correction the roadmapper needs: the `--verify` seam does not survive the deletion
 
-The milestone text says the ACME export is *"verified by a real ACME through the existing `--verify` seam."* Read directly this session, that seam is **regenerator2000's**, not ACME's:
+The milestone text says the ACME export is *"verified by a real ACME through the existing `--verify` seam."* Read directly this session, that seam is **the external analyser's**, not ACME's:
 
-- `r2000-verify.ts` (184 lines) imports `buildVerifyArgs` and `runR2000` from `r2000-launch.ts` and parses **`regenerator2000 --verify`'s stdout** with `VERIFY_LINE_PATTERN = /^[✓✗]\s+(.+?)\s+[—–-]\s+(.+)$/`. It never invokes ACME. When regenerator2000 is deleted, `r2000-verify.ts` and `buildVerifyArgs` die with it.
+- `anno-verify.ts` (184 lines) imports `buildVerifyArgs` and `runAnno` from `anno-launch.ts` and parses **`analyser --verify`'s stdout** with `VERIFY_LINE_PATTERN = /^[✓✗]\s+(.+?)\s+[—–-]\s+(.+)$/`. It never invokes ACME. When the external analyser is deleted, `anno-verify.ts` and `buildVerifyArgs` die with it.
 
 The genuinely surviving ACME oracle is a different pair of files, and the plan must name them:
 
 | File | Lines | Fate |
 |---|---|---|
-| `r2000-test-gate.ts` | 166 | **Rename and keep.** Owns `ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()` and the `VICE_REQUIRE_ACME` convention. Not regenerator2000 glue despite the name — the grep gate must exempt or the rename must precede it. |
+| `anno-test-gate.ts` | 166 | **Rename and keep.** Owns `ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()` and the `VICE_REQUIRE_ACME` convention. Not the external analyser glue despite the name — the grep gate must exempt or the rename must precede it. |
 | `disasm-roundtrip.test.ts` | 427 | **The pattern to extend.** Already spawns real ACME with an argv array, byte-diffs the reassembly, and documents the "never treat a warning as failure" rule. Its "ACME availability gate (D-08)" test always runs and is never skipped. |
 | `src/skills/acme-build/scripts/acme.mjs` | — | The shipped `build` / `sym` / `new` route. Unchanged. |
-| `r2000-verify.ts`, `r2000-launch.ts::buildVerifyArgs` | 184 + part of 357 | **Deleted with the subject.** The store's own verify must be re-built against ACME directly. |
+| `anno-verify.ts`, `anno-launch.ts::buildVerifyArgs` | 184 + part of 357 | **Deleted with the subject.** The store's own verify must be re-built against ACME directly. |
 
 This is a real scope item, not a rename: the store needs a new `verify` path that emits ACME source to a temp dir, spawns ACME, and byte-diffs against the source bytes. `disasm-roundtrip.test.ts` already contains every technique needed.
 
@@ -286,36 +286,36 @@ smc_operand = * + $01
 
 ### Typed label prefixes — already owned, and richer than the seed says
 
-`r2000-coverage.ts:1384` already owns the vocabulary:
+`anno-coverage.ts:1384` already owns the vocabulary:
 
 ```
 AUTO_NAME_PREFIX_RE = /^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)/
 ```
 
-Eleven prefixes, not the five the seed lists (`zpp_`/`zpa_`/`f_`/`a_`/`e_`). `r2000-coverage.test.ts:946` pins all eleven, and `src/skills/routine-queue-walker/SKILL.md:154,200` documents them for users. **Move this regex into the store's naming module; do not re-derive a subset from the seed.** A five-prefix reimplementation would silently stop recognising `p_`, `j_`, `s_`, `b_`, `r_`, `zpf_` as auto-generated — which is exactly the signal `routine-queue-walker` builds its backlog from.
+Eleven prefixes, not the five the seed lists (`zpp_`/`zpa_`/`f_`/`a_`/`e_`). `anno-coverage.test.ts:946` pins all eleven, and `src/skills/routine-queue-walker/SKILL.md:154,200` documents them for users. **Move this regex into the store's naming module; do not re-derive a subset from the seed.** A five-prefix reimplementation would silently stop recognising `p_`, `j_`, `s_`, `b_`, `r_`, `zpf_` as auto-generated — which is exactly the signal `routine-queue-walker` builds its backlog from.
 
 ### The model interfaces already exist
 
-`r2000-coverage.ts:192-224` already defines the four record shapes, and they map 1:1 onto the store's tables:
+`anno-coverage.ts:192-224` already defines the four record shapes, and they map 1:1 onto the store's tables:
 
 | Existing interface | Becomes |
 |---|---|
-| `R2000Symbol { address, name, kind, type? }` | `symbol` table. `kind` ∈ `User`/`Auto`/`System`; `type` ∈ `Subroutine`/`AbsoluteAddress`/… |
-| `R2000Comment { address, type, comment }` | `comment` table. `type` ∈ `line`/`side` — **keep both**; the ACME renderer needs the distinction. |
-| `R2000BlockEntry { start_address, end_address, type }` | `range` table. **Widen `type`** from r2000's `BlockType` Display strings to the milestone's full seven-value vocabulary: `code`, `byte`, `word`, `address`, `petscii`, `screencode`, `table`. |
-| `R2000CrossReference { address, callers[] }` | `xref` table, or a derived view over the typed decode. |
+| `AnnoSymbol { address, name, kind, type? }` | `symbol` table. `kind` ∈ `User`/`Auto`/`System`; `type` ∈ `Subroutine`/`AbsoluteAddress`/… |
+| `AnnoComment { address, type, comment }` | `comment` table. `type` ∈ `line`/`side` — **keep both**; the ACME renderer needs the distinction. |
+| `AnnoBlockEntry { start_address, end_address, type }` | `range` table. **Widen `type`** from anno's `BlockType` Display strings to the milestone's full seven-value vocabulary: `code`, `byte`, `word`, `address`, `petscii`, `screencode`, `table`. |
+| `AnnoCrossReference { address, callers[] }` | `xref` table, or a derived view over the typed decode. |
 
-Rename off the `r2000` prefix, keep the field names (they are already the wire shape the absorbed procedures speak), and note `start_address`/`end_address` are **inclusive** in the existing code — carry that, and document it, because half-open vs closed is the other classic interval bug.
+Rename off the `anno` prefix, keep the field names (they are already the wire shape the absorbed procedures speak), and note `start_address`/`end_address` are **inclusive** in the existing code — carry that, and document it, because half-open vs closed is the other classic interval bug.
 
-### Where `r2000-coverage.ts`'s `classAt()` must NOT be copied
+### Where `anno-coverage.ts`'s `classAt()` must NOT be copied
 
 `classAt()` (line 342) is a linear scan over `classRuns` — the 4.6 µs/lookup shape measured above, 301 ms per full 64K pass. Its own comment says why it is acceptable there ("Linear over runs, which is what keeps the census JSON-safe"), and for a once-per-census lookup it is. **Do not carry that shape into the store's hot path**, which is queried once per decoded instruction across the whole image. Use the paint array. Note this explicitly in the plan, because copying the nearest existing function is the obvious move and it is the wrong one here.
 
 ### Tool-surface registration and argument validation
 
-- Register through `buildViceTool()` (`vice-proxy.ts:3263`), following the existing `r2000_*` precedent at `:3402`. This satisfies the architecture constraint **by construction**: neither `rewriteArguments()` call site (`:3029` inside `forwardToVice()`, `:1508` inside `gatherWedgeEvidence()`) is reachable, so there is no interception to forget and the store is backend-agnostic for free. Re-check those line numbers at plan time — `docs-linerefs.test.ts` guards two of them and PROJECT.md warns they drift.
-- **The proxy validates nothing.** `vice-proxy.ts:3216-3230`: `rawJsonSchemaAsStandardSchema()` returns `validate: (value) => ({ value })`, and the header says so plainly — *"this proxy has never validated argument shape itself."* So every store tool receives **unvalidated** arguments. Validate in the store: address range `0x0000–0xFFFF`, `lo <= hi`, `type` in the seven-value set, label matches `assertLegalAcmeIdentifier()` (`r2000-acme-ident.ts`, `MAX_ACME_IDENTIFIER_LENGTH = 200`) — throwing named error subclasses per the existing `ViceError` convention. **Do not add `zod`.**
-- **`r2000-acme-ident.ts` (97 lines) is a keeper.** It already enforces ACME identifier legality, which is what stops an illegal label reaching the exporter and failing the ACME oracle late instead of at the setter.
+- Register through `buildViceTool()` (`vice-proxy.ts:3263`), following the existing `anno_*` precedent at `:3402`. This satisfies the architecture constraint **by construction**: neither `rewriteArguments()` call site (`:3029` inside `forwardToVice()`, `:1508` inside `gatherWedgeEvidence()`) is reachable, so there is no interception to forget and the store is backend-agnostic for free. Re-check those line numbers at plan time — `docs-linerefs.test.ts` guards two of them and PROJECT.md warns they drift.
+- **The proxy validates nothing.** `vice-proxy.ts:3216-3230`: `rawJsonSchemaAsStandardSchema()` returns `validate: (value) => ({ value })`, and the header says so plainly — *"this proxy has never validated argument shape itself."* So every store tool receives **unvalidated** arguments. Validate in the store: address range `0x0000–0xFFFF`, `lo <= hi`, `type` in the seven-value set, label matches `assertLegalAcmeIdentifier()` (`anno-acme-ident.ts`, `MAX_ACME_IDENTIFIER_LENGTH = 200`) — throwing named error subclasses per the existing `ViceError` convention. **Do not add `zod`.**
+- **`anno-acme-ident.ts` (97 lines) is a keeper.** It already enforces ACME identifier legality, which is what stops an illegal label reaching the exporter and failing the ACME oracle late instead of at the setter.
 
 ### The tool surface is a diff, not a design
 
@@ -363,12 +363,12 @@ The only prerequisite unchanged-but-worth-restating: **real ACME on `$PATH`** fo
 | `lowdb` 7.0.1 | Last published 2023-12-26; it *is* the whole-file-JSON route (16 ms/edit, scaling with store size) with a dependency attached | Owned atomic-rename for the text export; `node:sqlite` for the store |
 | `write-file-atomic` 8.0.0 | `engines.node: "^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0"` — **above** this project's declared `>=22.18.0` floor. Adopting it forces a breaking `engines` bump for a ~15-line `node:fs` helper | ~15 lines of owned `node:fs`: `open` → `writeFile(fd)` → `fsyncSync(fd)` → `close` → `rename` → `fsync` the directory |
 | `proper-lockfile` 4.1.2 | 5.5 years stale; the store is single-writer by construction and SQLite handles the rest | SQLite locking + the existing FIFO-queue pattern |
-| Any interval-tree package | `static-interval-tree` has **no licence field**; `interval-tree2` and `augmented-interval-tree` are abandoned (2015 / one version ever); `node-interval-tree` and `interval-tree-1d` are 3.7–5.2 years stale; and the one maintained option (`@flatten-js/interval-tree` 2.0.3) still has no narrowest-wins semantics, so you write the deciding logic anyway | ~60–120 lines of owned paint-array code, extending `r2000-coverage.ts`'s existing `toRuns()` pattern |
+| Any interval-tree package | `static-interval-tree` has **no licence field**; `interval-tree2` and `augmented-interval-tree` are abandoned (2015 / one version ever); `node-interval-tree` and `interval-tree-1d` are 3.7–5.2 years stale; and the one maintained option (`@flatten-js/interval-tree` 2.0.3) still has no narrowest-wins semantics, so you write the deciding logic anyway | ~60–120 lines of owned paint-array code, extending `anno-coverage.ts`'s existing `toRuns()` pattern |
 | `immer` 11.1.18 | In-memory undo dies at process exit — the exact requirement it must satisfy | Inverse-command journal in SQLite |
-| `zod` 4.4.3 | Present only as an undeclared transitive of `@mastra`; a direct import is the same phantom-dependency defect class `r2000-mcp-client.ts`'s header already names. And the proxy validates nothing anyway, so validation is store-local logic, not a schema layer | Owned validators throwing named `ViceError` subclasses; `r2000-acme-ident.ts` for label legality |
+| `zod` 4.4.3 | Present only as an undeclared transitive of `@mastra`; a direct import is the same phantom-dependency defect class `anno-mcp-client.ts`'s header already names. And the proxy validates nothing anyway, so validation is store-local logic, not a schema layer | Owned validators throwing named `ViceError` subclasses; `anno-acme-ident.ts` for label legality |
 | `uuid`, `nanoid` | `node:crypto.randomUUID()` is built in | `randomUUID()` for `edit_log.group_id` |
-| Copying `r2000-coverage.ts`'s `classAt()` into the store hot path | Linear over runs: 4.6 µs/lookup, 301 ms per full 64K pass, 250× slower than the paint array | The paint array. Leave `classAt()` where it is — it is correct for the census's once-per-report use. |
-| Keeping `r2000-verify.ts` as "the ACME seam" | It parses **regenerator2000's** `--verify` output and calls `runR2000()`; it dies with the subject | Build the ACME verify path on `disasm-roundtrip.test.ts`'s pattern, gated by the renamed `r2000-test-gate.ts` |
+| Copying `anno-coverage.ts`'s `classAt()` into the store hot path | Linear over runs: 4.6 µs/lookup, 301 ms per full 64K pass, 250× slower than the paint array | The paint array. Leave `classAt()` where it is — it is correct for the census's once-per-report use. |
+| Keeping `anno-verify.ts` as "the ACME seam" | It parses **the external analyser's** `--verify` output and calls `runAnno()`; it dies with the subject | Build the ACME verify path on `disasm-roundtrip.test.ts`'s pattern, gated by the renamed `anno-test-gate.ts` |
 | A five-prefix reimplementation of the typed label prefixes | `AUTO_NAME_PREFIX_RE` already owns **eleven**; dropping six silently breaks `routine-queue-walker`'s backlog construction | Move the existing regex |
 | A test asserting the store's stderr is empty | `node:sqlite` emits an unconditional `ExperimentalWarning` on the Node 22 line | Assert on results; suppress with `--disable-warning=ExperimentalWarning` if noise matters |
 
@@ -407,7 +407,7 @@ Ordered by `ENGINEERING_RULES.md` §7's hierarchy. **HIGH** = real external syst
 - `doc/api/sqlite.md` and `lib/sqlite.js` on `nodejs/node` branches `v22.x`, `v24.x`, `v25.x`, `main` (stability levels, flag-removal PRs #55890/#61262, warning presence, method-heading diff).
 - `nodejs/Release/schedule.json` (Node 22 maintenance 2025-10-21, EOL 2027-04-30).
 - npm registry API (`registry.npmjs.org`) for every version, publish date, `engines`, `gypfile`, install-script and dependency claim in this document.
-- This repository's own committed source: `vice-proxy.ts` (`buildViceTool` :3263, SDK import :174, no-validation seam :3216-3230, `r2000_*` registration :3402), `r2000-coverage.ts` (`R2000Symbol`/`R2000Comment`/`R2000BlockEntry`/`R2000CrossReference` :192-224, `ClassRun`/`toRuns`/`classAt` :272-347, `AUTO_NAME_PREFIX_RE` :1384), `r2000-verify.ts` (regenerator2000-not-ACME, `VERIFY_LINE_PATTERN`), `disasm-roundtrip.test.ts`, `r2000-test-gate.ts`, `r2000-acme-ident.ts`, `repo-root.ts`, `package.json`, `.gitignore`.
+- This repository's own committed source: `vice-proxy.ts` (`buildViceTool` :3263, SDK import :174, no-validation seam :3216-3230, `anno_*` registration :3402), `anno-coverage.ts` (`AnnoSymbol`/`AnnoComment`/`AnnoBlockEntry`/`AnnoCrossReference` :192-224, `ClassRun`/`toRuns`/`classAt` :272-347, `AUTO_NAME_PREFIX_RE` :1384), `anno-verify.ts` (external-analyser-not-ACME, `VERIFY_LINE_PATTERN`), `disasm-roundtrip.test.ts`, `anno-test-gate.ts`, `anno-acme-ident.ts`, `repo-root.ts`, `package.json`, `.gitignore`.
 - `.planning/PROJECT.md`, `.planning/ENGINEERING_RULES.md`, `.planning/seeds/own-the-annotation-store.md`.
 
 **MEDIUM — inference from directly-read evidence, not itself executed:**

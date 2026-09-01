@@ -266,7 +266,7 @@ Per `29-BASELINE.md`'s rule, the comparison target is the failing-file SET, and 
 | `npm run typecheck` | exit 0, clean |
 | `npm run test:automated` | 2681/2688 pass; failing set `{repo-root.test.ts}` — worktree-location artefact, see above |
 | `node scripts/audit-gate.mjs` | exit 0 — 9 docs guards green, 7 milestone audits scanned |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 — "0 temporarily allow-listed across **0 entries**" |
+| `node scripts/check-no-analyser.mjs` | exit 0 — "0 temporarily allow-listed across **0 entries**" |
 | `md5sum docs/tool-support.md` after regeneration | `bb4744890855e58887142e5a97f44fc0` — unchanged |
 | `grep -c 'Math.min(requestedEnd' anno-tools.ts` | **0** |
 | `grep -c 'assertAnnoBatch(call.arguments' anno-tools.ts` | **0** |
@@ -316,7 +316,7 @@ None — no external service configuration required.
   `dispatchSaveProject()` → 1; `node --test anno-tools.test.ts` → 54/54;
   `npm run typecheck` → exit 0.
 - **Plan-level verification re-run:** `audit-gate.mjs` exit 0;
-  `check-no-regenerator2000.mjs` exit 0 with 0 entries;
+  `check-no-analyser.mjs` exit 0 with 0 entries;
   `docs/tool-support.md` md5 `bb4744890855e58887142e5a97f44fc0` unchanged.
 - **Deletions:** `git diff --diff-filter=D` over the branch is EMPTY, so the
   branch does not trip `cleanup-wave`'s deletion refusal.

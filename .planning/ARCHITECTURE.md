@@ -185,7 +185,7 @@ tracks the allowed consumer set.
 
 ### Rule A16 — Container-side static analysis remains container-side
 
-Static-analysis backends such as regenerator2000 should run on the same side of the boundary as the
+Static-analysis backends such as the external analyser should run on the same side of the boundary as the
 MCP proxy unless an explicit architecture decision changes that model. Host-path translation must
 not be applied to container-local analysis paths.
 
@@ -198,20 +198,20 @@ Examples include:
 - stock VICE for binary-monitor behavior;
 - ACME for assembler/reassembly correctness;
 - package-manager/fresh-container installs for installation claims;
-- regenerator2000 for static-analysis behavior.
+- the external analyser for static-analysis behavior.
 
 ### Rule A17 — Do not replace an external oracle with a same-assumption mock
 
 Mocks and synthetic fixtures are useful for speed and fault injection, but they do not replace a
 real external oracle when acceptance depends on the external program's actual behavior.
 
-## Static Analysis / regenerator2000
+## Static Analysis / the external analyser
 
 For the v0.3.0 direction:
 
 ### Rule A18 — Static-analysis-only integration
 
-regenerator2000 is a static-analysis backend. It must not be launched with `--vice` unless a future
+The external analyser is a static-analysis backend. It must not be launched with `--vice` unless a future
 architecture decision explicitly changes this project boundary.
 
 ### Rule A19 — Queryable annotation state is authoritative analysis state
@@ -226,7 +226,7 @@ Static-analysis symbols exported to VICE and live-discovered symbols imported ba
 annotation model must flow through explicit conversion/adapter code. Do not make either side parse
 the other's internal representation directly.
 
-### Rule A21 — One long-lived regenerator2000 child per project path, per proxy process
+### Rule A21 — One long-lived the external analyser child per project path, per proxy process
 
 ⚠ **SUPERSEDED 2026-08-30 (Phase 29, plan 29-10, commit `1d40ad0`) — this rule governed a
 subsystem that no longer exists.** Kept as a dated record rather than deleted, on the same
@@ -235,14 +235,14 @@ keep-dated precedent as `CORE-01` and `D-36`: the rule number is cross-reference
 that this project once chose a long-lived child process and then reversed that choice on
 measured grounds.
 
-**What the rule said, in the past tense.** At most one live regenerator2000 child existed per
+**What the rule said, in the past tense.** At most one live the external analyser child existed per
 `vice-proxy.ts` process, keyed on `resolveStorePath()`'s output (D18-04). It was opened lazily
-on the first `r2000_*` call that needed it and never at tool-registration time (D18-03). It was
+on the first `anno_*` call that needed it and never at tool-registration time (D18-03). It was
 killed only through the retained `ChildProcess` handle, never by a stored pid (D18-21). It was
-never spawned from a module other than `r2000-mcp-client.ts` (D18-02). Rule A18's `--vice`
+never spawned from a module other than `anno-mcp-client.ts` (D18-02). Rule A18's `--vice`
 prohibition was unchanged and unaffected by this rule, and still stands on its own.
 
-**Why it is superseded.** Phase 29 deleted the binary-driving glue, `r2000-mcp-client.ts`
+**Why it is superseded.** Phase 29 deleted the binary-driving glue, `anno-mcp-client.ts`
 included, and `resolveStorePath()` went with it — so every clause above now names a symbol or a
 module that is not on disk. Phase 29's own `D-06` reversed this rule explicitly and on the
 record, choosing open/close per call with an explicit store-path argument on every verb
@@ -287,7 +287,7 @@ backend adapters
 
 static-analysis adapters
         |
-        +--> regenerator2000 integration
+        +--> the external analyser integration
 ```
 
 Avoid circular dependencies between routing, transport, broker, and derived-tool modules.
@@ -312,26 +312,26 @@ six-step Architecture Change Procedure above for that reversal.
 
 1. **Identify the decisions by id.** `D-17` and `D-18` (Phase 11,
    `.planning/phases/11-annotation-store-enums-and-the-symbol-round-trip/11-CONTEXT.md`)
-   are reversed by Phase 18. D-17 fixed regenerator2000's lifecycle as
-   **per-call**: spawn, load, mutate, `r2000_save_project`, exit — no
+   are reversed by Phase 18. D-17 fixed the external analyser's lifecycle as
+   **per-call**: spawn, load, mutate, `anno_save_project`, exit — no
    long-lived child, no process supervision, no second wedge class. D-18
-   built the curated tool surface on top of that assumption. `r2000-mcp-client.ts`'s
+   built the curated tool surface on top of that assumption. `anno-mcp-client.ts`'s
    own header states the reversed lifecycle: this repo must spawn
-   `regenerator2000 --mcp-server-stdio`, send it JSON-RPC requests, and trust
-   (or refuse to trust) its answers, once per `withR2000Session()` call, with
+   `analyser --mcp-server-stdio`, send it JSON-RPC requests, and trust
+   (or refuse to trust) its answers, once per `withAnnoSession()` call, with
    no long-lived child and no supervision. Phase 18 reverses that: one
-   `regenerator2000 --mcp-server-stdio` child now stays alive across many
-   `r2000_*` tool calls inside the already-running `vice-proxy.ts` process.
+   `analyser --mcp-server-stdio` child now stays alive across many
+   `anno_*` tool calls inside the already-running `vice-proxy.ts` process.
 
 2. **Why the existing architecture cannot support the requirement.** SESS-01
-   requires a regenerator2000 project to stay open across a whole working
+   requires an external analyser project to stay open across a whole working
    session instead of being respawned per tool call — a session-model
    mismatch the per-call lifecycle cannot serve. Cursor-shaped tools
    (`jump_to_address`, `get_disassembly_cursor`, `read_selected`) are
    meaningless under a per-call spawn: there is no cursor to hold between
    calls when the process holding it exits after every one. The project's
    own text already concedes the respawn cost: `src/skills/c64-program-recon/SKILL.md`
-   states, for `r2000_batch_execute`, that "batching is what makes that
+   states, for `anno_batch_execute`, that "batching is what makes that
    affordable under the per-call spawn-load-mutate-save-exit lifecycle" —
    an admission that anything short of batching is not affordable under
    D-17 as written.
@@ -340,11 +340,11 @@ six-step Architecture Change Procedure above for that reversal.
    safety property D-17/D-18 existed to protect is **durability** — no
    annotation is lost to a crashed or wedged child. The alternative that
    preserves it unchanged, without preserving the per-call lifecycle itself,
-   is D18-08's save-per-mutation invariant: every mutating `r2000_*` call
-   still calls `r2000_save_project` inside the same session before that tool
+   is D18-08's save-per-mutation invariant: every mutating `anno_*` call
+   still calls `anno_save_project` inside the same session before that tool
    call resolves to its caller, identically to today, byte-for-byte. The
    internal auto-save stays a plain `save_project`, never `saveAndVerify()` —
-   `saveAndVerify()` remains reserved for `r2000_save_project` invoked as the
+   `saveAndVerify()` remains reserved for `anno_save_project` invoked as the
    outer tool by name, since an idempotent mutation legitimately produces an
    unchanged hash and `saveAndVerify()`'s contract is to throw when the hash
    does not change. Persistence changes process **lifetime**, not the
@@ -362,7 +362,7 @@ six-step Architecture Change Procedure above for that reversal.
    table, including `D-36` (allocated by this same plan, superseding `D-32`).
 
 5. **Regression guards this phase lands, and what each catches.**
-   `src/mcp/vice/r2000-session.test.ts` is D18-09's three-scenario
+   `src/mcp/vice/anno-session.test.ts` is D18-09's three-scenario
    planted-violation save-discipline gate (plan 18-03 task 2) — proving a
    mutation survives a direct `SIGKILL` of the child immediately after the
    mutating call resolves, that short-circuiting the internal save makes the
@@ -371,7 +371,7 @@ six-step Architecture Change Procedure above for that reversal.
    disk left unchanged — and D18-19's lost-update planted-violation gate
    (plan 18-06), proving two concurrent mutating calls against the same
    address both land under the seam's lock and that removing the lock makes
-   the same test go red. `src/mcp/vice/r2000-spawn-seam.test.ts` keeps its
+   the same test go red. `src/mcp/vice/spawn-seam.test.ts` keeps its
    existing two-entry spawn-site set unchanged in shape and gains a new
    session-reuse fixture (plan 18-03 task 3) proving the long-lived path
    still calls `assertNoViceFlag()` before spawning. Step 5 of this procedure
@@ -381,10 +381,10 @@ six-step Architecture Change Procedure above for that reversal.
    *Addendum, 2026-08-29 (phase 29, plan 29-05). The two sentences above are
    the Phase 18 record and are left as written. What they point AT has moved,
    and a pointer that no longer resolves is what this addendum exists to stop:
-   `src/mcp/vice/r2000-spawn-seam.test.ts` is now `spawn-seam.test.ts` — a
+   `src/mcp/vice/spawn-seam.test.ts` is now `spawn-seam.test.ts` — a
    rename only, because the discipline it guards (no shipped module spawns a
    child that touches VICE) outlives the substrate it was written against.
-   `src/mcp/vice/r2000-session.test.ts` is deleted with the session primitive
+   `src/mcp/vice/anno-session.test.ts` is deleted with the session primitive
    in plan 29-10 and is NOT renamed; the surviving guard that carries the
    save-discipline half of step 5 forward is `anno-durability.test.ts`, the
    owned annotation store's crash-durability gate, which proves by planted
@@ -394,6 +394,6 @@ six-step Architecture Change Procedure above for that reversal.
    for by containment.*
 
 6. **Only then implement.** Plan 18-03 is the first implementing plan of this
-   reversal — it lands `r2000-session.ts`, the long-lived session primitive,
+   reversal — it lands `anno-session.ts`, the long-lived session primitive,
    and the D18-09 save-discipline gate before anything else in this phase
    depends on the session.

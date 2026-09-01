@@ -61,7 +61,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   `scripts/`**" was measured at the v0.7.0 open, against a tree Phase 29's
   renames and deletions have since reshaped. Measured at discussion time: 126
   `*.test.*` files now sit in `src/mcp/vice/`, `scripts/lib/` is fully renamed to
-  `anno-*`, and `scripts/` has gained `check-no-regenerator2000.mjs`. Mapping the
+  `anno-*`, and `scripts/` has gained `check-no-analyser.mjs`. Mapping the
   historical 43 forward alone would be blind to guards Phase 29 *created* — and
   Phase 29 is the source of most of the set. Re-deriving alone would lose the
   requirement's own auditable numbers. The reconciliation is the deliverable that
@@ -118,8 +118,8 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
 
 - **D-08 — Only text that tells a reader to use, install or invoke a deleted route is corrected. Everything historical stays byte-identical.** Measured at
   discussion time: 35 tracked non-`.planning` files still contain the literal
-  `regenerator2000`, in three classes — dated findings documents
-  (`docs/phase9-regenerator2000-probe-findings.md`,
+  `the external analyser`, in three classes — dated findings documents
+  (`docs/phase9-external-analyser-probe-findings.md`,
   `docs/phase23-real-release-gate-findings.md`), licence and attribution notices
   (`THIRD-PARTY-NOTICES.md`, `src/mcp/vice/THIRD-PARTY-NOTICES.md`,
   `installer/THIRD-PARTY-NOTICES.md` — which ROADMAP.md records as **remaining
@@ -132,8 +132,8 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
 - **D-09 — Every file in the swept set gets a row, including "left unchanged".**
   So a later reader can distinguish "we looked and it is fine" from "we never
   looked" — the same distinction `D-01`'s registry draws for guards, applied to
-  documents. `.planning/PROJECT.md` alone carries 46 `regenerator2000` mentions
-  and 26 `r2000_` occurrences, which is exactly where a silent omission would
+  documents. `.planning/PROJECT.md` alone carries 46 `the external analyser` mentions
+  and 26 `anno_` occurrences, which is exactly where a silent omission would
   bite.
 
 - **D-10 — `PROJECT.md`'s stale `vice-proxy.ts` line citations are repaired AND brought under `docs-linerefs.test.ts`.** `CLAUDE.md`'s equivalents are already
@@ -146,7 +146,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   every milestone.
 
 - **D-11 — `CLAUDE.md` is already clean and needs no work.** Measured at
-  discussion time: 0 `regenerator2000` mentions, 0 `r2000_` occurrences. Phase 29
+  discussion time: 0 `the external analyser` mentions, 0 `anno_` occurrences. Phase 29
   discharged it. A planner must not re-derive this as outstanding. Likewise there
   is **no `ARCHITECTURE.md` outside `.planning/`** — ROADMAP.md's "Rule A21"
   reference resolves to `.planning/ARCHITECTURE.md`.
@@ -189,7 +189,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   `audit-gate.mjs`'s `D-12-11` states the prohibition and its reason: guard files
   must be invoked directly, as their own file names, never through the broader
   automated-suite entry point. It sits alongside the six existing named steps
-  (`check-no-regenerator2000.mjs`, `check-npm-packages.mjs`,
+  (`check-no-analyser.mjs`, `check-npm-packages.mjs`,
   `check-skill-tool-coverage.mjs`, `check-skill-fork-honesty.mjs`,
   `check-skill-description-overlap.mjs`, `check-skill-cli-invocations.mjs`).
   Making it a plain `*.test.ts` was rejected: `audit-gate.mjs` finds its guard set
@@ -208,7 +208,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
 - The deletion, the CLI verb split and the dated withdrawal notices landed in
   **Phase 29** (`D-01`, `D-02` of `29-CONTEXT.md`). `CUT-01`, `CUT-02`, `CUT-03`
   and `CUT-05` are discharged there and are not this phase's work.
-- `scripts/check-no-regenerator2000.mjs`, its scope predicate (`git ls-files`
+- `scripts/check-no-analyser.mjs`, its scope predicate (`git ls-files`
   minus the `.planning/` prefix, plus a post-sync read of `packFiles()`'s
   `installer/**` paths) and **both** exemption axes are **built and observed
   biting** on four planted routes plus the exemption non-vacuity plant, with a
@@ -276,7 +276,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   their own file names, never from the package `scripts` block), `D-12-14` (no
   waiver file, no env override, no relaxation hatch), and the `--root <dir>`
   testability pattern `D-06` reuses
-- `scripts/check-no-regenerator2000.mjs` — the built gate. Its scope predicate
+- `scripts/check-no-analyser.mjs` — the built gate. Its scope predicate
   and both exemption axes are the subject of the audit, not its work
 - `src/mcp/vice/fixtures/planted-removal-fixture.ts.txt`,
   `src/mcp/vice/fixtures/planted-removal-fixture.md.txt` — the committed-plant
@@ -293,7 +293,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   CI steps `D-16`'s new step sits alongside
 
 ### The `CUT-06` sweep targets
-- `.planning/PROJECT.md` — 46 `regenerator2000` mentions, 26 `r2000_`
+- `.planning/PROJECT.md` — 46 `the external analyser` mentions, 26 `anno_`
   occurrences, the constraints and Key Decisions rows, the stale `vice-proxy.ts`
   line citations, and the `D-36` row
 - `.planning/ARCHITECTURE.md` — Rule A21. **There is no `ARCHITECTURE.md`
@@ -304,7 +304,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   `installer/THIRD-PARTY-NOTICES.md` — the dual-licence notices ROADMAP.md
   records as remaining **true** for the retained prose
 - `README.md`, `docs/stock-vice-parity.md`,
-  `docs/phase9-regenerator2000-probe-findings.md`,
+  `docs/phase9-external-analyser-probe-findings.md`,
   `docs/phase23-real-release-gate-findings.md` — the remaining non-skill,
   non-source mentions
 
@@ -382,8 +382,8 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   manual-only files **did not fail**, not that they exercised anything. The
   evidence must say this in words, not leave it inferable.
 - The measurements taken at discussion time, for the researcher to re-verify
-  rather than trust: 35 tracked non-`.planning` files contain `regenerator2000`;
-  `.planning/PROJECT.md` has 46 mentions and 26 `r2000_` occurrences; `CLAUDE.md`
+  rather than trust: 35 tracked non-`.planning` files contain `the external analyser`;
+  `.planning/PROJECT.md` has 46 mentions and 26 `anno_` occurrences; `CLAUDE.md`
   has 0 and 0; `src/mcp/vice/` holds 126 `*.test.*` files against the
   requirement's historical 32; no `ARCHITECTURE.md` exists outside `.planning/`.
 
@@ -415,7 +415,7 @@ Debugging `vice-proxy.test.ts`'s local hang. Automatic annotation (v0.8.0).
   "deleted routes" to "all stale doc claims".
 - **"Phase 7 Pitfall 5 overgeneralizes 'text monitor unreachable' and is why the
   `-remotemonitor` port stayed unclaimed"** — doc-accuracy work in `docs/`,
-  unrelated to regenerator2000. Same widening objection.
+  unrelated to the external analyser. Same widening objection.
 - The remaining six keyword matches (`broker` and `capture` area todos) are
   false positives from generic term overlap and were not considered further.
 

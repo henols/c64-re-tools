@@ -7,14 +7,14 @@ tags: [d64, ci-guard, npm-packaging, skill-honesty, closure-walk, dynamic-import
 # Dependency graph
 requires:
   - phase: 10-adoption-boundaries-automated-bootstrap-and-the-removal
-    provides: r2000-d64.ts, r2000-cli.ts, r2000-project.ts and the review that found WR-03/05/06/07
+    provides: anno-d64.ts, anno-cli.ts, anno-project.ts and the review that found WR-03/05/06/07
 provides:
   - "sectorSlice(): every .d64 sector read bounded against image.length, at both walk sites"
   - "petsciiName() strips $00 padding in addition to $A0, matching isEmptySlot()'s own definition"
   - "extractEntry() throws naming the sector when a final sector's usedByte < 2, instead of silently clamping to a zero-length payload"
-  - "r2000-cli.ts dispatches .raw/.bin flat captures by extension, before the 65536-byte-length branch, so flatImageOrigin()'s named size refusal is always reachable"
+  - "anno-cli.ts dispatches .raw/.bin flat captures by extension, before the 65536-byte-length branch, so flatImageOrigin()'s named size refusal is always reachable"
   - "check-skill-fork-honesty.mjs's evidence:\"disasm\" exemption scoped to the \\bdisasm\\b check alone, bounded to exactly one hit via a non-vacuous exemptionHits assertion"
-  - "check-npm-packages.mjs's transitive-closure walk traverses await import(\"./x.ts\") as well as static imports; r2000-cli.ts pinned by name in REQUIRED_DERIVED_MODULES"
+  - "check-npm-packages.mjs's transitive-closure walk traverses await import(\"./x.ts\") as well as static imports; anno-cli.ts pinned by name in REQUIRED_DERIVED_MODULES"
 affects: [11-03, 11-04, 11-05, 11-06, 11-07, 11-08]
 
 # Tech tracking
@@ -27,10 +27,10 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - .claude/mcp/vice/r2000-d64.ts
-    - .claude/mcp/vice/r2000-d64.test.ts
-    - .claude/mcp/vice/r2000-cli.ts
-    - .claude/mcp/vice/r2000-cli.test.ts
+    - .claude/mcp/vice/anno-d64.ts
+    - .claude/mcp/vice/anno-d64.test.ts
+    - .claude/mcp/vice/anno-cli.ts
+    - .claude/mcp/vice/anno-cli.test.ts
     - scripts/check-skill-fork-honesty.mjs
     - scripts/check-npm-packages.mjs
 
@@ -42,7 +42,7 @@ key-decisions:
 patterns-established:
   - "A CI guard's own exemption/allowlist must be scoped to the narrowest check it protects, and its use-count pinned by a non-vacuous assertion, not just documented as scoped"
 
-requirements-completed: [R2000-10]
+requirements-completed: [ANNO-10]
 
 # Metrics
 duration: 45min
@@ -67,7 +67,7 @@ completed: 2026-08-20
 - A `$00`-padded directory name printed by `listEntries()` is now guaranteed selectable via `extractEntry()`'s `--entry` argument (WR-06).
 - A wrong-size `.raw`/`.bin` flat capture is refused by name instead of being silently reinterpreted as a `.prg` with a bogus load address (WR-07).
 - `check-skill-fork-honesty.mjs`'s `disasm` exemption can no longer be combined on the same line with a live `toacme`/`cmdDisasm` reintroduction to hide it (WR-03).
-- `check-npm-packages.mjs`'s transitive-closure walk now sees `await import("./x.ts")`, closing the blind spot that let the whole r2000 family (5 modules) ship correctly only by hand (folded todo 1).
+- `check-npm-packages.mjs`'s transitive-closure walk now sees `await import("./x.ts")`, closing the blind spot that let the whole anno family (5 modules) ship correctly only by hand (folded todo 1).
 
 ## Task Commits
 
@@ -79,17 +79,17 @@ Each task was committed atomically:
 
 ## Files Created/Modified
 
-- `.claude/mcp/vice/r2000-d64.ts` - `sectorSlice()` bounds every sector read against `image.length`; `petsciiName()` strips `$00` as well as `$A0`; final-sector `usedByte < 2` throws instead of clamping
-- `.claude/mcp/vice/r2000-d64.test.ts` - fixtures: truncated image throws naming sector + actual length; `$00`-padded name round-trips through `extractEntry()`; `usedByte === 0` throws naming the sector
-- `.claude/mcp/vice/r2000-cli.ts` - extension-dispatched `.raw`/`.bin` branch calling `flatImageOrigin()` before the length-based branch
-- `.claude/mcp/vice/r2000-cli.test.ts` - fixtures: 4096-byte `.raw` fails naming 4096 and 65536; genuine 65536-byte `.raw` still bootstraps; 4096-byte `.prg` still bootstraps as a `.prg` (regression guard against extension-branch over-matching)
+- `.claude/mcp/vice/anno-d64.ts` - `sectorSlice()` bounds every sector read against `image.length`; `petsciiName()` strips `$00` as well as `$A0`; final-sector `usedByte < 2` throws instead of clamping
+- `.claude/mcp/vice/anno-d64.test.ts` - fixtures: truncated image throws naming sector + actual length; `$00`-padded name round-trips through `extractEntry()`; `usedByte === 0` throws naming the sector
+- `.claude/mcp/vice/anno-cli.ts` - extension-dispatched `.raw`/`.bin` branch calling `flatImageOrigin()` before the length-based branch
+- `.claude/mcp/vice/anno-cli.test.ts` - fixtures: 4096-byte `.raw` fails naming 4096 and 65536; genuine 65536-byte `.raw` still bootstraps; 4096-byte `.prg` still bootstraps as a `.prg` (regression guard against extension-branch over-matching)
 - `scripts/check-skill-fork-honesty.mjs` - `toacme`/`cmdDisasm` checks run before the exemption is consulted; `exemptionHits` counter with a `need(exemptionHits === 1, ...)` non-vacuity assertion
-- `scripts/check-npm-packages.mjs` - closure walk also matches `import\s*\(\s*"(\.\/[^"]+)"\s*\)`; `["r2000-cli.ts", "R2000-09"]` added to `REQUIRED_DERIVED_MODULES`
+- `scripts/check-npm-packages.mjs` - closure walk also matches `import\s*\(\s*"(\.\/[^"]+)"\s*\)`; `["anno-cli.ts", "ANNO-09"]` added to `REQUIRED_DERIVED_MODULES`
 
 ## Decisions Made
 
-- Kept `assertPlainImage()` unchanged and still the sole opt-in whole-image-length check for its one existing caller (`r2000-cli.ts`'s `.d64` branch), rather than folding it into `sectorSlice()` — they check different things (whole-image length vs. per-sector bounds) and the plan explicitly scoped the change this way.
-- Left two literal occurrences of the string `image.subarray(off, off + 256)` in `r2000-d64.ts` (one inside `sectorSlice()`'s own return statement, required by the fix itself) rather than obfuscating the expression to satisfy the acceptance criterion's literal grep count of 0 — see Deviations below.
+- Kept `assertPlainImage()` unchanged and still the sole opt-in whole-image-length check for its one existing caller (`anno-cli.ts`'s `.d64` branch), rather than folding it into `sectorSlice()` — they check different things (whole-image length vs. per-sector bounds) and the plan explicitly scoped the change this way.
+- Left two literal occurrences of the string `image.subarray(off, off + 256)` in `anno-d64.ts` (one inside `sectorSlice()`'s own return statement, required by the fix itself) rather than obfuscating the expression to satisfy the acceptance criterion's literal grep count of 0 — see Deviations below.
 
 ## Deviations from Plan
 
@@ -99,11 +99,11 @@ None beyond the plan's own prescribed fixes — all three tasks matched their `<
 
 ### Clarifications (not deviations, evidence-ceiling note per ENGINEERING_RULES.md §8)
 
-**1. Acceptance criterion `grep -c 'image.subarray(off, off + 256)' r2000-d64.ts` returns 1, not 0 (Task 1)**
+**1. Acceptance criterion `grep -c 'image.subarray(off, off + 256)' anno-d64.ts` returns 1, not 0 (Task 1)**
 - **Found during:** Task 1 verification
 - **Issue:** the plan's own action text prescribes `sectorSlice()`'s implementation as `return image.subarray(off, off + 256);` — the exact literal string the acceptance criterion greps for. The criterion as literally worded is unsatisfiable while implementing the plan's own recommended fix, because the bounded read still has to perform that read once it has passed the bound check.
-- **Resolution:** reworded two *comments* that incidentally repeated the same literal (bringing the count down from 3 to 1), but did not obfuscate the one legitimate call site inside `sectorSlice()` itself — doing so would trade a real, readable bounded read for a cosmetic dodge of the literal grep, with no gain in the actual property being verified (zero *unguarded* reads bypassing the check). The unguarded pattern's occurrence count at the original two call sites (the directory walk and the file-chain walk) is correctly 0; `grep -c 'function sectorSlice' r2000-d64.ts` returns 1, confirming both prior direct reads route through the guarded helper.
-- **Verification:** `node --test r2000-d64.test.ts` (14/14 pass, including the new truncated-image fixture), `npm run typecheck` clean.
+- **Resolution:** reworded two *comments* that incidentally repeated the same literal (bringing the count down from 3 to 1), but did not obfuscate the one legitimate call site inside `sectorSlice()` itself — doing so would trade a real, readable bounded read for a cosmetic dodge of the literal grep, with no gain in the actual property being verified (zero *unguarded* reads bypassing the check). The unguarded pattern's occurrence count at the original two call sites (the directory walk and the file-chain walk) is correctly 0; `grep -c 'function sectorSlice' anno-d64.ts` returns 1, confirming both prior direct reads route through the guarded helper.
+- **Verification:** `node --test anno-d64.test.ts` (14/14 pass, including the new truncated-image fixture), `npm run typecheck` clean.
 
 ---
 
@@ -130,22 +130,22 @@ check-skill-fork-honesty: FAIL
 ```
 Exit code 1. Reverted; `node scripts/check-skill-fork-honesty.mjs` afterward: `OK -- 11 fork-only mentions across 30 files in 6 skill directories, ...`.
 
-### (b) `check-npm-packages.mjs` — `r2000-cli.ts` removed from `files[]`
+### (b) `check-npm-packages.mjs` — `anno-cli.ts` removed from `files[]`
 
-Removed the `"r2000-cli.ts",` line from `.claude/mcp/vice/package.json`'s `files[]`.
+Removed the `"anno-cli.ts",` line from `.claude/mcp/vice/package.json`'s `files[]`.
 
 `node scripts/check-npm-packages.mjs` output:
 ```
 check-npm-packages: FAIL
-  - vice-mcp: missing r2000-cli.ts -- R2000-09 would ship a package that throws ERR_MODULE_NOT_FOUND
-  - vice-mcp: r2000-cli.ts is imported by vice-proxy.ts but is not in the published tarball -- Rule 2 (see 6801cf5, 897faf6)
+  - vice-mcp: missing anno-cli.ts -- ANNO-09 would ship a package that throws ERR_MODULE_NOT_FOUND
+  - vice-mcp: anno-cli.ts is imported by vice-proxy.ts but is not in the published tarball -- Rule 2 (see 6801cf5, 897faf6)
 ```
 Exit code 1 — caught independently by both the named `REQUIRED_DERIVED_MODULES` check and the dynamic-import-aware closure walk. Reverted; `node scripts/check-npm-packages.mjs` afterward: `check-npm-packages: transitive closure from vice-proxy.ts -- 48 modules, clean` / `check-npm-packages: OK`.
 
 ### Closure-count evidence (acceptance criterion)
 
 - Before this plan's Task 3 fix: `check-npm-packages: transitive closure from vice-proxy.ts -- 43 modules, clean`
-- After: `check-npm-packages: transitive closure from vice-proxy.ts -- 48 modules, clean` (the r2000 family — `r2000-cli.ts`, `r2000-d64.ts`, `r2000-project.ts`, `r2000-launch.ts`, `r2000-verify.ts` — is now traversed via the dynamic-import match)
+- After: `check-npm-packages: transitive closure from vice-proxy.ts -- 48 modules, clean` (the anno family — `anno-cli.ts`, `anno-d64.ts`, `anno-project.ts`, `anno-launch.ts`, `anno-verify.ts` — is now traversed via the dynamic-import match)
 
 ## Issues Encountered
 
@@ -160,7 +160,7 @@ None - no external service configuration required.
 
 - All four residual Phase 10 review findings this plan owned (WR-03, WR-05, WR-06, WR-07) are fixed and pinned by a fixture or assertion that fails without the fix.
 - Folded todo 1 (dynamic-import blindness in the npm closure walk) is closed in code; per the plan, the todo file's own disposition (moving `.planning/todos/pending/2026-08-20-npm-closure-walk-blind-to-dynamic-imports.md`) is handled by plan 11-03, not this plan.
-- `r2000-d64.ts` and `r2000-cli.ts` are now hardened ahead of plans 11-06/11-07/11-08, each of which adds a verb to `r2000-cli.ts` per this plan's own objective.
+- `anno-d64.ts` and `anno-cli.ts` are now hardened ahead of plans 11-06/11-07/11-08, each of which adds a verb to `anno-cli.ts` per this plan's own objective.
 - No blockers for 11-03 onward.
 
 ---

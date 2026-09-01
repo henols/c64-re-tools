@@ -18,7 +18,7 @@ files_reviewed_list:
   - src/mcp/vice/block-class.test.ts
   - src/mcp/vice/block-class.ts
   - src/mcp/vice/package.json
-  - src/mcp/vice/r2000-coverage.test.ts
+  - src/mcp/vice/anno-coverage.test.ts
 findings:
   critical: 3
   warning: 28
@@ -145,7 +145,7 @@ keywords, and the one `vacuum into` whose argument is refused for
 SQLite will not convert to the integer of an existing row. No debug artifacts, no
 `eval`, no dynamic `Function`.
 
-`r2000-coverage.test.ts` was read and is unchanged since 28-03; per the phase
+`anno-coverage.test.ts` was read and is unchanged since 28-03; per the phase
 note it is reviewed but not extended or re-verified. Nothing was found in it.
 
 ## Structural Findings (fallow)
@@ -1494,7 +1494,7 @@ flag**. Both yielded.
   everything.
 
 Nothing new was found in `anno-index.ts`, `block-class.ts`, `package.json` or
-`r2000-coverage.test.ts`; all four are unchanged since round 5 and their open
+`anno-coverage.test.ts`; all four are unchanged since round 5 and their open
 items (IN-03, IN-08, WR-10) are carried forward. **There is still no SQL
 injection and no new one was introduced**: the round's new SQL is three bound
 `prepare().run()`/`get()` statements in `addScope` and `retype`, and the new
@@ -2008,7 +2008,7 @@ give the count its own local fixture carrying all three spellings, in the style
 **Files Reviewed:** 15 (the identical set; the diff under review is
 `0df4ab3^..HEAD`, which touched **four** of them: `anno-types.ts`,
 `anno-store.ts`, `anno-types.test.ts`, `anno-overlap.test.ts`. The other six --
-`package.json`, `r2000-coverage.test.ts`, `anno-index.ts`, `block-class.ts`,
+`package.json`, `anno-coverage.test.ts`, `anno-index.ts`, `block-class.ts`,
 `anno-store.test.ts`, `anno-durability-mutator.mjs` -- are byte-identical to the
 tree round 6 reviewed: `git diff --stat 0df4ab3^..HEAD` over those six paths is
 empty. `anno-store.ts` is still in `package.json:73`'s `files[]`, so WR-10 is
@@ -2117,9 +2117,9 @@ measured rather than argued:
   that was scoped to `anno-types.ts`.
 
 Nothing new was found in `anno-index.ts`, `block-class.ts`, `package.json`,
-`anno-store.test.ts`, `anno-durability-mutator.mjs` or `r2000-coverage.test.ts`;
+`anno-store.test.ts`, `anno-durability-mutator.mjs` or `anno-coverage.test.ts`;
 all six are unchanged since round 6 and their open items (IN-03, IN-08, WR-10)
-are carried forward. `r2000-coverage.test.ts` was read and is still unchanged
+are carried forward. `anno-coverage.test.ts` was read and is still unchanged
 since 28-03; per the phase note it is reviewed but not extended or re-verified,
 and nothing was found in it.
 

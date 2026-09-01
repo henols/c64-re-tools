@@ -115,9 +115,9 @@ test("codeOnly(): blanks // line comments, same-line /* */ blocks, and a block c
 });
 
 test("codeOnly(): leaves real identifiers and call syntax intact, so a genuine occurrence still matches", () => {
-  const src = 'spawnSync(R2000_BIN, ["--version"], { encoding: "utf8" });';
+  const src = 'spawnSync(ANNO_BIN, ["--version"], { encoding: "utf8" });';
   const code = codeOnly(src);
-  assert.match(code, /spawnSync\(R2000_BIN/, "a genuine call must remain discoverable after stripping");
+  assert.match(code, /spawnSync\(ANNO_BIN/, "a genuine call must remain discoverable after stripping");
 });
 
 test("codeOnly(keepLiteralBodies = true): keeps literal text, for the caller reading an import specifier", () => {
@@ -137,16 +137,16 @@ test("codeOnly(): a regex literal containing a backtick or a quote does not swal
   // backtick inside the character class opens a phantom TEMPLATE frame the
   // scanner never leaves, and every remaining line of the file vanishes from
   // the "code" the consuming guards match against.
-  const src = 'const r = /[`*_]/g;\nspawnSync(R2000_BIN, []);\nconst s = "HIDDEN";\n';
+  const src = 'const r = /[`*_]/g;\nspawnSync(ANNO_BIN, []);\nconst s = "HIDDEN";\n';
   const code = codeOnly(src);
-  assert.match(code, /spawnSync\(R2000_BIN/, "code after a regex literal must stay visible");
+  assert.match(code, /spawnSync\(ANNO_BIN/, "code after a regex literal must stay visible");
   assert.equal(/HIDDEN/.test(code), false, "and a real string literal after it must still be blanked");
 
-  const singleQuoted = codeOnly("const r = /'/g;\nspawnSync(R2000_BIN, []);\n");
-  assert.match(singleQuoted, /spawnSync\(R2000_BIN/, "a quote inside a regex must not open a string frame either");
+  const singleQuoted = codeOnly("const r = /'/g;\nspawnSync(ANNO_BIN, []);\n");
+  assert.match(singleQuoted, /spawnSync\(ANNO_BIN/, "a quote inside a regex must not open a string frame either");
 
-  const doubleQuoted = codeOnly('const r = /["]/g;\nspawnSync(R2000_BIN, []);\n');
-  assert.match(doubleQuoted, /spawnSync\(R2000_BIN/, "nor a double quote inside a character class");
+  const doubleQuoted = codeOnly('const r = /["]/g;\nspawnSync(ANNO_BIN, []);\n');
+  assert.match(doubleQuoted, /spawnSync\(ANNO_BIN/, "nor a double quote inside a character class");
 });
 
 test("codeOnly(): the two real modules CR-01 was measured on are scanned whole, not truncated", () => {
@@ -189,9 +189,9 @@ test("codeOnly(): a division is NOT read as a regex opener, in either direction"
   // The permissive failure mode of the CR-01 fix: misreading `/` as a regex
   // opener consumes real code as literal text. Both keyword position (where
   // a regex IS legal) and value position (where it is division) are pinned.
-  assert.match(codeOnly("const q = total / count;\nspawnSync(R2000_BIN, []);\n"), /total \/ count/);
-  assert.match(codeOnly("const q = f() / 2;\nspawnSync(R2000_BIN, []);\n"), /spawnSync\(R2000_BIN/);
-  assert.match(codeOnly("const q = arr[0] / 2;\nspawnSync(R2000_BIN, []);\n"), /spawnSync\(R2000_BIN/);
+  assert.match(codeOnly("const q = total / count;\nspawnSync(ANNO_BIN, []);\n"), /total \/ count/);
+  assert.match(codeOnly("const q = f() / 2;\nspawnSync(ANNO_BIN, []);\n"), /spawnSync\(ANNO_BIN/);
+  assert.match(codeOnly("const q = arr[0] / 2;\nspawnSync(ANNO_BIN, []);\n"), /spawnSync\(ANNO_BIN/);
   assert.match(
     codeOnly('function f() { return /x/.test("HIDDEN"); }'),
     /return \/x\/\.test\(/,

@@ -17,7 +17,7 @@ rather than invent one.
 | File to modify | Role | Data Flow | Closest Analog | Match Quality |
 |---|---|---|---|---|
 | `.claude/mcp/vice/docs-review-disposition.test.ts` (`parseFindingIds()` regex) | test/guard (planning-doc) | transform (regex parse of markdown headings) | `.claude/mcp/vice/docs-linerefs.test.ts`, `docs-dangling-refs.test.ts`, `docs-fork-decision.test.ts` (sibling guards, same file) | exact — same file family, same idiom |
-| `.planning/todos/pending/*.md` → `.planning/todos/completed/*.md` (≈18 files) | planning-doc / "model" record | CRUD (move + append) | `.planning/todos/completed/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`, `.planning/todos/completed/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md` | exact |
+| `.planning/todos/pending/*.md` → `.planning/todos/completed/*.md` (≈18 files) | planning-doc / "model" record | CRUD (move + append) | `.planning/todos/completed/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`, `.planning/todos/completed/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md` | exact |
 | `08-REVIEW.md` (WR-04, WR-12 fixes), `stock-dispatch.ts` (WR-13), `stock-connect.ts` (IN-05), `probe-binmon.mjs` (WR-01) | source / one-line-to-small fixes | request-response / string constant | Each finding's own review already has a written diff (`08-REVIEW.md:330-360` etc.) — analog is the review text itself, not another source file | exact (fix pre-specified) |
 | `README.md`, `.claude/skills/c64-ram-capture/SKILL.md` (DEBT-02 additions) | docs / user-facing prose | — | Existing adjacent sections in the same files (`## Boot a disk`, `## Troubleshooting`, `## Which skill does what`) | exact — insert in local voice |
 | `.planning/phases/03-direct-tools/03-HUMAN-UAT.md` (3 `pending` → `pass`/`fail`) | planning-doc / recorded test result | event-driven (live probe result) | `.planning/phases/08-capability-honesty-and-the-install-story/08-HUMAN-UAT.md` (test 1, already `result: partial` with evidence) | exact |
@@ -101,7 +101,7 @@ immutability), Phase 13's `IN-01`/`IN-02`, the `.vsf`-bootstrap todo, etc.
 
 ### Pending-todo disposition — the fixed-with-commit shape
 
-**Analog:** `.planning/todos/completed/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md` — frontmatter plus body structure to copy exactly:
+**Analog:** `.planning/todos/completed/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md` — frontmatter plus body structure to copy exactly:
 
 ```yaml
 ---
@@ -109,7 +109,7 @@ created: 2026-08-21T00:00:00.000Z
 title: <finding + short description> (<source review file> <id>)
 area: cli
 files:
-  - .claude/mcp/vice/r2000-cli.ts
+  - .claude/mcp/vice/anno-cli.ts
 ---
 
 ## Problem
@@ -144,7 +144,7 @@ Acknowledged, not in this roadmap.
 ### Upstream Contributions
 
 - **UP-01**: A `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60 lines in `monitor_binary.c` calling `keyboard_set_keyarr_any`) — closes stock's hardest loss for everyone, and would satisfy one of `FORK-01`'s reversal criteria
-- **UP-02**: regenerator2000's `--mcp-port` / `--mcp-bind` (~5 lines) — unblocks two projects at once and a host-side TUI, currently a *stated* limit in this project's install documentation precisely because it cannot be fixed downstream
+- **UP-02**: The external analyser's `--mcp-port` / `--mcp-bind` (~5 lines) — unblocks two projects at once and a host-side TUI, currently a *stated* limit in this project's install documentation precisely because it cannot be fixed downstream
 
 ### Fork Backend Follow-on (FORK-01, decided `retain`, Phase 14 plan 14-05)
 
@@ -154,7 +154,7 @@ Deliberately excluded from Phase 14's own scope (research Pitfall 4: Phase
 tied to the same reversal condition (`UP-01`) that would reopen `FORK-01`:
 ```
 
-Use this exact bullet shape — bold id (if warranted), one-line summary, em-dash rationale — for the `vice_disk_attach` contract-redesign promotion (DEBT-01's item b) and the `2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md` promotion if not fixed in-phase. Note `REQUIREMENTS.md`'s Traceability table (lines 153-166) lists `GATE-02`/`DEBT-01` etc. as `| ID | Phase | Status |` rows — flip `Pending` → `Complete` there too once done, matching the existing row shape.
+Use this exact bullet shape — bold id (if warranted), one-line summary, em-dash rationale — for the `vice_disk_attach` contract-redesign promotion (DEBT-01's item b) and the `2026-08-21-migrate-hand-copied-acme-gates-to-anno-test-gate.md` promotion if not fixed in-phase. Note `REQUIREMENTS.md`'s Traceability table (lines 153-166) lists `GATE-02`/`DEBT-01` etc. as `| ID | Phase | Status |` rows — flip `Pending` → `Complete` there too once done, matching the existing row shape.
 
 ---
 
@@ -240,7 +240,7 @@ not softened to force a pass.
 **Apply to:** the `docs-review-disposition.test.ts` regex-widening change — any edit to a guard's matching logic should carry an inline comment naming the specific real-world defect that motivated it (id, file, line), matching the existing "WHY THIS EXISTS" / "SCOPE FENCE" prose style already used throughout this file family.
 
 ### Todo lifecycle (`pending/` → `completed/` via `git mv` + `## Resolution`)
-**Source:** `.planning/todos/completed/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`, `.planning/todos/completed/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md`
+**Source:** `.planning/todos/completed/2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`, `.planning/todos/completed/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md`
 **Apply to:** all ~18 pending todos this phase disposes, and any newly-filed-and-closed-in-the-same-breath todo for a finding with no existing todo file.
 
 ### Disposition-source discipline
@@ -254,7 +254,7 @@ Per RESEARCH.md's own Open Questions section — these are genuinely undetermine
 | Item | Why no analog assigned | RESEARCH.md reference |
 |---|---|---|
 | Where the `vice_machine_config_set`/WarpMode caveat belongs (`docs/stock-vice-parity.md`'s licensed-divergence register vs. a new `capability-registry.ts` note field) | Genuine schema-vs-doc trade-off, explicitly flagged for planner/human decision, not a copy-a-pattern question | RESEARCH.md Open Question 1, Assumption A3 |
-| Whether `2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md` is fixed in-phase or promoted | Time-budget judgment call, not a pattern gap | RESEARCH.md Open Question 2 |
+| Whether `2026-08-21-migrate-hand-copied-acme-gates-to-anno-test-gate.md` is fixed in-phase or promoted | Time-budget judgment call, not a pattern gap | RESEARCH.md Open Question 2 |
 | Whether the widened regex needs a companion heading-style-normalization fix, or is sufficient alone | Forward-looking risk, not resolvable by finding a better analog today | RESEARCH.md Open Question 3 |
 
 ## Metadata

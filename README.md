@@ -221,7 +221,7 @@ withdrawal at each place a reader would otherwise reach for the old route.
 
 **The attribution stands, and is not what paid for the removal.** The skill
 playbooks in this repository still incorporate prose **adapted** from
-[regenerator2000](https://github.com/ricardoquesada/regenerator2000)'s own
+[the external analyser](an upstream repository)'s own
 analysis procedures, dual-licensed `MIT OR Apache-2.0` and taken here under
 MIT, pinned at commit `493f840418f1450a342bb220c2fe3d2585dd0525` (`v0.9.20`,
 2026-07-11). Every adapted playbook carries its own `ATTRIBUTION (ABS-02)`

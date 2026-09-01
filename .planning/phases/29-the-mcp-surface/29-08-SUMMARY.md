@@ -136,7 +136,7 @@ coverage:
     description: "This plan's edit to anno-derivation.test.ts is count-neutral for the removal gate's needle, proven by measurement rather than by adjusting the gate"
     verification:
       - kind: other
-        ref: "grep -aoi regenerator2000 src/mcp/vice/anno-derivation.test.ts | wc -l — 3 before and 3 after, identical with and without -a; scripts/check-no-regenerator2000.mjs exits 0 and is absent from commit 904763e's git show --stat"
+        ref: "grep -aoi the external analyser src/mcp/vice/anno-derivation.test.ts | wc -l — 3 before and 3 after, identical with and without -a; scripts/check-no-analyser.mjs exits 0 and is absent from commit 904763e's git show --stat"
         status: pass
     human_judgment: false
 
@@ -191,7 +191,7 @@ Each task was committed atomically:
 
 ### The two same-wave constraints the plan named — both discharged, with the observed ordering recorded
 
-- **Count neutrality for the removal gate's needle: PROVEN, not assumed.** `anno-derivation.test.ts` carries the permanent manifest-provenance exemption pinned at an exact hit count of **3**. Measured before the edit: **3** with `grep -a`, **3** without. Measured after: **3** with `grep -a`, **3** without. The three occurrences are at lines 41, 69 and 94, all inside the untouched upstream-integrity half; the appended half is written entirely over this surface's own verb names and refers to upstream only as "the Phase 19 manifest" and "the upstream analyser". `scripts/check-no-regenerator2000.mjs` exits **0**, and is **absent** from commit `904763e`'s `git show --stat`, which lists exactly one file.
+- **Count neutrality for the removal gate's needle: PROVEN, not assumed.** `anno-derivation.test.ts` carries the permanent manifest-provenance exemption pinned at an exact hit count of **3**. Measured before the edit: **3** with `grep -a`, **3** without. Measured after: **3** with `grep -a`, **3** without. The three occurrences are at lines 41, 69 and 94, all inside the untouched upstream-integrity half; the appended half is written entirely over this surface's own verb names and refers to upstream only as "the Phase 19 manifest" and "the upstream analyser". `scripts/check-no-analyser.mjs` exits **0**, and is **absent** from commit `904763e`'s `git show --stat`, which lists exactly one file.
 - **The observed ordering with plan 29-07: 29-07 committed FIRST.** Its four commits (`cd6e2e0`, `d15ea45`, `4e491a6`, `9e91694`) plus its metadata commit `1c8b64c` were already on `main` when this plan started — `1c8b64c` was `HEAD`. So the gate's CLI allow-list entries were already discharged and the contingency the plan described (a gate failure naming a CLI path, to be re-checked after 29-07's commit) never arose. The gate was green on the first invocation and on every subsequent one.
 - **The module-set assumption held.** 29-07 added no `anno-*.ts` production module and deleted none, exactly as measured at plan time. The count on this tree before Task 1 was **15**; after `anno-register.ts` landed it is **16**, which is what `ANNO_MODULE_FLOOR` is pinned to and what the new equality assertion confirms.
 
@@ -212,7 +212,7 @@ None. Every gate was green on first invocation after the code it checks was writ
 | `node --test anno-derivation.test.ts anno-register.test.ts anno-tools.test.ts hostpath-consumers.test.ts module-classification.test.ts` | **97 tests, 96 pass, 0 fail, 1 skipped** (the skip is the live upstream re-hash, absent by design) |
 | `cd src/mcp/vice && npm run typecheck` | **exit 0** |
 | `node scripts/check-npm-packages.mjs` | **exit 0** — `@henols/vice-mcp` now 84 files (was 81 at the baseline; the three added by plans 29-04/29-06/29-08) |
-| `node scripts/check-no-regenerator2000.mjs` | **exit 0** |
+| `node scripts/check-no-analyser.mjs` | **exit 0** |
 | `node scripts/audit-gate.mjs` | **exit 0** |
 | `cd src/mcp/vice && npm run test:automated` | 2829 tests, 2795 pass, **6 fail**, 23 skipped — see the baseline comparison below |
 
@@ -222,7 +222,7 @@ Per `29-BASELINE.md`, the comparison target is the SET. The VICE broker was conf
 
 | File | Baseline | This run | Verdict |
 |---|---|---|---|
-| `r2000-session.test.ts` | 5 (timing-sensitive FIFO queue, load-sensitive) | 5 in isolation, 6 under the full automated run | **unchanged** — same five named tests, the sixth being the load-sensitive variant the baseline predicts |
+| `anno-session.test.ts` | 5 (timing-sensitive FIFO queue, load-sensitive) | 5 in isolation, 6 under the full automated run | **unchanged** — same five named tests, the sixth being the load-sensitive variant the baseline predicts |
 | `audit-integrity.test.ts` | 2 | **0** | **left the set, with a known cause** — repaired earlier in this phase by plan 29-05 (`c59fcef`, "move the four unpaired guard tests, raise the module floor, give the registry's non-vacuity a survivable fate"). Confirmed green in isolation here: 44 tests, 44 pass. Not banked as this plan's improvement. |
 | `vice-proxy.test.ts` | 41 (lower bound, `MANUAL_ONLY_TESTS`) | not in the automated set | expected — `test:automated` skips it by design |
 
@@ -239,7 +239,7 @@ None — no external service configuration required.
 ## Next Phase Readiness
 
 - **Ready for 29-09.** The register `anno_search` lives in now exists, which is what C-5's re-point of the skill-coverage script's non-vacuity control depends on. The entry carries a `note` saying so in terms, so a later reader cannot remove it to make a count come out without reading why it is load-bearing.
-- **A standing note for 29-10.** `anno-derivation.test.ts`'s upstream-integrity half still compares the manifest's `curated` disposition against `CURATED_R2000_TOOLS`, imported from the module 29-10 deletes at wave 6. That import was deliberately left alone here, per this plan's own acceptance criterion — 29-10 owns the re-point, names this file in its `files_modified`, and carries the criterion that the comparison must still fail when the manifest and the surface disagree. Do not re-point it early.
+- **A standing note for 29-10.** `anno-derivation.test.ts`'s upstream-integrity half still compares the manifest's `curated` disposition against `CURATED_ANNO_TOOLS`, imported from the module 29-10 deletes at wave 6. That import was deliberately left alone here, per this plan's own acceptance criterion — 29-10 owns the re-point, names this file in its `files_modified`, and carries the criterion that the comparison must still fail when the manifest and the surface disagree. Do not re-point it early.
 - **A standing note for anyone touching the verb surface.** Adding a twentieth verb now requires either a manifest classification or a register entry with a requirement id and a consumer, and the failure names the verb. Retiring a verb requires removing its register entry in the same commit, or `DIRECTION 3 (no orphans)` names it.
 - **A standing note for anyone touching the `anno-*.ts` module set.** The floor is now an equality, not just a lower bound. Adding or deleting a production module in that family fails `hostpath-consumers.test.ts` with a message naming every module it found — re-derive the literal deliberately, naming the plan that moved the set.
 

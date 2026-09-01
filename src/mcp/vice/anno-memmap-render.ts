@@ -76,11 +76,11 @@ import { blockClassAt } from "./block-class.ts";
 // ---------------------------------------------------------------------------
 // WHAT THE VERSION-2 DIGEST HASHED -- the provenance of a lineage this
 // renderer no longer reads. Version 2 hashed three wire result shapes
-// measured LIVE against a real regenerator2000-core-0.9.20
+// measured LIVE against a real external-analyser-core-0.9.20
 // `--mcp-server-stdio` child, never transcribed from a document:
-// `r2000_get_blocks` returned `{start_address, end_address, type}`,
-// `r2000_get_symbols` returned `{address, name, kind, type}`, and
-// `r2000_get_comments` returned `{address, comment, type}`.
+// `anno_get_blocks` returned `{start_address, end_address, type}`,
+// `anno_get_symbols` returned `{address, name, kind, type}`, and
+// `anno_get_comments` returned `{address, comment, type}`.
 //
 // THIS PARAGRAPH IS THE RECORD, not a pointer at one. The three `interface`
 // declarations it used to sit above went with the queries, so the spellings
@@ -175,14 +175,14 @@ const REQUIRED_STRING_KEYS: readonly (keyof ProvenanceHeader)[] = [
  * copied into a sidecar by accident. */
 const PLACEHOLDER_PATTERN = /^<.*>$/;
 
-export class R2000ProvenanceHeaderError extends Error {
+export class AnnoProvenanceHeaderError extends Error {
   /** Every problem found, one entry per offending key -- a caller filling a
    * sidecar wants the whole list, not one problem at a time. */
   problems: readonly string[];
 
   constructor(message: string, problems: readonly string[]) {
     super(message);
-    this.name = "R2000ProvenanceHeaderError";
+    this.name = "AnnoProvenanceHeaderError";
     this.problems = problems;
   }
 }
@@ -191,14 +191,14 @@ export class R2000ProvenanceHeaderError extends Error {
  * Parses and validates a provenance sidecar. Collects EVERY problem (a
  * missing key, a non-string value, a template placeholder, a malformed
  * `captureSha256`, an invalid `videoStandard`, a malformed
- * `rasterPositions`) into one list and throws `R2000ProvenanceHeaderError`
+ * `rasterPositions`) into one list and throws `AnnoProvenanceHeaderError`
  * naming all of them at once -- never one at a time.
  */
 export function parseProvenanceHeader(json: unknown): ProvenanceHeader {
   const problems: string[] = [];
 
   if (typeof json !== "object" || json === null || Array.isArray(json)) {
-    throw new R2000ProvenanceHeaderError(
+    throw new AnnoProvenanceHeaderError(
       `provenance sidecar must be a JSON object, got ${Array.isArray(json) ? "an array" : typeof json}`,
       ["<root>: must be a JSON object"],
     );
@@ -241,7 +241,7 @@ export function parseProvenanceHeader(json: unknown): ProvenanceHeader {
   }
 
   if (problems.length > 0) {
-    throw new R2000ProvenanceHeaderError(
+    throw new AnnoProvenanceHeaderError(
       `provenance sidecar has ${problems.length} problem(s):\n` + problems.map((p) => `  - ${p}`).join("\n"),
       problems,
     );
@@ -296,7 +296,7 @@ export const RENDERER_VERSION = "3";
  * ESCAPES and never REJECTS -- unlike the label-name policy
  * (`anno-acme-ident.ts`'s `assertLegalAcmeIdentifier()`, T-11-NAME-INJECT's
  * other leg), because comment `evidence` legitimately contains `|` and
- * embedded newlines (`r2000_set_comment`'s own schema documents multi-line
+ * embedded newlines (`anno_set_comment`'s own schema documents multi-line
  * support) -- refusing here would refuse valid data, not an attack. Closes
  * WR-04 / T-11-NAME-INJECT's render leg: an unescaped `|` or newline in
  * store text used to be able to inject an extra table cell or split a row

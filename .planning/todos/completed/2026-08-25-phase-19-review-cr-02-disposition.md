@@ -76,7 +76,7 @@ gate to accommodate a fixture that had none.
 "The single seam" and header/schema subsections) and `19-REVIEW.md`'s `CR-02` blockquote, which
 agree on all four of the following:
 
-- **The Class-3 scan is gated** (`r2000-coverage.ts:836-924`). A pairing is PROVEN only when it
+- **The Class-3 scan is gated** (`anno-coverage.ts:836-924`). A pairing is PROVEN only when it
   is not inside a Class-4 window, both loads use the same index register (compared via
   `indexRegisterOf()` on the decoded mode, not by mere membership in `INDEXED_LOAD_MODES`), a
   dispatch consumer is in evidence (`hasDispatchContext()`), every reconstructed target is
@@ -91,7 +91,7 @@ agree on all four of the following:
 - **`COVERAGE_SCHEMA_VERSION` was bumped 1 → 2**, with a version-history block recording what
   changed and that a human accepted it; the nine-entry top-level `COVERAGE_REPORT_KEYS` set is
   unchanged.
-- **`provenDispatchTargets()`** (`r2000-coverage.ts:954-969`) is the single exported seam every
+- **`provenDispatchTargets()`** (`anno-coverage.ts:954-969`) is the single exported seam every
   `extraSeeds:` assignment reads, and `classFromBytes()` (`:1276`) takes the proven array as a
   parameter instead of testing `discoveredTargets`.
 

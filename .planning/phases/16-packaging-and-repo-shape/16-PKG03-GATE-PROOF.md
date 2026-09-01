@@ -246,7 +246,7 @@ $ git status --porcelain -- src
 (no output -- clean)
 
 $ grep -rnE "is Phase [0-9]+'s|Phase [0-9]+, via" src/ --include='*.ts' --include='*.mts' | grep -v 'fixtures/'
-src/mcp/vice/docs-dangling-refs.test.ts:152:// `r2000-cli.ts` told a user that closing the `.vsf` gap "is Phase 11's
+src/mcp/vice/docs-dangling-refs.test.ts:152:// `anno-cli.ts` told a user that closing the `.vsf` gap "is Phase 11's
 src/mcp/vice/docs-dangling-refs.test.ts:389:        "none of its literal System arms). Closing that gap for real is Phase 11's job, not this CLI's. " +
 
 $ grep -rnE "is Phase [0-9]+'s|Phase [0-9]+, via" src/mcp/vice/fixtures/ | wc -l
@@ -256,7 +256,7 @@ $ grep -rnE "is Phase [0-9]+'s|Phase [0-9]+, via" src/mcp/vice/fixtures/ | wc -l
 **Recorded honestly rather than filtered out:** the two lines above are NOT
 survivors of any plant this document performed. Both are pre-existing,
 unedited-by-this-plan content inside `docs-dangling-refs.test.ts` -- a
-DIFFERENT guard's own committed evidence, quoting `r2000-cli.ts`'s real
+DIFFERENT guard's own committed evidence, quoting `anno-cli.ts`'s real
 pre-fix wording from an unrelated defect this project fixed in plan
 11.1-01 (FLOW-02, the `.vsf` dangling-phase-pointer, not PKG-03). Line 152
 is prose in that file's own header explaining why FLOW-02 exists; line 389

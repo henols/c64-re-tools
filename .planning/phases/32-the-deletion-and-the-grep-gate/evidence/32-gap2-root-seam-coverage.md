@@ -449,7 +449,7 @@ would be a false positive that happened to pass for the wrong reason.
 | 5 | `npm run typecheck` (in `src/mcp/vice`) | exit 0, no diagnostics |
 | 6 | `npm run test:automated` (in `src/mcp/vice`) | 2994 tests, 2987 pass, **1 fail**, 1 skipped, 5 todo — see below |
 | 7 | `node scripts/check-guard-fates.mjs` | exit 0 — the blocking CI gate still green after all three Gap-2 plans |
-| 8 | `node scripts/check-no-regenerator2000.mjs` | exit 0 |
+| 8 | `node scripts/check-no-analyser.mjs` | exit 0 |
 | 9 | the nine `docs-*.test.ts` guards, run individually | 9/9 exit 0 |
 
 The nine, each `node --test <file>` on its own:

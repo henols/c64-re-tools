@@ -58,8 +58,8 @@ exists there until plan `32-08` adds that setting.
 ```
 
 with `TEST_PATH_RE = /^src\/mcp\/vice\/.*\.test\.[a-z]+$/`,
-`SCRIPTS_RE = /^scripts\//`, `SUBJECT_PREFIX = "r2000-"` and
-`SUBJECT_RE = /r2000/i`, applied over:
+`SCRIPTS_RE = /^scripts\//`, `SUBJECT_PREFIX = "anno-"` and
+`SUBJECT_RE = /anno/i`, applied over:
 
 ```bash
 git ls-tree -r --full-tree --name-only 0394cbc -- src/mcp/vice scripts   # 273 paths
@@ -119,31 +119,31 @@ setA 43   tests 32   scripts 11
   content-only tests    13
 ```
 
-`CUT-04` says "32 test files (19 `r2000-`named plus 13 non-`r2000-`named that
+`CUT-04` says "32 test files (19 `anno-`named plus 13 non-`anno-`named that
 reference it) and 11 files under `scripts/`". **19 + 13 = 32, plus 11 = 43.**
 Every figure reproduces.
 
 ### 2.1 The 19 name-carrying test files
 
-- `src/mcp/vice/r2000-answer-key.test.ts`
-- `src/mcp/vice/r2000-cli.test.ts`
-- `src/mcp/vice/r2000-confidence.test.ts`
-- `src/mcp/vice/r2000-coverage-grammar.test.ts`
-- `src/mcp/vice/r2000-coverage.test.ts`
-- `src/mcp/vice/r2000-d64.test.ts`
-- `src/mcp/vice/r2000-enum-gen.test.ts`
-- `src/mcp/vice/r2000-launch.test.ts`
-- `src/mcp/vice/r2000-mcp-client.test.ts`
-- `src/mcp/vice/r2000-memmap-render.test.ts`
-- `src/mcp/vice/r2000-project.test.ts`
-- `src/mcp/vice/r2000-regbits.test.ts`
-- `src/mcp/vice/r2000-session.test.ts`
-- `src/mcp/vice/r2000-spawn-seam.test.ts`
-- `src/mcp/vice/r2000-symbol-roundtrip.test.ts`
-- `src/mcp/vice/r2000-tools.test.ts`
-- `src/mcp/vice/r2000-upstream-audit.test.ts`
-- `src/mcp/vice/r2000-verb-coverage.test.ts`
-- `src/mcp/vice/r2000-verify.test.ts`
+- `src/mcp/vice/absorbed-answer-key.test.ts`
+- `src/mcp/vice/anno-cli.test.ts`
+- `src/mcp/vice/anno-confidence.test.ts`
+- `src/mcp/vice/anno-coverage-grammar.test.ts`
+- `src/mcp/vice/anno-coverage.test.ts`
+- `src/mcp/vice/anno-d64.test.ts`
+- `src/mcp/vice/anno-enum-gen.test.ts`
+- `src/mcp/vice/anno-launch.test.ts`
+- `src/mcp/vice/anno-mcp-client.test.ts`
+- `src/mcp/vice/anno-memmap-render.test.ts`
+- `src/mcp/vice/anno-project.test.ts`
+- `src/mcp/vice/anno-regbits.test.ts`
+- `src/mcp/vice/anno-session.test.ts`
+- `src/mcp/vice/spawn-seam.test.ts`
+- `src/mcp/vice/anno-symbol-roundtrip.test.ts`
+- `src/mcp/vice/anno-tools.test.ts`
+- `src/mcp/vice/anno-derivation.test.ts`
+- `src/mcp/vice/anno-verb-coverage.test.ts`
+- `src/mcp/vice/anno-verify.test.ts`
 
 ### 2.2 The 13 content-only test files, with both counting definitions
 
@@ -153,7 +153,7 @@ Every figure reproduces.
 | `src/mcp/vice/capability-registry.test.ts` | 8 | 5 |
 | `src/mcp/vice/disasm-roundtrip.test.ts` | 3 | 3 |
 | `src/mcp/vice/docs-dangling-refs.test.ts` | 19 | 18 |
-| `src/mcp/vice/docs-r2000-decisions.test.ts` | 10 | 8 |
+| `src/mcp/vice/docs-absorbed-decisions.test.ts` | 10 | 8 |
 | `src/mcp/vice/hop-chain-comments.test.ts` | 8 | 8 |
 | `src/mcp/vice/hostpath-consumers.test.ts` | 31 | 22 |
 | `src/mcp/vice/skill-acme-build-cli.test.ts` | 2 | 2 |
@@ -166,8 +166,8 @@ Every figure reproduces.
 Command (per path):
 
 ```bash
-git show 0394cbc:<path> | grep -aoi r2000 | wc -l   # occurrences
-git show 0394cbc:<path> | grep -aic r2000           # lines-with-a-hit
+git show 0394cbc:<path> | grep -aoi anno | wc -l   # occurrences
+git show 0394cbc:<path> | grep -aic anno           # lines-with-a-hit
 ```
 
 **Counting definition used by THIS document: occurrences** (one entry per
@@ -184,7 +184,7 @@ is directly comparable with `grep -aoi … | wc -l`.
 ### 2.3 Reconciliation against `.planning/research/PITFALLS.md:36`
 
 `PITFALLS.md:36` lists **the same 13 names** with these per-file figures:
-`docs-r2000-decisions` (8), `hostpath-consumers` (22), `skill-attribution`
+`docs-anno-decisions` (8), `hostpath-consumers` (22), `skill-attribution`
 (20), `stock-dispatch` (21), `vice-proxy` (29), `docs-dangling-refs` (18),
 `hop-chain-comments` (8), `capability-registry` (5), `tool-support-table`
 (5), `disasm-roundtrip` (3), `skill-acme-build-cli` (2), `stock-connect` (1),
@@ -197,20 +197,20 @@ lines-with-a-hit, this document counts occurrences — and not a disagreement
 about membership or a measurement error in either. The two are consistent; read
 them with their own definitions.
 
-### 2.4 CORRECTION: `PITFALLS.md:36`'s "21 `r2000-*.test.ts` files" does not reproduce
+### 2.4 CORRECTION: `PITFALLS.md:36`'s "21 `anno-*.test.ts` files" does not reproduce
 
-The same `PITFALLS.md` row closes with "plus the 21 `r2000-*.test.ts` files".
+The same `PITFALLS.md` row closes with "plus the 21 `anno-*.test.ts` files".
 Measured:
 
 ```bash
 git ls-tree -r --full-tree --name-only 0394cbc -- src/mcp/vice \
-  | grep -c '^src/mcp/vice/r2000-.*\.test\.[a-z]\+$'      # -> 19
+  | grep -c '^src/mcp/vice/anno-.*\.test\.[a-z]\+$'      # -> 19
 git ls-tree -r --full-tree --name-only 0394cbc -- src/mcp/vice \
-  | grep -c '^src/mcp/vice/r2000-'                         # -> 36
+  | grep -c '^src/mcp/vice/anno-'                         # -> 36
 ```
 
-**19**, not 21 — and `CUT-04`'s own "19 `r2000-`named" is the figure that
-reproduces. (36 is the count of *all* `r2000-`prefixed files under
+**19**, not 21 — and `CUT-04`'s own "19 `anno-`named" is the figure that
+reproduces. (36 is the count of *all* `anno-`prefixed files under
 `src/mcp/vice/`, tests and non-tests together; it is not the test count.) The
 guard's `SET_A_FLOOR = 43` is built on 19 + 13 + 11, so nothing downstream
 depends on the 21.
@@ -224,8 +224,8 @@ depends on the 21.
 | `scripts/check-skill-fork-honesty.mjs` | content | 8 |
 | `scripts/check-skill-tool-coverage.mjs` | content | 85 |
 | `scripts/generate-tool-support-table.mjs` | content | 12 |
-| `scripts/lib/r2000-cli-verbs.d.mts` | **path** | 4 |
-| `scripts/lib/r2000-cli-verbs.mjs` | **path** | 16 |
+| `scripts/lib/anno-cli-verbs.d.mts` | **path** | 4 |
+| `scripts/lib/anno-cli-verbs.mjs` | **path** | 16 |
 | `scripts/lib/skill-corpus.d.mts` | content | 1 |
 | `scripts/lib/skill-descriptions.d.mts` | content | 1 |
 | `scripts/lib/skill-descriptions.mjs` | content | 3 |
@@ -238,7 +238,7 @@ depends on the 21.
 `CUT-04`'s prose refers to "two `.d.mts` declarations" among the 11 `scripts/`
 files. The derived set contains **three**:
 
-- `scripts/lib/r2000-cli-verbs.d.mts`
+- `scripts/lib/anno-cli-verbs.d.mts`
 - `scripts/lib/skill-corpus.d.mts`
 - `scripts/lib/skill-descriptions.d.mts`
 
@@ -281,13 +281,13 @@ member: seven set-A paths are absent from `345d5c4` and have **no mechanically
 derivable successor** — no git-detected rename, and no name-descendant that
 exists at `AUDIT_END`:
 
-- `src/mcp/vice/r2000-launch.test.ts`
-- `src/mcp/vice/r2000-mcp-client.test.ts`
-- `src/mcp/vice/r2000-project.test.ts`
-- `src/mcp/vice/r2000-session.test.ts`
-- `src/mcp/vice/r2000-symbol-roundtrip.test.ts`
-- `src/mcp/vice/r2000-upstream-audit.test.ts`
-- `src/mcp/vice/r2000-verify.test.ts`
+- `src/mcp/vice/anno-launch.test.ts`
+- `src/mcp/vice/anno-mcp-client.test.ts`
+- `src/mcp/vice/anno-project.test.ts`
+- `src/mcp/vice/anno-session.test.ts`
+- `src/mcp/vice/anno-symbol-roundtrip.test.ts`
+- `src/mcp/vice/anno-derivation.test.ts`
+- `src/mcp/vice/anno-verify.test.ts`
 
 Calling any of these "renamed" would require a **hand-typed** historical→new
 mapping, which is exactly what the guard forbids. Each of the seven therefore
@@ -302,31 +302,31 @@ reproduces, and 15 is the measured figure.
 
 `git diff -M --name-status 0394cbc 345d5c4` resolves **8** of the 15 renames.
 The remaining 7 score as `D` + an unrelated `A`, and are resolved by the
-name-descendant predicate — same directory, basename with the `r2000-` prefix
+name-descendant predicate — same directory, basename with the `anno-` prefix
 replaced by `anno-`/`absorbed-` or dropped entirely:
 
 | Historical path | New subject | Resolved via |
 |---|---|---|
-| `scripts/lib/r2000-cli-verbs.mjs` | `scripts/lib/anno-cli-verbs.mjs` | git rename detection |
-| `src/mcp/vice/docs-r2000-decisions.test.ts` | `src/mcp/vice/docs-absorbed-decisions.test.ts` | git rename detection |
-| `src/mcp/vice/r2000-answer-key.test.ts` | `src/mcp/vice/absorbed-answer-key.test.ts` | git rename detection |
-| `src/mcp/vice/r2000-confidence.test.ts` | `src/mcp/vice/anno-confidence.test.ts` | git rename detection |
-| `src/mcp/vice/r2000-coverage-grammar.test.ts` | `src/mcp/vice/anno-coverage-grammar.test.ts` | git rename detection |
-| `src/mcp/vice/r2000-coverage.test.ts` | `src/mcp/vice/anno-coverage.test.ts` | git rename detection |
-| `src/mcp/vice/r2000-d64.test.ts` | `src/mcp/vice/anno-d64.test.ts` | git rename detection |
-| `src/mcp/vice/r2000-regbits.test.ts` | `src/mcp/vice/anno-regbits.test.ts` | git rename detection |
-| `scripts/lib/r2000-cli-verbs.d.mts` | `scripts/lib/anno-cli-verbs.d.mts` | **name-descendant** |
-| `src/mcp/vice/r2000-cli.test.ts` | `src/mcp/vice/anno-cli.test.ts` | **name-descendant** |
-| `src/mcp/vice/r2000-enum-gen.test.ts` | `src/mcp/vice/anno-enum-gen.test.ts` | **name-descendant** |
-| `src/mcp/vice/r2000-memmap-render.test.ts` | `src/mcp/vice/anno-memmap-render.test.ts` | **name-descendant** |
-| `src/mcp/vice/r2000-spawn-seam.test.ts` | `src/mcp/vice/spawn-seam.test.ts` | **name-descendant** |
-| `src/mcp/vice/r2000-tools.test.ts` | `src/mcp/vice/anno-tools.test.ts` | **name-descendant** |
-| `src/mcp/vice/r2000-verb-coverage.test.ts` | `src/mcp/vice/anno-verb-coverage.test.ts` | **name-descendant** |
+| `scripts/lib/anno-cli-verbs.mjs` | `scripts/lib/anno-cli-verbs.mjs` | git rename detection |
+| `src/mcp/vice/docs-absorbed-decisions.test.ts` | `src/mcp/vice/docs-absorbed-decisions.test.ts` | git rename detection |
+| `src/mcp/vice/absorbed-answer-key.test.ts` | `src/mcp/vice/absorbed-answer-key.test.ts` | git rename detection |
+| `src/mcp/vice/anno-confidence.test.ts` | `src/mcp/vice/anno-confidence.test.ts` | git rename detection |
+| `src/mcp/vice/anno-coverage-grammar.test.ts` | `src/mcp/vice/anno-coverage-grammar.test.ts` | git rename detection |
+| `src/mcp/vice/anno-coverage.test.ts` | `src/mcp/vice/anno-coverage.test.ts` | git rename detection |
+| `src/mcp/vice/anno-d64.test.ts` | `src/mcp/vice/anno-d64.test.ts` | git rename detection |
+| `src/mcp/vice/anno-regbits.test.ts` | `src/mcp/vice/anno-regbits.test.ts` | git rename detection |
+| `scripts/lib/anno-cli-verbs.d.mts` | `scripts/lib/anno-cli-verbs.d.mts` | **name-descendant** |
+| `src/mcp/vice/anno-cli.test.ts` | `src/mcp/vice/anno-cli.test.ts` | **name-descendant** |
+| `src/mcp/vice/anno-enum-gen.test.ts` | `src/mcp/vice/anno-enum-gen.test.ts` | **name-descendant** |
+| `src/mcp/vice/anno-memmap-render.test.ts` | `src/mcp/vice/anno-memmap-render.test.ts` | **name-descendant** |
+| `src/mcp/vice/spawn-seam.test.ts` | `src/mcp/vice/spawn-seam.test.ts` | **name-descendant** |
+| `src/mcp/vice/anno-tools.test.ts` | `src/mcp/vice/anno-tools.test.ts` | **name-descendant** |
+| `src/mcp/vice/anno-verb-coverage.test.ts` | `src/mcp/vice/anno-verb-coverage.test.ts` | **name-descendant** |
 
-The plan names five of these as git-invisible (`r2000-cli`, `r2000-enum-gen`,
-`r2000-memmap-render`, `r2000-tools`, `r2000-verb-coverage`); the measurement
-finds **seven**, adding `scripts/lib/r2000-cli-verbs.d.mts` and
-`src/mcp/vice/r2000-spawn-seam.test.ts`. **The name-descendant predicate is
+The plan names five of these as git-invisible (`anno-cli`, `anno-enum-gen`,
+`anno-memmap-render`, `anno-tools`, `anno-verb-coverage`); the measurement
+finds **seven**, adding `scripts/lib/anno-cli-verbs.d.mts` and
+`src/mcp/vice/spawn-seam.test.ts`. **The name-descendant predicate is
 AUTHORITATIVE over git's output** wherever the two disagree — it is the same
 predicate `CUT-01` and `29-VERIFICATION.md` already established, and git's
 similarity heuristic is a scoring accident of how much of each file changed,
@@ -368,8 +368,8 @@ admits each one; where it is `0`, the **path** carried the match instead.
 
 | Path | matched via | occurrences at `345d5c4` |
 |---|---|---|
-| `scripts/check-no-regenerator2000.d.mts` | **path** | 0 |
-| `scripts/check-no-regenerator2000.mjs` | **path** | 0 |
+| `scripts/check-no-analyser.d.mts` | **path** | 0 |
+| `scripts/check-no-analyser.mjs` | **path** | 0 |
 | `scripts/lib/anno-cli-invocations.mjs` | content | 1 |
 | `src/mcp/vice/acme-gate.test.ts` | content | 1 |
 | `src/mcp/vice/anno-derivation.test.ts` | content | 19 |
@@ -404,13 +404,13 @@ uniform content test failing, not a judgement.
 | `scripts/lib/anno-cli-invocations.d.mts` | yes | **0** | **EXCLUDED** — same reason |
 | `scripts/lib/anno-cli-verbs.d.mts` | yes | **0** | **EXCLUDED** — same reason (see §7.1; this is the exclusion the plan's arithmetic did not account for) |
 | `scripts/lib/anno-cli-invocations.mjs` | yes | **1** | **INCLUDED** — its content matches |
-| `scripts/lib/anno-cli-verbs.mjs` | **no** (git resolves it as a rename `R`) | 4 | **not a set-B candidate** — it is `scripts/lib/r2000-cli-verbs.mjs`'s successor, and that set-A row claims it (§4.2) |
+| `scripts/lib/anno-cli-verbs.mjs` | **no** (git resolves it as a rename `R`) | 4 | **not a set-B candidate** — it is `scripts/lib/anno-cli-verbs.mjs`'s successor, and that set-A row claims it (§4.2) |
 
 Command:
 
 ```bash
 git diff --name-only --diff-filter=A 0394cbc 345d5c4 | grep -x '<path>'
-git show 345d5c4:<path> | grep -aoi r2000 | wc -l
+git show 345d5c4:<path> | grep -aoi anno | wc -l
 ```
 
 **The asymmetry between `anno-cli-invocations.mjs` (in) and
@@ -460,7 +460,7 @@ Result — **11 names**, in the requirement's own order:
 ```
 docs-linerefs
 docs-dangling-refs
-docs-r2000-decisions
+docs-anno-decisions
 hostpath-consumers
 stock-dispatch
 vice-proxy
@@ -536,7 +536,7 @@ does not commit it.
   candidate listed and **none picked**. An ambiguity silently resolved by
   preference is exactly the "name unaudited" failure this section closes.
   *Measured outcome: no name resolved ambiguously under the equality rule.*
-- `docs-r2000-decisions` resolves to **zero** paths at `HEAD` — the file was
+- `docs-anno-decisions` resolves to **zero** paths at `HEAD` — the file was
   renamed to `docs-absorbed-decisions.test.ts` by **plan 29-05** — but resolves
   cleanly against the pinned-commit `historicalPath` set. Its resolution below
   is taken at `AUDIT_COMMIT` `0394cbc`, which is what makes the historical name
@@ -546,9 +546,9 @@ does not commit it.
 
 | # | Name as written in `CUT-04` | Resolved path | Verdict | Evidence |
 |---|---|---|---|---|
-| 1 | `docs-linerefs` | *(no registry row)* → `src/mcp/vice/docs-linerefs.test.ts` | **EXCLUDED** | `grep -aic r2000` = **0** at `0394cbc` and **0** at `345d5c4`; not added between the pins. Non-vacuity discharged in-band by plan 32-04 — see §6.1.4 |
+| 1 | `docs-linerefs` | *(no registry row)* → `src/mcp/vice/docs-linerefs.test.ts` | **EXCLUDED** | `grep -aic anno` = **0** at `0394cbc` and **0** at `345d5c4`; not added between the pins. Non-vacuity discharged in-band by plan 32-04 — see §6.1.4 |
 | 2 | `docs-dangling-refs` | `src/mcp/vice/docs-dangling-refs.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/docs-dangling-refs.test.ts`, `verdict` `re-pointed` |
-| 3 | `docs-r2000-decisions` | `src/mcp/vice/docs-r2000-decisions.test.ts` *(at `0394cbc`; renamed to `src/mcp/vice/docs-absorbed-decisions.test.ts` by plan 29-05)* | **CITED** | registry row `historicalPath` `src/mcp/vice/docs-r2000-decisions.test.ts`, `verdict` `re-pointed`, `newSubject` `src/mcp/vice/docs-absorbed-decisions.test.ts` |
+| 3 | `docs-anno-decisions` | `src/mcp/vice/docs-absorbed-decisions.test.ts` *(at `0394cbc`; renamed to `src/mcp/vice/docs-absorbed-decisions.test.ts` by plan 29-05)* | **CITED** | registry row `historicalPath` `src/mcp/vice/docs-absorbed-decisions.test.ts`, `verdict` `re-pointed`, `newSubject` `src/mcp/vice/docs-absorbed-decisions.test.ts` |
 | 4 | `hostpath-consumers` | `src/mcp/vice/hostpath-consumers.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/hostpath-consumers.test.ts`, `verdict` `re-pointed` |
 | 5 | `stock-dispatch` | `src/mcp/vice/stock-dispatch.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/stock-dispatch.test.ts`, `verdict` `re-pointed` |
 | 6 | `vice-proxy` | `src/mcp/vice/vice-proxy.test.ts` | **CITED** | registry row `historicalPath` `src/mcp/vice/vice-proxy.test.ts`, `verdict` `re-pointed` |
@@ -584,9 +584,9 @@ from the registry.
 **2. Subject-occurrence count at both pins — zero and zero.**
 
 ```bash
-$ git show 0394cbc:src/mcp/vice/docs-linerefs.test.ts | grep -aic r2000
+$ git show 0394cbc:src/mcp/vice/docs-linerefs.test.ts | grep -aic anno
 0
-$ git show 345d5c4:src/mcp/vice/docs-linerefs.test.ts | grep -aic r2000
+$ git show 345d5c4:src/mcp/vice/docs-linerefs.test.ts | grep -aic anno
 0
 ```
 
@@ -753,12 +753,12 @@ renamed member gets **exactly one row** — under its historical path at
 
 | Subtracted path | Claimed by (set-A member) |
 |---|---|
-| `src/mcp/vice/anno-cli.test.ts` | `src/mcp/vice/r2000-cli.test.ts` |
-| `src/mcp/vice/anno-enum-gen.test.ts` | `src/mcp/vice/r2000-enum-gen.test.ts` |
-| `src/mcp/vice/anno-memmap-render.test.ts` | `src/mcp/vice/r2000-memmap-render.test.ts` |
-| `src/mcp/vice/anno-tools.test.ts` | `src/mcp/vice/r2000-tools.test.ts` |
-| `src/mcp/vice/anno-verb-coverage.test.ts` | `src/mcp/vice/r2000-verb-coverage.test.ts` |
-| `src/mcp/vice/spawn-seam.test.ts` | `src/mcp/vice/r2000-spawn-seam.test.ts` |
+| `src/mcp/vice/anno-cli.test.ts` | `src/mcp/vice/anno-cli.test.ts` |
+| `src/mcp/vice/anno-enum-gen.test.ts` | `src/mcp/vice/anno-enum-gen.test.ts` |
+| `src/mcp/vice/anno-memmap-render.test.ts` | `src/mcp/vice/anno-memmap-render.test.ts` |
+| `src/mcp/vice/anno-tools.test.ts` | `src/mcp/vice/anno-tools.test.ts` |
+| `src/mcp/vice/anno-verb-coverage.test.ts` | `src/mcp/vice/anno-verb-coverage.test.ts` |
+| `src/mcp/vice/spawn-seam.test.ts` | `src/mcp/vice/spawn-seam.test.ts` |
 
 **22 − 6 = 16.**
 
@@ -783,7 +783,7 @@ was nothing to subtract it from:
 git diff --name-only --diff-filter=A 0394cbc 345d5c4 \
   | grep -x 'scripts/lib/anno-cli-verbs.d.mts'          # -> present (it IS an addition)
 git show 345d5c4:scripts/lib/anno-cli-verbs.d.mts \
-  | grep -aoi r2000 | wc -l                              # -> 0  (fails the content predicate)
+  | grep -aoi anno | wc -l                              # -> 0  (fails the content predicate)
 ```
 
 The plan counted a path out of the set-B candidate list that had never entered

@@ -36,8 +36,8 @@
 // WHAT NOT TO DO -- each entry names a specific, measured trap
 // ---------------------------------------------------------------------------
 //   1. NEVER re-spell, re-order, add to or remove from the twelve members of
-//      `DATA_TYPES`. They are the `r2000_set_data_type` schema's own strings in
-//      the schema's own order (`r2000-tools.ts:291-304`), and
+//      `DATA_TYPES`. They are the `anno_set_data_type` schema's own strings in
+//      the schema's own order (`anno-tools.ts:291-304`), and
 //      `src/skills/c64-memory-mapping/SKILL.md` already names all four split
 //      variants verbatim -- a re-spelling breaks a shipped playbook and buys
 //      nothing. Narrowing the vocabulary once a project file exists is not a
@@ -88,7 +88,7 @@
 //      permanent because nothing records that a substitution happened. A legal
 //      name already bound to a different address is refused for the same
 //      reason rather than rebound. The schema states the rule itself
-//      (`r2000-tools.ts:246-251`): "An illegal name is REJECTED, never
+//      (`anno-tools.ts:246-251`): "An illegal name is REJECTED, never
 //      sanitized or quoted."
 //   8. NEVER restate the eleven auto-generated-name prefixes here. They live in
 //      exactly one place, `anno-coverage.ts`'s `AUTO_NAME_PREFIX_RE`, and
@@ -157,7 +157,7 @@ import { ViceError, type ViceErrorOptions } from "./vice.ts";
  * somewhere else is a number the next reader has no way to weigh.
  *
  * WHAT THE BUMP BUYS: `anno_enum_usage`, the table that associates ONE address
- * with ONE `anno_enum` row, which is what `r2000_apply_enum_usage`'s route
+ * with ONE `anno_enum` row, which is what `anno_apply_enum_usage`'s route
  * needs and what version 2 had nowhere to put. The association is by enum
  * **id**, never by enum name, so `updateProjectEnum`'s rename can neither
  * orphan a usage nor silently re-point it at a different enum.
@@ -198,8 +198,8 @@ export const ADDRESS_MAX = 0xffff;
 export const MAX_SNAPSHOT_REVISIONS = 32;
 
 /**
- * The twelve annotation data types, in the `r2000_set_data_type` schema's own
- * order and spelling (`r2000-tools.ts:291-304`). This is the ONE place the
+ * The twelve annotation data types, in the `anno_set_data_type` schema's own
+ * order and spelling (`anno-tools.ts:291-304`). This is the ONE place the
  * vocabulary is written down -- see trap 1 in the module header.
  *
  * Both distinguishing axes are separately observable, which is what justifies
@@ -208,7 +208,7 @@ export const MAX_SNAPSHOT_REVISIONS = 32;
  * `lo_hi_address` and as `$1008 $3412 $00c0 $ffcf` under `hi_lo_address` -- a
  * different resolved-target set. ADDRESS-VERSUS-WORD: the address forms
  * produce cross-references and the word forms do not
- * (`r2000-tools.ts:305-313`).
+ * (`anno-tools.ts:305-313`).
  */
 export const DATA_TYPES = Object.freeze([
   "code",
@@ -249,7 +249,7 @@ export const SPLIT_DATA_TYPES: readonly SplitDataType[] = Object.freeze(DATA_TYP
 
 /**
  * One typed range as the store holds it. `endInclusive` is INCLUSIVE, matching
- * the schema's own `end_address` sentence (`r2000-tools.ts:288`), so a range's
+ * the schema's own `end_address` sentence (`anno-tools.ts:288`), so a range's
  * length is `endInclusive - start + 1` and a one-byte range has
  * `start === endInclusive`. `bank` is reserved and interpreted by nothing:
  * every row this store writes today has `bank` null.
@@ -263,8 +263,8 @@ export interface RangeRow {
 }
 
 /**
- * The two comment placements, in the `r2000_set_comment` schema's own order and
- * spelling (`r2000-tools.ts:270-274`). This is the ONE place this vocabulary is
+ * The two comment placements, in the `anno_set_comment` schema's own order and
+ * spelling (`anno-tools.ts:270-274`). This is the ONE place this vocabulary is
  * written down: `'line'` is a comment on its own line before the instruction,
  * `'side'` is inline on the same line as the instruction.
  */
@@ -277,7 +277,7 @@ export type CommentType = (typeof COMMENT_TYPES)[number];
  * The four label kinds. This is the ONE place this vocabulary is written down.
  *
  * THE CAPITALISATION IS A DECIDED ASYMMETRY, not an oversight. `DATA_TYPES` is
- * lowercase because it is read off `r2000_set_data_type`'s own schema and is
+ * lowercase because it is read off `anno_set_data_type`'s own schema and is
  * named verbatim in `src/skills/c64-memory-mapping/SKILL.md`, so a re-spelling
  * would break a shipped playbook. `LABEL_KINDS` is capitalised because its only
  * mechanical consumer is the coverage census, which already spells it
@@ -452,7 +452,7 @@ export interface SplitTableReinterpretation {
 }
 
 /** One scope as the store holds it. Both ends are INCLUSIVE, matching the
- * schema's own two sentences (`r2000-tools.ts:322-331`). There is no name field
+ * schema's own two sentences (`anno-tools.ts:322-331`). There is no name field
  * and no nesting: the schema says nested scopes are unsupported, and the store
  * must not invent a capability the surface it mirrors does not have. That last
  * claim is ENFORCED rather than merely asserted -- `addScope()` in
@@ -875,7 +875,7 @@ export function assertDataType(value: unknown): DataType {
  * Refuses an impossible range shape. Three separate refusals, each with its
  * own message: an end outside `ADDRESS_MIN..ADDRESS_MAX`, an `endInclusive`
  * below `start`, and an ODD byte count on a split-table layout -- the schema's
- * own "even count required" rule (`r2000-tools.ts:305-313`), which is a
+ * own "even count required" rule (`anno-tools.ts:305-313`), which is a
  * validation rule about the DATA rather than a property of the type, which is
  * why it is checked here and not encoded in `DataType`.
  */
@@ -1301,7 +1301,7 @@ export function assertAccessKind(value: unknown): XrefAccessKind {
 }
 
 /** The legal-identifier shape, quoted from the schema's own sentence
- * (`r2000-tools.ts:246-251`): "starts with a letter or underscore, followed by
+ * (`anno-tools.ts:246-251`): "starts with a letter or underscore, followed by
  * letters/digits/underscores only". Used for label names and for project-enum
  * names, which the schema calls a "unique alphanumeric identifier" and whose own
  * documented example (`vic_registers`) carries an underscore. */
@@ -1400,7 +1400,7 @@ const LINE_BREAK_RE = /[\n\r\u2028\u2029]/;
  *      text. Named before a length is, because "your comment has a line break
  *      in it" is actionable and "your comment is too long" would not be.
  *   3. The `';'` prefix the schema tells callers to omit ("Do not include the
- *      ';' prefix", `r2000-tools.ts:269`) -- unless `allowLeadingSemicolon`.
+ *      ';' prefix", `anno-tools.ts:269`) -- unless `allowLeadingSemicolon`.
  *   4. Over `MAX_COMMENT_BYTES` UTF-8 bytes.
  *
  * Returns the text UNCHANGED on acceptance. Every refusal is a REFUSAL and
@@ -1462,7 +1462,7 @@ export const MAX_VARIANT_KEY = 0xffffffff;
 
 /**
  * Parses one project-enum variant key into its numeric value. Accepts exactly
- * the forms the schema names (`r2000-tools.ts:474`): "keys are numeric strings
+ * the forms the schema names (`anno-tools.ts:474`): "keys are numeric strings
  * (decimal, hex 0x/$, bin 0b/%)".
  *
  * Decimal IS accepted here, and that is not an inconsistency with
@@ -1508,7 +1508,7 @@ export function parseVariantKey(key: unknown): number {
 }
 
 /** True for the two `_address` split layouts, false for the two `_word` ones.
- * The schema's own distinction (`r2000-tools.ts:305-313`):
+ * The schema's own distinction (`anno-tools.ts:305-313`):
  * `address=16-bit LE pointers (creates X-Refs, ...)` versus
  * `word=16-bit LE values`. Exported separately from `resolveSplitTargets()` so
  * the store can ask the question without resolving anything. */

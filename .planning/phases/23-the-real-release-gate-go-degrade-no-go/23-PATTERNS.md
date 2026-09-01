@@ -12,9 +12,9 @@
 > whole phase shape: 8 plans, 5 waves, zero product code, one durable findings doc with a
 > machine-readable verdict, ROADMAP/STATE pointers as the gate.
 >
-> **D-01 exclusion:** nothing here maps to regenerator2000 runtime/tooling as a pattern to
-> follow. The one r2000-adjacent analog cited (`09-*`) is cited for its *plan/evidence shape*,
-> not for its subject matter. Reading `analyzer.rs` source is permitted; running r2000 is not.
+> **D-01 exclusion:** nothing here maps to the external analyser runtime/tooling as a pattern to
+> follow. The one anno-adjacent analog cited (`09-*`) is cited for its *plan/evidence shape*,
+> not for its subject matter. Reading `analyzer.rs` source is permitted; running anno is not.
 
 ## File Classification
 
@@ -22,7 +22,7 @@
 |-------------------|------|-----------|----------------|---------------|
 | `23-01-PLAN.md` (the pre-committed rule + schemas) | plan / pre-commitment | document | `.planning/phases/09-the-assumption-probe-go-no-go/09-07-PLAN.md` `<decision_rule>` block | exact |
 | `23-NN-PLAN.md` (measuring plans) | plan | document | `09-01-PLAN.md` (frontmatter + `<evidence_conventions>`) | exact |
-| `docs/phase23-real-release-gate-findings.md` (THE VERDICT) | findings doc | document, machine-readable frontmatter | `docs/phase9-regenerator2000-probe-findings.md` | exact |
+| `docs/phase23-real-release-gate-findings.md` (THE VERDICT) | findings doc | document, machine-readable frontmatter | `docs/phase9-external-analyser-probe-findings.md` | exact |
 | `evidence/criterion1-*.txt` … `criterion4-*.md` | evidence transcript | append-only file I/O | `.planning/phases/09-…/evidence/criterion3-reassembly.txt` (outcome line + `## ACCEPTED LIMIT` + `## RESEARCH CORRECTIONS`) | exact |
 | `evidence/inventory/*` (D-05 pre-committed inventory) | evidence, pre-commitment | document + JSON | `09-…/evidence/criterion0-prerequisites.txt` (shape only) | role-match |
 | `evidence/capture/*` (flat 64K identity + machine state) | evidence record | document | `src/skills/c64-ram-capture/templates/capture-record.template.md` | exact |
@@ -65,7 +65,7 @@ condition, and *why* in the milestone's own terms:
 ```markdown
 Rules, first match wins:
 
-- **R1 → `reconsider`.** `c1_build` is not `pass`. D-R2 makes regenerator2000 a *required*
+- **R1 → `reconsider`.** `c1_build` is not `pass`. D-R2 makes the external analyser a *required*
   prerequisite … and no other criterion is answerable without it.
 - **R4 → `degrade`.** Any of `c3_2_reassembly`, `c3_3_export_lbl`, `c3_4_vsf_load` is not
   `pass` (including `partial` and `could-not-run`). The milestone proceeds, with named
@@ -113,8 +113,8 @@ depends_on: []
 files_modified:
   - .planning/phases/09-…/evidence/criterion1-install-and-version.txt
 autonomous: false
-requirements: [R2000-16]
-requirement_subparts: ["R2000-16(5) — build present and version recorded", "prerequisite for R2000-16(1)(2)(3)(4)"]
+requirements: [ANNO-16]
+requirement_subparts: ["ANNO-16(5) — build present and version recorded", "prerequisite for ANNO-16(1)(2)(3)(4)"]
 must_haves:
   artifacts:
     - path: ".planning/phases/09-…/evidence/criterion1-install-and-version.txt"
@@ -122,9 +122,9 @@ must_haves:
       min_lines: 20
   key_links:
     - from: "evidence/criterion1-install-and-version.txt"
-      to: "$HOME/.cargo/bin/regenerator2000"
-      via: "recorded `regenerator2000 --version` output"
-      pattern: "regenerator2000 [0-9]+\\.[0-9]+\\.[0-9]+"
+      to: "$HOME/.cargo/bin/analyser"
+      via: "recorded `analyser --version` output"
+      pattern: "the external analyser [0-9]+\\.[0-9]+\\.[0-9]+"
 ---
 ```
 
@@ -144,7 +144,7 @@ Binding on every task in this plan and every other plan in phase 9.
    … Record the absolute `PROBE_DIR` paths in the evidence file so later waves can find them.
 3. **Argv arrays, never shell strings.** Any spawn from a script uses an argv array. Do
    not interpolate a path or a filename into a shell command string (ASVS V5 …).
-4. **`--vice` is never passed to regenerator2000.** Not experimentally, not "just to see".
+4. **`--vice` is never passed to the external analyser.** Not experimentally, not "just to see".
 5. **Do NOT spawn a nested `claude` / `claude -p` session** … Nested sessions stall
    indefinitely in this project and the stall reports as success.
 6. **Commit early.** Bank each task before starting the next; verify with `git log`.
@@ -152,8 +152,8 @@ Binding on every task in this plan and every other plan in phase 9.
 ```
 
 Phase 23 substitutions: `PROBE_DIR=$HOME/.cache/c64-re-tools/phase23` (**not** `/tmp` — tmpfs,
-and the pivot already lost a dxa build to it); rule 4 becomes **"regenerator2000 is never
-executed — not the binary, not `r2000-coverage.ts`, not as an oracle or a screening tool
+and the pivot already lost a dxa build to it); rule 4 becomes **"the external analyser is never
+executed — not the binary, not `anno-coverage.ts`, not as an oracle or a screening tool
 (D-01). Reading `analyzer.rs` source is permitted."**
 
 Also copy 09-07's addition, which is a real collision guard:
@@ -168,16 +168,16 @@ Also copy 09-07's addition, which is a real collision guard:
 
 ### `docs/phase23-real-release-gate-findings.md` — the verdict (D-10, PROOF-05)
 
-**Analog:** `docs/phase9-regenerator2000-probe-findings.md` (606 lines).
+**Analog:** `docs/phase9-external-analyser-probe-findings.md` (606 lines).
 
-**Frontmatter** (`docs/phase9-regenerator2000-probe-findings.md:1-16`), verbatim:
+**Frontmatter** (`docs/phase9-external-analyser-probe-findings.md:1-16`), verbatim:
 
 ```yaml
 ---
 phase: 09-the-assumption-probe-go-no-go
-requirement: R2000-16
+requirement: ANNO-16
 probe_date: 2026-08-20
-regenerator2000_version: 0.9.20
+regeneratoanno_version: 0.9.20
 verdict: degrade
 verdict_rule_applied: R4
 criteria:
@@ -252,7 +252,7 @@ Three structural elements, all load-bearing:
 
 1. **The outcome line** — bare `^[A-Z][A-Z0-9_]*: value` at column 0, which the decision rule
    greps. Examples in the analog: `criterion3-reassembly.txt:395` `REASSEMBLY: pass`;
-   `criterion1-install-and-version.txt:186` `INSTALLED_VERSION: regenerator2000 0.9.20`;
+   `criterion1-install-and-version.txt:186` `INSTALLED_VERSION: The external analyser 0.9.20`;
    `criterion1-container-toolchain-cost.txt:344` `SINGLE_STAGE_BYTES: 1256576420`.
 2. **`## ACCEPTED LIMIT`** blocks (`criterion3-reassembly.txt:402`,
    `criterion3-export-lbl.txt:599`, `criterion4-vsf-load.txt:880`) — prose naming what the limit
@@ -265,7 +265,7 @@ Three structural elements, all load-bearing:
    The ROADMAP's standing "prefer `.vsf` over `.raw` …" constraint is **well-supported for
    RAM content and for the entry-point/start-address field** … It is **not well-supported
    for machine-type auto-detection** … Any Phase 10/11 pipeline that bootstraps a project
-   from a stock-VICE `.vsf` … must **not** trust regenerator2000's auto-detected system …
+   from a stock-VICE `.vsf` … must **not** trust the external analyser's auto-detected system …
    ```
 3. **`## RESEARCH CORRECTIONS`** blocks (`criterion1-container-toolchain-cost.txt:389`,
    `criterion3-reassembly.txt:421`, `criterion4-vsf-load.txt:900`) — numbered items, each
@@ -472,7 +472,7 @@ the outcomes:
 Add one entry to `### Decisions`, in the existing `- [Phase 09]: …` shape. It must contain:
 the verdict value verbatim, the rule that fired (`R1`-`R5`) and the input value that made it
 fire, the installed … version the finding is qualified by, and the literal
-path `docs/phase9-regenerator2000-probe-findings.md`. … **Do not restate the
+path `docs/phase9-external-analyser-probe-findings.md`. … **Do not restate the
 per-criterion outcomes here**; a second copy of the seven values is a second thing that can
 drift out of agreement with the first.
 ```
@@ -488,10 +488,10 @@ over your edit, repair the body afterwards and do not pin any magic number in an
 Its verify step also shows the guard that the findings doc is not touched by the pointer plan:
 
 ```bash
-grep -q 'phase9-regenerator2000-probe-findings.md' .planning/STATE.md && \
+grep -q 'phase9-external-analyser-probe-findings.md' .planning/STATE.md && \
 grep -qE '\[Phase 09\]' .planning/STATE.md && \
 grep -qE 'proceed|degrade|reconsider' .planning/STATE.md && \
-test -z "$(git diff --name-only -- docs/phase9-regenerator2000-probe-findings.md)"
+test -z "$(git diff --name-only -- docs/phase9-external-analyser-probe-findings.md)"
 ```
 
 Phase 23's ROADMAP edit targets Phase 24's `**Depends on**` line and Notes. The analog's own
@@ -512,7 +512,7 @@ section that pre-empts the "no code, no tests" false gap:
 ## What This Phase Is
 
 A probe/gate phase. It deliberately produces no product code — evidence transcripts under
-`evidence/`, one durable findings document (`docs/phase9-regenerator2000-probe-findings.md`),
+`evidence/`, one durable findings document (`docs/phase9-external-analyser-probe-findings.md`),
 and a machine-readable verdict. Absence of source changes and new tests is by design and is not
 treated as a gap.
 ```

@@ -5,11 +5,11 @@ severity: warning
 resolves_phase:
 ---
 
-# Residual r2000 review findings not fixed in Phase 10
+# Residual anno review findings not fixed in Phase 10
 
 `10-REVIEW.md` reported 2 Critical / 12 Warning / 7 Info. The two Criticals (CR-01
 export-asm clobber, CR-02 bootstrap self-destruct) plus WR-01 (dead
-`FORBIDDEN_R2000_FLAGS`) were fixed during phase 10 close-out. These remain open —
+`FORBIDDEN_ANNO_FLAGS`) were fixed during phase 10 close-out. These remain open —
 deliberately deferred, not overlooked:
 
 - **WR-02 — the deny-by-construction guard test can go vacuous.**
@@ -37,7 +37,7 @@ Verified CLEAN by the same review and recorded here so it is not re-derived: the
 `--vice` guard is complete against 0.9.20's real flag surface; all spawns are argv
 arrays with no `shell: true`; the host-path consumer set is still exactly five;
 Phase 4's `disasm-*` family is untouched; `files[]` is complete; and
-`r2000-verify.ts`'s no-exit-code-trust claim holds in both directions.
+`anno-verify.ts`'s no-exit-code-trust claim holds in both directions.
 
 Full detail with file:line and repro steps:
 `.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-REVIEW.md`

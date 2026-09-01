@@ -41,7 +41,7 @@ disagree for exactly that reason:
 
 - **LINES** — the number of lines containing at least one match. This is what `grep -c` reports.
 - **OCCURRENCES** — the number of matches. This is what `grep -o … | wc -l` reports, and what
-  `check-no-regenerator2000.mjs`'s `subjectHits()` returns (*"ONE ENTRY PER OCCURRENCE (not per
+  `check-no-analyser.mjs`'s `subjectHits()` returns (*"ONE ENTRY PER OCCURRENCE (not per
   line), so a line carrying the subject twice is reported twice"*).
 
 **Every number in this ledger names its unit.** A bare count is a defect.
@@ -52,20 +52,20 @@ disagree for exactly that reason:
 binary and skips it, so a plain `grep` silently drops it from any census:
 
 ```bash
-$ grep -c 'regenerator2000' src/mcp/vice/anno-memmap-render.ts ; echo "plain-grep-exit=$?"
+$ grep -c 'the external analyser' src/mcp/vice/anno-memmap-render.ts ; echo "plain-grep-exit=$?"
 plain-grep-exit=1                        # no output, exit 1 -- the file was SKIPPED, not searched
 
-$ grep -ac 'regenerator2000' src/mcp/vice/anno-memmap-render.ts
+$ grep -ac 'the external analyser' src/mcp/vice/anno-memmap-render.ts
 1                                        # 1 LINE, with -a
 ```
 
 Consequence, measured both ways over the same file set:
 
 ```bash
-$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done | wc -l); echo "with -a: $N"
+$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'the external analyser' "$f" && echo "$f"; done | wc -l); echo "with -a: $N"
 with -a: 35
 
-$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -q  'regenerator2000' "$f" && echo "$f"; done | wc -l); echo "without -a: $N"
+$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -q  'the external analyser' "$f" && echo "$f"; done | wc -l); echo "without -a: $N"
 without -a: 34
 ```
 
@@ -95,7 +95,7 @@ const lns = (s, n) => s.split("\n").filter((l) => l.includes(n)).length;
 ```
 
 This agrees with `grep -a` on every file checked and, unlike `grep`, has no binary heuristic at all.
-The needle is the contiguous literal `regenerator` + `2000`, matched case-sensitively; the gate's own
+The needle is the contiguous subject literal, matched case-sensitively; the gate's own
 `subjectHits()` matches case-insensitively, and no case variant was found in the swept set.
 
 ---
@@ -107,12 +107,12 @@ The swept set is the **union of three clauses**, deduplicated on repo-relative p
 ### Clause (a) — the removal gate's own scope predicate
 
 Files the removal gate actually polices: `git ls-files` minus the `PLANNING_PREFIX` (`".planning/"`,
-a **prefix**, not a substring — `check-no-regenerator2000.mjs:180`, `trackedFiles()` at `:194-200`),
+a **prefix**, not a substring — `check-no-analyser.mjs:180`, `trackedFiles()` at `:194-200`),
 plus the shipped-but-untracked `installer/**` paths `packFiles()` supplies.
 
 ```bash
 # (a) tracked, outside .planning/, CONTENT carries the literal -- 35 files
-for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done
+for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'the external analyser' "$f" && echo "$f"; done
 ```
 
 ```bash
@@ -133,14 +133,14 @@ $ git ls-files | grep -vc '^\.planning/'
 
 **(a1) + (a2) = 37 files**, and **37 is the cardinality of the gate's own predicate**, because
 `subjectHits(relPath, text)` scans *"BOTH the file's path and its text"* and emits the sentinel `0`
-for a path occurrence (`check-no-regenerator2000.mjs`, `subjectHits()`). The plan's clause-(a) command
+for a path occurrence (`check-no-analyser.mjs`, `subjectHits()`). The plan's clause-(a) command
 is content-only and yields **35**; the plan's published figure of 35 therefore reconciles exactly under
 the content-only definition, and the gate's own predicate reaches **two more files**:
 
-- `scripts/check-no-regenerator2000.mjs` — the gate itself. Its **content** carries **0** occurrences
-  (it composes `SUBJECT_NEEDLE = "regenerator" + "2000"` at module scope specifically so that *"this
+- `scripts/check-no-analyser.mjs` — the gate itself. Its **content** carries **0** occurrences
+  (it composes `SUBJECT_NEEDLE = the subject needle at module scope specifically so that *"this
   file's own source never carries the literal contiguously"*). Its **path** carries 1.
-- `scripts/check-no-regenerator2000.d.mts` — its ambient type declaration. Same shape: 0 in content,
+- `scripts/check-no-analyser.d.mts` — its ambient type declaration. Same shape: 0 in content,
   1 in the path.
 
 Both are pinned at exactly 1 by the `gate-self` exemption class, which is why the gate's reported
@@ -149,14 +149,14 @@ whether we looked, and a file the gate itself counts is a file we must be able t
 Confirming the direction of the discrepancy:
 
 ```bash
-$ grep -ac 'regenerator2000' scripts/check-no-regenerator2000.mjs
+$ grep -ac 'the external analyser' scripts/check-no-analyser.mjs
 0
 ```
 
 ### Clause (b) — the named living documents ROADMAP criterion 2 lists that clause (a) cannot reach
 
 `.planning/ROADMAP.md` § Phase 32 criterion 2 names *"install documentation, `CLAUDE.md`'s
-regenerator2000 constraint bullets and its `r2000_*` clause, `PROJECT.md`'s constraints and Key
+The external analyser constraint bullets and its `anno_*` clause, `PROJECT.md`'s constraints and Key
 Decisions rows … `ARCHITECTURE.md`'s Rule A21, `THIRD-PARTY-NOTICES.md`'s dual-licence notice — which
 **remains true** for the retained prose — and all seven skill playbooks"*. Four of those live under
 `.planning/`, which clause (a) excludes by prefix, and `CLAUDE.md` carries zero occurrences so clause
@@ -241,7 +241,7 @@ the gate's pins use. **`lines`** = LINES of content containing it.
 | 2 | `README.md` | 2 | 1 | 2 | unchanged | — | `surviving-provenance`, pinned **2** (one line: the attribution link's URL + link text) |
 | 3 | `THIRD-PARTY-NOTICES.md` | 3 | 3 | 2 | unchanged | — | `notices-attribution-blocks`, BLOCK-scoped (no per-file exact pin; class total **27**) |
 | 4 | `docs/phase23-real-release-gate-findings.md` | 3 | 2 | 1 | unchanged | — | `findings-docs`, pinned **3** |
-| 5 | `docs/phase9-regenerator2000-probe-findings.md` | 44 | 41 | 1 | unchanged | — | `findings-docs`, pinned **44** — 43 in content + **1 in the filename** |
+| 5 | `docs/phase9-external-analyser-probe-findings.md` | 44 | 41 | 1 | unchanged | — | `findings-docs`, pinned **44** — 43 in content + **1 in the filename** |
 | 6 | `docs/stock-vice-parity.md` | 1 | 1 | 2 | unchanged | — | `surviving-provenance`, pinned **1** |
 | 7 | `installer/THIRD-PARTY-NOTICES.md` | 7 | 7 | 2 | unchanged | — | `notices-attribution-blocks`, BLOCK-scoped |
 | 8 | `scripts/check-npm-packages.mjs` | 1 | 1 | 2 | unchanged | — | `surviving-provenance`, pinned **1** |
@@ -277,8 +277,8 @@ the gate's pins use. **`lines`** = LINES of content containing it.
 
 | # | Path | hits | lines | `D-08` class | Verdict | Changed by | Gate exemption class + pin |
 |---|---|---|---|---|---|---|---|
-| 36 | `scripts/check-no-regenerator2000.mjs` | 1 (path) | 0 | infra | **corrected** | plan **32-03** (`c81d2ee`) — rule 4's stale NUL offset and pre-deletion tree-wide totals re-measured. **Comment-only**; content occurrences stayed at 0, so no pin could move | `gate-self`, pinned **1** — satisfied by the filename alone |
-| 37 | `scripts/check-no-regenerator2000.d.mts` | 1 (path) | 0 | infra | unchanged | — | `gate-self`, pinned **1** — filename only |
+| 36 | `scripts/check-no-analyser.mjs` | 1 (path) | 0 | infra | **corrected** | plan **32-03** (`c81d2ee`) — rule 4's stale NUL offset and pre-deletion tree-wide totals re-measured. **Comment-only**; content occurrences stayed at 0, so no pin could move | `gate-self`, pinned **1** — satisfied by the filename alone |
+| 37 | `scripts/check-no-analyser.d.mts` | 1 (path) | 0 | infra | unchanged | — | `gate-self`, pinned **1** — filename only |
 
 ### Clause (a3) — the 4 shipped-but-untracked `installer/**` twins
 
@@ -297,9 +297,9 @@ Verdict derived by byte-comparison against the generated-from source, not by `gi
 also why `CUT-06`'s *corrective* work could be confined to `.planning/` without touching any exact
 count.
 
-| # | Path | hits | lines | `r2000_` (occ / lines) | `D-08` class | Verdict | Changed by |
+| # | Path | hits | lines | `anno_` (occ / lines) | `D-08` class | Verdict | Changed by |
 |---|---|---|---|---|---|---|---|
-| 42 | `.planning/PROJECT.md` | 51 | 46 | 22 / 16 | 3 (was) → corrected | **corrected** | plan **32-03** (`11abb71`): `:311`'s four `vice-proxy.ts` citations un-staled by `+2` and the deleted `r2000_*` family replaced with the surviving `anno_*` one; `:396`'s `D-36` Outcome cell re-pointed at a guard file that exists. Subject-literal count **unmoved** at 51 occurrences / 46 lines; `r2000_` moved 23→22 occurrences, 17→16 lines, which is the one corrected pointer leaving. See §3 |
+| 42 | `.planning/PROJECT.md` | 51 | 46 | 22 / 16 | 3 (was) → corrected | **corrected** | plan **32-03** (`11abb71`): `:311`'s four `vice-proxy.ts` citations un-staled by `+2` and the deleted `anno_*` family replaced with the surviving `anno_*` one; `:396`'s `D-36` Outcome cell re-pointed at a guard file that exists. Subject-literal count **unmoved** at 51 occurrences / 46 lines; `anno_` moved 23→22 occurrences, 17→16 lines, which is the one corrected pointer leaving. See §3 |
 | 43 | `.planning/ARCHITECTURE.md` | 11 | 11 | 7 / 7 | 3 (was) → corrected | **corrected** | plan **32-03** (`5ff2311`): Rule A21 converted from a present-tense invariant about a deleted module into a dated, superseded record. Heading and rule number preserved; all five citations intact; subject count **unmoved** at 11 / 11 |
 | 44 | `.planning/ROADMAP.md` | 24 | 23 | 10 / 10 | 1 | **corrected** | **Not a `CUT-06` edit.** Orchestrator progress bookkeeping only (`2eaa136`, `19b2c5c`): three plan checkboxes `[ ]`→`[x]`, `**Plans**: 9 plans`→`3/9 plans executed`, and the Phase 32 progress row `— / Not started`→`3/9 / In Progress`. The full diff (`git diff d6bebb1 HEAD -- .planning/ROADMAP.md`) contains **no change to any sentence naming the subject**; criterion 2's prose is byte-identical. Both counts unmoved (24 / 23, 10 / 10) |
 | 45 | `.planning/REQUIREMENTS.md` | 13 | 12 | 7 / 7 | 1 | unchanged | — Deliberately untouched: `CUT-06` is declared by six plans in this phase, so it may not read `Complete` until the last one summarises (recorded by plan 32-03) |
@@ -308,11 +308,11 @@ count.
 ### Clause (c) — the 3 remaining playbooks with zero mentions, plus `acme-build`
 
 The four playbooks in the set **only** through clause (c). Each carries **0 occurrences / 0 lines** of
-the subject literal and **0 occurrences of `r2000_`**, so none is reachable by clause (a) and none
+the subject literal and **0 occurrences of `anno_`**, so none is reachable by clause (a) and none
 carries a gate pin. They are here because ROADMAP criterion 2 names the seven playbooks as a set, and
 "we looked and there is nothing" must be distinguishable from "we never looked".
 
-| # | Path | hits | lines | `r2000_` occ | Verdict | Changed by |
+| # | Path | hits | lines | `anno_` occ | Verdict | Changed by |
 |---|---|---|---|---|---|---|
 | 47 | `src/skills/acme-build/SKILL.md` | 0 | 0 | 0 | unchanged | — |
 | 48 | `src/skills/c64-provenance-diff/SKILL.md` | 0 | 0 | 0 | unchanged | — |
@@ -325,7 +325,7 @@ carries a gate pin. They are here because ROADMAP criterion 2 names the seven pl
 rows                     50   (= deduplicated swept-set size, §1)
 unchanged                45
 corrected                 5   (.planning/PROJECT.md, .planning/ARCHITECTURE.md, .planning/ROADMAP.md,
-                               scripts/check-no-regenerator2000.mjs, scripts/check-skill-fork-honesty.mjs)
+                               scripts/check-no-analyser.mjs, scripts/check-skill-fork-honesty.mjs)
   of those, CUT-06 pointer corrections   3   (PROJECT.md, ARCHITECTURE.md, and the gate's own stale header)
   of those, changed for other reasons    2   (ROADMAP.md bookkeeping; check-skill-fork-honesty.mjs's --root)
 occurrence counts moved   0   in every clause-(a) file -- see §6
@@ -335,23 +335,23 @@ occurrence counts moved   0   in every clause-(a) file -- see §6
 
 ---
 
-## 3. `.planning/PROJECT.md` — the `r2000_` per-line roll-up, including `:715`
+## 3. `.planning/PROJECT.md` — the `anno_` per-line roll-up, including `:715`
 
-Plan 32-03 adjudicated all **17 lines** carrying `r2000_` in `.planning/PROJECT.md` at the pre-sweep
+Plan 32-03 adjudicated all **17 lines** carrying `anno_` in `.planning/PROJECT.md` at the pre-sweep
 tree and recorded **15 keep / 2 correct**, with the deciding `D-08` clause written down for each. That
-table is the primary record (`32-03-SUMMARY.md` § *The `r2000_` adjudication ledger*); it is rolled up
+table is the primary record (`32-03-SUMMARY.md` § *The `anno_` adjudication ledger*); it is rolled up
 here rather than re-derived.
 
 Re-measured for this ledger, both units, both trees:
 
 ```bash
-$ git show d6bebb1:.planning/PROJECT.md | grep -ac 'r2000_'            # pre-sweep, LINES
+$ git show d6bebb1:.planning/PROJECT.md | grep -ac 'anno_'            # pre-sweep, LINES
 17
-$ git show d6bebb1:.planning/PROJECT.md | grep -ao 'r2000_' | wc -l    # pre-sweep, OCCURRENCES
+$ git show d6bebb1:.planning/PROJECT.md | grep -ao 'anno_' | wc -l    # pre-sweep, OCCURRENCES
 23
-$ grep -ac 'r2000_' .planning/PROJECT.md                               # post-sweep, LINES
+$ grep -ac 'anno_' .planning/PROJECT.md                               # post-sweep, LINES
 16
-$ grep -ao 'r2000_' .planning/PROJECT.md | wc -l                       # post-sweep, OCCURRENCES
+$ grep -ao 'anno_' .planning/PROJECT.md | wc -l                       # post-sweep, OCCURRENCES
 22
 ```
 
@@ -360,7 +360,7 @@ single line that left is `:311`, the one live pointer.
 
 | Verdict | Lines | Where recorded |
 |---|---|---|
-| `correct` | 2 — `:311` (live pointer at the deleted `r2000_*` family, replaced with `anno_*`), `:396` (`D-36` Outcome cell's pointer at a guard filename not on disk) | `32-03-SUMMARY.md`, commit `11abb71` |
+| `correct` | 2 — `:311` (live pointer at the deleted `anno_*` family, replaced with `anno_*`), `:396` (`D-36` Outcome cell's pointer at a guard filename not on disk) | `32-03-SUMMARY.md`, commit `11abb71` |
 | `keep` | 15, of which 3 carry a recorded ambiguity (`:143`, `:668`, `:715`) | `32-03-SUMMARY.md` |
 
 ### 3.1 `.planning/PROJECT.md:715` — explicit verdict, reasoned here
@@ -371,7 +371,7 @@ than a silent inheritance, and rather than a silent reversal.
 **The text** (`.planning/PROJECT.md:714-716`, read this session):
 
 > The prose is therefore already this project's. What is **not** already this project's is the route
-> underneath it: every absorbed step **is written against `r2000_*` tool calls**. Deleting the tool
+> underneath it: every absorbed step **is written against `anno_*` tool calls**. Deleting the tool
 > surface without re-pointing them leaves the knowledge intact and the procedure inert — which is the
 > failure this milestone's skill half exists to prevent.
 
@@ -382,7 +382,7 @@ the clause is **present tense**, and as a statement about today's tree it is now
 this session:
 
 ```bash
-$ grep -aco 'r2000_' src/skills/*/SKILL.md
+$ grep -aco 'anno_' src/skills/*/SKILL.md
 src/skills/acme-build/SKILL.md:0
 src/skills/c64-memory-mapping/SKILL.md:0
 src/skills/c64-program-recon/SKILL.md:0
@@ -392,8 +392,8 @@ src/skills/routine-queue-walker/SKILL.md:0
 src/skills/vice-wedge-triage/SKILL.md:0
 ```
 
-Zero `r2000_` occurrences across all seven playbooks: phases 29 and 31 re-pointed every one. So "every
-absorbed step is written against `r2000_*` tool calls" describes a tree that no longer exists.
+Zero `anno_` occurrences across all seven playbooks: phases 29 and 31 re-pointed every one. So "every
+absorbed step is written against `anno_*` tool calls" describes a tree that no longer exists.
 
 The case *for* keeping it, which decides the verdict:
 
@@ -421,7 +421,7 @@ zeros above — so a later reader is not left to rediscover it.
 
 **Recommended remedy, deliberately not applied here.** If a later plan wants present-tense accuracy,
 the correct edit is **additive**: append a dated clause such as "(re-pointed to `anno_*` by phases 29
-and 31; zero `r2000_` occurrences remain in the playbooks as of 2026-08-31)" *after* the existing
+and 31; zero `anno_` occurrences remain in the playbooks as of 2026-08-31)" *after* the existing
 sentence, leaving the original byte-identical. This plan does not make that edit for two independent
 reasons, both recorded rather than assumed: (i) plan 32-05's declared `files_modified` is exactly this
 ledger, so editing `.planning/PROJECT.md` would be an out-of-scope write from a parallel worktree
@@ -513,9 +513,9 @@ reporting on two. The generated tree is gitignored, so it does not dirty the wor
 this as outstanding."* This ledger records the evidence without reopening the decision.
 
 ```bash
-$ grep -ac 'regenerator2000' CLAUDE.md
+$ grep -ac 'the external analyser' CLAUDE.md
 0
-$ grep -ac 'r2000_' CLAUDE.md
+$ grep -ac 'anno_' CLAUDE.md
 0
 ```
 
@@ -544,7 +544,7 @@ Four copies, all under `.planning/`. Full inventory in §B.5.
 ### 6.1 The removal gate exits 0
 
 ```bash
-$ node scripts/check-no-regenerator2000.mjs ; echo "exit=$?"
+$ node scripts/check-no-analyser.mjs ; echo "exit=$?"
 check-no-<subject>: OK -- scanned 406 files (376 tracked outside ".planning/" + 30 shipped-but-untracked
 installer paths, floor 350); 157 occurrence(s) permanently exempt, 0 temporarily allow-listed across 0 entries.
   permanent exemptions (exact pins):
@@ -584,9 +584,9 @@ The five `corrected` rows are the interesting cases, and all five held:
 
 | Path | pre-sweep occ | post-sweep occ | moved? |
 |---|---|---|---|
-| `scripts/check-no-regenerator2000.mjs` | 1 (path only) | 1 (path only) | no — comment-only edit |
+| `scripts/check-no-analyser.mjs` | 1 (path only) | 1 (path only) | no — comment-only edit |
 | `scripts/check-skill-fork-honesty.mjs` | 2 | 2 | no — `--root` added around them |
-| `.planning/PROJECT.md` | 51 | 51 | no (subject literal); `r2000_` 23→22 |
+| `.planning/PROJECT.md` | 51 | 51 | no (subject literal); `anno_` 23→22 |
 | `.planning/ARCHITECTURE.md` | 11 | 11 | no |
 | `.planning/ROADMAP.md` | 24 | 24 | no |
 
@@ -647,9 +647,9 @@ root (§0), run verbatim:
 
 ```bash
 cd "$WT_ROOT" \
-  && N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done | wc -l) \
+  && N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'the external analyser' "$f" && echo "$f"; done | wc -l) \
   && echo "N=$N" && test "$N" -eq 35 \
-  && node scripts/check-no-regenerator2000.mjs >/dev/null \
+  && node scripts/check-no-analyser.mjs >/dev/null \
   && grep -c 'grep -a' .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-document-sweep.md
 ```
 
@@ -669,7 +669,7 @@ were taken before phase 32's own commits landed, so "the same number today" is t
 |---|---|---|---|---|
 | A1 | 35 tracked non-`.planning` files contain the literal | **35** (with `-a`) / **34** (without) | FILES | ✅ **reconciles** — but only with `-a` |
 | A2 | `.planning/PROJECT.md` has 46 mentions | **46 lines / 51 occurrences** | both | ✅ **reconciles**, as LINES |
-| A3 | `.planning/PROJECT.md` has 26 `r2000_` occurrences | **26** case-insensitive occurrences at the pre-sweep tree | OCCURRENCES, case-insensitive | ✅ **reconciles** — see A3.1; this **overturns** the research prediction |
+| A3 | `.planning/PROJECT.md` has 26 `anno_` occurrences | **26** case-insensitive occurrences at the pre-sweep tree | OCCURRENCES, case-insensitive | ✅ **reconciles** — see A3.1; this **overturns** the research prediction |
 | A4 | `CLAUDE.md` has 0 and 0 | **0 and 0** | LINES and OCCURRENCES | ✅ **reconciles** (`D-11` confirmed) |
 | A5 | no `ARCHITECTURE.md` outside `.planning/` | **none**; 4 copies, all inside | FILES | ✅ **reconciles** |
 | A6 | 126 `*.test.*` files in `src/mcp/vice/` | **126** at the phase base, **127** at HEAD | FILES | ✅ **reconciles** at the tree it was measured against |
@@ -678,9 +678,9 @@ were taken before phase 32's own commits landed, so "the same number today" is t
 ### A1 — the 35, and the NUL trap
 
 ```bash
-$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done | wc -l); echo "$N"
+$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'the external analyser' "$f" && echo "$f"; done | wc -l); echo "$N"
 35
-$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -q  'regenerator2000' "$f" && echo "$f"; done | wc -l); echo "$N"
+$ N=$(for f in $(git ls-files | grep -v '^\.planning/'); do grep -q  'the external analyser' "$f" && echo "$f"; done | wc -l); echo "$N"
 34
 ```
 
@@ -692,24 +692,24 @@ answer is **37**; see §1, sub-clause (a2).
 ### A2 — `.planning/PROJECT.md`, the subject literal
 
 ```bash
-$ grep -ac 'regenerator2000' .planning/PROJECT.md          # LINES
+$ grep -ac 'the external analyser' .planning/PROJECT.md          # LINES
 46
-$ grep -ao 'regenerator2000' .planning/PROJECT.md | wc -l  # OCCURRENCES
+$ grep -ao 'the external analyser' .planning/PROJECT.md | wc -l  # OCCURRENCES
 51
 ```
 
 `32-CONTEXT.md`'s "46 mentions" is the **LINES** figure. Both are recorded so a later reader picking
 either definition lands on a number this document already published. Unmoved from the pre-sweep tree
 (`git show d6bebb1:.planning/PROJECT.md` gives the same 46 / 51), because plan 32-03's `:311` edit
-replaced an `r2000_*` token, not a subject-literal one.
+replaced an `anno_*` token, not a subject-literal one.
 
-### A3 — `r2000_`: **CONTEXT.md's 26 reproduces exactly, and research's prediction was wrong**
+### A3 — `anno_`: **CONTEXT.md's 26 reproduces exactly, and research's prediction was wrong**
 
 `32-RESEARCH.md` §5.1 recorded this figure as **disagreeing** — *"Measured 17 lines and 23
 occurrences; neither counting definition yields 26"* — and `32-05-PLAN.md` instructed this ledger to
 record it as a disagreement with a delta of 3, listing three unconfirmed hypotheses. **Measurement
 contradicts the plan, so the measurement is what is recorded.** Research's own *first* hypothesis —
-*"the discussion-time figure counted `r2000_` case-insensitively plus `R2000_`"* — is **confirmed**,
+*"the discussion-time figure counted `anno_` case-insensitively plus `ANNO_`"* — is **confirmed**,
 and it accounts for the delta exactly.
 
 The full grid, both cases × both units × both trees:
@@ -720,25 +720,25 @@ The full grid, both cases × both units × both trees:
 | HEAD `19b2c5c` | 16 | 22 | 19 | 25 |
 
 ```bash
-$ git show d6bebb1:.planning/PROJECT.md | grep -ac  'r2000_'            # 17  (cs, LINES)
-$ git show d6bebb1:.planning/PROJECT.md | grep -ao  'r2000_' | wc -l    # 23  (cs, OCCURRENCES)
-$ git show d6bebb1:.planning/PROJECT.md | grep -aci 'r2000_'            # 20  (ci, LINES)
-$ git show d6bebb1:.planning/PROJECT.md | grep -aoi 'r2000_' | wc -l    # 26  (ci, OCCURRENCES)  <-- exact
+$ git show d6bebb1:.planning/PROJECT.md | grep -ac  'anno_'            # 17  (cs, LINES)
+$ git show d6bebb1:.planning/PROJECT.md | grep -ao  'anno_' | wc -l    # 23  (cs, OCCURRENCES)
+$ git show d6bebb1:.planning/PROJECT.md | grep -aci 'anno_'            # 20  (ci, LINES)
+$ git show d6bebb1:.planning/PROJECT.md | grep -aoi 'anno_' | wc -l    # 26  (ci, OCCURRENCES)  <-- exact
 ```
 
 The three extra occurrences are uppercase, and they are identifier names rather than tool names:
 
 ```bash
-$ git show d6bebb1:.planning/PROJECT.md | grep -aoi 'r2000_' | sort | uniq -c
-     23 r2000_
-      3 R2000_
-$ grep -an 'R2000_' .planning/PROJECT.md
-748:  `R2000_TOOL_DEFINITIONS`, so renaming the collection matches nothing, hits a
-751:  `check-skill-tool-coverage.mjs:49` statically imports `CURATED_R2000_TOOLS`
-753:  itself goes red on three tests, one via a hard-coded `R2000_MODULE_FLOOR = 14`
+$ git show d6bebb1:.planning/PROJECT.md | grep -aoi 'anno_' | sort | uniq -c
+     23 anno_
+      3 ANNO_
+$ grep -an 'ANNO_' .planning/PROJECT.md
+748:  `ANNO_TOOL_DEFINITIONS`, so renaming the collection matches nothing, hits a
+751:  `check-skill-tool-coverage.mjs:49` statically imports `CURATED_ANNO_TOOLS`
+753:  itself goes red on three tests, one via a hard-coded `ANNO_MODULE_FLOOR = 14`
 ```
 
-**23 + 3 = 26.** `R2000_TOOL_DEFINITIONS`, `CURATED_R2000_TOOLS` and `R2000_MODULE_FLOOR` are
+**23 + 3 = 26.** `ANNO_TOOL_DEFINITIONS`, `CURATED_ANNO_TOOLS` and `ANNO_MODULE_FLOOR` are
 SCREAMING_SNAKE_CASE symbol names, which is exactly this repo's constant-naming convention, so a
 case-insensitive count is not a sloppy count — it is the count that sees all the symbols. It is also
 the count **this project's own gate** takes: `subjectHits()` builds its matcher with
@@ -764,8 +764,8 @@ evidence; anyone can re-run the four `grep` invocations.
 ### A4 — `CLAUDE.md`
 
 ```bash
-$ grep -ac 'regenerator2000' CLAUDE.md   # 0
-$ grep -ac 'r2000_'          CLAUDE.md   # 0
+$ grep -ac 'the external analyser' CLAUDE.md   # 0
+$ grep -ac 'anno_'          CLAUDE.md   # 0
 ```
 
 **0 LINES and 0 OCCURRENCES of each**, at HEAD and at the pre-sweep tree alike. Recorded as
@@ -829,7 +829,7 @@ created by plan 32-01 as the fate guard's colocated non-vacuity proof. `CUT-04`'
 ### A7 — research's own tree-wide totals do **not** reproduce
 
 `32-RESEARCH.md` §5.1 published *"Total tracked files containing the literal (incl. `.planning/`):
-**373**"* and §5.3 derived *"`.planning/` files with `regenerator2000`, total: **338** (373 tracked −
+**373**"* and §5.3 derived *"`.planning/` files with `the external analyser`, total: **338** (373 tracked −
 35 non-`.planning`)"*. Re-measured with the byte-level scanner (§0.3) at the two commits closest to
 when research ran:
 
@@ -844,7 +844,7 @@ when research ran:
 exactly 1. Recorded as a disagreement rather than smoothed over.
 
 Hypotheses, explicitly **unconfirmed**: research may have measured against an uncommitted working tree
-missing one file; or excluded one path (`.planning/notes/regenerator2000-integration.md` carries the
+missing one file; or excluded one path (`.planning/notes/external-analyser-integration.md` carries the
 literal in its *path*, and a content-only scan that also skipped it would land on 338 — but a
 path-only match does not exist here, since that file's content carries the literal too, so this
 hypothesis does not fully account for it); or ran a slightly different scope predicate. **338 is in any
@@ -874,7 +874,7 @@ commit `ab14671` (this ledger's own first commit — see the self-reference note
 ```bash
 $ git ls-files | wc -l                    # 1405 tracked files
 $ git ls-files '.planning/*' | wc -l      # 1029 under .planning/
-# per-prefix: for f in $(git ls-files '<prefix>'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done | wc -l
+# per-prefix: for f in $(git ls-files '<prefix>'); do grep -aq 'the external analyser' "$f" && echo "$f"; done | wc -l
 ```
 
 | Population | Files carrying the literal | In the swept set? | Reason |
@@ -944,7 +944,7 @@ of `A21`. Same verdict, same reason, and the `archive-` path segment makes the d
 **Reason: all are dated or generated records, and none is named by ROADMAP criterion 2.** Milestone
 archives and audits are closed records with dates in their filenames; `quick/` holds completed one-off
 plans and summaries; `todos/` holds captured items (see §B.6); `notes/` holds dated investigation
-notes, including `.planning/notes/regenerator2000-integration.md`, which is the *record of the
+notes, including `.planning/notes/external-analyser-integration.md`, which is the *record of the
 integration that was deleted* and is the single most obviously class-1 document in the repository;
 `seeds/` holds an un-started idea. `codebase/` is regenerated by `/gsd-map-codebase` and carries zero
 occurrences, so there is nothing to exclude — a measured zero, recorded so it is not mistaken for an
@@ -978,9 +978,9 @@ are recorded here so a later reader sees they were **considered and rejected**, 
 | `.planning/todos/pending/2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability.md` | **0** | Out of scope. Doc-accuracy work in `docs/` about **text-monitor reachability**, unrelated to the subject |
 
 ```bash
-$ grep -ac 'regenerator2000' .planning/todos/pending/2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md.md
+$ grep -ac 'the external analyser' .planning/todos/pending/2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md.md
 0
-$ grep -ac 'regenerator2000' .planning/todos/pending/2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability.md
+$ grep -ac 'the external analyser' .planning/todos/pending/2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability.md
 0
 ```
 
@@ -1006,19 +1006,19 @@ plan file. Resolve it first:
 WT_ROOT=$(git rev-parse --show-toplevel) && cd "$WT_ROOT"
 ```
 
-1. **Clause (a1), the 35** — `for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'regenerator2000' "$f" && echo "$f"; done`
+1. **Clause (a1), the 35** — `for f in $(git ls-files | grep -v '^\.planning/'); do grep -aq 'the external analyser' "$f" && echo "$f"; done`
 2. **The NUL proof** — the same loop without `-a`; diff the two lists; the single missing path is the NUL-carrying file.
 3. **Clause (a2), the 2** — the gate's own predicate scans the *path* too:
-   `git ls-files | grep -v '^\.planning/' | grep -i 'regenerator2000'` returns **three** paths —
-   `docs/phase9-regenerator2000-probe-findings.md`, `scripts/check-no-regenerator2000.d.mts`,
-   `scripts/check-no-regenerator2000.mjs`. The first is already in clause (a1) (its *content* carries
+   `git ls-files | grep -v '^\.planning/' | grep -i 'the external analyser'` returns **three** paths —
+   `docs/phase9-external-analyser-probe-findings.md`, `scripts/check-no-analyser.d.mts`,
+   `scripts/check-no-analyser.mjs`. The first is already in clause (a1) (its *content* carries
    the literal 43 times as well), so clause (a2) is the other **two**: the ones whose content carries
    zero. `35 + 2 = 37`.
 4. **Clause (a3), the 4** — `node -e "import('./scripts/check-npm-packages.mjs').then(m=>console.log(m.packFiles('installer').files))"`, then grep the `installer/skills/**` results.
 5. **Clause (c), the 7** — `git ls-files | grep -E '^src/skills/[^/]+/SKILL\.md$'`
 6. **Every verdict** — `git diff --exit-code d6bebb1 HEAD -- <path>`; exit 0 is `unchanged`, non-zero is `corrected`.
-7. **Every pin** — read `EXEMPTION_CLASSES` in `scripts/check-no-regenerator2000.mjs`; the per-class totals print on every successful gate run.
-8. **The gate** — `node scripts/check-no-regenerator2000.mjs`; exit 0, 157 permanently exempt, 0 allow-listed.
+7. **Every pin** — read `EXEMPTION_CLASSES` in `scripts/check-no-analyser.mjs`; the per-class totals print on every successful gate run.
+8. **The gate** — `node scripts/check-no-analyser.mjs`; exit 0, 157 permanently exempt, 0 allow-listed.
 
 **One caveat that will bite the next reader:** running the gate (or anything that calls `packFiles()`)
 executes `npm pack --dry-run`, whose `prepack` hook regenerates `installer/skills/`. That directory is
@@ -1029,7 +1029,7 @@ four clause-(a3) paths absent from disk.
 
 ## 8. Deviation recorded: the plan's own prediction about A3 was wrong
 
-`32-05-PLAN.md` task 2 instructed this ledger to record `32-CONTEXT.md`'s "26 `r2000_` occurrences" as
+`32-05-PLAN.md` task 2 instructed this ledger to record `32-CONTEXT.md`'s "26 `anno_` occurrences" as
 **DISAGREEING** — *"Measured 17 lines and 23 occurrences; neither counting definition yields 26. State
 the delta of 3 … Do not smooth this over"* — and its `must_haves.truths` restates the same expectation.
 That instruction was written from `32-RESEARCH.md` §5.1, which tested two counting definitions

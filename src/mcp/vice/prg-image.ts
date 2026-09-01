@@ -9,14 +9,14 @@
 //
 // This module performs NO filesystem and NO network I/O: every function takes
 // bytes (or a base64 string) and returns values. Callers obtain and persist
-// the bytes themselves. That is the same claim `r2000-project.ts` makes about
+// the bytes themselves. That is the same claim `anno-project.ts` makes about
 // itself, and it must remain true of both files now that the split has
 // happened -- a structural test in `prg-image.test.ts` asserts it from this
 // module's own source rather than trusting this paragraph.
 //
 // WHY THIS FILE EXISTS SEPARATELY: these three functions used to live in
-// `r2000-project.ts`, the module that builds a `.regen2000proj` file for the
-// regenerator2000 analyser. They were never about that analyser. One of them
+// `anno-project.ts`, the module that builds a `.regen2000proj` file for the
+// the external analyser analyser. They were never about that analyser. One of them
 // is imported statically by the byte-coverage census (`anno-coverage.ts`), a
 // capability that must keep working independently of whether this repo still
 // drives that analyser at all -- so a census whose only route to a payload
@@ -24,7 +24,7 @@
 // no announcement (SEAM-02). Extracting them under a name that carries no
 // analyser prefix removes that coupling outright instead of recording it as a
 // hazard to remember later. There is deliberately NO re-export left behind in
-// `r2000-project.ts`: a compatibility shim would leave the coupling fully
+// `anno-project.ts`: a compatibility shim would leave the coupling fully
 // intact while looking finished.
 //
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`. It is reachable
@@ -96,7 +96,7 @@ export function parsePrg(bytes: Uint8Array): { origin: number; body: Uint8Array 
 
 /**
  * Returns the load address (`0`) for a flat 64K RAM capture, and throws for
- * anything else. Flat 64K is in scope because `R2000-06` names it directly
+ * anything else. Flat 64K is in scope because `ANNO-06` names it directly
  * and it is exactly the shape `c64-ram-capture` already produces (D-03) --
  * this function does not attempt to support any other flat-image size.
  */

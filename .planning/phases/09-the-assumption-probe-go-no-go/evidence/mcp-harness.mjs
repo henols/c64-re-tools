@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Throwaway MCP Streamable-HTTP client for phase 9 criterion 2 -- evidence, not a
-// deliverable. Connects to a live regenerator2000 --mcp-server instance, lists
+// deliverable. Connects to a live analyser --mcp-server instance, lists
 // tools, and calls one tool argv-driven (never string-interpolated into a shell
 // command, per T-09-03-D). A refusal is the finding, so every step is wrapped in
 // try/catch and the full error object is printed rather than thrown away.
@@ -37,7 +37,7 @@ async function main() {
   }
 
   const transport = new StreamableHTTPClientTransport(new URL("http://127.0.0.1:3000/mcp"));
-  const client = new Client({ name: "r2000-probe", version: "0.0.0" });
+  const client = new Client({ name: "anno-probe", version: "0.0.0" });
 
   try {
     await withTimeout(client.connect(transport), TIMEOUT_MS, "connect");

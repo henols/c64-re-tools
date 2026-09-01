@@ -32,29 +32,29 @@ them will size them wrong.
 | Brief says | Measured this session | Why it matters |
 |---|---|---|
 | "Three `ATTRIBUTION (ABS-02)` headers in `src/skills/*/SKILL.md`" | **Five header blocks across three files** — 2 in `c64-program-recon/SKILL.md`, 2 in `c64-memory-mapping/SKILL.md`, 1 in `routine-queue-walker/SKILL.md`. Plus **five more** in the gitignored generated tree `installer/skills/` | The grep-gate exemption set is 10 instances in 2 trees, not 3 in 1. An exemption list of 3 leaves 7 firings that look like real reintroductions |
-| "53, 54 and 21 mentions" of `r2000_*` in three skills | **36 / 27 / 14 tool-name mentions** = 82 total, spread over **5 files** not 3 (`c64-program-recon/SKILL.md`, `.../scripts/packer-finding.mjs`, `.../templates/memory-map.template.md`, `c64-memory-mapping/SKILL.md`, `routine-queue-walker/SKILL.md`), plus **13** `vice-mcp r2000 <verb>` CLI-verb mentions. 17 distinct tool names + `r2000_batch_execute` | One of the five is an **executable `.mjs` script**, not prose. Re-pointing playbooks leaves a runtime hole. And `templates/memory-map.template.md` is a template an agent *copies*, so a stale route propagates into every future project |
-| "Three committed guards are pinned to the subject being deleted" | **13 non-`r2000-`named test files reference r2000**: `docs-r2000-decisions` (8), `hostpath-consumers` (22), `skill-attribution` (20), `stock-dispatch` (21), `vice-proxy` (29, **manual-only**), `docs-dangling-refs` (18), `hop-chain-comments` (8), `capability-registry` (5), `tool-support-table.test.mjs` (5), `disasm-roundtrip` (3), `skill-acme-build-cli` (2), `stock-connect` (1), `audit-integrity` (1) | "Every guard pinned to the deleted subject is given an explicit fate" is a 13-item list plus the 21 `r2000-*.test.ts` files, not a 3-item one |
+| "53, 54 and 21 mentions" of `anno_*` in three skills | **36 / 27 / 14 tool-name mentions** = 82 total, spread over **5 files** not 3 (`c64-program-recon/SKILL.md`, `.../scripts/packer-finding.mjs`, `.../templates/memory-map.template.md`, `c64-memory-mapping/SKILL.md`, `routine-queue-walker/SKILL.md`), plus **13** `vice-mcp anno <verb>` CLI-verb mentions. 17 distinct tool names + `anno_batch_execute` | One of the five is an **executable `.mjs` script**, not prose. Re-pointing playbooks leaves a runtime hole. And `templates/memory-map.template.md` is a template an agent *copies*, so a stale route propagates into every future project |
+| "Three committed guards are pinned to the subject being deleted" | **13 non-`anno-`named test files reference anno**: `docs-anno-decisions` (8), `hostpath-consumers` (22), `skill-attribution` (20), `stock-dispatch` (21), `vice-proxy` (29, **manual-only**), `docs-dangling-refs` (18), `hop-chain-comments` (8), `capability-registry` (5), `tool-support-table.test.mjs` (5), `disasm-roundtrip` (3), `skill-acme-build-cli` (2), `stock-connect` (1), `audit-integrity` (1) | "Every guard pinned to the deleted subject is given an explicit fate" is a 13-item list plus the 21 `anno-*.test.ts` files, not a 3-item one |
 | "a whole-tree grep gate" (the `toacme` precedent) | The precedent gate, `scripts/check-skill-fork-honesty.mjs`, walks **`src/skills/`, `README.md`, `docs/stock-vice-parity.md` and `src/mcp/vice/`** — its own comment concedes "this script's own skills walk only covers src/skills/ and README.md". It is **not** whole-tree | Copying the precedent verbatim produces a gate blind to `docs/`, `installer/`, `scripts/`, `.claude-plugin/` and the published tarballs |
-| the removal is `~25,700` lines | **Exactly right**: 10,102 non-test + 15,657 test across `r2000-*.ts` = 25,759. Plus `fixtures/coverage/` (12 fixture dirs, 212 KB, its own generator `make-coverage-fixtures.mjs`), 19 entries in `package.json` `files[]`, ~120 lines of `vice-proxy.ts` wiring, and 3 `scripts/` consumers | The code number is honest; the *satellite* surface is what gets missed |
-| "the existing `--verify` seam" is reusable for ACME verification | `r2000-verify.ts` parses **regenerator2000's `--verify` output** and calls `buildVerifyArgs`/`runR2000` from `r2000-launch.ts`. The **parser** survives the deletion; its **producer does not** | STORE-06 as worded cannot be satisfied by reuse. See Pitfall 9 — this is the single most dangerous item in the milestone |
+| the removal is `~25,700` lines | **Exactly right**: 10,102 non-test + 15,657 test across `anno-*.ts` = 25,759. Plus `fixtures/coverage/` (12 fixture dirs, 212 KB, its own generator `make-coverage-fixtures.mjs`), 19 entries in `package.json` `files[]`, ~120 lines of `vice-proxy.ts` wiring, and 3 `scripts/` consumers | The code number is honest; the *satellite* surface is what gets missed |
+| "the existing `--verify` seam" is reusable for ACME verification | `anno-verify.ts` parses **the external analyser's `--verify` output** and calls `buildVerifyArgs`/`runAnno` from `anno-launch.ts`. The **parser** survives the deletion; its **producer does not** | STORE-06 as worded cannot be satisfied by reuse. See Pitfall 9 — this is the single most dangerous item in the milestone |
 
 Additional measured facts a roadmapper needs:
 
-- `git grep -l regenerator2000` = **291 tracked files**; excluding `.planning/` = **55**. So
+- `git grep -l the external analyser` = **291 tracked files**; excluding `.planning/` = **55**. So
   ~236 tracked files legitimately keep the word forever (roadmaps, requirements, milestone
   records, phase artifacts, decision rows). A gate scoped "whole tree" fires 236 times.
 - `installer/skills/` is **`.gitignore`d generated output** (`/installer/skills/`, line 43)
   rebuilt by `installer/scripts/sync-skills.mjs`, and it currently contains **11 files**
-  mentioning regenerator2000 in this working tree. A filesystem grep sees them; a `git grep`
+  mentioning the external analyser in this working tree. A filesystem grep sees them; a `git grep`
   never does; the **published `@henols/c64-re-tools` tarball ships them**.
-- `capability-registry.ts` contains **zero** r2000 entries and `tools-manifest.json` /
-  `tools-manifest.stock.json` contain **zero** r2000 mentions. The `r2000_*` family was never
+- `capability-registry.ts` contains **zero** anno entries and `tools-manifest.json` /
+  `tools-manifest.stock.json` contain **zero** anno mentions. The `anno_*` family was never
   in the manifest or the registry. STORE-03's "declared in `capability-registry.ts`" is
   therefore a **new** obligation with new consumers, not a carry-over.
 - `disasm-roundtrip.test.ts` — this project's real-ACME oracle — imports `ACME_BIN`,
-  `acmeSkipReasonFor` and `assertAcmeRequiredIfEnvSet` **from `r2000-test-gate.ts`**, and CI
+  `acmeSkipReasonFor` and `assertAcmeRequiredIfEnvSet` **from `anno-test-gate.ts`**, and CI
   installs ACME and sets `VICE_REQUIRE_ACME=1` against exactly that seam.
-- `r2000-project.ts:339` already implements write-to-`.tmp-$pid-$now`-then-`renameSync`, the
+- `anno-project.ts:339` already implements write-to-`.tmp-$pid-$now`-then-`renameSync`, the
   idiom shared with `refresh-manifest.ts`, `install-resources.ts`, `incident-record.ts` and
   `vice-broker.mts`. **None of the five `fsync`s.**
 
@@ -85,7 +85,7 @@ Take upstream's vocabulary as the floor, not the ceiling, and record the diff ex
 Minimum additions over the seven: split-table orientation (lo-hi vs hi-lo) and element kind
 (address vs word) as **first-class type variants, not a flag on "table"**; `external_file` for
 blobs exported as-is; `undefined` as an explicit reset state distinct from "never typed". Carry
-forward `r2000-coverage.ts`'s **dispatch-context gate** distinction — a split lo/hi pairing is
+forward `anno-coverage.ts`'s **dispatch-context gate** distinction — a split lo/hi pairing is
 `PROVEN` or `ADVISORY`, never silently promoted — which is 2,292 lines of already-earned
 knowledge sitting on the delete side of the line.
 
@@ -273,7 +273,7 @@ Three distinct failures wearing one coat:
    instead (`init screen` → `init_screen`) and two different user labels silently collapse
    into one, so one routine's name now points at another's address.
 2. **Mnemonic collision.** `LDA`, `INC`, `ROL` as label names assemble as instructions. Legal
-   identifiers, illegal labels. `r2000-acme-ident.ts` already implements this rejection — and
+   identifiers, illegal labels. `anno-acme-ident.ts` already implements this rejection — and
    it is **not** in CUT-02's reuse list.
 3. **Scope leakage.** Upstream's scopes are ranges and "nested scopes are not supported". A
    scope-local name equal to a global name reassembles to *whichever one ACME resolves*, which
@@ -319,7 +319,7 @@ falsified claim**.
 **Why it happens:**
 Comments and types are stored in separate tables with no referential integrity between them,
 which is the right storage decision and the wrong *update* decision. And the five-grade
-confidence vocabulary is enforced today by `r2000-confidence.ts` — the ONE authoritative place
+confidence vocabulary is enforced today by `anno-confidence.ts` — the ONE authoritative place
 for the `[confirmed-code]`/`[probable-code]`/`[confirmed-data]`/`[probable-data]`/`[unknown]`
 convention — which is **not** in CUT-02's reuse list while `c64-program-recon/SKILL.md` and
 `templates/memory-map.template.md` still instruct agents to write those exact tokens.
@@ -348,7 +348,7 @@ dependency.
 ### Pitfall 8: The enum applied to the wrong operand
 
 **What goes wrong:**
-`R2000-13`'s validated behaviour is that `lda #$1b` / `sta $d011` renders as
+`ANNO-13`'s validated behaviour is that `lda #$1b` / `sta $d011` renders as
 `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT`. Note where the enum goes: on the **immediate operand
 of the `lda`**, named for the register the *later* `sta` targets. Two ways to get this wrong,
 both silent:
@@ -390,13 +390,13 @@ reassembly-identity test must go red.
 **What goes wrong:**
 This is the most dangerous item in the milestone, because the requirement text
 (`STORE-06`, and the milestone's own "verified by a real ACME through the `--verify` seam")
-describes a reuse that the deletion makes impossible. `r2000-verify.ts` does **not** invoke
-ACME. It invokes **regenerator2000** (`buildVerifyArgs`/`runR2000` from `r2000-launch.ts`) and
-parses regenerator2000's per-assembler result lines. Delete `r2000-launch.ts` and the parser
+describes a reuse that the deletion makes impossible. `anno-verify.ts` does **not** invoke
+ACME. It invokes **the external analyser** (`buildVerifyArgs`/`runAnno` from `anno-launch.ts`) and
+parses the external analyser's per-assembler result lines. Delete `anno-launch.ts` and the parser
 has no producer.
 
 The natural repair — call ACME directly and check the exit code — walks straight back into the
-incident `r2000-verify.ts` exists to prevent, recorded verbatim in its header: with ACME absent
+incident `anno-verify.ts` exists to prevent, recorded verbatim in its header: with ACME absent
 from `PATH` and `ca65` present, a real run printed
 `✗ ACME — ACME not found in PATH (skipped)` / `✓ All roundtrip verifications passed.` /
 `EXIT=0`. Exit zero. An aggregate line reading as a full pass. The one assembler this project
@@ -406,13 +406,13 @@ and `status: null`, and a truthiness check on `status` reads a missing binary as
 
 **Why it happens:**
 The requirement says "reuse the seam", the seam exists, and its filename does not advertise
-that it is an r2000 output parser. Nobody re-reads a module they were told to reuse.
+that it is an anno output parser. Nobody re-reads a module they were told to reuse.
 
 **How to avoid:**
 Split the seam explicitly in the plan, before the removal:
 - **Keep** the verdict discipline — never derive `ok` from exit status, require unanimity
   across ACME result lines, refuse to guess when more than one authoritative line is present.
-  Its false-pass transcript fixtures are pinned in `r2000-verify.test.ts` and must move with
+  Its false-pass transcript fixtures are pinned in `anno-verify.test.ts` and must move with
   it.
 - **Replace** the producer with a direct ACME invocation modelled on
   `src/skills/acme-build/scripts/acme.mjs` (`spawnSync("acme", args, …)` — this repo's one
@@ -430,16 +430,16 @@ Split the seam explicitly in the plan, before the removal:
    and both directions must be re-proved against the new producer.
 
 **Phase to address:** Phase 29 (ACME export), and it must land **before** Phase 31 deletes
-`r2000-launch.ts`. If the removal precedes the exporter, there is a window with no working
+`anno-launch.ts`. If the removal precedes the exporter, there is a window with no working
 external oracle and every claim made in it is at fixture level.
 
 ---
 
-### Pitfall 10: Deleting `r2000-test-gate.ts` turns this project's strongest oracle into a silent skip
+### Pitfall 10: Deleting `anno-test-gate.ts` turns this project's strongest oracle into a silent skip
 
 **What goes wrong:**
-`r2000-test-gate.ts` (166 lines, name says r2000, sits squarely in the delete set) holds
-**two** gates, not one. The regenerator2000 half is genuinely dead after the removal. The
+`anno-test-gate.ts` (166 lines, name says anno, sits squarely in the delete set) holds
+**two** gates, not one. The external analyser half is genuinely dead after the removal. The
 **ACME half is not**: `ACME_BIN`, `probeAcme()`, `ACME_AVAILABLE`, `acmeSkipReasonFor()` and
 `assertAcmeRequiredIfEnvSet()`. Nine test files import from it; the one that survives the
 milestone is `disasm-roundtrip.test.ts`, this project's real-ACME round-trip oracle. And CI
@@ -452,11 +452,11 @@ store's ACME-verified export claim degrades from "hard fail if ACME is missing" 
 skip", in CI, with a green run.
 
 **Why it happens:**
-The filename. It is 166 lines of test infrastructure with an `r2000-` prefix, and the deletion
+The filename. It is 166 lines of test infrastructure with an `anno-` prefix, and the deletion
 sweep is prefix-driven.
 
 **How to avoid:**
-Re-home the ACME half under a non-r2000 name (`acme-test-gate.ts`) **in the same commit or
+Re-home the ACME half under a non-anno name (`acme-test-gate.ts`) **in the same commit or
 earlier** as the deletion, keeping the env var names byte-identical (`ACME_BIN`,
 `VICE_REQUIRE_ACME`) because CI already sets them and a rename there is a second, silent
 failure mode. Update the `ci.yml` comment that names `disasm-roundtrip.test.ts` if the binding
@@ -464,7 +464,7 @@ changes.
 
 **Warning signs:**
 A CI run where the ACME-dependent test count drops. Any `spawnSync("acme")` appearing in a
-second module (the gate was created precisely because "six-plus hand-copied `probeR2000()`
+second module (the gate was created precisely because "six-plus hand-copied `probeAnno()`
 bodies is exactly how a gate silently diverges").
 
 **Observing the control RED:** with `VICE_REQUIRE_ACME=1` set and `ACME_BIN` pointed at a
@@ -479,8 +479,8 @@ tests will want it.
 ### Pitfall 11: "Save succeeded" proved by a hash delta, which proves neither the mutation nor durability
 
 **What goes wrong:**
-The existing precedent, `saveAndVerify()` in `r2000-mcp-client.ts`, hashes the project file
-before and after the save and throws `R2000SaveNotPersistedError` if the hash is **unchanged**
+The existing precedent, `saveAndVerify()` in `anno-mcp-client.ts`, hashes the project file
+before and after the save and throws `AnnoSaveNotPersistedError` if the hash is **unchanged**
 — explicitly "refusing to report success on the strength of the child's own text response."
 That is the right instinct and an insufficient control, in both directions:
 - **False negative:** an idempotent save (nothing changed since the last one) legitimately
@@ -517,7 +517,7 @@ it gates everything built on the store.
 
 **What goes wrong:**
 This repo has one atomic-write idiom, used in five places
-(`r2000-project.ts:339`, `refresh-manifest.ts:65`, `install-resources.ts:235`,
+(`anno-project.ts:339`, `refresh-manifest.ts:65`, `install-resources.ts:235`,
 `incident-record.ts:338`, `vice-broker.mts:240`): write to `<target>.tmp-$pid-$now`, then
 `renameSync`. It is the right idiom — a reader never observes a partial file, and a crashed
 writer leaves the old file intact rather than a truncated new one. **None of the five calls
@@ -577,10 +577,10 @@ and the combined test must fail. If only the separate tests exist, both stay gre
 ### Pitfall 14: Concurrent writers — the in-process mutex is not a cross-process lock, and the staleness check is the thing most likely to be "cleaned up"
 
 **What goes wrong:**
-`r2000-session.ts` holds a coarse FIFO mutex and a synchronous single-owner `inFlight`
+`anno-session.ts` holds a coarse FIFO mutex and a synchronous single-owner `inFlight`
 check-and-set — **per proxy process**. That is not a lock on the file. Two real routes write the
 same store from outside that mutex today:
-1. `vice-mcp r2000 <verb>` — a genuinely separate OS process, invoked by a skill's Bash call
+1. `vice-mcp anno <verb>` — a genuinely separate OS process, invoked by a skill's Bash call
    (13 such mentions across the skills), with no access to the in-memory state at all.
 2. A second `vice-proxy.ts` process (a second Claude Code session on the same project).
 
@@ -626,7 +626,7 @@ revision check and this test must fail.
 
 **What goes wrong:**
 The `toacme` precedent is the right pattern and the wrong scope. Measured: **291 tracked files**
-mention regenerator2000; **55** outside `.planning/`. The remaining ~236 are roadmaps,
+mention the external analyser; **55** outside `.planning/`. The remaining ~236 are roadmaps,
 requirement documents, milestone records, decision rows and executed-phase artifacts that
 **must** keep the word — permanently, because they are the historical record of a decision.
 Meanwhile the precedent gate (`scripts/check-skill-fork-honesty.mjs`) walks only `src/skills/`,
@@ -642,7 +642,7 @@ narrow scope. Three distinct failures follow:
   exactly the hole that made the `toacme` gate's bite on a **non-`SKILL.md`** file the lesson
   it was.
 - **Wrong tree:** `installer/skills/` is `.gitignore`d generated output that currently holds
-  **11** files mentioning regenerator2000 and **is shipped in the `@henols/c64-re-tools`
+  **11** files mentioning the external analyser and **is shipped in the `@henols/c64-re-tools`
   tarball**. A filesystem grep fires on stale local output and reads as a real reintroduction;
   a `git grep` never sees it and the stale route ships to users.
 
@@ -658,7 +658,7 @@ tree*:
   the **5** `ATTRIBUTION (ABS-02)` blocks in `src/skills/` and their **5** synced twins;
   `THIRD-PARTY-NOTICES.md` in both packages (the MIT notice the attribution chain *requires* to
   stay); `src/skills/c64-program-recon/scripts/packer-finding.mjs`'s provenance strings
-  (`entropySource = "r2000_get_binary_info"` and the paragraph recording why no packer route
+  (`entropySource = "anno_get_binary_info"` and the paragraph recording why no packer route
   existed) — these record what an *already-produced* finding was derived from and deleting them
   destroys provenance.
 - Non-vacuity: assert the exemption set is non-empty **and** that each exemption still matches
@@ -666,7 +666,7 @@ tree*:
   precise failure the brief warns about, caught mechanically instead of by review.
 
 **Observing the control RED — three separate reds:**
-1. Plant `regenerator2000` in a non-`SKILL.md`, non-exempt file (a `.ts` under `src/mcp/vice/`,
+1. Plant `the external analyser` in a non-`SKILL.md`, non-exempt file (a `.ts` under `src/mcp/vice/`,
    a `docs/*.md`, and a `scripts/*.mjs` — one each, since the `toacme` lesson was specifically
    about the non-obvious location). The gate must bite on all three.
 2. Delete one `ATTRIBUTION (ABS-02)` block. The gate must **also** bite — on the exemption's
@@ -688,19 +688,19 @@ the reason.
 This is the highest-value removal pitfall in the milestone, because its symptom is a **green
 suite** over an undefended invariant. Three concrete instances, all measured:
 
-1. **`hostpath-consumers.test.ts`** derives the r2000 module family from disk —
-   `topLevelProductionModules().filter(name => /^r2000-.*\.ts$/.test(name))` — and asserts that
+1. **`hostpath-consumers.test.ts`** derives the anno module family from disk —
+   `topLevelProductionModules().filter(name => /^anno-.*\.ts$/.test(name))` — and asserts that
    family is **absent** from the host-path consumer set. It is well-built: it carries a
-   `R2000_MODULE_FLOOR` non-vacuity floor ("an empty or broken glob must fail loudly here
+   `ANNO_MODULE_FLOOR` non-vacuity floor ("an empty or broken glob must fail loudly here
    rather than let the absence assertion below pass trivially") and a positive-control list of
    four named modules. So the deletion turns it **red** — correctly. The trap is the *repair*:
    lowering the floor to 0 and deleting the positive-control list converts a proven-non-vacuous
    guard into a permanently green one, and the **new** store modules (named
-   `annotation-*`/`store-*`, not `r2000-*`) are then covered by nothing. The container-side
+   `annotation-*`/`store-*`, not `anno-*`) are then covered by nothing. The container-side
    invariant this guard exists for applies to the new family identically.
-2. **`scripts/check-skill-tool-coverage.mjs`** imports `CURATED_R2000_TOOLS` from
-   `r2000-tools.ts` and cross-checks it against `r2000_*` names extracted from skill prose,
-   with a `R2000_CLI_VERB_FLOOR` for the CLI verbs parsed out of `r2000-cli.ts`'s own dispatch
+2. **`scripts/check-skill-tool-coverage.mjs`** imports `CURATED_ANNO_TOOLS` from
+   `anno-tools.ts` and cross-checks it against `anno_*` names extracted from skill prose,
+   with a `ANNO_CLI_VERB_FLOOR` for the CLI verbs parsed out of `anno-cli.ts`'s own dispatch
    switch. After the deletion, zero mentions cross-checked against zero curated tools passes
    trivially — and the **82** re-pointed tool-name mentions in the skills are then validated
    against nothing.
@@ -715,7 +715,7 @@ the pattern that empties silently when the disk changes. The floor exists to cat
 the floor is the first thing a red-suite repair deletes.
 
 **How to avoid:**
-Give each of the 13 non-`r2000-`named referencing test files an **explicit, recorded fate**
+Give each of the 13 non-`anno-`named referencing test files an **explicit, recorded fate**
 before the deletion commit: *re-point* (the invariant survives under a new name), *delete*
 (the invariant is genuinely gone), or *keep-with-adjusted-expectation*. Written down, one line
 each, in the plan. Specifically:
@@ -742,31 +742,31 @@ before the phase gate, not discovered red in CI."
 
 **What goes wrong:**
 The reuse list names `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts`,
-`r2000-d64.ts`, `memmap.json`, `r2000-regbits-gen.ts`, `r2000-enum-gen.ts`. Measured against
+`anno-d64.ts`, `memmap.json`, `anno-regbits-gen.ts`, `anno-enum-gen.ts`. Measured against
 the actual module set, **six** more carry capability the milestone intends to keep while
 sitting on the delete side of the line:
 
 | Module | Lines | What is lost, silently |
 |---|---|---|
-| `r2000-test-gate.ts` | 166 | The ACME hard-fail switch CI binds to (Pitfall 10) |
-| `r2000-acme-ident.ts` | 97 | Legal-ACME-identifier rejection — the reject-never-sanitize rule (Pitfall 6) |
-| `r2000-confidence.ts` | 233 | The ONE five-grade confidence vocabulary the skills' prose and `memory-map.template.md` still instruct agents to emit (Pitfall 7) |
-| `r2000-symbols.ts` | 388 | The VICE label-file round trip — **`R2000-14`/`R2000-15`, a *Validated* requirement**, "demonstrated as one closed loop against genuine unpatched stock `x64sc`" |
-| `r2000-verify.ts` | 184 | The ACME-verdict parser and its two pinned false-pass transcripts (Pitfall 9) |
-| `r2000-memmap-render.ts` | 531 | `render-memmap --check` and the render-digest drift guard behind the Key Decision "make the store canonical and the Markdown memory map a generated view" |
+| `anno-test-gate.ts` | 166 | The ACME hard-fail switch CI binds to (Pitfall 10) |
+| `anno-acme-ident.ts` | 97 | Legal-ACME-identifier rejection — the reject-never-sanitize rule (Pitfall 6) |
+| `anno-confidence.ts` | 233 | The ONE five-grade confidence vocabulary the skills' prose and `memory-map.template.md` still instruct agents to emit (Pitfall 7) |
+| `anno-symbols.ts` | 388 | The VICE label-file round trip — **`ANNO-14`/`ANNO-15`, a *Validated* requirement**, "demonstrated as one closed loop against genuine unpatched stock `x64sc`" |
+| `anno-verify.ts` | 184 | The ACME-verdict parser and its two pinned false-pass transcripts (Pitfall 9) |
+| `anno-memmap-render.ts` | 531 | `render-memmap --check` and the render-digest drift guard behind the Key Decision "make the store canonical and the Markdown memory map a generated view" |
 
-Plus `r2000-coverage.ts` (2,292 lines) whose split-table dispatch-context gate is the
+Plus `anno-coverage.ts` (2,292 lines) whose split-table dispatch-context gate is the
 expressiveness Pitfall 1 needs, even though the coverage *instrument* is correctly superseded.
 
 **Why it happens:**
 The reuse list was written at v0.6.0 scoping time against a different phase shape, and the
-delete criterion is the `r2000-` filename prefix — which these six share with genuine glue.
-Nothing in the tree distinguishes "named r2000 because it talks to r2000" from "named r2000
-because it was written in the r2000 phase".
+delete criterion is the `anno-` filename prefix — which these six share with genuine glue.
+Nothing in the tree distinguishes "named anno because it talks to anno" from "named anno
+because it was written in the anno phase".
 
 **How to avoid:**
-Classify all 16 non-test `r2000-*.ts` modules explicitly — *glue* (delete), *capability*
-(re-home under a non-r2000 name), *superseded* (delete, with the superseding thing named) —
+Classify all 16 non-test `anno-*.ts` modules explicitly — *glue* (delete), *capability*
+(re-home under a non-anno name), *superseded* (delete, with the superseding thing named) —
 before writing the deletion plan, and check each *capability* row against the Validated
 requirements list in `PROJECT.md`. A module implementing a Validated requirement cannot be
 deleted without a recorded decision to un-ship it.
@@ -788,8 +788,8 @@ Three guards go red by construction when the deletion lands, and each has an obv
 
 1. **`docs-linerefs.test.ts`** extracts `vice-proxy.ts:<N>` citations from `CLAUDE.md`'s
    `rewriteArguments()` bullet and asserts the cited line **really is** a call site or function
-   start. The r2000 wiring in `vice-proxy.ts` sits at roughly `:188-310` (subcommand dispatch,
-   `R2000_TOOL_DEFINITIONS` import, drain timeout) and `:3163-3186` (session close) — i.e.
+   start. The anno wiring in `vice-proxy.ts` sits at roughly `:188-310` (subcommand dispatch,
+   `ANNO_TOOL_DEFINITIONS` import, drain timeout) and `:3163-3186` (session close) — i.e.
    ~120 lines *above* the cited `:1507`/`:1531`, and more above `:2987`/`:3052`. Removing them
    shifts all four. Wrong fix: loosen the guard to a regex-only check. Right fix: re-cite
    CLAUDE.md — the constraint bullet itself says "treat a mismatch as drift to re-verify, not
@@ -798,9 +798,9 @@ Three guards go red by construction when the deletion lands, and each has an obv
    `.planning/ROADMAP.md`, `CLAUDE.md`, `README.md`, `docs/roadmap-stock-vice.md`,
    `docs/stock-vice-parity.md` — and **fails if any of them is missing** ("a missing one FAILS
    rather than silently shrinking the scanned set"). `CLAUDE.md` currently carries four
-   regenerator2000 constraint bullets that must be rewritten, and `docs/` cleanup may touch a
+   the external analyser constraint bullets that must be rewritten, and `docs/` cleanup may touch a
    scanned file. Wrong fix: remove the path from the list. Right fix: rewrite the content.
-3. **`docs-r2000-decisions.test.ts`** pins **D-36** (the `r2000_get_address_details`
+3. **`docs-absorbed-decisions.test.ts`** pins **D-36** (the `anno_get_address_details`
    client-side composition) read out of the live `PROJECT.md`, with a stated reversal trigger
    on an upstream issue. Deleting the subject makes the pinned decision moot but the guard
    still asserts the text exists. Wrong fix: delete the guard *and* the decision row. Right
@@ -826,10 +826,10 @@ plan.
 ### Pitfall 19: Manual-only tests hide the breakage until CI
 
 **What goes wrong:**
-`vice-proxy.test.ts` holds **29** r2000 references and is a member of `MANUAL_ONLY_TESTS`
+`vice-proxy.test.ts` holds **29** anno references and is a member of `MANUAL_ONLY_TESTS`
 (9 files). `npm run test:automated` excludes it. CI runs the **full** `npm test` glob
 deliberately ("CI's set is deliberately wider than `npm run test:automated`"). So a deletion
-that breaks the proxy's r2000 wiring can be locally green through `test:automated` and red in
+that breaks the proxy's anno wiring can be locally green through `test:automated` and red in
 CI — after the commit, on a branch, with the removal already landed.
 
 **Why it happens:**
@@ -858,21 +858,21 @@ files account for.
 The satellite surface around 25,759 deleted lines:
 - **`src/mcp/vice/fixtures/coverage/`** — 212 KB, 12 named fixture directories, each a
   `project.regen2000proj` + `store.json` pair, plus its own generator
-  `make-coverage-fixtures.mjs` and a `README.md`. Owned entirely by `r2000-coverage.test.ts`.
+  `make-coverage-fixtures.mjs` and a `README.md`. Owned entirely by `anno-coverage.test.ts`.
   Deleting the test and keeping the fixtures leaves 212 KB of unreferenced binary-ish data that
   the next person cannot classify. Deleting the fixtures and keeping the generator is worse —
   a generator producing input for nothing.
-- **`package.json` `files[]`** — **19** r2000 entries (`r2000-launch.ts` … `r2000-coverage.ts`,
-  plus `r2000-regbits.json`). npm **silently ignores** a `files[]` entry naming a nonexistent
+- **`package.json` `files[]`** — **19** anno entries (`anno-launch.ts` … `anno-coverage.ts`,
+  plus `anno-regbits.json`). npm **silently ignores** a `files[]` entry naming a nonexistent
   file, so a stale list does not error; the tarball just quietly differs from the manifest.
   `scripts/check-npm-packages.mjs` validates tarball contents via `npm pack --dry-run --json`
   against an expected set, so it will catch a *removed* file it still expects — provided its
   own expectation list is updated in the same commit rather than after.
 - **Live `.planning/phases/` readers** — five tests read paths under `.planning/phases/`:
-  `r2000-upstream-audit.test.ts` and `skill-attribution.test.ts` (both hard-code
-  `phases/19-…/upstream-procedure-manifest.json`), `r2000-answer-key.test.ts`
-  (`phases/11-…/evidence/`, **no existence guard**), `r2000-coverage.test.ts`
-  (`phases/19-…/evidence/coverage-reproducibility`), `r2000-verify.test.ts`
+  `anno-derivation.test.ts` and `skill-attribution.test.ts` (both hard-code
+  `phases/19-…/upstream-procedure-manifest.json`), `absorbed-answer-key.test.ts`
+  (`phases/11-…/evidence/`, **no existence guard**), `anno-coverage.test.ts`
+  (`phases/19-…/evidence/coverage-reproducibility`), `anno-verify.test.ts`
   (`phases/10-…/evidence/10-verify-transcript.txt`). Three of the five die with their subject;
   `skill-attribution.test.ts` must survive and keeps its phase-19 dependency. And the
   milestone's own "derive the tool surface from `upstream-procedure-manifest.json`" makes that
@@ -885,7 +885,7 @@ them; and packaging manifests fail *quietly* by design.
 **How to avoid:**
 Enumerate the satellite surface in the deletion plan as its own task list: fixture directories,
 `files[]` entries, `check-npm-packages.mjs` expectations, the `.planning/phases/` readers, the
-`scripts/` consumers (`check-skill-tool-coverage.mjs`, `lib/r2000-cli-verbs.mjs`), and
+`scripts/` consumers (`check-skill-tool-coverage.mjs`, `lib/anno-cli-verbs.mjs`), and
 `THIRD-PARTY-NOTICES.md` in **both** packages. Then re-run `scripts/check-npm-packages.mjs`
 and `scripts/package.sh` as a gate. Do **not** archive phase directories at the v0.7.0 close
 (`--no-archive-phases`), for the same reason recorded as a standing Key Decision — and note the
@@ -902,7 +902,7 @@ packaging gate is vacuous.
 ### Pitfall 21: Re-pointing prose and forgetting the script, the template, and the CLI verbs
 
 **What goes wrong:**
-The five absorbed procedures are written against `r2000_*` calls in **five files**, and they
+The five absorbed procedures are written against `anno_*` calls in **five files**, and they
 are not all prose:
 - `c64-program-recon/SKILL.md` (27 mentions) and `c64-memory-mapping/SKILL.md` (36) —
   playbook prose. Re-pointing is an edit.
@@ -912,10 +912,10 @@ are not all prose:
   a project**. A stale route here propagates into every future project's memory map and is not
   visible in the skill that produced it.
 - `c64-program-recon/scripts/packer-finding.mjs` (2) — **executable code**. One mention is a
-  recorded provenance value (`entropySource = "r2000_get_binary_info"`), the other a paragraph
+  recorded provenance value (`entropySource = "anno_get_binary_info"`), the other a paragraph
   explaining why no packer route existed upstream. Re-pointing prose leaves this script's
   runtime behaviour and its recorded provenance to be handled separately.
-- Plus **13** `vice-mcp r2000 <verb>` CLI-verb mentions across the skills, which are Bash
+- Plus **13** `vice-mcp anno <verb>` CLI-verb mentions across the skills, which are Bash
   invocations, not MCP tool calls, and are therefore invisible to a tool-name grep.
 
 **Why it happens:**
@@ -924,8 +924,8 @@ is 5 files, 2 mention *kinds* (MCP tool names and CLI verbs), and 3 content kind
 template, executable).
 
 **How to avoid:**
-Derive the work list mechanically rather than by reading: `grep -ro "r2000_[a-z_]*"` and
-`grep -rn "vice-mcp r2000"` over `src/skills/`, and treat the union as the checklist. Keep the
+Derive the work list mechanically rather than by reading: `grep -ro "anno_[a-z_]*"` and
+`grep -rn "vice-mcp anno"` over `src/skills/`, and treat the union as the checklist. Keep the
 existing coverage gate pointed at the new surface (Pitfall 16) so a mention with no
 corresponding tool is a **failure**, not a documentation bug found later. For the 17 distinct
 tool names, decide each against the phase-19 manifest's `curated`/`omit`/
@@ -954,7 +954,7 @@ otherwise the removal lands with 82 dangling references and the gate cannot dist
 | Undo stack in memory only | Undo "works" in one session; no serialisation design | The durability control and the undo control are both green over a store that cannot undo across a restart | Never — the combined planted-violation test costs one test, not one phase |
 | Hash-delta as the persistence proof | One line, reads as rigour | A truncated save passes; an idempotent save fails | Only as a *supplement* to the mutate→kill→reopen read-back, never instead of it |
 | Verify export by string-matching the exporter's own output | No ACME needed, runs in CI unconditionally | This is the same-pass fixture failure the project has been taught six times; the Phase 4 opcode table was internally pinned and still shipped 14 wrong entries | Never for a reassembly claim. Acceptable for *formatting* assertions, labelled as such |
-| Delete `r2000-*`-prefixed modules by prefix | 25,759 lines in one commit | Six capability modules and a Validated requirement go with them (Pitfall 17) | Never. Classify first, delete second |
+| Delete `anno-*`-prefixed modules by prefix | 25,759 lines in one commit | Six capability modules and a Validated requirement go with them (Pitfall 17) | Never. Classify first, delete second |
 | Lower a non-vacuity floor to green a red suite | Immediate green | A permanently-green guard, and `ENGINEERING_RULES.md` §6's "a permanently-green test is not evidence" | Never. Re-point, then re-plant the violation |
 | Keep the store single-process-only, no revision check | No concurrency design | Silent annotation loss across two sessions or a CLI verb; a clean file with missing findings | Only with the limitation stated in the module header and the tool description, and a refusal rather than a silent overwrite |
 | Skip `fsync` | Matches five existing call sites; simpler | Machine-crash durability is not held | **Acceptable** — with the ceiling stated. Consistency with the existing idiom beats a lone divergence |
@@ -972,8 +972,8 @@ otherwise the removal lands with 82 dangling references and the gate cannot dist
 | **Real ACME — layout** | Assuming reassembly preserves addresses. A label substituted for a zero-page literal changes the addressing mode and the instruction **length**, shifting everything after it | Assert `*` equals the original address at the start of every block, not only at the program start. Byte-identity catches it; a "reassembles clean" assertion does not |
 | **CI's ACME provisioning** | Assuming the `acme` on `PATH` is ACME. CI already greps the binary's own banner because a name is not proof | Keep `probeAcme()`'s banner check; keep `VICE_REQUIRE_ACME` turning absence into a FAIL (Pitfall 10) |
 | **`memmap.json`** | Flat lookup, first-match, or description-length selection; lookup inside the loaded image; address resolved before bank state | All four rules, all four silent. `memmap.json` is **more** load-bearing after the pivot, and is pinned by `memmapSha256` in the enum generator — a store that copies its data instead of joining against it forks the truth |
-| **MCP tool-surface compatibility** | Adding the store to `tools-manifest.json` and reddening the fork's byte-identity regression gate; or registering proxy-locally and never telling the user the tools exist | The `r2000_*` family was in **neither** the manifest nor `capability-registry.ts`. STORE-03's registry declaration is new: check all four registry consumers and the generated `docs/tool-support.md` drift guard before choosing |
-| **`buildViceTool()` / `forwardToVice()`** | Registering a store tool behind `call()`, where `rewriteArguments()` has already host-translated its paths | Register proxy-locally exactly as the `r2000_*` family does, so the constraint is satisfied **by construction**. Both `rewriteArguments()` call sites are then unreachable — and the CLAUDE.md line citations must be re-verified after `vice-proxy.ts` shrinks (Pitfall 18) |
+| **MCP tool-surface compatibility** | Adding the store to `tools-manifest.json` and reddening the fork's byte-identity regression gate; or registering proxy-locally and never telling the user the tools exist | The `anno_*` family was in **neither** the manifest nor `capability-registry.ts`. STORE-03's registry declaration is new: check all four registry consumers and the generated `docs/tool-support.md` drift guard before choosing |
+| **`buildViceTool()` / `forwardToVice()`** | Registering a store tool behind `call()`, where `rewriteArguments()` has already host-translated its paths | Register proxy-locally exactly as the `anno_*` family does, so the constraint is satisfied **by construction**. Both `rewriteArguments()` call sites are then unreachable — and the CLAUDE.md line citations must be re-verified after `vice-proxy.ts` shrinks (Pitfall 18) |
 | **The store's project path** | Accepting a caller-supplied path and resolving it anywhere but the one seam | `resolveStorePath()`'s job today: resolve against `repoRoot()` only, `realpathSync` before use, refuse escape. Container-side, so **no** host-path translation module may be imported — asserted structurally by the derived-from-disk consumer-set guard, which must be re-pointed at the new family (Pitfall 16) |
 
 ---
@@ -1002,7 +1002,7 @@ interactive agent loop", not throughput.
 | Importing a host-path translation module into the store family | Breaks the container-side invariant and the tested closed consumer set; a path is translated for a process that never leaves the container | The derived-from-disk absence guard, **re-pointed** at the new family with its floor raised (Pitfall 16) |
 | A `tools_call`-shaped meta-tool on the store surface (batch execute) | Nested-argument smuggling past the deny-list — the exact shape `vice.ts`'s `DENY_LIST` exists to close | If a batch tool is offered, gate every inner name through the same curated-name assertion, recursively, before anything executes. One sanctioned exception, guarded, is the existing precedent |
 | Trusting store content as trusted input | Store comments/labels are first-party **untrusted** prose (an agent wrote them). Rendering them into ACME source, or into a shell command, without escaping | Treat store text as data. Labels are validated identifiers (reject, never sanitize); comments are escaped at emit; nothing from the store reaches a shell |
-| Leaving the `--vice` denial removed along with its subject | The invariant becomes moot for r2000 but the *pattern* (a static-analysis surface that must never reach the emulator) transfers to the new store | Record the fate explicitly: the spawn-seam guard's frozen set is genuinely empty after the removal (no child process exists), and the deny-list entry is reviewed rather than reflexively deleted |
+| Leaving the `--vice` denial removed along with its subject | The invariant becomes moot for anno but the *pattern* (a static-analysis surface that must never reach the emulator) transfers to the new store | Record the fate explicitly: the spawn-seam guard's frozen set is genuinely empty after the removal (no child process exists), and the deny-list entry is reviewed rather than reflexively deleted |
 
 ---
 
@@ -1089,7 +1089,7 @@ not the digits.
 | 7. Comment anchoring on retype | 27 — Store core | Retype returns the contradicted-comment list. RED: drop the check and the call returns clean success |
 | 8. Enum on the wrong operand | **29 — ACME export** | `lda #$1b`/`sta $d011` renders with the enum and reassembles byte-identical. RED: allow application to an address operand |
 | 9. The `--verify` seam cannot be reused | **29 — ACME export**, before 31 | Two reds: missing-ACME must not pass; a corrupted byte must fail while ACME exits 0 |
-| 10. `r2000-test-gate.ts`'s ACME half | 27 (earliest) / 29 (latest), before 31 | `VICE_REQUIRE_ACME=1` + bogus `ACME_BIN` must **FAIL**, not skip |
+| 10. `anno-test-gate.ts`'s ACME half | 27 (earliest) / 29 (latest), before 31 | `VICE_REQUIRE_ACME=1` + bogus `ACME_BIN` must **FAIL**, not skip |
 | 11. Hash-delta as durability | 27 — Store core | mutate → `SIGKILL` → fresh-process reopen → read back. RED: skip the `rename`; also truncate-and-reopen must refuse |
 | 12. tmp+rename ≠ `fsync` | 27 — Store core | Wording gate at the phase boundary: "durable across process death" only |
 | 13. Undo across restart | 27 — Store core | One combined test: mutate → kill → reopen → **undo** → assert prior value. RED: keep the log in memory |
@@ -1126,35 +1126,35 @@ All findings below were produced by direct inspection of this repository's worki
 *this* codebase's integration and removal surface, for which the repository is the primary
 source and the strongest available one.
 
-- **Store semantics and vocabulary:** `src/mcp/vice/r2000-tools.ts` (tool schemas, the 12-type
-  `data_type` enum, inclusive range wording, `CURATED_R2000_TOOLS`, `resolveStorePath()`,
-  batch-recursion gate), `r2000-project.ts:339` (tmp+rename), `r2000-session.ts`
+- **Store semantics and vocabulary:** `src/mcp/vice/anno-tools.ts` (tool schemas, the 12-type
+  `data_type` enum, inclusive range wording, `CURATED_ANNO_TOOLS`, `resolveStorePath()`,
+  batch-recursion gate), `anno-project.ts:339` (tmp+rename), `anno-session.ts`
   (FIFO mutex, `inFlight`, `mtimeMs` staleness, restart budget, the two deliberate absences),
-  `r2000-mcp-client.ts:780-795` (`saveAndVerify()`), `r2000-confidence.ts`
-  (five-grade vocabulary), `r2000-acme-ident.ts`, `r2000-coverage.ts` (census header, the
+  `anno-mcp-client.ts:780-795` (`saveAndVerify()`), `anno-confidence.ts`
+  (five-grade vocabulary), `anno-acme-ident.ts`, `anno-coverage.ts` (census header, the
   dispatch-context gate, its six named traps).
-- **Export/reassembly:** `r2000-verify.ts` (the D-10 false-pass transcript, the WR-04 unanimity
-  fix, `AssemblerOutcome`), `r2000-test-gate.ts` (both gates, `VICE_REQUIRE_ACME`),
+- **Export/reassembly:** `anno-verify.ts` (the D-10 false-pass transcript, the WR-04 unanimity
+  fix, `AssemblerOutcome`), `anno-test-gate.ts` (both gates, `VICE_REQUIRE_ACME`),
   `disasm-roundtrip.test.ts`, `src/skills/acme-build/scripts/acme.mjs:124`,
   `.github/workflows/ci.yml:45-140` (ACME install, banner grep, `VICE_REQUIRE_ACME: "1"`,
   the deliberate `npm test` over `test:automated`).
-- **Removal surface:** `wc -l` over `r2000-*.ts` (10,102 non-test + 15,657 test);
-  `git grep -l regenerator2000` (291 tracked / 55 outside `.planning/`);
+- **Removal surface:** `wc -l` over `anno-*.ts` (10,102 non-test + 15,657 test);
+  `git grep -l the external analyser` (291 tracked / 55 outside `.planning/`);
   `.gitignore:43` (`/installer/skills/`) with 11 mentions in the generated tree;
-  `package.json` `files[]` (19 r2000 entries); `scripts/check-skill-fork-honesty.mjs` (its
+  `package.json` `files[]` (19 anno entries); `scripts/check-skill-fork-honesty.mjs` (its
   actual walk scope and its own comment on that scope); `skill-honesty-checks.test.ts`
   (the `toacme` gate's live child-process plants and its check-ordering regression);
-  `scripts/check-skill-tool-coverage.mjs` + `scripts/lib/r2000-cli-verbs.mjs`
-  (`CURATED_R2000_TOOLS` import, `R2000_CLI_VERB_FLOOR`);
-  `hostpath-consumers.test.ts:173-240` (derived glob, `R2000_MODULE_FLOOR`, positive control,
+  `scripts/check-skill-tool-coverage.mjs` + `scripts/lib/anno-cli-verbs.mjs`
+  (`CURATED_ANNO_TOOLS` import, `ANNO_CLI_VERB_FLOOR`);
+  `hostpath-consumers.test.ts:173-240` (derived glob, `ANNO_MODULE_FLOOR`, positive control,
   planted violation); `skill-attribution.test.ts` (5-row registry, manifest-length relation,
   `src/skills/`-only scope); `docs-linerefs.test.ts`, `docs-dangling-refs.test.ts:39-56`,
-  `docs-r2000-decisions.test.ts`; `test-gate.mjs:95-105` (`MANUAL_ONLY_TESTS`);
+  `docs-absorbed-decisions.test.ts`; `test-gate.mjs:95-105` (`MANUAL_ONLY_TESTS`);
   `ci-suite-coverage.test.ts:68-74` (`installer/skills` as gitignored generated output);
   `src/mcp/vice/fixtures/coverage/` (12 dirs, `store.json` + `project.regen2000proj`,
   `make-coverage-fixtures.mjs`).
-- **Skill surface:** `grep -ro "r2000_[a-z_]*" src/skills` (82 mentions / 17 distinct names
-  across 5 files), `grep -rn "vice-mcp r2000" src/skills` (13), the five
+- **Skill surface:** `grep -ro "anno_[a-z_]*" src/skills` (82 mentions / 17 distinct names
+  across 5 files), `grep -rn "vice-mcp anno" src/skills` (13), the five
   `ATTRIBUTION (ABS-02)` blocks and their five synced twins.
 - **Project record:** `.planning/PROJECT.md` (Current Milestone v0.7.0, the two scope decisions
   of 2026-08-26, Constraints, Key Decisions incl. `--no-archive-phases`, `FORK-01`, `CORE-01`,
@@ -1163,5 +1163,5 @@ source and the strongest available one.
   `.planning/notes/auto-annotation-from-ghidra-xrefs.md` (the four silent join rules).
 
 ---
-*Pitfalls research for: owning the annotation store and removing regenerator2000 (v0.7.0)*
+*Pitfalls research for: owning the annotation store and removing the external analyser (v0.7.0)*
 *Researched: 2026-08-26*

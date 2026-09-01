@@ -4,14 +4,14 @@
 toolchain (v0.5.0 "The rebuild half — absorbed playbooks, modifiable source")
 **Researched:** 2026-08-23
 **Confidence:** HIGH for 6502/C64 hardware facts, this project's own documented incidents,
-and regenerator2000 0.9.20 source behavior (all verified directly against the installed
+and the external analyser 0.9.20 source behavior (all verified directly against the installed
 crate this session). MEDIUM for the persistent-session daemon's exact failure surface,
 since that architecture does not exist yet — those pitfalls are inferred from this
-project's own broker precedent plus regenerator2000's confirmed process model, not
+project's own broker precedent plus the external analyser's confirmed process model, not
 observed live.
 
 This document assumes the reader has `.planning/PROJECT.md`, `CLAUDE.md`,
-`.planning/RETROSPECTIVE.md`, `docs/phase9-regenerator2000-probe-findings.md`, and
+`.planning/RETROSPECTIVE.md`, `docs/phase9-external-analyser-probe-findings.md`, and
 `src/skills/c64-ram-capture/{SKILL.md,scripts/compare.mjs}` open. It does not restate
 their content; it extends it.
 
@@ -24,7 +24,7 @@ Every `JSR`/`JMP` operand is trivially symbolisable once the target is a known l
 The hazard is the opposite case: a 16-bit value that *is* a code address but sits inside
 a data byte stream — a pointer stored in a table, an address pushed by hand, a value
 computed as `base + offset` at runtime — where nothing marks the bytes as `Address`
-type. regenerator2000's own cross-reference builder only resolves `JMP ($xxxx)` when the
+type. The external analyser's own cross-reference builder only resolves `JMP ($xxxx)` when the
 *pointer location itself* is already typed `BlockType::Address`
 (`analyzer.rs:504-511`, verified against the installed 0.9.20 source this session); an
 untyped pointer is invisible to it. After relocation, every address baked into an
@@ -33,7 +33,7 @@ reads garbage at runtime.
 
 **Why it happens:**
 "The disassembler symbolised it" and "the value is symbol-safe" are different claims.
-Regenerator2000's auto-analysis only symbolises what its own heuristics recognize as
+The external analyser's auto-analysis only symbolises what its own heuristics recognize as
 address-shaped in a place it already expects an address (an instruction operand, or a
 block a human has already typed `Address`/`LoHiAddress`/`HiLoAddress`). A raw `!byte`
 pair that happens to decode to a valid in-range 16-bit value is never promoted
@@ -62,7 +62,7 @@ goes through a symbol" is claimed done).
 
 **What goes wrong:**
 Two extremely common C64 dispatch idioms are structurally invisible to
-regenerator2000's own jump-table follower:
+The external analyser's own jump-table follower:
 
 - **Operand-patch dispatch:** `ldx state / lda joblo,x / sta $c001 / lda jobhi,x / sta
   $c002 / jmp $c000` — the JMP target is *computed and written* before the JMP executes.
@@ -73,7 +73,7 @@ regenerator2000's own jump-table follower:
   one byte into the wrong instruction at runtime.
 
 Verified directly against 0.9.20's `follow_indirect_jumps`
-(`regenerator2000-core-0.9.20/src/analyzer.rs:445-528`): it resolves exactly one thing —
+(`external-analyser-core-0.9.20/src/analyzer.rs:445-528`): it resolves exactly one thing —
 a literal `JMP ($xxxx)` opcode (`0x6C`) whose 16-bit pointer location is already typed
 `Address`, reading **one** fixed target. It has no code path that walks an N-entry table
 indexed by a register, and no way to discover N (table length is implicit, usually
@@ -115,7 +115,7 @@ Common idioms: patching an instruction's operand byte at runtime (`sta $c001` wh
 `$c001` is another instruction's low operand byte — loop-unroll speed hacks,
 self-relocating loaders, IRQ-handler polymorphism); patching a JMP/JSR target (Pitfall
 2's operand-patch variant); an `INC`/`DEC` on an address that is itself an opcode or
-operand byte. Verified: `regenerator2000-core-0.9.20`'s entire source tree has **zero**
+operand byte. Verified: `external-analyser-core-0.9.20`'s entire source tree has **zero**
 matches for `self-modif`/`smc` — its analyzer has no SMC detection or flagging of any
 kind.
 
@@ -130,7 +130,7 @@ are separated across source files without preserving their relationship, the pat
 misses its mark or corrupts an unrelated byte after the move.
 
 **How to avoid:**
-This is mechanically detectable even though regenerator2000 does not do it: query every
+This is mechanically detectable even though the external analyser does not do it: query every
 `STA`/`STX`/`STY`/`INC`/`DEC` instruction's absolute target address and check whether that
 address falls inside a block currently typed `Code` (this is a straightforward script
 against the annotation store's own cross-reference/block-type data — build it as a
@@ -243,7 +243,7 @@ regression here.
 **What goes wrong:**
 This project's own disassembler already round-trips 221/256 opcodes through real ACME
 0.97 — that is not the risk here. The risk is specific to the **rebuild** pipeline and
-regenerator2000's own confirmed defect: a `.regen2000proj` bootstrapped without
+The external analyser's own confirmed defect: a `.regen2000proj` bootstrapped without
 `settings.use_illegal_opcodes = true` degrades every real illegal opcode to a raw
 `!byte $xx ; Invalid or partial instruction` fallback. This still reassembles
 byte-identical (nothing fails), which means the degradation is **silent** — the export
@@ -255,11 +255,11 @@ without tripping any existing gate.
 **Why it happens:**
 Auto-analysis never flips the setting (confirmed false by direct testing in the Phase 9
 probe); it must be forced explicitly, and that forcing was previously scoped only to the
-original project-synthesis path (`R2000-09`'s synthesiser), not to every project a
+original project-synthesis path (`ANNO-09`'s synthesiser), not to every project a
 persistent session might open or re-open for this milestone's rebuild work.
 
 **How to avoid:**
-Force `use_illegal_opcodes: true` on every regenerator2000 project touched by this
+Force `use_illegal_opcodes: true` on every the external analyser project touched by this
 milestone's pipeline, not only ones freshly synthesised — verify the setting at the start
 of any persistent session that will annotate or export code, the same way the existing
 synthesiser already forces it at creation time. Separately, define an explicit convention
@@ -298,7 +298,7 @@ Overlap load-bearing for *original* game logic is rare but not impossible; it is
 common in loader/cracktro regions this milestone's own provenance-awareness requirement
 should already exclude before rebuild is attempted. The practical answer is not "detect
 automatically" — any linear or recursive-descent disassembler, including
-regenerator2000's own auto-analyzer, can get this wrong the same way a human can. The
+The external analyser's own auto-analyzer, can get this wrong the same way a human can. The
 practical answer is to treat every routine-boundary claim as a checkable hypothesis: run
 a cross-reference check per routine — does any jump target land strictly inside this
 routine's already-decoded byte range, other than at its declared start? — before treating
@@ -396,23 +396,23 @@ assumption) are wrong for exactly that comparison. Do not treat `compare.mjs` as
 
 ---
 
-### Pitfall 9: The persistent regenerator2000 session inherits every session-model lesson this project already paid for once — solving each one twice, slightly differently, is worse than reusing the broker
+### Pitfall 9: The persistent the external analyser session inherits every session-model lesson this project already paid for once — solving each one twice, slightly differently, is worse than reusing the broker
 
 **What goes wrong (six distinct failure modes, one root cause):**
 
-1. **Unsaved-annotation loss on crash.** `r2000_save_project` is an explicit, separate
+1. **Unsaved-annotation loss on crash.** `anno_save_project` is an explicit, separate
    verb (confirmed in the Phase 9 probe transcripts) — a long-lived session accumulates
    many annotation writes between explicit saves. A crash or a forced kill of a wedged
    session loses everything since the last save, and the blast radius is now the whole
    working session's worth of work, not one call's worth.
-2. **A wedged child that looks alive.** regenerator2000's HTTP MCP mode can accept a TCP
+2. **A wedged child that looks alive.** the external analyser's HTTP MCP mode can accept a TCP
    connection while its own event loop is blocked on something else (the Phase 9 probe
    hit exactly this shape of surprise: an unanticipated "Import Context Setup" modal
    holding focus before the bootstrap could proceed). A naive "can I connect" liveness
    check will report healthy while every real query hangs — the identical shape of
    problem `vice-wedge-triage` and `vice-probe.ts`'s deliberately-fragile, no-retry
    liveness check already exist to solve for VICE.
-3. **Fixed `:3000` port collision.** Confirmed, no workaround upstream (`R2000-04`'s
+3. **Fixed `:3000` port collision.** Confirmed, no workaround upstream (`ANNO-04`'s
    scope note: no `--mcp-port`/`--mcp-bind`). Two projects open at once on one host
    collide outright. Under spawn-per-call this was rare enough to document rather than
    detect (v0.3.0's explicit cut rationale); under a persistent session it becomes routine
@@ -431,7 +431,7 @@ assumption) are wrong for exactly that comparison. Do not treat `compare.mjs` as
    `.regen2000proj` synthesiser directly edits the project file as JSON to force
    `use_illegal_opcodes`/`system`. If a live session has that file open when an external
    edit happens, the live in-memory state silently diverges, and the next
-   `r2000_save_project` from the live session **overwrites the external edit** — silently
+   `anno_save_project` from the live session **overwrites the external edit** — silently
    reverting exactly the forced settings Phase 9's own Accepted Limits say are required
    for correct illegal-opcode reassembly (Pitfall 6).
 
@@ -440,7 +440,7 @@ that splitting `vice_memory_write` and `vice_snapshot_save` across three separat
 client connections produced a `.vsf` that did **not** contain the written bytes, even
 though a same-connection read-back looked correct moments earlier. The lesson —
 "every causally-related mutate-then-read sequence must happen within one connection" —
-was learned about VICE and is not yet applied to the new regenerator2000 session model,
+was learned about VICE and is not yet applied to the new analyser session model,
 where the entire point of persistence is that MANY more mutate-then-read sequences will
 now span a longer-lived, shared connection.
 
@@ -451,7 +451,7 @@ single-owner, crash-recoverable) in the VICE broker: `vice-broker.mts`'s single-
 `inFlight` guard (built after the real 2026-08-01 triple-launch outage), its verified-kill
 pattern (PID plus argv/identity check, not a bare signal), its epoch-based restart
 detection, and its capability-token-gated control plane. Re-deriving a *different*,
-lighter version of each of these for regenerator2000 is very likely to reproduce a subset
+lighter version of each of these for the external analyser is very likely to reproduce a subset
 of the same bugs the broker's design already closes, with none of the broker's own
 regression tests protecting the new code.
 
@@ -481,8 +481,8 @@ it (Pitfall 11 is downstream of getting this right).
 ### Pitfall 10: Absorbing procedure text is a different obligation than depending on the binary, and the installed crate does not even contain what's being absorbed
 
 **What goes wrong:**
-Verified this session: `regenerator2000`'s `Cargo.toml` explicitly `exclude`s
-`.agent/**/*` from the published crate. The `cargo install regenerator2000` binary this
+Verified this session: `the external analyser`'s `Cargo.toml` explicitly `exclude`s
+`.agent/**/*` from the published crate. The `cargo install analyser` binary this
 project already depends on (0.9.20) **does not ship the five `.agent/skills/` procedures
 at all** — they can only be fetched from the upstream GitHub repository directly, at
 whatever commit `main` (or a tag) happens to be at fetch time. This decouples the
@@ -496,12 +496,12 @@ entry (written for "depends on this binary, dual `MIT OR Apache-2.0`") does not 
   specifically, not just be recorded once for the whole dependency.
 - **Snapshot/version drift.** Whatever commit the absorbed text is pulled from is not
   mechanically tied to the 0.9.20 binary actually installed and run. A procedure
-  describing tool behavior from a newer or older regenerator2000 than 0.9.20 will read as
+  describing tool behavior from a newer or older the external analyser than 0.9.20 will read as
   correct and fail silently or subtly when actually driven against 0.9.20.
 - **Tool-surface mismatch.** Upstream's playbooks are written against upstream's *full*
   MCP surface and (implicitly) upstream's session model. This project exposes a
   deliberately curated 17-tool subset, cut by the same "does a shipped skill call it"
-  test used twice before (v0.2.0's manifest cut, v0.3.0's R2000 cut). An absorbed
+  test used twice before (v0.2.0's manifest cut, v0.3.0's ANNO cut). An absorbed
   procedure calling a tool outside the curated 17 (or one of the items already cut as
   surplus, e.g. HTML export) will fail or need re-scoping — and per this project's own
   explicit v0.5.0 requirement, that gap-finding is *expected*, not a sign something went
@@ -525,7 +525,7 @@ this project has already used twice, applied to a new candidate set.
 
 **Warning signs:**
 An absorbed procedure step that calls a tool name not present in this project's own
-`tools-manifest.json`/curated `r2000_*` list — a mechanically checkable, not a
+`tools-manifest.json`/curated `anno_*` list — a mechanically checkable, not a
 judgment-call, signal.
 
 **Phase to address:**
@@ -552,7 +552,7 @@ deliberately keeping alive specifically so state persists across the session.
 Absorbing a tested, working procedure feels lower-risk than writing one from scratch —
 but "tested" upstream is silent about what it was tested *against*, and this project has
 direct, dated evidence (the three-separate-connections `.vsf` incident, Phase 9) that its
-own regenerator2000 integration does not tolerate uncoordinated multi-connection access
+own the external analyser integration does not tolerate uncoordinated multi-connection access
 to shared state.
 
 **How to avoid:**
@@ -634,11 +634,11 @@ Roadmap ordering itself — this is a sequencing pitfall, not a within-phase one
 ### Pitfall 14: Recurrence of "a guard whose scope is narrower than its subject reports clean for the wrong reason"
 
 **How this specifically recurs in v0.5.0:**
-A coverage checker that only walks addresses regenerator2000's *own* block-type table has
+A coverage checker that only walks addresses the external analyser's *own* block-type table has
 already assigned will silently treat bytes outside that scan as "not applicable" rather
 than "unclassified" — reporting 100% coverage while genuinely undocumented bytes exist.
 Concretely, and now confirmed by this session's source reading: a "does every referenced
-address resolve to a label" check that trusts regenerator2000's own `follow_indirect_jumps`
+address resolve to a label" check that trusts the external analyser's own `follow_indirect_jumps`
 cross-reference output will report clean while an entire indexed jump table's N-1
 untraveled entries (Pitfall 2 — the tool literally cannot enumerate them) are never even
 in scope to check. This is the *exact* shape of the 119-vs-150 finding
@@ -649,7 +649,7 @@ own notion of "everything I've looked at" is being mistaken for "everything ther
 Build the coverage/reference scanner to walk the raw byte range and instruction stream
 independently of what the annotation tool claims it has already classified — a
 derived-from-bytes census, not a report generated from the store's own bookkeeping. Widen
-it specifically to cover the address space regenerator2000's indirect-jump follower does
+it specifically to cover the address space the external analyser's indirect-jump follower does
 not walk (multi-entry indexed dispatch tables), since that gap is now a confirmed,
 specific fact about this dependency rather than a hypothetical.
 
@@ -662,7 +662,7 @@ The coverage-measurement phase, as the design constraint on the scanner itself.
 
 **How this specifically recurs in v0.5.0:**
 Two Active requirements are exactly the shape of claim this project has been burned by
-asserting without measuring: "the curated `r2000_*` surface covers what the absorbed
+asserting without measuring: "the curated `anno_*` surface covers what the absorbed
 analyze procedures actually call" is true only if someone extracts every tool call the
 five absorbed procedures make and diffs it against the 17-tool list — writing the sentence
 because it sounds plausible is the same substitution as Phase 9's "8 predicted, 27 found"
@@ -692,7 +692,7 @@ Every phase closing a requirement with an empirical claim; enforced the way
   store while adding zero understanding, and a coverage script counting
   `block_type != Undefined` over total bytes reads 100% either way.
 - **"Every referenced address documented"** degenerates to "has a non-null comment
-  field" — regenerator2000 already auto-generates comments/labels for every reference it
+  field" — the external analyser already auto-generates comments/labels for every reference it
   finds (confirmed: `LabelKind::Auto` exists as a distinct, tracked kind alongside
   `LabelKind::User` in the installed source, `types.rs:353-357`). A script that treats
   presence of *any* comment as "documented" cannot distinguish a genuinely authored
@@ -747,7 +747,7 @@ caveat on it.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|-----------------|------------------|
-| Trusting regenerator2000's auto-generated cross-refs as "the" reference graph | Fast, zero extra code | Misses every indexed jump table (Pitfall 2) and any pointer not already `Address`-typed (Pitfall 1); coverage claims built on it are vacuous (Pitfall 14/16) | Never as the sole source for a coverage or relocation-safety claim; fine as a starting seed for human/agent review |
+| Trusting the external analyser's auto-generated cross-refs as "the" reference graph | Fast, zero extra code | Misses every indexed jump table (Pitfall 2) and any pointer not already `Address`-typed (Pitfall 1); coverage claims built on it are vacuous (Pitfall 14/16) | Never as the sole source for a coverage or relocation-safety claim; fine as a starting seed for human/agent review |
 | Symbolising every label the moment it's created (auto or user) without distinguishing kind in reporting | Simple 100%-labeled output | Hides the Auto/User ratio that is the one cheap, honest coverage-quality signal this dependency already exposes | Never for the milestone's coverage measurement; acceptable for a quick interim disassembly listing not claimed as "well documented" |
 | Reusing a warm-floor VICE instance for both sides of an equivalence comparison | Faster test cycles | Leaked prior-session state masquerades as a "fresh" capture, producing a false PASS or FAIL with no error (Pitfall 8) | Never for an equivalence run; fine for exploratory, non-recorded manual poking |
 | Copying upstream's 7-subagent orchestration structure verbatim | Ships absorption faster, reuses tested prose | Corrupts the one shared persistent session under concurrent writes with no error surfaced (Pitfall 9/11) | Never as shipped; acceptable only after the concurrency model is independently proven safe against the persistent session |
@@ -757,7 +757,7 @@ caveat on it.
 
 | Integration | Common Mistake | Correct Approach |
 |--------------|------------------|-------------------|
-| regenerator2000 persistent session (this milestone's core change) | Assuming spawn-per-call session-safety habits (single connection, single writer) still hold once the process stays up | Re-derive session-safety explicitly for the persistent model; reuse the VICE broker's single-owner/verified-kill/epoch patterns rather than inventing lighter equivalents (Pitfall 9) |
+| the external analyser persistent session (this milestone's core change) | Assuming spawn-per-call session-safety habits (single connection, single writer) still hold once the process stays up | Re-derive session-safety explicitly for the persistent model; reuse the VICE broker's single-owner/verified-kill/epoch patterns rather than inventing lighter equivalents (Pitfall 9) |
 | `.regen2000proj` direct JSON edits (the existing synthesiser's own technique) | Editing the project file while a live session has it open | Force settings only at bootstrap, before a session opens the file, or via the live session's own tool surface (Pitfall 9, point 6) |
 | Upstream `.agent/skills/` absorption | Treating "read the GitHub repo" as equivalent to "the installed crate documents this" | The installed 0.9.20 crate does not ship `.agent/skills/` at all (`exclude`d from the package) — fetch and pin a specific commit/tag independently, and verify compatibility with 0.9.20 (Pitfall 10) |
 | `c64-ram-capture`'s `compare.mjs` reused for behavioral equivalence | Calling it unmodified and trusting a PASS/FAIL verdict tuned for same-binary reproducibility | Extend its volatile mask, add an intentional-difference allowlist, and add a write-trace comparison before trusting a verdict on two different binaries (Pitfall 8) |
@@ -775,7 +775,7 @@ caveat on it.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Binding the persistent regenerator2000 HTTP MCP session on `0.0.0.0` (its likely default, unverified this session) without the broker's capability-token discipline | Any host on the local network segment could read or mutate the analysis session for a binary being reverse-engineered | Apply the same token-gated, `timingSafeEqual`-compared control-plane pattern the VICE broker's control listener already uses, rather than trusting a bare port bind (mirrors `PKG-04`'s accepted-risk analysis — do the analysis explicitly rather than skip it because "it's just a disassembler") |
+| Binding the persistent analyser HTTP MCP session on `0.0.0.0` (its likely default, unverified this session) without the broker's capability-token discipline | Any host on the local network segment could read or mutate the analysis session for a binary being reverse-engineered | Apply the same token-gated, `timingSafeEqual`-compared control-plane pattern the VICE broker's control listener already uses, rather than trusting a bare port bind (mirrors `PKG-04`'s accepted-risk analysis — do the analysis explicitly rather than skip it because "it's just a disassembler") |
 | Treating a `.regen2000proj` or absorbed-skill file as trusted input because it's "just documentation" | An externally-fetched skill file or project file could carry a prompt-injection payload interpreted as instructions by a session reading it via a Read/agent flow | Apply the standard untrusted-input boundary discipline to anything fetched from upstream's GitHub repo during absorption, the same as any other external content ingested into an agent's context |
 
 ## UX Pitfalls
@@ -792,7 +792,7 @@ caveat on it.
       absence of the `Undefined` block type — a fully auto-renamed binary satisfies the
       literal wording (Pitfall 16).
 - [ ] **"Every referenced address documented"**: verify the reference graph the coverage
-      check walks includes multi-entry indexed jump tables, which regenerator2000's own
+      check walks includes multi-entry indexed jump tables, which the external analyser's own
       cross-reference builder does not enumerate (Pitfall 2, Pitfall 14).
 - [ ] **"Every branch, JSR/JMP and data reference goes through a symbol"**: verify data
       byte-pairs that decode to in-range addresses with incoming cross-references were
@@ -811,7 +811,7 @@ caveat on it.
 - [ ] **"Upstream's five analyze procedures are absorbed"**: verify each absorbed file
       carries a specific source commit/tag and licence header, and that its tool calls
       were diffed against the curated 17 (Pitfall 10).
-- [ ] **"A regenerator2000 project stays open across a whole working session"**: verify a
+- [ ] **"an external analyser project stays open across a whole working session"**: verify a
       crash/kill mid-session was actually exercised and the resulting state-loss/recovery
       behavior observed, not merely that the happy path was demoed (Pitfall 9).
 
@@ -820,7 +820,7 @@ caveat on it.
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|----------------|------------------|
 | A relocation shipped that turns out to have broken a jump table or SMC site | MEDIUM | Bisect via `c64-provenance-diff`-style anchor comparison against the pre-relocation binary at the affected address range; the original `.d64`/binary stays the ground truth to diff against, per this project's existing provenance workflow |
-| A persistent regenerator2000 session crashes with unsaved annotations | LOW–HIGH depending on save discipline | If autosave/frequent-save discipline (Pitfall 9) was followed, reload from the last save; if not, the loss is total for that session — this is the argument for building the save discipline before relying on the persistent model at all |
+| A persistent the external analyser session crashes with unsaved annotations | LOW–HIGH depending on save discipline | If autosave/frequent-save discipline (Pitfall 9) was followed, reload from the last save; if not, the loss is total for that session — this is the argument for building the save discipline before relying on the persistent model at all |
 | `compare.mjs`-based equivalence check reports a false FAIL on an intentional change | LOW | Add the difference to the run's explicit allowlist (once built, per Pitfall 8) and re-verify; do not silently accept a manual "looks fine to me" override without recording why |
 | Absorbed procedure text found to reference an unavailable tool mid-use | LOW | Fall back to the curated 17-tool surface's nearest equivalent, or file the gap as a scope-widening candidate per the measured-caller test, rather than patching the absorbed prose ad hoc |
 | Coverage report later found to have been gamed by templated auto-labels | HIGH | Requires an actual second-pass annotation effort against the flagged Auto-ratio regions — there is no mechanical shortcut once vacuous coverage has been recorded as complete, which is exactly why Pitfall 16's prevention must run *before* the milestone is declared done, not after |
@@ -857,20 +857,20 @@ caveat on it.
   instances) and "a guard's scope is itself a claim to be checked."
 - `.planning/codebase/CONCERNS.md` — broker fragility, the 2026-08-01 triple-launch
   outage, and the single-owner `inFlight` guard it produced.
-- `docs/phase9-regenerator2000-probe-findings.md` — the go/no-go probe against real
-  regenerator2000 0.9.20; source of the confirmed `.vsf` cross-connection incident, the
+- `docs/phase9-external-analyser-probe-findings.md` — the go/no-go probe against real
+  the external analyser 0.9.20; source of the confirmed `.vsf` cross-connection incident, the
   `use_illegal_opcodes` default defect, and the `.vsf` machine-type auto-detection
   limitation.
 - `src/skills/c64-ram-capture/SKILL.md` and `scripts/compare.mjs` — the existing drift
   floor and difference-classification machinery this milestone must extend, read in full
   this session.
-- `regenerator2000-core-0.9.20/src/analyzer.rs`, `state/types.rs`
+- `external-analyser-core-0.9.20/src/analyzer.rs`, `state/types.rs`
   (`~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/`) — read directly this
   session to confirm `follow_indirect_jumps`'s single-fixed-target limitation (no
   indexed-jump-table enumeration), the absence of any self-modifying-code detection
   anywhere in the crate, and the `LabelKind::Auto`/`User`/`System` and `BlockType`
   (including `LoHiAddress`/`HiLoAddress`) enum shapes.
-- `regenerator2000-0.9.20/Cargo.toml` — confirmed `.agent/**/*` is excluded from the
+- `the external analyser-0.9.20/Cargo.toml` — confirmed `.agent/**/*` is excluded from the
   published crate, meaning the installed binary does not carry the skills text this
   milestone absorbs.
 - General NMOS 6502/6510 hardware facts (relative branch range, indexed-addressing

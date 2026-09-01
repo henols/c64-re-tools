@@ -24,9 +24,9 @@ planning assumption:
 | First pass said | This pass establishes |
 |---|---|
 | "The five upstream procedure paths and exact tool names must be fetched from the pinned source before copying." | Fetched. `upstream-procedure-manifest.json`'s five paths, five sha256 digests and all 41 tool references **verify byte-exact** against the pin. |
-| "`detect_packer()` being internal means a new MCP tool may be required." | **No read-only route to packer identity exists anywhere on the 0.9.20 MCP *or* CLI surface** — not in `r2000_get_binary_info`, not in `r2000_unpack_binary`'s result, not in the saved project file. Every consumer of `packer_name` is TUI-only. A "new MCP tool" is not the answer either; see §2. |
+| "`detect_packer()` being internal means a new MCP tool may be required." | **No read-only route to packer identity exists anywhere on the 0.9.20 MCP *or* CLI surface** — not in `anno_get_binary_info`, not in `anno_unpack_binary`'s result, not in the saved project file. Every consumer of `packer_name` is TUI-only. A "new MCP tool" is not the answer either; see §2. |
 | (silent) | **The deferred reader-writer question is not merely unmeasured — it is answerable and answered NO.** `--mcp-server-stdio` is a strictly serial loop. A reader-writer lock would buy exactly zero parallelism. Measured live, three runs. |
-| (silent) | Two "no criterion" tool exclusions (`r2000_toggle_splitter`, `r2000_set_immediate_format`) **acquire a criterion** from this diff, and they are needed by Phase 20/21, not Phase 19. |
+| (silent) | Two "no criterion" tool exclusions (`anno_toggle_splitter`, `anno_set_immediate_format`) **acquire a criterion** from this diff, and they are needed by Phase 20/21, not Phase 19. |
 | (silent) | `scripts/check-npm-packages.mjs:235` pins `skillMds.length === 6`. Adding the routine-queue-walker **breaks CI** until it is changed. |
 
 ---
@@ -40,9 +40,9 @@ the binding decision record. Reproduced verbatim:
 
 - **Needs research at plan-time (research flag).** The packer-identification mechanism is only MEDIUM confidence — no dedicated read-only "identify packer" tool was confirmed in the live 28-tool surface; resolve with a live-source spike against 0.9.20's `packer_signatures.rs` before committing to an approach.
 - **Needs research at plan-time (research flag).** The exact upstream commit/tag to pin for the five absorbed procedures, and whether their tool-call surface matches the curated list, must be diffed explicitly during absorption rather than assumed compatible.
-- **2026-08-24 (inherited from Phase 18 / plan 18-06):** The concurrency model is a coarse mutex at the `r2000-session.ts` seam: exactly one logical operation per session is in flight at a time, and contention is answered by a bounded FIFO wait rather than a refuse-while-busy error. Phase 19 must not copy upstream's 7-way concurrent-subagent orchestration unchanged; read-only fan-out is the sanctioned orchestration pattern, while the seam quietly queues whatever reaches it.
-- **2026-08-24 (deferred, not rejected):** A reader-writer upgrade remains deferred pending measurement of whether regenerator2000's stdio handler actually multiplexes concurrent requests rather than reading stdin serially. Before considering any concurrent-read / exclusive-write lock, Phase 19 must run and record that measurement as evidence, the same way Phase 18 recorded the stdin-EOF measurement; see `18-06-SUMMARY.md` for the observed outcome of the lock-bypassed lost-update proof that motivated the current answer.
-- Coverage-instrument design constraint: walk the raw byte range and instruction stream independently of what regenerator2000's own block-type table already claims — a derived-from-bytes census, not a report generated from the store's own bookkeeping. Widen it specifically to cover what `follow_indirect_jumps` does not walk (multi-entry indexed dispatch tables) — Phase 21's hazard report needs this same widened scan.
+- **2026-08-24 (inherited from Phase 18 / plan 18-06):** The concurrency model is a coarse mutex at the `anno-session.ts` seam: exactly one logical operation per session is in flight at a time, and contention is answered by a bounded FIFO wait rather than a refuse-while-busy error. Phase 19 must not copy upstream's 7-way concurrent-subagent orchestration unchanged; read-only fan-out is the sanctioned orchestration pattern, while the seam quietly queues whatever reaches it.
+- **2026-08-24 (deferred, not rejected):** A reader-writer upgrade remains deferred pending measurement of whether the external analyser's stdio handler actually multiplexes concurrent requests rather than reading stdin serially. Before considering any concurrent-read / exclusive-write lock, Phase 19 must run and record that measurement as evidence, the same way Phase 18 recorded the stdin-EOF measurement; see `18-06-SUMMARY.md` for the observed outcome of the lock-bypassed lost-update proof that motivated the current answer.
+- Coverage-instrument design constraint: walk the raw byte range and instruction stream independently of what the external analyser's own block-type table already claims — a derived-from-bytes census, not a report generated from the store's own bookkeeping. Widen it specifically to cover what `follow_indirect_jumps` does not walk (multi-entry indexed dispatch tables) — Phase 21's hazard report needs this same widened scan.
 - Do not copy upstream's 7-way concurrent-subagent orchestration unchanged (decided in Phase 18, criterion 4) — absorb the procedures' sequencing, not their concurrency model.
 - Validate the coverage instrument against a real, previously-unseen fixture before trusting it, not only against the fixture the same pass wrote it against.
 
@@ -51,8 +51,8 @@ the binding decision record. Reproduced verbatim:
 Committed in `58d8c14` `test(19-01): pin upstream procedure audit`:
 
 - `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`
-- `src/mcp/vice/r2000-upstream-audit.test.ts`
-- Upstream pin `ricardoquesada/regenerator2000@493f840` (= release 0.9.20, 2026-07-11).
+- `src/mcp/vice/anno-derivation.test.ts`
+- Upstream pin `an upstream repository@493f840` (= release 0.9.20, 2026-07-11).
 
 **Verdict on the manifest: it holds. No contradiction found.** See §1.
 
@@ -94,9 +94,9 @@ prescriptive answers than the phase brief anticipated**, and one resolved into a
 
 **Question 1 (upstream procedures) is fully closed and the existing manifest is
 vindicated.** The upstream repo is present at the pin on this machine
-(`/tmp/regenerator2000-phase19`, `git log` head `493f840 v0.9.20`). All five
-`.agent/skills/r2000-analyze-*/SKILL.md` files hash byte-identically to the
-manifest's `sha256` values, and a `grep -oE '\br2000_[a-z0-9_]+'` over each file
+(`/tmp/external-analyser-phase19`, `git log` head `493f840 v0.9.20`). All five
+`.agent/skills/anno-analyze-*/SKILL.md` files hash byte-identically to the
+manifest's `sha256` values, and a `grep -oE '\banno_[a-z0-9_]+'` over each file
 reproduces the manifest's per-procedure tool sets exactly — 41 references, 5
 non-curated names, and every one of the manifest's three dispositions lands on
 the right name. The pin is corroborated *independently of the git tag*: the
@@ -110,13 +110,13 @@ Phase 19 omissions.
 **Question 2 (packer identity) is closed negatively, and the honest answer is
 not a new MCP tool.** `AppState::file_info()` computes `packer_name` at load
 time via `detect_packer()`, but every single consumer of that field is in the
-TUI crate. `r2000_get_binary_info` emits exactly seven fields and none is
+TUI crate. `anno_get_binary_info` emits exactly seven fields and none is
 packer-related (verified in source *and* by a live call through
 `vice-proxy.ts`). `UnpackResult` has no name field. `LoadedProjectData.detected_packer`
 is an in-memory struct the TUI reads; `load_project()` sets it to `None` and it is
-never serialised. `regenerator2000 --help` at 0.9.20 offers no flag for it.
+never serialised. `analyser --help` at 0.9.20 offers no flag for it.
 Therefore SURF-03 cannot be satisfied by *reading* upstream. Since copying
-`packer_signatures.rs` is out of bounds and a project-invented `r2000_*` name
+`packer_signatures.rs` is out of bounds and a project-invented `anno_*` name
 would be a fake upstream tool that this repo's own CI forbids, the smallest
 boundary-respecting bridge is a **project-owned recon finding with a pluggable
 external oracle and a hard `unknown` default** (§2.4) — plus the observation that
@@ -128,7 +128,7 @@ re-sync trigger should watch for.
 `read_line` loop that calls `handle_request(&request, &mut app_state, ...)`
 *synchronously* in the loop body. Rust's borrow rules make concurrent handling
 of `&mut AppState` impossible by construction. Measured live three times: a
-trivial `r2000_get_binary_info` sitting in the child's stdin pipe since t≈410ms
+trivial `anno_get_binary_info` sitting in the child's stdin pipe since t≈410ms
 received no reply until 2ms after a 6–14 second batch ahead of it finished.
 **D18-16's reader-writer upgrade is not merely deferred — it is pointless for a
 single session, and the coarse FIFO mutex is an exact model of the child's own
@@ -136,9 +136,9 @@ behaviour.** Phase 19 should close D18-16 rather than re-defer it.
 
 **Primary recommendation:** Do not build new checkers where this repo already has
 them. ABS-01's tool-diff gate is `scripts/check-skill-tool-coverage.mjs` (it
-already fails on any non-curated `r2000_*` token anywhere under `src/skills/`);
+already fails on any non-curated `anno_*` token anywhere under `src/skills/`);
 COV-01's third number is the Phase 11 sealed-answer-key mechanism
-(`r2000-answer-key.test.ts`); COV-01's first number is this repo's own
+(`absorbed-answer-key.test.ts`); COV-01's first number is this repo's own
 `decode()` in `disasm-decoder.ts`, which is the "independent instruction stream"
 the ROADMAP note demands and is already import-free of transport code. Build
 exactly three genuinely new things: the description-collision checker, the
@@ -153,11 +153,11 @@ coverage report itself, and the packer finding.
 | Absorbed procedure text (playbooks) | Skills layer (`src/skills/*/SKILL.md`) | — | Descriptions *are* the trigger mechanism; prose belongs where Claude Code matches it. Ships in the installer tarball (`installer/skills/`, synced). |
 | Attribution headers | Skills layer (per file) | Repo docs (`THIRD-PARTY-NOTICES.md`) | The header travels inside the published tarball; the notices file is the repo-level statement. Both needed — the installer package currently ships **no** notices file at all (§5.3). |
 | Trigger-uniqueness check | Build/CI layer (`scripts/check-*.mjs` + `scripts/lib/*.mjs`) | Test layer (planted-violation proof in `src/mcp/vice/*.test.ts`) | Exact precedent: `check-skill-fork-honesty.mjs` / `skill-honesty-checks.mjs` / `skill-honesty-checks.test.ts`. |
-| Derived-from-bytes census | MCP-server layer (`src/mcp/vice/`), reusing `disasm-decoder.ts` | On-disk project reader (`r2000-project.ts`) | The census must not depend on the session at all; reading `raw_data_base64` off disk means zero FIFO contention and total independence from r2000's analysis. |
-| Auto-vs-User ratio | MCP-server layer, via curated `r2000_get_symbols` | — | The label store is only reachable through the curated surface; the FIFO mutex serialises it. |
+| Derived-from-bytes census | MCP-server layer (`src/mcp/vice/`), reusing `disasm-decoder.ts` | On-disk project reader (`anno-project.ts`) | The census must not depend on the session at all; reading `raw_data_base64` off disk means zero FIFO contention and total independence from anno's analysis. |
+| Auto-vs-User ratio | MCP-server layer, via curated `anno_get_symbols` | — | The label store is only reachable through the curated surface; the FIFO mutex serialises it. |
 | Sampled reproducibility | Planning-evidence layer (`.planning/phases/19-.../evidence/`) + test guard | MCP-server layer for the re-derivation | Mirrors Phase 11 D-26's sealed key: the answer lives in evidence, the guard lives in `src/mcp/vice/`. |
-| Packer finding | Skills layer script (`src/skills/c64-program-recon/scripts/`) | External oracle process (`unp64`, optional) | It is a *finding*, not an emulator capability. A new `r2000_*` tool would be a fabricated upstream name (§2.5). |
-| Concurrency | `r2000-session.ts` seam (unchanged) | — | Measured: the child is serial. Nothing to change. |
+| Packer finding | Skills layer script (`src/skills/c64-program-recon/scripts/`) | External oracle process (`unp64`, optional) | It is a *finding*, not an emulator capability. A new `anno_*` tool would be a fabricated upstream name (§2.5). |
+| Concurrency | `anno-session.ts` seam (unchanged) | — | Measured: the child is serial. Nothing to change. |
 
 ---
 
@@ -168,10 +168,10 @@ locked decisions.
 
 | Directive | Bearing on Phase 19 |
 |---|---|
-| **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`.** The `r2000_*` family is registered through `buildViceTool()` and never reaches `forwardToVice()` — "satisfied by construction for that family, not by an interception." | If a packer route were added as an `r2000_*` tool it inherits this by construction. But §2.5 recommends *not* adding a tool. If one is added anyway it must be `vice_*`-family and must be interception-checked. |
-| **Tech stack: Node ≥ 22.18 native type-stripping; the shipped server has no build step.** Host-bound `.mts` must be compiled by `build.ts` into committed `resources/*.mjs`; `resources-sync.test.ts` fails CI on drift. | The coverage instrument and packer script must be plain `.ts`/`.mjs` runnable directly. **No Rust toolchain, no compiled helper, no linking `regenerator2000-core` as a library** — that alone disqualifies "call `detect_packer` through FFI". |
-| **Any host-facing path or hostname must go through `hostpath.ts`/`containerpath.ts`/`container-guard.mts`; tested closed consumer set.** | `r2000-cli.ts`'s header states the opposite for r2000: *"Import nothing from `hostpath.ts` or `containerpath.ts`. Every path this CLI handles is already container-side"*, asserted structurally by `hostpath-consumers.test.ts` (D-08). New coverage/packer code on the r2000 side must **not** import either. |
-| **The broker's single-owner `inFlight` guard must stay a synchronous check-and-set with no `await` between.** | Untouched by this phase; the r2000 FIFO mutex is a separate seam (`r2000-session.ts`). Do not conflate them — REQUIREMENTS "Out of Scope" already forbids routing the session through the broker. |
+| **Derived tools must be intercepted before `forwardToVice()`, not behind `call()`.** The `anno_*` family is registered through `buildViceTool()` and never reaches `forwardToVice()` — "satisfied by construction for that family, not by an interception." | If a packer route were added as an `anno_*` tool it inherits this by construction. But §2.5 recommends *not* adding a tool. If one is added anyway it must be `vice_*`-family and must be interception-checked. |
+| **Tech stack: Node ≥ 22.18 native type-stripping; the shipped server has no build step.** Host-bound `.mts` must be compiled by `build.ts` into committed `resources/*.mjs`; `resources-sync.test.ts` fails CI on drift. | The coverage instrument and packer script must be plain `.ts`/`.mjs` runnable directly. **No Rust toolchain, no compiled helper, no linking `external-analyser-core` as a library** — that alone disqualifies "call `detect_packer` through FFI". |
+| **Any host-facing path or hostname must go through `hostpath.ts`/`containerpath.ts`/`container-guard.mts`; tested closed consumer set.** | `anno-cli.ts`'s header states the opposite for anno: *"Import nothing from `hostpath.ts` or `containerpath.ts`. Every path this CLI handles is already container-side"*, asserted structurally by `hostpath-consumers.test.ts` (D-08). New coverage/packer code on the anno side must **not** import either. |
+| **The broker's single-owner `inFlight` guard must stay a synchronous check-and-set with no `await` between.** | Untouched by this phase; the anno FIFO mutex is a separate seam (`anno-session.ts`). Do not conflate them — REQUIREMENTS "Out of Scope" already forbids routing the session through the broker. |
 | **`vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested.** | If the packer finding ever runs a depack in VICE (`c64-ram-capture` route), preserve "exactly one resume per wait; poll on `hit_count`, never on paused state". |
 | **Testing: `test:automated` skips `MANUAL_ONLY_TESTS`** (project memory, corroborated by `test-gate.mjs`). | Phase-gate evidence must be the full `npm test`, not `test:automated`. |
 | GSD workflow enforcement: no direct repo edits outside a GSD workflow. | This research writes only `19-RESEARCH.md`. |
@@ -184,11 +184,11 @@ locked decisions.
 
 | Fact | Evidence |
 |---|---|
-| Upstream repo present at pin on this machine | `/tmp/regenerator2000-phase19`, `git log --oneline -3` → `493f840 v0.9.20` [VERIFIED: local clone, this session] |
-| Full SHA and date | `git log -1 --format='%H %ci %an' 493f840` → `493f840418f1450a342bb220c2fe3d2585dd0525 2026-07-11 07:06:45 -0700 Ricardo Quesada` [VERIFIED] |
+| Upstream repo present at pin on this machine | `/tmp/external-analyser-phase19`, `git log --oneline -3` → `493f840 v0.9.20` [VERIFIED: local clone, this session] |
+| Full SHA and date | `git log -1 --format='%H %ci %an' 493f840` → `493f840418f1450a342bb220c2fe3d2585dd0525 2026-07-11 07:06:45 -0700 the upstream author` [VERIFIED] |
 | Tag | `git tag --points-at 493f840` → `v0.9.20` [VERIFIED] |
-| **The installed crate was published from exactly this commit** | `~/.cargo/registry/src/index.crates.io-*/regenerator2000-0.9.20/.cargo_vcs_info.json` → `{"git":{"sha1":"493f840418f1450a342bb220c2fe3d2585dd0525"},"path_in_vcs":""}` [VERIFIED: installed crate, this session] |
-| Installed binary version | `regenerator2000 --help` runs; `18-STDIN-EOF-EVIDENCE.md` records `regenerator2000 0.9.20` [VERIFIED] |
+| **The installed crate was published from exactly this commit** | `~/.cargo/registry/src/index.crates.io-*/analyser-0.9.20/.cargo_vcs_info.json` → `{"git":{"sha1":"493f840418f1450a342bb220c2fe3d2585dd0525"},"path_in_vcs":""}` [VERIFIED: installed crate, this session] |
+| Installed binary version | `analyser --help` runs; `18-STDIN-EOF-EVIDENCE.md` records `the external analyser 0.9.20` [VERIFIED] |
 
 The `.cargo_vcs_info.json` corroboration matters: it means the pin is not merely
 "a tag someone typed" but the commit the *binary this project actually drives*
@@ -213,7 +213,7 @@ exclude = [
 ]
 ```
 
-[VERIFIED: `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-0.9.20/Cargo.toml.orig:31-42`, read this session]
+[VERIFIED: `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/analyser-0.9.20/Cargo.toml.orig:31-42`, read this session]
 
 And `ls -a` of that crate directory contains no `.agent` entry; `find` for
 `.agent` or `*analyze-blocks*` across all three installed 0.9.20 crates returns
@@ -223,7 +223,7 @@ ABS-04's snapshot-vs-drift trade real.
 
 Same file, line 28: `license = "MIT OR Apache-2.0"` [VERIFIED — verbatim]. The
 repo at pin ships `LICENSE-MIT` and `LICENSE-APACHE`; `LICENSE-MIT:3` reads
-verbatim `Copyright (c) 2026 Ricardo Quesada` [VERIFIED].
+verbatim `Copyright (c) 2026 the upstream author` [VERIFIED].
 
 ### 1.2 The manifest verifies byte-exact [VERIFIED]
 
@@ -231,40 +231,40 @@ Computed this session with `sha256sum` against the clone at the pin:
 
 | Path (at `493f840`) | sha256 | Bytes | Manifest match |
 |---|---|---|---|
-| `.agent/skills/r2000-analyze-basic/SKILL.md` | `8fc662ce52a1c947e0b57b92a8efb8e2f387a4cdad117de2b5300f50d44c23a2` | 4457 | ✅ |
-| `.agent/skills/r2000-analyze-blocks/SKILL.md` | `3fad6193466a20fa0d2f56a7e38a740fa7218b920aa36e348bc65273c987aa1b` | 14674 | ✅ |
-| `.agent/skills/r2000-analyze-program/SKILL.md` | `2d1c91bcc612c00ce71b7def08917b59ca7e495aa61f9075cbb0795e935f6955` | 15308 | ✅ |
-| `.agent/skills/r2000-analyze-routine/SKILL.md` | `6fd26337de42b2d8f7da570ec7c5aa47072818f4cede675d8189930cadbe2730` | 9248 | ✅ |
-| `.agent/skills/r2000-analyze-symbol/SKILL.md` | `d57d9c2fdfa1c3e2f8a6384a881378ad1e3e371114c3b0b8d15ec1c71b3b4da8` | 9705 | ✅ |
+| `an upstream basic procedure` | `8fc662ce52a1c947e0b57b92a8efb8e2f387a4cdad117de2b5300f50d44c23a2` | 4457 | ✅ |
+| `an upstream blocks procedure` | `3fad6193466a20fa0d2f56a7e38a740fa7218b920aa36e348bc65273c987aa1b` | 14674 | ✅ |
+| `an upstream program procedure` | `2d1c91bcc612c00ce71b7def08917b59ca7e495aa61f9075cbb0795e935f6955` | 15308 | ✅ |
+| `an upstream routine procedure` | `6fd26337de42b2d8f7da570ec7c5aa47072818f4cede675d8189930cadbe2730` | 9248 | ✅ |
+| `an upstream symbol procedure` | `d57d9c2fdfa1c3e2f8a6384a881378ad1e3e371114c3b0b8d15ec1c71b3b4da8` | 9705 | ✅ |
 
 **Total absorbed corpus: 53,392 bytes across five files.**
 
 Tool references, extracted with the *same regex this repo's CI uses*
-(`/\br2000_[a-z0-9_]+/g`, `scripts/check-skill-tool-coverage.mjs:88`):
+(`/\banno_[a-z0-9_]+/g`, `scripts/check-skill-tool-coverage.mjs:88`):
 
 | Procedure | Tools referenced (verbatim, sorted) | Non-curated |
 |---|---|---|
-| basic | `r2000_batch_execute`, `r2000_read_region`, `r2000_save_project`, `r2000_set_comment`, `r2000_set_data_type` | — none |
-| blocks | `r2000_batch_execute`, `r2000_disassemble`, `r2000_get_binary_info`, `r2000_get_blocks`, `r2000_get_cross_references`, `r2000_read_region`, `r2000_save_project`, `r2000_set_comment`, `r2000_set_data_type`, `r2000_set_label_name`, `r2000_toggle_splitter`, `r2000_undo` | `toggle_splitter`, `undo` |
-| program | `r2000_get_binary_info`, `r2000_get_comments`, `r2000_get_symbols`, `r2000_save_project`, `r2000_set_immediate_format`, `r2000_unpack_binary` | `set_immediate_format`, `unpack_binary` |
-| routine | `r2000_apply_enum_usage`, `r2000_create_project_enum`, `r2000_get_binary_info`, `r2000_get_cross_references`, `r2000_get_disassembly_cursor`, `r2000_read_region`, `r2000_set_comment`, `r2000_set_immediate_format`, `r2000_set_label_name` | `get_disassembly_cursor`, `set_immediate_format` |
-| symbol | `r2000_apply_enum_usage`, `r2000_create_project_enum`, `r2000_get_address_details`, `r2000_get_binary_info`, `r2000_get_cross_references`, `r2000_get_disassembly_cursor`, `r2000_set_comment`, `r2000_set_immediate_format`, `r2000_set_label_name` | `get_disassembly_cursor`, `set_immediate_format` |
+| basic | `anno_batch_execute`, `anno_read_region`, `anno_save_project`, `anno_set_comment`, `anno_set_data_type` | — none |
+| blocks | `anno_batch_execute`, `anno_disassemble`, `anno_get_binary_info`, `anno_get_blocks`, `anno_get_cross_references`, `anno_read_region`, `anno_save_project`, `anno_set_comment`, `anno_set_data_type`, `anno_set_label_name`, `anno_toggle_splitter`, `anno_undo` | `toggle_splitter`, `undo` |
+| program | `anno_get_binary_info`, `anno_get_comments`, `anno_get_symbols`, `anno_save_project`, `anno_set_immediate_format`, `anno_unpack_binary` | `set_immediate_format`, `unpack_binary` |
+| routine | `anno_apply_enum_usage`, `anno_create_project_enum`, `anno_get_binary_info`, `anno_get_cross_references`, `anno_get_disassembly_cursor`, `anno_read_region`, `anno_set_comment`, `anno_set_immediate_format`, `anno_set_label_name` | `get_disassembly_cursor`, `set_immediate_format` |
+| symbol | `anno_apply_enum_usage`, `anno_create_project_enum`, `anno_get_address_details`, `anno_get_binary_info`, `anno_get_cross_references`, `anno_get_disassembly_cursor`, `anno_set_comment`, `anno_set_immediate_format`, `anno_set_label_name` | `get_disassembly_cursor`, `set_immediate_format` |
 
-[VERIFIED: `grep -oE '\br2000_[a-z0-9_]+' <each file> | sort -u`, this session]
+[VERIFIED: `grep -oE '\banno_[a-z0-9_]+' <each file> | sort -u`, this session]
 
 Every one of these sets is **identical** to the corresponding `tools` object in
 `upstream-procedure-manifest.json`. **The manifest is correct. Nothing to
 contradict.**
 
 Curated surface, cross-checked three ways [VERIFIED]:
-- `grep -oE '"r2000_[a-z0-9_]+"' src/mcp/vice/r2000-tools.ts | sort -u` → **19** names.
-- Upstream handler `grep -oE '"name": "r2000_[a-z0-9_]+"' crates/regenerator2000-core/src/mcp/handler.rs` → **28** names.
-- **Live**: `tools/list` through `node src/mcp/vice/vice-proxy.ts` → 80 tools total, **19** with the `r2000_` prefix, matching the static list exactly.
+- `grep -oE '"anno_[a-z0-9_]+"' src/mcp/vice/anno-tools.ts | sort -u` → **19** names.
+- Upstream handler `grep -oE '"name": "anno_[a-z0-9_]+"' crates/external-analyser-core/src/mcp/handler.rs` → **28** names.
+- **Live**: `tools/list` through `node src/mcp/vice/vice-proxy.ts` → 80 tools total, **19** with the `anno_` prefix, matching the static list exactly.
 
 The nine upstream tools the project does **not** expose:
-`r2000_get_disassembly_cursor`, `r2000_jump_to_address`, `r2000_read_selected`,
-`r2000_redo`, `r2000_search_memory`, `r2000_set_immediate_format`,
-`r2000_toggle_splitter`, `r2000_undo`, `r2000_unpack_binary`. Five of them are
+`anno_get_disassembly_cursor`, `anno_jump_to_address`, `anno_read_selected`,
+`anno_redo`, `anno_search_memory`, `anno_set_immediate_format`,
+`anno_toggle_splitter`, `anno_undo`, `anno_unpack_binary`. Five of them are
 touched by the absorbed procedures; four are not touched at all.
 
 ### 1.3 Disposition table, with the justification the manifest lacks
@@ -273,11 +273,11 @@ The three dispositions ABS-01 demands, resolved per call, each with evidence:
 
 | Upstream call | Sites | Disposition | Justification |
 |---|---|---|---|
-| `r2000_get_disassembly_cursor` | routine:20, symbol:12 | **Project-owned adaptation** — the caller always supplies an explicit address | Upstream's *own* text forbids the cursor route in exactly the situation this project uses: *"**CRITICAL**: Always launch each subagent with an explicit target address … **NEVER** use the 'current cursor address' or rely on the active cursor location in the editor, as the cursor will change dynamically when running parallel subagents"* (`r2000-analyze-program/SKILL.md:74` and `:128`) [VERIFIED — verbatim]. This project also has no TUI, and `r2000_read_region` (SURF-01, D18-24/D18-25) answers "read this routine" by range. `r2000-tools.ts`'s header records the trio as **HELD, not unproven** (D18-26) and says *"a real caller appearing in Phase 19's absorption diff is what would justify adding one, additively"* — the diff produced a caller **whose own upstream text says not to use it**. Recommend: keep HELD, record this as the reason, do not add the tool. |
-| `r2000_undo` | blocks:85 ("if a conversion was wrong, use `r2000_undo` to revert") | **Project-owned adaptation** — re-set the correct type | `r2000_set_data_type` is idempotent over a range, so "undo then redo correctly" collapses to "set correctly". `r2000-tools.ts` records undo/redo as earning no place *under this surface's own discipline* even now that a session persists. Cheap, no surface change. |
-| `r2000_toggle_splitter` | blocks:86, :158, :223 | **Separately-justified future-surface proposal — and it is Phase 20/21's blocker, not Phase 19's** | Not cosmetic. Upstream Pitfall 5 verbatim: *"**Forgetting splitters**: Two adjacent byte tables will auto-merge into one. Use `r2000_toggle_splitter` at the boundary."* And line 158: *"When two split halves are in adjacent memory, use `r2000_toggle_splitter` at the boundary between the lo …"* [VERIFIED]. `r2000_get_blocks`'s own description says *"Respects splitters."* [VERIFIED: `handler.rs:188`]. Without it, DECOMP-01's "every byte is code, byte, word, address, PETSCII, screencode **or table**" cannot distinguish two adjacent tables, and BUILD-02's "data tables extracted to their own files" has no boundary to cut on. **This also biases COV-01's structural census** (§3.2). Recommend: propose it explicitly, with SURF-01's additive pattern, sequenced so Phase 20 has it. |
-| `r2000_set_immediate_format` | program:84, :140; routine:66, :67, :103; symbol:57, :58, :113 (8 sites) | **Separately-justified future-surface proposal — Phase 21's blocker** | It is the low/high-byte pointer-readability step: `"format": "low_byte"` / `"high_byte"` plus `"target_address"` turns a split immediate load into a *symbol reference*. That is literally **BUILD-03** ("every branch, `JSR`/`JMP` and data reference goes through a symbol, so code can move"). `r2000-tools.ts` currently records "no criterion in this phase" — BUILD-03 is the criterion. Upstream impl is mutating (`set_immediate_format_impl` applies a Command, calls `perform_analysis()` and `disassemble()`, pushes a Batch — `handler.rs:1645-1695`), so it must go through the FIFO mutex if added. Recommend: propose, do not build in Phase 19. |
-| `r2000_unpack_binary` | program:31-36 (Phase 0 entropy gate) | **Explicit omission** — destructive, and this project has its own depack route | Upstream's own words: *"`r2000_unpack_binary` is a destructive action (clears existing comments/labels/blocks) and may take up to 10 seconds or more"* [VERIFIED: `r2000-analyze-program/SKILL.md:31`]. Confirmed in source: the handler calls `app_state.load_unpacked_binary(...)`, replacing the binary in place (`handler.rs:844-852`). This project's route is `c64-ram-capture` (run-and-capture) plus the SURF-03 packer finding. The **entropy gate itself survives** — `entropy` is in `r2000_get_binary_info`'s live response and the 7.5 threshold is written into the curated tool description (`r2000-tools.ts:441`). |
+| `anno_get_disassembly_cursor` | routine:20, symbol:12 | **Project-owned adaptation** — the caller always supplies an explicit address | Upstream's *own* text forbids the cursor route in exactly the situation this project uses: *"**CRITICAL**: Always launch each subagent with an explicit target address … **NEVER** use the 'current cursor address' or rely on the active cursor location in the editor, as the cursor will change dynamically when running parallel subagents"* (`analyze-program/SKILL.md:74` and `:128`) [VERIFIED — verbatim]. This project also has no TUI, and `anno_read_region` (SURF-01, D18-24/D18-25) answers "read this routine" by range. `anno-tools.ts`'s header records the trio as **HELD, not unproven** (D18-26) and says *"a real caller appearing in Phase 19's absorption diff is what would justify adding one, additively"* — the diff produced a caller **whose own upstream text says not to use it**. Recommend: keep HELD, record this as the reason, do not add the tool. |
+| `anno_undo` | blocks:85 ("if a conversion was wrong, use `anno_undo` to revert") | **Project-owned adaptation** — re-set the correct type | `anno_set_data_type` is idempotent over a range, so "undo then redo correctly" collapses to "set correctly". `anno-tools.ts` records undo/redo as earning no place *under this surface's own discipline* even now that a session persists. Cheap, no surface change. |
+| `anno_toggle_splitter` | blocks:86, :158, :223 | **Separately-justified future-surface proposal — and it is Phase 20/21's blocker, not Phase 19's** | Not cosmetic. Upstream Pitfall 5 verbatim: *"**Forgetting splitters**: Two adjacent byte tables will auto-merge into one. Use `anno_toggle_splitter` at the boundary."* And line 158: *"When two split halves are in adjacent memory, use `anno_toggle_splitter` at the boundary between the lo …"* [VERIFIED]. `anno_get_blocks`'s own description says *"Respects splitters."* [VERIFIED: `handler.rs:188`]. Without it, DECOMP-01's "every byte is code, byte, word, address, PETSCII, screencode **or table**" cannot distinguish two adjacent tables, and BUILD-02's "data tables extracted to their own files" has no boundary to cut on. **This also biases COV-01's structural census** (§3.2). Recommend: propose it explicitly, with SURF-01's additive pattern, sequenced so Phase 20 has it. |
+| `anno_set_immediate_format` | program:84, :140; routine:66, :67, :103; symbol:57, :58, :113 (8 sites) | **Separately-justified future-surface proposal — Phase 21's blocker** | It is the low/high-byte pointer-readability step: `"format": "low_byte"` / `"high_byte"` plus `"target_address"` turns a split immediate load into a *symbol reference*. That is literally **BUILD-03** ("every branch, `JSR`/`JMP` and data reference goes through a symbol, so code can move"). `anno-tools.ts` currently records "no criterion in this phase" — BUILD-03 is the criterion. Upstream impl is mutating (`set_immediate_format_impl` applies a Command, calls `perform_analysis()` and `disassemble()`, pushes a Batch — `handler.rs:1645-1695`), so it must go through the FIFO mutex if added. Recommend: propose, do not build in Phase 19. |
+| `anno_unpack_binary` | program:31-36 (Phase 0 entropy gate) | **Explicit omission** — destructive, and this project has its own depack route | Upstream's own words: *"`anno_unpack_binary` is a destructive action (clears existing comments/labels/blocks) and may take up to 10 seconds or more"* [VERIFIED: `analyze-program/SKILL.md:31`]. Confirmed in source: the handler calls `app_state.load_unpacked_binary(...)`, replacing the binary in place (`handler.rs:844-852`). This project's route is `c64-ram-capture` (run-and-capture) plus the SURF-03 packer finding. The **entropy gate itself survives** — `entropy` is in `anno_get_binary_info`'s live response and the 7.5 threshold is written into the curated tool description (`anno-tools.ts:441`). |
 
 Note the shape of the finding: **the absorption diff, run properly, is a
 requirements discovery instrument, not a compliance checkbox.** Two exclusions
@@ -287,14 +287,14 @@ decision, not silently add tools.
 
 ### 1.4 The `.agent/skills/` runtime dependency — three concrete sites [VERIFIED]
 
-`r2000-analyze-program/SKILL.md` instructs the agent to **read files at
+`analyze-program/SKILL.md` instructs the agent to **read files at
 `.agent/skills/...` paths at runtime** — exactly what ABS-01 forbids:
 
-- `:42` — "Read the skill file at `.agent/skills/r2000-analyze-blocks/SKILL.md`."
-- `:78` — subagent prompt: "Read the skill file at `.agent/skills/r2000-analyze-routine/SKILL.md` and follow its workflow."
-- `:134` — subagent prompt: "Read the skill file at `.agent/skills/r2000-analyze-symbol/SKILL.md` and follow its workflow."
+- `:42` — "Read the skill file at `an upstream blocks procedure`."
+- `:78` — subagent prompt: "Read the skill file at `an upstream routine procedure` and follow its workflow."
+- `:134` — subagent prompt: "Read the skill file at `an upstream symbol procedure` and follow its workflow."
 
-Plus one soft cross-reference in `r2000-analyze-blocks/SKILL.md:94` ("using conventions from the **r2000-analyze-routine**…").
+Plus one soft cross-reference in `analyze-blocks/SKILL.md:94` ("using conventions from the **analyze-routine**…").
 
 [VERIFIED: `grep -nE '\.agent/skills|subagent|Task tool' <files>`, this session]
 
@@ -310,37 +310,37 @@ anywhere under `src/skills/` and `installer/skills/`.
 `scripts/check-skill-tool-coverage.mjs` already:
 
 - walks the whole `src/skills/` tree (`walkSkills`, `scripts/lib/skill-corpus.mjs`);
-- extracts every `r2000_*` token with `/\br2000_[a-z0-9_]+/g` after stripping the MCP prefix (`:88`, `:101-102`);
-- imports `CURATED_R2000_TOOLS` from `src/mcp/vice/r2000-tools.ts` (`:50`);
+- extracts every `anno_*` token with `/\banno_[a-z0-9_]+/g` after stripping the MCP prefix (`:88`, `:101-102`);
+- imports `CURATED_ANNO_TOOLS` from `src/mcp/vice/anno-tools.ts` (`:50`);
 - **fails** if any extracted name is not curated (`:400-406`), with a three-route resolution message;
-- **also** fails if an extracted `r2000_*` name appears in either `tools-manifest.json` (`:413-421`) — the family is proxy-local by design;
-- carries a non-vacuity floor: `extractedR2000.size >= 10` (`:446`).
+- **also** fails if an extracted `anno_*` name appears in either `tools-manifest.json` (`:413-421`) — the family is proxy-local by design;
+- carries a non-vacuity floor: `extractedAnno.size >= 10` (`:446`).
 
 Live run this session: `check-skill-tool-coverage: OK -- 37 distinct vice_* names
-… r2000_*: 10 distinct names extracted, all curated (CURATED_R2000_TOOLS has 19
-entries). r2000 CLI verbs: 7 parsed from r2000-cli.ts, 7/7 resolved` — exit 0.
+… anno_*: 10 distinct names extracted, all curated (CURATED_ANNO_TOOLS has 19
+entries). anno CLI verbs: 7 parsed from anno-cli.ts, 7/7 resolved` — exit 0.
 [VERIFIED: executed this session]
 
 **Two load-bearing consequences the plan must design around:**
 
-1. **The absorbed text cannot even *mention* a non-curated `r2000_*` name — not
+1. **The absorbed text cannot even *mention* a non-curated `anno_*` name — not
    in prose, not in a table, not inside a "we deliberately omit this" note.** The
    check is a plain token grep with no comment/context awareness. Escape hatches,
    in preference order: (a) name it without the prefix — "upstream's
    `toggle_splitter`"; (b) record the omission in `.planning/` (not scanned;
    `SKILLS_DIR` is `src/skills` only, `:55`); (c) add it to the curated surface.
    **Do not add an exemption list to this checker** — it currently has no
-   `r2000_*` allowlist at all, and introducing one is how the gate rots.
-2. **The `r2000_*` extraction floor is `>= 10`, a floor not an equality** (`:446`) —
+   `anno_*` allowlist at all, and introducing one is how the gate rots.
+2. **The `anno_*` extraction floor is `>= 10`, a floor not an equality** (`:446`) —
    safe to grow. Likewise `topLevelDirs.length >= 6` (`:380`) and
-   `R2000_CLI_VERB_FLOOR = 7` (`scripts/lib/r2000-cli-verbs.mjs:40`, used as
+   `ANNO_CLI_VERB_FLOOR = 7` (`scripts/lib/anno-cli-verbs.mjs:40`, used as
    `>=` at `:467`). Adding skills and verbs is safe *here*.
 
 ### 1.6 The ABS-01 ↔ FUT-01 tension — flag it, do not paper over it
 
 ABS-01 says "**the five** upstream analyze procedures are absorbed."
 REQUIREMENTS "Future Requirements → Deferred" says **FUT-01**: "BASIC token
-decoding (upstream's `r2000-analyze-basic`) — commercial C64 games captured
+decoding (upstream's `analyze-basic`) — commercial C64 games captured
 post-loader almost universally reduce to a one-line `SYS` stub." The manifest
 routes `basic` → `src/skills/c64-program-recon`.
 
@@ -348,7 +348,7 @@ These are reconcilable but only if stated deliberately. Recommended resolution
 for the planner to lock:
 
 > Absorb all five as **attributed text** (satisfying ABS-01's count and ABS-02's
-> attribution). Mark `r2000-analyze-basic`'s content as **reference material,
+> attribution). Mark `analyze-basic`'s content as **reference material,
 > capability deferred per FUT-01** — its trigger phrases must not enter any
 > skill's `description:` frontmatter, so it can never fire (ABS-03) and never
 > claims a capability the milestone deferred.
@@ -367,14 +367,14 @@ rhetorical:
 
 Two concrete re-sync triggers to name in the dated decision:
 
-1. **Any bump of the installed `regenerator2000` past `0.9.20`.** At that point re-fetch the five paths at the new commit (obtainable from the new crate's own `.cargo_vcs_info.json` — no guessing) and diff the five sha256 values. Existing text: `upstream-procedure-manifest.json`'s `resync_trigger` already says "Review the upstream procedure diff before upgrading regenerator2000 from 0.9.20." Keep it, and make it checkable.
-2. **Any change to `r2000_get_binary_info`'s field set.** This is the SURF-03 trigger (§2.6): `AppState::file_info()` already computes `packer_name`, so the day upstream adds it to the handler's `json!` block, the packer bridge becomes a one-line read and the fallback oracle becomes unnecessary. Watching a *specific tool's response shape* is a much sharper trigger than "watch for a new release".
+1. **Any bump of the installed `the external analyser` past `0.9.20`.** At that point re-fetch the five paths at the new commit (obtainable from the new crate's own `.cargo_vcs_info.json` — no guessing) and diff the five sha256 values. Existing text: `upstream-procedure-manifest.json`'s `resync_trigger` already says "Review the upstream procedure diff before upgrading the external analyser from 0.9.20." Keep it, and make it checkable.
+2. **Any change to `anno_get_binary_info`'s field set.** This is the SURF-03 trigger (§2.6): `AppState::file_info()` already computes `packer_name`, so the day upstream adds it to the handler's `json!` block, the packer bridge becomes a one-line read and the fallback oracle becomes unnecessary. Watching a *specific tool's response shape* is a much sharper trigger than "watch for a new release".
 
-A mechanical assertion is available and cheap: `r2000-upstream-audit.test.ts`
+A mechanical assertion is available and cheap: `anno-derivation.test.ts`
 can additionally assert that the installed binary's `--version` still reports
 `0.9.20` **or** that the manifest's `commit` has been updated — a live-gated
-check in the `r2000-test-gate.ts` (D-11) style, skipping cleanly when
-regenerator2000 is absent (as it is in CI, by design).
+check in the `anno-test-gate.ts` (D-11) style, skipping cleanly when
+The external analyser is absent (as it is in CI, by design).
 
 ---
 
@@ -382,7 +382,7 @@ regenerator2000 is absent (as it is in CI, by design).
 
 ### 2.1 The internal API [VERIFIED — verbatim]
 
-`crates/regenerator2000-core/src/packer_signatures.rs`:
+`crates/external-analyser-core/src/packer_signatures.rs`:
 
 ```rust
 /// Information about a detected packer.
@@ -401,9 +401,9 @@ pub struct PackerInfo {          // :3
 pub fn detect_packer(mem: &[u8], load_addr: u16, load_end: u16) -> Option<PackerInfo> {  // :14
 ```
 
-[VERIFIED: `crates/regenerator2000-core/src/packer_signatures.rs:1-14` at pin, read this session]
+[VERIFIED: `crates/external-analyser-core/src/packer_signatures.rs:1-14` at pin, read this session]
 
-`FileInfo` in `crates/regenerator2000-core/src/state/app_state.rs:27-42`, verbatim:
+`FileInfo` in `crates/external-analyser-core/src/state/app_state.rs:27-42`, verbatim:
 
 ```rust
     /// Calculated Shannon entropy (0.0 to 8.0).
@@ -419,7 +419,7 @@ sets `(is_packed, packer_name, entry_point)` at `:316-338`.
 
 ### 2.2 Four independent proofs that nothing surfaces it
 
-**(a) `r2000_get_binary_info` emits exactly seven fields, none packer-related.**
+**(a) `anno_get_binary_info` emits exactly seven fields, none packer-related.**
 Source, `handler.rs:814-820`, verbatim:
 
 ```rust
@@ -459,17 +459,17 @@ passes `None` for that callback (`handler.rs:844`). The success message text
 populated in three load paths (`state/file_io.rs:159`, `:228`, `:574`) and set to
 `None` in `load_project()` (`:403`). It does not appear in `ProjectState` (the
 serialised shape written by `save_project()`, `file_io.rs:582+`). So
-`r2000_save_project` followed by reading the `.regen2000proj` yields nothing.
+`anno_save_project` followed by reading the `.regen2000proj` yields nothing.
 [VERIFIED]
 
 **(d) Every consumer is TUI-only.** `grep -rn "packer_name|is_packed|file_info()"`
 across the whole workspace at pin returns, outside `app_state.rs` itself and the
-three `file_io.rs` sites: `regenerator2000-tui/src/ui/menu/menu_action.rs:201`,
+three `file_io.rs` sites: `external-analyser-tui/src/ui/menu/menu_action.rs:201`,
 `ui_state.rs:302`, `ui/dialog_unpack.rs:208-209`,
 `ui/dialog_import_context.rs:22-78,519,535`, `ui/dialog_file_info.rs:52,99`.
 **Zero non-TUI, non-internal consumers.** [VERIFIED]
 
-**(e) The CLI has no flag for it.** `regenerator2000 --help` run live this
+**(e) The CLI has no flag for it.** `analyser --help` run live this
 session lists 13 options: `--import_lbl`, `--export_lbl`, `--export_asm`,
 `--export_html`, `--assembler`, `--headless`, `--verify`, `--mcp-server`,
 `--mcp-server-stdio`, `--vice`, `--dump-system-config-files`,
@@ -485,10 +485,10 @@ reading upstream at 0.9.20.
 
 | Option | Rejected because |
 |---|---|
-| Copy `packer_signatures.rs` (or transcribe its signature bytes into `r2000_search_memory`/`r2000_search_disassembly` patterns) | **Out of bounds by the phase brief.** Transcribing the byte signatures into search patterns is the same copy wearing a hat — and `r2000_search_memory` is not even curated. |
-| Link `regenerator2000-core` as a library / FFI / build a tiny Rust helper | Violates CLAUDE.md's **no-build-step** rule and would add a Rust toolchain to the runtime requirements. `regenerator2000-core` ships exactly one bin target, `src/bin/unpacker_compare_all.rs`, and it is **not installed** (`ls ~/.cargo/bin` → only `regenerator2000`). [VERIFIED] |
-| Upstream PR adding `packer_name`/`is_packed` to `r2000_get_binary_info` | Correct engineering (`file_info()` already computes both; it is a two-line change at `handler.rs:814-820`) but REQUIREMENTS "Out of Scope" excludes upstream contributions, and a PR cannot be this milestone's delivery route. **Keep it as ABS-04's re-sync trigger** (§1.7 trigger 2). |
-| `r2000_unpack_binary` on a throwaway copy | Destructive (clears comments/labels/blocks), not curated, and yields `dep_addr`/`entry_point`/range but **still no name**. Mapping `dep_addr` → packer name would be a weaker re-implementation of the signature table. |
+| Copy `packer_signatures.rs` (or transcribe its signature bytes into `anno_search_memory`/`anno_search_disassembly` patterns) | **Out of bounds by the phase brief.** Transcribing the byte signatures into search patterns is the same copy wearing a hat — and `anno_search_memory` is not even curated. |
+| Link `external-analyser-core` as a library / FFI / build a tiny Rust helper | Violates CLAUDE.md's **no-build-step** rule and would add a Rust toolchain to the runtime requirements. `external-analyser-core` ships exactly one bin target, `src/bin/unpacker_compare_all.rs`, and it is **not installed** (`ls ~/.cargo/bin` → only `the external analyser`). [VERIFIED] |
+| Upstream PR adding `packer_name`/`is_packed` to `anno_get_binary_info` | Correct engineering (`file_info()` already computes both; it is a two-line change at `handler.rs:814-820`) but REQUIREMENTS "Out of Scope" excludes upstream contributions, and a PR cannot be this milestone's delivery route. **Keep it as ABS-04's re-sync trigger** (§1.7 trigger 2). |
+| `anno_unpack_binary` on a throwaway copy | Destructive (clears comments/labels/blocks), not curated, and yields `dep_addr`/`entry_point`/range but **still no name**. Mapping `dep_addr` → packer name would be a weaker re-implementation of the signature table. |
 | Infer the name from entropy or `dep_addr` | This is exactly "guessing", which SURF-03's own framing and this project's culture forbid. Must be structurally impossible in the design, not merely discouraged. |
 
 ### 2.4 Recommended design — the smallest read-only bridge
@@ -500,17 +500,17 @@ oracle that reports one.
 **Oracle chain (evaluated in order, first hit wins for the name):**
 
 1. **`unp64`, if present.** An independent, external packer identifier (not
-   upstream r2000 code, so no boundary crossing). Upstream itself uses it as its
-   own comparison oracle: `crates/regenerator2000-core/src/bin/unpacker_compare_all.rs:6-8`
+   upstream anno code, so no boundary crossing). Upstream itself uses it as its
+   own comparison oracle: `crates/external-analyser-core/src/bin/unpacker_compare_all.rs:6-8`
    reads `UNP64` then `UNP64_PATH` from the environment [VERIFIED — the same env
    convention this project should adopt]. Invoked read-only: input file
    unmodified, output to a scratch temp path, identification parsed from stdout.
    **Not installed on this machine** (`command -v unp64` → nothing; not in
    `/usr/local/bin` alongside the VICE tools) [VERIFIED], so it must be gated,
    never assumed.
-2. **Entropy gate — packedness only, never a name.** `r2000_get_binary_info`'s
+2. **Entropy gate — packedness only, never a name.** `anno_get_binary_info`'s
    `entropy` against the 7.5 threshold already written into the curated tool
-   description (`r2000-tools.ts:441-442`).
+   description (`anno-tools.ts:441-442`).
 3. **Explicit `unknown`.**
 
 **Response shape (project-owned, stable):**
@@ -523,10 +523,10 @@ oracle that reports one.
   "route": "unp64" | "entropy-only" | "none",
   "evidence": [
     { "source": "unp64", "version": "<--version output>", "raw": "<stdout line>" },
-    { "source": "r2000_get_binary_info", "entropy": 7.83, "threshold": 7.5 }
+    { "source": "anno_get_binary_info", "entropy": 7.83, "threshold": 7.5 }
   ],
   "checkedAt": "2026-08-24T00:00:00.000Z",
-  "unavailableReason": "no packer-identity route on the pinned regenerator2000 0.9.20 MCP or CLI surface; unp64 oracle absent"
+  "unavailableReason": "no packer-identity route on the pinned analyser 0.9.20 MCP or CLI surface; unp64 oracle absent"
 }
 ```
 
@@ -538,17 +538,17 @@ oracle that reports one.
 3. `verdict: "unknown"` must carry a non-empty `unavailableReason`. A silent `null` with no reason is the failure mode.
 4. Never emit a percentage or a "probably Exomizer" style hedge. The vocabulary is the four verdicts and nothing else.
 
-**Live-gating**, mirroring `r2000-test-gate.ts`'s D-11 pattern exactly: probe
+**Live-gating**, mirroring `anno-test-gate.ts`'s D-11 pattern exactly: probe
 `unp64 --version` (or `$UNP64`/`$UNP64_PATH`), treat ENOENT as *not available →
 expected SKIP*, and hard-**FAIL** when an opt-in env var (`VICE_REQUIRE_UNP64`,
-by the `VICE_REQUIRE_R2000` precedent) is set. Never let absence read as a pass.
+by the `VICE_REQUIRE_ANNO` precedent) is set. Never let absence read as a pass.
 
-### 2.5 Where it lives — a skill script, NOT a new `r2000_*` tool
+### 2.5 Where it lives — a skill script, NOT a new `anno_*` tool
 
-Do **not** add `r2000_detect_packer` (or similar) to `CURATED_R2000_TOOLS`. Two
+Do **not** add `anno_detect_packer` (or similar) to `CURATED_ANNO_TOOLS`. Two
 mechanical reasons, both already enforced in this repo:
 
-- `check-skill-tool-coverage.mjs:400-421` requires every skill-mentioned `r2000_*` name to be curated **and absent from both manifests**. A project-invented name would pass those checks while being a **fabricated upstream tool name** — the `r2000_` prefix means "regenerator2000 serves this", and no such tool exists upstream. That is precisely the class of dishonest surface `check-skill-fork-honesty.mjs` exists to prevent elsewhere.
+- `check-skill-tool-coverage.mjs:400-421` requires every skill-mentioned `anno_*` name to be curated **and absent from both manifests**. A project-invented name would pass those checks while being a **fabricated upstream tool name** — the `anno_` prefix means "the external analyser serves this", and no such tool exists upstream. That is precisely the class of dishonest surface `check-skill-fork-honesty.mjs` exists to prevent elsewhere.
 - Adding an MCP tool moves the tool-count pin, `docs/tool-support.md` and the manifest wiring for zero gain — SURF-01's own lesson.
 
 **Recommended home:** a script under `src/skills/c64-program-recon/scripts/`
@@ -564,7 +564,7 @@ satisfy CLAUDE.md's interception rule.
 positive is "can we ever report a name?" Two experiments:
 
 - **E1 (cheap, decisive for the oracle):** install `unp64`, build a genuinely Exomizer-packed synthetic fixture, and confirm the oracle route reports a name and the finding's `confidence` flips to `HIGH`. Until E1 runs, the `route: "unp64"` branch is `[ASSUMED]` in its output *format* (the env-var convention is verified; the stdout parse shape is not).
-- **E2 (watch, don't do):** re-run `r2000_get_binary_info` after any upgrade past 0.9.20 and diff the field set (§1.7 trigger 2).
+- **E2 (watch, don't do):** re-run `anno_get_binary_info` after any upgrade past 0.9.20 and diff the field set (§1.7 trigger 2).
 
 ---
 
@@ -574,22 +574,22 @@ positive is "can we ever report a name?" Two experiments:
 
 | Data | Route | Notes |
 |---|---|---|
-| Raw bytes | `.regen2000proj`'s `raw_data_base64` (gzip+base64) read **off disk**, or curated `r2000_read_region` | `synthesizeProject()` (`r2000-project.ts:135-152`) writes exactly this field, so an on-disk reader is symmetric with an existing, tested writer. **Prefer on disk for the census**: zero session contention, total independence from r2000's analysis. |
-| Independent instruction stream | **`decode(bytes, startAddress, opts)`** — `src/mcp/vice/disasm-decoder.ts:148` | This repo's own 6502/6510 decoder. Import-free of `stock-*.ts`/`vice*.ts`/`node:` builtins by design (D-05); bounded by construction, never throws, returns `[]` on malformed input. Yields per instruction: `address`, `bytes`, `opcode`, `mnemonic`, `mode`, `illegal`, `acmeExpressible`, `operand: {role, value, width}`, `resolvedTarget`, `notes`. **This is the "independent of r2000's block-type table" source the ROADMAP note demands, and it already exists.** |
-| r2000's own classification | `r2000_get_blocks` → `[{start_address, end_address, type}]` | `type` is `BlockType`'s `Display` string (`types.rs:333+`): `Code`, `Byte`, `Word`, `Address`, `PETSCII Text`, `Screencode Text`, `Lo/Hi Address`, `Hi/Lo Address`, `Lo/Hi Word`, … Description says "Respects splitters." **Use only for the divergence sub-report, never as the census.** |
-| Labels + kind | `r2000_get_symbols` → `[{address, name, kind, type}]` (`handler.rs:1747-1752`) | `kind` is `Debug`-formatted `LabelKind`. Verbatim (`types.rs:353-358`): `User`, `Auto`, `System` (with `#[serde(alias = "Platform")]`). `type` is `Debug`-formatted `LabelType`, verbatim (`types.rs:361-378`): `ZeroPageField`, `Field`, `ZeroPageAbsoluteAddress`, `AbsoluteAddress`, `Pointer`, `ZeroPagePointer`, `Branch`, `Jump`, `Subroutine`, `ExternalJump`, `Predefined`, `UserDefined`, `LocalUserDefined`, `Return`. Filter arg `kind` accepts `"user"`, `"system"`/`"platform"`, `"auto"`. |
+| Raw bytes | `.regen2000proj`'s `raw_data_base64` (gzip+base64) read **off disk**, or curated `anno_read_region` | `synthesizeProject()` (`anno-project.ts:135-152`) writes exactly this field, so an on-disk reader is symmetric with an existing, tested writer. **Prefer on disk for the census**: zero session contention, total independence from anno's analysis. |
+| Independent instruction stream | **`decode(bytes, startAddress, opts)`** — `src/mcp/vice/disasm-decoder.ts:148` | This repo's own 6502/6510 decoder. Import-free of `stock-*.ts`/`vice*.ts`/`node:` builtins by design (D-05); bounded by construction, never throws, returns `[]` on malformed input. Yields per instruction: `address`, `bytes`, `opcode`, `mnemonic`, `mode`, `illegal`, `acmeExpressible`, `operand: {role, value, width}`, `resolvedTarget`, `notes`. **This is the "independent of anno's block-type table" source the ROADMAP note demands, and it already exists.** |
+| anno's own classification | `anno_get_blocks` → `[{start_address, end_address, type}]` | `type` is `BlockType`'s `Display` string (`types.rs:333+`): `Code`, `Byte`, `Word`, `Address`, `PETSCII Text`, `Screencode Text`, `Lo/Hi Address`, `Hi/Lo Address`, `Lo/Hi Word`, … Description says "Respects splitters." **Use only for the divergence sub-report, never as the census.** |
+| Labels + kind | `anno_get_symbols` → `[{address, name, kind, type}]` (`handler.rs:1747-1752`) | `kind` is `Debug`-formatted `LabelKind`. Verbatim (`types.rs:353-358`): `User`, `Auto`, `System` (with `#[serde(alias = "Platform")]`). `type` is `Debug`-formatted `LabelType`, verbatim (`types.rs:361-378`): `ZeroPageField`, `Field`, `ZeroPageAbsoluteAddress`, `AbsoluteAddress`, `Pointer`, `ZeroPagePointer`, `Branch`, `Jump`, `Subroutine`, `ExternalJump`, `Predefined`, `UserDefined`, `LocalUserDefined`, `Return`. Filter arg `kind` accepts `"user"`, `"system"`/`"platform"`, `"auto"`. |
 | Auto-name prefixes | derived from `LabelType::prefix()` | Verbatim (`types.rs:384-397`): `zpf_`, `f_`, `zpa_`, `a_`, `p_`, `zpp_`, `e_`, `j_`, `s_`, `b_`, `r_`, and `L_` for `Predefined`/`UserDefined`/`LocalUserDefined`. |
-| Comments | `r2000_get_comments` → `[{address, type, comment}]`, `type` ∈ `"line"`/`"side"` | Read from `app_state.user_line_comments` / `user_side_comments` (`handler.rs:1858-1866`) — **user-authored only**; there is no auto-comment noise to filter. |
-| Callers | `r2000_get_cross_references(address)` → sorted, deduped `Vec<Addr>` (`handler.rs:1636-1645`) | Exactly what COV-02's multi-caller rule needs. |
-| Confidence grades | `src/mcp/vice/r2000-confidence.ts` | Five grades, verbatim tokens: `confirmed-code`, `probable-code`, `confirmed-data`, `probable-data`, `unknown`. Parser throws on a near-miss rather than silently degrading. Already built, already tested. |
+| Comments | `anno_get_comments` → `[{address, type, comment}]`, `type` ∈ `"line"`/`"side"` | Read from `app_state.user_line_comments` / `user_side_comments` (`handler.rs:1858-1866`) — **user-authored only**; there is no auto-comment noise to filter. |
+| Callers | `anno_get_cross_references(address)` → sorted, deduped `Vec<Addr>` (`handler.rs:1636-1645`) | Exactly what COV-02's multi-caller rule needs. |
+| Confidence grades | `src/mcp/vice/anno-confidence.ts` | Five grades, verbatim tokens: `confirmed-code`, `probable-code`, `confirmed-data`, `probable-data`, `unknown`. Parser throws on a near-miss rather than silently degrading. Already built, already tested. |
 
 ### 3.2 Number 1 — structural completeness (derived from bytes)
 
-**Source:** raw bytes + `decode()`. **Never** `r2000_get_blocks`.
+**Source:** raw bytes + `decode()`. **Never** `anno_get_blocks`.
 
 Algorithm:
 
-1. **Seeds** = program origin, plus every `User`-kind label address from `r2000_get_symbols`, plus any entry point recorded by the project.
+1. **Seeds** = program origin, plus every `User`-kind label address from `anno_get_symbols`, plus any entry point recorded by the project.
 2. **Recursive descent** with `decode()`: follow `resolvedTarget` for `relative`-role operands (branches) and for absolute `JSR`/`JMP`; terminate a trace at `RTS`/`RTI`/unconditional `JMP`/`BRK`.
 3. **Widened indirect scan** — the part `follow_indirect_jumps` does not do (§3.7), four classes:
    - `0x6C` `JMP ($nnnn)` with the pointer **anywhere**, including zero page.
@@ -600,27 +600,27 @@ Algorithm:
    `reached-as-instruction` (recursive descent from a seed), `table-entry`
    (inside a reconstructed table), `referenced-as-data` (target of an indexed or
    absolute load/store), `unreached`.
-5. **Divergence sub-report:** byte counts where the census and `r2000_get_blocks`
+5. **Divergence sub-report:** byte counts where the census and `anno_get_blocks`
    disagree, broken out by direction (census says code / store says
    `Undefined`|`Byte`, and vice versa).
 
 **Why it cannot be gamed:** the census is a pure function of the bytes and the
-seed set. Mass `r2000_set_data_type` calls move `get_blocks` and therefore
+seed set. Mass `anno_set_data_type` calls move `get_blocks` and therefore
 `divergence`, but cannot move `reached-as-instruction` by a single byte.
 
 **Two design constraints, both sourced from upstream's own text:**
 
-- **Decodability is not evidence of code.** Upstream Pitfall 1, verbatim: *"**Speculative code conversion / disassembly**: This is the **most dangerous mistake**. Never trigger `r2000_disassemble` at a region unless you have concrete proof it is executed (JSR/JMP/branch target, vector table entry, or user confirmation). Random data routinely disassembles into plausible-looking instruction sequences — this does NOT make it code."* [VERIFIED: `r2000-analyze-blocks/SKILL.md:213-217`]. So `reached-as-instruction` must mean *reached by recursive descent from a seed*, and a separate, clearly-labelled `linear-sweep-decodable` count may be reported but must never be summed into completeness.
-- **Splitter absence biases the census's peer.** Upstream Pitfall 5 (§1.3): two adjacent same-type tables auto-merge, and `r2000_get_blocks` "respects splitters". Since `r2000_toggle_splitter` is not curated, the divergence sub-report will show a systematic over-merge on the store side. Report it as a known, named bias rather than as instrument error.
+- **Decodability is not evidence of code.** Upstream Pitfall 1, verbatim: *"**Speculative code conversion / disassembly**: This is the **most dangerous mistake**. Never trigger `anno_disassemble` at a region unless you have concrete proof it is executed (JSR/JMP/branch target, vector table entry, or user confirmation). Random data routinely disassembles into plausible-looking instruction sequences — this does NOT make it code."* [VERIFIED: `analyze-blocks/SKILL.md:213-217`]. So `reached-as-instruction` must mean *reached by recursive descent from a seed*, and a separate, clearly-labelled `linear-sweep-decodable` count may be reported but must never be summed into completeness.
+- **Splitter absence biases the census's peer.** Upstream Pitfall 5 (§1.3): two adjacent same-type tables auto-merge, and `anno_get_blocks` "respects splitters". Since `anno_toggle_splitter` is not curated, the divergence sub-report will show a systematic over-merge on the store side. Report it as a known, named bias rather than as instrument error.
 
 ### 3.3 Number 2 — the Auto-versus-User label ratio
 
-**Source:** `r2000_get_symbols`.
+**Source:** `anno_get_symbols`.
 
 Report **two** independent figures, because one is gameable and the other is not:
 
 - `kindRatio`: `{ user, auto, userFraction: user/(user+auto) }` over **non-`System`** labels only. `System` labels are platform-provided; counting them would let a large KERNAL symbol set inflate the ratio for free.
-- `autoPrefixNamesRemaining`: count of labels whose **name** still matches `^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)` — regardless of `kind`. This catches the game "call `r2000_set_label_name` with the same string so `kind` flips to `User` while the name stays `p_1234`". It also maps directly onto DECOMP-02's own bar ("no `p_XXXX` or `l_XXXX` left").
+- `autoPrefixNamesRemaining`: count of labels whose **name** still matches `^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)` — regardless of `kind`. This catches the game "call `anno_set_label_name` with the same string so `kind` flips to `User` while the name stays `p_1234`". It also maps directly onto DECOMP-02's own bar ("no `p_XXXX` or `l_XXXX` left").
 
 Note `L_` is *both* `Predefined` and `UserDefined`/`LocalUserDefined`
 (`types.rs:394-396`), so `L_` must **not** be in the auto-prefix regex — it
@@ -632,7 +632,7 @@ excludes it deliberately.
 **Reuse the Phase 11 sealed-answer-key mechanism (D-26).** It already exists,
 already has a non-vacuity guard, and already solves the hard part.
 
-`src/mcp/vice/r2000-answer-key.test.ts` guards three failure classes, verbatim
+`src/mcp/vice/absorbed-answer-key.test.ts` guards three failure classes, verbatim
 from its header: `T-11-SEAL-DRIFT` (hash stops matching the answer's canonical
 line), `T-11-LEAK` (the question file contains the answer, so a second session
 could answer without querying the store), and `T-11-RETROFIT / T-11-VACUOUS-CHECK`
@@ -665,7 +665,7 @@ Applied to COV-01:
 - `distinctCommentRatio = distinctNormalisedComments / commentedAddresses`.
 - A committed banned-generic set (`"handles data"`, `"does stuff"`, `"routine"`, `"data"`, `"unknown"`, …) whose members never count as documentation.
 - A **duplicate-comment** rule: the same normalised text at ≥ V addresses counts once, not V times.
-- A **confidence-grade** requirement, reusing `r2000-confidence.ts`: report `gradedFraction`, and treat `[unknown]`-graded comments as *not yet documented*. Already-built, already-tested machinery — do not write a second grade vocabulary (that module's header explicitly forbids it).
+- A **confidence-grade** requirement, reusing `anno-confidence.ts`: report `gradedFraction`, and treat `[unknown]`-graded comments as *not yet documented*. Already-built, already-tested machinery — do not write a second grade vocabulary (that module's header explicitly forbids it).
 - DECOMP-02's four-part purpose bar (function, inputs, outputs, side effects) is the eventual semantic bar; Phase 19 should implement the *mechanical* subset (length floor, distinctness, grade presence) and name the semantic part as human-judgment.
 
 ### 3.6 The multi-caller rule, mechanically
@@ -674,7 +674,7 @@ Applied to COV-01:
 
 Mechanically, per label `L`:
 
-1. `callers = r2000_get_cross_references(L.address)` — verified to return a sorted, deduped list (`handler.rs:1636-1645`).
+1. `callers = anno_get_cross_references(L.address)` — verified to return a sorted, deduped list (`handler.rs:1636-1645`).
 2. If `callers.length <= 1`, the ordinary documentation rules apply.
 3. If `callers.length > 1`, `L` counts as documented **only if** its line comment (a) exists, (b) is non-vacuous per §3.5, **and** (c) literally names at least one caller — either as `$XXXX` matching a caller address, or as the user label name at a caller address.
 4. Otherwise `L` is `multi-caller-undocumented` and is excluded from #2's `user` tally. Report the count and the offending addresses.
@@ -684,7 +684,7 @@ returns. No new tool needed.
 
 ### 3.7 What `follow_indirect_jumps` does NOT walk [VERIFIED — source at pin]
 
-`crates/regenerator2000-core/src/analyzer.rs:445-540`, called once from `:280`.
+`crates/external-analyser-core/src/analyzer.rs:445-540`, called once from `:280`.
 Read this session. It walks a linear sweep over bytes whose `block_types` entry is
 already `Code`, and acts **only** on opcode `0x6C`:
 
@@ -705,13 +705,13 @@ Concretely unwalked, each a census-widening requirement:
 
 ### 3.8 Where the instrument lives, and the CI constraints on that choice
 
-Recommended: a new `coverage` verb on `r2000-cli.ts`'s dispatch switch, plus the
+Recommended: a new `coverage` verb on `anno-cli.ts`'s dispatch switch, plus the
 census/report modules in `src/mcp/vice/`.
 
 **Three mechanical constraints on that choice, all verified:**
 
-1. **A new CLI verb must be documented in a skill file or CI goes red.** `scripts/lib/r2000-cli-verbs.mjs` parses the verb list from `r2000-cli.ts`'s own dispatch switch (never a hand-typed array); `check-skill-tool-coverage.mjs:481-491` fails for any verb "parsed from r2000-cli.ts's dispatch switch but named by NO skill file". Current state, live: 7 verbs — `bootstrap`, `export-asm`, `export-lbl`, `gen-enums`, `import-lbl`, `render-memmap`, `verify` — 7/7 resolved. [VERIFIED]
-2. **`R2000_CLI_VERB_FLOOR = 7` is a floor** (`>=` at `:467`), so 8 verbs is fine. [VERIFIED]
+1. **A new CLI verb must be documented in a skill file or CI goes red.** `scripts/lib/anno-cli-verbs.mjs` parses the verb list from `anno-cli.ts`'s own dispatch switch (never a hand-typed array); `check-skill-tool-coverage.mjs:481-491` fails for any verb "parsed from anno-cli.ts's dispatch switch but named by NO skill file". Current state, live: 7 verbs — `bootstrap`, `export-asm`, `export-lbl`, `gen-enums`, `import-lbl`, `render-memmap`, `verify` — 7/7 resolved. [VERIFIED]
+2. **`ANNO_CLI_VERB_FLOOR = 7` is a floor** (`>=` at `:467`), so 8 verbs is fine. [VERIFIED]
 3. **Any test file outside `src/mcp/vice/` must be covered by a `.github/workflows/ci.yml` `build`-job step**, or `ci-suite-coverage.test.ts` fails — it derives the set of directories holding committed test files from the repo itself, because `npm test` in `src/mcp/vice` is `node --test '*.test.*'`, cwd-only and non-recursive. [VERIFIED: that file's header and `SKILLS_GLOB_PROOF = "src/skills/*/scripts/*.test.mjs"`]
 
 ### 3.9 The previously-unseen fixture — concrete candidates
@@ -766,14 +766,14 @@ Computed this session over all 6 project skills plus all 5 upstream procedures
 
 | Pair | Score | Worst-matching clauses |
 |---|---|---|
-| `r2000-analyze-routine` :: `r2000-analyze-symbol` (both upstream) | **0.261** | "Analyzes a disassembly subroutine to determine its function by examining code, cross-references, and memory usage…" :: "Analyzes a specific memory address or label to determine its purpose … by examining its cross-references and usage patterns" |
+| `analyze-routine` :: `analyze-symbol` (both upstream) | **0.261** | "Analyzes a disassembly subroutine to determine its function by examining code, cross-references, and memory usage…" :: "Analyzes a specific memory address or label to determine its purpose … by examining its cross-references and usage patterns" |
 | `c64-program-recon` :: `c64-provenance-diff` (both project) | **0.250** | "reverse engineer a C64 game" :: "cracktro code from game code" |
 | `acme-build` :: `c64-memory-mapping` | 0.200 | "list the symbols a program uses" :: "document a disassembly listing" |
 | `c64-ram-capture` :: `vice-wedge-triage` | 0.200 | "capture a memory image at a checkpoint" :: "when a checkpoint never fires" |
-| `r2000-analyze-blocks` :: `r2000-analyze-routine` | 0.138 | (capability sentences) |
+| `analyze-blocks` :: `analyze-routine` | 0.138 | (capability sentences) |
 
 [VERIFIED: computed this session with the normalisation above over
-`src/skills/*/SKILL.md` and `/tmp/regenerator2000-phase19/.agent/skills/r2000-analyze-*/SKILL.md`]
+`src/skills/*/SKILL.md` and `/tmp/external-analyser-phase19/.agent/skills/anno-analyze-*/SKILL.md`]
 
 **Two findings that shape the plan:**
 
@@ -828,18 +828,18 @@ is duplicated by hand and can drift: `CLAUDE.md`'s "Project Skills" table,
 
 | Fact | Source |
 |---|---|
-| `license = "MIT OR Apache-2.0"` | `regenerator2000-0.9.20/Cargo.toml.orig:28` (installed crate) — and `crates/regenerator2000-core/Cargo.toml:5` at pin |
-| `Copyright (c) 2026 Ricardo Quesada` | `LICENSE-MIT:3` at pin |
+| `license = "MIT OR Apache-2.0"` | `the external analyser-0.9.20/Cargo.toml.orig:28` (installed crate) — and `crates/external-analyser-core/Cargo.toml:5` at pin |
+| `Copyright (c) 2026 the upstream author` | `LICENSE-MIT:3` at pin |
 | Both licence files ship | `ls LICENSE*` at pin → `LICENSE-APACHE`, `LICENSE-MIT` |
-| Repository | `https://github.com/ricardoquesada/regenerator2000` |
+| Repository | `an upstream repository` |
 | Commit | `493f840418f1450a342bb220c2fe3d2585dd0525`, 2026-07-11 |
 
 ### 5.2 The existing notices file contains a claim absorption makes FALSE
 
 `src/mcp/vice/THIRD-PARTY-NOTICES.md` currently says, under
-**"## Build/CI tools — not incorporated: regenerator2000"**:
+**"## Build/CI tools — not incorporated: The external analyser"**:
 
-> **No regenerator2000 source, data table, or output is included in this repository or in either published package**, so its licence does not attach to anything shipped.
+> **No the external analyser source, data table, or output is included in this repository or in either published package**, so its licence does not attach to anything shipped.
 
 And in its opening paragraph:
 
@@ -854,8 +854,8 @@ into shipped documentation — exactly the defect class
 Required edits:
 
 1. **New section**, alongside the existing cc65 one:
-   `## Incorporated material — regenerator2000 analysis procedures (MIT OR Apache-2.0)` — naming the five source paths, the pinned commit, the five sha256 digests, the byte counts, "adapted, not verbatim" where adapted, and the dual-licence election this project makes (state which: MIT is the natural match to this repo's own MIT licence).
-2. **Narrow** the existing "not incorporated: regenerator2000" section to the *subprocess* claim only — it remains true that no regenerator2000 **source code, data table or program output** is incorporated. Keep the correction note about the stale Apache-2.0-alone claim; it is still valuable.
+   `## Incorporated material — the external analyser analysis procedures (MIT OR Apache-2.0)` — naming the five source paths, the pinned commit, the five sha256 digests, the byte counts, "adapted, not verbatim" where adapted, and the dual-licence election this project makes (state which: MIT is the natural match to this repo's own MIT licence).
+2. **Narrow** the existing "not incorporated: The external analyser" section to the *subprocess* claim only — it remains true that no the external analyser **source code, data table or program output** is incorporated. Keep the correction note about the stale Apache-2.0-alone claim; it is still valuable.
 3. **Widen** the opening enumeration to include "MIT-OR-Apache-2.0 (incorporated)". The "No GPL-licensed material" claim is unaffected and stays.
 
 ### 5.3 The installer package ships the absorbed text with NO notices file [VERIFIED]
@@ -888,12 +888,12 @@ description: …
 
 <!--
 ATTRIBUTION (ABS-02)
-Adapted from regenerator2000.
-  Source repository: https://github.com/ricardoquesada/regenerator2000
-  Source path:       .agent/skills/r2000-analyze-program/SKILL.md
+Adapted from the external analyser.
+  Source repository: an upstream repository
+  Source path:       an upstream program procedure
   Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
   Source sha256:     2d1c91bcc612c00ce71b7def08917b59ca7e495aa61f9075cbb0795e935f6955
-  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
+  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 the upstream author
   This project elects: MIT
   ADAPTED, NOT VERBATIM. Named deviations:
     - the seven-way concurrent-subagent rolling window is NOT carried
@@ -949,9 +949,9 @@ table.
 `--mcp-server-stdio` dispatches to `run_headless_stdio_loop()`:
 `src/main.rs:710-711` sets `headless`/`mcp_server` from the flag, `:811` returns
 `run_headless_mcp(core.state, mcp_server_stdio)`, and `:388` calls
-`regenerator2000_core::mcp::stdio::run_headless_stdio_loop(app_state, view_state)`.
+`regeneratoanno_core::mcp::stdio::run_headless_stdio_loop(app_state, view_state)`.
 
-`crates/regenerator2000-core/src/mcp/stdio.rs:67-72, 98`:
+`crates/external-analyser-core/src/mcp/stdio.rs:67-72, 98`:
 
 ```rust
 pub async fn run_headless_stdio_loop(mut app_state: AppState, mut view_state: CoreViewState) {
@@ -982,10 +982,10 @@ Two incidental hazards worth recording for session robustness:
 behaviour at the OS level, not through `vice-proxy.ts`):
 
 1. Synthesize a scratch `.regen2000proj` with the real, shipped `synthesizeProject()` (8192 bytes of `$EA` NOPs terminated by `$60 RTS`, origin `$0810`).
-2. Spawn `regenerator2000 --mcp-server-stdio <project>` with `stdio: ["pipe","pipe","pipe"]` — the exact shape `openR2000Session()` uses.
+2. Spawn `analyser --mcp-server-stdio <project>` with `stdio: ["pipe","pipe","pipe"]` — the exact shape `openAnnoSession()` uses.
 3. `initialize`, then after 400ms write **one single burst** containing two requests back to back, so both sit in the child's stdin pipe simultaneously:
-   - `id: "SLOW-BATCH"` — `r2000_batch_execute` with N × `r2000_set_comment` (each inner call triggers `perform_analysis()` + `disassemble()` inside r2000);
-   - `id: "FAST-INFO"` — `r2000_get_binary_info`, trivial.
+   - `id: "SLOW-BATCH"` — `anno_batch_execute` with N × `anno_set_comment` (each inner call triggers `perform_analysis()` + `disassemble()` inside anno);
+   - `id: "FAST-INFO"` — `anno_get_binary_info`, trivial.
 4. Timestamp every response line's arrival relative to spawn.
 
 **If the handler multiplexed, `FAST-INFO` would return in single-digit
@@ -998,21 +998,21 @@ finishes.**
 | 2 | 3000 | 405ms | 6329ms | **6329ms** | ~5.9s |
 | 3 | 3000 | 410ms | 11679ms | **11679ms** | ~11.3s |
 
-[VERIFIED: live, three runs this session, `regenerator2000` at
-`/home/henrik/.cargo/bin/regenerator2000`, version 0.9.20. Driver retained at
+[VERIFIED: live, three runs this session, `the external analyser` at
+`/home/henrik/.cargo/bin/analyser`, version 0.9.20. Driver retained at
 the session scratchpad, `serial-probe.mjs`.]
 
 **Conclusion (HIGH — source + live, two independent methods agreeing):**
-regenerator2000 0.9.20's `--mcp-server-stdio` handler **reads stdin serially and
+The external analyser 0.9.20's `--mcp-server-stdio` handler **reads stdin serially and
 processes exactly one request at a time, in arrival order.** It does not
 multiplex.
 
 ### 6.3 What this means for D18-16
 
-- A reader-writer lock at `r2000-session.ts` would buy **zero** parallelism: concurrent reads would immediately re-serialise inside the child.
+- A reader-writer lock at `anno-session.ts` would buy **zero** parallelism: concurrent reads would immediately re-serialise inside the child.
 - The **coarse FIFO mutex is not a compromise — it is an exact model of the child's own behaviour**, and its bounded-FIFO-wait contention answer is the right shape (a refuse-while-busy error would surface the child's serialism as a caller-visible failure for no benefit).
 - **Recommendation: Phase 19 CLOSES D18-16 as "measured, answered NO, not needed" rather than re-deferring it.** The precondition the deferral named has been met and the answer removes the motivation.
-- Read-only fan-out remains the sanctioned *orchestration* pattern (multiple agents thinking in parallel), but the plan must state plainly that fan-out buys **no I/O parallelism at the session** — its value is agent reasoning concurrency, not throughput. Absorbed procedure text must not promise otherwise. `r2000-analyze-program`'s 7-way rolling window (`:75`, `:89-93`, `:129`, `:145`) must therefore be rewritten, not carried — and the attribution header must name that deviation (§5.4).
+- Read-only fan-out remains the sanctioned *orchestration* pattern (multiple agents thinking in parallel), but the plan must state plainly that fan-out buys **no I/O parallelism at the session** — its value is agent reasoning concurrency, not throughput. Absorbed procedure text must not promise otherwise. `analyze-program`'s 7-way rolling window (`:75`, `:89-93`, `:129`, `:145`) must therefore be rewritten, not carried — and the attribution header must name that deviation (§5.4).
 
 ### 6.4 The artifact that records it
 
@@ -1038,7 +1038,7 @@ by `scripts/check-npm-packages.mjs`; nothing here changes it.
 The one new external dependency is `unp64` — an **optional, OS-level CLI oracle**
 invoked as a subprocess, gated on presence, never an npm/PyPI/crates package and
 never added to any `dependencies` block. Its licence therefore does not attach to
-anything shipped, exactly as recorded for ACME and regenerator2000 in
+anything shipped, exactly as recorded for ACME and the external analyser in
 `src/mcp/vice/THIRD-PARTY-NOTICES.md`'s "Build/CI tools — not incorporated"
 sections. It is **not installed on this machine** (§Environment Availability) —
 treat it as a scope decision, not a silent install.
@@ -1050,11 +1050,11 @@ treat it as a scope decision, not a silent install.
 
 | Problem | Don't build | Use instead | Why |
 |---|---|---|---|
-| "Does absorbed text call an uncurated `r2000_*` tool?" | A new tool-diff checker | **`scripts/check-skill-tool-coverage.mjs`** (already imports `CURATED_R2000_TOOLS`, already greps `src/skills/**`, already fails, already has a non-vacuity floor) | A second checker would diverge from the first. Verified running green this session. |
+| "Does absorbed text call an uncurated `anno_*` tool?" | A new tool-diff checker | **`scripts/check-skill-tool-coverage.mjs`** (already imports `CURATED_ANNO_TOOLS`, already greps `src/skills/**`, already fails, already has a non-vacuity floor) | A second checker would diverge from the first. Verified running green this session. |
 | An independent 6502 instruction stream for the census | A new decoder | **`decode()` in `src/mcp/vice/disasm-decoder.ts:148`** | Already bounded-by-construction, never-throws, import-free of transport code (D-05), and gives `resolvedTarget` + `mode` + `operand.role` — everything the reachability walk needs. |
-| Reading the raw bytes out of a project | A new format parser | **`r2000-project.ts`'s `synthesizeProject()` shape** (`raw_data_base64`, gzip+base64) read symmetrically, or curated `r2000_read_region` | A tested writer already defines the format. |
-| "Independent reproducibility, provably not retrofitted" | A fresh seal/hash scheme | **Phase 11's sealed answer key** (`r2000-answer-key.test.ts` + `evidence/criterion1/`) | Already guards seal-drift, answer-leak **and** the vacuous-check case (missing/empty second answer must FAIL, not skip). |
-| A confidence vocabulary for comments | A sixth grade, or a second spelling | **`r2000-confidence.ts`'s `CONFIDENCE_GRADES`** | Its header explicitly forbids a second copy; its parser throws on near-misses so a typo can't silently degrade. |
+| Reading the raw bytes out of a project | A new format parser | **`anno-project.ts`'s `synthesizeProject()` shape** (`raw_data_base64`, gzip+base64) read symmetrically, or curated `anno_read_region` | A tested writer already defines the format. |
+| "Independent reproducibility, provably not retrofitted" | A fresh seal/hash scheme | **Phase 11's sealed answer key** (`absorbed-answer-key.test.ts` + `evidence/criterion1/`) | Already guards seal-drift, answer-leak **and** the vacuous-check case (missing/empty second answer must FAIL, not skip). |
+| A confidence vocabulary for comments | A sixth grade, or a second spelling | **`anno-confidence.ts`'s `CONFIDENCE_GRADES`** | Its header explicitly forbids a second copy; its parser throws on near-misses so a typo can't silently degrade. |
 | Walking the skills tree / extracting tool names | A local copy | **`scripts/lib/skill-corpus.mjs`** (`walkSkills`, `topLevelSkillDirs`, `extractToolNames`, `MCP_PREFIX_RE`) | The WR-12 lesson; four scripts already share it. |
 | A CI-visible predicate that can't be proven non-vacuous | Logic inline in a top-level script | **The three-file pattern**: `scripts/lib/*.mjs` predicate + `scripts/check-*.mjs` runner + `src/mcp/vice/*.test.ts` planted-violation proof | `skill-honesty-checks.test.ts`'s header states exactly why: a top-level script's exit code says nothing about whether the predicate distinguishes a violation from a clean file. |
 | An ever-growing exemption list | A plain allowlist | **The shrink-by-failing allowlist** (`FORK_ONLY_UNRECOVERABLE` pattern): every entry asserted still-live, stale entries fail the build | Named in `check-skill-tool-coverage.mjs`'s own header as how a coverage check rots. |
@@ -1071,10 +1071,10 @@ catch.
 ## Common Pitfalls
 
 ### Pitfall 1: mentioning a non-curated tool name in absorbed prose
-**What goes wrong:** CI fails with `r2000_toggle_splitter: referenced by src/skills/… but NOT in CURATED_R2000_TOOLS`.
-**Why:** `check-skill-tool-coverage.mjs:88` is a plain token grep (`/\br2000_[a-z0-9_]+/g`) with no comment or context awareness. Even a "we deliberately omit this" note trips it.
+**What goes wrong:** CI fails with `anno_toggle_splitter: referenced by src/skills/… but NOT in CURATED_ANNO_TOOLS`.
+**Why:** `check-skill-tool-coverage.mjs:88` is a plain token grep (`/\banno_[a-z0-9_]+/g`) with no comment or context awareness. Even a "we deliberately omit this" note trips it.
 **How to avoid:** name it without the prefix, or record the omission in `.planning/` (not scanned).
-**Warning sign:** the phrase "we do not use `r2000_…`" anywhere under `src/skills/`.
+**Warning sign:** the phrase "we do not use `anno_…`" anywhere under `src/skills/`.
 
 ### Pitfall 2: adding the 7th skill and breaking the packaging check
 **What goes wrong:** `check-npm-packages.mjs:235` fails — `installer: expected 6 skills with SKILL.md, found 7`.
@@ -1082,8 +1082,8 @@ catch.
 **How to avoid:** convert to a relation (installer copy count == `src/skills` SKILL.md count). Also run `installer/scripts/sync-skills.mjs` and commit the copy, and update `CLAUDE.md`'s Project Skills table.
 **Warning sign:** any `=== <number>` on a census in a guard you are about to make grow.
 
-### Pitfall 3: building the census from `r2000_get_blocks`
-**What goes wrong:** the instrument becomes trivially gameable — mass `r2000_set_data_type` makes the number look perfect.
+### Pitfall 3: building the census from `anno_get_blocks`
+**What goes wrong:** the instrument becomes trivially gameable — mass `anno_set_data_type` makes the number look perfect.
 **Why:** it reads the store's own bookkeeping, which is the thing being audited. Circularly, upstream's own `follow_indirect_jumps` has the same defect: it requires the pointer to already be `BlockType::Address` (`analyzer.rs:505-506`) and skips non-`Code` bytes, so on an under-classified binary it finds nothing.
 **How to avoid:** census from bytes via `decode()`; use `get_blocks` **only** for the divergence sub-report.
 **Warning sign:** any coverage figure that changes when only block types change.
@@ -1096,24 +1096,24 @@ catch.
 
 ### Pitfall 5: the auto-name/auto-kind gap
 **What goes wrong:** `userFraction` reads 1.00 while every label is still called `p_1234`.
-**Why:** `r2000_set_label_name` with the same string flips `kind` to `User`; the name is unchanged.
+**Why:** `anno_set_label_name` with the same string flips `kind` to `User`; the name is unchanged.
 **How to avoid:** report `autoPrefixNamesRemaining` as an independent figure. Exclude `L_` from the prefix regex — it is used by `Predefined` **and** `UserDefined` (`types.rs:394-396`) and cannot distinguish them.
 **Warning sign:** DECOMP-02's own bar ("no `p_XXXX` or `l_XXXX` left") passing while names are unchanged.
 
 ### Pitfall 6: carrying upstream's concurrency model with the sequencing
 **What goes wrong:** absorbed text promises 7-way parallel throughput the seam cannot deliver.
-**Why:** `r2000-analyze-program/SKILL.md:75, 89-93, 129, 145` prescribes a 7-slot rolling window. §6 proves the child is serial; Phase 18 criterion 4 already forbade copying it.
+**Why:** `analyze-program/SKILL.md:75, 89-93, 129, 145` prescribes a 7-slot rolling window. §6 proves the child is serial; Phase 18 criterion 4 already forbade copying it.
 **How to avoid:** absorb the *sequencing* (queue construction, refresh points, no-premature-halting rule) and drop the concurrency; name the deviation in the attribution header.
 **Warning sign:** the words "concurrent", "rolling window" or "7" surviving into an absorbed step.
 
 ### Pitfall 7: shipping a notices claim that absorption falsified
-**What goes wrong:** `src/mcp/vice/THIRD-PARTY-NOTICES.md` continues to assert "No regenerator2000 source … is included in this repository or in either published package" while 53KB of it is.
+**What goes wrong:** `src/mcp/vice/THIRD-PARTY-NOTICES.md` continues to assert "No the external analyser source … is included in this repository or in either published package" while 53KB of it is.
 **How to avoid:** split the section as in §5.2 *in the same commit* that lands the first absorbed file.
 **Warning sign:** the absorbed text landing before the notices edit.
 
 ### Pitfall 8: a live-dependency check that silently skips
 **What goes wrong:** `unp64` absent ⇒ the packer test skips ⇒ SURF-03 reads green with no evidence.
-**How to avoid:** the `r2000-test-gate.ts` D-11 pattern — expected SKIP by default, hard FAIL under an opt-in env var, and the finding itself must emit `verdict: "unknown"` with a non-empty `unavailableReason`, never a silent `null`.
+**How to avoid:** the `anno-test-gate.ts` D-11 pattern — expected SKIP by default, hard FAIL under an opt-in env var, and the finding itself must emit `verdict: "unknown"` with a non-empty `unavailableReason`, never a silent `null`.
 
 ### Pitfall 9: a test file outside `src/mcp/vice/` with no CI step
 **What goes wrong:** `ci-suite-coverage.test.ts` fails, naming the uncovered directory.
@@ -1147,15 +1147,15 @@ Probed this session.
 
 | Dependency | Required By | Available | Version | Fallback |
 |---|---|---|---|---|
-| `regenerator2000` | every r2000 route; the §6 measurement | ✓ | 0.9.20 at `/home/henrik/.cargo/bin/regenerator2000` | none needed; D-11 gate handles absence (expected SKIP in CI, by design) |
-| regenerator2000 crate source | source-level verification | ✓ | 0.9.20 in `~/.cargo/registry/src/index.crates.io-*/` (3 crates) | — |
-| upstream git clone at pin | the five procedure files (**excluded from the crate**) | ✓ | `/tmp/regenerator2000-phase19` @ `493f840` | re-clone/fetch from GitHub. **NB: `/tmp` is RAM and empties on reboot** (project memory) — the plan must not assume this clone persists |
+| `the external analyser` | every anno route; the §6 measurement | ✓ | 0.9.20 at `/home/henrik/.cargo/bin/analyser` | none needed; D-11 gate handles absence (expected SKIP in CI, by design) |
+| the external analyser crate source | source-level verification | ✓ | 0.9.20 in `~/.cargo/registry/src/index.crates.io-*/` (3 crates) | — |
+| upstream git clone at pin | the five procedure files (**excluded from the crate**) | ✓ | `/tmp/external-analyser-phase19` @ `493f840` | re-clone/fetch from GitHub. **NB: `/tmp` is RAM and empties on reboot** (project memory) — the plan must not assume this clone persists |
 | Node | everything | ✓ | v22.22.0 (engines: `>=22.18.0`) | — |
 | `x64sc` (fork) | unrelated to this phase | ✓ | `/usr/local/bin/x64sc`, backend detected "fork" | — |
 | `/usr/bin/x64sc` (genuine stock) | unrelated to this phase | ✓ | per project memory | — |
 | **`unp64`** | the only known packer-name oracle | ✗ | — | **no fallback for the name.** The finding degrades to `verdict: "unknown"` with a reason. Test must SKIP-by-default / FAIL-under-`VICE_REQUIRE_UNP64` |
 | `exomizer` / `pucrunch` | producing a genuinely packed fixture for E1 | ✗ | — | a pre-packed synthetic fixture could be committed instead, but authoring one without a packer is itself blocked |
-| `unpacker_compare_all` (upstream bin) | — | ✗ | not installed (`ls ~/.cargo/bin` → only `regenerator2000`) | needs `cargo build`; **rejected** (no-build-step rule) |
+| `unpacker_compare_all` (upstream bin) | — | ✗ | not installed (`ls ~/.cargo/bin` → only `the external analyser`) | needs `cargo build`; **rejected** (no-build-step rule) |
 
 **Missing with no fallback:**
 - `unp64` → SURF-03 can report *packedness* and an explicit `unknown`, but cannot report a *name* on this machine today. **The plan must decide whether SURF-03's bar is "a route exists and is exercised when the oracle is present" or "a name is actually reported here".** These are different acceptance bars and the difference is not resolvable by more research — it is a scope decision.
@@ -1176,24 +1176,24 @@ Probed this session.
 | Quick run command | `cd src/mcp/vice && node --experimental-strip-types --test <file>.test.ts` |
 | Full suite command | `cd src/mcp/vice && npm test` **plus** `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` **plus** `node scripts/check-skill-tool-coverage.mjs`, `node scripts/check-skill-fork-honesty.mjs`, `node scripts/check-npm-packages.mjs` from the repo root |
 | Node | v22.22.0 installed; engines `>=22.18.0`. Native type-stripping; **no build step for the shipped server** |
-| Live gate | `src/mcp/vice/r2000-test-gate.ts` (D-11). Absence of `regenerator2000` in CI is an **expected SKIP, forever, by design**; `VICE_REQUIRE_R2000` makes it a hard FAIL locally |
+| Live gate | `src/mcp/vice/anno-test-gate.ts` (D-11). Absence of `the external analyser` in CI is an **expected SKIP, forever, by design**; `VICE_REQUIRE_ANNO` makes it a hard FAIL locally |
 | **Do not** use as the gate | `npm run test:automated` (`test-gate.mjs`) — it skips `MANUAL_ONLY_TESTS` and hides CI failures |
 
 ### Phase Requirements → Test Map
 
 | Req | Behavior | Test type | Automated command | File exists? |
 |---|---|---|---|---|
-| ABS-01 | Pin + five paths + five sha256 + dispositions | unit | `node --experimental-strip-types --test r2000-upstream-audit.test.ts` | ✅ exists — **extend** with sha256-vs-clone and disposition-justification assertions |
+| ABS-01 | Pin + five paths + five sha256 + dispositions | unit | `node --experimental-strip-types --test anno-derivation.test.ts` | ✅ exists — **extend** with sha256-vs-clone and disposition-justification assertions |
 | ABS-01 | No absorbed step calls an uncurated tool | integration (CI script) | `node scripts/check-skill-tool-coverage.mjs` | ✅ exists — no change needed, just must stay green |
 | ABS-01 | Zero runtime `.agent/skills` dependency | unit | grep guard over `src/skills/**` + `installer/skills/**` | ❌ Wave 0 |
 | ABS-02 | Per-file attribution header complete + matches manifest | unit | new `skill-attribution.test.ts` | ❌ Wave 0 |
 | ABS-02 | Notices file records incorporated MIT-OR-Apache-2.0 and no longer claims "nothing incorporated" | unit | assertion over `src/mcp/vice/THIRD-PARTY-NOTICES.md` (planted-violation: the old sentence must fail) | ❌ Wave 0 |
 | ABS-02 | Installer tarball carries notices | integration | `node scripts/check-npm-packages.mjs` | ✅ exists — **extend** (`installer/files[]`), and **fix** the `=== 6` pin at `:235` |
 | ABS-03 | Pairwise description check clean across the whole inventory | unit + CI script | `node scripts/check-skill-description-overlap.mjs`; `node --experimental-strip-types --test skill-description-overlap.test.ts` | ❌ Wave 0 (three files) |
-| ABS-04 | Dated decision + named re-sync trigger, mechanically pinned | unit | extend `r2000-upstream-audit.test.ts` (resync_trigger present; pin-vs-installed-version live check) | ✅ exists — extend |
-| COV-01 | Three separately-addressable numbers, never one aggregate | unit | new `r2000-coverage.test.ts` — assert three distinct fields **and** assert no aggregate field exists | ❌ Wave 0 |
+| ABS-04 | Dated decision + named re-sync trigger, mechanically pinned | unit | extend `anno-derivation.test.ts` (resync_trigger present; pin-vs-installed-version live check) | ✅ exists — extend |
+| COV-01 | Three separately-addressable numbers, never one aggregate | unit | new `anno-coverage.test.ts` — assert three distinct fields **and** assert no aggregate field exists | ❌ Wave 0 |
 | COV-01 | Census independent of `get_blocks` | unit | mutate block types in a fixture, assert census bytes unchanged and only `divergence` moves | ❌ Wave 0 |
-| COV-02 | NC1, NC1b, NC2, NC3, NC4 each FAIL; NC5 PASSES | unit | `r2000-coverage.test.ts` negative controls | ❌ Wave 0 |
+| COV-02 | NC1, NC1b, NC2, NC3, NC4 each FAIL; NC5 PASSES | unit | `anno-coverage.test.ts` negative controls | ❌ Wave 0 |
 | COV-01/02 | Previously-unseen fixture | integration (live-gated) | run against `.planning/phases/11-.../evidence/criterion1/recon-subject.regen2000proj` | ❌ Wave 0 |
 | SURF-03 | Packer finding emits a valid verdict; `unknown` when no oracle; never guesses a name from entropy | unit | new `packer-finding.test.ts` — planted violation: an entropy-only input must never set `packer` | ❌ Wave 0 |
 | SURF-03 | Oracle route live | integration (live-gated) | gated on `unp64`; SKIP-by-default, FAIL under `VICE_REQUIRE_UNP64` | ❌ Wave 0 (**oracle absent — see Environment Availability**) |
@@ -1211,12 +1211,12 @@ Probed this session.
 - [ ] `scripts/check-skill-description-overlap.mjs` — ABS-03 CI runner
 - [ ] `src/mcp/vice/skill-description-overlap.test.ts` — ABS-03 planted-violation proof
 - [ ] `src/mcp/vice/skill-attribution.test.ts` — ABS-02 headers + `.agent/skills` absence + notices content
-- [ ] `src/mcp/vice/r2000-coverage.test.ts` — COV-01/COV-02, incl. NC1/NC1b/NC2/NC3/NC4/NC5
+- [ ] `src/mcp/vice/anno-coverage.test.ts` — COV-01/COV-02, incl. NC1/NC1b/NC2/NC3/NC4/NC5
 - [ ] `src/mcp/vice/packer-finding.test.ts` — SURF-03, incl. the "never infer a name" planted violation
 - [ ] Synthetic coverage fixtures for NC1–NC5 (committed; synthetic only, per the milestone bar)
 - [ ] `.planning/phases/19-.../evidence/measure-stdio-multiplexing.mjs` + `19-STDIO-MULTIPLEXING-EVIDENCE.md`
 - [ ] **Fix** `scripts/check-npm-packages.mjs:235`'s `=== 6` before adding the 7th skill
-- [ ] **Extend** `r2000-upstream-audit.test.ts` (sha256-vs-source, disposition justification, resync trigger)
+- [ ] **Extend** `anno-derivation.test.ts` (sha256-vs-source, disposition justification, resync trigger)
 - Framework install: none — Node's built-in runner is already in use.
 
 ---
@@ -1231,9 +1231,9 @@ Probed this session.
 |---|---|---|
 | V2 Authentication | no | No authentication surface: local CLI/stdio only, no network listener added |
 | V3 Session Management | no | The "session" is a child process on a pipe, not an authenticated session |
-| V4 Access Control | **yes (narrow)** | Project-path validation stays in `resolveStorePath()` (`r2000-tools.ts`) — the one authoritative place. New coverage/packer code must reuse it, never hand-validate a path. Skill content remains **untrusted input that is matched, never executed** (`scripts/lib/skill-corpus.mjs` header, and `check-skill-tool-coverage.mjs:32`: "it still never `import()`s, `require()`s, `eval()`s or spawns anything from `src/skills/`") |
+| V4 Access Control | **yes (narrow)** | Project-path validation stays in `resolveStorePath()` (`anno-tools.ts`) — the one authoritative place. New coverage/packer code must reuse it, never hand-validate a path. Skill content remains **untrusted input that is matched, never executed** (`scripts/lib/skill-corpus.mjs` header, and `check-skill-tool-coverage.mjs:32`: "it still never `import()`s, `require()`s, `eval()`s or spawns anything from `src/skills/`") |
 | V5 Input Validation | **yes** | Three untrusted inputs: (a) absorbed upstream prose — parsed/grepped, never executed; (b) `.regen2000proj` / `.prg` bytes — `decode()` is bounded by construction and never throws (T-04-03-01), and `synthesizeProject()` already validates origin range; (c) the `unp64` oracle's stdout — parse defensively, cap length, never `eval`, never interpolate into a shell (spawn with an argv array, never a shell string) |
-| V6 Cryptography | **yes (integrity only)** | sha256 via `node:crypto`'s `createHash` for the manifest digests and the sealed answer key — the `r2000-answer-key.test.ts` precedent. Never hand-roll a digest or a comparison |
+| V6 Cryptography | **yes (integrity only)** | sha256 via `node:crypto`'s `createHash` for the manifest digests and the sealed answer key — the `absorbed-answer-key.test.ts` precedent. Never hand-roll a digest or a comparison |
 | V12 Files & Resources | **yes** | Absorbed files land under `src/skills/` and ship in a tarball; `check-npm-packages.mjs` already validates tarball contents (no `node_modules/`, no test files, no fixtures leaked). Scratch/temp paths for the oracle must be created safely and cleaned up |
 | V14 Configuration | **yes (narrow)** | New env vars (`UNP64`, `UNP64_PATH`, `VICE_REQUIRE_UNP64`) are paths/flags, not secrets. `UNP64` is an **attacker-influenceable executable path** if the environment is hostile — resolve and spawn without a shell, and treat a non-existent path as "oracle absent", never as an error to interpolate |
 
@@ -1254,16 +1254,16 @@ Probed this session.
 
 | Old approach | Current approach | When changed | Impact |
 |---|---|---|---|
-| One regenerator2000 process per tool call (D-17/D-18) | One long-lived session per project, owned by `r2000-session.ts` (Rule A21) | Phase 18, plan 18-03 | Coverage and absorbed procedures can make many calls cheaply — but all of them serialise (§6) |
+| One the external analyser process per tool call (D-17/D-18) | One long-lived session per project, owned by `anno-session.ts` (Rule A21) | Phase 18, plan 18-03 | Coverage and absorbed procedures can make many calls cheaply — but all of them serialise (§6) |
 | Concurrency unknown; reader-writer upgrade deferred (D18-16) | **Measured: the child is strictly serial. Coarse FIFO mutex is exact, not a compromise** | Phase 19 (this research) | D18-16 should be **closed**, not re-deferred |
-| Export the whole program to read a routine | `r2000_read_region` at a range (SURF-01, D18-24/D18-25) | Phase 18, plan 18-05 | Makes the absorbed `analyze-routine` flow viable, and makes the cursor trio largely redundant (D18-26) |
-| `r2000_get_address_details` refused (D-32) | Curated as a client-side composition that never calls upstream's defective same-named tool (D-36 supersedes D-32) | Phase 18, plan 18-01 | `analyze-symbol` can be absorbed without hitting the `u16` overflow at `handler.rs:1894` |
+| Export the whole program to read a routine | `anno_read_region` at a range (SURF-01, D18-24/D18-25) | Phase 18, plan 18-05 | Makes the absorbed `analyze-routine` flow viable, and makes the cursor trio largely redundant (D18-26) |
+| `anno_get_address_details` refused (D-32) | Curated as a client-side composition that never calls upstream's defective same-named tool (D-36 supersedes D-32) | Phase 18, plan 18-01 | `analyze-symbol` can be absorbed without hitting the `u16` overflow at `handler.rs:1894` |
 | `toggle_splitter` / `set_immediate_format`: "no criterion" | **Criteria found**: DECOMP-01/BUILD-02 and BUILD-03 respectively | Phase 19 (this research) | Propose additively; needed by Phase 20/21, not 19 |
-| regenerator2000 licence recorded as Apache-2.0 alone | `MIT OR Apache-2.0`, dual at the user's option | Phase 10 correction, in the notices file | ABS-02 must use the dual form; the correction note is already there and should be kept |
+| the external analyser licence recorded as Apache-2.0 alone | `MIT OR Apache-2.0`, dual at the user's option | Phase 10 correction, in the notices file | ABS-02 must use the dual form; the correction note is already there and should be kept |
 
 **Deprecated / no longer true:**
-- "No regenerator2000 source … is included in this repository" (`src/mcp/vice/THIRD-PARTY-NOTICES.md`) — **becomes false with absorption**; must be split in the same commit.
-- "a real caller appearing in Phase 19's absorption diff is what would justify adding [a cursor tool]" (`r2000-tools.ts` header) — a caller appeared, **and its own upstream text forbids using it**. Update the header to record that outcome rather than leaving the invitation open.
+- "No the external analyser source … is included in this repository" (`src/mcp/vice/THIRD-PARTY-NOTICES.md`) — **becomes false with absorption**; must be split in the same commit.
+- "a real caller appearing in Phase 19's absorption diff is what would justify adding [a cursor tool]" (`anno-tools.ts` header) — a caller appeared, **and its own upstream text forbids using it**. Update the header to record that outcome rather than leaving the invitation open.
 - FUT-02's blocker is unchanged: HTTP mode hardcodes port 3000 (`main.rs:397` region, confirmed at `run_headless_mcp`'s `else` branch this session).
 
 ---
@@ -1274,10 +1274,10 @@ Probed this session.
 |---|---|---|---|
 | A1 | `unp64`'s stdout carries a parseable packer-name line in a stable format | §2.4 | The oracle route's parse is wrong; the finding always reports `unknown`. **Raise to VERIFIED by E1** (install `unp64`, run against a packed fixture). Upstream's `parse_unp64_entry()` (`unpacker_compare_all.rs:190`) parses an *entry address*, not a name — evidence the stdout is structured, but not proof about the name line |
 | A2 | `T = 0.35` is the right collision threshold | §4.3 | Too low ⇒ false positives on the two measured 0.200 pairs; too high ⇒ vacuous. Mitigated by reporting the observed max and asserting both a real-collision and a no-false-positive control; **raise to VERIFIED** once the absorbed descriptions are written and the real max is measured |
-| A3 | The `.regen2000proj` `raw_data_base64` field is gzip+base64 of the raw payload and readable symmetrically | §3.1 | The census cannot read bytes off disk and must go through `r2000_read_region` (slower, contends on the mutex, still correct). Inferred from `synthesizeProject()`'s **writer** (`gzipSync(bytes).toString("base64")`, `r2000-project.ts:147`), not from a read-back test. **Raise to VERIFIED** by round-tripping one committed fixture |
+| A3 | The `.regen2000proj` `raw_data_base64` field is gzip+base64 of the raw payload and readable symmetrically | §3.1 | The census cannot read bytes off disk and must go through `anno_read_region` (slower, contends on the mutex, still correct). Inferred from `synthesizeProject()`'s **writer** (`gzipSync(bytes).toString("base64")`, `anno-project.ts:147`), not from a read-back test. **Raise to VERIFIED** by round-tripping one committed fixture |
 | A4 | The RTS-trick window match (`LDA hi,X : PHA : LDA lo,X : PHA : RTS`) covers the idiom as it appears in real code | §3.2 | The widened scan misses dispatch tables; BUILD-04 inherits the gap. Variants (operand order, `TAX`/`TAY` interleaves, `JMP` instead of `RTS`) are likely. **Raise to VERIFIED** against a real fixture in Phase 21 |
 | A5 | Adding an 8th CLI verb and a 7th skill breaks nothing beyond `check-npm-packages.mjs:235` | §3.8, §5.5 | Another pinned count fails late. Searched `scripts/`, `installer/`, `.claude-plugin/`, `src/mcp/vice/*.test.ts` and found only that one exact pin, but the search was pattern-based, not exhaustive |
-| A6 | The `/tmp/regenerator2000-phase19` clone is present when the plan executes | §1, Environment | Every source citation in §1–§3 becomes unverifiable mid-execution. **`/tmp` is RAM in this environment and only empties on reboot** (project memory) — the plan should re-clone at a stable path, or fetch by the pinned SHA, as its first task |
+| A6 | The `/tmp/external-analyser-phase19` clone is present when the plan executes | §1, Environment | Every source citation in §1–§3 becomes unverifiable mid-execution. **`/tmp` is RAM in this environment and only empties on reboot** (project memory) — the plan should re-clone at a stable path, or fetch by the pinned SHA, as its first task |
 | A7 | The three `.agent/skills` runtime-read sites and one soft cross-reference are the complete set | §1.4 | An absorbed file retains a runtime dependency. Found by `grep -nE '\.agent/skills\|subagent\|Task tool\|Skill('` across all five files; a differently-worded reference could hide |
 
 ---
@@ -1301,10 +1301,10 @@ so the resolution is visible from this file rather than only from the plan set.
    - What's unclear: whether the phase closes with `verdict: "unknown"` on every fixture, or whether installing `unp64` is in scope.
    - Recommendation: **decide this explicitly in the plan, not at verification.** Cheapest satisfying answer: implement the finding with the oracle chain, live-gate the oracle branch, and record a dated decision that the *named* identity is unavailable through the pinned surface with §1.7's trigger 2 as the watch. If the user wants a name reported, installing `unp64` becomes an explicit prerequisite task.
 
-2. **Should `r2000_toggle_splitter` and `r2000_set_immediate_format` be added in Phase 19 or Phase 20/21?**
+2. **Should `anno_toggle_splitter` and `anno_set_immediate_format` be added in Phase 19 or Phase 20/21?**
    - **RESOLVED: 19-05 Task 3 decision 2.** Both are PROPOSED in Phase 19 as a dated decision
-     naming the requirement each serves (`r2000_toggle_splitter` → DECOMP-01 and BUILD-02;
-     `r2000_set_immediate_format` → BUILD-03) and implemented at the start of Phase 20, with a
+     naming the requirement each serves (`anno_toggle_splitter` → DECOMP-01 and BUILD-02;
+     `anno_set_immediate_format` → BUILD-03) and implemented at the start of Phase 20, with a
      pointer written into ROADMAP Phase 20's and Phase 21's Notes. Neither is added to the
      curated surface in Phase 19.
    - What we know: both acquired criteria from this diff (DECOMP-01/BUILD-02 and BUILD-03). Both are mutating. Both are additive under SURF-01's precedent.
@@ -1344,30 +1344,30 @@ so the resolution is visible from this file rather than only from the plan set.
 
 ### Primary (HIGH confidence — read or executed this session)
 
-**Upstream at pin `493f840418f1450a342bb220c2fe3d2585dd0525` (`/tmp/regenerator2000-phase19`):**
-- `.agent/skills/r2000-analyze-{basic,blocks,program,routine,symbol}/SKILL.md` — all five read; sha256 and byte counts computed; tool references extracted with this repo's own CI regex
-- `crates/regenerator2000-core/src/mcp/handler.rs` — `:182-184` (get_binary_info schema), `:188` (get_blocks "Respects splitters"), `:798-826` (get_binary_info impl, 7 fields), `:826-900` (unpack_binary impl), `:1106-1160` (xref/symbols/comments dispatch), `:1636-1645` (`get_cross_references_impl`), `:1645-1695` (`set_immediate_format_impl`), `:1697-1788` (`get_symbols_impl`), `:1790-1870` (`get_comments_impl`)
-- `crates/regenerator2000-core/src/mcp/stdio.rs` — `:67-98` (`run_headless_stdio_loop`, the serial loop)
-- `crates/regenerator2000-core/src/packer_signatures.rs` — `:1-14` (`PackerInfo`, `detect_packer`)
-- `crates/regenerator2000-core/src/unpacker.rs` — `:50-70` (`UnpackResult`), `:1035-1075` (`detect_packer` call site)
-- `crates/regenerator2000-core/src/state/app_state.rs` — `:27-42` (`FileInfo`), `:295-345` (`file_info()`)
-- `crates/regenerator2000-core/src/state/project.rs` — `:98-115` (`LoadedProjectData.detected_packer`)
-- `crates/regenerator2000-core/src/state/file_io.rs` — `:140-175`, `:403`, `:550-590` (load paths; `save_project`)
-- `crates/regenerator2000-core/src/state/types.rs` — `:314-331` (`BlockType`), `:333-345` (`Display`), `:353-358` (`LabelKind`), `:361-378` (`LabelType`), `:382-398` (`prefix()`)
-- `crates/regenerator2000-core/src/analyzer.rs` — `:280`, `:445-540` (`follow_indirect_jumps`)
-- `crates/regenerator2000-core/src/bin/unpacker_compare_all.rs` — `:6-8` (`UNP64`/`UNP64_PATH` convention), `:190` (`parse_unp64_entry`)
+**Upstream at pin `493f840418f1450a342bb220c2fe3d2585dd0525` (`/tmp/external-analyser-phase19`):**
+- `.agent/skills/anno-analyze-{basic,blocks,program,routine,symbol}/SKILL.md` — all five read; sha256 and byte counts computed; tool references extracted with this repo's own CI regex
+- `crates/external-analyser-core/src/mcp/handler.rs` — `:182-184` (get_binary_info schema), `:188` (get_blocks "Respects splitters"), `:798-826` (get_binary_info impl, 7 fields), `:826-900` (unpack_binary impl), `:1106-1160` (xref/symbols/comments dispatch), `:1636-1645` (`get_cross_references_impl`), `:1645-1695` (`set_immediate_format_impl`), `:1697-1788` (`get_symbols_impl`), `:1790-1870` (`get_comments_impl`)
+- `crates/external-analyser-core/src/mcp/stdio.rs` — `:67-98` (`run_headless_stdio_loop`, the serial loop)
+- `crates/external-analyser-core/src/packer_signatures.rs` — `:1-14` (`PackerInfo`, `detect_packer`)
+- `crates/external-analyser-core/src/unpacker.rs` — `:50-70` (`UnpackResult`), `:1035-1075` (`detect_packer` call site)
+- `crates/external-analyser-core/src/state/app_state.rs` — `:27-42` (`FileInfo`), `:295-345` (`file_info()`)
+- `crates/external-analyser-core/src/state/project.rs` — `:98-115` (`LoadedProjectData.detected_packer`)
+- `crates/external-analyser-core/src/state/file_io.rs` — `:140-175`, `:403`, `:550-590` (load paths; `save_project`)
+- `crates/external-analyser-core/src/state/types.rs` — `:314-331` (`BlockType`), `:333-345` (`Display`), `:353-358` (`LabelKind`), `:361-378` (`LabelType`), `:382-398` (`prefix()`)
+- `crates/external-analyser-core/src/analyzer.rs` — `:280`, `:445-540` (`follow_indirect_jumps`)
+- `crates/external-analyser-core/src/bin/unpacker_compare_all.rs` — `:6-8` (`UNP64`/`UNP64_PATH` convention), `:190` (`parse_unp64_entry`)
 - `src/main.rs` — `:68`, `:375-400` (`run_headless_mcp`), `:709-711`, `:811`
-- `crates/regenerator2000-core/Cargo.toml:5` (`license = "MIT OR Apache-2.0"`), `LICENSE-MIT:3`
+- `crates/external-analyser-core/Cargo.toml:5` (`license = "MIT OR Apache-2.0"`), `LICENSE-MIT:3`
 
 **Installed crate (independent corroboration):**
-- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-0.9.20/.cargo_vcs_info.json` — sha1 == the pin
+- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/analyser-0.9.20/.cargo_vcs_info.json` — sha1 == the pin
 - `.../Cargo.toml.orig:28` (licence), `:31-42` (`exclude`, incl. `.agent/**/*`)
 - `ls -a` of the crate root — no `.agent/`
 
 **Live executions this session:**
-- `regenerator2000 --help` — 13 options, none reports file info or packer
-- `node src/mcp/vice/vice-proxy.ts` `tools/list` — 80 tools, 19 `r2000_*`
-- `node src/mcp/vice/vice-proxy.ts` `tools/call r2000_get_binary_info` against `recon-subject.regen2000proj` — 7-field response, verbatim above
+- `analyser --help` — 13 options, none reports file info or packer
+- `node src/mcp/vice/vice-proxy.ts` `tools/list` — 80 tools, 19 `anno_*`
+- `node src/mcp/vice/vice-proxy.ts` `tools/call anno_get_binary_info` against `recon-subject.regen2000proj` — 7-field response, verbatim above
 - `node scripts/check-skill-tool-coverage.mjs` — exit 0, full OK line captured
 - `sha256sum` over the five upstream SKILL.md files
 - Custom pipelined-request driver, 3 runs — the §6.2 serialisation measurement
@@ -1375,17 +1375,17 @@ so the resolution is visible from this file rather than only from the plan set.
 - `node --version` → v22.22.0; `command -v unp64 exomizer pucrunch` → all absent
 
 **This repository:**
-- `src/mcp/vice/r2000-tools.ts` (header + `CURATED_R2000_TOOLS` + `:438-449` get_binary_info definition)
+- `src/mcp/vice/anno-tools.ts` (header + `CURATED_ANNO_TOOLS` + `:438-449` get_binary_info definition)
 - `src/mcp/vice/disasm-decoder.ts` (`:51-148` types + `decode()`)
-- `src/mcp/vice/r2000-confidence.ts` (`:64-113` `CONFIDENCE_GRADES`)
-- `src/mcp/vice/r2000-project.ts` (`:135-155` `synthesizeProject()`)
-- `src/mcp/vice/r2000-cli.ts` (header; dispatch verbs), `r2000-launch.ts` (`:77` `FORBIDDEN_R2000_FLAGS`, arg builders)
-- `src/mcp/vice/r2000-test-gate.ts` (the D-11 live gate pattern)
-- `src/mcp/vice/r2000-answer-key.test.ts` (the sealed-key mechanism)
-- `src/mcp/vice/r2000-upstream-audit.test.ts`, `.planning/phases/19-.../upstream-procedure-manifest.json`
+- `src/mcp/vice/anno-confidence.ts` (`:64-113` `CONFIDENCE_GRADES`)
+- `src/mcp/vice/anno-project.ts` (`:135-155` `synthesizeProject()`)
+- `src/mcp/vice/anno-cli.ts` (header; dispatch verbs), `anno-launch.ts` (`:77` `FORBIDDEN_ANNO_FLAGS`, arg builders)
+- `src/mcp/vice/anno-test-gate.ts` (the D-11 live gate pattern)
+- `src/mcp/vice/absorbed-answer-key.test.ts` (the sealed-key mechanism)
+- `src/mcp/vice/anno-derivation.test.ts`, `.planning/phases/19-.../upstream-procedure-manifest.json`
 - `src/mcp/vice/skill-honesty-checks.test.ts`, `scripts/lib/skill-honesty-checks.mjs`, `scripts/check-skill-fork-honesty.mjs`
 - `scripts/check-skill-tool-coverage.mjs` (`:32`, `:49-51`, `:55`, `:85-112`, `:302`, `:377-381`, `:394-421`, `:446`, `:465-491`, `:509-520`)
-- `scripts/lib/skill-corpus.mjs`, `scripts/lib/r2000-cli-verbs.mjs` (`:40`)
+- `scripts/lib/skill-corpus.mjs`, `scripts/lib/anno-cli-verbs.mjs` (`:40`)
 - `scripts/check-npm-packages.mjs` (`:13-26`, `:112-113`, `:213-225`, **`:235`**)
 - `src/mcp/vice/ci-suite-coverage.test.ts` (header, `:167`)
 - `src/mcp/vice/THIRD-PARTY-NOTICES.md`, root `THIRD-PARTY-NOTICES.md`, `installer/package.json`, `src/mcp/vice/package.json`
@@ -1394,7 +1394,7 @@ so the resolution is visible from this file rather than only from the plan set.
 - `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md` §19, `.planning/STATE.md`, `./CLAUDE.md`, `.planning/config.json`
 
 ### Secondary (MEDIUM confidence)
-- `src/mcp/vice/r2000-tools.ts`'s header narrative about D18-26/D-33 — first-party prose, load-bearing and self-consistent, but not independently re-derived this session beyond the parts checked above.
+- `src/mcp/vice/anno-tools.ts`'s header narrative about D18-26/D-33 — first-party prose, load-bearing and self-consistent, but not independently re-derived this session beyond the parts checked above.
 
 ### Tertiary (LOW confidence)
 - `unp64`'s stdout format for packer names (A1) — not installed, not observed. Inferred only from upstream's use of it as a comparison oracle.
@@ -1419,4 +1419,4 @@ so the resolution is visible from this file rather than only from the plan set.
 | CI/packaging constraints | **HIGH** for the four cited assertions (read + one executed); **MEDIUM** on exhaustiveness (A5). |
 
 **Research date:** 2026-08-24
-**Valid until:** the earlier of (a) the installed `regenerator2000` moving off 0.9.20, or (b) 2026-09-23. The upstream-source findings are pinned to a commit and do not decay; the *live* findings (installed version, curated tool count, `unp64` absence, CI green) are machine state and should be re-probed if the plan executes more than a few days out — as should A6's clone, since `/tmp` is RAM here.
+**Valid until:** the earlier of (a) the installed `the external analyser` moving off 0.9.20, or (b) 2026-09-23. The upstream-source findings are pinned to a commit and do not decay; the *live* findings (installed version, curated tool count, `unp64` absence, CI green) are machine state and should be re-probed if the plan executes more than a few days out — as should A6's clone, since `/tmp` is RAM here.

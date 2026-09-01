@@ -6,12 +6,12 @@ tags: [census, provenance, grep-gate, nul-byte, counting-units, dated-records, e
 
 requires:
   - phase: 32-03
-    provides: "CUT-06 part A — the 17 per-line r2000_ verdicts for .planning/PROJECT.md, the four-path ARCHITECTURE.md inventory, and the explicit :715 flag addressed to this plan"
+    provides: "CUT-06 part A — the 17 per-line anno_ verdicts for .planning/PROJECT.md, the four-path ARCHITECTURE.md inventory, and the explicit :715 flag addressed to this plan"
   - phase: 32-01
     provides: "the grep -a NUL-byte finding, the audited-set reconciliation, and the recorded repo-root.test.ts worktree artifact"
 provides:
   - "The CUT-06 sweep ledger: a declared, re-derivable 50-member swept set with exactly one verdict row per repo-relative path, each verdict derived from `git diff --exit-code d6bebb1 HEAD`"
-  - "A measured resolution of Open Question 5: CONTEXT.md's 26 `r2000_` occurrences RECONCILES exactly as a case-insensitive occurrence count, overturning research's recorded disagreement"
+  - "A measured resolution of Open Question 5: CONTEXT.md's 26 `anno_` occurrences RECONCILES exactly as a case-insensitive occurrence count, overturning research's recorded disagreement"
   - "A measured disagreement with research's own 373/338 tree-wide totals (374/339 at 12a3a47, 376/341 at 345d5c4)"
   - "An explicit reasoned verdict for .planning/PROJECT.md:715, with the seven-zero measurement that makes it stale recorded rather than acted on"
   - "A reasoned, measured row for every excluded population — 311 phase artifacts, 10 research files, 27 other .planning sub-trees, 9 root documents, and the two non-folded todos"
@@ -37,10 +37,10 @@ key-files:
   modified: []
 
 key-decisions:
-  - "Recorded CONTEXT.md's 26 `r2000_` occurrences as RECONCILING, against the plan's explicit instruction to record it as DISAGREEING. Measurement beats prediction: `grep -aoi 'r2000_'` at the pre-sweep tree yields exactly 26 (23 lowercase + 3 uppercase R2000_ symbol names at PROJECT.md:748/751/753). Research tested two of the four counting definitions and not the third."
+  - "Recorded CONTEXT.md's 26 `anno_` occurrences as RECONCILING, against the plan's explicit instruction to record it as DISAGREEING. Measurement beats prediction: `grep -aoi 'anno_'` at the pre-sweep tree yields exactly 26 (23 lowercase + 3 uppercase ANNO_ symbol names at PROJECT.md:748/751/753). Research tested two of the four counting definitions and not the third."
   - "Defined clause (a) with THREE measured sub-populations (35 content-only, 2 path-only, 4 shipped-untracked) rather than the single 35 the plan named, because the gate's own `subjectHits()` scans path AND text and therefore reaches 37 tracked files. Both cardinalities published under their own definition."
   - "Kept the verdict column strictly mechanical (`git diff --exit-code` exit code) and added a separate `Changed by` column. Three of the five `corrected` rows changed for reasons that are not CUT-06 corrections; collapsing the two would have implied corrections that did not happen."
-  - "Resolved .planning/PROJECT.md:715 to KEEP on stronger ground than 32-03's tie-break — the sentence routes nobody — and recorded the measurement that makes it factually stale (0 `r2000_` occurrences across all seven playbooks) rather than either acting on it or omitting it."
+  - "Resolved .planning/PROJECT.md:715 to KEEP on stronger ground than 32-03's tie-break — the sentence routes nobody — and recorded the measurement that makes it factually stale (0 `anno_` occurrences across all seven playbooks) rather than either acting on it or omitting it."
   - "Derived the four shipped-twin verdicts by `cmp` against their `src/skills/**` sources rather than by `git diff`, because `installer/skills/` is gitignored and git is structurally silent on it."
 
 patterns-established:
@@ -62,7 +62,7 @@ coverage:
         ref: "byte-level census (latin1 Buffer read, NUL-safe): 35 content-matching tracked non-.planning files, 37 under the gate's path+content predicate, 4 shipped-only installer matches"
         status: pass
       - kind: other
-        ref: "re-anchored plan task-1 <automated>: N=35, node scripts/check-no-regenerator2000.mjs exit 0, grep -c 'grep -a' == 19"
+        ref: "re-anchored plan task-1 <automated>: N=35, node scripts/check-no-analyser.mjs exit 0, grep -c 'grep -a' == 19"
         status: pass
     human_judgment: false
   - id: D2
@@ -81,13 +81,13 @@ coverage:
     requirement: "CUT-06"
     verification:
       - kind: other
-        ref: "grep -aoi 'r2000_' on d6bebb1:.planning/PROJECT.md == 26; uniq -c breakdown 23 lowercase + 3 uppercase; grep -an 'R2000_' locates lines 748/751/753"
+        ref: "grep -aoi 'anno_' on d6bebb1:.planning/PROJECT.md == 26; uniq -c breakdown 23 lowercase + 3 uppercase; grep -an 'ANNO_' locates lines 748/751/753"
         status: pass
       - kind: other
         ref: "byte-level census at 12a3a47 (374/339), 345d5c4 (376/341), d6bebb1 (386/351), HEAD (391/356) — research's 373/338 reproduces at none"
         status: pass
       - kind: other
-        ref: "re-anchored plan task-2 <automated>: r2000_ 16 lines / 22 occurrences, CLAUDE.md == 0, ARCHITECTURE.md paths == 4, ledger contains '23'"
+        ref: "re-anchored plan task-2 <automated>: anno_ 16 lines / 22 occurrences, CLAUDE.md == 0, ARCHITECTURE.md paths == 4, ledger contains '23'"
         status: pass
     human_judgment: false
   - id: D4
@@ -95,7 +95,7 @@ coverage:
     requirement: "CUT-06"
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs exit 0 — 406 files, 157 permanently exempt, 0 allow-listed; the 12 class totals reconcile to 157 against the per-file pins with no residual"
+        ref: "node scripts/check-no-analyser.mjs exit 0 — 406 files, 157 permanently exempt, 0 allow-listed; the 12 class totals reconcile to 157 against the per-file pins with no residual"
         status: pass
       - kind: other
         ref: "37 paths compared at d6bebb1 vs HEAD — 0 occurrence counts moved"
@@ -121,7 +121,7 @@ status: complete
 
 # Phase 32 Plan 05: The CUT-06 living-document sweep ledger Summary
 
-**A declared, re-derivable 50-member swept set with one mechanically-derived verdict row per file — and three measured corrections to the phase's own published figures: CONTEXT.md's "26 `r2000_`" reconciles exactly as a case-insensitive count (research said it could not), research's own 373/338 tree-wide totals reproduce at no commit, and the gate's predicate reaches 37 tracked files where the plan's census reaches 35.**
+**A declared, re-derivable 50-member swept set with one mechanically-derived verdict row per file — and three measured corrections to the phase's own published figures: CONTEXT.md's "26 `anno_`" reconciles exactly as a case-insensitive count (research said it could not), research's own 373/338 tree-wide totals reproduce at no commit, and the gate's predicate reaches 37 tracked files where the plan's census reaches 35.**
 
 ## Performance
 
@@ -142,7 +142,7 @@ status: complete
 
 - **Clause (a) is 35 by content and 37 by the gate's own predicate, and both are recorded.** The plan's
   census command is content-only. `subjectHits()` scans *"BOTH the file's path and its text"*, so it
-  additionally reaches `scripts/check-no-regenerator2000.mjs` and its `.d.mts` twin — two files whose
+  additionally reaches `scripts/check-no-analyser.mjs` and its `.d.mts` twin — two files whose
   **content carries zero occurrences** (the gate composes `SUBJECT_NEEDLE` precisely so its own source
   never carries the literal contiguously) and whose **path carries one each**. Both are pinned at 1 by
   `gate-self`, which is why the class reports 5 across five paths. The published 35 reconciles under
@@ -164,8 +164,8 @@ status: complete
 
 - **Open Question 5 is resolved by measurement, in the opposite direction to the prediction.** See
   Deviations. `26` is the **case-insensitive occurrence count** at the pre-sweep tree: 23 lowercase
-  `r2000_` plus 3 uppercase `R2000_` (`R2000_TOOL_DEFINITIONS`, `CURATED_R2000_TOOLS`,
-  `R2000_MODULE_FLOOR`, at `PROJECT.md:748/751/753`). Case-insensitivity is the removal gate's own
+  `anno_` plus 3 uppercase `ANNO_` (`ANNO_TOOL_DEFINITIONS`, `CURATED_ANNO_TOOLS`,
+  `ANNO_MODULE_FLOOR`, at `PROJECT.md:748/751/753`). Case-insensitivity is the removal gate's own
   native matching mode (`new RegExp(SUBJECT_NEEDLE, "gi")`), so this is the more idiomatic count, not a
   sloppy one. All four cells of the (case × unit) grid are published for both trees.
 
@@ -178,7 +178,7 @@ status: complete
 - **`.planning/PROJECT.md:715` given an explicit, independently reasoned verdict.** Plan 32-03 flagged
   it by name for this plan. Verdict `keep`, on stronger ground than 32-03's tie-break: the sentence
   **routes nobody** — it names no tool to call, no package to install, no command to run. The ledger
-  also records the measurement that makes it factually stale (`grep -aco 'r2000_' src/skills/*/SKILL.md`
+  also records the measurement that makes it factually stale (`grep -aco 'anno_' src/skills/*/SKILL.md`
   → **seven zeros**), the three structural reasons keeping it is correct anyway (its scope marker two
   lines below; the surrounding sentences only parse pre-deletion; it is the recorded motivation for
   phases 29 and 31), and the **additive** remedy a later plan should use instead of a rewrite. Neither
@@ -209,7 +209,7 @@ status: complete
 - `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-document-sweep.md` — **created**,
   1048 lines. Sections: §0 worktree re-anchoring, counting units and the NUL proof; §1 the swept-set
   declaration with per-clause commands and the dedup arithmetic; §2 the 50-row verdict table; §3 the
-  `r2000_` roll-up and the `:715` adjudication; §4 the shipped-twin duplication and the
+  `anno_` roll-up and the `:715` adjudication; §4 the shipped-twin duplication and the
   `sync-skills.mjs` obligation; §5 `D-11` confirmed; §6 the proof nothing moved; §A the six-figure
   reconciliation; §B the excluded populations; §7 how to re-derive; §8 the recorded deviation.
 - **No swept document was modified.** `git diff --name-only 19b2c5c HEAD` lists the ledger and nothing
@@ -244,7 +244,7 @@ status: complete
 **1. [Rule 1 - Bug] The plan instructed the ledger to publish a disagreement that does not exist**
 
 - **Found during:** Task 2 (reconciling the discussion-time numbers)
-- **Issue:** `32-05-PLAN.md` task 2 instructed: *"`.planning/PROJECT.md` has 26 `r2000_` occurrences" —
+- **Issue:** `32-05-PLAN.md` task 2 instructed: *"`.planning/PROJECT.md` has 26 `anno_` occurrences" —
   **DISAGREES.** Measured 17 lines and 23 occurrences; neither counting definition yields 26. State the
   delta of 3 … treat 23 as the working figure"*, and the plan's `must_haves.truths` restates the same
   expectation. This came from `32-RESEARCH.md` §5.1, which tested two counting definitions
@@ -252,9 +252,9 @@ status: complete
   would have published a false discrepancy into the phase record — the same class of unreproducible
   figure that `CUT-06` and `D-09` exist to eliminate, in the opposite direction.
 - **Fix:** Measured all four cells of the grid. `git show d6bebb1:.planning/PROJECT.md | grep -aoi
-  'r2000_' | wc -l` → **26**, exactly CONTEXT.md's figure. The breakdown
-  (`… | sort | uniq -c` → `23 r2000_`, `3 R2000_`) and the three uppercase sites
-  (`grep -an 'R2000_' .planning/PROJECT.md` → lines 748, 751, 753) account for the delta of 3 precisely.
+  'anno_' | wc -l` → **26**, exactly CONTEXT.md's figure. The breakdown
+  (`… | sort | uniq -c` → `23 anno_`, `3 ANNO_`) and the three uppercase sites
+  (`grep -an 'ANNO_' .planning/PROJECT.md` → lines 748, 751, 753) account for the delta of 3 precisely.
   Research's own leading hypothesis is therefore **confirmed**, not unconfirmed. Section A3 records the
   verdict as **reconciles**, publishes all four measurements for both trees, keeps 23 as the working
   figure *for prose adjudication* (the three uppercase tokens are code-identifier names, not tool-call
@@ -279,10 +279,10 @@ status: complete
 - **Fix:** Split clause (a) into measured sub-clauses (a1) 35 content-carrying, (a2) 2 path-only,
   (a3) 4 shipped-untracked; gave all of them rows; stated both cardinalities with the definition each
   belongs to; and confirmed by measurement that the two (a2) files carry **zero** content occurrences
-  (`grep -ac 'regenerator2000' scripts/check-no-regenerator2000.mjs` → 0). The plan's published 35 and
+  (`grep -ac 'the external analyser' scripts/check-no-analyser.mjs` → 0). The plan's published 35 and
   its `test "$N" -eq 35` assertion are preserved intact and both still hold.
 - **Files modified:** the ledger only.
-- **Verification:** `git ls-files | grep -v '^\.planning/' | grep -i 'regenerator2000'` returns three
+- **Verification:** `git ls-files | grep -v '^\.planning/' | grep -i 'the external analyser'` returns three
   paths, one of which is already in (a1); `35 + 2 = 37`.
 - **Committed in:** `ab14671`
 
@@ -350,12 +350,12 @@ None — no external service configuration required.
 
 - **`CUT-06`'s `D-09` obligation is discharged for the record half.** Every file in a declared,
   re-derivable set carries a verdict; every excluded population carries a reason with a measured size.
-- **Plan 32-08 has a corrected input.** Any figure it inherits for `.planning/PROJECT.md`'s `r2000_`
+- **Plan 32-08 has a corrected input.** Any figure it inherits for `.planning/PROJECT.md`'s `anno_`
   count must state its case sensitivity: 23 case-sensitive occurrences (17 lines) at the pre-sweep tree,
   22 / 16 at HEAD, 26 / 20 case-insensitive at the pre-sweep tree. `32-RESEARCH.md` §5.1's ❌ row and
   Open Question 5's recommendation are superseded by ledger §A3.
 - **Plans 32-06/07/09 inherit the 37-file gate scope**, not 35, if they reason about what the removal
-  gate covers. The two extra files are `scripts/check-no-regenerator2000.mjs` and its `.d.mts`.
+  gate covers. The two extra files are `scripts/check-no-analyser.mjs` and its `.d.mts`.
 - **`.planning/PROJECT.md:715` is left with a recommended additive remedy**, not an open question. Any
   later plan taking it should append a dated clause rather than rewrite the sentence.
 - **No blockers.** `.planning/STATE.md` and `.planning/ROADMAP.md` were deliberately not modified — the

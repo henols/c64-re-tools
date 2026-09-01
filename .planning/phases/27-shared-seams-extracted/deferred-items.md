@@ -3,28 +3,28 @@
 Out-of-scope discoveries logged during execution. Not fixed: each lies outside
 the touching plan's file set (executor scope boundary).
 
-## D-27-02-A — `r2000-session.test.ts`'s five plan-18-06 queue tests are ungated
+## D-27-02-A — `anno-session.test.ts`'s five plan-18-06 queue tests are ungated
 
 **Found during:** plan 27-02, whole-glob `node --test '*.test.*'` run.
-**Symptom:** 5 hard failures, all `R2000SpawnError: regenerator2000 was not
-found on PATH`, at `r2000-session.test.ts:809` onward:
+**Symptom:** 5 hard failures, all `AnnoSpawnError: The external analyser was not
+found on PATH`, at `anno-session.test.ts:809` onward:
 
 - `plan 18-06: five same-tick callers begin in strict FIFO arrival order`
 - `plan 18-06: a throwing callback releases the queue and the following entry still runs`
-- `plan 18-06: a waiting caller times out with R2000SessionBusyError and is removed from the queue before it can run late`
+- `plan 18-06: a waiting caller times out with AnnoSessionBusyError and is removed from the queue before it can run late`
 - `plan 18-06: the bounded wait applies only to waiting for the slot, not to a slow callback once it holds it`
 - `plan 18-06: the queue prevents a client-side lost update, and bypassing it makes the same scenario fail loud as non-exercising`
 
 **Why it is a real gap rather than a missing binary:** every OTHER
-regenerator2000-dependent test in the same file is wrapped by
-`skipReasonFor("r2000-session.test.ts")` and SKIPs cleanly with a message that
-names `R2000_BIN`. These five spawn a real child with no gate, so on a host
-without `regenerator2000` they FAIL where their siblings skip. The file is
+external-analyser-dependent test in the same file is wrapped by
+`skipReasonFor("anno-session.test.ts")` and SKIPs cleanly with a message that
+names `ANNO_BIN`. These five spawn a real child with no gate, so on a host
+without `the external analyser` they FAIL where their siblings skip. The file is
 untouched by phase 27 (last modified in phase 18) and the failures reproduce in
 isolation.
 
 **Not fixed here:** outside plan 27-02's `files_modified`, and it touches the
-r2000 session/spawn family that plan 27-04 owns.
+anno session/spawn family that plan 27-04 owns.
   status: acknowledged
 
 ## D-27-02-B — `vice-proxy.test.ts` needs a live host, and the whole-glob run does not know that
@@ -83,7 +83,7 @@ residual rather than a phase-27 blocker.
 both about *future* entries rather than any present one:
 
 - A contested capability-or-glue verdict is recorded as CONTESTED inside the
-  free-text `note` (today: `r2000-test-gate.ts`, WR-10). Nothing mechanical
+  free-text `note` (today: `anno-test-gate.ts`, WR-10). Nothing mechanical
   forces a future contested verdict to be flagged — `contested` is not a
   structured field, so a guard cannot assert on it.
 - `note` is deliberately exempt from Direction 4's name-prefix scan (which does
@@ -93,7 +93,7 @@ both about *future* entries rather than any present one:
 **Why it is not a phase-27 defect:** every present entry is correct and the
 non-vacuity of Direction 4 is proven both ways (a planted name-justified entry
 goes red; a clean control stays green), and Direction 1 was proven against a
-real unclassified `r2000-*.ts` created on disk. The residual is about what a
+real unclassified `anno-*.ts` created on disk. The residual is about what a
 later maintainer could add, not about what the record now says.
 
 **Not fixed here:** promoting `contested` to a structured field changes the

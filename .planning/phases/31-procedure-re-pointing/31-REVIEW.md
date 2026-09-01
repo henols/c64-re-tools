@@ -4,7 +4,7 @@ reviewed: 2026-08-31T00:00:00Z
 depth: standard
 files_reviewed: 2
 files_reviewed_list:
-  - scripts/check-no-regenerator2000.mjs
+  - scripts/check-no-analyser.mjs
   - src/mcp/vice/skill-attribution.test.ts
 findings:
   critical: 2
@@ -23,7 +23,7 @@ status: issues_found
 
 ## Summary
 
-Two source files were in scope. `scripts/check-no-regenerator2000.mjs` changed 17 lines
+Two source files were in scope. `scripts/check-no-analyser.mjs` changed 17 lines
 of prose only; I confirmed the re-point is factually correct (`.planning/ROADMAP.md:723-726`
 has exactly two Phase 31 criteria, narrowed by `D-01`, and criterion 1 is the ABS-02
 two-naming-lines sentence), that no predicate, pin, scope or count moved, that the gate
@@ -46,7 +46,7 @@ while the claim it scores is false**, both reproduced:
    guard's entire reason for existing is unscored where the gate actually gates.
 2. The byte-exactness comparison runs against the regex *capture group*, not the file's
    physical lines, so the first and last line of every block are truncated before comparison.
-   `ATTRIBUTION (ABS-02)Adapted from regenerator2000.` and
+   `ATTRIBUTION (ABS-02)Adapted from the external analyser.` and
    `  Source repository: <url>-->` both score as byte-identical, where the guard's own stated
    `grep -rx` semantics would report zero matches.
 
@@ -129,14 +129,14 @@ suffix/prefix match — precisely the loosening the comment says it refuses.
 Two drift classes therefore pass. Both reproduced:
 
 ```
-A) on-disk line: "ATTRIBUTION (ABS-02)Adapted from regenerator2000."
+A) on-disk line: "ATTRIBUTION (ABS-02)Adapted from the external analyser."
    scored:       { adapted: 1, repository: 1 }      <-- passes
 
-B) on-disk line: "  Source repository: https://github.com/ricardoquesada/regenerator2000-->"
+B) on-disk line: "  Source repository: an upstream repository-->"
    scored:       { adapted: 1, repository: 1 }      <-- passes
 ```
 
-`grep -rx 'Adapted from regenerator2000.'` reports zero matches on (A) and
+`grep -rx 'Adapted from the external analyser.'` reports zero matches on (A) and
 `grep -rx '  Source repository: …'` reports zero on (B). Case (A) also makes the guard
 disagree with the criterion it scores: a tree where one of the five instances is jammed onto
 the marker line is *not* "byte-identical across two trees", yet the guard is green. The
@@ -213,7 +213,7 @@ and add the fourth branch assertion beside `:816-830`:
 
 ### WR-02: Two divergent ABS-02 block extractors; the gate's "agree by construction" claim is false, and the divergence is an over-exemption route
 
-**File:** `scripts/check-no-regenerator2000.mjs:301-325` vs
+**File:** `scripts/check-no-analyser.mjs:301-325` vs
 `src/mcp/vice/skill-attribution.test.ts:192-194`
 
 **Issue:** The gate's header asserts the two implementations *"agree on where a block begins
@@ -223,9 +223,9 @@ echoed by the test at `:854-856`). They do not. The gate is line-based and, afte
 `-->` on the opener line. On a single-line block they disagree:
 
 ```
-input line 2: "<!-- ATTRIBUTION (ABS-02) Adapted from regenerator2000. -->"
-input line 3: "LIVE REINTRODUCTION: regenerator2000 is invoked here"
-input line 4: "more regenerator2000 prose"
+input line 2: "<!-- ATTRIBUTION (ABS-02) Adapted from the external analyser. -->"
+input line 3: "LIVE REINTRODUCTION: The external analyser is invoked here"
+input line 4: "more the external analyser prose"
 input line 5: "<!-- an unrelated comment -->"
 
 gate skillAttributionBlocks() -> [{ firstLine: 2, lastLine: 5 }]   <-- swallows :3 and :4
@@ -268,7 +268,7 @@ export function skillAttributionBlockSpans(text) {
 }
 ```
 
-Have `check-no-regenerator2000.mjs:310` and the test both delegate to it. Note the gate's
+Have `check-no-analyser.mjs:310` and the test both delegate to it. Note the gate's
 `re-measure` obligation: consolidating changes no counts on the current tree (verified: 5
 blocks per tree, pins `2/2/1` per file, gate green), so no pin moves.
 
@@ -300,7 +300,7 @@ derivation.
 
 ### WR-04: The re-pointed prose cites a mutable ROADMAP ordinal that nothing mechanically checks — the rot this phase repaired will recur
 
-**File:** `scripts/check-no-regenerator2000.mjs:293-296` and `:526-528`
+**File:** `scripts/check-no-analyser.mjs:293-296` and `:526-528`
 
 **Issue:** Both edited sites now read `ROADMAP Phase 31 criterion 1`. That is correct today
 (verified against `.planning/ROADMAP.md:725`), and the parenthetical recording the `criterion
@@ -400,7 +400,7 @@ and use it at `:303`, `:316`, `:788`, `:806`; widen the separator class to `[/\\
 
 ### IN-02: `NOTICES_FILES` is duplicated across both reviewed files, in different order
 
-**File:** `scripts/check-no-regenerator2000.mjs:224-228` and
+**File:** `scripts/check-no-analyser.mjs:224-228` and
 `src/mcp/vice/skill-attribution.test.ts:448-452`
 
 **Issue:** Two independent copies of the same three-path list, ordered differently

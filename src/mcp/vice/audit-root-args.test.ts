@@ -514,29 +514,10 @@ interface MatrixRow {
 
 const MATRIX: MatrixRow[] = [
   { script: "generate-tool-support-table", contained: "refuses" },
-  { script: "check-guard-fates", contained: "repo-root" },
   { script: "check-skill-tool-coverage", contained: "refuses" },
   { script: "check-skill-fork-honesty", contained: "refuses" },
   { script: "check-skill-cli-invocations", contained: "refuses" },
   { script: "check-skill-description-overlap", contained: "synthetic-corpus" },
-  // WHY THIS ROW CARRIES A SELECTOR, AND WHY THE ROW NAME IS DELIBERATELY
-  // NON-EXISTENT. The harness enforces "exactly one of --row, --rows, --all"
-  // inside `parseArgs()`, which runs BEFORE `resolveContainedRoot()`; a row
-  // that spawned it with no selector would hit the selector rule instead of
-  // the behaviour under test, and the case would pass for the wrong reason.
-  //
-  // The selector's VALUE is a row name that matches nothing in the registry,
-  // and that is a SAFETY property, not an accident. Row selection resolves
-  // AFTER containment, so if a future change ever reordered the two, this
-  // invocation would find NO ROW TO PLANT and stop -- rather than planting a
-  // mutation into the real working tree from inside a unit test. `--all` here
-  // would sweep it. Do NOT replace this with a real `historicalPath`: the
-  // non-existence is the fail-safe (T-32-30).
-  {
-    script: "audit-mutation-harness",
-    contained: "repo-root",
-    extraArgs: ["--row", "zz-no-such-registry-row-exists.mjs"],
-  },
   // Uncontained by design (plan 32-16). Needs no extra arguments: `--root` is
   // its only positional concern and both its other flags are optional booleans.
   { script: "audit-gate", contained: "uncontained-read-only" },
@@ -768,13 +749,19 @@ test("the matrix covers EVERY root-accepting script", () => {
       "removing a " +
       "member from measurement is the defect this guard was corrected to stop having.",
   );
-  // A NON-VACUITY FLOOR, to be RAISED and NEVER LOWERED. It was six while the
-  // population was keyed on the shared seam; the flag-derived population is
-  // eight. Lowering it would silently re-admit the state this guard exists to
-  // report.
+  // A NON-VACUITY FLOOR, to be RAISED and NEVER LOWERED BY ITSELF. It was six
+  // while the population was keyed on the shared seam; the flag-derived
+  // population was eight. It reads six again, and the ONE admissible reason a
+  // floor like this moves down is recorded here rather than left to be
+  // reconstructed: `check-guard-fates.mjs` and `audit-mutation-harness.mjs`
+  // were RETIRED WITH THEIR SUBJECT, in the same commit that lowered this
+  // number -- they are gone from the tree, not excluded from measurement. No
+  // exclusion list, no skip, no unmigrated-scripts array was added. Lowering
+  // this for any other reason would silently re-admit the state this guard
+  // exists to report.
   assert.ok(
-    covered.length >= 8,
-    `expected at least the eight known root-accepting scripts, measured ${covered.length}`,
+    covered.length >= 6,
+    `expected at least the six known root-accepting scripts, measured ${covered.length}`,
   );
 });
 
@@ -947,20 +934,6 @@ for (const { script, contained, extraArgs = [] } of MATRIX) {
   });
 }
 
-test("check-guard-fates: a contained root equal to the repository root runs and exits 0", () => {
-  // `[edge:CUT-04/adjacency]`, accept side. This gate derives its audited set
-  // from a git object store, so its contained-root case is the repository
-  // itself rather than an empty synthetic directory -- an empty tree has no
-  // object store and would prove only that the guard fails on an empty tree.
-  const r = runScript("check-guard-fates", ["--root", ROOT]);
-  assert.equal(r.status, 0, `expected exit 0, got ${r.status} (stderr: ${r.stderr})`);
-  assert.match(
-    r.stdout,
-    /check-guard-fates: OK -- setA=\d+ setB=\d+ setC=\d+ total=\d+ rows=\d+/,
-    "an explicit --root naming the repository root must produce the gate's normal report, " +
-      `got stdout: ${r.stdout}`,
-  );
-});
 
 // --- The synthetic-corpus read proof ---------------------------------------
 //
@@ -1069,7 +1042,7 @@ test("a repeated --root is rejected by the spawned script, naming BOTH values", 
   // `[edge:CUT-04/ordering]`, first half: where two argv tokens compare equal,
   // the resolution is SPECIFIED (a hard error) rather than positional, so no
   // invocation's meaning depends on which copy the parser happened to keep.
-  const r = runScript("check-guard-fates", ["--root", "/a", "--root", "/b"]);
+  const r = runScript("audit-gate", ["--root", "/a", "--root", "/b"]);
   assert.notEqual(r.status, 0, `expected a non-zero exit, got ${r.status}`);
   assert.ok(r.stderr.includes("BAD ARGUMENTS"), `got: ${r.stderr}`);
   assert.ok(r.stderr.includes("/a"), `stderr must name the first value, got: ${r.stderr}`);
@@ -1084,7 +1057,7 @@ test("a declared boolean flag is never swallowed as the root's value", () => {
   // verification record. It is deliberately NOT re-run here: each of those
   // orderings is a FULL run of the fate guard, and this file runs no script to
   // completion twice.
-  const swallowed = runScript("check-guard-fates", ["--root", "--json"]);
+  const swallowed = runScript("audit-gate", ["--root", "--json"]);
   assert.notEqual(swallowed.status, 0, "`--root --json` must be a MISSING value, not a value");
   assert.ok(swallowed.stderr.includes("BAD ARGUMENTS"), `got: ${swallowed.stderr}`);
   assert.ok(
@@ -1115,7 +1088,7 @@ test("no root-accepting script carries a NUL byte, so a text read of them loses 
   // root-accepting scripts go unseen here for a whole round.
   const population = scriptsAcceptingARoot();
   assert.ok(
-    population.length >= 8,
+    population.length >= 6,
     "the NUL sweep must cover the whole root-accepting population; it selected " +
       `${population.length}: ${population.join(", ")}`,
   );
@@ -1168,21 +1141,14 @@ test("split-read contract: every root-accepting script that binds ../src statica
   // it as "still no violations found".
   assert.deepEqual(
     clean.sort(),
-    [
-      "audit-gate",
-      "audit-mutation-harness",
-      "check-guard-fates",
-      "check-skill-description-overlap",
-    ],
+    ["audit-gate", "check-skill-description-overlap"],
     "the clean controls changed. `check-skill-description-overlap` is the one skill gate that " +
-      "honours an arbitrary contained root for BOTH halves of its comparison, and " +
-      "`check-guard-fates` derives everything it needs from a git object store. `audit-gate` " +
-      "and `audit-mutation-harness` joined this population in plan 32-18 when it was keyed on " +
-      "the FLAG rather than on the shared seam; MEASURED there, neither binds a ../src " +
-      "specifier statically, so the split-read contract is satisfied for both by carrying no " +
-      "matching import at all rather than by carrying a refusal. If any of the four now binds " +
-      "a ../src import, it needs a refusal too; if a FIFTH script became clean, its refusal " +
-      "may have been deleted.",
+      "honours an arbitrary contained root for BOTH halves of its comparison. `audit-gate` " +
+      "joined this population in plan 32-18 when it was keyed on the FLAG rather than on the " +
+      "shared seam; MEASURED there, it binds no ../src specifier statically, so the " +
+      "split-read contract is satisfied for both by carrying no matching import at all rather " +
+      "than by carrying a refusal. If either now binds a ../src import, it needs a refusal " +
+      "too; if a THIRD script became clean, its refusal may have been deleted.",
   );
   for (const script of clean) {
     assert.deepEqual(

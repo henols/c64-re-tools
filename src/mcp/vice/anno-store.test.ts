@@ -1034,7 +1034,7 @@ test("a comment whose bracket token is not one of the five makes the retype thro
     }
 
     assert.ok(thrown instanceof AnnoCommentGradeError, `expected AnnoCommentGradeError, got ${String(thrown)}`);
-    assert.ok(thrown instanceof ViceError, "everything the store throws must be a ViceError, which R2000ConfidenceGradeError is not");
+    assert.ok(thrown instanceof ViceError, "everything the store throws must be a ViceError, which AnnoConfidenceGradeError is not");
     let originalMessage = "";
     try {
       parseConfidencePrefix("[maybe-code] a near-miss token");

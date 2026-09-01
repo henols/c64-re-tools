@@ -35,8 +35,8 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md
 
 key-decisions:
@@ -61,7 +61,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a jump through a vector the pairing's own two loads never wrote to is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a jump through a vector the pairing's own two loads never wrote to is not dispatch context, and the census does not inflate on it"
         status: pass
       - kind: integration
         ref: "cd src/mcp/vice && npx tsc --noEmit"
@@ -72,7 +72,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the tightened zero-page-vector branch is LIVE: the one-byte-different twin whose jump names the pairing's OWN vector is still PROVEN"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the tightened zero-page-vector branch is LIVE: the one-byte-different twin whose jump names the pairing's OWN vector is still PROVEN"
         status: pass
     human_judgment: false
   - id: D3
@@ -80,10 +80,10 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a jump through a vector the pairing's own two loads never wrote to is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a jump through a vector the pairing's own two loads never wrote to is not dispatch context, and the census does not inflate on it"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
         status: pass
     human_judgment: false
   - id: D4
@@ -91,10 +91,10 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a control DECLARED as positive is actually ACCEPTED by the instrument"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a control DECLARED as positive is actually ACCEPTED by the instrument"
         status: pass
     human_judgment: false
   - id: D5
@@ -102,10 +102,10 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#EVERY true-returning site of hasDispatchContext() consults the PAIRING under test, not merely the window"
+        ref: "src/mcp/vice/anno-coverage.test.ts#EVERY true-returning site of hasDispatchContext() consults the PAIRING under test, not merely the window"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#functionBodyFromSource() THROWS naming the signature when the function it is asked for does not exist"
+        ref: "src/mcp/vice/anno-coverage.test.ts#functionBodyFromSource() THROWS naming the signature when the function it is asked for does not exist"
         status: pass
     human_judgment: false
   - id: D6
@@ -113,7 +113,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: manual_procedural
-        ref: "branch B reverted in the working tree; node --test r2000-coverage.test.ts observed exit 1, 76 pass / 2 fail of 78; branch A reverted, 78 pass / 2 fail of 80; branch B reverted again, 77 pass / 3 fail of 80; all three restored to 80 pass / 0 fail with a clean source diff"
+        ref: "branch B reverted in the working tree; node --test anno-coverage.test.ts observed exit 1, 76 pass / 2 fail of 78; branch A reverted, 78 pass / 2 fail of 80; branch B reverted again, 77 pass / 3 fail of 80; all three restored to 80 pass / 0 fail with a clean source diff"
         status: pass
     human_judgment: true
     rationale: >-
@@ -147,7 +147,7 @@ status: complete
   any two consecutive zero-page store targets with a jump naming the lower. It now reads
   `pairing.oriented.vectorLow`, the address the pairing's own two consumer stores built. The
   window-wide `zpStores` array, its collection in the window loop and the nested `b - a === 1`
-  double loop are all deleted; `grep -c 'zpStores' src/mcp/vice/r2000-coverage.ts` is 0.
+  double loop are all deleted; `grep -c 'zpStores' src/mcp/vice/anno-coverage.ts` is 0.
 - **The defect was worse than the plan anticipated, and the measurement says so.** Under the
   pre-fix predicate `ZP_VECTOR_FOREIGN_JUMP` and `ZP_VECTOR_OWN_JUMP` — payloads that differ at
   exactly one operand byte, one jumping through a foreign vector and one through its own — were
@@ -171,7 +171,7 @@ status: complete
 - **Three gates watched fail, and one extraction defect found by watching.** Branch B reverted →
   `exit 1`, 76/2 of 78. The pin against branch A's presence-only form → `exit 1`, 78/2 of 80. The
   pin against branch B's presence-only form → `exit 1`, 77/3 of 80. All three restored to 80 pass /
-  0 fail with `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` clean.
+  0 fail with `git diff --quiet -- src/mcp/vice/anno-coverage.ts` clean.
 - **`COVERAGE_SCHEMA_VERSION` is still 2 and `COVERAGE_REPORT_KEYS` is unchanged** — a predicate and
   control change, not a report-shape change. No fixture directory was added; both new payloads are
   in-suite constants and `git status --porcelain src/mcp/vice/fixtures/coverage` is empty.
@@ -200,13 +200,13 @@ Gate sequence is present and in order.
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` — `SplitOrientation.vectorLow` with the doc comment stating why
+- `src/mcp/vice/anno-coverage.ts` — `SplitOrientation.vectorLow` with the doc comment stating why
   it rides the orientation; `resolveSplitOrientation()` sets it in both arms from
   `Math.min(firstZp, secondZp)`; `hasDispatchContext()` branch B rewritten to one membership test
   against `pairing.oriented.vectorLow`; the `zpStores` array, its collection and the nested pair
   loop deleted; the branch's doc comment gains the second half of the CR-04 rule, naming the shape
   that defeated the previous form.
-- `src/mcp/vice/r2000-coverage.test.ts` — `ZP_VECTOR_FOREIGN_PROLOGUE`,
+- `src/mcp/vice/anno-coverage.test.ts` — `ZP_VECTOR_FOREIGN_PROLOGUE`,
   `ZP_VECTOR_JUMP_OPERAND_INDEX`, `withZpVectorData()`, `ZP_VECTOR_FOREIGN_JUMP`,
   `ZP_VECTOR_OWN_JUMP`, `ZP_VECTOR_FOREIGN_JUMP_CODE_BYTES`; two new report-level tests; two new
   `GATE_INTERIOR_DECLARATIONS` rows (one negative, one positive); `COVERAGE_SIGNATURE`,
@@ -259,7 +259,7 @@ Gate sequence is present and in order.
 - **Fix:** The backward scan now tracks parenthesis depth and accepts `;`, `}` or `{` as a boundary
   only at paren depth 0. The reasoning is written into the code as a comment naming the failure it
   prevents.
-- **Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
+- **Files modified:** `src/mcp/vice/anno-coverage.test.ts`
 - **Verification:** Plant 17 re-run after the fix quoted the full header
   `for (let k = start; k < end; k++) { if (insns[k]!.opcode === 0x48) sawPha++; if (insns[k]!.opcode === 0x60 && sawPha >= 2)`;
   the pin is green against the committed predicate and red against both presence-only forms.
@@ -284,15 +284,15 @@ declared fixed on the strength of one green run.
 
 | Check | Result |
 |---|---|
-| `cd src/mcp/vice && node --test r2000-coverage.test.ts` | **80 pass, 0 fail** (baseline 76 — strictly greater, as required) |
+| `cd src/mcp/vice && node --test anno-coverage.test.ts` | **80 pass, 0 fail** (baseline 76 — strictly greater, as required) |
 | `cd src/mcp/vice && npx tsc --noEmit` | exit 0 |
 | `cd src/mcp/vice && node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts docs-linerefs.test.ts` | 27 pass, 0 fail |
 | Full suite `cd src/mcp/vice && npm test` | 2589 tests, **2544 pass, 0 fail**, 40 skipped, 5 todo |
 | `node scripts/check-npm-packages.mjs` | exit 0 |
 | `git status --porcelain src/mcp/vice/fixtures/coverage` | **empty** — no fixture change |
-| `grep -c 'vectorLow' src/mcp/vice/r2000-coverage.ts` | **7** (interface field, both return arms, branch B's read, plus doc-comment mentions) — at least 4 required |
-| `grep -c 'zpStores' src/mcp/vice/r2000-coverage.ts` | **0** |
-| `grep -c 'COVERAGE_SCHEMA_VERSION = 2' src/mcp/vice/r2000-coverage.ts` | **1** |
+| `grep -c 'vectorLow' src/mcp/vice/anno-coverage.ts` | **7** (interface field, both return arms, branch B's read, plus doc-comment mentions) — at least 4 required |
+| `grep -c 'zpStores' src/mcp/vice/anno-coverage.ts` | **0** |
+| `grep -c 'COVERAGE_SCHEMA_VERSION = 2' src/mcp/vice/anno-coverage.ts` | **1** |
 | `ZP_VECTOR_FOREIGN_JUMP` report | `splitTables=[]`, `provenDispatchTargets=[]`, `tableEntryAddresses=[]`, `splitTableCandidates=1`, `reachedAsInstruction=17`, `classAt($0840)="unreached"` |
 | `ZP_VECTOR_OWN_JUMP` report | `splitTables.length=1`, `provenDispatchTargets` deep-equal `[$0840…$0847]`, `reachedAsInstruction=33` |
 | The two payloads differ at exactly one byte offset | asserted in the suite against `ZP_VECTOR_JUMP_OPERAND_INDEX` |
@@ -320,9 +320,9 @@ declared fixed on the strength of one green run.
 - No scope-reduction language (`v1`, `for now`, `simplified`, `placeholder`, `future phase`) and no
   phase-number pointer in any comment or assertion message this plan wrote — grep over the plan's
   own additions returned nothing, and the three documentation guards pass.
-- No new string or template literal in `src/mcp/vice/r2000-coverage.ts` names a phase number; this
+- No new string or template literal in `src/mcp/vice/anno-coverage.ts` names a phase number; this
   plan's additions there are comments and one field.
-- WR-03 not touched and not absorbed. `r2000-session.ts`'s 200 ms timeout not widened.
+- WR-03 not touched and not absorbed. `anno-session.ts`'s 200 ms timeout not widened.
 - No runtime dependency added to either published package.
 
 ## Known Stubs
@@ -354,8 +354,8 @@ None — no external service configuration required.
 
 ## Self-Check: PASSED
 
-- `src/mcp/vice/r2000-coverage.ts` — FOUND
-- `src/mcp/vice/r2000-coverage.test.ts` — FOUND
+- `src/mcp/vice/anno-coverage.ts` — FOUND
+- `src/mcp/vice/anno-coverage.test.ts` — FOUND
 - `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md` — FOUND
 - Commits `9e0bbbd`, `c41ddee`, `7a68033`, `3f13101` — all FOUND in `git log --all`
 - All plan `<acceptance_criteria>` re-run and passing; plan `<verification>` re-run in full with no

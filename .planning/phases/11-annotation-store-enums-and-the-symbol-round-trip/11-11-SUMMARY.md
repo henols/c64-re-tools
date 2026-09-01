@@ -1,17 +1,17 @@
 ---
 phase: 11-annotation-store-enums-and-the-symbol-round-trip
 plan: 11
-subsystem: regenerator2000-integration
-tags: [regenerator2000, vice-symbols, stock-vice, fork-vice, live-walkthrough, r2000, back-02]
+subsystem: external-analyser-integration
+tags: [the external analyser, vice-symbols, stock-vice, fork-vice, live-walkthrough, anno, back-02]
 
 # Dependency graph
 requires:
   - phase: 11-08
-    provides: "export-lbl/import-lbl CLI verbs plus r2000-symbols.ts's exportLabels()/importLabels()/regenerateAndReload() -- the mechanism this plan drives live"
+    provides: "export-lbl/import-lbl CLI verbs plus anno-symbols.ts's exportLabels()/importLabels()/regenerateAndReload() -- the mechanism this plan drives live"
   - phase: 11-07
     provides: "the committed recon-subject.prg/regen2000proj fixture used as this plan's live subject (branch 2 of the objective's resolution rule)"
 provides:
-  - "A 23-step live walkthrough (WALKTHROUGH.md) proving criterion 4 as ONE closed loop -- absence proven before live discovery, discovery before naming, naming before regeneration, regeneration before a single vice_symbols_load -- against genuine unpatched stock x64sc (VICE 3.9) and a real regenerator2000 0.9.20"
+  - "A 23-step live walkthrough (WALKTHROUGH.md) proving criterion 4 as ONE closed loop -- absence proven before live discovery, discovery before naming, naming before regeneration, regeneration before a single vice_symbols_load -- against genuine unpatched stock x64sc (VICE 3.9) and a real analyser 0.9.20"
   - "BACK-02's standing per-phase regression gate result for Phase 11 (BACK-02-GATE.md), including a live fork-backend (VICE 3.10) confirmation that the fork's own symbol implementation is unregressed"
   - "A reproduced, logged instance of the documented FINDING-C1 defect (missing -drive8type 1541) hit and fixed live during this plan's own launch, not merely cited"
 affects: []
@@ -21,7 +21,7 @@ tech-stack:
   added: []
   patterns:
     - "Driving stock-connect.ts/stock-dispatch.ts directly from a throwaway script (bypassing vice-proxy.ts's stdio JSON-RPC framing, which needs @mastra/mcp) to get a live, real-emulator transcript without a nested interactive session -- the same pattern stock-live.test.ts already established for its own before()/withOwnStockInstance() fixtures"
-    - "A pre-discovery, post-outbound project snapshot (subject-copy.regen2000proj) so the --import_lbl leg can be demonstrated on an independent copy without depending on the canonical r2000_set_label_name path's own state"
+    - "A pre-discovery, post-outbound project snapshot (subject-copy.regen2000proj) so the --import_lbl leg can be demonstrated on an independent copy without depending on the canonical anno_set_label_name path's own state"
 
 key-files:
   created:
@@ -40,12 +40,12 @@ key-decisions:
   - "Used plan 11-07's committed recon-subject.prg/regen2000proj as the live subject (objective's branch 2) -- verified directly that no consuming project has a registered real release on this host (recovery/RELEASES.json does not exist), so branch 1 does not apply."
   - "Picked the outbound label address (2105/$0839) and the to-be-discovered address (2118/$0846) by reading the fixture's own source, but treated 2118's NAME as genuinely discovered: the address itself was surfaced live via vice_disassemble's resolvedTarget field on a real beq operand, and named only after that live observation, not read off the source file."
   - "Drove the live VICE half by importing stock-connect.ts/stock-dispatch.ts directly in a throwaway script rather than through vice-proxy.ts's stdio JSON-RPC layer -- avoids a nested interactive MCP session (explicitly forbidden for this plan) while still exercising the real wire protocol and the real dispatch table, matching stock-live.test.ts's own established pattern."
-  - "Snapshotted the project (subject-copy.regen2000proj) immediately after the outbound label was written but before the discovery leg, so the --import_lbl demonstration in Task 2 is on an independent copy whose only prior state is the outbound label -- not entangled with the canonical r2000_set_label_name path's own mutations."
+  - "Snapshotted the project (subject-copy.regen2000proj) immediately after the outbound label was written but before the discovery leg, so the --import_lbl demonstration in Task 2 is on an independent copy whose only prior state is the outbound label -- not entangled with the canonical anno_set_label_name path's own mutations."
 
 patterns-established:
   - "A live walkthrough plan drives the same production dispatch tables (stockConnect/dispatchStock) a test fixture would, from a standalone script, when a nested interactive session is forbidden and the CLI's own stdio server has a runtime dependency (@mastra/mcp) not needed for the underlying calls."
 
-requirements-completed: [R2000-14, R2000-15]
+requirements-completed: [ANNO-14, ANNO-15]
 
 # Metrics
 duration: ~30min
@@ -54,7 +54,7 @@ completed: 2026-08-20
 
 # Phase 11 Plan 11: Criterion 4 Live Walkthrough Summary
 
-**A 23-step live transcript closes the R2000-14/R2000-15 symbol loop end to end against genuine unpatched stock x64sc (VICE 3.9) and a real regenerator2000 0.9.20: a store-written label resolves live, a name discovered by disassembling the running program (never read off source) gets written back into the store, and BACK-02's fork-backend regression gate is independently reconfirmed live against genuine VICE 3.10.**
+**A 23-step live transcript closes the ANNO-14/ANNO-15 symbol loop end to end against genuine unpatched stock x64sc (VICE 3.9) and a real analyser 0.9.20: a store-written label resolves live, a name discovered by disassembling the running program (never read off source) gets written back into the store, and BACK-02's fork-backend regression gate is independently reconfirmed live against genuine VICE 3.10.**
 
 ## Performance
 
@@ -65,8 +65,8 @@ completed: 2026-08-20
 
 ## Accomplishments
 
-- **The outbound leg:** wrote `counter_wrap_reentry` at `$0839` into the store via `r2000_set_label_name`, exported it via the real `vice-mcp r2000 export-lbl` CLI verb, then loaded it into a genuinely launched, real stock `x64sc` and confirmed `vice_symbols_lookup` resolves it to the exact address written -- plus a live `vice_disassemble` read at that address showing real program bytes underneath the label, not merely an asserted number.
-- **The inbound leg, with the absence proven before the discovery:** confirmed (both against the store via `r2000_get_symbols` and against the exported `.lbl` file) that no user label existed at `$0846` before disassembling the running program's `main_loop` live and observing its `beq` branch to that exact address (`resolvedTarget: 2118` read directly off the real disassembler). Disassembling `$0846` itself showed real reachable code, independently resolving an ambiguity plan 11-07's own recon session had explicitly flagged `[unknown]` at that address. Named it `selector_ff_handler` from that live observation, wrote it into the store, regenerated the whole label file (D-29, 9 symbols), and called `vice_symbols_load` on it exactly once (2 total occurrences across the whole transcript). Also exercised `--import_lbl` explicitly on an independent project copy, with a fresh `export-lbl` from that copy confirming the discovered name persisted.
+- **The outbound leg:** wrote `counter_wrap_reentry` at `$0839` into the store via `anno_set_label_name`, exported it via the real `vice-mcp anno export-lbl` CLI verb, then loaded it into a genuinely launched, real stock `x64sc` and confirmed `vice_symbols_lookup` resolves it to the exact address written -- plus a live `vice_disassemble` read at that address showing real program bytes underneath the label, not merely an asserted number.
+- **The inbound leg, with the absence proven before the discovery:** confirmed (both against the store via `anno_get_symbols` and against the exported `.lbl` file) that no user label existed at `$0846` before disassembling the running program's `main_loop` live and observing its `beq` branch to that exact address (`resolvedTarget: 2118` read directly off the real disassembler). Disassembling `$0846` itself showed real reachable code, independently resolving an ambiguity plan 11-07's own recon session had explicitly flagged `[unknown]` at that address. Named it `selector_ff_handler` from that live observation, wrote it into the store, regenerated the whole label file (D-29, 9 symbols), and called `vice_symbols_load` on it exactly once (2 total occurrences across the whole transcript). Also exercised `--import_lbl` explicitly on an independent project copy, with a fresh `export-lbl` from that copy confirming the discovered name persisted.
 - **BACK-02's standing gate, fully run and recorded:** `test:automated` (1893/1899, the one failure being the pre-existing worktree-only `repo-root.test.ts` case already documented in 11-08-SUMMARY.md), clean `typecheck`, `smoke` OK, `check-npm-packages.mjs` OK, the fork manifest's 62-count and stock dispatch's 38-count both unchanged, and a live check against genuine fork VICE 3.10 confirming its own `vice_symbols_load`/`lookup` implementation is unregressed.
 - **A real defect hit and fixed live, not merely cited:** the first launch attempt (missing `-drive8type 1541`) reproduced the documented FINDING-C1 failure mode outright -- `vice_autostart` failed at the wire with `CMD_FAILURE (0x8f)` -- confirming the fix is still load-bearing on this exact stock binary, not just historically true.
 
@@ -115,11 +115,11 @@ None beyond the deviation documented above.
 
 ## User Setup Required
 
-None - no external service configuration required. `regenerator2000 0.9.20`, genuine stock `x64sc` (`/usr/bin/x64sc`, VICE 3.9) and the fork build (`/usr/local/bin/x64sc`, VICE 3.10) were all already present on this host, and `.claude/mcp/vice/node_modules` was provisioned via `npm ci` (gated by the lockfile hash, per this project's own `ensure-mcp-deps.sh` convention) so `vice-proxy.ts r2000 export-lbl`/`import-lbl` could run as real CLI subprocesses.
+None - no external service configuration required. `the external analyser 0.9.20`, genuine stock `x64sc` (`/usr/bin/x64sc`, VICE 3.9) and the fork build (`/usr/local/bin/x64sc`, VICE 3.10) were all already present on this host, and `.claude/mcp/vice/node_modules` was provisioned via `npm ci` (gated by the lockfile hash, per this project's own `ensure-mcp-deps.sh` convention) so `vice-proxy.ts anno export-lbl`/`import-lbl` could run as real CLI subprocesses.
 
 ## Next Phase Readiness
 
-- Criterion 4 (`R2000-14`/`R2000-15`) is now proven end to end, live, as one closed loop, not merely by the committed-fixture test plan 11-08 already landed. The evidence ceiling is stated explicitly in `WALKTHROUGH.md`: proven against a real emulator and a real regenerator2000 0.9.20 on a 102-byte purpose-built fixture; not proven against a commercial release's size, packing or self-modification. Raising that ceiling needs a registered real release in a consuming project's `recovery/RELEASES.json` (branch 1 of the objective's own resolution rule, which does not apply on this host).
+- Criterion 4 (`ANNO-14`/`ANNO-15`) is now proven end to end, live, as one closed loop, not merely by the committed-fixture test plan 11-08 already landed. The evidence ceiling is stated explicitly in `WALKTHROUGH.md`: proven against a real emulator and a real analyser 0.9.20 on a 102-byte purpose-built fixture; not proven against a commercial release's size, packing or self-modification. Raising that ceiling needs a registered real release in a consuming project's `recovery/RELEASES.json` (branch 1 of the objective's own resolution rule, which does not apply on this host).
 - `T-11-NAME-INJECT` (label names unvalidated on entry, first flagged in 11-08-SUMMARY.md) remains open and is noted again here per the plan's own instruction, not re-covered -- both names this walkthrough introduced were deliberately ordinary, well-formed identifiers.
 - The pre-existing, worktree-only `repo-root.test.ts` failure (documented in 11-08-SUMMARY.md's own "Next Phase Readiness") is still present and still not caused by this plan.
 - No emulator process was left running: `pgrep -af x64sc` confirmed empty after both the stock and fork live sessions.

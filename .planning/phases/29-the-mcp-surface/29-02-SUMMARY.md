@@ -6,9 +6,9 @@ tags: [ci-gate, structural-guard, npm-pack, git-ls-files, planted-violation, att
 
 requires:
   - phase: 29-the-mcp-surface
-    provides: "plan 29-01's anno-tools.ts and the moved registration-time guards, which the gate's scope predicate had to account for alongside the surviving r2000-* modules"
+    provides: "plan 29-01's anno-tools.ts and the moved registration-time guards, which the gate's scope predicate had to account for alongside the surviving anno-* modules"
 provides:
-  - "scripts/check-no-regenerator2000.mjs — the removal gate: a whole-tree-minus-.planning scan unioned with the shipped installer tarball, with 8 exact-count exemption classes and a dated 49-entry temporary allow-list"
+  - "scripts/check-no-analyser.mjs — the removal gate: a whole-tree-minus-.planning scan unioned with the shipped installer tarball, with 8 exact-count exemption classes and a dated 49-entry temporary allow-list"
   - "packFiles() as an export of scripts/check-npm-packages.mjs, plus an entry-point guard so importing it does not run that script's whole driver"
   - "src/mcp/vice/removal-gate.test.ts — four planted evasion routes, the attribution false-positive control, and a behavioural binary-safety proof, all through the gate's own exported predicate"
   - "src/mcp/vice/fixtures/planted-removal-fixture.{ts,md}.txt — committed planted bodies, documented in fixtures/README.md"
@@ -31,8 +31,8 @@ tech-stack:
 
 key-files:
   created:
-    - scripts/check-no-regenerator2000.mjs
-    - scripts/check-no-regenerator2000.d.mts
+    - scripts/check-no-analyser.mjs
+    - scripts/check-no-analyser.d.mts
     - src/mcp/vice/removal-gate.test.ts
     - src/mcp/vice/fixtures/planted-removal-fixture.ts.txt
     - src/mcp/vice/fixtures/planted-removal-fixture.md.txt
@@ -63,7 +63,7 @@ coverage:
     requirement: CUT-02
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs"
+        ref: "node scripts/check-no-analyser.mjs"
         status: pass
       - kind: unit
         ref: "src/mcp/vice/removal-gate.test.ts#the predicate scans the path as well as the content, and reports a path occurrence as the sentinel 0"
@@ -163,7 +163,7 @@ status: complete
 - **The gate exists and is green, and its greenness is not vacuous.** It scans 395 files against a measured floor of 350, prints a per-class breakdown on success, and asserts an exact hit count per exemption class — a count that has *grown* is the shape of "an exemption used to hide a reintroduction" and fails.
 - **The shipped-tree blind spot is closed, and the closure is proven.** `git ls-files installer/skills` returns **0** while 8 files there mentioning the subject (27 occurrences) are shipped in `@henols/c64-re-tools`. The `packFiles("installer")` half of the scope predicate supplies those 30 paths; the route-(d) plant fires on `installer/skills/…`, a path a `--cached` predicate cannot see at all.
 - **CUT-03's failure mode is made impossible rather than merely discouraged.** Deleting one attribution block from `THIRD-PARTY-NOTICES.md` — the cheapest way to silence a false fire — drops both the file's pinned attribution-block count and its pinned hit count, and the gate reports *both*.
-- **The gate is binary-safe by construction and by observation.** With only the memmap exemption removed it names `src/mcp/vice/r2000-memmap-render.ts:79`; `grep -c` on that file prints nothing and exits 1 while `grep -ac` prints 1. A grep-backed implementation exits 0 there and would have let a real occurrence survive its own removal check.
+- **The gate is binary-safe by construction and by observation.** With only the memmap exemption removed it names `src/mcp/vice/anno-memmap-render.ts:79`; `grep -c` on that file prints nothing and exits 1 while `grep -ac` prints 1. A grep-backed implementation exits 0 there and would have let a real occurrence survive its own removal check.
 - **Assumption A1 is corrected, not confirmed.** The full-glob suite does **not** take ~660 s and then finish: it blocks forever in `vice-proxy.test.ts`. The baseline records the bounded procedure that produces a usable number, and the failing-file **set** the phase gate compares against.
 
 ## Task Commits
@@ -174,8 +174,8 @@ status: complete
 
 ## Files Created/Modified
 
-- `scripts/check-no-regenerator2000.mjs` — the gate. Exports `SUBJECT_NEEDLE` (joined from two fragments so its own source carries no contiguous literal), `subjectHits(relPath, text)` (the scan predicate — path **and** content, one entry per occurrence, `0` sentinel for a path hit), `attributionBlocks(text)` and `isInsideAttributionBlock(text, line)`. Driver guarded by an entry-point check.
-- `scripts/check-no-regenerator2000.d.mts` — ambient declarations so the colocated test typechecks under `strict`, following the `scripts/lib/r2000-cli-verbs.d.mts` precedent.
+- `scripts/check-no-analyser.mjs` — the gate. Exports `SUBJECT_NEEDLE` (joined from two fragments so its own source carries no contiguous literal), `subjectHits(relPath, text)` (the scan predicate — path **and** content, one entry per occurrence, `0` sentinel for a path hit), `attributionBlocks(text)` and `isInsideAttributionBlock(text, line)`. Driver guarded by an entry-point check.
+- `scripts/check-no-analyser.d.mts` — ambient declarations so the colocated test typechecks under `strict`, following the `scripts/lib/anno-cli-verbs.d.mts` precedent.
 - `src/mcp/vice/removal-gate.test.ts` — 8 tests: four planted routes, the path-half of the predicate, the attribution false-positive control, the CUT-03 block-deletion control, and the behavioural binary-safety proof. Imports the gate's predicates; never re-derives them; never writes the literal into its own source.
 - `src/mcp/vice/fixtures/planted-removal-fixture.ts.txt` / `.md.txt` — the committed planted bodies for routes (a) and (b).
 - `src/mcp/vice/fixtures/README.md` — new "Planted-violation fixtures" section naming both fixtures, the guard they belong to, and the prefix-exemption pin.
@@ -326,14 +326,14 @@ else touched:
 ```
 exit: 1
 check-no-<subject>: FAIL
-  - src/mcp/vice/r2000-memmap-render.ts:79: the removed static-analysis integration is named here. ...
+  - src/mcp/vice/anno-memmap-render.ts:79: the removed static-analysis integration is named here. ...
 ```
 
 and the grep blindness that makes this criterion meaningful:
 
 ```
-$ grep -c  'regenerator2000' src/mcp/vice/r2000-memmap-render.ts   # (no output) exit 1
-$ grep -ac 'regenerator2000' src/mcp/vice/r2000-memmap-render.ts   # 1           exit 0
+$ grep -c  'the external analyser' src/mcp/vice/anno-memmap-render.ts   # (no output) exit 1
+$ grep -ac 'the external analyser' src/mcp/vice/anno-memmap-render.ts   # 1           exit 0
 ```
 
 Exemption restored → `exit 0`.
@@ -360,10 +360,10 @@ which is why `29-05` is accepted for exactly the reason `29-09`, `29-10` and
 `29-11` are.
 
 **E — the allow-list emptied entirely:** 312 errors, firing on every class it
-covers — the 29-05 rename set (`r2000-cli.ts`, `r2000-spawn-seam.test.ts`,
-`docs-r2000-decisions.test.ts`, `module-classification.ts`, …), the 29-09 skill
+covers — the 29-05 rename set (`anno-cli.ts`, `spawn-seam.test.ts`,
+`docs-absorbed-decisions.test.ts`, `module-classification.ts`, …), the 29-09 skill
 set (`README.md`, `src/skills/**`, and the shipped `installer/skills/**`
-mirrors), and the 29-10 deletion set (`r2000-launch.ts`, `r2000-tools.ts`,
+mirrors), and the 29-10 deletion set (`anno-launch.ts`, `anno-tools.ts`,
 `vice-proxy.ts`, `CLAUDE.md`, …).
 
 ## The exemption set, and why each member is permanent
@@ -373,8 +373,8 @@ mirrors), and the 29-10 deletion set (`r2000-launch.ts`, `r2000-tools.ts`,
 | `gate-self` | the gate, its `.d.mts`, its test, `fixtures/README.md`, the CI step | 5 | carries the subject only as part of the gate's own **filename** |
 | `findings-docs` | `docs/phase9-…-probe-findings.md` (44, incl. its path), `docs/phase23-real-release-gate-findings.md` (3) | 47 | dated records of a past investigation; true in the past tense |
 | `attribution-guard-test` | `src/mcp/vice/skill-attribution.test.ts` | 12 | it must name the subject to police prose about the subject |
-| `upstream-audit-manifest-provenance` | `src/mcp/vice/r2000-upstream-audit.test.ts` | 3 | names an **upstream project** that is not deleted, not an integration that is. **29-05 re-points this** |
-| `memmap-measurement-provenance` | `src/mcp/vice/r2000-memmap-render.ts:79` | 1, at line 79 | records that three query result shapes were measured live against a real pinned-version child. **29-05 re-points this** |
+| `upstream-audit-manifest-provenance` | `src/mcp/vice/anno-derivation.test.ts` | 3 | names an **upstream project** that is not deleted, not an integration that is. **29-05 re-points this** |
+| `memmap-measurement-provenance` | `src/mcp/vice/anno-memmap-render.ts:79` | 1, at line 79 | records that three query result shapes were measured live against a real pinned-version child. **29-05 re-points this** |
 | `surviving-provenance` | 10 files: `docs/stock-vice-parity.md`, `scripts/check-npm-packages.mjs`, `scripts/lib/skill-descriptions.mjs`, `acme-gate.ts`, `disasm-roundtrip.test.ts`, `docs-dangling-refs.test.ts`, `prg-image.ts`, `shipped-modules.ts`, `skill-acme-build-cli.test.ts`, `stock-symbols.ts` | 21 | past-tense provenance, or references to the upstream project rather than to this repo's integration. **No plan in this phase removes any of them** |
 | `planted-fixtures` | `src/mcp/vice/fixtures/planted-*` | 2 | exist to be scanned by the test, not by the gate |
 | `notices-attribution-blocks` | 3 notices trees, **block-scoped** | blocks 2/4/3, hits 3/17/7 | CUT-03's protected prose |
@@ -388,7 +388,7 @@ That is **18 files** that legitimately keep the word forever — matching
 2. **Two exemption classes beyond the plan's enumeration.** `surviving-provenance` and `gate-self`. See "Deviations" below — this was forced, not preferred.
 3. **Allow-list entries carry exact counts.** Plans 29-10 and 29-12 are already written against that behaviour ("the gate asserts every allow-list class count EXACTLY (29-02 Task 2)"), and every plan that touches an allow-listed file already carries the gate in its `files_modified`.
 4. **The discharging-plan id set is derived from disk**, guarded by a "≥ 10 plan files while the allow-list is non-empty" non-vacuity assertion, so the acceptance is a fact about the phase rather than a typed list that can silently stop accepting a plan.
-5. **The `.d.mts` follows the `scripts/lib/r2000-cli-verbs.d.mts` precedent** — a CI-only declaration file, out of `package.json`'s `files[]`, so the colocated test typechecks while importing a `.mjs`.
+5. **The `.d.mts` follows the `scripts/lib/anno-cli-verbs.d.mts` precedent** — a CI-only declaration file, out of `package.json`'s `files[]`, so the colocated test typechecks while importing a `.mjs`.
 
 ## Deviations from Plan
 
@@ -399,8 +399,8 @@ That is **18 files** that legitimately keep the word forever — matching
 - **Found during:** Task 2
 - **Issue:** `scripts/check-npm-packages.mjs` executes its entire driver at module scope and calls `process.exit(1)` on failure. Adding only `export` — the plan's literal instruction — would have made the removal gate pack both npm packages, run every leak/closure/notices assertion, and die inside an `import` on any unrelated failure, misattributed to the gate.
 - **Fix:** wrapped the driver in `if (IS_ENTRY_POINT) { … }` (two inserted lines, zero reindentation, block-identical body) and added `resolve` to the existing `node:path` import. The same guard was applied to the new gate for the same reason.
-- **Files modified:** `scripts/check-npm-packages.mjs`, `scripts/check-no-regenerator2000.mjs`
-- **Verification:** `node scripts/check-npm-packages.mjs` exits 0; `import('./scripts/check-npm-packages.mjs')` resolves with `packFiles` and no side effects; `import('./scripts/check-no-regenerator2000.mjs')` likewise.
+- **Files modified:** `scripts/check-npm-packages.mjs`, `scripts/check-no-analyser.mjs`
+- **Verification:** `node scripts/check-npm-packages.mjs` exits 0; `import('./scripts/check-npm-packages.mjs')` resolves with `packFiles` and no side effects; `import('./scripts/check-no-analyser.mjs')` likewise.
 - **Committed in:** `4bfafe4`
 
 **2. [Rule 2 — Missing critical] The plan's exemption enumeration did not cover 10 files that no plan in this phase discharges**
@@ -408,7 +408,7 @@ That is **18 files** that legitimately keep the word forever — matching
 - **Found during:** Task 2
 - **Issue:** The plan lists six exemption classes and says everything else goes in the temporary allow-list, which "must be EMPTY at the phase's close" (asserted by 29-11). But 10 files carry mentions that are past-tense provenance or references to the **upstream project** rather than to this repo's integration — `docs/stock-vice-parity.md`, `scripts/check-npm-packages.mjs`, `scripts/lib/skill-descriptions.mjs`, `acme-gate.ts`, `disasm-roundtrip.test.ts`, `docs-dangling-refs.test.ts`, `prg-image.ts`, `shipped-modules.ts`, `skill-acme-build-cli.test.ts`, `stock-symbols.ts` — and **no plan in phase 29 touches or removes any of them**. Allow-listing them would have made 29-11's "block is empty" assertion unsatisfiable; omitting them would have made the gate red on the untouched tree.
 - **Fix:** added a `surviving-provenance` exemption class (path-scoped, exact per-path counts, 21 occurrences) and a `gate-self` class (5) covering the gate, its declarations, its test, the fixtures README and the CI step — files whose only mention is the gate's own filename.
-- **Files modified:** `scripts/check-no-regenerator2000.mjs`
+- **Files modified:** `scripts/check-no-analyser.mjs`
 - **Verification:** gate exits 0; the "emptied allow-list" control (E) still fires on all four discharge classes; the file total (18 permanently-exempt files) independently reproduces `29-RESEARCH.md`'s "~18 legitimately keep the word forever".
 - **Committed in:** `4bfafe4`
 
@@ -439,7 +439,7 @@ That is **18 files** that legitimately keep the word forever — matching
 
 - **The full-glob suite blocks indefinitely** — see deviation 4. Resolved by bounding the run and killing the one blocked child. This is now documented in `29-BASELINE.md` as the standing procedure for this phase.
 - **The measured blast radius differs from every prior figure.** `29-CONTEXT.md`/`CUT-02` say 291/55, `29-RESEARCH.md` says 339/61; measured at `c27922a` it is **347 files tracked / 59 outside `.planning/`, 396 occurrences**. Plan 29-01 landed between research and this measurement. `29-BASELINE.md` records the corrected figures and the measurement method.
-- **Two pre-existing failing files are in the baseline, not regressions:** `audit-integrity.test.ts` (2 — census assertions pinning audit totals that legitimately grow per milestone) and `r2000-session.test.ts` (5 — load-sensitive FIFO-queue timing tests, and on plan 29-10's deletion set, so its 5 will leave the set *by construction*, which 29-10 must say rather than report as an improvement).
+- **Two pre-existing failing files are in the baseline, not regressions:** `audit-integrity.test.ts` (2 — census assertions pinning audit totals that legitimately grow per milestone) and `anno-session.test.ts` (5 — load-sensitive FIFO-queue timing tests, and on plan 29-10's deletion set, so its 5 will leave the set *by construction*, which 29-10 must say rather than report as an improvement).
 
 ## Known Stubs
 
@@ -467,7 +467,7 @@ Obligations this plan hands forward, each already named in the gate's own text:
 |---|---|
 | 29-05 | re-point 14 allow-list entries and the 2 permanent exemptions it renames, counts included, in the same commit as the `git mv` |
 | 29-09 | discharge its 18 allow-list entries (10 `src/skills/`+`README`+`check-skill-fork-honesty`, 8 shipped mirrors) |
-| 29-10 | discharge its 17 allow-list entries; explain `r2000-session.test.ts`'s 5 baseline failures leaving the set by deletion |
+| 29-10 | discharge its 17 allow-list entries; explain `anno-session.test.ts`'s 5 baseline failures leaving the set by deletion |
 | 29-12 | move `anno-memmap-render.test.ts`'s allow-list count with its pin |
 | 29-11 | assert the temporary allow-list block is **empty** |
 

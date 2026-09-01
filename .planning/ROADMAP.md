@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v0.2.0 Switchable stock-VICE backend** — Phases 1-8, 8.1, 8.2 (shipped 2026-08-19)
-- ✅ **v0.3.0 regenerator2000 static-analysis backend** — Phases 9-11, 11.1 (shipped 2026-08-21)
+- ✅ **v0.3.0 the external analyser static-analysis backend** — Phases 9-11, 11.1 (shipped 2026-08-21)
 - ✅ **v0.4.0 Debt discharged, decisions settled** — Phases 12-17 (shipped 2026-08-23)
 - ✅ **v0.5.0 Persistent Session and the Coverage Instrument** — Phases 18-19; 20-22 cut (shipped 2026-08-25)
 - 🗄 **v0.6.0 Own the substrate** — Phases 23-26 (CLOSED INCOMPLETE 2026-08-26 by
@@ -90,7 +90,7 @@ the pivot exploration, each of which fails **silently** when broken.
   tracked files is structurally blind to what users actually receive.** *(Added
   at the v0.7.0 open, 2026-08-26.)* Measured: `git ls-files installer/skills`
   returns **0**, and that same tree ships inside the `@henols/c64-re-tools`
-  tarball — 11 `regenerator2000` mentions and 5 synced `ATTRIBUTION (ABS-02)`
+  tarball — 11 `the external analyser` mentions and 5 synced `ATTRIBUTION (ABS-02)`
   twins live there today, invisible to `git grep` and to every guard built on it
   (`skill-attribution.test.ts` scans `src/skills/` only, so a sync that drops the
   headers is invisible to it). Any gate whose subject is *what a user gets* must
@@ -100,22 +100,22 @@ the pivot exploration, each of which fails **silently** when broken.
   is green, and the shipped copy is wrong.
 
 - **A module's delete criterion is what it does, never its name prefix.**
-  *(Added at the v0.7.0 open, 2026-08-26.)* `r2000-test-gate.ts` is the founding
+  *(Added at the v0.7.0 open, 2026-08-26.)* `anno-test-gate.ts` is the founding
   instance: two gates in one file, one of which is the **ACME** availability gate
   that `disasm-roundtrip.test.ts`, `skill-acme-build-cli.test.ts` and
   `ci.yml:45-140` bind to by env-var name. A prefix-driven deletion takes it and
   silently degrades the ACME claim from "hard fail if ACME is missing" to
-  "skip" — in CI, over a green run. At least ten `r2000-*` modules are
+  "skip" — in CI, over a green run. At least ten `anno-*` modules are
   capabilities wearing glue-shaped names: `-test-gate`, `-acme-ident`,
   `-confidence`, `-symbols` (which *implements* the ✓ Validated
-  `R2000-14`/`R2000-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`,
+  `ANNO-14`/`ANNO-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`,
   `-regbits-gen`, `-enum-gen`, `-coverage`. Classify by behaviour and record the
   classification **before** any deletion, which is the only time the record can
   be trusted; a module whose sole claim to deletion is its prefix is not deleted.
 
 - **An `ATTRIBUTION (ABS-02)` block outlives the code it attributes.** *(Added at
   the v0.7.0 open, 2026-08-26.)* The absorbed prose stays adapted from
-  regenerator2000 after every line of regenerator2000 *integration* is gone, so
+  the external analyser after every line of the external analyser *integration* is gone, so
   the attribution is not residue to be swept up with the code — it is a
   licence-and-provenance obligation that must survive the deletion
   byte-identical. Measured: **10 instances across two trees** (5 blocks in 3
@@ -134,7 +134,7 @@ the pivot exploration, each of which fails **silently** when broken.
   violation against the new subject.** Dropping the floor to 0 and deleting the
   positive control is a one-line change that converts a proven guard into one
   that can never fail, over a suite that still reads green.
-  `hostpath-consumers.test.ts` (`R2000_MODULE_FLOOR`),
+  `hostpath-consumers.test.ts` (`ANNO_MODULE_FLOOR`),
   `scripts/check-skill-tool-coverage.mjs` (zero mentions cross-checked against
   zero curated tools passes trivially) and `skill-attribution.test.ts` all have
   this shape. **If you cannot make it fail, you have not re-pointed it.**
@@ -172,17 +172,17 @@ criteria:** [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md)
 </details>
 
 <details>
-<summary>✅ v0.3.0 regenerator2000 static-analysis backend (Phases 9-11, 11.1) — SHIPPED 2026-08-21</summary>
+<summary>✅ v0.3.0 the external analyser static-analysis backend (Phases 9-11, 11.1) — SHIPPED 2026-08-21</summary>
 
-**Delivered:** recon findings stop being prose. regenerator2000 is adopted as a
+**Delivered:** recon findings stop being prose. The external analyser is adopted as a
 static-analysis backend — a persistent, queryable annotation store plus a
-recursive-descent disassembler — reached through **17** curated `r2000_*` tools
-and a `vice-mcp r2000 <verb>` CLI, entirely container-side and structurally
+recursive-descent disassembler — reached through **17** curated `anno_*` tools
+and a `vice-mcp anno <verb>` CLI, entirely container-side and structurally
 incapable of touching VICE. Register writes read as bit names, symbols flow both
 ways between the store and a live emulator, and the flat linear `toacme` decoder
 it makes obsolete is deleted.
 
-- [x] Phase 9: The Assumption Probe (Go/No-Go) (8/8 plans) — completed 2026-08-20 — verdict `degrade` (rule `R4`), see `docs/phase9-regenerator2000-probe-findings.md`
+- [x] Phase 9: The Assumption Probe (Go/No-Go) (8/8 plans) — completed 2026-08-20 — verdict `degrade` (rule `R4`), see `docs/phase9-external-analyser-probe-findings.md`
 - [x] Phase 10: Adoption Boundaries, Automated Bootstrap, and the Removal (9/9 plans) — completed 2026-08-20
 - [x] Phase 11: Annotation Store, Enums, and the Symbol Round Trip (12/12 plans) — completed 2026-08-21
 - [x] Phase 11.1: Close v0.3.0 Audit Items (INSERTED) (7/7 plans) — completed 2026-08-21
@@ -242,7 +242,7 @@ validation coverage. Closed as `override_closeout`: the pre-close artifact audit
 <summary>✅ v0.5.0 Persistent Session and the Coverage Instrument (Phases 18-19; 20-22 cut) — SHIPPED 2026-08-25</summary>
 
 **Opened as** "The rebuild half — absorbed playbooks, modifiable source" (Phases
-18-22). **Delivered** its first half and cut its second: a regenerator2000
+18-22). **Delivered** its first half and cut its second: an external analyser
 session that survives many tool calls, all five upstream analyze procedures
 absorbed and attributed, a seventh skill, and a derived-from-bytes coverage
 census that the store's own block table cannot move by a single byte.
@@ -263,8 +263,8 @@ substrate v0.6.0 builds. The sentence above stands as what was decided at the
 v0.5.0 close; this note is what changed after it.)*
 
 **Why 20-22 were cut.** The milestone's second half was written against
-regenerator2000 as the analysis substrate. Measurement on a committed 279-byte
-fixture showed r2000 unannotated flat-decodes, while dxa recovered 72% of data
+The external analyser as the analysis substrate. Measurement on a committed 279-byte
+fixture showed anno unannotated flat-decodes, while dxa recovered 72% of data
 bytes with zero false positives and resolved a dispatch table unaided, and
 Ghidra — given dxa's map plus volatile I/O blocks — resolved the indirect
 dispatch, the self-modifying write, and the index/stride/split-pointer facts.
@@ -284,7 +284,7 @@ The goals survive; the substrate does not. Reverses D-R1/D-R2.
 
 ### v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phases 23-26)
 
-**Goal:** Replace regenerator2000 as the analysis substrate with dxa + Ghidra and
+**Goal:** Replace the external analyser as the analysis substrate with dxa + Ghidra and
 an annotation store this project owns — proving the pivot's numbers hold on real
 cracked code *before* anything is built on them.
 
@@ -325,13 +325,13 @@ therefore reachable while the `no-go` stands.
 
 - [x] **Phase 23: The Real-Release Gate (Go/Degrade/No-Go)** - The pivot's numbers re-measured against real cracked releases, with a recorded verdict able to narrow or cancel everything after it — **verdict recorded: `no-go`, rule `R1`** in `docs/phase23-real-release-gate-findings.md`
 - [ ] **Phase 24: The Two Engines** - dxa separates code from data and Ghidra headless recovers semantics, with all 105 undocumented opcode bytes decodable and hardware writes surviving the decompiler — **HELD** 2026-08-26 for v0.8.0: blocked on a frame-exact emulator stop that nothing owns; requirement text unchanged
-- [ ] **Phase 25: The Annotation Store and the Cutover** - This project owns the annotation state and its ACME export, and 19,181 lines of regenerator2000 glue are deleted rather than left standing beside their replacement — **TAKEN FORWARD to v0.7.0** 2026-08-26: its goal needs no corpus once the Phase 24 coupling is dropped, so it became Phases 27-32
+- [ ] **Phase 25: The Annotation Store and the Cutover** - This project owns the annotation state and its ACME export, and 19,181 lines of the external analyser glue are deleted rather than left standing beside their replacement — **TAKEN FORWARD to v0.7.0** 2026-08-26: its goal needs no corpus once the Phase 24 coupling is dropped, so it became Phases 27-32
 - [ ] **Phase 26: Automatic Annotation** - Machine addresses annotate themselves, bank-aware, declining rather than guessing where the bank state is path-dependent — **HELD** 2026-08-26 for v0.8.0: same corpus gate as Phase 24; requirement text unchanged
 
 <details>
 <summary>✅ v0.7.0 Own the Annotation Store (Phases 27-32) — SHIPPED 2026-09-01</summary>
 
-**Delivered:** this project stopped renting its analysis state. regenerator2000
+**Delivered:** this project stopped renting its analysis state. The external analyser
 is **deleted** — not deprecated, not wrapped — and `.annostore` replaced it: a
 `node:sqlite` store behind one structurally-asserted seam holding labels,
 comments, a frozen twelve-member per-range type vocabulary, scopes and project
@@ -355,8 +355,8 @@ requirements, 7 days, 690 commits, `override_closeout`. **No milestone audit was
 run** — every phase carries `verification_status: passed` and the per-phase
 `VERIFICATION.md` files are the evidence of record. Two qualifications ship with
 it: `STORE-03`'s traceability row contradicts its own prose (Phase 29 routed it
-to a verification pass or an audit; this close ran neither), and `R2000-13` /
-`R2000-14` / `R2000-15` were withdrawn with the removal and **no phase owns their
+to a verification pass or an audit; this close ran neither), and `ANNO-13` /
+`ANNO-14` / `ANNO-15` were withdrawn with the removal and **no phase owns their
 return**.
 
 **Full phase details, the two owner decisions taken at the open, the three
@@ -478,7 +478,7 @@ Notes:
 - **Why `OPC-*` stays in this phase rather than becoming its own.** Its verification is not separable. `OPC-03` can only be checked by running the harness `GHID-01` delivers, and `GHID-04`'s acceptance — structural facts recovered from *real cracked code* — is not honestly claimable while 105 opcode bytes are undecodable, because crack and packer code is exactly where that gap bites. Splitting would force Phase 24 to close on a claim its own corpus contradicts and a later phase to reopen it. The phase still groups three ways in planning — discovery, semantic harness, opcode coverage — with the SLEIGH extension sequenced **ahead of** criterion 4's acceptance run, not after it.
 - The SLEIGH source already exists in full: `docs/undocumented-opcodes-ghidra.md`, 776 lines, all 105 bytes, with the unstable instructions already modelled as black-box userops and the `@include` layering already written against the `65c02.slaspec` collision. This phase integrates and verifies it; it does not write it from scratch.
 - dxa 0.1.5 is 3,417 lines of C, GPLv2+, builds clean with plain `make`, dormant since a 2022-03 tarball, and ships in no Debian package (`dpkg -L xa65` has no `dxa`). Vendor and build; do not assume `$PATH`.
-- **Reuse rather than rebuild** (`CUT-02` is Phase 25's, but the reuse decisions are taken here): `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts` already decode 6502 including illegal opcodes across 2,555 lines, and `r2000-d64.ts` is 310 standalone lines. Neither is r2000's.
+- **Reuse rather than rebuild** (`CUT-02` is Phase 25's, but the reuse decisions are taken here): `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts` already decode 6502 including illegal opcodes across 2,555 lines, and `anno-d64.ts` is 310 standalone lines. Neither is anno's.
 - Ghidra alone, with zero hints, produced **nothing** on the pivot fixture — 0 functions, 0 code bytes. The map from dxa is not an optimisation; it is what makes Ghidra work at all on a headerless 6502 image.
 
 ### Phase 25: The Annotation Store and the Cutover
@@ -487,7 +487,7 @@ Notes:
 historical record of how the work was scoped *inside* v0.6.0 and is kept for
 that reason; it is **not** the live scope. The live scope is v0.7.0's Phases
 27-32, where the Phase 24 engine coupling is dropped, no parity is owed to
-regenerator2000, the type vocabulary is corrected from 7 members to **12**, and
+The external analyser, the type vocabulary is corrected from 7 members to **12**, and
 the 19,181-line deletion figure below is corrected to a net **~12.4k** of a
 25,759-line surface (~12.9k survives under new names). Read the v0.7.0 phase
 details, not this block, before planning.
@@ -495,17 +495,17 @@ details, not this block, before planning.
 **Goal**: This project owns the annotation state — labels, comments, per-range
 typing, scopes, enums, undo, persistence — reached through its own MCP surface
 and exported as ACME a real assembler accepts, and the 19,181 lines of
-regenerator2000 integration glue are deleted rather than left standing beside
+The external analyser integration glue are deleted rather than left standing beside
 their replacement.
-**Depends on**: Phase 24 — the store's typed decode and cross-references are populated from the engines' output, and nothing may delete r2000 before a replacement demonstrably produces the same facts. Verdict-gated on Phase 23
+**Depends on**: Phase 24 — the store's typed decode and cross-references are populated from the engines' output, and nothing may delete anno before a replacement demonstrably produces the same facts. Verdict-gated on Phase 23
 **Requirements**: STORE-01, STORE-02, STORE-03, STORE-04, STORE-05, STORE-06, CUT-01, CUT-02, CUT-03
 **Success Criteria** (what must be TRUE):
 
   1. A caller creates and queries labels, comments, per-range data typing (code, byte, word, address, PETSCII, screencode, table), scopes and project enums through MCP tools **this project owns**, declared in `capability-registry.ts` and advertised identically on the stock and fork manifests. The family registers proxy-locally and never reaches `forwardToVice()`, so backend-agnosticism is structural rather than tested once per backend — asserted over the shipped module set, not by a hand-maintained list.
   2. **Durability is proven by planted violation, not by a passing happy path.** An edit is undoable, and a mutate → kill → reopen → read sequence returns the mutation; removing the save makes that same test go **red**, observed rather than assumed.
-  3. The capability `R2000-11` shipped survives the substrate swap: *which addresses reference this address*, and search across labels, comments and instructions, are still answerable — against a program analysed by the new engines, with the old route gone rather than kept as a fallback.
+  3. The capability `ANNO-11` shipped survives the substrate swap: *which addresses reference this address*, and search across labels, comments and instructions, are still answerable — against a program analysed by the new engines, with the old route gone rather than kept as a fallback.
   4. Exported ACME **reassembles under a real ACME** through the `--verify` seam that keys strictly on ACME's own result line, and both carried idioms are load-bearing in that reassembly: a self-modifying write target named by the `=*+$01` mid-instruction label reassembles byte-identically, and typed label prefixes carry the inferred type. Proven by the assembler, never by a string match on the exporter's own output — this project's own record is that an internally-checked opcode table still shipped 14 wrong entries.
-  5. The removal is real and stays removed: 19,181 lines of glue (9,087 non-test + 9,928 test) deleted, with a whole-tree grep gate **observed biting** on a planted reintroduction; every living document naming regenerator2000 as a required prerequisite corrected — install documentation, `CLAUDE.md`'s constraints, all seven skill playbooks — and what survives (`disasm-*.ts`, `r2000-d64.ts`, `memmap.json` with `r2000-regbits-gen.ts` and `r2000-enum-gen.ts`) reused under names that no longer say `r2000`.
+  5. The removal is real and stays removed: 19,181 lines of glue (9,087 non-test + 9,928 test) deleted, with a whole-tree grep gate **observed biting** on a planted reintroduction; every living document naming the external analyser as a required prerequisite corrected — install documentation, `CLAUDE.md`'s constraints, all seven skill playbooks — and what survives (`disasm-*.ts`, `anno-d64.ts`, `memmap.json` with `anno-regbits-gen.ts` and `anno-enum-gen.ts`) reused under names that no longer say `anno`.
 
 **Plans**: TBD
 
@@ -514,11 +514,11 @@ Notes:
 - **Verdict-gated** on Phase 23 like everything after it — recorded verdict **`no-go`** (rule **`R1`**) in `docs/phase23-real-release-gate-findings.md`; read its frontmatter `verdict` before writing any plan here.
 - **Scope amendment recorded by the verdict (rule `R1`).** `R1`'s consequence is milestone-level — *"secure a corpus first, or re-scope v0.6.0 to a claim explicitly qualified as fixture-only"* — and it carries no pre-mapped narrowing of any `STORE-*` or `CUT-*` requirement. The success criteria above stand **byte-identical** and are not rewritten by this verdict; what the verdict puts in question is whether this phase is reached as scoped at all, which is the milestone decision `R1` hands back.
 - The store is `DECOMP-01`'s substrate in v0.7.0, and per-range typing is the part nothing else in the stack records. Type for what v0.7.0 needs now, not for the minimum this milestone happens to exercise — `STORE-01` says so explicitly, and rebuilding the type vocabulary one milestone later is exactly the double-write this milestone's scoping decision exists to avoid.
-- **The MCP family registers through `buildViceTool()` and never reaches `forwardToVice()`** — the same structural route the `r2000_*` family used. That is what satisfies CLAUDE.md's derived-tool path-translation constraint *by construction*, with no interception to forget, and it makes the family backend-agnostic for free. Assert it over `package.json`'s `files[]`, the way `hostpath-consumers.test.ts` already does, rather than over a raw directory listing.
+- **The MCP family registers through `buildViceTool()` and never reaches `forwardToVice()`** — the same structural route the `anno_*` family used. That is what satisfies CLAUDE.md's derived-tool path-translation constraint *by construction*, with no interception to forget, and it makes the family backend-agnostic for free. Assert it over `package.json`'s `files[]`, the way `hostpath-consumers.test.ts` already does, rather than over a raw directory listing.
 - **The removal pattern is the `toacme` one**: a whole-tree grep gate proven to bite on a planted reintroduction, not a documented deletion. That precedent bit on a non-`SKILL.md` file, which is why the gate is whole-tree rather than playbook-scoped.
-- `CUT-03`'s blast radius is wider than the install docs: `CLAUDE.md` carries three regenerator2000 constraint bullets, `PROJECT.md` carries constraints, Out-of-Scope entries and Key Decisions rows, `THIRD-PARTY-NOTICES.md` carries the dual-licence notice, and all seven skill playbooks name the route. A skill pointing at a deleted route is worse than one pointing at nothing.
-- **Deleting r2000 also deletes what several committed guards read.** `r2000-spawn-seam.test.ts`, `docs-r2000-decisions.test.ts` and `r2000-answer-key.test.ts` — the last reading `.planning/phases/11-*/evidence/` with no existence guard — are pinned to the thing being removed. Plan their fate explicitly; discovering it in a red CI run at the phase gate is the avoidable version of this.
-- r2000's own C64 map is 732 labels, names only, no descriptions, and its first line excludes the entire hardware register file. Nothing in the store's machine knowledge comes from it; `memmap.json` (959 entries, 4 published sources) is the source and is already pinned upstream of the enum path by `memmapSha256`.
+- `CUT-03`'s blast radius is wider than the install docs: `CLAUDE.md` carries three the external analyser constraint bullets, `PROJECT.md` carries constraints, Out-of-Scope entries and Key Decisions rows, `THIRD-PARTY-NOTICES.md` carries the dual-licence notice, and all seven skill playbooks name the route. A skill pointing at a deleted route is worse than one pointing at nothing.
+- **Deleting anno also deletes what several committed guards read.** `spawn-seam.test.ts`, `docs-absorbed-decisions.test.ts` and `absorbed-answer-key.test.ts` — the last reading `.planning/phases/11-*/evidence/` with no existence guard — are pinned to the thing being removed. Plan their fate explicitly; discovering it in a red CI run at the phase gate is the avoidable version of this.
+- anno's own C64 map is 732 labels, names only, no descriptions, and its first line excludes the entire hardware register file. Nothing in the store's machine knowledge comes from it; `memmap.json` (959 entries, 4 published sources) is the source and is already pinned upstream of the enum path by `memmapSha256`.
 
 ### Phase 26: Automatic Annotation
 
@@ -579,7 +579,7 @@ avoided by holding `DECOMP-*`/`BUILD-*`/`EQUIV-*` for v0.7.0.
 
 **Why the cutover rides with the store rather than being its own phase.** The
 deletion is only safe once a replacement demonstrably produces the same facts,
-and `CUT-02`'s reuse decisions (`disasm-*.ts`, `r2000-d64.ts`, `memmap.json`
+and `CUT-02`'s reuse decisions (`disasm-*.ts`, `anno-d64.ts`, `memmap.json`
 plus the two generators) are decisions about what the store is built out of.
 Split apart, Phase 25 would end with the replacement standing beside its
 predecessor — exactly the state `CUT-01` exists to prevent — and a later phase
@@ -679,14 +679,14 @@ scope decision rather than archaeology.
 `.planning/phases/` accumulates across milestones by design.
 `docs-review-disposition.test.ts` asserts at least 150 review findings read out
 of `.planning/phases/` and explicitly excludes `.planning/milestones/`, and
-`r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no
+`absorbed-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no
 existence guard — archiving them turns both red. Every milestone close therefore
 passes `--no-archive-phases`. *As of the v0.7.0 open the count is **five**
 committed tests reading live paths under `.planning/phases/`, two of them by
 hard-coded relative path to Phase 19's `upstream-procedure-manifest.json` — which
 is a **design input** to v0.7.0, not merely a fixture, so the constraint is
 stronger now than when it was recorded. **Phase 32** deletes the subject of
-`r2000-answer-key.test.ts`; that guard's fate is planned there, not discovered at
+`absorbed-answer-key.test.ts`; that guard's fate is planned there, not discovered at
 a gate, and deleting it must be an explicit recorded choice rather than a side
 effect.*
 

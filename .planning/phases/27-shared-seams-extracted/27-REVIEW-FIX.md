@@ -48,11 +48,11 @@ Closing scoped run across all 14 touched files plus the four docs guards:
 review's minimal case returned exactly what it predicted:
 
 ```
-codeOnly('const a = "SHOULD_BE_BLANKED";\nconst r = /[`*_]/g;\nfunction spawnHere() { spawnSync(R2000_BIN, []); }\n')
+codeOnly('const a = "SHOULD_BE_BLANKED";\nconst r = /[`*_]/g;\nfunction spawnHere() { spawnSync(ANNO_BIN, []); }\n')
   => 'const a = ;\nconst r = /['
 ```
 
-and on the live set: `r2000-coverage.ts` 2329 raw lines -> **1107** lines of
+and on the live set: `anno-coverage.ts` 2329 raw lines -> **1107** lines of
 visible code, `incident-record.ts` 443 -> **89**. All seven exported functions
 the review named (`computeCommentVacuity`, `computeReproducibility`,
 `COVERAGE_REPORT_KEYS`, `coverageFindings`, `renderIncidentRecord`,
@@ -88,12 +88,12 @@ raw source still present in `codeOnly()`'s output?":
 So the blast radius was larger than the seven functions the review named by
 hand: nineteen exported symbols across the two modules were invisible.
 
-**Verified:** truncation gone (`r2000-coverage.ts` 2329 -> 1765, i.e. comment
+**Verified:** truncation gone (`anno-coverage.ts` 2329 -> 1765, i.e. comment
 stripping only; `incident-record.ts` 443 -> 389), all seven named symbols
 visible, `tsc --noEmit` clean, keep-mode idempotent across all 190 `.ts`/`.mts` files in
 the directory, and — the assertion that matters most — **all eight consuming
-guards still pass (207/207)**, including `r2000-spawn-seam.test.ts`'s
-`EXPECTED_R2000_SPAWN_SITES` set equality in both directions now that the two
+guards still pass (207/207)**, including `spawn-seam.test.ts`'s
+`EXPECTED_ANNO_SPAWN_SITES` set equality in both directions now that the two
 previously-truncated modules are fully visible. No third spawn site was hiding
 in the newly-visible ~1000 lines.
 
@@ -144,7 +144,7 @@ stays last, preserving the file's documented type-narrowing ordering.
 
 **Verified by planted violation, both eras.** Each of the four shapes appended
 to `block-class.ts` now reddens the guard by its own message
-(`block-class.ts imports from the ./r2000- family -- see trap 1 in its header`).
+(`block-class.ts imports from the ./anno- family -- see trap 1 in its header`).
 Against the pre-fix guard, the bare side-effect import and the `const` Map
 produced **zero** failures — measured, confirming the blindness.
 
@@ -180,7 +180,7 @@ zero remaining uses in the file). `tsc --noEmit` clean, 130/130 pass.
 adding **Direction 9b**: `prosePathCitations()` extracts every `path:NN`
 citation from `module-classification.ts`'s own source (header prose and
 `rationale`/`note` strings), including the bare `:NN` continuation shape
-(`at r2000-cli.ts:91 and :631`) which inherits the last path seen, exactly as it
+(`at anno-cli.ts:91 and :631`) which inherits the last path seen, exactly as it
 reads to a human and exactly how it drifts. Each citation is checked for: file
 exists, line exists, line is non-blank, and — where the prose names an adjacent
 symbol — the same containment check Direction 9 applies to structured
@@ -194,21 +194,21 @@ continuations). All 15 pass today, confirming the review's hand-check.
 **Deliberate scope limit, recorded rather than smuggled:** the symbol window is
 **same-source-line only**. A wider window was measured to reach back into the
 previous bullet and attribute that bullet's symbol to the
-`r2000-session.ts:294` citation — whose prose names no symbol at all ("the
+`anno-session.ts:294` citation — whose prose names no symbol at all ("the
 single-flight session queue … onward") — reddening a *correct* record. Five of
 fifteen citations therefore get full containment; all fifteen get
 existence/line/non-blank. Under-reaching costs coverage; over-reaching costs
 trust in the guard.
 
 **Verified by planted violation, five drift classes:** symbol containment onto a
-non-blank wrong line (`cites r2000-verify.ts:120 for acmeVerdict, but that line
+non-blank wrong line (`cites anno-verify.ts:120 for acmeVerdict, but that line
 does not contain it`), a blank cited line, a renamed file, a line past
 end-of-file, and the bare `:NN` continuation. All five caught with the citation
 named.
 
 ### WR-07: the `.d64` composition test degrades a broken checkout into a green SKIP, and its dynamic import removes `tsc` from the boundary the phase most needed verified
 
-**Files modified:** `src/mcp/vice/r2000-d64.test.ts`
+**Files modified:** `src/mcp/vice/anno-d64.test.ts`
 **Commit:** `3565de8`
 
 **Applied fix:** both halves. Deleted the `existsSync` probe and the
@@ -223,13 +223,13 @@ recreated WR-05/IN-07's defect in the same commit.
 
 **Verified that the fix does what it claims:** renaming `parsePrg` away in
 `prg-image.ts` now produces
-`r2000-d64.test.ts(11,10): error TS2305: Module './prg-image.ts' has no exported
+`anno-d64.test.ts(11,10): error TS2305: Module './prg-image.ts' has no exported
 member 'parsePrg'.` The moved-symbol boundary — the phase's central risk — is
 back under the typechecker. 16 pass, **0 skipped** (was a skip candidate).
 
 ### WR-08: two new assertions pin a fixture-derived absolute count, with no message
 
-**Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
+**Files modified:** `src/mcp/vice/anno-coverage.test.ts`
 **Commit:** `f8d43e6`
 
 **Applied fix:** replaced both `assert.equal(before.divergence.censusCodeStoreNotCode, 0)`
@@ -241,37 +241,37 @@ in a different test and were not in scope.
 
 ### WR-09: the block-literal SUPPLEMENT scans raw source, so a comment quoting the store's spelling reddens it
 
-**Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
+**Files modified:** `src/mcp/vice/anno-coverage.test.ts`
 **Commit:** `a371cad`
 
 **Applied fix:** `codeOnly(readFileSync(...), true)` — keep-mode, since the
 thing being searched for *is* a string literal.
 
 **Verified both directions:** a comment discussing the store's `"Code"` spelling
-appended to `r2000-coverage.ts` no longer reddens the supplement (112 pass, 0
+appended to `anno-coverage.ts` no longer reddens the supplement (112 pass, 0
 fail), while a real `export const SNEAKY = "Code";` still does
 (`not ok 8 - SUPPLEMENT (not the proof) …`). The gate got narrower in exactly
 the intended dimension and no wider.
 
-### WR-10: `r2000-test-gate.ts`'s "capability" verdict is internally tense and is not marked contested
+### WR-10: `anno-test-gate.ts`'s "capability" verdict is internally tense and is not marked contested
 
 **Files modified:** `src/mcp/vice/module-classification.ts`
 **Commit:** `d16f923`
 
-**Applied fix:** added a `CONTESTED` paragraph in the shape the `r2000-verify.ts`
+**Applied fix:** added a `CONTESTED` paragraph in the shape the `anno-verify.ts`
 entry already uses — naming both measurements in tension (every one of the ten
-importers is an `r2000-*.test.ts`, so every consumer dies with the substrate;
+importers is an `anno-*.test.ts`, so every consumer dies with the substrate;
 and the substrate-independent half already left for `acme-gate.ts` this same
 phase), stating that what a later reader carries forward is the **discipline**
 (now embodied twice, which is what proves it generalises), and stating
 explicitly what the verdict must NOT be read as.
 
 **Re-verified the review's measurement before writing it down:** exactly ten
-importers of `r2000-test-gate.ts`, every one `r2000-*`.
+importers of `anno-test-gate.ts`, every one `anno-*`.
 
 This commit also repairs a **line citation my own WR-07 fix drifted**: removing
-`r2000-d64.test.ts`'s import block shifted `sectorsPerTrack` from line 13 to
-line 10, and Direction 9 caught it (`cites src/mcp/vice/r2000-d64.test.ts:13
+`anno-d64.test.ts`'s import block shifted `sectorsPerTrack` from line 13 to
+line 10, and Direction 9 caught it (`cites src/mcp/vice/anno-d64.test.ts:13
 for sectorsPerTrack, but that line does not contain it`). The structured-citation
 guard doing its job on a real edit, which is incidentally the best available
 argument for WR-06.
@@ -294,7 +294,7 @@ the header now truthfully states. 6/6 pass.
 
 ### WR-12: "PRODUCTION MUST NOT PASS THIS" is the one invariant in this phase with no mechanical gate
 
-**Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
+**Files modified:** `src/mcp/vice/anno-coverage.test.ts`
 **Commit:** `ab4cd01`
 
 **Applied fix:** added a supplement built from the enumerator and stripper this
@@ -302,8 +302,8 @@ phase extracted — for every `shippedTsModules()` entry except the declaration
 site, `/\bblockClassifier\s*:/` must not appear in `codeOnly()` output.
 
 **Verified by planted violation:** `export const PLANTED = { blockClassifier: null };`
-appended to `r2000-project.ts` fails with
-`shipped module(s) inject a block classifier: r2000-project.ts`.
+appended to `anno-project.ts` fails with
+`shipped module(s) inject a block classifier: anno-project.ts`.
 
 ### IN-01: `codeOnly()` declares two loop-local flags at function scope
 
@@ -316,13 +316,13 @@ each iteration.
 
 ### IN-02: `SPAWN_CALL_RE`'s doc comment describes behaviour `codeOnly()` does not have and names a function that does not exist
 
-**Files modified:** `src/mcp/vice/r2000-spawn-seam.test.ts`
+**Files modified:** `src/mcp/vice/spawn-seam.test.ts`
 **Commit:** `32800d0`
 
 **Applied fix:** the comment now says a string-literal first argument
 "contributes nothing at all" and surfaces as `spawnSync(, …)` so the identifier
-group cannot match, and names the real predicate `isR2000SpawnCall()`. The
-phantom `isR2000BinaryExpression()` no longer appears anywhere in the file.
+group cannot match, and names the real predicate `isAnnoSpawnCall()`. The
+phantom `isAnnoBinaryExpression()` no longer appears anywhere in the file.
 
 ### IN-03: a relocated assertion's regex matcher is satisfied by the wrong number
 
@@ -358,7 +358,7 @@ assert-to-throw upgrade the header already justifies further down.
 
 ### IN-06: formatting artefacts left by the deletions
 
-**Files modified:** `src/mcp/vice/r2000-spawn-seam.test.ts`, `src/mcp/vice/comment-phase-pointers.test.ts`
+**Files modified:** `src/mcp/vice/spawn-seam.test.ts`, `src/mcp/vice/comment-phase-pointers.test.ts`
 **Commits:** `32800d0` (the re-flowed header clause), `78c6f7a` (the duplicate blank line)
 
 **Applied fix:** re-flowed the sentence broken mid-clause ("Within that derived
@@ -367,15 +367,15 @@ the double blank line left where `comment-phase-pointers.test.ts`'s local
 enumerator was deleted.
 
 Split across two commits because the finding spans two files and the
-`r2000-spawn-seam.test.ts` half sits in the same header block as IN-02's fix;
+`spawn-seam.test.ts` half sits in the same header block as IN-02's fix;
 both ids are named in their commit messages.
 
 ### IN-07: pre-existing unused import moved by this phase
 
-**Files modified:** `src/mcp/vice/r2000-verify.test.ts`
+**Files modified:** `src/mcp/vice/anno-verify.test.ts`
 **Commit:** `8830385`
 
-**Applied fix:** dropped `R2000_BIN` from the import list. As the review
+**Applied fix:** dropped `ANNO_BIN` from the import list. As the review
 required, re-checked `module-classification.ts:463`'s citation in the same
 change: line 40 still holds the `skipReasonFor` import (the line shortened, it
 did not move), so the citation stays valid — and Direction 9 confirms it,
@@ -388,7 +388,7 @@ edits to the same region of the same file and separating them would have meant
 committing a half-edited file:
 
 - `e5a07e9` — WR-03 and WR-04, both in `block-class.test.ts`'s guard block.
-- `32800d0` — IN-02 and IN-06, both in `r2000-spawn-seam.test.ts`'s header/doc
+- `32800d0` — IN-02 and IN-06, both in `spawn-seam.test.ts`'s header/doc
   region.
 
 Every other finding is one commit. Every id appears in at least one commit
@@ -420,19 +420,19 @@ files:
 | file | failures | cause |
 |---|---|---|
 | `vice-proxy.test.ts` | 39 | needs a live host; on `test-gate.mjs`'s frozen `MANUAL_ONLY_TESTS` list |
-| `r2000-session.test.ts` | 6 | `regenerator2000` not on `PATH` (confirmed absent) |
+| `anno-session.test.ts` | 6 | `the external analyser` not on `PATH` (confirmed absent) |
 
 **Zero failures anywhere else across 2418 tests.** Nothing this run touched
 regressed.
 
-The `r2000-session.test.ts` count needs one note, since the phase's environment
+The `anno-session.test.ts` count needs one note, since the phase's environment
 brief says 5 rather than 6. Run **in isolation** that file fails exactly **5**
 (25 tests: 14 pass, 5 fail, 6 skipped) — the documented number. The sixth
 failure only appears under the full glob's parallel load and is
 `stub: a child that answers nothing within the call timeout rejects with
-R2000TimeoutError…`, a timeout-sensitive test. It is a load-induced flake, not a
-regression: `r2000-session.test.ts` imports only `r2000-tools.ts`,
-`r2000-project.ts` and `r2000-test-gate.ts`, none of which this run modified,
+AnnoTimeoutError…`, a timeout-sensitive test. It is a load-induced flake, not a
+regression: `anno-session.test.ts` imports only `anno-tools.ts`,
+`anno-project.ts` and `anno-test-gate.ts`, none of which this run modified,
 and the single production behaviour change anywhere in this run
 (`block-class.ts`'s `Array.isArray` early return, IN-04) sits on a path both
 production callers make unreachable by pre-guarding with

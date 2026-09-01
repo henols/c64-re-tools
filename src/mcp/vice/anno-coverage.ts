@@ -6,7 +6,7 @@
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
 // COV-01 asks for a coverage instrument, and the obvious implementation --
-// ask regenerator2000 how much of the image it has classified as `Code` and
+// ask the external analyser how much of the image it has classified as `Code` and
 // call that "completeness" -- is CIRCULAR, and provably so at upstream's own
 // source. `follow_indirect_jumps()` (`analyzer.rs:445-540` at the pinned
 // commit) walks a linear sweep over bytes whose `block_types` entry is
@@ -66,7 +66,7 @@
 //      listing enters this file only through `block-class.ts` and leaves it
 //      as a comparison. A "completeness" number sourced from the block table
 //      measures the annotator's bookkeeping, not the annotation -- and mass
-//      `r2000_set_data_type` calls would move it for free. Nor may this file
+//      `anno_set_data_type` calls would move it for free. Nor may this file
 //      compare a store block-type string directly: the boundary owns that
 //      vocabulary, and a comparison written here would be a second answer to
 //      "what class is this address" beside the one the boundary gives.
@@ -86,8 +86,8 @@
 //      `./anno-confidence.ts` is the only one; that module's own header
 //      forbids a second spelling.
 //   5. NEVER import this repository's host-path or container-path translation
-//      modules. The whole r2000 module family is asserted ABSENT from that
-//      consumer set by a derived-from-disk scan (the `r2000-*.ts` glob in the
+//      modules. The whole anno module family is asserted ABSENT from that
+//      consumer set by a derived-from-disk scan (the `anno-*.ts` glob in the
 //      path-consumer guard suite), and this file joins that family by name --
 //      an import here would fail that guard rather than merely violate a
 //      convention. Note that the guard's own filename is deliberately not
@@ -195,13 +195,13 @@ export const SPLIT_TABLE_WINDOW = 8;
 
 // ---------------------------------------------------------------------------
 // Input shapes -- exactly what the curated read tools return
-// (`r2000-tools.ts`: r2000_get_symbols / r2000_get_comments / r2000_get_blocks
-// / r2000_get_cross_references). This module never calls those tools itself;
+// (`anno-tools.ts`: anno_get_symbols / anno_get_comments / anno_get_blocks
+// / anno_get_cross_references). This module never calls those tools itself;
 // a caller fetches and hands the data in. That is what keeps it pure, keeps
 // it session-free, and keeps it testable with no child process.
 // ---------------------------------------------------------------------------
 
-export interface R2000Symbol {
+export interface AnnoSymbol {
   address: number;
   name: string;
   /** `LabelKind`'s Debug form: `"User"`, `"Auto"` or `"System"`. */
@@ -210,7 +210,7 @@ export interface R2000Symbol {
   type?: string;
 }
 
-export interface R2000Comment {
+export interface AnnoComment {
   address: number;
   /** `"line"` or `"side"`. */
   type: string;
@@ -221,9 +221,9 @@ export interface R2000Comment {
 // `block-class.ts` as `BlockEntry`, together with the one function allowed to
 // interpret its `type` field -- see invariant 1 above.
 
-export interface R2000CrossReference {
+export interface AnnoCrossReference {
   address: number;
-  /** The sorted, deduped caller list `r2000_get_cross_references` returns. */
+  /** The sorted, deduped caller list `anno_get_cross_references` returns. */
   callers: readonly number[];
 }
 
@@ -231,7 +231,7 @@ export interface R2000CrossReference {
 // Errors
 // ---------------------------------------------------------------------------
 
-export interface R2000CoverageInputErrorOptions {
+export interface AnnoCoverageInputErrorOptions {
   cause?: unknown;
   projectPath?: string;
 }
@@ -242,15 +242,15 @@ export interface R2000CoverageInputErrorOptions {
  * gunzip, or a project file that is not JSON, is reported as an explicit
  * `payloadDecoded: false` plus a reason (COV-02's "never a silent skip", and
  * never a throw the caller has to guess at either). Mirrors
- * `R2000ProjectSettingsError`'s named-field convention so a caller never has
+ * `AnnoProjectSettingsError`'s named-field convention so a caller never has
  * to parse message text to recover the path.
  */
-export class R2000CoverageInputError extends Error {
+export class AnnoCoverageInputError extends Error {
   projectPath: string | undefined;
 
-  constructor(message: string, { cause, projectPath }: R2000CoverageInputErrorOptions = {}) {
+  constructor(message: string, { cause, projectPath }: AnnoCoverageInputErrorOptions = {}) {
     super(message);
-    this.name = "R2000CoverageInputError";
+    this.name = "AnnoCoverageInputError";
     this.projectPath = projectPath;
     if (cause !== undefined) {
       (this as { cause?: unknown }).cause = cause;
@@ -1415,7 +1415,7 @@ export interface LabelRatioOptions {
   excludeUserAddresses?: Iterable<number>;
 }
 
-export function computeLabelRatio(symbols: readonly R2000Symbol[], opts: LabelRatioOptions = {}): LabelRatio {
+export function computeLabelRatio(symbols: readonly AnnoSymbol[], opts: LabelRatioOptions = {}): LabelRatio {
   const list = Array.isArray(symbols) ? symbols : [];
   const excluded = new Set<number>([...(opts.excludeUserAddresses ?? [])]);
 
@@ -1539,7 +1539,7 @@ interface ParsedComment {
   normalised: string;
 }
 
-function parseLineComments(comments: readonly R2000Comment[]): ParsedComment[] {
+function parseLineComments(comments: readonly AnnoComment[]): ParsedComment[] {
   const list = Array.isArray(comments) ? comments : [];
   const byAddress = new Map<number, ParsedComment>();
   for (const entry of list) {
@@ -1565,7 +1565,7 @@ function parseLineComments(comments: readonly R2000Comment[]): ParsedComment[] {
   return [...byAddress.values()].sort((a, b) => a.address - b.address);
 }
 
-export function computeCommentVacuity(comments: readonly R2000Comment[]): CommentVacuity {
+export function computeCommentVacuity(comments: readonly AnnoComment[]): CommentVacuity {
   const parsed = parseLineComments(comments);
   const commentedAddresses = parsed.length;
 
@@ -1659,10 +1659,10 @@ export interface Reproducibility {
 export interface ReproducibilityInput {
   census: StructuralCensus;
   dispatch: IndirectDispatchScan;
-  symbols: readonly R2000Symbol[];
-  comments: readonly R2000Comment[];
+  symbols: readonly AnnoSymbol[];
+  comments: readonly AnnoComment[];
   blocks: readonly BlockEntry[];
-  crossReferences: readonly R2000CrossReference[];
+  crossReferences: readonly AnnoCrossReference[];
   sampleSize?: number;
   /** REQUIRED, with NO default. The store side's block vocabulary reaches
    * this function only through here. An internal caller that forgets it is a
@@ -1704,8 +1704,8 @@ function classFromStore(gradeToken: string | null, blockClass: BlockClass | null
  * from an annotation store the operator did not necessarily author
  * (a cracked release's annotation store, a shared project). A name carrying
  * regex metacharacters must therefore become text rather than a pattern.
- * Same discipline `skill-attribution.test.ts` applies to manifest-sourced
- * strings. */
+ * Same discipline this repository applies to any externally-sourced string
+ * that reaches a regex. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -1750,7 +1750,7 @@ const CALLER_CITATION_ALTERNATION = CALLER_CITATION_WORDS.map(
  * address -- AS A REFERENCE to that caller?
  *
  * THE DECISION, RECORDED (WR-13). Bare presence of the name is NOT enough.
- * regenerator2000 label names are routinely ordinary English words -- `loop`,
+ * the external analyser label names are routinely ordinary English words -- `loop`,
  * `init`, `main`, `start`, `data`, `table`, `draw` -- and an ordinary
  * description of what a routine does will contain one by accident. The
  * reproduced case: callers `[$0012, $0034]`, comment "sets the mode flag
@@ -2072,10 +2072,10 @@ export const COVERAGE_REPORT_KEYS: readonly string[] = [
 
 export interface CoverageOptions {
   projectPath: string;
-  symbols?: readonly R2000Symbol[];
-  comments?: readonly R2000Comment[];
+  symbols?: readonly AnnoSymbol[];
+  comments?: readonly AnnoComment[];
   blocks?: readonly BlockEntry[];
-  crossReferences?: readonly R2000CrossReference[];
+  crossReferences?: readonly AnnoCrossReference[];
   /** Extra descent seeds beyond the origin and the `User` label addresses. */
   entryPoints?: readonly number[];
   sampleSize?: number;
@@ -2208,7 +2208,7 @@ export function loadProjectImage(projectPath: string): LoadedProject {
     // EISDIR) that carries no byte of the file's content, so it is left
     // interpolated on purpose; plan 29-14 left the equivalent read-failure
     // branch on the sibling verb alone for exactly this reason.
-    throw new R2000CoverageInputError(
+    throw new AnnoCoverageInputError(
       `buildCoverageReport: could not read ${projectPath} -- ${err instanceof Error ? err.message : String(err)}`,
       { cause: err, projectPath },
     );
@@ -2297,7 +2297,7 @@ export function loadProjectImage(projectPath: string): LoadedProject {
  */
 export function buildCoverageReport(opts: CoverageOptions): CoverageReport {
   if (!opts || typeof opts.projectPath !== "string" || opts.projectPath.length === 0) {
-    throw new R2000CoverageInputError("buildCoverageReport: projectPath is required and must be a non-empty string");
+    throw new AnnoCoverageInputError("buildCoverageReport: projectPath is required and must be a non-empty string");
   }
 
   const symbols = opts.symbols ?? [];

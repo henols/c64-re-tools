@@ -1,5 +1,5 @@
 // anno-enum-gen.test.ts -- coverage for anno-enum-gen.ts (D-20/D-22/D-23,
-// R2000-13): the pinned variantNameFor() target, decoding totality across all
+// ANNO-13): the pinned variantNameFor() target, decoding totality across all
 // 256 values for four registers, sanitization refusals, the adjacent-pair
 // rule, D-20's one-variant-per-distinct-value plan, and the truncation-signal
 // wording contract.
@@ -312,7 +312,7 @@ test("buildEnumGenerationReport: a run below its ceiling says NOTHING about trun
   assert.equal(report.pass2Truncated, false);
 });
 
-test("buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible", () => {
+test("buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible", () => {
   const pairing = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$d011")]);
   const report = buildEnumGenerationReport(pairing, [
     { regKey: "$D011", enumName: "D011", variantCount: 1, action: "updated", usagesApplied: 1 },

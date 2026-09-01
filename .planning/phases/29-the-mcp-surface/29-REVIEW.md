@@ -103,10 +103,10 @@ pre-existing untracked files.
 | `WR-01` | **CLOSED** by 29-19 (`0b84ff5` feat, `f23bd6e` RED test) | required-flag presence checked from a shared table; gate re-declaration is structurally forbidden. Residual holes are a **new** finding (`WR-18`), not this one reopening |
 | `WR-02` | **PARTIALLY CLOSED** by 29-20 (`23cae55`, `c8503f9`, `2da457d`) | the positional half of the inventory is now derived from `--help` in both directions, and the three over-claiming headers are corrected to state the narrower property. The aggregate-count limit itself is **unchanged and now named in four places** — an honest deferral, not a fix |
 | `WR-03` | OPEN, untouched | `check-npm-packages.mjs` not in this round's diff |
-| `WR-04` | OPEN, untouched — and its measurement has moved | the raw NUL is still at `anno-memmap-render.ts:315`, but the import edit on line 72 shifted its byte offsets to **15097 and 15118** (the ledger text above records 15074, measured pre-round). `check-no-regenerator2000.mjs`'s two "offset 12862 (line 291)" citations remain stale. Nothing mechanical catches either drift |
+| `WR-04` | OPEN, untouched — and its measurement has moved | the raw NUL is still at `anno-memmap-render.ts:315`, but the import edit on line 72 shifted its byte offsets to **15097 and 15118** (the ledger text above records 15074, measured pre-round). `check-no-analyser.mjs`'s two "offset 12862 (line 291)" citations remain stale. Nothing mechanical catches either drift |
 | `WR-05` | **CLOSED**, with one named residual **confirmed** | 29-20 re-spelled the synopsis to `coverage <image>`, named the three image forms, corrected "beside the project" → "beside the STORE", and added the payload-decode exit path. All four re-verified against the code. **Residual confirmed, exactly as `29-20-SUMMARY.md` predicts it:** `anno-cli.ts:921` still reads `will not derive its path from <project>`, and `scripts/lib/anno-cli-invocations.mjs:158` quotes that sentence *verbatim* as `REQUIRED_FLAGS`' provenance. The coupling is real — the two must move in one commit or the quote stops being a quote. Not re-raised as a new id; already on record |
 | `WR-06`..`WR-13` | OPEN, untouched (dispositioned OPEN-AS-WARNING) | none of `anno-derive.ts`, `anno-store.ts`, `anno-tools.ts`, `prg-image.ts`, `anno-coverage.ts` is in this round's diff |
-| `WR-14`, `WR-15`, `WR-16` | DEFERRED ON RECORD, unchanged | no disagreement with the deferrals; `runR2000Cli` is still the exported entry point (`anno-cli.test.ts` still calls it), which is what the `WR-16` deferral says |
+| `WR-14`, `WR-15`, `WR-16` | DEFERRED ON RECORD, unchanged | no disagreement with the deferrals; `runAnnoCli` is still the exported entry point (`anno-cli.test.ts` still calls it), which is what the `WR-16` deferral says |
 
 Two prior citations were re-verified rather than assumed and are **correct**:
 `module-classification.ts`'s three updated line references (`anno-cli.ts:106`, `:111`, `:234`) all
@@ -620,12 +620,12 @@ else if (process.argv[1] !== undefined && basename(process.argv[1]) === basename
 }
 ```
 
-`check-no-regenerator2000.mjs` keeps importing `packFiles` and is unaffected.
+`check-no-analyser.mjs` keeps importing `packFiles` and is unaffected.
 
 ### WR-04 (NEW): a literal NUL byte was introduced into a shipped source file, and the gate that documents the hazard cites a stale offset twice
 
 **File:** `src/mcp/vice/anno-memmap-render.ts:315`; citations at
-`scripts/check-no-regenerator2000.mjs:65-67` and `:815`
+`scripts/check-no-analyser.mjs:65-67` and `:815`
 
 **Issue:** `computeRenderDigest()`'s canonicalisation embeds a raw `0x00` byte in its separator
 string literal rather than a `\u0000` escape sequence:
@@ -654,7 +654,7 @@ const canonical = JSON.stringify({ blocks, symbols, comments }) + DIGEST_FIELD_S
 ```
 
 The digest input is byte-identical, so no fixture or pin moves. Then delete both stale offsets from
-`check-no-regenerator2000.mjs` — with the raw byte gone the caveat is historical, and rule 4
+`check-no-analyser.mjs` — with the raw byte gone the caveat is historical, and rule 4
 ("never shell out to grep, never skip a file that looks binary") stands on its own without a
 line-number citation that has to be maintained.
 
@@ -854,7 +854,7 @@ way.
 
 ### WR-15 (DEFERRED ON RECORD — was WR-13): the removal gate's `exemptionFor()` short-circuits
 
-**File:** `scripts/check-no-regenerator2000.mjs:773-797`
+**File:** `scripts/check-no-analyser.mjs:773-797`
 
 **Issue:** Still present and **deliberately deferred on a recorded decision** — raised here as a
 pointer only, not as a new demand. For a path in a `blockScoped` or `skillBlocks` class, an
@@ -869,12 +869,12 @@ remaining `EXEMPTION_CLASSES`; the `atLines` branch immediately above correctly 
 
 **File:** `src/mcp/vice/anno-cli.ts:866`; `src/mcp/vice/vice-proxy.ts:300`, `:307`
 
-**Issue:** Plan 29-16 closed the user-facing half — both `r2000:` message prefixes are now `anno:`
-(`anno-cli.ts:1017`, `:1026`), `anno-cli-verbs.mjs`'s stale `extractedR2000`/floor cross-reference
+**Issue:** Plan 29-16 closed the user-facing half — both `anno:` message prefixes are now `anno:`
+(`anno-cli.ts:1017`, `:1026`), `anno-cli-verbs.mjs`'s stale `extractedAnno`/floor cross-reference
 is repaired, and `check-npm-packages.mjs:235-251` is marked explicitly past-tense with the
 pre-deletion names. What remains is **deferred on a recorded decision**
-(`<wr14_scope_decision>`): the exported entry point is still `runR2000Cli` and the test hatch is
-still `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`. Noted so the deferral stays visible rather than
+(`<wr14_scope_decision>`): the exported entry point is still `runAnnoCli` and the test hatch is
+still `VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES`. Noted so the deferral stays visible rather than
 becoming invisible, not re-litigated.
 
 **Fix (when the deferral is lifted):** rename both together with their two consumers

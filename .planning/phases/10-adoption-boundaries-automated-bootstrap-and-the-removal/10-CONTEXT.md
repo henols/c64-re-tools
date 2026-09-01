@@ -6,20 +6,20 @@
 <domain>
 ## Phase Boundary
 
-regenerator2000 becomes a **guarded, declared, container-side static-analysis
+The external analyser becomes a **guarded, declared, container-side static-analysis
 prerequisite** that turns a raw binary into an analysed `.regen2000proj` with no
 human in the loop — and the one thing it makes obsolete (`acme-build`'s
 `toacme`-backed `disasm` verb plus its caveat section) is deleted.
 
 This is **Tier 1 — CLI shell-out only**. No ports, no process lifecycle, no
-`r2000_*` MCP tools. The same shape as `acme-build` calling `acme`. The
+`anno_*` MCP tools. The same shape as `acme-build` calling `acme`. The
 annotation store, the MCP server and the symbol round trip are **Phase 11**.
 
-Requirements in scope: `R2000-01`, `R2000-02`, `R2000-03`, `R2000-09`,
-`R2000-05`, `R2000-06` (6).
+Requirements in scope: `ANNO-01`, `ANNO-02`, `ANNO-03`, `ANNO-09`,
+`ANNO-05`, `ANNO-06` (6).
 
 **Gate satisfied:** Phase 9's recorded verdict is `degrade` / rule `R4`
-(`docs/phase9-regenerator2000-probe-findings.md` frontmatter). Criteria 2a/2b
+(`docs/phase9-external-analyser-probe-findings.md` frontmatter). Criteria 2a/2b
 passed cleanly, so criterion 3 proceeds as a **real automated bootstrap**, not a
 documented manual step.
 
@@ -28,15 +28,15 @@ documented manual step.
 <decisions>
 ## Implementation Decisions
 
-### Bootstrap mechanism (criterion 3 — `R2000-09`)
+### Bootstrap mechanism (criterion 3 — `ANNO-09`)
 
 - **D-01 (Claude's call, evidence-backed): the bootstrap synthesises the
   `.regen2000proj` file directly in Node. It does not drive the TUI.** The user
   declined to pick a mechanism ("not sure it's your job to figure that out" — it
   isn't theirs), so this is decided from evidence gathered live during the
-  discussion against the installed regenerator2000 0.9.20:
+  discussion against the installed analyser 0.9.20:
   - `ProjectState`
-    (`~/.cargo/registry/src/index.crates.io-*/regenerator2000-core-0.9.20/src/state/project.rs:41-96`)
+    (`~/.cargo/registry/src/index.crates.io-*/external-analyser-core-0.9.20/src/state/project.rs:41-96`)
     has exactly **three** fields without `#[serde(default)]`: `origin`,
     `raw_data_base64`, `blocks`. Everything else — `version` included — defaults.
   - The project file is **plain JSON**. Only the `raw_data_base64` *value* is
@@ -45,7 +45,7 @@ documented manual step.
     gzip header`; gzipping the payload fixed it.
   - A ~15-line Node function producing
     `{origin, raw_data_base64: gzip(body), blocks: [], settings: {...}}` from a
-    `.prg` was loaded by `regenerator2000 --headless --export_asm out.a
+    `.prg` was loaded by `analyser --headless --export_asm out.a
     --assembler acme`, auto-analysed, and exported correct ACME source —
     including all six illegal opcodes (`lax`, `sax`, `slo`, `dcp`, `isc`, `anc`)
     correctly decoded, cross-references resolved, and a `!cpu 6510` assemble
@@ -73,12 +73,12 @@ documented manual step.
 - **D-03: the input set is `.prg`, `.d64` (named entry), and flat 64K `.raw`.
   `.vsf` is dropped from this phase.**
   - `.prg` and `.d64` are the user's explicit answer.
-  - Flat 64K is **kept because `R2000-06` names it** ("A `.prg` **or flat 64K
+  - Flat 64K is **kept because `ANNO-06` names it** ("A `.prg` **or flat 64K
     capture** becomes reassemblable ACME source"), it is what
     `c64-ram-capture` already produces, and D-01 makes it a two-line case
     (`origin: 0`, whole buffer) — proven working above. Dropping it would leave
-    `R2000-06` partly unmet.
-  - `.vsf` is dropped because under D-01 we never hand r2000 a container format
+    `ANNO-06` partly unmet.
+  - `.vsf` is dropped because under D-01 we never hand anno a container format
     at all, and parsing VICE snapshots ourselves is real new work whose only
     payoff — machine-type and start-address auto-detection — Phase 9 proved
     unreliable for the machine-type field anyway.
@@ -90,12 +90,12 @@ documented manual step.
 
 - **D-04: version tolerance comes from minimality plus a self-check, not from a
   version pin.** The user asked for "the simplest and cleverest way to support
-  any version of regenerator2000". Write **only** the three required fields plus
+  any version of the external analyser". Write **only** the three required fields plus
   the settings we deliberately force — every other field is `#[serde(default)]`,
   so a minimal file is maximally forward-compatible by construction. Then prove
-  it loaded by actually running r2000 once and checking the result, rather than
+  it loaded by actually running anno once and checking the result, rather than
   consulting a version table. **No `--version` allow-list**, no known-good range:
-  a version gate would block users on a newer r2000 that works fine, and would
+  a version gate would block users on a newer anno that works fine, and would
   not detect a schema break within a permitted version anyway.
 
 - **D-05 (Claude's call — user said "you decide"): every generated project
@@ -106,7 +106,7 @@ documented manual step.
   Phase 9's `.vsf` machine-type limit. A flag can be added later if a non-C64
   target ever appears — that is not this milestone.
 
-### Adoption boundaries (criteria 1-2 — `R2000-01`, `R2000-02`)
+### Adoption boundaries (criteria 1-2 — `ANNO-01`, `ANNO-02`)
 
 - **D-06 (Claude's call — user said "you decide"): the guarded launch seam is a
   module under `.claude/mcp/vice/`, with a thin skill-side entry point for CLI
@@ -121,7 +121,7 @@ documented manual step.
     `watch-loads.test.mjs` and `dump-artifacts.test.mjs` are all unrun. A guard
     test living in a skill script would be green-by-absence, and criteria 1 and
     2 both say "pinned by a test".
-  - Phase 11 puts the `r2000_*` MCP surface in that directory regardless, so the
+  - Phase 11 puts the `anno_*` MCP surface in that directory regardless, so the
     seam is already where it will be needed — no relocation later.
   - **Open for research:** exactly how the skill-side entry reaches the seam.
     A skill `.mjs` importing a `.ts` module across the package boundary is
@@ -142,19 +142,19 @@ documented manual step.
   silently — a silent strip hides the bug.
 
 - **D-08: criterion 2's no-translation absence is asserted by extending
-  `hostpath-consumers.test.ts`'s closed consumer set**, adding the r2000 module
+  `hostpath-consumers.test.ts`'s closed consumer set**, adding the anno module
   to the "must be absent from the hostpath consumer set" side — the exact mirror
   of `DERIV-07`, where translation was wrongly applied. Do **not** write a new
   bespoke test for this; the closed-consumer-set mechanism already exists and
   already runs in CI.
 
-### The reassembly proof (criterion 4 — `R2000-06`)
+### The reassembly proof (criterion 4 — `ANNO-06`)
 
-- **D-09 (user): lean on regenerator2000's own `--verify`** rather than building
+- **D-09 (user): lean on the external analyser's own `--verify`** rather than building
   an independent export-assemble-diff harness. `--verify` already spawns a real
   assembler; on the synthesised fixture it reported
   `✓ ACME — byte-identical (44 bytes)` (and ca65 likewise). The caveat was put
-  to the user — this is r2000 checking its own export, the shape of internal
+  to the user — this is anno checking its own export, the shape of internal
   check this project has been burned by repeatedly — and they chose it anyway.
   Recorded as their decision.
 
@@ -170,18 +170,18 @@ documented manual step.
     matters be skipped silently. Assert the ACME line is `✓` and **fail on
     `skipped`**.
 
-- **D-11 (Claude's call): CI does not install regenerator2000.** The check is a
-  named SKIP when r2000 is absent and a hard FAIL under a `VICE_REQUIRE_R2000`
+- **D-11 (Claude's call): CI does not install the external analyser.** The check is a
+  named SKIP when anno is absent and a hard FAIL under a `VICE_REQUIRE_ANNO`
   env var — exactly `disasm-roundtrip.test.ts`'s `VICE_REQUIRE_ACME` pattern,
   including its "exactly one test always runs, never skipped" availability gate.
-  Rationale: `cargo install regenerator2000` measured **4m48s–5m39s** and needs
+  Rationale: `cargo install analyser` measured **4m48s–5m39s** and needs
   a Rust toolchain at **rustc >= 1.90**; the user chose `--verify` for being
   "cheapest by far", and putting a five-minute Rust build on every merge
   contradicts that. The phase records its live `--verify` evidence in its own
   artifacts instead. Never use a hand-rolled `if (!available) return` — that
   reports a false PASS rather than a SKIP.
 
-### The removal (criterion 4 — `R2000-05`)
+### The removal (criterion 4 — `ANNO-05`)
 
 - **D-12 (Claude's call — user asked for "flexible and simple without
   duplicating functionality"): one implementation, one entry point, verb
@@ -205,26 +205,26 @@ documented manual step.
     belongs) — both pointing at the single seam from D-06, not each carrying
     their own copy.
 
-### Install story (criterion 5 — `R2000-03`)
+### Install story (criterion 5 — `ANNO-03`)
 
 - **D-13: the CI honesty guard must be inverted, not worked around.**
   `scripts/check-skill-fork-honesty.mjs:253` currently lists
-  `["regenerator2000", "D-B: this phase's install docs must stay
-  regenerator2000-free"]` in `FORBIDDEN_README_SUBSTRINGS`. Criterion 5 requires
+  `["the external analyser", "D-B: this phase's install docs must stay
+  external-analyser-free"]` in `FORBIDDEN_README_SUBSTRINGS`. Criterion 5 requires
   the name **in** README.md. Move it to `REQUIRED_README_SUBSTRINGS` with a
   `whatIsLost` string, and update that file's header comment, which still says
-  "the regenerator2000 name Phase 8 removed".
+  "the external analyser name Phase 8 removed".
 
 - **D-14: the license is `MIT OR Apache-2.0` (dual), and the notices must say
-  the true thing.** `09-RESEARCH.md:55` had this right; `R2000-03`'s own wording
-  and `.planning/notes/regenerator2000-integration.md:253` still say Apache-2.0
+  the true thing.** `09-RESEARCH.md:55` had this right; `ANNO-03`'s own wording
+  and `.planning/notes/external-analyser-integration.md:253` still say Apache-2.0
   only (Phase 9 findings § Corrections, entry 2 — flagged there explicitly for
   this phase to pick up). Both `LICENSE-MIT` and `LICENSE-APACHE` ship in the
   crate. Correct the requirement text and the note as well as writing the
   notice, so the wrong claim stops propagating.
 
 - **D-15: the documented facts are the measured ones, not the estimated ones.**
-  - `cargo install regenerator2000` — **no upstream release assets exist**.
+  - `cargo install analyser` — **no upstream release assets exist**.
   - Toolchain floor **rustc >= 1.90**, the verified figure. Both earlier
     readings (`>= 1.85` from edition 2024, `>= 1.88` from `Cargo.lock` pins)
     undercounted and are superseded; `rust:1.88-slim` fails a real
@@ -234,7 +234,7 @@ documented manual step.
     against: single-stage **~1.26 GB** (build 5m39s), multi-stage **~251 MB**
     (build 4m48s).
   - The one-project-per-namespace limit is **stated, not detected** (the
-    `R2000-04` fold).
+    `ANNO-04` fold).
   - Apache-2.0 **and** MIT notice per D-14, in
     `.claude/mcp/vice/THIRD-PARTY-NOTICES.md` (the canonical file — the root
     `THIRD-PARTY-NOTICES.md` is a 4-line pointer to it).
@@ -244,7 +244,7 @@ documented manual step.
 The user explicitly delegated four decisions. They are recorded above as
 decisions rather than left open, so the planner does not re-litigate them:
 **D-01** (bootstrap mechanism), **D-05** (forced settings), **D-06** (seam
-location), **D-12** (replacement surface). **D-11** (CI does not install r2000)
+location), **D-12** (replacement surface). **D-11** (CI does not install anno)
 follows from the user's `--verify` choice and is likewise Claude's call.
 
 Still genuinely open for research, not decided here:
@@ -273,7 +273,7 @@ Both matched todos were folded in by the user.
    but never answers a `PING` is contention, not a wedge, and the broker knows
    whether it already holds a lease on that port), and state the rule positively
    in the install docs — on the stock backend, **exactly one process may hold
-   `-binarymonitor`**. Note the hazard is not r2000-specific: a stray `nc`, a
+   `-binarymonitor`**. Note the hazard is not anno-specific: a stray `nc`, a
    second Claude session, or VICE's own `-remotemonitor` does the same.
 
 2. **`.planning/todos/pending/2026-08-19-acme-build-scaffold-library-missing-on-both-provisioning-routes.md`**
@@ -297,7 +297,7 @@ Both matched todos were folded in by the user.
 **Downstream agents MUST read these before planning or implementing.**
 
 ### The Phase 9 gate — read first
-- `docs/phase9-regenerator2000-probe-findings.md` — the go/no-go gate. Its
+- `docs/phase9-external-analyser-probe-findings.md` — the go/no-go gate. Its
   frontmatter `verdict` key (`degrade`) and `verdict_rule_applied` (`R4`) are
   what Phase 10's planner reads **before writing any plan**. Also carries:
   § Accepted limits (the two amendments), § Corrections to prior documents
@@ -316,10 +316,10 @@ Both matched todos were folded in by the user.
   constraint are amended by D-03** — reconcile the wording.
 - `.planning/ROADMAP.md` § Standing Constraints — applies to every phase, not
   repeated as per-phase criteria.
-- `.planning/REQUIREMENTS.md` — `R2000-01`, `R2000-02`, `R2000-03`
-  (Apache-2.0-only wording corrected by D-14), `R2000-09`, `R2000-05`,
-  `R2000-06` (names flat 64K capture — see D-03).
-- `.planning/notes/regenerator2000-integration.md` — decisions `D-R1`..`D-R4`,
+- `.planning/REQUIREMENTS.md` — `ANNO-01`, `ANNO-02`, `ANNO-03`
+  (Apache-2.0-only wording corrected by D-14), `ANNO-09`, `ANNO-05`,
+  `ANNO-06` (names flat 64K capture — see D-03).
+- `.planning/notes/external-analyser-integration.md` — decisions `D-R1`..`D-R4`,
   the overlap map, source-confirmed upstream blockers. Line 253's
   Apache-2.0-only claim is wrong (D-14).
 
@@ -352,25 +352,25 @@ Both matched todos were folded in by the user.
 - `.claude/mcp/vice/THIRD-PARTY-NOTICES.md` — the canonical notices file (the
   root one is a pointer).
 
-### regenerator2000 0.9.20 source, on disk
+### the external analyser 0.9.20 source, on disk
 Verified present at
 `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/`. Read the source, not
 the web — every claim in D-01/D-04/D-10 was checked against it.
-- `regenerator2000-core-0.9.20/src/state/project.rs:41-96` — `ProjectState`, the
+- `external-analyser-core-0.9.20/src/state/project.rs:41-96` — `ProjectState`, the
   three required fields, the `#[serde(default)]` set; `:138-155` —
   `encode_raw_data_to_base64` / `decode_raw_data_from_base64` (gzip+base64);
   `compress_block_types` (the run-length `blocks` shape, indices not addresses).
-- `regenerator2000-0.9.20/src/main.rs:141-152` — `validate_headless_mode()`,
+- `the external analyser-0.9.20/src/main.rs:141-152` — `validate_headless_mode()`,
   `exit(1)` on any non-`.regen2000proj` input; `:710` — `headless = cli.headless
   || cli.verify || cli.mcp_server_stdio`, so **all three** headless routes
   require a project file.
-- `regenerator2000-core-0.9.20/src/mcp/handler.rs:350-352,1264-1271` —
-  `r2000_save_project` takes **no arguments** and errors `-32603` when
+- `external-analyser-core-0.9.20/src/mcp/handler.rs:350-352,1264-1271` —
+  `anno_save_project` takes **no arguments** and errors `-32603` when
   `project_path` is `None`. **There is no MCP tool that loads a file** (28 tools,
   none an open/load), so the MCP surface cannot bootstrap either — relevant to
   Phase 11, not just here.
-- `regenerator2000-core-0.9.20/src/mcp/handler.rs:1894` — the `raw_data.len() as
-  u16` overflow that makes `r2000_get_address_details` report `OutOfRange` for
+- `external-analyser-core-0.9.20/src/mcp/handler.rs:1894` — the `raw_data.len() as
+  u16` overflow that makes `anno_get_address_details` report `OutOfRange` for
   any full-64K load.
 
 </canonical_refs>
@@ -393,7 +393,7 @@ the web — every claim in D-01/D-04/D-10 was checked against it.
   gap.
 - **`acme.mjs`'s `findAcmeLib()` probe** — the established shape for "locate an
   external tool's data, don't assume a path", validated by a file we actually
-  include. The r2000 route needs the same posture for the binary itself.
+  include. The anno route needs the same posture for the binary itself.
 - **`vice.ts`'s `DENY_LIST`** — the established "hard-block by name at every
   dispatch seam, never re-derived locally" pattern D-07 mirrors.
 
@@ -409,7 +409,7 @@ the web — every claim in D-01/D-04/D-10 was checked against it.
   D-01 claim above was run, not reasoned.
 - **No build step for the shipped server**, and host-bound `.mts` must be
   compiled into committed `resources/*.mjs` with `resources-sync.test.ts`
-  failing CI on drift. The r2000 seam is container-side (D-R4), so it should
+  failing CI on drift. The anno seam is container-side (D-R4), so it should
   **not** need to become a `resources/` artifact — worth confirming, not
   assuming.
 
@@ -441,7 +441,7 @@ the web — every claim in D-01/D-04/D-10 was checked against it.
   one input-set requirement stated directly rather than inferred. `.d64` is not
   in the ROADMAP's criterion-3 wording; it is now in scope (D-02, D-03).
 - **"I want the simplest and cleverest way to support any version of
-  regenerator2000"** — read as an explicit rejection of version pinning and
+  the external analyser"** — read as an explicit rejection of version pinning and
   version tables, and as licence for the minimal-fields approach in D-04.
 - **"Flexible and simple without duplicating functionality, use the best way"**
   — the constraint on D-12. One implementation, referenced from wherever it is
@@ -457,30 +457,30 @@ the web — every claim in D-01/D-04/D-10 was checked against it.
 
 - **`.vsf` as a bootstrap input** — deferred out of Phase 10 by D-03. **Resolved
   by Phase 11's D-34 (2026-08-20): this was a dangling forward reference, not a
-  deferral to a real destination.** `R2000-14`/`R2000-15` are about the symbol
+  deferral to a real destination.** `ANNO-14`/`ANNO-15` are about the symbol
   round trip (VICE label files), not about accepting `.vsf` as a project
-  bootstrap input — no `R2000-*` requirement covers that capability. It is now
+  bootstrap input — no `ANNO-*` requirement covers that capability. It is now
   filed as backlog instead:
   `.planning/todos/pending/2026-08-20-vsf-as-a-bootstrap-input.md`, which
   records the Phase 9 machine-type limit and the single-MCP-connection snapshot
   constraint (both still true) alongside the reason no requirement claims it.
 - **`--mcp-server-stdio` instead of the HTTP server for Phase 11.** Found while
-  researching this phase: r2000 exposes a **stdio** MCP transport
+  researching this phase: anno exposes a **stdio** MCP transport
   (`main.rs:66`, `run_headless_mcp`), not just HTTP on port 3000. That would
   sidestep the fixed-port collision that produced the one-project-at-a-time
-  limit (`R2000-04`) entirely — potentially removing the very limitation D-15
+  limit (`ANNO-04`) entirely — potentially removing the very limitation D-15
   documents. It also implies `--headless`, so it needs a project file, which
   D-01's synthesis now provides. **Phase 11 should evaluate this before
   building against the HTTP transport.**
-- **The `r2000_get_address_details` u16 overflow** (`handler.rs:1894`,
+- **The `anno_get_address_details` u16 overflow** (`handler.rs:1894`,
   `raw_data.len() as u16` wraps 65536 to 0, so any full-64K project reports
   `OutOfRange`). Worth filing upstream; Phase 11 will need a workaround wherever
   it queries address details against a full-memory image.
-- **Non-ACME export formats** (`64tass`, `ca65`, `kick`). r2000 supports all
+- **Non-ACME export formats** (`64tass`, `ca65`, `kick`). anno supports all
   four and `--verify` checks whichever are on `PATH`; this project only cares
   about ACME (`!cpu 6510`). Not scope.
 - **Two-project-limit detection and reporting** — permanently out of scope by
-  the `R2000-04` fold; documented (D-15), never detected. Building detection for
+  the `ANNO-04` fold; documented (D-15), never detected. Building detection for
   an upstream port collision is work in the wrong place.
 - **The v0.4.0-shaped todo `2026-08-20-fully-remove-the-forked-vice-mcp-backend.md`**
   — not folded, not phase-10 scope. Semver-major, and 24 fork-only tools each

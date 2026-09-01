@@ -6,7 +6,7 @@
 
 ## What this answers, and the test it applies
 
-v0.7.0 replaces regenerator2000's `state/` with an annotation store this project owns. The consumers **already exist and are specified**: five absorbed analysis procedures live in this repo's skills, written against `r2000_*` calls, and `.planning/phases/19-.../upstream-procedure-manifest.json` classifies every verb each one calls. That manifest is the derived specification.
+v0.7.0 replaces the external analyser's `state/` with an annotation store this project owns. The consumers **already exist and are specified**: five absorbed analysis procedures live in this repo's skills, written against `anno_*` calls, and `.planning/phases/19-.../upstream-procedure-manifest.json` classifies every verb each one calls. That manifest is the derived specification.
 
 Every feature below is scored against this project's standing measured test:
 
@@ -14,7 +14,7 @@ Every feature below is scored against this project's standing measured test:
 
 Applied mechanically, not by judgment. The measurements:
 
-**Store verbs called directly by shipped skills** (`grep -rho 'r2000_[a-z_]*' src/skills/`):
+**Store verbs called directly by shipped skills** (`grep -rho 'anno_[a-z_]*' src/skills/`):
 
 | Skill | Store verbs it calls |
 |---|---|
@@ -23,25 +23,25 @@ Applied mechanically, not by judgment. The measurements:
 | `routine-queue-walker` | 8 — `get_binary_info`, `get_comments`, `get_cross_references`, `get_symbols`, `read_region`, `save_project`, `set_comment`, `set_label_name` |
 | `acme-build`, `c64-provenance-diff`, `c64-ram-capture`, `vice-wedge-triage` | **none** — these four are store-independent |
 
-**Store verbs reached indirectly**, via the 8 CLI verbs the skills document (`bootstrap`, `export-asm`, `verify`, `gen-enums`, `export-lbl`, `import-lbl`, `render-memmap`, `coverage`). Measured at the only non-test `runR2000Tool(...)` call sites in the tree:
+**Store verbs reached indirectly**, via the 8 CLI verbs the skills document (`bootstrap`, `export-asm`, `verify`, `gen-enums`, `export-lbl`, `import-lbl`, `render-memmap`, `coverage`). Measured at the only non-test `runAnnoTool(...)` call sites in the tree:
 
 | CLI verb | Store verbs it depends on | Source |
 |---|---|---|
-| `gen-enums` | `search_disassembly` ×2, `create_project_enum`, **`update_project_enum`**, `apply_enum_usage` | `r2000-enum-gen.ts:304,318,419,431,446` |
-| `import-lbl` | `set_label_name` | `r2000-symbols.ts:378` |
-| `coverage` | `get_blocks` (divergence sub-report **only**), `get_symbols` (label ratio), `get_comments` (comment vacuity) | `r2000-coverage.ts:186-187` |
-| `export-asm` / `verify` | the whole model — labels, comments, blocks, scopes, enums — rendered to ACME | `r2000-cli.ts`, `r2000-verify.ts` |
-| `export-lbl` | labels, **user kind only** (measured: auto `a_`/`e_` externals are not exported) | `r2000-symbols.ts:16-23` |
-| `bootstrap` | store creation / open | `r2000-project.ts` |
-| `render-memmap` | **none** — reads `memmap.json`, never the store | `r2000-memmap-render.ts` (no `runR2000Tool` call site) |
+| `gen-enums` | `search_disassembly` ×2, `create_project_enum`, **`update_project_enum`**, `apply_enum_usage` | `anno-enum-gen.ts:304,318,419,431,446` |
+| `import-lbl` | `set_label_name` | `anno-symbols.ts:378` |
+| `coverage` | `get_blocks` (divergence sub-report **only**), `get_symbols` (label ratio), `get_comments` (comment vacuity) | `anno-coverage.ts:186-187` |
+| `export-asm` / `verify` | the whole model — labels, comments, blocks, scopes, enums — rendered to ACME | `anno-cli.ts`, `anno-verify.ts` |
+| `export-lbl` | labels, **user kind only** (measured: auto `a_`/`e_` externals are not exported) | `anno-symbols.ts:16-23` |
+| `bootstrap` | store creation / open | `anno-project.ts` |
+| `render-memmap` | **none** — reads `memmap.json`, never the store | `anno-memmap-render.ts` (no `runAnnoTool` call site) |
 
-**Result of applying the test to the current 19-verb curated surface:** 18 verbs have a named consumer. **One does not: `r2000_delete_project_enum`** — no shipped skill calls it, and no skill-called module calls it (`gen-enums` uses create-then-update, never delete). It is surplus and should not be rebuilt.
+**Result of applying the test to the current 19-verb curated surface:** 18 verbs have a named consumer. **One does not: `anno_delete_project_enum`** — no shipped skill calls it, and no skill-called module calls it (`gen-enums` uses create-then-update, never delete). It is surplus and should not be rebuilt.
 
 ## How comparable tools model this
 
 **MEDIUM confidence** — cross-checked per tool.
 
-| Concern | Ghidra | IDA Pro | rizin/radare2 | Binary Ninja | SourceGen (6502) | Regenerator / regenerator2000 (C64) |
+| Concern | Ghidra | IDA Pro | rizin/radare2 | Binary Ninja | SourceGen (6502) | the earlier analyser / the external analyser (C64) |
 |---|---|---|---|---|---|---|
 | Labels | Symbols + namespaces | Names, local labels | Flags (`f`, `fr`, `f-`) | Symbols | user / auto, tagged non-unique-local / unique-local / global / exported | user labels; auto `a_`/`e_`/`s_` prefixes |
 | Comment kinds | **5** — EOL, PRE, POST, PLATE, REPEATABLE | **5** — regular, repeatable, function, anterior, posterior | **1** (`CC`) | **1** + a separate *tags* axis | **3** — end-of-line, long comment (emitted), note (**never** emitted) | **2** — line, side |
@@ -64,11 +64,11 @@ Six things every tool in the table has, in the same shape:
 
 ### Where they disagree, and whether it matters here
 
-**Comment multiplicity — disagreement is real, and mostly does not matter.** Five kinds (Ghidra, IDA) down to one (rizin, Binary Ninja). The **line / side** pair is C64-native, not a regenerator2000 invention — the original Regenerator advertised full-line and side comments plus user labels years earlier. Two kinds is defensible and is what every caller uses. The **one distinction worth stealing** is SourceGen's *note* vs *long comment*: a note is multi-line and **never emitted into generated source**, a long comment is. No C64 tool has it, and an ACME exporter is exactly where the difference bites — a triage note like `[unknown] looks like a decrunch stub, unverified` should not land in shipped source. Cheap: one enum value, no new storage.
+**Comment multiplicity — disagreement is real, and mostly does not matter.** Five kinds (Ghidra, IDA) down to one (rizin, Binary Ninja). The **line / side** pair is C64-native, not an external analyser invention — the original analyser advertised full-line and side comments plus user labels years earlier. Two kinds is defensible and is what every caller uses. The **one distinction worth stealing** is SourceGen's *note* vs *long comment*: a note is multi-line and **never emitted into generated source**, a long comment is. No C64 tool has it, and an ACME exporter is exactly where the difference bites — a triage note like `[unknown] looks like a decrunch stub, unverified` should not land in shipped source. Cheap: one enum value, no new storage.
 
 **Undo — genuinely contested, and the LLM consumer breaks the tie.** See the anti-features table.
 
-**Xref access kind — matters, and is the one place regenerator2000 is behind.** `r2000_get_cross_references` returns bare addresses. Ghidra keeps `READ`/`WRITE`/`READ_WRITE`/`COMPUTED_JUMP` as a field, and v0.6.0's held `GHID-05` already states the reason: *"the annotation join consumes the kind and not only the address."* The honest measured position: **no shipped skill or skill-called module consumes an access kind today** — `r2000-coverage.ts` derives dispatch idioms from bytes itself and does not read xref kinds. So the *classifier* is surplus, but the *field* is nearly free, because the decoder already knows `sta $d020` is a write at decode time and cannot recover it later without re-decoding. Recommendation: **store the kind, do not build analysis on it**, and say plainly it is speculative-but-cheap rather than caller-driven.
+**Xref access kind — matters, and is the one place the external analyser is behind.** `anno_get_cross_references` returns bare addresses. Ghidra keeps `READ`/`WRITE`/`READ_WRITE`/`COMPUTED_JUMP` as a field, and v0.6.0's held `GHID-05` already states the reason: *"the annotation join consumes the kind and not only the address."* The honest measured position: **no shipped skill or skill-called module consumes an access kind today** — `anno-coverage.ts` derives dispatch idioms from bytes itself and does not read xref kinds. So the *classifier* is surplus, but the *field* is nearly free, because the decoder already knows `sta $d020` is a write at decode time and cannot recover it later without re-decoding. Recommendation: **store the kind, do not build analysis on it**, and say plainly it is speculative-but-cheap rather than caller-driven.
 
 **Flat vs banked address space — does not matter for v0.7.0, and the reason is on the record.** Ghidra's answer is overlay memory blocks with *no automatic bank-switch analysis* (GhidraNes maps each bank to its own overlay block and documents bank handling as manual). Everyone else is flat. For the C64 the real cases are RAM under I/O at `$D000-$DFFF` and KERNAL/BASIC ROM shadowing at `$A000`/`$E000`. `PROOF-03` — the requirement that would have measured where a forward-carried `$01` value becomes wrong — is recorded **`could-not-run`** at the Phase 23 `no-go`, and `memmap.json` is a flat address model. So: **keep addresses flat and unqualified in v0.7.0, and record the assumption at the store's own seam** so a future milestone finds it instead of discovering it. Adding a bank qualifier now would be modelling for an unmeasured requirement.
 
@@ -78,7 +78,7 @@ Six things every tool in the table has, in the same shape:
 
 | Feature | Why Expected | Complexity | Notes |
 |---|---|---|---|
-| **Label at an address** (`set_label_name`) | Universal. Present in all 6 surveyed tools plus the original Regenerator | **LOW** | Consumers: 3 of 5 absorbed procedures (`blocks`, `routine`, `symbol`), all 3 store-using skills, `import-lbl`. Depends on `r2000-acme-ident.ts`'s `assertLegalAcmeIdentifier` — **REJECT, never sanitize**, already the convention |
+| **Label at an address** (`set_label_name`) | Universal. Present in all 6 surveyed tools plus the original analyser | **LOW** | Consumers: 3 of 5 absorbed procedures (`blocks`, `routine`, `symbol`), all 3 store-using skills, `import-lbl`. Depends on `anno-acme-ident.ts`'s `assertLegalAcmeIdentifier` — **REJECT, never sanitize**, already the convention |
 | **Label kind: user / system / auto** (`get_symbols` filter) | Conventional in 4 of 6 tools | **LOW** | Consumers: `routine-queue-walker`'s backlog *is* the `auto` set; `export-lbl` exports `user` only; `coverage`'s two label ratios. Do not collapse to one kind |
 | **Comment at an address, line + side** (`set_comment` / `get_comments`) | Universal; the line/side pair is C64-native | **LOW** | Consumers: **all 5** absorbed procedures, all 3 skills. Multi-line must work on `line` (upstream's does). Carrier for the `[confirmed-code]`-style confidence prefix — see differentiators |
 | **Per-range data typing, inclusive both ends** (`set_data_type`) | Universal | **MEDIUM** | Consumers: `analyze-basic`, `analyze-blocks`, `c64-memory-mapping`, `c64-program-recon`. v0.7.0 mandates the *full* `DECOMP-01` vocabulary — code, byte, word, address, PETSCII, screencode, table — not the subset this milestone exercises. Upstream's 12 variants include 4 split-table forms (`lo_hi_address`, `hi_lo_address`, `lo_hi_word`, `hi_lo_word`), `external_file` and `undefined`; the split forms have a real 6502 caller (SID frequency tables, jump tables) and an even-count validation rule |
@@ -95,11 +95,11 @@ Six things every tool in the table has, in the same shape:
 
 | Feature | Value Proposition | Complexity | Notes |
 |---|---|---|---|
-| **Project enums generated from `memmap.json`** (`create_project_enum`, `update_project_enum`, `apply_enum_usage`) | *"Neither project can do this alone."* `lda #$1b / sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME | **MEDIUM** (retarget, not rebuild) | Consumers: `analyze-routine`, `analyze-symbol`, `c64-memory-mapping`, `c64-program-recon`, the `gen-enums` verb. Depends on `memmap.json` (959 entries), `r2000-regbits-gen.ts`, `r2000-enum-gen.ts`. `update` is required for re-runnable generation; `delete` is not (see surplus) |
-| **Confidence grade as a queryable axis** | No surveyed tool has a confidence dimension on a block type. `Code` cannot distinguish "PC observed executing" from "reachable via a JSR, never run" — the distinction the recon template exists to keep | **LOW** (already built) | Consumers: `c64-program-recon`'s memory-map template, `coverage`'s comment-vacuity measure. Lives as a bracket-token prefix inside a line comment (`r2000-confidence.ts`, five grades) with **zero new storage** and a typo'd-near-miss parser. Promoting it to a first-class column is optional and has no caller — keep it as a comment convention |
-| **Store ↔ live-emulator symbol round trip** (`export-lbl` / `import-lbl`) | No surveyed RE tool talks to a running emulator's symbol table. Annotate statically → resolve live addresses to those names → new live findings flow back | **LOW–MEDIUM** (adapter exists) | Consumers: `c64-memory-mapping`, `c64-program-recon`, `routine-queue-walker`. Depends on `r2000-symbols.ts` + `stock-symbols.ts`'s `parseViceLabelFile()` (this repo's *only* sanctioned second consumer of that format) |
-| **ACME export verified by a real ACME** | Verification by external oracle, not by internal fixture — this project's most-repeated lesson | **HIGH** | Consumers: `export-asm`, `verify`, `acme-build`. v0.7.0 requires the `=*+$01` mid-instruction label idiom for self-modifying write targets and typed label prefixes (`zpp_`/`zpa_`/`f_`/`a_`/`e_`) — both preserved deliberately rather than rediscovered. Depends on `r2000-verify.ts`'s parse of ACME's own result line |
-| **Derived-from-bytes coverage census the store cannot move** | Asking the store how much it has classified is provably circular. The census is a pure function of raw bytes + caller seeds; the block table is read at exactly one site and feeds a *divergence* sub-report explicitly named as a comparison | **HIGH** (already built; retarget) | Consumer: the `coverage` verb, documented by `c64-program-recon`. Retarget cost is low; the *conceptual* boundary (`r2000-coverage.test.ts` rewrites every block entry to one type and asserts no census byte count moves) must survive the port intact |
+| **Project enums generated from `memmap.json`** (`create_project_enum`, `update_project_enum`, `apply_enum_usage`) | *"Neither project can do this alone."* `lda #$1b / sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME | **MEDIUM** (retarget, not rebuild) | Consumers: `analyze-routine`, `analyze-symbol`, `c64-memory-mapping`, `c64-program-recon`, the `gen-enums` verb. Depends on `memmap.json` (959 entries), `anno-regbits-gen.ts`, `anno-enum-gen.ts`. `update` is required for re-runnable generation; `delete` is not (see surplus) |
+| **Confidence grade as a queryable axis** | No surveyed tool has a confidence dimension on a block type. `Code` cannot distinguish "PC observed executing" from "reachable via a JSR, never run" — the distinction the recon template exists to keep | **LOW** (already built) | Consumers: `c64-program-recon`'s memory-map template, `coverage`'s comment-vacuity measure. Lives as a bracket-token prefix inside a line comment (`anno-confidence.ts`, five grades) with **zero new storage** and a typo'd-near-miss parser. Promoting it to a first-class column is optional and has no caller — keep it as a comment convention |
+| **Store ↔ live-emulator symbol round trip** (`export-lbl` / `import-lbl`) | No surveyed RE tool talks to a running emulator's symbol table. Annotate statically → resolve live addresses to those names → new live findings flow back | **LOW–MEDIUM** (adapter exists) | Consumers: `c64-memory-mapping`, `c64-program-recon`, `routine-queue-walker`. Depends on `anno-symbols.ts` + `stock-symbols.ts`'s `parseViceLabelFile()` (this repo's *only* sanctioned second consumer of that format) |
+| **ACME export verified by a real ACME** | Verification by external oracle, not by internal fixture — this project's most-repeated lesson | **HIGH** | Consumers: `export-asm`, `verify`, `acme-build`. v0.7.0 requires the `=*+$01` mid-instruction label idiom for self-modifying write targets and typed label prefixes (`zpp_`/`zpa_`/`f_`/`a_`/`e_`) — both preserved deliberately rather than rediscovered. Depends on `anno-verify.ts`'s parse of ACME's own result line |
+| **Derived-from-bytes coverage census the store cannot move** | Asking the store how much it has classified is provably circular. The census is a pure function of raw bytes + caller seeds; the block table is read at exactly one site and feeds a *divergence* sub-report explicitly named as a comparison | **HIGH** (already built; retarget) | Consumer: the `coverage` verb, documented by `c64-program-recon`. Retarget cost is low; the *conceptual* boundary (`anno-coverage.test.ts` rewrites every block entry to one type and asserts no census byte count moves) must survive the port intact |
 | **Explicitly stored ranges, so adjacency never auto-merges** | Removes the need for a `toggle_splitter` primitive **by construction**. Upstream auto-merges two adjacent same-type tables, which is why the manifest holds `toggle_splitter` as a future-surface proposal blocking `DECOMP-01` and `BUILD-02` | **LOW if designed in; MEDIUM to retrofit** | Named future consumers: `DECOMP-01` ("every byte is code, byte, word, address, PETSCII, screencode or table" cannot distinguish two merged tables), `BUILD-02` ("data tables extracted to their own files" has no boundary to cut on). Also removes the named bias the manifest predicts for `COV-01`'s divergence report. **The single largest free win available from owning the store** |
 | **`{available:false, reason}` instead of a plausible zero** | Existing project convention at three named sites (`stock-cia.ts:494`, `stock-vicii.ts:239`, `incident-record.ts:115`). Aligns with the MCP guidance to return errors *inside* the result so the model can recover | **LOW** | Consumer: every skill that reads a possibly-absent capability. Apply to the store's own gaps — an unclassified range, an absent xref set, an unopened store |
 | **Emitted vs non-emitted comment kinds** (SourceGen's *note*) | A triage note must not reach shipped source; a long comment must | **LOW** | No shipped caller **today** — marked speculative. Recommended only because the exporter is being built this milestone and adding the enum value later means re-typing existing comments |
@@ -108,7 +108,7 @@ Six things every tool in the table has, in the same shape:
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---|---|---|---|
-| **Undo / redo journal** | Every GUI tool has one — Ghidra transactions, Binary Ninja `BeginUndoActions`, IDA since 7.3, regenerator2000's own. And v0.7.0's Active list plus `STORE-02` both say "undo" | The manifest already disposes `r2000_undo` as **`omit`**, with the reason: `set_data_type` is idempotent over a range, so *"if a conversion was wrong, undo it and redo it correctly"* collapses to *"set it correctly"*. **No absorbed procedure and no shipped skill calls undo.** An agent also has no cursor or selection for "the last action" to be relative to, and retries make "whose last action?" genuinely ambiguous. A per-edit inverse-operation journal is the single largest structural cost in the store | Satisfy the requirement with the **cheapest form that has a consumer**: a whole-store snapshot/restore save-point (the store is a JSON document — copy it), not a per-edit inverse journal. Note it honestly: the *durability* half of `STORE-02` has a hard planted-violation test; the *undo* half has no caller and should be scoped to what the test can actually prove |
+| **Undo / redo journal** | Every GUI tool has one — Ghidra transactions, Binary Ninja `BeginUndoActions`, IDA since 7.3, the external analyser's own. And v0.7.0's Active list plus `STORE-02` both say "undo" | The manifest already disposes `anno_undo` as **`omit`**, with the reason: `set_data_type` is idempotent over a range, so *"if a conversion was wrong, undo it and redo it correctly"* collapses to *"set it correctly"*. **No absorbed procedure and no shipped skill calls undo.** An agent also has no cursor or selection for "the last action" to be relative to, and retries make "whose last action?" genuinely ambiguous. A per-edit inverse-operation journal is the single largest structural cost in the store | Satisfy the requirement with the **cheapest form that has a consumer**: a whole-store snapshot/restore save-point (the store is a JSON document — copy it), not a per-edit inverse journal. Note it honestly: the *durability* half of `STORE-02` has a hard planted-violation test; the *undo* half has no caller and should be scoped to what the test can actually prove |
 | **A cursor / "current address"** | It is how every GUI works, and upstream ships `get_disassembly_cursor` | Upstream's **own procedure text** forbids it in exactly this situation: *"Always launch each subagent with an explicit target address … **NEVER** use the 'current cursor address'."* This project has no editor. The manifest disposition is `adapt-to-address-input` | Explicit address (or explicit inclusive range) on **every** call, always. Already the shape of all 19 curated verbs |
 | **Rejecting no-op writes** | Reads as discipline; a real MCP server does it (`ghidra-mcp` rejects "type unchanged" with an explanation) | It **breaks idempotency**, and agents retry on timeout. A retried `set_label_name` that already succeeded would surface as an error the model has to reason about | Succeed, and return `changed: true|false`. Last-writer-wins over an explicit range |
 | **The full 5-kind comment taxonomy** | Ghidra and IDA both have five; parity looks like completeness | Only `line` and `side` have callers, across all five absorbed procedures. Three more kinds is three more enum values in every prompt for zero measured benefit | Keep `line` + `side`. Add the emitted/non-emitted flag if the exporter needs it — one bit, not three kinds |
@@ -119,8 +119,8 @@ Six things every tool in the table has, in the same shape:
 | **Bank-qualified addresses / overlay address spaces** | ROM banking is real on the C64, and `PROOF-03` names it as the pivot's highest-risk item | `PROOF-03` is recorded **`could-not-run`** — no capture existed, nothing was measured. `memmap.json` is flat. No absorbed procedure asks for a bank qualifier. Modelling it now is modelling for an unmeasured requirement, and Ghidra's own answer (overlay blocks) still leaves bank-switch analysis manual | Flat, unqualified addresses; **record the assumption at the store's own seam** with a pointer to `PROOF-03` so a future milestone finds it rather than discovering it |
 | **A `tools_call`-shaped meta-tool, or script eval** | `ida-pro-mcp` ships `py_eval`; it is the most powerful single tool you can add | Explicitly forbidden by this repo's own convention: it is the nested-argument smuggling shape `vice.ts`'s `DENY_LIST` exists to close. `batch_execute` is the **one** sanctioned exception, and only because every inner name is validated before anything executes | `batch_execute` with pre-flight validation of every inner name |
 | **Destructive in-place unpacking** | It is the fast path to a depacked image | Manifest disposition: **`omit`, permanent**. Destructive by upstream's own description (clears comments/labels/blocks) and this project has a non-destructive route to the same answer | `c64-ram-capture` runs the program in the real emulator past the decrunch; the packer identity is a recon finding. The entropy gate **survives** the omission because entropy is a `get_binary_info` field |
-| **HTML export with clickable xrefs** | Shareable artifact | Already cut in v0.3.0 as `R2000-07` — no skill produces or consumes it | Nothing. Stay cut |
-| **Byte-or-behaviour parity with regenerator2000's store** | It is the thing being replaced, so parity feels like the safe bar | v0.7.0's own requirement text forecloses it: cross-references and search must be *"built on the surviving `disasm-*` decoders rather than carried across as a parity obligation."* Parity would measure an unpromised property — the exact mistake v0.2.0's dropped `VERIF-03` harness made | The manifest's per-procedure tool list is the bar. A procedure that runs is the test |
+| **HTML export with clickable xrefs** | Shareable artifact | Already cut in v0.3.0 as `ANNO-07` — no skill produces or consumes it | Nothing. Stay cut |
+| **Byte-or-behaviour parity with the external analyser's store** | It is the thing being replaced, so parity feels like the safe bar | v0.7.0's own requirement text forecloses it: cross-references and search must be *"built on the surviving `disasm-*` decoders rather than carried across as a parity obligation."* Parity would measure an unpromised property — the exact mistake v0.2.0's dropped `VERIF-03` harness made | The manifest's per-procedure tool list is the bar. A procedure that runs is the test |
 | **`delete_project_enum`** | It exists upstream and completes the CRUD set | **Zero callers anywhere.** `gen-enums` re-runs via create-then-update | Do not build it. Re-runnable generation needs `create` + `update` only |
 
 ## Feature Dependencies
@@ -135,7 +135,7 @@ Owned 6510 decoders (disasm-opcodes / decoder / renderer, 1,042 non-test lines)
     ├──required by──> block classification / get_blocks
     ├──required by──> cross-reference derivation ──requires──> `address` range typing
     ├──required by──> xref access kind (free at decode time, unrecoverable later)
-    └──required by──> ACME export ──verified by──> real ACME (r2000-verify.ts seam)
+    └──required by──> ACME export ──verified by──> real ACME (anno-verify.ts seam)
 
 Explicitly-stored ranges (no adjacency auto-merge)
     ├──removes need for──> toggle_splitter
@@ -159,7 +159,7 @@ Comments (line + side, multi-line on line)
 Scopes (flat, non-overlapping)
     └──enhances──> ACME export (the !source / zone boundary)
 
-batch_execute ──requires──> single-owner write path (r2000-session.ts's FIFO discipline)
+batch_execute ──requires──> single-owner write path (anno-session.ts's FIFO discipline)
 undo journal ──conflicts with──> idempotent range typing (each makes the other pointless)
 bank-qualified addresses ──conflicts with──> memmap.json's flat address model
 no-op rejection ──conflicts with──> agent retry semantics
@@ -168,8 +168,8 @@ no-op rejection ──conflicts with──> agent retry semantics
 ### Dependency Notes
 
 - **Cross-references require `address` range typing, not just the decoder.** A pointer table is only a set of xrefs once its range is typed `address` (or a split lo/hi variant). This is why typing and xrefs cannot be split across distant phases: typing with no xref consumer looks complete and proves nothing.
-- **`batch_execute` requires the single-owner write path.** `r2000-session.ts`'s FIFO call queue and save-before-return persistence are what make a batch safe. Porting the batch verb without that discipline reintroduces the interleaved-write failure mode.
-- **`export-lbl` depends on the user/auto label *kind*, not merely on labels.** Measured: an annotated project emits exactly the labels a caller set; auto `a_D011`/`e_FFD2` externals are **not** exported. A test asserting an `a_`-prefixed name appears in an export result is testing the wrong thing — that trap is already documented at `r2000-symbols.ts:16-23` and must survive the port.
+- **`batch_execute` requires the single-owner write path.** `anno-session.ts`'s FIFO call queue and save-before-return persistence are what make a batch safe. Porting the batch verb without that discipline reintroduces the interleaved-write failure mode.
+- **`export-lbl` depends on the user/auto label *kind*, not merely on labels.** Measured: an annotated project emits exactly the labels a caller set; auto `a_D011`/`e_FFD2` externals are **not** exported. A test asserting an `a_`-prefixed name appears in an export result is testing the wrong thing — that trap is already documented at `anno-symbols.ts:16-23` and must survive the port.
 - **`render-memmap` has no store dependency at all.** It reads `memmap.json` and writes Markdown. It can be re-pointed independently of the store, or not at all.
 - **`coverage` depends on the store only at its divergence sub-report** (plus label ratio and comment vacuity). Its census reads raw bytes and caller seeds. This boundary is *the* thing to preserve across the port; the existing test pins it by rewriting every block entry to one type and asserting no census byte count moves.
 - **Undo conflicts with idempotent range typing.** Making typing idempotent is what makes undo unnecessary; building undo is what makes idempotency uninteresting. Pick idempotency — it is the one the callers already assume.
@@ -181,10 +181,10 @@ The seed `own-the-annotation-store.md` states figures that no longer hold. Recor
 | Seed claim | Measured 2026-08-26 | Note |
 |---|---|---|
 | `disasm-*` = 2,555 lines to reuse | **1,042** non-test; 2,555 is the total **including tests** | Reuse target is ~1k lines, not ~2.5k |
-| Delete 19,181 lines (9,087 non-test + 9,928 test) | **25,759** across `r2000-*.ts` (10,102 non-test + **15,657** test) | Test surface is ~58% larger than the seed assumed; the deletion phase is materially bigger than sized |
-| `r2000-d64.ts` = 310 lines, standalone | 310, standalone — **holds** | Keep as-is |
+| Delete 19,181 lines (9,087 non-test + 9,928 test) | **25,759** across `anno-*.ts` (10,102 non-test + **15,657** test) | Test surface is ~58% larger than the seed assumed; the deletion phase is materially bigger than sized |
+| `anno-d64.ts` = 310 lines, standalone | 310, standalone — **holds** | Keep as-is |
 
-**20 test files** are pinned to the deleted subject (`r2000-*.test.ts` ×19 plus `docs-r2000-decisions.test.ts`). Each needs an explicit fate before the phase gate — already an Active requirement, and the sizing above says why it is not a footnote. Two need particular care: `r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard, and `docs-r2000-decisions.test.ts` pins D-36, a decision about a tool that is being deleted.
+**20 test files** are pinned to the deleted subject (`anno-*.test.ts` ×19 plus `docs-absorbed-decisions.test.ts`). Each needs an explicit fate before the phase gate — already an Active requirement, and the sizing above says why it is not a footnote. Two need particular care: `absorbed-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard, and `docs-absorbed-decisions.test.ts` pins D-36, a decision about a tool that is being deleted.
 
 ## MVP Definition
 
@@ -282,10 +282,10 @@ Eight rules, each traced to something already decided in this repo or cross-chec
 
 | Area | Level | Reason |
 |---|---|---|
-| Consumer trace (which verb has which caller) | **HIGH** | Measured directly: `grep` over `src/skills/`, every non-test `runR2000Tool` call site, the committed manifest |
+| Consumer trace (which verb has which caller) | **HIGH** | Measured directly: `grep` over `src/skills/`, every non-test `runAnnoTool` call site, the committed manifest |
 | Sizing figures | **HIGH** | `wc -l` this session; the seed's figures are corrected above |
 | Comparable-tool models | **MEDIUM** | Cross-checked per tool across ≥2 sources; official docs for Ghidra/Binary Ninja/SourceGen, vendor docs for IDA |
-| C64-specific tools other than regenerator2000 | **LOW** | Infiltrator (2011), jc64dis and C64 Studio are GUI/one-shot decompilers; no primary documentation of an annotation model was found. Treated as evidence of *absence* of prior art, not as a model to follow |
+| C64-specific tools other than the external analyser | **LOW** | Infiltrator (2011), jc64dis and C64 Studio are GUI/one-shot decompilers; no primary documentation of an annotation model was found. Treated as evidence of *absence* of prior art, not as a model to follow |
 | MCP-for-RE prior art | **MEDIUM** | `ida-pro-mcp`, `re-mcp`, `bethington/ghidra-mcp` READMEs read directly; the batch/convention/idempotency claims are their own documentation, not independently exercised |
 | Whether a bank qualifier is needed | **LOW — and honestly so** | `PROOF-03` is `could-not-run`. Nothing is known. Recommendation is to record the assumption, not to model it |
 
@@ -296,7 +296,7 @@ Eight rules, each traced to something already decided in this repo or cross-chec
 
 ## Sources
 
-**This repository, read directly (HIGH):** `.planning/PROJECT.md`; `.planning/REQUIREMENTS.md`; `.planning/seeds/own-the-annotation-store.md`; `.planning/notes/regenerator2000-integration.md`; `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`; `src/mcp/vice/r2000-tools.ts`, `r2000-enum-gen.ts`, `r2000-symbols.ts`, `r2000-confidence.ts`, `r2000-coverage.ts`, `r2000-cli.ts`, `r2000-memmap-render.ts`, `stock-cia.ts`, `stock-vicii.ts`, `incident-record.ts`; `src/skills/*/SKILL.md`.
+**This repository, read directly (HIGH):** `.planning/PROJECT.md`; `.planning/REQUIREMENTS.md`; `.planning/seeds/own-the-annotation-store.md`; `.planning/notes/external-analyser-integration.md`; `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`; `src/mcp/vice/anno-tools.ts`, `anno-enum-gen.ts`, `anno-symbols.ts`, `anno-confidence.ts`, `anno-coverage.ts`, `anno-cli.ts`, `anno-memmap-render.ts`, `stock-cia.ts`, `stock-vicii.ts`, `incident-record.ts`; `src/skills/*/SKILL.md`.
 
 **Comparable tools (MEDIUM):**
 - [Ghidra `CommentType`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/listing/CommentType.html), [`Listing`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/listing/Listing.html), [`RefType`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/symbol/RefType.html), [`FlowType`](https://ghidra.re/ghidra_docs/api/ghidra/program/model/symbol/FlowType.html), [Comments help topic](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/Base/src/main/help/help/topics/CommentsPlugin/Comments.htm), [Ghidra Tip 0x0A: Comments](https://maxkersten.nl/2025/04/15/ghidra-tip-0x0a-comments/)
@@ -305,7 +305,7 @@ Eight rules, each traced to something already decided in this repo or cross-chec
 - [Rizin Handbook: Adding Metadata to Disassembly](https://book.rizin.re/src/disassembling/adding_metadata.html), [Introducing Projects in Rizin](https://rizin.re/posts/introducing-projects/)
 - [Binary Ninja `FileMetadata`](https://api.binary.ninja/binaryninja.filemetadata-module.html), [Important Concepts (user vs auto actions)](https://docs.binary.ninja/dev/concepts.html), [`BinaryView` C++ API](https://api.binary.ninja/cpp/group__binaryview.html)
 - [6502bench SourceGen: More Details](https://6502bench.com/sgmanual/intro-details.html), [Editors](https://6502bench.com/sgmanual/editors.html), [Instruction and Data Analysis](https://6502bench.com/sgmanual/analysis.html), [fadden/6502bench](https://github.com/fadden/6502bench)
-- [Regenerator 2000 docs](https://regenerator2000.readthedocs.io/en/latest/), [Regenerator (n0stalgia) v1.3 release notes](https://www.nightfallcrew.com/16/05/2013/regenerator-disassembler-v1-3-by-n0stalgia/), [Infiltrator Disassembler V1.0 (CSDb)](https://csdb.dk/release/?id=100129)
+- [the external analyser docs](https://analyser.readthedocs.io/en/latest/), [the earlier analyser (n0stalgia) v1.3 release notes](https://www.nightfallcrew.com/16/05/2013/regenerator-disassembler-v1-3-by-n0stalgia/), [Infiltrator Disassembler V1.0 (CSDb)](https://csdb.dk/release/?id=100129)
 
 **LLM/MCP consumer shaping (MEDIUM):**
 - [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp), [jtsylve/re-mcp](https://github.com/jtsylve/re-mcp) and [its announcement](https://jtsylve.blog/post/2026/05/04/ida-mcp-becomes-re-mcp), [bethington/ghidra-mcp](https://github.com/bethington/ghidra-mcp)

@@ -41,7 +41,7 @@ key-files:
     - src/mcp/vice/package.json
 
 key-decisions:
-  - "Search matching is byte-exact and CASE SENSITIVE, and the reason is the store's own identity rule: setLabel's doc block records that name comparison is exact byte equality with no case folding, so a case-folding search would report a hit on a label the store considers a DIFFERENT name. r2000_search_disassembly's case-insensitive default is the shape deliberately NOT copied."
+  - "Search matching is byte-exact and CASE SENSITIVE, and the reason is the store's own identity rule: setLabel's doc block records that name comparison is exact byte equality with no case folding, so a case-folding search would report a hit on a label the store considers a DIFFERENT name. anno_search_disassembly's case-insensitive default is the shape deliberately NOT copied."
   - "The instruction corpus is built with renderLine() per instruction rather than render() over the range: a hit must carry the address it was found at, and render()'s output is one blob with a !cpu 6510 header. Both go through the same renderInstructionLine(), so the matched text is byte-identical to a listing's."
   - "A PARTIAL split table is skipped rather than resolved. SplitTableReinterpretation records that an entry's partner is a function of the row's start AND its length, so a fragment re-pairs every entry and decodes to different 16-bit values -- resolving one would produce legal, plausible, wrong targets."
   - "Split-table entry addresses come from splitEntryAddressPairs() rather than the research example's `range.start + i`. Both compute the same number today; only one of them is the single place that knows an entry's partner."
@@ -219,7 +219,7 @@ status: complete
 
 ## Decisions Made
 
-- **Case-SENSITIVE, byte-exact matching, and it is not a default that fell out of `String.prototype.includes`.** `anno-store.ts`'s `setLabel` doc block records that the store's own name comparison is exact byte equality on a binary-collation text column — "No case folding, no Unicode normalisation, no trimming". A case-folding search would report a hit on a label the store itself considers a *different name*, putting the search and the store into disagreement about identity. `r2000_search_disassembly`'s case-insensitive default is named in this module's header as the shape deliberately not copied.
+- **Case-SENSITIVE, byte-exact matching, and it is not a default that fell out of `String.prototype.includes`.** `anno-store.ts`'s `setLabel` doc block records that the store's own name comparison is exact byte equality on a binary-collation text column — "No case folding, no Unicode normalisation, no trimming". A case-folding search would report a hit on a label the store itself considers a *different name*, putting the search and the store into disagreement about identity. `anno_search_disassembly`'s case-insensitive default is named in this module's header as the shape deliberately not copied.
 - **A partial split table is skipped, not resolved.** `SplitTableReinterpretation`'s own reasoning applies unchanged: an entry's partner is a function of the row's start *and* its length, so a fragment re-pairs every entry and decodes to different 16-bit values. Resolving a fragment would emit legal, plausible, wrong targets — with nothing downstream able to tell.
 - **`splitEntryAddressPairs()` rather than `range.start + i`.** `29-RESEARCH.md`'s worked example computes the entry address inline. Both produce the same number today; only one of them goes through the module that is documented as "THE ONE PLACE IN THIS REPO WHERE AN ENTRY'S PARTNER IS COMPUTED", and the plan's own prohibition on a second arithmetic copy is the reason.
 - **`renderLine()` per instruction, not `render()` per range.** The plan's action named `render()`. A search hit has to carry the address it was found at, and `render()` returns one blob prefixed by `!cpu 6510` and a symbol block — the addresses are gone. `renderLine()` is `render()`'s own per-instruction primitive and both go through the same `renderInstructionLine()`, so the text a search matches is byte-identical to the text a listing shows. Recorded as an implementation choice, not a behaviour change.
@@ -252,8 +252,8 @@ status: complete
 
 ## Issues Encountered
 
-- **The full-glob suite was deliberately not run.** Per `29-BASELINE.md` it does not terminate on this host (it blocks forever in `vice-proxy.test.ts`, a `MANUAL_ONLY_TESTS` member needing a live emulator). Instead, every test that reads a changed identifier or scans `package.json`'s `files[]` was run: `anno-derive`, `anno-index`, `anno-store`, `anno-durability`, `anno-seam`, `anno-types`, `anno-tools`, `anno-confinement`, `anno-overlap`, `shipped-modules`, `hostpath-consumers`, `module-classification`, `docs-dangling-refs`, `stock-dispatch`, `block-class`, `comment-phase-pointers`, `r2000-spawn-seam`, `docs-linerefs`, `capability-registry`, `disasm-decoder`, `disasm-renderer`, `prg-image` — 636 tests, 0 failures, 1 pre-existing skip.
-- **Baseline comparison:** the recorded failing-file **SET** is `{vice-proxy.test.ts, r2000-session.test.ts, audit-integrity.test.ts}`. This plan touches nothing any of the three reads, and every file it does touch is green. **No file entered the set and none left it.**
+- **The full-glob suite was deliberately not run.** Per `29-BASELINE.md` it does not terminate on this host (it blocks forever in `vice-proxy.test.ts`, a `MANUAL_ONLY_TESTS` member needing a live emulator). Instead, every test that reads a changed identifier or scans `package.json`'s `files[]` was run: `anno-derive`, `anno-index`, `anno-store`, `anno-durability`, `anno-seam`, `anno-types`, `anno-tools`, `anno-confinement`, `anno-overlap`, `shipped-modules`, `hostpath-consumers`, `module-classification`, `docs-dangling-refs`, `stock-dispatch`, `block-class`, `comment-phase-pointers`, `anno-spawn-seam`, `docs-linerefs`, `capability-registry`, `disasm-decoder`, `disasm-renderer`, `prg-image` — 636 tests, 0 failures, 1 pre-existing skip.
+- **Baseline comparison:** the recorded failing-file **SET** is `{vice-proxy.test.ts, anno-session.test.ts, audit-integrity.test.ts}`. This plan touches nothing any of the three reads, and every file it does touch is green. **No file entered the set and none left it.**
 - **No VICE broker was running**, so the `BACK-05` deterministic reddening did not apply to any result above.
 
 ## Verification Results
@@ -265,7 +265,7 @@ status: complete
 | `node --test` over all 22 adjacent suites | 636 tests, 635 pass, 1 pre-existing skip, 0 fail |
 | `npm run typecheck` | clean |
 | `node scripts/check-npm-packages.mjs` | exit 0 — 83 files, closure clean |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 |
+| `node scripts/check-no-analyser.mjs` | exit 0 |
 | `node scripts/audit-gate.mjs` | exit 0 |
 | `node scripts/check-skill-tool-coverage.mjs` | exit 0 |
 | `node scripts/check-skill-fork-honesty.mjs` | exit 0 |

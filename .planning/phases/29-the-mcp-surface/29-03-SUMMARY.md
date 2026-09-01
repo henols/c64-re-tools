@@ -254,10 +254,10 @@ Nothing in this plan closes, drops, or re-files either item. Prohibition 28-18 P
 
 | | Baseline (`c27922a`) | This tree |
 |---|---|---|
-| Failing **files** | `audit-integrity.test.ts`, `r2000-session.test.ts` | `audit-integrity.test.ts`, `r2000-session.test.ts` |
+| Failing **files** | `audit-integrity.test.ts`, `anno-session.test.ts` | `audit-integrity.test.ts`, `anno-session.test.ts` |
 | Failures | 7 | 8 |
 
-**No file entered the failing set and none left it — no regression, no unexplained improvement.** The count moved 7 → 8 entirely inside `r2000-session.test.ts`, which the baseline records as *"timing-sensitive FIFO-queue tests. Load-sensitive on a busy host"*; the extra failure (`stub: a child that answers nothing within the call timeout…`) is in that same file and that same class. `audit-integrity.test.ts`'s 2 are the baseline's census assertions that go red on a correct tree.
+**No file entered the failing set and none left it — no regression, no unexplained improvement.** The count moved 7 → 8 entirely inside `anno-session.test.ts`, which the baseline records as *"timing-sensitive FIFO-queue tests. Load-sensitive on a busy host"*; the extra failure (`stub: a child that answers nothing within the call timeout…`) is in that same file and that same class. `audit-integrity.test.ts`'s 2 are the baseline's census assertions that go red on a correct tree.
 
 ## Issues Encountered
 

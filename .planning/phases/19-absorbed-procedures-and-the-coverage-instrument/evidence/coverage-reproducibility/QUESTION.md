@@ -13,12 +13,12 @@ route may read the other's input:
   (including their D-25 confidence-grade prefixes), its block listing and its cross-reference
   lists;
 - the **bytes route** may read only the fixture's `project.regen2000proj` payload — the raw
-  program bytes, decoded and walked by `r2000-coverage.ts`'s census, with the store's own
+  program bytes, decoded and walked by `anno-coverage.ts`'s census, with the store's own
   classification never consulted.
 
 `ANSWER.sha256` is committed with the store-route answer. The bytes-route re-derivation lands in
 `RE-DERIVED-ANSWER.md` and must hash to the same seal. A missing or empty re-derivation is a
-FAILURE, never a skip — see `r2000-coverage.test.ts`'s three named guard classes.
+FAILURE, never a skip — see `anno-coverage.test.ts`'s three named guard classes.
 
 ## Permitted inputs
 
@@ -97,11 +97,11 @@ grammar, which is what lets `ANSWER.sha256` check a submitted answer mechanicall
 ## Why the two routes are genuinely independent
 
 - **Part 2 (class).** The store route reads a human judgement recorded as a D-25 confidence-grade
-  prefix — a *confidence* axis regenerator2000's own `BlockType` does not carry at all. The bytes
+  prefix — a *confidence* axis the external analyser's own `BlockType` does not carry at all. The bytes
   route reads no comment and no block entry; it runs a recursive descent from a seed set and asks
   whether the address was reached. Neither derivation can see the other's input, and the store
   route's fallback to a block type is exactly the input the census is forbidden to read.
-- **Part 3 (callers).** The store route reads a list regenerator2000 maintains. The bytes route
+- **Part 3 (callers).** The store route reads a list analyser maintains. The bytes route
   re-counts control-flow targets from the decoded instruction stream. A disagreement here would
   mean the store's cross-reference bookkeeping and the program's own bytes have drifted apart —
   which is precisely the class of drift a coverage instrument exists to surface.

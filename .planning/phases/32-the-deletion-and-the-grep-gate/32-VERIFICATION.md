@@ -177,7 +177,7 @@ review_dispositions:
 # Phase 32: The Deletion and the Grep Gate — Verification Report (round 4)
 
 **Phase Goal (ROADMAP, narrowed by D-01):** every guard and CI script re-pointed off the
-deleted regenerator2000 subject is audited as a set, after the dust has settled, and proven
+deleted the external analyser subject is audited as a set, after the dust has settled, and proven
 non-vacuous (`CUT-04`); and no living document is left pointing a user at a route that no
 longer exists (`CUT-06`).
 
@@ -264,9 +264,9 @@ and names the round-4 concern the coordinator asked me to weigh.
 | 2 | None passes vacuously — each re-pointed guard's planted violation re-run against its NEW subject and observed red | ROADMAP SC-1 / CUT-04 | ✓ (coincidental-reliance) | ✓ | ✓ VERIFIED | **35/35 OBSERVED RED in my own `--all` sweep**, each with a green unplanted control (`control exit status 0`). Field-by-field diff of the sweep's write-back against `HEAD:guard-fates.json`: 0 verdict changes, 0 exit-status changes, 0 control-status changes |
 | 3 | Audited as a set, at once, retrospectively, on the settled tree | ROADMAP SC-1 | ✓ | ✓ | ✓ VERIFIED | One command, one process, all 61 rows in registry order: `measured=35 skipped=26 total=61`, exit 0, `tree: restored byte-identical to the baseline` |
 | 4 | The fate guard itself cannot pass vacuously | plan 32-01 | ✓ | ✓ | ✓ VERIFIED | Planted at HEAD: deleted the last registry row → `check-guard-fates: FAIL -- ... rows=60`, naming `src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs` as having no recorded fate. Registry restored, porcelain clean |
-| 5 | No living document points a user at a deleted route | ROADMAP SC-2 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `check-no-regenerator2000.mjs` exit 0; 157 permanent exemptions in four named categories; **temporary allow-list asserted EMPTY** since 2026-08-30 |
+| 5 | No living document points a user at a deleted route | ROADMAP SC-2 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `check-no-analyser.mjs` exit 0; 157 permanent exemptions in four named categories; **temporary allow-list asserted EMPTY** since 2026-08-30 |
 | 6 | The phase-close gate is re-run and recorded with its broker state | ROADMAP SC-2 (gate half) / plan 32-09 | ✓ | ✓ | ✓ VERIFIED | Broker `inactive`. **7/7 `scripts/check-*.mjs` exit 0** and **9/9 `docs-*.test.ts` exit 0**, each run individually by me. `typecheck` exit 0 and `test:automated` 3021 pass / 0 fail (orchestrator, cited) |
-| 7 | `PROJECT.md`'s citations and `r2000_*` clause repaired; `ARCHITECTURE.md` A21 dated-superseded | plan 32-03 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `PROJECT.md:311` cites `:3050` / `:2985` / `:1529` / `:1505`; `grep -c "r2000_" CLAUDE.md` = 0; `ARCHITECTURE.md:231` carries `⚠ SUPERSEDED 2026-08-30 (Phase 29, plan 29-10, commit 1d40ad0)` with the keep-dated rationale |
+| 7 | `PROJECT.md`'s citations and `anno_*` clause repaired; `ARCHITECTURE.md` A21 dated-superseded | plan 32-03 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `PROJECT.md:311` cites `:3050` / `:2985` / `:1529` / `:1505`; `grep -c "anno_" CLAUDE.md` = 0; `ARCHITECTURE.md:231` carries `⚠ SUPERSEDED 2026-08-30 (Phase 29, plan 29-10, commit 1d40ad0)` with the keep-dated rationale |
 | 8 | `docs-linerefs.test.ts` widened onto `PROJECT.md` with a per-document non-vacuity floor | plan 32-04 / D-10 | ✓ | ✓ | ✓ VERIFIED | `SCANNED_DOCS = ["CLAUDE.md", ".planning/PROJECT.md"]` at `:64-67`; guard exit 0 |
 | 9 | The sweep ledger carries one verdict row per swept file, numbers reconciled, no dated record rewritten | plan 32-05 / D-08, D-09 | ✓ | ✓ | ✓ VERIFIED | Untouched since round 3; registry census reproduced (35 re-pointed / 19 kept-unchanged / 7 deleted = 61) |
 | 10 | Sweep rows, deleted rows, set-B rows and both deferred fates complete; tree left clean | plans 32-06/07/08 | ✓ | ✓ | ✓ VERIFIED | 35 / 19 / 7 = 61 reproduced from the JSON; porcelain identical before and after every command in this report |
@@ -390,7 +390,7 @@ wrong.
 | `guard-fates.json` | `rows[].observedRed.{exitStatus, excerpt}` | `spawnSync` of the row's own guard command against a planted tree | ✓ — 35/35 re-derived from live subprocess runs by me, verdicts identical | ✓ FLOWING |
 | `guard-fates.json` | `rows[].observedRed.control` | `spawnSync` of the SAME command against the unplanted tree | ✓ — 35/35 green controls re-derived | ✓ FLOWING |
 | `check-guard-fates.mjs` | derived audited set (61) | `git diff` over two pinned commits (`0394cbc` → `345d5c4`), 273 paths | ✓ — not read from the registry it checks | ✓ FLOWING |
-| `check-no-regenerator2000.mjs` | exemption counts (157) | live repository census, four named categories | ✓ — temporary allow-list asserted EMPTY | ✓ FLOWING |
+| `check-no-analyser.mjs` | exemption counts (157) | live repository census, four named categories | ✓ — temporary allow-list asserted EMPTY | ✓ FLOWING |
 
 No hardcoded literal, static return, or mock terminates any of these chains.
 
@@ -406,7 +406,7 @@ No hardcoded literal, static return, or mock terminates any of these chains.
 | Restore machinery survives a second plant window | `node --test audit-harness-restore.test.ts` | 15 tests, 15 pass, 0 fail, 0 skipped — incl. both `gap 2 / CR-10` second-window cases | ✓ PASS |
 | The fate guard reddens on a missing row | delete last registry row, `node scripts/check-guard-fates.mjs` | `FAIL -- ... rows=60`, names the orphaned path | ✓ PASS |
 | Containment removal reddens its case group | patch `plant()` to bypass `resolveContainedRoot()`, run driver | `planted=false` (assertion passes — `WR-38`) but message assertions fail → group RED | ✓ PASS (with WARNING) |
-| The deleted-route gate is green with an empty temporary allow-list | `node scripts/check-no-regenerator2000.mjs` | exit 0; 157 permanent exemptions; temporary allow-list EMPTY | ✓ PASS |
+| The deleted-route gate is green with an empty temporary allow-list | `node scripts/check-no-analyser.mjs` | exit 0; 157 permanent exemptions; temporary allow-list EMPTY | ✓ PASS |
 | Every close-gate script is green | 7 × `node scripts/check-*.mjs` | 7/7 exit 0 | ✓ PASS |
 | Every docs guard is green individually | 9 × `node --test docs-*.test.ts` | 9/9 exit 0 | ✓ PASS |
 | Full suite / typecheck | `npm run test:automated`, `npm run typecheck` | `tests 3027, pass 3021, fail 0, skipped 1, todo 5`, exit 0; typecheck exit 0 | ✓ PASS (orchestrator, cited, not re-run) |
@@ -427,7 +427,7 @@ above. **Step 7c: satisfied by the harness run; no conventional probes to discov
 | Requirement | Source Plans | Description | Status | Evidence |
 |---|---|---|---|---|
 | `CUT-04` | 18 of 21 plans | Every guard and CI script pinned to the deleted subject has a recorded fate and none passes vacuously, measured mechanically | ✓ SATISFIED | 61/61 fates recorded and gate-enforced; 35/35 machine-verified observed reds, all 35 independently re-measured with identical verdicts; the whole-set command completes and writes back |
-| `CUT-06` | 12 of 21 plans | Every living document naming regenerator2000 as a required prerequisite is corrected | ✓ SATISFIED | `check-no-regenerator2000.mjs` exit 0 with an EMPTY temporary allow-list; `CLAUDE.md` `r2000_*` count 0; `PROJECT.md:311` citations current; `ARCHITECTURE.md` A21 dated-superseded; all seven skill playbooks pass the gate |
+| `CUT-06` | 12 of 21 plans | Every living document naming the external analyser as a required prerequisite is corrected | ✓ SATISFIED | `check-no-analyser.mjs` exit 0 with an EMPTY temporary allow-list; `CLAUDE.md` `anno_*` count 0; `PROJECT.md:311` citations current; `ARCHITECTURE.md` A21 dated-superseded; all seven skill playbooks pass the gate |
 
 **Orphan check:** `grep -E "^\| [A-Z]+-[0-9]+ \| Phase 32 " .planning/REQUIREMENTS.md` returns
 exactly two rows, `CUT-04` and `CUT-06`, both `Complete`. The plans declare exactly those two

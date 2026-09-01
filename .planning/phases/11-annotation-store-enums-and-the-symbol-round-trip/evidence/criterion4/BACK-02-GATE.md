@@ -67,7 +67,7 @@ smoke: OK -- initialize + tools/list handshake completed (server vice, 78 tool(s
 ```
 
 The stdio server still boots under type-stripping with this phase's new modules
-(`r2000-symbols.ts` et al.) in the graph. The `MAX_MCP_OUTPUT_TOKENS` line is an
+(`anno-symbols.ts` et al.) in the graph. The `MAX_MCP_OUTPUT_TOKENS` line is an
 unrelated, pre-existing per-machine-setup notice, not an error (smoke still
 reports `OK`).
 
@@ -87,8 +87,8 @@ check-npm-packages: OK
 ```
 
 Both published tarballs still contain every module the new dynamic imports reach
--- 11-08's own folded todo-1 fix (declaring `r2000-symbols.ts` in `package.json`'s
-`files[]`) is what makes this meaningful for the r2000 family for the first time;
+-- 11-08's own folded todo-1 fix (declaring `anno-symbols.ts` in `package.json`'s
+`files[]`) is what makes this meaningful for the anno family for the first time;
 53 modules is the closure walked from `vice-proxy.ts` including that file.
 
 ## 5. `fork-manifest-surface.test.ts`'s 62-tool count

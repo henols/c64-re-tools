@@ -129,10 +129,10 @@ Every figure below was measured in this worktree, from git blobs, before any edi
 
 ### Pre-phase end, at `8f21d77`
 
-File-selection predicate — `r2000-*.ts` under `src/mcp/vice/`, which excludes `r2000-regbits.json` because the requirement is a `.ts` claim:
+File-selection predicate — `anno-*.ts` under `src/mcp/vice/`, which excludes `anno-regbits.json` because the requirement is a `.ts` claim:
 
 ```
-$ git ls-tree -r --name-only 8f21d77 -- src/mcp/vice | grep -E '^src/mcp/vice/r2000-.*\.ts$' | wc -l
+$ git ls-tree -r --name-only 8f21d77 -- src/mcp/vice | grep -E '^src/mcp/vice/anno-.*\.ts$' | wc -l
 35
 ```
 
@@ -140,7 +140,7 @@ Total lines:
 
 ```
 $ git ls-tree -r --name-only 8f21d77 -- src/mcp/vice \
-    | grep -E '^src/mcp/vice/r2000-.*\.ts$' \
+    | grep -E '^src/mcp/vice/anno-.*\.ts$' \
     | while read f; do git show "8f21d77:$f" | wc -l; done \
     | awk '{s+=$1} END {print "total_lines="s}'
 total_lines=26023
@@ -149,10 +149,10 @@ total_lines=26023
 Test / non-test split:
 
 ```
-$ ... | grep -E '^src/mcp/vice/r2000-.*\.test\.ts$' | ... 
+$ ... | grep -E '^src/mcp/vice/anno-.*\.test\.ts$' | ... 
 test_lines=15988
 
-$ ... | grep -E '^src/mcp/vice/r2000-.*\.ts$' | grep -v '\.test\.ts$' | ...
+$ ... | grep -E '^src/mcp/vice/anno-.*\.ts$' | grep -v '\.test\.ts$' | ...
 nontest_lines=10035
 ```
 
@@ -173,7 +173,7 @@ three named files:           986
 TOTAL = 18,728 + 986 = 19,714
 ```
 
-Fifteen of the 35 original files have no `anno-*` name-twin at HEAD (`r2000-launch*`, `r2000-mcp-client*`, `r2000-project*`, `r2000-session*`, `r2000-symbol-roundtrip.test.ts`, `r2000-test-gate.ts`, `r2000-upstream-audit.test.ts`, `r2000-verify*`, plus `r2000-answer-key.test.ts` and `r2000-spawn-seam.test.ts` which are two of the three named renames).
+Fifteen of the 35 original files have no `ANNO-*` name-twin at HEAD (`anno-launch*`, `anno-mcp-client*`, `anno-project*`, `anno-session*`, `anno-symbol-roundtrip.test.ts`, `anno-test-gate.ts`, `anno-derivation.test.ts`, `anno-verify*`, plus `absorbed-answer-key.test.ts` and `spawn-seam.test.ts` which are two of the three named renames).
 
 ## Discrepancy — stated, not reconciled
 
@@ -187,7 +187,7 @@ Three alternative set-definitions were tried and none reproduces 15,957:
 |---|---|
 | `anno-*` name-descendants at HEAD + the three named renamed tests (the entry's stated predicate) | **19,714** |
 | The ORIGINAL sizes at `8f21d77` of the lineages that survive (i.e. how much of the 26,023 belonged to files that lived on) | **19,839** |
-| ALL `anno-*.ts` at HEAD (36 files — includes the Phase-28 store modules, which are not r2000 descendants) + the three named tests | **37,891** |
+| ALL `anno-*.ts` at HEAD (36 files — includes the Phase-28 store modules, which are not anno descendants) + the three named tests | **37,891** |
 
 A subset-sum search over the 23-file universe of the first definition was also run, looking for a plausible exclusion set worth 3,757 lines. It returned twelve arbitrary combinations (`anno-acme-ident.ts + anno-cli.test.ts + anno-cli.ts + …`) and no natural one — no coherent predicate produces 15,957.
 
@@ -199,11 +199,11 @@ A subset-sum search over the 23-file universe of the first definition was also r
 
 **Before** (line 128, checkbox unchecked):
 
-> - [ ] **CUT-01**: The regenerator2000 integration is deleted — a **net ~12.4k lines** of the 25,759-line `r2000-*.ts` surface (10,102 non-test + 15,657 test), the remaining ~12.9k surviving under new names. Both figures correct v0.6.0's `CUT-01`/`CUT-02`, which asserted 19,181; a phase sized at 25.7k deletes the coverage instrument and the enum generator
+> - [ ] **CUT-01**: The external analyser integration is deleted — a **net ~12.4k lines** of the 25,759-line `anno-*.ts` surface (10,102 non-test + 15,657 test), the remaining ~12.9k surviving under new names. Both figures correct v0.6.0's `CUT-01`/`CUT-02`, which asserted 19,181; a phase sized at 25.7k deletes the coverage instrument and the enum generator
 
 **After** (checkbox checked, plus two provenance paragraphs folded into the same entry):
 
-> - [x] **CUT-01**: The regenerator2000 integration is deleted — a **net 10,066 lines** of the **26,023-line, 35-file** `r2000-*.ts` surface (10,035 non-test + 15,988 test), the remaining **15,957 lines** surviving under new names. These figures supersede v0.6.0's `CUT-01`/`CUT-02`, which asserted 19,181: the surface was 26,023 rather than 19,181, and a phase sized at 26.0k deletes the coverage instrument and the enum generator.
+> - [x] **CUT-01**: The external analyser integration is deleted — a **net 10,066 lines** of the **26,023-line, 35-file** `anno-*.ts` surface (10,035 non-test + 15,988 test), the remaining **15,957 lines** surviving under new names. These figures supersede v0.6.0's `CUT-01`/`CUT-02`, which asserted 19,181: the surface was 26,023 rather than 19,181, and a phase sized at 26.0k deletes the coverage instrument and the enum generator.
 >
 >   **Provenance, carried here rather than in a footnote …** — names `8f21d77` and `f16d0b1`, the predicate at each end, and the single counting command applied to both.
 >
@@ -217,7 +217,7 @@ A subset-sum search over the 23-file universe of the first definition was also r
 
 **After** — two paragraphs replacing the one:
 
-> **`CUT-01` MOVES UP to `Complete` on the OWNER's decision of 2026-08-30, after the measurement that had never been taken was taken — and its sizing sentence was rewritten in the same edit as its row.** … records that the pass happened, that all three figures were falsified in the same direction, the two options the `human_verification` item put to the owner, which one the owner chose, and that the substantive claim was independently confirmed (zero `r2000-*.ts` under `src/mcp/vice/`; the removal gate green tree-wide with an **empty** temporary allow-list).
+> **`CUT-01` MOVES UP to `Complete` on the OWNER's decision of 2026-08-30, after the measurement that had never been taken was taken — and its sizing sentence was rewritten in the same edit as its row.** … records that the pass happened, that all three figures were falsified in the same direction, the two options the `human_verification` item put to the owner, which one the owner chose, and that the substantive claim was independently confirmed (zero `anno-*.ts` under `src/mcp/vice/`; the removal gate green tree-wide with an **empty** temporary allow-list).
 >
 > **The paragraph this replaces was correct when it was written, and is superseded rather than wrong.** … says plainly which paragraph is live, records that `29-11-SUMMARY.md`'s wording of the `Partial` record is superseded by the same decision, and names the 15,957 non-re-derivation.
 
@@ -283,7 +283,7 @@ Exactly one file changed, as the plan requires. Change set, verified line by lin
 
 **The `test:automated` failing-file set is much larger than `29-BASELINE.md`'s, and the cause is the worktree, not this plan.**
 
-- Baseline (`29-BASELINE.md`): 7 failures — `audit-integrity.test.ts` (2) + `r2000-session.test.ts` (5). The latter left the set by construction when 29-10 deleted the file.
+- Baseline (`29-BASELINE.md`): 7 failures — `audit-integrity.test.ts` (2) + `anno-session.test.ts` (5). The latter left the set by construction when 29-10 deleted the file.
 - This run: **36 failures / 2,634 pass / 2,676 tests**, across `repo-root.test.ts`, `resources-sync.test.ts`, `vice-broker-acquire.test.ts`, `vice-broker-supervision.test.ts`, `broker-control.test.ts`, `broker-kill.test.ts`, `build-atomic.test.ts`, `telemetry-import.test.ts`, `anno-cli.test.ts`, `vice-proxy.test.ts`, `disasm-roundtrip.test.ts`, `absorbed-answer-key.test.ts`.
 - **Attribution is mechanical, not inferred.** `git diff f16d0b1 HEAD --name-only` returns exactly one path, `.planning/REQUIREMENTS.md`. Every source file under `src/mcp/vice/` is byte-identical to the base commit, so any test failing at HEAD fails identically at `f16d0b1`. The only guards that read `REQUIREMENTS.md` are `audit-integrity.test.ts`, `docs-dangling-refs.test.ts`, `docs-review-disposition.test.ts` and `scripts/audit-gate.mjs` — **all four green** (59/59 tests, gate exit 0).
 - **The environment names itself.** `repo-root.test.ts`'s failure message is verbatim: `the agreed directory must not sit under .claude -- got /home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-afc541937c56e907b/.vice-supervisor (the exact regression a naive move would introduce)`. This plan runs in a worktree under `.claude/`, which is precisely the condition that assertion forbids. The broker, build-atomic and resources-sync families are host/path/build-sensitive in the same way.

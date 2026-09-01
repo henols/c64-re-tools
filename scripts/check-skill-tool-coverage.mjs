@@ -34,14 +34,14 @@
 //
 // FLOW-01 (11.1-CONTEXT.md, D-11.1-02): everything above checks MCP TOOL
 // names in skill prose, but nothing checked CLI VERBS at all -- so
-// `gen-enums`, `export-lbl` and `import-lbl` (R2000-13/-14/-15's own delivery
+// `gen-enums`, `export-lbl` and `import-lbl` (ANNO-13/-14/-15's own delivery
 // path) reached `main` documented in zero skill files, with nothing here
 // catching it. The verb-coverage section near the bottom of this file closes
 // that gap the same way the rest of this file already works: the verb list is
 // PARSED from `anno-cli.ts`'s own dispatch switch
 // (`scripts/lib/anno-cli-verbs.mjs`), never a hand-typed array -- a
 // hard-coded list is exactly how this class of finding arrives. The
-// subcommand those verbs are invoked under was renamed `r2000` -> `anno` on
+// subcommand those verbs are invoked under was renamed `anno` -> `anno` on
 // 2026-08-29 (plan 29-09); the literal lives once, in that module.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -615,7 +615,7 @@ for (const [name, files] of extractedAnno) {
 //    fails when a real name leaves the surface, and its SUBJECT has to be
 //    chosen for that job rather than picked as a convenient example.
 //
-//    THE SUBJECT IS THE SEARCH VERB (C-5). It was `r2000_get_address_details`,
+//    THE SUBJECT IS THE SEARCH VERB (C-5). It was `anno_get_address_details`,
 //    a verb of a family this phase retires, so the control had to be
 //    re-pointed regardless. `anno_search` is chosen because a disappearance
 //    fires TWO independent checks rather than neither: it is `STORE-06`'s own
@@ -632,7 +632,7 @@ need(
 //    point of saying so here rather than just editing the number.
 //
 //    The floor it replaces was 10: the exact count plan 11-12 introduced, over
-//    the retired `r2000_*` family, across the three files that plan edited.
+//    the retired `anno_*` family, across the three files that plan edited.
 //    Plan 29-09 re-pointed every one of those references onto the surviving
 //    `anno_*` surface and, in doing so, MEASURED what the skill tree actually
 //    carries afterwards: 18 distinct names, spread over
@@ -672,7 +672,7 @@ need(
 // this one is about `anno <verb>` CLI invocations, a completely separate
 // surface with its own source of truth (anno-cli.ts's dispatch switch, not
 // either manifest and not CURATED_ANNO_TOOLS). The subcommand token itself
-// was renamed `r2000` -> `anno` by plan 29-09, in ONE commit spanning the
+// was renamed `anno` -> `anno` by plan 29-09, in ONE commit spanning the
 // skill prose, `scripts/lib/anno-cli-verbs.mjs`'s invocation literal and
 // `vice-proxy.ts`'s dispatch token -- moving any one alone reds this section
 // from the wrong side.
@@ -703,9 +703,9 @@ need(
 // the dispatch switch AND missing from every skill file, so an inert key can
 // never fire on its own.
 const VERB_REQUIREMENT = {
-  "gen-enums": "R2000-13",
-  "export-lbl": "R2000-14",
-  "import-lbl": "R2000-15",
+  "gen-enums": "ANNO-13",
+  "export-lbl": "ANNO-14",
+  "import-lbl": "ANNO-15",
 };
 
 const skillTexts = skillFiles.map((f) => readFileSync(f, "utf8"));

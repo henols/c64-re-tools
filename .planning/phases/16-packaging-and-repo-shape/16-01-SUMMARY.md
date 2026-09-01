@@ -39,11 +39,11 @@ key-files:
     - scripts/check-skill-fork-honesty.mjs
     - installer/scripts/sync-skills.mjs
     - .github/workflows/ci.yml
-    - .claude/mcp/vice/r2000-verb-coverage.test.ts
-    - .claude/mcp/vice/r2000-symbol-roundtrip.test.ts
+    - .claude/mcp/vice/anno-verb-coverage.test.ts
+    - .claude/mcp/vice/anno-symbol-roundtrip.test.ts
     - .claude/mcp/vice/skill-honesty-checks.test.ts
-    - .claude/mcp/vice/r2000-regbits-gen.ts
-    - .claude/mcp/vice/r2000-regbits.test.ts
+    - .claude/mcp/vice/anno-regbits-gen.ts
+    - .claude/mcp/vice/anno-regbits.test.ts
     - .claude/mcp/vice/stock-a4-checkpoint-flood.test.ts
     - src/skills/c64-provenance-diff/scripts/recovery-schema.mjs
     - src/skills/c64-provenance-diff/scripts/diff-images.mjs
@@ -117,9 +117,9 @@ status: complete
 ## Accomplishments
 
 - All six skills (`acme-build`, `c64-memory-mapping`, `c64-program-recon`, `c64-provenance-diff`, `c64-ram-capture`, `vice-wedge-triage`) live under `src/skills/`; `.claude/skills/` no longer exists.
-- Every functional consumer repointed in the same commit as the move: `.claude-plugin/plugin.json`'s `skills` field, `scripts/package.sh`'s `skillsDir`, both skill-corpus CI checks' `SKILLS_DIR` (non-vacuity floors — ≥30 `vice_*`, ≥10 `r2000_*`, ≥8 fork-only — left untouched), `installer/scripts/sync-skills.mjs`'s `SRC`, CI's two `acme.mjs` invocations, and three vice-mcp test files' `SKILLS_DIR`/`ACME_MJS`/scratch-file target.
+- Every functional consumer repointed in the same commit as the move: `.claude-plugin/plugin.json`'s `skills` field, `scripts/package.sh`'s `skillsDir`, both skill-corpus CI checks' `SKILLS_DIR` (non-vacuity floors — ≥30 `vice_*`, ≥10 `anno_*`, ≥8 fork-only — left untouched), `installer/scripts/sync-skills.mjs`'s `SRC`, CI's two `acme.mjs` invocations, and three vice-mcp test files' `SKILLS_DIR`/`ACME_MJS`/scratch-file target.
 - `recovery-schema.mjs`'s `SCAN_DIRS[1]` rebuilt `HERE`-relative (was project-root-relative and would have silently stopped resolving), with a new loud existence assertion on both scan directories.
-- Found live, by the full test run, three functional literals the plan's own enumerated consumer set missed (`r2000-regbits-gen.ts`'s `MEMMAP_PATH` and two scratch-tree mirrors of it, `stock-a4-checkpoint-flood.test.ts`'s `memmapPath`) — fixed for the new 3-level hop depth (see Deviations).
+- Found live, by the full test run, three functional literals the plan's own enumerated consumer set missed (`anno-regbits-gen.ts`'s `MEMMAP_PATH` and two scratch-tree mirrors of it, `stock-a4-checkpoint-flood.test.ts`'s `memmapPath`) — fixed for the new 3-level hop depth (see Deviations).
 - `scripts/package.sh` gained a `mustNotExist` check that fails CI if `.claude/skills` reappears at the repo root, proven non-vacuous by a live plant-and-remove.
 - Both real install routes (npm installer scratch-dir install; installer tarball dry-run) proven against the relocated tree in a scratch directory, never touching machine-global `~/.claude/plugins/` state.
 - README.md now states the payload lives under `src/skills/`, is no longer auto-discovered, why that tradeoff was accepted, and the two consumer routes for exercising it.
@@ -140,8 +140,8 @@ status: complete
 - `scripts/check-skill-tool-coverage.mjs`, `scripts/check-skill-fork-honesty.mjs` - `SKILLS_DIR` and every failure-message/comment repointed; floors unchanged
 - `installer/scripts/sync-skills.mjs` - `SRC` repointed
 - `.github/workflows/ci.yml` - two `acme.mjs` invocations in the library-free scaffold step repointed
-- `.claude/mcp/vice/r2000-verb-coverage.test.ts`, `r2000-symbol-roundtrip.test.ts`, `skill-honesty-checks.test.ts` - `SKILLS_DIR`/`ACME_MJS`/scratch-file target repointed
-- `.claude/mcp/vice/r2000-regbits-gen.ts`, `r2000-regbits.test.ts`, `stock-a4-checkpoint-flood.test.ts` - `MEMMAP_PATH`/`memmapPath` literals rebuilt for the new 3-level hop depth (deviation, see below)
+- `.claude/mcp/vice/anno-verb-coverage.test.ts`, `anno-symbol-roundtrip.test.ts`, `skill-honesty-checks.test.ts` - `SKILLS_DIR`/`ACME_MJS`/scratch-file target repointed
+- `.claude/mcp/vice/anno-regbits-gen.ts`, `anno-regbits.test.ts`, `stock-a4-checkpoint-flood.test.ts` - `MEMMAP_PATH`/`memmapPath` literals rebuilt for the new 3-level hop depth (deviation, see below)
 - `src/skills/c64-provenance-diff/scripts/recovery-schema.mjs` - `SCAN_DIRS[1]` rebuilt `HERE`-relative with an existence assertion
 - `src/skills/c64-provenance-diff/scripts/diff-images.mjs` - added a one-line comment at the generation site recording the embedded consumer path is deliberate
 - `README.md` - new "Developing this repo: no in-repo autoload" section
@@ -159,9 +159,9 @@ status: complete
 
 **1. [Rule 3 - Blocking] Three functional path literals outside the plan's own enumerated consumer set broke 4 tests after the move**
 - **Found during:** Task 1, running the full `VICE_REQUIRE_ACME=1 npm test` glob (first post-move run: 2244 pass / 4 fail, down from the 2248-pass baseline)
-- **Issue:** `r2000-regbits-gen.ts:57`'s `MEMMAP_PATH` was built as `join(HERE, "..", "..", "skills", "c64-memory-mapping", "memmap.json")` — a 2-level-up hop that resolved to `.claude/skills/...` when `.claude/skills` existed, but no longer resolves now that the skills tree is `src/skills/` (3 levels up from `.claude/mcp/vice`, since `src/` sits directly under the repo root rather than under `.claude/`). `r2000-regbits.test.ts` carried two scratch-tree tests that mirror this generator's own relative-path formula in a synthetic `tmpDir` (to prove the drift guard and the non-vacuity throw), and `stock-a4-checkpoint-flood.test.ts:128` had an identical literal for reading the KERNAL IRQ default address out of `memmap.json`. None of these four sites were in the plan's own `read_first`/consumer-edit list.
-- **Fix:** Rebuilt all four literals for the 3-level hop (`join(HERE, "..", "..", "..", "src", "skills", ...)`). For the two scratch-tree tests in `r2000-regbits.test.ts`, restructured the synthetic `tmpDir` layout to mirror the real repo shape 3 levels deep (`tmpDir/claude/mcp/vice` alongside `tmpDir/src/skills/c64-memory-mapping`, matching `.claude/mcp/vice` and `src/skills/...` both sitting directly under the repo root) so the generator's own `HERE`-relative formula resolves identically inside the scratch tree.
-- **Files modified:** `.claude/mcp/vice/r2000-regbits-gen.ts`, `.claude/mcp/vice/r2000-regbits.test.ts`, `.claude/mcp/vice/stock-a4-checkpoint-flood.test.ts`
+- **Issue:** `anno-regbits-gen.ts:57`'s `MEMMAP_PATH` was built as `join(HERE, "..", "..", "skills", "c64-memory-mapping", "memmap.json")` — a 2-level-up hop that resolved to `.claude/skills/...` when `.claude/skills` existed, but no longer resolves now that the skills tree is `src/skills/` (3 levels up from `.claude/mcp/vice`, since `src/` sits directly under the repo root rather than under `.claude/`). `anno-regbits.test.ts` carried two scratch-tree tests that mirror this generator's own relative-path formula in a synthetic `tmpDir` (to prove the drift guard and the non-vacuity throw), and `stock-a4-checkpoint-flood.test.ts:128` had an identical literal for reading the KERNAL IRQ default address out of `memmap.json`. None of these four sites were in the plan's own `read_first`/consumer-edit list.
+- **Fix:** Rebuilt all four literals for the 3-level hop (`join(HERE, "..", "..", "..", "src", "skills", ...)`). For the two scratch-tree tests in `anno-regbits.test.ts`, restructured the synthetic `tmpDir` layout to mirror the real repo shape 3 levels deep (`tmpDir/claude/mcp/vice` alongside `tmpDir/src/skills/c64-memory-mapping`, matching `.claude/mcp/vice` and `src/skills/...` both sitting directly under the repo root) so the generator's own `HERE`-relative formula resolves identically inside the scratch tree.
+- **Files modified:** `.claude/mcp/vice/anno-regbits-gen.ts`, `.claude/mcp/vice/anno-regbits.test.ts`, `.claude/mcp/vice/stock-a4-checkpoint-flood.test.ts`
 - **Verification:** Re-ran `VICE_REQUIRE_ACME=1 npm test` — 2292 tests, 2248 pass, 0 fail, 39 skipped, 5 todo, 23 suites — exactly matching the pre-move baseline.
 - **Committed in:** `2d8c25b` (Task 1 commit)
 
@@ -219,20 +219,20 @@ hostpath.ts
 incident-record.ts
 install-resources.ts
 package.json
-r2000-acme-ident.ts
-r2000-cli.ts
-r2000-confidence.ts
-r2000-d64.ts
-r2000-enum-gen.ts
-r2000-launch.ts
-r2000-mcp-client.ts
-r2000-memmap-render.ts
-r2000-project.ts
-r2000-regbits-gen.ts
-r2000-regbits.json
-r2000-symbols.ts
-r2000-tools.ts
-r2000-verify.ts
+anno-acme-ident.ts
+anno-cli.ts
+anno-confidence.ts
+anno-d64.ts
+anno-enum-gen.ts
+anno-launch.ts
+anno-mcp-client.ts
+anno-memmap-render.ts
+anno-project.ts
+anno-regbits-gen.ts
+anno-regbits.json
+anno-symbols.ts
+anno-tools.ts
+anno-verify.ts
 refresh-manifest.ts
 repo-root.ts
 resources/backend-detect.mjs

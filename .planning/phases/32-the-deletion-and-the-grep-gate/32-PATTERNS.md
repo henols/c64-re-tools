@@ -12,8 +12,8 @@ those choices into copy-ready excerpts with `file:line` citations. It does **not
 | New/Modified File | Role | Data Flow | Closest Analog | Match Quality |
 |---|---|---|---|---|
 | `.planning/phases/32-*/guard-fates.json` (NEW) | config / data | file-I/O (read-only by guard) | `scripts/audit-gate.mjs`'s `EXPECTED_DOCS_GUARD_NAMES` block (`:132-165`) — same "frozen membership checked against a derived set" role, serialized instead of inlined | role-match |
-| `scripts/check-guard-fates.mjs` (NEW) | guard / CI script | batch transform → exit status | `scripts/check-no-regenerator2000.mjs` (structure, `need()`, exact-count `===`, entry-point guard, report block) + `scripts/audit-gate.mjs` (`--root`, derive-from-disk, floor) | exact |
-| `scripts/check-guard-fates.d.mts` (NEW, only if a test imports it) | type declaration | n/a | `scripts/check-no-regenerator2000.d.mts` (14 lines, whole file) | exact |
+| `scripts/check-guard-fates.mjs` (NEW) | guard / CI script | batch transform → exit status | `scripts/check-no-analyser.mjs` (structure, `need()`, exact-count `===`, entry-point guard, report block) + `scripts/audit-gate.mjs` (`--root`, derive-from-disk, floor) | exact |
+| `scripts/check-guard-fates.d.mts` (NEW, only if a test imports it) | type declaration | n/a | `scripts/check-no-analyser.d.mts` (14 lines, whole file) | exact |
 | `src/mcp/vice/guard-fates.test.ts` (NEW) | test (non-vacuity) | request-response (predicate in / assertion out) | `src/mcp/vice/removal-gate.test.ts:58-75` | exact |
 | the mutation harness (NEW, `scripts/`) | phase instrument | event-driven loop (plant → spawn → assert → revert) | `scripts/audit-gate.mjs`'s `runGuardsLive()` (`:203-244`) | exact |
 | `.github/workflows/ci.yml` (MODIFIED) | config | n/a | the six named steps at `:189-235` | exact |
@@ -26,9 +26,9 @@ those choices into copy-ready excerpts with `file:line` citations. It does **not
 
 ### `scripts/check-guard-fates.mjs` (guard, batch → exit status)
 
-**Primary analog:** `scripts/check-no-regenerator2000.mjs`. **Secondary:** `scripts/audit-gate.mjs`.
+**Primary analog:** `scripts/check-no-analyser.mjs`. **Secondary:** `scripts/audit-gate.mjs`.
 
-**Imports + root + error accumulator** — `scripts/check-no-regenerator2000.mjs:114-125`:
+**Imports + root + error accumulator** — `scripts/check-no-analyser.mjs:114-125`:
 ```js
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -111,7 +111,7 @@ The comment records the discipline verbatim: the floor is only ever moved *in th
 retires or adds a guard, and it exists so "a silently-shrinking glob" is a structural failure.
 Set the fate registry's floor to 43 and write the same same-commit clause.
 
-**Exact-count assertion with `===`** — `scripts/check-no-regenerator2000.mjs:891-899`:
+**Exact-count assertion with `===`** — `scripts/check-no-analyser.mjs:891-899`:
 ```js
       const actual = byPath.get(p) ?? 0;
       need(
@@ -125,7 +125,7 @@ Set the fate registry's floor to 43 and write the same same-commit clause.
 Both directions asserted, and the message names what each direction means. Mirror this for the
 registry: a member with no row **and** a row naming no member both fail.
 
-**Entry-point guard, so a test can import the predicates** — `scripts/check-no-regenerator2000.mjs:754-768`:
+**Entry-point guard, so a test can import the predicates** — `scripts/check-no-analyser.mjs:754-768`:
 ```js
 // Everything from here down is this gate's own DRIVER and runs only when this
 // file is the process entry point. `removal-gate.test.ts` IMPORTS the two
@@ -139,7 +139,7 @@ const IS_ENTRY_POINT =
 if (IS_ENTRY_POINT) {
 ```
 
-**Report block** — `scripts/check-no-regenerator2000.mjs:747-758` (and the same shape at
+**Report block** — `scripts/check-no-analyser.mjs:747-758` (and the same shape at
 `scripts/check-skill-tool-coverage.mjs:~tail`):
 ```js
 if (errors.length) {
@@ -159,7 +159,7 @@ vacuous run visible in CI logs.
 
 ### ⚠️ HAZARD 1 — the exact-count exemptions red on the landing commit
 
-`scripts/check-no-regenerator2000.mjs:217-222`:
+`scripts/check-no-analyser.mjs:217-222`:
 ```js
 // PERMANENT EXEMPTIONS -- path-scoped or block-scoped, shape-matched, each
 // with an EXACT hit count measured against THIS tree (never copied out of a
@@ -169,7 +169,7 @@ vacuous run visible in CI logs.
 The `===` assertion itself is at `:891-899` (quoted above), with three more at `:914`, `:932`,
 `:943`, `:962`, `:980`, `:1052`.
 
-The **`.planning/` prefix exclusion** that makes the registry's location safe — `scripts/check-no-regenerator2000.mjs:180` and `:194-200`:
+The **`.planning/` prefix exclusion** that makes the registry's location safe — `scripts/check-no-analyser.mjs:180` and `:194-200`:
 ```js
 /** PREFIX, never a substring: `docs/planning-notes.md` stays in scope. */
 const PLANNING_PREFIX = ".planning/";
@@ -189,9 +189,9 @@ function trackedFiles() {
   the new `ci.yml` step **are** in scope. None may contain the contiguous literal in any form —
   not in a name, not in a comment, not in an error message. `.github/workflows/ci.yml` is pinned at
   exactly **1** occurrence (the existing step name at `:199`).
-- The gate composes its own path strings rather than typing them (`scripts/check-no-regenerator2000.mjs:139-146`):
+- The gate composes its own path strings rather than typing them (`scripts/check-no-analyser.mjs:139-146`):
 ```js
-export const SUBJECT_NEEDLE = "regenerator" + "2000";
+export const SUBJECT_NEEDLE = the subject needle;
 const GATE_PATH = `scripts/check-no-${SUBJECT_NEEDLE}.mjs`;
 ```
   If the new guard genuinely must name the subject, use this composition trick — but the cheaper
@@ -273,7 +273,7 @@ import { spawnSync } from "node:child_process";
 
 /** Re-introduced helper: shells out to the analyser this project deleted. */
 export function probeAnalyser(projectPath: string): string {
-  const result = spawnSync("regenerator2000", ["--mcp-server-stdio", projectPath], {
+  const result = spawnSync("the external analyser", ["--mcp-server-stdio", projectPath], {
     encoding: "utf8",
   });
   return result.stdout ?? "";
@@ -299,7 +299,7 @@ runtime import ever loads them.
 that names the subject moves that pin — re-pin in the same commit or word the row without it.
 Also: `planted-removal-fixture.{ts,md}.txt` are covered by `prefixes: ["src/mcp/vice/fixtures/planted-"]`
 with `prefixHits: 2` — a **new** `planted-*` fixture carrying the literal changes that total and
-reds the gate (`scripts/check-no-regenerator2000.mjs:958-966`):
+reds the gate (`scripts/check-no-analyser.mjs:958-966`):
 ```js
   if (cls.prefixes) {
     const total = [...byPath.entries()]
@@ -327,7 +327,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { ... } from "../../../scripts/check-no-regenerator2000.mjs";   // :38-44
+import { ... } from "../../../scripts/check-no-analyser.mjs";   // :38-44
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "fixtures");
@@ -355,7 +355,7 @@ test("planted violation, route (a): a `src/mcp/vice/*.ts` module body is reporte
 ```
 The "delete a row → red" test (D-01/§4.2 item 5) is this shape: import the guard's **exported
 predicate**, feed it a registry object with one row removed, assert it reports the missing member.
-Drive the real predicate, never a re-implementation (`scripts/check-no-regenerator2000.mjs:149-154`:
+Drive the real predicate, never a re-implementation (`scripts/check-no-analyser.mjs:149-154`:
 *"A planted violation proved against a re-implementation of the rule proves nothing about the rule
 the real scan applies."*).
 
@@ -363,7 +363,7 @@ the real scan applies."*).
 
 ### `scripts/check-guard-fates.d.mts` (type declaration)
 
-**Analog:** `scripts/check-no-regenerator2000.d.mts` — whole file, 14 lines:
+**Analog:** `scripts/check-no-analyser.d.mts` — whole file, 14 lines:
 ```typescript
 // Type declarations for the removal gate (`scripts/check-no-<subject>.mjs`),
 // so its colocated test (src/mcp/vice/removal-gate.test.ts) typechecks under
@@ -409,7 +409,7 @@ bare `run: node scripts/<file>.mjs`. Excerpt — `.github/workflows/ci.yml:192-2
       # ships, outside a dated allow-list and a set of exact-count, path- or
       # block-scoped exemptions ...
       - name: Validate the removed integration stays removed (CUT-02/CUT-03)
-        run: node scripts/check-no-regenerator2000.mjs
+        run: node scripts/check-no-analyser.mjs
 ```
 and `:232-235`:
 ```yaml
@@ -510,7 +510,7 @@ swept in, or the guard reds on correctly-preserved history. Same for `.planning/
 Two edits land on the same line, `.planning/PROJECT.md:311`:
 1. Line-citation repair, mechanical: `3052→3050`, `2987→2985`, `1531→1529`, `1507→1505`.
    (All four CLAUDE.md numbers re-verified correct against `vice-proxy.ts` this research cycle.)
-2. Live-pointer correction: `` `r2000_*` family `` → `` `anno_*` family ``, matching CLAUDE.md:26.
+2. Live-pointer correction: `` `anno_*` family `` → `` `anno_*` family ``, matching CLAUDE.md:26.
 
 **Ordering (RESEARCH Pitfall 3, D-07):** (a) repair `:311` → (b) widen `docs-linerefs.test.ts` →
 (c) measure it. Widening onto an unrepaired `PROJECT.md` makes the guard red on landing, and
@@ -562,7 +562,7 @@ set is the authority. Both directions asserted.
 interpolated string.
 
 ### Report the measured numbers, not the word OK
-**Source:** `scripts/check-skill-tool-coverage.mjs` tail, `scripts/check-no-regenerator2000.mjs:761-778`
+**Source:** `scripts/check-skill-tool-coverage.mjs` tail, `scripts/check-no-analyser.mjs:761-778`
 **Apply to:** `check-guard-fates.mjs`'s success path — print the derived-set size, the row count and
 the floor, so a vacuous run is visible in the CI log rather than green-and-silent.
 
@@ -583,8 +583,8 @@ the floor, so a vacuous run is visible in the CI log rather than green-and-silen
 **Analog search scope:** `scripts/`, `scripts/lib/`, `src/mcp/vice/*.test.ts`,
 `src/mcp/vice/fixtures/`, `.github/workflows/`
 **Files read this pass:** `scripts/audit-gate.mjs` (targeted ranges 1-60, 100-250, 1110-1175),
-`scripts/check-no-regenerator2000.mjs` (110-235, 740-800, 880-1000, tail),
-`scripts/check-no-regenerator2000.d.mts`, `scripts/lib/anno-cli-verbs.d.mts`,
+`scripts/check-no-analyser.mjs` (110-235, 740-800, 880-1000, tail),
+`scripts/check-no-analyser.d.mts`, `scripts/lib/anno-cli-verbs.d.mts`,
 `scripts/check-skill-tool-coverage.mjs` (1-40, tail), `src/mcp/vice/docs-linerefs.test.ts` (full),
 `src/mcp/vice/docs-dangling-refs.test.ts` (targeted), `src/mcp/vice/removal-gate.test.ts` (targeted),
 `src/mcp/vice/fixtures/planted-removal-fixture.ts.txt`, `src/mcp/vice/fixtures/README.md`,

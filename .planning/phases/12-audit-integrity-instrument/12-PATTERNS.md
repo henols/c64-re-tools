@@ -65,7 +65,7 @@ export const EXPECTED_DOCS_GUARD_NAMES = [
   "docs-review-disposition.test.ts",
 ];
 ```
-(D-12-08's floor-assertion shape is identical to `hostpath-consumers.test.ts:182-197`'s `R2000_MODULE_FLOOR` pattern — see below.)
+(D-12-08's floor-assertion shape is identical to `hostpath-consumers.test.ts:182-197`'s `ANNO_MODULE_FLOOR` pattern — see below.)
 
 **Spawn + interpret exit code** — reuse verbatim from `test-gate.mjs:90-98`:
 ```javascript
@@ -117,13 +117,13 @@ Gated statuses (D-12-12/D-12-13): `passed` and `tech_debt` are gated; `gaps_foun
 **Analog 1 — derived-set-plus-floor:** `.claude/mcp/vice/hostpath-consumers.test.ts:182-197` (see full excerpt above under `docs-guardFiles`). Copy this shape directly for D-12-07/D-12-08:
 ```typescript
 // hostpath-consumers.test.ts:182-197
-const R2000_MODULE_FLOOR = 14;
+const ANNO_MODULE_FLOOR = 14;
 
-test("the r2000 module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
-  const modules = r2000ProductionModules();
+test("the anno module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
+  const modules = annoProductionModules();
   assert.ok(
-    modules.length >= R2000_MODULE_FLOOR,
-    `expected >= ${R2000_MODULE_FLOOR} r2000-*.ts production modules on disk, found ${modules.length} -- ` +
+    modules.length >= ANNO_MODULE_FLOOR,
+    `expected >= ${ANNO_MODULE_FLOOR} anno-*.ts production modules on disk, found ${modules.length} -- ` +
       "an empty or broken glob must fail loudly here rather than let the absence assertion below pass trivially",
   );
 });
@@ -302,7 +302,7 @@ No test framework dependency; `npm test` runs `node --test '*.test.*'` (`.claude
 **Apply to:** `scripts/audit-gate.mjs` when run standalone (non-hook mode): collect every failure, print one `FAIL` block with a `-` bullet per failure, `process.exit(1)`; on success print one `OK` summary line with counts. This is more informative than test-gate.mjs's inherited-stdio-only contract and matches D-12-15's "name the property, the offending value, and the route to fix" requirement better, since `check-skill-tool-coverage.mjs`'s messages already do exactly that.
 
 ### Derive from ground truth, add a non-vacuity floor
-**Source:** `hostpath-consumers.test.ts:182-197` (R2000_MODULE_FLOOR), `docs-review-disposition.test.ts:271-273` (`>= 100` findings floor), `check-skill-tool-coverage.mjs:405-419` (multiple `need()` non-vacuity controls: `extracted.size >= 30`, positive-control tool names).
+**Source:** `hostpath-consumers.test.ts:182-197` (ANNO_MODULE_FLOOR), `docs-review-disposition.test.ts:271-273` (`>= 100` findings floor), `check-skill-tool-coverage.mjs:405-419` (multiple `need()` non-vacuity controls: `extracted.size >= 30`, positive-control tool names).
 **Apply to:** both `scripts/audit-gate.mjs`'s guard-file glob and `audit-integrity.test.ts`'s own assertions about that glob — every derived set in this codebase pairs with an explicit lower-bound assertion so an empty/broken glob fails loudly rather than passing vacuously.
 
 ## No Analog Found

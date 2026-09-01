@@ -60,7 +60,7 @@ export function fileClaimViolations(content, { forbidden = [], required = [] } =
  * `disasm-*.ts` module name, because `-` is a non-word character and so
  * satisfies `\b` on both sides of the match. A skill doc naming those
  * PROTECTED modules (CLAUDE.md's standing constraint; do not touch or
- * rename them) must be able to do so without tripping the R2000-05 deletion
+ * rename them) must be able to do so without tripping the ANNO-05 deletion
  * pin about a `disasm` VERB that plan 10-06 deleted from `acme.mjs`.
  *
  * Excluded by construction (NOT violations):

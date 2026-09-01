@@ -285,17 +285,17 @@ Measured with `grep -n` against the **finished** file, never computed by arithme
 | `npm run typecheck` | **clean** |
 | `npm run test:automated` | 2696 tests, **1 fail** — see reconciliation below |
 | `node scripts/check-npm-packages.mjs` | **exit 0** — `@henols/vice-mcp` 78 files, `@henols/c64-re-tools` 34 files / 7 skills; no test file leaked |
-| `node scripts/check-no-regenerator2000.mjs` | **exit 0**, allow-list still 0 entries |
+| `node scripts/check-no-analyser.mjs` | **exit 0**, allow-list still 0 entries |
 | `node scripts/audit-gate.mjs` | **exit 0** — 9 docs guards green |
 | `md5sum docs/tool-support.md` after regeneration | **`bb4744890855e58887142e5a97f44fc0`** — unchanged at `bb47448…`, as predicted |
 
-MCP-02 holds by construction: no `anno-*` module imports `hostpath.ts`, and this plan used the annotation family's own seam throughout.
+MCP-02 holds by construction: no `ANNO-*` module imports `hostpath.ts`, and this plan used the annotation family's own seam throughout.
 
 ### `test:automated` failing-file set vs `29-BASELINE.md`
 
-The baseline records `audit-integrity.test.ts` (2) + `r2000-session.test.ts` (5). The observed set is `repo-root.test.ts` (1). All three names reconcile:
+The baseline records `audit-integrity.test.ts` (2) + `anno-session.test.ts` (5). The observed set is `repo-root.test.ts` (1). All three names reconcile:
 
-- **`r2000-session.test.ts` — gone.** Deleted by plan 29-10; `29-BASELINE.md` anticipates this in its own "Note for plan 29-10".
+- **`anno-session.test.ts` — gone.** Deleted by plan 29-10; `29-BASELINE.md` anticipates this in its own "Note for plan 29-10".
 - **`audit-integrity.test.ts` — now green.** A real improvement, not a guard that stopped asserting: `git log` shows 29-05 (`c59fcef`) re-expressed its census assertions as relations with survivable fates, and `7a8bf52` registered a missing guard in both registries. Untouched by this plan.
 - **`repo-root.test.ts` — new, and NOT a regression from this plan.** It touches none of the five files this plan changed. `repo-root.test.ts:178` asserts the agreed supervisor directory does not sit under `.claude`; every GSD worktree is created at `.claude/worktrees/agent-<id>/`, so `repoRoot()` legitimately resolves there. **Confirmed by running the same file in the MAIN checkout: 6/6 green.** Logged to `deferred-items.md` item 2.
 

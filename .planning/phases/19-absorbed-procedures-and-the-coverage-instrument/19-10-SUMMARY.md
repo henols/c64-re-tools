@@ -2,7 +2,7 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 10
 subsystem: testing
-tags: [r2000, coverage-instrument, dispatch-scan, 6502, control-fixtures, negative-controls]
+tags: [anno, coverage-instrument, dispatch-scan, 6502, control-fixtures, negative-controls]
 
 # Dependency graph
 requires:
@@ -28,7 +28,7 @@ tech-stack:
   added: []
   patterns:
     - "Interior negative control: a control must reach INSIDE the predicate it constrains, and the claim is checked by a witness that decodes the payload rather than accepted from a table"
-    - "Source-derived count pin: read the predicate's body from the module source, brace-matched, count its true-returning sites, assert equality with the frozen declaration — the enumerated-site discipline of `r2000-spawn-seam.test.ts` applied to a boolean predicate"
+    - "Source-derived count pin: read the predicate's body from the module source, brace-matched, count its true-returning sites, assert equality with the frozen declaration — the enumerated-site discipline of `spawn-seam.test.ts` applied to a boolean predicate"
     - "Generator invariants as checked negatives: `assertDispatchesNowhere()` throws on any `$6c`/`$48` byte anywhere in a fixture image, so 'this program dispatches nowhere' is a checked property rather than a comment"
     - "Concatenated fixture payloads: prologue + own data literal, never laid into a pre-sized array, so a prologue edit changes the LENGTH instead of being silently absorbed"
 
@@ -39,8 +39,8 @@ key-files:
     - src/mcp/vice/fixtures/coverage/fp2b-immediate-data-pointer/project.regen2000proj
     - src/mcp/vice/fixtures/coverage/fp2b-immediate-data-pointer/store.json
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
     - src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs
     - src/mcp/vice/fixtures/coverage/README.md
 
@@ -63,10 +63,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#dispatch class 3 DECLINES an ordinary two-table indexed read loop"
+        ref: "src/mcp/vice/anno-coverage.test.ts#dispatch class 3 DECLINES an ordinary two-table indexed read loop"
         status: pass
     human_judgment: false
   - id: D2
@@ -74,7 +74,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
         status: pass
       - kind: other
         ref: "observed RED against the unfixed gate before the fix and green after — values recorded in ## Fail-First Record below"
@@ -85,10 +85,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as the zero-page vector shape's interior control"
+        ref: "src/mcp/vice/anno-coverage.test.ts#NON-VACUITY: the witness DECLINES an outside-bracketing payload offered as the zero-page vector shape's interior control"
         status: pass
       - kind: other
         ref: "node fixtures/coverage/make-coverage-fixtures.mjs — assertDispatchesNowhere() throws on any $6c/$48 byte; planted-violation message recorded below"
@@ -99,7 +99,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#FP2b earns its place: without a committed twin, the interior control's census could only be compared against a remembered number"
+        ref: "src/mcp/vice/anno-coverage.test.ts#FP2b earns its place: without a committed twin, the interior control's census could only be compared against a remembered number"
         status: pass
     human_judgment: false
   - id: D5
@@ -107,7 +107,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a zero-page vector that is BUILT and then read through as data is not dispatch context, and the census does not inflate on it"
         status: pass
     human_judgment: false
   - id: D6
@@ -115,13 +115,13 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every shape the dispatch predicate accepts is claimed by an interior declaration"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every shape the dispatch predicate accepts is claimed by an interior declaration"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the declared shape count equals the number of true-returning sites in hasDispatchContext()'s own source"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the declared shape count equals the number of true-returning sites in hasDispatchContext()'s own source"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#minting a dispatch shape id without an interior predicate THROWS, naming the id"
+        ref: "src/mcp/vice/anno-coverage.test.ts#minting a dispatch shape id without an interior predicate THROWS, naming the id"
         status: pass
       - kind: other
         ref: "planted a third true-returning branch and a synthetic shape id, both observed failing by name, both restored — messages recorded below"
@@ -132,7 +132,7 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#idempotency: two consecutive reports over the same fixture are deeply equal once the timestamp is removed"
+        ref: "src/mcp/vice/anno-coverage.test.ts#idempotency: two consecutive reports over the same fixture are deeply equal once the timestamp is removed"
         status: pass
       - kind: other
         ref: "cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.mjs (twice) && test -z \"$(git status --porcelain fixtures/coverage)\""
@@ -143,10 +143,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#ordering: every offending-address list in every fixture's report is in ascending numeric order"
+        ref: "src/mcp/vice/anno-coverage.test.ts#ordering: every offending-address list in every fixture's report is in ascending numeric order"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every reported count is a count of the deduped list printed beside it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every reported count is a count of the deduped list printed beside it"
         status: pass
     human_judgment: false
 
@@ -185,8 +185,8 @@ status: complete
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` — `hasDispatchContext()` rewritten to require the consumer; `DISPATCH_CONTEXT_SHAPES` exported and frozen; `SPLIT_TABLE_WINDOW` exported for the witness; class-3 block comment condition (c) rewritten
-- `src/mcp/vice/r2000-coverage.test.ts` — the report-level interior control, the FP2 twin comparison, `FP2b earns its place`, section 8c (witness + declaration table + five assertions), extended section-8b header, fixture-wide idempotency, `COMMITTED_CONTROL_FIXTURES` 8 → 10
+- `src/mcp/vice/anno-coverage.ts` — `hasDispatchContext()` rewritten to require the consumer; `DISPATCH_CONTEXT_SHAPES` exported and frozen; `SPLIT_TABLE_WINDOW` exported for the witness; class-3 block comment condition (c) rewritten
+- `src/mcp/vice/anno-coverage.test.ts` — the report-level interior control, the FP2 twin comparison, `FP2b earns its place`, section 8c (witness + declaration table + five assertions), extended section-8b header, fixture-wide idempotency, `COMMITTED_CONTROL_FIXTURES` 8 → 10
 - `src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs` — `FP2_INDEXED_PROLOGUE`, `FP2_IMMEDIATE_PROLOGUE`, `FP2_CODE_SIZE`, `withZeroPageVectorData()`, `ZEROPAGE_DATA_POINTER`, `IMMEDIATE_DATA_POINTER`, `assertDispatchesNowhere()`, five new invariant throws, two `FIXTURES` rows
 - `src/mcp/vice/fixtures/coverage/README.md` — count 8 → 10, two new table rows, a third group in the opening list, a new section on the interior pair's two programs, and the sameness claims corrected in all three places that stated one
 - `fp2-zeropage-data-pointer/` and `fp2b-immediate-data-pointer/` — generated project + store files
@@ -304,7 +304,7 @@ an omitted position cannot read as a deliberate one.
 |---|---|
 | `ls -d src/mcp/vice/fixtures/coverage/*/ \| wc -l` | **10** |
 | Generator run twice, then `git status --porcelain src/mcp/vice/fixtures/coverage` | **empty — DETERMINISTIC** |
-| `cd src/mcp/vice && node --test r2000-coverage.test.ts` | `# tests 64 / # pass 64 / # fail 0` |
+| `cd src/mcp/vice && node --test anno-coverage.test.ts` | `# tests 64 / # pass 64 / # fail 0` |
 | `cd src/mcp/vice && npm test` (FULL suite, not `test:automated`) | `# tests 2573 / # suites 24 / # pass 2528 / # fail 0 / # skipped 40 / # todo 5` |
 | `cd src/mcp/vice && npx tsc --noEmit -p tsconfig.json` | exit 0 |
 | `node scripts/check-npm-packages.mjs` | exit 0 — neither tarball packs anything under `fixtures/` |
@@ -380,8 +380,8 @@ achieve green.
   stated but unasserted.
 - **Fix:** The assertion now loops `fixtureDirs()`, so every committed fixture is covered and a new
   directory joins automatically. `generatedAt` remains the only field permitted to differ.
-- **Files modified:** `src/mcp/vice/r2000-coverage.test.ts`
-- **Verification:** `node --test r2000-coverage.test.ts` — 64/64 pass; the loop covers all 10 dirs.
+- **Files modified:** `src/mcp/vice/anno-coverage.test.ts`
+- **Verification:** `node --test anno-coverage.test.ts` — 64/64 pass; the loop covers all 10 dirs.
 - **Committed in:** `7581931`
 
 ---

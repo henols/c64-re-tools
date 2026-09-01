@@ -15,19 +15,19 @@ plus `upstream-procedure-manifest.json`. Every excerpt below was opened this ses
 | `scripts/check-skill-description-overlap.mjs` (new) | config/CI runner | batch | `scripts/check-skill-fork-honesty.mjs` | exact |
 | `src/mcp/vice/skill-description-overlap.test.ts` (new) | test | file-I/O + subprocess | `src/mcp/vice/skill-honesty-checks.test.ts` | exact |
 | `src/mcp/vice/skill-attribution.test.ts` (new) | test | file-I/O (registry scan) | `src/mcp/vice/skill-consumer-paths.test.ts` | exact |
-| `src/mcp/vice/r2000-coverage.ts` (new) | service (census/report) | transform (bytes -> report) | `src/mcp/vice/r2000-verify.ts` + `disasm-decoder.ts` | role-match |
-| `src/mcp/vice/r2000-coverage.test.ts` (new) | test | file-I/O + fixtures | `src/mcp/vice/r2000-verify.test.ts` / `r2000-answer-key.test.ts` | role-match |
+| `src/mcp/vice/anno-coverage.ts` (new) | service (census/report) | transform (bytes -> report) | `src/mcp/vice/anno-verify.ts` + `disasm-decoder.ts` | role-match |
+| `src/mcp/vice/anno-coverage.test.ts` (new) | test | file-I/O + fixtures | `src/mcp/vice/anno-verify.test.ts` / `absorbed-answer-key.test.ts` | role-match |
 | `src/skills/c64-program-recon/scripts/packer-finding.mjs` (new) | utility (skill script) | request-response (external oracle) | `src/skills/c64-program-recon/scripts/derive.mjs` | role-match |
-| `src/mcp/vice/packer-finding.test.ts` (new) | test | file-I/O + live gate | `src/mcp/vice/r2000-test-gate.ts` consumers | role-match |
+| `src/mcp/vice/packer-finding.test.ts` (new) | test | file-I/O + live gate | `src/mcp/vice/anno-test-gate.ts` consumers | role-match |
 | `src/skills/routine-queue-walker/SKILL.md` (new, 7th skill) | component (playbook) | event-driven (trigger match) | `src/skills/c64-program-recon/SKILL.md` | exact |
 | `src/skills/c64-program-recon/SKILL.md` (mod: absorbed basic+routine) | component | event-driven | itself / `c64-memory-mapping/SKILL.md` | exact |
 | `src/skills/c64-memory-mapping/SKILL.md` (mod: absorbed blocks+symbol) | component | event-driven | `c64-program-recon/SKILL.md` | exact |
-| `src/mcp/vice/r2000-cli.ts` (mod: `coverage` verb) | route/dispatch | request-response | its own `render-memmap` case `:1084` | exact |
+| `src/mcp/vice/anno-cli.ts` (mod: `coverage` verb) | route/dispatch | request-response | its own `render-memmap` case `:1084` | exact |
 | `scripts/check-npm-packages.mjs` (mod: `:235` pin + installer notices) | config/CI | batch | its own `:112-115` notices assertion | exact |
 | `src/mcp/vice/THIRD-PARTY-NOTICES.md` (mod) | config/doc | — | its own cc65 "Incorporated material" section `:9-40` | exact |
 | `THIRD-PARTY-NOTICES.md` (root, mod) | config/doc | — | itself (6-line pointer) | exact |
 | `installer/package.json` (mod: `files[]`) | config | — | `src/mcp/vice/package.json:75` | exact |
-| `src/mcp/vice/r2000-upstream-audit.test.ts` (mod: sha256 + disposition + ABS-04) | test | file-I/O | itself + `docs-fork-decision.test.ts` | exact |
+| `src/mcp/vice/anno-derivation.test.ts` (mod: sha256 + disposition + ABS-04) | test | file-I/O | itself + `docs-fork-decision.test.ts` | exact |
 | `.planning/.../19-STDIO-MULTIPLEXING-EVIDENCE.md` (new) | doc/evidence | — | `18-STDIN-EOF-EVIDENCE.md` | exact |
 | `.planning/.../evidence/measure-stdio-multiplexing.mjs` (new) | utility (driver) | request-response (subprocess) | `evidence/measure-stdin-eof-driver.mjs` | exact |
 | `CLAUDE.md` Project Skills table (mod) | doc | — | existing table row | exact |
@@ -132,8 +132,8 @@ need(
   `non-vacuity: expected at least 6 skill directories scanned with at least one file read in each, got ${topLevelDirs.length} directories (${[...dirsWithAFileRead].length} with a file read)`
 );
 need(
-  extractedR2000.size >= 10,
-  `non-vacuity: expected at least 10 distinct r2000_* names extracted from src/skills/, got ${extractedR2000.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
+  extractedAnno.size >= 10,
+  `non-vacuity: expected at least 10 distinct anno_* names extracted from src/skills/, got ${extractedAnno.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
 );
 ```
 
@@ -198,44 +198,44 @@ if (fs.existsSync(skillsDir)) {
 ```
 
 **`scripts/check-skill-tool-coverage.mjs`** — the ABS-01 gate. It is a plain token grep (`:88`),
-so absorbed prose must not contain a non-curated `r2000_*` literal:
+so absorbed prose must not contain a non-curated `anno_*` literal:
 
 ```js
-const R2000_TOOL_NAME_RE = /\br2000_[a-z0-9_]+/g;
+const ANNO_TOOL_NAME_RE = /\banno_[a-z0-9_]+/g;
 ```
 
 Its failure site, verbatim (`:400-406`):
 
 ```js
-for (const [name, files] of extractedR2000) {
+for (const [name, files] of extractedAnno) {
   need(
-    CURATED_R2000_TOOLS.includes(name),
-    `${name}: referenced by ${[...files].join(", ")} but NOT in CURATED_R2000_TOOLS (r2000-tools.ts). ` +
-      `Resolve by: (1) implementing it and adding it to R2000_TOOL_DEFINITIONS with a named criterion, (2) removing the skill reference, or (3) recording it as a scope decision.`
+    CURATED_ANNO_TOOLS.includes(name),
+    `${name}: referenced by ${[...files].join(", ")} but NOT in CURATED_ANNO_TOOLS (anno-tools.ts). ` +
+      `Resolve by: (1) implementing it and adding it to ANNO_TOOL_DEFINITIONS with a named criterion, (2) removing the skill reference, or (3) recording it as a scope decision.`
   );
 }
 ```
 
 Scope is `src/skills` only (`:55` `const SKILLS_DIR = join(ROOT, "src/skills");`) — so omission
-notes naming `r2000_toggle_splitter` belong in `.planning/`, never in a skill file. Do **not** add
-an `r2000_*` allowlist to this script.
+notes naming `anno_toggle_splitter` belong in `.planning/`, never in a skill file. Do **not** add
+an `anno_*` allowlist to this script.
 
 **New CLI verb constraint** — `coverage` must be named by a skill file or the same script fails
 (`:481-491`):
 
 ```js
-const missingCliVerbs = verbsMissingFromSkills(r2000CliVerbs, skillTexts);
+const missingCliVerbs = verbsMissingFromSkills(annoCliVerbs, skillTexts);
 for (const verb of missingCliVerbs) {
   const req = VERB_REQUIREMENT[verb] ? ` (${VERB_REQUIREMENT[verb]}'s delivery path)` : "";
   need(
     false,
-    `r2000 ${verb}: parsed from r2000-cli.ts's dispatch switch but named by NO skill file${req}. ` +
+    `anno ${verb}: parsed from anno-cli.ts's dispatch switch but named by NO skill file${req}. ` +
       `Resolve by: (1) documenting it in a playbook, (2) removing the verb, or (3) recording it as a scope decision.`
   );
 }
 ```
 
-`scripts/lib/r2000-cli-verbs.mjs:40` is `export const R2000_CLI_VERB_FLOOR = 7;` used as `>=`, so
+`scripts/lib/anno-cli-verbs.mjs:40` is `export const ANNO_CLI_VERB_FLOOR = 7;` used as `>=`, so
 8 verbs is safe.
 
 ---
@@ -262,11 +262,11 @@ cc65 is zlib-licensed, copyright cc65's own author:
 **The claim absorption falsifies** (`src/mcp/vice/THIRD-PARTY-NOTICES.md:78-84`, verbatim):
 
 ```markdown
-## Build/CI tools — not incorporated: regenerator2000
+## Build/CI tools — not incorporated: The external analyser
 
-regenerator2000 is invoked as an **external CLI subprocess** (Phase 10's
-`R2000-09` bootstrap and `R2000-06` reassembly proof) against a real,
-locally-installed `regenerator2000` binary. **No regenerator2000 source,
+The external analyser is invoked as an **external CLI subprocess** (Phase 10's
+`ANNO-09` bootstrap and `ANNO-06` reassembly proof) against a real,
+locally-installed `the external analyser` binary. **No the external analyser source,
 data table, or output is included in this repository or in either
 published package**, so its licence does not attach to anything shipped.
 ```
@@ -373,18 +373,18 @@ function keyDecisionsSection(projectMd: string): string | null {
 }
 ```
 
-**Extension target** — `src/mcp/vice/r2000-upstream-audit.test.ts` in full (it is short; the whole
+**Extension target** — `src/mcp/vice/anno-derivation.test.ts` in full (it is short; the whole
 file is the analog for the ABS-01/ABS-04 additions):
 
 ```ts
 const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json"), "utf8"));
 
 test("Phase 19 pins and classifies all five upstream analysis procedures", () => {
-  assert.equal(manifest.repository, "https://github.com/ricardoquesada/regenerator2000");
+  assert.equal(manifest.repository, "an upstream repository");
   assert.match(manifest.commit, /^[0-9a-f]{7,40}$/);
   assert.equal(manifest.procedures.length, 5);
   for (const procedure of manifest.procedures) {
-    assert.match(procedure.path, /^\.agent\/skills\/r2000-analyze-/);
+    assert.match(procedure.path, /^\.agent\/skills\/anno-analyze-/);
     assert.match(procedure.sha256, /^[0-9a-f]{64}$/);
     assert.ok(!procedure.destination.includes(".agent/skills"));
     for (const disposition of Object.values(procedure.tools) as string[]) {
@@ -420,12 +420,12 @@ The census's recursive-descent walker must be written the same way (bounded, nev
 no recursion into transport code) — note `decode()` itself is non-recursive, so the walker owns
 its own explicit worklist.
 
-**On-disk project read analog:** `src/mcp/vice/r2000-project.ts:135-149` — the symmetric writer
+**On-disk project read analog:** `src/mcp/vice/anno-project.ts:135-149` — the symmetric writer
 that defines the format the census reads (`raw_data_base64` = gzip+base64):
 
 ```ts
 export function synthesizeProject(bytes: Uint8Array, opts: SynthesizeOptions): string {
-  const { origin, system = R2000_SYSTEM_C64 } = opts;
+  const { origin, system = ANNO_SYSTEM_C64 } = opts;
 
   if (!Number.isInteger(origin) || origin < 0 || origin > 0xffff) {
     throw new Error(
@@ -440,12 +440,12 @@ export function synthesizeProject(bytes: Uint8Array, opts: SynthesizeOptions): s
 ```
 
 **Module-header pattern for a report that must never trust an aggregate** —
-`src/mcp/vice/r2000-verify.ts:1-26` is the closest analog and its lesson is COV-01's own
+`src/mcp/vice/anno-verify.ts:1-26` is the closest analog and its lesson is COV-01's own
 ("three distinct numbers, never one aggregate"):
 
 ```ts
 #!/usr/bin/env node
-// r2000-verify.ts -- the ONE place that interprets regenerator2000's
+// anno-verify.ts -- the ONE place that interprets the external analyser's
 // `--verify` output.
 //
 // WHY PARSING IS REQUIRED AT ALL (D-10, the concrete incident): ...
@@ -457,14 +457,14 @@ export function synthesizeProject(bytes: Uint8Array, opts: SynthesizeOptions): s
 // line, which is itself the thing that lied in the transcript above.
 ```
 
-And its no-host-path rule, which the new coverage module inherits (`r2000-verify.ts:43-45`):
+And its no-host-path rule, which the new coverage module inherits (`anno-verify.ts:43-45`):
 
 ```ts
 // Import nothing from `hostpath.ts`/`containerpath.ts` -- plan 10-01's
 // absence assertion in `hostpath-consumers.test.ts` already names this file.
 ```
 
-**Confidence vocabulary — reuse, never re-spell** (`src/mcp/vice/r2000-confidence.ts:81-93`):
+**Confidence vocabulary — reuse, never re-spell** (`src/mcp/vice/anno-confidence.ts:81-93`):
 
 ```ts
 export const CONFIDENCE_GRADES: readonly ConfidenceGrade[] = [
@@ -483,7 +483,7 @@ Exports available: `CONFIDENCE_GRADES` `:81`, `parseConfidencePrefix()` `:175`,
 `formatConfidenceComment()` `:203`.
 
 **Sealed-answer-key analog for COV-01's third number** —
-`src/mcp/vice/r2000-answer-key.test.ts:1-55`. Copy its three named failure classes and its
+`src/mcp/vice/absorbed-answer-key.test.ts:1-55`. Copy its three named failure classes and its
 "missing/empty must FAIL, never skip" rule:
 
 ```ts
@@ -505,12 +505,12 @@ const OPEN_MARKER = "<!-- CANONICAL-ANSWER-LINE -->";
 const CLOSE_MARKER = "<!-- /CANONICAL-ANSWER-LINE -->";
 ```
 
-**CLI verb wiring analog** — `src/mcp/vice/r2000-cli.ts:1050-1090`. Add `case "coverage":` beside
+**CLI verb wiring analog** — `src/mcp/vice/anno-cli.ts:1050-1090`. Add `case "coverage":` beside
 `render-memmap`; note `checkAcceptedOptions()` runs before dispatch, so the new verb's option set
 must be registered there:
 
 ```ts
-export async function runR2000Cli(argv: string[]): Promise<number> {
+export async function runAnnoCli(argv: string[]): Promise<number> {
   const [verb, ...rest] = argv;
 
   if (!verb || verb === "--help" || verb === "-h") {
@@ -533,7 +533,7 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
       case "render-memmap":
         return await cmdRenderMemmap(rest);
       default:
-        console.error(`r2000: unknown verb "${verb}"\n`);
+        console.error(`anno: unknown verb "${verb}"\n`);
 ```
 
 ---
@@ -556,23 +556,23 @@ import { readFileSync } from 'node:fs';
 ```
 
 The packer finding differs on exactly one axis — it may spawn an *external* oracle (`unp64`) —
-so it needs the live-gate discipline from `src/mcp/vice/r2000-test-gate.ts:36-56`, adapted with
+so it needs the live-gate discipline from `src/mcp/vice/anno-test-gate.ts:36-56`, adapted with
 `UNP64`/`UNP64_PATH` and `VICE_REQUIRE_UNP64`:
 
 ```ts
-export const R2000_BIN: string = process.env.R2000_BIN ?? "regenerator2000";
+export const ANNO_BIN: string = process.env.ANNO_BIN ?? "the external analyser";
 
-/** Spawns `${R2000_BIN} --version` with a 10s timeout ... Never throws: a spawn error
+/** Spawns `${ANNO_BIN} --version` with a 10s timeout ... Never throws: a spawn error
  * (e.g. ENOENT) is treated as "not available", not a test failure. */
-export function probeR2000(): boolean {
-  const r = spawnSync(R2000_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
+export function probeAnno(): boolean {
+  const r = spawnSync(ANNO_BIN, ["--version"], { encoding: "utf8", timeout: 10_000 });
   if (r.error) return false;
   const banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-  return /regenerator2000/i.test(banner);
+  return /analyser/i.test(banner);
 }
 
 /** Evaluated exactly once, at module load ... */
-export const R2000_AVAILABLE: boolean = probeR2000();
+export const ANNO_AVAILABLE: boolean = probeAnno();
 ```
 
 Header note to copy from the same file (`:24-33`) — a test-only helper must stay out of `files[]`
@@ -671,8 +671,8 @@ the shape isolates the child's own behaviour), `## Exact command sequence` (a `b
 
 **Plan:** 18-04, task 3(b)
 **Date:** 2026-08-24
-**Binary:** `regenerator2000` at `/home/henrik/.cargo/bin/regenerator2000`
-**`--version` output:** `regenerator2000 0.9.20`
+**Binary:** `the external analyser` at `/home/henrik/.cargo/bin/analyser`
+**`--version` output:** `the external analyser 0.9.20`
 
 ## Question
 ...
@@ -684,8 +684,8 @@ against the real binary, not assumed either way.
 ## Exact command sequence
 
 ```bash
-regenerator2000 --version
-# regenerator2000 0.9.20
+The external analyser --version
+# the external analyser 0.9.20
 
 cd .planning/phases/18-persistent-session-and-tool-surface/evidence
 node measure-stdin-eof-driver.mjs
@@ -694,7 +694,7 @@ node measure-stdin-eof-driver.mjs
 
 **Driver analog:** `.planning/phases/18-.../evidence/measure-stdin-eof-driver.mjs:1-23, 34-50` —
 self-contained, prints one JSON result line, imports the real shipped `synthesizeProject()` by
-`pathToFileURL`, honours `R2000_BIN`, and bounds its poll:
+`pathToFileURL`, honours `ANNO_BIN`, and bounds its poll:
 
 ```js
 #!/usr/bin/env node
@@ -703,7 +703,7 @@ self-contained, prints one JSON result line, imports the real shipped `synthesiz
 // POLL_BOUND_MS, printing one JSON result line.
 //
 // Usage: node measure-stdin-eof-driver.mjs
-// Requires `regenerator2000` on PATH (or R2000_BIN pointing at it).
+// Requires `the external analyser` on PATH (or ANNO_BIN pointing at it).
 import { spawn, execSync } from "node:child_process";
 ...
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -712,14 +712,14 @@ const POLL_INTERVAL_MS = 200;
 ```
 
 ```js
-  const r2000ProjectPath = join(HERE, "..", "..", "..", "..", "src", "mcp", "vice", "r2000-project.ts");
-  const { synthesizeProject } = await import(pathToFileURL(r2000ProjectPath).href);
+  const annoProjectPath = join(HERE, "..", "..", "..", "..", "src", "mcp", "vice", "anno-project.ts");
+  const { synthesizeProject } = await import(pathToFileURL(annoProjectPath).href);
 
   const dir = mkdtempSync(join(tmpdir(), "d18-23-stdin-eof-"));
   const projectPath = join(dir, "measure.regen2000proj");
   writeFileSync(projectPath, synthesizeProject(new Uint8Array([0]), { origin: 0xc000 }));
 
-  const bin = process.env.R2000_BIN || "regenerator2000";
+  const bin = process.env.ANNO_BIN || "the external analyser";
   const versionOutput = execSync(`${bin} --version`).toString().trim();
 ```
 
@@ -729,17 +729,17 @@ Phase 18 drivers establish that.
 ## Shared Patterns
 
 ### Module-header doctrine (applies to every new `.ts`/`.mjs` file)
-**Source:** `src/mcp/vice/r2000-verify.ts:1-26`, `src/mcp/vice/r2000-cli.ts:10-33`,
+**Source:** `src/mcp/vice/anno-verify.ts:1-26`, `src/mcp/vice/anno-cli.ts:10-33`,
 `scripts/lib/skill-honesty-checks.mjs:1-27`.
 **Apply to:** all new modules. Header states (1) WHY the file exists, naming the concrete
 incident/requirement; (2) what it is the ONE place for; (3) an explicit "WHAT NOT TO DO, named
-concretely" block. `r2000-cli.ts:10-14`:
+concretely" block. `anno-cli.ts:10-14`:
 
 ```ts
 //   WHAT NOT TO DO, named concretely:
 //   - Never accept a caller-supplied passthrough of extra flags to
-//     regenerator2000 (D-07). Every child-process argv is built only by
-//     `r2000-launch.ts`'s fixed builders ...
+//     the external analyser (D-07). Every child-process argv is built only by
+//     `anno-launch.ts`'s fixed builders ...
 ```
 
 ### Import conventions
@@ -765,7 +765,7 @@ into a permanent exemption."*
 asserted still-live, stale entries FAIL.
 
 ### Floors, not equalities
-**Source:** `scripts/check-skill-tool-coverage.mjs:379-382, 445-448`; `scripts/lib/r2000-cli-verbs.mjs:40`.
+**Source:** `scripts/check-skill-tool-coverage.mjs:379-382, 445-448`; `scripts/lib/anno-cli-verbs.mjs:40`.
 **Apply to:** every new census assertion, and the `check-npm-packages.mjs:235` fix. Project memory:
 "assert relations, not counts."
 
@@ -773,7 +773,7 @@ asserted still-live, stale entries FAIL.
 
 | File | Role | Data Flow | Reason |
 |---|---|---|---|
-| `src/mcp/vice/r2000-coverage.ts`'s widened indirect-dispatch scan (multi-entry tables, split lo/hi tables, the RTS-trick sliding window) | service | transform | Nothing in this repo walks a 6502 dispatch table. `disasm-decoder.ts` supplies the instruction stream and `resolvedTarget`, but the reachability walker, the table reconstruction and the RTS-trick matcher are genuinely new. Use RESEARCH §3.2 step 3 as the specification and §3.7's gap table as the requirement list. |
+| `src/mcp/vice/anno-coverage.ts`'s widened indirect-dispatch scan (multi-entry tables, split lo/hi tables, the RTS-trick sliding window) | service | transform | Nothing in this repo walks a 6502 dispatch table. `disasm-decoder.ts` supplies the instruction stream and `resolvedTarget`, but the reachability walker, the table reconstruction and the RTS-trick matcher are genuinely new. Use RESEARCH §3.2 step 3 as the specification and §3.7's gap table as the requirement list. |
 
 Partial-analog note: the description-similarity metric itself (normalisation, clause split,
 Jaccard) has no code analog either — RESEARCH §4.2 is the spec. Only its *file shape* is

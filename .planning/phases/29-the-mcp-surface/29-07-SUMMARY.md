@@ -13,7 +13,7 @@ provides:
   - a two-verb CLI (`render-memmap`, `coverage`) with no import of any module plan 29-10 deletes
   - a coverage census reading the Phase 28 annotation store through four named adapter functions, with the block-type vocabulary agreement measured rather than assumed
   - the removal gate's two CLI allow-list entries discharged by deletion — nothing cites 29-07 any longer
-  - a dated withdrawal note in PROJECT.md for the `R2000-14` / `R2000-15` symbol round trip
+  - a dated withdrawal note in PROJECT.md for the `ANNO-14` / `ANNO-15` symbol round trip
 affects: [29-09, 29-10, 29-12, phase-30]
 
 actuals:
@@ -41,7 +41,7 @@ key-files:
     - src/mcp/vice/anno-tools.ts
     - scripts/lib/anno-cli-verbs.mjs
     - scripts/check-skill-tool-coverage.mjs
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
     - .planning/PROJECT.md
 
 key-decisions:
@@ -109,7 +109,7 @@ coverage:
         ref: "src/mcp/vice/anno-verb-coverage.test.ts#comment hygiene: a case hidden in a block comment or a line comment is never parsed as a verb"
         status: pass
       - kind: other
-        ref: "node scripts/check-skill-tool-coverage.mjs (exit 0; 'r2000 CLI verbs: 2 parsed from anno-cli.ts, 2/2 resolved')"
+        ref: "node scripts/check-skill-tool-coverage.mjs (exit 0; 'anno CLI verbs: 2 parsed from anno-cli.ts, 2/2 resolved')"
         status: pass
     human_judgment: false
   - id: D6
@@ -117,11 +117,11 @@ coverage:
     requirement: MCP-05
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs (exit 0; 40 entries, no 29-07 citation)"
+        ref: "node scripts/check-no-analyser.mjs (exit 0; 40 entries, no 29-07 citation)"
         status: pass
     human_judgment: false
   - id: D7
-    description: "The withdrawal of the `R2000-14` / `R2000-15` symbol round trip is recorded in PROJECT.md's shipped-capability list, dated, with Phase 30 named as its return condition"
+    description: "The withdrawal of the `ANNO-14` / `ANNO-15` symbol round trip is recorded in PROJECT.md's shipped-capability list, dated, with Phase 30 named as its return condition"
     verification: []
     human_judgment: true
     rationale: "Whether a prose withdrawal note is genuinely findable by a reader checking whether the capability works is an editorial judgment no test asserts. The note's PRESENCE is mechanically checkable; its adequacy as a warning is not."
@@ -133,7 +133,7 @@ status: complete
 
 # Phase 29 Plan 07: Narrow the CLI, Re-point the Census Summary
 
-**The `r2000` CLI drops from eight verbs to two, and its `coverage` verb now reads labels, comments, ranges and derived cross-references out of the Phase 28 SQLite annotation store — proven verdict-for-verdict identical against all twelve committed coverage fixtures, with the 512-lookup round-trip ceiling deleted rather than carried.**
+**The `anno` CLI drops from eight verbs to two, and its `coverage` verb now reads labels, comments, ranges and derived cross-references out of the Phase 28 SQLite annotation store — proven verdict-for-verdict identical against all twelve committed coverage fixtures, with the 512-lookup round-trip ceiling deleted rather than carried.**
 
 ## Performance
 
@@ -146,7 +146,7 @@ status: complete
 ## Accomplishments
 
 - **The one flagged-unverified assumption is closed as measured.** `29-RESEARCH.md`'s assumption A3 — that `blockClassAt()` is total over the frozen twelve `DATA_TYPES` and that each resolves to the class the census expects — is now a committed by-name table whose key set is asserted equal to `DATA_TYPES` itself. **The measured mapping, in the schema's own order:** `code` → `code`; `byte`, `word`, `address`, `petscii`, `screencode`, `lo_hi_address`, `hi_lo_address`, `lo_hi_word`, `hi_lo_word`, `external_file` → `data` (ten members); `undefined` → `undefined`. Both non-`data` classes are reachable from the store's own lowercase vocabulary, so the census does not depend on the transitional arm for either.
-- **Six verbs deleted, not disabled.** `bootstrap`, `export-asm`, `verify`, `gen-enums`, `export-lbl` and `import-lbl` are gone from the dispatch switch, from `VERB_OPTIONS`, from USAGE and from the file's header, together with their implementations, their parsers and the four imports of modules plan 29-10 deletes (`r2000-launch.ts`, `r2000-project.ts`, `r2000-verify.ts`, `r2000-tools.ts`). `anno-cli.ts` fell from 1,511 lines to 883.
+- **Six verbs deleted, not disabled.** `bootstrap`, `export-asm`, `verify`, `gen-enums`, `export-lbl` and `import-lbl` are gone from the dispatch switch, from `VERB_OPTIONS`, from USAGE and from the file's header, together with their implementations, their parsers and the four imports of modules plan 29-10 deletes (`anno-launch.ts`, `anno-project.ts`, `anno-verify.ts`, `anno-tools.ts`). `anno-cli.ts` fell from 1,511 lines to 883.
 - **The census re-point is a caller-side change, and it is proven equivalent.** `anno-coverage.ts` was not touched. Four named adapters in the CLI (`symbolsFromStore`, `commentsFromStore`, `blocksFromStore`, `crossReferencesFromStore`) map the store's rows onto the instrument's three declared input shapes plus the derived fourth. All twelve committed control fixtures are replayed through a REAL populated store and reach the verdict each fixture records.
 - **The truncation is gone.** The 512-lookup ceiling that bounded the per-label transport round trips is deleted. Over an in-process derivation it would truncate a complete answer and call the remainder a floor — strictly worse than the bound it used to express.
 - **The gate entries this plan was cited to discharge are discharged by deletion.** Both files re-measured at exactly **zero** occurrences of the subject, so the fallback (lower the count, re-cite to 29-10) was not needed.
@@ -168,10 +168,10 @@ status: complete
 - `src/mcp/vice/block-class.test.ts` — added `STORE_BLOCK_CLASS_BY_NAME` and its totality-plus-per-member test.
 - `src/mcp/vice/anno-verb-coverage.test.ts` — `REAL_VERBS` narrowed to two; planted-violation negative control re-pointed onto `render-memmap`; comment-hygiene fixture given names that are synthetic by construction.
 - `scripts/lib/anno-cli-verbs.mjs` — `ANNO_CLI_VERB_FLOOR` 8 → 2, with the replacement-not-a-lowering record.
-- `scripts/check-skill-tool-coverage.mjs` — a dated note on `VERB_REQUIREMENT`'s three now-inert keys. **Its `render-memmap` generated-artifact non-vacuity check and its `extractedR2000.size >= 10` tool-name floor are byte-identical** (`git diff` touches neither).
-- `scripts/check-no-regenerator2000.mjs` — the two 29-07 allow-list entries deleted, with the measurement recorded in their place.
-- `.planning/PROJECT.md` — the dated `R2000-14`/`R2000-15` withdrawal note, and the constraints paragraph updated to name `anno-symbols.ts` and to state that its ROUTE, not its knowledge, is what left.
-- `src/mcp/vice/module-classification.ts` — six now-false consumer citations deleted, two drifted line numbers re-pointed, the contested `r2000-verify.ts` note corrected.
+- `scripts/check-skill-tool-coverage.mjs` — a dated note on `VERB_REQUIREMENT`'s three now-inert keys. **Its `render-memmap` generated-artifact non-vacuity check and its `extractedAnno.size >= 10` tool-name floor are byte-identical** (`git diff` touches neither).
+- `scripts/check-no-analyser.mjs` — the two 29-07 allow-list entries deleted, with the measurement recorded in their place.
+- `.planning/PROJECT.md` — the dated `ANNO-14`/`ANNO-15` withdrawal note, and the constraints paragraph updated to name `anno-symbols.ts` and to state that its ROUTE, not its knowledge, is what left.
+- `src/mcp/vice/module-classification.ts` — six now-false consumer citations deleted, two drifted line numbers re-pointed, the contested `anno-verify.ts` note corrected.
 - `src/mcp/vice/docs-dangling-refs.test.ts` — positive control re-pointed off the deleted `.vsf` refusal literal.
 - `src/mcp/vice/anno-tools.ts` — the dangling `anno-cli.ts:483-506` citation removed.
 
@@ -179,9 +179,9 @@ status: complete
 
 - **The `coverage` verb gained a required `--store` option.** The plan's action text said to "open the store once for the whole verb" while `buildCoverageReport()` still reads its payload bytes from a project file. Those are two different files in the Phase 28 architecture — the store holds annotations and never bytes (`anno-store.ts`'s DDL has no payload table) — so the verb has to name both. `--store` is required rather than defaulted from `<project>`: deriving one caller-supplied path from another is exactly the silent auto-pick D-02 forbids. Both paths go through the single confinement seam.
 - **Both allow-list entries were deleted, not re-cited.** Measured with the gate's own exported `subjectHits()` predicate: `anno-cli.ts` **13 → 0**, `anno-cli.test.ts` **14 → 0** (27 → 0 in total, matching the 27 the gate reported against plan 29-07). An entry pinning a count of zero would be an exemption with room in it, which the gate's own header forbids.
-- **The reachability check was still performed and is recorded, even though the fallback was not used.** `29-10-PLAN.md`'s `files_modified` was read directly: it carries `scripts/check-no-regenerator2000.mjs`, `src/mcp/vice/anno-cli.ts` **and** `src/mcp/vice/anno-cli.test.ts`. Had either entry needed re-citing to 29-10, that citation would have been reachable.
+- **The reachability check was still performed and is recorded, even though the fallback was not used.** `29-10-PLAN.md`'s `files_modified` was read directly: it carries `scripts/check-no-analyser.mjs`, `src/mcp/vice/anno-cli.ts` **and** `src/mcp/vice/anno-cli.test.ts`. Had either entry needed re-citing to 29-10, that citation would have been reachable.
 - **The transitional capitalised block-type arm is KEPT** — see key-decisions above. This is the explicit fate decision Task 1 asked for rather than an omission.
-- **The analyser-gated `render-memmap` happy-path test was dropped from `anno-cli.test.ts`.** It drove the retired binary through `synthesizeProject()` and `runR2000Tool()`, both of which plan 29-10 deletes, and D-17 makes plan 29-12 the owner of rebuilding that verb and its test. Keeping it would have carried two imports of deleted modules into a file whose whole point in this commit was to stop importing them. The verb's argument-level refusals are still covered here; its rendering behaviour is covered by `anno-memmap-render.test.ts`, which 29-12 owns.
+- **The analyser-gated `render-memmap` happy-path test was dropped from `anno-cli.test.ts`.** It drove the retired binary through `synthesizeProject()` and `runAnnoTool()`, both of which plan 29-10 deletes, and D-17 makes plan 29-12 the owner of rebuilding that verb and its test. Keeping it would have carried two imports of deleted modules into a file whose whole point in this commit was to stop importing them. The verb's argument-level refusals are still covered here; its rendering behaviour is covered by `anno-memmap-render.test.ts`, which 29-12 owns.
 
 ## Deviations from Plan
 
@@ -190,7 +190,7 @@ status: complete
 **1. [Rule 3 - Blocker] Six now-false consumer citations and two drifted line numbers in `module-classification.ts`**
 - **Found during:** Task 2
 - **Issue:** `module-classification.test.ts`'s Direction 9 asserts that every `basis.consumers[].line` citation resolves to a line CONTAINING the cited symbol, and Direction 9b does the same for `path:NN` citations in the module's own prose. Removing the six verbs deleted six import lines from `anno-cli.ts` and moved the two that survive, turning eight structured citations and one prose citation red.
-- **Fix:** The two surviving citations (`renderMemoryMap` :66 → :63, `buildCoverageReport` :79 → :68) and the prose citation (`checkAcceptedOptions` :330 → :169) were re-pointed. The six citations naming consumers that no longer exist were **deleted**, not stripped of their `line` field — a citation whose line is dropped stops being checked by Direction 9 while still asserting a consumer relationship that is false, which reads as a maintained record. A dated `note` on the `anno-cli.ts` entry records all six by name and why. The contested `r2000-verify.ts` note's own claim ("the CLI records the same fact twice, at anno-cli.ts:91 and :631") was rewritten, since both sites went with the verb.
+- **Fix:** The two surviving citations (`renderMemoryMap` :66 → :63, `buildCoverageReport` :79 → :68) and the prose citation (`checkAcceptedOptions` :330 → :169) were re-pointed. The six citations naming consumers that no longer exist were **deleted**, not stripped of their `line` field — a citation whose line is dropped stops being checked by Direction 9 while still asserting a consumer relationship that is false, which reads as a maintained record. A dated `note` on the `anno-cli.ts` entry records all six by name and why. The contested `anno-verify.ts` note's own claim ("the CLI records the same fact twice, at anno-cli.ts:91 and :631") was rewritten, since both sites went with the verb.
 - **Files modified:** `src/mcp/vice/module-classification.ts`
 - **Verification:** `node --test module-classification.test.ts` — 20/20 pass.
 - **Committed in:** `d15ea45`
@@ -226,21 +226,21 @@ It could not become a single shared derivation pass without one of two things th
 
 ## Issues Encountered
 
-**The `29-07` plan's Task 2 `read_first` describes `render-memmap`'s module as having "zero local imports" and "no store call site". That is false** — `anno-memmap-render.ts:69` imports `runR2000Tool` from `r2000-tools.ts` and uses it at `:106` inside its own `queryR2000Json()`. This is exactly the NUL-byte grep blindness `29-BASELINE.md` documents and D-17 records; 29-10's own plan already carries the correction and assigns the rebuild to plan 29-12 at wave 6. **No action taken here** beyond leaving `render-memmap` untouched as instructed — pre-empting 29-12's rebuild is explicitly out of scope. `anno-cli.ts` itself imports nothing 29-10 deletes; the surviving dependency is one level down, in the verb's module.
+**The `29-07` plan's Task 2 `read_first` describes `render-memmap`'s module as having "zero local imports" and "no store call site". That is false** — `anno-memmap-render.ts:69` imports `runAnnoTool` from `anno-tools.ts` and uses it at `:106` inside its own `queryAnnoJson()`. This is exactly the NUL-byte grep blindness `29-BASELINE.md` documents and D-17 records; 29-10's own plan already carries the correction and assigns the rebuild to plan 29-12 at wave 6. **No action taken here** beyond leaving `render-memmap` untouched as instructed — pre-empting 29-12's rebuild is explicitly out of scope. `anno-cli.ts` itself imports nothing 29-10 deletes; the surviving dependency is one level down, in the verb's module.
 
-**Test baseline: unchanged, verified against the SET not a count.** `npm run test:automated` finishes at **5 failures**, all in `r2000-session.test.ts` (the four `plan 18-06` FIFO-queue tests plus the timing-sensitive `R2000TimeoutError` stub). That is the recorded baseline file, load-sensitive as documented. `audit-integrity.test.ts` is absent from the failing set, which is the improvement 29-05 recorded and explained. **No new file entered the set.** Broker confirmed down before the run (`systemctl --user status vice-broker` → unit not found; no `x64sc`/`vice-broker` processes), so the BACK-05 phantom failure is not in play.
+**Test baseline: unchanged, verified against the SET not a count.** `npm run test:automated` finishes at **5 failures**, all in `anno-session.test.ts` (the four `plan 18-06` FIFO-queue tests plus the timing-sensitive `AnnoTimeoutError` stub). That is the recorded baseline file, load-sensitive as documented. `audit-integrity.test.ts` is absent from the failing set, which is the improvement 29-05 recorded and explained. **No new file entered the set.** Broker confirmed down before the run (`systemctl --user status vice-broker` → unit not found; no `x64sc`/`vice-broker` processes), so the BACK-05 phantom failure is not in play.
 
-**Wave-4 coupling with plan 29-08 (this plan writes the gate 29-08 reads).** Not observable from here whether 29-08 ran before or after this plan's gate commit — no 29-08 artifacts exist on the tree at close, and its `files_modified` (`anno-register.ts`, `anno-register.test.ts`, `anno-derivation.test.ts`, `hostpath-consumers.test.ts`, `package.json`) shows no overlap with this plan's twelve files. The obligation was met regardless: `node scripts/check-no-regenerator2000.mjs` was run and observed at **exit 0** before Task 2's commit, immediately after it, and again after Task 3, so there is no window in which the gate was red. This plan also added and deleted **zero** `src/mcp/vice/anno-*.ts` files (`git diff --diff-filter=AD 41dac67..HEAD -- 'src/mcp/vice/anno-*.ts'` is empty), so 29-08's hand-typed `ANNO_MODULE_FLOOR` is unaffected.
+**Wave-4 coupling with plan 29-08 (this plan writes the gate 29-08 reads).** Not observable from here whether 29-08 ran before or after this plan's gate commit — no 29-08 artifacts exist on the tree at close, and its `files_modified` (`anno-register.ts`, `anno-register.test.ts`, `anno-derivation.test.ts`, `hostpath-consumers.test.ts`, `package.json`) shows no overlap with this plan's twelve files. The obligation was met regardless: `node scripts/check-no-analyser.mjs` was run and observed at **exit 0** before Task 2's commit, immediately after it, and again after Task 3, so there is no window in which the gate was red. This plan also added and deleted **zero** `src/mcp/vice/anno-*.ts` files (`git diff --diff-filter=AD 41dac67..HEAD -- 'src/mcp/vice/anno-*.ts'` is empty), so 29-08's hand-typed `ANNO_MODULE_FLOOR` is unaffected.
 
 ## Verification Results
 
 | Check | Result |
 |---|---|
-| `cd src/mcp/vice && npm run test:automated` | 2811 tests, 2778 pass, **5 fail** — all `r2000-session.test.ts`, the recorded baseline set. No new failing file. |
+| `cd src/mcp/vice && npm run test:automated` | 2811 tests, 2778 pass, **5 fail** — all `anno-session.test.ts`, the recorded baseline set. No new failing file. |
 | `cd src/mcp/vice && npm run typecheck` | exit 0 |
-| `node scripts/check-skill-tool-coverage.mjs` | exit 0 — `r2000 CLI verbs: 2 parsed from anno-cli.ts, 2/2 resolved` |
+| `node scripts/check-skill-tool-coverage.mjs` | exit 0 — `anno CLI verbs: 2 parsed from anno-cli.ts, 2/2 resolved` |
 | `node scripts/check-npm-packages.mjs` | exit 0 — `@henols/vice-mcp` 83 files |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 — 40 entries, **no 29-07 citation** |
+| `node scripts/check-no-analyser.mjs` | exit 0 — 40 entries, **no 29-07 citation** |
 | `node scripts/check-skill-fork-honesty.mjs` | exit 0 |
 | `node scripts/check-skill-description-overlap.mjs` | exit 0 |
 | `node scripts/audit-gate.mjs` | exit 0 |
@@ -263,7 +263,7 @@ None - no external service configuration required.
 - **Plan 29-09 (wave 5)** inherits a two-verb CLI whose verbs are both already named by real skill files, so `check-skill-tool-coverage.mjs` reports `2/2 resolved` with no skill edit required as a precondition. Its own `files_modified` includes `scripts/lib/anno-cli-verbs.mjs` and `scripts/check-skill-tool-coverage.mjs`; both are green at this plan's close, and the `anno <verb>` invocation rename is 29-09's to make.
 - **Plan 29-10 (wave 7)** inherits `anno-cli.ts` and `anno-cli.test.ts` free of the retired subject and free of every import it deletes. Its remaining work on that pair is nil for the removal gate; the entries are gone rather than re-cited, so 29-11's emptiness assertion is one pair closer.
 - **Plan 29-12 (wave 6)** still owns the `render-memmap` rebuild. The verb, its CLI dispatch case, its argument refusals and its allow-list entry are all left exactly as found; its module's live import of the retired runner is untouched and remains D-17's subject.
-- **Phase 30** carries a named, dated debt: `R2000-14` / `R2000-15`'s symbol round trip has no route, and `gen-enums`, `export-lbl` and `import-lbl` each raise `ANNO_CLI_VERB_FLOOR` when they return. `check-skill-tool-coverage.mjs`'s `VERB_REQUIREMENT` map was deliberately kept with all three keys so the failure message is right again the day the first one lands.
+- **Phase 30** carries a named, dated debt: `ANNO-14` / `ANNO-15`'s symbol round trip has no route, and `gen-enums`, `export-lbl` and `import-lbl` each raise `ANNO_CLI_VERB_FLOOR` when they return. `check-skill-tool-coverage.mjs`'s `VERB_REQUIREMENT` map was deliberately kept with all three keys so the failure message is right again the day the first one lands.
 - **Phase 32** gains one guard-fate item: `block-class.ts`'s transitional capitalised arm, whose removal trigger is now the coverage fixtures being re-spelled.
 
 ---

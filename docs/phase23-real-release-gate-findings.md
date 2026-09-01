@@ -43,8 +43,8 @@ This document carries YAML frontmatter, unlike `docs/phase1-probe-results.md` an
 `docs/phase2-backend-probe-evidence.md`, both of which have none — the departure is
 deliberate: criterion 5 requires a machine-readable `go` / `degrade` / `no-go` verdict that
 Phase 24's planner reads as a gate, and a prose sentence buried in the body is not that.
-The precedent is `docs/phase9-regenerator2000-probe-findings.md`, which took the same
-departure for the same reason.
+The precedent is the phase-9 probe findings document, which took the same
+departure for the same reason (that document has since been removed).
 
 Every value in this document is transcribed from an outcome line at column 0 of a named
 evidence file, cited by path relative to
@@ -559,7 +559,7 @@ and is not offered as one.
 > it costs — derived from the real thing, not inferred from the fixture.*
 
 **Outcome: measured.** This is the one criterion that needs no depacked capture — it is read
-offline from the `regenerator2000-core` 0.9.20 crate source, and **no regenerator2000 process
+offline from the `external-analyser-core` 0.9.20 crate source, and **no the external analyser process
 was started** (D-01). Transcribed from `evidence/criterion4-analyzer-audit.md`:
 
 ```
@@ -591,7 +591,7 @@ stated is a decision, not a defect. Only the `lost-blocking:` count gates, via `
 
 **E6 is the audit's most load-bearing comparison, and the audit deliberately did not settle
 it.** The row is written `replaced-by:` because Ghidra was *observed* resolving a strictly
-harder indirect dispatch, and because r2000's own precondition — an already-`Address`-typed
+harder indirect dispatch, and because anno's own precondition — an already-`Address`-typed
 block — is store state the milestone is committed to holding anyway. The audit states the
 exact condition under which it should be reclassified `lost-blocking:`: **if and only if**
 criterion 2 records `C2_COMPUTED_DISPATCH: unresolved` on a real corpus **and** `GHID-04`'s
@@ -698,7 +698,7 @@ cross-reference to entries 1 and 2 rather than a ninth block, and is noted as su
 
 6. **`LabelType::Return` leaves the label vocabulary** (`evidence/criterion4-analyzer-audit.md`
    ACCEPTED LIMIT 2). The store's type set is eleven values rather than twelve. **What it
-   breaks:** a store schema copied from r2000's enum would carry a value nothing can ever set,
+   breaks:** a store schema copied from anno's enum would carry a value nothing can ever set,
    inviting a later reader to assume something populates it. Consumer: `STORE-01`.
 
 7. **`BlockType::HiLoAddress` has no observation in either direction**
@@ -938,7 +938,7 @@ same commit as this section.
     (`evidence/criterion4-analyzer-audit.md` correction 3). Seven have an arm in
     `analyzer.rs`; `state/types.rs:314-331` carries twelve. The five with no arm — `DataByte`,
     `PetsciiText`, `ScreencodeText`, `ExternalFile`, `Undefined` — fall through to a bare
-    `else { pc += 1 }` and **record no label and no cross-reference**. r2000's analyzer is
+    `else { pc += 1 }` and **record no label and no cross-reference**. anno's analyzer is
     therefore silent about text blocks and undefined regions, so `STORE-01`'s PETSCII and
     screencode typing has no analyzer-side predecessor to inherit behaviour from. *Applied* to
     `23-RESEARCH.md` in this commit.

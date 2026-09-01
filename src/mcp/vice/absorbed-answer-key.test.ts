@@ -20,7 +20,7 @@
 //      is empty, so a non-answer can never read as a vacuous pass.
 //
 // Both original checks are pure file-reads against the phase's evidence/
-// directory -- no regenerator2000 child, no D-11 gate needed. This file is
+// directory -- no the external analyser child, no D-11 gate needed. This file is
 // TEST-ONLY: it is not (and must not be) listed in package.json's files[].
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -136,7 +136,7 @@ test("QUESTION.md does not contain the sealed answer's distinctive field values 
   // as a whole word (not a bare substring) is the meaningful, non-vacuous
   // leak check. The other three fields are deliberately NOT checked as bare
   // substrings here: their values are drawn from small enumerated
-  // vocabularies (five D-25 confidence grades, twelve r2000 block types,
+  // vocabularies (five D-25 confidence grades, twelve anno block types,
   // small integers) that legitimately appear as illustrative examples
   // elsewhere in QUESTION.md's own field-rules prose -- forbidding the bare
   // word "byte" or the digit "2" from the whole document would be a vacuous
@@ -219,7 +219,7 @@ test("SESSION-B-ANSWER.md's canonical line matches QUESTION.md's own grammar", (
 // and sets `VICE_REQUIRE_ACME=1`, so a missing ACME hard-FAILS there rather
 // than skipping. The gate below is imported from `acme-gate.ts` (the
 // sanctioned seam) rather than hand-copied a third time -- that seam stands
-// under its own name, outside the regenerator2000 filename prefix, so a
+// under its own name, outside the external analyser filename prefix, so a
 // prefix-driven cleanup there cannot take this file's hard FAIL with it
 // (SEAM-01).
 // ---------------------------------------------------------------------------

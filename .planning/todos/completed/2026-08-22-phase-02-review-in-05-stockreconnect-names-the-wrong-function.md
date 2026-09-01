@@ -25,7 +25,7 @@ Correctly recorded as a confirmed-live straggler in plan 11.1-07's disposition l
 (`.planning/todos/completed/2026-08-21-phase-10-and-11-review-residual-dispositions.md`,
 its own `### 02-REVIEW.md IN-05` section) at the v0.3.0 close -- "a trivial one-line fix,"
 but `stock-connect.ts` sat outside every intervening phase's scope fence (Phase 2 family,
-not r2000, not the Phase 4 disassembler family), so no phase's plan ever touched it. This
+not anno, not the Phase 4 disassembler family), so no phase's plan ever touched it. This
 todo supersedes that entry: the finding it described as still open is now fixed.
 
 ## Resolution

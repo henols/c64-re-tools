@@ -53,7 +53,7 @@ as data — which is the "instruct it to ignore the graphics" step.
 The user's reading was that these areas are "garbled information anyway". True of
 the *rendering*, but the rendering is not the cost. **Graphics bytes decoded as
 instructions mint phantom labels and phantom cross-references that look exactly
-like real ones.** From the first fixture in this exploration, r2000 decoding a
+like real ones.** From the first fixture in this exploration, anno decoding a
 plain 32-byte counting table produced:
 
 ```

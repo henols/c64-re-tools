@@ -1,6 +1,6 @@
 ---
 created: 2026-08-21T00:00:00.000Z
-title: Stale phase pointers in stock-cia.ts and stock-dispatch.ts comments, outside the r2000 family
+title: Stale phase pointers in stock-cia.ts and stock-dispatch.ts comments, outside the anno family
 area: docs
 files:
   - .claude/mcp/vice/stock-cia.ts
@@ -43,7 +43,7 @@ guard would be self-invalidating against its own fix commits; see 11.1-01-SUMMAR
 ## Why it was deferred
 
 Comment-only, no functional impact (both tools remain correctly unregistered either
-way), and outside the two protected/in-scope families for Phase 11.1 (r2000, and the
+way), and outside the two protected/in-scope families for Phase 11.1 (anno, and the
 Phase 4 disassembler standing protection). Fixing the wording is a one-line-per-site
 doc change but is real triage work belonging to whichever phase next touches the Phase-3
 tool surface (`stock-dispatch.ts`) or the CIA/keyboard family (`stock-cia.ts`) — not this

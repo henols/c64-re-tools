@@ -11,7 +11,7 @@ requires:
 provides:
   - "fixtures/coverage/fp1-indexed-copy-loop + fp1b-immediate-copy-loop: the census false-positive control PAIR, generated"
   - "make-coverage-fixtures.mjs per-fixture `program` support plus four enforced pair invariants"
-  - "r2000-coverage.test.ts: a REPORT-level non-inflation control and an FP1b earns-its-place test"
+  - "anno-coverage.test.ts: a REPORT-level non-inflation control and an FP1b earns-its-place test"
   - "19-VALIDATION.md extended with the gap-closure run's executed evidence and nine flagged assumptions"
 affects:
   - "Phase 19 re-verification: gap 2 missing items 3 and 5 are now answerable from committed artifacts"
@@ -33,7 +33,7 @@ key-files:
   modified:
     - src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs
     - src/mcp/vice/fixtures/coverage/README.md
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.test.ts
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md
 
 key-decisions:
@@ -63,10 +63,10 @@ coverage:
     human_judgment: false
     verification:
       - kind: test
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a false-positive control fixture is committed for the census, and the census declines to inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a false-positive control fixture is committed for the census, and the census declines to inflate on it"
         status: pass
       - kind: command
-        ref: "cd src/mcp/vice && node --test r2000-coverage.test.ts"
+        ref: "cd src/mcp/vice && node --test anno-coverage.test.ts"
         status: pass
   - deliverable: "The pair is GENERATED, deterministically, and its only-difference-is-addressing-mode relationship is enforced by the generator"
     human_judgment: false
@@ -81,7 +81,7 @@ coverage:
     human_judgment: false
     verification:
       - kind: test
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a false-positive control fixture is committed for the census, and the census declines to inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a false-positive control fixture is committed for the census, and the census declines to inflate on it"
         status: pass
       - kind: command
         ref: "observed RED first against a pre-19-08 shadow tree: 55 !== 7"
@@ -90,7 +90,7 @@ coverage:
     human_judgment: false
     verification:
       - kind: test
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the committed control set is exactly the pinned size, and every fixture carries a project file and a store file"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the committed control set is exactly the pinned size, and every fixture carries a project file and a store file"
         status: pass
   - deliverable: "19-VALIDATION.md extended with executed gap-closure evidence and the nine flagged assumptions, no original row deleted"
     human_judgment: false
@@ -180,8 +180,8 @@ fallback was **not** needed. Read by role, the identifiers used are:
 
 | Role | Identifier as 19-08 implemented it | How this plan reads it |
 |---|---|---|
-| The advisory split-table field | `dispatch.splitTableCandidates` (`r2000-coverage.ts:584`) | `indexed.dispatch.splitTableCandidates.length === 1`, `orientationResolved === false`, `targets === []`; twin `=== 0` |
-| The proven-target seam | `provenDispatchTargets(scan)` (`r2000-coverage.ts:954`) | `provenDispatchTargets(report.dispatch)` deep-equals `[]` for both fixtures |
+| The advisory split-table field | `dispatch.splitTableCandidates` (`anno-coverage.ts:584`) | `indexed.dispatch.splitTableCandidates.length === 1`, `orientationResolved === false`, `targets === []`; twin `=== 0` |
+| The proven-target seam | `provenDispatchTargets(scan)` (`anno-coverage.ts:954`) | `provenDispatchTargets(report.dispatch)` deep-equals `[]` for both fixtures |
 | The narrowed raw list | `dispatch.discoveredTargets` | not read by the new assertions — reading it would defeat the seam it exists to be |
 
 The schema is `COVERAGE_SCHEMA_VERSION` 2 with the nine-entry `COVERAGE_REPORT_KEYS` unchanged;
@@ -222,13 +222,13 @@ prohibition. So the committed pair was run through the **pre-19-08 instrument**.
 
 ```
 git archive 1706d8b^ src/mcp/vice .planning/phases/19-.../evidence | tar -x -C <scratch>/shadow
-cp src/mcp/vice/r2000-coverage.test.ts <scratch>/shadow/src/mcp/vice/          # the NEW tests
+cp src/mcp/vice/anno-coverage.test.ts <scratch>/shadow/src/mcp/vice/          # the NEW tests
 cp -r fixtures/coverage/fp1-* <scratch>/shadow/src/mcp/vice/fixtures/coverage/ # the NEW fixtures
-# + a recorded NULL-HYPOTHESIS SHIM appended to the shadow's PRE-fix r2000-coverage.ts:
+# + a recorded NULL-HYPOTHESIS SHIM appended to the shadow's PRE-fix anno-coverage.ts:
 #     export function provenDispatchTargets(scan: IndirectDispatchScan): number[] {
 #       return scan.discoveredTargets;
 #     }
-cd <scratch>/shadow/src/mcp/vice && node --test --test-name-pattern '<the two new tests>' r2000-coverage.test.ts
+cd <scratch>/shadow/src/mcp/vice && node --test --test-name-pattern '<the two new tests>' anno-coverage.test.ts
 ```
 
 `1706d8b` is 19-08's gate commit, so `1706d8b^` is the last instrument state before the gate. The
@@ -278,7 +278,7 @@ pre-gate instrument would fail. No claim is made that it was red.
 
 | Where | Value |
 |---|---|
-| `r2000-coverage.test.ts` — `COMMITTED_CONTROL_FIXTURES`, read by the renamed count test | **8** |
+| `anno-coverage.test.ts` — `COMMITTED_CONTROL_FIXTURES`, read by the renamed count test | **8** |
 | `README.md` opening sentence | **"Eight** committed synthetic fixtures, in two groups" |
 | `README.md` per-fixture table | **8** rows (six `nc*`, two `fp*`) |
 | `make-coverage-fixtures.mjs` header — the shared-program invariant | "the **eight** fixtures are two groups"; the shared-program claim now scoped to "the five findings controls (NC1..NC5)" |
@@ -404,7 +404,7 @@ evidence, and none is silently "resolved". Accounting: 8 authored into `must_hav
 | 4 | ABS-03 | `ordering` | `unresolved` | A stable-ordering test for equal-scoring pairs already exists in the same file |
 | 5 | ABS-04 | `unclassified` | `unresolved` | The reversal-condition count is **structural** and cannot tell a checkable condition from a well-formed but unfalsifiable one. Left unresolved deliberately, no backstop marker. `19-VERIFICATION.md` truth 5 (✓): five dated decisions, each with a named reversal or re-sync condition |
 | 6 | COV-01 | `encoding` | `unresolved` | Byte counts over `[origin, origin + size)`; exact string equality after a four-step pinned normalisation; ASCII case-sensitive prefix matching. `19-VERIFICATION.md` truth 4 A/B (✓). 19-08's 16-bit bound narrows the range, not the meaning of equality |
-| 7 | COV-01 | `concurrency` | `unresolved` | A coverage run is read-only **by construction**, asserted at source level (no `writeFileSync` / `renameSync` / `appendFileSync` / `save_project` / live-session import). `r2000-coverage.test.ts` section 11 (✓) |
+| 7 | COV-01 | `concurrency` | `unresolved` | A coverage run is read-only **by construction**, asserted at source level (no `writeFileSync` / `renameSync` / `appendFileSync` / `save_project` / live-session import). `anno-coverage.test.ts` section 11 (✓) |
 | 8 | SURF-03 | `unclassified` | `unresolved` | `19-VERIFICATION.md` truth 5 (✓): `PACKER_VERDICTS` frozen to four; `identifiedByOracle()` the only site assigning `packer`, throwing on non-string/empty; both `spawnSync` sites `shell: false`; wired at `c64-program-recon/SKILL.md:88-89`. WR-08/WR-09 are open against that file and **DEFERRED** in 19-08 — they do not reopen SURF-03 |
 | 9 | SURF-03 | `empty` | `unresolved` | The hard-unknown property is the requirement's own core: `unknownFinding()` throws on an empty reason, `identifiedByOracle()` on an empty name. `packer-finding.test.mjs` 17 tests, 16 pass, 1 visible skip (live oracle gate) |
 
@@ -433,7 +433,7 @@ evidence, and none is silently "resolved". Accounting: 8 authored into `must_hav
 |---|---------|--------|
 | 1 | `ls -d src/mcp/vice/fixtures/coverage/*/ \| wc -l` | **8** |
 | 2 | generator run **twice**, then `git status --porcelain fixtures/coverage` | `wrote 8 control fixtures` both runs; porcelain **empty** — `DETERMINISTIC` |
-| 3 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | exit **0** — `# tests 55`, `# pass 55`, **`# fail 0`** |
+| 3 | `cd src/mcp/vice && node --test anno-coverage.test.ts` | exit **0** — `# tests 55`, `# pass 55`, **`# fail 0`** |
 | 4 | `cd src/mcp/vice && npm test` (the **FULL** suite, never `test:automated`) | exit **0** — `# tests 2564`, `# pass 2519`, **`# fail 0`**, 40 skipped, 5 todo |
 | 5 | `cd src/mcp/vice && npx tsc --noEmit -p tsconfig.json` | exit **0** |
 | 6a | `node scripts/check-npm-packages.mjs` | exit **0** — vice-mcp 75 files, c64-re-tools 34 files / 7 skills; nothing under `fixtures/` packed in either tarball |
@@ -454,7 +454,7 @@ fixture directory). **Nothing is attributed to pre-existing breakage, because th
 
 ## Test-count accounting
 
-| Point | `r2000-coverage.test.ts` | Delta |
+| Point | `anno-coverage.test.ts` | Delta |
 |---|---|---|
 | Inherited from 19-08 | 51 | — |
 | After Task 2 | **55** | **+4** = 2 authored tests + 2 auto-generated control-loop entries (`control FP1 (fp1-indexed-copy-loop): produces a non-clean result`, `control FP1b (…)`) |

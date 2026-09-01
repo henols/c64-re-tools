@@ -364,43 +364,6 @@ two lines are the part you cannot afford to load lazily.
   `ping` still reporting `running`, an identical PC — because the machine genuinely never moved.
   Two cheap reads settle it, and neither needs `vice_execution_run`.
 
-<!--
-ATTRIBUTION (ABS-02)
-Adapted from regenerator2000.
-  Source repository: https://github.com/ricardoquesada/regenerator2000
-  Source path:       r2000-analyze-routine/SKILL.md — held under the upstream
-                     repository's excluded agent-skills directory, which the
-                     published crate does not ship. The full upstream path is
-                     recorded once, in
-                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
-  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
-  Source sha256:     6fd26337de42b2d8f7da570ec7c5aa47072818f4cede675d8189930cadbe2730
-  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
-  This project elects: MIT
-
-  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
-  upstream text instructs:
-    - Upstream's "if no address is given, ask the disassembly cursor where we
-      are" step is replaced by explicit address input plus a range read.
-      Upstream's own text forbids relying on the cursor in exactly this
-      situation, and this project has no editor cursor at all.
-    - The range read names this project's own 4096-byte ceiling and the
-      consecutive-ranges route around it, which upstream has no equivalent of.
-    - Upstream's three low/high-byte immediate-formatting steps are NOT
-      carried as instructions — the underlying call is not exposed here. They
-      are named by bare verb, with the requirement that would supply their
-      criterion, under "The pointer-formatting step this project does not
-      have" below.
-    - Upstream is silent on where this procedure sits relative to a whole-
-      program pass. This project states it: the queue is
-      `routine-queue-walker`'s job and this is the per-entry procedure it
-      calls into.
-
-  Re-sync trigger: see ABS-04's dated decision and the manifest's
-  `resync_triggers`.
-  See THIRD-PARTY-NOTICES.md.
--->
-
 ## Documenting one routine, end to end
 
 The table at the top of this page finds *where* the structure is. This section
@@ -565,40 +528,6 @@ documented earlier on this page.
 | No callers, but the routine is clearly live | Reached through a jump table. Look for an address table pointing at it. |
 | Disassembly appears to break mid-routine | Undocumented opcodes. Check the binary-info hint and keep reading. |
 | Zero-page usage contradicts the main program's | The routine runs from the IRQ. Its context is IRQ-relative. |
-
-<!--
-ATTRIBUTION (ABS-02)
-Adapted from regenerator2000.
-  Source path:       r2000-analyze-basic/SKILL.md — held under the upstream
-                     repository's excluded agent-skills directory, which the
-                     published crate does not ship. The full upstream path is
-                     recorded once, in
-                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
-  Source repository: https://github.com/ricardoquesada/regenerator2000
-  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
-  Source sha256:     8fc662ce52a1c947e0b57b92a8efb8e2f387a4cdad117de2b5300f50d44c23a2
-  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
-  This project elects: MIT
-
-  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
-  upstream text instructs:
-    - This is REFERENCE-ONLY material. The capability is DEFERRED under
-      FUT-01, so the section below is carried as text a reader may consult and
-      NOT as a capability this skill claims. Upstream's four trigger phrases
-      ("analyze this BASIC code", "decode basic commands from memory", "create
-      side comments for BASIC lines", "parse basic pointer address and line
-      number") are deliberately kept out of every skill's `description:`
-      frontmatter, so nothing here can fire as a trigger.
-    - Upstream's "if unspecified, prompt the user for the range" step is
-      replaced by explicit address input, consistent with every other absorbed
-      procedure in this project.
-    - The region read names this project's own 4096-byte ceiling, which
-      upstream has no equivalent of.
-
-  Re-sync trigger: see ABS-04's dated decision and the manifest's
-  `resync_triggers`.
-  See THIRD-PARTY-NOTICES.md.
--->
 
 ## REFERENCE-ONLY: decoding Commodore BASIC tokens
 

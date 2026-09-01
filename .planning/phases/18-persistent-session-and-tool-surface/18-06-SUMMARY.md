@@ -2,7 +2,7 @@
 phase: 18-persistent-session-and-tool-surface
 plan: 06
 subsystem: session-concurrency
-tags: [regenerator2000, mutex, fifo, timeout, concurrency]
+tags: [the external analyser, mutex, fifo, timeout, concurrency]
 requires:
   - phase: 18-04
     provides: persistent session lifecycle, restart handling, and named client errors
@@ -21,14 +21,14 @@ tech-stack:
 key-files:
   created: [.planning/phases/18-persistent-session-and-tool-surface/18-06-SUMMARY.md]
   modified:
-    - src/mcp/vice/r2000-session.ts
-    - src/mcp/vice/r2000-mcp-client.ts
-    - src/mcp/vice/r2000-session.test.ts
+    - src/mcp/vice/anno-session.ts
+    - src/mcp/vice/anno-mcp-client.ts
+    - src/mcp/vice/anno-session.test.ts
     - .planning/ROADMAP.md
 key-decisions:
-  - "Serialize complete runInR2000Session callbacks at the session seam, preserving call-then-save atomicity."
+  - "Serialize complete runInAnnoSession callbacks at the session seam, preserving call-then-save atomicity."
   - "Keep the synchronous open guard beside the queue because it protects future entry points that might bypass it."
-  - "Defer reader-writer locking until Phase 19 measures regenerator2000 stdio multiplexing."
+  - "Defer reader-writer locking until Phase 19 measures the external analyser stdio multiplexing."
 patterns-established:
   - "Queue timeout timers remain referenced until grant or timeout; an unref'd timer cannot guarantee a pending Promise will reject."
 requirements-completed: [SESS-04]
@@ -38,10 +38,10 @@ coverage:
     requirement: SESS-04
     verification:
       - kind: integration
-        ref: src/mcp/vice/r2000-session.test.ts#plan 18-06
+        ref: src/mcp/vice/anno-session.test.ts#plan 18-06
         status: pass
       - kind: unit
-        ref: src/mcp/vice/r2000-mcp-client.test.ts
+        ref: src/mcp/vice/anno-mcp-client.test.ts
         status: pass
     human_judgment: false
   - id: D2
@@ -49,7 +49,7 @@ coverage:
     requirement: SESS-04
     verification:
       - kind: integration
-        ref: src/mcp/vice/r2000-session.test.ts#the queue prevents a client-side lost update
+        ref: src/mcp/vice/anno-session.test.ts#the queue prevents a client-side lost update
         status: pass
     human_judgment: false
 duration: 0min
@@ -59,19 +59,19 @@ status: complete
 
 # Phase 18 Plan 06: Session Concurrency Summary
 
-**A single FIFO queue now owns each persistent regenerator2000 session, preserving whole-operation call-and-save ordering and surfacing stuck contention as a named timeout.**
+**A single FIFO queue now owns each persistent the external analyser session, preserving whole-operation call-and-save ordering and surfacing stuck contention as a named timeout.**
 
 ## Accomplishments
 
-- Added a coarse mutex around the complete `runInR2000Session()` body, so project eviction/opening, a mutating tool call, and its internal save cannot interleave with another logical operation.
-- Added `R2000SessionBusyError` with public `waitedMs` and `holder` fields; timed-out callers are removed before they can run late.
+- Added a coarse mutex around the complete `runInAnnoSession()` body, so project eviction/opening, a mutating tool call, and its internal save cannot interleave with another logical operation.
+- Added `AnnoSessionBusyError` with public `waitedMs` and `holder` fields; timed-out callers are removed before they can run late.
 - Added FIFO, failure-release, timeout-removal, slow-holder, and non-vacuity tests. The planted bypass deliberately produces a lost update (`1` or `10`, not `11`) from two interleaved read-modify-write callbacks, while the locked run produces `11`.
 - Recorded the coarse mutex decision and Phase 19's required stdio-multiplexing measurement in the roadmap; reader-writer locking is deferred, not rejected.
 
 ## Verification
 
-- `node --experimental-strip-types --test r2000-session.test.ts` — 23 passing tests, including live regenerator2000 session checks.
-- `node --experimental-strip-types --test r2000-mcp-client.test.ts` — 23 passing tests.
+- `node --experimental-strip-types --test anno-session.test.ts` — 23 passing tests, including live the external analyser session checks.
+- `node --experimental-strip-types --test anno-mcp-client.test.ts` — 23 passing tests.
 - `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` — passed.
 - `npm test` cannot load TypeScript tests under Node 22.13 without `--experimental-strip-types`; with that option it begins executing but reports unrelated existing failures in `audit-integrity.test.ts`, `binmon-fixtures.test.ts`, and broker tests. The Phase 18 focused suites above pass.
 

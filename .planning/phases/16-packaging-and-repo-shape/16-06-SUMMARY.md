@@ -20,7 +20,7 @@ tech-stack:
   added: []
   patterns:
     - "Subprocess-CLI test pattern (argv vector via spawnSync(process.execPath, [scriptPath, ...]), never a shell string) for scripts that dispatch at module scope"
-    - "In-process import pattern for a script that guards its CLI dispatch behind an entry-point check, reused from r2000-cli.test.ts's own convention"
+    - "In-process import pattern for a script that guards its CLI dispatch behind an entry-point check, reused from anno-cli.test.ts's own convention"
     - "Scoped @ts-expect-error on a single import line (not a shipped sibling .d.mts) as the way to typecheck an import of an unmodifiable, undeclared .mjs skill script without adding a test-only artefact to the published tarball"
 
 key-files:
@@ -57,7 +57,7 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
-    description: "acme.mjs (acme-build skill) has committed, discovered test coverage for every verb (new, build, sym) through the shared r2000-test-gate.ts ACME-availability seam, with the assemble case mirroring CI's own library-free scaffold-and-assemble check including the load-address assertion"
+    description: "acme.mjs (acme-build skill) has committed, discovered test coverage for every verb (new, build, sym) through the shared anno-test-gate.ts ACME-availability seam, with the assemble case mirroring CI's own library-free scaffold-and-assemble check including the load-address assertion"
     requirement: "PKG-02"
     verification:
       - kind: unit
@@ -113,7 +113,7 @@ behind an entry-point check — while leaving all three scripts byte-for-byte un
   `VICE_REQUIRE_ACME=1`): usage/unknown-verb/missing-path/nonexistent-path and the scaffold
   (`new`) verb run unconditionally since none needs an assembler; `build`, `sym`, the
   syntax-error diagnostic parse, and the output-path/output-dir/report-suppression options are
-  gated behind the existing `r2000-test-gate.ts` ACME seam (imported, never re-probed); the
+  gated behind the existing `anno-test-gate.ts` ACME seam (imported, never re-probed); the
   assemble case mirrors CI's own library-free scaffold-and-assemble check exactly, including
   the load-address assertion.
 

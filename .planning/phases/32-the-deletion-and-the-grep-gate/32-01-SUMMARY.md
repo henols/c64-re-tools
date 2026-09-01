@@ -65,7 +65,7 @@ coverage:
     requirement: "CUT-04"
     verification:
       - kind: integration
-        ref: "node scripts/audit-mutation-harness.mjs --row src/mcp/vice/r2000-verb-coverage.test.ts"
+        ref: "node scripts/audit-mutation-harness.mjs --row src/mcp/vice/anno-verb-coverage.test.ts"
         status: pass
     human_judgment: false
   - id: D2
@@ -102,7 +102,7 @@ coverage:
     description: "SET_B_FLOOR/TOTAL_FLOOR corrected from the plan's predicted 15/60 to the measured 16/61, with the disproving command recorded"
     verification:
       - kind: integration
-        ref: "git show 345d5c4:scripts/lib/anno-cli-verbs.d.mts | grep -aoi r2000 | wc -l  -> 0, while the same path IS in git diff --diff-filter=A 0394cbc 345d5c4"
+        ref: "git show 345d5c4:scripts/lib/anno-cli-verbs.d.mts | grep -aoi anno | wc -l  -> 0, while the same path IS in git diff --diff-filter=A 0394cbc 345d5c4"
         status: pass
     human_judgment: true
     rationale: "The measurement is unambiguous, but the DECISION to move a floor away from the number three later plans (32-06/07/08) were written against needs a human to confirm rather than an executor to assume. Nothing downstream is broken by it — those plans add rows, they do not pin the total — but the arithmetic they inherit changed."
@@ -126,8 +126,8 @@ status: complete
 
 ## Accomplishments
 
-- **The tracer closed.** `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/r2000-verb-coverage.test.ts` exits 0 having recorded the guard's own exit status as **1**, with a **green false-positive control at exit 0** captured before the plant, and `git status --porcelain` byte-identical before and after. The full raw capture — both halves, TAP transcripts included — is at `evidence/32-tracer-observed-red.md`.
-- **The audited set derives, and reproduces the requirement's figures.** `setA=43` (19 name-carrying + 13 content-only test files = 32, plus 11 `scripts/` files) — exactly `CUT-04`'s two historical figures, re-measured. `setB=16`, `setC=2`, `total=61`. No member path is typed by hand anywhere in the guard (`grep -c 'src/mcp/vice/r2000' scripts/check-guard-fates.mjs` is 0).
+- **The tracer closed.** `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/anno-verb-coverage.test.ts` exits 0 having recorded the guard's own exit status as **1**, with a **green false-positive control at exit 0** captured before the plant, and `git status --porcelain` byte-identical before and after. The full raw capture — both halves, TAP transcripts included — is at `evidence/32-tracer-observed-red.md`.
+- **The audited set derives, and reproduces the requirement's figures.** `setA=43` (19 name-carrying + 13 content-only test files = 32, plus 11 `scripts/` files) — exactly `CUT-04`'s two historical figures, re-measured. `setB=16`, `setC=2`, `total=61`. No member path is typed by hand anywhere in the guard (`grep -c 'src/mcp/vice/anno' scripts/check-guard-fates.mjs` is 0).
 - **The pre-declared red is real and specific.** The guard exits non-zero naming **60** members with no row — one per line, individually. A green here would have meant the membership check was vacuous.
 - **The guard carries its own non-vacuity proof.** 21 tests in `src/mcp/vice/guard-fates.test.ts`, every one driving the REAL exported predicate: a deleted row, a stranger row, duplicate `historicalPath`, duplicate `newSubject`, an empty registry, an empty derived set, a zero-exit `observedRed`, a red with no green control, a missing `removalTrigger`, an unrecognised verdict, a load-bearing `exists` injection, three set-C parse failures, and the segment-wise `--root` boundary (`<repoRoot>-evil` is refused).
 - **Three inherited figures were re-measured and corrected**, each with the command that disproves it — see Deviations.
@@ -168,7 +168,7 @@ status: complete
   ```
   $ git diff --name-only --diff-filter=A 0394cbc 345d5c4 | grep -x 'scripts/lib/anno-cli-verbs.d.mts'
   scripts/lib/anno-cli-verbs.d.mts          # it IS an addition
-  $ git show 345d5c4:scripts/lib/anno-cli-verbs.d.mts | grep -aoi r2000 | wc -l
+  $ git show 345d5c4:scripts/lib/anno-cli-verbs.d.mts | grep -aoi anno | wc -l
   0                                          # but it fails the content predicate
   ```
 - **Why not write 15 anyway:** the guard asserts `setB.length !== SET_B_FLOOR` as an error, so a floor of 15 against a derivation of 16 would red the guard permanently, on a fabricated number, in the one file whose entire purpose is refusing fabricated evidence. The plan's own instruction — "no figure is copied … without re-running its command" — points the same way.
@@ -178,14 +178,14 @@ status: complete
 **2. [Rule 1 — Bug] The forward map is 21 same-path / 15 renamed / 7 gone, not 21 / 16 / 6**
 
 - **Found during:** Task 1 (measured), documented in Task 3.
-- **Issue:** the plan's §4 states 21 / 16 / 6. Measured, **seven** set-A paths absent from `345d5c4` have no mechanically derivable successor — no git-detected rename and no name-descendant existing at `AUDIT_END`: `r2000-launch`, `r2000-mcp-client`, `r2000-project`, `r2000-session`, `r2000-symbol-roundtrip`, `r2000-upstream-audit`, `r2000-verify` (all `.test.ts`). Calling any of them "renamed" would need a hand-typed map, which the guard forbids.
-- **Fix:** recorded as 21 / 15 / 7 with all three groups enumerated in the reconciliation §4.1-4.3. No floor depends on the split — it is descriptive. Related: the plan names **five** renames git's `-M` heuristic misses; measured **seven** (adding `scripts/lib/r2000-cli-verbs.d.mts` and `src/mcp/vice/r2000-spawn-seam.test.ts`), and the name-descendant predicate is recorded as authoritative over git's output.
+- **Issue:** the plan's §4 states 21 / 16 / 6. Measured, **seven** set-A paths absent from `345d5c4` have no mechanically derivable successor — no git-detected rename and no name-descendant existing at `AUDIT_END`: `anno-launch`, `anno-mcp-client`, `anno-project`, `anno-session`, `anno-symbol-roundtrip`, `anno-upstream-audit`, `anno-verify` (all `.test.ts`). Calling any of them "renamed" would need a hand-typed map, which the guard forbids.
+- **Fix:** recorded as 21 / 15 / 7 with all three groups enumerated in the reconciliation §4.1-4.3. No floor depends on the split — it is descriptive. Related: the plan names **five** renames git's `-M` heuristic misses; measured **seven** (adding `scripts/lib/anno-cli-verbs.d.mts` and `src/mcp/vice/spawn-seam.test.ts`), and the name-descendant predicate is recorded as authoritative over git's output.
 - **Commits:** `371750e`, `7cf922e`.
 
-**3. [Rule 1 — Bug] `.planning/research/PITFALLS.md:36`'s "21 `r2000-*.test.ts` files" is 19**
+**3. [Rule 1 — Bug] `.planning/research/PITFALLS.md:36`'s "21 `anno-*.test.ts` files" is 19**
 
 - **Found during:** Task 3.
-- **Issue:** measured 19; `CUT-04`'s own "19 `r2000-`named" is the figure that reproduces. (36 is the count of all `r2000-`prefixed files under `src/mcp/vice/`, tests and non-tests together.)
+- **Issue:** measured 19; `CUT-04`'s own "19 `anno-`named" is the figure that reproduces. (36 is the count of all `anno-`prefixed files under `src/mcp/vice/`, tests and non-tests together.)
 - **Fix:** corrected in the reconciliation §2.4 with both commands. Nothing depends on the 21 — `SET_A_FLOOR` is built on 19 + 13 + 11. Separately, `PITFALLS.md:36`'s 13 per-file counts turned out to match this document's **lines-with-a-hit** column for **all 13 files**, so the two documents differ only by counting definition; §2.3 states which definition each uses rather than leaving them contradicting.
 - **Commit:** `7cf922e`.
 
@@ -217,7 +217,7 @@ status: complete
 
 | Check | Command | Result |
 |---|---|---|
-| Tracer | `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/r2000-verb-coverage.test.ts` | exit **0**; guard status **1**; control status **0**; `tree: restored byte-identical to the baseline` |
+| Tracer | `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/anno-verb-coverage.test.ts` | exit **0**; guard status **1**; control status **0**; `tree: restored byte-identical to the baseline` |
 | Plant reverted | `git diff --stat -- scripts/lib/anno-cli-verbs.mjs` | empty |
 | Fate guard | `node scripts/check-guard-fates.mjs` | `FAIL -- setA=43 setB=16 setC=2 total=61 rows=1`, 60 named orphans — **the pre-declared red** |
 | `--root` refusal | `node scripts/check-guard-fates.mjs --root /tmp` | `REFUSED`, names `/tmp` and the repo root, exit 1 |
@@ -225,15 +225,15 @@ status: complete
 | Selector: none | `node scripts/audit-mutation-harness.mjs` | `USAGE … got 0`, exit 2 |
 | Selector: two | `… --all --row <p>` | `USAGE … got 2`, exit 2 |
 | Selector: unknown | `… --rows src/mcp/vice/not-in-registry.test.ts` | `matched 0 registry row(s)`, names the entry, exit 1 |
-| Selector: `--rows` | `… --rows src/mcp/vice/r2000-verb-coverage.test.ts --out <scratch>` | `measured 1 row(s)`, observed red |
+| Selector: `--rows` | `… --rows src/mcp/vice/anno-verb-coverage.test.ts --out <scratch>` | `measured 1 row(s)`, observed red |
 | ASVS greps | `grep -c 'NODE_TEST_' … ; grep -c 'shell: *true' … ; grep -c 'execSync' …` | **4** / **0** / **0** |
-| Subject discipline | `grep -ac 'regenerator2000'` on all four in-scope new files + both `.d.mts` | **0** each |
+| Subject discipline | `grep -ac 'the external analyser'` on all four in-scope new files + both `.d.mts` | **0** each |
 | Floors present | `grep -Ec 'SET_A_FLOOR\|SET_B_FLOOR\|SET_C_FLOOR\|TOTAL_FLOOR' scripts/check-guard-fates.mjs` | **27** (≥ 4) |
-| No typed members | `grep -c 'src/mcp/vice/r2000' scripts/check-guard-fates.mjs` | **0** |
+| No typed members | `grep -c 'src/mcp/vice/anno' scripts/check-guard-fates.mjs` | **0** |
 | Non-vacuity test | `cd src/mcp/vice && node --test guard-fates.test.ts` | **21/21 pass** |
 | Typecheck | `cd src/mcp/vice && npm run typecheck` | exit 0 |
 | No new CI step needed | `cd src/mcp/vice && node --test ci-suite-coverage.test.ts` | 10/10 pass |
-| Removal gate | `node scripts/check-no-regenerator2000.mjs` | `OK -- scanned 406 files (376 tracked … floor 350)`; every exact exemption pin unmoved |
+| Removal gate | `node scripts/check-no-analyser.mjs` | `OK -- scanned 406 files (376 tracked … floor 350)`; every exact exemption pin unmoved |
 | Audit gate | `node scripts/audit-gate.mjs --json` | `allowed: true redGuards: [] structuralErrors: [] guards: 9` |
 | Other CI checks | `check-npm-packages`, `check-skill-tool-coverage`, `check-skill-fork-honesty`, `check-skill-description-overlap`, `check-skill-cli-invocations` | all `OK` |
 | Harness not in CI | `grep -n 'audit-mutation-harness' .github/workflows/ci.yml src/mcp/vice/package.json` | no match |

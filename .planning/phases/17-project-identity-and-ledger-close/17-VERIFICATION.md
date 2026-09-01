@@ -61,7 +61,7 @@ previously-verified truths, and confirms `G-17-1`'s fix is real and complete.
 | 5 | (backstop) Every STATE.md count figure states its arithmetic in the same sentence, not hand-typed | ✓ VERIFIED | Re-confirmed directly, unaffected by plan 17-04's edits (different paragraphs). |
 | 6 | STATE.md's `## Deferred Items` states plainly what the 0 figure excludes | ✓ VERIFIED | Unaffected by plan 17-04 — that section was out of scope by explicit prohibition. |
 | 7 | PROJECT.md's `## Core Value` carries an ISO date not present before this plan | ✓ VERIFIED | `2026-08-23` still present inside the `**Kept as-is (CORE-01, decided 2026-08-23).**` marker, byte-identical per plan 17-04's own prohibition and confirmed live: `grep -n '\*\*Kept as-is (CORE-01, decided 2026-08-23).\*\*' .planning/PROJECT.md`. |
-| 8 | `## Core Value` names, verbatim, specific evidence actually weighed | ✓ VERIFIED | `R2000-01`, Phase 11's sealed-question test, `R2000-10`, `R2000-14`/`R2000-15`, the 17 `r2000_*` tools all still present — plan 17-04 explicitly left the `*Decisive reason.*` paragraph untouched (only `*Provenance.*` changed). |
+| 8 | `## Core Value` names, verbatim, specific evidence actually weighed | ✓ VERIFIED | `ANNO-01`, Phase 11's sealed-question test, `ANNO-10`, `ANNO-14`/`ANNO-15`, the 17 `anno_*` tools all still present — plan 17-04 explicitly left the `*Decisive reason.*` paragraph untouched (only `*Provenance.*` changed). |
 | 9 | The verdict recorded is the option **a human selected** at the `gate="blocking-human"` checkpoint, not one an executor picked while unattended | ⚠️ see Human Verification | The `*Provenance.*` paragraph is now corrected (plan 17-04, gap `G-17-1`): it states plainly that the checkpoint was rendered, the operator answered 298 seconds later in free text (`you decide`) rather than choosing either label, and the orchestrator then selected `keep-dated`. It also now distinguishes the terminal render (six-for/five-against columns) from the decision prompt itself (two labels plus one strongest-argument line each), and states the UAT non-recall. Comprehension is stated as not evidenced by any artifact and not claimed — the false claim `17-UAT.md` test 1 found is gone. The must-have's literal wording ("a human selected...") remains unmet by design (delegation, not personal selection); that gap is unchanged by this plan and was never intended to be reopened. Routed to human verification. |
 | 10 | If keep-as-is, the entry names a concrete condition under which the question reopens | ✓ VERIFIED | `*Reversal.*` paragraph untouched by plan 17-04; both conditions still present verbatim. |
 | 11 | The dated entry lives inside `## Core Value`, not `## Key Decisions`; `docs-fork-decision.test.ts` stays green and untouched | ✓ VERIFIED | Re-ran: `node --test docs-fork-decision.test.ts` → 6/6 pass. Not in plan 17-04's `files_modified`; `git diff HEAD -- src/` clean. |
@@ -223,7 +223,7 @@ reached; (d) the reversal condition is specific enough to tell whether it has
 been met.
 
 **Expected:** All four sub-criteria hold. (This verifier's own reading found
-all four satisfied — the entry names `keep-dated`, cites `R2000-01`/Phase
+all four satisfied — the entry names `keep-dated`, cites `ANNO-01`/Phase
 11's sealed-question test/the symbol round trip by name, contains an explicit
 "Case against this verdict, carried rather than resolved" paragraph, and
 states two concrete, checkable reversal triggers. `17-UAT.md`'s test 2 already

@@ -185,7 +185,7 @@ declared scope. Both limitations were routed around; neither was patched.
 
 - `git status --porcelain` over tracked non-`.planning` paths: **empty**.
 - `git diff --exit-code -- docs/tool-support.md`: **exit 0**.
-- `node scripts/check-no-regenerator2000.mjs`: **exit 0** — the removal gate's exact per-exemption
+- `node scripts/check-no-analyser.mjs`: **exit 0** — the removal gate's exact per-exemption
   hit counts are unmoved, so no plant disturbed the subject literal's pinned occurrences.
 - All six CI check scripts exit 0; `node scripts/audit-gate.mjs --json` reports
   `allowed: true, redGuards: [], structuralErrors: []`.
@@ -211,8 +211,8 @@ declared scope. Both limitations were routed around; neither was patched.
   **7** `gone` + **2** set C = 25, with **0** same-path and **0** renamed members remaining. The full
   audited set is 61; 36 rows are recorded.
 - The `gone` group, owed to plan 32-08 as `deleted` or `superseded`, is:
-  `r2000-launch.test.ts`, `r2000-mcp-client.test.ts`, `r2000-project.test.ts`, `r2000-session.test.ts`,
-  `r2000-symbol-roundtrip.test.ts`, **`r2000-upstream-audit.test.ts`**, `r2000-verify.test.ts`.
+  `anno-launch.test.ts`, `anno-mcp-client.test.ts`, `anno-project.test.ts`, `anno-session.test.ts`,
+  `anno-symbol-roundtrip.test.ts`, **`anno-derivation.test.ts`**, `anno-verify.test.ts`.
   The emphasised one is the member plan 32-06 suggested this plan might have to take: the derivation
   places it in `forwardGone`, not `forwardSamePath`, so it is **not** this plan's and no row was
   created for it here.
@@ -315,7 +315,7 @@ Raw output:
 sync-skills: copied 7 skill(s) into /home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/installer/skills: acme-build, c64-memory-mapping, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker, vice-wedge-triage
 sync-skills: excluded 6 non-shipping entries (test files, fixtures/, test-corpus.mjs)
 check-npm-packages: FAIL
-  - vice-mcp: missing anno-cli.ts -- R2000-09 would ship a package that throws ERR_MODULE_NOT_FOUND
+  - vice-mcp: missing anno-cli.ts -- ANNO-09 would ship a package that throws ERR_MODULE_NOT_FOUND
   - vice-mcp: anno-cli.ts is imported by vice-proxy.ts but is not in the published tarball -- Rule 2 (see 6801cf5, 897faf6)
 ```
 
@@ -1633,8 +1633,8 @@ ok 4 - every module this phase adds is absent from the hostpath.ts consumer set 
   duration_ms: 35.339187
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
-ok 5 - the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+# Subtest: the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+ok 5 - the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
   ---
   duration_ms: 1.916632
   type: 'test'
@@ -1651,14 +1651,14 @@ ok 7 - INT-01's positive control: the modules the audit found uncovered are pres
   duration_ms: 1.252904
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
-ok 8 - the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+# Subtest: the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+ok 8 - the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
   ---
   duration_ms: 33.165532
   type: 'test'
   ...
-# Subtest: planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
-ok 9 - planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+# Subtest: planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+ok 9 - planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
   ---
   duration_ms: 1.148679
   type: 'test'
@@ -1770,8 +1770,8 @@ ok 4 - every module this phase adds is absent from the hostpath.ts consumer set 
   duration_ms: 23.514
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
-ok 5 - the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+# Subtest: the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+ok 5 - the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
   ---
   duration_ms: 1.533671
   type: 'test'
@@ -1788,8 +1788,8 @@ ok 7 - INT-01's positive control: the modules the audit found uncovered are pres
   duration_ms: 0.991674
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
-not ok 8 - the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+# Subtest: the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+not ok 8 - the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
   ---
   duration_ms: 21.873669
   type: 'test'
@@ -1814,8 +1814,8 @@ not ok 8 - the annotation module family (D-08/R2000-02) is absent from the consu
     Test.run (node:internal/test_runner/test:1101:12)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-# Subtest: planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
-ok 9 - planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+# Subtest: planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+ok 9 - planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
   ---
   duration_ms: 0.675577
   type: 'test'
@@ -3851,7 +3851,7 @@ not ok 1 - tools/list survives a missing or corrupt snapshot
   location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a74dc0897a837deff/src/mcp/vice/vice-proxy.test.ts:570:1'
   failureType: 'testCodeFailure'
   error: |-
-    expected only the synthetic and r2000_* tools for /tmp/vice-proxy-manifest-bad-JGLb1S/does-not-exist.json
+    expected only the synthetic and anno_* tools for /tmp/vice-proxy-manifest-bad-JGLb1S/does-not-exist.json
     + actual - expected
     
       [

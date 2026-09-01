@@ -15,7 +15,7 @@
 // (ACME_BIN / acmeSkipReasonFor / assertAcmeRequiredIfEnvSet) from
 // ./acme-gate.ts, exactly like disasm-roundtrip.test.ts -- never a
 // second, hand-rolled binary-presence probe. The seam lives under its own
-// name rather than inside the regenerator2000 gate module, so a
+// name rather than inside the external analyser gate module, so a
 // prefix-driven cleanup there cannot silently turn this file's hard FAIL
 // back into a skip (SEAM-01). The always-runs
 // availability-gate test below fails loudly (not silently skips) when

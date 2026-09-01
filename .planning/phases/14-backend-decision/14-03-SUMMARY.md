@@ -176,7 +176,7 @@ status: complete
 - **Issue:** `docs-deferred-ledger.test.ts`'s AUDIT-04 direction-A guard failed: the pending todo filed by Task 2 (`2026-08-22-tools-manifest-stale-missing-vice_snapshot_list`) had no corresponding row in `STATE.md`'s `## Deferred Items` section. A second, adjacent AUDIT-04 subtest in the same file failed as a direct consequence.
 - **Fix:** Added one table row to `STATE.md`'s Deferred Items section naming the todo, its priority (`low`), and a one-line summary matching the todo's own framing.
 - **Files modified:** `.planning/STATE.md`
-- **Verification:** `node --test docs-deferred-ledger.test.ts` went from 2 failing / 2 passing to 4/4 passing. Full `node test-gate.mjs` re-run afterward dropped from 8 failures to 1 (a pre-existing, documented full-suite-load flake in `r2000-mcp-client.test.ts`, confirmed green when run focused — see Issues Encountered).
+- **Verification:** `node --test docs-deferred-ledger.test.ts` went from 2 failing / 2 passing to 4/4 passing. Full `node test-gate.mjs` re-run afterward dropped from 8 failures to 1 (a pre-existing, documented full-suite-load flake in `anno-mcp-client.test.ts`, confirmed green when run focused — see Issues Encountered).
 - **Committed in:** `ae05182`
 
 ---
@@ -189,17 +189,17 @@ status: complete
 **Full-suite test-gate.mjs run surfaced 8 failures on the first pass; 7 of
 the 8 are the exact pre-existing full-suite-load flakes this plan's dispatch
 instructions named in advance** (`audit-integrity.test.ts`'s D-12-02 case,
-`broker-control.test.ts`'s SIGHUP/singleton case, `r2000-cli.test.ts`'s
-`--help`/verb-options bin cases, and `r2000-mcp-client.test.ts`'s
+`broker-control.test.ts`'s SIGHUP/singleton case, `anno-cli.test.ts`'s
+`--help`/verb-options bin cases, and `anno-mcp-client.test.ts`'s
 mid-call-exit-family Property 1/2/5 and Task-3 cases). All seven were
 re-run focused (`node --test <file>.test.ts` in isolation) and passed
 cleanly: `audit-integrity.test.ts` 43/43, `broker-control.test.ts` 45/45,
-`r2000-cli.test.ts` 64/64, `r2000-mcp-client.test.ts` 23/23 — confirming
+`anno-cli.test.ts` 64/64, `anno-mcp-client.test.ts` 23/23 — confirming
 these are timing-sensitive child-process-stub tests under full-suite CPU/IO
 contention, not regressions introduced by this plan. The 8th failure
 (`docs-deferred-ledger.test.ts`'s AUDIT-04 direction-A) was this plan's own
 gap, fixed above. A second full-suite re-run afterward showed exactly 1
-failure remaining — a `r2000-mcp-client.test.ts` Property-5 case from the
+failure remaining — a `anno-mcp-client.test.ts` Property-5 case from the
 same known-flaky family, also confirmed green when run focused
 (23/23) — consistent with the documented flake pattern, not a new one.
 

@@ -13,7 +13,7 @@ requires:
 provides:
   - "`19-REVIEW-FIX.md` — the phase's durable disposition ledger, covering all 24 finding ids `19-REVIEW.md` declares, in the guard's source 5. Measured to cover all 24 ALONE, with every other disposition source excluded"
   - "Both stale `deferred-items.md` entries corrected in place: the failed prediction kept as the record of what was believed, plus a dated correction with the measured current condition and a clearing condition this run satisfies. Both CLEARED"
-  - "Deferred item 3 (the r2000-session flake) re-measured rather than restated: 2 red in 6 full-suite runs, 0 red in 4 standalone, with the 200 ms wall-clock budget cited at source"
+  - "Deferred item 3 (the anno-session flake) re-measured rather than restated: 2 red in 6 full-suite runs, 0 red in 4 standalone, with the 200 ms wall-clock budget cited at source"
   - "`19-VALIDATION.md` extended with ten executed-evidence rows for the second gap-closure run, a measured-this-run block, and a nine-row phase gate — 93 insertions, 0 deletions"
   - "The release hold named rather than left as an unowned default: 19-07's checkpoint option and the verbatim lifting condition, with the statement that this run does not satisfy it"
 affects: [phase-19 re-verification, phase-20 decomposition sweep, milestone audit]
@@ -126,10 +126,10 @@ coverage:
         status: pass
     human_judgment: false
   - id: D9
-    description: "Deferred item 3 (the r2000-session load-sensitive stub test) remains genuinely open and is reported rather than absorbed — its fix is outside this plan's file fence"
+    description: "Deferred item 3 (the anno-session load-sensitive stub test) remains genuinely open and is reported rather than absorbed — its fix is outside this plan's file fence"
     verification: []
     human_judgment: true
-    rationale: "The item is unclosed by design. Whether the honest choice was to report it rather than widen a 200 ms timeout in a file outside the fence is a judgment about scope discipline, and no test can assert it. A human should confirm the reporting is adequate and route the fix to a plan that owns r2000-session.ts."
+    rationale: "The item is unclosed by design. Whether the honest choice was to report it rather than widen a 200 ms timeout in a file outside the fence is a judgment about scope discipline, and no test can assert it. A human should confirm the reporting is adequate and route the fix to a plan that owns anno-session.ts."
 
 # Metrics
 duration: 23 min
@@ -327,7 +327,7 @@ rather than the claim repeated:
 | `docs-deferred-ledger.test.ts` | **0** | `# tests 6 # pass 6 # fail 0` |
 | `docs-fork-decision.test.ts` | **0** | `# tests 6 # pass 6 # fail 0` |
 | `docs-linerefs.test.ts` | **0** | `# tests 3 # pass 3 # fail 0` |
-| `docs-r2000-decisions.test.ts` | **0** | `# tests 5 # pass 5 # fail 0` |
+| `docs-absorbed-decisions.test.ts` | **0** | `# tests 5 # pass 5 # fail 0` |
 
 **Zero of seven genuinely red.** The six-of-seven cascade claim is confirmed by measurement, and the
 seventh is green for a real reason. `audit-integrity.test.ts` standalone: **exit 0**,
@@ -355,10 +355,10 @@ aggregate run.
 `stock-a4-checkpoint-flood`). A CI failure in any of those nine would be invisible to the subset.
 The subset was not used as evidence anywhere in this plan.
 
-## The `r2000-session.test.ts` flake — re-measured, not absorbed
+## The `anno-session.test.ts` flake — re-measured, not absorbed
 
 The orchestrator's wave-3 gate reported `# fail 1` on `not ok 858 - stub: a child that answers
-nothing within the call timeout rejects with R2000TimeoutError, is killed, and the crash counter
+nothing within the call timeout rejects with AnnoTimeoutError, is killed, and the crash counter
 increases by 1`. Re-measured here rather than accepted:
 
 - **Standalone, three consecutive runs at `1494ade`:** exit 0, `# tests 25 / # pass 25 / # fail 0`,
@@ -366,18 +366,18 @@ increases by 1`. Re-measured here rather than accepted:
 - **Full suite, this plan's own gate:** **green** — `# tests 2580 / # pass 2535 / # fail 0`. Across
   2026-08-25 the full-suite rate is now **2 red in 6**.
 - **The mechanism is now source-level, not inferred.** The test drives a real spawned child against a
-  **200 ms** wall-clock budget (`r2000-session.test.ts:622`, test declared at `:616`) while
+  **200 ms** wall-clock budget (`anno-session.test.ts:622`, test declared at `:616`) while
   `node --test` runs test *files* concurrently across 12 cores. That explains the exact split
   observed: red only ever under the full suite, never standalone.
 - **Nothing in this run touched it, confirmed:**
-  `git log a756b17..HEAD -- src/mcp/vice/r2000-session.ts src/mcp/vice/r2000-session.test.ts` is
-  empty, and neither file imports from `r2000-coverage.*`.
+  `git log a756b17..HEAD -- src/mcp/vice/anno-session.ts src/mcp/vice/anno-session.test.ts` is
+  empty, and neither file imports from `anno-coverage.*`.
 
 **The tension in this plan's own instructions, resolved by reporting rather than by force.** This
 plan's `files_modified` fence covers only `.planning/` files, so widening that timeout was never
 available to it — and its own prohibitions forbid making a red gate green by rewriting a ledger.
 Deferred item 3's clearing condition is therefore **unchanged**: a plan that owns
-`r2000-session.ts` either widens the timeout or replaces the wall-clock wait with an injected clock.
+`anno-session.ts` either widens the timeout or replaces the wall-clock wait with an injected clock.
 The evidence was strengthened; the condition was not moved to fit the run. **A green gate does not
 close an intermittent failure**, and the item is left open after this plan's own suite ran clean.
 
@@ -505,7 +505,7 @@ after plan N, and a claim about which document dispositions an id cannot survive
 being written. Both classes are fixed the same way — phrase the condition over a property that can be
 re-measured, and re-measure it.
 
-**The `r2000-session.test.ts` flake could not be fixed here and was not made to look fixed.** See
+**The `anno-session.test.ts` flake could not be fixed here and was not made to look fixed.** See
 its section above. It remains open with its owner named.
 
 ## User Setup Required
@@ -527,7 +527,7 @@ None — no external service configuration required.
   - **`WR-06`** (the coverage CLI surface is untested) is the honest limit on `19-VALIDATION.md`'s one
     green-run-only COV-01 row, and both documents now say so.
 - **Deferred item 3** is the one live blocker on a reliably-green CI gate and needs a plan that owns
-  `r2000-session.ts`.
+  `anno-session.ts`.
 - **The release hold stands** with its verbatim condition recorded. `[skip release]` remains on every
   commit until a Phase 19 re-verification returns no gaps.
 

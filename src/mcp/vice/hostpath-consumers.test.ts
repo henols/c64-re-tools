@@ -72,7 +72,7 @@ function importsHostpath(strippedSrc: string): boolean {
 /** Strips `//` line comments and `/* ... *\/` block comments, returning the
  * comment-stripped source as ONE newline-joined string (not an array of
  * lines) so a multi-line import statement stays intact for a single regex
- * match against the whole thing. This is r2000-launch.test.ts's own
+ * match against the whole thing. This is anno-launch.test.ts's own
  * stripCommentLines(), reused verbatim rather than reinvented: its WR-02 fix
  * (10-REVIEW.md) closes a block comment on the FIRST close-comment token
  * found by position, never by whether the trimmed line happens to END with
@@ -202,7 +202,7 @@ test("every module this phase adds is absent from the hostpath.ts consumer set (
  * second directory walk -- filtered down to the family name pattern.
  *
  * RE-EXPRESSED OVER THE `anno-` PREFIX BY PLAN 29-05 (D-05, D-13). The
- * helper this replaces filtered on `/^r2000-.*\.ts$/`; nine capability
+ * helper this replaces filtered on `/^anno-.*\.ts$/`; nine capability
  * modules moved out from under that prefix in the same commit, so a filter
  * left pointing at it would have kept counting a shrinking family and gone
  * quietly vacuous as the family emptied. The prefix is the one D-05 locks,
@@ -221,7 +221,7 @@ function annoProductionModules(): string[] {
 // pass trivially, which is the exact defect INT-01 found in the ten-name
 // hard-coded array this whole derivation replaces.
 //
-// It REPLACES `R2000_MODULE_FLOOR = 14` over the retired prefix, and D-13's
+// It REPLACES `ANNO_MODULE_FLOOR = 14` over the retired prefix, and D-13's
 // "raised, not lowered" is read LITERALLY rather than charitably: 15 is
 // strictly greater than the 14 it replaces, so the re-expression is a raise
 // on its own terms and needs no interpretation. That is only satisfiable
@@ -256,7 +256,7 @@ function annoProductionModules(): string[] {
 // strictly greater than the 16 it replaces.
 const ANNO_MODULE_FLOOR = 16 + 1;
 
-test("the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
+test("the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();
   assert.ok(
     modules.length >= ANNO_MODULE_FLOOR,
@@ -316,7 +316,7 @@ test("INT-01's positive control: the modules the audit found uncovered are prese
   }
 });
 
-test("the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
+test("the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path", () => {
   const importers = hostpathImporters();
   const annoModules = annoProductionModules();
   // Non-vacuity is asserted separately above; this loop still guards against
@@ -327,7 +327,7 @@ test("the annotation module family (D-08/R2000-02) is absent from the consumer s
   }
 });
 
-test("planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses", () => {
+test("planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses", () => {
   const plantedViolation = `import { hostPath } from "./hostpath.ts";\nexport function doSomething() {}\n`;
   const plantedClean = `export function doSomething() {}\n`;
   assert.equal(

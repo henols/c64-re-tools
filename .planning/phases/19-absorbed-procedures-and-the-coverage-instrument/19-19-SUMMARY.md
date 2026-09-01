@@ -93,7 +93,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: integration
-        ref: "cd src/mcp/vice && node --test docs-deferred-ledger.test.ts docs-r2000-decisions.test.ts docs-dangling-refs.test.ts audit-integrity.test.ts (within the 96/96 seven-guard run)"
+        ref: "cd src/mcp/vice && node --test docs-deferred-ledger.test.ts docs-absorbed-decisions.test.ts docs-dangling-refs.test.ts audit-integrity.test.ts (within the 96/96 seven-guard run)"
         status: pass
     human_judgment: true
     rationale: >-
@@ -119,13 +119,13 @@ coverage:
         ref: "cd src/mcp/vice && npx tsc --noEmit → exit 0"
         status: pass
       - kind: unit
-        ref: "cd src/mcp/vice && node --test r2000-coverage.test.ts → 107 pass / 0 fail (baseline 71 at the round-3 verification)"
+        ref: "cd src/mcp/vice && node --test anno-coverage.test.ts → 107 pass / 0 fail (baseline 71 at the round-3 verification)"
         status: pass
       - kind: unit
-        ref: "cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts → 22 pass / 0 fail"
+        ref: "cd src/mcp/vice && node --test anno-coverage-grammar.test.ts → 22 pass / 0 fail"
         status: pass
       - kind: unit
-        ref: "cd src/mcp/vice && node --test docs-review-disposition.test.ts audit-integrity.test.ts ci-suite-coverage.test.ts comment-phase-pointers.test.ts docs-dangling-refs.test.ts docs-r2000-decisions.test.ts docs-deferred-ledger.test.ts → 96 pass / 0 fail"
+        ref: "cd src/mcp/vice && node --test docs-review-disposition.test.ts audit-integrity.test.ts ci-suite-coverage.test.ts comment-phase-pointers.test.ts docs-dangling-refs.test.ts docs-absorbed-decisions.test.ts docs-deferred-ledger.test.ts → 96 pass / 0 fail"
         status: pass
       - kind: integration
         ref: "node scripts/check-npm-packages.mjs && node scripts/check-skill-tool-coverage.mjs && node scripts/check-skill-description-overlap.mjs → all exit 0"
@@ -278,7 +278,7 @@ resolved in favour of the enumerated list, and neither changed what was produced
 
 ## Issues Encountered
 
-None. The full suite was green on its single run, so the documented `r2000-session.ts` call-timeout
+None. The full suite was green on its single run, so the documented `anno-session.ts` call-timeout
 flake never engaged and the plan's prepared handling — standalone re-run, `git log` non-causation
 check, append to the running tally — was not needed for a red. The tally was appended anyway, as a
 green observation that does not clear the item.
@@ -289,11 +289,11 @@ green observation that does not clear the item.
 |---|---|
 | `cd src/mcp/vice && npm test` (FULL suite, run ONCE) | `# tests 2638`, `# suites 24`, `# pass 2593`, **`# fail 0`**, 40 skipped, 5 todo, `# duration_ms 116872.403001`, **exit 0**, 117 s wall, zero `not ok` lines |
 | `cd src/mcp/vice && npx tsc --noEmit` | **exit 0** |
-| `cd src/mcp/vice && node --test r2000-coverage.test.ts` | **107 pass, 0 fail**, `# duration_ms 239.049193`, exit 0 — strictly greater than the 71 at the round-3 verification |
-| `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` | **22 pass, 0 fail**, `# duration_ms 508.78394`, exit 0 |
+| `cd src/mcp/vice && node --test anno-coverage.test.ts` | **107 pass, 0 fail**, `# duration_ms 239.049193`, exit 0 — strictly greater than the 71 at the round-3 verification |
+| `cd src/mcp/vice && node --test anno-coverage-grammar.test.ts` | **22 pass, 0 fail**, `# duration_ms 508.78394`, exit 0 |
 | The seven documentation and audit guards | **96 pass, 0 fail**, exit 0 — re-run after the final `deferred-items.md` append, still 96/96 |
 | `node scripts/check-npm-packages.mjs` | exit 0 — 58-module closure clean, 75 / 34 files, 7 skills |
-| `node scripts/check-skill-tool-coverage.mjs` | exit 0 — 37 `vice_*` names, 17 `r2000_*` all curated, 8/8 CLI verbs |
+| `node scripts/check-skill-tool-coverage.mjs` | exit 0 — 37 `vice_*` names, 17 `anno_*` all curated, 8/8 CLI verbs |
 | `node scripts/check-skill-description-overlap.mjs` | exit 0 — 21 pairs, max 0.250, threshold 0.35, allowlist 0 |
 | generator re-run + `git status --porcelain src/mcp/vice/fixtures/coverage` | `wrote 12 control fixtures`, porcelain **empty** |
 | `git diff --numstat` on `19-VALIDATION.md` | 69 + 29 = **98 insertions, 0 deletions** |
@@ -312,7 +312,7 @@ green observation that does not clear the item.
   mechanically by the plan's own `awk` assertion after every append.
 - **No red gate was made green by editing a ledger.** The suite was green on its own; nothing was
   reworded to produce that.
-- **`r2000-session.ts`'s 200 ms call timeout was not widened** and the file was not opened. Its
+- **`anno-session.ts`'s 200 ms call timeout was not widened** and the file was not opened. Its
   clearing condition is unchanged.
 - **WR-03 was not re-litigated** — 19-20 closed it and this plan records the outcome.
 - **No source file under `src/` was touched.** `git diff --name-only` lists only the two `.planning/`
@@ -342,7 +342,7 @@ None — no external service configuration required.
   recorded next action is to rescope SC4 to advisory-not-gate — one-way, and requiring explicit user
   confirmation — not to plan a round 5.
 - **Two items remain open in `deferred-items.md` with unchanged clearing conditions:** the
-  `r2000-session.test.ts` 200 ms call-timeout flake and the `vice-proxy.test.ts` wall-clock budgets.
+  `anno-session.test.ts` 200 ms call-timeout flake and the `vice-proxy.test.ts` wall-clock budgets.
   Each needs a plan that owns its file. Eight full-suite runs across round 4 produced three reds, all
   in those two files, none ever reproducible standalone.
 - **One residual is carried forward with a checkable trigger:** WR-03's closure brings the census to

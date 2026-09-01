@@ -60,8 +60,8 @@ to a data source a pipeline stage joins against — which is what the user
 predicted.
 
 `memmap.json` is therefore **more** load-bearing after the pivot, not less. It is
-already upstream of the enum path (`r2000-regbits-gen.ts` pins it by
-`memmapSha256`), and it carries what r2000 structurally does not: r2000's built-in
+already upstream of the enum path (`anno-regbits-gen.ts` pins it by
+`memmapSha256`), and it carries what anno structurally does not: anno's built-in
 C64 map is 732 labels, **names only, no descriptions**, and its first line reads
 `excluded = ["D000-D031","D400-D41D","DC00-DC10","DD00-DD10","FFFA-FFFF"]` — the
 entire hardware register file is out of scope for it, and its only built-in enums

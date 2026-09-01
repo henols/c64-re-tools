@@ -144,7 +144,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * `docs-core-value-decision.test.ts` (17-02) had ever been added to either
  * constant, despite this array's own comment instructing exactly that. Raised
  * from 6 to 7 (Phase 18 plan 18-01) alongside `EXPECTED_DOCS_GUARD_NAMES`
- * below, when `docs-r2000-decisions.test.ts` (renamed to
+ * below, when `docs-absorbed-decisions.test.ts` (renamed to
  * `docs-absorbed-decisions.test.ts` by phase 29 plan 29-05) was added -- in the
  * SAME commit this time, per CR-02's own instruction and the registry-drift
  * detector it added to `audit-integrity.test.ts`. The floor did NOT move for
@@ -177,7 +177,7 @@ export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   "docs-review-disposition.test.ts",
   "docs-fork-decision.test.ts",
   "docs-core-value-decision.test.ts",
-  // Renamed from docs-r2000-decisions.test.ts by phase 29 plan 29-05, in the
+  // Renamed from docs-absorbed-decisions.test.ts by phase 29 plan 29-05, in the
   // SAME commit as the rename -- D-12's own reason for pairing them, and the
   // exact half CR-02 found frozen through two additions and a deletion.
   "docs-absorbed-decisions.test.ts",

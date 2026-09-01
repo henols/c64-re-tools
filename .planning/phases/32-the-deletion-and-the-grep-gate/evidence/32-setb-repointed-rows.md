@@ -82,7 +82,7 @@ ok 4 - the elected licence is one of the two the upstream dual licence offers
   type: 'test'
   ...
 # Subtest: live: the five source digests re-hash to the manifest's values
-ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of https://github.com/ricardoquesada/regenerator2000 at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set R2000_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_R2000_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
+ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of an upstream repository at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set ANNO_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_ANNO_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
   ---
   duration_ms: 0.289065
   type: 'test'
@@ -160,7 +160,7 @@ ok 4 - the elected licence is one of the two the upstream dual licence offers
   type: 'test'
   ...
 # Subtest: live: the five source digests re-hash to the manifest's values
-ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of https://github.com/ricardoquesada/regenerator2000 at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set R2000_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_R2000_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
+ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of an upstream repository at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set ANNO_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_ANNO_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
   ---
   duration_ms: 0.123121
   type: 'test'
@@ -372,7 +372,7 @@ ok 20 - module-classification.ts is absent from package.json's files[] array (bo
 
 ### Planted run
 
-- **Plant:** `src/mcp/vice/module-classification.ts`: `module: "anno-regbits.json",` → `module: "r2000-regbits.json",`
+- **Plant:** `src/mcp/vice/module-classification.ts`: `module: "anno-regbits.json",` → `module: "anno-regbits.json",`
 - **Planted command:** `node --test module-classification.test.ts`
 - **cwd:** `src/mcp/vice`
 - **Exit status:** `1` (must be non-zero)

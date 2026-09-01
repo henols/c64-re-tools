@@ -506,7 +506,12 @@ test("anno-index.ts imports from exactly one module, anno-types.ts, and uses no 
   // The family loop runs FIRST and the `deepEqual` LAST, deliberately:
   // `deepEqual` narrows its actual argument's type, so a one-element
   // expectation makes every later read of `specifiers` a typecheck error.
-  for (const family of ["node:", "./anno-store", "./hostpath", "./containerpath", "./vice", "./disasm-", "./r2000-"]) {
+  // The retired analyser family used to be listed here as a forbidden prefix.
+  // It is gone from the tree entirely -- every module that carried it was
+  // renamed into the `anno-` namespace or deleted -- so the entry is dropped
+  // rather than re-pointed at `./anno-`, which would forbid this module's one
+  // legitimate import, `./anno-types.ts`.
+  for (const family of ["node:", "./anno-store", "./hostpath", "./containerpath", "./vice", "./disasm-"]) {
     assert.equal(
       specifiers.some((specifier) => specifier.startsWith(family)),
       false,

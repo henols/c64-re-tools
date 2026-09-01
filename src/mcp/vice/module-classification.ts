@@ -1,5 +1,5 @@
 // module-classification.ts -- the ONE authoritative, committed record of
-// which `r2000`-named modules are CAPABILITIES (things this project owns,
+// which `anno`-named modules are CAPABILITIES (things this project owns,
 // which must survive the substrate swap under some name) and which are GLUE
 // (things whose whole subject is the rented external analyser, and which go
 // when it goes).
@@ -37,7 +37,7 @@
 // survives the substrate swap, OR a requirement id the module serves or
 // implements. It is NEVER derived from the module's name.
 //
-//   "Has a consumer whose name lacks the r2000 prefix" is NOT the
+//   "Has a consumer whose name lacks the anno prefix" is NOT the
 //   discriminator, and reading it that way gets three entries wrong in one
 //   direction and two in the other. Measured on this tree:
 //
@@ -79,14 +79,14 @@
 //     reasoning recorded beside the assertion itself.
 //
 // EXCLUDED, DELIBERATELY -- every scope decision, stated:
-//   - THE NINETEEN `r2000-*.test.ts` FILES. A test file's fate follows its
+//   - THE NINETEEN `anno-*.test.ts` FILES. A test file's fate follows its
 //     module's, so a separate verdict for each would be a second copy of
 //     the same judgement. They cannot go unaccounted for either way: a
 //     committed drift guard already asserts that every `*.test.*` file on
 //     disk lands in exactly one of the automated or manual-only sets.
 //   - `docs-absorbed-decisions.test.ts`. A reader will expect it here. The
 //     declared enumeration does not reach it, because its filename begins
-//     `docs-` rather than `r2000-`. Named explicitly rather than left for a
+//     `docs-` rather than `anno-`. Named explicitly rather than left for a
 //     reader to notice and wonder about.
 //   - `scripts/lib/anno-cli-verbs.mjs` and its `.d.mts` declaration.
 //     CUT-04 names the former explicitly as a guard whose fate must be
@@ -120,7 +120,7 @@
 // line, so a citation into a deleted module is a hard failure, not a stale
 // footnote. The symbols are named without a site, which is all a survey
 // finding needs to stay readable:
-//   - `parseR2000TimeoutMs` (the launch module) was a pure string-to-number
+//   - `parseAnnoTimeoutMs` (the launch module) was a pure string-to-number
 //     parser with a range refusal, but its subject was the analyser's own
 //     spawn timeout environment variable and it had no consumer outside the
 //     family.
@@ -306,7 +306,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-acme-ident.ts",
+      from: "retired-analyser-acme-ident.ts",
       to: "anno-acme-ident.ts",
       on: "2026-08-29",
       why:
@@ -338,7 +338,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-confidence.ts",
+      from: "retired-analyser-confidence.ts",
       to: "anno-confidence.ts",
       on: "2026-08-29",
       why:
@@ -371,7 +371,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-coverage.ts",
+      from: "retired-analyser-coverage.ts",
       to: "anno-coverage.ts",
       on: "2026-08-29",
       why:
@@ -406,7 +406,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-d64.ts",
+      from: "retired-analyser-d64.ts",
       to: "anno-d64.ts",
       on: "2026-08-29",
       why:
@@ -436,21 +436,21 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-enum-gen.ts",
+      from: "retired-analyser-enum-gen.ts",
       to: "anno-enum-gen.ts",
       on: "2026-08-29",
       why:
-        "Re-runnable enum generation from observed register writes (R2000-13) reads a committed table, not the analyser; the verdict is unchanged and only the name moved.",
+        "Re-runnable enum generation from observed register writes (ANNO-13) reads a committed table, not the analyser; the verdict is unchanged and only the name moved.",
     },
     verdict: "capability",
     basis: {
       consumers: [
         { path: "src/mcp/vice/anno-enum-gen.test.ts", symbol: "generateEnums" },
       ],
-      requirements: ["R2000-13"],
+      requirements: ["ANNO-13"],
       rationale:
         "Turns register writes observed in a capture into named enum variants -- one variant per " +
-        "distinct value actually written -- and does so re-runnably, which is R2000-13's own stated " +
+        "distinct value actually written -- and does so re-runnably, which is ANNO-13's own stated " +
         "requirement: a regenerated set must be able to replace an old one. Its knowledge comes from " +
         "the committed register bit-name table it reads by path, not from the analyser.",
     },
@@ -461,7 +461,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-memmap-render.ts",
+      from: "retired-analyser-memmap-render.ts",
       to: "anno-memmap-render.ts",
       on: "2026-08-29",
       why:
@@ -491,7 +491,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-regbits-gen.ts",
+      from: "retired-analyser-regbits-gen.ts",
       to: "anno-regbits-gen.ts",
       on: "2026-08-29",
       why:
@@ -520,7 +520,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-regbits.json",
+      from: "retired-analyser-regbits.json",
       to: "anno-regbits.json",
       on: "2026-08-29",
       why:
@@ -552,27 +552,27 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-symbols.ts",
+      from: "retired-analyser-symbols.ts",
       to: "anno-symbols.ts",
       on: "2026-08-29",
       why:
-        "The validated label round trip (R2000-14/R2000-15) is what those requirements were validated against; the verdict is unchanged and only the name moved.",
+        "The validated label round trip (ANNO-14/ANNO-15) is what those requirements were validated against; the verdict is unchanged and only the name moved.",
     },
     verdict: "capability",
     basis: {
       consumers: [
       ],
-      requirements: ["R2000-14", "R2000-15"],
+      requirements: ["ANNO-14", "ANNO-15"],
       rationale:
         "IMPLEMENTS the validated label round trip, rather than merely serving it: the VICE label-file " +
         "export of user-defined names only, and the re-import whose success is confirmed against disk " +
-        "rather than against the tool's own report. R2000-14 and R2000-15 are both recorded validated, " +
+        "rather than against the tool's own report. ANNO-14 and ANNO-15 are both recorded validated, " +
         "and this module is what they were validated against.",
     },
     extractables: [],
   },
   {
-    module: "r2000-test-gate.ts",
+    module: "retired-analyser-test-gate.ts",
     scope: "discharged",
     fate: {
       kind: "deleted",
@@ -600,9 +600,9 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "Its ACME half left for acme-gate.ts earlier in this phase with byte-identical symbol and " +
       "environment-variable names and NO re-export shim -- a case-insensitive search for 'acme' in this " +
       "module now returns nothing. Ten importers remain, all inside the analyser family. " +
-      "CONTESTED, flagged rather than smoothed over -- the same shape the r2000-verify.ts entry below " +
+      "CONTESTED, flagged rather than smoothed over -- the same shape the anno-verify.ts entry below " +
       "flags for itself, and it was left unflagged here (WR-10). Two measurements sit in tension with " +
-      "the 'capability' verdict: every one of the ten measured importers is an r2000-*.test.ts file, so " +
+      "the 'capability' verdict: every one of the ten measured importers is an anno-*.test.ts file, so " +
       "every consumer of this module dies with the substrate it gates; and the substrate-INDEPENDENT " +
       "half of its discipline has already been extracted, in this same phase, under a different name " +
       "(acme-gate.ts). What a later reader should carry forward is therefore the DISCIPLINE -- one " +
@@ -615,7 +615,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "still one this record exists to prevent.",
   },
   {
-    module: "r2000-verify.ts",
+    module: "retired-analyser-verify.ts",
     scope: "discharged",
     fate: {
       kind: "deleted",
@@ -668,7 +668,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     scope: "discharged",
     fate: {
       kind: "renamed",
-      from: "r2000-cli.ts",
+      from: "retired-analyser-cli.ts",
       to: "anno-cli.ts",
       on: "2026-08-29",
       why:
@@ -678,9 +678,9 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runR2000Cli", line: 307 },
+        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runAnnoCli", line: 307 },
         { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 52 },
-        { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runR2000Cli" },
+        { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runAnnoCli" },
       ],
       requirements: [],
       rationale:
@@ -694,8 +694,8 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     note:
       "CONSUMER-CITATION UPDATE, 2026-08-29 (plan 29-07, D-14). This module dropped from SIX other " +
       "entries' consumer lists in one commit -- anno-d64.ts (listEntries), anno-enum-gen.ts " +
-      "(generateEnums), anno-symbols.ts (exportLabels), r2000-verify.ts (verifyProject), " +
-      "r2000-launch.ts (buildExportAsmArgs) and r2000-project.ts (synthesizeProject) -- because the " +
+      "(generateEnums), anno-symbols.ts (exportLabels), anno-verify.ts (verifyProject), " +
+      "anno-launch.ts (buildExportAsmArgs) and anno-project.ts (synthesizeProject) -- because the " +
       "six verbs that reached them were removed. Those consumer rows were DELETED rather than " +
       "stripped of their line numbers: a citation whose line is dropped stops being checked by " +
       "Direction 9 while still asserting a consumer relationship that no longer exists, which is a " +
@@ -706,7 +706,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     extractables: [],
   },
   {
-    module: "r2000-launch.ts",
+    module: "retired-analyser-launch.ts",
     scope: "discharged",
     fate: {
       kind: "deleted",
@@ -727,12 +727,12 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     },
     extractables: [],
     note:
-      "Surveyed for extractables: parseR2000TimeoutMs is a pure parser with a range refusal, but its " +
+      "Surveyed for extractables: parseAnnoTimeoutMs is a pure parser with a range refusal, but its " +
       "subject is this binary's own timeout environment variable and it has no consumer outside the " +
       "family, so it is not one.",
   },
   {
-    module: "r2000-mcp-client.ts",
+    module: "retired-analyser-mcp-client.ts",
     scope: "discharged",
     fate: {
       kind: "deleted",
@@ -755,7 +755,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     extractables: [],
   },
   {
-    module: "r2000-project.ts",
+    module: "retired-analyser-project.ts",
     scope: "discharged",
     fate: {
       kind: "deleted",
@@ -786,7 +786,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "glue with an empty extractables list rather than glue-with-extractable.",
   },
   {
-    module: "r2000-session.ts",
+    module: "retired-analyser-session.ts",
     scope: "discharged",
     fate: {
       kind: "deleted",
@@ -814,7 +814,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "is not one.",
   },
   {
-    module: "r2000-tools.ts",
+    module: "retired-analyser-tools.ts",
     scope: "discharged",
     fate: {
       kind: "deleted",
@@ -876,7 +876,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "Outside the enforcing test's enumeration by design: the enumeration stays inside this module " +
       "directory, so this entry is data for a later reader rather than something the completeness loop " +
       "checks. Stated here because an unstated exclusion is indistinguishable from an oversight. " +
-      "Plan 29-05 renamed this file from scripts/lib/r2000-cli-verbs.mjs and re-pointed the path above; " +
+      "Plan 29-05 renamed this file from scripts/lib/anno-cli-verbs.mjs and re-pointed the path above; " +
       "the entry stays out-of-enumeration rather than becoming discharged, because it never answered to " +
       "the enumeration in the first place and moving it would empty the set DIRECTION 7 proves the " +
       "marker is doing the excluding with.",
@@ -895,7 +895,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     extractables: [],
     note:
       "Same out-of-enumeration reasoning as the module it declares, and renamed alongside it by plan " +
-      "29-05 (from scripts/lib/r2000-cli-verbs.d.mts). Recorded separately rather than folded into that " +
+      "29-05 (from scripts/lib/anno-cli-verbs.d.mts). Recorded separately rather than folded into that " +
       "entry so a later reader deleting by path finds both files listed.",
   },
 ];

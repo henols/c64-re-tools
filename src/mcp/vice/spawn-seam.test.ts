@@ -13,8 +13,8 @@
 // THE FOUNDING INCIDENT, kept verbatim in substance because it is the reason
 // this file exists at all and stays true in the past tense:
 //
-//   `r2000-launch.ts`'s header used to claim it was the ONE place in this
-//   repo that spawned regenerator2000. That was FALSE -- `r2000-mcp-client.ts`
+//   `anno-launch.ts`'s header used to claim it was the ONE place in this
+//   repo that spawned the external analyser. That was FALSE -- `anno-mcp-client.ts`
 //   held a second, necessary spawn site, because a long-lived async child is
 //   not something a blocking `spawnSync` can provide. The invariant itself
 //   was never actually compromised (both sites did guard their argv first),
@@ -34,7 +34,7 @@
 //
 //   BEFORE                                   AFTER
 //   ------                                   -----
-//   the analyser binary (R2000_BIN)          the emulator binary (VICE_BIN /
+//   the analyser binary (ANNO_BIN)          the emulator binary (VICE_BIN /
 //                                            "x64sc" / a resolved binPath)
 //   assertNoViceFlag(argv) precedes          the call uses the argv-ARRAY
 //   every spawn                              form, and the module builds no

@@ -84,7 +84,7 @@ prove. It is out of scope for any path-reference sweep, including this one.
 
 ### The review's `IN-01` finding — renamed, not left
 
-`16-REVIEW.md`'s `IN-01` raised `src/mcp/vice/r2000-regbits.test.ts:91,220`'s synthetic
+`16-REVIEW.md`'s `IN-01` raised `src/mcp/vice/anno-regbits.test.ts:91,220`'s synthetic
 scratch-directory segment names (`path.join(tmpDir, "claude", "mcp", "vice")`), which named
 the pre-move `.claude/mcp/vice` shape while the adjacent comment claimed to mirror "the real
 repo shape". **This round did NOT leave this one alone: plan 16-09 renamed both scratch
@@ -147,7 +147,7 @@ planning:
 | The `renderLoading` consumer-path literal in `src/skills/c64-ram-capture/scripts/watch-loads.mjs` (the absence-as-evidence paragraph naming `watch-loads.mjs`/`dump-artifacts.mjs` at the wrong tree) | Re-verifying the tree during planning, alongside `16-REVIEW.md`'s `CR-01` finding for the sibling `diff-images.mjs` case | Plan `16-10` |
 | The `; Build:` instruction in `src/skills/acme-build/template.a`, copied verbatim into every file `acme.mjs new` writes for a user | Re-verifying the tree during planning, the same consumer-path defect class as `CR-01` | Plan `16-10` |
 | The stale canonical-source comment in `.gitignore` (naming the no-longer-existing `.claude/skills/` instead of `src/skills/`, the directory `installer/scripts/sync-skills.mjs`'s `SRC` constant actually reads) | Re-verifying the tree during planning | Plan `16-09` |
-| The self-contradictory scratch-shape comment in `src/mcp/vice/r2000-regbits.test.ts` (`16-REVIEW.md`'s `IN-01`) | `16-REVIEW.md`'s code review | Plan `16-09` |
+| The self-contradictory scratch-shape comment in `src/mcp/vice/anno-regbits.test.ts` (`16-REVIEW.md`'s `IN-01`) | `16-REVIEW.md`'s code review | Plan `16-09` |
 | The four `src/skills/*/scripts/*.test.mjs` skill test suites plus `installer/wire-mcp.test.mjs`, all committed but not executed by any CI step (`16-REVIEW.md`'s `WR-01`, and the durability half of `PKG-02`'s `unclassified` probe row) | `16-REVIEW.md`'s code review, corroborated by the probe's `PKG-02` row | Plan `16-08` |
 
 Every site above is named with the plan that closed it — no site is recorded as still open

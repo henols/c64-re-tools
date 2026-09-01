@@ -174,7 +174,7 @@ and invisibility is a note somebody could reword.
 
 ---
 
-## 5. `r2000-upstream-audit.test.ts` — a rename the derivation cannot express
+## 5. `anno-derivation.test.ts` — a rename the derivation cannot express
 
 Filed here because it is the one place in this phase where a *verdict* and a *measured
 fact* do not line up, and burying that in a registry note would be the exact failure this
@@ -183,14 +183,14 @@ audit exists to prevent.
 **Measured.** `git show --format="" --name-status -M c59fcef` reports:
 
 ```
-R091	src/mcp/vice/r2000-upstream-audit.test.ts	src/mcp/vice/anno-derivation.test.ts
+R091	src/mcp/vice/anno-derivation.test.ts	src/mcp/vice/anno-derivation.test.ts
 ```
 
 A 91 %-similarity **rename**, inside the very commit the derivation records as the
 removing commit. Three independent confirmations:
 
 1. The commit's own subject: `refactor(29-05): move the four unpaired guard tests, ...`.
-2. The successor's header, in words: *"RENAMED from `r2000-upstream-audit.test.ts` by
+2. The successor's header, in words: *"RENAMED from `anno-derivation.test.ts` by
    phase 29 plan 29-05. Renamed ONLY — plan 29-08 adds this file's surface-derivation
    half."*
 3. **All five** of the predecessor's test names survive verbatim in
@@ -327,7 +327,7 @@ console.log("files",f.length,"blocks",n,c)'
 grep -an 'block.type === "Code"\|block.type === "Undefined"' src/mcp/vice/block-class.ts
 
 # section 5 — the rename the derivation cannot see
-git show --format="" --name-status -M c59fcef -- src/mcp/vice/r2000-upstream-audit.test.ts src/mcp/vice/anno-derivation.test.ts
+git show --format="" --name-status -M c59fcef -- src/mcp/vice/anno-derivation.test.ts src/mcp/vice/anno-derivation.test.ts
 
 # section 7 — nothing moved
 git diff --exit-code -- src/mcp/vice/fixtures/coverage/ src/mcp/vice/block-class.ts

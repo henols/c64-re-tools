@@ -39,8 +39,8 @@ key-files:
     - src/mcp/vice/fixtures/coverage/fp3b-immediate-push-idiom/project.regen2000proj
     - src/mcp/vice/fixtures/coverage/fp3b-immediate-push-idiom/store.json
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
     - src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs
     - src/mcp/vice/fixtures/coverage/README.md
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md
@@ -67,7 +67,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
         status: pass
     human_judgment: false
   - id: D2
@@ -75,7 +75,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
         status: pass
       - kind: integration
         ref: "cd src/mcp/vice && npx tsc --noEmit"
@@ -86,7 +86,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the tightened class-3 push-idiom branch is LIVE: a payload whose two paired loads each push what they loaded is still PROVEN"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the tightened class-3 push-idiom branch is LIVE: a payload whose two paired loads each push what they loaded is still PROVEN"
         status: pass
     human_judgment: false
   - id: D4
@@ -94,7 +94,7 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a push idiom that pushes bytes the two paired loads never supplied is not dispatch context, and the census does not inflate on it"
         status: pass
     human_judgment: false
   - id: D5
@@ -102,10 +102,10 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#the window-edge twin is OUTSIDE the class-3 push-idiom route while FP3 is INSIDE it, so the interior predicate is not satisfied by everything"
+        ref: "src/mcp/vice/anno-coverage.test.ts#the window-edge twin is OUTSIDE the class-3 push-idiom route while FP3 is INSIDE it, so the interior predicate is not satisfied by everything"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every gate-interior declaration is mechanically TRUE, not a claim in a table"
         status: pass
     human_judgment: false
   - id: D6
@@ -124,7 +124,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: manual_procedural
-        ref: "branch A reverted in the working tree; cd src/mcp/vice && node --test r2000-coverage.test.ts observed exit 1, 75 pass / 1 fail; restored via git checkout, 76 pass / 0 fail"
+        ref: "branch A reverted in the working tree; cd src/mcp/vice && node --test anno-coverage.test.ts observed exit 1, 75 pass / 1 fail; restored via git checkout, 76 pass / 0 fail"
         status: pass
     human_judgment: true
     rationale: >-
@@ -206,12 +206,12 @@ Gate sequence is present and in order.
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` — `interface SplitOrientation` (the named return type of
+- `src/mcp/vice/anno-coverage.ts` — `interface SplitOrientation` (the named return type of
   `resolveSplitOrientation()`); `interface DispatchPairing`; `hasDispatchContext()` gains a fourth
   `pairing` parameter and a rewritten branch A; the class-3 call site passes
   `{ firstIndex: i, secondIndex: j, oriented }`; the falsified doc-comment rationale replaced;
   `sawPha` deleted.
-- `src/mcp/vice/r2000-coverage.test.ts` — `FP3_INTERIOR`, `FP3_IMMEDIATE`, `PUSH_IDIOM_LINKED`,
+- `src/mcp/vice/anno-coverage.test.ts` — `FP3_INTERIOR`, `FP3_IMMEDIATE`, `PUSH_IDIOM_LINKED`,
   `PUSH_IDIOM_LINKED_CODE_BYTES`, `PUSH_IDIOM_TARGETS`, `PUSH_IDIOM_WINDOW_EDGE`,
   `PUSH_IDIOM_WINDOW_EDGE_CODE_BYTES`; three new tests; two new
   `GATE_INTERIOR_DECLARATIONS` rows; `COMMITTED_CONTROL_FIXTURES` 10 → 12.
@@ -261,7 +261,7 @@ None — plan executed exactly as written. No deviation rule was invoked; no aut
 `node --test vice-proxy.test.ts` → 123 tests, 119 pass, 0 fail, 4 skipped. This is the documented
 concurrency-flake mechanism already carried as item 3 of this phase's `deferred-items.md`
 (a spawned child on a wall-clock budget while `node --test` runs 24 files concurrently), on a second
-file. It cannot be caused by this plan: 19-15 touched only `r2000-coverage.*` and
+file. It cannot be caused by this plan: 19-15 touched only `anno-coverage.*` and
 `fixtures/coverage/`, `vice-proxy.test.ts` imports nothing from that family, and the coverage module
 is read-only by construction. Recorded in `deferred-items.md` with its owner named
 (a plan that owns `vice-proxy.ts`), per the scope boundary.
@@ -270,16 +270,16 @@ is read-only by construction. Recorded in `deferred-items.md` with its owner nam
 
 | Check | Result |
 |---|---|
-| `cd src/mcp/vice && node --test r2000-coverage.test.ts` | **76 pass, 0 fail** (baseline 71 — above the recorded round-3 count) |
+| `cd src/mcp/vice && node --test anno-coverage.test.ts` | **76 pass, 0 fail** (baseline 71 — above the recorded round-3 count) |
 | `cd src/mcp/vice && npx tsc --noEmit` | exit 0 |
 | generator run twice, `git status --porcelain fixtures/coverage` | `wrote 12 control fixtures` both runs, porcelain **empty** |
 | `node scripts/check-npm-packages.mjs` | exit 0 — 75 / 34 files, neither fixture directory leaks |
 | `cd src/mcp/vice && node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts` | 24 pass, 0 fail |
 | `cd src/mcp/vice && node --test docs-linerefs.test.ts` | pass (the two `rewriteArguments()` citations still exact) |
 | `ls -d src/mcp/vice/fixtures/coverage/*/ \| wc -l` | 12, and `COMMITTED_CONTROL_FIXTURES` is 12 |
-| `grep -c 'sawPha' src/mcp/vice/r2000-coverage.ts` | 0 |
-| `grep -c 'skipped outright' src/mcp/vice/r2000-coverage.ts` | 0 |
-| `grep -c 'COVERAGE_SCHEMA_VERSION = 2' src/mcp/vice/r2000-coverage.ts` | 1 |
+| `grep -c 'sawPha' src/mcp/vice/anno-coverage.ts` | 0 |
+| `grep -c 'skipped outright' src/mcp/vice/anno-coverage.ts` | 0 |
+| `grep -c 'COVERAGE_SCHEMA_VERSION = 2' src/mcp/vice/anno-coverage.ts` | 1 |
 | `git diff --numstat` on `19-VALIDATION.md` | 58 insertions, **0 deletions** |
 | Edge predicates (empty / single-instruction / shorter-than-window payloads) | empty lists, no throw |
 | Full suite `cd src/mcp/vice && npm test` | 2585 tests, 2539 pass, **1 fail** — the out-of-scope `vice-proxy.test.ts` flake above; green standalone |
@@ -295,7 +295,7 @@ is read-only by construction. Recorded in `deferred-items.md` with its owner nam
 - `COVERAGE_SCHEMA_VERSION` not bumped; `COVERAGE_REPORT_KEYS` unchanged.
 - No scope-reduction language and no phase-number pointer in any comment, fixture purpose field or
   assertion message this plan wrote — verified by grep over the plan's own additions.
-- WR-03 not touched and not absorbed. `r2000-session.ts`'s 200 ms timeout not widened.
+- WR-03 not touched and not absorbed. `anno-session.ts`'s 200 ms timeout not widened.
 - No runtime dependency added to either published package.
 
 ## Known Stubs

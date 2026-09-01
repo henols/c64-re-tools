@@ -8,11 +8,11 @@
 
 | New/Modified File | Role | Data Flow | Closest Analog | Match Quality |
 |-------------------|------|-----------|-----------------|----------------|
-| `.claude/mcp/vice/r2000-launch.ts` | utility (guarded CLI-shell-out seam) | request-response (spawnSync, no lifecycle) | `.claude/mcp/vice/vice.ts` (`DENY_LIST`/`denyListRefusalMessage`/`call()` guard) | role-match (deny pattern is exact; spawn shape borrows from `acme.mjs`) |
-| `.claude/mcp/vice/r2000-launch.test.ts` | test | unit | `.claude/mcp/vice/hostpath-consumers.test.ts` (regex-over-source-text assertion style) + `vice.ts`'s own would-be deny-list test convention | role-match |
-| `.claude/mcp/vice/r2000-project.ts` | utility (pure data transform: gzip+base64+JSON) | transform | *(none — genuinely new, no in-repo precedent)* | no analog (see "No Analog Found") |
-| `.claude/mcp/vice/r2000-project.test.ts` | test | unit + integration | `.claude/mcp/vice/disasm-roundtrip.test.ts` (real-subprocess proof pattern, for the integration half only) | partial match |
-| `.claude/mcp/vice/r2000-verify.test.ts` | test | integration (gated subprocess) | `.claude/mcp/vice/disasm-roundtrip.test.ts` (SKIP_REASON / `VICE_REQUIRE_ACME` shape — **mirror only, do not edit**) | exact-shape match, different file |
+| `.claude/mcp/vice/anno-launch.ts` | utility (guarded CLI-shell-out seam) | request-response (spawnSync, no lifecycle) | `.claude/mcp/vice/vice.ts` (`DENY_LIST`/`denyListRefusalMessage`/`call()` guard) | role-match (deny pattern is exact; spawn shape borrows from `acme.mjs`) |
+| `.claude/mcp/vice/anno-launch.test.ts` | test | unit | `.claude/mcp/vice/hostpath-consumers.test.ts` (regex-over-source-text assertion style) + `vice.ts`'s own would-be deny-list test convention | role-match |
+| `.claude/mcp/vice/anno-project.ts` | utility (pure data transform: gzip+base64+JSON) | transform | *(none — genuinely new, no in-repo precedent)* | no analog (see "No Analog Found") |
+| `.claude/mcp/vice/anno-project.test.ts` | test | unit + integration | `.claude/mcp/vice/disasm-roundtrip.test.ts` (real-subprocess proof pattern, for the integration half only) | partial match |
+| `.claude/mcp/vice/anno-verify.test.ts` | test | integration (gated subprocess) | `.claude/mcp/vice/disasm-roundtrip.test.ts` (SKIP_REASON / `VICE_REQUIRE_ACME` shape — **mirror only, do not edit**) | exact-shape match, different file |
 | `.claude/mcp/vice/hostpath-consumers.test.ts` (extend) | test | unit (structural absence assertion) | itself — extend existing negative-assertion test | exact (same file, new test block) |
 | `.d64` named-entry extraction (extend `d64-parse.mjs`) | utility (pure byte-level parse) | transform | `d64-parse.mjs`'s own `parseDirectory()`/`tsToOffset()` (sector-chain walk already implemented) | exact — same module, new export |
 | Skill-side entry point reaching the D-06 seam | route / CLI dispatch | request-response (subprocess bridge) | `.claude/mcp/vice/smoke.mjs` (spawns the published bin, works across install routes) + `probe-binmon.mjs` (standalone CLI-with-flags shape) | role-match, mechanism unlocked |
@@ -21,12 +21,12 @@
 | `.claude/skills/c64-program-recon/SKILL.md` (add pointer) | documentation | n/a | `acme-build/SKILL.md`'s "Which skill does what" cross-reference table | role-match |
 | `scripts/check-skill-fork-honesty.mjs` (D-13 array move) | config/CI gate | batch (static analysis over prose) | itself — `REQUIRED_README_SUBSTRINGS`/`FORBIDDEN_README_SUBSTRINGS` tuple shape | exact |
 | `.claude/mcp/vice/package.json` (`files[]`, conditional) | config | n/a | itself — existing flat `files[]` array | exact |
-| `README.md` (R2000-03 install story) | documentation | n/a | `README.md`'s existing "Installing VICE, and choosing a backend" section | role-match |
+| `README.md` (ANNO-03 install story) | documentation | n/a | `README.md`'s existing "Installing VICE, and choosing a backend" section | role-match |
 | `.claude/mcp/vice/THIRD-PARTY-NOTICES.md` (dual-license notice) | documentation | n/a | itself — existing "Existing runtime dependencies" / "Build/CI tools — not incorporated" sections | exact |
 
 ## Pattern Assignments
 
-### `.claude/mcp/vice/r2000-launch.ts` (utility, request-response)
+### `.claude/mcp/vice/anno-launch.ts` (utility, request-response)
 
 **Analog:** `.claude/mcp/vice/vice.ts` (deny pattern) + `.claude/skills/acme-build/scripts/acme.mjs` (spawn shape)
 
@@ -47,7 +47,7 @@
 // blocker entry).  The guard below runs *before* any request is serialised,
 // so no caller -- however indirect -- can reach that tool by accident.
 ```
-`r2000-launch.ts`'s header should state: why a seam at all (D-06 — this is where the closed-consumer-set test machinery runs, and where Phase 11's `r2000_*` MCP tools will land), and why the deny guard exists (`--vice` would make regenerator2000 itself a second, unserviced binary-monitor client — CLAUDE.md's single-client constraint).
+`anno-launch.ts`'s header should state: why a seam at all (D-06 — this is where the closed-consumer-set test machinery runs, and where Phase 11's `anno_*` MCP tools will land), and why the deny guard exists (`--vice` would make the external analyser itself a second, unserviced binary-monitor client — CLAUDE.md's single-client constraint).
 
 **Deny-by-construction + deny-by-scan pattern to mirror** (verified `.claude/mcp/vice/vice.ts:201-207, 229-243, 690-700`):
 ```typescript
@@ -84,7 +84,7 @@ export async function call(toolName: string, args: Record<string, unknown> = {},
   ...
 }
 ```
-D-07's analog: argv is built ONLY by fixed per-verb builder functions (never a caller-supplied passthrough array) — that is the "unreachable by construction" half. Then, immediately before `spawnSync`, scan the fully-built `string[]` argv for an exact-token match on `"--vice"` (never a substring match against a joined command line — a filename containing the substring must not false-positive) and `throw` a named error (e.g. `class R2000ViceFlagError extends Error`, following `vice.ts:250-260`'s `ViceError` constructor shape) if found. Never strip silently.
+D-07's analog: argv is built ONLY by fixed per-verb builder functions (never a caller-supplied passthrough array) — that is the "unreachable by construction" half. Then, immediately before `spawnSync`, scan the fully-built `string[]` argv for an exact-token match on `"--vice"` (never a substring match against a joined command line — a filename containing the substring must not false-positive) and `throw` a named error (e.g. `class AnnoViceFlagError extends Error`, following `vice.ts:250-260`'s `ViceError` constructor shape) if found. Never strip silently.
 
 **Error class shape to copy** (verified `.claude/mcp/vice/vice.ts:245-260`):
 ```typescript
@@ -105,7 +105,7 @@ export class ViceError extends Error {
   }
 }
 ```
-Follow this for any `R2000...Error` subclass: named `.name`, plain public fields, options-object constructor.
+Follow this for any `ANNO...Error` subclass: named `.name`, plain public fields, options-object constructor.
 
 **Spawn shape to copy — argv array, never a shell string** (verified `.claude/skills/acme-build/scripts/acme.mjs:93-129`):
 ```javascript
@@ -123,28 +123,28 @@ if (r.error) {
     : String(r.error));
 }
 ```
-`r2000-launch.ts`'s spawn wrapper should mirror this "probe the ENOENT case with a specific, actionable message" convention, and `disasm-roundtrip.test.ts:44,111-120`'s explicit rule: never interpolate any test/caller input into a shell command string — always an argv array to `spawnSync`/`spawn`.
+`anno-launch.ts`'s spawn wrapper should mirror this "probe the ENOENT case with a specific, actionable message" convention, and `disasm-roundtrip.test.ts:44,111-120`'s explicit rule: never interpolate any test/caller input into a shell command string — always an argv array to `spawnSync`/`spawn`.
 
 **Deliberate absence:** must NOT import `hostpath.ts` / `containerpath.ts` (D-08) — this absence is what `hostpath-consumers.test.ts`'s new negative assertion checks structurally.
 
 ---
 
-### `.claude/mcp/vice/r2000-launch.test.ts` (test, unit)
+### `.claude/mcp/vice/anno-launch.test.ts` (test, unit)
 
 **Analog:** No direct sibling test exists for `vice.ts`'s own `DENY_LIST` (it's exercised indirectly through `call()`'s integration tests) — the closest concrete shape to mirror is `hostpath-consumers.test.ts`'s "assert an absence/presence structurally, never by convention" style plus `disasm-roundtrip.test.ts`'s "argv array, never a shell string" assertion habit.
 
 Two things this test must assert (per D-07, both — not either/or):
 1. **Unreachable by construction:** every exported argv-builder function has a fixed parameter list with no generic "extra args"/"passthrough" parameter — assert this at the type level (no `...rest: string[]` reaching the builder) or by asserting the builder's return array never contains a caller-supplied string verbatim.
-2. **Denied by scan:** feed a fabricated/mutated argv (simulating a future regression that reintroduces a passthrough) directly into the scan-and-throw function and assert it throws a named error (`R2000ViceFlagError` or similar) — never assert on a silently-stripped array.
+2. **Denied by scan:** feed a fabricated/mutated argv (simulating a future regression that reintroduces a passthrough) directly into the scan-and-throw function and assert it throws a named error (`AnnoViceFlagError` or similar) — never assert on a silently-stripped array.
 
 ---
 
-### `.claude/mcp/vice/r2000-project.ts` (utility, transform — NO ANALOG, see below)
+### `.claude/mcp/vice/anno-project.ts` (utility, transform — NO ANALOG, see below)
 
 **No close analog exists in this codebase.** This is the one genuinely new piece of mechanism this phase introduces (RESEARCH.md's own "Don't Hand-Roll" table names it as the sole exception). Build from first principles per D-01/D-04/D-05:
 
 - Pure function: `synthesize(bytes: Buffer, opts: { origin: number; system: string }) -> Buffer` (or `-> string`, if returning JSON text directly) — no filesystem/network I/O inside the function itself (I/O happens at the call site, keeping this testable without a real file).
-- Shape, per CONTEXT.md D-01 (re-verify field names directly against `~/.cargo/registry/src/index.crates.io-*/regenerator2000-core-0.9.20/src/state/project.rs:41-96` before writing — RESEARCH.md's Assumption A1 flags this as not independently re-verified this pass):
+- Shape, per CONTEXT.md D-01 (re-verify field names directly against `~/.cargo/registry/src/index.crates.io-*/external-analyser-core-0.9.20/src/state/project.rs:41-96` before writing — RESEARCH.md's Assumption A1 flags this as not independently re-verified this pass):
   ```
   { origin: <number>, raw_data_base64: gzip(bytes).toString("base64"), blocks: [],
     settings: { use_illegal_opcodes: true, system: <explicit string> } }
@@ -163,21 +163,21 @@ Two things this test must assert (per D-07, both — not either/or):
  * since one is not needed for what these disks contain.
  */
 ```
-Mirror this "state the deliberate scope limit inline, don't just implement it silently" convention for `r2000-project.ts`'s own minimal-field choice.
+Mirror this "state the deliberate scope limit inline, don't just implement it silently" convention for `anno-project.ts`'s own minimal-field choice.
 
 ---
 
-### `.claude/mcp/vice/r2000-project.test.ts` (test, unit + integration)
+### `.claude/mcp/vice/anno-project.test.ts` (test, unit + integration)
 
-**Analog:** `disasm-roundtrip.test.ts`'s real-subprocess-proof shape, for the integration half only (see `r2000-verify.test.ts` below for the full gate pattern — this file's integration test can reuse the same `SKIP_REASON`/`R2000_AVAILABLE` computation, or import it from a shared small helper if the planner wants to avoid duplicating the probe).
+**Analog:** `disasm-roundtrip.test.ts`'s real-subprocess-proof shape, for the integration half only (see `anno-verify.test.ts` below for the full gate pattern — this file's integration test can reuse the same `SKIP_REASON`/`ANNO_AVAILABLE` computation, or import it from a shared small helper if the planner wants to avoid duplicating the probe).
 
-Split per the Wave-0 note ("unit (pure synthesis) + integration (real r2000 load)"):
+Split per the Wave-0 note ("unit (pure synthesis) + integration (real anno load)"):
 - **Unit tests** (always run, no gating): assert the exact JSON shape from fixed inputs — three required fields present, `settings.use_illegal_opcodes === true`, `settings.system` is the explicit value passed in (never inferred), `raw_data_base64` round-trips through gzip decode back to the original bytes.
-- **Integration test** (gated, mirrors D-11's shape): actually run `regenerator2000 --headless --export_asm <tmp> --assembler acme` against a synthesized project and assert exit 0 + the exported `.a` file exists — this is D-04's "prove it loaded by actually running r2000 once" requirement, not a version table.
+- **Integration test** (gated, mirrors D-11's shape): actually run `analyser --headless --export_asm <tmp> --assembler acme` against a synthesized project and assert exit 0 + the exported `.a` file exists — this is D-04's "prove it loaded by actually running anno once" requirement, not a version table.
 
 ---
 
-### `.claude/mcp/vice/r2000-verify.test.ts` (test, integration, gated — NEW FILE, mirror shape only)
+### `.claude/mcp/vice/anno-verify.test.ts` (test, integration, gated — NEW FILE, mirror shape only)
 
 **Analog:** `.claude/mcp/vice/disasm-roundtrip.test.ts` — **copy the SKIP/FAIL-gate shape into a new file; do not edit this file.** It is Phase 4's protected stock-disassembler round-trip test (ROADMAP.md Standing Constraint), unrelated to `acme-build`'s deleted `disasm` verb beyond a name collision.
 
@@ -218,7 +218,7 @@ test("ACME availability gate (D-08)", () => {
   }
 });
 ```
-`r2000-verify.test.ts` renames every `ACME_*`/`VICE_REQUIRE_ACME` symbol to `R2000_*`/`VICE_REQUIRE_R2000`, probes `regenerator2000 --version`/`--help` instead of `acme`, and — per D-11 — CI never sets `VICE_REQUIRE_R2000`, so the availability-gate test passes trivially in CI while still failing hard for any future maintainer who sets the env var locally without r2000 installed.
+`anno-verify.test.ts` renames every `ACME_*`/`VICE_REQUIRE_ACME` symbol to `ANNO_*`/`VICE_REQUIRE_ANNO`, probes `analyser --version`/`--help` instead of `acme`, and — per D-11 — CI never sets `VICE_REQUIRE_ANNO`, so the availability-gate test passes trivially in CI while still failing hard for any future maintainer who sets the env var locally without anno installed.
 
 **D-10's parsing rule (the reason this can't just check exit code)** — verified live output shape (RESEARCH.md § Code Examples, Phase 9 evidence):
 ```
@@ -228,7 +228,7 @@ EXIT=0
 ```
 The test must parse stdout for a line matching `✓ ACME — byte-identical` (or equivalent success text) and explicitly **fail** on any `ACME — ... (skipped)` line, independent of exit code. `disasm-roundtrip.test.ts:38-41`'s companion rule — "never treat an ACME stderr WARNING as a failure" — applies here too if `--verify`'s stderr carries benign warnings.
 
-**Spawn shape:** argv array (`spawnSync("regenerator2000", ["--headless", "--verify", ...], { encoding: "utf8" })`), never a shell string — same rule as everywhere else in this codebase.
+**Spawn shape:** argv array (`spawnSync("the external analyser", ["--headless", "--verify", ...], { encoding: "utf8" })`), never a shell string — same rule as everywhere else in this codebase.
 
 ---
 
@@ -248,9 +248,9 @@ test("the disassembler modules (not yet reachable from stock-dispatch.ts in this
   }
 });
 ```
-Add a sibling test naming `r2000-launch.ts` and `r2000-project.ts` (or whatever the seam module family is actually called) in an identical `assert.equal(importers.includes(name), false, ...)` list.
+Add a sibling test naming `anno-launch.ts` and `anno-project.ts` (or whatever the seam module family is actually called) in an identical `assert.equal(importers.includes(name), false, ...)` list.
 
-**CRITICAL — what NOT to touch:** `EXPECTED_IMPORTERS` (line 77) is an exact five-element **positive** array (`["containerpath.ts", "install-resources.ts", "stock-paths.ts", "vice-proxy.ts", "vice-sync.ts"]`), asserted with `assert.deepEqual` plus `assert.equal(importers.length, 5)` (lines 79-83). The r2000 modules belong ONLY on the negative/absence side — never added here. This is the one pitfall the research flags explicitly (Pitfall/D-08 note): a planner reading only "extend the closed consumer set" prose might reach for the positive array by mistake.
+**CRITICAL — what NOT to touch:** `EXPECTED_IMPORTERS` (line 77) is an exact five-element **positive** array (`["containerpath.ts", "install-resources.ts", "stock-paths.ts", "vice-proxy.ts", "vice-sync.ts"]`), asserted with `assert.deepEqual` plus `assert.equal(importers.length, 5)` (lines 79-83). The anno modules belong ONLY on the negative/absence side — never added here. This is the one pitfall the research flags explicitly (Pitfall/D-08 note): a planner reading only "extend the closed consumer set" prose might reach for the positive array by mistake.
 
 ---
 
@@ -284,7 +284,7 @@ for (;;) {
 ```
 The new `extractFile(buffer, entry)` (or similarly named) export should reuse `tsToOffset()`/`isInImage()`/`sectorsPerTrack()` (already exported) and apply this identical visited-set guard against a malicious/corrupt chain, per this module's own established defensive posture — never a bare `while(track !== 0)` loop with no revisit guard.
 
-**D-02's fail-loud contract belongs in the CALLER** (the new r2000-bootstrap route), not in `d64-parse.mjs` itself: `d64-parse.mjs` stays a pure, offline parser (no `process.exit`, no "which entry did you mean" prompt logic) — the caller uses `parseDirectory()` to print the listing and `extractFile()` to pull the named entry's bytes, and is the layer that enforces "no name given → print listing, exit non-zero."
+**D-02's fail-loud contract belongs in the CALLER** (the new anno-bootstrap route), not in `d64-parse.mjs` itself: `d64-parse.mjs` stays a pure, offline parser (no `process.exit`, no "which entry did you mean" prompt logic) — the caller uses `parseDirectory()` to print the listing and `extractFile()` to pull the named entry's bytes, and is the layer that enforces "no name given → print listing, exit non-zero."
 
 **Module's documented, inherited limits** (verified header, `d64-parse.mjs:6-11`): plain 174848-byte, 35-track images only, no error-info bytes, no 40-track variant — D-02's `.d64` support inherits these as-is; do not silently extend scope to 40-track images in this phase.
 
@@ -294,7 +294,7 @@ The new `extractFile(buffer, entry)` (or similarly named) export should reuse `t
 
 **Analog:** `.claude/mcp/vice/smoke.mjs` (spawns the published bin exactly as a real consumer would, across install routes) and `probe-binmon.mjs` (standalone `.mjs` CLI with its own flag parsing, run directly by a human or skill).
 
-RESEARCH.md's own recommendation (Open Question 1 / Assumption A2, MEDIUM confidence, not verified end-to-end): give the existing `vice-mcp` bin (`vice-proxy.ts`) an argv-subcommand branch that short-circuits before the Mastra MCP-stdio server starts — e.g. `npx @henols/vice-mcp r2000-bootstrap <file>` — because that bin is the ONE surface proven to resolve identically across all three install routes (Claude Code plugin, npm-installer default, npm-installer `--vendor`); `installer/bin/cli.mjs:129-132`'s `viceServerEntry()` confirms `.claude/mcp/vice/*.ts` are never plain files on disk in either npm-installer mode:
+RESEARCH.md's own recommendation (Open Question 1 / Assumption A2, MEDIUM confidence, not verified end-to-end): give the existing `vice-mcp` bin (`vice-proxy.ts`) an argv-subcommand branch that short-circuits before the Mastra MCP-stdio server starts — e.g. `npx @henols/vice-mcp anno-bootstrap <file>` — because that bin is the ONE surface proven to resolve identically across all three install routes (Claude Code plugin, npm-installer default, npm-installer `--vendor`); `installer/bin/cli.mjs:129-132`'s `viceServerEntry()` confirms `.claude/mcp/vice/*.ts` are never plain files on disk in either npm-installer mode:
 ```javascript
 // installer/bin/cli.mjs:129-132
 function viceServerEntry(vendor) {
@@ -370,7 +370,7 @@ Add, in the vacated `## Disassembly` section's place, a short pointer to the new
 
 ### `.claude/skills/c64-program-recon/SKILL.md` (add pointer — new documentation, not a deletion)
 
-**Analog:** `acme-build/SKILL.md`'s own "Which skill does what" table (same file, cross-referenced above) — this skill currently has no mention of `disasm`/`toacme`/`regenerator2000` at all (confirmed by RESEARCH.md's grep). Add a short section pointing at the same D-06 seam/entry point acme-build now points at — per D-12, both point at the single implementation, neither carries its own copy.
+**Analog:** `acme-build/SKILL.md`'s own "Which skill does what" table (same file, cross-referenced above) — this skill currently has no mention of `disasm`/`toacme`/`the external analyser` at all (confirmed by RESEARCH.md's grep). Add a short section pointing at the same D-06 seam/entry point acme-build now points at — per D-12, both point at the single implementation, neither carries its own copy.
 
 ---
 
@@ -381,7 +381,7 @@ Add, in the vacated `## Disassembly` section's place, a short pointer to the new
 **Current (wrong) placement** (verified `check-skill-fork-honesty.mjs:252-262`):
 ```javascript
 const FORBIDDEN_README_SUBSTRINGS = [
-  ["regenerator2000", "D-B: this phase's install docs must stay regenerator2000-free"],
+  ["the external analyser", "D-B: this phase's install docs must stay external-analyser-free"],
   ["skill-docs.test.ts", "this ghost guardrail-test file does not exist anywhere in this repository -- claiming it exists is a false statement about this repo"],
   ["vice-mcp-selector-docs.test.ts", "this ghost guardrail-test file does not exist anywhere in this repository -- claiming it exists is a false statement about this repo"],
 ];
@@ -402,27 +402,27 @@ for (const [needle, whatIsLost] of REQUIRED_README_SUBSTRINGS) {
   );
 }
 ```
-D-13's edit: remove `["regenerator2000", ...]` from `FORBIDDEN_README_SUBSTRINGS` and add `["regenerator2000", "<a fresh whatIsLost string reflecting criterion 5's requirement that the name appear>"]` to `REQUIRED_README_SUBSTRINGS`, in the exact same `[needle, whatIsLost]` tuple shape. **Also required in the same commit** (Pitfall 4): update the file's header comment (line 14) — "the regenerator2000 name Phase 8 removed" is now stale and self-contradicting once the array flips.
+D-13's edit: remove `["the external analyser", ...]` from `FORBIDDEN_README_SUBSTRINGS` and add `["the external analyser", "<a fresh whatIsLost string reflecting criterion 5's requirement that the name appear>"]` to `REQUIRED_README_SUBSTRINGS`, in the exact same `[needle, whatIsLost]` tuple shape. **Also required in the same commit** (Pitfall 4): update the file's header comment (line 14) — "the external analyser name Phase 8 removed" is now stale and self-contradicting once the array flips.
 
 ---
 
 ### `.claude/mcp/vice/package.json` (`files[]`, conditional on reachability)
 
-**Analog:** itself — flat array, no globs, every top-level module listed by exact name (verified full array, `package.json:10-61`). If (and only if) `r2000-launch.ts`/`r2000-project.ts` become reachable from `vice-proxy.ts`'s own import closure (e.g. via the argv-subcommand dispatch), add their exact filenames to this array in the same commit — `scripts/check-npm-packages.mjs`'s transitive-closure walk (verified header comment, `check-npm-packages.mjs:15-18`, and completion log line `check-npm-packages.mjs:141`) will otherwise fail loudly at pack-time, not at `npm test` time. If the modules stay unreachable from `vice-proxy.ts` (e.g. because the skill-side route shells out to a wholly separate script that never imports them into the bin's own closure), no `files[]` change is needed — but they must still ship if referenced by any published surface; verify against `check-npm-packages.mjs` directly before deciding.
+**Analog:** itself — flat array, no globs, every top-level module listed by exact name (verified full array, `package.json:10-61`). If (and only if) `anno-launch.ts`/`anno-project.ts` become reachable from `vice-proxy.ts`'s own import closure (e.g. via the argv-subcommand dispatch), add their exact filenames to this array in the same commit — `scripts/check-npm-packages.mjs`'s transitive-closure walk (verified header comment, `check-npm-packages.mjs:15-18`, and completion log line `check-npm-packages.mjs:141`) will otherwise fail loudly at pack-time, not at `npm test` time. If the modules stay unreachable from `vice-proxy.ts` (e.g. because the skill-side route shells out to a wholly separate script that never imports them into the bin's own closure), no `files[]` change is needed — but they must still ship if referenced by any published surface; verify against `check-npm-packages.mjs` directly before deciding.
 
 ---
 
-### `README.md` (R2000-03 install story)
+### `README.md` (ANNO-03 install story)
 
-**Analog:** `README.md`'s own existing "## Installing VICE, and choosing a backend" section (verified `README.md:63-127`) — same structure to replicate for regenerator2000: a short "what it is and why you need it" lead-in, a table of the measured facts (per D-15: `cargo install regenerator2000` toolchain floor `rustc >= 1.90`, no upstream release assets, container cost figures if relevant, the one-project-per-namespace limit stated not detected), and an explicit statement of what breaks/degrades without it (mirroring this section's own "### What a sub-3.10 VICE costs" subsection pattern, verified lines 99-105).
+**Analog:** `README.md`'s own existing "## Installing VICE, and choosing a backend" section (verified `README.md:63-127`) — same structure to replicate for the external analyser: a short "what it is and why you need it" lead-in, a table of the measured facts (per D-15: `cargo install analyser` toolchain floor `rustc >= 1.90`, no upstream release assets, container cost figures if relevant, the one-project-per-namespace limit stated not detected), and an explicit statement of what breaks/degrades without it (mirroring this section's own "### What a sub-3.10 VICE costs" subsection pattern, verified lines 99-105).
 
-**CI gate that enforces this doc's honesty:** `scripts/check-skill-fork-honesty.mjs`'s `REQUIRED_README_SUBSTRINGS` (D-13, above) — the new `regenerator2000` entry there is what makes an incomplete README fail CI rather than silently ship.
+**CI gate that enforces this doc's honesty:** `scripts/check-skill-fork-honesty.mjs`'s `REQUIRED_README_SUBSTRINGS` (D-13, above) — the new `the external analyser` entry there is what makes an incomplete README fail CI rather than silently ship.
 
 ---
 
 ### `.claude/mcp/vice/THIRD-PARTY-NOTICES.md` (dual-license notice, D-14/D-15)
 
-**Analog:** itself — the file's own existing per-source notice sections (verified in full). Model the new regenerator2000 entry on the "## Build/CI tools — not incorporated" section's own style (verified `THIRD-PARTY-NOTICES.md:66-76`):
+**Analog:** itself — the file's own existing per-source notice sections (verified in full). Model the new analyser entry on the "## Build/CI tools — not incorporated" section's own style (verified `THIRD-PARTY-NOTICES.md:66-76`):
 ```markdown
 ## Build/CI tools — not incorporated
 
@@ -434,13 +434,13 @@ attach to anything shipped. ACME never appears in `.claude/mcp/vice/package.json
 `files[]`, `dependencies`, or `devDependencies` -- it is an apt/CI-installed
 tool, never an npm package.
 ```
-regenerator2000's notice needs the **correct** license statement per D-14 — `MIT OR Apache-2.0` (dual), both `LICENSE-MIT` and `LICENSE-APACHE` ship in the crate — not the stale Apache-2.0-only claim `09-RESEARCH.md:55`/`.planning/notes/regenerator2000-integration.md:253` still carry. Root `THIRD-PARTY-NOTICES.md` is a 4-line pointer (verified in full) to this canonical file and needs no separate edit.
+The external analyser's notice needs the **correct** license statement per D-14 — `MIT OR Apache-2.0` (dual), both `LICENSE-MIT` and `LICENSE-APACHE` ship in the crate — not the stale Apache-2.0-only claim `09-RESEARCH.md:55`/`.planning/notes/external-analyser-integration.md:253` still carry. Root `THIRD-PARTY-NOTICES.md` is a 4-line pointer (verified in full) to this canonical file and needs no separate edit.
 
 ## Shared Patterns
 
 ### Deny-by-construction plus deny-by-scan (D-07)
 **Source:** `.claude/mcp/vice/vice.ts:201-243, 690-700` (`DENY_LIST`, `denyListRefusalMessage()`, `call()`'s first-line guard)
-**Apply to:** `r2000-launch.ts` and `r2000-launch.test.ts`
+**Apply to:** `anno-launch.ts` and `anno-launch.test.ts`
 ```typescript
 export const DENY_LIST: readonly string[] = [ /* ... */ ];
 export function denyListRefusalMessage(toolName: string): string { /* ... */ }
@@ -448,7 +448,7 @@ if (DENY_LIST.includes(toolName)) {
   throw new ViceError(denyListRefusalMessage(toolName));
 }
 ```
-The r2000 analog scans an argv array for an exact `"--vice"` token (not a name lookup) and throws a named error before spawn — never strips silently.
+The anno analog scans an argv array for an exact `"--vice"` token (not a name lookup) and throws a named error before spawn — never strips silently.
 
 ### Closed consumer set as a structural absence proof (D-08)
 **Source:** `.claude/mcp/vice/hostpath-consumers.test.ts:89-104` (negative-assertion shape) and `:77-83` (the untouchable positive `EXPECTED_IMPORTERS`)
@@ -456,7 +456,7 @@ The r2000 analog scans an argv array for an exact `"--vice"` token (not a name l
 ```typescript
 test("... are absent from the consumer set", () => {
   const importers = hostpathImporters();
-  for (const name of [ /* new r2000 module names */ ]) {
+  for (const name of [ /* new anno module names */ ]) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
 });
@@ -464,36 +464,36 @@ test("... are absent from the consumer set", () => {
 
 ### Availability-gated, never-silently-skipped CI proof (D-11)
 **Source:** `.claude/mcp/vice/disasm-roundtrip.test.ts:62-100` (`probeAcme()`, `SKIP_REASON`, the always-running gate test) — **shape only, new file**
-**Apply to:** `r2000-verify.test.ts` (renaming every `ACME_*`/`VICE_REQUIRE_ACME` symbol to the r2000 equivalent)
+**Apply to:** `anno-verify.test.ts` (renaming every `ACME_*`/`VICE_REQUIRE_ACME` symbol to the anno equivalent)
 ```typescript
-const R2000_AVAILABLE = probeR2000();
-const SKIP_REASON: string | false = R2000_AVAILABLE ? false : `... set VICE_REQUIRE_R2000=1 to hard-fail ...`;
-test("regenerator2000 availability gate", () => {
-  if (process.env.VICE_REQUIRE_R2000) {
-    assert.ok(R2000_AVAILABLE, `VICE_REQUIRE_R2000 is set but no real regenerator2000 was found ...`);
+const ANNO_AVAILABLE = probeAnno();
+const SKIP_REASON: string | false = ANNO_AVAILABLE ? false : `... set VICE_REQUIRE_ANNO=1 to hard-fail ...`;
+test("the external analyser availability gate", () => {
+  if (process.env.VICE_REQUIRE_ANNO) {
+    assert.ok(ANNO_AVAILABLE, `VICE_REQUIRE_ANNO is set but no real the external analyser was found ...`);
   }
 });
 ```
-D-11: CI never sets `VICE_REQUIRE_R2000`, unlike `VICE_REQUIRE_ACME` which `.github/workflows/ci.yml:94` sets unconditionally for the ACME gate — this is a deliberate asymmetry, not an oversight to "fix" by copying the CI env var too.
+D-11: CI never sets `VICE_REQUIRE_ANNO`, unlike `VICE_REQUIRE_ACME` which `.github/workflows/ci.yml:94` sets unconditionally for the ACME gate — this is a deliberate asymmetry, not an oversight to "fix" by copying the CI env var too.
 
 ### Argv array, never a shell string
 **Source:** `.claude/skills/acme-build/scripts/acme.mjs:124` (`spawnSync("acme", args, ...)`) and `disasm-roundtrip.test.ts:44,111-120`'s explicit rule
-**Apply to:** `r2000-launch.ts`, `r2000-verify.test.ts`, and any code that shells out to `regenerator2000`
+**Apply to:** `anno-launch.ts`, `anno-verify.test.ts`, and any code that shells out to `the external analyser`
 Every project-wide subprocess call already follows this convention with no exception; the new seam must not be the first to break it.
 
 ### Header-comment convention (WHY / ONE authoritative place / WHAT NOT TO DO)
 **Source:** `.claude/mcp/vice/vice.ts:1-13`, `.claude/mcp/vice/containerpath.ts:1-33`
-**Apply to:** `r2000-launch.ts`, `r2000-project.ts` (both new modules under `.claude/mcp/vice/`)
-Every existing module in this directory states why it exists (what incident/requirement demanded it), what it is the one authoritative place for, and what NOT to do naming the specific past mistake or hazard. The two new r2000 modules should match this density, not a bare functional comment.
+**Apply to:** `anno-launch.ts`, `anno-project.ts` (both new modules under `.claude/mcp/vice/`)
+Every existing module in this directory states why it exists (what incident/requirement demanded it), what it is the one authoritative place for, and what NOT to do naming the specific past mistake or hazard. The two new anno modules should match this density, not a bare functional comment.
 
 ## No Analog Found
 
 | File | Role | Data Flow | Reason |
 |------|------|-----------|--------|
-| `.claude/mcp/vice/r2000-project.ts` (the `.regen2000proj` synthesis function itself) | utility | transform | Genuinely new mechanism — no prior code in this repo gzips+base64s+JSON-encodes a project file for an external tool. Build from `ProjectState`'s field analysis (CONTEXT.md D-01, re-verify against `project.rs:41-96` directly per RESEARCH.md Assumption A1) rather than an in-repo pattern. The *style* conventions (pure function, documented scope limits inline, no version pinning) come from `d64-parse.mjs` and D-04's own reasoning, cited above, but the actual gzip/base64/JSON shape has no precedent to copy. |
+| `.claude/mcp/vice/anno-project.ts` (the `.regen2000proj` synthesis function itself) | utility | transform | Genuinely new mechanism — no prior code in this repo gzips+base64s+JSON-encodes a project file for an external tool. Build from `ProjectState`'s field analysis (CONTEXT.md D-01, re-verify against `project.rs:41-96` directly per RESEARCH.md Assumption A1) rather than an in-repo pattern. The *style* conventions (pure function, documented scope limits inline, no version pinning) come from `d64-parse.mjs` and D-04's own reasoning, cited above, but the actual gzip/base64/JSON shape has no precedent to copy. |
 | Skill-side entry point / argv-subcommand dispatch mechanism | route | request-response | RESEARCH.md's own Open Question 1 / Assumption A2 — a recommendation (argv-subcommand on the existing `vice-mcp` bin), not a verified, locked pattern. `smoke.mjs`/`probe-binmon.mjs` are the closest *shape* precedents (spawn-the-published-bin, standalone-CLI-with-flags) but neither is a subcommand-dispatch-inside-an-existing-bin precedent — this is new wiring, not a copy. |
 
-## Deletion Blast Radius (R2000-05, criterion 4)
+## Deletion Blast Radius (ANNO-05, criterion 4)
 
 Full-repo grep for `disasm`/`toacme` performed (cross-checked against RESEARCH.md's own equivalent table); every consumer that must change, with exact locations:
 
@@ -507,11 +507,11 @@ Full-repo grep for `disasm`/`toacme` performed (cross-checked against RESEARCH.m
 | `.claude/skills/acme-build/SKILL.md:19` | Change "wraps `acme` and `toacme` and nothing else" → "wraps `acme` and nothing else" |
 | `.claude/skills/acme-build/SKILL.md:134-176` | Delete the entire `## Disassembly` section (fenced examples, "linear decode" prose, `.dis.a`→`.dis.asm` workaround, out-of-range-label / illegal-opcode-indent instructions) |
 | `.claude/skills/acme-build/SKILL.md:180` | Change "Put `acme` and `toacme` on `$PATH`." → "Put `acme` on `$PATH`." |
-| `.claude/skills/acme-build/SKILL.md` (in the vacated section's place) | Add a short pointer to the new r2000 route |
-| `.claude/skills/c64-program-recon/SKILL.md` | No existing `disasm`/`toacme`/`regenerator2000` mention (confirmed) — add a NEW pointer to the same route (D-12: no duplicated copy) |
+| `.claude/skills/acme-build/SKILL.md` (in the vacated section's place) | Add a short pointer to the new anno route |
+| `.claude/skills/c64-program-recon/SKILL.md` | No existing `disasm`/`toacme`/`the external analyser` mention (confirmed) — add a NEW pointer to the same route (D-12: no duplicated copy) |
 | `installer/skills/acme-build/*` | **No manual edit** — gitignored, regenerated from `.claude/skills/` by `installer/scripts/sync-skills.mjs`'s `prepack` hook (`git check-ignore -v installer/skills/acme-build/SKILL.md` matches `.gitignore:43`) |
 | `scripts/check-npm-packages.mjs` | No reference to `disasm`/`toacme` — confirmed by grep; no change needed for the deletion itself |
-| `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/PROJECT.md` | Historical/requirement-tracking prose (e.g. `PROJECT.md:65,247`) — backward-looking, closes naturally when R2000-05 is marked satisfied; no separate edit task |
+| `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/PROJECT.md` | Historical/requirement-tracking prose (e.g. `PROJECT.md:65,247`) — backward-looking, closes naturally when ANNO-05 is marked satisfied; no separate edit task |
 | `docs/*.md`, other `SKILL.md` files | No other file mentions `disasm`/`toacme` as a live capability (confirmed by grep across `.md`/`.ts`/`.mts`/`.mjs`/`.json`) |
 | `.claude/mcp/vice/disasm-roundtrip.test.ts`, `disasm-opcodes.ts`, `disasm-decoder.ts`, `disasm-renderer.ts`, `stock-disassemble.ts` | **Must NOT be touched** — Phase 4's unrelated, standing-constraint-protected stock live-disassembler family; a diff touching any of these in a Phase 10 plan is a scope error (RESEARCH.md Pitfall 1) |
 

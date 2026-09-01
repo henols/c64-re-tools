@@ -65,7 +65,7 @@ coverage:
     requirement: COV-01
     verification:
       - kind: unit
-        ref: "node --test {docs-review-disposition,docs-core-value-decision,docs-dangling-refs,docs-deferred-ledger,docs-fork-decision,docs-linerefs,docs-r2000-decisions}.test.ts — seven separate standalone runs, each exit 0"
+        ref: "node --test {docs-review-disposition,docs-core-value-decision,docs-dangling-refs,docs-deferred-ledger,docs-fork-decision,docs-linerefs,docs-anno-decisions}.test.ts — seven separate standalone runs, each exit 0"
         status: pass
     human_judgment: false
   - id: D4
@@ -162,7 +162,7 @@ One id, one phase — narrower than `19-VERIFICATION.md` recorded. The five ids 
 | `docs-deferred-ledger.test.ts` | **0** | `# tests 6 # pass 6 # fail 0` |
 | `docs-fork-decision.test.ts` | **0** | `# tests 6 # pass 6 # fail 0` |
 | `docs-linerefs.test.ts` | **0** | `# tests 3 # pass 3 # fail 0` |
-| `docs-r2000-decisions.test.ts` | **0** | `# tests 5 # pass 5 # fail 0` |
+| `docs-absorbed-decisions.test.ts` | **0** | `# tests 5 # pass 5 # fail 0` |
 
 **Seven of seven green.** The verification's claim — that D-12-02's message named seven red guards while six passed standalone — is now confirmed by measuring all seven rather than three, and the seventh (the disposition guard) is green too. None of the six previously-green guards has regressed, so this plan had nothing to halt and report.
 
@@ -192,7 +192,7 @@ Deleting either half entirely would leave the other standing, and the record wou
 
 ## Why no full-suite run
 
-**The full suite was NOT run in this plan, deliberately.** This plan's wave-1 sibling **19-10** is concurrently editing `r2000-coverage.ts`, `r2000-coverage.test.ts`, the fixture generator and two new fixture directories. A full-suite run here would observe the tree mid-flight and report a failure belonging to neither plan — evidence about scheduling, not about correctness.
+**The full suite was NOT run in this plan, deliberately.** This plan's wave-1 sibling **19-10** is concurrently editing `anno-coverage.ts`, `anno-coverage.test.ts`, the fixture generator and two new fixture directories. A full-suite run here would observe the tree mid-flight and report a failure belonging to neither plan — evidence about scheduling, not about correctness.
 
 The gate used instead is the two named guards run standalone. Both read only `.planning/` documents (`19-REVIEW.md`, phase SUMMARYs/VERIFICATIONs, `.planning/todos/`, top-level milestone audits) plus `scripts/audit-gate.mjs`'s derived guard set — **no file 19-10 touches** — so their result is independent of 19-10's progress. The unconditional full-suite gate belongs to wave 2 onward.
 

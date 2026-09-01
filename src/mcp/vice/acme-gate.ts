@@ -12,16 +12,16 @@
 // machine for no documented reason. Every ACME-gated test file imports this
 // single implementation instead of copying it.
 //
-// This half previously lived at the bottom of `r2000-test-gate.ts`, sharing a
-// file with the regenerator2000 gate. It stands under its own name now
-// because that filename's `r2000-` prefix makes the ACME gate collateral
-// damage of any prefix-driven cleanup of the regenerator2000 surface -- and
+// This half previously lived at the bottom of `anno-test-gate.ts`, sharing a
+// file with the external analyser gate. It stands under its own name now
+// because that filename's `anno-` prefix makes the ACME gate collateral
+// damage of any prefix-driven cleanup of the external analyser surface -- and
 // that loss is SILENT: with the gate gone, a missing ACME degrades from a hard
 // FAIL back into a named SKIP, and CI reports green either way. The
-// regenerator2000 gate keeps its own module; there is deliberately no
+// the external analyser gate keeps its own module; there is deliberately no
 // re-export bridging the two (see WHAT NOT TO DO).
 //
-// Unlike the regenerator2000 gate, `.github/workflows/ci.yml` DOES install
+// Unlike the external analyser gate, `.github/workflows/ci.yml` DOES install
 // ACME and DOES set `VICE_REQUIRE_ACME=1` for its Test step, so a skip from
 // this gate is a local-only state -- never a CI state. CI binds the env-var
 // NAMES only; it never names this module's path, which is why moving the code

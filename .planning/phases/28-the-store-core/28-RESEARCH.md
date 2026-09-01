@@ -66,7 +66,7 @@ planted violation is the removal of one `COMMIT`.
 
 | ID | Description | Research Support |
 |----|-------------|------------------|
-| STORE-01 | Labels, comments, per-range typing over the **full 12-member vocabulary**, scopes, project enums | `## The 12-Member Vocabulary, Read Off The Real Schema` gives the twelve literal strings verbatim from `r2000-tools.ts:291-304`, plus the label/comment/scope/enum field shapes from the same file, plus the label-namespace and legality rules |
+| STORE-01 | Labels, comments, per-range typing over the **full 12-member vocabulary**, scopes, project enums | `## The 12-Member Vocabulary, Read Off The Real Schema` gives the twelve literal strings verbatim from `anno-tools.ts:291-304`, plus the label/comment/scope/enum field shapes from the same file, plus the label-namespace and legality rules |
 | STORE-02 | Ranges stored as ranges, never merged on adjacency, no splitter | `## Architecture Patterns` → Pattern 2. The paint-array index is rebuilt from rows on mutation; adjacency is never consulted, so there is nothing to merge and no splitter to introduce |
 | STORE-03 | Narrowest-wins lookup exact at all 65,536 addresses, cross-validated against a second implementation | `## The Cross-Validation Oracle` — measured at **279 ms** for 2,000 ranges, zero disagreements. Tie-break, both ends and `$FFFF` pinning specified |
 | STORE-04 | Survives `SIGKILL`; an edit is revertible; **one** combined planted-violation test | `## Durability and Revert, Proven By Running It` — the exact sequence was run and the planted violation observed red. Prototype at `~/.cache/gsd-probe/c4/` |
@@ -96,8 +96,8 @@ committed guards, and both will bite a naively-written module header — see
 
 ## The 12-Member Vocabulary, Read Off The Real Schema
 
-`r2000_set_data_type`'s `data_type.enum` at **`src/mcp/vice/r2000-tools.ts:291-304`**,
-quoted verbatim [VERIFIED: src/mcp/vice/r2000-tools.ts:291-304]:
+`anno_set_data_type`'s `data_type.enum` at **`src/mcp/vice/anno-tools.ts:291-304`**,
+quoted verbatim [VERIFIED: src/mcp/vice/anno-tools.ts:291-304]:
 
 ```
             "code",
@@ -117,7 +117,7 @@ quoted verbatim [VERIFIED: src/mcp/vice/r2000-tools.ts:291-304]:
 Twelve members, lowercase, snake_case. The **four split layouts** are, verbatim:
 `lo_hi_address`, `hi_lo_address`, `lo_hi_word`, `hi_lo_word`. They factor as
 `{lo_hi, hi_lo} × {address, word}`, and the schema's own description distinguishes
-the two axes [VERIFIED: src/mcp/vice/r2000-tools.ts:305-313]:
+the two axes [VERIFIED: src/mcp/vice/anno-tools.ts:305-313]:
 
 - orientation: `"lo_hi_address=split address table, low bytes first then high bytes (even count required); hi_lo_address=split address table, high bytes first (even count required)"`
 - address-vs-word: `"address=16-bit LE pointers (creates X-Refs, use for jump tables/vectors)"` versus `"word=16-bit LE values"`
@@ -128,8 +128,8 @@ xref rows are produced at all*. Both are needed to justify four members rather t
 two. `even count required` is a validation rule, not a type property — it belongs in
 `anno-types.ts` as a refusal.
 
-**Do not carry `r2000_` in the member strings, and do not re-spell them.** The
-strings themselves contain no `r2000`, so they survive Phase 32's gate unchanged.
+**Do not carry `anno_` in the member strings, and do not re-spell them.** The
+strings themselves contain no `anno`, so they survive Phase 32's gate unchanged.
 Re-spelling them (e.g. `lohi_address`) would break every `src/skills/` playbook that
 names them and gain nothing.
 
@@ -137,10 +137,10 @@ names them and gain nothing.
 
 | Vocabulary | Members | Source |
 |---|---|---|
-| Comment type | `"line"`, `"side"` | [VERIFIED: src/mcp/vice/r2000-tools.ts:270-274] — `enum: ["line", "side"]`, `'line' = comment on its own line before the instruction. 'side' = inline comment on the same line.` |
-| Confidence grade (a comment *prefix*, not a column) | `[confirmed-code]`, `[probable-code]`, `[confirmed-data]`, `[probable-data]`, `[unknown]` | [VERIFIED: src/mcp/vice/r2000-confidence.ts:81-114] — `CONFIDENCE_GRADES`, five entries, each `{ token, bracket, phrase }` |
-| Label kind | `"User"`, `"Auto"`, `"System"` (and `"Platform"`, accepted as a synonym of `System` by the census) | [VERIFIED: src/mcp/vice/r2000-coverage.ts:206] — `/** `LabelKind`'s Debug form: `"User"`, `"Auto"` or `"System"`. */`; and `r2000-coverage.ts:1430` — `if (kind === "System" \|\| kind === "Platform") {` |
-| Auto-name prefixes (11) | `zpf_`, `f_`, `zpa_`, `a_`, `p_`, `zpp_`, `e_`, `j_`, `s_`, `b_`, `r_` | [VERIFIED: src/mcp/vice/r2000-coverage.ts:1392] — `export const AUTO_NAME_PREFIX_RE = /^(zpf_\|f_\|zpa_\|a_\|p_\|zpp_\|e_\|j_\|s_\|b_\|r_)/;` |
+| Comment type | `"line"`, `"side"` | [VERIFIED: src/mcp/vice/anno-tools.ts:270-274] — `enum: ["line", "side"]`, `'line' = comment on its own line before the instruction. 'side' = inline comment on the same line.` |
+| Confidence grade (a comment *prefix*, not a column) | `[confirmed-code]`, `[probable-code]`, `[confirmed-data]`, `[probable-data]`, `[unknown]` | [VERIFIED: src/mcp/vice/anno-confidence.ts:81-114] — `CONFIDENCE_GRADES`, five entries, each `{ token, bracket, phrase }` |
+| Label kind | `"User"`, `"Auto"`, `"System"` (and `"Platform"`, accepted as a synonym of `System` by the census) | [VERIFIED: src/mcp/vice/anno-coverage.ts:206] — `/** `LabelKind`'s Debug form: `"User"`, `"Auto"` or `"System"`. */`; and `anno-coverage.ts:1430` — `if (kind === "System" \|\| kind === "Platform") {` |
+| Auto-name prefixes (11) | `zpf_`, `f_`, `zpa_`, `a_`, `p_`, `zpp_`, `e_`, `j_`, `s_`, `b_`, `r_` | [VERIFIED: src/mcp/vice/anno-coverage.ts:1392] — `export const AUTO_NAME_PREFIX_RE = /^(zpf_\|f_\|zpa_\|a_\|p_\|zpp_\|e_\|j_\|s_\|b_\|r_)/;` |
 
 The `AUTO_NAME_PREFIX_RE` count is **11**, matching `EXPORT-02`'s figure exactly.
 `ROADMAP.md`'s warning that a five-prefix reimplementation would break
@@ -150,7 +150,7 @@ label-kind field is what separates namespaces, and the prefix regex stays where 
 
 ### The label namespace and legality rules, verbatim
 
-[VERIFIED: src/mcp/vice/r2000-tools.ts:246-251]:
+[VERIFIED: src/mcp/vice/anno-tools.ts:246-251]:
 
 > `"The label name (e.g. 'init_screen', 'loop_start'). Must be a legal ACME identifier: starts with a letter or underscore, followed by letters/digits/underscores only, and must not be a 6502/6510 mnemonic (e.g. 'LDA'). An illegal name is REJECTED, never sanitized or quoted."`
 
@@ -202,9 +202,9 @@ Its header states the design rationale it now undermines
 > `// accidentally still agree -- it gets a different answer and moves a`
 > `// measured number, loudly.`
 
-The premise is that the store's spelling is **capitalised**. It was — r2000's Rust
+The premise is that the store's spelling is **capitalised**. It was — anno's Rust
 `Display` emits `Code`/`Undefined`/`Byte`. The vocabulary read off
-`r2000_set_data_type` is **lowercase**. So a new store returning `type: "code"` hits
+`anno_set_data_type` is **lowercase**. So a new store returning `type: "code"` hits
 neither branch and falls through to `"data"`, and the census's whole code/data axis
 collapses to data. **Nothing currently red-flags this**: `block-class.test.ts`
 hard-codes `const STORE_CODE = "Code"` at line 34, deliberately, so "a silent change
@@ -233,11 +233,11 @@ cross-check rather than by spelling distinctness.
 
 ### (b) The label-kind vocabulary was never extracted at all
 
-`SEAM-03` claims `r2000-coverage.ts`'s store contact is "reduced to a named,
+`SEAM-03` claims `anno-coverage.ts`'s store contact is "reduced to a named,
 repointable boundary — measured as two functions comparing against upstream's Rust
 `Display` strings". That measurement covered the **block-type** comparisons. The
 **label-kind** comparisons are still inline, at four sites
-[VERIFIED: src/mcp/vice/r2000-coverage.ts:1430, 1432, 1869, 2180]:
+[VERIFIED: src/mcp/vice/anno-coverage.ts:1430, 1432, 1869, 2180]:
 
 ```
 1430:    if (kind === "System" || kind === "Platform") {
@@ -249,7 +249,7 @@ repointable boundary — measured as two functions comparing against upstream's 
 Lines 1869 and 2180 are the dangerous ones: a store emitting `kind: "user"` makes
 `nameByAddress` empty and `seeds` empty. The `COV-01`/`COV-02` boundary test does not
 cover this — it rewrites **block** entries to a single type
-[VERIFIED: src/mcp/vice/r2000-coverage.test.ts:616] — `const oneType: BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];`.
+[VERIFIED: src/mcp/vice/anno-coverage.test.ts:616] — `const oneType: BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];`.
 
 **Two dispositions, and the planner must pick one explicitly:**
 
@@ -442,7 +442,7 @@ differ in **which set they scan** and that difference is load-bearing.
 | Guard | Scanned set | Stripper |
 |---|---|---|
 | `hostpath-consumers.test.ts` | `readdirSync(HERE)` filtered to `.ts`/`.mts` minus `*.test.*` — a **local** `topLevelProductionModules()` [VERIFIED: src/mcp/vice/hostpath-consumers.test.ts:124-127] | its own local `stripCommentLines()` (comments only) |
-| `r2000-spawn-seam.test.ts` | `shippedTsModules()` — `package.json` `files[]` filtered to `.ts`/`.mts` [VERIFIED: src/mcp/vice/r2000-spawn-seam.test.ts:53, 183] | `codeOnly()` from `shipped-modules.ts` |
+| `spawn-seam.test.ts` | `shippedTsModules()` — `package.json` `files[]` filtered to `.ts`/`.mts` [VERIFIED: src/mcp/vice/spawn-seam.test.ts:53, 183] | `codeOnly()` from `shipped-modules.ts` |
 | `comment-phase-pointers.test.ts` | `shippedTsModules()` [VERIFIED: src/mcp/vice/comment-phase-pointers.test.ts:53-55, 74] | its own inverted comment extractor |
 
 `shippedTsModules()` **throws** `ShippedFilesEntryMissingError` when a `files[]` entry
@@ -598,7 +598,7 @@ table with lo == hi) makes the control vacuous. Assert the fixture's non-degener
 in the test itself.
 
 **Second axis, needed to justify four members rather than two:** `address` creates
-xrefs and `word` does not [VERIFIED: src/mcp/vice/r2000-tools.ts:307-308]. Assert
+xrefs and `word` does not [VERIFIED: src/mcp/vice/anno-tools.ts:307-308]. Assert
 that `lo_hi_address` and `lo_hi_word` over the same bytes differ in xref production.
 Without this, a reviewer can correctly object that two members would do.
 
@@ -630,8 +630,8 @@ an error, not a refusal). Removing the check makes the call return clean success
 which is the red.
 
 **The contradiction rule already exists in this repo and must be reused, not
-invented.** `r2000-confidence.ts` owns the five-grade vocabulary and
-`parseConfidencePrefix()` [VERIFIED: src/mcp/vice/r2000-confidence.ts:81-114, 175].
+invented.** `anno-confidence.ts` owns the five-grade vocabulary and
+`parseConfidencePrefix()` [VERIFIED: src/mcp/vice/anno-confidence.ts:81-114, 175].
 The rule falls out of it:
 
 - a comment graded `[confirmed-code]` or `[probable-code]` at an address being
@@ -640,15 +640,15 @@ The rule falls out of it:
   retyped to `code` is contradicted;
 - `[unknown]` and an ungraded comment are never contradicted.
 
-Note `parseConfidencePrefix()` **throws** `R2000ConfidenceGradeError` on a bracket
+Note `parseConfidencePrefix()` **throws** `AnnoConfidenceGradeError` on a bracket
 token that is not exactly one of the five, deliberately, so an unparseable prefix is
 not silently treated as ungraded. The store must not swallow that.
 
-**Two consequences the planner must record:** (1) `r2000-confidence.ts` still carries
-the `r2000` prefix and is renamed in **Phase 32**, so a Phase-28 import of it becomes
+**Two consequences the planner must record:** (1) `anno-confidence.ts` still carries
+the `anno` prefix and is renamed in **Phase 32**, so a Phase-28 import of it becomes
 a Phase-32 edit — acceptable, but it must be on Phase 32's enumerated task list, not
-discovered there. (2) `R2000ConfidenceGradeError extends Error`, **not** `ViceError`
-[VERIFIED: src/mcp/vice/r2000-confidence.ts:139] — so the store's own errors cannot
+discovered there. (2) `AnnoConfidenceGradeError extends Error`, **not** `ViceError`
+[VERIFIED: src/mcp/vice/anno-confidence.ts:139] — so the store's own errors cannot
 be caught by a single `catch (e) { if (e instanceof ViceError) }` if this one escapes.
 Either wrap it or state the asymmetry.
 
@@ -694,7 +694,7 @@ booleans computed outside any `try`.
 | `node:fs` (`mkdtempSync`, `renameSync`, `fsyncSync`, `copyFileSync`) | built-in | Snapshot restore, test temp dirs | The revert path replaces the store file by `rename` after an `fsync` of both the temp file and its directory |
 | `ViceError` from `./vice.ts` | in-repo | Base class for all new named errors | Established by ~14 existing modules [VERIFIED: grep for `extends ViceError`] |
 | `OPCODES` from `./disasm-opcodes.ts` | in-repo | Derive the mnemonic denylist for label legality | Never hand-type the mnemonic list |
-| `CONFIDENCE_GRADES` / `parseConfidencePrefix()` from `./r2000-confidence.ts` | in-repo | The comment-contradiction rule | Reuse; do not reinvent |
+| `CONFIDENCE_GRADES` / `parseConfidencePrefix()` from `./anno-confidence.ts` | in-repo | The comment-contradiction rule | Reuse; do not reinvent |
 | `codeOnly()` / `shippedTsModules()` from `./shipped-modules.ts` | in-repo, **test-only** | The `STORE-07` structural assertion | `keepLiteralBodies = true` for an import-specifier scan |
 
 ### Alternatives Considered
@@ -799,12 +799,12 @@ run before it lands.
 
     ─────── existing consumers Phase 28 must not break ───────
 
-  block-class.ts ──► r2000-coverage.ts census
+  block-class.ts ──► anno-coverage.ts census
    (two literals "Code"/"Undefined" must change to the new
     lowercase spellings; its import list stays EMPTY, so the
     store-vs-classifier cross-check lives in a TEST)
 
-  r2000-coverage.ts:1430/1432/1869/2180 — label-kind literals
+  anno-coverage.ts:1430/1432/1869/2180 — label-kind literals
    ("User"/"Auto"/"System"/"Platform") were NEVER extracted.
     Either the store emits those spellings verbatim, or a
     second boundary is extracted here.  ← named decision
@@ -825,8 +825,8 @@ src/mcp/vice/
 ```
 
 Naming: `anno-*` [ASSUMED — a discretion choice, not read off anything]. It satisfies
-every hard constraint checked this session: no `r2000` substring (Phase 32's gate);
-outside `module-classification.test.ts`'s `startsWith("r2000-")` enumeration
+every hard constraint checked this session: no `anno` substring (Phase 32's gate);
+outside `module-classification.test.ts`'s `startsWith("anno-")` enumeration
 [VERIFIED: src/mcp/vice/module-classification.test.ts:72-78], so **no classification
 entry is required and the planner should not invent one**; the prefix is a single
 stable disk-derivable prefix as Phase 29's notes require; and no file of that name
@@ -841,12 +841,12 @@ strings appear.
 **When to use:** always. Every consumer — the validator, the split-table layout
 logic, the `block-class.ts` cross-check test, the Phase 29 tool schema — derives from
 it.
-**Example** (shape follows `r2000-confidence.ts:81-114`'s `CONFIDENCE_GRADES` and
+**Example** (shape follows `anno-confidence.ts:81-114`'s `CONFIDENCE_GRADES` and
 `capability-registry.ts`'s typed-const idiom):
 
 ```typescript
-// Source: shape from src/mcp/vice/r2000-confidence.ts:81-114 (CONFIDENCE_GRADES);
-//         member strings verbatim from src/mcp/vice/r2000-tools.ts:291-304
+// Source: shape from src/mcp/vice/anno-confidence.ts:81-114 (CONFIDENCE_GRADES);
+//         member strings verbatim from src/mcp/vice/anno-tools.ts:291-304
 export const DATA_TYPES = Object.freeze([
   "code", "byte", "word", "address", "petscii", "screencode",
   "lo_hi_address", "hi_lo_address", "lo_hi_word", "hi_lo_word",
@@ -884,9 +884,9 @@ a "nice" coalescing pass.
 **Why:** `ROADMAP.md` names six conversion boundaries, five of which produce
 plausible output when wrong. **Verified as a real hazard in this tree:**
 `block-class.ts`'s `BlockEntry` uses `end_address` with both ends inclusive
-[VERIFIED: src/mcp/vice/block-class.ts:130] and `r2000_set_data_type`'s schema says
+[VERIFIED: src/mcp/vice/block-class.ts:130] and `anno_set_data_type`'s schema says
 `"End of the memory region (inclusive), decimal."`
-[VERIFIED: src/mcp/vice/r2000-tools.ts:288] — the inclusivity is real but is carried
+[VERIFIED: src/mcp/vice/anno-tools.ts:288] — the inclusivity is real but is carried
 only in prose, in two different field names. The new name makes it carried by the
 identifier. Add a test that the *string* `end_inclusive` appears in the DDL and that
 no store row type exposes a bare `end`.
@@ -955,8 +955,8 @@ machinery and no `hostpath.ts`. Safe.
 - **Putting narrowest-wins inside the write path.** It makes criterion 2's tie-break
   pin unreachable (see `## The Cross-Validation Oracle`).
 - **An explicit `save` verb.** Durability is the store's, not the caller's. `ROADMAP.md`
-  §Phase 29 lists it as a measured anti-feature; `r2000_save_project` exists in the
-  old surface [VERIFIED: src/mcp/vice/r2000-tools.ts:526] and is exactly what not to
+  §Phase 29 lists it as a measured anti-feature; `anno_save_project` exists in the
+  old surface [VERIFIED: src/mcp/vice/anno-tools.ts:526] and is exactly what not to
   carry.
 - **Caching a derived index on disk.** A cached index inside the store creates a
   second truth that can disagree with the range table — the failure `COV-01`'s
@@ -998,7 +998,7 @@ later.
 
 | Category | Items Found | Action Required |
 |----------|-------------|------------------|
-| Stored data | **None to migrate.** No `.annostore` file exists anywhere; the existing store format is r2000's `.regen2000proj` [VERIFIED: src/mcp/vice/r2000-tools.ts:174] and **no parity is owed to it** (owner decision, `REQUIREMENTS.md` decision 1), so nothing is converted. New state created: `<project>.annostore` plus a `snapshots/` sibling directory | none — but the plan must state that no import path from `.regen2000proj` is built, so a later reader does not look for one |
+| Stored data | **None to migrate.** No `.annostore` file exists anywhere; the existing store format is anno's `.regen2000proj` [VERIFIED: src/mcp/vice/anno-tools.ts:174] and **no parity is owed to it** (owner decision, `REQUIREMENTS.md` decision 1), so nothing is converted. New state created: `<project>.annostore` plus a `snapshots/` sibling directory | none — but the plan must state that no import path from `.regen2000proj` is built, so a later reader does not look for one |
 | Live service config | None — verified: the store is container-side, reached per call by explicit path, with no daemon, no port and no broker involvement | none |
 | OS-registered state | None — verified: no systemd unit, no scheduler entry. (The VICE broker's systemd unit is unrelated and untouched) | none |
 | Secrets/env vars | None — verified: no new env var is required. If a plan adds one (e.g. a store-path override) it must be named in the module header the way `VICE_*` vars are | none |
@@ -1083,8 +1083,8 @@ corrupt the wire.
 D-27-02-B and D-27-05-A]:
 
 - the whole-glob run produces **44 failures on a clean tree** (39 in
-  `vice-proxy.test.ts` needing a live host, 5 in `r2000-session.test.ts` needing
-  `regenerator2000` on PATH), and
+  `vice-proxy.test.ts` needing a live host, 5 in `anno-session.test.ts` needing
+  `the external analyser` on PATH), and
 - `vice-proxy.test.ts` **leaks two LISTEN sockets and never exits** — diagnosed on a
   real PID, zero CPU, all 2,410 TAP lines already emitted, two `127.0.0.1` listeners
   held. The child must be terminated by hand once its results are out.
@@ -1134,13 +1134,13 @@ assertion vacuous.
 
 Two knock-on effects of joining `files[]`, both desirable and both to be verified in
 the phase: the new modules enter `comment-phase-pointers.test.ts`'s scanned set (see
-P-1) and `r2000-spawn-seam.test.ts`'s (they contain no spawn call, so they pass
+P-1) and `spawn-seam.test.ts`'s (they contain no spawn call, so they pass
 trivially — but confirm rather than assume).
 
-### P-10: `r2000-confidence.ts` is imported under a name Phase 32 renames
+### P-10: `anno-confidence.ts` is imported under a name Phase 32 renames
 
 If Phase 28 imports `parseConfidencePrefix()` (recommended), the import specifier
-`"./r2000-confidence.ts"` becomes a Phase-32 edit. Put it on Phase 32's enumerated
+`"./anno-confidence.ts"` becomes a Phase-32 edit. Put it on Phase 32's enumerated
 task list at plan time. Do **not** avoid the import by copying the vocabulary — that
 is exactly the divergence the single-seam convention exists to prevent.
 
@@ -1457,7 +1457,7 @@ Two supporting facts the planner needs:
   starts two lines late. `docs-linerefs.test.ts` only checks CLAUDE.md's
   `rewriteArguments()` bullet [VERIFIED: src/mcp/vice/docs-linerefs.test.ts:32, 66-83],
   so nothing goes red — but a plan quoting the range should use the real lines.
-- `SEAM-03` describes `r2000-coverage.ts`'s store contact as *"two functions"*. The
+- `SEAM-03` describes `anno-coverage.ts`'s store contact as *"two functions"*. The
   block-type half is now behind `block-class.ts`; the **label-kind** half is four
   inline comparisons that were never counted. See `## The Named Boundary Phase 27 Left
   Half-Open` (b).
@@ -1474,7 +1474,7 @@ Two supporting facts the planner needs:
 | Real disk for durability measurement | the `SIGKILL` evidence run | ✓ | ext4 on nvme at `/home` | note: `/tmp` is tmpfs, so a durability measurement taken there is not a disk measurement |
 | ACME cross-assembler | **not** this phase (Phase 30) | ✓ (0.97 per prior phases) | — | — |
 | A VICE emulator / the broker | **not** this phase | n/a | — | — |
-| `regenerator2000` on PATH | **not** this phase | ✗ on this host | — | irrelevant: no Phase 28 test spawns it. It is the cause of 5 of the 44 whole-glob baseline failures (D-27-02-A) |
+| `the external analyser` on PATH | **not** this phase | ✗ on this host | — | irrelevant: no Phase 28 test spawns it. It is the cause of 5 of the 44 whole-glob baseline failures (D-27-02-A) |
 
 **Missing dependencies with no fallback:** none.
 **Missing dependencies with fallback:** none required by this phase.
@@ -1525,7 +1525,7 @@ deterministically reddens the `BACK-05` test**, so it must be stopped before any
 | (regression) | No new module imports `hostpath.ts` | structural | `node --test hostpath-consumers.test.ts` | ✅ exists |
 | (regression) | No new shipped comment hands work to a numbered phase; no shipped literal names one | structural | `node --test comment-phase-pointers.test.ts docs-dangling-refs.test.ts` | ✅ exists |
 | (regression) | `block-class.ts` maps **every one** of the twelve members correctly — derived from `DATA_TYPES`, total | unit | `node --test block-class.test.ts` | ✅ exists (extend) |
-| (regression) | The census's label-kind spelling and the store's agree (or the second boundary is extracted) | unit | `node --test r2000-coverage.test.ts` | ✅ exists (extend) |
+| (regression) | The census's label-kind spelling and the store's agree (or the second boundary is extracted) | unit | `node --test anno-coverage.test.ts` | ✅ exists (extend) |
 | (regression) | `shippedTsModules()` does not throw — every new `files[]` entry is on disk | structural | `node --test shipped-modules.test.ts` | ✅ exists |
 | (regression) | Tarball closure and packaging still clean with three unreachable-but-shipped modules | CI script | `node scripts/check-npm-packages.mjs` | ✅ exists |
 | (regression) | Typecheck | typecheck | `cd src/mcp/vice && npm run typecheck` | ✅ exists |
@@ -1533,7 +1533,7 @@ deterministically reddens the `BACK-05` test**, so it must be stopped before any
 ### Sampling Rate
 
 - **Per task commit:** `cd src/mcp/vice && node --test anno-*.test.ts && npm run typecheck` — the store's own tests plus a typecheck. Sub-second plus tsc.
-- **Per wave merge:** `cd src/mcp/vice && npm run test:automated` — includes every regression guard above (`hostpath-consumers`, `comment-phase-pointers`, `docs-dangling-refs`, `block-class`, `r2000-coverage`, `shipped-modules`) and terminates.
+- **Per wave merge:** `cd src/mcp/vice && npm run test:automated` — includes every regression guard above (`hostpath-consumers`, `comment-phase-pointers`, `docs-dangling-refs`, `block-class`, `anno-coverage`, `shipped-modules`) and terminates.
 - **Phase gate:** `npm run test:automated` green, `npm run typecheck` green, `node scripts/check-npm-packages.mjs` green, and one whole-glob `npm test` evidence run with the broker stopped, the 44-failure baseline reconciled item by item, and the hung `vice-proxy.test.ts` child terminated and noted — **before** `/gsd-verify-work`.
 
 **Nyquist justification for the sampling rate.** The fastest-moving thing in this
@@ -1552,7 +1552,7 @@ does.
 - [ ] `anno-store.test.ts` — covers STORE-01/02/03/05 (round-trip, no-merge, five overlap cases, contradiction, refusals, cross-process CAS)
 - [ ] `anno-durability.test.ts` — covers STORE-04 (the one combined test) **plus a sibling mutator script** the test spawns and `SIGKILL`s
 - [ ] `anno-seam.test.ts` — covers STORE-07 (structural + four plantings + the `files[]` non-vacuity pairing)
-- [ ] Extensions to two existing files: `block-class.test.ts` (total derived mapping over `DATA_TYPES`) and `r2000-coverage.test.ts` (label-kind agreement)
+- [ ] Extensions to two existing files: `block-class.test.ts` (total derived mapping over `DATA_TYPES`) and `anno-coverage.test.ts` (label-kind agreement)
 - [ ] Framework install: **none** — `node --test` is built in and every new `*.test.ts` joins both globs automatically
 
 ## Security Domain
@@ -1565,7 +1565,7 @@ does.
 | ASVS Category | Applies | Standard Control |
 |---------------|---------|-----------------|
 | V2 Authentication | **no** | No principal, no credential. The store is a local file reached in-process by an already-trusted MCP server |
-| V3 Session Management | **no** | No session. `D-19`'s explicit-path-per-call convention is carried: no ambient state names the store [VERIFIED: src/mcp/vice/r2000-tools.ts:174-176] |
+| V3 Session Management | **no** | No session. `D-19`'s explicit-path-per-call convention is carried: no ambient state names the store [VERIFIED: src/mcp/vice/anno-tools.ts:174-176] |
 | V4 Access Control | **partially** | The only boundary is the filesystem. One control matters and is a real risk: the store path arrives from the caller, so it must be constrained to the workspace. The tree has the *idiom* — `class PathOutOfWorkspaceError extends Error {}` [VERIFIED: src/mcp/vice/vice-proxy.ts:1873], thrown at `:1923` — but it is **module-private and not exported**, so it cannot be imported. Copy the *shape* under a new exported `ViceError` subclass in `anno-types.ts`; do not export the private one out of `vice-proxy.ts` (that file is under a standing size instruction) |
 | V5 Input Validation | **yes — the whole phase** | The proxy validates nothing (`vice-proxy.ts:3230`'s `validate: (value) => ({ value })`), so every argument arrives unvalidated. Hand-written validators in `anno-types.ts` throwing named `ViceError` subclasses. **Not `zod`** — it is present only as an undeclared transitive of `@mastra`, so depending on it would be depending on someone else's dependency tree |
 | V6 Cryptography | **no** | No secrets, no hashing, no signing. Nothing to hand-roll |
@@ -1588,7 +1588,7 @@ does.
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | The `anno-*` module prefix and the three-module split (`anno-types` / `anno-index` / `anno-store`) | Architecture Patterns | Low. A naming/structure choice, not a fact. Every hard constraint on it was verified (no `r2000`, outside the classification glob, single stable prefix, names free). The planner may rename freely |
+| A1 | The `anno-*` module prefix and the three-module split (`anno-types` / `anno-index` / `anno-store`) | Architecture Patterns | Low. A naming/structure choice, not a fact. Every hard constraint on it was verified (no `anno`, outside the classification glob, single stable prefix, names free). The planner may rename freely |
 | A2 | `<project>.annostore` as the store file extension and a `snapshots/` sibling directory | Runtime State Inventory | Low. Nothing depends on it yet. Must be decided here because a later change is a user-visible file rename |
 | A3 | The comment-contradiction rule is derived from `CONFIDENCE_GRADES` (code-graded comment vs a data retype, and vice versa) | Planted-Violation Reddenability | **Medium.** The five grades and `parseConfidencePrefix()` are verified; the *mapping* from grade to "contradicted by which retype" is my inference. If the intended rule is different (e.g. any comment at all is "contradicted"), criterion 3's second planting changes shape. **Worth a one-line owner confirmation** |
 | A4 | The tie-break is "equal length → higher id (later insertion) wins" | The Cross-Validation Oracle | **Medium.** Criterion 2 requires *a* pinned tie-break but does not name one. Any deterministic rule satisfies it; this one is the cheapest to implement in both oracles independently. Pick it explicitly rather than letting a sort order decide |
@@ -1634,7 +1634,7 @@ resolving before the plan is written; both are one-line decisions.
 ### Primary (HIGH confidence)
 
 - **This repository at HEAD**, read with `Read`/`sed` this session. Every `[VERIFIED: path:lines]` tag in this document cites a file and line range I opened, with the values quoted verbatim beside the claim:
-  `src/mcp/vice/r2000-tools.ts` (170-177, 233-334, 405-420, 467-510, 526), `block-class.ts` (32-52, 126-137), `block-class.test.ts` (26-137, 186-191, 218-227), `r2000-coverage.ts` (206, 1392, 1430-1432, 1869, 2180), `r2000-coverage.test.ts` (616, 647-649), `r2000-confidence.ts` (81-114, 139, 175), `shipped-modules.ts` (1-80, 105-205), `hostpath-consumers.test.ts` (32-70, 120-260), `module-classification.ts` (133-152, 169-251), `module-classification.test.ts` (60-90, 288-623), `r2000-spawn-seam.test.ts` (33-53, 176-205), `comment-phase-pointers.test.ts` (1-77, 271-320), `vice.ts` (14-18, 245-292), `stock-address.ts` (12, 52-76, 91-180, 185-205), `disasm-opcodes.ts` (183-215), `disasm-decoder.ts` (51-85), `vice-proxy.ts` (3212-3236, 3263-3276), `test-gate.mjs` (1-135), `audit-integrity.test.ts` (535-605), `docs-linerefs.test.ts` (1-99), `load-order.test.ts` (1-30), `package.json` (files[], scripts, engines), `scripts/check-npm-packages.mjs` (207-260)
+  `src/mcp/vice/anno-tools.ts` (170-177, 233-334, 405-420, 467-510, 526), `block-class.ts` (32-52, 126-137), `block-class.test.ts` (26-137, 186-191, 218-227), `anno-coverage.ts` (206, 1392, 1430-1432, 1869, 2180), `anno-coverage.test.ts` (616, 647-649), `anno-confidence.ts` (81-114, 139, 175), `shipped-modules.ts` (1-80, 105-205), `hostpath-consumers.test.ts` (32-70, 120-260), `module-classification.ts` (133-152, 169-251), `module-classification.test.ts` (60-90, 288-623), `spawn-seam.test.ts` (33-53, 176-205), `comment-phase-pointers.test.ts` (1-77, 271-320), `vice.ts` (14-18, 245-292), `stock-address.ts` (12, 52-76, 91-180, 185-205), `disasm-opcodes.ts` (183-215), `disasm-decoder.ts` (51-85), `vice-proxy.ts` (3212-3236, 3263-3276), `test-gate.mjs` (1-135), `audit-integrity.test.ts` (535-605), `docs-linerefs.test.ts` (1-99), `load-order.test.ts` (1-30), `package.json` (files[], scripts, engines), `scripts/check-npm-packages.mjs` (207-260)
 - **Live execution on this host**, 2026-08-27 — probes at `~/.cache/gsd-probe/` and `$SCRATCH/dur|j|j2`: `node --version`; `node:sqlite` module/prototype/session/constants surface; `pragma journal_mode`/`synchronous`/`compile_options`/`integrity_check`/`quick_check`/`data_version`; four `SIGKILL` durability matrices; three truncation shapes; the four `node:sqlite` access routes; `--disable-warning=ExperimentalWarning`; per-edit cost on ext4 and on tmpfs; `vacuum into` and `backup()`; the cross-process revision CAS; the 65,536-address paint-vs-scan cross-validation; FTS5 vs `LIKE`; and the **full criterion-4 combined test in both the committing and the planted-violation configuration**
 - `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md` (§Phase 27-32 and §Sequencing Rationale), `.planning/STATE.md`, `.planning/config.json`, `.planning/ENGINEERING_RULES.md` §4-5, `./CLAUDE.md`, `.planning/phases/27-shared-seams-extracted/{27-PATTERNS.md,deferred-items.md}`
 

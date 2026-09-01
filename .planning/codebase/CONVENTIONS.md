@@ -13,7 +13,7 @@ Code lives in three places, and all three share one hand-maintained style:
 - **Installer** — `installer/bin/cli.mjs`, `installer/scripts/sync-skills.mjs` (plain ESM).
 
 Repo-level guards live in `scripts/*.mjs` (`check-npm-packages.mjs`, `check-guard-fates.mjs`,
-`check-no-regenerator2000.mjs`, `check-skill-*.mjs`, `audit-gate.mjs`) and are proven by test
+`check-no-analyser.mjs`, `check-skill-*.mjs`, `audit-gate.mjs`) and are proven by test
 files under `src/mcp/vice/`.
 
 Note: `src/mcp/vice/anno-memmap-render.ts` contains a NUL byte, so plain `grep` treats it as
@@ -138,7 +138,7 @@ Node >= 18 for the installer (`installer/package.json`).
   class's JSDoc.
 - The stock backend has `StockProtocolError` (`stock-protocol.ts`) for wire-level failures.
 - A handful of leaf classes extend `Error` directly when they must NOT be a `ViceError`
-  (`R2000SymbolsError`, `R2000CoverageInputError`, `R2000ConfidenceGradeError`,
+  (`AnnoSymbolsError`, `AnnoCoverageInputError`, `AnnoConfidenceGradeError`,
   `PathOutOfWorkspaceError`) — the "directly, not via ViceError" choice is commented at the
   declaration; preserve it.
 - Constructor pattern: `constructor(message: string, { ...fields }: XOptions = {}) { super(message);

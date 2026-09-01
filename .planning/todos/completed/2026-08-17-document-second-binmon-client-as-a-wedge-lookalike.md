@@ -2,7 +2,7 @@
 title: Document that a second binary-monitor client is indistinguishable from a wedge, and the never---vice rule
 date: 2026-08-17
 priority: medium
-source: /gsd-explore "regenerator2000" — D-R1; folds into v0.2.0 Phase 8 (SKILL-01 / DIST-02)
+source: /gsd-explore "the external analyser" — D-R1; folds into v0.2.0 Phase 8 (SKILL-01 / DIST-02)
 resolves_phase: 10
 ---
 
@@ -19,10 +19,10 @@ emulator" (Phase 2, complete). What is missing is the *human* half: nothing
 tells a user why their emulator went silent, or which of their own tools could
 have caused it.
 
-This became concrete while exploring regenerator2000, which ships a VICE
+This became concrete while exploring the external analyser, which ships a VICE
 binary-monitor debugger and auto-connects with `--vice <HOST:PORT>` (default
 `localhost:6502`). Any user who points it at an emulator our broker owns will
-produce a textbook false wedge. But the hazard is not specific to r2000 — a bare
+produce a textbook false wedge. But the hazard is not specific to anno — a bare
 `x64sc -binarymonitor` plus a stray `nc localhost 6502`, a second Claude
 session, VICE's own `-remotemonitor`, or any other 6502 debugger does the same.
 
@@ -37,12 +37,12 @@ session, VICE's own `-remotemonitor`, or any other 6502 debugger does the same.
 2. **Install / usage docs (DIST-02)** — state the rule positively: on the stock
    backend, exactly one process may hold `-binarymonitor`. Name the concrete
    trap: do not launch another debugger against a broker-managed instance.
-3. **If and when r2000 lands (v0.3.0)** — the never-`--vice` rule needs a real
+3. **If and when anno lands (v0.3.0)** — the never-`--vice` rule needs a real
    guard, not just prose, mirroring the existing `DENY_LIST` pattern in
    `vice.ts`: the launch path must refuse to pass `--vice` rather than trusting
    documentation.
 
-## Why it is worth doing regardless of r2000
+## Why it is worth doing regardless of anno
 
 Item 1 and 2 are true today for any stock-backend user, cost almost nothing, and
 land naturally next to `SKILL-01`'s Phase 8 revision of the same playbook. Item
@@ -59,8 +59,8 @@ Closed across three plans:
    accepts a connection but never answers is contention, not a wedge) and names
    the concrete causes (a hand-run `nc` session, a second Claude Code session,
    VICE's own `-remotemonitor`, and any other 6502 debugger — including
-   regenerator2000's own `--vice` flag), plus the fact that this plugin's own
-   regenerator2000 route can never be one of them.
+   the external analyser's own `--vice` flag), plus the fact that this plugin's own
+   the external analyser route can never be one of them.
 2. **Item 2** (state the rule positively in the install docs) — resolved in plan
    10-08: `README.md`'s one-holder statement near `### Verifying a stock install`
    was extended into the full positive rule with the same named traps.

@@ -18,7 +18,7 @@ complete
 
 ### 1. Review the Phase 18 gate evidence
 
-expected: No live r2000 test is skipped; every Phase 18 requirement row names a test that ran; the stdin-EOF verdict matches its transcript and any required follow-up has an owner.
+expected: No live anno test is skipped; every Phase 18 requirement row names a test that ran; the stdin-EOF verdict matches its transcript and any required follow-up has an owner.
 result: passed - approved by the user on 2026-08-24
 
 ## Summary

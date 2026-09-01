@@ -44,7 +44,7 @@ key-files:
     - src/mcp/vice/module-classification.ts
     - src/skills/routine-queue-walker/SKILL.md
     - .github/workflows/ci.yml
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
     - scripts/check-npm-packages.mjs
     - scripts/lib/anno-cli-verbs.mjs
     - .planning/phases/29-the-mcp-surface/29-VERIFICATION.md
@@ -58,7 +58,7 @@ key-decisions:
 
 patterns-established:
   - "A planted disclosure token is TEN characters, because V8 truncates its JSON parse-error snippet at ten — a longer token makes the absence assertion vacuous (inherited from 29-14 rather than rediscovered)"
-  - "A line-scoped exemption pin in check-no-regenerator2000.mjs is re-measured in the same commit as the edit that moved it, exactly like a module-classification.ts citation"
+  - "A line-scoped exemption pin in check-no-analyser.mjs is re-measured in the same commit as the edit that moved it, exactly like a module-classification.ts citation"
 
 requirements-completed: [REPOINT-01, REPOINT-02]
 
@@ -131,7 +131,7 @@ coverage:
     description: "WR-14 sites 2, 4 and 5 discharged; sites 1 and 3 recorded open in 29-VERIFICATION.md's WR-14 row"
     verification:
       - kind: e2e
-        ref: "node src/mcp/vice/vice-proxy.ts anno badverb -> 'anno: unknown verb ...' (was 'r2000: unknown verb ...')"
+        ref: "node src/mcp/vice/vice-proxy.ts anno badverb -> 'anno: unknown verb ...' (was 'anno: unknown verb ...')"
         status: pass
       - kind: other
         ref: "git log --oneline -1 -- .planning/phases/29-the-mcp-surface/29-VERIFICATION.md -> 9f57197; diff is 1 insertion / 1 deletion, one row"
@@ -252,7 +252,7 @@ A 10-character token planted at the head of a non-JSON file inside the workspace
 
 | Branch | Verdict | Reason |
 |---|---|---|
-| unreadable **PATH** throw (`R2000CoverageInputError`) | left interpolated | Errno-class only (`ENOENT`, `EACCES`, `EISDIR`) — carries no byte of file content. 29-14 left the equivalent read-failure branch alone for exactly this reason. |
+| unreadable **PATH** throw (`AnnoCoverageInputError`) | left interpolated | Errno-class only (`ENOENT`, `EACCES`, `EISDIR`) — carries no byte of file content. 29-14 left the equivalent read-failure branch alone for exactly this reason. |
 | **payload-decode** failure (`decodeRawData`) | left interpolated, **on a measurement, not an assumption** | Probed `gunzipSync(Buffer.from(x,"base64"))` across five inputs (plain ASCII, non-base64, empty, truncated gzip, corrupt body). Every reachable message is a fixed zlib string — `incorrect header check`, `unexpected end of file`, `incorrect data check` — with no fragment of the input in any of them. Library-class only. |
 
 ## 3. The invocation gate
@@ -307,7 +307,7 @@ Ordered gate list (`grep -n 'run: node scripts/check-\|run: bash scripts/package
 
 ```
 170:        run: node scripts/check-npm-packages.mjs
-180:        run: node scripts/check-no-regenerator2000.mjs
+180:        run: node scripts/check-no-analyser.mjs
 187:        run: node scripts/check-skill-tool-coverage.mjs
 195:        run: node scripts/check-skill-fork-honesty.mjs
 205:        run: node scripts/check-skill-description-overlap.mjs
@@ -319,7 +319,7 @@ The new step lands **after** `check-skill-description-overlap.mjs` and **before*
 
 ## 5. WR-14 — the unknown-verb message, and the row
 
-**Before:** `r2000: unknown verb "badverb" -- this CLI has exactly two: render-memmap and coverage`
+**Before:** `anno: unknown verb "badverb" -- this CLI has exactly two: render-memmap and coverage`
 **After:** `anno: unknown verb "badverb" -- this CLI has exactly two: render-memmap and coverage`
 
 Rest byte-identical; the last-resort catch's prefix moved the same way. The enclosing function keeps its name, so no consumer, test or record entry moved with it.
@@ -330,7 +330,7 @@ Rest byte-identical; the last-resort catch's prefix moved the same way. The encl
 
 **After** (status cell and note cell only):
 
-> … | ⚠️ **PARTLY DISCHARGED** | WR-14. **Sites 2, 4 and 5 SHIPPED in plan 29-16** … **Sites 1 and 3 REMAIN OPEN** — the exported entry function `runR2000Cli` and the test hatch `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`, dropped from that round on a measured decision: … a ~26-call-site rename in `anno-cli.test.ts` plus a guarded-record update in `module-classification.ts:674`/`:676` … Full reasoning: plan `29-16-PLAN.md` § `<wr14_scope_decision>`.
+> … | ⚠️ **PARTLY DISCHARGED** | WR-14. **Sites 2, 4 and 5 SHIPPED in plan 29-16** … **Sites 1 and 3 REMAIN OPEN** — the exported entry function `runAnnoCli` and the test hatch `VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES`, dropped from that round on a measured decision: … a ~26-call-site rename in `anno-cli.test.ts` plus a guarded-record update in `module-classification.ts:674`/`:676` … Full reasoning: plan `29-16-PLAN.md` § `<wr14_scope_decision>`.
 
 Carried by commit **`9f57197`**; `git diff 9f57197^..9f57197 -- 29-VERIFICATION.md` is **1 insertion, 1 deletion** — one row annotated, no row added or removed, no verdict, score or gap disposition changed.
 
@@ -363,7 +363,7 @@ Both empty, measured **after** the last commit. WR-14 sites 1 and 3 did not cree
 - `AUTO_NAME_PREFIX_RE` moved anyway, and this is a **deviation from the plan's "prefer keeping them unmoved"**: extension dispatch needs `extname`, which `anno-coverage.ts` had no existing `node:path` import to extend, so one line was added at `:146`. Re-deriving the extension with a local regex instead was rejected — the plan says to *copy* `loadImage()`'s order, and hand-rolling its extension extractor is re-deriving it.
 - **`:1392` was GREEN-WHILE-WRONG before correction.** Neither prose site names the symbol on the same line, so DIRECTION 9b degrades to existence-and-non-blank, and line 1392 became the comment's closing `*/` — non-blank, so the guard passed over a wrong citation. This is exactly the defect class 29-15 found in `c64-program-recon`. Both occurrences corrected.
 - `DIRECTION 9b` was observed **RED** on the `anno-cli.ts:201` drift before correction: *"cites anno-cli.ts:201 for checkAcceptedOptions, but that line does not contain it -- drift. Line reads: `const accepted = VERB_OPTIONS[verb];`"*.
-- `git diff` on the file shows **three changed line numbers and nothing else** — no verdict, rationale, fate or requirement anchor moved, and the `runR2000Cli` consumer entries at `:674`/`:676` are untouched.
+- `git diff` on the file shows **three changed line numbers and nothing else** — no verdict, rationale, fate or requirement anchor moved, and the `runAnnoCli` consumer entries at `:674`/`:676` are untouched.
 
 ## 8. `anno-cli.test.ts` assertions
 
@@ -373,7 +373,7 @@ Both empty, measured **after** the last commit. WR-14 sites 1 and 3 did not cree
 
 | Gate | Result |
 |---|---|
-| `check-no-regenerator2000.mjs` | exit 0 — **157** occurrences permanently exempt, **0** temporarily allow-listed across **0** entries (unchanged before and after task 3; `census-design-and-incident-records` still at 3) |
+| `check-no-analyser.mjs` | exit 0 — **157** occurrences permanently exempt, **0** temporarily allow-listed across **0** entries (unchanged before and after task 3; `census-design-and-incident-records` still at 3) |
 | `check-skill-tool-coverage.mjs` | exit 0 — `anno CLI verbs: 2 parsed from anno-cli.ts, 2/2 resolved` (unchanged at 2) |
 | `check-skill-cli-invocations.mjs` | exit 0 — **new** |
 | `check-npm-packages.mjs` | exit 0 — `@henols/vice-mcp 78 files`, `@henols/c64-re-tools 34 files, 7 skills`, transitive closure 55 modules clean (unchanged) |
@@ -404,12 +404,12 @@ Both empty, measured **after** the last commit. WR-14 sites 1 and 3 did not cree
 
 ### Auto-fixed Issues
 
-**1. [Rule 1 — Bug] `check-no-regenerator2000.mjs`'s line-scoped exemption pins drifted**
+**1. [Rule 1 — Bug] `check-no-analyser.mjs`'s line-scoped exemption pins drifted**
 
 - **Found during:** Task 3 (running the pre-task gate baseline)
 - **Issue:** The gate went **exit 1** with four errors. The permanent, LINE-SCOPED `census-design-and-incident-records` exemption pins *which* lines carry the two exempt mentions in `anno-coverage.ts` and the one in `anno-coverage.test.ts`; task 1's edits above them moved all three, so the gate read them as reintroductions.
 - **Fix:** Re-measured with `grep -n`, not computed: `anno-coverage.ts` 1752 → 1753, `anno-coverage.test.ts` 1549 → 1557. Counts unchanged at 2 and 1, which is what makes this a re-pin rather than a reintroduction — the gate's own message states that rule. The `why` prose was updated to record the re-measure and its cause.
-- **Files modified:** `scripts/check-no-regenerator2000.mjs`
+- **Files modified:** `scripts/check-no-analyser.mjs`
 - **Verification:** gate back to exit 0, temporary allow-list still **0 entries**, permanent total unchanged at **157**.
 - **Committed in:** `34d0745`
 
@@ -447,7 +447,7 @@ None — no external service configuration required.
 ## Next Phase Readiness
 
 - **Gap 2 (CR-04 + CR-05) is closed on both halves,** and the structural blind spot that let both ship green now has a gate with a non-vacuity floor, four planted-violation controls and a declared CI step.
-- **Open, deliberately, and recorded in `29-VERIFICATION.md`:** WR-14 sites 1 and 3 (`runR2000Cli`, `VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES`). Their correct home is a pass that owns `anno-cli.test.ts` as its subject — the rename touches ~26 call sites there plus a guarded record in `module-classification.ts:674`/`:676`.
+- **Open, deliberately, and recorded in `29-VERIFICATION.md`:** WR-14 sites 1 and 3 (`runAnnoCli`, `VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES`). Their correct home is a pass that owns `anno-cli.test.ts` as its subject — the rename touches ~26 call sites there plus a guarded record in `module-classification.ts:674`/`:676`.
 - **Known limitation, for whoever adds an image format next:** the invocation gate's `POSITIONAL_KINDS` map mirrors `loadProjectImage()` and `openStore()` rather than deriving from them, so a *loader* narrowing is invisible to the gate (measured — see §3). `anno-coverage.test.ts` case E is the control that catches that class. If Phase 30 adds `anno export-asm` or a new image form, add the kind in both places in the same commit; the map's own comment names them.
 - **`ANNO_INVOCATION_FLOOR` is 10** and rises with the next documented invocation, in the commit that adds it.
 - Nothing here touches `.planning/REQUIREMENTS.md` (29-17 owns it) or `STATE.md` / `ROADMAP.md` (the orchestrator owns those).

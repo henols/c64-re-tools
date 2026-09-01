@@ -45,7 +45,7 @@ created: 2026-08-30
 - **Before `/gsd-verify-work` (phase gate):** full suite green under
   `VICE_REQUIRE_ACME=1` — this is the **Phase 27 ACME hard-fail gate at this phase's
   boundary**, which the ROADMAP requires — plus `node scripts/check-npm-packages.mjs`,
-  `check-no-regenerator2000.mjs`, `check-skill-tool-coverage.mjs`,
+  `check-no-analyser.mjs`, `check-skill-tool-coverage.mjs`,
   `check-skill-cli-invocations.mjs`, `check-skill-fork-honesty.mjs`
 - **Max feedback latency:** 45 seconds
 

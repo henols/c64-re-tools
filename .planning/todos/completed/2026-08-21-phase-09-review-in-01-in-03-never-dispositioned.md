@@ -82,7 +82,7 @@ Phase 15 plan 15-05 executed this todo's own recommendation exactly, rather than
 re-deriving the argument: `evidence/vice-tool-harness.mjs` and `evidence/mcp-harness.mjs`
 are throwaway probe harnesses whose committed transcripts (enumerated below) are Phase 9's
 actual deliverable, backing the `degrade` verdict and the `R4` rule recorded in
-`docs/phase9-regenerator2000-probe-findings.md` (frontmatter `verdict: degrade`,
+`docs/phase9-external-analyser-probe-findings.md` (frontmatter `verdict: degrade`,
 `verdict_rule_applied: R4`). Editing a harness after the fact breaks the correspondence
 between the harness in the tree and the evidence it is recorded as having produced — and
 all three findings are `Info`-level code-quality observations with no effect on any

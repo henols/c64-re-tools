@@ -16,46 +16,46 @@ table is authoritative and is repeated here.
 
 | New file | Role | Data Flow | Closest Analog | Match |
 |---|---|---|---|---|
-| `src/mcp/vice/anno-tools.ts` | tool-definition table + allow-list gate + runner | request-response | `src/mcp/vice/r2000-tools.ts` | exact (the family being replaced) |
+| `src/mcp/vice/anno-tools.ts` | tool-definition table + allow-list gate + runner | request-response | `src/mcp/vice/anno-tools.ts` | exact (the family being replaced) |
 | `src/mcp/vice/anno-register.ts` | committed decision register | config/data | `src/mcp/vice/module-classification.ts` | exact (role + enforcing-test shape) |
 | `src/mcp/vice/anno-derive.ts` | derivation service (xrefs, search) | transform (never persists) | `src/mcp/vice/stock-vicii.ts` `decodeVicii()` + `disasm-decoder.ts` | role-match |
-| `src/mcp/vice/anno-details.ts` | composition service | request-response | `r2000-tools.ts:1121` `composeAddressDetails()` | exact |
-| `src/mcp/vice/anno-cli.ts` | CLI (renamed from `r2000-cli.ts`) | batch | `src/mcp/vice/r2000-cli.ts` itself | rename-in-place |
-| `scripts/lib/anno-cli-verbs.mjs` | source-parsing seam | transform | `scripts/lib/r2000-cli-verbs.mjs` | exact (carry `stripComments()` verbatim) |
-| `scripts/check-no-regenerator2000.mjs` | structural CI gate | file-I/O scan | `scripts/check-skill-fork-honesty.mjs` (walk + exemption + non-vacuity counter) and `scripts/check-npm-packages.mjs` (`packFiles`) | exact, two halves |
+| `src/mcp/vice/anno-details.ts` | composition service | request-response | `anno-tools.ts:1121` `composeAddressDetails()` | exact |
+| `src/mcp/vice/anno-cli.ts` | CLI (renamed from `anno-cli.ts`) | batch | `src/mcp/vice/anno-cli.ts` itself | rename-in-place |
+| `scripts/lib/anno-cli-verbs.mjs` | source-parsing seam | transform | `scripts/lib/anno-cli-verbs.mjs` | exact (carry `stripComments()` verbatim) |
+| `scripts/check-no-analyser.mjs` | structural CI gate | file-I/O scan | `scripts/check-skill-fork-honesty.mjs` (walk + exemption + non-vacuity counter) and `scripts/check-npm-packages.mjs` (`packFiles`) | exact, two halves |
 
 ### Kind 1b — New tests (Wave 0 gaps)
 
 | New test | Role | Analog | Match |
 |---|---|---|---|
-| `anno-tools.test.ts` | unit + planted violation | `r2000-verb-coverage.test.ts` planted-violation block | role-match |
-| `anno-derivation.test.ts` | manifest-vs-surface guard | `r2000-upstream-audit.test.ts` | exact |
+| `anno-tools.test.ts` | unit + planted violation | `anno-verb-coverage.test.ts` planted-violation block | role-match |
+| `anno-derivation.test.ts` | manifest-vs-surface guard | `anno-derivation.test.ts` | exact |
 | `anno-register.test.ts` | enumerating registry guard | `module-classification.test.ts` (six named DIRECTIONs) | exact |
 | `anno-derive.test.ts` | never-cached control | `anno-seam.test.ts` (four planted access routes) | role-match |
-| `anno-verb-coverage.test.ts` | CLI-verb coverage guard | `r2000-verb-coverage.test.ts` | exact (port) |
+| `anno-verb-coverage.test.ts` | CLI-verb coverage guard | `anno-verb-coverage.test.ts` | exact (port) |
 
 ### Kind 2 — Re-pointed structural guards (edits to existing files, not new files)
 
 | File | Edit site | Current value |
 |---|---|---|
-| `src/mcp/vice/hostpath-consumers.test.ts` | `:180-182`, `:188`, `:199-206` | `r2000ProductionModules()` regex, `R2000_MODULE_FLOOR = 14`, 4-name positive control |
+| `src/mcp/vice/hostpath-consumers.test.ts` | `:180-182`, `:188`, `:199-206` | `annoProductionModules()` regex, `ANNO_MODULE_FLOOR = 14`, 4-name positive control |
 | `src/mcp/vice/stock-dispatch.test.ts` | `:1505`, `:1507-1517`, `:1519-1531`, `:1547`, `:1549-1562`, `:1564-1575` | ordered `BACKEND_SEAM_BYPASS_KEYS`, body-slice, manifest-absence loop |
-| `scripts/generate-tool-support-table.mjs` | `:95` (prose), `:107` (regex) | `R2000_LOOP_VAR_RE` |
+| `scripts/generate-tool-support-table.mjs` | `:95` (prose), `:107` (regex) | `ANNO_LOOP_VAR_RE` |
 | `src/mcp/vice/tool-support-table.test.mjs` | `:66` | duplicate witness 1 |
 | `src/mcp/vice/capability-registry.test.ts` | `:154` (stale "17"), `:161` | duplicate witness 2 |
-| `scripts/check-skill-tool-coverage.mjs` | `:445-448`, `:464-471` | `extractedR2000.size >= 10` (measured 17), CLI-verb floor use |
-| `scripts/check-skill-fork-honesty.mjs` | `:500-504` | `"r2000 export-asm"` positive pointer |
+| `scripts/check-skill-tool-coverage.mjs` | `:445-448`, `:464-471` | `extractedAnno.size >= 10` (measured 17), CLI-verb floor use |
+| `scripts/check-skill-fork-honesty.mjs` | `:500-504` | `"anno export-asm"` positive pointer |
 | `scripts/audit-gate.mjs` | `:109`, `:129-137` | `DOCS_GUARD_FLOOR = 7`, `EXPECTED_DOCS_GUARD_NAMES` |
-| `src/mcp/vice/docs-r2000-decisions.test.ts` | `:48` | `GUARD_FILENAMES` naming a deleted file |
-| `src/mcp/vice/r2000-upstream-audit.test.ts` | whole file | manifest guard; re-point, never delete |
-| `src/mcp/vice/r2000-verb-coverage.test.ts` | `:142-175` | `assert.equal(verbs.length, 8)`, `export-asm` |
-| `src/mcp/vice/package.json` | `files[]` `:56-71` | 16 `r2000` entries |
+| `src/mcp/vice/docs-absorbed-decisions.test.ts` | `:48` | `GUARD_FILENAMES` naming a deleted file |
+| `src/mcp/vice/anno-derivation.test.ts` | whole file | manifest guard; re-point, never delete |
+| `src/mcp/vice/anno-verb-coverage.test.ts` | `:142-175` | `assert.equal(verbs.length, 8)`, `export-asm` |
+| `src/mcp/vice/package.json` | `files[]` `:56-71` | 16 `anno` entries |
 
 ### Kind 3 — Registry-driven renames
 
 Driven by `src/mcp/vice/module-classification.ts` — the entry, never the prefix.
 RESEARCH F-3 narrows D-03's eleven to **nine** on the authority of two entries'
-own `note` fields (`r2000-test-gate.ts` `:475-490`, `r2000-verify.ts` `:516-524`).
+own `note` fields (`anno-test-gate.ts` `:475-490`, `anno-verify.ts` `:516-524`).
 
 ---
 
@@ -63,15 +63,15 @@ own `note` fields (`r2000-test-gate.ts` `:475-490`, `r2000-verify.ts` `:516-524`
 
 ### `src/mcp/vice/anno-tools.ts` (tool table + gate + runner)
 
-**Analog:** `src/mcp/vice/r2000-tools.ts` — read it before it is deleted.
+**Analog:** `src/mcp/vice/anno-tools.ts` — read it before it is deleted.
 
-**Header-comment convention** (`r2000-tools.ts:1-9` — every new module needs this
+**Header-comment convention** (`anno-tools.ts:1-9` — every new module needs this
 three-part shape: what it is the ONE place for / WHY it exists / what not to do):
 
 ```ts
 #!/usr/bin/env node
-// r2000-tools.ts -- the ONE authoritative place in this repo for the curated
-// r2000_* tool surface: which 19 curated regenerator2000 MCP tools (of the
+// anno-tools.ts -- the ONE authoritative place in this repo for the curated
+// anno_* tool surface: which 19 curated the external analyser MCP tools (of the
 // 28 upstream offers) this project advertises, the allow-list gate
 // (including its D-33 batch recursion), project-path validation, and the
 // runner ...
@@ -79,19 +79,19 @@ three-part shape: what it is the ONE place for / WHY it exists / what not to do)
 and `:52-60`:
 ```
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: the 19 curated
-// `ToolDefinition`s (`R2000_TOOL_DEFINITIONS`), the allow-list
-// (`CURATED_R2000_TOOLS`) and its enforcement (`assertCuratedTool()`,
+// `ToolDefinition`s (`ANNO_TOOL_DEFINITIONS`), the allow-list
+// (`CURATED_ANNO_TOOLS`) and its enforcement (`assertCuratedTool()`,
 // including the batch-recursion gate) ... No other module may hand-list
 // a curated tool name ...
 ```
 `anno-store.ts:1-6` is the other model of the same convention ("The ONE module in
 this repo that names `node:sqlite`").
 
-**Wire-shape declarations** (`r2000-tools.ts:110-140`) — copy verbatim with
+**Wire-shape declarations** (`anno-tools.ts:110-140`) — copy verbatim with
 identifiers substituted; the index signature is load-bearing for `buildViceTool()`:
 
 ```ts
-export interface R2000ToolDefinition {
+export interface AnnoToolDefinition {
   name: string;
   description: string;
   inputSchema: { type: "object"; properties: Record<string, unknown>; required?: string[] };
@@ -108,56 +108,56 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function okText(text: string): ToolCallResult { return { content: [{ type: "text", text }], isError: false }; }
 ```
 
-**Allow-list gate** (`r2000-tools.ts:854-874`) — set membership is the FIRST check;
+**Allow-list gate** (`anno-tools.ts:854-874`) — set membership is the FIRST check;
 the throw text names both resolution routes:
 
 ```ts
 export function assertCuratedTool(name: string, args?: unknown): void {
-  if (!CURATED_R2000_TOOLS.includes(name)) {
-    throw new R2000UncuratedToolError(
-      `"${name}" is not part of the curated r2000_* tool surface. Resolution routes: implement it and ` +
-        "add it to R2000_TOOL_DEFINITIONS with a named criterion, or remove the caller reference.",
+  if (!CURATED_ANNO_TOOLS.includes(name)) {
+    throw new AnnoUncuratedToolError(
+      `"${name}" is not part of the curated anno_* tool surface. Resolution routes: implement it and ` +
+        "add it to ANNO_TOOL_DEFINITIONS with a named criterion, or remove the caller reference.",
       { toolName: name },
     );
   }
-  if (name === "r2000_set_label_name") { assertLegalLabelArg(args); }
-  if (name === "r2000_read_region")    { assertReadRegionArgs(args); }
-  if (name === "r2000_batch_execute")  { assertCuratedBatch(args); }
+  if (name === "anno_set_label_name") { assertLegalLabelArg(args); }
+  if (name === "anno_read_region")    { assertReadRegionArgs(args); }
+  if (name === "anno_batch_execute")  { assertCuratedBatch(args); }
 }
 ```
 
-**D-33 batch recursion** (`r2000-tools.ts:801-838`) — this is the shape the batch
+**D-33 batch recursion** (`anno-tools.ts:801-838`) — this is the shape the batch
 verb must carry; note refuse-WHOLE, malformed-is-refusal-not-empty, and the
 self-recursion for a nested batch:
 
 ```ts
 function assertCuratedBatch(args: unknown): void {
   if (!isPlainObject(args) || !Array.isArray(args.calls)) {
-    throw new R2000UncuratedToolError(
-      "r2000_batch_execute refused: \"calls\" must be an array of {name, arguments} objects -- a " +
+    throw new AnnoUncuratedToolError(
+      "anno_batch_execute refused: \"calls\" must be an array of {name, arguments} objects -- a " +
         "malformed batch payload is treated as a refusal, never as an empty batch that passes through.",
-      { toolName: "r2000_batch_execute" },
+      { toolName: "anno_batch_execute" },
     );
   }
   const calls = args.calls as unknown[];
   calls.forEach((call, i) => {
     if (!isPlainObject(call) || typeof call.name !== "string") {
-      throw new R2000UncuratedToolError(
-        `r2000_batch_execute refused WHOLE: calls[${i}] is malformed (missing a string "name") -- ` +
+      throw new AnnoUncuratedToolError(
+        `anno_batch_execute refused WHOLE: calls[${i}] is malformed (missing a string "name") -- ` +
           "treated as a refusal, never as an empty batch that passes through.",
-        { toolName: "r2000_batch_execute", batchIndex: i },
+        { toolName: "anno_batch_execute", batchIndex: i },
       );
     }
-    if (!CURATED_R2000_TOOLS.includes(call.name)) {
-      throw new R2000UncuratedToolError(
-        `r2000_batch_execute refused WHOLE: calls[${i}].name "${call.name}" is outside the curated ` +
-          "r2000_* tool surface -- a batch is refused whole if any inner name is outside the curated set (D-33).",
+    if (!CURATED_ANNO_TOOLS.includes(call.name)) {
+      throw new AnnoUncuratedToolError(
+        `anno_batch_execute refused WHOLE: calls[${i}].name "${call.name}" is outside the curated ` +
+          "anno_* tool surface -- a batch is refused whole if any inner name is outside the curated set (D-33).",
         { toolName: call.name, batchIndex: i },
       );
     }
-    if (call.name === "r2000_set_label_name") { assertLegalLabelArg(call.arguments, i); }
-    if (call.name === "r2000_read_region")    { assertReadRegionArgs(call.arguments, i); }
-    if (call.name === "r2000_batch_execute")  { assertCuratedBatch(call.arguments); }
+    if (call.name === "anno_set_label_name") { assertLegalLabelArg(call.arguments, i); }
+    if (call.name === "anno_read_region")    { assertReadRegionArgs(call.arguments, i); }
+    if (call.name === "anno_batch_execute")  { assertCuratedBatch(call.arguments); }
   });
 }
 ```
@@ -166,13 +166,13 @@ per-argument validator is called from BOTH the outer gate and the batch-inner
 loop, "so the refusal fires identically whether ... called directly or smuggled
 inside a batch payload".
 
-**Runner + error-to-result conversion** (`r2000-tools.ts:1159-1213`) — copy the
+**Runner + error-to-result conversion** (`anno-tools.ts:1159-1213`) — copy the
 try/catch and the `errText` wording verbatim; note WR-02 is recorded in the
 analog at `:772-774` (the gate sits OUTSIDE the `try`, so a refusal rejects the
 promise). RESEARCH Pattern 2 moves `assertAnnoTool` INSIDE the `try` to close it:
 
 ```ts
-export async function runR2000Tool(name: string, args: unknown): Promise<ToolCallResult> {
+export async function runAnnoTool(name: string, args: unknown): Promise<ToolCallResult> {
   assertCuratedTool(name, args);
   const projectPath = resolveStorePath(isPlainObject(args) ? args.project : undefined);
   ...
@@ -186,16 +186,16 @@ export async function runR2000Tool(name: string, args: unknown): Promise<ToolCal
 }
 ```
 
-**Documented cap pattern, read-at-call-time** (`r2000-tools.ts:207-224`) — the
+**Documented cap pattern, read-at-call-time** (`anno-tools.ts:207-224`) — the
 model for `anno_read_region` / `anno_disassemble` size limits:
 
 ```ts
-export const R2000_READ_REGION_MAX_BYTES = 4096;
+export const ANNO_READ_REGION_MAX_BYTES = 4096;
 function currentReadRegionMaxBytes(): number {
-  const raw = process.env.R2000_READ_REGION_MAX_BYTES;
-  if (raw === undefined) return R2000_READ_REGION_MAX_BYTES;
+  const raw = process.env.ANNO_READ_REGION_MAX_BYTES;
+  if (raw === undefined) return ANNO_READ_REGION_MAX_BYTES;
   const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : R2000_READ_REGION_MAX_BYTES;
+  return Number.isFinite(n) && n > 0 ? n : ANNO_READ_REGION_MAX_BYTES;
 }
 ```
 
@@ -220,20 +220,20 @@ refusal class extends `AnnoStoreError`, never bare `Error`.
 
 ### `src/mcp/vice/anno-details.ts` (composition service)
 
-**Analog:** `r2000-tools.ts:1113-1136` `composeAddressDetails()`. Copy the
+**Analog:** `anno-tools.ts:1113-1136` `composeAddressDetails()`. Copy the
 composed-from disclosure shape; the store reads replace the `call()` reads:
 
 ```ts
-export async function composeAddressDetails(call: R2000Call, address: number): Promise<unknown> {
-  const symbols = await callJson(call, "r2000_get_symbols", { start_address: address, end_address: address });
-  const comments = await callJson(call, "r2000_get_comments", { addresses: [address] });
-  const allBlocks = (await callJson(call, "r2000_get_blocks", {})) as R2000Block[];
+export async function composeAddressDetails(call: AnnoCall, address: number): Promise<unknown> {
+  const symbols = await callJson(call, "anno_get_symbols", { start_address: address, end_address: address });
+  const comments = await callJson(call, "anno_get_comments", { addresses: [address] });
+  const allBlocks = (await callJson(call, "anno_get_blocks", {})) as AnnoBlock[];
   const block = allBlocks.find((b) => address >= b.start_address && address <= b.end_address) ?? null;
-  const crossReferences = await callJson(call, "r2000_get_cross_references", { address });
+  const crossReferences = await callJson(call, "anno_get_cross_references", { address });
   return {
     address, symbols, comments, block, cross_references: crossReferences,
     composed_client_side: true,
-    composed_from: ["r2000_get_symbols", "r2000_get_comments", "r2000_get_blocks", "r2000_get_cross_references"],
+    composed_from: ["anno_get_symbols", "anno_get_comments", "anno_get_blocks", "anno_get_cross_references"],
   };
 }
 ```
@@ -314,7 +314,7 @@ register must restate:
 > line of that file contains `symbol`; it never trusts the number. Omit it rather
 > than guess.
 
-**A filled entry to copy** (`:254-277`, `r2000-acme-ident.ts`) shows a
+**A filled entry to copy** (`:254-277`, `anno-acme-ident.ts`) shows a
 `requirements: ["EXPORT-01", "EXPORT-03"]` basis carrying the weight when the
 measured consumers do not survive — exactly the situation `anno_search`
 (`STORE-06`) and `anno_remove_scope` (F-5) are in.
@@ -328,7 +328,7 @@ the planted-violation test shares the predicate with the real scan.
 
 ### `scripts/lib/anno-cli-verbs.mjs` (replaces the deleted verb parser)
 
-**Analog:** `scripts/lib/r2000-cli-verbs.mjs`. Carry `stripComments()` verbatim
+**Analog:** `scripts/lib/anno-cli-verbs.mjs`. Carry `stripComments()` verbatim
 (`:47-60`) and its rationale:
 > A single-pass character scanner, not a regex -- this repo's own
 > `docs-dangling-refs.test.ts` measured a regex-alternation extractor silently
@@ -338,7 +338,7 @@ the planted-violation test shares the predicate with the real scan.
 **Floor convention** (`:31-44`) — and the honesty rule the plan must state, since
 the replacement floor is 5 where the old one was 8:
 ```js
-export const R2000_CLI_VERB_FLOOR = 8;
+export const ANNO_CLI_VERB_FLOOR = 8;
 ```
 > A future phase that adds a 9th verb ... must raise this floor to the new true
 > count when it lands -- never lower it to make a regression pass.
@@ -349,7 +349,7 @@ stays OUT of `src/mcp/vice/package.json`'s `files[]` while staying git-tracked f
 
 ---
 
-### `scripts/check-no-regenerator2000.mjs` (new structural CI gate)
+### `scripts/check-no-analyser.mjs` (new structural CI gate)
 
 **Analog A — walk + exemption + non-vacuity counter:**
 `scripts/check-skill-fork-honesty.mjs:421-495`. This is the whole template:
@@ -403,12 +403,12 @@ function packFiles(dir) {
 
 **Analog C — the planted-violation proof.** Two conventions exist; both are valid,
 pick per file:
-1. **Inline fixture constant** — `r2000-verb-coverage.test.ts:157-171`. The gate's
+1. **Inline fixture constant** — `anno-verb-coverage.test.ts:157-171`. The gate's
    predicate is called against a synthetic source string; the real corpus is used
    as the negative control in the same test, plus a self-non-vacuity check:
 ```ts
 test("planted violation: an 8th, genuinely new case is parsed and reported missing, while a real, documented verb is not", () => {
-  const verbs = parseR2000CliVerbs(PLANTED_VIOLATION_SRC);
+  const verbs = parseAnnoCliVerbs(PLANTED_VIOLATION_SRC);
   assert.equal(verbs.length, 8);
   assert.ok(verbs.includes("ghost-verb"), "the planted 8th case must be parsed as a verb");
   const missing = verbsMissingFromSkills(verbs, realSkillTexts());
@@ -434,14 +434,14 @@ test("planted violation: an 8th, genuinely new case is parsed and reported missi
 
 ### `src/mcp/vice/anno-derivation.test.ts` (MCP-01 manifest check)
 
-**Analog:** `src/mcp/vice/r2000-upstream-audit.test.ts` — re-point, never delete.
+**Analog:** `src/mcp/vice/anno-derivation.test.ts` — re-point, never delete.
 
 Its header `:1-31` is the model for stating a mechanical guard's three
 invariants, and carries the two prohibitions the new test inherits:
 > - Do not loosen the commit regex back to `/^[0-9a-f]{7,40}$/` ...
 > - Do not let an ABSENT upstream clone read as agreement. The live-gated
 >   re-hash check below SKIPs by default ... and hard-FAILs under the opt-in
->   `VICE_REQUIRE_R2000_UPSTREAM` env var. A silent pass on a missing oracle is
+>   `VICE_REQUIRE_ANNO_UPSTREAM` env var. A silent pass on a missing oracle is
 >   the defect class D-11 exists to close; do not reintroduce it here.
 
 Load-bearing constants to reuse: `MANIFEST_PATH` `:44-47`,
@@ -457,26 +457,26 @@ Existing tests at `:79`, `:96`, `:156`, `:177`, `:187`.
 Disk-derivation helper (`:175-182`) — the doc comment names INT-01 and the reuse
 rule; keep both, swap only the regex:
 ```ts
-/** The r2000 production module family, derived from disk rather than typed
+/** The anno production module family, derived from disk rather than typed
  * (INT-01/D-11.1-03) ... This is the SAME `readdirSync`-based helper the
  * five-member EXPECTED_IMPORTERS test above uses -- reused, not a second
- * directory walk -- filtered down to the r2000 name pattern. */
-function r2000ProductionModules(): string[] {
-  return topLevelProductionModules().filter((name) => /^r2000-.*\.ts$/.test(name));
+ * directory walk -- filtered down to the anno name pattern. */
+function annoProductionModules(): string[] {
+  return topLevelProductionModules().filter((name) => /^anno-.*\.ts$/.test(name));
 }
 ```
 Floor (`:183-188`):
 ```ts
 // Measured true count as of this phase (11.1-03, 2026-08-21): 14 production
-// r2000-*.ts modules on disk. This floor must be RAISED, never lowered ...
-const R2000_MODULE_FLOOR = 14;
+// anno-*.ts modules on disk. This floor must be RAISED, never lowered ...
+const ANNO_MODULE_FLOOR = 14;
 ```
 Positive control (`:198-206`):
 ```ts
-test("INT-01's positive control: the four modules the audit found uncovered are present in the derived r2000 set", () => {
-  const modules = r2000ProductionModules();
-  for (const name of ["r2000-acme-ident.ts", "r2000-regbits-gen.ts", "r2000-symbols.ts", "r2000-test-gate.ts"]) {
-    assert.ok(modules.includes(name), `${name} (named by INT-01 as uncovered) must be present in the derived r2000 module set`);
+test("INT-01's positive control: the four modules the audit found uncovered are present in the derived anno set", () => {
+  const modules = annoProductionModules();
+  for (const name of ["anno-acme-ident.ts", "anno-regbits-gen.ts", "anno-symbols.ts", "anno-test-gate.ts"]) {
+    assert.ok(modules.includes(name), `${name} (named by INT-01 as uncovered) must be present in the derived anno module set`);
   }
 });
 ```
@@ -498,8 +498,8 @@ rationale must be rewritten to "a proxy-local store, never VICE"):
 ```ts
 /** The two registration keys permitted to bypass buildBackendAwareTool()
  * entirely (plan 11-05 Task 2): RESULT_CONTINUE_TOOL.name ... and
- * r2000Def.name ... */
-const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "r2000Def.name"];
+ * annoDef.name ... */
+const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "annoDef.name"];
 ```
 `:1519-1531` — the order-sensitive half:
 ```ts
@@ -510,20 +510,20 @@ assert.deepEqual(bypassing, BACKEND_SEAM_BYPASS_KEYS,
 `:1547-1562` — the body-slice assertion `MCP-02` names, plus the file read that
 must move with the module:
 ```ts
-const R2000_TOOLS_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "r2000-tools.ts"), "utf8");
+const ANNO_TOOLS_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "anno-tools.ts"), "utf8");
 ...
-  const start = R2000_TOOLS_SOURCE.indexOf("export async function runR2000Tool(");
-  assert.ok(start > 0, "runR2000Tool() must still exist in r2000-tools.ts");
-  const body = R2000_TOOLS_SOURCE.slice(start, R2000_TOOLS_SOURCE.indexOf("\n}", start));
+  const start = ANNO_TOOLS_SOURCE.indexOf("export async function runAnnoTool(");
+  assert.ok(start > 0, "runAnnoTool() must still exist in anno-tools.ts");
+  const body = ANNO_TOOLS_SOURCE.slice(start, ANNO_TOOLS_SOURCE.indexOf("\n}", start));
   for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
-    assert.ok(!body.includes(forbidden), `runR2000Tool() must not reach ${forbidden} -- that is what makes the r2000_* family's backend-independence sound`);
+    assert.ok(!body.includes(forbidden), `runAnnoTool() must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound`);
   }
 ```
 Its sibling at `:1533-1546` (`handleResultContinue`) is the second, independent
 instance of the same shape — the pattern to imitate, not to share a helper with.
 `:1564-1575` — `MCP-03`'s "neither manifest gains an entry" half, iterating
-`CURATED_R2000_TOOLS` with its own non-vacuity guard
-(`assert.ok(CURATED_R2000_TOOLS.length > 0, ...)`).
+`CURATED_ANNO_TOOLS` with its own non-vacuity guard
+(`assert.ok(CURATED_ANNO_TOOLS.length > 0, ...)`).
 
 ### `generate-tool-support-table.mjs:104` → actually `:107`
 
@@ -531,9 +531,9 @@ instance of the same shape — the pattern to imitate, not to share a helper wit
 export function discoverSyntheticToolNames(proxySource) {
   const REGISTRATION_RE = /tools\[(\w+)\.name\]\s*=/g;
   const LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+manifestTools\s*\)/;
-  const R2000_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+R2000_TOOL_DEFINITIONS\s*\)/;
+  const ANNO_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+ANNO_TOOL_DEFINITIONS\s*\)/;
   ...
-    if (ident === r2000LoopVar) continue; // the r2000_* family's own loop registration -- not a VICE capability at all
+    if (ident === annoLoopVar) continue; // the anno_* family's own loop registration -- not a VICE capability at all
 ```
 Prose naming the array is at `:93-102`. The three-witness prohibition is stated
 in-line at `:133-141`:
@@ -551,18 +551,18 @@ Duplicate witnesses: `tool-support-table.test.mjs:66`,
 Tool-name floor (`:445-448`) with its raise-never-lower comment at `:436-444`:
 ```js
 need(
-  extractedR2000.size >= 10,
-  `non-vacuity: expected at least 10 distinct r2000_* names extracted from src/skills/, got ${extractedR2000.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
+  extractedAnno.size >= 10,
+  `non-vacuity: expected at least 10 distinct anno_* names extracted from src/skills/, got ${extractedAnno.size} -- the extraction regex or plan 11-12's skill edits may have regressed`
 );
 ```
 CLI-verb section (`:459-471`) — the "fourth, independent section" comment
 explains why the two surfaces are not merged; keep that framing:
 ```js
-const r2000CliSrc = readFileSync(join(VICE_DIR, "r2000-cli.ts"), "utf8");
-const r2000CliVerbs = parseR2000CliVerbs(r2000CliSrc);
+const annoCliSrc = readFileSync(join(VICE_DIR, "anno-cli.ts"), "utf8");
+const annoCliVerbs = parseAnnoCliVerbs(annoCliSrc);
 need(
-  r2000CliVerbs.length >= R2000_CLI_VERB_FLOOR,
-  `non-vacuity: expected at least ${R2000_CLI_VERB_FLOOR} r2000 CLI verbs parsed from r2000-cli.ts's dispatch switch, got ${r2000CliVerbs.length} -- the parser or the switch statement itself may be broken`
+  annoCliVerbs.length >= ANNO_CLI_VERB_FLOOR,
+  `non-vacuity: expected at least ${ANNO_CLI_VERB_FLOOR} anno CLI verbs parsed from anno-cli.ts's dispatch switch, got ${annoCliVerbs.length} -- the parser or the switch statement itself may be broken`
 );
 ```
 Also `:450-456`: the `render-memmap` generated-artifact non-vacuity need — survives
@@ -576,20 +576,20 @@ unchanged (D-24), do not re-point it by accident.
 const ACME_BUILD_SKILL_PATH = join(SKILLS_DIR, "acme-build", "SKILL.md");
 const acmeBuildSkillSource = readFileSync(ACME_BUILD_SKILL_PATH, "utf8");
 need(
-  acmeBuildSkillSource.includes("r2000 export-asm"),
-  `${ACME_BUILD_SKILL_PATH.slice(ROOT.length + 1)} is missing the replacement pointer string "r2000 export-asm" -- ` +
+  acmeBuildSkillSource.includes("anno export-asm"),
+  `${ACME_BUILD_SKILL_PATH.slice(ROOT.length + 1)} is missing the replacement pointer string "anno export-asm" -- ` +
     `the deletion must not be "fixed" by deleting the pointer to the proven route too.`
 );
 ```
 
-### `audit-gate.mjs` (D-12, one commit with `docs-r2000-decisions.test.ts`)
+### `audit-gate.mjs` (D-12, one commit with `docs-absorbed-decisions.test.ts`)
 
 `:109` `export const DOCS_GUARD_FLOOR = 7;` and `:129-137`:
 ```js
 export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   "docs-linerefs.test.ts", "docs-dangling-refs.test.ts", "docs-deferred-ledger.test.ts",
   "docs-review-disposition.test.ts", "docs-fork-decision.test.ts",
-  "docs-core-value-decision.test.ts", "docs-r2000-decisions.test.ts",
+  "docs-core-value-decision.test.ts", "docs-absorbed-decisions.test.ts",
 ]);
 ```
 CR-02's recorded failure at `:117-128` is the exact hazard this edit re-runs: the
@@ -598,23 +598,23 @@ array was frozen through two guard additions and a deletion left
 cross-check that now catches it lives in `audit-integrity.test.ts` ("the runtime
 registry names every guard the disk-derived set carries") and must be re-run.
 
-### `docs-r2000-decisions.test.ts:48`
+### `docs-absorbed-decisions.test.ts:48`
 
 ```ts
 /** Named, non-empty set of guard filenames the Architecture Change Record's
  * step 5 must name. Its own length is asserted non-zero in test 1 ... */
-const GUARD_FILENAMES: readonly string[] = ["r2000-session.test.ts", "r2000-spawn-seam.test.ts"];
+const GUARD_FILENAMES: readonly string[] = ["anno-session.test.ts", "spawn-seam.test.ts"];
 ```
-`r2000-session.test.ts` is deleted, so this re-points or the guard reds on its own
+`anno-session.test.ts` is deleted, so this re-points or the guard reds on its own
 content. Its header `:16-21` also records why the file is deliberately kept OUT of
 `package.json` `files[]` — carry that if the file is renamed.
 
-### `r2000-verb-coverage.test.ts:142-176`
+### `anno-verb-coverage.test.ts:142-176`
 
 ```ts
-test("real-source parse: r2000-cli.ts's dispatch switch yields exactly the 8 known verbs, never 'default'", () => {
-  const src = readFileSync(join(HERE, "r2000-cli.ts"), "utf8");
-  const verbs = parseR2000CliVerbs(src);
+test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 8 known verbs, never 'default'", () => {
+  const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
+  const verbs = parseAnnoCliVerbs(src);
   assert.deepEqual(verbs, [...REAL_VERBS].sort());
   assert.ok(!verbs.includes("default"), "the switch's own default: branch must never be parsed as a verb");
 });
@@ -626,8 +626,8 @@ plus the planted-violation and comment-hygiene tests quoted above.
 ## Kind 3 — Renames: the driving registry
 
 **Source of the work-list:** `module-classification.ts` entries, never a prefix
-sweep. Two entries' `note` fields (`:475-490` `r2000-test-gate.ts`, `:516-524`
-`r2000-verify.ts`) both say in their own words *"Do NOT read this verdict as a
+sweep. Two entries' `note` fields (`:475-490` `anno-test-gate.ts`, `:516-524`
+`anno-verify.ts`) both say in their own words *"Do NOT read this verdict as a
 claim that the module survives a prefix deletion"* / *"do not read this verdict as
 a claim that the route survives"* — so the rename set is 9, not 11, and those two
 are deleted. Every rename must also update the `module` field and the
@@ -639,8 +639,8 @@ DIRECTION 1/2 assert against disk.
 ## Shared Patterns
 
 ### Header comments (apply to every new module and test)
-**Sources:** `r2000-tools.ts:1-9,52-60`; `anno-store.ts:1-17`;
-`docs-r2000-decisions.test.ts:1-21`; `scripts/lib/r2000-cli-verbs.mjs:1-30`;
+**Sources:** `anno-tools.ts:1-9,52-60`; `anno-store.ts:1-17`;
+`docs-absorbed-decisions.test.ts:1-21`; `scripts/lib/anno-cli-verbs.mjs:1-30`;
 `stock-vicii.ts:1-15`.
 Three required parts, in this order: (1) what this file is the ONE authoritative
 place for; (2) WHY IT EXISTS, naming the dated incident/finding id; (3) WHAT NOT
@@ -648,7 +648,7 @@ TO DO, naming the specific past mistake (WR-03, INT-01, CR-02, WR-08, D-33).
 
 ### Disk-derived sets with a floor that only rises
 **Sources:** `hostpath-consumers.test.ts:175-196`;
-`check-skill-tool-coverage.mjs:436-448`; `scripts/lib/r2000-cli-verbs.mjs:31-44`;
+`check-skill-tool-coverage.mjs:436-448`; `scripts/lib/anno-cli-verbs.mjs:31-44`;
 `audit-gate.mjs:100-109`.
 **Apply to:** the `anno-` module floor, the `anno_*` skill-name floor, the new CLI
 verb floor. Never a hand-typed array; always a paired positive control naming real
@@ -662,15 +662,15 @@ specifically `anno_apply_enum_usage` if RESEARCH F-1 option (c) is taken.
 
 ### Errors are named subclasses carrying the offending value
 **Sources:** `anno-types.ts:477` (`AnnoStoreError extends ViceError`) and its 11
-subclasses; `r2000-tools.ts:854-861` for the message shape ("Resolution routes:
+subclasses; `anno-tools.ts:854-861` for the message shape ("Resolution routes:
 ... or remove the caller reference").
 **Apply to:** every refusal in `anno-tools.ts` / `anno-derive.ts` / `anno-cli.ts`.
 
 ### Planted violation observed red, then reverted
-**Sources:** `r2000-verb-coverage.test.ts:157-176`; `anno-seam.test.ts:139-150`;
+**Sources:** `anno-verb-coverage.test.ts:157-176`; `anno-seam.test.ts:139-150`;
 `module-classification.test.ts:11-14` (the predicate-sharing rule);
 `src/mcp/vice/fixtures/planted-*`.
-**Apply to:** `scripts/check-no-regenerator2000.mjs` (before the deletion commit),
+**Apply to:** `scripts/check-no-analyser.mjs` (before the deletion commit),
 `anno-register.test.ts`, `anno-derive.test.ts`'s never-cached control.
 
 ### Independent witnesses are never collapsed into a helper
@@ -689,7 +689,7 @@ weakest matches, flagged for the planner:
 | File | Role | Data Flow | Weakness |
 |---|---|---|---|
 | `anno-derive.ts` | derivation service | transform | No existing module derives xrefs or searches a decode corpus; the analogs supply the *shape* (`decodeVicii`, `handleViciiGetState`, `Instruction`) but not the algorithm. RESEARCH `## STORE-06` supplies the algorithm. |
-| `scripts/check-no-regenerator2000.mjs` | CI gate | file-I/O scan | No existing gate spans `git ls-files` ∪ packed files; it is a union of two analogs (`check-skill-fork-honesty.mjs`'s walk, `check-npm-packages.mjs`'s `packFiles`), not a copy of one. |
+| `scripts/check-no-analyser.mjs` | CI gate | file-I/O scan | No existing gate spans `git ls-files` ∪ packed files; it is a union of two analogs (`check-skill-fork-honesty.mjs`'s walk, `check-npm-packages.mjs`'s `packFiles`), not a copy of one. |
 
 ---
 

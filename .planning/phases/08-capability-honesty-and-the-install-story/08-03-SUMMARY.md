@@ -139,7 +139,7 @@ docs/tool-support.md is STALE -- run `node scripts/generate-tool-support-table.m
 - `cd .claude/mcp/vice && npx tsc --noEmit -p tsconfig.json` -- clean, exit 0.
 - `node scripts/check-skill-tool-coverage.mjs` -- OK (regression only, unmodified by this plan).
 - `node scripts/check-npm-packages.mjs` -- OK, both tarballs valid (regression only, unmodified by this plan).
-- `grep -rc 'regenerator2000' docs/tool-support.md` -- 0.
+- `grep -rc 'the external analyser' docs/tool-support.md` -- 0.
 - 63 total rows, equal to the independently-computed union size (Task 2's derived-union equality test).
 
 ## Deviations from Plan

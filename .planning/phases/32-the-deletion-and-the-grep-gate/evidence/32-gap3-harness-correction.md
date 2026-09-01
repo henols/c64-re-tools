@@ -13,7 +13,7 @@ conditions the machine section cannot record about itself.
 | **Commit measured** | `7638c6f1f7019e33b12845c93b7ad882904bbc42` |
 | **Harness commit that produced the run** | `7638c6f` — plan 32-14 Task 1, `fix(32-14): the harness writes what it records, and a kill is not a failure` |
 | **Branch / worktree** | `worktree-agent-a4c097c848a03c6d7` (stock GSD worktree isolation, wave 1) |
-| **Exact command** | `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/r2000-enum-gen.test.ts --out .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap3-harness-correction.md` |
+| **Exact command** | `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/anno-enum-gen.test.ts --out .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap3-harness-correction.md` |
 | **Harness exit status** | `0` |
 | **Node** | `v22.22.0` |
 | **Measured at** | 2026-08-31T22:19:38.458Z (harness clock, UTC) |
@@ -69,7 +69,7 @@ reading is recorded anyway so the run is interpretable on its own terms.
 
 ## What this run establishes, and what it does not
 
-**It establishes** that `src/mcp/vice/r2000-enum-gen.test.ts`'s successor guard,
+**It establishes** that `src/mcp/vice/anno-enum-gen.test.ts`'s successor guard,
 `src/mcp/vice/anno-enum-gen.test.ts`, is red under the mutation its registry row **literally
 records** — that is, with the fixed `plant()` writing
 `` return `$${address.toString(16).toUpperCase().padStart(5, "0")}`; `` to disk byte for
@@ -124,7 +124,7 @@ Written by `scripts/audit-mutation-harness.mjs`. Every field below is a captured
 
 **Byte-identical.** Every plant was reverted.
 
-## `src/mcp/vice/r2000-enum-gen.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-enum-gen.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -292,8 +292,8 @@ ok 26 - buildEnumGenerationReport: a run below its ceiling says NOTHING about tr
   duration_ms: 0.650349
   type: 'test'
   ...
-# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
-ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
+# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
+ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
   ---
   duration_ms: 0.664518
   type: 'test'
@@ -621,8 +621,8 @@ ok 26 - buildEnumGenerationReport: a run below its ceiling says NOTHING about tr
   duration_ms: 0.606076
   type: 'test'
   ...
-# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
-ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
+# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
+ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
   ---
   duration_ms: 0.475756
   type: 'test'

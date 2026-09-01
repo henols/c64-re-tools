@@ -91,7 +91,7 @@ than discovered:
 | File | Failures | Automated set? | Character |
 |---|---|---|---|
 | `src/mcp/vice/vice-proxy.test.ts` | **41** (lower bound) | no — `MANUAL_ONLY_TESTS` | Needs a live broker/emulator. Absent one, its broker-facing assertions fail and the file eventually blocks. |
-| `src/mcp/vice/r2000-session.test.ts` | **5** | yes | Timing-sensitive FIFO-queue tests (`plan 18-06`). Load-sensitive on a busy host. |
+| `src/mcp/vice/anno-session.test.ts` | **5** | yes | Timing-sensitive FIFO-queue tests (`plan 18-06`). Load-sensitive on a busy host. |
 | `src/mcp/vice/audit-integrity.test.ts` | **2** | yes | Census assertions that pin audit totals which legitimately grow per milestone — red on a correct tree. |
 
 Failing test names, verbatim, for the two files in the automated set:
@@ -99,14 +99,14 @@ Failing test names, verbatim, for the two files in the automated set:
 ```
 audit-integrity.test.ts:215  the docs guard set is derived from disk with a non-vacuity floor (D-12-07 / D-12-08)
 audit-integrity.test.ts:251  the runtime registry (EXPECTED_DOCS_GUARD_NAMES) names every guard the disk-derived set carries -- registry-drift detector (CR-02, 17-REVIEW.md)
-r2000-session.test.ts:809    plan 18-06: five same-tick callers begin in strict FIFO arrival order
-r2000-session.test.ts:831    plan 18-06: a throwing callback releases the queue and the following entry still runs
-r2000-session.test.ts:854    plan 18-06: a waiting caller times out with R2000SessionBusyError and is removed from the queue before it can run late
-r2000-session.test.ts:892    plan 18-06: the bounded wait applies only to waiting for the slot, not to a slow callback once it holds it
-r2000-session.test.ts:918    plan 18-06: the queue prevents a client-side lost update, and bypassing it makes the same scenario fail loud as non-exercising
+anno-session.test.ts:809    plan 18-06: five same-tick callers begin in strict FIFO arrival order
+anno-session.test.ts:831    plan 18-06: a throwing callback releases the queue and the following entry still runs
+anno-session.test.ts:854    plan 18-06: a waiting caller times out with AnnoSessionBusyError and is removed from the queue before it can run late
+anno-session.test.ts:892    plan 18-06: the bounded wait applies only to waiting for the slot, not to a slow callback once it holds it
+anno-session.test.ts:918    plan 18-06: the queue prevents a client-side lost update, and bypassing it makes the same scenario fail loud as non-exercising
 ```
 
-**Note for plan 29-10:** `r2000-session.test.ts` is on that plan's deletion set.
+**Note for plan 29-10:** `anno-session.test.ts` is on that plan's deletion set.
 When it goes, its 5 failures leave the set **by construction**, not by repair —
 that is a *set change with a known cause*, and 29-10 must say so rather than
 report an improvement.
@@ -126,7 +126,7 @@ report an improvement.
 | Wall time | **80 s** |
 | **Exit status** | **1** |
 
-Failing set: `audit-integrity.test.ts` (2) + `r2000-session.test.ts` (5) — the
+Failing set: `audit-integrity.test.ts` (2) + `anno-session.test.ts` (5) — the
 same two automated files as the full glob, same tests.
 
 **`test:automated` exits 1 on a clean tree.** It skips `MANUAL_ONLY_TESTS` *and*
@@ -147,7 +147,7 @@ its `2880` is exactly HEAD's file set. Neither run's **failure set** is affected
 | Command | Exit status | Note |
 |---|---|---|
 | `cd src/mcp/vice && npm run typecheck` | **0** | `tsc --noEmit` |
-| `node scripts/check-skill-tool-coverage.mjs` | **0** | 37 `vice_*` names / 17 `r2000_*` / 8 CLI verbs, 8/8 resolved |
+| `node scripts/check-skill-tool-coverage.mjs` | **0** | 37 `vice_*` names / 17 `anno_*` / 8 CLI verbs, 8/8 resolved |
 | `node scripts/check-skill-fork-honesty.mjs` | **0** | 11 fork-only mentions across 33 files, 24 names policed |
 | `node scripts/check-npm-packages.mjs` | **0** | `@henols/vice-mcp` 81 files; `@henols/c64-re-tools` 34 files, 7 skills |
 | `node scripts/check-skill-description-overlap.mjs` | **0** | 7 skills, 21 pairs, max score 0.250 vs threshold 0.35 |
@@ -183,17 +183,17 @@ taken before the gate existed in a commit.
 measurement. The numbers that matter for this phase are the two in bold, and
 they are the ones the gate is built against.
 
-**Grep is blind to one of them.** `src/mcp/vice/r2000-memmap-render.ts` carries
+**Grep is blind to one of them.** `src/mcp/vice/anno-memmap-render.ts` carries
 a literal NUL byte at offset 12862, so GNU grep classifies the file as binary:
 
 ```
-$ grep -c  'regenerator2000' src/mcp/vice/r2000-memmap-render.ts   # prints nothing, exit 1
-$ grep -ac 'regenerator2000' src/mcp/vice/r2000-memmap-render.ts   # 1,             exit 0
+$ grep -c  'the external analyser' src/mcp/vice/anno-memmap-render.ts   # prints nothing, exit 1
+$ grep -ac 'the external analyser' src/mcp/vice/anno-memmap-render.ts   # 1,             exit 0
 ```
 
 Content-only totals outside `.planning/` therefore read **400 with `-a`** and
 **399 without**, in the current working tree. The one-hit difference is the
-measurement-provenance comment at `r2000-memmap-render.ts:79`. Every census in
+measurement-provenance comment at `anno-memmap-render.ts:79`. Every census in
 this phase uses `grep -a`, or reads bytes in-process as the gate does.
 
 ---

@@ -61,7 +61,7 @@ over from the plans' own SUMMARY claims.*
 | CUT-04 | The fate guard is itself non-vacuous (delete a row → red) | unit | `cd src/mcp/vice && node --test guard-fates.test.ts` | ✅ green — 21/21, 0 fail |
 | CUT-04 | Each re-pointed guard observed red against its **new** subject | instrument | `node scripts/audit-mutation-harness.mjs --all` — run by hand; `D-17` keeps it out of CI (`ci.yml` grep 0) and out of `package.json` `scripts` (grep 0) | ✅ manual-only **by decision**, satisfied — 61 registry rows; last full sweep 35 OBSERVED RED / 26 SKIPPED / 0 UNMEASURABLE, tree restored byte-identical (`evidence/32-gap1-overlap-and-writeback.md`) |
 | CUT-06 | `PROJECT.md`'s `vice-proxy.ts` citations are correct and mechanically checked | unit | `cd src/mcp/vice && node --test docs-linerefs.test.ts` | ✅ green — 12/12, widened per `D-10` |
-| CUT-06 | No living document points a user at a deleted route | unit | `node scripts/check-no-regenerator2000.mjs` | ✅ green — exit 0, every pinned exact count unmoved |
+| CUT-06 | No living document points a user at a deleted route | unit | `node scripts/check-no-analyser.mjs` | ✅ green — exit 0, every pinned exact count unmoved |
 | CUT-06 | Close gate re-run | suite | research §7.4's recipe, recorded per `D-15` | ✅ green — `evidence/32-close-gate.md`, plus 18 further evidence records |
 
 *Status legend: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -91,7 +91,7 @@ child env before spawning (`:563-567`), so no planted red is recorded as a green
 
 **Two blocking hazards the plan must design around (research §2, §4.3):**
 
-1. `scripts/check-no-regenerator2000.mjs` asserts **exact hit counts with `===`** per
+1. `scripts/check-no-analyser.mjs` asserts **exact hit counts with `===`** per
    exemption, and `.github/workflows/ci.yml` is pinned at exactly **1**. A new CI step
    or registry file carrying the literal **reds the gate on the landing commit**.
 2. `audit-gate.mjs`'s `runGuardsLive()` **strips every `NODE_TEST_*` key** before

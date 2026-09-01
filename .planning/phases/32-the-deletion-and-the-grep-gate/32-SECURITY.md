@@ -69,10 +69,10 @@ with the individually notable rows called out in full.
 | Nested-runner DoS / timeouts | 32-01, 32-06, 32-15, 32-18, 32-19 | 8 | closed | `NODE_TEST_` stripped from child env `:563-567`; `timeout: 15000` + `killSignal: "SIGKILL"` `:573-574`; fail-closed ETIMEDOUT→status 1 `:578-600`; signal branch `:619-632` routes to UNMEASURABLE, kept separate from the timeout branch |
 | Guard non-vacuity / floors | 32-04, 32-08, 32-13 | 8 | closed | `docs-linerefs.test.ts:185-196` floor asserted PER DOCUMENT inside the loop ("never a sum"); `:151` predicate requires BOTH `rewriteArguments()` and a `CITATION_RE` match; hatch-vocabulary grep = 0 across the three instruments |
 | Audited-set derivation | 32-08, 32-13 | 5 | closed | `resolveSetC()` `:430-454` requires exactly `SET_C_FLOOR` tokens each resolving to exactly 1 tracked path, else throws — never a hand-typed array; `git cat-file -t` fail-closed `:195-201`; `ci.yml:38` `fetch-depth: 0` |
-| Record integrity (no silent rewrite) | 32-03, 32-05, 32-13, 32-14, 32-16, 32-20 | 12 | closed | git `--numstat` proofs: `27b695d` 323/**0**, `b08bdbc` 2/**0**, `205dc3c` 70/**0** — pure insertions; `c81d2ee` on `check-no-regenerator2000.mjs` has zero non-comment `+/-` lines |
+| Record integrity (no silent rewrite) | 32-03, 32-05, 32-13, 32-14, 32-16, 32-20 | 12 | closed | git `--numstat` proofs: `27b695d` 323/**0**, `b08bdbc` 2/**0**, `205dc3c` 70/**0** — pure insertions; `c81d2ee` on `check-no-analyser.mjs` has zero non-comment `+/-` lines |
 | NUL-taint / byte-mode handling | 32-05, 32-06, 32-18 | 4 | closed | `grep -a` used 37× in the sweep, 15× in the reconciliation doc, zero un-`-a` measurements; byte-mode capture `readFileSync(abs)` no encoding `:395`, latin1 round-trip, `Buffer.from(…,"latin1")` `:508`; NUL ledger names `anno-memmap-render.ts` offset 15097 / line 315 |
 | Broker read-only (D-13) | 32-06, 32-07, 32-09 | 3 | closed | zero `systemctl stop/restart`, `pkill`, `kill -9`, `killall` anywhere in `scripts/`; broker read at both ends of the close gate, both `inactive`; the `pgrep` false-positive trap itself documented |
-| Removal-gate pin stability | 32-03, 32-05, 32-07, 32-09 | 5 | closed | `grep -ac 'regenerator2000' .github/workflows/ci.yml` = **1** (line 209, pre-existing; the new step at `:258` carries no literal); `check-no-regenerator2000.mjs` re-run **exit 0** |
+| Removal-gate pin stability | 32-03, 32-05, 32-07, 32-09 | 5 | closed | `grep -ac 'the external analyser' .github/workflows/ci.yml` = **1** (line 209, pre-existing; the new step at `:258` carries no literal); `check-no-analyser.mjs` re-run **exit 0** |
 | Fixture/temp-dir hygiene | 32-10, 32-11, 32-19 | 4 | closed | every `mkdtempSync(tmpdir())` removed in a `finally`; scratch dirs gitignored (`.gitignore:55`, `:66`) and killed in `t.after`; no `.audit-root-synth-*` survives a run |
 | Split-read consistency | 32-02, 32-12 | 3 | closed | `claudeMd` moved inside `paths()` (`check-skill-description-overlap.mjs:101`, read via `P.claudeMd` `:305`); `splitReadRefusalReason()` `audit-root.mjs:382` consumed by four gates |
 | Write-freedom / export surface | 32-18, 32-19 | 4 | closed | `uncontained-read-only` `:504` paired with an fs-import allow-list and a zero-writes check over comment-stripped source; exactly 3 harness exports, `:192-194` returns `originals.size` never the map |
@@ -184,7 +184,7 @@ class of defect this phase exists to guard against.
 the argv seam (`scripts/lib/audit-root.mjs`), containment, plant/revert/restore and guard
 execution (`scripts/audit-mutation-harness.mjs`), the fate gate
 (`scripts/check-guard-fates.mjs`), the four split-read gates, and the four phase-32 test
-files. Independently executed by the auditor: `check-no-regenerator2000.mjs` **exit 0**,
+files. Independently executed by the auditor: `check-no-analyser.mjs` **exit 0**,
 `check-guard-fates.mjs` **exit 0** (`setA=43 setB=16 setC=2 total=61`), `guard-fates.test.ts`
 21/21, `removal-gate.test.ts` 8/8, `audit-root-args.test.ts` 62/62,
 `audit-harness-restore.test.ts` 15/15 — 106 assertions green — with `git status --porcelain`

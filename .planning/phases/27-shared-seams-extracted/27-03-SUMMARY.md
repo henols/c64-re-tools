@@ -7,15 +7,15 @@ tags: [seam-extraction, prg-parsing, coverage-census, npm-closure, byte-identica
 # Dependency graph
 requires:
   - phase: 27-shared-seams-extracted
-    provides: "plan 27-01's precedent for a same-wave seam extraction under a non-r2000 name (acme-gate.ts), and its split of r2000-cli.test.ts's mixed import"
+    provides: "plan 27-01's precedent for a same-wave seam extraction under a non-anno name (acme-gate.ts), and its split of anno-cli.test.ts's mixed import"
   - phase: 27-shared-seams-extracted
-    provides: "plan 27-02's block-class.ts, r2000-coverage.ts rewrite, and the package.json files[] entry that took the closure walk to 59 modules (this plan takes it to 60)"
+    provides: "plan 27-02's block-class.ts, anno-coverage.ts rewrite, and the package.json files[] entry that took the closure walk to 59 modules (this plan takes it to 60)"
 provides:
   - "src/mcp/vice/prg-image.ts — the ONE place holding pure C64 image byte-layout knowledge (parsePrg, flatImageOrigin, decodeRawData), independent of any external analyser"
   - "src/mcp/vice/prg-image.test.ts — the four relocated input-validator regressions verbatim, plus the decodeRawData round trip its doc comment claimed but nothing asserted, plus a structural purity SUPPLEMENT"
   - "A coverage census with zero imports from the annotation-store glue module — Correction C-1 discharged, OQ-3 resolved as move-it"
   - "A shipped module whose files[] entry is forced by the closure walk, validated: 60 modules, clean"
-affects: [phase-32-r2000-deletion, r2000-coverage, r2000-cli, r2000-d64, npm-packaging]
+affects: [phase-32-anno-deletion, anno-coverage, anno-cli, anno-d64, npm-packaging]
 
 actuals:
   tokens: 7108
@@ -35,25 +35,25 @@ key-files:
     - src/mcp/vice/prg-image.ts
     - src/mcp/vice/prg-image.test.ts
   modified:
-    - src/mcp/vice/r2000-project.ts
-    - src/mcp/vice/r2000-project.test.ts
-    - src/mcp/vice/r2000-cli.ts
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
-    - src/mcp/vice/r2000-symbol-roundtrip.test.ts
-    - src/mcp/vice/r2000-verify.test.ts
-    - src/mcp/vice/r2000-tools.test.ts
-    - src/mcp/vice/r2000-mcp-client.test.ts
-    - src/mcp/vice/r2000-d64.ts
-    - src/mcp/vice/r2000-d64.test.ts
+    - src/mcp/vice/anno-project.ts
+    - src/mcp/vice/anno-project.test.ts
+    - src/mcp/vice/anno-cli.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
+    - src/mcp/vice/anno-symbol-roundtrip.test.ts
+    - src/mcp/vice/anno-verify.test.ts
+    - src/mcp/vice/anno-tools.test.ts
+    - src/mcp/vice/anno-mcp-client.test.ts
+    - src/mcp/vice/anno-d64.ts
+    - src/mcp/vice/anno-d64.test.ts
     - src/mcp/vice/package.json
 
 key-decisions:
   - "OQ-3 resolved as option 2 (MOVE decodeRawData), not record-and-defer: the census statically imported it from a module a prefix deletion removes, so deferring would have left a capability one deletion away from silently breaking — the exact failure SEAM-02 exists to prevent"
-  - "No re-export shim left in r2000-project.ts: a compatibility shim leaves the coupling fully intact while looking finished, which is this phase's recorded anti-pattern"
+  - "No re-export shim left in anno-project.ts: a compatibility shim leaves the coupling fully intact while looking finished, which is this phase's recorded anti-pattern"
   - "The six remaining importers were repointed in Task 1's commit rather than Tasks 2-3: `tsc --noEmit` is whole-project, so any other ordering commits a tree that does not typecheck (deviation Rule 3)"
-  - "r2000-cli.test.ts was deliberately NOT edited: measured, no comment in it attributes either function to the old module, so the plan's 'two comment-accuracy files' is measured as one"
-  - "The dynamic non-literal specifier in r2000-d64.test.ts is RETAINED with its lapsed rationale stated, not deleted — removing the indirection and its explanation together would leave a future reader with neither"
+  - "anno-cli.test.ts was deliberately NOT edited: measured, no comment in it attributes either function to the old module, so the plan's 'two comment-accuracy files' is measured as one"
+  - "The dynamic non-literal specifier in anno-d64.test.ts is RETAINED with its lapsed rationale stated, not deleted — removing the indirection and its explanation together would leave a future reader with neither"
 
 patterns-established:
   - "A moved region is proven byte-identical by diffing it against its origin, not by reading it twice — the diff is what makes 'one intended reword' a measurement instead of a claim"
@@ -63,17 +63,17 @@ requirements-completed: [SEAM-02, SEAM-03]
 
 coverage:
   - id: D1
-    description: "prg-image.ts exports parsePrg, flatImageOrigin and decodeRawData under byte-identical names with byte-identical bodies and refusal messages; r2000-project.ts exports none of them and carries no unused node:zlib binding"
+    description: "prg-image.ts exports parsePrg, flatImageOrigin and decodeRawData under byte-identical names with byte-identical bodies and refusal messages; anno-project.ts exports none of them and carries no unused node:zlib binding"
     requirement: SEAM-02
     verification:
       - kind: unit
         ref: "src/mcp/vice/prg-image.test.ts (8 tests, 0 failures) — the four relocated validator tests verbatim, two decodeRawData round trips, two structural purity checks"
         status: pass
       - kind: other
-        ref: "diff of the moved 39-line region against r2000-project.ts@8b84624 shows exactly ONE differing line (decodeRawData's doc comment, the one intended reword)"
+        ref: "diff of the moved 39-line region against anno-project.ts@8b84624 shows exactly ONE differing line (decodeRawData's doc comment, the one intended reword)"
         status: pass
       - kind: other
-        ref: "grep -cE '^export function (parsePrg|flatImageOrigin|decodeRawData)' prg-image.ts => 3; same grep on r2000-project.ts => 0; grep -c gunzipSync r2000-project.ts => 0; grep -c gzipSync => 3"
+        ref: "grep -cE '^export function (parsePrg|flatImageOrigin|decodeRawData)' prg-image.ts => 3; same grep on anno-project.ts => 0; grep -c gunzipSync anno-project.ts => 0; grep -c gzipSync => 3"
         status: pass
       - kind: other
         ref: "grep -c 'a .prg needs at least 3 bytes' prg-image.ts => 1; grep -c 'must be exactly 65536 bytes' => 1"
@@ -87,17 +87,17 @@ coverage:
     requirement: SEAM-02
     verification:
       - kind: other
-        ref: "grep -c 'from \"./prg-image.ts\"' r2000-coverage.ts => 1; grep -c 'from \"./r2000-project.ts\"' r2000-coverage.ts => 0; same pair on r2000-coverage.test.ts => 1 / 0"
+        ref: "grep -c 'from \"./prg-image.ts\"' anno-coverage.ts => 1; grep -c 'from \"./anno-project.ts\"' anno-coverage.ts => 0; same pair on anno-coverage.test.ts => 1 / 0"
         status: pass
       - kind: unit
-        ref: "cd src/mcp/vice && node --test r2000-coverage.test.ts r2000-coverage-grammar.test.ts => 134 tests, 0 failures (the census's own independence, substitutability and reproducibility suites unaffected by the new boundary)"
+        ref: "cd src/mcp/vice && node --test anno-coverage.test.ts anno-coverage-grammar.test.ts => 134 tests, 0 failures (the census's own independence, substitutability and reproducibility suites unaffected by the new boundary)"
         status: pass
       - kind: other
-        ref: "importer-set relation vs 6c1f569: the diff prints exactly two lines, both `<`, naming r2000-coverage.test.ts and r2000-coverage.ts — no `>` line (nothing gained the import), no third `<` (no legitimate import deleted instead of split)"
+        ref: "importer-set relation vs 6c1f569: the diff prints exactly two lines, both `<`, naming anno-coverage.test.ts and anno-coverage.ts — no `>` line (nothing gained the import), no third `<` (no legitimate import deleted instead of split)"
         status: pass
     human_judgment: false
   - id: D3
-    description: "prg-image.ts ships: package.json files[] gains exactly one entry, forced by the closure walk from the published entry point through r2000-cli.ts, and both tarballs validate"
+    description: "prg-image.ts ships: package.json files[] gains exactly one entry, forced by the closure walk from the published entry point through anno-cli.ts, and both tarballs validate"
     requirement: SEAM-02
     verification:
       - kind: integration
@@ -117,45 +117,45 @@ coverage:
         status: pass
     human_judgment: false
   - id: D4
-    description: "All nine consumer sites resolve: the six mixed statements are SPLIT (both imports survive), the two decodeRawData-only statements are rewritten, and r2000-d64.test.ts's dynamic path constant points at the new module with its composition test RUNNING rather than skipping"
+    description: "All nine consumer sites resolve: the six mixed statements are SPLIT (both imports survive), the two decodeRawData-only statements are rewritten, and anno-d64.test.ts's dynamic path constant points at the new module with its composition test RUNNING rather than skipping"
     requirement: SEAM-03
     verification:
       - kind: other
-        ref: "no surviving `from \"./r2000-project.ts\"` STATEMENT names a moved symbol (perl statement-scoped scan prints nothing); non-vacuity control via `git show 6c1f569:<file>` prints exactly the 8 files predicted, including r2000-project.test.ts's multi-line statement a line-scoped grep would miss"
+        ref: "no surviving `from \"./anno-project.ts\"` STATEMENT names a moved symbol (perl statement-scoped scan prints nothing); non-vacuity control via `git show 6c1f569:<file>` prints exactly the 8 files predicted, including anno-project.test.ts's multi-line statement a line-scoped grep would miss"
         status: pass
       - kind: other
         ref: "cd src/mcp/vice && npm run typecheck (tsc --noEmit, exit 0) — the paired backstop that makes deleting a whole statement a compile error rather than a shortcut to green"
         status: pass
       - kind: unit
-        ref: "cd src/mcp/vice && node --test r2000-d64.test.ts => 16 pass, 0 fail, 0 SKIPPED; 'composition: extracted bytes feed parsePrg(), and the recovered origin matches the fixture's load address' runs for real"
+        ref: "cd src/mcp/vice && node --test anno-d64.test.ts => 16 pass, 0 fail, 0 SKIPPED; 'composition: extracted bytes feed parsePrg(), and the recovered origin matches the fixture's load address' runs for real"
         status: pass
       - kind: other
-        ref: "grep -c 'prg-image.ts' r2000-d64.test.ts => 7, r2000-d64.ts => 1; grep -c 'r2000-project.ts' r2000-d64.ts => 0; grep -c 'parsePrg: input is 0 byte(s)' r2000-d64.ts => 1 (quoted real refusal text byte-identical)"
+        ref: "grep -c 'prg-image.ts' anno-d64.test.ts => 7, anno-d64.ts => 1; grep -c 'anno-project.ts' anno-d64.ts => 0; grep -c 'parsePrg: input is 0 byte(s)' anno-d64.ts => 1 (quoted real refusal text byte-identical)"
         status: pass
     human_judgment: false
   - id: D5
-    description: "r2000-cli.ts's extension-before-length dispatch order is provably untouched, and the behavioural assertion that the parser's name never reaches stderr still holds"
+    description: "anno-cli.ts's extension-before-length dispatch order is provably untouched, and the behavioural assertion that the parser's name never reaches stderr still holds"
     requirement: SEAM-03
     verification:
       - kind: other
-        ref: "git diff -U0 -- r2000-cli.ts | grep -cE '^[-+](origin|body|  )' => 0 — changes confined to the import region, no control-flow line touched"
+        ref: "git diff -U0 -- anno-cli.ts | grep -cE '^[-+](origin|body|  )' => 0 — changes confined to the import region, no control-flow line touched"
         status: pass
       - kind: other
-        ref: "grep -c 'from \"./prg-image.ts\"' r2000-cli.ts => 1 AND grep -c 'from \"./r2000-project.ts\"' r2000-cli.ts => 1 — a split, not a replacement"
+        ref: "grep -c 'from \"./prg-image.ts\"' anno-cli.ts => 1 AND grep -c 'from \"./anno-project.ts\"' anno-cli.ts => 1 — a split, not a replacement"
         status: pass
       - kind: unit
-        ref: "grep -c 'doesNotMatch(stderr, /parsePrg/)' r2000-cli.test.ts => 1 (untouched); cd src/mcp/vice && node --test r2000-cli.test.ts green within the plan gate"
+        ref: "grep -c 'doesNotMatch(stderr, /parsePrg/)' anno-cli.test.ts => 1 (untouched); cd src/mcp/vice && node --test anno-cli.test.ts green within the plan gate"
         status: pass
     human_judgment: false
   - id: D6
-    description: "Zero r2000 modules deleted or renamed, and the five files importing only staying symbols were not edited at all"
+    description: "Zero anno modules deleted or renamed, and the five files importing only staying symbols were not edited at all"
     requirement: SEAM-03
     verification:
       - kind: other
-        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c r2000)\" = \"0\" exits 0 — and the unfiltered deletion list for that range is empty, so nothing at all was deleted"
+        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c anno)\" = \"0\" exits 0 — and the unfiltered deletion list for that range is empty, so nothing at all was deleted"
         status: pass
       - kind: other
-        ref: "git diff --name-only 6c1f569 -- r2000-enum-gen.test.ts r2000-spawn-seam.test.ts r2000-session.test.ts r2000-session.ts r2000-memmap-render.test.ts => 0 files"
+        ref: "git diff --name-only 6c1f569 -- anno-enum-gen.test.ts spawn-seam.test.ts anno-session.test.ts anno-session.ts anno-memmap-render.test.ts => 0 files"
         status: pass
     human_judgment: false
 
@@ -185,10 +185,10 @@ last static import from a module a prefix deletion would take away.
    — proven by diffing the moved 39-line region against its origin at `8b84624`,
    which shows exactly one differing line: `decodeRawData`'s doc comment, the one
    reword the plan authorised. Both refusal messages are unchanged strings.
-   `r2000-project.ts` lost the three exports and its now-unused `gunzipSync`
+   `anno-project.ts` lost the three exports and its now-unused `gunzipSync`
    binding; `gzipSync` stayed with the project builder. No re-export shim.
 2. **The coverage census no longer imports anything from the glue module.**
-   `r2000-coverage.ts` and `r2000-coverage.test.ts` take `decodeRawData` from
+   `anno-coverage.ts` and `anno-coverage.test.ts` take `decodeRawData` from
    `prg-image.ts`, and the importer-set relation against the base commit prints
    exactly those two files as departures and nothing else.
 3. **`prg-image.test.ts` (8 tests) carries the four validator regressions
@@ -197,16 +197,16 @@ last static import from a module a prefix deletion would take away.
 4. **The module ships and the tarball validates**: `files[]` gained exactly one
    entry, and the closure walk from `vice-proxy.ts` grew from 27-02's 59 modules
    to 60, clean.
-5. **`r2000-d64.test.ts`'s composition probe now runs instead of gating on a
+5. **`anno-d64.test.ts`'s composition probe now runs instead of gating on a
    moved filename** — 16 pass, 0 skipped — and its retained non-literal specifier
    says so with its lapsed worktree rationale stated rather than deleted.
 
 ## OQ-3 decision: move `decodeRawData`, not record-and-defer
 
 Resolved as **option 2 (move it)**, as the plan directed, and confirmed against
-the tree while executing. `r2000-coverage.ts` — a criterion-2 capability module —
+the tree while executing. `anno-coverage.ts` — a criterion-2 capability module —
 imported `decodeRawData` from a module `D-08` classifies as
-`glue-with-extractable`, and `r2000-coverage.test.ts` imported it too. The
+`glue-with-extractable`, and `anno-coverage.test.ts` imported it too. The
 function's body is two generic calls (base64-decode, then gunzip); only its doc
 comment tied it to one particular analyser payload field, which is exactly what
 made `27-CONTEXT.md`'s "does not move" reading look correct.
@@ -251,43 +251,43 @@ check-npm-packages: OK
 ```
 
 59 → 60 modules: the increment is `prg-image.ts`, reached through
-`vice-proxy.ts`'s dynamic `import("./r2000-cli.ts")` and then `r2000-cli.ts`'s
+`vice-proxy.ts`'s dynamic `import("./anno-cli.ts")` and then `anno-cli.ts`'s
 new static import. The `files[]` entry is forced by that walk, not chosen.
 
 ## Corrected count of files needing no import change
 
 The plan's arithmetic held exactly, re-measured at `6c1f569`: **14** files
-imported `r2000-project.ts`; **2** dropped it entirely (the census pair); **5**
-are splits keeping their own statement (`r2000-cli.ts`,
-`r2000-symbol-roundtrip.test.ts`, `r2000-verify.test.ts`, `r2000-tools.test.ts`,
-`r2000-mcp-client.test.ts`); **1** (`r2000-project.test.ts`) keeps a narrowed
-statement; **1** (`r2000-cli.test.ts`) keeps its statement unchanged; and **5**
+imported `anno-project.ts`; **2** dropped it entirely (the census pair); **5**
+are splits keeping their own statement (`anno-cli.ts`,
+`anno-symbol-roundtrip.test.ts`, `anno-verify.test.ts`, `anno-tools.test.ts`,
+`anno-mcp-client.test.ts`); **1** (`anno-project.test.ts`) keeps a narrowed
+statement; **1** (`anno-cli.test.ts`) keeps its statement unchanged; and **5**
 were not touched at all. 2 + 5 + 1 + 1 + 5 = 14, confirmed.
 
-**Refinement measured while executing:** the plan expected `r2000-cli.test.ts`
+**Refinement measured while executing:** the plan expected `anno-cli.test.ts`
 to need *comment* edits ("two comment-accuracy files"). Measured, it needs
 **none** — every one of its seven parser mentions (`:382`, `:383`, `:391`,
 `:975`, `:1246`, `:1254`, `:1260`, `:1274`) either names the function bare or
-attributes it to `r2000-cli.ts`'s own header, and none attributes it to the old
-module. Its only `r2000-project.ts` reference is the `synthesizeProject` import
+attributes it to `anno-cli.ts`'s own header, and none attributes it to the old
+module. Its only `anno-project.ts` reference is the `synthesizeProject` import
 at `:21`, which is correct and stays. So the file was left untouched rather than
-churned: **one** comment-accuracy file (`r2000-d64.ts`), not two. This makes the
+churned: **one** comment-accuracy file (`anno-d64.ts`), not two. This makes the
 count of files needing no change **6**, not 5.
 
 ## Commands run, with results
 
 | Command | Result |
 |---|---|
-| `diff <(sed -n '166,204p' r2000-project.ts@orig) <(tail -39 prg-image.ts)` | 1 differing line (the intended doc-comment reword) |
+| `diff <(sed -n '166,204p' anno-project.ts@orig) <(tail -39 prg-image.ts)` | 1 differing line (the intended doc-comment reword) |
 | `cd src/mcp/vice && npm run typecheck` | exit 0 (run after each of the three tasks) |
-| `node --test r2000-coverage.test.ts r2000-coverage-grammar.test.ts` | 134 tests, 134 pass, 0 fail |
+| `node --test anno-coverage.test.ts anno-coverage-grammar.test.ts` | 134 tests, 134 pass, 0 fail |
 | `node --test prg-image.test.ts` | 8 tests, 8 pass, 0 fail |
-| `node --test prg-image.test.ts r2000-project.test.ts test-gate.test.ts` | 31 tests, 30 pass, 0 fail, 1 skip |
-| `node --test r2000-d64.test.ts` | 16 pass, 0 fail, **0 skipped** |
-| `node --test docs-dangling-refs comment-phase-pointers hop-chain-comments assumption-label-discipline r2000-spawn-seam stock-dispatch` | 182 tests, 181 pass, 0 fail, 1 skip |
+| `node --test prg-image.test.ts anno-project.test.ts test-gate.test.ts` | 31 tests, 30 pass, 0 fail, 1 skip |
+| `node --test anno-d64.test.ts` | 16 pass, 0 fail, **0 skipped** |
+| `node --test docs-dangling-refs comment-phase-pointers hop-chain-comments assumption-label-discipline anno-spawn-seam stock-dispatch` | 182 tests, 181 pass, 0 fail, 1 skip |
 | Plan gate: `node --test` over all 18 named files | **532 tests, 516 pass, 0 fail, 16 skip** |
 | `node scripts/check-npm-packages.mjs` | exit 0, closure 60 modules clean, both tarballs OK |
-| `test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts \| grep -c r2000)" = "0"` | exit 0 — and the unfiltered deletion list is empty |
+| `test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts \| grep -c anno)" = "0"` | exit 0 — and the unfiltered deletion list is empty |
 
 **Not run as evidence:** `npm run test:automated` (forbidden by the plan) and the
 whole-glob `npm test` (owned by `27-05-PLAN.md`). No VICE broker or `x64sc`
@@ -301,17 +301,17 @@ process was started.
 
 - **Found during:** Task 1, immediately before its `<verify>` block.
 - **Issue:** Task 1's acceptance criteria require `npm run typecheck` to exit 0
-  and `node --test r2000-coverage.test.ts` to pass at Task 1's commit. But
+  and `node --test anno-coverage.test.ts` to pass at Task 1's commit. But
   `tsconfig.json` has `include: ["**/*.ts", "**/*.mts"]`, so `tsc --noEmit` is
   whole-project and sees every test file. With the three exports removed from
-  `r2000-project.ts` and six test importers still naming them, the tree cannot
-  typecheck and `r2000-coverage.test.ts` cannot even load — while the plan
+  `anno-project.ts` and six test importers still naming them, the tree cannot
+  typecheck and `anno-coverage.test.ts` cannot even load — while the plan
   assigns those six repoints to Tasks 2 and 3.
 - **Fix:** Repointed all six remaining import statements inside Task 1's commit
-  (four splits: `r2000-symbol-roundtrip.test.ts`, `r2000-verify.test.ts`,
-  `r2000-tools.test.ts`, `r2000-mcp-client.test.ts`; one rewrite:
-  `r2000-coverage.test.ts`; one repoint later narrowed in Task 2:
-  `r2000-project.test.ts`). Every one is a mechanical specifier change with zero
+  (four splits: `anno-symbol-roundtrip.test.ts`, `anno-verify.test.ts`,
+  `anno-tools.test.ts`, `anno-mcp-client.test.ts`; one rewrite:
+  `anno-coverage.test.ts`; one repoint later narrowed in Task 2:
+  `anno-project.test.ts`). Every one is a mechanical specifier change with zero
   logic touched, so no acceptance criterion changes meaning — only which commit
   satisfies it. The alternative (commit a tree that does not typecheck) would
   itself violate this phase's recorded "no partial repoints" principle: a
@@ -322,7 +322,7 @@ process was started.
   path constant and the comment-accuracy edit.
 - **Files modified:** the six named above, in commit `56b7d0d`.
 - **Verification:** `npm run typecheck` exit 0 and
-  `node --test r2000-coverage.test.ts r2000-coverage-grammar.test.ts` 134/134 at
+  `node --test anno-coverage.test.ts anno-coverage-grammar.test.ts` 134/134 at
   `56b7d0d`; every commit in this plan typechecks in isolation.
 - **Commit:** `56b7d0d`
 
@@ -344,11 +344,11 @@ process was started.
 
 ### Measured Corrections to the Plan
 
-**3. `r2000-cli.test.ts` needed no edit at all** — see "Corrected count of files
+**3. `anno-cli.test.ts` needed no edit at all** — see "Corrected count of files
 that needed no import change" above. The plan's Task 3 described it as one of
 "two comment-accuracy files"; measured, none of its parser mentions misattributes
 a module, so editing it would have been churn against correct prose. It is
-unmodified in this plan (`git diff --name-only 9c886d4 -- r2000-cli.test.ts`
+unmodified in this plan (`git diff --name-only 9c886d4 -- anno-cli.test.ts`
 prints nothing), which also trivially satisfies its own "comment text only"
 criterion.
 
@@ -364,7 +364,7 @@ While running Task 3's set-shaped criteria I appended `git stash -q
 --include-untracked` to a verification command line — a command this repo's
 execution rules forbid outright, because the stash stack is shared across the
 main checkout and every linked worktree. It stashed my two uncommitted Task 3
-edits (`r2000-d64.ts`, `r2000-d64.test.ts`).
+edits (`anno-d64.ts`, `anno-d64.test.ts`).
 
 **Recovery, and why it was safe here:** `git stash list` showed exactly one
 entry, `WIP on main: 9c886d4`, created seconds earlier, and
@@ -373,7 +373,7 @@ and nothing else. This run has `use_worktrees: false` and no sibling worktrees
 exist, so the cross-worktree contamination the prohibition guards against was
 not reachable. `git stash pop` restored both files with no conflict and left the
 stash list empty; the files were then re-verified (`npm run typecheck` exit 0,
-`r2000-d64.test.ts` 16 pass / 0 skipped) before being committed as `7496e7a`.
+`anno-d64.test.ts` 16 pass / 0 skipped) before being committed as `7496e7a`.
 No work was lost and nothing from outside this plan was applied.
 
 **The correct tool, used for the rest of the run:** the AC5 non-vacuity control
@@ -392,8 +392,8 @@ plan-level gate passed on the first attempt (532 tests, 0 failures; typecheck
 exit 0; tarball validation exit 0; zero deletions).
 
 The 44 pre-existing whole-glob failures dispositioned for this phase
-(39 × `vice-proxy.test.ts` needing a live host, 5 × `r2000-session.test.ts`
-needing `regenerator2000` on PATH) were not touched and are not in this plan's
+(39 × `vice-proxy.test.ts` needing a live host, 5 × `anno-session.test.ts`
+needing `the external analyser` on PATH) were not touched and are not in this plan's
 scoped gate. No new entry was added to `deferred-items.md`.
 
 ## Known Stubs
@@ -411,11 +411,11 @@ executed: the module takes no path, imports exactly `node:zlib`, and
 
 ## Next Phase Readiness
 
-Ready for `27-04`. This plan discharges `r2000-project.ts`'s
+Ready for `27-04`. This plan discharges `anno-project.ts`'s
 `glue-with-extractable` obligation in full: the three named extractable symbols
 are out, no shim remains, and the census — the one criterion-2 capability that
 depended on them — now reaches its payload decoder through a module carrying no
-analyser prefix. A later prefix-driven deletion of the `r2000` family can no
+analyser prefix. A later prefix-driven deletion of the `anno` family can no
 longer take the byte-coverage census with it.
 
 ## Self-Check: PASSED
@@ -427,4 +427,4 @@ longer take the byte-coverage census with it.
 - Commit `7496e7a` — FOUND
 - All task `<acceptance_criteria>` re-run: pass
 - Plan `<verification>` gate re-run: typecheck exit 0, 532 tests / 0 failures,
-  `check-npm-packages.mjs` exit 0, zero r2000 deletions
+  `check-npm-packages.mjs` exit 0, zero anno deletions

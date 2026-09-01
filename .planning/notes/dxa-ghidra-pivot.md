@@ -1,27 +1,27 @@
 ---
-title: "Pivot — dxa + Ghidra replace regenerator2000 as the analysis substrate"
+title: "Pivot — dxa + Ghidra replace the external analyser as the analysis substrate"
 date: 2026-08-24
-context: /gsd-explore "docs/dissambler-workflow.md — will it be more efficient than r2000?"
+context: /gsd-explore "docs/dissambler-workflow.md — will it be more efficient than anno?"
 status: decided by user 2026-08-24; reverses D-R1/D-R2; ROADMAP restructure not yet done
-supersedes: .planning/notes/regenerator2000-integration.md (D-R2 "required prerequisite")
+supersedes: .planning/notes/external-analyser-integration.md (D-R2 "required prerequisite")
 ---
 
-# Pivot: dxa + Ghidra replace regenerator2000
+# Pivot: dxa + Ghidra replace the external analyser
 
-**Decision (user, 2026-08-24).** Stop building on regenerator2000. Adopt dxa for
-discovery and Ghidra headless for semantic analysis. Anything r2000 uniquely
+**Decision (user, 2026-08-24).** Stop building on the external analyser. Adopt dxa for
+discovery and Ghidra headless for semantic analysis. Anything anno uniquely
 offers is replicated as our own skill/tool/MCP surface. The cc65 half of
 `docs/dissambler-workflow.md` (da65/ca65/ld65) is **not** adopted. Byte-perfect
 reconstruction is explicitly **not** the goal — source quality and functionality
 are; rebuilding a binary is a separate, later step.
 
-The user was told the timing concern (v0.5.0 Phases 20-22 are built on r2000)
+The user was told the timing concern (v0.5.0 Phases 20-22 are built on anno)
 and chose to pivot now rather than defer to v0.6.0. That is a deliberate,
 recorded override, not a drift.
 
 ## Why the pivot became viable
 
-r2000 looked irreplaceable while it appeared to be the analysis engine. It is
+anno looked irreplaceable while it appeared to be the analysis engine. It is
 not. Measured on a purpose-built 279-byte fixture (141 code / 138 data bytes)
 exercising split pointer tables, an RTS-trick dispatch, a full address table, a
 bounded indexed array, a stride-5 record array, inline `JSR` parameters and
@@ -31,7 +31,7 @@ self-modifying code:
 |---|---|---|
 | **dxa** 0.1.5 | 72% of data bytes typed as data, **0 false positives**; found every routine from the BASIC `SYS`; resolved the 4-entry address table to labels | — |
 | **Ghidra** 12.1.3 | **nothing** — 0 functions, 0 code bytes, 1 ASCII string | 152 code bytes, 17 functions, 43 typed xrefs |
-| **r2000** 0.9.20 fresh bootstrap | flat linear decode; every data table rendered as garbage instructions (9 `!byte` lines total) | n/a |
+| **anno** 0.9.20 fresh bootstrap | flat linear decode; every data table rendered as garbage instructions (9 `!byte` lines total) | n/a |
 | **da65** 2.18 no `.info` | flat linear decode (6 `.byte` lines) | n/a |
 
 Ghidra alone contributed three facts nothing else produced:
@@ -75,7 +75,7 @@ Ghidra owns understanding, but only once handed an entry point.
 
 ## Sizing the replacement
 
-`regenerator2000-core` 0.9.20 is 31,585 lines of Rust:
+`external-analyser-core` 0.9.20 is 31,585 lines of Rust:
 
 | Subsystem | Lines | Position |
 |---|---:|---|
@@ -85,12 +85,12 @@ Ghidra owns understanding, but only once handed an entry point.
 | `mcp/` 28-tool server | 2,857 | we own the MCP harness |
 | `exporter/` 4 assemblers + HTML | 2,749 | need ~1 of 4 (ACME) |
 | `disassembler/` + `disassembler.rs` | 4,596 | **already have** — 2,555 lines in `disasm-*.ts` |
-| `parser/` prg/d64/t64/crt/vsf | 1,930 | partly — `r2000-d64.ts` is 310 standalone lines |
+| `parser/` prg/d64/t64/crt/vsf | 1,930 | partly — `anno-d64.ts` is 310 standalone lines |
 | `analyzer.rs` | 1,506 | **irrelevant** once dxa+Ghidra own discovery |
 | `cpu.rs` 6502 emulator | 1,441 | only the unpacker needed it |
 | `vice/` | 1,048 | dead by D-R1 — never `--vice` |
 
-Against that, **19,181 lines of our own r2000 integration code get deleted**
+Against that, **19,181 lines of our own anno integration code get deleted**
 (9,087 non-test + 9,928 test). Net: build roughly 9,000 lines-equivalent of
 store + model + one exporter; delete 19,181 lines of glue.
 
@@ -108,7 +108,7 @@ unp64 benchmark parity across Exomizer 1.x/2.x/3.0/3.02+, Dali, ByteBoozer
 2. **Cross-references derived from the typed decode**, and search over it.
 3. **ACME exporter** with the two design details worth stealing rather than
    rediscovering: the `=*+$01` mid-instruction label idiom (how an SMC
-   write-target is named without breaking reassembly — r2000 and dxa both do
+   write-target is named without breaking reassembly — anno and dxa both do
    this; da65 does not), and typed label prefixes carrying inferred type in the
    name (`zpp_`/`zpa_`/`f_`/`a_`/`e_`).
 4. **Loaders** beyond `.prg`/`.d64`: `.t64`, `.crt`, `.vsf`.
@@ -139,4 +139,4 @@ table is friendlier than a demo coder's. Re-run against a real cracked release
 before anything load-bearing is built on these numbers. See
 [[dxa-ghidra-real-fixture-question]].
 
-Related: [[auto-annotation-from-ghidra-xrefs]], [[ghidra-volatile-io-and-banking]], [[regenerator2000-integration]]
+Related: [[auto-annotation-from-ghidra-xrefs]], [[ghidra-volatile-io-and-banking]], [[external-analyser-integration]]

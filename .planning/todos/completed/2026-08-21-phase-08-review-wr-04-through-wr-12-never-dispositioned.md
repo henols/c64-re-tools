@@ -34,7 +34,7 @@ still unfixed.**
   declaration regex is unchanged: `[\s\S]*?` is still unbounded past the declaration's
   own closing brace.
 - **WR-12** — no `scripts/lib/skill-corpus.mjs` (or equivalent) exists; `ls scripts/lib/`
-  shows only `r2000-cli-verbs.*` and `skill-honesty-checks.*`.
+  shows only `anno-cli-verbs.*` and `skill-honesty-checks.*`.
   `check-skill-fork-honesty.mjs` and `check-skill-tool-coverage.mjs` still each carry
   their own copy of `walkSkills()`/`MCP_PREFIX_RE`/`TOOL_NAME_RE`.
 
@@ -46,7 +46,7 @@ total absence of any disposition trail, treat them as still open too until re-ch
 
 `08-capability-honesty-and-the-install-story` is a v0.2.0 phase (this milestone's
 Phase 8, closed 2026-08-19) — entirely outside plan 11.1-07's stated scope (the
-`R2000-*`/regenerator2000 family) and outside this milestone's (`v0.3.0`) three phases.
+`anno-*`/analyser family) and outside this milestone's (`v0.3.0`) three phases.
 Filing rather than fixing keeps this closure phase's diff to what it was scoped for.
 
 ## What to do

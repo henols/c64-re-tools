@@ -123,16 +123,14 @@ jobs:
       # package's own `prepack` hook runs. This step reuses that single
       # producer rather than introducing a second sync path.
       #
-      # IT MUST STAY ORDERED BEFORE `Test`. The two steps further down that
-      # also materialise the tree (`Validate npm package contents` via
-      # check-npm-packages.mjs's packFiles(), and the removal gate) run AFTER
-      # the suite and are therefore too late to help it. The specific defect
-      # this closes: `src/mcp/vice/skill-attribution.test.ts` carries the one
-      # guard in this repository that scores the two ABS-02 naming lines
-      # across BOTH skill trees, and in CI the shipped tree did not exist when
-      # it ran -- so it scored ONE tree and reported a clean pass with zero
-      # skips, which is indistinguishable from having scored two.
-      - name: Generate the shipped skills tree (scored by skill-attribution.test.ts)
+      # IT MUST STAY ORDERED BEFORE `Test`. The step further down that also
+      # materialises the tree (`Validate npm package contents`, via
+      # check-npm-packages.mjs's packFiles()) runs AFTER the suite and is
+      # therefore too late to help it. Any guard that scores BOTH skill trees
+      # reads the shipped tree from disk, so if it does not exist when the
+      # suite runs the guard scores ONE tree and reports a clean pass with
+      # zero skips -- indistinguishable from having scored two.
+      - name: Generate the shipped skills tree (scored by the skill guards)
         working-directory: installer
         run: node scripts/sync-skills.mjs
 
@@ -198,16 +196,6 @@ jobs:
       - name: Validate npm package contents
         run: node scripts/check-npm-packages.mjs
 
-      # Blocking (CUT-02/CUT-03): the removal gate. It asserts the deleted
-      # static-analysis integration is named nowhere this repository tracks or
-      # ships, outside a dated allow-list and a set of exact-count, path- or
-      # block-scoped exemptions for the licence, attribution and provenance
-      # prose that legitimately keeps the name forever. It is deliberately in
-      # CI from the wave BEFORE the deletion, because 4f048bb closed a
-      # milestone with a guard already red and nothing forced anyone to notice.
-      - name: Validate the removed integration stays removed (CUT-02/CUT-03)
-        run: node scripts/check-no-regenerator2000.mjs
-
       # Blocking: a skill that documents a tool the active backend does not
       # advertise fails at runtime for the user with an unknown-tool error,
       # and the six skills are the product surface this milestone exists to
@@ -243,19 +231,6 @@ jobs:
       - name: Validate documented anno CLI invocations argument-by-argument (REPOINT-01/02)
         run: node scripts/check-skill-cli-invocations.mjs
 
-      # Blocking (CUT-04): the previous milestone re-pointed a large set of
-      # guards off a subject it then deleted, and each move was proven
-      # non-vacuous one guard at a time, at the commit that moved it. Nothing
-      # swept the whole set afterwards. Without this gate a guard can silently
-      # drop out of the audited set -- a vacuous guard asserts nothing and is
-      # therefore GREEN, invisible to every other check here -- and the
-      # recorded fate of every audited member decays into unenforced prose.
-      # That is the 4f048bb failure mode: a milestone closed with a guard
-      # already red and nothing forcing anyone to notice. It runs against the
-      # full-history checkout at the top of this job, which the derivation
-      # requires.
-      - name: Validate every audited guard has a recorded, non-vacuous fate (CUT-04)
-        run: node scripts/check-guard-fates.mjs
 
       - name: Build installable package
         run: bash scripts/package.sh

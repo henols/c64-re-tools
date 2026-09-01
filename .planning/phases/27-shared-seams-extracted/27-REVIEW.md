@@ -17,21 +17,21 @@ files_reviewed_list:
   - src/mcp/vice/package.json
   - src/mcp/vice/prg-image.test.ts
   - src/mcp/vice/prg-image.ts
-  - src/mcp/vice/r2000-answer-key.test.ts
-  - src/mcp/vice/r2000-cli.test.ts
-  - src/mcp/vice/r2000-cli.ts
-  - src/mcp/vice/r2000-coverage.test.ts
-  - src/mcp/vice/r2000-coverage.ts
-  - src/mcp/vice/r2000-d64.test.ts
-  - src/mcp/vice/r2000-d64.ts
-  - src/mcp/vice/r2000-mcp-client.test.ts
-  - src/mcp/vice/r2000-project.test.ts
-  - src/mcp/vice/r2000-project.ts
-  - src/mcp/vice/r2000-spawn-seam.test.ts
-  - src/mcp/vice/r2000-symbol-roundtrip.test.ts
-  - src/mcp/vice/r2000-test-gate.ts
-  - src/mcp/vice/r2000-tools.test.ts
-  - src/mcp/vice/r2000-verify.test.ts
+  - src/mcp/vice/absorbed-answer-key.test.ts
+  - src/mcp/vice/anno-cli.test.ts
+  - src/mcp/vice/anno-cli.ts
+  - src/mcp/vice/anno-coverage.test.ts
+  - src/mcp/vice/anno-coverage.ts
+  - src/mcp/vice/anno-d64.test.ts
+  - src/mcp/vice/anno-d64.ts
+  - src/mcp/vice/anno-mcp-client.test.ts
+  - src/mcp/vice/anno-project.test.ts
+  - src/mcp/vice/anno-project.ts
+  - src/mcp/vice/spawn-seam.test.ts
+  - src/mcp/vice/anno-symbol-roundtrip.test.ts
+  - src/mcp/vice/anno-test-gate.ts
+  - src/mcp/vice/anno-tools.test.ts
+  - src/mcp/vice/anno-verify.test.ts
   - src/mcp/vice/shipped-modules.test.ts
   - src/mcp/vice/shipped-modules.ts
   - src/mcp/vice/skill-acme-build-cli.test.ts
@@ -53,23 +53,23 @@ status: issues_found
 
 ## Summary
 
-Phase 27 moved five shared seams out from under the `r2000-` name prefix. I verified the
+Phase 27 moved five shared seams out from under the `anno-` name prefix. I verified the
 move itself is faithful: `acme-gate.ts`'s five symbols are byte-identical to the bodies
-deleted from `r2000-test-gate.ts`; `prg-image.ts`'s three functions are byte-identical
+deleted from `anno-test-gate.ts`; `prg-image.ts`'s three functions are byte-identical
 (only `decodeRawData`'s doc comment was reworded) and every one of the eight importers was
 repointed; `blockClassAt` is semantically equivalent to the `storeBlockTypeAt` +
 `classFromStore` + divergence-loop comparisons it replaced (including the `null`-covers-
 nothing and unrecognised-spelling-is-data fallthroughs, and both inclusive range ends);
 `shippedTsModules()` preserves the `.ts`/`.mts` filter and strengthens the existence check
 from a soft `assert.ok` into a thrown named error. `tsc --noEmit` is clean and every test
-file in scope is green on this host (r2000-coverage 112/112, stock-dispatch 130/130,
+file in scope is green on this host (anno-coverage 112/112, stock-dispatch 130/130,
 module-classification/shipped-modules/acme-gate/block-class/prg-image 50/50).
 
 The phase's real defect is in the one merged symbol the phase context flagged:
 `codeOnly()`. Its `keepLiteralBodies` flag threads correctly through every literal branch
 (I verified `codeOnly(src, true)` reconstructs source exactly, including nested templates
 and escaped quotes, and that the default path is byte-for-byte the behaviour of the
-`r2000-spawn-seam.test.ts` original). But the state machine has **no regular-expression-
+`spawn-seam.test.ts` original). But the state machine has **no regular-expression-
 literal handling**, and that is not theoretical here: a regex character class containing a
 backtick or a quote desynchronises the scanner and silently swallows the remainder of the
 file. Two currently-shipped modules trip it, so the tree's now-single shared stripper hands
@@ -97,17 +97,17 @@ template frame and the scanner never recovers.
 Minimal reproduction (run against the shipped module):
 
 ```js
-const src = 'const a = "SHOULD_BE_BLANKED";\nconst r = /[`*_]/g;\nfunction spawnHere() { spawnSync(R2000_BIN, []); }\n';
+const src = 'const a = "SHOULD_BE_BLANKED";\nconst r = /[`*_]/g;\nfunction spawnHere() { spawnSync(ANNO_BIN, []); }\n';
 codeOnly(src);
 // => 'const a = ;\nconst r = /['
 ```
 
-Everything after the regex — including a real `spawnSync(R2000_BIN, …)` call — is gone from
+Everything after the regex — including a real `spawnSync(ANNO_BIN, …)` call — is gone from
 the "code" the guards then match against.
 
 This is live on the currently-scanned set (`shippedTsModules()`, 62 entries):
 
-- `src/mcp/vice/r2000-coverage.ts:1495` — `.replace(/[`*_]/g, "")`. Real code from roughly
+- `src/mcp/vice/anno-coverage.ts:1495` — `.replace(/[`*_]/g, "")`. Real code from roughly
   line 1532 onward becomes invisible: `computeCommentVacuity`, `computeReproducibility`,
   `COVERAGE_REPORT_KEYS` and `coverageFindings` are all absent from `codeOnly()`'s output
   even though they are `export function`/`export const` declarations. Strict output is
@@ -116,18 +116,18 @@ This is live on the currently-scanned set (`shippedTsModules()`, 62 entries):
   (and again at `:395`). Real code from line 141 onward is invisible: `renderIncidentRecord`,
   `writeIncidentRecord` and `finaliseIncidentRecord` are all missing.
 
-Consumer impact today: `r2000-spawn-seam.test.ts:180-188` scans exactly this `codeOnly()`
+Consumer impact today: `spawn-seam.test.ts:180-188` scans exactly this `codeOnly()`
 output for spawn-family call sites across the shipped set. Its set-equality test would
 catch a *disappearing* expected site (the `missing` direction), but the `extra` direction —
 "a third spawn site has appeared and must be added to the frozen set" — cannot see anything
-added after `r2000-coverage.ts:1495` or `incident-record.ts:107`. The guard-before-spawn
+added after `anno-coverage.ts:1495` or `incident-record.ts:107`. The guard-before-spawn
 ordering check (`guardsBeforeEverySpawn`, comparing indices into the same truncated string)
-is likewise computed over a partial file. The R2000-01 invariant is therefore enforced over
+is likewise computed over a partial file. The ANNO-01 invariant is therefore enforced over
 a silently narrowed set, and `shippedTsModules()`'s hard-throw existence check — the thing
 27-04 added to stop the scanned set shrinking — does not protect against this, because the
 shrinkage happens inside the stripper rather than in the enumerator.
 
-Provenance, stated honestly: the same flaw existed in the `r2000-spawn-seam.test.ts` copy
+Provenance, stated honestly: the same flaw existed in the `spawn-seam.test.ts` copy
 before this phase, and 27-04 moved it verbatim. It is reported as a blocker on this phase
 because 27-04 is the commit that promoted this body to the tree's single authority, added
 `shipped-modules.test.ts` as its committed proof, applied it to a fifth consumer
@@ -167,7 +167,7 @@ if (c === "/" && regexAllowedAfter(lastSignificant)) {
 ```
 
 Then extend `shipped-modules.test.ts` with the WR-01 cases and re-run
-`r2000-spawn-seam.test.ts` — its `EXPECTED_R2000_SPAWN_SITES` set equality must still hold
+`spawn-seam.test.ts` — its `EXPECTED_ANNO_SPAWN_SITES` set equality must still hold
 in both directions once the two previously-truncated modules become fully visible.
 
 ## Warnings
@@ -188,11 +188,11 @@ branches the flag threads through.
 
 ```ts
 test("codeOnly(): a regex literal containing a backtick or a quote does not swallow the code after it", () => {
-  const src = 'const r = /[`*_]/g;\nspawnSync(R2000_BIN, []);\nconst s = "HIDDEN";\n';
+  const src = 'const r = /[`*_]/g;\nspawnSync(ANNO_BIN, []);\nconst s = "HIDDEN";\n';
   const code = codeOnly(src);
-  assert.match(code, /spawnSync\(R2000_BIN/, "code after a regex literal must stay visible");
+  assert.match(code, /spawnSync\(ANNO_BIN/, "code after a regex literal must stay visible");
   assert.equal(/HIDDEN/.test(code), false, "and the real string literal must still be blanked");
-  assert.match(codeOnly("const r = /'/; spawnSync(R2000_BIN, []);"), /spawnSync\(R2000_BIN/);
+  assert.match(codeOnly("const r = /'/; spawnSync(ANNO_BIN, []);"), /spawnSync\(ANNO_BIN/);
 });
 
 test("codeOnly(keepLiteralBodies = true) reconstructs every literal shape exactly", () => {
@@ -236,9 +236,9 @@ imports. Every one of the following would be invisible, and both the family loop
 `assert.deepEqual(specifiers, [])` emptiness assertion would pass:
 
 ```ts
-import "./r2000-coverage.ts";                      // bare side-effect import, no `from`
-import { x } from './r2000-coverage.ts';           // single-quoted specifier
-const m = await import("./r2000-coverage.ts");     // dynamic import
+import "./anno-coverage.ts";                      // bare side-effect import, no `from`
+import { x } from './anno-coverage.ts';           // single-quoted specifier
+const m = await import("./anno-coverage.ts");     // dynamic import
 ```
 
 This is the load-bearing test of the file, per its own header: trap 1 in `block-class.ts`
@@ -298,9 +298,9 @@ import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSy
 
 **Issue:** Direction 9 walks `entry.basis.consumers[].line` only. The file additionally
 cites eleven `path:line` locations in its own header and in `note` fields
-(`r2000-launch.ts:251`, `r2000-cli.ts:330`, `r2000-tools.ts:972`, `r2000-tools.ts:1121`,
-`r2000-session.ts:294`, `r2000-coverage.ts:1392` (twice), `r2000-verify.ts:116`,
-`r2000-cli.ts:91` and `:631`, `c64-program-recon/SKILL.md:274` and `:250`,
+(`anno-launch.ts:251`, `anno-cli.ts:330`, `anno-tools.ts:972`, `anno-tools.ts:1121`,
+`anno-session.ts:294`, `anno-coverage.ts:1392` (twice), `anno-verify.ts:116`,
+`anno-cli.ts:91` and `:631`, `c64-program-recon/SKILL.md:274` and `:250`,
 `c64-memory-mapping/SKILL.md:195`). I checked all of them by hand and every one is
 currently correct — so this is a latent defect, not a present one. But the file's own
 header says the drift liability is "MEASURED, NOT HYPOTHETICAL" and that three citations
@@ -317,7 +317,7 @@ under deletion pressure.
 
 ### WR-07: the `.d64` composition test degrades a broken checkout into a green SKIP, and its dynamic import removes `tsc` from the boundary the phase most needed verified
 
-**File:** `src/mcp/vice/r2000-d64.test.ts:359-364` (skip gate) and `:369-383` (dynamic import)
+**File:** `src/mcp/vice/anno-d64.test.ts:359-364` (skip gate) and `:369-383` (dynamic import)
 
 **Issue:** Two problems in the same test, both introduced by 27-03's rewrite of this block:
 
@@ -326,7 +326,7 @@ under deletion pressure.
    package.json's files[]" — i.e. the condition can now only be false when something is
    genuinely wrong. Under that premise the correct response is a hard failure, not a named
    skip; a skip reports green. This is the same degradation `acme-gate.ts:61-63` and
-   `r2000-test-gate.ts` both name as the failure mode their whole design exists to prevent.
+   `anno-test-gate.ts` both name as the failure mode their whole design exists to prevent.
 2. The dynamic `import(pathToFileURL(PRG_IMAGE_PATH).href)` plus
    `as { parsePrg: (bytes: Uint8Array) => { origin: number; body: Uint8Array } }` means
    `tsc --noEmit` never checks that `prg-image.ts` exports `parsePrg` with that signature.
@@ -349,7 +349,7 @@ test("composition: extracted bytes feed parsePrg(), and the recovered origin mat
 
 ### WR-08: two new assertions pin a fixture-derived absolute count, with no message
 
-**File:** `src/mcp/vice/r2000-coverage.test.ts:627` and `:729`
+**File:** `src/mcp/vice/anno-coverage.test.ts:627` and `:729`
 
 **Issue:** `assert.equal(before.divergence.censusCodeStoreNotCode, 0);` is a bare equality
 on an absolute byte count derived from the `WELL_DOCUMENTED` fixture, and it is the *only*
@@ -372,35 +372,35 @@ assert.ok(
 
 ### WR-09: the block-literal SUPPLEMENT scans raw source, so a comment quoting the store's spelling reddens it
 
-**File:** `src/mcp/vice/r2000-coverage.test.ts:799-812`
+**File:** `src/mcp/vice/anno-coverage.test.ts:799-812`
 
-**Issue:** The supplement reads `r2000-coverage.ts` with `readFileSync` and asserts the raw
+**Issue:** The supplement reads `anno-coverage.ts` with `readFileSync` and asserts the raw
 text contains none of `"Code"`, `"Undefined"`, `"Byte"`, `"Address"`. Comments are not
 stripped, so a future header paragraph that legitimately discusses the store's `"Code"`
 spelling — exactly the kind of paragraph this phase's own modules are full of — turns the
 test red for a reason unrelated to the invariant. `shipped-modules.ts`'s `codeOnly()` exists
 in this directory for precisely this, and is already imported by four other guards.
 
-**Fix:** `const source = codeOnly(readFileSync(join(HERE, "r2000-coverage.ts"), "utf8"), true);`
+**Fix:** `const source = codeOnly(readFileSync(join(HERE, "anno-coverage.ts"), "utf8"), true);`
 — `keepLiteralBodies: true` is the right mode here, since the thing being searched for *is*
 a string literal.
 
-### WR-10: `r2000-test-gate.ts`'s "capability" verdict is internally tense and is not marked contested
+### WR-10: `anno-test-gate.ts`'s "capability" verdict is internally tense and is not marked contested
 
 **File:** `src/mcp/vice/module-classification.ts:458-479`
 
 **Issue:** The entry's own `note` records that "Ten importers remain, all inside the
-analyser family" (I verified: exactly ten `*.test.ts` files, every one `r2000-*`), and that
+analyser family" (I verified: exactly ten `*.test.ts` files, every one `anno-*`), and that
 the reusable half of its discipline left for `acme-gate.ts` in this same phase. So the
 record marks as a surviving capability a module whose every consumer dies with the
 substrate and whose substrate-independent half has already been extracted under a different
 name. That may still be the right call — the *discipline* is reusable — but it is the same
-shape of tension the `r2000-verify.ts` entry explicitly flags as `CONTESTED`, and here it is
+shape of tension the `anno-verify.ts` entry explicitly flags as `CONTESTED`, and here it is
 not flagged. The record's whole purpose is to be trusted by a later reader driving a
 deletion; an unflagged tense verdict is how a later phase keeps dead code (the inverse of
 the failure SEAM-02 targets, but still a failure the record exists to prevent).
 
-**Fix:** Add a `CONTESTED`-style paragraph to the note, in the shape `r2000-verify.ts`
+**Fix:** Add a `CONTESTED`-style paragraph to the note, in the shape `anno-verify.ts`
 already uses: state that what survives is the discipline (now also embodied in
 `acme-gate.ts`), that all ten measured importers are inside the family, and what a later
 reader should therefore actually carry forward.
@@ -432,7 +432,7 @@ and correct the header's count.
 
 ### WR-12: "PRODUCTION MUST NOT PASS THIS" is the one invariant in this phase with no mechanical gate
 
-**File:** `src/mcp/vice/r2000-coverage.ts:2081-2098`
+**File:** `src/mcp/vice/anno-coverage.ts:2081-2098`
 
 **Issue:** `CoverageOptions.blockClassifier` is documented in capitals as a test-only seam
 that production must never supply, on the stated ground that a second production classifier
@@ -440,7 +440,7 @@ is a second answer to "what class is this address" — the exact hazard `block-c
 exists to close. Every other invariant this phase introduced got a committed guard
 (`files[]` presence/absence, import purity, name-as-justification, the third verdict's
 extractables, disk completeness in both directions). This one got a comment. I confirmed the
-only caller supplying it today is `r2000-coverage.test.ts`, so nothing is broken — but the
+only caller supplying it today is `anno-coverage.test.ts`, so nothing is broken — but the
 prohibition is unenforced.
 
 **Fix:** Add a one-line structural assertion beside the existing supplement, using the
@@ -449,7 +449,7 @@ enumerator and stripper this phase just extracted:
 ```ts
 test("no shipped module passes CoverageOptions.blockClassifier", () => {
   for (const m of shippedTsModules()) {
-    if (m === "r2000-coverage.ts") continue;   // the declaration site
+    if (m === "anno-coverage.ts") continue;   // the declaration site
     assert.equal(/\bblockClassifier\s*:/.test(codeOnly(readFileSync(join(HERE, m), "utf8"))), false, `${m} injects a classifier`);
   }
 });
@@ -470,18 +470,18 @@ and `= false` initialisers are dead. (The original copy also carried a genuinely
 
 ### IN-02: `SPAWN_CALL_RE`'s doc comment describes behaviour `codeOnly()` does not have and names a function that does not exist
 
-**File:** `src/mcp/vice/r2000-spawn-seam.test.ts:81-88`
+**File:** `src/mcp/vice/spawn-seam.test.ts:81-88`
 
 **Issue:** It states that a string-literal first argument "surfaces here as an empty pair of
 quote characters" — `codeOnly()` removes the quotes entirely, leaving `spawnSync(, …)` — and
-attributes the handling to `isR2000BinaryExpression()`, which does not exist (the real
-predicate is `isR2000SpawnCall()` at `:132`). The guard's *behaviour* is still correct: with
+attributes the handling to `isAnnoBinaryExpression()`, which does not exist (the real
+predicate is `isAnnoSpawnCall()` at `:132`). The guard's *behaviour* is still correct: with
 the quotes gone the regex's identifier group cannot match, which is the intended outcome.
 Both inaccuracies predate this phase, but 27-04 rewrote the surrounding comment block
 without correcting them.
 
 **Fix:** Say "contributes nothing at all, so the identifier group cannot match", and name
-`isR2000SpawnCall()`.
+`isAnnoSpawnCall()`.
 
 ### IN-03: a relocated assertion's regex matcher is satisfied by the wrong number
 
@@ -502,7 +502,7 @@ regression.
 **Issue:** The doc comment justifies skipping `null`/`undefined` holes on the ground that
 "the listing arrives from a project file this process did not author", but `for (const block
 of blocks)` throws `TypeError` if `blocks` itself is not iterable. Both production callers
-pre-guard (`r2000-coverage.ts:1860` and `:1991` both do `Array.isArray(blocks) ? blocks : []`),
+pre-guard (`anno-coverage.ts:1860` and `:1991` both do `Array.isArray(blocks) ? blocks : []`),
 so nothing is reachable today — but the defence is asymmetric and the pre-guard now lives
 outside the module that documents the premise.
 
@@ -526,7 +526,7 @@ assert-to-throw upgrade, which the header already justifies further down.
 ### IN-06: formatting artefacts left by the deletions
 
 **File:** `src/mcp/vice/comment-phase-pointers.test.ts:399-401` (double blank line where the
-function was removed); `src/mcp/vice/r2000-spawn-seam.test.ts:24-26` (a sentence broken
+function was removed); `src/mcp/vice/spawn-seam.test.ts:24-26` (a sentence broken
 mid-clause: "…so neither is a special case. Within that derived set, / this file / finds
 every call to a spawn-family function…")
 
@@ -537,15 +537,15 @@ as truncated.
 
 ### IN-07: pre-existing unused import moved by this phase
 
-**File:** `src/mcp/vice/r2000-verify.test.ts:40`
+**File:** `src/mcp/vice/anno-verify.test.ts:40`
 
-**Issue:** `R2000_BIN` has been imported and unused in this file since phase 11 (`1271e06`).
+**Issue:** `ANNO_BIN` has been imported and unused in this file since phase 11 (`1271e06`).
 This phase shifted the line by one when it split the `prg-image.ts` import out, and
 `module-classification.ts:463` now cites this exact line number as a consumer citation (for
 `skipReasonFor`, which *is* used, so the citation is valid). Flagged only so the dead
 binding is not mistaken for something this phase introduced.
 
-**Fix:** Drop `R2000_BIN` from the import list — but do so in a change that also re-checks
+**Fix:** Drop `ANNO_BIN` from the import list — but do so in a change that also re-checks
 `module-classification.ts:463`'s line citation, since Direction 9 verifies it.
 
 ---

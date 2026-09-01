@@ -254,7 +254,7 @@ A separate grep for prose `path:NN` citations into the three edited files (`anno
 | `node --test anno-memmap-render.test.ts anno-confinement.test.ts module-classification.test.ts` | 65 tests, 65 pass, 0 fail — exit 0 |
 | `npm --prefix src/mcp/vice run typecheck` | exit 0 |
 | `npm --prefix src/mcp/vice run test:automated` | 2741 tests, **2734 pass, 1 fail**, 1 skipped, 5 todo |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0, 392 files scanned, **0 temporarily allow-listed across 0 entries** |
+| `node scripts/check-no-analyser.mjs` | exit 0, 392 files scanned, **0 temporarily allow-listed across 0 entries** |
 | `grep -a -n 'store: \|sidecar: ' anno-memmap-render.ts` | `474: lines.push(\`  store: ${storeLocation}\`)` / `475: lines.push(\`  sidecar: ${sidecarLocation}\`)` — neither interpolates a raw path |
 | `git diff -- anno-memmap-render.ts \| grep -a '^[-+].*RENDERER_VERSION'` | two hits, **both prose** (` * ` doc-comment lines); no changed code line. `computeRenderDigest` returns nothing at all |
 

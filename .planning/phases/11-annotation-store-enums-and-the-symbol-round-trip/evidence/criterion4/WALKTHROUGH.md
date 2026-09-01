@@ -23,7 +23,7 @@ this plan's own `evidence/criterion4/` as `subject.prg` / `subject.regen2000proj
 so this walkthrough's own mutations never touch 11-07's evidence artifact.
 
 **Evidence ceiling, stated up front (ENGINEERING_RULES.md §8):** this walkthrough
-proves the mechanism end to end against a real emulator and a real regenerator2000
+proves the mechanism end to end against a real emulator and a real analyser
 0.9.20, on a small purpose-built recon fixture. It does not prove behaviour on a
 commercial release's size, packing or self-modification. See the closing section
 for the full statement.
@@ -40,8 +40,8 @@ $ /usr/bin/x64sc --help | grep -c mcpserver
 $ /usr/local/bin/x64sc --version
 x64sc (VICE 3.10)
 
-$ regenerator2000 --version
-regenerator2000 0.9.20
+$ analyser --version
+The external analyser 0.9.20
 ```
 
 `/usr/bin/x64sc` is genuine unpatched stock (zero `mcpserver` occurrences in its
@@ -63,10 +63,10 @@ eca741911c38c9d5f9398027aa59d781cd27b7a7018aba02e1c0525e734ca4a5  subject.prg
 Matches 11-07-SUMMARY.md's recorded hash exactly -- the copy is byte-identical to
 the committed fixture.
 
-## Step 2 -- `[2026-08-20T23:37:06Z]` baseline: `r2000_get_symbols`, before ANY mutation this plan makes
+## Step 2 -- `[2026-08-20T23:37:06Z]` baseline: `anno_get_symbols`, before ANY mutation this plan makes
 
 ```js
-runR2000Tool("r2000_get_symbols", { project: "evidence/criterion4/subject.regen2000proj" })
+runAnnoTool("anno_get_symbols", { project: "evidence/criterion4/subject.regen2000proj" })
 ```
 
 ```json
@@ -91,7 +91,7 @@ Two addresses that matter later already carry an AUTO branch label
 (`b_0839`/2105, `b_0846`/2118, `kind: "Auto"`) but no USER label. A baseline
 `export-lbl` from this exact project (run separately as a sanity check, not
 counted as a walkthrough step) confirms these auto names are never exported: only
-the 7 `kind: "User"` entries appear in a `.lbl` file, matching `r2000-symbols.ts`'s
+the 7 `kind: "User"` entries appear in a `.lbl` file, matching `anno-symbols.ts`'s
 documented measured fact that `--export_lbl` emits user labels only.
 
 ## Step 3 -- `[2026-08-20T23:38:18Z]` the outbound leg: write ONE user label into the store
@@ -102,7 +102,7 @@ uses, chosen from source-level knowledge of the fixture (this is OUR OWN label,
 not a "discovery" claim).
 
 ```js
-runR2000Tool("r2000_set_label_name", {
+runAnnoTool("anno_set_label_name", {
   project: "evidence/criterion4/subject.regen2000proj",
   address: 2105,
   name: "counter_wrap_reentry",
@@ -113,10 +113,10 @@ runR2000Tool("r2000_set_label_name", {
 {"content":[{"text":"Label set at $0839","type":"text"}],"isError":false}
 ```
 
-## Step 4 -- `[2026-08-20T23:38:25Z]` `vice-mcp r2000 export-lbl` (the real CLI verb)
+## Step 4 -- `[2026-08-20T23:38:25Z]` `vice-mcp anno export-lbl` (the real CLI verb)
 
 ```
-$ node vice-proxy.ts r2000 export-lbl evidence/criterion4/subject.regen2000proj --out evidence/criterion4/outbound.lbl
+$ node vice-proxy.ts anno export-lbl evidence/criterion4/subject.regen2000proj --out evidence/criterion4/outbound.lbl
 export-lbl: wrote evidence/criterion4/outbound.lbl (8 symbol(s))
 ```
 
@@ -144,13 +144,13 @@ $ cp evidence/criterion4/subject.regen2000proj evidence/criterion4/subject-copy.
 ```
 
 This copy is used later (Step 16) to exercise the `--import_lbl` leg
-independently of the canonical `r2000_set_label_name` path -- it freezes the
+independently of the canonical `anno_set_label_name` path -- it freezes the
 project's state at "outbound label present, discovered label NOT yet present."
 
 ## Step 6 -- `[2026-08-20T23:38:46Z]` ABSENT BEFORE, negative result #1: the store
 
 ```js
-runR2000Tool("r2000_get_symbols", {
+runAnnoTool("anno_get_symbols", {
   project: "evidence/criterion4/subject.regen2000proj",
   start_address: 2118,
   end_address: 2118,
@@ -161,7 +161,7 @@ runR2000Tool("r2000_get_symbols", {
 [{"address":2118,"kind":"Auto","name":"b_0846","type":"Branch"}]
 ```
 
-**Absent before:** the only entry at address 2118 is regenerator2000's own
+**Absent before:** the only entry at address 2118 is the external analyser's own
 auto-generated branch label (`kind: "Auto"`), which Step 4 already proved is
 never exported. No **user** label exists at this address in the store.
 
@@ -330,7 +330,7 @@ observation, not by re-reading the source.
 ## Step 16 -- `[2026-08-20T23:41:06.150Z]` name it, based on the live observation, and write it into the store FIRST
 
 ```js
-runR2000Tool("r2000_set_label_name", {
+runAnnoTool("anno_set_label_name", {
   project: "evidence/criterion4/subject.regen2000proj",
   address: 2118,
   name: "selector_ff_handler",
@@ -393,35 +393,35 @@ emulator killed (SIGKILL) and scratch XDG_CONFIG_HOME removed
 
 Confirmed separately: `pgrep -af x64sc` returned no process after this step.
 
-## Step 21 -- `[2026-08-20T23:41:32Z]` the `--import_lbl` leg, explicitly (R2000-15's own wording)
+## Step 21 -- `[2026-08-20T23:41:32Z]` the `--import_lbl` leg, explicitly (ANNO-15's own wording)
 
 Pre-import baseline, from the Step 5 snapshot (`subject-copy.regen2000proj`):
 
 ```
-$ node vice-proxy.ts r2000 export-lbl evidence/criterion4/subject-copy.regen2000proj --out evidence/criterion4/copy-pre-import.lbl
+$ node vice-proxy.ts anno export-lbl evidence/criterion4/subject-copy.regen2000proj --out evidence/criterion4/copy-pre-import.lbl
 export-lbl: wrote evidence/criterion4/copy-pre-import.lbl (8 symbol(s))
 ```
 
 8 symbols -- `selector_ff_handler` absent, confirmed by `grep -c
 selector_ff_handler copy-pre-import.lbl` returning 0.
 
-## Step 22 -- `[2026-08-20T23:41:25Z]` `vice-mcp r2000 import-lbl` (the real CLI verb)
+## Step 22 -- `[2026-08-20T23:41:25Z]` `vice-mcp anno import-lbl` (the real CLI verb)
 
 ```
-$ node vice-proxy.ts r2000 import-lbl evidence/criterion4/subject-copy.regen2000proj evidence/criterion4/regenerated.lbl
+$ node vice-proxy.ts anno import-lbl evidence/criterion4/subject-copy.regen2000proj evidence/criterion4/regenerated.lbl
 import-lbl: imported 9 name(s): init_screen_and_irq, poll_table_and_dispatch, counter_wrap_reentry, selector_ff_handler, border_bump_up, border_bump_down, raster_sample_isr, dispatch_selector_bytes, routine_vector_table
-import-lbl: persisted by an explicit r2000_save_project call over the same --mcp-server-stdio session (D-28) -- verified by re-reading the project from disk in a fresh process, not merely trusted from the child's own success text.
+import-lbl: persisted by an explicit anno_save_project call over the same --mcp-server-stdio session (D-28) -- verified by re-reading the project from disk in a fresh process, not merely trusted from the child's own success text.
 ```
 
 Exit code 0 -- disk-verified confirmation printed, per the D-28 path
-(`--import_lbl` + `--mcp-server-stdio` + explicit `r2000_save_project`, proven by
+(`--import_lbl` + `--mcp-server-stdio` + explicit `anno_save_project`, proven by
 a fresh re-export from disk in a brand-new process, never trusted from the
 child's own success text alone).
 
 ## Step 23 -- `[2026-08-20T23:41:38Z]` fresh `export-lbl` from the imported copy contains the discovered name
 
 ```
-$ node vice-proxy.ts r2000 export-lbl evidence/criterion4/subject-copy.regen2000proj --out evidence/criterion4/copy-post-import.lbl
+$ node vice-proxy.ts anno export-lbl evidence/criterion4/subject-copy.regen2000proj --out evidence/criterion4/copy-post-import.lbl
 export-lbl: wrote evidence/criterion4/copy-post-import.lbl (9 symbol(s))
 ```
 
@@ -440,8 +440,8 @@ al C:0864 .routine_vector_table
 `al C:0846 .selector_ff_handler` is present -- the discovered name, imported via
 `--import_lbl` into an INDEPENDENT copy of the project, confirmed by a fresh
 export from that copy. The canonical loop (Steps 16-19) used
-`r2000_set_label_name` directly; this step additionally demonstrates the
-`--import_lbl` route R2000-15 names explicitly, on a separate project copy so
+`anno_set_label_name` directly; this step additionally demonstrates the
+`--import_lbl` route ANNO-15 names explicitly, on a separate project copy so
 neither leg's evidence depends on the other.
 
 ---
@@ -459,7 +459,7 @@ border_bump_down` / `jmp poll_table_and_dispatch` (Step 15) -- read from the
 actual running machine, not asserted from source.
 
 **What is now in the store:** `selector_ff_handler` at address 2118, written via
-`r2000_set_label_name` (Step 16), present in the regenerated `.lbl` (Step 17),
+`anno_set_label_name` (Step 16), present in the regenerated `.lbl` (Step 17),
 loaded into and resolved by the live emulator (Steps 18-19), AND separately
 confirmed importable via the `--import_lbl` route into an independent project
 copy (Steps 21-23).
@@ -499,10 +499,10 @@ bytes, hash-verified in Step 1) via the objective's branch (2) -- no consuming
 project with a registered real release exists on this host (branch (1) does not
 apply, verified directly against `recovery/RELEASES.json`).
 
-**What this walkthrough proves:** the full R2000-14/R2000-15 mechanism, as ONE
+**What this walkthrough proves:** the full ANNO-14/ANNO-15 mechanism, as ONE
 closed loop, against a real, genuine, unpatched stock `x64sc` (VICE 3.9) driven
 through this project's own real binary-monitor client and dispatch table, and
-against a real `regenerator2000 0.9.20` binary -- including the launch-argv
+against a real `the external analyser 0.9.20` binary -- including the launch-argv
 ordering constraint, the absence-before-discovery invariant, the
 replace-not-merge `vice_symbols_load` semantics, and the `--import_lbl` D-28
 persistence path. It also re-confirms, live, that BACK-02's fork backend is
@@ -511,7 +511,7 @@ unregressed by this phase's changes (`BACK-02-GATE.md` §7).
 **What this walkthrough does NOT prove:** behaviour on a commercial release's
 size, packing or self-modification -- the subject fixture is 102 bytes with no
 packing, no self-modifying code, and no copy protection. It also does not extend
-regenerator2000-version coverage beyond the single `0.9.20` binary installed on
+external-analyser-version coverage beyond the single `0.9.20` binary installed on
 this host; nothing here bears on any other version's behaviour, matching the
 same scoping caveat ROADMAP.md already applies to Phase 9's criterion 3(3)
 `pass`.
@@ -525,7 +525,7 @@ fixture.
 ## T-11-NAME-INJECT residual (noted, not re-covered)
 
 11-08-SUMMARY.md already recorded that a label name is NOT validated on entry via
-either `r2000_set_label_name` or `--import_lbl` -- `assertLegalAcmeIdentifier()`
+either `anno_set_label_name` or `--import_lbl` -- `assertLegalAcmeIdentifier()`
 is called only on enum/variant names, never on a label name. Both names this
 walkthrough introduced (`counter_wrap_reentry`, `selector_ff_handler`) are
 ordinary, well-formed identifiers chosen deliberately to stay inside that gap

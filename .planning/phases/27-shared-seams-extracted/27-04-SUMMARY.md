@@ -6,7 +6,7 @@ tags: [seam-extraction, structural-guards, test-only-helper, convention-record]
 
 requires:
   - "src/mcp/vice/docs-dangling-refs.test.ts (the canonical enumerator body's original home)"
-  - "src/mcp/vice/r2000-spawn-seam.test.ts (the full stripper's original home)"
+  - "src/mcp/vice/spawn-seam.test.ts (the full stripper's original home)"
   - "src/mcp/vice/acme-gate.ts (SEAM-01's output — the second unshipped-gate example the moved rationale names)"
 provides:
   - "src/mcp/vice/shipped-modules.ts — the ONE files[]-derived shipped-module enumerator and the ONE full comment-and-string-literal stripper, both test-only"
@@ -15,7 +15,7 @@ provides:
   - "One narrowed statement of the guard-test sharing convention, recorded identically in both places it lives"
 affects:
   - "src/mcp/vice/docs-dangling-refs.test.ts"
-  - "src/mcp/vice/r2000-spawn-seam.test.ts"
+  - "src/mcp/vice/spawn-seam.test.ts"
   - "src/mcp/vice/stock-dispatch.test.ts"
   - "src/mcp/vice/comment-phase-pointers.test.ts"
   - "src/mcp/vice/prg-image.test.ts"
@@ -35,7 +35,7 @@ key-files:
     - src/mcp/vice/shipped-modules.test.ts
   modified:
     - src/mcp/vice/docs-dangling-refs.test.ts
-    - src/mcp/vice/r2000-spawn-seam.test.ts
+    - src/mcp/vice/spawn-seam.test.ts
     - src/mcp/vice/stock-dispatch.test.ts
     - src/mcp/vice/comment-phase-pointers.test.ts
     - src/mcp/vice/prg-image.test.ts
@@ -43,7 +43,7 @@ key-files:
 
 key-decisions:
   - "OQ-1 resolved as stated: `codeOnly()` is extracted on a SURVIVAL rationale, not a divergence one, and the helper's header says so explicitly so a later reader does not hunt for a divergence that was never the motive."
-  - "The comment-extractor family stays split, by decision. All six sites are named by filename and line inside the helper's WHAT NOT TO DO block, with a pointer at `r2000-tools.test.ts:193-201`, which states in code why comment-only stripping is right when the literal being searched for is itself a string."
+  - "The comment-extractor family stays split, by decision. All six sites are named by filename and line inside the helper's WHAT NOT TO DO block, with a pointer at `anno-tools.test.ts:193-201`, which states in code why comment-only stripping is right when the literal being searched for is itself a string."
   - "`shippedTsModules()` THROWS its own named `ShippedFilesEntryMissingError` rather than taking a caller's assertion library. Chosen so no call site can opt out of the existence check by forgetting an argument, and so all 11 call sites needed no signature change at all."
   - "The helper takes an optional `dir` parameter (defaulting to its own directory) purely so the REAL code path can be driven against a synthetic `package.json`. Real callers pass nothing; no test pins the live `files[]` array."
   - "`codeOnly()` was merged as a SUPERSET, not a choice between the two copies: the spawn-seam character state machine plus `prg-image.test.ts`'s `keepLiteralBodies` flag. The default (`false`) path is byte-identical to the moved original, so the spawn-seam guard's semantics are unchanged."
@@ -86,7 +86,7 @@ coverage:
         ref: "src/mcp/vice/shipped-modules.test.ts#codeOnly(): blanks // line comments, same-line /* */ blocks, and a block comment spanning lines"
         status: pass
       - kind: test
-        ref: "src/mcp/vice/r2000-spawn-seam.test.ts (13 pass / 1 skip, unchanged) — the guard whose planted-violation tests depend on full stripping"
+        ref: "src/mcp/vice/spawn-seam.test.ts (13 pass / 1 skip, unchanged) — the guard whose planted-violation tests depend on full stripping"
         status: pass
   - deliverable: "The helper is test-only: absent from files[], not collected by the runner's glob, registers no test at import"
     human_judgment: false
@@ -107,7 +107,7 @@ coverage:
         ref: "grep -c 'Kept as a second, independent copy' both files == 0; grep -c 'Keep the copy verbatim so a future reader can diff the two' == 0"
         status: pass
       - kind: command
-        ref: "grep -c 'another guard test' both files >= 1; cpp cites r2000-spawn-seam.test.ts; hcc cites r2000-tools.test.ts"
+        ref: "grep -c 'another guard test' both files >= 1; cpp cites spawn-seam.test.ts; hcc cites anno-tools.test.ts"
         status: pass
       - kind: command
         ref: "git diff -U0 -- hop-chain-comments.test.ts | grep -cE '^[-+]\\s*(assert|const|let|function|test\\()' == 0 — comment text only"
@@ -116,7 +116,7 @@ coverage:
     human_judgment: false
     verification:
       - kind: command
-        ref: "pass counts before/after identical: docs-dangling-refs 8/8, r2000-spawn-seam 13+1skip, stock-dispatch 130/130, comment-phase-pointers 16/16, prg-image 8/8"
+        ref: "pass counts before/after identical: docs-dangling-refs 8/8, anno-spawn-seam 13+1skip, stock-dispatch 130/130, comment-phase-pointers 16/16, prg-image 8/8"
         status: pass
       - kind: command
         ref: "scanned-set equivalence: 62 entries, element-for-element identical to the pre-change array (JSON compare)"
@@ -124,11 +124,11 @@ coverage:
       - kind: command
         ref: "plan gate: node --test over ten suites — 208 tests, 207 pass, 0 fail, 1 skipped, exit 0"
         status: pass
-  - deliverable: "No r2000 module deleted or renamed; package.json untouched by this plan"
+  - deliverable: "No anno module deleted or renamed; package.json untouched by this plan"
     human_judgment: false
     verification:
       - kind: command
-        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c r2000)\" = \"0\" (exit 0)"
+        ref: "test \"$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts | grep -c anno)\" = \"0\" (exit 0)"
         status: pass
       - kind: command
         ref: "git show --stat --format= <each of c7f4bdd, cf6d624, 93c0e2e> -- src/mcp/vice/package.json (empty); git diff --stat -- src/mcp/vice/package.json (empty)"
@@ -180,8 +180,8 @@ convention instead of contradicting each other.
    the live array — and pairs its planted stale entry with a non-vacuity control
    inside the same test, so a helper that simply always threw could not pass.
 3. **Six local definitions deleted with no shim and no wrapper**: four
-   enumerators (`docs-dangling-refs`, `r2000-spawn-seam`, `stock-dispatch`,
-   `comment-phase-pointers`) and two strippers (`r2000-spawn-seam`, and
+   enumerators (`docs-dangling-refs`, `anno-spawn-seam`, `stock-dispatch`,
+   `comment-phase-pointers`) and two strippers (`anno-spawn-seam`, and
    `prg-image` — see Deviation 1). Every executable call site resolved: 2, 3, 2
    and 4 respectively, identical before and after.
 4. **The convention is recorded once, in both places.** `comment-phase-pointers`
@@ -192,7 +192,7 @@ convention instead of contradicting each other.
    file and line rather than asserted. The sentence instructing a reader to keep
    the copy verbatim is gone, and the one duplication `hop-chain-comments`
    deliberately keeps (its comment extractor) is named with its in-code reason.
-5. **Nothing shipped and nothing was deleted from the `r2000` family.** The
+5. **Nothing shipped and nothing was deleted from the `anno` family.** The
    tarball is unchanged at 77 files, the closure walk from `vice-proxy.ts` still
    reports 60 modules clean, and `package.json` is untouched by all three
    commits.
@@ -203,7 +203,7 @@ Resolved exactly as the plan directed, and the rationale is now written into the
 helper rather than only into planning documents. `codeOnly()` had **no**
 divergence hazard worth the name — it had one full-strength consuming file — so
 the argument that motivated its sibling does not apply to it. It is extracted
-because its only home was an `r2000-*.test.ts` file a later prefix deletion
+because its only home was an `anno-*.test.ts` file a later prefix deletion
 removes, and it is the only implementation in the tree that correctly blanks
 template-literal bodies, logic that was measured into existence after a regex
 extractor was observed to miss a real violation inside one. The header states
@@ -213,9 +213,9 @@ existed.
 **The deliberate limit is recorded in code, not by omission.** The helper's
 `WHAT NOT TO DO` block names all six comment-extractor sites
 (`disasm-decoder.test.ts:308`, `disasm-renderer.test.ts:346`,
-`disasm-opcodes.test.ts:394`, `r2000-tools.test.ts:201`, `stock-dispatch`'s
+`disasm-opcodes.test.ts:394`, `anno-tools.test.ts:201`, `stock-dispatch`'s
 `nonCommentLines()`, and `hop-chain-comments`'s comment-span extractor), says
-each does a different job, and points at `r2000-tools.test.ts:193-201` for the
+each does a different job, and points at `anno-tools.test.ts:193-201` for the
 in-code statement of why blanking string bodies would make the literals five of
 them search for unobservable.
 
@@ -246,13 +246,13 @@ pre-change file was needed it was read with `git show <rev>:<path>`).
 | Guard suite | Before | After |
 |---|---|---|
 | `docs-dangling-refs.test.ts` | 8 tests, 8 pass, 0 fail | 8 tests, 8 pass, 0 fail |
-| `r2000-spawn-seam.test.ts` | 14 tests, 13 pass, 0 fail, 1 skipped | 14 tests, 13 pass, 0 fail, 1 skipped |
+| `spawn-seam.test.ts` | 14 tests, 13 pass, 0 fail, 1 skipped | 14 tests, 13 pass, 0 fail, 1 skipped |
 | `stock-dispatch.test.ts` | 130 tests, 130 pass, 0 fail | 130 tests, 130 pass, 0 fail |
 | `comment-phase-pointers.test.ts` | 16 tests, 16 pass, 0 fail | 16 tests, 16 pass, 0 fail |
 | `prg-image.test.ts` | 8 tests, 8 pass, 0 fail | 8 tests, 8 pass, 0 fail |
 
-The one pre-existing skip in `r2000-spawn-seam.test.ts` is its regenerator2000
-availability gate (`R2000_BIN` unset on this host), unchanged by this plan.
+The one pre-existing skip in `spawn-seam.test.ts` is its the external analyser
+availability gate (`ANNO_BIN` unset on this host), unchanged by this plan.
 
 ## Scanned-set equivalence check (recorded)
 
@@ -278,11 +278,11 @@ every test here drives synthetic inputs.
 | `node --test shipped-modules.test.ts` | 9 tests, **9 pass, 0 fail** |
 | `node --test shipped-modules.test.ts test-gate.test.ts` | 12 tests, 12 pass, 0 fail — the new `*.test.ts` is auto-discovered, no `MANUAL_ONLY_TESTS` edit |
 | `node --test <the five repointed suites>` (individually) | pass counts identical to baseline, table above |
-| `node --test comment-phase-pointers hop-chain-comments r2000-spawn-seam docs-dangling-refs stock-dispatch shipped-modules` | 184 tests, 183 pass, **0 fail**, 1 skipped |
-| **Plan gate:** `node --test shipped-modules docs-dangling-refs r2000-spawn-seam stock-dispatch comment-phase-pointers hop-chain-comments test-gate assumption-label-discipline hostpath-consumers docs-linerefs` | **208 tests, 207 pass, 0 fail, 1 skipped, exit 0** |
+| `node --test comment-phase-pointers hop-chain-comments anno-spawn-seam docs-dangling-refs stock-dispatch shipped-modules` | 184 tests, 183 pass, **0 fail**, 1 skipped |
+| **Plan gate:** `node --test shipped-modules docs-dangling-refs anno-spawn-seam stock-dispatch comment-phase-pointers hop-chain-comments test-gate assumption-label-discipline hostpath-consumers docs-linerefs` | **208 tests, 207 pass, 0 fail, 1 skipped, exit 0** |
 | `node scripts/check-npm-packages.mjs` | `transitive closure from vice-proxy.ts -- 60 modules, clean`; `@henols/vice-mcp -- 77 files` (unchanged) |
 | `git show --stat --format= <each commit> -- src/mcp/vice/package.json` | empty for all three; `git diff --stat` on the same path also empty |
-| `test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts \| grep -c r2000)" = "0"` | exit 0 — zero deletions in that range |
+| `test "$(git diff --diff-filter=D --name-only 6c1f569..HEAD -- src/mcp/vice scripts \| grep -c anno)" = "0"` | exit 0 — zero deletions in that range |
 
 `npm run test:automated` was **not** used as evidence anywhere, per the plan's
 explicit prohibition; the whole-glob `npm test` belongs to `27-05-PLAN.md`.
@@ -295,7 +295,7 @@ explicit prohibition; the whole-glob `npm test` belongs to `27-05-PLAN.md`.
 
 - **Found during:** Task 1 (survey), acted on in Task 2.
 - **Issue:** RESEARCH.md's Correction C-3 measured "exactly ONE `codeOnly()`, at
-  `r2000-spawn-seam.test.ts:65`" — true when this plan was written. Plan 27-03
+  `spawn-seam.test.ts:65`" — true when this plan was written. Plan 27-03
   then landed a second copy at `prg-image.test.ts:100` (its own Deviation 2),
   and that copy is **behaviourally different**: it keeps the quote characters,
   does not preserve `${ ... }` interpolation as code, and adds a
@@ -319,7 +319,7 @@ explicit prohibition; the whole-glob `npm test` belongs to `27-05-PLAN.md`.
   `src/mcp/vice/prg-image.test.ts` (added to the plan's file set)
 - **Verification:** `prg-image.test.ts` 8 pass / 0 fail (identical to its
   baseline, including the import-specifier test that reads
-  `["node:zlib"]`); `r2000-spawn-seam.test.ts` 13 pass / 1 skip, unchanged;
+  `["node:zlib"]`); `spawn-seam.test.ts` 13 pass / 1 skip, unchanged;
   `shipped-modules.test.ts` covers both flag values directly.
 - **Commits:** `c7f4bdd` (the superset helper), `cf6d624` (both repoints)
 
@@ -338,7 +338,7 @@ pass if the definition survives, which is the opposite of the task's own
 | File | Mentions before (incl. definition) | Definition lines | Mentions after | Executable call sites before → after |
 |---|---|---|---|---|
 | `docs-dangling-refs.test.ts` | 3 | 1 | 3 | **2 → 2** |
-| `r2000-spawn-seam.test.ts` | 7 | 1 | 6 | **3 → 3** |
+| `spawn-seam.test.ts` | 7 | 1 | 6 | **3 → 3** |
 | `stock-dispatch.test.ts` | 4 | 1 | 3 | **2 → 2** |
 | `comment-phase-pointers.test.ts` | 7 | 1 | 6 | **4 → 4** |
 
@@ -353,7 +353,7 @@ because its replacement pointer comment happens to name the function.
 **3. One line of `nonCommentLines()`'s doc comment was repointed, and it is not
 a violation of "leave it completely alone".**
 
-That doc comment attributed the fuller stripper to `r2000-spawn-seam.test.ts`,
+That doc comment attributed the fuller stripper to `spawn-seam.test.ts`,
 which stopped being true in `cf6d624`. The single edited line now names
 `shipped-modules.ts`. It does not contain the token `nonCommentLines`, so Task
 2's `git diff -U0 | grep -c 'nonCommentLines'` criterion still reports **0**, and
@@ -372,14 +372,14 @@ effect on what shipped.
 
 None. No pre-existing failure listed in `deferred-items.md` was touched: the 39
 `vice-proxy.test.ts` failures (needs a live host; on `test-gate.mjs`'s frozen
-`MANUAL_ONLY_TESTS` list) and the 5 `r2000-session.test.ts` failures
-(`regenerator2000` absent, `R2000_BIN` unset) are both outside this plan's file
+`MANUAL_ONLY_TESTS` list) and the 5 `anno-session.test.ts` failures
+(`the external analyser` absent, `ANNO_BIN` unset) are both outside this plan's file
 set and outside its gate.
 
-Note for `27-05`: `D-27-02-A` records the five ungated `r2000-session.test.ts`
-queue tests as "it touches the r2000 session/spawn family that plan 27-04 owns".
-This plan owns `r2000-spawn-seam.test.ts` only — a guard *about* spawn sites, not
-the session module — and `r2000-session.test.ts` is not in its `files_modified`
+Note for `27-05`: `D-27-02-A` records the five ungated `anno-session.test.ts`
+queue tests as "it touches the anno session/spawn family that plan 27-04 owns".
+This plan owns `spawn-seam.test.ts` only — a guard *about* spawn sites, not
+the session module — and `anno-session.test.ts` is not in its `files_modified`
 and was not modified. That item remains open and unclaimed.
 
 ## Known Stubs
@@ -403,4 +403,4 @@ have a concrete referent.
 - commit `93c0e2e` — FOUND
 - plan `<verification>` gate re-run at `93c0e2e`: typecheck exit 0; ten-suite run
   208 tests / 207 pass / 0 fail / 1 skipped, exit 0; `package.json` empty in all
-  three commits and uncommitted; zero `r2000` deletions since `6c1f569`.
+  three commits and uncommitted; zero `anno` deletions since `6c1f569`.

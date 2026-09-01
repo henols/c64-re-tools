@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // anno-symbols.ts -- the ONE authoritative place in this repo for the
 // PRE-SPAWN half of the symbol round trip between an annotation store and
-// stock VICE's symbol table (R2000-14/R2000-15, ARCHITECTURE.md Rule A20).
+// stock VICE's symbol table (ANNO-14/ANNO-15, ARCHITECTURE.md Rule A20).
 //
 // WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS (plan 29-10, D-01/D-14,
 // 2026-08-30). Read this paragraph before looking for a function that is not
@@ -46,7 +46,7 @@
 //   criterion of it mentioned `export-lbl` or `import-lbl`. So the forecast
 //   was wrong, and it is CORRECTED here rather than deleted, because deleting
 //   a withdrawal notice erases the record that a capability went missing and
-//   why. `.planning/PROJECT.md` carries the dated R2000-14/R2000-15 notice and
+//   why. `.planning/PROJECT.md` carries the dated ANNO-14/ANNO-15 notice and
 //   says the same thing: this is a temporary loss of a capability that was
 //   genuinely Validated, not a completed one being tidied away. The
 //   demonstration was made end to end against genuine unpatched stock `x64sc`
@@ -114,10 +114,10 @@ import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
  * ever called, or (T-11-NAME-INJECT, closed) an illegal label name caught
  * before any child could be spawned -- naming the offending name, its 1-based
  * line number, and that line's own text. */
-export class R2000SymbolsError extends Error {
+export class AnnoSymbolsError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "R2000SymbolsError";
+    this.name = "AnnoSymbolsError";
   }
 }
 
@@ -205,7 +205,7 @@ export interface ValidatedLabelFile {
  *      VERBATIM rather than being re-wrapped.
  *   3. Every discovered name validated against `anno-acme-ident.ts`'s
  *      `assertLegalAcmeIdentifier()`. An illegal name throws
- *      `R2000SymbolsError` naming the offending name, its 1-based line
+ *      `AnnoSymbolsError` naming the offending name, its 1-based line
  *      number, and that line's own text -- REJECT, never sanitize.
  *
  * The offending line is located by a substring search over the already-read
@@ -222,12 +222,12 @@ export function validateLabelFileForImport({ lblPath }: { lblPath: string }): Va
   try {
     size = statSync(lblPath).size;
   } catch (err) {
-    throw new R2000SymbolsError(
+    throw new AnnoSymbolsError(
       `validateLabelFileForImport: could not stat "${lblPath}" (${err instanceof Error ? err.message : String(err)})`,
     );
   }
   if (size > MAX_LABEL_FILE_BYTES) {
-    throw new R2000SymbolsError(
+    throw new AnnoSymbolsError(
       `validateLabelFileForImport: "${lblPath}" is ${size} bytes, which exceeds the ${MAX_LABEL_FILE_BYTES}-byte ceiling`,
     );
   }
@@ -247,7 +247,7 @@ export function validateLabelFileForImport({ lblPath }: { lblPath: string }): Va
       const lineIndex = lines.findIndex((line) => line.includes(name));
       const lineNumber = lineIndex === -1 ? 0 : lineIndex + 1;
       const lineText = lineIndex === -1 ? "(line not found)" : lines[lineIndex];
-      throw new R2000SymbolsError(
+      throw new AnnoSymbolsError(
         `validateLabelFileForImport: "${lblPath}" line ${lineNumber} carries an illegal label name "${name}" ` +
           `(${reason}) -- line text: ${JSON.stringify(lineText)}. REJECTED, never sanitized or quoted, before ` +
           "any child is spawned.",

@@ -1,10 +1,10 @@
 // docs-absorbed-decisions.test.ts
 //
-// WHY THIS EXISTS: D18-30. `r2000_get_address_details` was excluded from the
-// curated r2000_* surface by D-32 (Phase 11, v0.3.0) and carried, unexamined,
+// WHY THIS EXISTS: D18-30. `anno_get_address_details` was excluded from the
+// curated anno_* surface by D-32 (Phase 11, v0.3.0) and carried, unexamined,
 // into v0.4.0. Phase 18 re-decides it with D-36 -- a dated decision that
 // supersedes D-32, states the client-side-composition verdict, and names a
-// specific reversal trigger (an upstream fix to regenerator2000 issue #42).
+// specific reversal trigger (an upstream fix to the external analyser issue #42).
 // This is the SECOND milestone the item has been carried; D18-30 says a
 // pinning guard is what stops a third. Like `docs-fork-decision.test.ts` and
 // `docs-core-value-decision.test.ts`, a dated decision written in prose can
@@ -47,8 +47,8 @@ const REVERSAL_PHRASES: readonly string[] = ["reverses if", "would reverse", "re
  * nothing to check.
  *
  * RE-POINTED BY PHASE 29 PLAN 29-05, and both halves of the move matter.
- * `r2000-spawn-seam.test.ts` is `spawn-seam.test.ts` now -- a rename, the
- * same guard. `r2000-session.test.ts` is NOT renamed: plan 29-10 deletes it
+ * `spawn-seam.test.ts` is `spawn-seam.test.ts` now -- a rename, the
+ * same guard. `anno-session.test.ts` is NOT renamed: plan 29-10 deletes it
  * with the session primitive it gates, so naming it here would be a scheduled
  * red rather than a check. It is replaced by `anno-durability.test.ts`, the
  * owned store's crash-durability gate, which is the surviving guard carrying
@@ -186,13 +186,13 @@ test("2. ARCHITECTURE.md's Architecture Change Record names D-17/D-18, carries a
   }
 });
 
-test("3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts", () => {
+test("3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts", () => {
   const architectureMd = readFileSync(ARCHITECTURE_MD, "utf8");
   const section = ruleA21Section(architectureMd);
   assert.ok(section !== null, "could not locate ARCHITECTURE.md's '### Rule A21' heading");
   assert.ok(section!.includes("resolveStorePath"), "Rule A21's body does not name resolveStorePath");
   assert.ok(section!.includes("ChildProcess"), "Rule A21's body does not name ChildProcess");
-  assert.ok(section!.includes("r2000-mcp-client.ts"), "Rule A21's body does not name r2000-mcp-client.ts");
+  assert.ok(section!.includes("anno-mcp-client.ts"), "Rule A21's body does not name anno-mcp-client.ts");
 });
 
 test("4. PROJECT.md's Key Decisions D-36 row states supersession of D-32, names handler.rs:1894, the upstream issue url, and a named reversal-trigger phrase", () => {
@@ -203,7 +203,7 @@ test("4. PROJECT.md's Key Decisions D-36 row states supersession of D-32, names 
 
   assert.ok(row.includes("supersedes D-32"), "the D-36 row does not state 'supersedes D-32'");
   assert.ok(row.includes("handler.rs:1894"), "the D-36 row does not name handler.rs:1894");
-  assert.ok(row.includes("issues/42"), "the D-36 row does not name the upstream issue url (regenerator2000 issue #42)");
+  assert.ok(row.includes("issues/42"), "the D-36 row does not name the upstream issue url (the external analyser issue #42)");
 
   const matched = REVERSAL_PHRASES.filter((phrase) => row.includes(phrase));
   assert.ok(

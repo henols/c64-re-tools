@@ -178,12 +178,12 @@ refusal is never reported as a mistyped path.
 grep -c 'function parseArgs' scripts/generate-tool-support-table.mjs      -> 0
 grep -c parseRootArg scripts/generate-tool-support-table.mjs              -> 3
 grep -v '^//' scripts/lib/audit-root.mjs | grep -c 'export function parseRootArg' -> 1
-grep -aic r2000 src/mcp/vice/audit-root-args.test.ts                      -> 0
+grep -aic anno src/mcp/vice/audit-root-args.test.ts                      -> 0
 ```
 
 ### 4. `npm run typecheck` — exit 0, no diagnostics.
 
-### 5. `node scripts/check-no-regenerator2000.mjs` — exit 0, tree-wide.
+### 5. `node scripts/check-no-analyser.mjs` — exit 0, tree-wide.
 
 The new test file is inside the removal gate's scope and carries zero occurrences
 of the deleted subject's literal name (checked with `grep -a`, per the NUL-byte

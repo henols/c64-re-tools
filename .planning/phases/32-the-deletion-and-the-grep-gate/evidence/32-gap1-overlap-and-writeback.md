@@ -447,35 +447,35 @@ file-wide count would be invalidated by this document's own narrative.
 ```text
 SWEEP-TRANSCRIPT-BEGIN
 audit-mutation-harness: selected 61 row(s)
-  OBSERVED RED  src/mcp/vice/r2000-verb-coverage.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-verb-coverage.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-verb-coverage.test.ts
-  OBSERVED RED  scripts/lib/r2000-cli-verbs.mjs: guard exit status 1 (control exit status 0)
+  OBSERVED RED  scripts/lib/anno-cli-verbs.mjs: guard exit status 1 (control exit status 0)
                 command: node scripts/check-skill-tool-coverage.mjs
-  OBSERVED RED  scripts/lib/r2000-cli-verbs.d.mts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  scripts/lib/anno-cli-verbs.d.mts: guard exit status 1 (control exit status 0)
                 command: node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
-  OBSERVED RED  src/mcp/vice/docs-r2000-decisions.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/docs-absorbed-decisions.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test docs-absorbed-decisions.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-answer-key.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/absorbed-answer-key.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test absorbed-answer-key.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-spawn-seam.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/spawn-seam.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test spawn-seam.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-cli.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-cli.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test --test-name-pattern VERB_OPTIONS carries exactly the surviving verbs anno-cli.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-confidence.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-confidence.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-confidence.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-coverage-grammar.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-coverage-grammar.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-coverage-grammar.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-coverage.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-coverage.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-coverage.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-d64.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-d64.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-d64.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-enum-gen.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-enum-gen.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-enum-gen.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-memmap-render.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-memmap-render.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-memmap-render.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-regbits.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-regbits.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-regbits.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-tools.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-tools.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-tools.test.ts
   OBSERVED RED  scripts/audit-gate.mjs: guard exit status 1 (control exit status 0)
                 command: node scripts/audit-gate.mjs
@@ -516,15 +516,15 @@ audit-mutation-harness: selected 61 row(s)
                 command: node --test --test-name-pattern derived-union equality tool-support-table.test.mjs
   OBSERVED RED  src/mcp/vice/vice-proxy.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test --test-name-pattern tools/list survives a missing or corrupt snapshot vice-proxy.test.ts
-  SKIPPED       src/mcp/vice/r2000-launch.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-mcp-client.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-project.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-session.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-symbol-roundtrip.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-upstream-audit.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-verify.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       scripts/check-no-regenerator2000.d.mts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
-  SKIPPED       scripts/check-no-regenerator2000.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-launch.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-mcp-client.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-project.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-session.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-symbol-roundtrip.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-derivation.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-verify.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       scripts/check-no-analyser.d.mts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
+  SKIPPED       scripts/check-no-analyser.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   SKIPPED       scripts/lib/anno-cli-invocations.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   SKIPPED       src/mcp/vice/acme-gate.test.ts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   OBSERVED RED  src/mcp/vice/anno-derivation.test.ts: guard exit status 1 (control exit status 0)
@@ -672,7 +672,7 @@ plant was refused; a row was unmeasurable; a row's guard exited 0 with the viola
 ## 4. The removal gate's EMPTY terminal state
 
 ```
-$ node scripts/check-no-regenerator2000.mjs
+$ node scripts/check-no-analyser.mjs
 check-no-<subject>: OK -- scanned 412 files (382 tracked outside ".planning/" + 30
   shipped-but-untracked installer paths, floor 350); 157 occurrence(s) permanently exempt,
   0 temporarily allow-listed across 0 entries.
@@ -698,7 +698,7 @@ therefore established by a derivation instead:
 
 ```
 $ git diff 01894b9 -- . > plan-diff.txt          (933 lines: this plan's whole change against its base)
-$ grep -aci 'regenerator2000' plan-diff.txt
+$ grep -aci 'the external analyser' plan-diff.txt
 0
 ```
 
@@ -756,7 +756,7 @@ with the broker **inactive**.
 
 | Command | Result |
 |---|---|
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 — 412 files, 157 permanent exemptions, temporary allow-list EMPTY |
+| `node scripts/check-no-analyser.mjs` | exit 0 — 412 files, 157 permanent exemptions, temporary allow-list EMPTY |
 | `node scripts/check-guard-fates.mjs` | exit 0 — `setA=43 setB=16 setC=2 total=61 rows=61 (floors setA=43 setB=16 setC=2 total=61)` |
 | `node scripts/audit-gate.mjs` | exit 0 — `9 docs guards green, 7 milestone audits scanned, 5 declaring a gated status` |
 | `cd src/mcp/vice && npm run typecheck` | exit 0 — `tsc --noEmit -p tsconfig.json`, no diagnostics |

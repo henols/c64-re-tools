@@ -2,11 +2,11 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 06
 subsystem: testing
-tags: [regenerator2000, coverage, anti-gaming, regexp, anchoring, node-test, typescript]
+tags: [the external analyser, coverage, anti-gaming, regexp, anchoring, node-test, typescript]
 
 requires:
   - phase: 19-absorbed-procedures-and-the-coverage-instrument
-    provides: "the coverage instrument (r2000-coverage.ts), its six committed controls, and the NC4 multi-caller negative control this plan makes adversarial"
+    provides: "the coverage instrument (anno-coverage.ts), its six committed controls, and the NC4 multi-caller negative control this plan makes adversarial"
 provides:
   - "An ANCHORED multi-caller cross-reference rule: a caller's hex must be a delimited token (bare or canonical-4 width, non-hex-digit right boundary), and a caller's label name must stand on an identifier boundary both sides"
   - "escapeRegExp() — store-sourced label names reach a RegExp constructor as literals, never as patterns (T-19G-06-02)"
@@ -29,8 +29,8 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
 
 key-decisions:
   - "The pre-fix failure was demonstrated by authoring both controls BEFORE the fix and running them, not by `git stash` as the plan's acceptance criterion suggested — `git stash` is prohibited in this execution environment because the stash stack is shared across worktrees. The evidence produced is strictly stronger: the controls were observed red in the committed test file, then green after the fix, with the exact reported values captured both times."
@@ -50,7 +50,7 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#ANCHORING: a colliding longer hex never satisfies the multi-caller rule -- NC4 plus $8106 is still undocumented, and the well-documented control is still clean"
+        ref: "src/mcp/vice/anno-coverage.test.ts#ANCHORING: a colliding longer hex never satisfies the multi-caller rule -- NC4 plus $8106 is still undocumented, and the well-documented control is still clean"
         status: pass
     human_judgment: false
   - id: D2
@@ -58,7 +58,7 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#ANCHORING: a caller's label name satisfies the rule only on an identifier boundary"
+        ref: "src/mcp/vice/anno-coverage.test.ts#ANCHORING: a caller's label name satisfies the rule only on an identifier boundary"
         status: pass
     human_judgment: false
   - id: D3
@@ -66,10 +66,10 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#NON-VACUITY: the well-documented control passes, so the instrument is not merely a machine that fails everything"
+        ref: "src/mcp/vice/anno-coverage.test.ts#NON-VACUITY: the well-documented control passes, so the instrument is not merely a machine that fails everything"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#ANCHORING: a colliding longer hex never satisfies the multi-caller rule -- NC4 plus $8106 is still undocumented, and the well-documented control is still clean"
+        ref: "src/mcp/vice/anno-coverage.test.ts#ANCHORING: a colliding longer hex never satisfies the multi-caller rule -- NC4 plus $8106 is still undocumented, and the well-documented control is still clean"
         status: pass
     human_judgment: false
   - id: D4
@@ -77,10 +77,10 @@ coverage:
     requirement: COV-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#every reported count is a count of the deduped list printed beside it"
+        ref: "src/mcp/vice/anno-coverage.test.ts#every reported count is a count of the deduped list printed beside it"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#two symbols at one address produce a count of one, not two"
+        ref: "src/mcp/vice/anno-coverage.test.ts#two symbols at one address produce a count of one, not two"
         status: pass
     human_judgment: false
   - id: D5
@@ -149,10 +149,10 @@ hold is **not** lifted by this plan.
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` — anchored `namesACaller()`, new module-private
+- `src/mcp/vice/anno-coverage.ts` — anchored `namesACaller()`, new module-private
   `escapeRegExp()`, dedup-derived counts at three sites, rewritten doc comment and one extended
   header bullet. 1446 → **1495** lines (plan floor: 1470).
-- `src/mcp/vice/r2000-coverage.test.ts` — four new tests. 755 → **897** lines (plan floor: 780).
+- `src/mcp/vice/anno-coverage.test.ts` — four new tests. 755 → **897** lines (plan floor: 780).
 - `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/deferred-items.md` —
   new; records the two out-of-scope full-suite failures and their owner.
 - `.planning/WINDOWS.md` — one `unmet-truth` entry for the same condition.
@@ -161,7 +161,7 @@ hold is **not** lifted by this plan.
 
 ### Control A — colliding hex, report-level, on the real committed NC4 fixture
 
-Command (both runs): `cd src/mcp/vice && node --test r2000-coverage.test.ts`
+Command (both runs): `cd src/mcp/vice && node --test anno-coverage.test.ts`
 
 | | `reproducibility.multiCallerUndocumented` | `coverageFindings().clean` | `findings` |
 |---|---|---|---|
@@ -173,7 +173,7 @@ caller — exactly the falsely-clean verdict (T-19-14) the instrument exists to 
 
 ### Control B — identifier boundary
 
-Command (both runs): `cd src/mcp/vice && node --test r2000-coverage.test.ts`
+Command (both runs): `cd src/mcp/vice && node --test anno-coverage.test.ts`
 
 | Comment at `$0820` (callers `$0810` = `entry_point`, `$0816`) | Pre-fix `multiCallerUndocumented` | Post-fix |
 |---|---|---|
@@ -182,7 +182,7 @@ Command (both runs): `cd src/mcp/vice && node --test r2000-coverage.test.ts`
 
 ### Control C — WR-02, duplicate address
 
-Command (both runs): `cd src/mcp/vice && node --test r2000-coverage.test.ts`
+Command (both runs): `cd src/mcp/vice && node --test anno-coverage.test.ts`
 
 | Input | Field | Pre-fix | Post-fix |
 |---|---|---|---|
@@ -193,7 +193,7 @@ Command (both runs): `cd src/mcp/vice && node --test r2000-coverage.test.ts`
 ### How the pre-fix state was observed
 
 Both ANCHORING controls were **authored and committed to the working tree before** the
-`r2000-coverage.ts` change, run, and observed red:
+`anno-coverage.ts` change, run, and observed red:
 
 ```
 not ok 18 - ANCHORING: a colliding longer hex never satisfies the multi-caller rule …
@@ -208,7 +208,7 @@ not ok 19 - ANCHORING: a caller's label name satisfies the rule only on an ident
 
 | # | Command | Result |
 |---|---------|--------|
-| 1 | `cd src/mcp/vice && node --test r2000-coverage.test.ts` | exit **0**, `# tests 46`, `# pass 46`, `# fail 0` |
+| 1 | `cd src/mcp/vice && node --test anno-coverage.test.ts` | exit **0**, `# tests 46`, `# pass 46`, `# fail 0` |
 | 2 | `cd src/mcp/vice && npx tsc --noEmit -p tsconfig.json` | exit **0** |
 | 3 | `cd src/mcp/vice && npm test` (FULL suite, not `test:automated`) | exit **1** — `# tests 2551`, `# pass 2504`, **`# fail 2`**, `# skipped 40`, `# todo 5`. Both failures pre-existing and out of scope — see *Issues Encountered*. |
 | 4 | `node scripts/check-skill-tool-coverage.mjs` | exit **0** |
@@ -225,9 +225,9 @@ not ok 19 - ANCHORING: a caller's label name satisfies the rule only on an ident
 
 | Command | Before | After | Required |
 |---|---|---|---|
-| ``grep -cF 'lower.includes(`$' src/mcp/vice/r2000-coverage.ts`` | `2` | **`0`** | `0` |
-| `grep -c 'rawComment.includes(name)' src/mcp/vice/r2000-coverage.ts` | `1` | **`0`** | `0` |
-| `grep -c 'autoPrefixNameAddresses.length' src/mcp/vice/r2000-coverage.ts` | `1` | **`0`** | `0` |
+| ``grep -cF 'lower.includes(`$' src/mcp/vice/anno-coverage.ts`` | `2` | **`0`** | `0` |
+| `grep -c 'rawComment.includes(name)' src/mcp/vice/anno-coverage.ts` | `1` | **`0`** | `0` |
+| `grep -c 'autoPrefixNameAddresses.length' src/mcp/vice/anno-coverage.ts` | `1` | **`0`** | `0` |
 
 The fixture-driven control loop still reports `nc4-multi-caller-unnamed` as non-clean naming
 `reproducibility` and `nc5-well-documented` as clean with an empty findings array (the existing
@@ -251,7 +251,7 @@ dropped; see *Issues Encountered*.
 ## Decisions Made
 
 1. **`git stash` was not used to demonstrate the pre-fix failure.** Task 1's acceptance
-   criterion suggested stashing the `r2000-coverage.ts` change and re-running. `git stash` is
+   criterion suggested stashing the `anno-coverage.ts` change and re-running. `git stash` is
    prohibited in this execution environment — the stash stack is shared across the main checkout
    and every linked worktree, so a `pop` can silently apply a sibling's WIP. The controls were
    instead authored first and observed red in place, which yields the same numbers and a
@@ -283,7 +283,7 @@ dropped; see *Issues Encountered*.
   have discarded the criterion's actual substance ("a control that has never been seen to fail
   is not evidence", T-19G-06-03).
 - **Fix:** Both controls were written and run **before** the source fix, observed red with the
-  exact reported values, and only then was `r2000-coverage.ts` changed. The pre-fix numbers were
+  exact reported values, and only then was `anno-coverage.ts` changed. The pre-fix numbers were
   additionally captured through a direct probe against the unmodified module so the values could
   be recorded field-by-field rather than only as assertion diff output.
 - **Files modified:** none beyond the plan's own two files.
@@ -324,11 +324,11 @@ plan and are out of scope.**
    (D-12-02)` — cascades from (1). It names seven red docs guards, but **only one is genuinely
    red**: `docs-review-disposition`. The other six (`docs-core-value-decision`,
    `docs-dangling-refs`, `docs-deferred-ledger`, `docs-fork-decision`, `docs-linerefs`,
-   `docs-r2000-decisions`) each exit 0 when run standalone — the known cascade in
+   `docs-anno-decisions`) each exit 0 when run standalone — the known cascade in
    `audit-integrity`'s guard runner.
 
 **Proof they are untouched by this plan:** `git diff --name-only 5c68473..HEAD` after both task
-commits lists exactly `src/mcp/vice/r2000-coverage.ts` and `src/mcp/vice/r2000-coverage.test.ts`.
+commits lists exactly `src/mcp/vice/anno-coverage.ts` and `src/mcp/vice/anno-coverage.test.ts`.
 Neither guard reads either file.
 
 Recorded in
@@ -357,7 +357,7 @@ None — no external service configuration required.
 ## Next Phase Readiness
 
 - **Ready for 19-07** (GAP 1). No dependency in either direction: 19-06 touches only
-  `r2000-coverage.ts` / `r2000-coverage.test.ts`, and 19-07 owns the licence-wording decision.
+  `anno-coverage.ts` / `anno-coverage.test.ts`, and 19-07 owns the licence-wording decision.
 - **Gap 2 (SC4 / COV-02) is half closed.** This plan discharged `missing` items **1** and **4**
   and the `coincidental_reliance_items[0]` hardening in full — `nc4-multi-caller-unnamed` is no
   longer `fixture-only`; it now has an adversarial control that was seen to fail. Items **2**
@@ -377,7 +377,7 @@ None — no external service configuration required.
 ## Self-Check: PASSED
 
 - All four files claimed above exist on disk (`19-06-SUMMARY.md`, `deferred-items.md`,
-  `r2000-coverage.ts`, `r2000-coverage.test.ts`).
+  `anno-coverage.ts`, `anno-coverage.test.ts`).
 - Both task commits exist in git history: `0bca490`, `cbdbf97`.
 - No tracked file was deleted by either task commit
   (`git diff --diff-filter=D --name-only 5c68473..HEAD` is empty).

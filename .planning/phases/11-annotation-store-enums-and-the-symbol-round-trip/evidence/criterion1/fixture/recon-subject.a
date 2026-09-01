@@ -81,12 +81,12 @@ irq_handler
         inc zp_counter
         jmp KERNAL_IRQ_CONTINUE  ; chain to the KERNAL's own IRQ continuation
 
-; byte_table: r2000_set_data_type target for block type "byte". Read by
+; byte_table: anno_set_data_type target for block type "byte". Read by
 ; main_loop above via zp_counter as an index.
 byte_table
         !byte $01, $02, $03, $04, $05, $06, $07, $ff
 
-; addr_table: r2000_set_data_type target for block type "address" -- a real
+; addr_table: anno_set_data_type target for block type "address" -- a real
 ; word-pair jump/vector table, little-endian, pointing at four of this
 ; program's own routines. Distinguishable from byte_table by shape alone.
 addr_table

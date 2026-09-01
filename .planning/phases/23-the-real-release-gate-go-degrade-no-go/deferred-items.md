@@ -7,9 +7,9 @@ are **not** fixed by the plan that found them.
 
 **Found during:** 23-01, running the phase regression gate (`cd src/mcp/vice && npm test`).
 
-**What happens:** the live r2000 spawn-seam test re-records
+**What happens:** the live anno spawn-seam test re-records
 `.planning/phases/18-persistent-session-and-tool-surface/evidence/18-session-reuse-transcript.json`
-on every run, rewriting `recordedAt`, the `.r2000-spawn-seam-test-live-*` temp path inside
+on every run, rewriting `recordedAt`, the `.anno-spawn-seam-test-live-*` temp path inside
 `argv`, and `pidAfterCall1` / `pidAfterCall2`. The suite passes; the file is left dirty.
 
 **Why it matters to this phase specifically:** every plan in phase 23 runs the full suite
@@ -29,15 +29,15 @@ evidence artifact.
 
 ---
 
-## Flaky under load: `r2000-session.test.ts:615` timeout/crash-counter test
+## Flaky under load: `anno-session.test.ts:615` timeout/crash-counter test
 
 **Found during:** 23-04 Task 1, running the `cd src/mcp/vice && npm test` acceptance gate.
 
 **What happens:** `stub: a child that answers nothing within the call timeout rejects with
-R2000TimeoutError, is killed, and the crash counter increases by 1` fails under the full
+AnnoTimeoutError, is killed, and the crash counter increases by 1` fails under the full
 parallel suite with `Expected values to be strictly equal: 0 !== 1` at
-`r2000-session.test.ts:631` — the crash counter reads `0` where the test expects `1`. Run
-in isolation (`node --test r2000-session.test.ts`) the same file is **25/25 green**. It is a
+`anno-session.test.ts:631` — the crash counter reads `0` where the test expects `1`. Run
+in isolation (`node --test anno-session.test.ts`) the same file is **25/25 green**. It is a
 load-sensitive timing assertion: under the full suite's parallelism the child's kill and the
 counter increment do not land inside the window the test samples.
 
@@ -48,7 +48,7 @@ that changed one markdown file under `.planning/`.
 **Not fixed here:** it is pre-existing, timing-dependent test behaviour with no connection to
 anything 23-04 changed (this plan touches exactly one file, under `.planning/evidence/`), and
 evidence convention 9 forbids phase 23 from modifying anything under `src/`. There is also a
-standing project instruction that r2000 test surface is not this milestone's to verify or
+standing project instruction that anno test surface is not this milestone's to verify or
 extend.
 
 **Confirmed a flake, not a break:** a second full `npm test` at the same commit ran
@@ -69,12 +69,12 @@ while a VICE instance was live and the broker busy.
 | Run | fail count | failing tests |
 |---|---|---|
 | 1 | 1 | (not captured) |
-| 2 | 4 | `159` wired disconnect-while-queued; `916` r2000 call-timeout/crash-counter; `2408` BACK-05 D-G ordering at the wire; `2410` IN-01 bounded drain |
+| 2 | 4 | `159` wired disconnect-while-queued; `916` anno call-timeout/crash-counter; `2408` BACK-05 D-G ordering at the wire; `2410` IN-01 bounded drain |
 | 3 | 1 | (not captured) |
 | 4 | 1 | `2408` BACK-05 D-G ordering at the wire |
 
 2592 of 2638 pass in every run; the variance is 1-4 tests out of 2638 and the *identity*
-of the failures changes between runs. Item 2 above already logs `r2000-session.test.ts:615`
+of the failures changes between runs. Item 2 above already logs `anno-session.test.ts:615`
 (test `916`) as a known load-sensitive flake; this entry records that it is **not the only
 one** — `159`, `2408` and `2410` join it, and all four are timing- or concurrency-shaped
 (a queued-acquire race, a call-timeout assertion, a wire-ordering assertion, and a

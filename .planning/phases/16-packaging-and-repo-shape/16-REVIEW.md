@@ -12,8 +12,8 @@ files_reviewed_list:
   - src/mcp/vice/ci-suite-coverage.test.ts
   - src/mcp/vice/fixtures/planted-hop-chain-fixture.ts.txt
   - src/mcp/vice/hop-chain-comments.test.ts
-  - src/mcp/vice/r2000-regbits.test.ts
-  - src/mcp/vice/r2000-symbol-roundtrip.test.ts
+  - src/mcp/vice/anno-regbits.test.ts
+  - src/mcp/vice/anno-symbol-roundtrip.test.ts
   - src/mcp/vice/skill-acme-build-cli.test.ts
   - src/mcp/vice/skill-consumer-paths.test.ts
   - src/skills/acme-build/SKILL.md
@@ -44,7 +44,7 @@ This is a round-2 review of the 18-file delta produced by gap-closure plans 16-0
 - `installer/scripts/sync-skills.mjs` + `scripts/check-npm-packages.mjs`: ran `node scripts/check-npm-packages.mjs` and inspected the generated `installer/skills/` tree by hand. The filter genuinely excludes `*.test.mjs`, `test-corpus.mjs` and any `fixtures/` directory while retaining `template.a` and all real skill assets; `assertLeanTarball()` genuinely runs from inside `packFiles()` for both packages, so a third package or a per-package special case cannot skip it. No leak found in either published tarball.
 - `.github/workflows/ci.yml` + `ci-suite-coverage.test.ts` + `ci-guardrails.test.mjs`: confirmed `installer/wire-mcp.test.mjs` (18/18) and `src/skills/*/scripts/*.test.mjs` (89 pass / 8 skip) are now genuinely reachable from the `build` job (ran both invocations exactly as CI would), and that the guard suites pass against the real `ci.yml`. One weakness found in the new coverage guard's own proof-matching (WR-05 below).
 - The four consumer-path literal sites (`diff-images.mjs`, `watch-loads.mjs`, `template.a`, `acme-build/SKILL.md`) plus their two guards (`skill-consumer-paths.test.ts`, plus the assertions embedded in `diff-images.test.mjs`/`watch-loads.test.mjs`): verified every required/forbidden substring against the actual file contents by hand (not just by reading the registry) and cross-checked the region-anchoring for `acme-build/SKILL.md`'s dual-route block. All four are correctly fixed and the presence+absence pairing is real, not vacuous.
-- `hop-chain-comments.test.ts` + its fixture + `r2000-symbol-roundtrip.test.ts`/`r2000-regbits.test.ts`: ran the guard directly; its scan is correctly scoped to `*.ts`/`*.mts` files directly under `src/mcp/vice/`, the fixture drives both a positive and negative control, and `r2000-symbol-roundtrip.test.ts`'s own hop-count comment is now correct (3 hops, `src/mcp/vice -> src/mcp -> src -> repo root`). However, this guard's directory scope is too narrow to see an identical defect class that still exists in two of the skill-script test files this same phase touched — see WR-06.
+- `hop-chain-comments.test.ts` + its fixture + `anno-symbol-roundtrip.test.ts`/`anno-regbits.test.ts`: ran the guard directly; its scan is correctly scoped to `*.ts`/`*.mts` files directly under `src/mcp/vice/`, the fixture drives both a positive and negative control, and `anno-symbol-roundtrip.test.ts`'s own hop-count comment is now correct (3 hops, `src/mcp/vice -> src/mcp -> src -> repo root`). However, this guard's directory scope is too narrow to see an identical defect class that still exists in two of the skill-script test files this same phase touched — see WR-06.
 
 Two warnings, no blockers. Both are real, provable weaknesses in the new guard/test code itself (exactly the defect class this round-2 review was asked to scrutinise), not in the production skill scripts' behaviour.
 

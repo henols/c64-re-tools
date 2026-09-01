@@ -193,7 +193,7 @@ import { capabilityRefusalMessage } from "./capability-registry.ts";
 // against it and closes it again (D-06), reached only when a tool is called.
 import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
 
-// ------------------------------------------------------------ r2000 subcommand
+// ------------------------------------------------------------ anno subcommand
 //
 // D-06 / RESEARCH.md Open Question #1 (plan 10-04): `vice-mcp anno <verb>` is
 // the ONLY surface that resolves identically across the Claude Code plugin
@@ -239,7 +239,7 @@ import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
 // zero-length write's callback fires only once every prior queued write has
 // actually flushed) before the terminating `process.exit(code)`.
 //
-// T-11.1-EXITHANG: the drain is BOUNDED to `R2000_CLI_DRAIN_TIMEOUT_MS`. An
+// T-11.1-EXITHANG: the drain is BOUNDED to `ANNO_CLI_DRAIN_TIMEOUT_MS`. An
 // exit that hangs forever waiting on a pipe nobody reads is worse than a
 // truncated diagnostic -- this project's standing rule is that a teardown
 // path never becomes a hang (see the "never end the process from a teardown
@@ -247,7 +247,7 @@ import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
 // for the same reason the original unbounded `process.exit()` did not: this
 // still runs before any lease, socket or handler exists, and now also can
 // never block indefinitely).
-const R2000_CLI_DRAIN_TIMEOUT_MS = 300;
+const ANNO_CLI_DRAIN_TIMEOUT_MS = 300;
 
 /** Resolves once `stream`'s own pending writes have flushed, or after
  * `timeoutMs`, whichever comes first. A zero-length `write("", cb)`'s
@@ -262,7 +262,7 @@ function drainStdio(stream: NodeJS.WriteStream): Promise<void> {
       resolve();
       return;
     }
-    const timer = setTimeout(resolve, R2000_CLI_DRAIN_TIMEOUT_MS);
+    const timer = setTimeout(resolve, ANNO_CLI_DRAIN_TIMEOUT_MS);
     stream.write("", () => {
       clearTimeout(timer);
       resolve();
@@ -297,15 +297,15 @@ if (process.argv[2] === "anno") {
   // none of them. Never reachable
   // from a real `anno <verb>` invocation: the check is against a specific,
   // unambiguous env var name no real caller would ever set.
-  const testFillBytes = process.env.VICE_TEST_R2000_CLI_STDOUT_FILL_BYTES;
+  const testFillBytes = process.env.VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES;
   if (testFillBytes) {
     process.stdout.write("x".repeat(Number(testFillBytes)));
     await Promise.all([drainStdio(process.stdout), drainStdio(process.stderr)]);
     process.exit(0);
   }
 
-  const { runR2000Cli } = await import("./anno-cli.ts");
-  const code = await runR2000Cli(process.argv.slice(3));
+  const { runAnnoCli } = await import("./anno-cli.ts");
+  const code = await runAnnoCli(process.argv.slice(3));
   await Promise.all([drainStdio(process.stdout), drainStdio(process.stderr)]);
   process.exit(code);
 }

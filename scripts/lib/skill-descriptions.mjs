@@ -65,7 +65,7 @@
  * Jaccard.
  *
  * MEASURED, NOT CHOSEN. 19-RESEARCH.md section 4.3 scored all 55 unordered
- * pairs over this project's six skills plus all five upstream regenerator2000
+ * pairs over this project's six skills plus all five upstream the external analyser
  * analyze procedures, using exactly the normalisation below:
  *
  *   - The clean project inventory's observed CEILING was 0.250, from
@@ -76,8 +76,8 @@
  *     uses" :: "document a disassembly listing"), and
  *     `c64-ram-capture` :: `vice-wedge-triage` ("capture a memory image at a
  *     checkpoint" :: "when a checkpoint never fires").
- *   - Upstream's own two most-similar siblings, `r2000-analyze-routine` ::
- *     `r2000-analyze-symbol`, scored 0.261 -- ABOVE this project's clean
+ *   - Upstream's own two most-similar siblings, `analyze-routine` ::
+ *     `analyze-symbol`, scored 0.261 -- ABOVE this project's clean
  *     ceiling. That single number is why the absorbed descriptions were
  *     rewritten on absorption rather than carried verbatim (19-02): carrying
  *     them would have breached the measured baseline on the day they landed.

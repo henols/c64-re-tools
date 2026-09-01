@@ -12,8 +12,8 @@ open item is SC4's goal qualifier — *"a coverage instrument … that resists b
 before any decomposition work runs under it"* — specifically the **structural-completeness
 number**, which remains manufacturable out of ordinary 6502 data. That is COV-01.
 
-Scope is `hasDispatchContext()` in `src/mcp/vice/r2000-coverage.ts`, the two passes that
-consult it, and the control mechanism in `src/mcp/vice/r2000-coverage.test.ts` that is
+Scope is `hasDispatchContext()` in `src/mcp/vice/anno-coverage.ts`, the two passes that
+consult it, and the control mechanism in `src/mcp/vice/anno-coverage.test.ts` that is
 supposed to hold it down. Nothing else. No new capability, no new report field, no new verb.
 
 **This round is scoped to the DEFECT CLASS, not to the next instance.** Closing only the
@@ -54,7 +54,7 @@ had ids. The shape without an id survived.
   > presence of a shape within the window.
 
   The evidence that this is a class and not an instance is that the two shipped branches are
-  asymmetric. From `r2000-coverage.ts` as committed at `a1b39da`:
+  asymmetric. From `anno-coverage.ts` as committed at `a1b39da`:
 
   ```
   // zeropage-vector-jumped-through -- PROVEN LINK (fixed by 19-10, CR-04)
@@ -81,7 +81,7 @@ had ids. The shape without an id survived.
 ### The control mechanism — where round 3 leaked
 
 - **D-04:** Interior controls are keyed by **(shape × route)**, not by shape.
-  `r2000-coverage.test.ts:2250` is the line that let round 3's defect through:
+  `anno-coverage.test.ts:2250` is the line that let round 3's defect through:
 
   ```js
   const claimed = new Set(rows.filter(r => r.position !== OUTSIDE && r.polarity === "negative")
@@ -104,7 +104,7 @@ had ids. The shape without an id survived.
   touching every row plus the two coverage assertions that read them.
 
 - **D-05:** The route set is **derived from source text**, not hand-maintained. The assertion at
-  `r2000-coverage.test.ts:2322` already reads `hasDispatchContext()`'s own source to prove its
+  `anno-coverage.test.ts:2322` already reads `hasDispatchContext()`'s own source to prove its
   true-returning-site count equals `DISPATCH_CONTEXT_SHAPES.length`. Apply the same technique to
   enumerate the **call sites that consult the gate**, so adding a third consumer reds the suite
   rather than silently creating an uncontrolled route.
@@ -175,12 +175,12 @@ those are the reason this round exists.
 - `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/deferred-items.md` — open items, including item 3 (out of scope, see `<deferred>`).
 
 ### The code under change
-- `src/mcp/vice/r2000-coverage.ts` — `hasDispatchContext()` and its doc comment (the falsified rationale, D-03); `DISPATCH_CONTEXT_SHAPES`; `resolveSplitOrientation()`; the class-3 and class-4 passes that consult the gate.
-- `src/mcp/vice/r2000-coverage.test.ts` — `GATE_INTERIOR_DECLARATIONS` (:2117), the shape-keyed `claimed` assertion (:2250, the D-04 hole), the source-derived branch-count assertion (:2322), `reachesGateInterior()` (:1990, the disjunction).
+- `src/mcp/vice/anno-coverage.ts` — `hasDispatchContext()` and its doc comment (the falsified rationale, D-03); `DISPATCH_CONTEXT_SHAPES`; `resolveSplitOrientation()`; the class-3 and class-4 passes that consult the gate.
+- `src/mcp/vice/anno-coverage.test.ts` — `GATE_INTERIOR_DECLARATIONS` (:2117), the shape-keyed `claimed` assertion (:2250, the D-04 hole), the source-derived branch-count assertion (:2322), `reachesGateInterior()` (:1990, the disjunction).
 - `src/mcp/vice/fixtures/coverage/README.md` and `make-coverage-fixtures.mjs` — the committed twin-pair fixtures that D-06 generalises.
 
 ### Project constraints
-- `CLAUDE.md` — the derived-tool interception constraint, the "no build step" rule, and the testing conventions. Note especially that `vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested; that exemption does NOT extend to `r2000-coverage.ts`.
+- `CLAUDE.md` — the derived-tool interception constraint, the "no build step" rule, and the testing conventions. Note especially that `vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested; that exemption does NOT extend to `anno-coverage.ts`.
 
 </canonical_refs>
 
@@ -188,17 +188,17 @@ those are the reason this round exists.
 ## Existing Code Insights
 
 ### Reusable Assets
-- **The source-text assertion technique** (`r2000-coverage.test.ts:2322`) already reads a function's own body and asserts a property of it. D-05 is the same technique pointed at call sites instead of return sites — extend it, do not invent a second mechanism.
+- **The source-text assertion technique** (`anno-coverage.test.ts:2322`) already reads a function's own body and asserts a property of it. D-05 is the same technique pointed at call sites instead of return sites — extend it, do not invent a second mechanism.
 - **`GATE_INTERIOR_DECLARATIONS` + `polarity`** — the table and its positive/negative split (added by 19-11) is the right shape; it needs one more key (D-04), not a redesign.
 - **The twin-pair fixtures** (`fp1`/`fp1b`, `fp2`/`fp2b`) — indexed payload vs byte-identical immediate twin, same origin and length. This is already the D-06 property at N=2; the generator should produce this pairing, not a new convention.
 - **`isPlausibleEntryPoint()`** (extracted by 19-11) — the shared decodability/in-image predicate both gated reconstructions already read. A new branch's link check should compose with it rather than re-deriving bounds.
-- **The single derived `effectiveEnd`** (`r2000-coverage.ts:793`, added by 19-12) — one clamped bound read by five sites. Any new index computation reads it too.
+- **The single derived `effectiveEnd`** (`anno-coverage.ts:793`, added by 19-12) — one clamped bound read by five sites. Any new index computation reads it too.
 
 ### Established Patterns
 - **Every tightening ships its both-directions control in the same commit.** A gate that declines everything measures nothing; `SPLIT_TABLE` and `STACK_RETURN` must still be PROVEN after this round.
 - **A control built from OUTSIDE the predicate it constrains is not a control.** Position and polarity are declared and mechanically checked, never claimed in prose.
 - **`COVERAGE_SCHEMA_VERSION`** — a report-shape change bumps it. D-01…D-07 are predicate and test changes; if the report shape genuinely must change, that is a decision to surface, not to absorb.
-- **The instrument is read-only by construction** — a committed source-level assertion proves `r2000-coverage.ts` performs no filesystem write and imports no live session. It must still pass.
+- **The instrument is read-only by construction** — a committed source-level assertion proves `anno-coverage.ts` performs no filesystem write and imports no live session. It must still pass.
 
 ### Integration Points
 - `provenDispatchTargets()` is the single seam deciding what may seed a recursive descent. Both passes feed it; the gate is what stands between them and it.
@@ -226,10 +226,10 @@ the control half.
 <deferred>
 ## Deferred Ideas
 
-- **`r2000-session.test.ts:631` — the 200 ms call-timeout flake.** `deferred-items.md` item 3;
+- **`anno-session.test.ts:631` — the 200 ms call-timeout flake.** `deferred-items.md` item 3;
   measured 3 red in 7 full-suite runs vs 0 in 5 standalone. It drives a real spawned child
   against a wall-clock budget while `node --test` runs files concurrently across 12 cores. It
-  needs a plan that OWNS `r2000-session.ts`; do not widen a timeout from a plan fenced out of
+  needs a plan that OWNS `anno-session.ts`; do not widen a timeout from a plan fenced out of
   that file, and do not treat a green full-suite observation as proof the tree is stable.
 - **WR-03** — 4 code bytes plus 60 bytes of `$02` reports `reached=64, unreached=0,
   linearSweepDecodable=4`, so the report contradicts itself 16×. Same defect family, already

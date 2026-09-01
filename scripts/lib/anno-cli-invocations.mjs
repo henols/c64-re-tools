@@ -58,7 +58,7 @@
 
 /**
  * The subcommand token every documented invocation goes through, renamed
- * `r2000` -> `anno` on 2026-08-29 (plan 29-09). Declared here rather than
+ * `anno` -> `anno` on 2026-08-29 (plan 29-09). Declared here rather than
  * imported from `anno-cli-verbs.mjs`, which embeds the same token inside a
  * template literal for a different predicate (`verbsMissingFromSkills`); if a
  * future rename moves one, grep for the other in the same commit.

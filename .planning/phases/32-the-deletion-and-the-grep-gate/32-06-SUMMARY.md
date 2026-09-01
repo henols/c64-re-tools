@@ -17,7 +17,7 @@ provides:
   - "14 new `re-pointed` rows in guard-fates.json, each with a minimal plant, a guard descriptor and a note naming the assertion it trips"
   - "15 machine-captured observed reds (every renamed set-A member), each paired with a green exit-0 unplanted control"
   - "evidence/32-sweep-renamed-rows.md — raw command, raw stdout/stderr, exit status, plant and tree state per row, both legs"
-  - "A measured correction: the renamed group is 15, not 16; r2000-upstream-audit.test.ts is `gone` and belongs to the wave-5 sweep"
+  - "A measured correction: the renamed group is 15, not 16; anno-derivation.test.ts is `gone` and belongs to the wave-5 sweep"
   - "Two findings against the harness's guard-argv conventions (`--run` unusable; 15s timeout too short for anno-cli.test.ts)"
 affects: [32-07, 32-08, 32-09, guard-fates-registry, audit-mutation-harness]
 
@@ -40,7 +40,7 @@ key-files:
     - .planning/phases/32-the-deletion-and-the-grep-gate/guard-fates.json
 
 key-decisions:
-  - "Followed the guard's mechanical derivation over the plan's hand-typed table: 15 renamed members, not 16. r2000-upstream-audit.test.ts is derived `gone` and was NOT given a `re-pointed` row."
+  - "Followed the guard's mechanical derivation over the plan's hand-typed table: 15 renamed members, not 16. anno-derivation.test.ts is derived `gone` and was NOT given a `re-pointed` row."
   - "Every plant is `kind: worktree`. The harness implements no other kind and throws on one, so no synthetic fixture tree was built and no `mktemp -d` was used."
   - "The .d.mts row's guard runs tsc directly rather than the harness's documented `[\"--run\",\"typecheck\"]`, which spawns an invocation npm rejects."
   - "The anno-cli row's guard is scoped with --test-name-pattern because the full file (20596ms) exceeds the harness's 15000ms timeout, and a timeout is mapped to status 1 — a false red."
@@ -94,7 +94,7 @@ coverage:
         status: pass
     human_judgment: false
   - id: D4
-    description: "The renamed group is 15, not the plan's 16 — a derivation correction that reassigns r2000-upstream-audit.test.ts to the wave-5 deleted/superseded sweep"
+    description: "The renamed group is 15, not the plan's 16 — a derivation correction that reassigns anno-derivation.test.ts to the wave-5 deleted/superseded sweep"
     verification:
       - kind: automated
         ref: "deriveAuditedSet({root}).forwardRenamed via scripts/check-guard-fates.mjs — renamed 15, samePath 21, gone 7, summing to SET_A_FLOOR 43"
@@ -149,34 +149,34 @@ status: complete
 
 | historical path | new subject | plant | guard | red |
 |---|---|---|---|---|
-| `r2000-verb-coverage.test.ts` | `anno-verb-coverage.test.ts` | `ANNO_CLI_VERB_FLOOR` 3→4 | `node --test anno-verb-coverage.test.ts` | 1 |
-| `lib/r2000-cli-verbs.mjs` | `lib/anno-cli-verbs.mjs` | invocation literal `` `anno ${verb}` ``→`` `anno-${verb}` `` | `node scripts/check-skill-tool-coverage.mjs` | 1 |
-| `lib/r2000-cli-verbs.d.mts` | `lib/anno-cli-verbs.d.mts` | drop the `verbsMissingFromSkills` declaration | `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` | 1 |
-| `docs-r2000-decisions.test.ts` | `docs-absorbed-decisions.test.ts` | `PROJECT.md` `handler.rs:1894`→`1895` | `node --test docs-absorbed-decisions.test.ts` | 1 |
-| `r2000-answer-key.test.ts` | `absorbed-answer-key.test.ts` | `ANSWER.sha256` one hex digit | `node --test absorbed-answer-key.test.ts` | 1 |
-| `r2000-spawn-seam.test.ts` | `spawn-seam.test.ts` | drop the argv-array brackets at the one emulator spawn | `node --test spawn-seam.test.ts` | 1 |
-| `r2000-cli.test.ts` | `anno-cli.test.ts` | `VERB_OPTIONS` key `export-asm`→`export-asmX` | `node --test --test-name-pattern '…surviving verbs' anno-cli.test.ts` | 1 |
-| `r2000-confidence.test.ts` | `anno-confidence.test.ts` | grade phrase `probable code`→`probable-code` | `node --test anno-confidence.test.ts` | 1 |
-| `r2000-coverage-grammar.test.ts` | `anno-coverage-grammar.test.ts` | `absolute_y` high-byte shift `<< 8`→`<< 9` | `node --test anno-coverage-grammar.test.ts` | 1 |
-| `r2000-coverage.test.ts` | `anno-coverage.test.ts` | `COVERAGE_SCHEMA_VERSION` 2→3 | `node --test anno-coverage.test.ts` | 1 |
-| `r2000-d64.test.ts` | `anno-d64.test.ts` | plain-image length `174848`→`174847` | `node --test anno-d64.test.ts` | 1 |
-| `r2000-enum-gen.test.ts` | `anno-enum-gen.test.ts` | `registerKeyFor` `padStart(4`→`padStart(5` | `node --test anno-enum-gen.test.ts` | 1 |
-| `r2000-memmap-render.test.ts` | `anno-memmap-render.test.ts` | SHA hex length `{64}`→`{63}` | `node --test anno-memmap-render.test.ts` | 1 |
-| `r2000-regbits.test.ts` | `anno-regbits.test.ts` | generated banner `memmapSha256` one hex digit | `node --test anno-regbits.test.ts` | 1 |
-| `r2000-tools.test.ts` | `anno-tools.test.ts` | registered `name: "anno_get_symbols"`→`"anno_get_symbolz"` | `node --test anno-tools.test.ts` | 1 |
+| `anno-verb-coverage.test.ts` | `anno-verb-coverage.test.ts` | `ANNO_CLI_VERB_FLOOR` 3→4 | `node --test anno-verb-coverage.test.ts` | 1 |
+| `lib/anno-cli-verbs.mjs` | `lib/anno-cli-verbs.mjs` | invocation literal `` `anno ${verb}` ``→`` `anno-${verb}` `` | `node scripts/check-skill-tool-coverage.mjs` | 1 |
+| `lib/anno-cli-verbs.d.mts` | `lib/anno-cli-verbs.d.mts` | drop the `verbsMissingFromSkills` declaration | `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` | 1 |
+| `docs-absorbed-decisions.test.ts` | `docs-absorbed-decisions.test.ts` | `PROJECT.md` `handler.rs:1894`→`1895` | `node --test docs-absorbed-decisions.test.ts` | 1 |
+| `absorbed-answer-key.test.ts` | `absorbed-answer-key.test.ts` | `ANSWER.sha256` one hex digit | `node --test absorbed-answer-key.test.ts` | 1 |
+| `spawn-seam.test.ts` | `spawn-seam.test.ts` | drop the argv-array brackets at the one emulator spawn | `node --test spawn-seam.test.ts` | 1 |
+| `anno-cli.test.ts` | `anno-cli.test.ts` | `VERB_OPTIONS` key `export-asm`→`export-asmX` | `node --test --test-name-pattern '…surviving verbs' anno-cli.test.ts` | 1 |
+| `anno-confidence.test.ts` | `anno-confidence.test.ts` | grade phrase `probable code`→`probable-code` | `node --test anno-confidence.test.ts` | 1 |
+| `anno-coverage-grammar.test.ts` | `anno-coverage-grammar.test.ts` | `absolute_y` high-byte shift `<< 8`→`<< 9` | `node --test anno-coverage-grammar.test.ts` | 1 |
+| `anno-coverage.test.ts` | `anno-coverage.test.ts` | `COVERAGE_SCHEMA_VERSION` 2→3 | `node --test anno-coverage.test.ts` | 1 |
+| `anno-d64.test.ts` | `anno-d64.test.ts` | plain-image length `174848`→`174847` | `node --test anno-d64.test.ts` | 1 |
+| `anno-enum-gen.test.ts` | `anno-enum-gen.test.ts` | `registerKeyFor` `padStart(4`→`padStart(5` | `node --test anno-enum-gen.test.ts` | 1 |
+| `anno-memmap-render.test.ts` | `anno-memmap-render.test.ts` | SHA hex length `{64}`→`{63}` | `node --test anno-memmap-render.test.ts` | 1 |
+| `anno-regbits.test.ts` | `anno-regbits.test.ts` | generated banner `memmapSha256` one hex digit | `node --test anno-regbits.test.ts` | 1 |
+| `anno-tools.test.ts` | `anno-tools.test.ts` | registered `name: "anno_get_symbols"`→`"anno_get_symbolz"` | `node --test anno-tools.test.ts` | 1 |
 
 Every control exited 0. No `observedRed.command` names its row's historical path — checked mechanically, not by eye.
 
 ## Registry row count, before and after
 
-- **Before:** 1 row (the tracer, `r2000-verb-coverage.test.ts`, from plan 32-01).
+- **Before:** 1 row (the tracer, `anno-verb-coverage.test.ts`, from plan 32-01).
 - **After:** 15 rows. Verified against the guard's own summary line: `rows=15`.
 - **This plan added 14**, not 16 and not 15. The tracer was NOT duplicated — its `historicalPath` and `newSubject` appear exactly once, which the guard checks in both directions.
 - `check-guard-fates.mjs` remains red as pre-declared, and its `no recorded fate` list shrank from **60** lines to **46** — exactly the 14 rows added.
 
 ## Decisions Made
 
-1. **The derivation beat the table.** `32-06-PLAN.md`'s `<objective>` enumerates 16 renamed members and maps `src/mcp/vice/r2000-upstream-audit.test.ts` onto `anno-derivation.test.ts`. That mapping is not derivable: `nameDescendantCandidates()` yields `anno-upstream-audit.test.ts`, `absorbed-upstream-audit.test.ts` and `upstream-audit.test.ts`, none of which exists at `AUDIT_END`, and git's `-M` heuristic does not score it either. The guard's `forwardRenamed` returns **15**, with that member in `forwardGone`. The plan instructs, in as many words, to follow the derivation and never edit a floor or a table to make the planning-time reading win — so no row was created for it, and it is handed to the wave-5 sweep that owns the `gone` members as a `deleted` or `superseded` verdict. This is not a new finding: `evidence/32-audited-set-reconciliation.md` §4.1 already recorded "15 renamed / 7 gone, not the plan's 16 / 6". No floor moved; the forward-map split is descriptive.
+1. **The derivation beat the table.** `32-06-PLAN.md`'s `<objective>` enumerates 16 renamed members and maps `src/mcp/vice/anno-derivation.test.ts` onto `anno-derivation.test.ts`. That mapping is not derivable: `nameDescendantCandidates()` yields `anno-upstream-audit.test.ts`, `absorbed-upstream-audit.test.ts` and `upstream-audit.test.ts`, none of which exists at `AUDIT_END`, and git's `-M` heuristic does not score it either. The guard's `forwardRenamed` returns **15**, with that member in `forwardGone`. The plan instructs, in as many words, to follow the derivation and never edit a floor or a table to make the planning-time reading win — so no row was created for it, and it is handed to the wave-5 sweep that owns the `gone` members as a `deleted` or `superseded` verdict. This is not a new finding: `evidence/32-audited-set-reconciliation.md` §4.1 already recorded "15 renamed / 7 gone, not the plan's 16 / 6". No floor moved; the forward-map split is descriptive.
 
 2. **Every plant is `kind: "worktree"`.** Task 1's action contemplates a `kind: "root"` route with synthetic fixture trees. The harness's `plant()` implements only `worktree` and throws on anything else. So no fixture tree was built, nothing was added under the pinned `src/mcp/vice/fixtures/planted-` prefix, and `src/mcp/vice/fixtures/README.md` is untouched. This also made the `mktemp -d` hazard moot — see below.
 
@@ -186,7 +186,7 @@ Every control exited 0. No `observedRed.command` names its row's historical path
 
 ### 1. [Rule 3 — Blocking] The harness's `["--run","typecheck"]` guard convention does not work
 
-- **Found during:** Task 1, the `scripts/lib/r2000-cli-verbs.d.mts` row.
+- **Found during:** Task 1, the `scripts/lib/anno-cli-verbs.d.mts` row.
 - **Issue:** `resolveBin()` maps `argv[0] === "--run"` to the npm client, producing `npm --run typecheck`. npm 11 rejects that form: `Unknown command: "typecheck"` / `Did you mean this? npm run typecheck`. The UNPLANTED control therefore exited 1 and the row came back **UNMEASURABLE** — the green-control rule working exactly as designed, refusing to bank a broken invocation as evidence.
 - **Fix:** re-pointed the row's `guard.argv` at `node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` with `cwd: src/mcp/vice`, which is byte-for-byte what `package.json`'s `typecheck` script runs, and which reaches the harness through its *other* documented convention. **No script was modified** — this plan measures.
 - **Verification:** re-probed; `OBSERVED RED … guard exit status 1 (control exit status 0)`.
@@ -195,7 +195,7 @@ Every control exited 0. No `observedRed.command` names its row's historical path
 
 ### 2. [Rule 3 — Blocking] `GUARD_RUN_TIMEOUT_MS` is shorter than one real guard's runtime
 
-- **Found during:** Task 2, the `src/mcp/vice/r2000-cli.test.ts` row.
+- **Found during:** Task 2, the `src/mcp/vice/anno-cli.test.ts` row.
 - **Issue:** `node --test anno-cli.test.ts` takes **20596ms** measured; the harness bounds every guard at **15000ms** and maps a timeout to status 1. Unscoped, the green control would have timed out (row UNMEASURABLE) and — worse, had the control somehow passed — a timeout would have been banked as an observed red proving nothing about the plant. This is precisely the false red the harness's own header warns about.
 - **Fix:** scoped the guard with `--test-name-pattern 'VERB_OPTIONS carries exactly the surviving verbs'`, the one assertion the plant targets. Runtime drops to **2675ms**. The command still names the row's `newSubject` and still runs that guard's own assertion.
 - **Verification:** `OBSERVED RED … guard exit status 1 (control exit status 0)`; all 13 other per-file control timings were measured up front and recorded in the evidence header, so the bound was checked rather than assumed.
@@ -232,7 +232,7 @@ None. No stub, placeholder, skipped test or unrun `<verify>` was introduced. Eve
 **Ready.** Plan 32-07 (wave 5) inherits:
 
 - A registry at 15 rows with a settled shape — copy any `re-pointed` row as the schema reference.
-- **One extra member than its plan expects:** `src/mcp/vice/r2000-upstream-audit.test.ts` is in `forwardGone`, not `forwardRenamed`, so it owes a `deleted` (with its removing commit named) or `superseded` verdict from the wave-5 sweep, not a `re-pointed` one. The full `gone` set is the seven listed in the evidence header.
+- **One extra member than its plan expects:** `src/mcp/vice/anno-derivation.test.ts` is in `forwardGone`, not `forwardRenamed`, so it owes a `deleted` (with its removing commit named) or `superseded` verdict from the wave-5 sweep, not a `re-pointed` one. The full `gone` set is the seven listed in the evidence header.
 - **46 members still owe a row** (down from 60), per `check-guard-fates.mjs`'s own output. Use that output as the work list; do not transcribe one.
 - **Two harness caveats that will bite again:** `["--run", ...]` is unusable, and any guard slower than 15000ms must be scoped or it records a false red. `vice-proxy.test.ts` is in the remaining set and is the known slow one.
 - Do NOT re-run `--all` on the wave-5 sweep: these 15 rows are measured and would be re-measured for no new information.

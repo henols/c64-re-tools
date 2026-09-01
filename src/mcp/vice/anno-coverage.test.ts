@@ -44,7 +44,7 @@ import {
   DISPATCH_GATE_ROUTES,
   MAX_TABLE_ENTRIES,
   PROVEN_TARGET_SOURCES,
-  R2000CoverageInputError,
+  AnnoCoverageInputError,
   SPLIT_TABLE_WINDOW,
   buildCoverageReport,
   classAt,
@@ -58,9 +58,9 @@ import {
   provenDispatchTargets,
   scanIndirectDispatch,
   type CoverageReport,
-  type R2000Comment,
-  type R2000CrossReference,
-  type R2000Symbol,
+  type AnnoComment,
+  type AnnoCrossReference,
+  type AnnoSymbol,
 } from "./anno-coverage.ts";
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { DATA_TYPES, LABEL_KINDS } from "./anno-types.ts";
@@ -127,10 +127,10 @@ interface FixtureStore {
   code_size?: number;
   expect_clean: boolean;
   expect_measure: string | null;
-  symbols: R2000Symbol[];
-  comments: R2000Comment[];
+  symbols: AnnoSymbol[];
+  comments: AnnoComment[];
   blocks: BlockEntry[];
-  cross_references: R2000CrossReference[];
+  cross_references: AnnoCrossReference[];
 }
 
 function fixtureDirs(): string[] {
@@ -844,7 +844,7 @@ test("substitutability: on an UNGRADED comment set every fromStore value moves w
   // answering path. The rest of each comment is preserved verbatim so the
   // labels stay non-vacuous and therefore stay sampled.
   const { store } = loadFixture(WELL_DOCUMENTED);
-  const ungraded: R2000Comment[] = store.comments.map((c) => ({
+  const ungraded: AnnoComment[] = store.comments.map((c) => ({
     ...c,
     comment: c.comment.replace(/^\[(confirmed|probable)-(code|data)\]/, "[unknown]"),
   }));
@@ -923,7 +923,7 @@ test("a lowercase label kind collapses the user tally to zero with no error -- t
       "input, not a collapse, and this test measures nothing",
   );
 
-  const lowercased: R2000Symbol[] = store.symbols.map((s) => ({ ...s, kind: String(s.kind ?? "").toLowerCase() }));
+  const lowercased: AnnoSymbol[] = store.symbols.map((s) => ({ ...s, kind: String(s.kind ?? "").toLowerCase() }));
 
   const before = reportFor(WELL_DOCUMENTED);
   const after = reportFor(WELL_DOCUMENTED, { symbols: lowercased });
@@ -963,7 +963,7 @@ test("derived agreement: every member of the store's label-kind vocabulary appea
 
   // THE ASYMMETRY IS DECIDED, not an oversight: block types are lowercase and
   // label kinds are capitalised. `DATA_TYPES` is lowercase because it is read
-  // off `r2000_set_data_type`'s own schema and named verbatim in
+  // off `anno_set_data_type`'s own schema and named verbatim in
   // `src/skills/c64-memory-mapping/SKILL.md`, so re-spelling it would break a
   // shipped playbook. `LABEL_KINDS` is capitalised because its only mechanical
   // consumer is this census, which already spells it capitalised at four
@@ -1292,8 +1292,8 @@ test("emptiness: an undecodable payload reports an explicit reason rather than t
 });
 
 test("a missing or empty project path is the ONE caller-contract violation this module throws for", () => {
-  assert.throws(() => buildCoverageReport({ projectPath: "" }), R2000CoverageInputError);
-  assert.throws(() => buildCoverageReport({ projectPath: join(FIXTURE_ROOT, "no-such-fixture", "project.regen2000proj") }), R2000CoverageInputError);
+  assert.throws(() => buildCoverageReport({ projectPath: "" }), AnnoCoverageInputError);
+  assert.throws(() => buildCoverageReport({ projectPath: join(FIXTURE_ROOT, "no-such-fixture", "project.regen2000proj") }), AnnoCoverageInputError);
 });
 
 // ---------------------------------------------------------------------------
@@ -1422,17 +1422,17 @@ test("AUTO_NAME_PREFIX_RE deliberately excludes the prefix upstream shares betwe
 });
 
 test("the cross-reference rule engages at strictly MORE THAN ONE caller, and not at one", () => {
-  const symbols: R2000Symbol[] = [
+  const symbols: AnnoSymbol[] = [
     { address: 0x0820, name: "two_callers", kind: "User", type: "Subroutine" },
     { address: 0x0828, name: "one_caller", kind: "User", type: "Subroutine" },
   ];
-  const comments: R2000Comment[] = [
+  const comments: AnnoComment[] = [
     { address: 0x0820, type: "line", comment: "[confirmed-code] sets the mode flag before the main loop runs" },
     { address: 0x0828, type: "line", comment: "[confirmed-code] reads the value table indexed by X" },
   ];
   const census = computeStructuralCensus(new Uint8Array(0), 0x0810, []);
   const dispatch = scanIndirectDispatch([], new Uint8Array(0), 0x0810);
-  const crossReferences: R2000CrossReference[] = [
+  const crossReferences: AnnoCrossReference[] = [
     { address: 0x0820, callers: [0x0810, 0x0816] },
     { address: 0x0828, callers: [0x0813] },
   ];
@@ -1472,7 +1472,7 @@ test("ANCHORING: a colliding longer hex never satisfies the multi-caller rule --
   // whose leading three digits coincide with caller $0810's bare hex form --
   // appended to the $0820 entry. The comment still names NEITHER caller.
   const { store } = loadFixture("nc4-multi-caller-unnamed");
-  const gamed: R2000Comment[] = store.comments.map((c) =>
+  const gamed: AnnoComment[] = store.comments.map((c) =>
     c.address === 0x0820 ? { ...c, comment: `${c.comment}; see also the pointer table at $8106` } : c,
   );
   assert.equal(
@@ -1519,13 +1519,13 @@ test("ANCHORING: a caller's label name satisfies the rule only on an identifier 
   // one-directional assertion would be satisfied either by a rule that never
   // matches a name or by one that matches any substring, and neither is the
   // rule. `my_entry_pointer` embeds `entry_point`; it names no caller.
-  const symbols: R2000Symbol[] = [
+  const symbols: AnnoSymbol[] = [
     { address: 0x0810, name: "entry_point", kind: "User", type: "Subroutine" },
     { address: 0x0820, name: "two_callers", kind: "User", type: "Subroutine" },
   ];
   const census = computeStructuralCensus(new Uint8Array(0), 0x0810, []);
   const dispatch = scanIndirectDispatch([], new Uint8Array(0), 0x0810);
-  const crossReferences: R2000CrossReference[] = [{ address: 0x0820, callers: [0x0810, 0x0816] }];
+  const crossReferences: AnnoCrossReference[] = [{ address: 0x0820, callers: [0x0810, 0x0816] }];
   const reproFor = (comment: string) =>
     computeReproducibility({
       census,
@@ -1554,7 +1554,7 @@ test("ANCHORING: a caller's label name satisfies the rule only on an identifier 
 
 test("WR-13: a caller's label name counts only when the comment USES it as a reference -- an ordinary English word in ordinary prose names no caller", () => {
   // WR-13, and the same falsely-clean class as CR-01 at a lower trigger rate.
-  // regenerator2000 label names are routinely ordinary English words, and an
+  // the external analyser label names are routinely ordinary English words, and an
   // ordinary description of what a routine does will contain one by accident.
   // The reproduction from `19-REVIEW.md`, verbatim in its inputs: callers
   // [$0012, $0034], caller $0012 renamed `loop`, and a comment that refers to
@@ -1567,13 +1567,13 @@ test("WR-13: a caller's label name counts only when the comment USES it as a ref
   // three genuine citation shapes must still clear the rule. A tightening
   // asserted only in the refusing direction is satisfied by a rule that
   // declines every name, which measures nothing.
-  const symbols: R2000Symbol[] = [
+  const symbols: AnnoSymbol[] = [
     { address: 0x0012, name: "loop", kind: "User", type: "Subroutine" },
     { address: 0x0820, name: "two_callers", kind: "User", type: "Subroutine" },
   ];
   const census = computeStructuralCensus(new Uint8Array(0), 0x0810, []);
   const dispatch = scanIndirectDispatch([], new Uint8Array(0), 0x0810);
-  const crossReferences: R2000CrossReference[] = [{ address: 0x0820, callers: [0x0012, 0x0034] }];
+  const crossReferences: AnnoCrossReference[] = [{ address: 0x0820, callers: [0x0012, 0x0034] }];
   const reproFor = (comment: string) =>
     computeReproducibility({
       census,
@@ -4664,10 +4664,10 @@ test("the previously-unseen Phase 11 fixture -- authored for a different phase, 
 
 test("the coverage module contains no file-write call, no project-save call and no live-session import", () => {
   const source = readFileSync(join(HERE, "anno-coverage.ts"), "utf8");
-  for (const forbidden of ["writeFileSync", "renameSync", "appendFileSync", "save_project", "r2000-session.ts"]) {
+  for (const forbidden of ["writeFileSync", "renameSync", "appendFileSync", "save_project", "anno-session.ts"]) {
     assert.ok(!source.includes(forbidden), `anno-coverage.ts mentions ${forbidden} -- a coverage run must be read-only by construction`);
   }
-  assert.ok(!/hostpath|containerpath/.test(source), "the r2000 module family must stay absent from the path-translation consumer set");
+  assert.ok(!/hostpath|containerpath/.test(source), "the anno module family must stay absent from the path-translation consumer set");
 });
 
 // ---------------------------------------------------------------------------

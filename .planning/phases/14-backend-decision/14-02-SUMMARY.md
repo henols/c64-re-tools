@@ -170,9 +170,9 @@ warning about enumerating guards. Result: 2081 pass / 10 fail / 3 cancelled /
 known-flaky-under-full-suite-load set already documented for this session:
 `audit-integrity.test.ts`'s D-12-02 case, the broker singleton and real-SIGTERM
 end-to-end cases in `broker-control.test.ts`/`broker-e2e.test.ts`, four
-`vice-mcp r2000 --help`/bin cases plus the verb-options-map case in
-`r2000-cli.test.ts`, and a `runR2000()` slow-child-timeout case in
-`r2000-mcp-client.test.ts`. None touch `docs-*.test.ts`, `capability-registry.test.ts`,
+`vice-mcp anno --help`/bin cases plus the verb-options-map case in
+`anno-cli.test.ts`, and a `runAnno()` slow-child-timeout case in
+`anno-mcp-client.test.ts`. None touch `docs-*.test.ts`, `capability-registry.test.ts`,
 or any file this plan modified — confirmed by grepping the full failure list
 for those names (zero matches). `capability-registry.test.ts` itself:
 13/13 passing, both standalone and inside the full suite.

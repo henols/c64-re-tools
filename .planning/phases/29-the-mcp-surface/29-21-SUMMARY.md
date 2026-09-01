@@ -58,7 +58,7 @@ coverage:
     requirement: "CUT-01"
     verification:
       - kind: other
-        ref: "node measure-cut01.mjs — git ls-tree 8f21d77 filtered ^src/mcp/vice/r2000-.*\\.ts$ (35 files), git show <commit>:<path> | wc -l summed at both ends; pre 26,023 / surviving 19,714 / net 6,309"
+        ref: "node measure-cut01.mjs — git ls-tree 8f21d77 filtered ^src/mcp/vice/anno-.*\\.ts$ (35 files), git show <commit>:<path> | wc -l summed at both ends; pre 26,023 / surviving 19,714 / net 6,309"
         status: pass
       - kind: other
         ref: "awk-extracted live CUT-01 entry | grep -c -e '15,957' -e '10,066' == 0 (was 2 before the edit)"
@@ -67,7 +67,7 @@ coverage:
         ref: "grep -n 'f16d0b1' .planning/REQUIREMENTS.md — anchor named inside the :128 sizing sentence"
         status: pass
       - kind: other
-        ref: "node scripts/audit-gate.mjs exit 0; node scripts/check-no-regenerator2000.mjs exit 0 with an EMPTY temporary allow-list"
+        ref: "node scripts/audit-gate.mjs exit 0; node scripts/check-no-analyser.mjs exit 0 with an EMPTY temporary allow-list"
         status: pass
       - kind: other
         ref: "independent re-derivation from a clean shell, third run, identical figures; reversed-order re-derivation equal; dirty-tree re-run identical"
@@ -130,7 +130,7 @@ The measurement was driven by a script that runs exactly the commands the entry 
 
 ```
 pre-phase set  = git ls-tree -r --name-only 8f21d77 -- src/mcp/vice
-                 filtered by ^src/mcp/vice/r2000-.*\.ts$
+                 filtered by ^src/mcp/vice/anno-.*\.ts$
 surviving set  = the anno-* name-descendants of that set, plus the three
                  renamed test files 29-VERIFICATION.md enumerates:
                  absorbed-answer-key.test.ts, spawn-seam.test.ts,
@@ -141,7 +141,7 @@ counting       = git show <commit>:<path> | wc -l, summed
 ### Step 1 — pre-phase end at `8f21d77`
 
 ```
-$ git ls-tree -r --name-only 8f21d77 -- src/mcp/vice | grep -cE '^src/mcp/vice/r2000-.*\.ts$'
+$ git ls-tree -r --name-only 8f21d77 -- src/mcp/vice | grep -cE '^src/mcp/vice/anno-.*\.ts$'
 35
 ```
 
@@ -150,41 +150,41 @@ Selection non-empty, cardinality **35** — matches the count the entry names, s
 `git show 8f21d77:<path> | wc -l`, per file:
 
 ```
-    97  non-test  src/mcp/vice/r2000-acme-ident.ts
-   285  TEST      src/mcp/vice/r2000-answer-key.test.ts
-  1651  TEST      src/mcp/vice/r2000-cli.test.ts
-  1511  non-test  src/mcp/vice/r2000-cli.ts
-   154  TEST      src/mcp/vice/r2000-confidence.test.ts
-   233  non-test  src/mcp/vice/r2000-confidence.ts
-  2169  TEST      src/mcp/vice/r2000-coverage-grammar.test.ts
-  4781  TEST      src/mcp/vice/r2000-coverage.test.ts
-  2328  non-test  src/mcp/vice/r2000-coverage.ts
-   389  TEST      src/mcp/vice/r2000-d64.test.ts
-   310  non-test  src/mcp/vice/r2000-d64.ts
-   353  TEST      src/mcp/vice/r2000-enum-gen.test.ts
-   574  non-test  src/mcp/vice/r2000-enum-gen.ts
-   527  TEST      src/mcp/vice/r2000-launch.test.ts
-   357  non-test  src/mcp/vice/r2000-launch.ts
-   776  TEST      src/mcp/vice/r2000-mcp-client.test.ts
-   795  non-test  src/mcp/vice/r2000-mcp-client.ts
-   464  TEST      src/mcp/vice/r2000-memmap-render.test.ts
-   531  non-test  src/mcp/vice/r2000-memmap-render.ts
-   414  TEST      src/mcp/vice/r2000-project.test.ts
-   304  non-test  src/mcp/vice/r2000-project.ts
-   421  non-test  src/mcp/vice/r2000-regbits-gen.ts
-   250  TEST      src/mcp/vice/r2000-regbits.test.ts
-   966  TEST      src/mcp/vice/r2000-session.test.ts
-   693  non-test  src/mcp/vice/r2000-session.ts
-   514  TEST      src/mcp/vice/r2000-spawn-seam.test.ts
-   618  TEST      src/mcp/vice/r2000-symbol-roundtrip.test.ts
-   388  non-test  src/mcp/vice/r2000-symbols.ts
-    95  non-test  src/mcp/vice/r2000-test-gate.ts
-  1030  TEST      src/mcp/vice/r2000-tools.test.ts
-  1214  non-test  src/mcp/vice/r2000-tools.ts
-   207  TEST      src/mcp/vice/r2000-upstream-audit.test.ts
-   192  TEST      src/mcp/vice/r2000-verb-coverage.test.ts
-   248  TEST      src/mcp/vice/r2000-verify.test.ts
-   184  non-test  src/mcp/vice/r2000-verify.ts
+    97  non-test  src/mcp/vice/anno-acme-ident.ts
+   285  TEST      src/mcp/vice/absorbed-answer-key.test.ts
+  1651  TEST      src/mcp/vice/anno-cli.test.ts
+  1511  non-test  src/mcp/vice/anno-cli.ts
+   154  TEST      src/mcp/vice/anno-confidence.test.ts
+   233  non-test  src/mcp/vice/anno-confidence.ts
+  2169  TEST      src/mcp/vice/anno-coverage-grammar.test.ts
+  4781  TEST      src/mcp/vice/anno-coverage.test.ts
+  2328  non-test  src/mcp/vice/anno-coverage.ts
+   389  TEST      src/mcp/vice/anno-d64.test.ts
+   310  non-test  src/mcp/vice/anno-d64.ts
+   353  TEST      src/mcp/vice/anno-enum-gen.test.ts
+   574  non-test  src/mcp/vice/anno-enum-gen.ts
+   527  TEST      src/mcp/vice/anno-launch.test.ts
+   357  non-test  src/mcp/vice/anno-launch.ts
+   776  TEST      src/mcp/vice/anno-mcp-client.test.ts
+   795  non-test  src/mcp/vice/anno-mcp-client.ts
+   464  TEST      src/mcp/vice/anno-memmap-render.test.ts
+   531  non-test  src/mcp/vice/anno-memmap-render.ts
+   414  TEST      src/mcp/vice/anno-project.test.ts
+   304  non-test  src/mcp/vice/anno-project.ts
+   421  non-test  src/mcp/vice/anno-regbits-gen.ts
+   250  TEST      src/mcp/vice/anno-regbits.test.ts
+   966  TEST      src/mcp/vice/anno-session.test.ts
+   693  non-test  src/mcp/vice/anno-session.ts
+   514  TEST      src/mcp/vice/spawn-seam.test.ts
+   618  TEST      src/mcp/vice/anno-symbol-roundtrip.test.ts
+   388  non-test  src/mcp/vice/anno-symbols.ts
+    95  non-test  src/mcp/vice/anno-test-gate.ts
+  1030  TEST      src/mcp/vice/anno-tools.test.ts
+  1214  non-test  src/mcp/vice/anno-tools.ts
+   207  TEST      src/mcp/vice/anno-derivation.test.ts
+   192  TEST      src/mcp/vice/anno-verb-coverage.test.ts
+   248  TEST      src/mcp/vice/anno-verify.test.ts
+   184  non-test  src/mcp/vice/anno-verify.ts
 PRE-PHASE TOTAL      = 26023
   non-test subtotal  = 10035
   test subtotal      = 15988
@@ -242,24 +242,24 @@ ordering: reversed-order re-derivation = 19714; equal to sorted-order = true
 **The 15 pre-phase files fully removed** (no name-descendant at `f16d0b1`), enumerated rather than silently dropped:
 
 ```
-src/mcp/vice/r2000-answer-key.test.ts
-src/mcp/vice/r2000-launch.test.ts
-src/mcp/vice/r2000-launch.ts
-src/mcp/vice/r2000-mcp-client.test.ts
-src/mcp/vice/r2000-mcp-client.ts
-src/mcp/vice/r2000-project.test.ts
-src/mcp/vice/r2000-project.ts
-src/mcp/vice/r2000-session.test.ts
-src/mcp/vice/r2000-session.ts
-src/mcp/vice/r2000-spawn-seam.test.ts
-src/mcp/vice/r2000-symbol-roundtrip.test.ts
-src/mcp/vice/r2000-test-gate.ts
-src/mcp/vice/r2000-upstream-audit.test.ts
-src/mcp/vice/r2000-verify.test.ts
-src/mcp/vice/r2000-verify.ts
+src/mcp/vice/absorbed-answer-key.test.ts
+src/mcp/vice/anno-launch.test.ts
+src/mcp/vice/anno-launch.ts
+src/mcp/vice/anno-mcp-client.test.ts
+src/mcp/vice/anno-mcp-client.ts
+src/mcp/vice/anno-project.test.ts
+src/mcp/vice/anno-project.ts
+src/mcp/vice/anno-session.test.ts
+src/mcp/vice/anno-session.ts
+src/mcp/vice/spawn-seam.test.ts
+src/mcp/vice/anno-symbol-roundtrip.test.ts
+src/mcp/vice/anno-test-gate.ts
+src/mcp/vice/anno-derivation.test.ts
+src/mcp/vice/anno-verify.test.ts
+src/mcp/vice/anno-verify.ts
 ```
 
-(`r2000-answer-key.test.ts` and `r2000-spawn-seam.test.ts` have no `anno-` descendant because they were renamed to `absorbed-answer-key.test.ts` and `spawn-seam.test.ts`, which are counted on the survivor side as the three named files. The descendant map is a pure name transform and does not know about those renames — which is exactly why the entry enumerates the three separately.)
+(`absorbed-answer-key.test.ts` and `spawn-seam.test.ts` have no `anno-` descendant because they were renamed to `absorbed-answer-key.test.ts` and `spawn-seam.test.ts`, which are counted on the survivor side as the three named files. The descendant map is a pure name transform and does not know about those renames — which is exactly why the entry enumerates the three separately.)
 
 **Concurrency check.** The working tree was dirtied (`echo … >> .planning/REQUIREMENTS.md`, confirmed by `git status --short` reporting ` M .planning/REQUIREMENTS.md`), both measurements re-run, and the figures were **identical** — 26,023 / 10,035 / 15,988 / 19,714 / 6,309. `git show` reads the object store at a named commit and is unaffected by the tree. The touch was then reverted with `git checkout -- .planning/REQUIREMENTS.md` and `git status --short` confirmed clean.
 
@@ -354,7 +354,7 @@ MCP-04
 | 5 | `git diff --stat` one file; all sites in the same diff | **PASS** — `1 file changed, 6 insertions(+), 4 deletions(-)` |
 | 6 | `grep -c 'MOVES BACK DOWN'` ≥ 1 | **PASS** — 1 |
 | 7 | Independent re-derivation from a clean shell | **PASS** — re-run twice more post-edit; identical each time |
-| 8 | `audit-gate.mjs` exit 0; `check-no-regenerator2000.mjs` exit 0 with empty temporary allow-list | **PASS** — `audit-gate: OK -- 9 docs guards green, 7 milestone audits scanned, 5 declaring a gated status`; `check-no-<subject>: OK -- scanned 392 files … 0 temporarily allow-listed across 0 entries` |
+| 8 | `audit-gate.mjs` exit 0; `check-no-analyser.mjs` exit 0 with empty temporary allow-list | **PASS** — `audit-gate: OK -- 9 docs guards green, 7 milestone audits scanned, 5 declaring a gated status`; `check-no-<subject>: OK -- scanned 392 files … 0 temporarily allow-listed across 0 entries` |
 
 ### Task 2
 
@@ -416,7 +416,7 @@ not ok 1267 - path agreement (D-3, D-6, THE regression this task exists to catch
 | MCP-04 `Complete` at all four sites, superseded BLOCKED quote replaced | **PASS** |
 | `MOVES BACK DOWN` and `corrected DOWNWARD on 2026-08-30` survive | **PASS** (1 each) |
 | `node scripts/audit-gate.mjs` exit 0 | **PASS** |
-| `node scripts/check-no-regenerator2000.mjs` exit 0, empty temporary allow-list | **PASS** — `0 temporarily allow-listed across 0 entries` |
+| `node scripts/check-no-analyser.mjs` exit 0, empty temporary allow-list | **PASS** — `0 temporarily allow-listed across 0 entries` |
 | `test:automated` | 2727 pass / 1 fail (`repo-root.test.ts`, environmental) |
 | `git diff --name-only` across the plan lists exactly `.planning/REQUIREMENTS.md` | **PASS** |
 

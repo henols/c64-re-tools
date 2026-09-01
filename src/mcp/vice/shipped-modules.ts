@@ -28,7 +28,7 @@
 // anyone reading this file later looking for the divergence that motivated its
 // sibling: there is no divergence hazard for the stripper worth speaking of --
 // it had one full-strength consuming file. It is here on a SURVIVAL rationale.
-// Its only home was an `r2000-*.test.ts` file that a later prefix deletion
+// Its only home was an `anno-*.test.ts` file that a later prefix deletion
 // removes, and it is the only implementation in this tree that correctly
 // blanks TEMPLATE-LITERAL bodies -- logic that was measured into existence
 // after a regex extractor was observed to MISS a real violation sitting inside
@@ -46,7 +46,7 @@
 // scanner never left, cutting `anno-coverage.ts` (whose `:1495` does
 // `.replace(/[`*_]/g, "")`) from 2329 lines to 1107 and `incident-record.ts`
 // (whose `:107` does `/'/g`) from 443 to 89 -- hiding seven real exported
-// functions from the R2000-01 spawn-seam guard reading them. That is the
+// functions from the ANNO-01 spawn-seam guard reading them. That is the
 // same "a guard that scans nothing finds nothing" failure the enumerator
 // half of this file exists to remove, so BOTH halves of this module now
 // carry it. `shipped-modules.test.ts` pins the regex shapes, the
@@ -73,7 +73,7 @@
 // importing a `.test.ts` module for its exports also re-runs every top-level
 // `test(...)` call that module registers with the runner, as an import side
 // effect, silently duplicating that file's whole execution inside whichever
-// file imports it. `fork-deleted-tools.ts` and `r2000-test-gate.ts` state both
+// file imports it. `fork-deleted-tools.ts` and `anno-test-gate.ts` state both
 // rules for themselves; this module is the third instance of the same shape.
 //
 // WHAT NOT TO DO
@@ -90,7 +90,7 @@
 //       * `disasm-decoder.test.ts:308` -- local comment-line const
 //       * `disasm-renderer.test.ts:346` -- byte-identical sibling of it
 //       * `disasm-opcodes.test.ts:394`  -- byte-identical sibling of it
-//       * `r2000-tools.test.ts:201`     -- regex variant, and the file whose
+//       * `anno-tools.test.ts:201`     -- regex variant, and the file whose
 //         lines 193-201 state IN CODE why comment-only stripping is the right
 //         tool when the literal being searched for is itself a string
 //       * `stock-dispatch.test.ts`'s `nonCommentLines()` -- line-oriented on
@@ -126,10 +126,10 @@ export class ShippedFilesEntryMissingError extends Error {
  * Deliberately NOT a raw `readdirSync` over every non-`*.test.*` file in
  * this directory. That broader set also catches genuinely test-only helpers
  * that merely fail to end in `.test.ts` by name, and there are now TWO
- * modules of exactly that shape, not one special case: `r2000-test-gate.ts`
+ * modules of exactly that shape, not one special case: `anno-test-gate.ts`
  * (its own header states it is test-only and must never be imported by a
  * production module, and it is deliberately absent from `files[]`) probes
- * regenerator2000's availability with a fixed, hardcoded argv; and
+ * the external analyser's availability with a fixed, hardcoded argv; and
  * `acme-gate.ts` probes the ACME cross-assembler the same way, under the
  * same test-only rule. Both are real child-process call sites that no
  * shipped-surface guard is about, and neither is a file a maintainer ships.
@@ -307,7 +307,7 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
     // (`.replace(/[`*_]/g, "")`) truncated a 2329-line module to 1107 lines
     // of visible code, and `incident-record.ts:107` (`/'/g`) truncated 443
     // lines to 89, hiding seven real exported functions from
-    // `spawn-seam.test.ts`'s R2000-01 scan.
+    // `spawn-seam.test.ts`'s ANNO-01 scan.
     if (c === "/" && regexAllowed) {
       let j = i + 1;
       let inClass = false;

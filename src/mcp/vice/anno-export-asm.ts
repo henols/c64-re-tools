@@ -484,7 +484,7 @@ function formatSymbolDefinition(name: string, address: number): string {
 /**
  * One mid-instruction label definition, in the golden witness's own compact
  * spelling -- no spaces around the `=`, the offset in two hex digits:
- * `f_0900 =*+$01` [`.planning/notes/dxa-ghidra-pivot-evidence/r2000.asm:202`].
+ * `f_0900 =*+$01` [`.planning/notes/dxa-ghidra-pivot-evidence/anno.asm:202`].
  * That witness carries SIX such labels (lines 51, 81, 135, 145, 202 and 205);
  * the ROADMAP note saying four is documentation drift, corrected in
  * `30-RESEARCH.md`.

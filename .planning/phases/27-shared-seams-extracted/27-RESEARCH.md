@@ -35,11 +35,11 @@ observed evidence, not a preference.
 
 `27-CONTEXT.md` `<canonical_refs>` states, verbatim:
 
-> `src/mcp/vice/r2000-project.ts:171-195` — `parsePrg`, `flatImageOrigin` (note `decodeRawData` at `:202` is r2000-payload-specific and does **not** move)
+> `src/mcp/vice/anno-project.ts:171-195` — `parsePrg`, `flatImageOrigin` (note `decodeRawData` at `:202` is anno-payload-specific and does **not** move)
 
 Two observations contradict the parenthetical.
 
-**(a) Its body is not r2000-specific.** `[VERIFIED: src/mcp/vice/r2000-project.ts:196-204]`, quoted verbatim:
+**(a) Its body is not anno-specific.** `[VERIFIED: src/mcp/vice/anno-project.ts:196-204]`, quoted verbatim:
 
 ```
 /**
@@ -52,40 +52,40 @@ export function decodeRawData(base64: string): Uint8Array {
 }
 ```
 
-The function is two generic calls. Only its *doc comment* ties it to r2000's
+The function is two generic calls. Only its *doc comment* ties it to anno's
 `raw_data_base64` field. It is exactly as "pure and prefix-free" as `parsePrg`
 and `flatImageOrigin`, which D-08/D-14 extract on precisely that ground.
 
 **(b) A criterion-2 capability module statically imports it.**
-`[VERIFIED: src/mcp/vice/r2000-coverage.ts:131-134]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-coverage.ts:131-134]`, quoted verbatim:
 
 ```
 import { decode, type Instruction } from "./disasm-decoder.ts";
-import { decodeRawData } from "./r2000-project.ts";
-import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./r2000-confidence.ts";
+import { decodeRawData } from "./anno-project.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
 import { readFileSync } from "node:fs";
 ```
 
-`r2000-coverage.ts` is one of the ten modules criterion 2 says are "provably not
-deletable by prefix". `r2000-project.ts` is D-08's named `glue-with-extractable`
+`anno-coverage.ts` is one of the ten modules criterion 2 says are "provably not
+deletable by prefix". `anno-project.ts` is D-08's named `glue-with-extractable`
 instance. **So after Phase 27 as CONTEXT specifies it, deleting
-`r2000-project.ts` in Phase 32 breaks the coverage census** — a capability whose
+`anno-project.ts` in Phase 32 breaks the coverage census** — a capability whose
 loss does not announce itself. That is the precise failure mode SEAM-02 exists
 to prevent, left in place by the one line of CONTEXT that waves it away.
 
-`r2000-coverage.test.ts:64` imports it too `[VERIFIED: grep, src/mcp/vice/r2000-coverage.test.ts:64]`.
+`anno-coverage.test.ts:64` imports it too `[VERIFIED: grep, src/mcp/vice/anno-coverage.test.ts:64]`.
 
 **Recommended resolution (planner's call, both discharge it):**
 1. *Minimum, does not overrule CONTEXT:* record `decodeRawData` as a **named
-   extractable symbol** in `r2000-project.ts`'s `glue-with-extractable` registry
+   extractable symbol** in `anno-project.ts`'s `glue-with-extractable` registry
    entry (D-08 explicitly exists to name "the specific symbols that must move
    out before the module may be deleted"). Cost: one registry field. Phase 32
    cannot then discharge the obligation by ignoring it.
 2. *Cleaner:* move it into `prg-image.ts` alongside `parsePrg`/`flatImageOrigin`
    in this phase. It is the same shape of pure byte-level helper and it already
    has a non-glue consumer. Cost: `prg-image.ts` gains a `node:zlib` import; two
-   more import sites to repoint (`r2000-coverage.ts:132`,
-   `r2000-coverage.test.ts:64`).
+   more import sites to repoint (`anno-coverage.ts:132`,
+   `anno-coverage.test.ts:64`).
 
 Option 2 is recommended: option 1 leaves the census's dependency on a
 to-be-deleted module live for five more phases, and D-14's own rationale
@@ -94,46 +94,46 @@ to-be-deleted module live for five more phases, and D-14's own rationale
 planner must **state the choice**; silently following CONTEXT's parenthetical is
 the one route that leaves the hazard.
 
-### C-2 — `r2000-test-gate.ts` keeps **ten** importers, not nine, and one import statement must be *split* rather than rewritten
+### C-2 — `anno-test-gate.ts` keeps **ten** importers, not nine, and one import statement must be *split* rather than rewritten
 
-D-01 states: "`r2000-test-gate.ts` keeps only the regenerator2000 half and its
-nine remaining importers." Measured against the tree, the regenerator2000 half
+D-01 states: "`anno-test-gate.ts` keeps only the external analyser half and its
+nine remaining importers." Measured against the tree, the external analyser half
 has **ten** importing files. The undercount arises because CONTEXT treated the
 four ACME importers as disjoint from the remainder (13 distinct importers − 4 =
-9), but **`r2000-cli.test.ts` imports both halves**.
+9), but **`anno-cli.test.ts` imports both halves**.
 
-`[VERIFIED: src/mcp/vice/r2000-cli.test.ts:22-28]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-cli.test.ts:22-28]`, quoted verbatim:
 
 ```
 import {
-  R2000_AVAILABLE,
+  ANNO_AVAILABLE,
   skipReasonFor,
-  assertR2000RequiredIfEnvSet,
+  assertAnnoRequiredIfEnvSet,
   ACME_AVAILABLE,
   assertAcmeRequiredIfEnvSet,
-} from "./r2000-test-gate.ts";
+} from "./anno-test-gate.ts";
 ```
 
 **Consequence for the plan:** three of the four ACME importers get their import
-line *rewritten*; `r2000-cli.test.ts` gets its single import statement **split
-into two** — one retaining `R2000_AVAILABLE`, `skipReasonFor`,
-`assertR2000RequiredIfEnvSet` from `./r2000-test-gate.ts`, one taking
+line *rewritten*; `anno-cli.test.ts` gets its single import statement **split
+into two** — one retaining `ANNO_AVAILABLE`, `skipReasonFor`,
+`assertAnnoRequiredIfEnvSet` from `./anno-test-gate.ts`, one taking
 `ACME_AVAILABLE`, `assertAcmeRequiredIfEnvSet` from the new module. Note also
-that `r2000-cli.test.ts` imports `ACME_AVAILABLE`/`assertAcmeRequiredIfEnvSet`
+that `anno-cli.test.ts` imports `ACME_AVAILABLE`/`assertAcmeRequiredIfEnvSet`
 but **not** `ACME_BIN`/`acmeSkipReasonFor` — an acceptance criterion asserting
 "all four files import `ACME_BIN`" would be false.
 
 ### C-3 — There is exactly **one** `codeOnly()`, not two; and `stock-dispatch.test.ts` deliberately does **not** borrow it
 
 The roadmap Notes say: "the `codeOnly()` / `shippedTsModules()` helpers
-`stock-dispatch.test.ts:2889,2919` borrows from `r2000-spawn-seam.test.ts`".
+`stock-dispatch.test.ts:2889,2919` borrows from `spawn-seam.test.ts`".
 D-15 says "two of `codeOnly()`".
 
 Measured: `grep -n "^function codeOnly"` across `src/mcp/vice/` returns exactly
-one hit — `r2000-spawn-seam.test.ts:65` `[VERIFIED: src/mcp/vice/r2000-spawn-seam.test.ts:65]`.
+one hit — `spawn-seam.test.ts:65` `[VERIFIED: src/mcp/vice/spawn-seam.test.ts:65]`.
 
 The two cited `stock-dispatch.test.ts` lines are **prose, not definitions**:
-- `:2889` is inside a header comment: `// the same shippedTsModules() idiom r2000-spawn-seam.test.ts already`
+- `:2889` is inside a header comment: `// the same shippedTsModules() idiom spawn-seam.test.ts already`
 - `:2919` is inside a doc comment that explicitly declines `codeOnly()`. `[VERIFIED: src/mcp/vice/stock-dispatch.test.ts:2913-2923]`, quoted verbatim:
 
 ```
@@ -142,7 +142,7 @@ The two cited `stock-dispatch.test.ts` lines are **prose, not definitions**:
  * .ts's OWN doc comment quotes both forbidden shapes as prose describing what
  * NOT to do (335-346), and this file's own comments quote WR-13's fixed
  * wording; neither is a live occurrence. Line-oriented, not the fuller
- * codeOnly() string-literal stripper r2000-spawn-seam.test.ts uses -- no
+ * codeOnly() string-literal stripper spawn-seam.test.ts uses -- no
  * shipped module's non-comment code has any legitimate reason to hold either
  * forbidden phrase inside a string literal either, so the simpler filter is
  * sufficient here. */
@@ -156,11 +156,11 @@ at `:2902`), and holds a *fifth* distinct comment-stripper (`nonCommentLines()`
 at `:2925`) whose non-use of `codeOnly()` is a recorded, reasoned decision.
 
 **Consequence:** `codeOnly()` has exactly **one** consumer today
-(`r2000-spawn-seam.test.ts` itself, at `:276` and `:493`). There is therefore
+(`spawn-seam.test.ts` itself, at `:276` and `:493`). There is therefore
 **no divergence hazard** for `codeOnly()` — the divergence argument D-15 makes
 applies only to `shippedTsModules()`. The case for extracting `codeOnly()` is a
-*survival* case, not a divergence case: `r2000-spawn-seam.test.ts` is an
-`r2000-*.test.ts` file Phase 32 deletes, so `codeOnly()` dies with it. The
+*survival* case, not a divergence case: `spawn-seam.test.ts` is an
+`anno-*.test.ts` file Phase 32 deletes, so `codeOnly()` dies with it. The
 planner should either state that survival rationale explicitly, or scope D-15 to
 `shippedTsModules()` alone. See Open Question OQ-1 for the tension this creates
 with the "no partial repoints" principle.
@@ -205,10 +205,10 @@ comment needs the clarification.)
 
 | Citation in `27-CONTEXT.md` | Observed | Status |
 |---|---|---|
-| `ACME_AVAILABLE` at `r2000-test-gate.ts:132` (D-05) | `r2000-test-gate.ts:**134**` | drift, −2 |
-| `storeBlockTypeAt`, `r2000-coverage.ts:1662` (D-11) | `r2000-coverage.ts:**1662**` | **exact** |
+| `ACME_AVAILABLE` at `anno-test-gate.ts:132` (D-05) | `anno-test-gate.ts:**134**` | drift, −2 |
+| `storeBlockTypeAt`, `anno-coverage.ts:1662` (D-11) | `anno-coverage.ts:**1662**` | **exact** |
 
-`[VERIFIED: src/mcp/vice/r2000-test-gate.ts:133-134]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-test-gate.ts:133-134]`, quoted verbatim:
 
 ```
 /** Probed once at module load, shared by every importing test file. */
@@ -219,7 +219,7 @@ The substance of D-05 is unaffected — `ACME_AVAILABLE` **is** evaluated once a
 module load, so no in-process test can re-probe, and the child-process design
 stands. Only the cited line number is stale.
 
-The one other drift: `r2000-project.ts:171-195` is cited for `parsePrg` +
+The one other drift: `anno-project.ts:171-195` is cited for `parsePrg` +
 `flatImageOrigin`. `parsePrg` is at `:171` and `flatImageOrigin` at `:188`
 (exact), but `flatImageOrigin`'s body ends at `:194` and its doc comment starts
 at `:182` — the range `171-195` is correct as a span. No action.
@@ -227,8 +227,8 @@ at `:182` — the range `171-195` is correct as a span. No action.
 ### C-6 — The criterion-3 test is **not** named `COV-01`/`COV-02` in its own file
 
 Criterion 3 and D-13 refer to "`COV-01`/`COV-02`'s census-versus-store boundary
-test" at `r2000-coverage.test.ts:604`. The line number is exact, but the test's
-own name carries neither id. `[VERIFIED: src/mcp/vice/r2000-coverage.test.ts:600-606]`, quoted verbatim:
+test" at `anno-coverage.test.ts:604`. The line number is exact, but the test's
+own name carries neither id. `[VERIFIED: src/mcp/vice/anno-coverage.test.ts:600-606]`, quoted verbatim:
 
 ```
 // ---------------------------------------------------------------------------
@@ -237,15 +237,15 @@ own name carries neither id. `[VERIFIED: src/mcp/vice/r2000-coverage.test.ts:600
 
 test("independence: rewriting every block entry to one type leaves every census byte count unchanged and moves only the divergence sub-report", () => {
   const before = reportFor(WELL_DOCUMENTED);
-  const oneType: R2000BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];
+  const oneType: AnnoBlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];
 ```
 
 The literal strings `COV-01` and `COV-02` appear elsewhere in that file — at
 `:578`, `:592` (a *different* test: "no key anywhere in the report matches a
-combined-figure vocabulary"), and `:816`, `:913` `[VERIFIED: grep -n "COV-01\|COV-02" src/mcp/vice/r2000-coverage.test.ts]`.
+combined-figure vocabulary"), and `:816`, `:913` `[VERIFIED: grep -n "COV-01\|COV-02" src/mcp/vice/anno-coverage.test.ts]`.
 
 **Consequence:** an acceptance criterion written as "grep for `COV-01` in
-`r2000-coverage.test.ts` and confirm it passes" targets the wrong test. The
+`anno-coverage.test.ts` and confirm it passes" targets the wrong test. The
 criterion must name the test by its **title string** (`"independence: rewriting
 every block entry to one type…"`) or by its line, not by requirement id.
 
@@ -256,17 +256,17 @@ every block entry to one type…"`) or by its line, not by requirement id.
 
 ### Locked Decisions
 
-- **D-01: The ACME half is a hard move out of `r2000-test-gate.ts` — no
+- **D-01: The ACME half is a hard move out of `anno-test-gate.ts` — no
   re-export shim.** `ACME_BIN`, `probeAcme`, `ACME_AVAILABLE`,
   `acmeSkipReasonFor` and `assertAcmeRequiredIfEnvSet` move to a new module and
   all four importing test files get their import line rewritten:
   `disasm-roundtrip.test.ts:57`, `skill-acme-build-cli.test.ts:47`,
-  `r2000-cli.test.ts:28`, `r2000-answer-key.test.ts:228-231`.
-  `r2000-test-gate.ts` keeps only the regenerator2000 half and its nine
+  `anno-cli.test.ts:28`, `absorbed-answer-key.test.ts:228-231`.
+  `anno-test-gate.ts` keeps only the external analyser half and its nine
   remaining importers. A shim was rejected precisely because it would leave the
-  deletion hazard intact: with a re-export in place, deleting `r2000-*` still
+  deletion hazard intact: with a re-export in place, deleting `anno-*` still
   breaks four test files, which is the failure `SEAM-01` exists to remove.
-  Verified: `grep -c` of the ACME symbols under `r2000-*` reaching zero is the
+  Verified: `grep -c` of the ACME symbols under `anno-*` reaching zero is the
   observable form of this decision.
   — **Reversibility:** reversible — five symbols and four import lines.
 
@@ -294,16 +294,16 @@ every block entry to one type…"`) or by its line, not by requirement id.
 
 - **D-04: The new module gets its own `acme-gate.test.ts`**, carrying (a) the
   `package.json` `files[]`-absence assertion for `acme-gate.ts` and (b)
-  criterion 1's hard-FAIL proof. `r2000-verify.test.ts:187` is left alone — it
-  is still correct about `r2000-test-gate.ts`. Extending that assertion was
-  rejected: it would put a non-`r2000` module's only structural guard inside an
-  `r2000-*` test file, re-creating the exact prefix-deletion hazard this phase
+  criterion 1's hard-FAIL proof. `anno-verify.test.ts:187` is left alone — it
+  is still correct about `anno-test-gate.ts`. Extending that assertion was
+  rejected: it would put a non-`anno` module's only structural guard inside an
+  `anno-*` test file, re-creating the exact prefix-deletion hazard this phase
   removes.
   — **Reversibility:** reversible.
 
 - **D-05: Criterion 1's FAIL is proven by a committed child-process test, not a
   one-off transcript.** `ACME_AVAILABLE` is evaluated once at module load
-  (`r2000-test-gate.ts:132`), so no in-process test can re-probe. The test
+  (`anno-test-gate.ts:132`), so no in-process test can re-probe. The test
   spawns a child `node --test` run with `VICE_REQUIRE_ACME=1` and `ACME_BIN`
   pointed at a nonexistent path, and asserts a **non-zero exit** plus the
   assertion message. It re-runs on every CI run forever, so the gate cannot
@@ -312,7 +312,7 @@ every block entry to one type…"`) or by its line, not by requirement id.
   — **Reversibility:** reversible.
 
 - **D-06: The record is a committed registry data file plus an enforcing test,
-  not a prose document.** The test enumerates `src/mcp/vice/r2000-*` on disk and
+  not a prose document.** The test enumerates `src/mcp/vice/anno-*` on disk and
   **FAILS** when any module has no registry entry, so a module added later
   cannot slip in unclassified. A `docs/` page was rejected as the sole record:
   nothing fails when it goes stale, and its consumer (Phase 32) is five phases
@@ -324,8 +324,8 @@ every block entry to one type…"`) or by its line, not by requirement id.
 
 - **D-07: Each entry's basis is surviving consumers plus requirement ids —
   never the name prefix.** An entry names the concrete files/symbols that break
-  if the module vanishes, plus any requirement it implements (`r2000-symbols` →
-  the ✓ Validated `R2000-14`/`R2000-15` symbol round trip; `r2000-coverage` →
+  if the module vanishes, plus any requirement it implements (`anno-symbols` →
+  the ✓ Validated `ANNO-14`/`ANNO-15` symbol round trip; `anno-coverage` →
   `COV-01`/`COV-02`). **Capability** means it has a consumer or a requirement
   that survives the substrate swap. The enforcing test asserts every cited
   consumer path exists on disk and that no entry's justification rests on the
@@ -335,9 +335,9 @@ every block entry to one type…"`) or by its line, not by requirement id.
 
 - **D-08: Three verdicts, not two: `capability`, `glue`, `glue-with-extractable`.**
   The third names the specific symbols that must move out before the module may
-  be deleted. `r2000-project.ts` is the concrete instance — it is glue that
-  drives the regenerator2000 binary, but it also holds `parsePrg`
-  (`r2000-project.ts:171`) and `flatImageOrigin` (`:188`), which are pure and
+  be deleted. `anno-project.ts` is the concrete instance — it is glue that
+  drives the external analyser binary, but it also holds `parsePrg`
+  (`anno-project.ts:171`) and `flatImageOrigin` (`:188`), which are pure and
   prefix-free. This turns "also extractable" from a nice-to-have into a recorded
   obligation Phase 32 cannot discharge by ignoring it.
   — **Reversibility:** reversible.
@@ -351,9 +351,9 @@ every block entry to one type…"`) or by its line, not by requirement id.
   — **Reversibility:** reversible.
 
 - **D-10: The boundary is an adapter module with a neutral vocabulary.** A new
-  non-`r2000` module owns the upstream Rust `Display` strings and exposes a
+  non-`anno` module owns the upstream Rust `Display` strings and exposes a
   neutral shape (e.g. `blockClassAt(blocks, addr) → "code" | "data" |
-  "undefined" | null`). After the move `r2000-coverage.ts` contains **no**
+  "undefined" | null`). After the move `anno-coverage.ts` contains **no**
   literal `"Code"` / `"Undefined"` / `"Byte"` comparison anywhere. Phase 28
   swaps the adapter, not the census. Rejected: an injected default-argument
   mapping (a caller that forgets it silently gets upstream's vocabulary back —
@@ -365,15 +365,15 @@ every block entry to one type…"`) or by its line, not by requirement id.
 
 - **D-11: All three comparison sites route through the adapter — including the
   divergence sub-report.** The requirement text says "two functions"
-  (`storeBlockTypeAt`, `r2000-coverage.ts:1662`; `classFromStore`, `:1683`), but
+  (`storeBlockTypeAt`, `anno-coverage.ts:1662`; `classFromStore`, `:1683`), but
   the scout found a **third** site: the boundary-audit block at
-  `r2000-coverage.ts:1983-1986` compares `blockType !== "Code"` and
+  `anno-coverage.ts:1983-1986` compares `blockType !== "Code"` and
   `blockType === "Code"` directly. Leaving it behind would leave the census
   holding upstream's vocabulary and quietly falsify criterion 3. Treat
   "two functions" as the requirement's measurement, not as an exhaustive list.
   — **Reversibility:** reversible.
 
-- **D-12: `r2000-coverage.ts` keeps its name this phase.** Only its store
+- **D-12: `anno-coverage.ts` keeps its name this phase.** Only its store
   contact moves; the census itself is protected by its registry entry (D-06/D-07)
   rather than by a rename. It is 2292 lines with a 4315-line test file, no
   criterion requires the rename, and renaming it makes criterion 4's
@@ -385,7 +385,7 @@ every block entry to one type…"`) or by its line, not by requirement id.
   a string search.** A new test feeds the census a *different* block-vocabulary
   implementation through the adapter and asserts the census's byte counts are
   unchanged while only the divergence sub-report moves. This is the same shape
-  as the existing independence test at `r2000-coverage.test.ts:604` (the
+  as the existing independence test at `anno-coverage.test.ts:604` (the
   mass-rewrite-to-one-type test `COV-01`/`COV-02` already own), and it is the
   property Phase 28 actually needs. A structural "no Rust literal survives in
   the census" guard proves absence of a string, not substitutability — it is
@@ -393,12 +393,12 @@ every block entry to one type…"`) or by its line, not by requirement id.
   — **Reversibility:** reversible.
 
 - **D-14: `prg-image.ts` is extracted in this phase.** `parsePrg` and
-  `flatImageOrigin` move out of `r2000-project.ts` into a new
+  `flatImageOrigin` move out of `anno-project.ts` into a new
   `src/mcp/vice/prg-image.ts`. They are the concrete instance behind
-  `r2000-project.ts`'s `glue-with-extractable` verdict (D-08), so extracting now
+  `anno-project.ts`'s `glue-with-extractable` verdict (D-08), so extracting now
   discharges that obligation immediately instead of leaving Phase 32 to do it
   under deletion pressure. **Unlike the gate, this module ships**:
-  `r2000-project.ts` is in `package.json`'s `files[]`, so `prg-image.ts` must be
+  `anno-project.ts` is in `package.json`'s `files[]`, so `prg-image.ts` must be
   added there too, and `scripts/check-npm-packages.mjs` validates the resulting
   tarball contents.
   — **Reversibility:** costly — adding a file to `files[]` changes the published
@@ -406,18 +406,18 @@ every block entry to one type…"`) or by its line, not by requirement id.
 
 - **D-15: `shippedTsModules()` / `codeOnly()` are extracted to one shared
   test-only helper, and all copies are repointed.** The scout found **four**
-  hand-copies of `shippedTsModules()` — `r2000-spawn-seam.test.ts:176`,
+  hand-copies of `shippedTsModules()` — `spawn-seam.test.ts:176`,
   `stock-dispatch.test.ts:2902`, `docs-dangling-refs.test.ts:353`,
   `comment-phase-pointers.test.ts:400` — and two of `codeOnly()`
-  (`r2000-spawn-seam.test.ts:65`, plus the partial variants in
+  (`spawn-seam.test.ts:65`, plus the partial variants in
   `disasm-decoder.test.ts:308`, `disasm-renderer.test.ts:346`,
-  `disasm-opcodes.test.ts:394`, `r2000-tools.test.ts:201`). The roadmap names
+  `disasm-opcodes.test.ts:394`, `anno-tools.test.ts:201`). The roadmap names
   only `stock-dispatch`'s copy. Four copies of a `files[]`-derived module
-  enumerator is exactly the divergence hazard `r2000-test-gate.ts`'s own header
+  enumerator is exactly the divergence hazard `anno-test-gate.ts`'s own header
   was written to stop. Test-only, so the helper stays out of `files[]`.
   **Scope note for the planner:** the four `shippedTsModules()` copies are
   verbatim and repoint cleanly. The `codeOnly()` variants in the three
-  `disasm-*` / `r2000-tools` test files are *partial* strippers doing a
+  `disasm-*` / `anno-tools` test files are *partial* strippers doing a
   different job (comments only, not string bodies) — repoint only the true
   `codeOnly()` copies, and leave the partial ones unless they turn out
   identical on inspection.
@@ -429,7 +429,7 @@ every block entry to one type…"`) or by its line, not by requirement id.
   than an import — this file and `docs-dangling-refs.test.ts` each own their own
   scan end-to-end."* The convention forbids one guard test importing **another
   guard test**. Importing a neutral non-test helper module is a different thing
-  — `r2000-spawn-seam.test.ts:53` already imports `r2000-test-gate.ts` exactly
+  — `spawn-seam.test.ts:53` already imports `anno-test-gate.ts` exactly
   that way. So the extraction is compatible with the convention, **and that
   comment is rewritten in the same commit** to state the convention's scope
   explicitly, so it is not re-read later as a ban on all sharing. Leaving the
@@ -453,16 +453,16 @@ every block entry to one type…"`) or by its line, not by requirement id.
 The following were left open with a stated lean; the planner decides:
 
 - **Adapter module name (D-10).** Lean: `block-class.ts` or
-  `annotation-blocks.ts` — must not say `r2000`, and must not collide with
+  `annotation-blocks.ts` — must not say `anno`, and must not collide with
   anything already in `src/mcp/vice/`. Check the directory before choosing.
-- **Whether `R2000BlockEntry` (and `R2000Symbol` / `R2000Comment`) move with the
-  adapter (`r2000-coverage.ts:192-219`).** Lean: `R2000BlockEntry` moves (it is
+- **Whether `AnnoBlockEntry` (and `AnnoSymbol` / `AnnoComment`) move with the
+  adapter (`anno-coverage.ts:192-219`).** Lean: `AnnoBlockEntry` moves (it is
   the store's shape and its doc comment literally documents the Rust `Display`
   vocabulary); the other two stay, since nothing in this phase touches them.
-  If they move, they are renamed off the `R2000` prefix.
-- **Whether the registry also covers `r2000-*.test.ts` files and
-  `r2000-regbits.json`.** Lean: cover the 16 non-test modules plus
-  `r2000-regbits.json` (it is in `files[]`); leave test files out, since a test
+  If they move, they are renamed off the `ANNO` prefix.
+- **Whether the registry also covers `anno-*.test.ts` files and
+  `anno-regbits.json`.** Lean: cover the 16 non-test modules plus
+  `anno-regbits.json` (it is in `files[]`); leave test files out, since a test
   file's fate follows its module's.
 - **Registry file format** (TS module with a typed const, vs JSON). Lean: TS —
   the enforcing test gets type-checking for free and `tsconfig` already covers
@@ -474,23 +474,23 @@ The following were left open with a stated lean; the planner decides:
   of the rest.
 
 **One standing hazard for the enforcing test (D-06):** assert *relations*, not
-counts. A pinned "there are exactly 16 `r2000-*` modules" assertion goes red on
+counts. A pinned "there are exactly 16 `anno-*` modules" assertion goes red on
 a correct tree the moment a module is added or extracted — the failure mode
 already seen in `audit-integrity.test.ts`. The test's contract is "every module
 on disk has an entry and every cited consumer exists", never a total.
 
 ### Deferred Ideas (OUT OF SCOPE)
 
-- **Renaming `r2000-coverage.ts` off the prefix.** Explicitly deferred by D-12
+- **Renaming `anno-coverage.ts` off the prefix.** Explicitly deferred by D-12
   to Phase 31/32, once its consumers are already repointed.
-- **The remaining `r2000-*` capability renames** (`-acme-ident`, `-confidence`,
+- **The remaining `anno-*` capability renames** (`-acme-ident`, `-confidence`,
   `-symbols`, `-verify`, `-memmap-render`, `-d64`, `-regbits-gen`, `-enum-gen`).
   This phase records their classification (D-06/D-07); it does not rename them.
   Whether they ever need renaming is a Phase 32 question the registry exists to
   answer.
 - **The partial `codeOnly()` variants** in `disasm-decoder.test.ts:308`,
   `disasm-renderer.test.ts:346`, `disasm-opcodes.test.ts:394` and
-  `r2000-tools.test.ts:201` — comment-only strippers doing a different job. Not
+  `anno-tools.test.ts:201` — comment-only strippers doing a different job. Not
   consolidated (D-15).
 - Six reviewed todos, none folded (broker, capture and planning concerns).
 </user_constraints>
@@ -500,9 +500,9 @@ on disk has an entry and every cited consumer exists", never a total.
 
 | ID | Description (verbatim, `REQUIREMENTS.md:68-70`) | Research Support |
 |----|-------------|------------------|
-| SEAM-01 | "The ACME availability gate is extracted out of `r2000-test-gate.ts` under a name that does not say `r2000`, keeping `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` working for `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` — and `ci.yml` is repointed in the same commit, because CI binds those names directly (`ci.yml:45-140`). Proven by observing a missing-ACME run **FAIL** under `VICE_REQUIRE_ACME=1`, not skip" | §Verified Reference Map rows 1-8 (all five symbols + their exact lines); §ci.yml Binding Audit (proves **no** ci.yml code edit is needed, D-03 confirmed); Correction C-2 (the importer set is 4 ACME + 10 r2000-half, one file in both); §Validation Architecture V-1 (the child-process hard-FAIL design, with the in-repo precedent named) |
-| SEAM-02 | "Every `r2000-*` module that is a **capability rather than glue** is identified by what it does and not by its name prefix, and the classification is recorded before any deletion — at minimum `r2000-test-gate`, `-acme-ident`, `-confidence`, `-symbols` (which *implements* the ✓ Validated `R2000-14`/`R2000-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`, `-regbits-gen`, `-enum-gen` and `-coverage`. A module whose only claim to deletion is its prefix is not deleted" | §SEAM-02 Ground Truth — the full on-disk module list, every module's live consumer set by file:line, and the requirement ids each serves; §Glue-vs-Capability Discriminator (why "has a non-`r2000` consumer" is *not* the test); Correction C-1 (a fifth capability dependency CONTEXT excludes); OQ-2 (`-verify`'s contested classification); §Registry Scope Gaps |
-| SEAM-03 | "`r2000-coverage.ts`'s store contact is reduced to a named, repointable boundary — measured as two functions comparing against upstream's Rust `Display` strings — so the coverage census survives the substrate swap intact rather than being deleted as glue. `COV-01`/`COV-02`'s census-versus-store boundary test passes against the new store" | §The Coverage Boundary, Measured — all three comparison sites + both `storeBlockTypeAt()` call sites verified at exact lines with verbatim quotes; §The Stale Header Invariant (the module's own "one call site" claim is already false and the adapter is what makes it true); Correction C-6 (the criterion-3 test is not named `COV-01`/`COV-02`); §Validation Architecture V-3 (D-13's second-implementation design) |
+| SEAM-01 | "The ACME availability gate is extracted out of `anno-test-gate.ts` under a name that does not say `anno`, keeping `ACME_BIN`, `VICE_REQUIRE_ACME` and `assertAcmeRequiredIfEnvSet` working for `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` — and `ci.yml` is repointed in the same commit, because CI binds those names directly (`ci.yml:45-140`). Proven by observing a missing-ACME run **FAIL** under `VICE_REQUIRE_ACME=1`, not skip" | §Verified Reference Map rows 1-8 (all five symbols + their exact lines); §ci.yml Binding Audit (proves **no** ci.yml code edit is needed, D-03 confirmed); Correction C-2 (the importer set is 4 ACME + 10 anno-half, one file in both); §Validation Architecture V-1 (the child-process hard-FAIL design, with the in-repo precedent named) |
+| SEAM-02 | "Every `anno-*` module that is a **capability rather than glue** is identified by what it does and not by its name prefix, and the classification is recorded before any deletion — at minimum `anno-test-gate`, `-acme-ident`, `-confidence`, `-symbols` (which *implements* the ✓ Validated `ANNO-14`/`ANNO-15` symbol round trip), `-verify`, `-memmap-render`, `-d64`, `-regbits-gen`, `-enum-gen` and `-coverage`. A module whose only claim to deletion is its prefix is not deleted" | §SEAM-02 Ground Truth — the full on-disk module list, every module's live consumer set by file:line, and the requirement ids each serves; §Glue-vs-Capability Discriminator (why "has a non-`anno` consumer" is *not* the test); Correction C-1 (a fifth capability dependency CONTEXT excludes); OQ-2 (`-verify`'s contested classification); §Registry Scope Gaps |
+| SEAM-03 | "`anno-coverage.ts`'s store contact is reduced to a named, repointable boundary — measured as two functions comparing against upstream's Rust `Display` strings — so the coverage census survives the substrate swap intact rather than being deleted as glue. `COV-01`/`COV-02`'s census-versus-store boundary test passes against the new store" | §The Coverage Boundary, Measured — all three comparison sites + both `storeBlockTypeAt()` call sites verified at exact lines with verbatim quotes; §The Stale Header Invariant (the module's own "one call site" claim is already false and the adapter is what makes it true); Correction C-6 (the criterion-3 test is not named `COV-01`/`COV-02`); §Validation Architecture V-3 (D-13's second-implementation design) |
 </phase_requirements>
 
 ## Project Constraints (from CLAUDE.md)
@@ -527,11 +527,11 @@ reorganisation inside a single Node package. The map is therefore over
 
 | Capability | Primary Tier | Secondary Tier | Rationale |
 |------------|-------------|----------------|-----------|
-| ACME binary availability probe (`probeAcme`, `ACME_AVAILABLE`) | Test-harness seam (`acme-gate.ts`, not in `files[]`) | CI env binding (`ci.yml` env vars) | It gates *whether external-oracle tests may skip*. It is not shipped runtime behaviour, exactly as `r2000-test-gate.ts` is not. `r2000-verify.test.ts:187`'s `files[]`-absence pattern is the enforcement. |
+| ACME binary availability probe (`probeAcme`, `ACME_AVAILABLE`) | Test-harness seam (`acme-gate.ts`, not in `files[]`) | CI env binding (`ci.yml` env vars) | It gates *whether external-oracle tests may skip*. It is not shipped runtime behaviour, exactly as `anno-test-gate.ts` is not. `anno-verify.test.ts:187`'s `files[]`-absence pattern is the enforcement. |
 | CI hard-FAIL switch (`VICE_REQUIRE_ACME`) | CI configuration (`ci.yml:140`) | Test-harness seam (reads `process.env`) | CI owns *setting* it; the module owns *honouring* it. The binding is by env-var name only — no module path crosses the boundary. This is why D-03's "no ci.yml code edit" holds. |
-| `r2000-*` capability-or-glue classification | Committed data + enforcing test (registry in `src/mcp/vice/`, not in `files[]`) | Phase 32 deletion decisions (downstream consumer) | Bookkeeping, not runtime. Colocated with the modules so drift and the enumerating test land in one diff (D-09). |
-| Block-vocabulary translation (Rust `Display` → neutral class) | Adapter module (non-`r2000`, ships or not per §Discretion Resolutions) | `r2000-coverage.ts` census (consumer only) | The census must own *derivation from bytes*; the store's vocabulary is a foreign contract. Phase 28 swaps the adapter, never the census (D-10). |
-| `.prg` / flat-64K byte-layout parsing | Shipped runtime module (`prg-image.ts`, **in** `files[]`) | `r2000-cli.ts` + five test files (consumers) | Pure byte-level C64 file-format knowledge with no regenerator2000 dependency. Its one shipped consumer (`r2000-cli.ts:56`) is why it must be in `files[]`. |
+| `anno-*` capability-or-glue classification | Committed data + enforcing test (registry in `src/mcp/vice/`, not in `files[]`) | Phase 32 deletion decisions (downstream consumer) | Bookkeeping, not runtime. Colocated with the modules so drift and the enumerating test land in one diff (D-09). |
+| Block-vocabulary translation (Rust `Display` → neutral class) | Adapter module (non-`anno`, ships or not per §Discretion Resolutions) | `anno-coverage.ts` census (consumer only) | The census must own *derivation from bytes*; the store's vocabulary is a foreign contract. Phase 28 swaps the adapter, never the census (D-10). |
+| `.prg` / flat-64K byte-layout parsing | Shipped runtime module (`prg-image.ts`, **in** `files[]`) | `anno-cli.ts` + five test files (consumers) | Pure byte-level C64 file-format knowledge with no the external analyser dependency. Its one shipped consumer (`anno-cli.ts:56`) is why it must be in `files[]`. |
 | `files[]`-derived shipped-module enumeration | Test-only shared helper (not in `files[]`) | Four guard test files (consumers) | Four identical copies of one `package.json`-reading enumerator is a divergence hazard; the shared helper is a neutral non-test module, which D-16 establishes is *not* what the convention forbids. |
 
 ## Verified Reference Map (SEAM-01)
@@ -540,7 +540,7 @@ Every reference `27-CONTEXT.md` inherits for the gate split, re-checked against
 the tree at `1785165`. **"exact"** means the cited line number matches what is on
 disk today.
 
-### The five ACME symbols in `src/mcp/vice/r2000-test-gate.ts` (166 lines total)
+### The five ACME symbols in `src/mcp/vice/anno-test-gate.ts` (166 lines total)
 
 | Symbol | CONTEXT cites | Observed | Status |
 |---|---|---|---|
@@ -552,7 +552,7 @@ disk today.
 | The ACME half's boundary | `:96-166` | `:97-166` (banner comment opens at `:97`) | effectively exact |
 | The ACME half's rationale | `:96-113` | `:97-112` | effectively exact |
 
-`[VERIFIED: src/mcp/vice/r2000-test-gate.ts:97-134]`, quoted verbatim (the block
+`[VERIFIED: src/mcp/vice/anno-test-gate.ts:97-134]`, quoted verbatim (the block
 that must travel with the code, per `<code_context>`):
 
 ```
@@ -561,11 +561,11 @@ that must travel with the code, per `<code_context>`):
 //
 // WHY IT LIVES HERE TOO: `disasm-roundtrip.test.ts` established the
 // `ACME_BIN`/`VICE_REQUIRE_ACME` convention in an earlier phase, and
-// `r2000-cli.test.ts` hand-copied it for criterion 3. The Phase 11
+// `anno-cli.test.ts` hand-copied it for criterion 3. The Phase 11
 // validation audit needed a THIRD copy for criterion 1's fixture
 // reproducibility check -- which is precisely the divergence this module's
 // own header exists to stop. So the probe lives here instead, and every
-// ACME-gated test file (`disasm-roundtrip.test.ts`, `r2000-cli.test.ts`)
+// ACME-gated test file (`disasm-roundtrip.test.ts`, `anno-cli.test.ts`)
 // imports it from here rather than copying it.
 //
 // The env var names are deliberately UNCHANGED (`ACME_BIN`,
@@ -597,18 +597,18 @@ export const ACME_AVAILABLE: boolean = probeAcme();
 ```
 
 **Note for the planner:** `spawnSync` is imported once at
-`r2000-test-gate.ts:34` (`import { spawnSync } from "node:child_process";`) and
+`anno-test-gate.ts:34` (`import { spawnSync } from "node:child_process";`) and
 is used by **both** halves. `acme-gate.ts` needs its own copy of that import;
-`r2000-test-gate.ts` keeps its (the R2000 probe still uses it).
+`anno-test-gate.ts` keeps its (the ANNO probe still uses it).
 
 Two additional header facts that must be carried into `acme-gate.ts`'s own header
-`[VERIFIED: src/mcp/vice/r2000-test-gate.ts:25-33]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-test-gate.ts:25-33]`, quoted verbatim:
 
 ```
 // This module is TEST-ONLY. It must never appear in package.json's `files[]`
 // (a test-only helper has no business in the published npm tarball), and it
 // must never be imported by a production module -- only by `*.test.ts`
-// files. `r2000-verify.test.ts` asserts the `files[]` absence mechanically.
+// files. `anno-verify.test.ts` asserts the `files[]` absence mechanically.
 //
 // This file's own name deliberately does NOT match the `*.test.*` glob
 // `package.json`'s `"test"` script runs (`node --test '*.test.*'`) -- it is
@@ -629,53 +629,53 @@ these four importing files, plus one comment-only mention.
 |---|---|---|---|---|
 | `disasm-roundtrip.test.ts` | `:57` | **`:57` exact** | `ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet` | rewrite one line |
 | `skill-acme-build-cli.test.ts` | `:47` | **`:47` exact** | `ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet` | rewrite one line |
-| `r2000-cli.test.ts` | `:28` | **`:22-28` exact** (statement spans 22-28) | `R2000_AVAILABLE, skipReasonFor, assertR2000RequiredIfEnvSet, ACME_AVAILABLE, assertAcmeRequiredIfEnvSet` | **SPLIT into two statements** — see Correction C-2 |
-| `r2000-answer-key.test.ts` | `:228-231` | **`:227-231` exact** (statement opens `import {` at `:227`) | `ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet` | rewrite the statement |
+| `anno-cli.test.ts` | `:28` | **`:22-28` exact** (statement spans 22-28) | `ANNO_AVAILABLE, skipReasonFor, assertAnnoRequiredIfEnvSet, ACME_AVAILABLE, assertAcmeRequiredIfEnvSet` | **SPLIT into two statements** — see Correction C-2 |
+| `absorbed-answer-key.test.ts` | `:228-231` | **`:227-231` exact** (statement opens `import {` at `:227`) | `ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet` | rewrite the statement |
 
-**Comment-only mention, not an importer:** `r2000-launch.ts:65` — a doc comment
+**Comment-only mention, not an importer:** `anno-launch.ts:65` — a doc comment
 reading *"Overridable binary name, mirroring `disasm-roundtrip.test.ts`'s `ACME_BIN`"*.
-`[VERIFIED: grep, src/mcp/vice/r2000-launch.ts:65]`. No repoint needed.
+`[VERIFIED: grep, src/mcp/vice/anno-launch.ts:65]`. No repoint needed.
 
 **Prose sites to update for comment accuracy** (each names
-`r2000-test-gate.ts` as the ACME seam and will be false after the split):
+`anno-test-gate.ts` as the ACME seam and will be false after the split):
 `disasm-roundtrip.test.ts:60-65`, `skill-acme-build-cli.test.ts:15-16`,
-`r2000-cli.test.ts:679-684`, `r2000-answer-key.test.ts:220-221`,
-`r2000-spawn-seam.test.ts:158-175` (its `shippedTsModules()` doc comment cites
-`r2000-test-gate.ts` as the motivating unshipped-spawn-site example — after this
+`anno-cli.test.ts:679-684`, `absorbed-answer-key.test.ts:220-221`,
+`spawn-seam.test.ts:158-175` (its `shippedTsModules()` doc comment cites
+`anno-test-gate.ts` as the motivating unshipped-spawn-site example — after this
 phase `acme-gate.ts` is a *second* instance of exactly that shape and the comment
 should say so).
 
-### The ten remaining (regenerator2000-half) importers — count CORRECTED from nine
+### The ten remaining (external-analyser-half) importers — count CORRECTED from nine
 
 | # | File | Import line | Symbols |
 |---|---|---|---|
-| 1 | `r2000-symbol-roundtrip.test.ts` | `:45` | `skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 2 | `r2000-project.test.ts` | `:60` | `R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 3 | `r2000-verify.test.ts` | `:39` | `R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 4 | `r2000-enum-gen.test.ts` | `:23` | `skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 5 | `r2000-memmap-render.test.ts` | `:22` | `skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 6 | `r2000-session.test.ts` | `:21` | `R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 7 | `r2000-tools.test.ts` | `:37` | `R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 8 | `r2000-spawn-seam.test.ts` | `:53` | `skipReasonFor, assertR2000RequiredIfEnvSet` |
-| 9 | `r2000-mcp-client.test.ts` | `:99` | `R2000_BIN, skipReasonFor, assertR2000RequiredIfEnvSet` |
-| **10** | **`r2000-cli.test.ts`** | **`:22-28`** | **`R2000_AVAILABLE, skipReasonFor, assertR2000RequiredIfEnvSet`** (the half it keeps) |
+| 1 | `anno-symbol-roundtrip.test.ts` | `:45` | `skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 2 | `anno-project.test.ts` | `:60` | `ANNO_BIN, skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 3 | `anno-verify.test.ts` | `:39` | `ANNO_BIN, skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 4 | `anno-enum-gen.test.ts` | `:23` | `skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 5 | `anno-memmap-render.test.ts` | `:22` | `skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 6 | `anno-session.test.ts` | `:21` | `ANNO_BIN, skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 7 | `anno-tools.test.ts` | `:37` | `ANNO_BIN, skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 8 | `spawn-seam.test.ts` | `:53` | `skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| 9 | `anno-mcp-client.test.ts` | `:99` | `ANNO_BIN, skipReasonFor, assertAnnoRequiredIfEnvSet` |
+| **10** | **`anno-cli.test.ts`** | **`:22-28`** | **`ANNO_AVAILABLE, skipReasonFor, assertAnnoRequiredIfEnvSet`** (the half it keeps) |
 
-`[VERIFIED: grep -rn 'from "./r2000-test-gate.ts"' src/mcp/vice/]`. Distinct
-importers: **13**. ACME half: **4**. R2000 half: **10**. Overlap: **1**
-(`r2000-cli.test.ts`).
+`[VERIFIED: grep -rn 'from "./anno-test-gate.ts"' src/mcp/vice/]`. Distinct
+importers: **13**. ACME half: **4**. ANNO half: **10**. Overlap: **1**
+(`anno-cli.test.ts`).
 
-### `r2000-verify.test.ts:187` — the `files[]`-absence assertion (left alone)
+### `anno-verify.test.ts:187` — the `files[]`-absence assertion (left alone)
 
-`[VERIFIED: src/mcp/vice/r2000-verify.test.ts:187-194]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-verify.test.ts:187-194]`, quoted verbatim:
 
 ```
-test("r2000-test-gate.ts is absent from package.json's files[] array (test-only, mechanically enforced)", () => {
+test("anno-test-gate.ts is absent from package.json's files[] array (test-only, mechanically enforced)", () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
   assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
   assert.equal(
-    pkg.files.includes("r2000-test-gate.ts"),
+    pkg.files.includes("anno-test-gate.ts"),
     false,
-    "r2000-test-gate.ts is test-only and must never ship in the published npm tarball"
+    "anno-test-gate.ts is test-only and must never ship in the published npm tarball"
   );
 });
 ```
@@ -691,23 +691,23 @@ reasoning for not extending it holds.
 `[VERIFIED: src/mcp/vice/hostpath-consumers.test.ts:199-207]`, quoted verbatim:
 
 ```
-test("INT-01's positive control: the four modules the audit found uncovered are present in the derived r2000 set", () => {
+test("INT-01's positive control: the four modules the audit found uncovered are present in the derived anno set", () => {
   // The finding's own reproduction, kept as a permanent test: if a future
   // rename or move drops one of these out of the glob, this says which one
   // -- rather than the absence test below silently stopping short again.
-  const modules = r2000ProductionModules();
-  for (const name of ["r2000-acme-ident.ts", "r2000-regbits-gen.ts", "r2000-symbols.ts", "r2000-test-gate.ts"]) {
-    assert.ok(modules.includes(name), `${name} (named by INT-01 as uncovered) must be present in the derived r2000 module set`);
+  const modules = annoProductionModules();
+  for (const name of ["anno-acme-ident.ts", "anno-regbits-gen.ts", "anno-symbols.ts", "anno-test-gate.ts"]) {
+    assert.ok(modules.includes(name), `${name} (named by INT-01 as uncovered) must be present in the derived anno module set`);
   }
 });
 ```
 
-The assertion is membership in `r2000ProductionModules()` — a glob over
-`r2000-*.ts`. `acme-gate.ts` can never match it; **adding it would break the
-test**. Phase 27 neither deletes nor renames `r2000-test-gate.ts`, so this test
+The assertion is membership in `annoProductionModules()` — a glob over
+`anno-*.ts`. `acme-gate.ts` can never match it; **adding it would break the
+test**. Phase 27 neither deletes nor renames `anno-test-gate.ts`, so this test
 continues to pass unchanged. Its sibling floor is also safe:
-`[VERIFIED: src/mcp/vice/hostpath-consumers.test.ts:188]` — `const R2000_MODULE_FLOOR = 14;`
-against **16** `r2000-*.ts` production modules on disk. Phase 27 adds and removes
+`[VERIFIED: src/mcp/vice/hostpath-consumers.test.ts:188]` — `const ANNO_MODULE_FLOOR = 14;`
+against **16** `anno-*.ts` production modules on disk. Phase 27 adds and removes
 zero, so `16 >= 14` still holds. **No edit to this file.**
 
 ## ci.yml Binding Audit (D-03 CONFIRMED)
@@ -749,26 +749,26 @@ Obtained from the live tree, not from prose. **Relations and lists only — no
 pinned total is stated as an invariant** (per `27-CONTEXT.md`'s standing hazard
 note and the `audit-integrity.test.ts` history).
 
-### Every `src/mcp/vice/r2000-*` entry on disk
+### Every `src/mcp/vice/anno-*` entry on disk
 
-`[VERIFIED: git ls-files | grep -i r2000; ls src/mcp/vice/r2000-*]`
+`[VERIFIED: git ls-files | grep -i anno; ls src/mcp/vice/anno-*]`
 
 **Non-test modules** (`.ts`), alphabetical:
-`r2000-acme-ident.ts`, `r2000-cli.ts`, `r2000-confidence.ts`, `r2000-coverage.ts`,
-`r2000-d64.ts`, `r2000-enum-gen.ts`, `r2000-launch.ts`, `r2000-mcp-client.ts`,
-`r2000-memmap-render.ts`, `r2000-project.ts`, `r2000-regbits-gen.ts`,
-`r2000-session.ts`, `r2000-symbols.ts`, `r2000-test-gate.ts`, `r2000-tools.ts`,
-`r2000-verify.ts` — **sixteen**, matching CONTEXT's "16 non-test modules" lean.
+`anno-acme-ident.ts`, `anno-cli.ts`, `anno-confidence.ts`, `anno-coverage.ts`,
+`anno-d64.ts`, `anno-enum-gen.ts`, `anno-launch.ts`, `anno-mcp-client.ts`,
+`anno-memmap-render.ts`, `anno-project.ts`, `anno-regbits-gen.ts`,
+`anno-session.ts`, `anno-symbols.ts`, `anno-test-gate.ts`, `anno-tools.ts`,
+`anno-verify.ts` — **sixteen**, matching CONTEXT's "16 non-test modules" lean.
 
-**Data file:** `r2000-regbits.json` (in `files[]`; generated, header warns
+**Data file:** `anno-regbits.json` (in `files[]`; generated, header warns
 against hand-editing).
 
-**Test files** (`r2000-*.test.ts`), alphabetical: `r2000-answer-key`,
-`r2000-cli`, `r2000-confidence`, `r2000-coverage-grammar`, `r2000-coverage`,
-`r2000-d64`, `r2000-enum-gen`, `r2000-launch`, `r2000-mcp-client`,
-`r2000-memmap-render`, `r2000-project`, `r2000-regbits`, `r2000-session`,
-`r2000-spawn-seam`, `r2000-symbol-roundtrip`, `r2000-tools`,
-`r2000-upstream-audit`, `r2000-verb-coverage`, `r2000-verify`.
+**Test files** (`anno-*.test.ts`), alphabetical: `anno-answer-key`,
+`anno-cli`, `anno-confidence`, `anno-coverage-grammar`, `anno-coverage`,
+`anno-d64`, `anno-enum-gen`, `anno-launch`, `anno-mcp-client`,
+`anno-memmap-render`, `anno-project`, `anno-regbits`, `anno-session`,
+`anno-spawn-seam`, `anno-symbol-roundtrip`, `anno-tools`,
+`anno-upstream-audit`, `anno-verb-coverage`, `anno-verify`.
 
 **All ten modules named in criterion 2 are present**: `-test-gate` ✓,
 `-acme-ident` ✓, `-confidence` ✓, `-symbols` ✓, `-verify` ✓, `-memmap-render` ✓,
@@ -778,70 +778,70 @@ criterion 2 are `-cli`, `-launch`, `-mcp-client`, `-project`, `-session`, `-tool
 
 ### Registry Scope Gaps (must be stated, not discovered later)
 
-Three items sit outside the glob D-06 specifies (`src/mcp/vice/r2000-*`):
+Three items sit outside the glob D-06 specifies (`src/mcp/vice/anno-*`):
 
-1. **`scripts/lib/r2000-cli-verbs.mjs`** and **`scripts/lib/r2000-cli-verbs.d.mts`**
-   `[VERIFIED: git ls-files | grep -i r2000]`. `CUT-04` names the former
-   explicitly. A registry scoped to `src/mcp/vice/r2000-*` is structurally blind
+1. **`scripts/lib/anno-cli-verbs.mjs`** and **`scripts/lib/anno-cli-verbs.d.mts`**
+   `[VERIFIED: git ls-files | grep -i anno]`. `CUT-04` names the former
+   explicitly. A registry scoped to `src/mcp/vice/anno-*` is structurally blind
    to both.
-2. **`src/mcp/vice/docs-r2000-decisions.test.ts`** — an `r2000`-named guard that
-   the glob `r2000-*` does **not** match (it starts `docs-`). Not a gap in the
+2. **`src/mcp/vice/docs-absorbed-decisions.test.ts`** — an `anno`-named guard that
+   the glob `anno-*` does **not** match (it starts `docs-`). Not a gap in the
    glob's correctness, but a name a future reader will expect to be covered.
-3. **`r2000-regbits.json`** — matches the glob but is not a module. If the
-   enforcing test globs `r2000-*` without an extension filter, it will demand a
+3. **`anno-regbits.json`** — matches the glob but is not a module. If the
+   enforcing test globs `anno-*` without an extension filter, it will demand a
    registry entry for a JSON data file. CONTEXT's lean is to cover it; either
    way the test's filter must be **explicit**, not incidental.
 
 **Recommendation:** the registry states its own scope as a field or header
 comment, and the enforcing test asserts that scope. Extending it to
-`scripts/lib/r2000-cli-verbs.*` is cheap (two entries) and closes a `CUT-04`
+`scripts/lib/anno-cli-verbs.*` is cheap (two entries) and closes a `CUT-04`
 blind spot five phases early. If the planner scopes it narrowly, the exclusion
 must be *written down* — an unstated exclusion is the failure D-06 exists to stop.
 
 ### Consumer map — the raw material for D-06/D-07 entries
 
 Every static/dynamic import of each non-test module, from the live tree
-`[VERIFIED: grep -rn 'from "./r2000-<m>.ts"' src scripts]`. **`†` marks a
-consumer that is itself `r2000-*` and therefore does not survive Phase 32.**
+`[VERIFIED: grep -rn 'from "./anno-<m>.ts"' src scripts]`. **`†` marks a
+consumer that is itself `anno-*` and therefore does not survive Phase 32.**
 
 | Module | Consumers (file:line) | Requirement ids it serves | Criterion-2 named? |
 |---|---|---|---|
-| `r2000-acme-ident.ts` | `r2000-tools.ts:104`†, `r2000-enum-gen.ts:86`†, `r2000-symbols.ts:76`† | `EXPORT-02` (ACME identifier legality / the 11 typed label prefixes) — **its only non-`†` basis** | ✓ |
-| `r2000-confidence.ts` | `r2000-coverage.ts:133`† (but a *capability*), `r2000-memmap-render.test.ts:21`†, `r2000-cli.test.ts:904`† | supplies the grade tokens `classFromStore()` reads (`COV-01`/`COV-02`) | ✓ |
-| `r2000-coverage.ts` | `r2000-cli.ts:74,75`†, `r2000-coverage-grammar.test.ts:71`†, `r2000-coverage.test.ts:62`† | `COV-01`, `COV-02` | ✓ |
-| `r2000-d64.ts` | `r2000-cli.ts:57`†, `r2000-d64.test.ts:13`†, `r2000-cli.test.ts:20`† | `.d64` image reading — pure C64 format knowledge, no r2000 dependency | ✓ |
-| `r2000-enum-gen.ts` | `r2000-cli.ts:59`†, `r2000-enum-gen.test.ts:22`† | `EXPORT-*` adjacency; `R2000-13` lineage | ✓ |
-| `r2000-memmap-render.ts` | `r2000-cli.ts:61`†, `r2000-memmap-render.test.ts:18`† | memory-map rendering (skill-facing) | ✓ |
-| `r2000-regbits-gen.ts` | `r2000-enum-gen.ts:85`† (type-only), `r2000-regbits.test.ts:20,239`† ; produces `r2000-regbits.json` (in `files[]`) | VIC-II/SID/CIA register-bit tables | ✓ |
-| `r2000-symbols.ts` | `r2000-cli.ts:60`†, `r2000-symbol-roundtrip.test.ts:46`† | **`R2000-14` / `R2000-15`** (✓ Validated symbol round trip) | ✓ |
-| `r2000-test-gate.ts` | ACME half: 4 files (3 non-`†`: `disasm-roundtrip`, `skill-acme-build-cli`, plus `r2000-cli`†, `r2000-answer-key`†). R2000 half: 10, all `†` | `SEAM-01`; `DISASM-03` round-trip gate | ✓ |
-| `r2000-verify.ts` | `r2000-cli.ts:58`†, `r2000-verify.test.ts:37`† | contested — see OQ-2 | ✓ |
-| `r2000-cli.ts` | `vice-proxy.ts:309` (dynamic), `scripts/check-skill-tool-coverage.mjs:41,468,487,519` (parses its dispatch switch), `scripts/lib/r2000-cli-verbs.mjs:3`, `scripts/check-npm-packages.mjs:217`, `r2000-cli.test.ts:19`†, `r2000-verb-coverage.test.ts:9`† | none surviving — the CLI verbs are what `MCP-01` replaces | ✗ (glue) |
-| `r2000-launch.ts` | `r2000-verify.ts:46`†, `r2000-symbols.ts:72`†, `r2000-mcp-client.ts:84`†, `r2000-cli.ts:55`†, `r2000-spawn-seam.test.ts:51`†, `r2000-symbol-roundtrip.test.ts:48`†, `r2000-launch.test.ts:35`† | none — spawns the regenerator2000 binary | ✗ (glue) |
-| `r2000-mcp-client.ts` | `r2000-tools.ts:108,1163`†, `r2000-session.ts:102,554`†, `r2000-symbols.ts:73`†, `r2000-mcp-client.test.ts:97`†, `r2000-session.test.ts:36`† | none — speaks MCP to the r2000 binary | ✗ (glue) |
-| `r2000-project.ts` | `r2000-cli.ts:56`†, `r2000-session.ts:94`†, **`r2000-coverage.ts:132`†(capability)**, `r2000-coverage.test.ts:64`†, plus 7 more `†` test files, `fixtures/coverage/make-coverage-fixtures.mjs:63` | `glue-with-extractable`: `parsePrg` `:171`, `flatImageOrigin` `:188`, **and `decodeRawData` `:202` — see C-1** | ✗ (glue-with-extractable) |
-| `r2000-session.ts` | `r2000-tools.ts:1164`†, **`vice-proxy.ts:200`** (static, `closeR2000SessionSync`), `r2000-spawn-seam.test.ts:50`†, `r2000-tools.test.ts:38`†, `r2000-session.test.ts:29`† | none — r2000 session lifecycle | ✗ (glue) |
-| `r2000-tools.ts` | **`vice-proxy.ts:194`** (`R2000_TOOL_DEFINITIONS, runR2000Tool`), `stock-dispatch.test.ts:44,1547`, `vice-proxy.test.ts:54`, `scripts/check-skill-tool-coverage.mjs:49`, plus 8 `†` sites | none — `MCP-01` replaces the surface | ✗ (glue) |
+| `anno-acme-ident.ts` | `anno-tools.ts:104`†, `anno-enum-gen.ts:86`†, `anno-symbols.ts:76`† | `EXPORT-02` (ACME identifier legality / the 11 typed label prefixes) — **its only non-`†` basis** | ✓ |
+| `anno-confidence.ts` | `anno-coverage.ts:133`† (but a *capability*), `anno-memmap-render.test.ts:21`†, `anno-cli.test.ts:904`† | supplies the grade tokens `classFromStore()` reads (`COV-01`/`COV-02`) | ✓ |
+| `anno-coverage.ts` | `anno-cli.ts:74,75`†, `anno-coverage-grammar.test.ts:71`†, `anno-coverage.test.ts:62`† | `COV-01`, `COV-02` | ✓ |
+| `anno-d64.ts` | `anno-cli.ts:57`†, `anno-d64.test.ts:13`†, `anno-cli.test.ts:20`† | `.d64` image reading — pure C64 format knowledge, no anno dependency | ✓ |
+| `anno-enum-gen.ts` | `anno-cli.ts:59`†, `anno-enum-gen.test.ts:22`† | `EXPORT-*` adjacency; `ANNO-13` lineage | ✓ |
+| `anno-memmap-render.ts` | `anno-cli.ts:61`†, `anno-memmap-render.test.ts:18`† | memory-map rendering (skill-facing) | ✓ |
+| `anno-regbits-gen.ts` | `anno-enum-gen.ts:85`† (type-only), `anno-regbits.test.ts:20,239`† ; produces `anno-regbits.json` (in `files[]`) | VIC-II/SID/CIA register-bit tables | ✓ |
+| `anno-symbols.ts` | `anno-cli.ts:60`†, `anno-symbol-roundtrip.test.ts:46`† | **`ANNO-14` / `ANNO-15`** (✓ Validated symbol round trip) | ✓ |
+| `anno-test-gate.ts` | ACME half: 4 files (3 non-`†`: `disasm-roundtrip`, `skill-acme-build-cli`, plus `anno-cli`†, `anno-answer-key`†). ANNO half: 10, all `†` | `SEAM-01`; `DISASM-03` round-trip gate | ✓ |
+| `anno-verify.ts` | `anno-cli.ts:58`†, `anno-verify.test.ts:37`† | contested — see OQ-2 | ✓ |
+| `anno-cli.ts` | `vice-proxy.ts:309` (dynamic), `scripts/check-skill-tool-coverage.mjs:41,468,487,519` (parses its dispatch switch), `scripts/lib/anno-cli-verbs.mjs:3`, `scripts/check-npm-packages.mjs:217`, `anno-cli.test.ts:19`†, `anno-verb-coverage.test.ts:9`† | none surviving — the CLI verbs are what `MCP-01` replaces | ✗ (glue) |
+| `anno-launch.ts` | `anno-verify.ts:46`†, `anno-symbols.ts:72`†, `anno-mcp-client.ts:84`†, `anno-cli.ts:55`†, `spawn-seam.test.ts:51`†, `anno-symbol-roundtrip.test.ts:48`†, `anno-launch.test.ts:35`† | none — spawns the external analyser binary | ✗ (glue) |
+| `anno-mcp-client.ts` | `anno-tools.ts:108,1163`†, `anno-session.ts:102,554`†, `anno-symbols.ts:73`†, `anno-mcp-client.test.ts:97`†, `anno-session.test.ts:36`† | none — speaks MCP to the anno binary | ✗ (glue) |
+| `anno-project.ts` | `anno-cli.ts:56`†, `anno-session.ts:94`†, **`anno-coverage.ts:132`†(capability)**, `anno-coverage.test.ts:64`†, plus 7 more `†` test files, `fixtures/coverage/make-coverage-fixtures.mjs:63` | `glue-with-extractable`: `parsePrg` `:171`, `flatImageOrigin` `:188`, **and `decodeRawData` `:202` — see C-1** | ✗ (glue-with-extractable) |
+| `anno-session.ts` | `anno-tools.ts:1164`†, **`vice-proxy.ts:200`** (static, `closeAnnoSessionSync`), `spawn-seam.test.ts:50`†, `anno-tools.test.ts:38`†, `anno-session.test.ts:29`† | none — anno session lifecycle | ✗ (glue) |
+| `anno-tools.ts` | **`vice-proxy.ts:194`** (`ANNO_TOOL_DEFINITIONS, runAnnoTool`), `stock-dispatch.test.ts:44,1547`, `vice-proxy.test.ts:54`, `scripts/check-skill-tool-coverage.mjs:49`, plus 8 `†` sites | none — `MCP-01` replaces the surface | ✗ (glue) |
 
 ### Glue-vs-Capability Discriminator (a trap D-07's wording invites)
 
-**"Has a non-`r2000`-prefixed consumer" is NOT the discriminator.** Two of the
-six glue modules have prominent non-`r2000` consumers:
+**"Has a non-`anno`-prefixed consumer" is NOT the discriminator.** Two of the
+six glue modules have prominent non-`anno` consumers:
 
-- `r2000-tools.ts` ← `vice-proxy.ts:194`, `stock-dispatch.test.ts:44`,
+- `anno-tools.ts` ← `vice-proxy.ts:194`, `stock-dispatch.test.ts:44`,
   `vice-proxy.test.ts:54`, `scripts/check-skill-tool-coverage.mjs:49`
-- `r2000-session.ts` ← `vice-proxy.ts:200`
-- `r2000-cli.ts` ← `vice-proxy.ts:309`, four `scripts/` files
+- `anno-session.ts` ← `vice-proxy.ts:200`
+- `anno-cli.ts` ← `vice-proxy.ts:309`, four `scripts/` files
 
 `vice-proxy.ts` survives Phase 32; *its imports of these modules do not*. And two
-of the ten capability modules have **no** non-`r2000` consumer at all
-(`r2000-acme-ident.ts`, `r2000-confidence.ts`) — their basis is a requirement id,
+of the ten capability modules have **no** non-`anno` consumer at all
+(`anno-acme-ident.ts`, `anno-confidence.ts`) — their basis is a requirement id,
 not a consumer.
 
 So D-07's "surviving consumers plus requirement ids" must be read as: **a
 consumer that survives *the substrate swap*, or a requirement id.** The enforcing
 test can check the *cheap half* mechanically (every cited consumer path exists on
-disk; no justification string matches `/^r2000-/` or reads "prefix") but cannot
+disk; no justification string matches `/^anno-/` or reads "prefix") but cannot
 mechanically decide survival. That judgement belongs in the committed data, which
 is exactly why D-06 wants data + test rather than a doc.
 
@@ -849,11 +849,11 @@ is exactly why D-06 wants data + test rather than a doc.
 
 ```ts
 {
-  module: "r2000-symbols.ts",
+  module: "anno-symbols.ts",
   verdict: "capability",
   basis: {
-    consumers: [{ path: "r2000-cli.ts", symbol: "exportLabels", line: 60 }, ...],
-    requirements: ["R2000-14", "R2000-15"],
+    consumers: [{ path: "anno-cli.ts", symbol: "exportLabels", line: 60 }, ...],
+    requirements: ["ANNO-14", "ANNO-15"],
   },
   extractables: [],            // non-empty only for "glue-with-extractable"
 }
@@ -873,10 +873,10 @@ in-repo precedent for that check).
 
 ### The store input shapes
 
-`[VERIFIED: src/mcp/vice/r2000-coverage.ts:192-218]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-coverage.ts:192-218]`, quoted verbatim:
 
 ```
-export interface R2000Symbol {
+export interface AnnoSymbol {
   address: number;
   name: string;
   /** `LabelKind`'s Debug form: `"User"`, `"Auto"` or `"System"`. */
@@ -885,39 +885,39 @@ export interface R2000Symbol {
   type?: string;
 }
 
-export interface R2000Comment {
+export interface AnnoComment {
   address: number;
   /** `"line"` or `"side"`. */
   type: string;
   comment: string;
 }
 
-export interface R2000BlockEntry {
+export interface AnnoBlockEntry {
   start_address: number;
   end_address: number;
   /** `BlockType`'s Display string: `"Code"`, `"Byte"`, `"Address"`, ... */
   type: string;
 }
 
-export interface R2000CrossReference {
+export interface AnnoCrossReference {
   address: number;
-  /** The sorted, deduped caller list `r2000_get_cross_references` returns. */
+  /** The sorted, deduped caller list `anno_get_cross_references` returns. */
   callers: readonly number[];
 }
 ```
 
-Exact lines: `R2000Symbol` `:192`, `R2000Comment` `:201`, **`R2000BlockEntry`
-`:208`**, `R2000CrossReference` `:215`. CONTEXT's cited range `192-219` is
-correct as a span. **`R2000BlockEntry` is the only one of the four whose doc
+Exact lines: `AnnoSymbol` `:192`, `AnnoComment` `:201`, **`AnnoBlockEntry`
+`:208`**, `AnnoCrossReference` `:215`. CONTEXT's cited range `192-219` is
+correct as a span. **`AnnoBlockEntry` is the only one of the four whose doc
 comment documents the Rust `Display` vocabulary** — confirming the Discretion
 lean that it, and only it, moves with the adapter.
 
 ### The boundary functions and all three comparison sites
 
-`[VERIFIED: src/mcp/vice/r2000-coverage.ts:1662-1690]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-coverage.ts:1662-1690]`, quoted verbatim:
 
 ```
-function storeBlockTypeAt(blocks: readonly R2000BlockEntry[], address: number): string | null {
+function storeBlockTypeAt(blocks: readonly AnnoBlockEntry[], address: number): string | null {
   for (const block of blocks) {
     if (!block) continue;
     if (address >= block.start_address && address <= block.end_address) return block.type;
@@ -948,7 +948,7 @@ function classFromStore(gradeToken: string | null, blockType: string | null): De
 }
 ```
 
-`[VERIFIED: src/mcp/vice/r2000-coverage.ts:1983-1986]`, quoted verbatim (the
+`[VERIFIED: src/mcp/vice/anno-coverage.ts:1983-1986]`, quoted verbatim (the
 **third** site D-11 adds):
 
 ```
@@ -968,17 +968,17 @@ function classFromStore(gradeToken: string | null, blockType: string | null): De
 | Third comparison site | `:1983-1986` | **`:1983-1986`** | **exact** |
 | Header independence invariants | `:59-70`, `:116-135` | `:59-75`, `:116-131` | effectively exact |
 
-**Complete inventory of the literal Rust `Display` strings in `r2000-coverage.ts`**
-`[VERIFIED: grep -n '"Code"\|"Undefined"\|"Byte"\|"Word"\|"Text"\|blockType' src/mcp/vice/r2000-coverage.ts]`:
+**Complete inventory of the literal Rust `Display` strings in `anno-coverage.ts`**
+`[VERIFIED: grep -n '"Code"\|"Undefined"\|"Byte"\|"Word"\|"Text"\|blockType' src/mcp/vice/anno-coverage.ts]`:
 `:211` (doc comment), `:1687`, `:1688`, `:1985`, `:1986`. **Five occurrences,
 four of them live comparisons, all inside the three D-11 sites.** Plus one in the
-test file at `r2000-coverage.test.ts:606` (`type: "Byte"` — a *fixture value*,
+test file at `anno-coverage.test.ts:606` (`type: "Byte"` — a *fixture value*,
 which correctly stays: the test exists to prove the store side can hold any
 vocabulary).
 
 **Both `storeBlockTypeAt()` call sites** (the lookup itself must route through
 the adapter, not just the comparisons): `:1921` and `:1983`.
-`[VERIFIED: src/mcp/vice/r2000-coverage.ts:1921]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-coverage.ts:1921]`, quoted verbatim:
 
 ```
     const fromStore = classFromStore(entry?.gradeToken ?? null, storeBlockTypeAt(blockList, address));
@@ -989,14 +989,14 @@ function) and `:1976` (inside `computeDivergence`, declared `:1974`).
 
 ### The Stale Header Invariant — a correction the adapter *fixes*
 
-`[VERIFIED: src/mcp/vice/r2000-coverage.ts:61-66]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-coverage.ts:61-66]`, quoted verbatim:
 
 ```
 //   1. NEVER derive any measure from the store's block-type listing. The
 //      listing enters this file at one call site (`computeDivergence()`) and
 //      leaves it as a comparison. A "completeness" number sourced from the
 //      block table measures the annotator's bookkeeping, not the annotation
-//      -- and mass `r2000_set_data_type` calls would move it for free.
+//      -- and mass `anno_set_data_type` calls would move it for free.
 ```
 
 The claim "**enters this file at one call site (`computeDivergence()`)**" is
@@ -1013,7 +1013,7 @@ it as "enters this file only through `<adapter>.ts`". Leaving it as written whil
 introducing the adapter reproduces the D-16 failure shape.
 
 The two invariants the adapter must **not** weaken
-`[VERIFIED: src/mcp/vice/r2000-coverage.ts:124-127]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-coverage.ts:124-127]`, quoted verbatim:
 
 ```
 // BYTES-VERSUS-STORE: one side classifies an address using only the raw bytes
@@ -1028,12 +1028,12 @@ most important shape constraint on `blockClassAt()`.
 
 ### The criterion-3 test that must still pass
 
-`[VERIFIED: src/mcp/vice/r2000-coverage.test.ts:604-623]`, quoted verbatim:
+`[VERIFIED: src/mcp/vice/anno-coverage.test.ts:604-623]`, quoted verbatim:
 
 ```
 test("independence: rewriting every block entry to one type leaves every census byte count unchanged and moves only the divergence sub-report", () => {
   const before = reportFor(WELL_DOCUMENTED);
-  const oneType: R2000BlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];
+  const oneType: AnnoBlockEntry[] = [{ start_address: 0x0810, end_address: 0x084f, type: "Byte" }];
   const after = reportFor(WELL_DOCUMENTED, { blocks: oneType });
 
   for (const key of ["reachedAsInstruction", "tableEntry", "referencedAsData", "unreached", "linearSweepDecodable", "rangeBytes"] as const) {
@@ -1061,36 +1061,36 @@ test where the divergence report cannot move proves nothing.
 
 ### `prg-image.ts` (D-14) — all consumers, and the shipped-module consequence
 
-`[VERIFIED: src/mcp/vice/r2000-project.ts:166-194]` — `parsePrg` at `:171`,
+`[VERIFIED: src/mcp/vice/anno-project.ts:166-194]` — `parsePrg` at `:171`,
 `flatImageOrigin` at `:188`. Both exact.
 
 | Consumer | Line | Import statement content | Action |
 |---|---|---|---|
-| **`r2000-cli.ts`** (SHIPPED) | `:56` | `import { synthesizeProject, parsePrg, flatImageOrigin } from "./r2000-project.ts";` | **SPLIT** — this is why `prg-image.ts` must be in `files[]` |
-| `r2000-symbol-roundtrip.test.ts` | `:49` | `import { parsePrg, synthesizeProject } from "./r2000-project.ts";` | SPLIT |
-| `r2000-verify.test.ts` | `:38` | `import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";` | SPLIT |
-| `r2000-tools.test.ts` | `:36` | `import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";` | SPLIT |
-| `r2000-mcp-client.test.ts` | `:98` | `import { synthesizeProject, flatImageOrigin } from "./r2000-project.ts";` | SPLIT |
-| `r2000-project.test.ts` | `:54-55` | multi-line import listing `parsePrg`, `flatImageOrigin` among others, closing `:59` | SPLIT; the four `parsePrg`/`flatImageOrigin` unit tests at `:110-128` move to a new `prg-image.test.ts` or stay pointing at the new module |
-| `r2000-d64.test.ts` | `:373-379` | **dynamic, non-literal** specifier: `await import(pathToFileURL(R2000_PROJECT_PATH).href)` | repoint the path constant; see note below |
-| `r2000-cli.test.ts` | `:383,384,974,1245,1253,1259,1273` | **comment/assertion-message prose only** | comment accuracy |
-| `r2000-d64.ts` | `:217,270` | **comment prose only** | comment accuracy |
+| **`anno-cli.ts`** (SHIPPED) | `:56` | `import { synthesizeProject, parsePrg, flatImageOrigin } from "./anno-project.ts";` | **SPLIT** — this is why `prg-image.ts` must be in `files[]` |
+| `anno-symbol-roundtrip.test.ts` | `:49` | `import { parsePrg, synthesizeProject } from "./anno-project.ts";` | SPLIT |
+| `anno-verify.test.ts` | `:38` | `import { synthesizeProject, flatImageOrigin } from "./anno-project.ts";` | SPLIT |
+| `anno-tools.test.ts` | `:36` | `import { synthesizeProject, flatImageOrigin } from "./anno-project.ts";` | SPLIT |
+| `anno-mcp-client.test.ts` | `:98` | `import { synthesizeProject, flatImageOrigin } from "./anno-project.ts";` | SPLIT |
+| `anno-project.test.ts` | `:54-55` | multi-line import listing `parsePrg`, `flatImageOrigin` among others, closing `:59` | SPLIT; the four `parsePrg`/`flatImageOrigin` unit tests at `:110-128` move to a new `prg-image.test.ts` or stay pointing at the new module |
+| `anno-d64.test.ts` | `:373-379` | **dynamic, non-literal** specifier: `await import(pathToFileURL(ANNO_PROJECT_PATH).href)` | repoint the path constant; see note below |
+| `anno-cli.test.ts` | `:383,384,974,1245,1253,1259,1273` | **comment/assertion-message prose only** | comment accuracy |
+| `anno-d64.ts` | `:217,270` | **comment prose only** | comment accuracy |
 
 **All six `SPLIT` rows are import statements that mix a moving symbol with a
 staying one (`synthesizeProject`).** Not one of them is a plain rewrite. An
 acceptance criterion saying "rewrite the import line" understates the work.
 
-**The `r2000-d64.test.ts` dynamic import needs care.**
-`[VERIFIED: src/mcp/vice/r2000-d64.test.ts:370-379]`, quoted verbatim:
+**The `anno-d64.test.ts` dynamic import needs care.**
+`[VERIFIED: src/mcp/vice/anno-d64.test.ts:370-379]`, quoted verbatim:
 
 ```
     // A non-literal specifier, deliberately: this defers module resolution
     // (both TypeScript's static check and Node's runtime resolution) to a
     // path we have already confirmed exists on disk above -- a literal
-    // `import("./r2000-project.ts")` would fail `tsc --noEmit` in this
+    // `import("./anno-project.ts")` would fail `tsc --noEmit` in this
     // isolated worktree even though the module is guaranteed to exist once
     // wave-1 merges.
-    const mod = (await import(pathToFileURL(R2000_PROJECT_PATH).href)) as {
+    const mod = (await import(pathToFileURL(ANNO_PROJECT_PATH).href)) as {
       parsePrg: (bytes: Uint8Array) => { origin: number; body: Uint8Array };
     };
 ```
@@ -1098,7 +1098,7 @@ acceptance criterion saying "rewrite the import line" understates the work.
 This is a **worktree-isolation workaround**, and `use_worktrees` is `false` in
 `.planning/config.json` `[VERIFIED: .planning/config.json workflow.use_worktrees]`.
 The comment's stated reason no longer applies, but the code is correct either way.
-Repointing it means changing `R2000_PROJECT_PATH` to a `prg-image.ts` path and
+Repointing it means changing `ANNO_PROJECT_PATH` to a `prg-image.ts` path and
 updating the comment. A `tsc --noEmit` run is the check.
 
 **`files[]` consequences of adding `prg-image.ts`** — three guards begin scanning
@@ -1110,7 +1110,7 @@ whole phase to miss.
 | File | CONTEXT/roadmap cites | Observed definition | Body |
 |---|---|---|---|
 | `docs-dangling-refs.test.ts` | `:353` | **`:353`** exact | canonical |
-| `r2000-spawn-seam.test.ts` | `:176` | **`:176`** exact | identical body; assert message lacks the trailing comma the others have |
+| `spawn-seam.test.ts` | `:176` | **`:176`** exact | identical body; assert message lacks the trailing comma the others have |
 | `stock-dispatch.test.ts` | `:2902` (D-15) / `:2889` (roadmap) | **`:2902`** exact; `:2889` is a comment | identical |
 | `comment-phase-pointers.test.ts` | `:400` | **`:400`** exact | identical |
 
@@ -1137,8 +1137,8 @@ Two things the extraction must preserve, both from its doc comments:
    silently shrinking the scanned set (the INT-01 lesson applied preemptively)"*).
    The shared helper takes `assert` — or throws its own named error. It **cannot**
    silently return a short list.
-2. **`r2000-spawn-seam.test.ts:155-175`'s doc comment explains why it is
-   `files[]`-derived rather than `readdirSync`-derived, using `r2000-test-gate.ts`
+2. **`spawn-seam.test.ts:155-175`'s doc comment explains why it is
+   `files[]`-derived rather than `readdirSync`-derived, using `anno-test-gate.ts`
    as the motivating example.** That rationale must travel with the helper. And
    after Phase 27, `acme-gate.ts` is a second instance of the same shape — a
    test-only module that spawns a real binary and must stay out of the scanned set
@@ -1148,22 +1148,22 @@ Two things the extraction must preserve, both from its doc comments:
 
 | Cited site | Observed | What it actually is |
 |---|---|---|
-| `r2000-spawn-seam.test.ts:65` | **exact** | `function codeOnly(src: string): string` — a character-state-machine stripping comments **and** string/template literal bodies. Consumers: `:276`, `:493` (both in the same file) |
+| `spawn-seam.test.ts:65` | **exact** | `function codeOnly(src: string): string` — a character-state-machine stripping comments **and** string/template literal bodies. Consumers: `:276`, `:493` (both in the same file) |
 | `disasm-decoder.test.ts:308` | **exact** | `const codeOnly = source.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n")` — a local `const` inside one test |
 | `disasm-renderer.test.ts:346` | **exact** | byte-identical local `const` to the above |
 | `disasm-opcodes.test.ts:394` | **exact** | byte-identical local `const` to the above |
-| `r2000-tools.test.ts:201` | **exact** | `const codeOnly = rawSource.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")` — regex-based, different implementation |
+| `anno-tools.test.ts:201` | **exact** | `const codeOnly = rawSource.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")` — regex-based, different implementation |
 
 **All four cited line numbers are exact.** And CONTEXT's judgement is confirmed
 correct: they are genuinely a different job.
-`[VERIFIED: src/mcp/vice/r2000-tools.test.ts:193-201]`, quoted verbatim — the
+`[VERIFIED: src/mcp/vice/anno-tools.test.ts:193-201]`, quoted verbatim — the
 in-code statement of *why*:
 
 ```
   // Comment-strip only (never string-strip): the literal we are looking FOR
   // is itself a string, so blanking string content would make it
   // unobservable. codeOnly()-style full stripping is the right tool when a
-  // check must ignore ALL string content (r2000-spawn-seam.test.ts's own
+  // check must ignore ALL string content (spawn-seam.test.ts's own
   // spawn-site scan); here the opposite is true -- we must inspect exactly
   // the literal call() receives, and comment-stripping alone is sufficient
   // to keep a doc-comment mention of "call(...)" from producing a false
@@ -1180,16 +1180,16 @@ Two supplementary observations the planner may want:
 ### D-16's convention — see Correction C-4
 
 Both recorded statements verified verbatim above. Both must be rewritten.
-`r2000-spawn-seam.test.ts:53`'s existing import of `r2000-test-gate.ts` is the
-precedent D-16 leans on, and it is real `[VERIFIED: src/mcp/vice/r2000-spawn-seam.test.ts:53]`:
-`import { skipReasonFor, assertR2000RequiredIfEnvSet } from "./r2000-test-gate.ts";`
+`spawn-seam.test.ts:53`'s existing import of `anno-test-gate.ts` is the
+precedent D-16 leans on, and it is real `[VERIFIED: src/mcp/vice/spawn-seam.test.ts:53]`:
+`import { skipReasonFor, assertAnnoRequiredIfEnvSet } from "./anno-test-gate.ts";`
 
 ## Discretion Resolutions (with observed evidence)
 
 ### 1. Adapter module name — no collision on any candidate
 
 `[VERIFIED: ls src/mcp/vice/ | grep -iE "block|annotation|prg|acme|registry|shipped"]` returns
-only `capability-registry.test.ts`, `capability-registry.ts`, `r2000-acme-ident.ts`,
+only `capability-registry.test.ts`, `capability-registry.ts`, `anno-acme-ident.ts`,
 `skill-acme-build-cli.test.ts`.
 
 | Candidate | Collision | Verdict |
@@ -1198,29 +1198,29 @@ only `capability-registry.test.ts`, `capability-registry.ts`, `r2000-acme-ident.
 | `annotation-blocks.ts` | none | Viable but broader — "annotation blocks" is Phase 28's *store* vocabulary, and naming a Phase-27 vocabulary-translation module after Phase 28's data model invites the assumption that it owns the blocks rather than translating them. |
 | `acme-gate.ts` (D-01/D-02) | none | Confirmed available. `test-gate.mjs`, `test-gate.d.mts`, `test-gate.test.ts` all present, confirming D-02's rejection of `test-gate.ts`. |
 | `prg-image.ts` (D-14) | none | Confirmed available. |
-| Registry: **must not** be `capability-registry.*` | `capability-registry.ts` exists (BACK-05's per-backend delta) | Suggest `r2000-classification.ts`… **no** — it would match the `r2000-*` glob the enforcing test walks and demand an entry for itself. Suggest **`module-classification.ts`** or **`prefix-deletion-registry.ts`**. This self-matching trap is easy to walk into. |
+| Registry: **must not** be `capability-registry.*` | `capability-registry.ts` exists (BACK-05's per-backend delta) | Suggest `anno-classification.ts`… **no** — it would match the `anno-*` glob the enforcing test walks and demand an entry for itself. Suggest **`module-classification.ts`** or **`prefix-deletion-registry.ts`**. This self-matching trap is easy to walk into. |
 
-### 2. Does `R2000BlockEntry` move with the adapter? — **Yes; the other two stay.**
+### 2. Does `AnnoBlockEntry` move with the adapter? — **Yes; the other two stay.**
 
 Evidence: it is the only one of the four input shapes whose doc comment documents
 the Rust `Display` vocabulary (`:211`, quoted above). Consumer inventory
-`[VERIFIED: grep -rn "R2000BlockEntry" src scripts]`: `r2000-coverage.ts`
-(`:208,1655,1662,1974,2059`), `r2000-coverage.test.ts` (`:58,122,606`),
-`r2000-cli.ts` (`:75,1373,1379`). Three files. `R2000Symbol` and `R2000Comment`
-have wider consumer sets (`r2000-coverage.ts:1409,1533,1559,1653,1654,2057,2058`,
-`r2000-cli.ts:1371,1372,1377,1378`, `r2000-coverage.test.ts` ×6) and **nothing in
+`[VERIFIED: grep -rn "AnnoBlockEntry" src scripts]`: `anno-coverage.ts`
+(`:208,1655,1662,1974,2059`), `anno-coverage.test.ts` (`:58,122,606`),
+`anno-cli.ts` (`:75,1373,1379`). Three files. `AnnoSymbol` and `AnnoComment`
+have wider consumer sets (`anno-coverage.ts:1409,1533,1559,1653,1654,2057,2058`,
+`anno-cli.ts:1371,1372,1377,1378`, `anno-coverage.test.ts` ×6) and **nothing in
 this phase touches them** — moving them would inflate criterion 4's diff for no
-criterion. Recommended renamed form: **`BlockEntry`** (the `R2000` prefix drops;
+criterion. Recommended renamed form: **`BlockEntry`** (the `ANNO` prefix drops;
 the adapter module name supplies the namespace, matching `stock-*.ts`'s
 convention of unprefixed exported types).
 
-`r2000-cli.ts:75` is a type-only import (`import type { CoverageReport,
-R2000BlockEntry, ... }`) — one more shipped-module import to split.
+`anno-cli.ts:75` is a type-only import (`import type { CoverageReport,
+AnnoBlockEntry, ... }`) — one more shipped-module import to split.
 
-### 3. Registry scope — cover the 16 modules **and** `r2000-regbits.json`, exclude test files, and **state the two `scripts/lib/` exclusions explicitly**
+### 3. Registry scope — cover the 16 modules **and** `anno-regbits.json`, exclude test files, and **state the two `scripts/lib/` exclusions explicitly**
 
-Evidence for including `r2000-regbits.json`: it is in `files[]`
-`[VERIFIED: src/mcp/vice/package.json files[]]` and it matches the `r2000-*`
+Evidence for including `anno-regbits.json`: it is in `files[]`
+`[VERIFIED: src/mcp/vice/package.json files[]]` and it matches the `anno-*`
 glob, so an unfiltered enumerating test will demand an entry for it regardless of
 intent. Better to include it deliberately than to add a silent extension filter.
 
@@ -1229,7 +1229,7 @@ own lean), and `test-gate.test.ts`'s drift guard already ensures every `*.test.*
 file lands in exactly one of the automated/manual sets — so no test file can go
 unaccounted for. `[VERIFIED: src/mcp/vice/test-gate.test.ts:33-49]`.
 
-Evidence for stating the `scripts/lib/r2000-cli-verbs.{mjs,d.mts}` exclusion:
+Evidence for stating the `scripts/lib/anno-cli-verbs.{mjs,d.mts}` exclusion:
 `CUT-04` names the first one, and a registry that silently omits it is a
 `CUT-04` blind spot the registry's whole purpose is to close.
 
@@ -1249,12 +1249,12 @@ Recommended, with the reasoning:
 
 1. **`27-01` — the ACME gate split (SEAM-01).** First, because criterion 1 is
    observable in isolation and `SEAM-01`'s Ordering constraint 1 makes it the
-   only requirement with a sequencing obligation. Touches `r2000-test-gate.ts`,
+   only requirement with a sequencing obligation. Touches `anno-test-gate.ts`,
    the new `acme-gate.ts` + `acme-gate.test.ts`, and four importers. Zero
    dependency on the other three plans.
 2. **`27-02` — the coverage store boundary (SEAM-03).** Independent of `27-01`.
-   Touches only `r2000-coverage.ts`, the new adapter, `r2000-coverage.test.ts`,
-   `r2000-cli.ts:75`. The largest and most delicate diff (2292-line module,
+   Touches only `anno-coverage.ts`, the new adapter, `anno-coverage.test.ts`,
+   `anno-cli.ts:75`. The largest and most delicate diff (2292-line module,
    4315-line test file) — deserves its own plan so criterion 4's "demonstrably a
    move" is readable.
 3. **`27-03` — `prg-image.ts` + the shared test helper (extraction scope, D-14/D-15/D-16).**
@@ -1262,9 +1262,9 @@ Recommended, with the reasoning:
    three `files[]`-scanning guards are exercised in one place. D-16's two comment
    rewrites belong here too, alongside the repoint they justify.
 4. **`27-04` — the classification registry (SEAM-02).** **Last**, because its
-   entries must cite the *post-extraction* tree: `r2000-project.ts`'s
-   `extractables` list shrinks once `27-03` lands, `r2000-test-gate.ts`'s
-   consumer list changes once `27-01` lands, and `r2000-coverage.ts`'s basis
+   entries must cite the *post-extraction* tree: `anno-project.ts`'s
+   `extractables` list shrinks once `27-03` lands, `anno-test-gate.ts`'s
+   consumer list changes once `27-01` lands, and `anno-coverage.ts`'s basis
    gains the adapter once `27-02` lands. A registry written first would be stale
    inside the same phase — the one thing criterion 2 says must not happen.
 
@@ -1286,7 +1286,7 @@ comment that trips one turns a green phase red.
 | `comment-phase-pointers.test.ts:400,414,424,446` | No dangling phase-comment *assignment* in a shipped module | A header comment reading "moved here in Phase 27" may trip the assignment pattern — check the guard's own pattern families before writing the header |
 | `stock-dispatch.test.ts:2902,2929,2949` | No shipped module hardcodes a fork-provides refusal claim, nor pairs future-phase framing with `VICE_BACKEND` | No realistic risk |
 | `scripts/check-npm-packages.mjs` | The published tarball contains exactly the right files | Must see the new `files[]` entry; this is the D-14 gate |
-| `r2000-spawn-seam.test.ts:176,296,363` | Every regenerator2000-shaped spawn site in the shipped set is in `EXPECTED_R2000_SPAWN_SITES` | `prg-image.ts` has no spawn call — safe. But the guard now scans it |
+| `spawn-seam.test.ts:176,296,363` | Every external-analyser-shaped spawn site in the shipped set is in `EXPECTED_ANNO_SPAWN_SITES` | `prg-image.ts` has no spawn call — safe. But the guard now scans it |
 
 ### Because all four new modules are `.ts` files in `src/mcp/vice/` (directory-wide guards, `files[]`-independent)
 
@@ -1296,7 +1296,7 @@ comment that trips one turns a green phase red.
 | `assumption-label-discipline.test.ts:45-53` | authored `.ts`/`.mts` directly under `src/mcp/vice/`, **excluding** `resources/` and every `*.test.*` | **No new `[ASSUMED]` label** in `acme-gate.ts`, the adapter, `prg-image.ts` or the registry, unless a matching Assumptions Log row is added. Checked: the ACME half being moved contains **no** `[ASSUMED]` text, so the move itself is safe |
 | `test-gate.test.ts:33-49` | `readdirSync(HERE)` `*.test.*` | `acme-gate.test.ts` is auto-discovered by `automatedTestFiles()`. **Do not** add it to `MANUAL_ONLY_TESTS`. No edit needed |
 | `ci-suite-coverage.test.ts` | derives suite *directories* from the repo | `src/mcp/vice/` is already a covered directory. No edit needed |
-| `hostpath-consumers.test.ts:188,204` | `r2000-*.ts` glob, floor 14, 16 present | No edit needed; see §Verified Reference Map |
+| `hostpath-consumers.test.ts:188,204` | `anno-*.ts` glob, floor 14, 16 present | No edit needed; see §Verified Reference Map |
 
 **`assumption-label-discipline.test.ts` is the one most likely to bite**, because
 the natural instinct when writing a long "single seam" header for a new module is
@@ -1307,11 +1307,11 @@ to record an assumption in it.
 | Problem | Don't Build | Use Instead | Why |
 |---|---|---|---|
 | Enumerating shipped modules from `files[]` | A fifth copy | The extracted shared helper (D-15), body copied verbatim from `docs-dangling-refs.test.ts:353` | Four copies is already the divergence hazard; a fifth in the registry's enforcing test would be self-parody |
-| Stripping comments/strings before a structural scan | A new stripper | `codeOnly()` (full) or the `disasm-*` three-line filter (comments only) — pick by whether string bodies must be ignored, per `r2000-tools.test.ts:193-201`'s recorded reasoning | Five strippers already exist; the choice between them is documented in-code |
-| Proving a module is absent from `files[]` | A prose promise | The `r2000-verify.test.ts:187-194` pattern, copied | It is the repo's established mechanical form and it is three lines |
-| Proving a gate hard-FAILs when its binary is missing | Re-probing in-process, or a transcript in a SUMMARY | A child process with a poisoned env (D-05) | `ACME_AVAILABLE` is a module-load `const` (`:134`); an in-process re-probe is structurally impossible. `r2000-launch.test.ts:497-512` is the in-repo precedent for the child-process shape |
+| Stripping comments/strings before a structural scan | A new stripper | `codeOnly()` (full) or the `disasm-*` three-line filter (comments only) — pick by whether string bodies must be ignored, per `anno-tools.test.ts:193-201`'s recorded reasoning | Five strippers already exist; the choice between them is documented in-code |
+| Proving a module is absent from `files[]` | A prose promise | The `anno-verify.test.ts:187-194` pattern, copied | It is the repo's established mechanical form and it is three lines |
+| Proving a gate hard-FAILs when its binary is missing | Re-probing in-process, or a transcript in a SUMMARY | A child process with a poisoned env (D-05) | `ACME_AVAILABLE` is a module-load `const` (`:134`); an in-process re-probe is structurally impossible. `anno-launch.test.ts:497-512` is the in-repo precedent for the child-process shape |
 | Asserting a module set has the right size | A pinned total | Relation assertions (`every X has a Y`, `every cited path exists`) plus a **floor** | `audit-integrity.test.ts`'s pinned totals went red on a correct tree; `hostpath-consumers.test.ts:188`'s `>= 14` floor is the pattern that survived |
-| Proving an adapter is substitutable | A grep for absent literals | A second implementation fed through the adapter (D-13), copying `r2000-coverage.test.ts:604`'s shape **including its non-vacuity half** | Absence of a string is not substitutability; and a substitutability test whose divergence report cannot move is vacuous |
+| Proving an adapter is substitutable | A grep for absent literals | A second implementation fed through the adapter (D-13), copying `anno-coverage.test.ts:604`'s shape **including its non-vacuity half** | Absence of a string is not substitutability; and a substitutability test whose divergence report cannot move is vacuous |
 
 ## Common Pitfalls
 
@@ -1332,25 +1332,25 @@ temp dir** (`mkdtempSync(join(tmpdir(), ...))`), importing `acme-gate.ts` by
 assertion if it is ever left behind.
 **Why it happens:** it is the shortest path to a relative import.
 **How to avoid:** temp dir + absolute-path import, `rmSync` in a `finally`.
-`r2000-launch.test.ts:497` avoids the file entirely with
+`anno-launch.test.ts:497` avoids the file entirely with
 `["--input-type=module", "-e", program]` — but `node --test` needs a file path,
 so a temp file is required if D-05's literal `node --test` is honoured.
 **Warning signs:** `test-gate.test.ts` goes red with an unfamiliar filename.
 
-### Pitfall 3: `r2000-cli.test.ts`'s import is *rewritten* instead of *split*
-**What goes wrong:** either the R2000-half symbols or the ACME-half symbols
+### Pitfall 3: `anno-cli.test.ts`'s import is *rewritten* instead of *split*
+**What goes wrong:** either the anno-half symbols or the ACME-half symbols
 vanish from the file, producing a typecheck error at best and a silently disabled
 gate at worst.
 **Why it happens:** D-01 says "get their import line rewritten", which is true
 for three of the four files and false for this one.
 **How to avoid:** Correction C-2. Same shape applies to all six
-`r2000-project.ts` importers in D-14's table.
+`anno-project.ts` importers in D-14's table.
 **Warning signs:** `tsc --noEmit` reports an undefined identifier; or one of the
 never-skipped gate tests disappears from the TAP output count.
 
 ### Pitfall 4: The adapter receives the census, collapsing the independence axis
 **What goes wrong:** `blockClassAt()` is given the census or the bytes "for
-convenience", and `r2000-coverage.ts:124-127`'s "neither side reads the other's
+convenience", and `anno-coverage.ts:124-127`'s "neither side reads the other's
 input" invariant is silently broken. The `:604` independence test may still pass
 while the *claim* it protects is void.
 **Why it happens:** the adapter sits next to `classFromStore()`, which already
@@ -1372,9 +1372,9 @@ have the enforcing test assert *the cited line contains the cited symbol* (the
 **Warning signs:** none — that is the point. This one is silent until Phase 32.
 
 ### Pitfall 6: The registry module name matches its own glob
-**What goes wrong:** naming it `r2000-classification.ts` makes the enforcing test
+**What goes wrong:** naming it `anno-classification.ts` makes the enforcing test
 demand a registry entry for the registry.
-**How to avoid:** a non-`r2000` name (`module-classification.ts`).
+**How to avoid:** a non-`anno` name (`module-classification.ts`).
 **Warning signs:** the enforcing test fails on its first run with a
 self-referential message.
 
@@ -1393,7 +1393,7 @@ stopped. `[VERIFIED: src/mcp/vice/test-gate.mjs:95-105]` — the nine
 **Warning signs:** the evidence names `test:automated`, or names no command at all.
 
 ### Pitfall 8: The two stale comments are left behind
-**What goes wrong:** `r2000-coverage.ts:61-66`'s "one call site" claim and
+**What goes wrong:** `anno-coverage.ts:61-66`'s "one call site" claim and
 `hop-chain-comments.test.ts:46-50`'s unqualified convention statement both
 survive, each now contradicting the code beside them.
 **How to avoid:** Corrections C-4 and §The Stale Header Invariant. Both are
@@ -1408,7 +1408,7 @@ category answered explicitly.
 
 | Category | Items Found | Action Required |
 |----------|-------------|------------------|
-| **Stored data** | **None.** No database, datastore, collection name, ID or `user_id` anywhere carries `r2000-test-gate`, `parsePrg`, `flatImageOrigin`, `shippedTsModules`, `codeOnly`, `storeBlockTypeAt` or `classFromStore`. Verified: these are module-internal TypeScript symbols with zero persisted representation. The one persisted artifact adjacent to this phase is `evidence/coverage-reproducibility/ANSWER.sha256` (the coverage seal) — it hashes a *derived answer*, not a symbol name, and nothing in this phase changes any census output (criterion 4 asserts exactly that). | none |
+| **Stored data** | **None.** No database, datastore, collection name, ID or `user_id` anywhere carries `anno-test-gate`, `parsePrg`, `flatImageOrigin`, `shippedTsModules`, `codeOnly`, `storeBlockTypeAt` or `classFromStore`. Verified: these are module-internal TypeScript symbols with zero persisted representation. The one persisted artifact adjacent to this phase is `evidence/coverage-reproducibility/ANSWER.sha256` (the coverage seal) — it hashes a *derived answer*, not a symbol name, and nothing in this phase changes any census output (criterion 4 asserts exactly that). | none |
 | **Live service config** | **None.** The only external service surface is the VICE broker, which is not configured with any symbol or module path from this phase. No n8n workflow, Datadog service name, Tailscale ACL tag or Cloudflare Tunnel exists in this repo. | none |
 | **OS-registered state** | **None.** No systemd unit, launchd plist, Task Scheduler entry or pm2 process name references any module in scope. The broker's own systemd unit (recorded project knowledge) launches `resources/vice-broker.mjs`, untouched here. | none |
 | **Secrets / env vars** | **`ACME_BIN` and `VICE_REQUIRE_ACME` — code reads them by exact name, and `ci.yml:140` sets the second.** D-03 keeps both byte-identical, so **no action**. This is the one category with real exposure and it is closed by decision rather than by absence. Also present: `ACME` (a *different* var, consumed by `src/skills/acme-build/scripts/acme.mjs`, set at `ci.yml:99-100`) — untouched. No `.env` file exists in the repo. | none — **but the plan must assert the names did not move**, per D-03 |
@@ -1428,15 +1428,15 @@ format, a stored record, or an env var.
 |------------|------------|-----------|---------|----------|
 | Node.js ≥ 22.18 | everything (type-stripping) | ✓ | v22.22.0 | — |
 | `tsc` | `npm run typecheck` | ✓ | 7.0.2 (devDependency) | — |
-| ACME cross-assembler | criterion 1's *positive* half (the gate must still SKIP-free-pass when ACME is present); `disasm-roundtrip.test.ts`, `skill-acme-build-cli.test.ts`, `r2000-answer-key.test.ts` | ✓ | release 0.97 "Zem", 31 Jan 2021, at `/home/henrik/.local/bin/acme` | — |
+| ACME cross-assembler | criterion 1's *positive* half (the gate must still SKIP-free-pass when ACME is present); `disasm-roundtrip.test.ts`, `skill-acme-build-cli.test.ts`, `absorbed-answer-key.test.ts` | ✓ | release 0.97 "Zem", 31 Jan 2021, at `/home/henrik/.local/bin/acme` | — |
 | A nonexistent path for `ACME_BIN` | criterion 1's *negative* half (the hard-FAIL) | ✓ (trivially) | — | — |
-| regenerator2000 binary | the ten R2000-half gate importers | ✗ (not probed; irrelevant) | — | Absence is an **expected SKIP forever, by design** — `r2000-test-gate.ts:15-24` records that `VICE_REQUIRE_R2000` is deliberately never set in CI. Not a blocker |
+| the external analyser binary | the ten anno-half gate importers | ✗ (not probed; irrelevant) | — | Absence is an **expected SKIP forever, by design** — `anno-test-gate.ts:15-24` records that `VICE_REQUIRE_ANNO` is deliberately never set in CI. Not a blocker |
 | VICE emulator / broker | nothing in this phase | n/a | — | **Must be STOPPED** for criterion 4's green run (D-17). No broker process was running at research time |
 
 `[VERIFIED: command -v acme && acme --version; node --version; npx tsc --version]`
 
 **Missing dependencies with no fallback:** none.
-**Missing dependencies with fallback:** regenerator2000 — absence is by design.
+**Missing dependencies with fallback:** the external analyser — absence is by design.
 
 ## Package Legitimacy Audit
 
@@ -1476,44 +1476,44 @@ this section is required.
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| SEAM-01 | With `VICE_REQUIRE_ACME=1` and a nonexistent `ACME_BIN`, the suite **FAILS** (non-zero exit) rather than skipping — from the extracted module under its non-`r2000` name | integration (child process) | `node --test acme-gate.test.ts` | ❌ Wave 0 (`acme-gate.test.ts`) |
+| SEAM-01 | With `VICE_REQUIRE_ACME=1` and a nonexistent `ACME_BIN`, the suite **FAILS** (non-zero exit) rather than skipping — from the extracted module under its non-`anno` name | integration (child process) | `node --test acme-gate.test.ts` | ❌ Wave 0 (`acme-gate.test.ts`) |
 | SEAM-01 | `acme-gate.ts` is absent from `package.json` `files[]` | unit (structural) | `node --test acme-gate.test.ts` | ❌ Wave 0 |
-| SEAM-01 | No ACME symbol is reachable from any `r2000-*` module | unit (structural grep-in-test) | `node --test acme-gate.test.ts` | ❌ Wave 0 |
-| SEAM-01 | The three unchanged ACME consumers still gate correctly | regression | `node --test disasm-roundtrip.test.ts skill-acme-build-cli.test.ts r2000-answer-key.test.ts r2000-cli.test.ts` | ✅ exists |
+| SEAM-01 | No ACME symbol is reachable from any `anno-*` module | unit (structural grep-in-test) | `node --test acme-gate.test.ts` | ❌ Wave 0 |
+| SEAM-01 | The three unchanged ACME consumers still gate correctly | regression | `node --test disasm-roundtrip.test.ts skill-acme-build-cli.test.ts absorbed-answer-key.test.ts anno-cli.test.ts` | ✅ exists |
 | SEAM-01 | `ci.yml` still sets `VICE_REQUIRE_ACME` and still runs the full glob | regression | `node --test ci-guardrails.test.mjs` | ✅ exists (`:334`, `:387`) |
-| SEAM-02 | Every in-scope `r2000-*` entry on disk has a registry entry; every cited consumer path exists; no basis cites the prefix | unit (enforcing, relation-only) | `node --test <registry>.test.ts` | ❌ Wave 0 |
+| SEAM-02 | Every in-scope `anno-*` entry on disk has a registry entry; every cited consumer path exists; no basis cites the prefix | unit (enforcing, relation-only) | `node --test <registry>.test.ts` | ❌ Wave 0 |
 | SEAM-02 | `extractables` is non-empty **iff** verdict is `glue-with-extractable` | unit | same | ❌ Wave 0 |
 | SEAM-02 | The registry is absent from `files[]` | unit (structural) | same | ❌ Wave 0 |
 | SEAM-02 | The registry type-checks | typecheck | `npm run typecheck` | ✅ exists |
-| SEAM-03 | The `:604` independence test still passes across the new boundary | regression | `node --test r2000-coverage.test.ts` | ✅ exists (`:604`) |
-| SEAM-03 | A **second** block-vocabulary implementation fed through the adapter leaves every census byte count unchanged and moves only the divergence sub-report | unit (substitutability) | `node --test r2000-coverage.test.ts` | ❌ Wave 0 (new test in existing file) |
-| SEAM-03 | The adapter imports nothing census-side (independence-axis purity) | unit (structural) | `node --test <adapter>.test.ts` or in `r2000-coverage.test.ts` | ❌ Wave 0 |
-| SEAM-03 *(optional supplement)* | No literal `"Code"`/`"Undefined"`/`"Byte"` comparison survives in `r2000-coverage.ts` | unit (structural) | same | ❌ Wave 0, planner's discretion per D-13 |
+| SEAM-03 | The `:604` independence test still passes across the new boundary | regression | `node --test anno-coverage.test.ts` | ✅ exists (`:604`) |
+| SEAM-03 | A **second** block-vocabulary implementation fed through the adapter leaves every census byte count unchanged and moves only the divergence sub-report | unit (substitutability) | `node --test anno-coverage.test.ts` | ❌ Wave 0 (new test in existing file) |
+| SEAM-03 | The adapter imports nothing census-side (independence-axis purity) | unit (structural) | `node --test <adapter>.test.ts` or in `anno-coverage.test.ts` | ❌ Wave 0 |
+| SEAM-03 *(optional supplement)* | No literal `"Code"`/`"Undefined"`/`"Byte"` comparison survives in `anno-coverage.ts` | unit (structural) | same | ❌ Wave 0, planner's discretion per D-13 |
 | D-14 | `prg-image.ts` is in `files[]` and the tarball validates | integration | `node scripts/check-npm-packages.mjs` | ✅ exists |
-| D-14 | `parsePrg`/`flatImageOrigin` unit behaviour unchanged | regression | `node --test prg-image.test.ts` (moved from `r2000-project.test.ts:110-128`) | ✅ tests exist, file ❌ Wave 0 |
-| D-15 | All four `shippedTsModules()` consumers still produce identical scanned sets | regression | `node --test docs-dangling-refs.test.ts comment-phase-pointers.test.ts stock-dispatch.test.ts r2000-spawn-seam.test.ts` | ✅ exists |
-| Criterion 4 | Full suite green with **zero** `r2000` modules deleted | full suite | `cd src/mcp/vice && npm test` (broker stopped) | ✅ exists |
-| Criterion 4 | Nothing was deleted | structural | `git diff --diff-filter=D --name-only HEAD~N` returns no `r2000-*` path | n/a — evidence assertion |
+| D-14 | `parsePrg`/`flatImageOrigin` unit behaviour unchanged | regression | `node --test prg-image.test.ts` (moved from `anno-project.test.ts:110-128`) | ✅ tests exist, file ❌ Wave 0 |
+| D-15 | All four `shippedTsModules()` consumers still produce identical scanned sets | regression | `node --test docs-dangling-refs.test.ts comment-phase-pointers.test.ts stock-dispatch.test.ts spawn-seam.test.ts` | ✅ exists |
+| Criterion 4 | Full suite green with **zero** `anno` modules deleted | full suite | `cd src/mcp/vice && npm test` (broker stopped) | ✅ exists |
+| Criterion 4 | Nothing was deleted | structural | `git diff --diff-filter=D --name-only HEAD~N` returns no `ANNO-*` path | n/a — evidence assertion |
 
 ### V-1: How criterion 1's hard-FAIL is observably proven (D-05)
 
 **The constraint that forces the design:** `ACME_AVAILABLE` is a module-load
-`const` `[VERIFIED: src/mcp/vice/r2000-test-gate.ts:134]` — `export const
+`const` `[VERIFIED: src/mcp/vice/anno-test-gate.ts:134]` — `export const
 ACME_AVAILABLE: boolean = probeAcme();`. Setting `process.env.ACME_BIN` inside a
 test cannot affect it: the module is already loaded. **No in-process test can
-prove criterion 1.** This is the same constraint `r2000-launch.test.ts:487-489`
-records for `R2000_BIN` ("resolved once at module load (the IN-04 lesson)").
+prove criterion 1.** This is the same constraint `anno-launch.test.ts:487-489`
+records for `ANNO_BIN` ("resolved once at module load (the IN-04 lesson)").
 
-**The in-repo precedent to copy** `[VERIFIED: src/mcp/vice/r2000-launch.test.ts:497-512]`,
+**The in-repo precedent to copy** `[VERIFIED: src/mcp/vice/anno-launch.test.ts:497-512]`,
 quoted verbatim:
 
 ```
-test("runR2000({ timeoutMs: 250 }) against a genuinely slow child throws a named, actionable error -- never a raw spawnSync error object", () => {
+test("runAnno({ timeoutMs: 250 }) against a genuinely slow child throws a named, actionable error -- never a raw spawnSync error object", () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const childProgram =
-    `import { runR2000 } from ${JSON.stringify(join(here, "r2000-launch.ts"))};\n` +
+    `import { runAnno } from ${JSON.stringify(join(here, "anno-launch.ts"))};\n` +
     `try {\n` +
-    `  runR2000(["-e", "setTimeout(() => {}, 5000)"], { timeoutMs: 250 });\n` +
+    `  runAnno(["-e", "setTimeout(() => {}, 5000)"], { timeoutMs: 250 });\n` +
     `  console.log("NO_THROW");\n` +
     `} catch (e) {\n` +
     `  console.log("THREW:" + JSON.stringify({ message: e.message, isPlainSpawnError: typeof e.errno === "number" }));\n` +
@@ -1522,7 +1522,7 @@ test("runR2000({ timeoutMs: 250 }) against a genuinely slow child throws a named
   const r = spawnSync(process.execPath, ["--input-type=module", "-e", childProgram], {
     encoding: "utf8",
     timeout: 15_000,
-    env: { ...process.env, R2000_BIN: process.execPath },
+    env: { ...process.env, ANNO_BIN: process.execPath },
   });
 ```
 
@@ -1577,7 +1577,7 @@ exists"** — never a total. Concretely:
 - **Direction 3 (basis integrity):** every entry's `basis` is non-empty; every
   `consumers[].path` exists; every `requirements[]` matches a known-id shape.
 - **Direction 4 (the prefix prohibition — criterion 2's checkable half):** no
-  `basis` field's text matches `/prefix/i` or consists solely of a `r2000-`
+  `basis` field's text matches `/prefix/i` or consists solely of a `anno-`
   pattern. This is what turns "no classification cites a name prefix" from a
   promise into a test.
 - **Direction 5 (verdict/extractables coherence):** `extractables.length > 0` iff
@@ -1610,7 +1610,7 @@ moves the divergence sub-report and nothing else.* The test:
    through whatever seam D-10 chooses (a parameter on `ReproducibilityInput`, or
    a module-level default the test overrides).
 3. Assert **every** `structural` byte count and `classRuns` is **identical** —
-   copying the exact key list from `r2000-coverage.test.ts:609`:
+   copying the exact key list from `anno-coverage.test.ts:609`:
    `["reachedAsInstruction", "tableEntry", "referencedAsData", "unreached",
    "linearSweepDecodable", "rangeBytes"]` plus `deepEqual` on `classRuns`.
 4. Assert the divergence sub-report **did** move — the non-vacuity half. Without
@@ -1646,8 +1646,8 @@ Four elements, all mandatory (D-17 plus recorded project knowledge):
 3. **The pass/fail/skip counts**, so a future reader can see the suite was not
    silently narrowed. A skip count that *dropped* is as much a signal as a
    failure.
-4. **"Zero `r2000` modules deleted"**, backed by a command not a claim — e.g.
-   `git diff --diff-filter=D --name-only <base>..HEAD | grep -c r2000` returning
+4. **"Zero `anno` modules deleted"**, backed by a command not a claim — e.g.
+   `git diff --diff-filter=D --name-only <base>..HEAD | grep -c anno` returning
    `0`. This is criterion 4's actual substance ("demonstrably a move rather than
    a change") and it is the one part of the criterion that is trivially
    mechanisable.
@@ -1669,12 +1669,12 @@ half-split import, and `tsc --noEmit` catches that class before the suite does.
       hard-FAIL, its non-vacuity control, and the `files[]`-absence assertion)
 - [ ] `src/mcp/vice/<registry>.test.ts` — covers SEAM-02 (five directions, a
       floor, and a planted violation)
-- [ ] New tests **inside** `src/mcp/vice/r2000-coverage.test.ts` — covers SEAM-03
+- [ ] New tests **inside** `src/mcp/vice/anno-coverage.test.ts` — covers SEAM-03
       (D-13's second implementation; optionally the structural literal guard)
 - [ ] `src/mcp/vice/prg-image.test.ts` — D-14; the four existing unit tests move
-      from `r2000-project.test.ts:110-128`
+      from `anno-project.test.ts:110-128`
 - [ ] Adapter import-purity assertion — a home must be chosen (its own
-      `<adapter>.test.ts`, or inside `r2000-coverage.test.ts`)
+      `<adapter>.test.ts`, or inside `anno-coverage.test.ts`)
 - [ ] Framework install: **none needed** — `node --test` is built in
 
 ## Security Domain
@@ -1687,12 +1687,12 @@ half-split import, and `tsc --noEmit` catches that class before the suite does.
 | ASVS Category | Applies | Standard Control |
 |---------------|---------|-----------------|
 | V2 Authentication | **no** | No authentication surface exists in this phase or this package. |
-| V3 Session Management | **no** | `r2000-session.ts` is an emulator/analyser *process* session, not a user session. Untouched here. |
+| V3 Session Management | **no** | `anno-session.ts` is an emulator/analyser *process* session, not a user session. Untouched here. |
 | V4 Access Control | **no** | No authorization decision is made or moved. |
-| V5 Input Validation | **partially — preserved, not added** | Two moving functions are input validators and their refusals must survive byte-identically: `parsePrg` rejects inputs under 3 bytes; `flatImageOrigin` rejects any length ≠ 65536. `r2000-cli.ts:24-31,477-491` records that the ordering of these two checks is deliberate — an oversized flat capture must hit `flatImageOrigin()`'s named refusal *instead of* silently falling through to `parsePrg()`. **The extraction must not reorder them.** The four existing unit tests at `r2000-project.test.ts:110-128` are the regression. |
+| V5 Input Validation | **partially — preserved, not added** | Two moving functions are input validators and their refusals must survive byte-identically: `parsePrg` rejects inputs under 3 bytes; `flatImageOrigin` rejects any length ≠ 65536. `anno-cli.ts:24-31,477-491` records that the ordering of these two checks is deliberate — an oversized flat capture must hit `flatImageOrigin()`'s named refusal *instead of* silently falling through to `parsePrg()`. **The extraction must not reorder them.** The four existing unit tests at `anno-project.test.ts:110-128` are the regression. |
 | V6 Cryptography | **no** | `decodeRawData` is base64 + gunzip — an encoding, not a cryptographic control. Nothing hand-rolls crypto. The coverage seal (`ANSWER.sha256`) uses a standard digest and is untouched. |
 | V12 File / Resource | **partially** | The child-process test writes to a temp dir; `mkdtempSync` (not a predictable path) plus `rmSync` in `finally` is the control, matching every existing temp-dir user in this suite. |
-| V14 Configuration | **yes — the phase's one real security-relevant property** | `ACME_BIN` is an **externally-controlled binary name reaching `spawnSync`**. It is invoked as `spawnSync(ACME_BIN, ["--version"], ...)` — an **argv array, never a shell string** `[VERIFIED: src/mcp/vice/r2000-test-gate.ts:123,126]`. That property must be preserved verbatim in `acme-gate.ts`. `04-06-PLAN.md:312` records this as threat `T-04-06-01` (Tampering / command injection via the ACME subprocess), mitigated by exactly this argv-array discipline. |
+| V14 Configuration | **yes — the phase's one real security-relevant property** | `ACME_BIN` is an **externally-controlled binary name reaching `spawnSync`**. It is invoked as `spawnSync(ACME_BIN, ["--version"], ...)` — an **argv array, never a shell string** `[VERIFIED: src/mcp/vice/anno-test-gate.ts:123,126]`. That property must be preserved verbatim in `acme-gate.ts`. `04-06-PLAN.md:312` records this as threat `T-04-06-01` (Tampering / command injection via the ACME subprocess), mitigated by exactly this argv-array discipline. |
 
 ### Known Threat Patterns for this stack (Node / TypeScript / test-harness extraction)
 
@@ -1702,7 +1702,7 @@ half-split import, and `tsc --noEmit` catches that class before the suite does.
 | Command injection in the new child-process test | Tampering | The `ACME_BIN` value it sets is a `join(tmpDir, ...)` path this code constructs, never user input; the child is spawned with an argv array | Mitigated by construction |
 | A security gate that silently degrades to a skip | Repudiation / Tampering | The hard-FAIL switch (`VICE_REQUIRE_ACME`) plus a committed test that observes the FAIL | **This is criterion 1.** The whole of SEAM-01 is a mitigation for this pattern |
 | A supply-chain change to the published tarball | Tampering | `scripts/check-npm-packages.mjs` validates both tarballs' exact contents via `npm pack --dry-run --json` | The `files[]` addition (D-14) is exactly what that guard exists to see. It must be **run**, not assumed |
-| A test-only module leaking into the published tarball | Information Disclosure | Mechanical `files[]`-absence assertions | `acme-gate.ts`, the registry and the shared helper each need one (D-04, D-09, D-15). `r2000-verify.test.ts:187` is the pattern |
+| A test-only module leaking into the published tarball | Information Disclosure | Mechanical `files[]`-absence assertions | `acme-gate.ts`, the registry and the shared helper each need one (D-04, D-09, D-15). `anno-verify.test.ts:187` is the pattern |
 | Path traversal | Tampering | n/a | No path from an untrusted source is handled. `prg-image.ts` takes `Uint8Array`, never a path |
 
 **No new attack surface is created by this phase.** Every security-relevant
@@ -1715,9 +1715,9 @@ principal security control as well as its correctness control.
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
 | A1 | `node --test <file>` exits non-zero when a test in that file fails, and the assertion message appears in the combined stdout/stderr | V-1 | The child-process test's assertions need reshaping. **Cheap to falsify in Wave 0** — run the probe by hand once before writing the assertions. Not verified this session because it requires the not-yet-written module |
-| A2 | Node's type-stripping resolves an absolute-path `.ts` import from a child process whose cwd is a temp dir outside the repo | V-1 | The probe file must live inside `src/mcp/vice/` (and then Pitfall 2 applies). Strongly suggested by `r2000-launch.test.ts:497-512`, which does exactly this with `-e` rather than `--test`, but the `--test` variant was not executed this session |
+| A2 | Node's type-stripping resolves an absolute-path `.ts` import from a child process whose cwd is a temp dir outside the repo | V-1 | The probe file must live inside `src/mcp/vice/` (and then Pitfall 2 applies). Strongly suggested by `anno-launch.test.ts:497-512`, which does exactly this with `-e` rather than `--test`, but the `--test` variant was not executed this session |
 | A3 | `hop-chain-comments.test.ts` and `comment-phase-pointers.test.ts` will not fire on a well-written header for the four new modules | §Guards | A header rewrite in Wave 0. Their scan sets and pattern families were read; the specific new header text does not exist yet, so this cannot be verified in advance |
-| A4 | `r2000-verify.ts`'s classification as a *capability* (criterion 2) is compatible with `EXPORT-01`'s statement that only its discipline survives | OQ-2 | The registry entry's basis must be reworded. Both texts were read verbatim; the tension is real and is an owner/planner judgement, not a fact to look up |
+| A4 | `anno-verify.ts`'s classification as a *capability* (criterion 2) is compatible with `EXPORT-01`'s statement that only its discipline survives | OQ-2 | The registry entry's basis must be reworded. Both texts were read verbatim; the tension is real and is an owner/planner judgement, not a fact to look up |
 | A5 | The three `disasm-*` local `codeOnly` consts are byte-identical to each other | §codeOnly | Only affects an out-of-scope observation; no plan depends on it. Read visually, not diffed mechanically |
 
 **Nothing in this document's Corrections C-1..C-6, Verified Reference Map, SEAM-02
@@ -1737,18 +1737,18 @@ opened this session.
 > | OQ | Resolution | Where |
 > |---|---|---|
 > | OQ-1 | Extract `codeOnly()`, on a **survival** rationale rather than a divergence one; comment-extractor family explicitly out of scope | `27-04-PLAN.md` |
-> | OQ-2 | Record `r2000-verify.ts` as `capability`, basis = the surviving *discipline*; tension flagged in the entry's own `note` | `27-05-PLAN.md` |
+> | OQ-2 | Record `anno-verify.ts` as `capability`, basis = the surviving *discipline*; tension flagged in the entry's own `note` | `27-05-PLAN.md` |
 > | OQ-3 | **Move** `decodeRawData` (option 2), not record-and-defer | `27-03-PLAN.md` |
 > | OQ-4 | Two `scripts/lib/` files carried as registry **data** with an `out-of-enumeration` marker; enforcing test's enumeration stays inside `src/mcp/vice/` | `27-05-PLAN.md` |
 
 ### OQ-1: Extract `codeOnly()` at all, given it has exactly one consumer? — RESOLVED in `27-04-PLAN.md`
 
-- **What we know:** `codeOnly()` has one definition (`r2000-spawn-seam.test.ts:65`)
+- **What we know:** `codeOnly()` has one definition (`spawn-seam.test.ts:65`)
   and one consuming file (itself, `:276` and `:493`). The four "variants" D-15
   names are local `const`s doing a different job, correctly excluded. So the
   *divergence* hazard D-15 argues from does not exist for `codeOnly()` — it
   exists only for `shippedTsModules()` (four true copies). Meanwhile
-  `r2000-spawn-seam.test.ts` is an `r2000-*.test.ts` file Phase 32 deletes, so
+  `spawn-seam.test.ts` is an `anno-*.test.ts` file Phase 32 deletes, so
   `codeOnly()` dies with it.
 - **What's unclear:** whether "a sophisticated stripper that will be deleted and
   might be wanted later" is worth extracting, and whether extracting it while
@@ -1768,22 +1768,22 @@ opened this session.
   instruction to keep *that* duplication — respecting it is consistent, not
   inconsistent.
 
-### OQ-2: Is `r2000-verify.ts` a capability, and if so on what basis? — RESOLVED in `27-05-PLAN.md`
+### OQ-2: Is `anno-verify.ts` a capability, and if so on what basis? — RESOLVED in `27-05-PLAN.md`
 
 - **What we know:** criterion 2 names `-verify` among the ten modules "provably
   not deletable by prefix". But `REQUIREMENTS.md:100-104` (`EXPORT-01` and its
   preceding comment) says, verbatim: *"v0.6.0's STORE-06 asserted this reuses an
-  existing `--verify` seam. It does not: that seam invokes regenerator2000 and
+  existing `--verify` seam. It does not: that seam invokes the external analyser and
   parses ITS transcript. Only the discipline survives."* And `EXPORT-01` requires
   a verify path *"built for this purpose"*. Its only consumers are
-  `r2000-cli.ts:58` and its own test — both `r2000-*`.
+  `anno-cli.ts:58` and its own test — both `anno-*`.
 - **What's unclear:** whether the registry records it as `capability` (per
   criterion 2's explicit list) or `glue-with-extractable` (per `EXPORT-01`'s
   measured statement that its route dies).
 - **Recommendation:** record it as **`capability`** — criterion 2 is the phase's
   own binding text and a research pass should not overrule it — but write the
   **basis as the discipline, not the route**: `acmeVerdict()`'s never-trust-the-
-  exit-code parse (`r2000-cli.ts:623` records *"`r2000-verify.ts`'s
+  exit-code parse (`anno-cli.ts:623` records *"`anno-verify.ts`'s
   `acmeVerdict()` derives ONLY from the parsed ACME…"*), which `EXPORT-01`
   explicitly carries forward and `EXPORT-03` restates. Cite `EXPORT-01` and
   `EXPORT-03` as its requirement ids. That is honest about what survives and
@@ -1794,7 +1794,7 @@ opened this session.
 
 - **What we know:** it is generic in implementation, and a criterion-2 capability
   module statically imports it from a `glue-with-extractable` module. CONTEXT's
-  stated reason for excluding it ("r2000-payload-specific") does not survive
+  stated reason for excluding it ("anno-payload-specific") does not survive
   reading the code.
 - **What's unclear:** only the planner's preference between moving it now
   (option 2) and recording it as a named extractable (option 1). Both discharge
@@ -1805,12 +1805,12 @@ opened this session.
   Silently following CONTEXT's parenthetical is the only route that leaves the
   census breakable by a prefix deletion.
 
-### OQ-4: Does the registry cover `scripts/lib/r2000-cli-verbs.*`? — RESOLVED in `27-05-PLAN.md`
+### OQ-4: Does the registry cover `scripts/lib/anno-cli-verbs.*`? — RESOLVED in `27-05-PLAN.md`
 
-- **What we know:** both files exist and match `r2000-*` by name but not by
-  location; `CUT-04` names `scripts/lib/r2000-cli-verbs.mjs` explicitly as a
+- **What we know:** both files exist and match `anno-*` by name but not by
+  location; `CUT-04` names `scripts/lib/anno-cli-verbs.mjs` explicitly as a
   guard with a fate to record. D-06 scopes the enumerating test to
-  `src/mcp/vice/r2000-*`, and D-09's rationale for the registry's location is
+  `src/mcp/vice/anno-*`, and D-09's rationale for the registry's location is
   that *"the test would then reach out of `src/mcp/vice/`, which nothing else in
   the suite does"* — which cuts against extending the scope.
 - **What's unclear:** whether closing a `CUT-04` blind spot five phases early is
@@ -1835,8 +1835,8 @@ did:
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
 | Guard tests each own their own scan end-to-end, copying helpers verbatim (`comment-phase-pointers.test.ts:53-59`, `hop-chain-comments.test.ts:46-50`) | The convention's scope is narrowed by D-16 to "no guard test imports **another guard test**"; importing a neutral non-test helper is permitted | This phase (D-16) | **Both** recorded statements must be rewritten, not one — Correction C-4 |
-| `r2000-coverage.ts`'s block listing "enters this file at one call site (`computeDivergence()`)" (`:61-66`) | It already enters at **two** (`:1921`, `:1983`). After D-10 it enters at exactly one boundary — the adapter | Already drifted; corrected by this phase | The header comment must be rewritten in the same commit — §The Stale Header Invariant |
-| `r2000-d64.test.ts:370-375`'s non-literal dynamic import, justified by "an isolated worktree" | `use_worktrees` is `false` | Config change, pre-dating this phase | The workaround's stated reason no longer applies. Repoint the path constant and update the comment; do not remove the pattern (it is harmless and the code is correct) |
+| `anno-coverage.ts`'s block listing "enters this file at one call site (`computeDivergence()`)" (`:61-66`) | It already enters at **two** (`:1921`, `:1983`). After D-10 it enters at exactly one boundary — the adapter | Already drifted; corrected by this phase | The header comment must be rewritten in the same commit — §The Stale Header Invariant |
+| `anno-d64.test.ts:370-375`'s non-literal dynamic import, justified by "an isolated worktree" | `use_worktrees` is `false` | Config change, pre-dating this phase | The workaround's stated reason no longer applies. Repoint the path constant and update the comment; do not remove the pattern (it is harmless and the code is correct) |
 
 **Deprecated / outdated:**
 - **Nothing in `27-CONTEXT.md` is deprecated.** Its two line drifts (C-5) and two
@@ -1852,18 +1852,18 @@ live tree, and every question was answerable there. No `research-plan` seam call
 was made for the same reason: there were no external questions to route.
 
 ### Primary (HIGH confidence — read this session, verbatim quotes above)
-- `src/mcp/vice/r2000-test-gate.ts` (166 lines, read `:1-45`, `:90-166`)
-- `src/mcp/vice/r2000-coverage.ts` (2292 lines, read `:55-75`, `:112-140`, `:184-222`, `:1612-1700`)
-- `src/mcp/vice/r2000-coverage.test.ts` (4315 lines, read `:595-640`)
-- `src/mcp/vice/r2000-project.ts` (read `:160-215`)
-- `src/mcp/vice/r2000-cli.test.ts` (read `:20-32`), `r2000-answer-key.test.ts` (`:215-235`), `disasm-roundtrip.test.ts` (`:50-70`), `skill-acme-build-cli.test.ts` (`:40-52`)
-- `src/mcp/vice/r2000-verify.test.ts` (`:173-196`), `hostpath-consumers.test.ts` (`:188-250`)
-- `src/mcp/vice/r2000-spawn-seam.test.ts` (`:15-80`, `:155-200`), `stock-dispatch.test.ts` (`:2885-2960`), `docs-dangling-refs.test.ts` (`:344-375`), `comment-phase-pointers.test.ts` (`:45-70`, `:390-415`)
+- `src/mcp/vice/anno-test-gate.ts` (166 lines, read `:1-45`, `:90-166`)
+- `src/mcp/vice/anno-coverage.ts` (2292 lines, read `:55-75`, `:112-140`, `:184-222`, `:1612-1700`)
+- `src/mcp/vice/anno-coverage.test.ts` (4315 lines, read `:595-640`)
+- `src/mcp/vice/anno-project.ts` (read `:160-215`)
+- `src/mcp/vice/anno-cli.test.ts` (read `:20-32`), `absorbed-answer-key.test.ts` (`:215-235`), `disasm-roundtrip.test.ts` (`:50-70`), `skill-acme-build-cli.test.ts` (`:40-52`)
+- `src/mcp/vice/anno-verify.test.ts` (`:173-196`), `hostpath-consumers.test.ts` (`:188-250`)
+- `src/mcp/vice/spawn-seam.test.ts` (`:15-80`, `:155-200`), `stock-dispatch.test.ts` (`:2885-2960`), `docs-dangling-refs.test.ts` (`:344-375`), `comment-phase-pointers.test.ts` (`:45-70`, `:390-415`)
 - `src/mcp/vice/hop-chain-comments.test.ts` (`:45-70`, `:250-278`), `assumption-label-discipline.test.ts` (`:45-75`), `test-gate.test.ts` (`:25-60`), `test-gate.mjs` (`:24-112`), `ci-suite-coverage.test.ts` (`:1-60`), `docs-linerefs.test.ts` (`:1-99`), `audit-integrity.test.ts` (grep)
-- `src/mcp/vice/disasm-decoder.test.ts` (`:300-320`), `disasm-renderer.test.ts` (`:340-355`), `disasm-opcodes.test.ts` (`:388-400`), `r2000-tools.test.ts` (`:190-215`), `r2000-d64.test.ts` (`:365-390`), `r2000-launch.test.ts` (`:485-520`)
+- `src/mcp/vice/disasm-decoder.test.ts` (`:300-320`), `disasm-renderer.test.ts` (`:340-355`), `disasm-opcodes.test.ts` (`:388-400`), `anno-tools.test.ts` (`:190-215`), `anno-d64.test.ts` (`:365-390`), `anno-launch.test.ts` (`:485-520`)
 - `src/mcp/vice/package.json` (full), `.github/workflows/ci.yml` (`:40-150` + full ACME grep)
 - `.planning/phases/27-shared-seams-extracted/27-CONTEXT.md` (full), `.planning/REQUIREMENTS.md` (full), `.planning/STATE.md` (`:1-120`), `.planning/config.json` (full), `./CLAUDE.md` (full, via system context)
-- `git ls-files | grep -i r2000`; `ls src/mcp/vice/`; repo-wide greps for each symbol in scope
+- `git ls-files | grep -i anno`; `ls src/mcp/vice/`; repo-wide greps for each symbol in scope
 
 ### Secondary (MEDIUM confidence)
 - Live tool probes: `node --version` → v22.22.0; `npx tsc --version` → 7.0.2; `command -v acme && acme --version` → `/home/henrik/.local/bin/acme`, release 0.97 "Zem"; `pgrep -fa vice-broker` → no broker
@@ -1886,7 +1886,7 @@ was made for the same reason: there were no external questions to route.
 - **Validation architecture: HIGH for design, MEDIUM for two mechanics** — the
   constraint forcing the child-process design is verified
   (`ACME_AVAILABLE` at `:134` is a module-load const) and the precedent shape is
-  verified (`r2000-launch.test.ts:497-512`), but A1/A2 in the Assumptions Log
+  verified (`anno-launch.test.ts:497-512`), but A1/A2 in the Assumptions Log
   were not executed and should be falsified in Wave 0 at near-zero cost.
 - **Standard stack: N/A** — zero external packages; no stack decision exists.
 - **Pitfalls: HIGH** — each is derived from a specific verified line, not from

@@ -2,7 +2,7 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 05
 subsystem: testing
-tags: [skills, dispatch, jaccard, ci-gates, decisions, validation, regenerator2000, licensing]
+tags: [skills, dispatch, jaccard, ci-gates, decisions, validation, the external analyser, licensing]
 
 # Dependency graph
 requires:
@@ -12,8 +12,8 @@ requires:
     provides: "19-02's four remaining absorbed procedures and its deliberate byte-identical hold on every description, which is what let this plan measure a stable corpus"
   - phase: 19-absorbed-procedures-and-the-coverage-instrument
     provides: "19-03's coverage instrument and 19-04's coverage CLI verb and packer finding — the deliverables decisions 2 and 3 date"
-  - phase: 11-r2000-annotation-surface
-    provides: "r2000-tools.ts's curated surface and its header, which carried the cursor-tool invitation this plan closes"
+  - phase: 11-anno-annotation-surface
+    provides: "anno-tools.ts's curated surface and its header, which carried the cursor-tool invitation this plan closes"
   - phase: 08-stock-backend-parity
     provides: "the three-file gate shape (predicate module / CI runner / planted-violation test) and ci-guardrails.test.mjs's frozen guard-script list this plan's fourth gate joins"
 provides:
@@ -49,7 +49,7 @@ key-files:
   modified:
     - .github/workflows/ci.yml
     - src/mcp/vice/ci-guardrails.test.mjs
-    - src/mcp/vice/r2000-tools.ts
+    - src/mcp/vice/anno-tools.ts
     - src/skills/acme-build/SKILL.md
     - src/skills/c64-memory-mapping/SKILL.md
     - src/skills/routine-queue-walker/SKILL.md
@@ -59,12 +59,12 @@ key-files:
     - .planning/REQUIREMENTS.md
 
 key-decisions:
-  - "The absorbed procedures are a SNAPSHOT at one pinned commit, not a tracked dependency — re-sync is a hash comparison against the manifest's five digests, mechanised by its resync_triggers array, with two named triggers: any move off regenerator2000 0.9.20, and any change to r2000_get_binary_info's field set"
-  - "r2000_toggle_splitter (DECOMP-01, BUILD-02) and r2000_set_immediate_format (which IS BUILD-03's low/high-byte mechanism) are PROPOSED in Phase 19 and implemented at the start of Phase 20 — the absorption diff acted as a requirements-discovery instrument, and dating that here is exactly what ABS-04 exists for"
+  - "The absorbed procedures are a SNAPSHOT at one pinned commit, not a tracked dependency — re-sync is a hash comparison against the manifest's five digests, mechanised by its resync_triggers array, with two named triggers: any move off the external analyser 0.9.20, and any change to anno_get_binary_info's field set"
+  - "anno_toggle_splitter (DECOMP-01, BUILD-02) and anno_set_immediate_format (which IS BUILD-03's low/high-byte mechanism) are PROPOSED in Phase 19 and implemented at the start of Phase 20 — the absorption diff acted as a requirements-discovery instrument, and dating that here is exactly what ABS-04 exists for"
   - "SURF-03's acceptance bar is 'a project-owned route exists, is exercised end to end, and never guesses', NOT 'a name is reported on this machine' — closed on a negative result stated as one, with upstream's signature table deliberately not copied and no invented name placed on the upstream-prefixed surface"
   - "MIT is elected from the dual MIT OR Apache-2.0, and loses nothing: Apache-2.0 §4(b)'s modification notice is discharged regardless by every per-file header's ADAPTED, NOT VERBATIM statement"
   - "D18-16's reader-writer deferral is CLOSED by measurement, not re-deferred: the child reads serially, so the upgrade would buy zero parallelism and the coarse FIFO mutex is an exact model of the child rather than a compromise"
-  - "The cursor-tool invitation in r2000-tools.ts is answered rather than left open — a real caller DID appear in this phase's diff, and its own upstream text forbids relying on the cursor, so the trio stays held"
+  - "The cursor-tool invitation in anno-tools.ts is answered rather than left open — a real caller DID appear in this phase's diff, and its own upstream text forbids relying on the cursor, so the trio stays held"
   - "A collision is resolved by SHARPENING a description; the threshold constant was not touched, no skill was excluded, and the allowlist is empty in both directions"
   - "The new gate was wired into ci.yml as a blocking step in the same commit that created it — a guard script CI does not run is a file, not a control"
 
@@ -195,7 +195,7 @@ coverage:
     requirement: ABS-04
     verification:
       - kind: other
-        ref: "19-DECISIONS.md decision 4; licence string read verbatim from two independent copies (Cargo.toml.orig:28 and crates/regenerator2000-core/Cargo.toml:5); election present in both THIRD-PARTY-NOTICES.md files and every per-file header, with commit and digest asserted equal to the manifest's by skill-attribution.test.ts"
+        ref: "19-DECISIONS.md decision 4; licence string read verbatim from two independent copies (Cargo.toml.orig:28 and crates/external-analyser-core/Cargo.toml:5); election present in both THIRD-PARTY-NOTICES.md files and every per-file header, with commit and digest asserted equal to the manifest's by skill-attribution.test.ts"
         status: pass
     human_judgment: true
     rationale: "CARRIED FORWARD from 19-01 (D3) and 19-02 (D5), deliberately not closed silently. A licence election published to npm is a legal claim, not a test outcome. Every mechanical check passes -- the strings are present, they agree with the manifest, and the pre-absorption false claim is gone -- but whether these are the right terms to publish is a human call the phase verifier should see."
@@ -270,7 +270,7 @@ status: complete
 - `src/mcp/vice/skill-description-overlap.test.ts` (394 lines) — 32 tests over the same predicate module the runner imports.
 - `.github/workflows/ci.yml`, `src/mcp/vice/ci-guardrails.test.mjs` — the new gate as a blocking step, plus the frozen guard-script list raised 3 → 4.
 - `src/skills/{acme-build,c64-memory-mapping,routine-queue-walker}/SKILL.md`, `CLAUDE.md` — three sharpened descriptions, propagated byte-identically.
-- `src/mcp/vice/r2000-tools.ts` — the cursor-tool invitation replaced with its outcome.
+- `src/mcp/vice/anno-tools.ts` — the cursor-tool invitation replaced with its outcome.
 - `19-DECISIONS.md` (348 lines, new), `19-VALIDATION.md` (rewritten), `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md`.
 
 ## The sharpening pass, measured
@@ -298,9 +298,9 @@ Each was resolved by naming the distinguishing **input or output**, never by del
 
 The five dated decisions are in `19-DECISIONS.md` in full; in brief:
 
-1. **Snapshot, not tracked dependency** — 53,392 bytes across five paths at `493f8404…`. Re-sync is a hash comparison, mechanised by the manifest's `resync_triggers`. Two triggers: any move off 0.9.20 (read the new crate's own `.cargo_vcs_info.json`, no guessing), and any change to `r2000_get_binary_info`'s field set.
-2. **Two future-surface tools proposed** — `r2000_toggle_splitter` (DECOMP-01, BUILD-02: without it two adjacent tables merge and there is no boundary to cut on) and `r2000_set_immediate_format` (which *is* BUILD-03's low/high-byte step). Implemented at the start of Phase 20; both mutating, so both through the existing session seam. The withdrawal condition is named.
-3. **SURF-03's bar** — "a project-owned route exists and never guesses", closed on a negative result stated as one, with what was *not* done (upstream's signature table not copied, no library linkage, no invented name on the `r2000_` prefix) and why.
+1. **Snapshot, not tracked dependency** — 53,392 bytes across five paths at `493f8404…`. Re-sync is a hash comparison, mechanised by the manifest's `resync_triggers`. Two triggers: any move off 0.9.20 (read the new crate's own `.cargo_vcs_info.json`, no guessing), and any change to `anno_get_binary_info`'s field set.
+2. **Two future-surface tools proposed** — `anno_toggle_splitter` (DECOMP-01, BUILD-02: without it two adjacent tables merge and there is no boundary to cut on) and `anno_set_immediate_format` (which *is* BUILD-03's low/high-byte step). Implemented at the start of Phase 20; both mutating, so both through the existing session seam. The withdrawal condition is named.
+3. **SURF-03's bar** — "a project-owned route exists and never guesses", closed on a negative result stated as one, with what was *not* done (upstream's signature table not copied, no library linkage, no invented name on the `anno_` prefix) and why.
 4. **MIT elected**, losing nothing: Apache-2.0 §4(b)'s modification notice is discharged regardless by every header's adaptation statement.
 5. **D18-16 CLOSED by measurement** — the child reads serially, so a reader-writer upgrade buys zero parallelism and the coarse FIFO mutex is an *exact model* rather than a compromise. The cursor-tool invitation is answered in the same breath: a real caller appeared, and its own upstream text forbids relying on the cursor.
 
@@ -366,7 +366,7 @@ None — no external service configuration required. The `unp64` oracle remains 
 
 Phase 20 opens knowing three things it would otherwise discover late:
 
-1. **Two tools to implement first** — `r2000_toggle_splitter` (DECOMP-01, BUILD-02) and `r2000_set_immediate_format` (BUILD-03), both mutating, both through the existing session seam, both with a stated withdrawal condition. Recorded in ROADMAP Phase 20's Notes.
+1. **Two tools to implement first** — `anno_toggle_splitter` (DECOMP-01, BUILD-02) and `anno_set_immediate_format` (BUILD-03), both mutating, both through the existing session seam, both with a stated withdrawal condition. Recorded in ROADMAP Phase 20's Notes.
 2. **The coverage report's `flat-three` schema was auto-selected under `yolo` mode and never reviewed by a human.** It is pinned so a silent rename fails, but the *shape* is unreviewed and hardens the moment Phase 20 reads it. Phase 20's first use is the moment to confirm or revise.
 3. **The MIT licence election is a live human-judgment item**, carried forward from 19-01 and 19-02 rather than closed silently — a legal claim published in two npm tarballs that no test can settle.
 

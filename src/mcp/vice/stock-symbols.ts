@@ -26,15 +26,15 @@
 // The confirmed input format is a VICE label file, one `al C:xxxx .Name`
 // line per symbol, verified against ACME's `--vicelabels` output via
 // acme-build/scripts/acme.mjs's own parser (curateLabels(),
-// `/^al\s+C:[0-9a-f]+\s+\.(\S+)/i`). VERIFIED (Phase 9, R2000-16(c)):
-// regenerator2000 0.9.20's `--export_lbl` was run against the
+// `/^al\s+C:[0-9a-f]+\s+\.(\S+)/i`). VERIFIED (Phase 9, ANNO-16(c)):
+// the external analyser 0.9.20's `--export_lbl` was run against the
 // probe-illegal.prg-derived fixture and emitted `al C:0810 .init_screen`,
 // which matches this module's own VICE_LABEL_LINE_RE
 // (`/^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/`) exactly. This claim is SCOPED to
-// regenerator2000 0.9.20 and that fixture -- not to all inputs forever (the
+// the external analyser 0.9.20 and that fixture -- not to all inputs forever (the
 // same scoping caveat ROADMAP.md applies to Phase 9's criterion 3(3) `pass`).
 // The parser below still SKIPS unrecognised lines rather than refusing the
-// whole file: a future regenerator2000 version, a hand-edited label file, or
+// whole file: a future analyser version, a hand-edited label file, or
 // a different exporter entirely can still produce lines this format should
 // tolerate rather than reject outright.
 //
@@ -83,7 +83,7 @@ const VICE_LABEL_LINE_RE = /^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/;
 /** T-05-02-03: three independent resource ceilings, each refusing with both
  * the observed value and the limit named. `MAX_LABEL_FILE_BYTES` is exported
  * (11-08, Rule A20) so `anno-symbols.ts`'s `exportLabels()`/`importLabels()`
- * can apply the SAME byte ceiling to a regenerator2000-produced/-consumed
+ * can apply the SAME byte ceiling to an external-analyser-produced/-consumed
  * `.lbl` file before ever calling `parseViceLabelFile()` below -- never a
  * second hand-copied number. */
 export const MAX_LABEL_FILE_BYTES = 2 * 1024 * 1024;
@@ -202,8 +202,8 @@ function resolveLabelFilePath(pathArg: unknown): string {
 
 /**
  * Exported (11-08, Rule A20) so `anno-symbols.ts` can validate a
- * regenerator2000-produced `.lbl` file (or check a caller-supplied one
- * BEFORE it is ever handed to a spawned regenerator2000 child) through THIS
+ * external-analyser-produced `.lbl` file (or check a caller-supplied one
+ * BEFORE it is ever handed to a spawned analyser child) through THIS
  * parser -- the ONE `al C:xxxx .Name` reader in this repo -- rather than
  * adding a second copy of `VICE_LABEL_LINE_RE`. Ceiling violations
  * (`MAX_LABEL_FILE_LINES`/`MAX_SYMBOLS`) throw `StockSymbolsError` exactly as

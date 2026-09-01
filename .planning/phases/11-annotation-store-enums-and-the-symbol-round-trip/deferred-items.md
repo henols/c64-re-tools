@@ -20,11 +20,11 @@ supervisorDir()/dirname(EPOCH_FILE), and the agreed path is not under .claude"
 sits under a path containing `.claude/` — so the "not under .claude" assertion fails purely as
 an artifact of the worktree's location on disk, not because of any behavior change in
 `repo-root.ts` or `vice-launcher.sh`. This is completely disjoint from all three files this plan
-modifies (`r2000-launch.test.ts`, `r2000-verify.ts`/`.test.ts`, `r2000-test-gate.ts`).
+modifies (`anno-launch.test.ts`, `anno-verify.ts`/`.test.ts`, `anno-test-gate.ts`).
 
 **Verified pre-existing / environmental, not introduced by this plan:** none of plan 11-01's
 changes touch `repo-root.ts`, `vice-launcher.sh`, or any host-path resolution code; the failure
-reproduces identically running `repo-root.test.ts` alone, unrelated to the r2000 changes.
+reproduces identically running `repo-root.test.ts` alone, unrelated to the anno changes.
 
 **Action:** Not fixed — out of scope for plan 11-01. Left for whoever next runs the suite from a
 normal (non-`.claude/worktrees/`) checkout to confirm it passes there, or for a future plan to

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 // measure-stdin-eof-driver.mjs -- plan 18-04 task 3(b) (D18-23). Orchestrates
 // the whole measurement: synthesizes a scratch `.regen2000proj`, spawns
-// measure-stdin-eof-parent.mjs (which itself spawns a REAL regenerator2000
+// measure-stdin-eof-parent.mjs (which itself spawns a REAL the external analyser
 // child over the same `stdio: ["pipe","pipe","pipe"]` shape
-// `r2000-mcp-client.ts` uses), waits for that parent to report the real
+// `anno-mcp-client.ts` uses), waits for that parent to report the real
 // child's pid, SIGKILLs the PARENT (never the child directly -- the whole
 // point is to observe what the CHILD does on its own once its stdin's write
 // end closes), then polls whether the child is still alive, up to
 // POLL_BOUND_MS, printing one JSON result line.
 //
 // Usage: node measure-stdin-eof-driver.mjs
-// Requires `regenerator2000` on PATH (or R2000_BIN pointing at it).
+// Requires `the external analyser` on PATH (or ANNO_BIN pointing at it).
 import { spawn, execSync } from "node:child_process";
 import { writeFileSync, readFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,15 +31,15 @@ function isAlive(pid) {
 }
 
 async function main() {
-  const r2000ProjectPath = join(HERE, "..", "..", "..", "..", "src", "mcp", "vice", "r2000-project.ts");
-  const { synthesizeProject } = await import(pathToFileURL(r2000ProjectPath).href);
+  const annoProjectPath = join(HERE, "..", "..", "..", "..", "src", "mcp", "vice", "anno-project.ts");
+  const { synthesizeProject } = await import(pathToFileURL(annoProjectPath).href);
 
   const dir = mkdtempSync(join(tmpdir(), "d18-23-stdin-eof-"));
   const projectPath = join(dir, "measure.regen2000proj");
   writeFileSync(projectPath, synthesizeProject(new Uint8Array([0]), { origin: 0xc000 }));
-  const pidFile = join(dir, "r2000.pid");
+  const pidFile = join(dir, "anno.pid");
 
-  const bin = process.env.R2000_BIN || "regenerator2000";
+  const bin = process.env.ANNO_BIN || "the external analyser";
   const versionOutput = execSync(`${bin} --version`).toString().trim();
 
   const parentScript = join(HERE, "measure-stdin-eof-parent.mjs");
@@ -73,7 +73,7 @@ async function main() {
   if (!isAlive(childPid)) {
     console.log(
       JSON.stringify(
-        { ok: false, reason: `regenerator2000 (pid ${childPid}) was already dead before the parent was killed` },
+        { ok: false, reason: `the external analyser (pid ${childPid}) was already dead before the parent was killed` },
         null,
         2,
       ),

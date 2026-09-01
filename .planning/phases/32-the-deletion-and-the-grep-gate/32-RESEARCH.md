@@ -63,16 +63,16 @@ Copied from `.planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md`. 
 | ID | Description | Research Support |
 |----|-------------|------------------|
 | CUT-04 | Every guard and CI script pinned to the deleted subject has a recorded fate and none passes vacuously — 32 test files + 11 `scripts/` files at the v0.7.0 open | §1 reproduces **both** historical figures exactly and gives the derive-from-disk predicate; §2 sizes plantability per member; §3 gives the harness shape; §4 gives the registry + guard shape and its side effects; §8 gives the two deferred fates |
-| CUT-06 | Every living document naming regenerator2000 as a required prerequisite is corrected | §5 gives the measured census with per-file verdict candidates; §6 gives the `PROJECT.md` citation repair and the `docs-linerefs.test.ts` widening; §7 gives the close-gate recipe |
+| CUT-06 | Every living document naming the external analyser as a required prerequisite is corrected | §5 gives the measured census with per-file verdict candidates; §6 gives the `PROJECT.md` citation repair and the `docs-linerefs.test.ts` widening; §7 gives the close-gate recipe |
 </phase_requirements>
 
 ## Summary
 
 Every discussion-time number in CONTEXT.md was re-measured this session. **Three reconcile exactly, one is a counting-definition difference, and one is off by three.** Most importantly, `CUT-04`'s two historical figures — "32 test files" and "11 files under `scripts/`" — **both reproduce exactly**, at the v0.7.0 open commit `0394cbc`, under a single stated predicate. That removes the largest planning risk in the phase: the audited set is not a hand-typed list to be reconstructed by judgement, it is a two-line command.
 
-The audited set is 43 files at the v0.7.0 open (19 `r2000-`named test files + 13 non-`r2000-`named referencing test files + 11 `scripts/` files). On the settled tree, **21 still exist under their original path, 16 survive under a new name, and 6 are gone outright** (21+16+6 = 43). Five of those renames — including `scripts/lib/r2000-cli-verbs.d.mts` — are invisible to git's own `-M` rename heuristic and are only recoverable through the `r2000-` → `anno-` name-descendant predicate `CUT-01` already established. Every one of those dispositions maps onto exactly one of `D-03`'s four verdicts.
+The audited set is 43 files at the v0.7.0 open (19 `anno-`named test files + 13 non-`anno-`named referencing test files + 11 `scripts/` files). On the settled tree, **21 still exist under their original path, 16 survive under a new name, and 6 are gone outright** (21+16+6 = 43). Five of those renames — including `scripts/lib/anno-cli-verbs.d.mts` — are invisible to git's own `-M` rename heuristic and are only recoverable through the `anno-` → `anno-` name-descendant predicate `CUT-01` already established. Every one of those dispositions maps onto exactly one of `D-03`'s four verdicts.
 
-The plantability picture is stark and drives `D-07`: **exactly one** of the six repo-level CI scripts has a `--root` override (`scripts/audit-gate.mjs`); the other five, including `scripts/check-no-regenerator2000.mjs` itself, derive their root from `import.meta.url` at module scope with no CLI surface at all. There is a second, larger hazard the planner must design around before writing a single plan: `check-no-regenerator2000.mjs` asserts **exact hit counts with `===`** for every exemption path, so *any* new file this phase adds that carries the contiguous literal `regenerator2000` — including the fate registry's own prose, and including a new CI step name in `.github/workflows/ci.yml` (currently pinned at exactly 1) — turns the removal gate red the moment it lands.
+The plantability picture is stark and drives `D-07`: **exactly one** of the six repo-level CI scripts has a `--root` override (`scripts/audit-gate.mjs`); the other five, including `scripts/check-no-analyser.mjs` itself, derive their root from `import.meta.url` at module scope with no CLI surface at all. There is a second, larger hazard the planner must design around before writing a single plan: `check-no-analyser.mjs` asserts **exact hit counts with `===`** for every exemption path, so *any* new file this phase adds that carries the contiguous literal `the external analyser` — including the fate registry's own prose, and including a new CI step name in `.github/workflows/ci.yml` (currently pinned at exactly 1) — turns the removal gate red the moment it lands.
 
 **Primary recommendation:** Derive the audited set mechanically from the object store at the pinned commit `0394cbc` using the predicate in §1.3, serialize the registry as JSON under `.planning/phases/32-the-deletion-and-the-grep-gate/` (outside the removal gate's `.planning/`-prefix-excluded scope, which sidesteps the exact-count hazard entirely), and give it a `scripts/check-guard-fates.mjs` guard whose name and CI step name carry no form of the subject literal.
 
@@ -83,7 +83,7 @@ The plantability picture is stark and drives `D-07`: **exactly one** of the six 
 | Derive the audited set | Git object store at a pinned commit | — | The set's members are files that no longer exist; a working-tree walk is structurally blind to them. Precedent: `CUT-01`'s own pinned-commit predicate |
 | Hold the fate line continuously | `scripts/check-*.mjs` + a named CI step | — | `D-16`; matches the six existing named steps at `ci.yml:189-235` |
 | Produce observed-red evidence | Committed phase instrument, run by hand | — | `D-17`; it mutates files and drives the whole guard set |
-| Store the registry data | `.planning/phases/32-*/` (recommended) | `scripts/` | `.planning/` is excluded from the removal gate's scope by prefix (`check-no-regenerator2000.mjs:180`), so registry prose naming the subject cannot fire it |
+| Store the registry data | `.planning/phases/32-*/` (recommended) | `scripts/` | `.planning/` is excluded from the removal gate's scope by prefix (`check-no-analyser.mjs:180`), so registry prose naming the subject cannot fire it |
 | Record close-gate evidence | `.planning/phases/32-*/evidence/` | — | `D-15`, matching `29-21-SUMMARY.md` |
 
 ---
@@ -95,13 +95,13 @@ The plantability picture is stark and drives `D-07`: **exactly one** of the six 
 | Measure | Command | Result | CONTEXT.md said | Verdict |
 |---|---|---|---|---|
 | `*.test.*` files in `src/mcp/vice/` | `git ls-files 'src/mcp/vice/*.test.*' \| wc -l` | **126** | 126 | ✅ exact |
-| Files under `scripts/` (incl. `scripts/lib/`) | `git ls-files scripts/ \| wc -l` | **23** | "`scripts/lib/` fully renamed to `anno-*`, `scripts/` gained `check-no-regenerator2000.mjs`" | ✅ consistent |
+| Files under `scripts/` (incl. `scripts/lib/`) | `git ls-files scripts/ \| wc -l` | **23** | "`scripts/lib/` fully renamed to `anno-*`, `scripts/` gained `check-no-analyser.mjs`" | ✅ consistent |
 
 `[VERIFIED: git ls-files, this session]`
 
-Full `scripts/` listing on the settled tree (23 files): `audit-gate.mjs`, `check-no-regenerator2000.d.mts`, `check-no-regenerator2000.mjs`, `check-npm-packages.mjs`, `check-skill-cli-invocations.mjs`, `check-skill-description-overlap.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-tool-coverage.mjs`, `ensure-mcp-deps.sh`, `generate-tool-support-table.mjs`, `lib/anno-cli-invocations.{mjs,d.mts}`, `lib/anno-cli-verbs.{mjs,d.mts}`, `lib/skill-corpus.{mjs,d.mts}`, `lib/skill-descriptions.{mjs,d.mts}`, `lib/skill-honesty-checks.{mjs,d.mts}`, `package.sh`, `release-assets.sh`, `version.mjs`.
+Full `scripts/` listing on the settled tree (23 files): `audit-gate.mjs`, `check-no-analyser.d.mts`, `check-no-analyser.mjs`, `check-npm-packages.mjs`, `check-skill-cli-invocations.mjs`, `check-skill-description-overlap.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-tool-coverage.mjs`, `ensure-mcp-deps.sh`, `generate-tool-support-table.mjs`, `lib/anno-cli-invocations.{mjs,d.mts}`, `lib/anno-cli-verbs.{mjs,d.mts}`, `lib/skill-corpus.{mjs,d.mts}`, `lib/skill-descriptions.{mjs,d.mts}`, `lib/skill-honesty-checks.{mjs,d.mts}`, `package.sh`, `release-assets.sh`, `version.mjs`.
 
-Note: `scripts/lib/` is **not** "fully renamed to `anno-*`" — only the `r2000-cli-verbs` pair moved to `anno-cli-verbs`; `anno-cli-invocations` is new, and the four `skill-*` files kept their names. CONTEXT.md's phrasing overstates it slightly. `[VERIFIED: git ls-files scripts/]`
+Note: `scripts/lib/` is **not** "fully renamed to `anno-*`" — only the `anno-cli-verbs` pair moved to `anno-cli-verbs`; `anno-cli-invocations` is new, and the four `skill-*` files kept their names. CONTEXT.md's phrasing overstates it slightly. `[VERIFIED: git ls-files scripts/]`
 
 ### 1.2 `CUT-04`'s historical figures — BOTH REPRODUCE EXACTLY
 
@@ -109,16 +109,16 @@ This is the single most valuable finding for the planner. Measured at the **v0.7
 
 | `CUT-04` claim | Measured at `0394cbc` | Verdict |
 |---|---|---|
-| 19 `r2000-`named test files | **19** | ✅ exact |
-| 13 non-`r2000-`named test files that reference it | **13** | ✅ exact |
+| 19 `anno-`named test files | **19** | ✅ exact |
+| 13 non-`anno-`named test files that reference it | **13** | ✅ exact |
 | → "**32 test files**" | **32** | ✅ exact |
 | "**11 files under `scripts/`**" | **11** | ✅ exact |
 
 `[VERIFIED: git ls-tree -r --name-only 0394cbc, this session]`
 
-**The 19 `r2000-`named test files** (all under `src/mcp/vice/`): `r2000-answer-key`, `r2000-cli`, `r2000-confidence`, `r2000-coverage-grammar`, `r2000-coverage`, `r2000-d64`, `r2000-enum-gen`, `r2000-launch`, `r2000-mcp-client`, `r2000-memmap-render`, `r2000-project`, `r2000-regbits`, `r2000-session`, `r2000-spawn-seam`, `r2000-symbol-roundtrip`, `r2000-tools`, `r2000-upstream-audit`, `r2000-verb-coverage`, `r2000-verify` — all `.test.ts`.
+**The 19 `anno-`named test files** (all under `src/mcp/vice/`): `anno-answer-key`, `anno-cli`, `anno-confidence`, `anno-coverage-grammar`, `anno-coverage`, `anno-d64`, `anno-enum-gen`, `anno-launch`, `anno-mcp-client`, `anno-memmap-render`, `anno-project`, `anno-regbits`, `anno-session`, `anno-spawn-seam`, `anno-symbol-roundtrip`, `anno-tools`, `anno-upstream-audit`, `anno-verb-coverage`, `anno-verify` — all `.test.ts`.
 
-**The 13 non-`r2000-`named referencing test files**, with their occurrence counts at `0394cbc` (`git show 0394cbc:<path> | grep -aoiF 'r2000' | wc -l`):
+**The 13 non-`anno-`named referencing test files**, with their occurrence counts at `0394cbc` (`git show 0394cbc:<path> | grep -aoiF 'anno' | wc -l`):
 
 | File | hits |
 |---|---|
@@ -126,7 +126,7 @@ This is the single most valuable finding for the planner. Measured at the **v0.7
 | `capability-registry.test.ts` | 8 |
 | `disasm-roundtrip.test.ts` | 3 |
 | `docs-dangling-refs.test.ts` | 19 |
-| `docs-r2000-decisions.test.ts` | 10 |
+| `docs-absorbed-decisions.test.ts` | 10 |
 | `hop-chain-comments.test.ts` | 8 |
 | `hostpath-consumers.test.ts` | 31 |
 | `skill-acme-build-cli.test.ts` | 2 |
@@ -136,11 +136,11 @@ This is the single most valuable finding for the planner. Measured at the **v0.7
 | `tool-support-table.test.mjs` | 9 |
 | `vice-proxy.test.ts` | 30 |
 
-This is **the same 13 names** `.planning/research/PITFALLS.md:36` lists. PITFALLS' per-file counts differ from mine (it records `docs-r2000-decisions` 8, `hostpath-consumers` 22, `capability-registry` 5, `tool-support-table` 5, `docs-dangling-refs` 18) — a different counting definition (almost certainly lines-with-a-hit vs occurrences, and/or measured a few commits apart). **The membership is identical; only the hit counts differ.** Flag for the planner: cite occurrences, and say which definition you used.
+This is **the same 13 names** `.planning/research/PITFALLS.md:36` lists. PITFALLS' per-file counts differ from mine (it records `docs-anno-decisions` 8, `hostpath-consumers` 22, `capability-registry` 5, `tool-support-table` 5, `docs-dangling-refs` 18) — a different counting definition (almost certainly lines-with-a-hit vs occurrences, and/or measured a few commits apart). **The membership is identical; only the hit counts differ.** Flag for the planner: cite occurrences, and say which definition you used.
 
-**The 11 `scripts/` files at `0394cbc`:** `audit-gate.mjs`, `check-npm-packages.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`, `lib/r2000-cli-verbs.d.mts`, `lib/r2000-cli-verbs.mjs`, `lib/skill-corpus.d.mts`, `lib/skill-descriptions.d.mts`, `lib/skill-descriptions.mjs`, `lib/skill-honesty-checks.mjs`.
+**The 11 `scripts/` files at `0394cbc`:** `audit-gate.mjs`, `check-npm-packages.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs`, `lib/anno-cli-verbs.d.mts`, `lib/anno-cli-verbs.mjs`, `lib/skill-corpus.d.mts`, `lib/skill-descriptions.d.mts`, `lib/skill-descriptions.mjs`, `lib/skill-honesty-checks.mjs`.
 
-`CUT-04` names the extras as *"`scripts/lib/r2000-cli-verbs.mjs` and two `.d.mts` declarations, `audit-gate.mjs`, `check-npm-packages.mjs`, `check-skill-fork-honesty.mjs` and `skill-honesty-checks.mjs`"*. The derived set contains **three** `.d.mts` files (`r2000-cli-verbs.d.mts`, `skill-corpus.d.mts`, `skill-descriptions.d.mts`), not two — unless `r2000-cli-verbs.d.mts` is being counted under the "`r2000-cli-verbs`" clause, in which case "two `.d.mts` declarations" means the other two and the arithmetic closes. Note the ambiguity; the **count of 11 is exact either way**.
+`CUT-04` names the extras as *"`scripts/lib/anno-cli-verbs.mjs` and two `.d.mts` declarations, `audit-gate.mjs`, `check-npm-packages.mjs`, `check-skill-fork-honesty.mjs` and `skill-honesty-checks.mjs`"*. The derived set contains **three** `.d.mts` files (`anno-cli-verbs.d.mts`, `skill-corpus.d.mts`, `skill-descriptions.d.mts`), not two — unless `anno-cli-verbs.d.mts` is being counted under the "`anno-cli-verbs`" clause, in which case "two `.d.mts` declarations" means the other two and the arithmetic closes. Note the ambiguity; the **count of 11 is exact either way**.
 
 ### 1.3 The derive-from-disk predicate (what `D-01`'s guard should use)
 
@@ -151,12 +151,12 @@ AUDIT_COMMIT = 0394cbc      # the v0.7.0 open; both CUT-04 figures reproduce her
 
 set = { p ∈ git ls-tree -r --name-only $AUDIT_COMMIT -- src/mcp/vice scripts :
           ( p matches ^src/mcp/vice/.*\.test\.[a-z]+$
-            AND ( basename(p) starts with "r2000-"
-                  OR git show $AUDIT_COMMIT:p matches /r2000/i ) )
+            AND ( basename(p) starts with "anno-"
+                  OR git show $AUDIT_COMMIT:p matches /anno/i ) )
           OR
           ( p matches ^scripts/
-            AND ( p contains "r2000"
-                  OR git show $AUDIT_COMMIT:p matches /r2000/i ) ) }
+            AND ( p contains "anno"
+                  OR git show $AUDIT_COMMIT:p matches /anno/i ) ) }
 
 |set| = 43   (19 + 13 + 11)
 ```
@@ -171,7 +171,7 @@ set = { p ∈ git ls-tree -r --name-only $AUDIT_COMMIT -- src/mcp/vice scripts :
 
 ### 1.4 Forward map — every historical member's fate on the settled tree
 
-Measured with (a) file existence at HEAD, (b) the `r2000-` → `anno-` **name-descendant** predicate `CUT-01` uses, and (c) `git diff -M -C --name-status 0394cbc HEAD`. Note that git's own rename heuristic **disagrees** with the name-descendant map for five files whose content changed more than 50% (`r2000-cli`, `r2000-enum-gen`, `r2000-memmap-render`, `r2000-tools`, `r2000-verb-coverage` are all scored `D`+`A` by git but do have `anno-*` descendants on disk). **Use the name-descendant predicate, not git's `-M` output** — it is the one `CUT-01` and `29-VERIFICATION.md` already established. `[VERIFIED: both runs this session]`
+Measured with (a) file existence at HEAD, (b) the `anno-` → `anno-` **name-descendant** predicate `CUT-01` uses, and (c) `git diff -M -C --name-status 0394cbc HEAD`. Note that git's own rename heuristic **disagrees** with the name-descendant map for five files whose content changed more than 50% (`anno-cli`, `anno-enum-gen`, `anno-memmap-render`, `anno-tools`, `anno-verb-coverage` are all scored `D`+`A` by git but do have `anno-*` descendants on disk). **Use the name-descendant predicate, not git's `-M` output** — it is the one `CUT-01` and `29-VERIFICATION.md` already established. `[VERIFIED: both runs this session]`
 
 **Survives under the same path — 21 members** (candidate verdict `re-pointed` or `kept-unchanged`, per `D-03`/`D-05`):
 
@@ -181,28 +181,28 @@ Measured with (a) file existence at HEAD, (b) the `r2000-` → `anno-` **name-de
 
 | Historical path | Settled-tree path | How established |
 |---|---|---|
-| `scripts/lib/r2000-cli-verbs.mjs` | `scripts/lib/anno-cli-verbs.mjs` | name-descendant + git `R` |
-| `scripts/lib/r2000-cli-verbs.d.mts` | `scripts/lib/anno-cli-verbs.d.mts` | name-descendant (git scores `D`; `.d.mts` files are small, so `-M` misses) |
-| `src/mcp/vice/docs-r2000-decisions.test.ts` | `docs-absorbed-decisions.test.ts` | git `R`; plan 29-05, same commit as `audit-gate.mjs`'s registry entry (`D-12`) |
-| `r2000-answer-key.test.ts` | `absorbed-answer-key.test.ts` | git `R`; ROADMAP note "kept, not deleted" |
-| `r2000-spawn-seam.test.ts` | `spawn-seam.test.ts` | `renamed-guard-disciplines` exemption, `check-no-regenerator2000.mjs:~470` |
-| `r2000-upstream-audit.test.ts` | `anno-derivation.test.ts` | `upstream-audit-manifest-provenance` exemption, `check-no-regenerator2000.mjs:~409` |
-| `r2000-cli.test.ts` | `anno-cli.test.ts` | name-descendant |
-| `r2000-confidence.test.ts` | `anno-confidence.test.ts` | name-descendant + git `R` |
-| `r2000-coverage-grammar.test.ts` | `anno-coverage-grammar.test.ts` | name-descendant + git `R` |
-| `r2000-coverage.test.ts` | `anno-coverage.test.ts` | name-descendant + git `R` |
-| `r2000-d64.test.ts` | `anno-d64.test.ts` | name-descendant + git `R` |
-| `r2000-enum-gen.test.ts` | `anno-enum-gen.test.ts` | name-descendant |
-| `r2000-memmap-render.test.ts` | `anno-memmap-render.test.ts` | name-descendant |
-| `r2000-regbits.test.ts` | `anno-regbits.test.ts` | name-descendant + git `R` |
-| `r2000-tools.test.ts` | `anno-tools.test.ts` | name-descendant |
-| `r2000-verb-coverage.test.ts` | `anno-verb-coverage.test.ts` | name-descendant |
+| `scripts/lib/anno-cli-verbs.mjs` | `scripts/lib/anno-cli-verbs.mjs` | name-descendant + git `R` |
+| `scripts/lib/anno-cli-verbs.d.mts` | `scripts/lib/anno-cli-verbs.d.mts` | name-descendant (git scores `D`; `.d.mts` files are small, so `-M` misses) |
+| `src/mcp/vice/docs-absorbed-decisions.test.ts` | `docs-absorbed-decisions.test.ts` | git `R`; plan 29-05, same commit as `audit-gate.mjs`'s registry entry (`D-12`) |
+| `absorbed-answer-key.test.ts` | `absorbed-answer-key.test.ts` | git `R`; ROADMAP note "kept, not deleted" |
+| `spawn-seam.test.ts` | `spawn-seam.test.ts` | `renamed-guard-disciplines` exemption, `check-no-analyser.mjs:~470` |
+| `anno-derivation.test.ts` | `anno-derivation.test.ts` | `upstream-audit-manifest-provenance` exemption, `check-no-analyser.mjs:~409` |
+| `anno-cli.test.ts` | `anno-cli.test.ts` | name-descendant |
+| `anno-confidence.test.ts` | `anno-confidence.test.ts` | name-descendant + git `R` |
+| `anno-coverage-grammar.test.ts` | `anno-coverage-grammar.test.ts` | name-descendant + git `R` |
+| `anno-coverage.test.ts` | `anno-coverage.test.ts` | name-descendant + git `R` |
+| `anno-d64.test.ts` | `anno-d64.test.ts` | name-descendant + git `R` |
+| `anno-enum-gen.test.ts` | `anno-enum-gen.test.ts` | name-descendant |
+| `anno-memmap-render.test.ts` | `anno-memmap-render.test.ts` | name-descendant |
+| `anno-regbits.test.ts` | `anno-regbits.test.ts` | name-descendant + git `R` |
+| `anno-tools.test.ts` | `anno-tools.test.ts` | name-descendant |
+| `anno-verb-coverage.test.ts` | `anno-verb-coverage.test.ts` | name-descendant |
 
-(**Corrected total: 21 same-path + 16 renamed = 37 survivors, 6 gone = 43.** An earlier draft of this section said "13 renamed"; the measured figure is 16, because `r2000-cli-verbs.d.mts` and the four renames git's `-M` heuristic misses are each a distinct member.)
+(**Corrected total: 21 same-path + 16 renamed = 37 survivors, 6 gone = 43.** An earlier draft of this section said "13 renamed"; the measured figure is 16, because `anno-cli-verbs.d.mts` and the four renames git's `-M` heuristic misses are each a distinct member.)
 
 **Gone outright — 6 members** (candidate verdict `deleted`; each owes proof of absence plus the removing commit per `D-05`):
 
-`src/mcp/vice/r2000-launch.test.ts`, `r2000-mcp-client.test.ts`, `r2000-project.test.ts`, `r2000-session.test.ts`, `r2000-symbol-roundtrip.test.ts`, `r2000-verify.test.ts`.
+`src/mcp/vice/anno-launch.test.ts`, `anno-mcp-client.test.ts`, `anno-project.test.ts`, `anno-session.test.ts`, `anno-symbol-roundtrip.test.ts`, `anno-verify.test.ts`.
 
 Verified absent: none of `anno-launch.test.ts`, `anno-mcp-client.test.ts`, `anno-project.test.ts`, `anno-session.test.ts`, `anno-symbol-roundtrip.test.ts`, `anno-verify.test.ts` exists on disk. `[VERIFIED: test -f loop, this session]` `29-21-SUMMARY.md:176-259` enumerates the removals and is the commit-level record `D-05` asks for.
 
@@ -212,7 +212,7 @@ Verified absent: none of `anno-launch.test.ts`, `anno-mcp-client.test.ts`, `anno
 
 Not in the historical 43, but created *by Phase 29* and therefore squarely inside `CUT-04`'s "guards pinned to the deleted subject" — the requirement itself says *"Phase 29 is the source of most of the guards it will audit"*:
 
-- `scripts/check-no-regenerator2000.mjs` + `.d.mts` (plan 29-02) — the gate itself
+- `scripts/check-no-analyser.mjs` + `.d.mts` (plan 29-02) — the gate itself
 - `src/mcp/vice/removal-gate.test.ts` — its colocated planted-violation test
 - `src/mcp/vice/fixtures/planted-removal-fixture.ts.txt`, `.md.txt` — its committed plants
 - `scripts/check-skill-cli-invocations.mjs` + `scripts/lib/anno-cli-invocations.{mjs,d.mts}` (REPOINT-01/02)
@@ -233,7 +233,7 @@ Measured by grepping each `scripts/*.mjs` for `--root` and for any `process.argv
 | Script | Root override? | How it resolves its root |
 |---|---|---|
 | `scripts/audit-gate.mjs` | **YES — `--root <dir>`** | `parseArgs()` at `:1119-1132`; `resolve(rootArg ?? join(HERE, ".."))` at `:1143` |
-| `scripts/check-no-regenerator2000.mjs` | **NO** | `const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))` at `:120`. Its only `process.argv` use is the direct-invocation guard at `:767` |
+| `scripts/check-no-analyser.mjs` | **NO** | `const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))` at `:120`. Its only `process.argv` use is the direct-invocation guard at `:767` |
 | `scripts/check-npm-packages.mjs` | **NO** | same shape; argv used only for the direct-invocation guard |
 | `scripts/check-skill-tool-coverage.mjs` | **NO** | fixed paths, no `process.argv` at all |
 | `scripts/check-skill-fork-honesty.mjs` | **NO** | fixed paths, no `process.argv` at all |
@@ -246,7 +246,7 @@ Measured by grepping each `scripts/*.mjs` for `--root` and for any `process.argv
 **So `D-07`'s split is 1 / 7 at the script level.** The `--root` pattern `D-06` and `D-07` build on exists in exactly one file, and it is the one file `CUT-04` does *not* name among its eleven.
 
 **Cheapness assessment for adding `--root` (`[ASSUMED]` — reasoning from the code shape, not from an attempted edit):**
-- `check-no-regenerator2000.mjs` — **cheap in principle, expensive in practice.** `ROOT` is a module-scope `const` consumed by `trackedFiles()` (which shells `git ls-files` with `cwd: ROOT`) and by `shippedInstallerFiles()` (which calls `packFiles("installer")`, which runs `npm pack --dry-run` and therefore the installer's `prepack` hook). Pointing that at a synthetic tree means the synthetic tree must be a git repo with an `installer/` package. **Recommend working-tree mutation for this one**, not `--root`.
+- `check-no-analyser.mjs` — **cheap in principle, expensive in practice.** `ROOT` is a module-scope `const` consumed by `trackedFiles()` (which shells `git ls-files` with `cwd: ROOT`) and by `shippedInstallerFiles()` (which calls `packFiles("installer")`, which runs `npm pack --dry-run` and therefore the installer's `prepack` hook). Pointing that at a synthetic tree means the synthetic tree must be a git repo with an `installer/` package. **Recommend working-tree mutation for this one**, not `--root`.
 - `check-skill-tool-coverage.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-description-overlap.mjs`, `check-skill-cli-invocations.mjs` — these read `src/skills/**` and manifest files. A `--root` addition is mechanically small (thread a parameter through the path constants). Whether it is *self-contained* per `D-07` is **NOT MEASURED — planner must verify** by reading each script's path-constant block.
 - `generate-tool-support-table.mjs` — it *writes* `docs/tool-support.md`. Planting against it means asserting the generated table diverges. A `--root` here is the difference between a safe measurement and clobbering a file `CUT-06`'s close-gate requires to be byte-identical. **Strongly recommend `--root` for this one.**
 
@@ -263,7 +263,7 @@ Measured by grepping each `scripts/*.mjs` for `--root` and for any `process.argv
 | `planted-hop-chain-fixture.ts.txt` | `hop-chain-comments.test.ts` |
 | `planted-phase-pointer-fixture.ts.txt` | `comment-phase-pointers.test.ts` |
 
-The `.txt` suffix is deliberate — `check-no-regenerator2000.mjs`'s `planted-fixtures` exemption records *"committed with a `.txt` suffix so no runner and no typechecker loads them"*, with `prefixes: ["src/mcp/vice/fixtures/planted-"]` and `prefixHits: 2`. **A new planted fixture under that prefix carrying the literal twice is already covered; one carrying it a different number of times is not** — `prefixHits` is an exact pin.
+The `.txt` suffix is deliberate — `check-no-analyser.mjs`'s `planted-fixtures` exemption records *"committed with a `.txt` suffix so no runner and no typechecker loads them"*, with `prefixes: ["src/mcp/vice/fixtures/planted-"]` and `prefixHits: 2`. **A new planted fixture under that prefix carrying the literal twice is already covered; one carrying it a different number of times is not** — `prefixHits` is an exact pin.
 
 ### 2.3 Guards that already carry an in-test non-vacuity assertion
 
@@ -322,7 +322,7 @@ for row in registry.rows where verdict == "re-pointed" | "superseded":
 
 ### 3.3 Where the harness lives
 
-`D-17`: a committed phase instrument, not a CI job, invoked by hand. `scripts/` + a committed `.d.mts` sibling is the established convention (`scripts/lib/anno-cli-verbs.{mjs,d.mts}`, `scripts/lib/skill-honesty-checks.{mjs,d.mts}`, `scripts/check-no-regenerator2000.{mjs,d.mts}`). `[VERIFIED: git ls-files scripts/lib/]` The `.d.mts` sibling is only needed if a `*.test.ts` under strict TypeScript imports it — `check-no-regenerator2000.d.mts`'s own header states exactly that: *"so its colocated test (src/mcp/vice/removal-gate.test.ts) typechecks under strict mode. This is a CI-only helper with no runtime role, so it stays out of src/mcp/vice/package.json's files[] like its .mjs sibling."*
+`D-17`: a committed phase instrument, not a CI job, invoked by hand. `scripts/` + a committed `.d.mts` sibling is the established convention (`scripts/lib/anno-cli-verbs.{mjs,d.mts}`, `scripts/lib/skill-honesty-checks.{mjs,d.mts}`, `scripts/check-no-analyser.{mjs,d.mts}`). `[VERIFIED: git ls-files scripts/lib/]` The `.d.mts` sibling is only needed if a `*.test.ts` under strict TypeScript imports it — `check-no-analyser.d.mts`'s own header states exactly that: *"so its colocated test (src/mcp/vice/removal-gate.test.ts) typechecks under strict mode. This is a CI-only helper with no runtime role, so it stays out of src/mcp/vice/package.json's files[] like its .mjs sibling."*
 
 ---
 
@@ -334,7 +334,7 @@ for row in registry.rows where verdict == "re-pointed" | "superseded":
 
 Rationale, in priority order:
 
-1. **`.planning/` is excluded from the removal gate's scope by *prefix*.** `check-no-regenerator2000.mjs:180`: `const PLANNING_PREFIX = ".planning/";` and `trackedFiles()` filters `.filter((p) => !p.startsWith(PLANNING_PREFIX))`. A registry whose rows name `src/mcp/vice/r2000-session.test.ts` and whose prose says "pinned to the deleted regenerator2000 subject" would otherwise fire the gate on landing. **This is the decisive argument.** (The bare token `r2000` does *not* fire it — `SUBJECT_NEEDLE = "regenerator" + "2000"` at `:140` is the full contiguous literal only — but the registry's *prose* almost certainly will.)
+1. **`.planning/` is excluded from the removal gate's scope by *prefix*.** `check-no-analyser.mjs:180`: `const PLANNING_PREFIX = ".planning/";` and `trackedFiles()` filters `.filter((p) => !p.startsWith(PLANNING_PREFIX))`. A registry whose rows name `src/mcp/vice/anno-session.test.ts` and whose prose says "pinned to the deleted analyser subject" would otherwise fire the gate on landing. **This is the decisive argument.** (The bare token `anno` does *not* fire it — `SUBJECT_NEEDLE = the subject needle at `:140` is the full contiguous literal only — but the registry's *prose* almost certainly will.)
 2. JSON is machine-readable, so the guard reads it with `JSON.parse` rather than parsing Markdown, and `D-05`'s per-verdict evidence rules become a schema check rather than prose judgement.
 3. `29-21-SUMMARY.md` is the model `D-15` names for the *evidence*; the registry is a different artifact (continuous, machine-checked) and should not be Markdown prose.
 
@@ -344,7 +344,7 @@ Rationale, in priority order:
   "auditCommit": "0394cbc",
   "rows": [
     {
-      "historicalPath": "src/mcp/vice/r2000-upstream-audit.test.ts",
+      "historicalPath": "src/mcp/vice/anno-derivation.test.ts",
       "verdict": "re-pointed",              // re-pointed | deleted | superseded | kept-unchanged
       "newSubject": "src/mcp/vice/anno-derivation.test.ts",
       "observedRed": {                       // required for re-pointed / superseded
@@ -386,13 +386,13 @@ This is the "check whether adding a new `scripts/check-*.mjs` has side effects" 
 | `scripts/audit-gate.mjs` | **NO** | `docsGuardFiles(viceDir)` is a *non-recursive* `readdirSync` of `src/mcp/vice/` filtered by `/^docs-.*\.test\.ts$/`. A `scripts/` file is invisible to it |
 | `scripts/audit-gate.mjs` — if the new guard were a `docs-*.test.ts` | **YES, hard** | It would join the derived set and **must** be added to `EXPECTED_DOCS_GUARD_NAMES` **in the same commit**, or `audit-integrity.test.ts`'s two docs-guard assertions go red. This is the recorded reason `D-16` rejects "make it a plain `*.test.ts`". Two real incidents are in the file's own comments: `docs-uat-abstention.test.ts` (commit `19b5bd5`) and `docs-worktree-isolation.test.ts` (commit `a02863d`, CI run 33275610121) both landed unregistered and reddened CI |
 | `src/mcp/vice/audit-integrity.test.ts` | **YES if `docs-*.test.ts`, NO otherwise** | Carries the disk-derived `deepEqual` and CR-02's registry-drift detector |
-| `scripts/check-no-regenerator2000.mjs` | **YES if the new file carries the literal** | Every exemption pins an **exact** hit count with `===`. `.github/workflows/ci.yml` is pinned at **1** under the `gate-self` class. **A new CI step whose `name:` or `run:` line contains `regenerator2000` moves that to 2 and reds the gate.** Name the new guard `check-guard-fates.mjs` (or similar) with no form of the subject in it |
+| `scripts/check-no-analyser.mjs` | **YES if the new file carries the literal** | Every exemption pins an **exact** hit count with `===`. `.github/workflows/ci.yml` is pinned at **1** under the `gate-self` class. **A new CI step whose `name:` or `run:` line contains `the external analyser` moves that to 2 and reds the gate.** Name the new guard `check-guard-fates.mjs` (or similar) with no form of the subject in it |
 | `src/mcp/vice/ci-suite-coverage.test.ts` | **Probably, for a new *test* file** | It walks the tree for directories containing `*.test.(ts\|mts\|mjs\|js)` and cross-references `.github/workflows/ci.yml` steps (`CI_YAML_PATH` at `:268`; `SKIP_DIR_NAMES` includes `.planning` at `:~62`). It skips `.planning` entirely, so a registry there is invisible. **NOT MEASURED — planner must verify** whether a new `scripts/*.test.mjs` would require a new CI step to satisfy it |
 | `scripts/check-skill-cli-invocations.mjs` | **NO** | Reads `src/skills/**` and the anno CLI verb tables, not `scripts/` |
-| `scripts/check-npm-packages.mjs` | **Possibly** | It validates via `npm pack --dry-run --json` that both tarballs contain exactly the right files. `scripts/` is not in either package's `files[]` (both `check-no-regenerator2000.mjs` and its `.d.mts` are documented as staying out), so a new `scripts/` file should be inert. **NOT MEASURED — planner must verify** by running it after the file lands |
+| `scripts/check-npm-packages.mjs` | **Possibly** | It validates via `npm pack --dry-run --json` that both tarballs contain exactly the right files. `scripts/` is not in either package's `files[]` (both `check-no-analyser.mjs` and its `.d.mts` are documented as staying out), so a new `scripts/` file should be inert. **NOT MEASURED — planner must verify** by running it after the file lands |
 | `src/mcp/vice/shipped-modules.test.ts` / `module-classification.test.ts` | **NO for `scripts/`** | They classify modules under `src/mcp/vice/` |
 
-**Also `D-16`-specific:** the new step goes alongside the six existing ones at `.github/workflows/ci.yml:189-235` — `check-npm-packages.mjs` (`:189-190`), `check-no-regenerator2000.mjs` (`:199-200`), `check-skill-tool-coverage.mjs` (`:206-207`), `check-skill-fork-honesty.mjs` (`:214-215`), `check-skill-description-overlap.mjs` (`:224-225`), `check-skill-cli-invocations.mjs` (`:234-235`). `[VERIFIED: grep -n over .github/workflows/ci.yml]` Nothing is added to `src/mcp/vice/package.json`'s `scripts` block, which currently holds exactly `test`, `test:automated`, `test:manual`, `typecheck`, `build`, `smoke`. `[VERIFIED: src/mcp/vice/package.json]`
+**Also `D-16`-specific:** the new step goes alongside the six existing ones at `.github/workflows/ci.yml:189-235` — `check-npm-packages.mjs` (`:189-190`), `check-no-analyser.mjs` (`:199-200`), `check-skill-tool-coverage.mjs` (`:206-207`), `check-skill-fork-honesty.mjs` (`:214-215`), `check-skill-description-overlap.mjs` (`:224-225`), `check-skill-cli-invocations.mjs` (`:234-235`). `[VERIFIED: grep -n over .github/workflows/ci.yml]` Nothing is added to `src/mcp/vice/package.json`'s `scripts` block, which currently holds exactly `test`, `test:automated`, `test:manual`, `typecheck`, `build`, `smoke`. `[VERIFIED: src/mcp/vice/package.json]`
 
 ---
 
@@ -402,10 +402,10 @@ This is the "check whether adding a new `scripts/check-*.mjs` has side effects" 
 
 | Measure | CONTEXT.md (discussion time) | Measured this session | Verdict |
 |---|---|---|---|
-| Tracked non-`.planning` files containing `regenerator2000` | 35 | **35** | ✅ exact — **but only with `-a`** |
+| Tracked non-`.planning` files containing `the external analyser` | 35 | **35** | ✅ exact — **but only with `-a`** |
 | Same, with a plain `grep` (no `-a`) | — | **34** | ⚠️ the NUL-byte trap, live |
-| `.planning/PROJECT.md` `regenerator2000` mentions | 46 | **46 lines / 51 occurrences** | ✅ "46" = lines; note both |
-| `.planning/PROJECT.md` `r2000_` occurrences | 26 | **17 lines / 23 occurrences** | ❌ **disagrees** — neither definition yields 26 |
+| `.planning/PROJECT.md` `the external analyser` mentions | 46 | **46 lines / 51 occurrences** | ✅ "46" = lines; note both |
+| `.planning/PROJECT.md` `anno_` occurrences | 26 | **17 lines / 23 occurrences** | ❌ **disagrees** — neither definition yields 26 |
 | `CLAUDE.md` | 0 and 0 | **0 and 0** | ✅ exact (`D-11` confirmed) |
 | `ARCHITECTURE.md` outside `.planning/` | none | **none** | ✅ exact |
 | Total tracked files containing the literal (incl. `.planning/`) | — | **373** | new figure |
@@ -414,11 +414,11 @@ This is the "check whether adding a new `scripts/check-*.mjs` has side effects" 
 
 **The NUL-byte trap is live and reproduced.** The file that vanishes from a plain grep is **`src/mcp/vice/anno-memmap-render.ts`**. Measured: 2 NUL bytes, first at **byte offset 15097, line 315**, file size 31604. `[VERIFIED: python3 byte scan, this session]`
 
-⚠️ **Documentation drift, flag to the planner:** `check-no-regenerator2000.mjs`'s header states *"carries a literal NUL byte at offset 12862 (line 291 …)"* and *"The tree-wide occurrence total is 399 with `-a` and 398 without"*. Both figures are now stale — the NUL has moved to offset 15097 / line 315 as the file grew. The gate's own `memmap-measurement-provenance` exemption pins the mention at **line 79** (`lines: { "src/mcp/vice/anno-memmap-render.ts": [79] }`), and the gate passes today, so the *pin* is still correct; only the header's descriptive offsets drifted. This is `CUT-06`-adjacent: a dated header stating a currently-false offset. **Recommended verdict: correct the offsets (drift repair on a live technical claim), or restate them as "measured at plan 29-02".** Either is defensible; do not leave a live-tense false number.
+⚠️ **Documentation drift, flag to the planner:** `check-no-analyser.mjs`'s header states *"carries a literal NUL byte at offset 12862 (line 291 …)"* and *"The tree-wide occurrence total is 399 with `-a` and 398 without"*. Both figures are now stale — the NUL has moved to offset 15097 / line 315 as the file grew. The gate's own `memmap-measurement-provenance` exemption pins the mention at **line 79** (`lines: { "src/mcp/vice/anno-memmap-render.ts": [79] }`), and the gate passes today, so the *pin* is still correct; only the header's descriptive offsets drifted. This is `CUT-06`-adjacent: a dated header stating a currently-false offset. **Recommended verdict: correct the offsets (drift repair on a live technical claim), or restate them as "measured at plan 29-02".** Either is defensible; do not leave a live-tense false number.
 
 ### 5.2 Per-file census with candidate `D-08` class and verdict
 
-All 35, with occurrence counts from `grep -ao 'regenerator2000' <f> | wc -l`. `[VERIFIED, this session]` Class per `D-08`: **(1)** dated findings, **(2)** licence/attribution, **(3)** live pointer.
+All 35, with occurrence counts from `grep -ao 'the external analyser' <f> | wc -l`. `[VERIFIED, this session]` Class per `D-08`: **(1)** dated findings, **(2)** licence/attribution, **(3)** live pointer.
 
 | # | File | hits | Class | Candidate verdict | Note |
 |---|---|---|---|---|---|
@@ -426,7 +426,7 @@ All 35, with occurrence counts from `grep -ao 'regenerator2000' <f> | wc -l`. `[
 | 2 | `README.md` | 2 | 2 | **unchanged** | `surviving-provenance` pins 2 — the attribution paragraph's link URL + link text, one line. All install prose already corrected by 29-09 |
 | 3 | `THIRD-PARTY-NOTICES.md` | 3 | 2 | **unchanged** | ROADMAP: dual-licence notice *remains true* for retained prose |
 | 4 | `docs/phase23-real-release-gate-findings.md` | 3 | 1 | **unchanged** | `findings-docs` pins 3 |
-| 5 | `docs/phase9-regenerator2000-probe-findings.md` | 43 | 1 | **unchanged** | `findings-docs` pins **44** (43 content + 1 in the filename). Dated record |
+| 5 | `docs/phase9-external-analyser-probe-findings.md` | 43 | 1 | **unchanged** | `findings-docs` pins **44** (43 content + 1 in the filename). Dated record |
 | 6 | `docs/stock-vice-parity.md` | 1 | 2 | **unchanged** | `surviving-provenance` pins 1 |
 | 7 | `installer/THIRD-PARTY-NOTICES.md` | 7 | 2 | **unchanged** | Block-scoped `notices-attribution-blocks` |
 | 8 | `scripts/check-npm-packages.mjs` | 1 | 2 | **unchanged** | `surviving-provenance` pins 1 |
@@ -458,34 +458,34 @@ All 35, with occurrence counts from `grep -ao 'regenerator2000' <f> | wc -l`. `[
 | 34 | `src/skills/c64-program-recon/scripts/packer-finding.mjs` | 1 | 2 | **unchanged** | `surviving-provenance` pins 1 — dated past-tense provenance |
 | 35 | `src/skills/routine-queue-walker/SKILL.md` | 3 | 2 | **unchanged** | ditto |
 
-**Conclusion for the tracked non-`.planning` tree: every one of the 35 is already either class 1 or class 2 under `D-08`, and every one is already pinned by an exact-count exemption in `check-no-regenerator2000.mjs`, which exits 0 today.** There are **no live pointers left outside `.planning/`**. `D-09` still requires a row for each of the 35 ("we looked and it is fine"), but the sweep's *corrective* work is confined to `.planning/`.
+**Conclusion for the tracked non-`.planning` tree: every one of the 35 is already either class 1 or class 2 under `D-08`, and every one is already pinned by an exact-count exemption in `check-no-analyser.mjs`, which exits 0 today.** There are **no live pointers left outside `.planning/`**. `D-09` still requires a row for each of the 35 ("we looked and it is fine"), but the sweep's *corrective* work is confined to `.planning/`.
 
-**⚠️ Corollary the planner must not miss:** because every count is pinned with `===`, **any** edit to one of these 35 files that changes its `regenerator2000` count reds the gate. The `D-09` sweep must therefore be verdict-recording, not editing, for all 35 — and the moment a plan *does* change one, it must re-pin in the same commit. This is the gate's own stated rule: *"a mention that moved moves its pin in the same commit, a mention that multiplied does not."*
+**⚠️ Corollary the planner must not miss:** because every count is pinned with `===`, **any** edit to one of these 35 files that changes its `the external analyser` count reds the gate. The `D-09` sweep must therefore be verdict-recording, not editing, for all 35 — and the moment a plan *does* change one, it must re-pin in the same commit. This is the gate's own stated rule: *"a mention that moved moves its pin in the same commit, a mention that multiplied does not."*
 
-Also note the **shipped-twin duplication**: `installer/skills/**` is gitignored but scanned via `packFiles()`. `check-no-regenerator2000.mjs` pins `installer/skills/c64-program-recon/scripts/packer-finding.mjs: 1` and `SKILL_ATTRIBUTION_PINS` covers the shipped twins. **Every edit to a `src/skills/*/SKILL.md` must be followed by `node installer/scripts/sync-skills.mjs` before the gate is re-run** — `.github/workflows/ci.yml:126-128` does exactly this ("Generate the shipped skills tree").
+Also note the **shipped-twin duplication**: `installer/skills/**` is gitignored but scanned via `packFiles()`. `check-no-analyser.mjs` pins `installer/skills/c64-program-recon/scripts/packer-finding.mjs: 1` and `SKILL_ATTRIBUTION_PINS` covers the shipped twins. **Every edit to a `src/skills/*/SKILL.md` must be followed by `node installer/scripts/sync-skills.mjs` before the gate is re-run** — `.github/workflows/ci.yml:126-128` does exactly this ("Generate the shipped skills tree").
 
 ### 5.3 `.planning/PROJECT.md` — where the live pointers actually are
 
 | Measure | Value |
 |---|---|
-| Lines containing `regenerator2000` | **46** |
-| Occurrences of `regenerator2000` | **51** |
-| Lines containing `r2000_` | **17** |
-| Occurrences of `r2000_` | **23** |
-| Occurrences of `r2000` (any form) | **112** |
+| Lines containing `the external analyser` | **46** |
+| Occurrences of `the external analyser` | **51** |
+| Lines containing `anno_` | **17** |
+| Occurrences of `anno_` | **23** |
+| Occurrences of `anno` (any form) | **112** |
 
 `[VERIFIED: grep -a on .planning/PROJECT.md]`
 
-**CONTEXT.md said "46 mentions and 26 `r2000_` occurrences". The 46 reconciles (as *lines*). The 26 does not** — I measure 23 occurrences and 17 lines. Neither definition produces 26. Possible causes: the discussion-time figure counted `r2000_` case-insensitively plus `R2000_`, or counted a superset pattern, or was measured before a commit landed. **Give both numbers in the plan and state the command.** The delta of 3 is small but `D-09`'s whole point is that a silent omission bites exactly here.
+**CONTEXT.md said "46 mentions and 26 `anno_` occurrences". The 46 reconciles (as *lines*). The 26 does not** — I measure 23 occurrences and 17 lines. Neither definition produces 26. Possible causes: the discussion-time figure counted `anno_` case-insensitively plus `ANNO_`, or counted a superset pattern, or was measured before a commit landed. **Give both numbers in the plan and state the command.** The delta of 3 is small but `D-09`'s whole point is that a silent omission bites exactly here.
 
 **The live-pointer class inside `PROJECT.md`, confirmed by reading:**
-- `.planning/PROJECT.md:311` — the Architecture constraint bullet. Names *"The `r2000_*` family (v0.3.0 Phase 11) is registered through `buildViceTool()`"*. `CLAUDE.md:26`'s corrected twin says *"The `anno_*` family"*. **Live pointer at a deleted tool family → correct.**
+- `.planning/PROJECT.md:311` — the Architecture constraint bullet. Names *"The `anno_*` family (v0.3.0 Phase 11) is registered through `buildViceTool()`"*. `CLAUDE.md:26`'s corrected twin says *"The `anno_*` family"*. **Live pointer at a deleted tool family → correct.**
 - The same line carries the stale line citations — see §6.
-- `PROJECT.md:745` — *"three first named here, and 13 non-`r2000-`named test files reference it"* — a dated measurement statement; **class 1, keep**.
-- `.planning/ARCHITECTURE.md:229` — **`### Rule A21 — One long-lived regenerator2000 child per project path, per proxy process`**, whose body cites `D18-04`, `D18-03`, `D18-21`, `D18-02` and `r2000-mcp-client.ts` (a file that no longer exists). `[VERIFIED: sed -n '225,245p' .planning/ARCHITECTURE.md]` This is ROADMAP's "Rule A21" and it is a **live pointer stated in the present tense at a deleted module**. Candidate verdict: **correct, or convert to dated history with an explicit "superseded by the deletion" note.** `D-08` says only text telling a reader to *use/install/invoke* is corrected; A21 is an *architectural invariant* about code that no longer exists, which reads as live. Recommend converting to dated past tense rather than deleting (the `CORE-01`/`D-36` keep-dated precedent).
+- `PROJECT.md:745` — *"three first named here, and 13 non-`anno-`named test files reference it"* — a dated measurement statement; **class 1, keep**.
+- `.planning/ARCHITECTURE.md:229` — **`### Rule A21 — One long-lived the external analyser child per project path, per proxy process`**, whose body cites `D18-04`, `D18-03`, `D18-21`, `D18-02` and `anno-mcp-client.ts` (a file that no longer exists). `[VERIFIED: sed -n '225,245p' .planning/ARCHITECTURE.md]` This is ROADMAP's "Rule A21" and it is a **live pointer stated in the present tense at a deleted module**. Candidate verdict: **correct, or convert to dated history with an explicit "superseded by the deletion" note.** `D-08` says only text telling a reader to *use/install/invoke* is corrected; A21 is an *architectural invariant* about code that no longer exists, which reads as live. Recommend converting to dated past tense rather than deleting (the `CORE-01`/`D-36` keep-dated precedent).
 - **NOTE:** there are **four** `ARCHITECTURE.md` files, all inside `.planning/`: `.planning/ARCHITECTURE.md`, `.planning/codebase/ARCHITECTURE.md`, `.planning/research/ARCHITECTURE.md`, `.planning/research/archive-v0.6.0/ARCHITECTURE.md`. `A21` appears in **two** of them (`.planning/ARCHITECTURE.md` and `.planning/research/ARCHITECTURE.md`). `[VERIFIED: git ls-files | grep -i ARCHITECTURE.md; grep -aln 'A21']` CONTEXT.md's `D-11` says "ROADMAP's Rule A21 reference resolves to `.planning/ARCHITECTURE.md`" — true, but the planner should decide explicitly whether the research copy gets a row (recommend: yes, verdict `unchanged — research archive, dated by construction`).
 
-**`.planning/` files with `regenerator2000`, total: 338** (373 tracked − 35 non-`.planning`). `D-09` says every file in *the swept set* gets a row — the planner must define the swept set explicitly. **Recommendation:** the swept set is (a) the 35 tracked non-`.planning` files, plus (b) the named living documents `.planning/PROJECT.md`, `.planning/ARCHITECTURE.md`, `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md`, `CLAUDE.md`, plus (c) `README.md` and installer docs already in (a). Phase artifacts under `.planning/phases/` are dated records by construction and are out of scope — but **say so in a row**, because that is exactly the "we looked and it is fine" distinction `D-09` exists to draw.
+**`.planning/` files with `the external analyser`, total: 338** (373 tracked − 35 non-`.planning`). `D-09` says every file in *the swept set* gets a row — the planner must define the swept set explicitly. **Recommendation:** the swept set is (a) the 35 tracked non-`.planning` files, plus (b) the named living documents `.planning/PROJECT.md`, `.planning/ARCHITECTURE.md`, `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md`, `CLAUDE.md`, plus (c) `README.md` and installer docs already in (a). Phase artifacts under `.planning/phases/` are dated records by construction and are out of scope — but **say so in a row**, because that is exactly the "we looked and it is fine" distinction `D-09` exists to draw.
 
 ---
 
@@ -518,7 +518,7 @@ Every one is **+2** off — precisely the −2 shift CLAUDE.md records: *"All fo
 
 > *"`docs-linerefs.test.ts` mechanically checks the two `rewriteArguments()` citations — the figures above were stale at `:2889`/`:1368` until the v0.3.0 close, and stale again at `:3029`/`:2964`/`:1508`/`:1484` until the v0.7.0 open, when `docs-linerefs.test.ts` was found to read only CLAUDE.md and not this copy."*
 
-The same line additionally carries the `r2000_*` live pointer (§5.3) — **both `D-10` and `D-08` corrections land on the same line 311**, which the planner should sequence as one edit.
+The same line additionally carries the `anno_*` live pointer (§5.3) — **both `D-10` and `D-08` corrections land on the same line 311**, which the planner should sequence as one edit.
 
 ⚠️ `.planning/ROADMAP.md:541` also carries a citation: `vice-proxy.ts:3216`. `[VERIFIED]` It is **not** in a `rewriteArguments()` context, so the current guard would not scan it — but if the widening changes the bullet-isolation predicate, it could be swept in. **Check this before widening.**
 
@@ -618,7 +618,7 @@ exit status 0
 ### 7.3 The six CI check scripts — all green today
 
 ```
-node scripts/check-no-regenerator2000.mjs        exit=0
+node scripts/check-no-analyser.mjs        exit=0
 node scripts/check-npm-packages.mjs              exit=0   (34 files, 7 skills)
 node scripts/check-skill-tool-coverage.mjs       exit=0
 node scripts/check-skill-fork-honesty.mjs        exit=0   (11 fork-only mentions, 33 files, 7 skill dirs)
@@ -657,7 +657,7 @@ timeout 300 node --test vice-proxy.test.ts; echo "vice-proxy exit=$?"
 
 # --- 3. The six CI check scripts -------------------------------------------
 node scripts/check-npm-packages.mjs
-node scripts/check-no-regenerator2000.mjs
+node scripts/check-no-analyser.mjs
 node scripts/check-skill-tool-coverage.mjs
 node scripts/check-skill-fork-honesty.mjs
 node scripts/check-skill-description-overlap.mjs
@@ -681,7 +681,7 @@ cd src/mcp/vice && npm run typecheck
 1. **A live broker makes the BACK-05 D-G ordering test red deterministically.** Not a flake. `D-13`'s entire reason. **Measured today: `systemctl --user is-active vice-broker` → `inactive`**, so the gate run can proceed — but assert it programmatically and record the state beside the results, per `D-13`. Do **not** script a stop: the broker is a systemd unit and tearing down the developer's environment is the wrong shape.
 2. **`npm test` over the full glob hangs locally on `vice-proxy.test.ts`.** Do not run bare `npm test` locally as the gate. `D-12`'s split exists for this. If you must run it, bound it with `timeout`.
 3. **`test:automated`'s baseline is 0 failures today** — the historical 44/7/5 baselines are superseded. Any failure is real.
-4. **The working tree is currently NOT clean** — four untracked files: `docs/dissambler-workflow.md`, `docs/undocumented-opcodes-ghidra.md`, `docs/vice-mcp-ideas.md`, `skills-lock.json`. `[VERIFIED: git status --porcelain]` None is tracked, so `check-no-regenerator2000.mjs`'s `git ls-files` predicate does not see them (its header records this window as accepted: *"an untracked, not-yet `git add`ed file is invisible to a `--cached` predicate. CI runs post-commit, so the window is local-only. This is accepted."*). But the harness's `assertTreeClean()` must distinguish "untracked, pre-existing" from "modified by the plant", or every row will fail its precondition.
+4. **The working tree is currently NOT clean** — four untracked files: `docs/dissambler-workflow.md`, `docs/undocumented-opcodes-ghidra.md`, `docs/vice-mcp-ideas.md`, `skills-lock.json`. `[VERIFIED: git status --porcelain]` None is tracked, so `check-no-analyser.mjs`'s `git ls-files` predicate does not see them (its header records this window as accepted: *"an untracked, not-yet `git add`ed file is invisible to a `--cached` predicate. CI runs post-commit, so the window is local-only. This is accepted."*). But the harness's `assertTreeClean()` must distinguish "untracked, pre-existing" from "modified by the plant", or every row will fail its precondition.
 5. **`/tmp` is a 16GB RAM tmpfs with aging disabled**, and the suite leaks. Twelve `vice-proxy-evidence-test-*` directories are already sitting in `.planning/`. `[VERIFIED: ls .planning/]` Budget for it; clean up after the manual leg.
 6. **The `NODE_TEST_*` strip** (§3.1) — a harness that runs `node --test` from inside `node --test` without stripping records reds as greens.
 7. **`installer/skills/` must be re-synced** before re-running the removal gate after any `src/skills/` edit (§5.2).
@@ -697,7 +697,7 @@ cd src/mcp/vice && npm run typecheck
 
 **The twelve fixtures are still spelled in that vocabulary and still on disk.** `git ls-files 'src/mcp/vice/fixtures/coverage/*/project.regen2000proj'` → **exactly 12**: `fp1-indexed-copy-loop`, `fp1b-immediate-copy-loop`, `fp2-zeropage-data-pointer`, `fp2b-immediate-data-pointer`, `fp3-unlinked-push-idiom`, `fp3b-immediate-push-idiom`, `nc1-all-auto`, `nc1b-auto-renamed-in-place`, `nc2-generic-comments`, `nc3-all-data-blocks`, `nc4-multi-caller-unnamed`, `nc5-well-documented`. `[VERIFIED: git ls-files, count 12]`
 
-Note the fixture filename is `project.regen2000proj` — **`regen2000`, not `regenerator2000`** — so it does **not** trip the removal gate's `SUBJECT_NEEDLE`. That is why 12 committed files carrying a retired producer's extension survive a gate that scans paths as well as content.
+Note the fixture filename is `project.regen2000proj` — **`regen2000`, not `the external analyser`** — so it does **not** trip the removal gate's `SUBJECT_NEEDLE`. That is why 12 committed files carrying a retired producer's extension survive a gate that scans paths as well as content.
 
 **Registry row (candidate):**
 
@@ -739,7 +739,7 @@ The proof-of-untouched for `D-05` is the 12-file count plus the fact that the fi
 | Pointing a guard at a synthetic tree | An env-var override or a skip flag | `--root <dir>` | `D-12-14`: no waiver file, no env override, no relaxation hatch |
 | Deriving the automated test set | A second glob | `automatedTestFiles()` from `test-gate.mjs` | Already drift-guarded by `test-gate.test.ts` |
 | A per-file timeout runner for the manual leg | A new runner | `timeout 300 node --test <file>` in a shell loop | `D-12` explicitly rejected a new runner |
-| Counting `regenerator2000` occurrences | `grep` without `-a` | `grep -a`, or read bytes in-process | `anno-memmap-render.ts` is NUL-tainted; 34 vs 35 |
+| Counting `the external analyser` occurrences | `grep` without `-a` | `grep -a`, or read bytes in-process | `anno-memmap-render.ts` is NUL-tainted; 34 vs 35 |
 | Scoping the removal gate | A whole-tree grep | The existing gate | 236 legitimate permanent mentions; `CUT-02` |
 
 ## Common Pitfalls
@@ -751,7 +751,7 @@ The proof-of-untouched for `D-05` is the 12-file count plus the fact that the fi
 **Warning signs:** empty output + exit 0 from a guard you know you broke.
 
 ### Pitfall 2: A new file trips the exact-count exemptions
-**What goes wrong:** the fate registry, its guard, or the new CI step names the subject, and `check-no-regenerator2000.mjs` reds on the commit that lands it.
+**What goes wrong:** the fate registry, its guard, or the new CI step names the subject, and `check-no-analyser.mjs` reds on the commit that lands it.
 **Why:** every exemption count is asserted with `===`; `.github/workflows/ci.yml` is pinned at exactly 1.
 **How to avoid:** put the registry under `.planning/` (prefix-excluded at `:180`) and name the guard/step with no form of the subject.
 
@@ -811,7 +811,7 @@ The proof-of-untouched for `D-05` is the 12-file count plus the fact that the fi
 | CUT-04 | The fate guard is itself non-vacuous | unit | `node --test guard-fates.test.ts` (delete a row → red) | ❌ Wave 0 |
 | CUT-04 | Each re-pointed guard observed red against its new subject | instrument | the mutation harness, by hand (`D-17`) | ❌ Wave 0 |
 | CUT-06 | `PROJECT.md`'s citations are correct | unit | `cd src/mcp/vice && node --test docs-linerefs.test.ts` | ✅ exists, needs widening |
-| CUT-06 | No living document points at a deleted route | unit | `node scripts/check-no-regenerator2000.mjs` | ✅ exists, green |
+| CUT-06 | No living document points at a deleted route | unit | `node scripts/check-no-analyser.mjs` | ✅ exists, green |
 | CUT-06 | Close gate | suite | §7.4's recipe | ✅ exists |
 
 ### Sampling Rate
@@ -886,7 +886,7 @@ execution time.
    - Known: 35 tracked non-`.planning` files + 338 `.planning` files carry the literal.
    - Recommendation: define it as the 35 plus the named living documents, and record a single row explaining why `.planning/phases/**` artifacts are dated-by-construction and out of scope.
 
-5. **Where did CONTEXT.md's "26 `r2000_` occurrences" come from?** — **RESOLVED by plan 32-05,
+5. **Where did CONTEXT.md's "26 `anno_` occurrences" come from?** — **RESOLVED by plan 32-05,
    Section A** (recorded as DISAGREEING with CONTEXT.md's 26: 17 lines / 23 occurrences, each with
    the command that produced it, 23 named as the working figure and the hypotheses for the 26 marked
    unconfirmed rather than asserted).
@@ -900,8 +900,8 @@ execution time.
 - `.planning/ROADMAP.md` § Phase 32 — goal, two criteria, all six Notes
 - `.planning/REQUIREMENTS.md` — `CUT-01`..`CUT-06`
 - `scripts/audit-gate.mjs` — full header, `DOCS_GUARD_FLOOR`, `EXPECTED_DOCS_GUARD_NAMES`, `docsGuardFiles()`, `runGuardsLive()`, `parseArgs()`/`--root`
-- `scripts/check-no-regenerator2000.mjs` — header, `SUBJECT_NEEDLE:140`, `PLANNING_PREFIX:180`, `subjectHits():165`, `EXEMPTION_CLASSES`, `TEMPORARY_ALLOW_LIST` (closed/empty)
-- `scripts/check-no-regenerator2000.d.mts` — the `.d.mts` sibling convention
+- `scripts/check-no-analyser.mjs` — header, `SUBJECT_NEEDLE:140`, `PLANNING_PREFIX:180`, `subjectHits():165`, `EXEMPTION_CLASSES`, `TEMPORARY_ALLOW_LIST` (closed/empty)
+- `scripts/check-no-analyser.d.mts` — the `.d.mts` sibling convention
 - `src/mcp/vice/test-gate.mjs:95-114` — `MANUAL_ONLY_TESTS`, `automatedTestFiles()`
 - `src/mcp/vice/test-gate.test.ts` — the drift guard
 - `src/mcp/vice/docs-linerefs.test.ts` — all 100 lines

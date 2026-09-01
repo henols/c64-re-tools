@@ -1,4 +1,4 @@
-// anno-regbits.test.ts -- coverage for anno-regbits-gen.ts (D-22, R2000-13
+// anno-regbits.test.ts -- coverage for anno-regbits-gen.ts (D-22, ANNO-13
 // Task 1): the drift guard between the generator and the committed artifact,
 // the digest pin against memmap.json, identifier legality across the whole
 // table, presence of the six override-supplied (memmap-absent) registers,

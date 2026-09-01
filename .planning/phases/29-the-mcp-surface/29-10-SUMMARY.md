@@ -54,7 +54,7 @@ key-files:
     - src/mcp/vice/anno-coverage.ts
     - src/mcp/vice/vice-proxy.ts
     - src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
     - CLAUDE.md
 
 key-decisions:
@@ -78,7 +78,7 @@ coverage:
         ref: "src/mcp/vice/module-classification.test.ts (20 tests, includes the discharge-closure relation over both fate kinds)"
         status: pass
       - kind: other
-        ref: "ls src/mcp/vice/ | grep -c '^r2000' -> 0"
+        ref: "ls src/mcp/vice/ | grep -c '^anno' -> 0"
         status: pass
     human_judgment: false
   - id: D2
@@ -142,7 +142,7 @@ coverage:
     description: "The removal gate is green with no allow-list entry for any deleted file, and did not become vacuous when its subject disappeared"
     verification:
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs -> OK, 387 files scanned, floor 350"
+        ref: "node scripts/check-no-analyser.mjs -> OK, 387 files scanned, floor 350"
         status: pass
       - kind: manual_procedural
         ref: "two post-deletion plants (a surviving module; an UNTRACKED shipped skill file) each observed non-zero and reverted"
@@ -220,13 +220,13 @@ the named summary rather than by copying the table forward:
 | Precondition | Re-verified against | Observed |
 |---|---|---|
 | Gate exists and was observed biting | `29-02-SUMMARY.md` | Four planted evasion routes (a)–(d) plus the attribution false-positive control and a behavioural binary-safety proof, all driven through the gate's own exported predicate |
-| Both skill trees point somewhere real, shipped copy included | `29-09-SUMMARY.md` | 65 → 0 gate citations discharged; withdrawn verbs carry dated notices naming Phase 30; no live `r2000_*` invocation under either tree |
+| Both skill trees point somewhere real, shipped copy included | `29-09-SUMMARY.md` | 65 → 0 gate citations discharged; withdrawn verbs carry dated notices naming Phase 30; no live `anno_*` invocation under either tree |
 | Guards breaking on the RENAME moved with it | `29-05-SUMMARY.md` | Coverage entry "Every guard that breaks on the rename moved with it"; gate green at every commit the plan made |
 | Guards breaking on REGISTRATION moved in the registering commit | `29-01-SUMMARY.md` | "all seven guards that break on registration moved in the same wave" — seven, where the plan had enumerated five |
-| Pre-phase failing-file SET recorded | `29-BASELINE.md` | Present on disk; the three-file set (`vice-proxy.test.ts`, `r2000-session.test.ts`, `audit-integrity.test.ts`) taken at `c27922a` with the broker down |
+| Pre-phase failing-file SET recorded | `29-BASELINE.md` | Present on disk; the three-file set (`vice-proxy.test.ts`, `anno-session.test.ts`, `audit-integrity.test.ts`) taken at `c27922a` with the broker down |
 
 **State of the tree at ratification.** All five CI gates exit 0
-(`check-no-regenerator2000`, `check-npm-packages`, `check-skill-tool-coverage`,
+(`check-no-analyser`, `check-npm-packages`, `check-skill-tool-coverage`,
 `check-skill-fork-honesty`, `audit-gate`) and `npm run typecheck` exits **0** —
 so Deviation 1 below, which left `vice-proxy.test.ts:54` importing a deleted
 module and typecheck red, has since been closed by follow-up commits `d77d5db`
@@ -239,13 +239,13 @@ backed by a demonstrably non-vacuous scanner.
 
 ### The deletion set came from the registry, not from a prefix sweep
 
-The registry carried exactly **seven** `in-enumeration` entries; those seven modules plus their six co-located tests plus `r2000-symbol-roundtrip.test.ts` are the 14 files removed. The count was confirmed against the registry before anything was deleted, as the plan required.
+The registry carried exactly **seven** `in-enumeration` entries; those seven modules plus their six co-located tests plus `anno-symbol-roundtrip.test.ts` are the 14 files removed. The count was confirmed against the registry before anything was deleted, as the plan required.
 
-**`src/mcp/vice/r2000-symbol-roundtrip.test.ts` is named here rather than described**, because D-11 requires this deletion be a *recorded choice* and a choice recorded only by description is not one. Its subject — the live symbol round trip — was already withdrawn by plan 29-07 and that withdrawal is already in the project record, so this deletion **discharges a recorded decision rather than making a new one**. It is not the symbols module's co-located test, which is exactly why plan 29-05 deliberately did not sweep it up.
+**`src/mcp/vice/anno-symbol-roundtrip.test.ts` is named here rather than described**, because D-11 requires this deletion be a *recorded choice* and a choice recorded only by description is not one. Its subject — the live symbol round trip — was already withdrawn by plan 29-07 and that withdrawal is already in the project record, so this deletion **discharges a recorded decision rather than making a new one**. It is not the symbols module's co-located test, which is exactly why plan 29-05 deliberately did not sweep it up.
 
 ### The transcripts rode forward before their module went
 
-`.planning/phases/29-the-mcp-surface/fixtures/` now holds `verify-honest-pass.txt`, `verify-false-pass-trap.txt` and a README recording (a) what each is — the honest pass, and the trap whose aggregate line reads `✓ All roundtrip verifications passed.` and exits `0` while ACME never ran; (b) where they came from (`regenerator2000 0.9.20` + ACME 0.97, Phase 10, with the unedited capture path cited); and (c) **Phase 30's obligation to re-record both from real assembler output rather than assert against these**. They live under `.planning/` deliberately: that prefix is outside the removal gate's scope by construction, so carrying them forward needed no exemption.
+`.planning/phases/29-the-mcp-surface/fixtures/` now holds `verify-honest-pass.txt`, `verify-false-pass-trap.txt` and a README recording (a) what each is — the honest pass, and the trap whose aggregate line reads `✓ All roundtrip verifications passed.` and exits `0` while ACME never ran; (b) where they came from (`the external analyser 0.9.20` + ACME 0.97, Phase 10, with the unedited capture path cited); and (c) **Phase 30's obligation to re-record both from real assembler output rather than assert against these**. They live under `.planning/` deliberately: that prefix is outside the removal gate's scope by construction, so carrying them forward needed no exemption.
 
 ### Knowledge kept as live code, not as prose about deleted code
 
@@ -264,7 +264,7 @@ The directive's own words are that the integration must **"never be included in 
 - `anno-memmap-render.test.ts`: the **ungated** availability assertion that ran on every suite invocation, plus its `SKIP_REASON`. Its three render tests were **not** touched — plan 29-12 had already converted them at wave 6 to ungated store-backed tests under D-17. A version of that file with those three deleted would have been wrong; D-01 required the child to go, not the coverage. The file's header now says so, so the next reader does not look for them.
 - `spawn-seam.test.ts`: the gated live session-reuse transcript and its committed-fixture existence check.
 
-Verified after: `grep -arn` over `src/mcp/vice/*.test.ts` finds **no** availability-gate assertion and **no** env-gated block whose subject was the deleted child. The two residual `SKIP_REASON`-shaped hits belong to `acme-gate.ts` (a different, surviving dependency) and `VICE_REQUIRE_R2000_UPSTREAM` gates a clone of the **upstream repository** for re-hashing procedure files — not the analyser binary, and the subject of a standing permanent exemption.
+Verified after: `grep -arn` over `src/mcp/vice/*.test.ts` finds **no** availability-gate assertion and **no** env-gated block whose subject was the deleted child. The two residual `SKIP_REASON`-shaped hits belong to `acme-gate.ts` (a different, surviving dependency) and `VICE_REQUIRE_ANNO_UPSTREAM` gates a clone of the **upstream repository** for re-hashing procedure files — not the analyser binary, and the subject of a standing permanent exemption.
 
 ### Three guards re-pointed, each proven by a plant against the real tree
 
@@ -274,10 +274,10 @@ Observed red, then reverted:
 
 ```
 $ node -e '<flip one curated disposition to omit>'
-FLIPPED r2000_read_region curated -> omit in .agent/skills/r2000-analyze-basic/SKILL.md
+FLIPPED anno_read_region curated -> omit in an upstream basic procedure
 $ node --test anno-derivation.test.ts
 not ok 2 - every non-curated upstream call carries a justification and a citation
-    .agent/skills/r2000-analyze-basic/SKILL.md: r2000_read_region is disposed "omit"
+    an upstream basic procedure: anno_read_region is disposed "omit"
     but the surface does carry a dedicated route for it (anno_read_region)
 not ok 6 - MCP-01 (forward): every curated or adapt-to-address-input verb has a route...
 # pass 6  # fail 2
@@ -288,7 +288,7 @@ $ <revert>   ->   git status --porcelain: clean
 
 | | before | after |
 |---|---|---|
-| binary | the analyser (`R2000_BIN`) | the emulator (`VICE_BIN` / `x64sc` / a resolved `binPath`) |
+| binary | the analyser (`ANNO_BIN`) | the emulator (`VICE_BIN` / `x64sc` / a resolved `binPath`) |
 | property | `assertNoViceFlag(argv)` precedes every spawn | the call uses the argv-**array** form and the module builds no shell command string |
 | expected sites | 2 | 1 (`backend-detect.mts`) |
 
@@ -372,7 +372,7 @@ check-no-<subject>: OK -- scanned 387 files (357 tracked outside ".planning/"
 
 | Check | Result |
 |---|---|
-| `node scripts/check-no-regenerator2000.mjs` | **OK** |
+| `node scripts/check-no-analyser.mjs` | **OK** |
 | `node scripts/check-skill-tool-coverage.mjs` | **OK** — 37 `vice_*`, 18 `anno_*` all curated, 2/2 CLI verbs resolved |
 | `node scripts/check-skill-fork-honesty.mjs` | **OK** |
 | `node scripts/check-npm-packages.mjs` | **OK** — `@henols/vice-mcp` 78 files (was 81), `@henols/c64-re-tools` 34 files / 7 skills |
@@ -389,7 +389,7 @@ check-no-<subject>: OK -- scanned 387 files (357 tracked outside ".planning/"
 | File | Baseline | Now | Explanation |
 |---|---|---|---|
 | `vice-proxy.test.ts` | 41 failures (lower bound), **HUNG** — had to be `kill -TERM`ed after 25 min | **1** file-level load failure | Its import of a deleted module no longer resolves, so the file fails at load instead of running far enough to block on a broker that is not there. A **known-cause set change**, not a repair — and the reason the whole suite now terminates in 44 s instead of 1578 s. |
-| `r2000-session.test.ts` | 5 | **gone** | Deleted by this plan. Leaves the set **by construction**, not by repair — `29-BASELINE.md` explicitly predicted this and required it be said rather than banked as an improvement. |
+| `anno-session.test.ts` | 5 | **gone** | Deleted by this plan. Leaves the set **by construction**, not by repair — `29-BASELINE.md` explicitly predicted this and required it be said rather than banked as an improvement. |
 | `audit-integrity.test.ts` | 2 | **gone** | Left the set at wave 3: plan 29-05's Rule 2 deviation registered a legitimate unregistered docs guard. Not this plan's doing. |
 | `repo-root.test.ts` | — | **appeared (1)** | **Worktree-location artifact, not a regression.** The test asserts the agreed supervisor directory "must not sit under `.claude`", and this executor's worktree *is* `…/.claude/worktrees/agent-…`. Confirmed by running the same file in the main checkout at the same content: **6/6 pass**. `git diff 7a8bf52..HEAD` touches none of `repo-root.ts`, `resources/`, or `repo-root.test.ts`. It will pass once this branch is merged into the main checkout. |
 
@@ -401,11 +401,11 @@ Every difference has a stated cause. No name appeared that is attributable to th
 
 - **Found during:** Task 2 (and again at Tasks 3 and 4's verification)
 - **Instruction:** The orchestrator sent an explicit in-flight scope change: *"leave the vice-proxy tests alone. Do not touch them."* — in **both** directions, i.e. neither update their expectations nor silence them with `{ skip: … }` / `t.skip()`. It further said that if the deletion caused those tests to change behaviour on their own, that is a natural consequence to **report, not chase**.
-- **Consequence, reported rather than chased:** `src/mcp/vice/vice-proxy.test.ts:54` still reads `import { CURATED_R2000_TOOLS } from "./r2000-tools.ts";`, a module this plan deleted. Three acceptance criteria are therefore **NOT MET**:
-  - `npm run typecheck` exits **1**, with exactly one error: `vice-proxy.test.ts(54,37): error TS2307: Cannot find module './r2000-tools.ts'`. This is the *only* typecheck error in the tree.
+- **Consequence, reported rather than chased:** `src/mcp/vice/vice-proxy.test.ts:54` still reads `import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";`, a module this plan deleted. Three acceptance criteria are therefore **NOT MET**:
+  - `npm run typecheck` exits **1**, with exactly one error: `vice-proxy.test.ts(54,37): error TS2307: Cannot find module './anno-tools.ts'`. This is the *only* typecheck error in the tree.
   - The tree-wide dangling-import sweep's **Arm 1** prints one path instead of nothing (Arm 2 prints 15, so the scan is not vacuous).
   - Task 4's *"the temporary allow-list contains only entries naming plan 29-11"* — one entry naming 29-10 survives (`vice-proxy.test.ts`, count 1, unchanged, so the gate itself stays **green**).
-- **What was deliberately NOT done:** the entry was **not** promoted to a permanent exemption. That would make 29-11's emptiness assertion pass by widening an exemption to dodge it, which is exactly what the gate exists to refuse and what this phase's standing prohibition forbids. It is left as a **documented orphan**, with a paragraph in `check-no-regenerator2000.mjs` explaining why it is there and warning the next reader off "finishing the job".
+- **What was deliberately NOT done:** the entry was **not** promoted to a permanent exemption. That would make 29-11's emptiness assertion pass by widening an exemption to dodge it, which is exactly what the gate exists to refuse and what this phase's standing prohibition forbids. It is left as a **documented orphan**, with a paragraph in `check-no-analyser.mjs` explaining why it is there and warning the next reader off "finishing the job".
 - **Where it should be settled:** plan **29-11**, which owns the emptiness assertion, once the reserved question about `vice-proxy.test.ts`'s three stale expectations is answered.
 - **Files modified:** none (that is the point)
 
@@ -413,14 +413,14 @@ Every difference has a stated cause. No name appeared that is attributable to th
 
 - **Found during:** Task 2
 - **Issue:** DIRECTION 3 (two surviving entries cited consumer paths that no longer exist), DIRECTION 9 (five advisory line citations drifted under my own header rewrites), DIRECTION 9b (five prose `path:NN` citations pointed into deleted modules), and the completeness planted-violation test (its fixture named two modules by their then-`in-enumeration` scope, and the enumeration is now empty **by design** — the enumeration's own comment anticipated exactly this).
-- **Fix:** consumer citations re-measured or dropped where their file is gone; the five prose citations rewritten to name the symbols **without a site**, keeping the survey finding readable — DIRECTION 9b is what made this mechanical rather than optional; the planted-violation fixture made fully synthetic (entries *and* disk list), so it exercises the predicate rather than the registry's current contents. The five deleted glue entries were anchored on **`CUT-01`** — literally "the regenerator2000 integration is deleted" — which is a real requirement in this project's own shape, rather than a fabricated consumer.
+- **Fix:** consumer citations re-measured or dropped where their file is gone; the five prose citations rewritten to name the symbols **without a site**, keeping the survey finding readable — DIRECTION 9b is what made this mechanical rather than optional; the planted-violation fixture made fully synthetic (entries *and* disk list), so it exercises the predicate rather than the registry's current contents. The five deleted glue entries were anchored on **`CUT-01`** — literally "the external analyser integration is deleted" — which is a real requirement in this project's own shape, rather than a fabricated consumer.
 - **Verification:** `node --test module-classification.test.ts` → 20/20
 - **Committed in:** `1d40ad0` (Task 2) and `094d65a` (Task 3)
 
 ### 3. [Rule 1 — Bug] `anno-cli.ts`'s consumer citation drifted under Task 3's own edit
 
 - **Found during:** Task 3 verification (caught by the automated suite, not by the single-file run)
-- **Issue:** removing the proxy's import moved `runR2000Cli`'s call site `309 → 307`, and the discriminator paragraph's claim that the session module "is still imported by the stdio entry point directly (`vice-proxy.ts:200`)" became false in the same edit.
+- **Issue:** removing the proxy's import moved `runAnnoCli`'s call site `309 → 307`, and the discriminator paragraph's claim that the session module "is still imported by the stdio entry point directly (`vice-proxy.ts:200`)" became false in the same edit.
 - **Fix:** citation re-measured to `:307`; the paragraph rewritten to record that its prediction is **discharged rather than rewritten** — it predicted all three imports would go *before any of them did*, and this is the commit that took the last one. A discriminator quietly edited to match whatever happened would prove nothing about the judgement it was used to make.
 - **Committed in:** `094d65a`
 
@@ -452,7 +452,7 @@ None. This plan removes surface rather than adding it: one external binary stops
 ## Next Phase Readiness
 
 - **Ready for 29-11**, which owns the allow-list emptiness assertion — with one known orphan entry to settle (Deviation 1) rather than a surprise.
-- **Ready for Phase 30**, which inherits: both carried-forward transcripts with an explicit re-record obligation; `validateLabelFileForImport()` to call first in a rebuilt import route; `pairSearchRows()` / `planEnumsForPairing()` / `buildEnumGenerationReport()` to rebuild the enum pass around; and `EnumInstallAction`'s two values, without which R2000-13's re-runnability becomes inexpressible.
+- **Ready for Phase 30**, which inherits: both carried-forward transcripts with an explicit re-record obligation; `validateLabelFileForImport()` to call first in a rebuilt import route; `pairSearchRows()` / `planEnumsForPairing()` / `buildEnumGenerationReport()` to rebuild the enum pass around; and `EnumInstallAction`'s two values, without which ANNO-13's re-runnability becomes inexpressible.
 - **`CUT-01` is NOT marked complete.** It is scoped to Phase 32 in `REQUIREMENTS.md` and sizes a net ~12.4k-line removal; this plan delivered 8,221 lines of it. `MCP-02` is completed here — the `anno_*` family registers proxy-locally through `buildViceTool()`, never reaches `forwardToVice()`, and `CLAUDE.md`'s constraint now says so with re-measured citations.
 
 ---

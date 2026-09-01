@@ -1,20 +1,20 @@
 ---
 phase: quick-260821-jd8
 plan: 01
-subsystem: r2000
-tags: [regenerator2000, cli, input-validation, security, wr-08]
+subsystem: anno
+tags: [the external analyser, cli, input-validation, security, wr-08]
 
 requires:
 
   - phase: 10-adoption-boundaries-automated-bootstrap-and-the-removal
-    provides: the r2000-cli.ts CLI ergonomics layer (parseArgs(), bootstrapProject(),
+    provides: the anno-cli.ts CLI ergonomics layer (parseArgs(), bootstrapProject(),
       cmdBootstrap/cmdExportAsm/cmdVerify) this task patches
 provides:
 
   - "parseArgs() refuses a missing or flag-shaped --entry/--out value instead of silently taking it"
   - "10-SECURITY.md flipped to threats_open: 0 / status: verified (T-10-19 assigned to WR-08)"
 
-affects: [r2000-cli, phase-10-security]
+affects: [anno-cli, phase-10-security]
 
 tech-stack:
   added: []
@@ -26,10 +26,10 @@ key-files:
   created: []
   modified:
 
-    - .claude/mcp/vice/r2000-cli.ts
-    - .claude/mcp/vice/r2000-cli.test.ts
+    - .claude/mcp/vice/anno-cli.ts
+    - .claude/mcp/vice/anno-cli.test.ts
     - .planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-SECURITY.md
-    - .planning/todos/pending/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md (moved to completed/)
+    - .planning/todos/pending/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md (moved to completed/)
     - .planning/STATE.md
 
 key-decisions:
@@ -50,7 +50,7 @@ audit_acknowledged:
 
 # Quick Task 260821-jd8: Close WR-08 — Flag-Shaped and Missing Option Values Summary
 
-**`parseArgs()` in `r2000-cli.ts` now refuses a missing or `--`-shaped value for `--entry`/`--out` across `bootstrap`/`export-asm`/`verify`, closing 10-REVIEW.md's WR-08 (assigned T-10-19) and flipping `10-SECURITY.md` to `threats_open: 0` / `status: verified`.**
+**`parseArgs()` in `anno-cli.ts` now refuses a missing or `--`-shaped value for `--entry`/`--out` across `bootstrap`/`export-asm`/`verify`, closing 10-REVIEW.md's WR-08 (assigned T-10-19) and flipping `10-SECURITY.md` to `threats_open: 0` / `status: verified`.**
 
 ## Performance
 
@@ -60,11 +60,11 @@ audit_acknowledged:
 
 ## Accomplishments
 
-- **WR-08 / T-10-19 closed:** `parseArgs()` (`r2000-cli.ts`) previously did `entry = rest[++i]` / `out = rest[++i]` unconditionally. It now checks whether the following token is `undefined` or itself starts with `--`, and if so sets `entryMissingValue`/`outMissingValue` instead of taking it as the value — the exact guard shape `parseExportLblArgs()` already used for `--out`, reused rather than reinvented. `cmdBootstrap()`, `cmdExportAsm()` and `cmdVerify()` (the three verbs sharing `parseArgs()`) each check the relevant flag(s) immediately after destructuring, before any filesystem access, and refuse with a one-line `<verb>: --{entry,out} requires a value` message plus USAGE — never a throw, preserving `bootstrapProject()`'s never-throw contract.
+- **WR-08 / T-10-19 closed:** `parseArgs()` (`anno-cli.ts`) previously did `entry = rest[++i]` / `out = rest[++i]` unconditionally. It now checks whether the following token is `undefined` or itself starts with `--`, and if so sets `entryMissingValue`/`outMissingValue` instead of taking it as the value — the exact guard shape `parseExportLblArgs()` already used for `--out`, reused rather than reinvented. `cmdBootstrap()`, `cmdExportAsm()` and `cmdVerify()` (the three verbs sharing `parseArgs()`) each check the relevant flag(s) immediately after destructuring, before any filesystem access, and refuse with a one-line `<verb>: --{entry,out} requires a value` message plus USAGE — never a throw, preserving `bootstrapProject()`'s never-throw contract.
 - **The message speaks the caller's vocabulary (WR-09's lesson):** `bootstrap x.prg --out --entry FOO` now says `bootstrap: --out requires a value`, never blaming `--entry`. Confirmed live (see transcript below).
-- **10 new pinning tests** added to `r2000-cli.test.ts`: the review's own literal reproduction for both `bootstrap` and `export-asm` (each asserting the actual harm — no file literally named `--entry` is created, at the real landing spot, `process.cwd()`), plus missing-value and flag-shaped-value cases for both options across `bootstrap`/`export-asm`, and `--entry`'s two cases for `verify`.
+- **10 new pinning tests** added to `anno-cli.test.ts`: the review's own literal reproduction for both `bootstrap` and `export-asm` (each asserting the actual harm — no file literally named `--entry` is created, at the real landing spot, `process.cwd()`), plus missing-value and flag-shaped-value cases for both options across `bootstrap`/`export-asm`, and `--entry`'s two cases for `verify`.
 - **10-SECURITY.md closed:** frontmatter flipped `status: issues_found` → `verified`, `threats_open: 1` → `0`, `threats_total: 24` → `25`. The unregistered WR-08 row is replaced with a real `T-10-19` register entry (disposition `mitigate`, status `CLOSED`, citing the fix and test commits), and the "WR-08 — live re-reproduction and severity assessment" section gained a `## Resolution` paragraph.
-- **Pending todo closed:** `.planning/todos/pending/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md` moved to `.planning/todos/completed/` with a `## Resolution` section naming this quick task and both commits.
+- **Pending todo closed:** `.planning/todos/pending/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md` moved to `.planning/todos/completed/` with a `## Resolution` section naming this quick task and both commits.
 - **STATE.md kept in sync:** Deferred Items table row removed, item count corrected 18→17, the enumeration prose updated, and "Current Position"/"Quick Tasks Completed" updated to record the closure. Both ledger guards (`docs-deferred-ledger.test.ts`, `docs-review-disposition.test.ts`) re-run green after the move.
 
 ## Task Commits
@@ -75,10 +75,10 @@ audit_acknowledged:
 
 ## Files Created/Modified
 
-- `.claude/mcp/vice/r2000-cli.ts` — `parseArgs()` rewritten with `entryMissingValue`/`outMissingValue` flags; `cmdBootstrap()`, `cmdExportAsm()`, `cmdVerify()` each check the relevant flag(s) before touching the filesystem
-- `.claude/mcp/vice/r2000-cli.test.ts` — 10 new tests in a new "WR-08" section (2 literal-reproduction cases with cwd-hazard assertions plus defensive cleanup, 4 bootstrap missing/flag-shaped cases, 4 export-asm missing/flag-shaped cases already counted, 2 verify `--entry` cases)
+- `.claude/mcp/vice/anno-cli.ts` — `parseArgs()` rewritten with `entryMissingValue`/`outMissingValue` flags; `cmdBootstrap()`, `cmdExportAsm()`, `cmdVerify()` each check the relevant flag(s) before touching the filesystem
+- `.claude/mcp/vice/anno-cli.test.ts` — 10 new tests in a new "WR-08" section (2 literal-reproduction cases with cwd-hazard assertions plus defensive cleanup, 4 bootstrap missing/flag-shaped cases, 4 export-asm missing/flag-shaped cases already counted, 2 verify `--entry` cases)
 - `.planning/phases/10-adoption-boundaries-automated-bootstrap-and-the-removal/10-SECURITY.md` — frontmatter flipped to `verified`/`threats_open: 0`/`threats_total: 25`; WR-08 row replaced with T-10-19 (CLOSED); Resolution paragraph appended to the WR-08 detail section
-- `.planning/todos/pending/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md` → moved to `.planning/todos/completed/`, with a `## Resolution` section appended
+- `.planning/todos/pending/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md` → moved to `.planning/todos/completed/`, with a `## Resolution` section appended
 - `.planning/STATE.md` — Deferred Items table/prose updated (18→17 items), Current Position section records the T-10-19 closure and fixes a pre-existing garbled "Last activity" line left over from quick task 260821-a86, Quick Tasks Completed table gained a new row
 
 ## Decisions Made
@@ -102,7 +102,7 @@ None requiring a Rule 1-4 classification — one **test-design correction** duri
 
 ```
 $ npx tsc --noEmit    # exit 0 (revert type-checks)
-$ node --test r2000-cli.test.ts
+$ node --test anno-cli.test.ts
 not ok 55 - bootstrap: the review's literal reproduction (--out --entry FOO) ...
 not ok 56 - bootstrap: --entry with no following token is refused ...
 not ok 57 - bootstrap: --entry followed by a flag-shaped token is refused ...
@@ -127,10 +127,10 @@ Test 55's failure detail: `error: 'Expected "actual" to be strictly unequal to: 
 `parseArgs()` was then restored from a pre-revert backup:
 
 ```
-$ diff <backup> r2000-cli.ts && echo "BYTE-IDENTICAL after restore"
+$ diff <backup> anno-cli.ts && echo "BYTE-IDENTICAL after restore"
 BYTE-IDENTICAL after restore
 $ npx tsc --noEmit          # exit 0
-$ node --test r2000-cli.test.ts
+$ node --test anno-cli.test.ts
 
 # tests 64
 
@@ -145,17 +145,17 @@ $ node --test r2000-cli.test.ts
 **After (fixed tree), `bootstrap x.prg --out --entry FOO`:**
 
 ```
-$ node vice-proxy.ts r2000 bootstrap <tmp>/game.prg --out --entry FOO
+$ node vice-proxy.ts anno bootstrap <tmp>/game.prg --out --entry FOO
 bootstrap: --out requires a value
 
-usage (npm install):    npx -y @henols/vice-mcp r2000 <verb>
+usage (npm install):    npx -y @henols/vice-mcp anno <verb>
 ...
 exit: 1
 ```
 
 Directory listing after: only `game.prg` remains — no `--entry` file, no `game.regen2000proj`.
 
-**Before (pre-fix parser, scratch reproduction via a temporary sibling copy of `r2000-cli.ts` with the reverted `parseArgs()`, never committed):**
+**Before (pre-fix parser, scratch reproduction via a temporary sibling copy of `anno-cli.ts` with the reverted `parseArgs()`, never committed):**
 
 ```
 $ node ./run-prefix-scratch-driver.mjs <tmp>/game.prg
@@ -176,11 +176,11 @@ None.
 ## Next Phase Readiness
 
 - All required verification gates pass, re-run live after all three commits:
-  - `cd .claude/mcp/vice && VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 npm test` → **2202 tests, 2167 pass, 0 fail, 30 skipped, 5 todo** (exactly baseline 2192/2157/0/30/5 plus the 10 new WR-08 tests, all passing — no regression).
+  - `cd .claude/mcp/vice && VICE_REQUIRE_ANNO=1 VICE_REQUIRE_ACME=1 npm test` → **2202 tests, 2167 pass, 0 fail, 30 skipped, 5 todo** (exactly baseline 2192/2157/0/30/5 plus the 10 new WR-08 tests, all passing — no regression).
   - `npx tsc --noEmit` → exit 0.
   - `node scripts/check-npm-packages.mjs` → exit 0 (73 files `@henols/vice-mcp`, 35 files/6 skills `@henols/c64-re-tools`).
   - `node scripts/check-skill-fork-honesty.mjs` → exit 0.
-  - `node scripts/check-skill-tool-coverage.mjs` → exit 0 (r2000 CLI verbs 7/7 resolved).
+  - `node scripts/check-skill-tool-coverage.mjs` → exit 0 (anno CLI verbs 7/7 resolved).
   - `node --test docs-linerefs.test.ts` → 3/3 pass.
   - `node --test docs-deferred-ledger.test.ts docs-review-disposition.test.ts` → 8/8 pass (both ledger guards green after the todo move and STATE.md update).
   - `node --test docs-dangling-refs.test.ts` → 8/8 pass.
@@ -193,6 +193,6 @@ None.
 
 ## Self-Check: PASSED
 
-All key files confirmed present on disk (`r2000-cli.ts`, `r2000-cli.test.ts`, `10-SECURITY.md`,
-`.planning/todos/completed/2026-08-21-r2000-cli-wr-08-option-values-silently-swallowed.md`) and
+All key files confirmed present on disk (`anno-cli.ts`, `anno-cli.test.ts`, `10-SECURITY.md`,
+`.planning/todos/completed/2026-08-21-anno-cli-wr-08-option-values-silently-swallowed.md`) and
 all three task commits (`3541886`, `e0fd305`, `d007d68`) confirmed present in `git log --oneline --all`.

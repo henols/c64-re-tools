@@ -72,7 +72,7 @@ code is above.
 (D-12-02)` fails, naming SEVEN red docs guards. Only ONE of the seven is genuinely red:
 `docs-review-disposition.test.ts` (item 1 above). The other six —
 `docs-core-value-decision`, `docs-dangling-refs`, `docs-deferred-ledger`,
-`docs-fork-decision`, `docs-linerefs`, `docs-r2000-decisions` — each PASS when run
+`docs-fork-decision`, `docs-linerefs`, `docs-anno-decisions` — each PASS when run
 standalone (`node --test <guard>.test.ts` exits 0) and are the known cascade in
 `audit-integrity`'s own guard runner.
 
@@ -96,7 +96,7 @@ guards `audit-integrity.test.ts`'s D-12-02 message names was run individually at
 | `docs-deferred-ledger.test.ts` | 0 | 6 tests / 6 pass / 0 fail | resolved |
 | `docs-fork-decision.test.ts` | 0 | 6 tests / 6 pass / 0 fail | resolved |
 | `docs-linerefs.test.ts` | 0 | 3 tests / 3 pass / 0 fail | resolved |
-| `docs-r2000-decisions.test.ts` | 0 | 5 tests / 5 pass / 0 fail | resolved |
+| `docs-absorbed-decisions.test.ts` | 0 | 5 tests / 5 pass / 0 fail | resolved |
 
 **Genuinely red today: zero of seven.** The claim above that six of the seven were only a cascade
 artefact is confirmed by measurement, and the seventh — `docs-review-disposition.test.ts`, the one
@@ -111,26 +111,26 @@ resolved rather than inferred from an aggregate run.
 
 **Both conditions pre-date plan 19-06** and are provably untouched by it: `git diff
 --name-only 5c68473..HEAD` after 19-06's two task commits lists only
-`src/mcp/vice/r2000-coverage.ts` and `src/mcp/vice/r2000-coverage.test.ts`, and neither guard
+`src/mcp/vice/anno-coverage.ts` and `src/mcp/vice/anno-coverage.test.ts`, and neither guard
 reads either file.
 
-## 3. `r2000-session.test.ts`'s call-timeout stub test is load-sensitive (found by 19-11)
+## 3. `anno-session.test.ts`'s call-timeout stub test is load-sensitive (found by 19-11)
 
 **Found during:** plan 19-11's plan-level verification (`cd src/mcp/vice && npm test`).
 
 **Condition:** `stub: a child that answers nothing within the call timeout rejects with
-R2000TimeoutError, is killed, and the crash counter increases by 1` failed once in a full-suite
-run (`# fail 1`), then passed on both a standalone run of `r2000-session.test.ts`
+AnnoTimeoutError, is killed, and the crash counter increases by 1` failed once in a full-suite
+run (`# fail 1`), then passed on both a standalone run of `anno-session.test.ts`
 (`# tests 25 / # pass 25 / # fail 0`) and an immediate re-run of the full suite
 (`# tests 2578 / # pass 2533 / # fail 0`).
 
 **Why deferred rather than fixed:** the test drives a real child process against a wall-clock
 call timeout, so it is sensitive to machine load rather than to any code this plan touched.
-19-11 modified only `src/mcp/vice/r2000-coverage.ts` and
-`src/mcp/vice/r2000-coverage.test.ts`; `r2000-session.test.ts` reads neither. Widening the
+19-11 modified only `src/mcp/vice/anno-coverage.ts` and
+`src/mcp/vice/anno-coverage.test.ts`; `anno-session.test.ts` reads neither. Widening the
 timeout would be a change to a file outside this plan's scope fence, made on one observation.
 
-**Clears when:** a plan that owns `r2000-session.ts` either widens the timeout or replaces the
+**Clears when:** a plan that owns `anno-session.ts` either widens the timeout or replaces the
 wall-clock wait with an injected clock.
 
 ### Re-measured — 2026-08-25 (plan 19-13)
@@ -144,22 +144,22 @@ is added evidence, not a restatement of the condition.
 been observed red **twice**: 19-11's first plan-level run (`# fail 1`), then green on 19-11's
 immediate re-run, green on the orchestrator's wave-3 post-merge gate runs 1 and 2, and red on run 3
 (`# tests 2580 / # pass 2534 / # fail 1`, `not ok 858`). Standalone it has never been observed red:
-19-11 recorded 25/25, and this plan ran `node --test r2000-session.test.ts` three consecutive times
+19-11 recorded 25/25, and this plan ran `node --test anno-session.test.ts` three consecutive times
 at `1494ade` — **exit 0, 25 tests / 25 pass / 0 fail on all three.**
 
 **The load-sensitivity diagnosis is now source-level rather than inferred.** The test drives a real
-spawned child against a **200 ms** wall-clock budget (`r2000-session.test.ts:622`,
+spawned child against a **200 ms** wall-clock budget (`anno-session.test.ts:622`,
 `{ timeoutMs: 200 }`, test declared at `:616`). `node --test` runs test *files* concurrently — 12
 cores on this host — so under a full suite the 200 ms budget competes with every other file's child
 processes, while a standalone run has the machine to itself. That is the mechanism, and it explains
 the exact split observed: red only ever under the full suite, never standalone.
 
 **Nothing in either gap-closure run touched it, confirmed rather than assumed.**
-`git log a756b17..HEAD -- src/mcp/vice/r2000-session.ts src/mcp/vice/r2000-session.test.ts` is
-empty, and neither file imports anything from `r2000-coverage.*`, the only module family this run
+`git log a756b17..HEAD -- src/mcp/vice/anno-session.ts src/mcp/vice/anno-session.test.ts` is
+empty, and neither file imports anything from `anno-coverage.*`, the only module family this run
 modified.
 
-**Still open. Owner: a plan that owns `r2000-session.ts`.** Recorded here rather than absorbed,
+**Still open. Owner: a plan that owns `anno-session.ts`.** Recorded here rather than absorbed,
 because a flake that only ever fires in CI's own gate is exactly the kind of item that gets
 explained away once per run and never fixed.
 
@@ -194,7 +194,7 @@ concurrently across this host's cores, so under a full suite the budget competes
 file's children. Red only under the full suite, never standalone — the identical split.
 
 **Not caused by this plan, confirmed rather than assumed.** 19-15 modified only
-`r2000-coverage.ts`, `r2000-coverage.test.ts` and `fixtures/coverage/`. `vice-proxy.test.ts`
+`anno-coverage.ts`, `anno-coverage.test.ts` and `fixtures/coverage/`. `vice-proxy.test.ts`
 imports nothing from that module family, and the coverage module is read-only by construction
 (asserted at source level) so it cannot affect a spawned proxy's stdout timing.
 
@@ -214,11 +214,11 @@ skipped, 5 todo**, `duration_ms 155534`. The single red was
 
 ```
 not ok 905 - stub: a child that answers nothing within the call timeout rejects with
-             R2000TimeoutError, is killed, and the crash counter increases by 1
+             AnnoTimeoutError, is killed, and the crash counter increases by 1
 ```
 
-in `r2000-session.test.ts` — a file plan 19-18 did not touch. Standalone,
-`node --test r2000-session.test.ts` reports **25 pass, 0 fail**. The documented `vice-proxy.test.ts`
+in `anno-session.test.ts` — a file plan 19-18 did not touch. Standalone,
+`node --test anno-session.test.ts` reports **25 pass, 0 fail**. The documented `vice-proxy.test.ts`
 flake above did NOT reproduce on this run; this one took its place, which is itself the signature of
 a wall-clock budget competing with 23 other suite files' children rather than of a defect in either
 file.
@@ -227,12 +227,12 @@ The mechanism is the one already described above: the assertion measures a **200
 against wall clock while `node --test` runs the suite files concurrently across this host's cores.
 
 **Not caused by this plan, confirmed rather than assumed.** `git diff --name-only HEAD~3 HEAD` for
-plan 19-18 lists exactly `r2000-coverage.ts`, `r2000-coverage.test.ts` and `19-VALIDATION.md`.
-`r2000-session.test.ts` imports nothing from the coverage module family, and the coverage module is
+plan 19-18 lists exactly `anno-coverage.ts`, `anno-coverage.test.ts` and `19-VALIDATION.md`.
+`anno-session.test.ts` imports nothing from the coverage module family, and the coverage module is
 read-only by construction (asserted at source level).
 
-**Still open. Owner: a plan that owns `r2000-session.ts` / `r2000-session.test.ts`.** Plan 19-18 was
-explicitly fenced out of that file with a standing prohibition — *"`r2000-session.ts`'s 200 ms call
+**Still open. Owner: a plan that owns `anno-session.ts` / `anno-session.test.ts`.** Plan 19-18 was
+explicitly fenced out of that file with a standing prohibition — *"`anno-session.ts`'s 200 ms call
 timeout is not widened"* — so widening it here was never an option, and would have been the wrong
 fix regardless: the budget is not too small, the measurement is wall-clock under contention.
 
@@ -327,7 +327,7 @@ round has recorded.
 
 **This does not close item 3 and does not close the `vice-proxy.test.ts` item.** A green run is the
 absence of an observation, not evidence of a fix. Both clearing conditions are unchanged: item 3
-clears when a plan that OWNS `r2000-session.ts` either widens the 200 ms budget or replaces the
+clears when a plan that OWNS `anno-session.ts` either widens the 200 ms budget or replaces the
 wall-clock wait with an injected clock; the `vice-proxy.test.ts` item clears the same way for the
 file that owns it. Plan 19-19 modified only `.planning/` documents and was fenced out of both files
 by a standing prohibition, so widening either budget was never available to it and would have been
@@ -341,13 +341,13 @@ contention.
 | 19-15 | 2 | `# tests 2585 / # pass 2539 / # fail 1` on **both** | `vice-proxy.test.ts:1594` and `:2260` | resolved |
 | 19-16 | 1 | `# tests 2589 / # pass 2544 / # fail 0` | none | resolved |
 | 19-17 | 1 | `# tests 2611 / # pass 2566 / # fail 0` | none | resolved |
-| 19-18 | 1 | `# tests 2627 / # pass 2581 / # fail 1` | `r2000-session.test.ts` (item 3) | resolved |
+| 19-18 | 1 | `# tests 2627 / # pass 2581 / # fail 1` | `anno-session.test.ts` (item 3) | resolved |
 | 19-20 | 2 | 2589 pass and 2593 pass, **both `# fail 0`** | none | resolved |
 | 19-19 | 1 | `# tests 2638 / # pass 2593 / # fail 0` | none | resolved |
 
 **Eight full-suite runs across round 4, three of them red, and every red was one of these two
 files.** Standalone, neither has ever been observed red: 19-15 measured `vice-proxy.test.ts` at
-`# tests 123 / # pass 119 / # fail 0` (4 skipped) and 19-18 measured `r2000-session.test.ts` at
+`# tests 123 / # pass 119 / # fail 0` (4 skipped) and 19-18 measured `anno-session.test.ts` at
 25 pass / 0 fail. That split — red only under the full suite, never standalone — is the signature the
 mechanism predicts, and it is why a green gate is recorded here as an observation rather than as a
 clearing event.

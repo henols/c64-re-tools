@@ -17,8 +17,8 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Lazy on first call (Rec) | First `r2000_*` call needing a child spawns it; no new tool, no protocol change. Invisible optimisation — nothing can forget to open one. | ✓ |
-| Explicit `r2000_session_open` | Makes the session a thing Phase 19's playbooks reason about, at the cost of a curated tool and a forgot-to-open failure class. | |
+| Lazy on first call (Rec) | First `anno_*` call needing a child spawns it; no new tool, no protocol change. Invisible optimisation — nothing can forget to open one. | ✓ |
+| Explicit `anno_session_open` | Makes the session a thing Phase 19's playbooks reason about, at the cost of a curated tool and a forgot-to-open failure class. | |
 | You decide | | |
 
 **User's choice:** Lazy on first call.
@@ -38,7 +38,7 @@
 | Option | Description | Selected |
 |--------|-------------|----------|
 | No timeout — lives to proxy exit (Rec) | `vice-proxy.ts` is already one process per Claude Code session; a 64K project's footprint is trivial. Avoids the idle-close-vs-crash ambiguity. | ✓ |
-| Idle close after N minutes | Frees the child during long non-r2000 stretches; costs a timer and muddies SESS-02's detection. | |
+| Idle close after N minutes | Frees the child during long non-anno stretches; costs a timer and muddies SESS-02's detection. | |
 | You decide | | |
 
 **User's choice:** No timeout.
@@ -47,8 +47,8 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Invisible — no session tools (Rec) | Health surfaces only through named errors on ordinary calls. Tool count 17 → 18 from `r2000_read_region` alone at that point in the discussion. | ✓ |
-| Add read-only `r2000_session_status` | One diagnostic tool for Phase 19 and wedge triage; costs a curated tool plus pin/doc updates. | |
+| Invisible — no session tools (Rec) | Health surfaces only through named errors on ordinary calls. Tool count 17 → 18 from `anno_read_region` alone at that point in the discussion. | ✓ |
+| Add read-only `anno_session_status` | One diagnostic tool for Phase 19 and wedge triage; costs a curated tool plus pin/doc updates. | |
 | Full open/close/status trio | Most explicit; three tools with no demonstrated caller. | |
 
 **User's choice:** Invisible.
@@ -127,7 +127,7 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| The whole mutate+save pair (Rec) | No second mutation interleaves between a change and its flush; `r2000_batch_execute`'s whole batch is likewise one unit. | ✓ |
+| The whole mutate+save pair (Rec) | No second mutation interleaves between a change and its flush; `anno_batch_execute`'s whole batch is likewise one unit. | ✓ |
 | Per tool call | Simpler; reopens the exact window Phase 9's incident lived in, in its harder-to-notice single-owner form. | |
 | You decide | | |
 
@@ -182,7 +182,7 @@
 
 ## D-32 re-decision
 
-### Which route for `r2000_get_address_details`?
+### Which route for `anno_get_address_details`?
 
 | Option | Description | Selected |
 |--------|-------------|----------|
@@ -207,11 +207,11 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Keep `r2000_get_address_details` (Rec) | The name upstream uses and Phase 19's procedures will reach for; client-composed nature documented, not encoded in the name. | ✓ |
+| Keep `anno_get_address_details` (Rec) | The name upstream uses and Phase 19's procedures will reach for; client-composed nature documented, not encoded in the name. | ✓ |
 | A distinct name | Signals it's this repo's composition; costs a rename in every absorbed procedure. | |
 | You decide | | |
 
-**User's choice:** Keep `r2000_get_address_details`.
+**User's choice:** Keep `anno_get_address_details`.
 
 ### How is the D-32 supersession recorded?
 
@@ -231,7 +231,7 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Hold for a demonstrated caller (Rec) | `r2000_read_region` already answers "read this routine" by range, making the trio largely redundant. Phase 19's absorption diff is where a real need would show, and adding then is additive not a rewrite. | ✓ |
+| Hold for a demonstrated caller (Rec) | `anno_read_region` already answers "read this routine" by range, making the trio largely redundant. Phase 19's absorption diff is where a real need would show, and adding then is additive not a rewrite. | ✓ |
 | Curate all three now | Honours the ROADMAP's "aligned to what every later phase needs" literally; three tools with no measured caller. | |
 | You decide | | |
 
@@ -261,7 +261,7 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Same plan, existing guards (Rec) | Update the count pin and regenerate `docs/tool-support.md` in the same plan, leaning on the v0.2.0 byte-identity drift guard plus `r2000-verb-coverage.test.ts`. | ✓ |
+| Same plan, existing guards (Rec) | Update the count pin and regenerate `docs/tool-support.md` in the same plan, leaning on the v0.2.0 byte-identity drift guard plus `anno-verb-coverage.test.ts`. | ✓ |
 | Add a dedicated drift test | More explicit; overlaps guards that already cover it. | |
 | You decide | | |
 
@@ -286,11 +286,11 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Extract `r2000-project.ts`'s existing forcing (Rec) | One shared "ensure settings" function both the synthesiser and the session-open path call — the one-authoritative-place convention. | ✓ |
-| New logic in `r2000-session.ts` | Fewer files touched; creates the second, drifting copy of a settings policy. | |
+| Extract `anno-project.ts`'s existing forcing (Rec) | One shared "ensure settings" function both the synthesiser and the session-open path call — the one-authoritative-place convention. | ✓ |
+| New logic in `anno-session.ts` | Fewer files touched; creates the second, drifting copy of a settings policy. | |
 | You decide | | |
 
-**User's choice:** Extract `r2000-project.ts`'s existing forcing.
+**User's choice:** Extract `anno-project.ts`'s existing forcing.
 
 ### What happens to `system` at session open?
 
@@ -319,7 +319,7 @@
 | Option | Description | Selected |
 |--------|-------------|----------|
 | I'm ready for context | Write CONTEXT.md and hand off to plan-phase. | ✓ |
-| Explore more gray areas | Three offered: the D-17/D-18 reversal record's required contents; live-versus-stub verification scope; whether `withR2000Session()` is retired. | |
+| Explore more gray areas | Three offered: the D-17/D-18 reversal record's required contents; live-versus-stub verification scope; whether `withAnnoSession()` is retired. | |
 
 **User's choice:** I'm ready for context.
 
@@ -330,11 +330,11 @@ The user selected a recommended option on every question — nothing was answere
 and recorded in CONTEXT.md so the planner does not re-open them:
 
 - **Live-versus-stub verification** — default to live testing against the real
-  installed `regenerator2000` 0.9.20 for anything that is a claim about the
+  installed `the external analyser` 0.9.20 for anything that is a claim about the
   external binary (stdin-EOF exit, the session-reuse spawn transcript, the
   save-survives-SIGKILL round trip). The stub harness stays appropriate for
   protocol-shape and error-classification tests.
-- **`withR2000Session()`** — not retired; it stays for CLI-verb callers, with
+- **`withAnnoSession()`** — not retired; it stays for CLI-verb callers, with
   the long-lived primitive added beside it.
 - **Reversal-record contents** — enumerated against the Architecture Change
   Procedure's six steps rather than left to the plan's judgment.
@@ -342,16 +342,16 @@ and recorded in CONTEXT.md so the planner does not re-open them:
 Left to the planner with the constraint named: the restart bound, the
 contention-queue timeout, the `read_region` cap value (all must be named
 constants, never magic numbers at a call site), and which of
-`r2000-session.ts` / the extended `r2000-mcp-client.ts` owns the mutex.
+`anno-session.ts` / the extended `anno-mcp-client.ts` owns the mutex.
 
 ## Deferred Ideas
 
 - Reader-writer lock for the session — deferred pending a Phase 19 measurement.
-- A caller-visible `r2000_session_status` tool — no demonstrated caller yet.
+- A caller-visible `anno_session_status` tool — no demonstrated caller yet.
 - The cursor trio — Phase 19's absorption diff is where a caller would appear.
 - A keyed map of concurrent multi-project sessions — already FUT-02.
 - A startup sweep for stale stdio children — only if the EOF measurement fails.
-- An upstream patch for regenerator2000 issue #42 — recorded as this project's
+- An upstream patch for the external analyser issue #42 — recorded as this project's
   reversal trigger instead.
-- `r2000_export_source` / `r2000_hazard_report` as MCP tools — research names
+- `anno_export_source` / `anno_hazard_report` as MCP tools — research names
   this an anti-pattern; the CLI-verb route is Phase 21's shape.

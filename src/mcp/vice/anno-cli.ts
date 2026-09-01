@@ -99,7 +99,7 @@
 //     check that refused it -- and makes every "wrote X" line name a file that
 //     is not the one on disk.
 //
-// `runR2000Cli()` returns an exit code and never terminates the process
+// `runAnnoCli()` returns an exit code and never terminates the process
 // itself, so it is testable in-process as well as from the bin (the bin,
 // `vice-proxy.ts`, is the only place that ends the process with this
 // function's return value). All output goes to stdout/stderr via
@@ -130,7 +130,7 @@ import type { ExportAsmResult } from "./anno-export-asm.ts";
 // fetches and hands the data in, which is exactly what makes the store
 // re-point below a CALLER-side change and nothing more.
 import { buildCoverageReport, coverageFindings, loadProjectImage } from "./anno-coverage.ts";
-import type { CoverageReport, LoadedProject, R2000Comment, R2000CrossReference, R2000Symbol } from "./anno-coverage.ts";
+import type { CoverageReport, LoadedProject, AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
 import type { BlockEntry } from "./block-class.ts";
@@ -285,7 +285,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
  * from `VERB_OPTIONS` and returns a one-line refusal naming the flag and the
  * accepted set; returns `undefined` when every flag-shaped token is
  * accepted (or when `verb` is not a key in the map at all, so an unknown
- * verb still falls through to `runR2000Cli()`'s own "unknown verb"
+ * verb still falls through to `runAnnoCli()`'s own "unknown verb"
  * message). Never throws -- this file's never-throw posture applies here
  * too.
  *
@@ -299,7 +299,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
  *
  *   `anno hasOwnProperty game.prg --force` -> TypeError: accepted.includes is not a function
  *
- * The call site at `runR2000Cli()` sits OUTSIDE that function's `try`, so the
+ * The call site at `runAnnoCli()` sits OUTSIDE that function's `try`, so the
  * throw escaped the function entirely and broke the never-throw contract this
  * file's header states. The identical defect was found and fixed one
  * directory over in this same phase -- `scripts/lib/anno-cli-invocations.mjs`
@@ -720,7 +720,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
 // THE COLUMN MAPPING, stated once, here, because a vocabulary mismatch at this
 // boundary changes coverage verdicts SILENTLY (T-29-29):
 //
-//   LabelRow   -> R2000Symbol        address, name, kind. `kind` needs no
+//   LabelRow   -> AnnoSymbol        address, name, kind. `kind` needs no
 //                                    translation: the store's LABEL_KINDS are
 //                                    the same four tokens the census filters
 //                                    on ("User"/"Auto"/"System"/"Platform").
@@ -728,7 +728,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
 //                                    dropped. The census never reads a
 //                                    symbol's `type`, so its absence from the
 //                                    store costs nothing.
-//   CommentRow -> R2000Comment       address, commentType -> type, text ->
+//   CommentRow -> AnnoComment       address, commentType -> type, text ->
 //                                    comment. COMMENT_TYPES is "line"/"side",
 //                                    which is exactly the census's own pair.
 //   RangeRow   -> BlockEntry         start -> start_address, endInclusive ->
@@ -742,18 +742,18 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
 //                                    each of the frozen twelve resolves to BY
 //                                    NAME so this mapping cannot drift
 //                                    quietly.
-//   derived    -> R2000CrossReference the union `crossReferencesTo()` computes
+//   derived    -> AnnoCrossReference the union `crossReferencesTo()` computes
 //                                    from the bytes, the typed split tables
 //                                    and the stored rows.
 // ---------------------------------------------------------------------------
 
 /** `LabelRow[]` as the census's symbol shape. */
-export function symbolsFromStore(rows: readonly LabelRow[]): R2000Symbol[] {
+export function symbolsFromStore(rows: readonly LabelRow[]): AnnoSymbol[] {
   return rows.map((row) => ({ address: row.address, name: row.name, kind: row.kind }));
 }
 
 /** `CommentRow[]` as the census's comment shape. */
-export function commentsFromStore(rows: readonly CommentRow[]): R2000Comment[] {
+export function commentsFromStore(rows: readonly CommentRow[]): AnnoComment[] {
   return rows.map((row) => ({ address: row.address, type: row.commentType, comment: row.text }));
 }
 
@@ -784,8 +784,8 @@ export function crossReferencesFromStore(
   handle: AnnoStoreHandle,
   image: Uint8Array,
   origin: number,
-  symbols: readonly R2000Symbol[],
-): R2000CrossReference[] {
+  symbols: readonly AnnoSymbol[],
+): AnnoCrossReference[] {
   const targets = [
     ...new Set(
       (Array.isArray(symbols) ? symbols : [])
@@ -1082,10 +1082,10 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  let symbols: R2000Symbol[];
-  let comments: R2000Comment[];
+  let symbols: AnnoSymbol[];
+  let comments: AnnoComment[];
   let blocks: BlockEntry[];
-  let crossReferences: R2000CrossReference[];
+  let crossReferences: AnnoCrossReference[];
   let handle: AnnoStoreHandle;
   try {
     handle = openStore(storePath, { workspaceRoot, mustExist: true });
@@ -1399,14 +1399,14 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
 }
 
 /**
- * Entry point for the `r2000` subcommand. Returns an exit code; never calls
+ * Entry point for the `anno` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
  * verb per `acme.mjs`'s own dispatch convention (`src/skills/acme-build/
  * scripts/acme.mjs`), with one deliberate difference: an explicit `--help`
  * returns 0 (a no-op invocation with no verb also returns 0), while an
  * unrecognised verb returns 1.
  */
-export async function runR2000Cli(argv: string[]): Promise<number> {
+export async function runAnnoCli(argv: string[]): Promise<number> {
   const [verb, ...rest] = argv;
 
   if (!verb || verb === "--help" || verb === "-h") {
@@ -1423,7 +1423,7 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
     //
     // INSIDE the try since 2026-08-31 (30-REVIEW CR-01, defence in depth).
     // It used to sit above this block, so a throw from it escaped
-    // `runR2000Cli()` entirely -- which is exactly what a prototype-key verb
+    // `runAnnoCli()` entirely -- which is exactly what a prototype-key verb
     // did. `checkAcceptedOptions()` is now own-property-safe and cannot
     // throw for that reason, but the never-throw contract this file's header
     // states should not depend on one callee staying careful: every
@@ -1444,7 +1444,7 @@ export async function runR2000Cli(argv: string[]): Promise<number> {
         return await cmdExportAsm(rest);
       default:
         // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
-        // `r2000:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
+        // `anno:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
         // -- so a user who mistyped a verb was answered by a subcommand that
         // no longer dispatches. Only the STRING moved: the enclosing function
         // keeps its current name, so no consumer, test or record entry moves

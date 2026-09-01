@@ -41,7 +41,7 @@ key-files:
     - scripts/generate-tool-support-table.mjs
     - scripts/version.mjs
     - scripts/audit-gate.mjs
-    - scripts/lib/r2000-cli-verbs.mjs / .d.mts
+    - scripts/lib/anno-cli-verbs.mjs / .d.mts
     - scripts/lib/skill-honesty-checks.mjs / .d.mts
     - scripts/lib/skill-corpus.mjs
     - .github/workflows/ci.yml
@@ -52,13 +52,13 @@ key-files:
     - src/mcp/vice/repo-root.ts
     - src/mcp/vice/repo-root.test.ts
     - src/mcp/vice/resources/vice-launcher.sh
-    - src/mcp/vice/r2000-regbits-gen.ts / r2000-regbits.json
+    - src/mcp/vice/anno-regbits-gen.ts / anno-regbits.json
     - src/skills/**/SKILL.md and scripts (stale .claude/skills self-references from plan 16-01)
 
 key-decisions:
   - "D-16-04 (from the plan): no compatibility shim, no major version bump -- the published tarball's 73-entry path list is package-relative and unaffected by the directory move, proven byte-identical to plan 16-01's baseline."
   - "The mustNotExist entry added is the literal .claude/mcp/vice (not the broader .claude/mcp), matching exactly what the plant-and-remove acceptance test exercises."
-  - "Kept two classes of remaining .claude/mcp/vice and .claude/skills mentions deliberately unedited: historical narration describing prior relocations (repo-root.ts/.test.ts's move history, containerpath.ts/.test.ts's retired devcontainer-host-path skill, r2000-regbits-gen.ts/.test.ts's plan-16-01 deviation note, this plan's own added version.test.ts note) and consumer-install-path/detection literals (installer's <target>/.claude/skills/, scripts/package.sh's mustNotExist check)."
+  - "Kept two classes of remaining .claude/mcp/vice and .claude/skills mentions deliberately unedited: historical narration describing prior relocations (repo-root.ts/.test.ts's move history, containerpath.ts/.test.ts's retired devcontainer-host-path skill, anno-regbits-gen.ts/.test.ts's plan-16-01 deviation note, this plan's own added version.test.ts note) and consumer-install-path/detection literals (installer's <target>/.claude/skills/, scripts/package.sh's mustNotExist check)."
 
 requirements-completed: [PKG-01]
 
@@ -138,7 +138,7 @@ status: complete
 - `repoRoot()`'s three-segment depth (`src`/`mcp`/`vice`) is asserted, not assumed, identical to the old `.claude`/`mcp`/`vice` shape; both `resolve(from, "..", "..", "..")` call sites are byte-identical (verified by diff, count still 2). `repo-root.ts`'s relocation header gains a fourth entry stating the hop count was "reviewed and left unchanged."
 - `repo-root.test.ts`'s synthetic last-resort fixture is rebuilt at the new `src/mcp/vice` shape, and a second synthetic case was added pinning the OLD `.claude/mcp/vice` shape too, so the hop count is proven as a property of depth (three segments) rather than of one particular directory name (5 tests before this task, 6 after).
 - The standing caution in `repo-root.test.ts` now explicitly distinguishes nesting authored sources one level deeper INSIDE the module directory (forbidden, would make four) from relocating the same three-segment shape elsewhere directly under the root (what this phase did, and does not break the hop count).
-- The register-bits generated artifact (`r2000-regbits.json`) was regenerated from its generator (never hand-edited) so its committed banner names the new directory; both banner copies verified identical.
+- The register-bits generated artifact (`anno-regbits.json`) was regenerated from its generator (never hand-edited) so its committed banner names the new directory; both banner copies verified identical.
 - Closed the tree-wide enumeration: a fresh grep for both the old MCP-server path and the old skills path found ~22 stale `.claude/skills` self-references inside `src/skills/**` (SKILL.md files, `template.a`, scripts) and `src/mcp/vice/*` that plan 16-01's own sweep had missed, plus `scripts/lib/skill-corpus.mjs` and this package's own `THIRD-PARTY-NOTICES.md`. All fixed; every remaining hit after the fix classifies into exactly one of the three allowed categories (see Evidence).
 
 ## Task Commits
@@ -157,14 +157,14 @@ status: complete
 - `.github/workflows/ci.yml` - cache key + 6 working-directory entries
 - `.gitignore`, `THIRD-PARTY-NOTICES.md`, `installer/bin/cli.mjs`, `installer/README.md` - prose repoints (installer's `<target>/.claude/skills/` consumer-install mentions deliberately left unchanged)
 - `src/mcp/vice/repo-root.ts`, `repo-root.test.ts`, `resources/vice-launcher.sh` - depth record resolved
-- `src/mcp/vice/r2000-regbits-gen.ts`, `r2000-regbits.json` - banner regenerated
-- `scripts/lib/skill-corpus.mjs`, `src/mcp/vice/{disasm-opcodes,disasm-roundtrip.test,r2000-confidence,r2000-d64,r2000-symbols,stock-cia,stock-sprites,stock-timing,stock-vicii}.ts`, `src/skills/**/SKILL.md` and scripts, `src/skills/acme-build/template.a` - stray `.claude/skills` staleness from plan 16-01 closed
+- `src/mcp/vice/anno-regbits-gen.ts`, `anno-regbits.json` - banner regenerated
+- `scripts/lib/skill-corpus.mjs`, `src/mcp/vice/{disasm-opcodes,disasm-roundtrip.test,anno-confidence,anno-d64,anno-symbols,stock-cia,stock-sprites,stock-timing,stock-vicii}.ts`, `src/skills/**/SKILL.md` and scripts, `src/skills/acme-build/template.a` - stray `.claude/skills` staleness from plan 16-01 closed
 
 ## Decisions Made
 
 - **D-16-04 (from the plan, confirmed):** no compatibility shim, no major version bump. Verified by direct 73-entry path-list comparison against plan 16-01's recorded baseline — identical.
 - **`mustNotExist`'s second entry is `.claude/mcp/vice`, not `.claude/mcp`:** matches the exact directory the plant-and-remove acceptance test exercises, and does not risk asserting on `.claude/mcp` as a whole (which does not exist as a concept independent of the `vice` subdirectory).
-- **Historical narration left unedited:** `repo-root.ts`/`repo-root.test.ts`'s prior-move history, `containerpath.ts`/`.test.ts`'s reference to the long-retired `devcontainer-host-path` skill (a different, deleted directory — not one of the six shipped skills), `r2000-regbits-gen.ts`/`.test.ts`'s note about plan 16-01's own deviation, `vice-proxy.test.ts`'s citation of a past plan's `git diff` command, and this plan's own added `version.test.ts` note are all accurate history and were left as-is rather than rewritten.
+- **Historical narration left unedited:** `repo-root.ts`/`repo-root.test.ts`'s prior-move history, `containerpath.ts`/`.test.ts`'s reference to the long-retired `devcontainer-host-path` skill (a different, deleted directory — not one of the six shipped skills), `anno-regbits-gen.ts`/`.test.ts`'s note about plan 16-01's own deviation, `vice-proxy.test.ts`'s citation of a past plan's `git diff` command, and this plan's own added `version.test.ts` note are all accurate history and were left as-is rather than rewritten.
 - **Fixed the ~22 stray `.claude/skills` mentions inside `src/skills/**` and `src/mcp/vice/*` rather than deferring them:** they did not fit any of the three allowed leftover categories (not root/docs markdown owned by plan 16-05, not a consumer-install path, not evidence-immutable), so per the plan's own "no fourth category" rule they were missed consumers to fix, not to classify away.
 
 ## Deviations from Plan
@@ -174,8 +174,8 @@ status: complete
 **1. [Rule 3 - Blocking] Three functional path literals outside the plan's own enumeration broke the first post-move test run**
 - **Found during:** Task 1, running the first post-move `VICE_REQUIRE_ACME=1 npm test` (19 failures against the 2292/2248/0 baseline)
 - **Issue:** `scripts/version.mjs`'s `SEAM_PATH`, `audit-integrity.test.ts`'s `buildSyntheticTree()` helper, and `repo-root.test.ts`'s two `repoRoot()`-driven path-agreement tests each built the old module-directory path from segmented `join(x, ".claude", "mcp", "vice")` arguments rather than the literal string `.claude/mcp/vice` — invisible to a plain-string grep enumeration. `audit-integrity.test.ts`'s helper alone was shared by 15+ test cases (all of `audit-gate.mjs`'s planted-violation and hook-mode coverage), so one missed literal produced most of the 19 failures.
-- **Fix:** Repointed all four sites to `src`/`mcp`/`vice`. Also found and fixed the same class of miss in `r2000-cli.test.ts`'s expected-`--help`-output regex, which used escaped-slash JS-regex syntax (`\.claude\/mcp\/vice\/`) invisible to both the plain-string enumeration grep and a plain-string `sed` replacement.
-- **Files modified:** `scripts/version.mjs`, `src/mcp/vice/audit-integrity.test.ts`, `src/mcp/vice/repo-root.test.ts`, `src/mcp/vice/r2000-cli.test.ts`
+- **Fix:** Repointed all four sites to `src`/`mcp`/`vice`. Also found and fixed the same class of miss in `anno-cli.test.ts`'s expected-`--help`-output regex, which used escaped-slash JS-regex syntax (`\.claude\/mcp\/vice\/`) invisible to both the plain-string enumeration grep and a plain-string `sed` replacement.
+- **Files modified:** `scripts/version.mjs`, `src/mcp/vice/audit-integrity.test.ts`, `src/mcp/vice/repo-root.test.ts`, `src/mcp/vice/anno-cli.test.ts`
 - **Verification:** Re-ran `VICE_REQUIRE_ACME=1 npm test` — 2292 tests, 2248 pass, 0 fail, 39 skipped, 5 todo, 23 suites — exactly matching the pre-move baseline.
 - **Committed in:** `c77edee` (Task 1 commit)
 
@@ -191,7 +191,7 @@ status: complete
 - **Found during:** Task 3's closing enumeration
 - **Issue:** Plan 16-01 moved the six skills to `src/skills/` but its own consumer sweep missed most of the skills' own internal self-references: `SKILL.md` files' "from the repo root" invocation examples, `acme-build/template.a`'s build comment, `c64-provenance-diff/scripts/diff-images.mjs`'s generated-Markdown banner text, `c64-ram-capture/scripts/{project-paths,watch-loads}.mjs`'s comments, plus `scripts/lib/skill-corpus.mjs` and this plan's own package's `THIRD-PARTY-NOTICES.md`.
 - **Fix:** Repointed every one to `src/skills/` (or `src/mcp/vice/` where the reference was to the MCP server rather than a skill). None fit the plan's three allowed leftover categories, so per its own "no fourth category" rule these were missed consumers to fix.
-- **Files modified:** `scripts/lib/skill-corpus.mjs`, `src/mcp/vice/{disasm-opcodes,disasm-roundtrip.test,r2000-confidence,r2000-d64,r2000-symbols,stock-cia,stock-sprites,stock-timing,stock-vicii}.ts`, `src/mcp/vice/THIRD-PARTY-NOTICES.md`, `src/skills/acme-build/{SKILL.md,template.a}`, `src/skills/c64-memory-mapping/SKILL.md`, `src/skills/c64-program-recon/{SKILL.md,templates/memory-map.template.md}`, `src/skills/c64-provenance-diff/{SKILL.md,scripts/diff-images.mjs}`, `src/skills/c64-ram-capture/{SKILL.md,scripts/project-paths.mjs,scripts/watch-loads.mjs}`
+- **Files modified:** `scripts/lib/skill-corpus.mjs`, `src/mcp/vice/{disasm-opcodes,disasm-roundtrip.test,anno-confidence,anno-d64,anno-symbols,stock-cia,stock-sprites,stock-timing,stock-vicii}.ts`, `src/mcp/vice/THIRD-PARTY-NOTICES.md`, `src/skills/acme-build/{SKILL.md,template.a}`, `src/skills/c64-memory-mapping/SKILL.md`, `src/skills/c64-program-recon/{SKILL.md,templates/memory-map.template.md}`, `src/skills/c64-provenance-diff/{SKILL.md,scripts/diff-images.mjs}`, `src/skills/c64-ram-capture/{SKILL.md,scripts/project-paths.mjs,scripts/watch-loads.mjs}`
 - **Verification:** Full tree-wide grep re-run afterward returns only the deliberately-preserved and historical-narration set (see Evidence); typecheck clean; full test glob green.
 - **Committed in:** `7295e20` (Task 3 commit)
 
@@ -203,12 +203,12 @@ status: complete
 - **Verification:** `node --test version.test.ts` passes; enumeration grep no longer flags this line as a live location claim (it is now correctly current).
 - **Committed in:** `c77edee` (Task 1 commit)
 
-**5. [Rule 3 - Blocking] The plan's own r2000-regbits.json banner-check verify command reads a nonexistent field path**
+**5. [Rule 3 - Blocking] The plan's own anno-regbits.json banner-check verify command reads a nonexistent field path**
 - **Found during:** Task 3
 - **Issue:** The plan's `<acceptance_criteria>` verify command for the banner checks `json.warning||(json.meta&&json.meta.warning)`, but the real committed structure nests the warning at `json._generated.warning`. Run verbatim, the command throws `Error: no warning banner found`.
-- **Fix:** No code changed for this — the underlying banner IS correct and regenerated. Verified with a corrected field path (`json._generated.warning`) matching `r2000-regbits-gen.ts`'s own `buildRegBitsDocument()` and `r2000-regbits.test.ts`'s own existing assertions, both of which read `_generated.warning`.
+- **Fix:** No code changed for this — the underlying banner IS correct and regenerated. Verified with a corrected field path (`json._generated.warning`) matching `anno-regbits-gen.ts`'s own `buildRegBitsDocument()` and `anno-regbits.test.ts`'s own existing assertions, both of which read `_generated.warning`.
 - **Files modified:** none (verification-only correction)
-- **Verification:** Corrected command prints "banner OK"; `node --test r2000-regbits.test.ts` (16 tests) passes.
+- **Verification:** Corrected command prints "banner OK"; `node --test anno-regbits.test.ts` (16 tests) passes.
 - **Committed in:** N/A (documentation-only note, no code change needed)
 
 ---
@@ -227,14 +227,14 @@ None - no external service configuration required.
 ## Next Phase Readiness
 
 - `src/mcp/vice/` is the proven, gate-verified target layout for the MCP server package. Plans 16-06 and 16-07 (both adding test files under `src/mcp/vice/`) can proceed directly against this location.
-- Plan 16-05 (documentation sweep, including CLAUDE.md, README.md, and `docs/*.md`) has a clean, closed starting enumeration: all 6 remaining root/docs-markdown hits are the only files it needs to touch for this plan's move (CLAUDE.md, `docs/phase0-binmon-findings.md`, `docs/phase1-probe-results.md`, `docs/phase2-backend-probe-evidence.md`, `docs/phase9-regenerator2000-probe-findings.md`, `docs/roadmap-stock-vice.md`).
+- Plan 16-05 (documentation sweep, including CLAUDE.md, README.md, and `docs/*.md`) has a clean, closed starting enumeration: all 6 remaining root/docs-markdown hits are the only files it needs to touch for this plan's move (CLAUDE.md, `docs/phase0-binmon-findings.md`, `docs/phase1-probe-results.md`, `docs/phase2-backend-probe-evidence.md`, `docs/phase9-external-analyser-probe-findings.md`, `docs/roadmap-stock-vice.md`).
 - No blockers. Full 2293-test glob green, typecheck clean, smoke test passing (78 tools advertised), all five packaging/corpus validators green, published tarball proven byte-identical to the pre-move baseline.
 
 ## Evidence (verbatim, per this plan's `<output>` spec)
 
 ### Functional-vs-prose consumer enumeration (re-run from the live tree, Task 1)
 
-Functional consumers (path built/asserted at runtime, import specifier, manifest field, CI working directory, `mustExist`/`files[]` entry, or user-facing string) repointed in Task 1's commit: `.mcp.json` (1), `scripts/ensure-mcp-deps.sh` (2), `scripts/package.sh` (5 sites + mustNotExist list), `scripts/check-npm-packages.mjs` (4 sites), `scripts/check-skill-tool-coverage.mjs` (2), `scripts/check-skill-fork-honesty.mjs` (2), `scripts/generate-tool-support-table.mjs` (3), `scripts/version.mjs` (2, including the segmented-literal `SEAM_PATH` caught by the first test run), `scripts/audit-gate.mjs` (2 functional `viceDir` literals + 3 prose), `.github/workflows/ci.yml` (7: 1 cache key + 6 working-directory), `src/mcp/vice/package.json` (`repository.directory`), `src/mcp/vice/version.test.ts` (2 functional literals + 1 comment), `src/mcp/vice/assumption-label-discipline.test.ts` (2 functional + 3 header), `src/mcp/vice/host-scripts.test.ts` (1 functional array entry + 1 comment), `src/mcp/vice/r2000-cli.ts` (1 user-facing string + 1 stale `.claude/skills` comment), `src/mcp/vice/probe-binmon.mjs` (6 usage-text paths), `src/mcp/vice/audit-integrity.test.ts` (1 shared synthetic-tree-helper literal, found live), `src/mcp/vice/repo-root.test.ts` (2 real path-agreement literals, found live), `src/mcp/vice/r2000-cli.test.ts` (1 escaped-regex literal, found live). Prose-only mentions repointed inside the module directory across ~25 files (`build.ts`, `build-atomic.test.ts`, `broker-kill.test.ts`, `containerpath.ts`, `docs-dangling-refs.test.ts`, `hostpath.ts`, `hostpath-consumers.test.ts`, `install-resources.ts`, `load-order.test.ts`, several `r2000-*.ts`/`.test.ts`, several `stock-*.ts`, `stock-connect.test.ts`, `telemetry-import.test.ts`, `test-gate.mjs`, `version.ts`, `vice-proxy.ts`, `vice-proxy.test.ts`'s test title, `resources/vice-launcher.sh`) plus `.gitignore` (3), `THIRD-PARTY-NOTICES.md` (1), `installer/bin/cli.mjs` (2), `scripts/lib/*` (5 header prose across 4 files).
+Functional consumers (path built/asserted at runtime, import specifier, manifest field, CI working directory, `mustExist`/`files[]` entry, or user-facing string) repointed in Task 1's commit: `.mcp.json` (1), `scripts/ensure-mcp-deps.sh` (2), `scripts/package.sh` (5 sites + mustNotExist list), `scripts/check-npm-packages.mjs` (4 sites), `scripts/check-skill-tool-coverage.mjs` (2), `scripts/check-skill-fork-honesty.mjs` (2), `scripts/generate-tool-support-table.mjs` (3), `scripts/version.mjs` (2, including the segmented-literal `SEAM_PATH` caught by the first test run), `scripts/audit-gate.mjs` (2 functional `viceDir` literals + 3 prose), `.github/workflows/ci.yml` (7: 1 cache key + 6 working-directory), `src/mcp/vice/package.json` (`repository.directory`), `src/mcp/vice/version.test.ts` (2 functional literals + 1 comment), `src/mcp/vice/assumption-label-discipline.test.ts` (2 functional + 3 header), `src/mcp/vice/host-scripts.test.ts` (1 functional array entry + 1 comment), `src/mcp/vice/anno-cli.ts` (1 user-facing string + 1 stale `.claude/skills` comment), `src/mcp/vice/probe-binmon.mjs` (6 usage-text paths), `src/mcp/vice/audit-integrity.test.ts` (1 shared synthetic-tree-helper literal, found live), `src/mcp/vice/repo-root.test.ts` (2 real path-agreement literals, found live), `src/mcp/vice/anno-cli.test.ts` (1 escaped-regex literal, found live). Prose-only mentions repointed inside the module directory across ~25 files (`build.ts`, `build-atomic.test.ts`, `broker-kill.test.ts`, `containerpath.ts`, `docs-dangling-refs.test.ts`, `hostpath.ts`, `hostpath-consumers.test.ts`, `install-resources.ts`, `load-order.test.ts`, several `anno-*.ts`/`.test.ts`, several `stock-*.ts`, `stock-connect.test.ts`, `telemetry-import.test.ts`, `test-gate.mjs`, `version.ts`, `vice-proxy.ts`, `vice-proxy.test.ts`'s test title, `resources/vice-launcher.sh`) plus `.gitignore` (3), `THIRD-PARTY-NOTICES.md` (1), `installer/bin/cli.mjs` (2), `scripts/lib/*` (5 header prose across 4 files).
 
 ### Post-move `npm pack --dry-run --json` path list vs. plan 16-01's baseline
 
@@ -304,11 +304,11 @@ exit=0
 
 Tree-wide grep for `\.claude/(mcp/vice|skills)` across `*.ts`/`*.mts`/`*.mjs`/`*.json`/`*.sh`/`*.yml`/`*.md`/`*.a`, excluding node_modules, dist/, `.planning/`, and the local agent-tooling directories, after Task 3's fixes:
 
-**Plan-16-05-owned (root markdown + docs/*.md, 6 files):** `CLAUDE.md`, `docs/phase0-binmon-findings.md`, `docs/phase1-probe-results.md`, `docs/phase2-backend-probe-evidence.md`, `docs/phase9-regenerator2000-probe-findings.md`, `docs/roadmap-stock-vice.md`.
+**Plan-16-05-owned (root markdown + docs/*.md, 6 files):** `CLAUDE.md`, `docs/phase0-binmon-findings.md`, `docs/phase1-probe-results.md`, `docs/phase2-backend-probe-evidence.md`, `docs/phase9-external-analyser-probe-findings.md`, `docs/roadmap-stock-vice.md`.
 
 **Deliberately-preserved (consumer-install path / detection literal, 3 files):** `installer/bin/cli.mjs` and `installer/README.md` (both describe copying skills into `<target>/.claude/skills/` — the *consumer's* project layout, a route this plan does not touch); `scripts/package.sh` (the `mustNotExist` literal `.claude/mcp/vice` must keep naming the OLD path — that is the value the gate checks for absence of, not a location to repoint).
 
-**Deliberately-preserved (historical narration, accurate as history, 8 files):** `src/mcp/vice/repo-root.ts` and `repo-root.test.ts` (narrate the tree's three prior relocations, including the retired `.claude/skills/vice-session/` and `.claude/skills/vice-mcp-selector/` homes, plus repo-root.test.ts's own deliberate old-shape synthetic test); `src/mcp/vice/containerpath.ts` and `containerpath.test.ts` (reference the long-retired, since-deleted `devcontainer-host-path` skill — a different directory from the six shipped skills, correctly described as history); `src/mcp/vice/r2000-regbits-gen.ts` and `r2000-regbits.test.ts` (document plan 16-01's own `MEMMAP_PATH` deviation, correctly past-tense); `src/mcp/vice/version.test.ts` (this plan's own added note explicitly marked "pre-move"); `src/mcp/vice/vice-proxy.test.ts` (cites a specific historical `git diff` invocation from plan 01.1-03's own verification, not a current claim).
+**Deliberately-preserved (historical narration, accurate as history, 8 files):** `src/mcp/vice/repo-root.ts` and `repo-root.test.ts` (narrate the tree's three prior relocations, including the retired `.claude/skills/vice-session/` and `.claude/skills/vice-mcp-selector/` homes, plus repo-root.test.ts's own deliberate old-shape synthetic test); `src/mcp/vice/containerpath.ts` and `containerpath.test.ts` (reference the long-retired, since-deleted `devcontainer-host-path` skill — a different directory from the six shipped skills, correctly described as history); `src/mcp/vice/anno-regbits-gen.ts` and `anno-regbits.test.ts` (document plan 16-01's own `MEMMAP_PATH` deviation, correctly past-tense); `src/mcp/vice/version.test.ts` (this plan's own added note explicitly marked "pre-move"); `src/mcp/vice/vice-proxy.test.ts` (cites a specific historical `git diff` invocation from plan 01.1-03's own verification, not a current claim).
 
 **No fourth category.** Every hit above fits one of the three allowed classifications; the ~22 hits that did NOT fit any of the three (stale `.claude/skills` self-references inside `src/skills/**` and a handful of `src/mcp/vice/*.ts` files, plus `scripts/lib/skill-corpus.mjs` and this package's own `THIRD-PARTY-NOTICES.md`) were fixed rather than classified, per deviation 3 above.
 

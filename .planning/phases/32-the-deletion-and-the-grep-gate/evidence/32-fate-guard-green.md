@@ -121,7 +121,7 @@ exit 0   (1749 ms)
 
 | gate | exit | first line |
 |---|---:|---|
-| `scripts/check-no-regenerator2000.mjs` | 0 | `OK -- scanned 406 files ... floor 350` |
+| `scripts/check-no-analyser.mjs` | 0 | `OK -- scanned 406 files ... floor 350` |
 | `scripts/check-npm-packages.mjs` | 0 | `transitive closure from vice-proxy.ts -- 57 modules, clean` |
 | `scripts/check-skill-cli-invocations.mjs` | 0 | `OK -- 18 documented anno CLI invocation(s)` |
 | `scripts/check-skill-description-overlap.mjs` | 0 | `OK -- 7 skills scanned` |

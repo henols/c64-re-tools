@@ -40,7 +40,7 @@ key-files:
     - .planning/WINDOWS.md
 
 key-decisions:
-  - "Followed the guard's derivation over the plan's table: the same-path group is 21 and r2000-upstream-audit.test.ts is in `gone`, so it was NOT claimed here and is handed to plan 32-08 by name."
+  - "Followed the guard's derivation over the plan's table: the same-path group is 21 and anno-derivation.test.ts is in `gone`, so it was NOT claimed here and is handed to plan 32-08 by name."
   - "vice-proxy.test.ts was NOT recorded UNMEASURABLE-LOCALLY. Three scopes were measured; the third is genuinely measurable behind a green control, so the row carries a real observed red and the hang is recorded as a finding instead of as a verdict."
   - "Every plant is `kind: worktree`. The harness implements no other kind, so the four rows the plan routes through a `--root` synthetic tree are planted in the working tree instead, with the substitution stated in each row's note."
   - "Two rows needed a second plant. Both attempts are recorded in the row note and in the evidence; neither guard was weakened and neither row was reclassified."
@@ -59,7 +59,7 @@ coverage:
     requirement: CUT-04
     verification:
       - kind: automated
-        ref: "per member, `git diff -U0 0394cbc 345d5c4 -- <path> | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000` -- 18 non-zero / 3 zero; the command is re-run by the row-authoring script and quoted in every row's note"
+        ref: "per member, `git diff -U0 0394cbc 345d5c4 -- <path> | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic anno` -- 18 non-zero / 3 zero; the command is re-run by the row-authoring script and quoted in every row's note"
         status: pass
       - kind: automated
         ref: "deriveAuditedSet({root}).forwardSamePath -- 21 members, matching the plan's enumeration exactly"
@@ -165,7 +165,7 @@ status: complete
 The rule, run per member and quoted in every row's note:
 
 ```
-git diff -U0 0394cbc 345d5c4 -- <path> | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic r2000
+git diff -U0 0394cbc 345d5c4 -- <path> | grep -E '^[+-]' | grep -av '^[+-][+-][+-]' | grep -aic anno
 ```
 
 **18 `re-pointed` / 3 `kept-unchanged`** — exactly the plan's prediction, and the three `kept-unchanged` are exactly the three it named: `scripts/lib/skill-descriptions.mjs`, `src/mcp/vice/skill-attribution.test.ts`, `src/mcp/vice/stock-connect.test.ts`.
@@ -213,11 +213,11 @@ The plan's own must-have anticipated a `UNMEASURABLE-LOCALLY` outcome. Three mea
 
 **The hang was not debugged.** `ROADMAP.md` states this phase contains no build work by design and `32-CONTEXT.md` lists diagnosing it as a deferred idea. One observation is recorded without acting on it: every scoped run prints `after() force-closed 0 leaked server(s) and killed 1 leaked child(ren)`, so a leaked child is present even in a run that completes.
 
-## `r2000-upstream-audit.test.ts` — explicitly NOT claimed here
+## `anno-derivation.test.ts` — explicitly NOT claimed here
 
 Plan 32-06 suggested this plan might have to take it. **It does not, and no row was created for it.** The guard's own forward map places it in `forwardGone`, not `forwardSamePath`: `nameDescendantCandidates()` yields three candidates, none of which exists at `AUDIT_END`, and git's `-M` heuristic does not score it. It is owed to **plan 32-08** as a `deleted` or `superseded` verdict, together with the rest of the `gone` group:
 
-`r2000-launch.test.ts`, `r2000-mcp-client.test.ts`, `r2000-project.test.ts`, `r2000-session.test.ts`, `r2000-symbol-roundtrip.test.ts`, **`r2000-upstream-audit.test.ts`**, `r2000-verify.test.ts`.
+`anno-launch.test.ts`, `anno-mcp-client.test.ts`, `anno-project.test.ts`, `anno-session.test.ts`, `anno-symbol-roundtrip.test.ts`, **`anno-derivation.test.ts`**, `anno-verify.test.ts`.
 
 ## Registry row count, before and after
 
@@ -278,7 +278,7 @@ Plan 32-06 suggested this plan might have to take it. **It does not, and no row 
 
 ### 6. [Scope choice, recorded] `disasm-roundtrip.test.ts` is planted at its subject, not at its re-pointed seam
 
-- The line Phase 29 re-pointed in this file is its import of the ACME availability seam (`./r2000-test-gate.ts` → `./acme-gate.ts`). Planting that seam makes this guard **green, not red**: `ACME_BIN` feeds `probeAcme()`, whose result gates every ACME-dependent test behind `{ skip: SKIP_REASON }`, so a broken seam SKIPS the file to exit 0. That is the silent skip-degradation `acme-gate.ts`'s own header names as its reason for existing. The row plants the round-trip subject (`disasm-renderer.ts`) instead and states the reason.
+- The line Phase 29 re-pointed in this file is its import of the ACME availability seam (`./anno-test-gate.ts` → `./acme-gate.ts`). Planting that seam makes this guard **green, not red**: `ACME_BIN` feeds `probeAcme()`, whose result gates every ACME-dependent test behind `{ skip: SKIP_REASON }`, so a broken seam SKIPS the file to exit 0. That is the silent skip-degradation `acme-gate.ts`'s own header names as its reason for existing. The row plants the round-trip subject (`disasm-renderer.ts`) instead and states the reason.
 - The same mutation IS a red for `skill-acme-build-cli.test.ts`, whose `:288-290` asserts the seam's value in a never-skipped test. That asymmetry is why the two rows do not share a plant, and is itself evidence the re-pointed seam is load-bearing.
 
 ---
@@ -298,7 +298,7 @@ No new network endpoints, auth paths, file-access patterns or trust-boundary sch
 
 - **T-32-28** (a timeout recorded as a red): every red is gated by a green exit-0 control on the identical command, every captured output names a failing assertion, and both slow guards were measured and scoped before use rather than discovered as reds.
 - **T-32-29** (a plant against `docs/tool-support.md`): the generator's guard generates in memory; the writing CLI is never invoked; `git diff --exit-code -- docs/tool-support.md` exits 0.
-- **T-32-30** (moving the removal gate's exactly-2 pin): no plant touches the subject literal; `node scripts/check-no-regenerator2000.mjs` exits 0 after the sweep.
+- **T-32-30** (moving the removal gate's exactly-2 pin): no plant touches the subject literal; `node scripts/check-no-analyser.mjs` exits 0 after the sweep.
 - **T-32-31** (a failed restore of a scanned normative document): the `docs-dangling-refs` plant targets `anno-cli.ts`, a source file, not `.planning/ROADMAP.md` or `CLAUDE.md`; the harness captured original bytes first and reported the tree byte-identical.
 - **T-32-32** (tearing down the broker unit): broker state was read-only asserted with `systemctl --user is-active` and bracketed `pgrep -af '[v]ice-broker'`, and recorded. Nothing was stopped or started.
 - **T-32-SC**: no packages were installed. `npm ci` restored the committed lockfile only; the only other npm-adjacent invocation is `tsc`, run directly as a guard.
@@ -321,7 +321,7 @@ One finding recorded to `.planning/WINDOWS.md` (`deviation`, `scripts/audit-gate
 
 - A registry at **36** rows with a settled shape; copy any same-path `re-pointed` row as the schema reference.
 - **25 members still owe a row**, and the composition is now proven mechanically: 16 set B + 7 `gone` + 2 set C, with zero same-path and zero renamed remaining. Use `node scripts/check-guard-fates.mjs`'s own output as the work list; do not transcribe one.
-- **The `gone` group is 7, and `r2000-upstream-audit.test.ts` is in it** — named above, not claimed here. A `deleted` verdict owes `newSubject: null`, the historical path absent from the working tree, and a `removingCommit`; it owes no `observedRed`.
+- **The `gone` group is 7, and `anno-derivation.test.ts` is in it** — named above, not claimed here. A `deleted` verdict owes `newSubject: null`, the historical path absent from the working tree, and a `removingCommit`; it owes no `observedRed`.
 - **Three harness caveats that will bite again:** `["--run", …]` is unusable; any guard slower than 15000 ms records a false red unless scoped; and only `kind: "worktree"` plants exist.
 - **A new caveat specific to `--root` guards:** `audit-gate.mjs --json` cannot signal a structural error through its exit status. If plan 32-08 or 32-09 uses that invocation as a health check, use text mode.
 - Do NOT re-run `--all`: 33 rows are measured and would be re-measured for no new information.

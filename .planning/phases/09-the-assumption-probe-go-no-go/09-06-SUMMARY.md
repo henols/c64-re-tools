@@ -2,16 +2,16 @@
 phase: 09-the-assumption-probe-go-no-go
 plan: 06
 subsystem: infra
-tags: [regenerator2000, vice-snapshot, stock-vice, vsf, mcp, probe]
+tags: [the external analyser, vice-snapshot, stock-vice, vsf, mcp, probe]
 
 requires:
   - phase: 09-the-assumption-probe-go-no-go
     provides: "A bootstrapped .regen2000proj file, evidence/mcp-harness.mjs and evidence/vice-tool-harness.mjs (from 09-03/09-05), and the probe fixture (probe-illegal.prg, 44 bytes at $c000) from 09-01"
 provides:
-  - "R2000-16(4) answered `partial`, by direct interrogation against a real live emulator and a real regenerator2000 build: a .vsf produced by vice_snapshot_save genuinely carries its own start address (entry point/PC) and memory content, but its displayed machine type traces to a coincidental default fallback rather than a genuine read of the snapshot's own machine_name field"
+  - "ANNO-16(4) answered `partial`, by direct interrogation against a real live emulator and a real analyser build: a .vsf produced by vice_snapshot_save genuinely carries its own start address (entry point/PC) and memory content, but its displayed machine type traces to a coincidental default fallback rather than a genuine read of the snapshot's own machine_name field"
   - "A real, load-bearing cross-session finding about this project's own broker: vice_memory_write and vice_snapshot_save issued as separate MCP client connections are not guaranteed to observe the same live machine state, even against the same broker-managed process -- caught by re-interrogating the first snapshot's own bytes rather than trusting the earlier same-invocation read-back"
-  - "A real regenerator2000 0.9.20 defect: r2000_get_address_details is unconditionally broken for any full-64K load due to a u16 overflow in handler.rs's bounds check"
-  - "An accepted limit for Phase 10/11: regenerator2000's auto-detected system for a stock-VICE .vsf must not be trusted -- verify or set it explicitly"
+  - "A real the external analyser 0.9.20 defect: anno_get_address_details is unconditionally broken for any full-64K load due to a u16 overflow in handler.rs's bounds check"
+  - "An accepted limit for Phase 10/11: The external analyser's auto-detected system for a stock-VICE .vsf must not be trusted -- verify or set it explicitly"
 affects: [09-07, 09-08]
 
 tech-stack:
@@ -29,9 +29,9 @@ key-decisions:
   - "Discovered during Task 3's own independent interrogation that the first snapshot did not carry the fixture bytes at $c000, despite an earlier same-invocation read-back confirming them -- traced to a genuine cross-MCP-connection session-continuity gap in the broker's on-demand pool, not a mistake to silently redo; documented in full, then fixed by reissuing the whole write-then-snapshot sequence in one connection"
   - "Scored VSF_LOAD as partial rather than pass: the displayed machine type (\"Commodore 64\") is correct in value but traced at the source level to a coincidental default fallback (dialog_import_context.rs's unwrap_or(current_system)), not a genuine derivation from the snapshot's own machine_name field (\"C64SC\", which matches none of file_io.rs's literal match arms) -- a value that happens to be right is not the same as a value genuinely derived, per Evidence Integrity Rule 6"
   - "Treated the export's `* = $0000` origin directive as a separate, non-comparison field from the snapshot's own start_address (the entry point/PC) -- the plan's own boilerplate language anticipated conflating these by analogy to .bin/.raw, but a full-64K .vsf's $0000 origin is structurally correct (the whole address space, not a partial blob, is loaded at offset 0), so the genuinely-carried start address is the entry point, which matched exactly"
-  - "Recorded, but did not score against this criterion, a real regenerator2000 defect (r2000_get_address_details always reports OutOfRange for a full-64K load) discovered incidentally while looking for a suitable live analysis tool"
+  - "Recorded, but did not score against this criterion, a real analyser defect (anno_get_address_details always reports OutOfRange for a full-64K load) discovered incidentally while looking for a suitable live analysis tool"
 
-requirements-completed: [R2000-16]
+requirements-completed: [ANNO-16]
 
 duration: ~50min active work (tasks 1-3, including the cross-session correction and re-run)
 completed: 2026-08-20
@@ -39,7 +39,7 @@ completed: 2026-08-20
 
 # Phase 09 Plan 06: The Snapshot Interrogation Probe (criterion 3(4)) Summary
 
-**R2000-16(4) answered `partial`: a real `.vsf` from `vice_snapshot_save` genuinely carries its start address (entry point/PC, `$e5d4`) and memory content (the fixture's 44 bytes at `$c000`, byte-identical) into regenerator2000, but its displayed machine type ("Commodore 64") is a coincidental default fallback rather than a genuine read of the snapshot's own `"C64SC"` machine-name field — plus a real cross-session broker finding caught and fixed mid-task, and a real regenerator2000 defect recorded separately.**
+**ANNO-16(4) answered `partial`: a real `.vsf` from `vice_snapshot_save` genuinely carries its start address (entry point/PC, `$e5d4`) and memory content (the fixture's 44 bytes at `$c000`, byte-identical) into the external analyser, but its displayed machine type ("Commodore 64") is a coincidental default fallback rather than a genuine read of the snapshot's own `"C64SC"` machine-name field — plus a real cross-session broker finding caught and fixed mid-task, and a real analyser defect recorded separately.**
 
 ## Performance
 
@@ -49,19 +49,19 @@ completed: 2026-08-20
 
 ## Accomplishments
 
-- **A real `.vsf` was produced, byte-level interrogated, and found to genuinely carry its own start address (entry point/PC) and memory content — but not a genuinely-derived machine type.** Independent, from-scratch parsing of the snapshot's own bytes (mirroring the actually-installed `regenerator2000-core-0.9.20` parser's exact offsets, not trusting either producer or consumer tool) confirmed: `machine_name = "C64SC"`, `MAINCPU PC = $e5d4`, and the C64MEM module carrying the fixture's 44 bytes byte-identical. regenerator2000's Import Context Setup modal and its own `r2000_get_binary_info`/`r2000_get_disassembly_cursor` MCP tools agreed with the entry point and memory content exactly, but the displayed "Commodore 64" traces — at the source level, in `dialog_import_context.rs:37`'s `unwrap_or(current_system)` — to a fallback default, not a real read of `"C64SC"` (which matches none of `file_io.rs`'s literal `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"` arms).
+- **A real `.vsf` was produced, byte-level interrogated, and found to genuinely carry its own start address (entry point/PC) and memory content — but not a genuinely-derived machine type.** Independent, from-scratch parsing of the snapshot's own bytes (mirroring the actually-installed `external-analyser-core-0.9.20` parser's exact offsets, not trusting either producer or consumer tool) confirmed: `machine_name = "C64SC"`, `MAINCPU PC = $e5d4`, and the C64MEM module carrying the fixture's 44 bytes byte-identical. The external analyser's Import Context Setup modal and its own `anno_get_binary_info`/`anno_get_disassembly_cursor` MCP tools agreed with the entry point and memory content exactly, but the displayed "Commodore 64" traces — at the source level, in `dialog_import_context.rs:37`'s `unwrap_or(current_system)` — to a fallback default, not a real read of `"C64SC"` (which matches none of `file_io.rs`'s literal `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"` arms).
 - **A real, self-caught mistake, corrected inline rather than hidden.** The first snapshot-production attempt split `vice_memory_write`/`vice_memory_read` and the later `vice_snapshot_save` across separate MCP client connections. The write's own same-connection read-back looked correct, but Task 3's independent re-parse of the produced `.vsf` showed the fixture bytes were NOT actually in it — VICE's own uninitialised-RAM pattern was there instead. Root-caused to this project's own broker session model ("the connection itself IS the lease") rather than assumed away, then fixed by reissuing the entire sequence in one connection and independently re-confirming the corrected file byte-identical.
-- **A real regenerator2000 defect found and recorded (not scored against this criterion):** `r2000_get_address_details` is unconditionally broken for any full-64K load — `handler.rs:1894`'s bounds check casts `raw_data.len()` (`65536`) to `u16`, which overflows to `0`, making the check always true.
+- **A real the external analyser defect found and recorded (not scored against this criterion):** `anno_get_address_details` is unconditionally broken for any full-64K load — `handler.rs:1894`'s bounds check casts `raw_data.len()` (`65536`) to `u16`, which overflows to `0`, making the check always true.
 - **`VSF_LOAD: partial`**, decided by Evidence Integrity Rule 6's own standard: a value that happens to display correctly is not the same as a value genuinely derived from the snapshot. Two of the criterion's fields (start address, memory content) are genuine passes; the third (machine type) is not, on provenance grounds established by direct source tracing, not inference.
-- Clean teardown proven throughout: broker, all `x64sc` instances, and every `regenerator2000`/`tmux` session confirmed gone; port `:3000` free; pre-existing unrelated listeners (`6600-6602`) left untouched.
+- Clean teardown proven throughout: broker, all `x64sc` instances, and every `the external analyser`/`tmux` session confirmed gone; port `:3000` free; pre-existing unrelated listeners (`6600-6602`) left untouched.
 
 ## Task Commits
 
 Each task was committed atomically (Task 3's commit also carries the mid-task correction to Task 1/2's own transcript sections, discovered and fixed within Task 3's own work):
 
 1. **Task 1: Produce a real snapshot from a live emulator, and record what it carries** - `858281f` (feat)
-2. **Task 2: Load the snapshot into regenerator2000 and bootstrap a project from it** - `c6912cf` (feat)
-3. **Task 3: Interrogate what regenerator2000 derived, compare, and correct the Task 1 cross-session finding** - `e18eb5f` (feat)
+2. **Task 2: Load the snapshot into the external analyser and bootstrap a project from it** - `c6912cf` (feat)
+3. **Task 3: Interrogate what the external analyser derived, compare, and correct the Task 1 cross-session finding** - `e18eb5f` (feat)
 
 _No plan-metadata commit yet -- this SUMMARY.md is committed next, per the sequential-executor protocol. STATE.md/ROADMAP.md are NOT updated by this worktree agent; the orchestrator owns those writes after all wave-3 agents complete._
 
@@ -76,10 +76,10 @@ No files under `.claude/mcp/vice/` were touched. `09-RESEARCH.md` was not modifi
 ## Key evidence lines (verbatim, for plan 09-07)
 
 ```
-SNAPSHOT_FILE: /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/r2000_probe_vsf_v2.vsf
+SNAPSHOT_FILE: /home/henrik/dev/henrik/git/c64-re-tools/.vice-snapshots/anno_probe_vsf_v2.vsf
 SNAPSHOT_FILE_IS_VSF: yes
 SNAPSHOT_CARRIED: machine_name (raw, from file) = "C64SC"; suggested_system match per file_io.rs's own logic = None; PC (from file, MAINCPU module offset 12-13) = $e5d4; PC (live register read, same session, moments before the snapshot) = $e5d4 (exact match); C64MEM module present, and the fixture's 44 bytes at $c000 are present byte-identical.
-R2000_DERIVED: machine type = "Commodore 64" (stated, provenance mismatch); start address (entry point/PC) = $e5d4 (genuinely derived, matches); export origin directive = $0000 (structurally expected for a full-64K load, not a comparison field).
+ANNO_DERIVED: machine type = "Commodore 64" (stated, provenance mismatch); start address (entry point/PC) = $e5d4 (genuinely derived, matches); export origin directive = $0000 (structurally expected for a full-64K load, not a comparison field).
 VSF_LOAD: partial
 ```
 
@@ -115,7 +115,7 @@ VSF_LOAD: partial
 
 ## Issues Encountered
 
-- A real regenerator2000 0.9.20 defect (`r2000_get_address_details` always reports `OutOfRange` for a full-64K load, traced to a `u16` overflow in `handler.rs:1894`) was found incidentally while choosing a live analysis tool. Not scored against this criterion (neither R2000-16(4) nor its acceptance criteria mention this tool) and not worked around — the two tools this task actually needed (`r2000_get_binary_info`, `r2000_get_disassembly_cursor`) already answered what was required. Recorded in the transcript for Phase 10/11 to track.
+- A real the external analyser 0.9.20 defect (`anno_get_address_details` always reports `OutOfRange` for a full-64K load, traced to a `u16` overflow in `handler.rs:1894`) was found incidentally while choosing a live analysis tool. Not scored against this criterion (neither ANNO-16(4) nor its acceptance criteria mention this tool) and not worked around — the two tools this task actually needed (`anno_get_binary_info`, `anno_get_disassembly_cursor`) already answered what was required. Recorded in the transcript for Phase 10/11 to track.
 - The broker recycled its warm instance to a different port between tasks (6603/6604 to 6605/6606) with the same broker PID throughout — noted at final teardown, not investigated further since it did not affect this plan's own evidence chain (the corrected snapshot's own single-connection sequence was self-contained).
 
 ## User Setup Required
@@ -126,9 +126,9 @@ None. No external service configuration required. The stock VICE binary (`/usr/b
 
 **Ready for plan 09-07 (findings synthesis) and 09-08 (verdict):**
 
-- `SNAPSHOT_FILE_IS_VSF: yes`, `SNAPSHOT_CARRIED:`, `R2000_DERIVED:` and `VSF_LOAD: partial` are all recorded verbatim in `evidence/criterion4-vsf-load.txt` for 09-07 to read directly, plus a `## COMPARISON` block with a per-field verdict and an `## ACCEPTED LIMIT` block naming exactly what Phase 10/11 must not assume (regenerator2000's auto-detected system for a stock-VICE `.vsf`).
-- The `## RESEARCH CORRECTIONS` section documents five items for 09-07 to fold into `09-RESEARCH.md`: the `self.origin`-vs-`entry_point` distinction for `.vsf` loads (not previously documented), the `"C64SC"` vs `"C64"` machine-name mismatch, the `r2000_get_address_details` defect, and the cross-connection session-continuity finding about this project's own broker.
-- Port `:3000` is free and no `regenerator2000`/`x64sc`/`vice-broker.mjs` process from this plan survives.
+- `SNAPSHOT_FILE_IS_VSF: yes`, `SNAPSHOT_CARRIED:`, `ANNO_DERIVED:` and `VSF_LOAD: partial` are all recorded verbatim in `evidence/criterion4-vsf-load.txt` for 09-07 to read directly, plus a `## COMPARISON` block with a per-field verdict and an `## ACCEPTED LIMIT` block naming exactly what Phase 10/11 must not assume (the external analyser's auto-detected system for a stock-VICE `.vsf`).
+- The `## RESEARCH CORRECTIONS` section documents five items for 09-07 to fold into `09-RESEARCH.md`: the `self.origin`-vs-`entry_point` distinction for `.vsf` loads (not previously documented), the `"C64SC"` vs `"C64"` machine-name mismatch, the `anno_get_address_details` defect, and the cross-connection session-continuity finding about this project's own broker.
+- Port `:3000` is free and no `the external analyser`/`x64sc`/`vice-broker.mjs` process from this plan survives.
 - The cross-connection session-continuity finding (item 5 in `## RESEARCH CORRECTIONS`) is directly relevant to any future `.vsf`-based extension of `c64-ram-capture` and should be flagged for whichever later plan builds that route.
 
 No blockers for the remaining wave-3/synthesis plans.

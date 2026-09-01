@@ -43,9 +43,10 @@ runtime import ever loads them.
 
 | Fixture | Guard it belongs to | Route it plants |
 |---|---|---|
-| `planted-removal-fixture.ts.txt` | the removal gate, `scripts/check-no-regenerator2000.mjs`, driven by `removal-gate.test.ts` | a surviving `src/mcp/vice/*.ts` module body |
-| `planted-removal-fixture.md.txt` | the same gate | a `docs/*.md` page outside its exemption set |
+| `planted-disposition-fixture.md` | `docs-review-disposition.test.ts` | a review finding left without a disposition |
+| `planted-review-fixture.md` | `docs-review-disposition.test.ts` | a review document the disposition scan must reject |
+| `planted-hop-chain-fixture.ts.txt` | `hop-chain-comments.test.ts` | a comment hop chain that does not resolve |
+| `planted-phase-pointer-fixture.ts.txt` | `comment-phase-pointers.test.ts`, `hop-chain-comments.test.ts` | a comment pointing at a phase that does not exist |
 
-The removal gate reaches both of these only through its `fixtures/planted-` **prefix exemption**,
-whose hit count is pinned exactly — so editing one of these bodies without moving that pin turns
-the gate red rather than quietly widening it.
+Each guard reaches its fixture by an explicit path, never by a directory scan, so adding a
+fixture here does not silently enrol it in an unrelated guard.

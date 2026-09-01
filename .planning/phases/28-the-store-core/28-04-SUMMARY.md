@@ -266,7 +266,7 @@ status: complete
   types. Two provenance facts are recorded in the doc comments rather than left
   to be rediscovered: the label-kind capitalisation is a *decided asymmetry*
   (the block-type vocabulary is lowercase because it is read off the
-  `r2000_set_data_type` schema and named verbatim in a shipped playbook, while
+  `anno_set_data_type` schema and named verbatim in a shipped playbook, while
   the label-kind vocabulary is capitalised because its only mechanical consumer
   is the coverage census, which spells it that way at four sites), and the four
   access-kind spellings are **cited from an external analyser's reference via
@@ -499,7 +499,7 @@ vice-broker` → `inactive`, no `x64sc` process), because a live broker reddens
 | `node --test anno-types.test.ts anno-store.test.ts anno-seam.test.ts` | green (15 + 23 + 14) |
 | `node --test anno-index.test.ts block-class.test.ts hostpath-consumers.test.ts comment-phase-pointers.test.ts docs-dangling-refs.test.ts` | green |
 | `npm run typecheck` | exits 0 |
-| `npm run test:automated` | **2582 tests, 6 failures — no failure outside the named baseline.** All six are in `r2000-session.test.ts`: the five `plan 18-06:` cases (`regenerator2000` absent from `PATH`) plus the known load-sensitive flake at `:615`. The run exits 1 on that baseline alone; the failure list is the gate, not the exit code. |
+| `npm run test:automated` | **2582 tests, 6 failures — no failure outside the named baseline.** All six are in `anno-session.test.ts`: the five `plan 18-06:` cases (`the external analyser` absent from `PATH`) plus the known load-sensitive flake at `:615`. The run exits 1 on that baseline alone; the failure list is the gate, not the exit code. |
 | `node scripts/check-npm-packages.mjs` | exits 0 |
 
 **Three observed reds, each named in its commit message and reverted before the
@@ -561,7 +561,7 @@ None — no external service configuration required.
   place for `STORE-04`/`STORE-05`'s revert and cross-process CAS work, and
   `runWriteSequence` now rolls back cleanly on a mutation failure, which the
   cross-process refusal test will depend on.
-- **Carried forward:** `P-10` — `28-05`'s import of `./r2000-confidence.ts`
+- **Carried forward:** `P-10` — `28-05`'s import of `./anno-confidence.ts`
   becomes an edit when that module is renamed under `CUT-04`. Recorded in both
   plans; unchanged by this one.
 - **No blockers.**

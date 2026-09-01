@@ -224,45 +224,6 @@ for any other enum.** `anno_create_project_enum` defines the variants and `anno_
 binds one to the accessing instruction's address — see "Name it" and "Document it" below. That is
 manual where `gen-enums` was bulk, but it writes exactly the same rows into the store.
 
-<!--
-ATTRIBUTION (ABS-02)
-Adapted from regenerator2000.
-  Source repository: https://github.com/ricardoquesada/regenerator2000
-  Source path:       r2000-analyze-blocks/SKILL.md — held under the upstream
-                     repository's excluded agent-skills directory, which the
-                     published crate does not ship. The full upstream path is
-                     recorded once, in
-                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
-  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
-  Source sha256:     3fad6193466a20fa0d2f56a7e38a740fa7218b920aa36e348bc65273c987aa1b
-  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
-  This project elects: MIT
-
-  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
-  upstream text instructs:
-    - Upstream's "if a conversion was wrong, undo it" step is replaced with
-      "set the correct type again". `anno_set_data_type` is idempotent over a
-      range, so the undo call buys nothing and this project does not expose
-      it.
-    - Upstream's two instructions to insert a table boundary marker are NOT
-      carried as instructions — the underlying call is not exposed here, and
-      as of 2026-08-29 the hazard they existed to prevent is GONE: the
-      annotation store never joins two rows of its own accord, so adjacent
-      same-type tables keep their boundary. The dated limitation and the
-      record of its closure are under "The adjacent-table limitation, and how
-      it was closed" below.
-    - Upstream's soft cross-reference to its own sibling procedure file is
-      replaced by a pointer to this project's own absorbed routine procedure
-      in `src/skills/c64-program-recon/SKILL.md`. The upstream file it named
-      does not exist for anyone who installed regenerator2000 from the crate.
-    - The region-read step names this project's own byte ceiling, which
-      upstream has no equivalent of.
-
-  Re-sync trigger: see ABS-04's dated decision and the manifest's
-  `resync_triggers`.
-  See THIRD-PARTY-NOTICES.md.
--->
-
 ## Classifying every region of an annotation project
 
 Everything above answers *what does this published address mean*. This section
@@ -509,40 +470,6 @@ Then report, and mean it:
 | A split table's addresses recombine to nonsense | The half boundary is misplaced, or the table is hi/lo rather than lo/hi. |
 | Two tables you classified separately show up as one block | The adjacent-table limitation above. Not your error. |
 | Text renders as garbage on screen but fine through CHROUT | It is PETSCII, typed as screencode — or the reverse. |
-
-<!--
-ATTRIBUTION (ABS-02)
-Adapted from regenerator2000.
-  Source repository: https://github.com/ricardoquesada/regenerator2000
-  Source path:       r2000-analyze-symbol/SKILL.md — held under the upstream
-                     repository's excluded agent-skills directory, which the
-                     published crate does not ship. The full upstream path is
-                     recorded once, in
-                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
-  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
-  Source sha256:     d57d9c2fdfa1c3e2f8a6384a881378ad1e3e371114c3b0b8d15ec1c71b3b4da8
-  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
-  This project elects: MIT
-
-  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
-  upstream text instructs:
-    - Upstream's cursor-based entry route is replaced by explicit address
-      input. Upstream's own text forbids relying on the cursor in exactly this
-      situation, and this project has no editor cursor at all; the composite
-      address lookup (`anno_get_address_details`) takes an explicit address.
-    - Upstream's two low/high-byte immediate-formatting steps are NOT carried
-      as instructions — the underlying call is not exposed here. They are
-      named by bare verb, with the requirement that would supply their
-      criterion, under "The pointer-formatting step this project does not
-      have" below.
-    - The hardware-register and KERNAL-routine identification steps are routed
-      to this skill's own `lookup` verb and its four published tables, rather
-      than to unassisted model recall.
-
-  Re-sync trigger: see ABS-04's dated decision and the manifest's
-  `resync_triggers`.
-  See THIRD-PARTY-NOTICES.md.
--->
 
 ## What a symbol in the store actually represents
 

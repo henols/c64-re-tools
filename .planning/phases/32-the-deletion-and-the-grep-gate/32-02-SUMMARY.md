@@ -87,7 +87,7 @@ coverage:
         ref: "grep -n 'join(DEFAULT_ROOT' over all five scripts returns nothing; grep -Ec 'process.env.[A-Z_]*ROOT|WAIVER|--skip|--force' is 0 for all five; grep -c resolveContainedRoot is >=1 for all five"
         status: pass
       - kind: integration
-        ref: "grep -ac regenerator2000 scripts/check-skill-fork-honesty.mjs == 2 (unchanged, :19 and :408) and node scripts/check-no-regenerator2000.mjs exits 0"
+        ref: "grep -ac the external analyser scripts/check-skill-fork-honesty.mjs == 2 (unchanged, :19 and :408) and node scripts/check-no-analyser.mjs exits 0"
         status: pass
     human_judgment: false
   - id: D3
@@ -106,7 +106,7 @@ coverage:
         ref: ".planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-root-override-inventory.md — 8 rows, every row a route of --root or worktree, every worktree row a named code shape (trackedFiles()'s git ls-files at :192-199, shippedInstallerFiles()/packFiles()'s npm pack --dry-run at :201-203 and :147-148, installer/package.json:52's prepack)"
         status: pass
       - kind: integration
-        ref: "node scripts/check-no-regenerator2000.mjs exits 0 with the inventory committed (it lives under .planning/, which the gate excludes by prefix)"
+        ref: "node scripts/check-no-analyser.mjs exits 0 with the inventory committed (it lives under .planning/, which the gate excludes by prefix)"
         status: pass
     human_judgment: false
   - id: D5
@@ -236,7 +236,7 @@ All run from `/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a
 | the same four with `--root .tmp-32-02-synth` | all exit 0 — green controls |
 | the same four with `--root /tmp` | all exit 1, `REFUSED`, naming `/tmp` |
 | `node scripts/check-skill-description-overlap.mjs --root .tmp-32-02-synth` with a planted `CLAUDE.md` disagreement | exit 1, `text-differs` for `acme-build` — the split-root fix proved |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 (before Task 1, after Task 2, and with the inventory committed) |
+| `node scripts/check-no-analyser.mjs` | exit 0 (before Task 1, after Task 2, and with the inventory committed) |
 | `node scripts/check-npm-packages.mjs` | exit 0 — 79 / 34 files, 7 skills |
 | `node scripts/audit-gate.mjs --json` | `allowed: true`, `redGuards: []`, `structuralErrors: []` |
 | `cd src/mcp/vice && npm run typecheck` | exit 0 |
@@ -245,7 +245,7 @@ All run from `/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a
 | `node scripts/check-guard-fates.mjs` | exit 1 — the pre-declared incomplete-registry red and nothing else: `setA=43 setB=16 setC=2 total=61 rows=1`, followed by exactly 60 `no recorded fate` lines and no other error class |
 | `grep -n 'join(DEFAULT_ROOT'` over all five scripts | no matches |
 | `grep -Ec 'process\.env\.[A-Z_]*ROOT\|WAIVER\|--skip\|--force'` over all five | 0 for each |
-| `grep -ac 'regenerator2000' scripts/check-skill-fork-honesty.mjs` | 2, unchanged (`:19`, `:408`) |
+| `grep -ac 'the external analyser' scripts/check-skill-fork-honesty.mjs` | 2, unchanged (`:19`, `:408`) |
 | `git status --porcelain` at close | clean (the synthetic tree was removed with a targeted `rm -rf`; no `git clean`) |
 
 **The fact research §7.4 marked NOT MEASURED, now measured:** `scripts/generate-tool-support-table.mjs` **WRITES** `docs/tool-support.md` on direct invocation — `main()` calls `writeFileSync(outputPath, doc)` unconditionally and there is no `--check` mode. So the close gate's step 4 must stay "run it, then `git diff --exit-code -- docs/tool-support.md`", exactly as §7.4 drafted it.
@@ -258,7 +258,7 @@ None — no external service configuration required.
 
 - **Ready for plan 32-06 (the sweep).** Every plant route now has a stated source: inventory §2 gives the route per script, §6 gives the exact fixture manifest per `--root` gate (transcribed from `paths().required`), §6.1 warns that the synthetic tree must be in-repo, §3 states the both-skill-trees requirement for `cli-invocations`, and §7 carries the two exact fixture pins that would red the removal gate.
 - **Ready for plan 32-08 (the fate registry).** `check-guard-fates.mjs` is still red only on the incomplete registry (60 of 61 rows unfilled), unchanged by this plan.
-- **Two `worktree`-route scripts remain**, both blocked on the same shape (a subprocess treating the root as a git/npm workspace): `check-no-regenerator2000.mjs` and `check-npm-packages.mjs`. Neither was touched; `check-no-regenerator2000.mjs` is plan 32-03's declared scope and was read only.
+- **Two `worktree`-route scripts remain**, both blocked on the same shape (a subprocess treating the root as a git/npm workspace): `check-no-analyser.mjs` and `check-npm-packages.mjs`. Neither was touched; `check-no-analyser.mjs` is plan 32-03's declared scope and was read only.
 - **Concern for the merge:** the inventory cites its own commit shas (`bdb8379`, `029e5ca`). Those are worktree-branch shas and survive a merge, but not a rebase. If the orchestrator rebases this branch, §1's two shas need updating to the rewritten ones.
 
 ## Self-Check: PASSED
@@ -266,7 +266,7 @@ None — no external service configuration required.
 - All 6 key files present on disk (`ls -1` over the created/modified list, all resolved).
 - All 3 task commits present in `git log --oneline --all`: `bdb8379`, `029e5ca`, `b5d39b2`.
 - Every task's `<acceptance_criteria>` re-run and logged in the table above; all pass, with the single documented exception of `test:automated`'s exit status, which fails only on the known worktree-only `repo-root.test.ts:249` assertion.
-- Working tree clean at close; `.planning/STATE.md` and `.planning/ROADMAP.md` untouched; `.planning/PROJECT.md`, `.planning/ARCHITECTURE.md` and `scripts/check-no-regenerator2000.mjs` (plan 32-03's scope) untouched.
+- Working tree clean at close; `.planning/STATE.md` and `.planning/ROADMAP.md` untouched; `.planning/PROJECT.md`, `.planning/ARCHITECTURE.md` and `scripts/check-no-analyser.mjs` (plan 32-03's scope) untouched.
 
 ---
 *Phase: 32-the-deletion-and-the-grep-gate*

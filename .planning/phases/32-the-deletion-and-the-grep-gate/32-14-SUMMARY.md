@@ -214,7 +214,7 @@ is that document's, not a second one invented here.
 
 **Commit measured:** `7638c6f1f7019e33b12845c93b7ad882904bbc42`.
 
-**The re-run.** `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/r2000-enum-gen.test.ts
+**The re-run.** `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/anno-enum-gen.test.ts
 --out .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap3-harness-correction.md`
 → exit `0`, `OBSERVED RED … guard exit status 1 (control exit status 0)`, tree restored
 byte-identical. The harness wrote the new `observedRed` back itself; it was not hand-edited.

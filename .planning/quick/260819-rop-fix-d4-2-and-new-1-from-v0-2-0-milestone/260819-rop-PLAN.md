@@ -127,7 +127,7 @@ Correct these three, matching on text:
    is an accurate record of what Phase 3 decided at the time, and this task does
    not rewrite history, it only stops asserting a false present-tense ownership.
 
-3. The regenerator2000 overlap narrative (`~:684-685`),
+3. The external analyser overlap narrative (`~:684-685`),
    `"Phase 7 owns disk detach (the deferred half of `DIRECT-06`) and wedge triage on stock."`
    This sits mid-paragraph, so reword rather than delete — the sentence must
    still carry Phase 7's real remaining ownership (wedge triage on stock) and the

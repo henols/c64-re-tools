@@ -26,7 +26,7 @@ CORE-01 is a different kind of task: there is no guard, and the two possible
 outcomes (restate, or record a dated "weighed and kept") are both legitimate
 under the requirement's own wording. The evidence for restating is strong and
 concrete (Phase 11's two-session sealed-question test, the symbol round trip, the
-17 `r2000_*` tools); the evidence for keeping the current wording is that the
+17 `anno_*` tools); the evidence for keeping the current wording is that the
 Core Value's actual subject — driving a *live* emulator reliably — is still the
 single thing every other phase of both this milestone and the prior two exists to
 serve, and the "outlives the session" property is a second axis, not a
@@ -306,7 +306,7 @@ adopt the already-drafted candidate, adopt a variant, or explicitly decline it."
 
 1. **`PROJECT.md:78` (Validated requirements list)** — *"`c64-program-recon`
    writes findings as queryable annotation state, not only Markdown prose, so a
-   later session can query instead of re-deriving — Phase 11 (`R2000-10`; proven
+   later session can query instead of re-deriving — Phase 11 (`ANNO-10`; proven
    by the two-session falsifiability test — session B answered a question sealed
    before it existed, from store queries alone)."* This is the single strongest
    piece of evidence: a genuinely independent second session answered a question
@@ -316,14 +316,14 @@ adopt the already-drafted candidate, adopt a variant, or explicitly decline it."
    question with a hashed answer key; a genuinely separate session B answered
    from tool calls alone and the canonical line hashed identically (`e64463d8…`).
    The strongest evidence this milestone produced."*
-3. **`PROJECT.md:81` (Validated)** — *"Symbols annotated in regenerator2000 export
+3. **`PROJECT.md:81` (Validated)** — *"Symbols annotated in the external analyser export
    as VICE label files into the symbol store, and names discovered live flow
-   back — closing the round trip — Phase 11 (`R2000-14`, `R2000-15`; demonstrated
+   back — closing the round trip — Phase 11 (`ANNO-14`, `ANNO-15`; demonstrated
    as one closed loop against genuine unpatched stock `x64sc`, with the inbound
    name's prior absence shown rather than claimed)."* — a second, independent
    mechanism by which a finding from one session (or one tool) becomes usable
    input to a later live emulator session.
-4. **`PROJECT.md:79-80`** — the 17 curated `r2000_*` tools let a later session
+4. **`PROJECT.md:79-80`** — the 17 curated `anno_*` tools let a later session
    query cross-references, labels, and comments over a program another session
    analysed, without re-deriving anything.
 5. **`STATE.md:27-33` (Project Reference, current framing)** — already states the
@@ -332,7 +332,7 @@ adopt the already-drafted candidate, adopt a variant, or explicitly decline it."
    is a v0.4.0 target feature, not a bookkeeping edit — see PROJECT.md → Core
    Value for the candidate shape."*
 6. Structural evidence beyond Phase 11: the annotation store is **persistent** by
-   construction (a project file regenerator2000 owns, not session memory), and
+   construction (a project file the external analyser owns, not session memory), and
    `docs/tool-support.md`/the generated memory map are themselves artifacts that
    outlive any one session and are consumed by later ones (`PROJECT.md:139-140`,
    `:182-186`).
@@ -351,13 +351,13 @@ adopt the already-drafted candidate, adopt a variant, or explicitly decline it."
    (v0.2.0) and added a **second**, structurally separate capability (v0.3.0),
    but did not touch or weaken the first.
 2. **The "outlives the session" property belongs to a component that is
-   *structurally incapable of touching VICE at all*.** `PROJECT.md:82` (`R2000-01`)
+   *structurally incapable of touching VICE at all*.** `PROJECT.md:82` (`ANNO-01`)
    states the static-analysis backend is "never launched with `--vice`, guarded
    in code rather than only documented" — two independent guarantees
-   (`R2000-02`). Folding "what it learns outlives the session" into a Core Value
+   (`ANNO-02`). Folding "what it learns outlives the session" into a Core Value
    that is otherwise entirely about *live emulator driving* risks conflating two
    genuinely separate subsystems (the live `vice_*` surface vs. the
-   emulator-incapable `r2000_*` surface) into one sentence that no longer cleanly
+   emulator-incapable `anno_*` surface) into one sentence that no longer cleanly
    describes either.
 3. **One milestone of evidence is explicitly flagged by the project's own prior
    author as thin ground** (`PROJECT.md:47`: *"One milestone of evidence is thin
@@ -607,7 +607,7 @@ checkable, but its **artifacts** are:
   be distinguished from a change that could have been made at any point,
   including "in passing."
 - A checkable citation of the **specific evidence actually weighed** — e.g. the
-  literal string "sealed-question" or "Phase 11" or "`r2000_*`" appearing in the
+  literal string "sealed-question" or "Phase 11" or "`anno_*`" appearing in the
   new paragraph, the same way FORK-01's row is checkably required to name
   `KEYBOARD_MATRIX_SET` verbatim (`docs-fork-decision.test.ts` test 4). A
   paragraph that says only "Core Value confirmed, no change needed" with no

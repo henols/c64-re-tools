@@ -1002,7 +1002,7 @@ test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where
 });
 
 // This repo's own stripCommentLines() convention (hostpath-consumers.test.ts,
-// r2000-launch.test.ts) reused verbatim rather than reinvented: strips `//`
+// anno-launch.test.ts) reused verbatim rather than reinvented: strips `//`
 // and `/* ... */` comments line-by-line, closing a block comment on the
 // FIRST close-token found by position, never by whether the trimmed line
 // happens to end with one, and re-feeding any code trailing a same-line

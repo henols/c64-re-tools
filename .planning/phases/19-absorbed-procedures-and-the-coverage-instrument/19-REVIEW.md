@@ -10,7 +10,7 @@ files_reviewed_list:
   - installer/THIRD-PARTY-NOTICES.md
   - scripts/check-npm-packages.mjs
   - scripts/check-skill-description-overlap.mjs
-  - scripts/lib/r2000-cli-verbs.mjs
+  - scripts/lib/anno-cli-verbs.mjs
   - scripts/lib/skill-corpus.d.mts
   - scripts/lib/skill-descriptions.d.mts
   - scripts/lib/skill-descriptions.mjs
@@ -34,13 +34,13 @@ files_reviewed_list:
   - src/mcp/vice/fixtures/coverage/nc5-well-documented/store.json
   - src/mcp/vice/fixtures/coverage/README.md
   - src/mcp/vice/package.json
-  - src/mcp/vice/r2000-cli.test.ts
-  - src/mcp/vice/r2000-cli.ts
-  - src/mcp/vice/r2000-coverage.test.ts
-  - src/mcp/vice/r2000-coverage.ts
-  - src/mcp/vice/r2000-tools.ts
-  - src/mcp/vice/r2000-upstream-audit.test.ts
-  - src/mcp/vice/r2000-verb-coverage.test.ts
+  - src/mcp/vice/anno-cli.test.ts
+  - src/mcp/vice/anno-cli.ts
+  - src/mcp/vice/anno-coverage.test.ts
+  - src/mcp/vice/anno-coverage.ts
+  - src/mcp/vice/anno-tools.ts
+  - src/mcp/vice/anno-derivation.test.ts
+  - src/mcp/vice/anno-verb-coverage.test.ts
   - src/mcp/vice/skill-attribution.test.ts
   - src/mcp/vice/skill-description-overlap.test.ts
   - src/mcp/vice/THIRD-PARTY-NOTICES.md
@@ -75,7 +75,7 @@ thirteen source files:
 ```
 THIRD-PARTY-NOTICES.md                          installer/THIRD-PARTY-NOTICES.md
 scripts/check-npm-packages.mjs                  src/mcp/vice/THIRD-PARTY-NOTICES.md
-src/mcp/vice/r2000-coverage.ts                  src/mcp/vice/r2000-coverage.test.ts
+src/mcp/vice/anno-coverage.ts                  src/mcp/vice/anno-coverage.test.ts
 src/mcp/vice/skill-attribution.test.ts          src/mcp/vice/fixtures/coverage/README.md
 src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs
 src/mcp/vice/fixtures/coverage/fp1{,b}-*/project.regen2000proj + store.json
@@ -121,7 +121,7 @@ census PLAIN         : reached=17  tableEntry=0   unreached=45
 Sixteen bytes of pure data are promoted to the headline measure and sixteen more
 are claimed as table entries — from a program that jumps nowhere. That is
 `CR-04`, and the committed test suite cannot see it: the class-3 positive
-control (`SPLIT_TABLE`, `r2000-coverage.test.ts:166-175`) carries a real
+control (`SPLIT_TABLE`, `anno-coverage.test.ts:166-175`) carries a real
 `jmp ($00fb)` and the negative control (`ORDINARY_INDEXED_COPY`) carries no
 zero-page store at all, so the two controls bracket the *outside* of the gate
 and never test its interior.
@@ -135,7 +135,7 @@ proof of code.
 
 The suite is green (2564 tests, 0 fail). Green means the controls that exist
 pass; `CR-04` and `WR-14` are the shapes no control covers, which is exactly the
-condition `r2000-coverage.test.ts:770-780`'s own comment names as the reason a
+condition `anno-coverage.test.ts:770-780`'s own comment names as the reason a
 fully green suite concealed `CR-02` the first time.
 
 ## Critical Issues
@@ -143,7 +143,7 @@ fully green suite concealed `CR-02` the first time.
 ### CR-01: `namesACaller()` matches caller addresses as unanchored substrings, defeating the multi-caller rule
 
 > **RESOLVED — plan 19-06** (commit `0bca490`). `namesACaller()` at
-> `src/mcp/vice/r2000-coverage.ts:1329-1348` now matches a delimited token:
+> `src/mcp/vice/anno-coverage.ts:1329-1348` now matches a delimited token:
 > `` `\\$${escapeRegExp(token)}(?![0-9a-f])` `` over both the bare and
 > canonical-4-digit widths, and the label-name branch is bounded on both sides
 > by `(?<![0-9A-Za-z_])` / `(?![0-9A-Za-z_])`. `escapeRegExp()` was added so a
@@ -152,7 +152,7 @@ fully green suite concealed `CR-02` the first time.
 > `HEAD`: `callers: [0x0012, 0x0034]` with a comment mentioning `$1234` is now
 > reported `{count: 1, addresses: [...]}`. **A residual remains — see WR-13.**
 
-**File:** `src/mcp/vice/r2000-coverage.ts:992-1006` *(pre-fix line numbers)*
+**File:** `src/mcp/vice/anno-coverage.ts:992-1006` *(pre-fix line numbers)*
 
 **Issue:** The COV-02 multi-caller rule ("a label with strictly more than one
 caller must name a caller") is satisfied by a plain `String.includes` of
@@ -169,7 +169,7 @@ comment: "[confirmed-code] reads the table at $1234 and returns"
 The comment names neither caller. The label is silently counted as documented,
 stays in `labels.kindRatio.user`, stays in the reproducibility sample population,
 and produces no finding. This is a **falsely-clean verdict** — the failure mode
-`r2000-coverage.test.ts`'s own header calls out as T-19-14, and the one the NC4
+`anno-coverage.test.ts`'s own header calls out as T-19-14, and the one the NC4
 control fixture exists to catch. NC4 only passes because its comment happens not
 to contain a colliding hex string.
 
@@ -183,7 +183,7 @@ canonical width; word-boundary the label name too.
 ### CR-02: the split lo/hi table scan manufactures census coverage from ordinary data
 
 > **RESOLVED (NARROWED) — plan 19-08** (commit `1706d8b`). The class-3 scan is
-> now gated (`r2000-coverage.ts:836-924`), ungated pairings move to the advisory
+> now gated (`anno-coverage.ts:836-924`), ungated pairings move to the advisory
 > `splitTableCandidates` sibling, `COVERAGE_SCHEMA_VERSION` was bumped to 2, and
 > `provenDispatchTargets()` (`:954-969`) is the single seam every `extraSeeds:`
 > assignment reads. `classFromBytes()` (`:1276`) takes the proven array as a
@@ -196,7 +196,7 @@ canonical width; word-boundary the label name too.
 > happens on the most ordinary indirect-data-read idiom in 6502 code. Tracked
 > as the new **CR-04** rather than by reopening this id.
 
-**File:** `src/mcp/vice/r2000-coverage.ts:580-621` (feeding `buildCoverageReport` at `:1308-1312`) *(pre-fix line numbers)*
+**File:** `src/mcp/vice/anno-coverage.ts:580-621` (feeding `buildCoverageReport` at `:1308-1312`) *(pre-fix line numbers)*
 
 **Issue:** The class-3 scan pairs **any** two indexed `ld*` instructions occurring
 within `SPLIT_TABLE_WINDOW` (8) decoded instructions, assumes their operands are
@@ -234,7 +234,7 @@ seed the descent only from evidence-backed targets through one seam.
 > `LICENSE-MIT` (1072 bytes, sha256
 > `e2579ce7a10784ea205270fc7775e75c07b283f7a5f6e1fdd31f20f8b8a4973b`) is now
 > reproduced verbatim under an identical `## Upstream MIT permission notice
-> (regenerator2000)` heading in all three of `THIRD-PARTY-NOTICES.md`,
+> (the external analyser)` heading in all three of `THIRD-PARTY-NOTICES.md`,
 > `installer/THIRD-PARTY-NOTICES.md` and `src/mcp/vice/THIRD-PARTY-NOTICES.md`.
 > The false sentence is deleted and pinned as forbidden
 > (`skill-attribution.test.ts:363-368`). The presence check is a **sha256 over
@@ -245,14 +245,14 @@ seed the descent only from evidence-backed targets through one seam.
 
 **File:** `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117`, `installer/THIRD-PARTY-NOTICES.md`, every `ATTRIBUTION (ABS-02)` block (e.g. `src/skills/routine-queue-walker/SKILL.md:6-40`) *(pre-fix line numbers)*
 
-**Issue:** The project elects **MIT** for the incorporated `regenerator2000`
+**Issue:** The project elects **MIT** for the incorporated `the external analyser`
 prose. The MIT licence requires that *"The above copyright notice and this
 permission notice shall be included in all copies or substantial portions of the
 Software."* A repo-wide search finds the string `Permission is hereby granted`
 in exactly one place — a 2018-vintage planning document — and **nowhere** in
 `src/skills/`, `installer/THIRD-PARTY-NOTICES.md`,
 `src/mcp/vice/THIRD-PARTY-NOTICES.md`, or either published tarball. Only the
-copyright line (`Copyright (c) 2026 Ricardo Quesada`) travels.
+copyright line (`Copyright (c) 2026 the upstream author`) travels.
 
 Compounding it, `src/mcp/vice/THIRD-PARTY-NOTICES.md:115-117` asserts:
 
@@ -270,7 +270,7 @@ digest so it cannot silently regress.
 
 ### CR-04: the dispatch-context gate accepts an ordinary zero-page *data*-pointer construction as proof of dispatch, so the census still manufactures `reachedAsInstruction` out of data
 
-**File:** `src/mcp/vice/r2000-coverage.ts:644-662` (`hasDispatchContext`), gating at `:871` and `:907-911`
+**File:** `src/mcp/vice/anno-coverage.ts:644-662` (`hasDispatchContext`), gating at `:871` and `:907-911`
 
 **Issue:** `CR-02`'s fix requires a class-3 pairing to carry "a dispatch consumer
 in evidence". `hasDispatchContext()` implements that as **any one of three
@@ -331,7 +331,7 @@ HERE IS THE DECISION TO TREAT THAT SOURCE AS PROOF OF CODE"; this is that
 decision made by accident, one level down, inside `hasDispatchContext`.
 
 The committed controls cannot catch it. `SPLIT_TABLE`
-(`r2000-coverage.test.ts:166-175`) is the positive control and carries a real
+(`anno-coverage.test.ts:166-175`) is the positive control and carries a real
 `jmp ($00fb)`; `ORDINARY_INDEXED_COPY` / FP1 is the negative control and carries
 **no zero-page store at all**. The two bracket the outside of the gate. Nothing
 tests the interior — a vector that is built and then consumed by something other
@@ -369,7 +369,7 @@ function hasDispatchContext(insns: readonly Instruction[], start: number, reach:
 }
 ```
 
-Then add the missing interior control to `r2000-coverage.test.ts`: the payload
+Then add the missing interior control to `anno-coverage.test.ts`: the payload
 above, asserting `splitTables === []`, `provenDispatchTargets(scan) === []`, and
 `classAt(census, 0x0840) === "unreached"`. Consider committing it as a third
 false-positive fixture (`fp2-zeropage-data-pointer`) alongside FP1/FP1b, since
@@ -380,7 +380,7 @@ the report-level statement is where the gap is actually phrased.
 ### WR-01: split-table lo/hi roles are assigned by address order, producing byte-swapped targets, and the same idiom is reported twice
 
 > **RESOLVED — plan 19-08** (commit `1706d8b`). `Math.min`/`Math.max` role
-> assignment is deleted. Class 4 now runs first (`r2000-coverage.ts:780-838`),
+> assignment is deleted. Class 4 now runs first (`anno-coverage.ts:780-838`),
 > records every instruction of a matched window in `classFourWindow`, and Class
 > 3 declines any pairing whose leading load sits in one (`:841`). Orientation
 > comes from `resolveSplitOrientation()` (`:679-712`) — the load whose value
@@ -390,7 +390,7 @@ the report-level statement is where the gap is actually phrased.
 > Regression-tested by *"the class-4 stack-return idiom is not also reported as
 > a class-3 split table"*, which includes an explicit byte-swap cross-check.
 
-**File:** `src/mcp/vice/r2000-coverage.ts:591-592`, `:605-618`, `:626-664` *(pre-fix line numbers)*
+**File:** `src/mcp/vice/anno-coverage.ts:591-592`, `:605-618`, `:626-664` *(pre-fix line numbers)*
 
 **Issue:** `loBase = Math.min(a, b); hiBase = Math.max(a, b)` assumes the low-byte
 table always sits at the lower address. Nothing justifies that. The file's own
@@ -413,14 +413,14 @@ infer lo/hi from the store construction or report the pairing as unresolved.
 ### WR-02: `autoPrefixNamesRemaining` and `multiCallerUndocumented.count` are pre-dedup lengths reported beside deduped address lists
 
 > **RESOLVED — plan 19-06** (commit `cbdbf97`). `computeLabelRatio()` now
-> dedupes once into a local (`r2000-coverage.ts:1042`) and both
+> dedupes once into a local (`anno-coverage.ts:1042`) and both
 > `autoPrefixNamesRemaining` and `autoPrefixNameAddresses` read from it;
 > `computeReproducibility()` does the same at `:1387` for
 > `multiCallerUndocumented`. Regression-tested by *"two symbols at one address
 > produce a count of one, not two"* and *"every reported count is a count of the
 > deduped list printed beside it"*.
 
-**File:** `src/mcp/vice/r2000-coverage.ts:746-747`, `:1061`, `:1090` *(pre-fix line numbers)*
+**File:** `src/mcp/vice/anno-coverage.ts:746-747`, `:1061`, `:1090` *(pre-fix line numbers)*
 
 **Issue:** `autoPrefixNamesRemaining: autoPrefixNameAddresses.length` is computed
 before `sortedUniqueNumbers()` is applied to the list that is reported. Two
@@ -443,12 +443,12 @@ printed beside it.
 > **STILL OPEN.** Deferred by 19-08 ("DEFERRED, not rejected — the correct fix is
 > gated on the project's `use_illegal_opcodes` setting … carry into Phase 20").
 > Re-verified against `HEAD`: `computeStructuralCensus()`'s descent break at
-> `r2000-coverage.ts:432` is still `if (!decoded || decoded.notes.includes("truncated")) break;`
+> `anno-coverage.ts:432` is still `if (!decoded || decoded.notes.includes("truncated")) break;`
 > with no `illegal` test, while the linear sweep still skips it at `:468`.
 > Reproduced at `HEAD`: a four-byte run of `0x02` reports
 > `reached=4, linearSweepDecodable=0, unreached=0`.
 
-**File:** `src/mcp/vice/r2000-coverage.ts:432` versus `:468`
+**File:** `src/mcp/vice/anno-coverage.ts:432` versus `:468`
 
 **Issue:** The linear sweep explicitly skips `insn.illegal`; the descent walk
 never inspects it, marks the bytes `reached-as-instruction`, and keeps walking
@@ -472,11 +472,11 @@ but keep the descent and sweep rules identical either way.
 
 ### WR-04: the cross-reference bound is printed but never recorded in the JSON report
 
-> **STILL OPEN.** Deferred by 19-08 (CLI cluster). `r2000-cli.ts` is untouched by
+> **STILL OPEN.** Deferred by 19-08 (CLI cluster). `anno-cli.ts` is untouched by
 > all four gap-closure plans — confirmed by `git diff --name-only 5c68473..HEAD`.
 > Line references below re-verified against `HEAD`.
 
-**File:** `src/mcp/vice/r2000-cli.ts:1284-1288`, `:1418-1427`
+**File:** `src/mcp/vice/anno-cli.ts:1284-1288`, `:1418-1427`
 
 **Issue:** `MAX_COVERAGE_CROSS_REFERENCE_LOOKUPS` (512) caps the per-label
 cross-reference lookups. When it bites, `printCoverageReport()` prints a NOTE
@@ -504,9 +504,9 @@ when the bound bit.
 ### WR-05: `--sample` silently accepts and truncates non-integer input
 
 > **STILL OPEN.** Deferred by 19-08 (CLI cluster). Re-verified at `HEAD`:
-> `r2000-cli.ts:1119` still reads `sample = Number.parseInt(value, 10);`.
+> `anno-cli.ts:1119` still reads `sample = Number.parseInt(value, 10);`.
 
-**File:** `src/mcp/vice/r2000-cli.ts:1113-1120`, `:1349-1352`
+**File:** `src/mcp/vice/anno-cli.ts:1113-1120`, `:1349-1352`
 
 **Issue:** `Number.parseInt(value, 10)` accepts a trailing-garbage prefix, so
 `--sample 4abc` → `4`, `--sample 3.7` → `3`, `--sample 1e9` → `1`. Each passes
@@ -536,7 +536,7 @@ recorded in the report. This is the same class as WR-08's documented lesson for
 > `printCoverageReport` and `cmdCoverage` still appear only at their definitions
 > and call sites.
 
-**File:** `src/mcp/vice/r2000-cli.ts:1078-1443`
+**File:** `src/mcp/vice/anno-cli.ts:1078-1443`
 
 **Issue:** `parseCoverageArgs()`, `printCoverageReport()` and `cmdCoverage()` are
 ~250 new lines with zero direct test coverage — a repo-wide search for those
@@ -550,7 +550,7 @@ prohibition currently exists only as a comment. Every refusal path
 
 **Fix:** Export `printCoverageReport` and `parseCoverageArgs` (or extract the
 rendering into a pure `renderCoverageReport(report, bound): string[]`) and add
-tests that (a) drive every refusal branch through `runR2000Cli(["coverage", ...])`,
+tests that (a) drive every refusal branch through `runAnnoCli(["coverage", ...])`,
 and (b) assert the rendered output contains no number that is not present in the
 report object — the mechanical form of "no combined figure at the point of
 display".
@@ -559,9 +559,9 @@ display".
 
 > **STILL OPEN.** Deferred by 19-08 (CLI cluster). Re-verified at `HEAD`.
 
-**File:** `src/mcp/vice/r2000-cli.ts:1123-1124`, `:1328-1332`
+**File:** `src/mcp/vice/anno-cli.ts:1123-1124`, `:1328-1332`
 
-**Issue:** `runR2000Cli()` calls `checkAcceptedOptions(verb, rest)` before
+**Issue:** `runAnnoCli()` calls `checkAcceptedOptions(verb, rest)` before
 dispatch, and `VERB_OPTIONS.coverage` is exactly `["--out", "--force",
 "--sample"]`. Any `--`-shaped token outside that set is refused there, so
 `parseCoverageArgs`'s `unknownOption` field and `cmdCoverage`'s corresponding
@@ -641,7 +641,7 @@ if (probe.error || probe.status !== 0) {
 1. `readFlag()` returns `undefined` when the next token is absent or `--`-shaped,
    so `packer-finding.mjs game.prg --entropy` and `... --entropy --foo` **silently
    drop the flag** and fall back to local measurement. That is the exact
-   accepting-but-silently-dropping-an-option defect `r2000-cli.ts`'s WR-08
+   accepting-but-silently-dropping-an-option defect `anno-cli.ts`'s WR-08
    comments record as already paid for once in this repo.
 2. There is no range check. Shannon entropy over bytes is 0.0–8.0, but
    `--entropy -5` and `--entropy 99` are accepted by `Number.isFinite` and drive
@@ -666,7 +666,7 @@ if (entropyRaw !== undefined && (!Number.isFinite(entropy) || entropy < 0 || ent
 Apply the same 0..8 guard inside `packerFinding()` itself (`:496-508`), since the
 library is callable independently of the CLI.
 
-*(The first review's prose cited "`r2000-cli.ts`'s WR-08/IN-06". `IN-06` is a
+*(The first review's prose cited "`anno-cli.ts`'s WR-08/IN-06". `IN-06` is a
 phantom cross-reference — this review has no `IN-06`. Corrected above; recorded
 by 19-08's disposition table as "DOES NOT EXIST".)*
 
@@ -680,13 +680,13 @@ by 19-08's disposition table as "DOES NOT EXIST".)*
 > `.planning/phases/19-…` and still calls `JSON.parse(readFileSync(MANIFEST_PATH))`
 > **at module scope, unguarded** (`:93`).
 
-**File:** `src/mcp/vice/skill-attribution.test.ts:88-93`, `src/mcp/vice/r2000-upstream-audit.test.ts:44-49`, `src/mcp/vice/r2000-coverage.test.ts:66-79` and `:596-608`, `src/skills/routine-queue-walker/SKILL.md:11-13,27`, `src/skills/c64-program-recon/SKILL.md`, `src/skills/c64-memory-mapping/SKILL.md`
+**File:** `src/mcp/vice/skill-attribution.test.ts:88-93`, `src/mcp/vice/anno-derivation.test.ts:44-49`, `src/mcp/vice/anno-coverage.test.ts:66-79` and `:596-608`, `src/skills/routine-queue-walker/SKILL.md:11-13,27`, `src/skills/c64-program-recon/SKILL.md`, `src/skills/c64-memory-mapping/SKILL.md`
 
 **Issue:** Two of the three test files call `readFileSync(MANIFEST_PATH)` at
 **module scope**, unguarded — so if
 `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/` moves, the
 whole suite fails to load with a raw ENOENT rather than a diagnosable assertion.
-`r2000-coverage.test.ts` additionally reads that directory's
+`anno-coverage.test.ts` additionally reads that directory's
 `evidence/coverage-reproducibility/` and phase **11**'s
 `evidence/criterion1/recon-subject.regen2000proj`. Archiving a completed phase
 directory is a routine, first-class GSD operation. This is a shipped-source test
@@ -736,7 +736,7 @@ assert.ok(entry, `${row.destination}: manifest lists no entry for ${row.upstream
 
 ### WR-13: the anchored multi-caller rule's label-name branch is still satisfied by an ordinary English word that happens to be a caller's name
 
-**File:** `src/mcp/vice/r2000-coverage.ts:1342-1343`
+**File:** `src/mcp/vice/anno-coverage.ts:1342-1343`
 
 **Issue:** `CR-01`'s fix anchored the *hex* branch correctly. The *name* branch
 is now identifier-bounded, which fixes the `my_entry_pointer` / `entry_point`
@@ -748,7 +748,7 @@ const name = nameByAddress.get(caller);
 if (name && new RegExp(`(?<![0-9A-Za-z_])${escapeRegExp(name)}(?![0-9A-Za-z_])`).test(rawComment)) return true;
 ```
 
-regenerator2000 label names are routinely ordinary English words — `loop`,
+The external analyser label names are routinely ordinary English words — `loop`,
 `init`, `main`, `start`, `data`, `table`, `draw` — and an ordinary description of
 what a routine does will contain them by accident. The rule then certifies a
 comment that names nothing.
@@ -786,7 +786,7 @@ test("a caller whose label name is an ordinary English word does not satisfy the
 
 ### WR-14: the class-4 stack-return scan feeds `provenDispatchTargets()` with no gate at all — no register match, no target plausibility, a guessed entry count
 
-**File:** `src/mcp/vice/r2000-coverage.ts:794-838`, consumed at `:961-963`
+**File:** `src/mcp/vice/anno-coverage.ts:794-838`, consumed at `:961-963`
 
 **Issue:** 19-08 gated class 3 behind five conditions and named
 `provenDispatchTargets()` "the ONE seam that decides what may seed a recursive
@@ -813,16 +813,16 @@ Two consequences, both reproduced against the shipped code at `HEAD`:
    descent seeds from it.
 
 Worse, the **committed positive fixture already demonstrates the problem**.
-`STACK_RETURN` (`r2000-coverage.test.ts:179-188`) reconstructs `$c006` — which is
+`STACK_RETURN` (`anno-coverage.test.ts:179-188`) reconstructs `$c006` — which is
 the *third byte of the idiom's own second instruction* (`lda $c013,x` occupies
-`$c004..$c006`). `r2000-coverage.test.ts:764` asserts that value is correct. A
+`$c004..$c006`). `anno-coverage.test.ts:764` asserts that value is correct. A
 mid-instruction address is not an entry point, and it is being handed to the seam
 whose doc comment says adding a source to it "IS THE DECISION TO TREAT THAT
 SOURCE AS PROOF OF CODE".
 
 The trigger rate is much lower than `CR-04`'s (the five-instruction idiom is
 specific), but the failure is the same manufactured-coverage class, and
-`r2000-coverage.test.ts:770-780`'s own comment states the rule this violates:
+`anno-coverage.test.ts:770-780`'s own comment states the rule this violates:
 *"A heuristic with a positive control and no negative one is not evidence that it
 declines anything."*
 
@@ -850,7 +850,7 @@ index registers`.
 
 ### WR-15: one unrelated indexed load between a genuine split-table pair silently downgrades the whole pairing to advisory
 
-**File:** `src/mcp/vice/r2000-coverage.ts:923` (`break; // one pairing per leading load`)
+**File:** `src/mcp/vice/anno-coverage.ts:923` (`break; // one pairing per leading load`)
 
 **Issue:** The inner class-3 loop takes the **first** second-load it encounters
 and then `break`s — whether that pairing was accepted as proven **or** recorded
@@ -892,16 +892,16 @@ found for that leading load. Add the two-payload comparison above as a control.
 
 ## Info
 
-### IN-01: `r2000-coverage.ts` carries a shebang but is a pure library
+### IN-01: `anno-coverage.ts` carries a shebang but is a pure library
 
 > **REJECTED — plan 19-08** ("out-of-scope cosmetics; shebang retained.
 > Harmless; removing it risks nothing but gains nothing"). Recorded here so the
-> decision is not re-litigated. Still present at `r2000-coverage.ts:1`.
+> decision is not re-litigated. Still present at `anno-coverage.ts:1`.
 
-**File:** `src/mcp/vice/r2000-coverage.ts:1`
+**File:** `src/mcp/vice/anno-coverage.ts:1`
 
 **Issue:** `#!/usr/bin/env node` implies a CLI entry point. The module has none —
-it exports functions only, and the CLI lives in `r2000-cli.ts`. The project's own
+it exports functions only, and the CLI lives in `anno-cli.ts`. The project's own
 convention is "shebang on every standalone script", which this is not.
 
 **Fix:** Remove line 1.
@@ -914,7 +914,7 @@ convention is "shebang on every standalone script", which this is not.
 > pair invariants — but added no per-host qualifier. Re-verified at `HEAD`:
 > `make-coverage-fixtures.mjs:27-29` still reads "There is no timestamp, no
 > random value and no host-dependent path in any emitted file", and the payload
-> still comes from `r2000-project.ts:147`'s `gzipSync(bytes)`. `README.md` says
+> still comes from `anno-project.ts:147`'s `gzipSync(bytes)`. `README.md` says
 > nothing either. Two more `project.regen2000proj` blobs were added under the
 > unqualified claim, so the exposure grew from six files to eight.
 
@@ -933,15 +933,15 @@ after gzip so the artifact is byte-identical across platforms.
 ### IN-03: `stripComments()` has no regex-literal awareness
 
 > **STILL OPEN.** Deferred by 19-08 ("different module family; no gap depends on
-> it"). `scripts/lib/r2000-cli-verbs.mjs` is untouched by all four plans.
+> it"). `scripts/lib/anno-cli-verbs.mjs` is untouched by all four plans.
 
-**File:** `scripts/lib/r2000-cli-verbs.mjs:59-96`
+**File:** `scripts/lib/anno-cli-verbs.mjs:59-96`
 
 **Issue:** The scanner treats `'` and `` ` `` as string delimiters unconditionally.
-A regex literal in `r2000-cli.ts` containing an apostrophe or a backtick would
+A regex literal in `anno-cli.ts` containing an apostrophe or a backtick would
 open a phantom string and desync the scan, and a string literal containing an
 unbalanced `{`/`}` would desync `switchVerbBody()`'s depth count. Severity is low
-only because `R2000_CLI_VERB_FLOOR` turns the resulting under-count into a loud CI
+only because `ANNO_CLI_VERB_FLOOR` turns the resulting under-count into a loud CI
 failure rather than a silent one.
 
 **Fix:** Note the limitation in the function's doc comment so a future maintainer
@@ -951,13 +951,13 @@ knows why a verb "disappeared", and reference the floor as the backstop.
 
 > **RESOLVED — plan 19-08** (commit `1706d8b`). `computeStructuralCensus()` now
 > computes `effectiveEnd = Math.min(safeOrigin + size, 0x10000)` and derives
-> `rangeSize` from it (`r2000-coverage.ts:376-377`); `inRange`, the class array,
+> `rangeSize` from it (`anno-coverage.ts:376-377`); `inRange`, the class array,
 > the count loop and the linear sweep all read the bounded range, and `size`
 > versus `rangeBytes` are documented as differing only for a malformed pair.
 > Regression-tested by *"a census whose origin plus size would leave the 16-bit
 > space is bounded"*. **The sibling scan was not bounded — see IN-05.**
 
-**File:** `src/mcp/vice/r2000-coverage.ts:335-336` *(pre-fix line numbers)*
+**File:** `src/mcp/vice/anno-coverage.ts:335-336` *(pre-fix line numbers)*
 
 **Issue:** `origin` is clamped to `0..0xffff`, but `size` is taken from the
 payload unchecked. A 64K payload at a non-zero origin produces `classRuns` whose
@@ -968,7 +968,7 @@ that do not exist on the machine being measured.
 
 ### IN-05: `scanIndirectDispatch()` was not given IN-04's 16-bit bound, so the report can still carry addresses above `$FFFF`
 
-**File:** `src/mcp/vice/r2000-coverage.ts:722` (`inImage`), `:762-764`, `:830-831`, `:889`
+**File:** `src/mcp/vice/anno-coverage.ts:722` (`inImage`), `:762-764`, `:830-831`, `:889`
 
 **Issue:** IN-04's fix bounded the *census* at `$10000`, but the dispatch scan's
 own predicate was left as
@@ -986,7 +986,7 @@ values at or above `$10000`.
 
 They cause no crash: `computeStructuralCensus`'s `mark()` filters them out. But
 they are written into the JSON report that Phase 20 and Phase 21 consume, and
-`r2000-cli.ts`'s `hexAddr()` renders them as five hex digits — an address the
+`anno-cli.ts`'s `hexAddr()` renders them as five hex digits — an address the
 machine being measured cannot address, printed as though it could. The census and
 its own dispatch sub-report now describe two different address spaces.
 

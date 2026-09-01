@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // anno-confidence.ts -- the ONE authoritative place in this repo for D-25's
 // confidence-grade convention: a machine-readable bracket-token prefix inside
-// an r2000 line comment (e.g. `[confirmed-code] observed executing at $0810`).
+// an anno line comment (e.g. `[confirmed-code] observed executing at $0810`).
 //
-// WHY THIS MODULE EXISTS: r2000's own `BlockType` (twelve variants -- Code,
+// WHY THIS MODULE EXISTS: anno's own `BlockType` (twelve variants -- Code,
 // Byte, Word, Address, PETSCII, Screencode, four split-table variants,
 // ExternalFile, Undefined; `types.rs:314-331`) carries CLASSIFICATION but no
 // CONFIDENCE axis. `Code` cannot distinguish "PC observed executing" from
 // "reachable via a JSR, never run" -- that distinction is
 // `memory-map.template.md`'s most deliberate feature, and its own text
 // forbids promoting a row by editing its grade (re-verify and restate the
-// evidence instead). Measured (D-25): r2000 line comments persist through
-// save/reload (`user_line_comments`), and both `r2000_get_comments` and
-// `r2000_search_disassembly` (which searches comments by default) can filter
+// evidence instead). Measured (D-25): anno line comments persist through
+// save/reload (`user_line_comments`), and both `anno_get_comments` and
+// `anno_search_disassembly` (which searches comments by default) can filter
 // on a leading token -- so "show me everything still [unknown]" is a real
 // query today, with NO new storage.
 //
@@ -40,19 +40,19 @@
 // WHAT NOT TO DO, named concretely:
 //   - Never accept a near-miss token (wrong case, an underscore instead of a
 //     hyphen, a plural, extra whitespace inside the brackets, a genuine
-//     typo). Every one of those must throw `R2000ConfidenceGradeError`, not
+//     typo). Every one of those must throw `AnnoConfidenceGradeError`, not
 //     silently degrade to `grade: null`.
 //   - Never add a second, address-keyed sidecar store for grades (T-11-
 //     SECOND-STORE). Grades live ONLY as this bracket-token prefix inside
-//     r2000's own line comments -- a second store keyed by address is
+//     anno's own line comments -- a second store keyed by address is
 //     exactly the drift class criterion 1 exists to close, and it would not
-//     be queryable through the same `r2000_get_comments` /
-//     `r2000_search_disassembly` tools this module's whole design depends
+//     be queryable through the same `anno_get_comments` /
+//     `anno_search_disassembly` tools this module's whole design depends
 //     on.
 //   - Never promote a row by editing its grade in place. The template's own
 //     text says so, and this module has no "upgrade" or "promote" function
 //     by design -- a caller who wants to change a grade calls
-//     `r2000_set_comment` again with a freshly composed
+//     `anno_set_comment` again with a freshly composed
 //     `formatConfidenceComment()` string, leaving a new comment (or
 //     replacing the old one explicitly), never a silent in-place mutation
 //     this module would hide.
@@ -122,7 +122,7 @@ const GRADE_BY_TOKEN: ReadonlyMap<string, ConfidenceGrade> = new Map(
   CONFIDENCE_GRADES.map((g) => [g.token, g]),
 );
 
-export interface R2000ConfidenceGradeErrorOptions {
+export interface AnnoConfidenceGradeErrorOptions {
   /** The raw text found between the leading `[` and `]`, verbatim -- may
    * carry the wrong case, stray whitespace, an underscore, or a plural, so a
    * caller can see exactly what was rejected. */
@@ -133,15 +133,15 @@ export interface R2000ConfidenceGradeErrorOptions {
  * Thrown by `parseConfidencePrefix()` when a comment begins with a bracket
  * token that is not exactly one of `CONFIDENCE_GRADES`'s five. Named,
  * carries the offending token as a field, and its message lists all five
- * valid tokens -- mirroring `r2000-launch.ts`'s `R2000ViceFlagError` shape
+ * valid tokens -- mirroring `anno-launch.ts`'s `AnnoViceFlagError` shape
  * (a named error over a malformed token, rather than a silent strip).
  */
-export class R2000ConfidenceGradeError extends Error {
+export class AnnoConfidenceGradeError extends Error {
   offendingToken: string;
 
-  constructor(message: string, { offendingToken }: R2000ConfidenceGradeErrorOptions) {
+  constructor(message: string, { offendingToken }: AnnoConfidenceGradeErrorOptions) {
     super(message);
-    this.name = "R2000ConfidenceGradeError";
+    this.name = "AnnoConfidenceGradeError";
     this.offendingToken = offendingToken;
   }
 }
@@ -168,7 +168,7 @@ export interface ParsedConfidencePrefix {
  *   the bracket and one run of following whitespace.
  * - A leading bracket token that does NOT match exactly one of the five
  *   (wrong case, an underscore, a plural, stray whitespace inside the
- *   brackets, or a plain typo): THROWS `R2000ConfidenceGradeError`, naming
+ *   brackets, or a plain typo): THROWS `AnnoConfidenceGradeError`, naming
  *   the offending token and listing the five valid ones. This is the whole
  *   point of the module -- see the header comment.
  */
@@ -181,7 +181,7 @@ export function parseConfidencePrefix(comment: string): ParsedConfidencePrefix {
   const innerToken = match[1]!;
   const grade = GRADE_BY_TOKEN.get(innerToken);
   if (!grade) {
-    throw new R2000ConfidenceGradeError(
+    throw new AnnoConfidenceGradeError(
       `"[${innerToken}]" is not a valid confidence grade -- the five valid tokens are ` +
         `${VALID_BRACKETS.join(", ")}. A near-miss (wrong case, an underscore instead of a hyphen, a ` +
         "plural, stray whitespace inside the brackets, or a plain typo) is refused rather than " +
@@ -203,7 +203,7 @@ export function parseConfidencePrefix(comment: string): ParsedConfidencePrefix {
 export function formatConfidenceComment(grade: string, evidence: string): string {
   const found = GRADE_BY_TOKEN.get(grade);
   if (!found) {
-    throw new R2000ConfidenceGradeError(
+    throw new AnnoConfidenceGradeError(
       `"${grade}" is not a valid confidence grade token -- the five valid tokens are ` +
         `${VALID_TOKENS.join(", ")}.`,
       { offendingToken: grade },
@@ -215,7 +215,7 @@ export function formatConfidenceComment(grade: string, evidence: string): string
 /**
  * Returns the literal search string that appears verbatim in every comment
  * carrying `grade` -- the bracket token itself, e.g. `"[unknown]"`. Passing
- * this to `r2000_search_disassembly`'s `query` (with `use_regex` left
+ * this to `anno_search_disassembly`'s `query` (with `use_regex` left
  * false/omitted) lists every address still carrying that grade. One
  * spelling, so "show me everything still [unknown]" never has two competing
  * queries drifting apart.
@@ -223,7 +223,7 @@ export function formatConfidenceComment(grade: string, evidence: string): string
 export function searchQueryForGrade(grade: string): string {
   const found = GRADE_BY_TOKEN.get(grade);
   if (!found) {
-    throw new R2000ConfidenceGradeError(
+    throw new AnnoConfidenceGradeError(
       `"${grade}" is not a valid confidence grade token -- the five valid tokens are ` +
         `${VALID_TOKENS.join(", ")}.`,
       { offendingToken: grade },

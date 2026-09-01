@@ -18,11 +18,11 @@ files_reviewed_list:
   - .claude/mcp/vice/fork-deleted-tools.ts
   - .claude/mcp/vice/fork-live.test.ts
   - .claude/mcp/vice/fork-manifest-surface.test.ts
-  - .claude/mcp/vice/r2000-cli.test.ts
-  - .claude/mcp/vice/r2000-cli.ts
-  - .claude/mcp/vice/r2000-project.test.ts
-  - .claude/mcp/vice/r2000-project.ts
-  - .claude/mcp/vice/r2000-test-gate.ts
+  - .claude/mcp/vice/anno-cli.test.ts
+  - .claude/mcp/vice/anno-cli.ts
+  - .claude/mcp/vice/anno-project.test.ts
+  - .claude/mcp/vice/anno-project.ts
+  - .claude/mcp/vice/anno-test-gate.ts
   - .claude/mcp/vice/README.md
   - .claude/mcp/vice/stock-a4-checkpoint-flood.test.ts
   - .claude/mcp/vice/stock-broker-live.test.ts

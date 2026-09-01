@@ -113,7 +113,7 @@ For this project, examples include:
 - real ACME for emitted assembly/reassembly claims;
 - fresh containers/package installs for installation claims;
 - real broker launch paths for lifecycle and argv claims;
-- real regenerator2000 for static-analysis and bootstrap claims.
+- real the external analyser for static-analysis and bootstrap claims.
 
 ## 8. Evidence Ceilings
 
@@ -242,7 +242,7 @@ The minimum completion set is:
 - relevant architecture/guard tests;
 - relevant live VICE tests for emulator-dependent claims;
 - real ACME round-trip when assembly correctness is affected;
-- real regenerator2000 run when static-analysis behavior is affected;
+- real the external analyser run when static-analysis behavior is affected;
 - final git diff review.
 
 If CI adds additional mandatory gates, local completion does not supersede them.

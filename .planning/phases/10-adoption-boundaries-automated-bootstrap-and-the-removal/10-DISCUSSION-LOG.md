@@ -40,11 +40,11 @@
 | Option | Description | Selected |
 |--------|-------------|----------|
 | `.prg` and flat 64K `.raw` | The two shapes this repo already produces; sidesteps `.vsf` parsing and the machine-type amendment. | |
-| Add `.vsf` by handing it to r2000 | Keeps ROADMAP's `.vsf` preference, but `.vsf` is not headless-loadable, so it forces the pty route regardless. | |
+| Add `.vsf` by handing it to anno | Keeps ROADMAP's `.vsf` preference, but `.vsf` is not headless-loadable, so it forces the pty route regardless. | |
 | Add `.vsf` by parsing it ourselves | One code path, but means owning a VICE snapshot parser. | |
 
 **User's choice:** Other — *"it must handle prg and d64 files"*.
-**Notes:** `.d64` was in none of the offered options and is absent from ROADMAP criterion 3's wording. Captured as **D-02**/**D-03**. Flat 64K was *kept* on top of the user's two formats because `R2000-06`'s own text names it and D-01 makes it a two-line case — dropping it would leave that requirement partly unmet; the assumption is stated explicitly in CONTEXT.md. `.vsf` dropped, with the ROADMAP wording reconciliation flagged for the planner.
+**Notes:** `.d64` was in none of the offered options and is absent from ROADMAP criterion 3's wording. Captured as **D-02**/**D-03**. Flat 64K was *kept* on top of the user's two formats because `ANNO-06`'s own text names it and D-01 makes it a two-line case — dropping it would leave that requirement partly unmet; the assumption is stated explicitly in CONTEXT.md. `.vsf` dropped, with the ROADMAP wording reconciliation flagged for the planner.
 
 ---
 
@@ -52,12 +52,12 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Round-trip test on a real binary | Synthesise, run real r2000, assert the export and the illegal-opcode decode. Catches a schema break as a red test. | |
+| Round-trip test on a real binary | Synthesise, run real anno, assert the export and the illegal-opcode decode. Catches a schema break as a red test. | |
 | Pin the version and assert it | Probe `--version`, refuse outside a known-good range. Cheap, but detects a version change rather than an actual break, and blocks users on newer builds. | |
 | Both | Runtime version probe plus the live round-trip test. | |
 
-**User's choice:** Other — *"i want the simplest and cleverest way to support any versions of regenerator2000"*.
-**Notes:** Read as an explicit rejection of version pinning. Captured as **D-04**: tolerance comes from *minimality* — write only the three non-`#[serde(default)]` fields plus the settings we deliberately force, so the file is forward-compatible by construction — plus proving it loaded by running r2000 once. No version table, no allow-list.
+**User's choice:** Other — *"i want the simplest and cleverest way to support any versions of the external analyser"*.
+**Notes:** Read as an explicit rejection of version pinning. Captured as **D-04**: tolerance comes from *minimality* — write only the three non-`#[serde(default)]` fields plus the settings we deliberately force, so the file is forward-compatible by construction — plus proving it loaded by running anno once. No version table, no allow-list.
 
 ---
 
@@ -91,12 +91,12 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Our own test; r2000 absent skips it | `disasm-roundtrip.test.ts`'s shape, with a `VICE_REQUIRE_R2000` gate. CI does not install r2000. | |
-| Our own test, and CI installs r2000 | Every merge re-proves criterion 4; costs a Rust toolchain and ~5 minutes per run. | |
-| Lean on r2000's own `--verify` | Already spawns a real `acme`; reported `✓ ACME — byte-identical (44 bytes)`. Cheapest — but it is r2000 checking its own export. | ✓ |
+| Our own test; anno absent skips it | `disasm-roundtrip.test.ts`'s shape, with a `VICE_REQUIRE_ANNO` gate. CI does not install anno. | |
+| Our own test, and CI installs anno | Every merge re-proves criterion 4; costs a Rust toolchain and ~5 minutes per run. | |
+| Lean on anno's own `--verify` | Already spawns a real `acme`; reported `✓ ACME — byte-identical (44 bytes)`. Cheapest — but it is anno checking its own export. | ✓ |
 
-**User's choice:** "Lean on r2000's own `--verify`".
-**Notes:** The internal-check caveat was stated in the option text and chosen anyway — recorded as the user's decision (**D-09**). A follow-up live check then found a real trap and it is captured as **D-10** without reversing the choice: with `ca65` present and ACME absent, `--verify` prints `✗ ACME — ACME not found in PATH (skipped)` followed by `✓ All roundtrip verifications passed.` and **exits 0**. With no assembler at all it correctly exits 1. Since criterion 4 is specifically about ACME/`!cpu 6510`, the check must key on the parsed ACME line and fail on `skipped`, never on the exit code. CI not installing r2000 (**D-11**) follows from the "cheapest" rationale.
+**User's choice:** "Lean on anno's own `--verify`".
+**Notes:** The internal-check caveat was stated in the option text and chosen anyway — recorded as the user's decision (**D-09**). A follow-up live check then found a real trap and it is captured as **D-10** without reversing the choice: with `ca65` present and ACME absent, `--verify` prints `✗ ACME — ACME not found in PATH (skipped)` followed by `✓ All roundtrip verifications passed.` and **exits 0**. With no assembler at all it correctly exits 1. Since criterion 4 is specifically about ACME/`!cpu 6510`, the check must key on the parsed ACME line and fail on `skipped`, never on the exit code. CI not installing anno (**D-11**) follows from the "cheapest" rationale.
 
 ---
 
@@ -104,8 +104,8 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| New r2000 script, verb deleted | `disasm` leaves `acme.mjs` entirely; respects that file's assembling-only scope. | ✓ (in part) |
-| Same verb, new engine | `node $A disasm` keeps working over r2000; nothing to relearn, but puts an r2000 dependency in an assembling-only file and hides the engine swap. | |
+| New anno script, verb deleted | `disasm` leaves `acme.mjs` entirely; respects that file's assembling-only scope. | ✓ (in part) |
+| Same verb, new engine | `node $A disasm` keeps working over anno; nothing to relearn, but puts an anno dependency in an assembling-only file and hides the engine swap. | |
 | A new skill of its own | Gives Phase 11's annotation store a home; costs a 7th skill across installer sync, plugin manifest and `check-skill-tool-coverage.mjs`. | |
 
 **User's choice:** "You decide, i want it to be flexeble and simple without duplicating functionallity, use the best way".
@@ -117,7 +117,7 @@
 
 Delegated by the user and recorded as decisions rather than left open: **D-01**
 (bootstrap mechanism), **D-05** (forced settings), **D-06** (seam location),
-**D-12** (replacement surface). **D-11** (CI does not install r2000) follows from
+**D-12** (replacement surface). **D-11** (CI does not install anno) follows from
 the `--verify` choice.
 
 Left genuinely open for research: how the skill-side entry reaches the seam
@@ -129,11 +129,11 @@ in place; the CLI verb names.
 - `.vsf` as a bootstrap input → Phase 11's `c64-ram-capture` extension.
 - **`--mcp-server-stdio` for Phase 11** — found during this discussion; a stdio
   MCP transport would sidestep the fixed-port collision behind the
-  one-project-at-a-time limit (`R2000-04`) entirely. Phase 11 should evaluate it
+  one-project-at-a-time limit (`ANNO-04`) entirely. Phase 11 should evaluate it
   before building against the HTTP transport.
-- The `r2000_get_address_details` u16 overflow (`handler.rs:1894`) — upstream
+- The `anno_get_address_details` u16 overflow (`handler.rs:1894`) — upstream
   report; Phase 11 workaround.
 - Non-ACME export formats (`64tass`, `ca65`, `kick`) — not scope.
-- Two-project-limit *detection* — permanently out by the `R2000-04` fold.
+- Two-project-limit *detection* — permanently out by the `ANNO-04` fold.
 - `2026-08-20-fully-remove-the-forked-vice-mcp-backend.md` — semver-major, not
   this phase.

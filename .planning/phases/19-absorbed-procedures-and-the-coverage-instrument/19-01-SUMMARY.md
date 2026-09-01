@@ -2,20 +2,20 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 01
 subsystem: testing
-tags: [skills, licensing, attribution, third-party-notices, npm-packaging, regenerator2000, stdio, measurement]
+tags: [skills, licensing, attribution, third-party-notices, npm-packaging, the external analyser, stdio, measurement]
 
 # Dependency graph
 requires:
   - phase: 18-persistent-session-and-tool-surface
-    provides: "the coarse FIFO mutex at r2000-session.ts (18-06) whose deferred reader-writer upgrade this plan measures and closes; the evidence-artifact template (18-STDIN-EOF-EVIDENCE.md) and driver shape this plan's measurement copies"
-  - phase: 11-r2000-annotation-surface
-    provides: "CURATED_R2000_TOOLS / R2000_TOOL_DEFINITIONS in r2000-tools.ts, the curated surface every absorbed tool reference is checked against; the D-11 live-gate pattern in r2000-test-gate.ts"
+    provides: "the coarse FIFO mutex at anno-session.ts (18-06) whose deferred reader-writer upgrade this plan measures and closes; the evidence-artifact template (18-STDIN-EOF-EVIDENCE.md) and driver shape this plan's measurement copies"
+  - phase: 11-anno-annotation-surface
+    provides: "CURATED_ANNO_TOOLS / ANNO_TOOL_DEFINITIONS in anno-tools.ts, the curated surface every absorbed tool reference is checked against; the D-11 live-gate pattern in anno-test-gate.ts"
 provides:
-  - "src/skills/routine-queue-walker/ — the seventh skill, absorbed from regenerator2000's r2000-analyze-program at a verified 40-hex pin, attributed, curated-tools-only, carrying none of upstream's parallel fan-out"
+  - "src/skills/routine-queue-walker/ — the seventh skill, absorbed from the external analyser's analyze-program at a verified 40-hex pin, attributed, curated-tools-only, carrying none of upstream's parallel fan-out"
   - "The installer skill count asserted as a RELATION against topLevelSkillDirs(src/skills) plus a >=6 floor — adding an eighth skill no longer turns CI red"
   - "Truthful notices in both THIRD-PARTY-NOTICES.md files: a new Incorporated-material section for the five pinned procedures (paths, digests, byte counts, MIT election) and the narrowed not-incorporated claim"
   - "skill-attribution.test.ts — the frozen-registry attribution guard plans 19-02 and 19-03 add rows to"
-  - "A sharpened r2000-upstream-audit.test.ts plus a manifest carrying per-call justifications, cited upstream lines, and three re-sync triggers with mechanisms"
+  - "A sharpened anno-derivation.test.ts plus a manifest carrying per-call justifications, cited upstream lines, and three re-sync triggers with mechanisms"
   - "19-STDIO-MULTIPLEXING-EVIDENCE.md — D18-16 closed by measurement"
 affects: [19-02, 19-03, 19-04, 19-05, phase-20-decompilation, phase-21-rebuild]
 
@@ -28,7 +28,7 @@ tech-stack:
   added: []
   patterns:
     - "Frozen registry with a proven-to-bite absence predicate (skill-consumer-paths.test.ts discipline) applied to licence attribution"
-    - "Live-gated third-party-source re-hash: SKIP without R2000_UPSTREAM_CLONE, hard FAIL under VICE_REQUIRE_R2000_UPSTREAM (D-11 shape)"
+    - "Live-gated third-party-source re-hash: SKIP without ANNO_UPSTREAM_CLONE, hard FAIL under VICE_REQUIRE_ANNO_UPSTREAM (D-11 shape)"
     - "Census assertions as relations against a shared corpus primitive rather than literals"
 
 key-files:
@@ -43,11 +43,11 @@ key-files:
     - src/mcp/vice/THIRD-PARTY-NOTICES.md
     - THIRD-PARTY-NOTICES.md
     - CLAUDE.md
-    - src/mcp/vice/r2000-upstream-audit.test.ts
+    - src/mcp/vice/anno-derivation.test.ts
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
 
 key-decisions:
-  - "This project elects MIT from regenerator2000's dual MIT OR Apache-2.0 for all absorbed prose — it matches this repository's own licence, so incorporated text and host carry identical terms, and the Apache-2.0 §4(b) modification notice is discharged anyway by every per-file header's ADAPTED, NOT VERBATIM statement plus its named deviations"
+  - "This project elects MIT from the external analyser's dual MIT OR Apache-2.0 for all absorbed prose — it matches this repository's own licence, so incorporated text and host carry identical terms, and the Apache-2.0 §4(b) modification notice is discharged anyway by every per-file header's ADAPTED, NOT VERBATIM statement plus its named deviations"
   - "The attribution header names its upstream source WITHOUT the literal `.agent/skills` path, because ABS-01's absence guard is a plain token grep over src/skills/ — the full upstream path is recorded once, in the manifest under .planning/, which is not scanned"
   - "The notices table carries a per-path 'Incorporated as of this commit' column rather than claiming all five are absorbed, so the section is true at every intermediate commit of the phase rather than only at the end"
   - "The installer skill-count pin became a relation plus a >=6 floor, not a 6→7 bump: a bump would go red again on the eighth skill, which is exactly the failure it was fixing"
@@ -63,11 +63,11 @@ requirements-completed: [ABS-01, ABS-02, ABS-04]
 
 coverage:
   - id: D1
-    description: "The seventh skill src/skills/routine-queue-walker/SKILL.md exists, absorbed from a verified pinned upstream commit, references only curated r2000_* tools, names no upstream agent-skills path, and carries none of upstream's parallel fan-out"
+    description: "The seventh skill src/skills/routine-queue-walker/SKILL.md exists, absorbed from a verified pinned upstream commit, references only curated anno_* tools, names no upstream agent-skills path, and carries none of upstream's parallel fan-out"
     requirement: ABS-01
     verification:
       - kind: integration
-        ref: "node scripts/check-skill-tool-coverage.mjs (OK — 7 skill directories, 13 distinct r2000_* names, all curated)"
+        ref: "node scripts/check-skill-tool-coverage.mjs (OK — 7 skill directories, 13 distinct anno_* names, all curated)"
         status: pass
       - kind: integration
         ref: "node scripts/check-skill-fork-honesty.mjs (OK — 31 files in 7 skill directories, all section-scoped-compliant)"
@@ -89,7 +89,7 @@ coverage:
     requirement: ABS-02
     verification:
       - kind: other
-        ref: "grep -c 'No regenerator2000 source' src/mcp/vice/THIRD-PARTY-NOTICES.md == 0; grep -c 'MIT OR Apache-2.0' >= 1; all five upstream source paths present; landed in the SAME commit (f59459c) as the first absorbed SKILL.md"
+        ref: "grep -c 'No the external analyser source' src/mcp/vice/THIRD-PARTY-NOTICES.md == 0; grep -c 'MIT OR Apache-2.0' >= 1; all five upstream source paths present; landed in the SAME commit (f59459c) as the first absorbed SKILL.md"
         status: pass
     human_judgment: true
     rationale: "A licence election published in two npm tarballs is a legal claim, not a test outcome. The mechanical checks prove the strings are present and the falsified claim is gone; whether the election and the adaptation statement are the right ones to publish is a human call."
@@ -102,21 +102,21 @@ coverage:
         status: pass
     human_judgment: false
   - id: D5
-    description: "The manifest carries a cited justification per non-curated upstream call and named re-sync triggers with mechanisms; r2000-upstream-audit.test.ts rejects an abbreviated or floating ref and re-hashes the five sources when a clone is reachable"
+    description: "The manifest carries a cited justification per non-curated upstream call and named re-sync triggers with mechanisms; anno-derivation.test.ts rejects an abbreviated or floating ref and re-hashes the five sources when a clone is reachable"
     requirement: ABS-04
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-upstream-audit.test.ts (5 tests; abbreviating the manifest commit to 7 chars demonstrated to exit non-zero, then restored)"
+        ref: "src/mcp/vice/anno-derivation.test.ts (5 tests; abbreviating the manifest commit to 7 chars demonstrated to exit non-zero, then restored)"
         status: pass
       - kind: integration
-        ref: "R2000_UPSTREAM_CLONE=~/.cache/c64-re-tools/regenerator2000-pin VICE_REQUIRE_R2000_UPSTREAM=1 node --experimental-strip-types --test r2000-upstream-audit.test.ts (5/5 pass, 0 skipped — five digests re-hashed byte-exact); with a nonexistent clone and the same opt-in, exit 1"
+        ref: "ANNO_UPSTREAM_CLONE=~/.cache/c64-re-tools/external-analyser-pin VICE_REQUIRE_ANNO_UPSTREAM=1 node --experimental-strip-types --test anno-derivation.test.ts (5/5 pass, 0 skipped — five digests re-hashed byte-exact); with a nonexistent clone and the same opt-in, exit 1"
         status: pass
     human_judgment: false
   - id: D6
     description: "D18-16's deferred measurement executed against the real binary and recorded with its command sequence, run table, raw JSON and the upstream source citation"
     verification:
       - kind: integration
-        ref: "node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs — 3 runs, all verdict serial-one-request-at-a-time; R2000_BIN=/nonexistent-binary exits 1 with a non-empty reason"
+        ref: "node .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/evidence/measure-stdio-multiplexing.mjs — 3 runs, all verdict serial-one-request-at-a-time; ANNO_BIN=/nonexistent-binary exits 1 with a non-empty reason"
         status: pass
     human_judgment: false
 
@@ -128,7 +128,7 @@ status: complete
 
 # Phase 19 Plan 01: Absorbed Procedures — the First Procedure End to End Summary
 
-**The seventh skill `routine-queue-walker` lands absorbed from regenerator2000 @`493f840…` with a six-field attribution header, the packaging guard now asserts a relation instead of the literal six, both notices files are true in the same commit, two mechanical guards hold the attribution chain shut (each proven to fire), and D18-16 is answered by a three-run measurement showing the stdio child does not multiplex.**
+**The seventh skill `routine-queue-walker` lands absorbed from the external analyser @`493f840…` with a six-field attribution header, the packaging guard now asserts a relation instead of the literal six, both notices files are true in the same commit, two mechanical guards hold the attribution chain shut (each proven to fire), and D18-16 is answered by a three-run measurement showing the stdio child does not multiplex.**
 
 ## Performance
 
@@ -140,11 +140,11 @@ status: complete
 
 ## Accomplishments
 
-- **One absorbed procedure, end to end.** `src/skills/routine-queue-walker/SKILL.md` (218 lines) absorbs upstream's `r2000-analyze-program` *sequencing* — queue construction, the two refresh points, the no-premature-halting rule, the 7.5 entropy gate citing the curated `entropy` field, the explicit-address discipline — and **none** of its concurrency. All three of upstream's runtime instructions to read a file inside its own excluded agent-skills directory are rewritten to this project's skill paths; the cursor-based entry route is replaced by explicit address input plus `r2000_read_region`; the destructive unpack step is re-routed to `c64-ram-capture` plus the packer finding. Every `r2000_*` name in the file is curated.
+- **One absorbed procedure, end to end.** `src/skills/routine-queue-walker/SKILL.md` (218 lines) absorbs upstream's `analyze-program` *sequencing* — queue construction, the two refresh points, the no-premature-halting rule, the 7.5 entropy gate citing the curated `entropy` field, the explicit-address discipline — and **none** of its concurrency. All three of upstream's runtime instructions to read a file inside its own excluded agent-skills directory are rewritten to this project's skill paths; the cursor-based entry route is replaced by explicit address input plus `anno_read_region`; the destructive unpack step is re-routed to `c64-ram-capture` plus the packer finding. Every `anno_*` name in the file is curated.
 - **The packaging pin became a relation.** `scripts/check-npm-packages.mjs` no longer pins `skillMds.length` to a literal; it computes the set of `src/skills/` subdirectories carrying a `SKILL.md` via the shared `topLevelSkillDirs()` primitive and asserts tarball-count == set-size, with a separate `>= 6` floor so a broken directory read cannot make the equality vacuously true on two zeros.
-- **Both notices files are true, in the same commit as the first absorbed file.** A new `## Incorporated material — regenerator2000 analysis procedures (MIT OR Apache-2.0)` section names the repository, the 40-hex pin with its date and the `.cargo_vcs_info.json` corroboration, all five source paths with sha256 digests and byte counts, the 53,392-byte total, the ADAPTED-NOT-VERBATIM statement, and the MIT election with its reasoning. The old blanket "No regenerator2000 source … is included" claim is narrowed to the binary's own implementation and scoped explicitly.
-- **Two mechanical guards, each demonstrated to fire.** `skill-attribution.test.ts` (new, frozen registry) and a sharpened `r2000-upstream-audit.test.ts`. Abbreviating the manifest commit to 7 characters turns the audit red; emptying the registry turns the attribution suite red. Both were restored.
-- **D18-16 closed by measurement.** Three runs at two batch sizes: a trivial `r2000_get_binary_info` sitting in the child's stdin pipe alongside a slow batch waited 5938ms, 5949ms and 13040ms, arriving 1–3ms **after** the batch ahead of it. Doubling the batch doubled the wait. Corroborated by the upstream source, where `handle_request` is called synchronously on `&mut AppState` inside `read_line`'s loop body.
+- **Both notices files are true, in the same commit as the first absorbed file.** A new `## Incorporated material — the external analyser analysis procedures (MIT OR Apache-2.0)` section names the repository, the 40-hex pin with its date and the `.cargo_vcs_info.json` corroboration, all five source paths with sha256 digests and byte counts, the 53,392-byte total, the ADAPTED-NOT-VERBATIM statement, and the MIT election with its reasoning. The old blanket "No the external analyser source … is included" claim is narrowed to the binary's own implementation and scoped explicitly.
+- **Two mechanical guards, each demonstrated to fire.** `skill-attribution.test.ts` (new, frozen registry) and a sharpened `anno-derivation.test.ts`. Abbreviating the manifest commit to 7 characters turns the audit red; emptying the registry turns the attribution suite red. Both were restored.
+- **D18-16 closed by measurement.** Three runs at two batch sizes: a trivial `anno_get_binary_info` sitting in the child's stdin pipe alongside a slow batch waited 5938ms, 5949ms and 13040ms, arriving 1–3ms **after** the batch ahead of it. Doubling the batch doubled the wait. Corroborated by the upstream source, where `handle_request` is called synchronously on `&mut AppState` inside `read_line`'s loop body.
 
 ## Task Commits
 
@@ -168,7 +168,7 @@ Each task was committed atomically:
 - `src/mcp/vice/THIRD-PARTY-NOTICES.md` — new incorporated-material section; opening enumeration widened; not-incorporated claim narrowed
 - `THIRD-PARTY-NOTICES.md` — pointer now names the incorporated skill prose as well as the MCP package
 - `CLAUDE.md` — `routine-queue-walker` row added to the Project Skills table
-- `src/mcp/vice/r2000-upstream-audit.test.ts` — 40-hex pin, disposition/justification/citation assertions, resync-trigger assertions, licence-election assertion, live-gated re-hash
+- `src/mcp/vice/anno-derivation.test.ts` — 40-hex pin, disposition/justification/citation assertions, resync-trigger assertions, licence-election assertion, live-gated re-hash
 - `.planning/phases/19-.../upstream-procedure-manifest.json` — full SHA, licence facts, per-procedure bytes, `disposition_rationale`, `resync_triggers`
 
 ## Decisions Made
@@ -187,31 +187,31 @@ Each task was committed atomically:
 **1. [Rule 3 - Blocking] Added `scripts/lib/skill-corpus.d.mts`**
 - **Found during:** Task 2 (skill-attribution.test.ts)
 - **Issue:** `tsc --noEmit` failed with TS7016 — `scripts/lib/skill-corpus.mjs` had no declaration sibling, so importing `walkSkills()` from a strict-mode `.ts` test was an implicit `any`. The plan's own verify step requires `tsc --noEmit` to exit 0.
-- **Fix:** Added the `.d.mts` declaration file, mirroring the two that already exist for `skill-honesty-checks.mjs` and `r2000-cli-verbs.mjs`. No runtime change; CI-only helper, deliberately outside `package.json`'s `files[]` like its `.mjs` sibling.
+- **Fix:** Added the `.d.mts` declaration file, mirroring the two that already exist for `skill-honesty-checks.mjs` and `anno-cli-verbs.mjs`. No runtime change; CI-only helper, deliberately outside `package.json`'s `files[]` like its `.mjs` sibling.
 - **Files modified:** `scripts/lib/skill-corpus.d.mts` (new)
 - **Verification:** `tsc --noEmit -p tsconfig.json` exits 0
 - **Committed in:** `f645485` (Task 2 commit)
 
 **2. [Rule 1 - Bug] Two acceptance greps still matched after the first edit pass**
 - **Found during:** Task 1
-- **Issue:** `grep -c '=== 6' scripts/check-npm-packages.mjs` returned 1 (the new *header comment* quoted the old assertion verbatim) and `grep -c 'No regenerator2000 source' src/mcp/vice/THIRD-PARTY-NOTICES.md` returned 1 (the narrowed sentence still opened with that exact substring). Both are the acceptance criterion's point: the falsified claim's *text* must be gone, not merely qualified.
-- **Fix:** Reworded the header comment to describe the old pin in prose, and reworded the narrowed claim to "Nothing from regenerator2000's own implementation — no source code, no data table, no captured program output — is included …".
+- **Issue:** `grep -c '=== 6' scripts/check-npm-packages.mjs` returned 1 (the new *header comment* quoted the old assertion verbatim) and `grep -c 'No the external analyser source' src/mcp/vice/THIRD-PARTY-NOTICES.md` returned 1 (the narrowed sentence still opened with that exact substring). Both are the acceptance criterion's point: the falsified claim's *text* must be gone, not merely qualified.
+- **Fix:** Reworded the header comment to describe the old pin in prose, and reworded the narrowed claim to "Nothing from the external analyser's own implementation — no source code, no data table, no captured program output — is included …".
 - **Files modified:** `scripts/check-npm-packages.mjs`, `src/mcp/vice/THIRD-PARTY-NOTICES.md`
 - **Verification:** both greps return 0; `node scripts/check-npm-packages.mjs` exits 0
 - **Committed in:** `f59459c` (Task 1 commit)
 
 **3. [Rule 1 - Bug] One cited upstream line in the manifest was wrong**
 - **Found during:** Task 2 (writing `disposition_rationale`)
-- **Issue:** The `r2000_unpack_binary` entry listed `.agent/skills/r2000-analyze-program/SKILL.md:33` among its sites, but line 33 does not contain the token. An audit record whose citations do not check out is worse than none.
+- **Issue:** The `anno_unpack_binary` entry listed `an upstream program procedure:33` among its sites, but line 33 does not contain the token. An audit record whose citations do not check out is worse than none.
 - **Fix:** Verified every cited line with `grep -nE` against the pinned clone and dropped `:33`. All remaining citations were confirmed present at the cited line.
 - **Files modified:** `.planning/phases/19-.../upstream-procedure-manifest.json`
-- **Verification:** `grep -nE 'r2000_(toggle_splitter|undo|set_immediate_format|unpack_binary|get_disassembly_cursor)'` over all five upstream files
+- **Verification:** `grep -nE 'anno_(toggle_splitter|undo|set_immediate_format|unpack_binary|get_disassembly_cursor)'` over all five upstream files
 - **Committed in:** `f645485` (Task 2 commit)
 
 **4. [Rule 3 - Blocking] The upstream clone was re-established outside `/tmp`**
 - **Found during:** Task 1 precondition
-- **Issue:** The only clone at the pin lived at `/tmp/regenerator2000-phase19`; `/tmp` is a RAM-backed tmpfs on this host and does not survive a reboot. The plan's own precondition names this.
-- **Fix:** Cloned to `~/.cache/c64-re-tools/regenerator2000-pin`, checked out `493f840418f1450a342bb220c2fe3d2585dd0525`, and confirmed all five `sha256sum` digests and all five byte counts against the manifest before absorbing anything.
+- **Issue:** The only clone at the pin lived at `/tmp/external-analyser-phase19`; `/tmp` is a RAM-backed tmpfs on this host and does not survive a reboot. The plan's own precondition names this.
+- **Fix:** Cloned to `~/.cache/c64-re-tools/external-analyser-pin`, checked out `493f840418f1450a342bb220c2fe3d2585dd0525`, and confirmed all five `sha256sum` digests and all five byte counts against the manifest before absorbing anything.
 - **Files modified:** none (out-of-tree)
 - **Verification:** `git rev-parse HEAD` = the full pin; five digests byte-exact; the same path drives the audit test's live-gated re-hash
 - **Committed in:** n/a (environment setup)
@@ -231,7 +231,7 @@ Each task was committed atomically:
 
 ## Issues Encountered
 
-- **One unreproduced test flake.** The first full `npm test` after Task 3 reported `# fail 1` with 2470 tests. Three consecutive re-runs reported `# fail 0` (2470 tests / 2425 pass / 40 skipped / 5 todo), and the failing subtest name was not captured before the output scrolled. The likely cause is a timing-sensitive live test racing the `regenerator2000` children the measurement driver had just been spawning and killing. **Recorded rather than dismissed**, and logged to `.planning/WINDOWS.md` as a `deviation` entry: if it recurs in a later plan of this phase, the name should be captured with `npm test 2>&1 | tee` rather than a pipeline that discards it.
+- **One unreproduced test flake.** The first full `npm test` after Task 3 reported `# fail 1` with 2470 tests. Three consecutive re-runs reported `# fail 0` (2470 tests / 2425 pass / 40 skipped / 5 todo), and the failing subtest name was not captured before the output scrolled. The likely cause is a timing-sensitive live test racing the `the external analyser` children the measurement driver had just been spawning and killing. **Recorded rather than dismissed**, and logged to `.planning/WINDOWS.md` as a `deviation` entry: if it recurs in a later plan of this phase, the name should be captured with `npm test 2>&1 | tee` rather than a pipeline that discards it.
 - The `tsc` implicit-`any` on the `scripts/lib` import (deviation 1) was the only genuine blocker; everything else in the plan's verification chain was green first time.
 
 ## Baseline vs. final test counts
@@ -242,8 +242,8 @@ Each task was committed atomically:
 | After this plan | 2470 | 2425 | 0 | 40 | 5 |
 
 The +10 tests are the 6 in `skill-attribution.test.ts` and the 4 added to
-`r2000-upstream-audit.test.ts`; the +1 skipped is the live-gated upstream
-re-hash, which SKIPs by design when `R2000_UPSTREAM_CLONE` is unset (and was
+`anno-derivation.test.ts`; the +1 skipped is the live-gated upstream
+re-hash, which SKIPs by design when `ANNO_UPSTREAM_CLONE` is unset (and was
 run separately, green, against the real clone).
 
 ## Known Stubs
@@ -270,9 +270,9 @@ with a reason rather than an unbounded poll).
 ## User Setup Required
 
 None — no external service configuration required. The optional
-`R2000_UPSTREAM_CLONE` env var (a local clone of the upstream repository at the
+`ANNO_UPSTREAM_CLONE` env var (a local clone of the upstream repository at the
 pin) enables the audit test's live re-hash; its absence is an expected SKIP by
-design, exactly like `regenerator2000` itself under D-11.
+design, exactly like `the external analyser` itself under D-11.
 
 ## Next Phase Readiness
 

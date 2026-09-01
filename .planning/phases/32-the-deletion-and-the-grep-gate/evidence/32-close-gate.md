@@ -355,7 +355,7 @@ exit=0
 ```
 
 ```
-$ node scripts/check-no-regenerator2000.mjs
+$ node scripts/check-no-analyser.mjs
 check-no-<subject>: OK -- scanned 406 files (376 tracked outside ".planning/" + 30 shipped-but-untracked installer paths, floor 350); 157 occurrence(s) permanently exempt, 0 temporarily allow-listed across 0 entries.
   permanent exemptions (exact pins):
     gate-self 5 | findings-docs 47 | attribution-guard-test 14 |
@@ -369,7 +369,7 @@ exit=0
 The `gate-self` pin still reads **5**, and its `.github/workflows/ci.yml` component is
 still pinned at exactly 1 with `===`. Confirmed independently:
 ```
-$ grep -ac 'regenerator2000' .github/workflows/ci.yml
+$ grep -ac 'the external analyser' .github/workflows/ci.yml
 1
 ```
 (`grep -a` deliberately: a NUL byte can hide a file from a plain `grep`.) The CI step

@@ -16,7 +16,7 @@
 //
 //      THE SIXTH REQUIRED STRING WAS RE-POINTED, NOT DROPPED (2026-08-29,
 //      phase 29 plan 29-09). It used to assert that README named
-//      regenerator2000 as a REQUIRED PREREQUISITE (Phase 10, R2000-03) --
+//      the external analyser as a REQUIRED PREREQUISITE (Phase 10, ANNO-03) --
 //      true when the plugin shelled out to that analyser, and false the
 //      moment the integration was cut. Deleting the assertion outright was
 //      the wrong repair: the obligation that survives the cut is CUT-03's,
@@ -40,7 +40,7 @@
 //      src/skills/ and README.md). Only claims 08-06-SUMMARY.md actually
 //      corrected are asserted here; the file's many legitimate historical
 //      "(Phase N, REQ-ID)" citations are untouched.
-//   4. The R2000-05 deletion pin (Phase 10, plan 10-08): plan 10-06 deleted
+//   4. The ANNO-05 deletion pin (Phase 10, plan 10-08): plan 10-06 deleted
 //      cmdDisasm() (the toacme-backed `disasm` verb) from acme.mjs in full,
 //      and every SKILL.md/references/*.md caveat it motivated. This walks
 //      the WHOLE src/skills tree already collected into `skillFiles`
@@ -494,7 +494,7 @@ const REQUIRED_README_SUBSTRINGS = [
   ["docs/tool-support.md", "the reader loses their route to the full per-tool answer"],
   ["3.10", "the reader cannot tell what an `apt install` of VICE gives them relative to the version gate"],
   [
-    "regenerator2000",
+    "the external analyser",
     "the README stops naming the upstream project whose analysis procedures the shipped skill playbooks adapt, so the CUT-03 attribution is reachable only from a notices file -- see the re-pointing note in this file's header, and note that the README must NOT claim it as an install prerequisite, which it no longer is",
   ],
 ];
@@ -605,7 +605,7 @@ for (const claim of SKILL_FILE_CLAIMS) {
   }
 }
 
-// --- R2000-05 deletion pin (Phase 10, plan 10-08) ---------------------------
+// --- ANNO-05 deletion pin (Phase 10, plan 10-08) ---------------------------
 // Plan 10-06 deleted cmdDisasm() (the toacme-backed `disasm` verb) from
 // acme.mjs in full, and every SKILL.md/references/*.md caveat that verb
 // motivated. This walks the WHOLE src/skills tree already collected
@@ -695,7 +695,7 @@ need(
 //
 // RE-POINTED 2026-08-29 (phase 29 plan 29-09, D-10/CUT-05), and the ONE thing
 // to understand before touching it again is WHICH SIDE MOVED. This assertion
-// used to pin the live invocation `r2000 export-asm`. Phase 29 removes that
+// used to pin the live invocation `anno export-asm`. Phase 29 removes that
 // verb, so the assertion and the cut contradicted each other outright:
 // cleansing the skill failed this check, while keeping the string to satisfy
 // it fired the removal gate. THE SKILL IS THE SIDE THAT MOVED. Its live

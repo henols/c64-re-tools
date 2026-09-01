@@ -1,14 +1,14 @@
 // docs-dangling-refs.test.ts
 //
 // WHY THIS EXISTS: T-11-DOC-DANGLE. Phase 10's D-03 dropped `.vsf` from
-// regenerator2000's bootstrap input set but pointed the deferral at "Phase
+// the external analyser's bootstrap input set but pointed the deferral at "Phase
 // 11's `c64-ram-capture` extension" as `.vsf`'s eventual home. That pointer
-// was wrong -- no `R2000-*` requirement covers `.vsf` as a bootstrap input
+// was wrong -- no `ANNO-*` requirement covers `.vsf` as a bootstrap input
 // (D-34) -- so Phase 11 plan 11-03 corrected it and filed the idea as a real
 // backlog item instead.
 //
 // It corrected FOUR of the FIVE sites. `.planning/REQUIREMENTS.md`'s
-// `R2000-08` fold entry still read "`.vsf` moves to Phase 11's
+// `ANNO-08` fold entry still read "`.vsf` moves to Phase 11's
 // `c64-ram-capture` extension" for a further day, through phase completion,
 // verification AND a security audit, because 11-03-T1's declared verification
 // was a hand-run `grep -c vsf .planning/ROADMAP.md` -- scoped to a single
@@ -147,7 +147,7 @@ test("no normative document points at a numbered phase as `.vsf`'s home (T-11-DO
   assert.deepEqual(
     hits,
     [],
-    "dangling `.vsf` phase pointer(s) found. No `R2000-*` requirement covers `.vsf` as a regenerator2000 " +
+    "dangling `.vsf` phase pointer(s) found. No `ANNO-*` requirement covers `.vsf` as an external analyser " +
       `bootstrap input (D-34) -- point at ${VSF_BACKLOG_ITEM} instead of at a phase:\n` +
       hits.map((h) => `  ${h.doc}: ${h.sentence}`).join("\n"),
   );
@@ -158,7 +158,7 @@ test("the `.vsf` backlog item still exists and still records why it is deferred"
   assert.ok(existsSync(path), `${VSF_BACKLOG_ITEM} is missing -- it is where the corrected pointers in ${normativeDocs().join(", ")} send the reader. Deleting it re-creates the dangling reference in the other direction.`);
   const body = readFileSync(path, "utf8");
   assert.match(body, /vsf/i, "the backlog item must still be about `.vsf`");
-  assert.match(body, /R2000-\d+/, "the backlog item must still name the requirement IDs it establishes do NOT cover `.vsf` -- that is the reason it is backlog and not a phase");
+  assert.match(body, /ANNO-\d+/, "the backlog item must still name the requirement IDs it establishes do NOT cover `.vsf` -- that is the reason it is backlog and not a phase");
 });
 
 test("non-vacuity: the scanned document set is non-empty and `.vsf` is actually discussed in it", () => {
@@ -181,7 +181,7 @@ test("non-vacuity: the scanned document set is non-empty and `.vsf` is actually 
 });
 
 test("planted-violation: the exact wording that survived plan 11-03 is detected by this guard's own logic", () => {
-  // Verbatim from `.planning/REQUIREMENTS.md`'s R2000-08 fold entry as it
+  // Verbatim from `.planning/REQUIREMENTS.md`'s ANNO-08 fold entry as it
   // read from plan 11-03 (2026-08-20) until the Phase 11 validation audit
   // (2026-08-21) -- including the line break it straddled, which is why the
   // scanner joins lines before splitting sentences.
@@ -191,7 +191,7 @@ test("planted-violation: the exact wording that survived plan 11-03 is detected 
 
   // And the corrected wording must NOT be flagged, or the guard is
   // unsatisfiable and would just get deleted.
-  const corrected = "`.vsf` has **no** later phase as its home — no `R2000-*` requirement covers it as a bootstrap input (confirmed by D-34), so it is filed as backlog rather than pointed at a phase.";
+  const corrected = "`.vsf` has **no** later phase as its home — no `ANNO-*` requirement covers it as a bootstrap input (confirmed by D-34), so it is filed as backlog rather than pointed at a phase.";
   const falsePositives = sentences(corrected).filter((s) => /\bvsf\b/i.test(s) && isPhaseAssignment(s));
   assert.deepEqual(falsePositives, [], "the corrected wording must not be flagged -- a guard that cannot be satisfied gets switched off");
 });
@@ -211,10 +211,10 @@ test("planted-violation: the exact wording that survived plan 11-03 is detected 
 // guard would be self-invalidating -- the commit that fixes a dangling
 // phase pointer legitimately wants to name the old wording in a "what NOT
 // to do" comment (this repo's established register; see anno-cli.ts's and
-// r2000-project.ts's FLOW-02 comments), and a guard that scanned comments
+// anno-project.ts's FLOW-02 comments), and a guard that scanned comments
 // would fail on the very commit that satisfies it. CLAUDE.md's grep-gate
 // hygiene rule names exactly this hazard. KNOWN, ACCEPTED GAP:
-// `r2000-project.ts`'s `.vsf` header comment carried this repo's third
+// `anno-project.ts`'s `.vsf` header comment carried this repo's third
 // FLOW-02 site and was corrected by hand in plan 11.1-01's Task 1; this
 // guard does not, and by design will not, hold that comment. A future
 // regression there would only be caught by re-reading the file.
@@ -433,7 +433,7 @@ test("planted-violation: the verbatim pre-fix wording is flagged, and the correc
   const preFixRefusal = `if (ext === ".vsf") {
     console.error(
       "bootstrap: .vsf input is not supported -- Phase 9 found its machine-type field only reads " +
-        'correctly by coincidence ("C64SC" falls through to regenerator2000\\'s own default, matching ' +
+        'correctly by coincidence ("C64SC" falls through to the external analyser\\'s own default, matching ' +
         "none of its literal System arms). Closing that gap for real is Phase 11's job, not this CLI's. " +
         "Convert to .prg, .d64 or a flat 64K capture instead.",
     );

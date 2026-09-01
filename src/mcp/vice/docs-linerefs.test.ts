@@ -350,7 +350,7 @@ test("planted-violation: a document whose only rewriteArguments() line carries n
   );
   assert.match(problem, /T-11-DOC-DRIFT/, "the message must still point at the vacuous-guard class it belongs to");
 
-  // Self-non-vacuity, in `removal-gate.test.ts:58-75`'s idiom: if the real
+  // Self-non-vacuity, in the retired removal-gate test's idiom: if the real
   // predicate were ever refactored into one that always reports "clean",
   // THIS is the assertion that catches it. Without it, every plant in this
   // file would pass against a neutered rule.

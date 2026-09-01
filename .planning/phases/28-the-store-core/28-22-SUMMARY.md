@@ -716,7 +716,7 @@ Both were green **before this round as well**, for the reason the round-5 report
 
 ### Deliberately NOT done here
 
-The full-glob suite (outlives the tool timeout, unrelated failure baseline); `r2000-session.test.ts`'s 5 `R2000SpawnError: regenerator2000 was not found on PATH` failures and `scripts/audit-gate.mjs:198`'s all-or-nothing attribution (both recorded pre-existing by the round-5 verifier); `.planning/STATE.md` and `.planning/ROADMAP.md` (untouched by tasks 1–3; updated only in this plan's own close-out step, which is this executor's sequential-mode responsibility and is NOT a task deliverable); and any work on WR-20, WR-23, IN-07 or IN-08, which are accept-only for this round.
+The full-glob suite (outlives the tool timeout, unrelated failure baseline); `anno-session.test.ts`'s 5 `AnnoSpawnError: The external analyser was not found on PATH` failures and `scripts/audit-gate.mjs:198`'s all-or-nothing attribution (both recorded pre-existing by the round-5 verifier); `.planning/STATE.md` and `.planning/ROADMAP.md` (untouched by tasks 1–3; updated only in this plan's own close-out step, which is this executor's sequential-mode responsibility and is NOT a task deliverable); and any work on WR-20, WR-23, IN-07 or IN-08, which are accept-only for this round.
 
 ---
 
@@ -793,7 +793,7 @@ None - no external service configuration required.
 - **What a round-6 verifier should read first:** the twelve-row disposition table and the two STILL-OPEN rows in `28-REVIEW.md`, then the round-5 record blocks in `.planning/REQUIREMENTS.md`, then the nine plantings and two reproductions above. Every claim in this SUMMARY is a number re-observed on the final tree.
 - **What is NOT claimed:** STORE-01 and STORE-03 remain `Gaps Found`. This round wrote the code the verifier's gap asked for, but an executor's confidence in its own fix is not a verdict — those two rows move only when a verification pass says so.
 - **Both human-verification items remain open** and neither is constructible by anything in this repo: the `integrity_check` throw arm needs filesystem- or SQLite-level fault injection, and the host-crash durability bound needs power-loss injection.
-- **One pre-existing item stays out of scope and is not a phase-28 defect:** `r2000-session.test.ts`'s 5 failures (`R2000SpawnError: regenerator2000 was not found on PATH` — a missing external binary) and `scripts/audit-gate.mjs:198`'s all-or-nothing attribution across the seven docs guards, which is what made a single red guard look like seven.
+- **One pre-existing item stays out of scope and is not a phase-28 defect:** `anno-session.test.ts`'s 5 failures (`AnnoSpawnError: The external analyser was not found on PATH` — a missing external binary) and `scripts/audit-gate.mjs:198`'s all-or-nothing attribution across the seven docs guards, which is what made a single red guard look like seven.
 
 ---
 *Phase: 28-the-store-core*

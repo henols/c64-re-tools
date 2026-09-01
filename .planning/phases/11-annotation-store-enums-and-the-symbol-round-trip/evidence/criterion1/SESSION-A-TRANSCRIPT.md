@@ -1,6 +1,6 @@
 # Session A Transcript — Criterion 1 (D-26), Plan 11-07
 
-**Purpose.** This transcript records the exact `r2000_*` tool calls this session made against
+**Purpose.** This transcript records the exact `anno_*` tool calls this session made against
 `recon-subject.regen2000proj`, plus a fresh-session re-read that proves the writes persisted to
 disk. It exists so plan 11-09 ("session B") can be judged as a genuinely separate execution
 context: session B is barred from reading this file (see `QUESTION.md`'s permitted-inputs list).
@@ -14,55 +14,55 @@ which is precisely what criterion 1 exists to rule out (T-11-LEAK). Everything N
 sealed answer is printed in full, including five of the six comments, six of the seven labels, and
 three of the four blocks, so the transcript still demonstrates the mechanism working end to end.
 
-**Environment.** `regenerator2000 0.9.20` (`~/.cargo/bin/regenerator2000`, confirmed via
+**Environment.** `the external analyser 0.9.20` (`~/.cargo/bin/analyser`, confirmed via
 `--version` before this session). `recon-subject.regen2000proj` bootstrapped from
 `fixture/recon-subject.prg`, sha256 `eca741911c38c9d5f9398027aa59d781cd27b7a7018aba02e1c0525e734ca4a5`
 (same hash recorded in `recon-subject.a`'s own header comment).
 
 **No nested session.** Every call below was driven directly by this executor agent, in its own
-foreground process, via `runR2000Tool()` (`.claude/mcp/vice/r2000-tools.ts`) — the same seam
-`vice-proxy.ts` registers the `r2000_*` MCP tools through. No `claude -p` or any other nested
+foreground process, via `runAnnoTool()` (`.claude/mcp/vice/anno-tools.ts`) — the same seam
+`vice-proxy.ts` registers the `anno_*` MCP tools through. No `claude -p` or any other nested
 headless Claude invocation appears anywhere in this session (T-11-NESTED-SESSION). Two separate
 `node` process invocations were used: one for the writes (this section), and a completely
 separate one, started after the first had fully exited, for the fresh-session re-read (next
 section) — proving persistence across a real process boundary, not just across two calls inside
 one still-running process.
 
-## Write phase — one `r2000_batch_execute` call
+## Write phase — one `anno_batch_execute` call
 
-Per D-33, the bulk of the annotation was issued as a single `r2000_batch_execute` call (17 inner
+Per D-33, the bulk of the annotation was issued as a single `anno_batch_execute` call (17 inner
 operations — well over the "5+ independent operations" threshold the tool's own description
-names). The runner (`runR2000Tool()`) saves the whole batch once, automatically, before its
+names). The runner (`runAnnoTool()`) saves the whole batch once, automatically, before its
 spawned session exits (D-17).
 
 Exact call:
 
 ```
-runR2000Tool("r2000_batch_execute", {
+runAnnoTool("anno_batch_execute", {
   project: "recon-subject.regen2000proj",
   calls: [
-    { name: "r2000_set_label_name", arguments: { address: 2064, name: "init_screen_and_irq" } },
-    { name: "r2000_set_label_name", arguments: { address: 2095, name: "poll_table_and_dispatch" } },
-    { name: "r2000_set_label_name", arguments: { address: 2124, name: [REDACTED — see QUESTION.md Part 1] } },
-    { name: "r2000_set_label_name", arguments: { address: 2128, name: "border_bump_down" } },
-    { name: "r2000_set_label_name", arguments: { address: 2132, name: "raster_sample_isr" } },
-    { name: "r2000_set_label_name", arguments: { address: 2140, name: "dispatch_selector_bytes" } },
-    { name: "r2000_set_label_name", arguments: { address: 2148, name: "routine_vector_table" } },
-    { name: "r2000_set_data_type", arguments: { start_address: 2140, end_address: 2147, data_type: "byte" } },
-    { name: "r2000_set_data_type", arguments: { start_address: 2148, end_address: 2155, data_type: "address" } },
-    { name: "r2000_set_data_type", arguments: { start_address: 2156, end_address: 2163, data_type: [REDACTED — see QUESTION.md Part 3] } },
-    { name: "r2000_add_scope", arguments: { start_address: 2132, end_address: 2139 } },
-    { name: "r2000_set_comment", arguments: { address: 2064, type: "line",
+    { name: "anno_set_label_name", arguments: { address: 2064, name: "init_screen_and_irq" } },
+    { name: "anno_set_label_name", arguments: { address: 2095, name: "poll_table_and_dispatch" } },
+    { name: "anno_set_label_name", arguments: { address: 2124, name: [REDACTED — see QUESTION.md Part 1] } },
+    { name: "anno_set_label_name", arguments: { address: 2128, name: "border_bump_down" } },
+    { name: "anno_set_label_name", arguments: { address: 2132, name: "raster_sample_isr" } },
+    { name: "anno_set_label_name", arguments: { address: 2140, name: "dispatch_selector_bytes" } },
+    { name: "anno_set_label_name", arguments: { address: 2148, name: "routine_vector_table" } },
+    { name: "anno_set_data_type", arguments: { start_address: 2140, end_address: 2147, data_type: "byte" } },
+    { name: "anno_set_data_type", arguments: { start_address: 2148, end_address: 2155, data_type: "address" } },
+    { name: "anno_set_data_type", arguments: { start_address: 2156, end_address: 2163, data_type: [REDACTED — see QUESTION.md Part 3] } },
+    { name: "anno_add_scope", arguments: { start_address: 2132, end_address: 2139 } },
+    { name: "anno_set_comment", arguments: { address: 2064, type: "line",
         comment: "[confirmed-code] entry point after bootstrap load; sets VIC-II/CIA registers and installs the live IRQ vector at $0314/$0315" } },
-    { name: "r2000_set_comment", arguments: { address: 2132, type: "line",
+    { name: "anno_set_comment", arguments: { address: 2132, type: "line",
         comment: "[confirmed-code] IRQ entry; samples the raster line then chains to the KERNAL's own continuation at $EA31" } },
-    { name: "r2000_set_comment", arguments: { address: 2140, type: "line",
+    { name: "anno_set_comment", arguments: { address: 2140, type: "line",
         comment: "[confirmed-data] dispatch selector consumed by poll_table_and_dispatch as an index; terminator $FF selects the take_two branch" } },
-    { name: "r2000_set_comment", arguments: { address: 2148, type: "line",
+    { name: "anno_set_comment", arguments: { address: 2148, type: "line",
         comment: "[probable-data] word-pair vector table pointing at four of this program's own routines; never itself executed as instructions" } },
-    { name: "r2000_set_comment", arguments: { address: 2156, type: "line",
+    { name: "anno_set_comment", arguments: { address: 2156, type: "line",
         comment: [REDACTED — see QUESTION.md Part 2] } },
-    { name: "r2000_set_comment", arguments: { address: 2118, type: "line",
+    { name: "anno_set_comment", arguments: { address: 2118, type: "line",
         comment: "[unknown] branch target reached only when dispatch_selector_bytes' selector equals $FF; not yet confirmed whether this path is exercised by the intended program flow or is dead residue from an earlier main-loop design" } },
   ]
 })
@@ -91,15 +91,15 @@ from the child, only the redacted entries omitted):
 17. Comment set at $0846
 ```
 
-## Fresh-session re-read (proves persistence, per r2000-mcp-client.ts's saveAndVerify()/D-17 posture)
+## Fresh-session re-read (proves persistence, per anno-mcp-client.ts's saveAndVerify()/D-17 posture)
 
 A **completely separate `node` process**, started only after the write-phase process above had
-fully exited (so this reads whatever `r2000_save_project`'s internal auto-save actually wrote to
+fully exited (so this reads whatever `anno_save_project`'s internal auto-save actually wrote to
 disk, not anything held in the prior process's memory), ran three read-only curated tools against
 the same `recon-subject.regen2000proj` path. This is the fresh-session re-read the plan requires:
 what follows is that re-read's own output, not the write calls' responses quoted above.
 
-### `r2000_get_symbols({ project, kind: "user" })`
+### `anno_get_symbols({ project, kind: "user" })`
 
 ```json
 [
@@ -117,7 +117,7 @@ Six of the seven labels written in the batch above survived into this fresh proc
 same path from disk, byte for byte — the seventh (address 2124) is real and present too, its
 `name` value is simply the one this transcript redacts.
 
-### `r2000_get_comments({ project })`
+### `anno_get_comments({ project })`
 
 ```json
 [
@@ -142,7 +142,7 @@ required tags (`[unknown]` at 2118, `[probable-data]` at 2148) are present and t
 round-trips through a save/reload. The sixth (address 2156) is real and present too; its text is
 the one `QUESTION.md` Part 2 asks for, so it is redacted here.
 
-### `r2000_get_blocks({ project })`
+### `anno_get_blocks({ project })`
 
 ```json
 [
@@ -160,18 +160,18 @@ ambiguous region) really is present with a real `type` value in the store — it
 
 ## What this transcript deliberately does NOT include
 
-No `r2000_get_cross_references` call appears anywhere above. `QUESTION.md` Part 4 asks for the
+No `anno_get_cross_references` call appears anywhere above. `QUESTION.md` Part 4 asks for the
 cross-reference count at one specific address; printing that call's output here would answer that
-part directly. The mechanism itself (that `r2000_get_cross_references` works against this store)
+part directly. The mechanism itself (that `anno_get_cross_references` works against this store)
 is not separately demonstrated in this transcript — it is exactly the kind of check the automated,
-non-secret `r2000-tools.test.ts` integration test already covers against the committed
+non-secret `anno-tools.test.ts` integration test already covers against the committed
 `probe-illegal.prg` fixture (plan 11-05), so nothing about its correctness is unwitnessed; only
 this specific address's answer is withheld here.
 
 ## D-25 convention note for plan 11-10
 
 The five confidence-prefix tokens used above (`confirmed-code`, `confirmed-data`, `probable-data`,
-`unknown`, and the redacted sixth) are written by hand into r2000 line comments, following D-25's
+`unknown`, and the redacted sixth) are written by hand into anno line comments, following D-25's
 convention exactly as `11-CONTEXT.md` states it — a leading `[token]` inside the comment text, no
 new storage. Plan 11-10 is the plan that formalises a parser for this convention; this session used
 it informally, matching the vocabulary the template names (`confirmed code`, `probable code`,

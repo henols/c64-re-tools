@@ -10,7 +10,7 @@ requires:
   - phase: 29-04
     provides: anno-derive.ts / anno-details.ts / anno-derive.test.ts, three additional consumers the rename census had to see
   - phase: 29-02
-    provides: scripts/check-no-regenerator2000.mjs with a dated allow-list keyed to 29-05 / 29-09 / 29-10, and 29-BASELINE.md's failing-file SET
+    provides: scripts/check-no-analyser.mjs with a dated allow-list keyed to 29-05 / 29-09 / 29-10, and 29-BASELINE.md's failing-file SET
 provides:
   - Nine capability modules and the CLI on the `anno-` prefix, with every importer, path read, comment citation and `files[]` entry moved in the same commit
   - A `ModuleFate` type and a third `discharged` scope in module-classification.ts, with a fate recorded for each of the ten discharged entries
@@ -56,7 +56,7 @@ key-files:
     - src/mcp/vice/anno-seam.test.ts
     - src/mcp/vice/vice-proxy.ts
     - src/mcp/vice/package.json
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
     - scripts/audit-gate.mjs
     - scripts/check-skill-tool-coverage.mjs
     - scripts/check-npm-packages.mjs
@@ -146,7 +146,7 @@ coverage:
     requirement: "MCP-05"
     verification:
       - kind: integration
-        ref: "node scripts/check-no-regenerator2000.mjs -- exit 0 at 63c1fe3, 388e66a, c59fcef and 9c4b58d"
+        ref: "node scripts/check-no-analyser.mjs -- exit 0 at 63c1fe3, 388e66a, c59fcef and 9c4b58d"
         status: pass
       - kind: other
         ref: "plant-and-revert probes: an extra mention in absorbed-answer-key.test.ts fails the permanent pin; an extra mention in anno-coverage.ts OUTSIDE the pinned lines falls through to the allow-list and fails its pin"
@@ -171,13 +171,13 @@ status: complete
 
 ## Accomplishments
 
-1. **The rename set was DERIVED, and the derivation was confirmed before anything moved.** `module-classification.ts` carries eleven `capability` verdicts. Two — `r2000-test-gate.ts` and `r2000-verify.ts` — carry `note` fields saying in terms that the verdict must not be read as a claim the module survives a prefix deletion. Eleven minus two is nine, which is what the plan predicted, so nothing was stopped or reported. The nine are acme-ident, confidence, coverage, d64, enum-gen, memmap-render, regbits-gen, symbols and the generated `regbits.json` data file. Seven co-located tests moved with them; `r2000-symbol-roundtrip.test.ts` was deliberately NOT swept up, because it is the live symbol round trip whose deletion 29-10 owns as an explicit recorded choice.
+1. **The rename set was DERIVED, and the derivation was confirmed before anything moved.** `module-classification.ts` carries eleven `capability` verdicts. Two — `anno-test-gate.ts` and `anno-verify.ts` — carry `note` fields saying in terms that the verdict must not be read as a claim the module survives a prefix deletion. Eleven minus two is nine, which is what the plan predicted, so nothing was stopped or reported. The nine are acme-ident, confidence, coverage, d64, enum-gen, memmap-render, regbits-gen, symbols and the generated `regbits.json` data file. Seven co-located tests moved with them; `anno-symbol-roundtrip.test.ts` was deliberately NOT swept up, because it is the live symbol round trip whose deletion 29-10 owns as an explicit recorded choice.
 
 2. **The registry now records fates, and the record is checked against disk.** `ModuleFate` (a rename with `from`/`to`, or a deletion with an optional `supersededBy`) sits beside `ModuleVerdict`; `discharged` is a third `ModuleScope` value documented in the same voice as the other two. Ten entries carry it — the nine capabilities plus the CLI. DIRECTION 6's `disk.length > 0` assertion, which this phase would legitimately have taken to zero, is replaced by a **discharge-closure relation** with its own non-emptiness assertion and a four-case planted violation driving the same predicate the real scan calls.
 
-3. **The CLI and its verb-parsing seam moved, and exactly two things did not.** `verbsMissingFromSkills`'s `` `r2000 ${verb}` `` invocation literal and `vice-proxy.ts:277`'s subcommand token are unchanged, because changing either half while the skill files still spell it the old way reds FLOW-01 from the wrong side; both move in 29-09. `stripComments()` and its rationale comment are carried verbatim. `vice-proxy.ts` is line-neutral: `git diff --numstat` reports 2 added / 2 deleted.
+3. **The CLI and its verb-parsing seam moved, and exactly two things did not.** `verbsMissingFromSkills`'s `` `anno ${verb}` `` invocation literal and `vice-proxy.ts:277`'s subcommand token are unchanged, because changing either half while the skill files still spell it the old way reds FLOW-01 from the wrong side; both move in 29-09. `stripComments()` and its rationale comment are carried verbatim. `vice-proxy.ts` is line-neutral: `git diff --numstat` reports 2 added / 2 deleted.
 
-4. **The module floor is a raise on its literal reading.** `ANNO_MODULE_FLOOR = 15`, measured on disk with `ls | grep -E '^anno-.*\.ts$' | grep -v '\.test\.'`, strictly greater than the `R2000_MODULE_FLOOR = 14` it replaces. The positive control names `anno-acme-ident.ts`, `anno-regbits-gen.ts`, `anno-symbols.ts` and `anno-store.ts`; the fourth INT-01 name (the availability-gate module) is substituted because 29-10 deletes it, and the substitution's reason is in the test's own comment.
+4. **The module floor is a raise on its literal reading.** `ANNO_MODULE_FLOOR = 15`, measured on disk with `ls | grep -E '^anno-.*\.ts$' | grep -v '\.test\.'`, strictly greater than the `ANNO_MODULE_FLOOR = 14` it replaces. The positive control names `anno-acme-ident.ts`, `anno-regbits-gen.ts`, `anno-symbols.ts` and `anno-store.ts`; the fourth INT-01 name (the availability-gate module) is substituted because 29-10 deletes it, and the substitution's reason is in the test's own comment.
 
 5. **The removal gate was re-pointed AND re-bucketed in the same commits as the moves, and it is green at every one of them.**
 
@@ -229,7 +229,7 @@ counts.
 
 ## The 25-row reconciliation, measured at execution time
 
-Re-measured at `598b22a` with `grep -aoi 'regenerator2000' <file> | wc -l`
+Re-measured at `598b22a` with `grep -aoi 'the external analyser' <file> | wc -l`
 (occurrences, `-a` throughout for the NUL-byte reason). **Every figure in the
 plan's table reproduced exactly; the grand total is 99, permanent 51 +
 temporary 48.** One row per rename source, including the thirteen zeroes, with
@@ -237,31 +237,31 @@ a bucket in every cell.
 
 | # | Task | Rename source → target | Hits | Bucket | Gate class / citing plan |
 |---|---|---|---|---|---|
-| 1 | 1 | `r2000-acme-ident.ts` → `anno-acme-ident.ts` | 1 | permanent | `enum-name-threat-history` |
-| 2 | 1 | `r2000-confidence.ts` → `anno-confidence.ts` | 0 | none needed | — |
-| 3 | 1 | `r2000-confidence.test.ts` → `anno-confidence.test.ts` | 0 | none needed | — |
-| 4 | 1 | `r2000-coverage.ts` → `anno-coverage.ts` | 4 | **split: 2 permanent + 2 temporary** | `census-design-and-incident-records` / 29-10 |
-| 5 | 1 | `r2000-coverage.test.ts` → `anno-coverage.test.ts` | 1 | permanent | `census-design-and-incident-records` |
-| 6 | 1 | `r2000-coverage-grammar.test.ts` → `anno-coverage-grammar.test.ts` | 0 | none needed | — |
-| 7 | 1 | `r2000-d64.ts` → `anno-d64.ts` | 0 | none needed | — |
-| 8 | 1 | `r2000-d64.test.ts` → `anno-d64.test.ts` | 0 | none needed | — |
-| 9 | 1 | `r2000-enum-gen.ts` → `anno-enum-gen.ts` | 4 | temporary | 29-10 |
-| 10 | 1 | `r2000-enum-gen.test.ts` → `anno-enum-gen.test.ts` | 4 | temporary | 29-10 |
-| 11 | 1 | `r2000-memmap-render.ts` → `anno-memmap-render.ts` | 1 | permanent | `memmap-measurement-provenance` (line-pinned at 79) |
-| 12 | 1 | `r2000-memmap-render.test.ts` → `anno-memmap-render.test.ts` | 4 | temporary | **29-12** (D-17) |
-| 13 | 1 | `r2000-regbits-gen.ts` → `anno-regbits-gen.ts` | 0 | none needed | — |
-| 14 | 1 | `r2000-regbits.json` → `anno-regbits.json` | 0 | none needed | — |
-| 15 | 1 | `r2000-regbits.test.ts` → `anno-regbits.test.ts` | 0 | none needed | — |
-| 16 | 1 | `r2000-symbols.ts` → `anno-symbols.ts` | 7 | temporary | 29-10 |
-| 17 | 2 | `r2000-cli.ts` → `anno-cli.ts` | 13 | temporary | 29-07 |
-| 18 | 2 | `r2000-cli.test.ts` → `anno-cli.test.ts` | 14 | temporary | 29-07 |
-| 19 | 2 | `r2000-verb-coverage.test.ts` → `anno-verb-coverage.test.ts` | 0 | none needed | — |
-| 20 | 2 | `scripts/lib/r2000-cli-verbs.mjs` → `anno-cli-verbs.mjs` | 0 | none needed | — |
-| 21 | 2 | `scripts/lib/r2000-cli-verbs.d.mts` → `anno-cli-verbs.d.mts` | 0 | none needed | — |
-| 22 | 3 | `r2000-spawn-seam.test.ts` → `spawn-seam.test.ts` | 39 | permanent | `renamed-guard-disciplines` |
-| 23 | 3 | `r2000-upstream-audit.test.ts` → `anno-derivation.test.ts` | 3 | permanent | `upstream-audit-manifest-provenance` |
-| 24 | 3 | `r2000-answer-key.test.ts` → `absorbed-answer-key.test.ts` | 2 | permanent | `renamed-guard-disciplines` |
-| 25 | 3 | `docs-r2000-decisions.test.ts` → `docs-absorbed-decisions.test.ts` | 2 | permanent | `renamed-guard-disciplines` |
+| 1 | 1 | `anno-acme-ident.ts` → `anno-acme-ident.ts` | 1 | permanent | `enum-name-threat-history` |
+| 2 | 1 | `anno-confidence.ts` → `anno-confidence.ts` | 0 | none needed | — |
+| 3 | 1 | `anno-confidence.test.ts` → `anno-confidence.test.ts` | 0 | none needed | — |
+| 4 | 1 | `anno-coverage.ts` → `anno-coverage.ts` | 4 | **split: 2 permanent + 2 temporary** | `census-design-and-incident-records` / 29-10 |
+| 5 | 1 | `anno-coverage.test.ts` → `anno-coverage.test.ts` | 1 | permanent | `census-design-and-incident-records` |
+| 6 | 1 | `anno-coverage-grammar.test.ts` → `anno-coverage-grammar.test.ts` | 0 | none needed | — |
+| 7 | 1 | `anno-d64.ts` → `anno-d64.ts` | 0 | none needed | — |
+| 8 | 1 | `anno-d64.test.ts` → `anno-d64.test.ts` | 0 | none needed | — |
+| 9 | 1 | `anno-enum-gen.ts` → `anno-enum-gen.ts` | 4 | temporary | 29-10 |
+| 10 | 1 | `anno-enum-gen.test.ts` → `anno-enum-gen.test.ts` | 4 | temporary | 29-10 |
+| 11 | 1 | `anno-memmap-render.ts` → `anno-memmap-render.ts` | 1 | permanent | `memmap-measurement-provenance` (line-pinned at 79) |
+| 12 | 1 | `anno-memmap-render.test.ts` → `anno-memmap-render.test.ts` | 4 | temporary | **29-12** (D-17) |
+| 13 | 1 | `anno-regbits-gen.ts` → `anno-regbits-gen.ts` | 0 | none needed | — |
+| 14 | 1 | `anno-regbits.json` → `anno-regbits.json` | 0 | none needed | — |
+| 15 | 1 | `anno-regbits.test.ts` → `anno-regbits.test.ts` | 0 | none needed | — |
+| 16 | 1 | `anno-symbols.ts` → `anno-symbols.ts` | 7 | temporary | 29-10 |
+| 17 | 2 | `anno-cli.ts` → `anno-cli.ts` | 13 | temporary | 29-07 |
+| 18 | 2 | `anno-cli.test.ts` → `anno-cli.test.ts` | 14 | temporary | 29-07 |
+| 19 | 2 | `anno-verb-coverage.test.ts` → `anno-verb-coverage.test.ts` | 0 | none needed | — |
+| 20 | 2 | `scripts/lib/anno-cli-verbs.mjs` → `anno-cli-verbs.mjs` | 0 | none needed | — |
+| 21 | 2 | `scripts/lib/anno-cli-verbs.d.mts` → `anno-cli-verbs.d.mts` | 0 | none needed | — |
+| 22 | 3 | `spawn-seam.test.ts` → `spawn-seam.test.ts` | 39 | permanent | `renamed-guard-disciplines` |
+| 23 | 3 | `anno-derivation.test.ts` → `anno-derivation.test.ts` | 3 | permanent | `upstream-audit-manifest-provenance` |
+| 24 | 3 | `absorbed-answer-key.test.ts` → `absorbed-answer-key.test.ts` | 2 | permanent | `renamed-guard-disciplines` |
+| 25 | 3 | `docs-absorbed-decisions.test.ts` → `docs-absorbed-decisions.test.ts` | 2 | permanent | `renamed-guard-disciplines` |
 | | | **permanent 51 + temporary 48** | **99** | | |
 
 Cross-check against the gate's own class totals: permanent from the rename set
@@ -309,15 +309,15 @@ reviewability, and neither statement stays true after the deletion:
 
 | File | Line | Was | Now |
 |---|---|---|---|
-| `src/mcp/vice/module-classification.ts` | 8 | `// regenerator2000 integration -- CUT-01 sizes it at a net ~12.4k lines out` | `// rented static-analysis integration -- CUT-01 sizes it at …` |
-| `src/mcp/vice/hostpath-consumers.test.ts` | 234 | test name: `… regenerator2000 runs container-side (D-R4) …` | `… the rented analyser ran container-side (D-R4) …` |
+| `src/mcp/vice/module-classification.ts` | 8 | `// the external analyser integration -- CUT-01 sizes it at a net ~12.4k lines out` | `// rented static-analysis integration -- CUT-01 sizes it at …` |
+| `src/mcp/vice/hostpath-consumers.test.ts` | 234 | test name: `… the external analyser runs container-side (D-R4) …` | `… the rented analyser ran container-side (D-R4) …` |
 
 These two are the entire `430 → 428` delta.
 
 ## The reachability walk, entry by entry, against the real plan manifests
 
 Half 1 of the derived constraint: a temporary entry may cite only a plan
-carrying **both** `scripts/check-no-regenerator2000.mjs` **and the file the
+carrying **both** `scripts/check-no-analyser.mjs` **and the file the
 entry names** in that plan's own `files_modified`. Walked against the actual
 frontmatter of `29-07-PLAN.md`, `29-10-PLAN.md` and `29-12-PLAN.md` on disk, not
 against the planning prose:
@@ -362,7 +362,7 @@ subject that cannot fail. Four probes, each planted, observed red, and reverted:
 |---|---|
 | `cd src/mcp/vice && npm run typecheck` | exit 0 |
 | bounded suite (`node --test` over the glob minus `vice-proxy.test.ts`) | 2856 tests, 2781 pass, **6 fail**, 64 skipped, 5 todo |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 — at **each** of `63c1fe3`, `388e66a`, `c59fcef`, `9c4b58d` |
+| `node scripts/check-no-analyser.mjs` | exit 0 — at **each** of `63c1fe3`, `388e66a`, `c59fcef`, `9c4b58d` |
 | `node scripts/audit-gate.mjs` | exit 0 |
 | `node scripts/check-npm-packages.mjs` | exit 0 (`@henols/vice-mcp` 83 files) |
 | `node scripts/check-skill-tool-coverage.mjs` | exit 0 (8 verbs parsed from `anno-cli.ts`, 8/8 resolved) |
@@ -380,7 +380,7 @@ process), so BACK-05 is not phantom-red.
 | File | Baseline | Now | Verdict |
 |---|---|---|---|
 | `vice-proxy.test.ts` | 41 (lower bound), MANUAL_ONLY | excluded from the bounded run | unchanged — it carries **zero** references to any path this plan renamed (`grep -c` → 0) |
-| `r2000-session.test.ts` | 5 | 6 under full-suite load, **5 in isolation** | in the set, unchanged. The 6th (`stub: a child that answers nothing within the call timeout`) is load-induced and disappears when the file is run alone; its error is `spawn regenerator2000 ENOENT`, environmental |
+| `anno-session.test.ts` | 5 | 6 under full-suite load, **5 in isolation** | in the set, unchanged. The 6th (`stub: a child that answers nothing within the call timeout`) is load-induced and disappears when the file is run alone; its error is `spawn the external analyser ENOENT`, environmental |
 | `audit-integrity.test.ts` | 2 | **0 — LEFT the set** | explained below |
 
 **No file entered the set. One file left it, and the cause is a real fix, not a
@@ -409,7 +409,7 @@ still compared by exact membership.
 ### 2. [Rule 1 — Bug] The `anno-*` `files[]` derivation could not see the shipped generated data file
 
 - **Found during:** the plan-level bounded suite, after Task 3.
-- **Issue:** `anno-seam.test.ts:232` compares every `files[]` entry starting with `anno-` against a disk derivation matching `/^anno-.*\.(ts|mts)$/`. Renaming `r2000-regbits.json` to `anno-regbits.json` put the shipped generated data file into the actual set where it could never enter the expected one — a guard red on a correctly-shipped file, whose cheapest fix under pressure is to drop the entry from `files[]` and silently unship the table a skill playbook cites by filename. Directly caused by this plan's own rename.
+- **Issue:** `anno-seam.test.ts:232` compares every `files[]` entry starting with `anno-` against a disk derivation matching `/^anno-.*\.(ts|mts)$/`. Renaming `anno-regbits.json` to `anno-regbits.json` put the shipped generated data file into the actual set where it could never enter the expected one — a guard red on a correctly-shipped file, whose cheapest fix under pressure is to drop the entry from `files[]` and silently unship the table a skill playbook cites by filename. Directly caused by this plan's own rename.
 - **Fix:** `.json` added to the derivation, not to the exclusion, with the reasoning recorded inline.
 - **Verification:** both of the assertion's teeth re-proved by planting `anno-durability-mutator.mjs` into `files[]` and watching it redden; `node --test anno-seam.test.ts` → 23 pass / 0 fail.
 - **Commit:** `9c4b58d`
@@ -418,7 +418,7 @@ still compared by exact membership.
 
 All were forced by a guard that would otherwise have been red, and all are inside the plan-level `files_modified` or are its direct consequence:
 
-- **`src/mcp/vice/module-classification.test.ts`** (Task 1 and 2). DIRECTION 2's encoding test read the data file out of the r2000 enumeration, which the rename emptied of it; the planted-violation test's synthetic disk list named entries that had become `discharged`. The encoding test was **re-expressed, not deleted** — its checked property (the registry keys on the exact filename INCLUDING the extension, never a stem) is unchanged and gained a negative control that the PRE-rename filename does not resolve either.
+- **`src/mcp/vice/module-classification.test.ts`** (Task 1 and 2). DIRECTION 2's encoding test read the data file out of the anno enumeration, which the rename emptied of it; the planted-violation test's synthetic disk list named entries that had become `discharged`. The encoding test was **re-expressed, not deleted** — its checked property (the registry keys on the exact filename INCLUDING the extension, never a stem) is unchanged and gained a negative control that the PRE-rename filename does not resolve either.
 - **`src/mcp/vice/module-classification.ts`** in Task 2 (not in Task 2's `<files>`): the CLI's entry had to become `discharged` or DIRECTION 2 would report it as an orphan.
 - **`src/mcp/vice/hostpath-consumers.test.ts`** in Task 1 (the plan assigns it to Task 3): the rename broke its derivation immediately. The helper, regex and positive control were re-pointed in Task 1 with the floor held at **14** — the same integer it replaced, so that commit is provably not a lowering — and Task 3 performed the measured raise to 15. This avoided leaving a knowingly-red guard across two commits inside the plan.
 - **`.planning/ARCHITECTURE.md`** (Task 3). `GUARD_FILENAMES` is checked **by containment** against ARCHITECTURE.md's Architecture Change Record step 5, so re-pointing it without editing that section would have reddened the guard. The Phase 18 sentences are left byte-identical; a dated 2026-08-29 addendum records the rename and names the substitute.
@@ -446,15 +446,15 @@ None. This plan added no network endpoint, no auth path, no file-access pattern 
 
 ## Issues Encountered
 
-`r2000-session.test.ts` fails 6 under full-suite load and 5 in isolation, and
-the 6th needs a live `regenerator2000` on `$PATH`. This is the load-sensitivity
+`anno-session.test.ts` fails 6 under full-suite load and 5 in isolation, and
+the 6th needs a live `the external analyser` on `$PATH`. This is the load-sensitivity
 `29-BASELINE.md` warns about and is why that document insists on comparing the
 failing-file **SET** rather than a count. Plan 29-10 deletes the file, which
 takes those failures out of the set by construction.
 
 ## Next Phase Readiness
 
-Ready for **29-06**. Waves 4 and 5 inherit a green `check-no-regenerator2000.mjs`
+Ready for **29-06**. Waves 4 and 5 inherit a green `check-no-analyser.mjs`
 with no entry naming a moved path, which is the specific failure ordering
 constraint 4 exists to prevent: plan 29-09 invokes the gate directly in its own
 `<automated>`, and a lagging entry from this plan would have surfaced there, two

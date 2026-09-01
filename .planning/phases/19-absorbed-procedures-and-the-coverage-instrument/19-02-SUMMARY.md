@@ -2,14 +2,14 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 02
 subsystem: testing
-tags: [skills, licensing, attribution, third-party-notices, npm-packaging, regenerator2000, fut-01]
+tags: [skills, licensing, attribution, third-party-notices, npm-packaging, the external analyser, fut-01]
 
 # Dependency graph
 requires:
   - phase: 19-absorbed-procedures-and-the-coverage-instrument
     provides: "plan 19-01's proven absorption chain — the attribution-header shape, skill-attribution.test.ts's frozen registry, the relation-based packaging pin, and the truthful incorporated-material section this plan's four rows flip"
-  - phase: 11-r2000-annotation-surface
-    provides: "CURATED_R2000_TOOLS / R2000_TOOL_DEFINITIONS and R2000_READ_REGION_MAX_BYTES in r2000-tools.ts — the surface every absorbed step is written against"
+  - phase: 11-anno-annotation-surface
+    provides: "CURATED_ANNO_TOOLS / ANNO_TOOL_DEFINITIONS and ANNO_READ_REGION_MAX_BYTES in anno-tools.ts — the surface every absorbed step is written against"
 provides:
   - "All five upstream analyze procedures absorbed at one pinned commit: analyze-blocks and analyze-symbol into c64-memory-mapping, analyze-routine and analyze-basic into c64-program-recon, joining 19-01's analyze-program"
   - "Five attribution blocks, one per SOURCE PATH — two skills now carry two blocks each, because two procedures with two digests cannot honestly share one header"
@@ -61,13 +61,13 @@ coverage:
     requirement: ABS-01
     verification:
       - kind: integration
-        ref: "node scripts/check-skill-tool-coverage.mjs (OK — 17 distinct r2000_* names extracted across 7 skill directories, all curated; up from 13 before this plan)"
+        ref: "node scripts/check-skill-tool-coverage.mjs (OK — 17 distinct anno_* names extracted across 7 skill directories, all curated; up from 13 before this plan)"
         status: pass
       - kind: integration
         ref: "node scripts/check-skill-fork-honesty.mjs (OK — 31 files in 7 skill directories, all section-scoped-compliant)"
         status: pass
       - kind: other
-        ref: "grep -ro over src/skills/ for each of r2000_toggle_splitter, r2000_undo, r2000_set_immediate_format, r2000_unpack_binary, r2000_get_disassembly_cursor — all return 0; grep -rl '\\.agent/skills' src/skills/ returns 0 files"
+        ref: "grep -ro over src/skills/ for each of anno_toggle_splitter, anno_undo, anno_set_immediate_format, anno_unpack_binary, anno_get_disassembly_cursor — all return 0; grep -rl '\\.agent/skills' src/skills/ returns 0 files"
         status: pass
       - kind: unit
         ref: "src/mcp/vice/skill-attribution.test.ts#no file under src/skills/ tells a reader to read an upstream agent-skills path"
@@ -78,7 +78,7 @@ coverage:
     requirement: ABS-02
     verification:
       - kind: unit
-        ref: "src/mcp/vice/skill-attribution.test.ts (8 tests, all pass; deleting the r2000-analyze-basic row exits 1 with 'the registry has 4 rows but the manifest lists 5 procedures', then restored)"
+        ref: "src/mcp/vice/skill-attribution.test.ts (8 tests, all pass; deleting the analyze-basic row exits 1 with 'the registry has 4 rows but the manifest lists 5 procedures', then restored)"
         status: pass
       - kind: other
         ref: "grep -c of each of the four new sha256 digests in its own destination file — 3fad6193…/d57d9c2f… in c64-memory-mapping, 6fd26337…/8fc662ce… in c64-program-recon, each exactly 1"
@@ -140,7 +140,7 @@ status: complete
 ## Accomplishments
 
 - **Four procedures absorbed into the two skills that already own their jobs.** `c64-memory-mapping` gains region classification (the four-pass order, the eight data kinds with their recognition heuristics, and upstream's most-dangerous-mistake rule carried in substance: never disassemble without a `JSR`/`JMP` target, a branch target, a vector-table entry or explicit human confirmation, because random data routinely disassembles into plausible instruction sequences) and symbol-purpose analysis (cross-reference-driven classification, the eight naming conventions, the zero-page rule). `c64-program-recon` gains the per-routine procedure (bounds, range read, callers, data usage, the exact separator comment-block format) and the BASIC material as reference only.
-- **Every omitted upstream call is named honestly and pointed at its criterion, never left aspirational.** `undo` collapses to "set the correct type again" (`r2000_set_data_type` is idempotent over a range). The table-boundary marker is carried as a *dated limitation* — adjacent same-type tables merge, the block listing respects markers, expect a systematic over-merge bias in any count taken from the store — with the forward pointer to `DECOMP-01`/`BUILD-02`. The low/high-byte immediate formatter is named by bare verb in both procedures that use it, marked not exposed, and tied to `BUILD-03`, with a hand-reconstruction workaround so the pointer is still readable today. Every cursor-based entry route becomes explicit address input.
+- **Every omitted upstream call is named honestly and pointed at its criterion, never left aspirational.** `undo` collapses to "set the correct type again" (`anno_set_data_type` is idempotent over a range). The table-boundary marker is carried as a *dated limitation* — adjacent same-type tables merge, the block listing respects markers, expect a systematic over-merge bias in any count taken from the store — with the forward pointer to `DECOMP-01`/`BUILD-02`. The low/high-byte immediate formatter is named by bare verb in both procedures that use it, marked not exposed, and tied to `BUILD-03`, with a hand-reconstruction workaround so the pointer is still readable today. Every cursor-based entry route becomes explicit address input.
 - **The deferred capability is readable but unfirable.** The BASIC section opens by stating the capability is deferred under `FUT-01` and why (commercial titles captured post-loader reduce to a one-line `SYS` stub). A named, non-empty ten-phrase trigger set is asserted absent from every `description:` under `src/skills/`, the set's own length is asserted non-zero, and the predicate is proven to bite on a planted description held in memory. The section *body* is deliberately free to use the vocabulary — only descriptions are policed, because descriptions are the trigger mechanism.
 - **The attribution guard now handles two procedures in one file.** A registry row is keyed on the upstream source path, and `attributionBlockFor()` resolves it to **exactly one** block by the source that block names — zero or two both fail. The registry's length *and* its upstream-path set are asserted equal to `manifest.procedures`, so neither a forgotten row nor two rows naming one path passes.
 - **The installer package finally carries notices.** `@henols/c64-re-tools` is the tarball that delivers the absorbed prose to npm consumers and shipped no notices file at all. It now carries one, named in `files[]`, asserted against the tarball's own packed file list, with a comment recording why a repo-path check would pass on a package that omits the file.
@@ -168,7 +168,7 @@ Each task was committed atomically:
 ## Decisions Made
 
 1. **One attribution block per source path, not per file.** Two destination files each absorb two procedures with two different digests. A per-file header would have to claim one digest and be silent about — or wrong about — the other, which is the honesty defect the whole attribution chain exists to prevent. The test was extended to match each row to the block naming its own source, and to fail on zero *or* two matches.
-2. **19-01's resolution of the RESEARCH §5.4 conflict is followed unchanged.** RESEARCH's example header spells the literal upstream `.agent/skills/…` path, but the plan's own acceptance criterion requires `grep -c '\.agent/skills' src/skills/` to return 0. As 19-01 recorded, the criterion governs: all five headers name the source *file* (`r2000-analyze-blocks/SKILL.md`) and state that it sits in the upstream repository's excluded agent-skills directory, with the full path recorded once in the manifest under `.planning/`, which is not scanned. Following the same resolution keeps all five headers consistent, and the test derives the expected reference *from* the manifest path rather than hand-typing it, so a re-pathed manifest entry cannot drift away from the headers.
+2. **19-01's resolution of the RESEARCH §5.4 conflict is followed unchanged.** RESEARCH's example header spells the literal upstream `.agent/skills/…` path, but the plan's own acceptance criterion requires `grep -c '\.agent/skills' src/skills/` to return 0. As 19-01 recorded, the criterion governs: all five headers name the source *file* (`analyze-blocks/SKILL.md`) and state that it sits in the upstream repository's excluded agent-skills directory, with the full path recorded once in the manifest under `.planning/`, which is not scanned. Following the same resolution keeps all five headers consistent, and the test derives the expected reference *from* the manifest path rather than hand-typing it, so a re-pathed manifest entry cannot drift away from the headers.
 3. **ABS-01 and ABS-02 flip to Complete.** 19-01 rolled them back deliberately, because ABS-01 reads "**the five** upstream analyze procedures are absorbed" and one had been. Five now are, all attributed, with the guards green. Leaving them Pending would understate the tree exactly as leaving them Complete overstated it before.
 4. **The installer notices document points rather than restates.** It records what ships *in that package* and defers to `src/mcp/vice/THIRD-PARTY-NOTICES.md` for the full inventory, so the two cannot drift into two competing inventories. The cc65 and ACME provenance is deliberately absent — neither ships there. Per-file sha256 digests are also deliberately absent: the per-file header travels with a playbook even when a consumer copies one out of the package, which is the case a notices document cannot cover.
 5. **The `disasm` enum value is described rather than named.** See the deviation below.
@@ -180,7 +180,7 @@ Each task was committed atomically:
 **1. [Rule 3 - Blocking] Absorbed prose tripped the corpus-wide `disasm` token ban**
 
 - **Found during:** Task 1, at the acceptance-criteria gate
-- **Issue:** `check-skill-fork-honesty.mjs` fails on a bare `disasm` verb token anywhere under `src/skills/` — plan 10-06 deleted `acme.mjs`'s `disasm` dispatch entry, and a playbook advertising it sends an agent into an unknown-verb failure. The absorbed read-region steps wrote `view: "disasm"`, which is a legitimate value of `r2000_read_region`'s `view` enum but the same token. Two sites: `c64-memory-mapping/SKILL.md:330` and `c64-program-recon/SKILL.md:338`.
+- **Issue:** `check-skill-fork-honesty.mjs` fails on a bare `disasm` verb token anywhere under `src/skills/` — plan 10-06 deleted `acme.mjs`'s `disasm` dispatch entry, and a playbook advertising it sends an agent into an unknown-verb failure. The absorbed read-region steps wrote `view: "disasm"`, which is a legitimate value of `anno_read_region`'s `view` enum but the same token. Two sites: `c64-memory-mapping/SKILL.md:330` and `c64-program-recon/SKILL.md:338`.
 - **Fix:** Reworded both to omit the `view` parameter and name its documented default instead — the tool's own description records that omitting `view` is identical to the disassembly view, confirmed live against the real binary — so the instruction stays fully executable. The checker's single line exemption was **not** grown: its header records the exemption count as pinned at exactly one, and `exemptionHits === 1` is asserted, so adding a second would have weakened a guard to accommodate new prose.
 - **Files modified:** `src/skills/c64-memory-mapping/SKILL.md`, `src/skills/c64-program-recon/SKILL.md`
 - **Verification:** `node scripts/check-skill-fork-honesty.mjs` exits 0
@@ -220,7 +220,7 @@ Each task was committed atomically:
 
 ## Issues Encountered
 
-- The `disasm` token ban (deviation 1) was the only genuine blocker. It is worth recording as a standing constraint for anyone absorbing more upstream prose: `r2000_read_region`'s `view` enum contains a value this repository's skill corpus is not allowed to spell, and the correct answer is to describe the default rather than to grow a pinned exemption.
+- The `disasm` token ban (deviation 1) was the only genuine blocker. It is worth recording as a standing constraint for anyone absorbing more upstream prose: `anno_read_region`'s `view` enum contains a value this repository's skill corpus is not allowed to spell, and the correct answer is to describe the default rather than to grow a pinned exemption.
 - `gsd-tools query state.add-decision --summary-file` rejects any path outside the repository, so the scratchpad route fails silently-ish (`added: false` with a reason). Repo-local temp files work.
 - 19-01's unreproduced one-test flake did **not** recur: the full suite ran once, clean, at 2472/2427/0.
 
@@ -267,9 +267,9 @@ two).
 
 ## User Setup Required
 
-None — no external service configuration required. `R2000_UPSTREAM_CLONE`
+None — no external service configuration required. `ANNO_UPSTREAM_CLONE`
 remains the optional opt-in for the audit test's live re-hash; this plan
-re-verified all five digests against `~/.cache/c64-re-tools/regenerator2000-pin`
+re-verified all five digests against `~/.cache/c64-re-tools/external-analyser-pin`
 at `493f840418f1450a342bb220c2fe3d2585dd0525` before absorbing anything.
 
 ## Next Phase Readiness

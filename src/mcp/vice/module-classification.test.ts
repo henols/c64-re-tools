@@ -69,19 +69,28 @@ const ROOT = repoRoot({ from: HERE });
  * violations can drive this same code path against synthetic inputs. Real
  * callers pass nothing.
  */
+/** The retired analyser family's filename prefix. Every module that ever
+ * carried it has been renamed into the `anno-` namespace or deleted, so this
+ * matches nothing on disk -- which is the enumeration emptying as designed,
+ * not a broken glob. DIRECTION 6 still catches a broken glob via
+ * `disk.length >= entries.length`. */
+const RETIRED_PREFIX = "retired-analyser-";
+
 function inEnumerationOnDisk(dir: string = HERE): string[] {
   return readdirSync(dir)
-    // STILL the retired prefix, and that is the re-pointing rather than an
+    // STILL the RETIRED prefix, and that is the re-pointing rather than an
     // oversight (plan 29-05). The enumeration's subject is WHAT REMAINS IN
     // SCOPE -- the modules still awaiting a fate -- not the family as it was
     // named. Nine capabilities and the CLI moved out from under this prefix
     // and their entries became `discharged`; widening this filter to follow
-    // them would re-import survivors into a scope whose whole purpose is to
-    // empty, and would make DIRECTION 6's completeness half report a growing
-    // set while the real one shrank. When this enumeration legitimately
-    // reaches zero, the non-vacuity that used to rest on `disk.length > 0`
-    // rests on the discharge-closure relation instead.
-    .filter((name) => name.startsWith("r2000-"))
+    // them into the surviving `anno-` namespace would re-import survivors
+    // into a scope whose whole purpose is to empty, and would make
+    // DIRECTION 6's completeness half report a growing set while the real one
+    // shrank. That enumeration HAS now legitimately reached zero -- no file
+    // under the retired prefix remains on disk -- so the non-vacuity that
+    // used to rest on `disk.length > 0` rests on the discharge-closure
+    // relation instead, exactly as planned below.
+    .filter((name) => name.startsWith(RETIRED_PREFIX))
     .filter((name) => /\.(ts|json)$/.test(name))
     .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name))
     .sort();
@@ -159,7 +168,7 @@ function orphanedEntries(entries: readonly ModuleClassificationEntry[], diskModu
 }
 
 /** A requirement id in this project's own FAMILY-NN shape (SEAM-02,
- * EXPORT-01, COV-02, R2000-13, CUT-04). Deliberately a shape check, not a
+ * EXPORT-01, COV-02, ANNO-13, CUT-04). Deliberately a shape check, not a
  * membership check against a file: a requirement document is reorganised
  * every milestone, and a guard that went red on that would be re-pointed
  * rather than believed. */
@@ -203,10 +212,10 @@ function basisProblems(entry: ModuleClassificationEntry, root: string = ROOT): s
 const NAME_JUSTIFICATION_PATTERNS: readonly RegExp[] = [
   /\bprefix(es|ed)?\b/i,
   /because of its name\b/i,
-  /\bnamed?\s+r2000\b/i,
+  /\bnamed?\s+anno\b/i,
   /\bname\s+(alone|itself)\b/i,
   /\bnaming convention\b/i,
-  /\br2000-\*/,
+  /\banno-\*/,
 ];
 
 /** DIRECTION 4. Every field of one entry's basis that justifies the verdict
@@ -304,7 +313,7 @@ function lineCitationProblems(entry: ModuleClassificationEntry, root: string = R
  * EARLIER ON THE SAME SOURCE LINE, or undefined. Deliberately same-line only:
  * a wider window reaches back into the previous bullet and attributes that
  * bullet's symbol to this citation, which reddens a CORRECT record -- measured
- * while writing this, on the `r2000-session.ts:294` citation, whose prose names
+ * while writing this, on the `anno-session.ts:294` citation, whose prose names
  * no symbol at all ("the single-flight session queue ... onward"). Under-
  * reaching costs coverage on a few citations; over-reaching costs trust in the
  * guard, and a guard that cries wolf gets deleted. */
@@ -348,7 +357,7 @@ test("DIRECTION 6 (non-vacuity): the on-disk in-scope count is at least the numb
   const disk = inEnumerationOnDisk();
   const entries = inEnumerationEntries(MODULE_CLASSIFICATION);
   // WHY A DERIVED RELATION AND NOT A LITERAL FLOOR. The obvious in-repo
-  // analog is `hostpath-consumers.test.ts`'s `R2000_MODULE_FLOOR = 14`,
+  // analog is `hostpath-consumers.test.ts`'s `ANNO_MODULE_FLOOR = 14`,
   // whose own comment says the number must be RAISED, never lowered. That
   // pattern is right about relations-over-equality and this assertion
   // supersedes it for one specific reason: a growing literal floor goes RED
@@ -405,7 +414,7 @@ test("DISCHARGE CLOSURE (plan 29-05): every discharged entry's fate resolves aga
 
 test("planted violation (discharge closure): a fate naming a nonexistent file, a self-rename, a missing fate and a survived deletion are all reported by the same predicate the real scan calls", () => {
   const base: ModuleClassificationEntry = {
-    module: "r2000-synthetic-discharged.ts",
+    module: "anno-synthetic-discharged.ts",
     scope: "discharged",
     verdict: "capability",
     basis: {
@@ -418,7 +427,7 @@ test("planted violation (discharge closure): a fate naming a nonexistent file, a
 
   const renamedToNothing: ModuleClassificationEntry = {
     ...base,
-    fate: { kind: "renamed", from: "r2000-synthetic-discharged.ts", to: "anno-this-file-does-not-exist.ts", on: "2026-08-29", why: "x" },
+    fate: { kind: "renamed", from: "anno-synthetic-discharged.ts", to: "anno-this-file-does-not-exist.ts", on: "2026-08-29", why: "x" },
   };
   assert.ok(
     dischargeClosureProblems(renamedToNothing).some((problem) => problem.includes("is NOT on disk")),
@@ -484,7 +493,7 @@ test("DIRECTION 2 (encoding): the generated data file is matched by its FULL fil
   // RE-EXPRESSED BY PLAN 29-05, and the reason is the whole point of the
   // `discharged` scope. This assertion used to read the data file out of
   // `inEnumerationOnDisk()`. The rename took it OUT of that enumeration -- the
-  // enumeration is the r2000-prefixed family awaiting deletion, and the data
+  // enumeration is the anno-prefixed family awaiting deletion, and the data
   // file is a survivor now -- so reading it from there would either go red on
   // a correct tree or force the enumeration to be widened to keep one
   // assertion alive, which is a guard re-pointed at a subject that cannot
@@ -500,7 +509,7 @@ test("DIRECTION 2 (encoding): the generated data file is matched by its FULL fil
     "a stem must NOT resolve to the data file's entry -- module values and on-disk filenames are compared as exact strings",
   );
   assert.ok(
-    classificationFor("r2000-regbits.json") === undefined,
+    classificationFor("retired-analyser-regbits.json") === undefined,
     "and the PRE-RENAME full filename must not resolve either -- the entry moved with the file, it was not duplicated",
   );
 });
@@ -649,25 +658,25 @@ test("planted violation: the same predicates the real scan uses report all five 
   const cleanConsumerPath = "src/mcp/vice/module-classification.ts";
 
   const emptyBasis: ModuleClassificationEntry = {
-    module: "r2000-synthetic-empty.ts",
+    module: "anno-synthetic-empty.ts",
     scope: "in-enumeration",
     verdict: "capability",
     basis: { consumers: [], requirements: [], rationale: "" },
     extractables: [],
   };
   const missingPath: ModuleClassificationEntry = {
-    module: "r2000-synthetic-missing-path.ts",
+    module: "anno-synthetic-missing-path.ts",
     scope: "in-enumeration",
     verdict: "capability",
     basis: {
-      consumers: [{ path: "src/mcp/vice/r2000-this-file-does-not-exist.ts", symbol: "somethingReal" }],
+      consumers: [{ path: "src/mcp/vice/anno-this-file-does-not-exist.ts", symbol: "somethingReal" }],
       requirements: ["SEAM-02"],
       rationale: "cites a consumer that is not on disk",
     },
     extractables: [],
   };
   const nameJustified: ModuleClassificationEntry = {
-    module: "r2000-synthetic-name-justified.ts",
+    module: "anno-synthetic-name-justified.ts",
     scope: "in-enumeration",
     verdict: "capability",
     basis: {
@@ -678,7 +687,7 @@ test("planted violation: the same predicates the real scan uses report all five 
     extractables: [],
   };
   const thirdVerdictNoExtractables: ModuleClassificationEntry = {
-    module: "r2000-synthetic-third-verdict.ts",
+    module: "anno-synthetic-third-verdict.ts",
     scope: "in-enumeration",
     verdict: "glue-with-extractable",
     basis: {
@@ -689,7 +698,7 @@ test("planted violation: the same predicates the real scan uses report all five 
     extractables: [],
   };
   const clean: ModuleClassificationEntry = {
-    module: "r2000-synthetic-clean.ts",
+    module: "anno-synthetic-clean.ts",
     scope: "in-enumeration",
     verdict: "glue",
     basis: {
@@ -718,7 +727,7 @@ test("planted violation: the same predicates the real scan uses report all five 
       "mechanically checkable half of criterion 2",
   );
   // (d) duplicate module
-  assert.deepEqual(duplicateModules([clean, thirdVerdictNoExtractables, clean]), ["r2000-synthetic-clean.ts"]);
+  assert.deepEqual(duplicateModules([clean, thirdVerdictNoExtractables, clean]), ["anno-synthetic-clean.ts"]);
   // (e) third verdict with no extractables
   assert.ok(
     verdictExtractablesProblems(thirdVerdictNoExtractables).length > 0,
@@ -752,14 +761,14 @@ test("planted violation: an in-scope file with no entry is reported by the same 
   // contents either; the registry's own completeness is Direction 1's job.
   const syntheticEntries: readonly ModuleClassificationEntry[] = [
     {
-      module: "r2000-synthetic-classified-a.ts",
+      module: "anno-synthetic-classified-a.ts",
       scope: "in-enumeration",
       verdict: "glue",
       basis: { consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION" }], requirements: [], rationale: "x" },
       extractables: [],
     },
     {
-      module: "r2000-synthetic-classified-b.ts",
+      module: "anno-synthetic-classified-b.ts",
       scope: "in-enumeration",
       verdict: "glue",
       basis: { consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION" }], requirements: [], rationale: "x" },
@@ -767,26 +776,26 @@ test("planted violation: an in-scope file with no entry is reported by the same 
     },
   ];
   const syntheticDisk = [
-    "r2000-synthetic-classified-a.ts",
-    "r2000-synthetic-classified-b.ts",
-    "r2000-synthetic-unclassified.ts",
+    "anno-synthetic-classified-a.ts",
+    "anno-synthetic-classified-b.ts",
+    "anno-synthetic-unclassified.ts",
   ];
   const unclassified = unclassifiedModules(syntheticEntries, syntheticDisk);
   assert.deepEqual(
     unclassified,
-    ["r2000-synthetic-unclassified.ts"],
+    ["anno-synthetic-unclassified.ts"],
     "a file present in the enumeration with no registry entry must be reported BY NAME -- if it is not, Direction 1 " +
       "cannot catch a module that slips in unclassified",
   );
   // And an entry with no file on disk is reported by the other direction.
   const orphanEntry: ModuleClassificationEntry = {
-    module: "r2000-renamed-away.ts",
+    module: "anno-renamed-away.ts",
     scope: "in-enumeration",
     verdict: "glue",
     basis: { consumers: [{ path: "src/mcp/vice/module-classification.ts", symbol: "MODULE_CLASSIFICATION" }], requirements: [], rationale: "x" },
     extractables: [],
   };
-  assert.deepEqual(orphanedEntries([...MODULE_CLASSIFICATION, orphanEntry], inEnumerationOnDisk()), ["r2000-renamed-away.ts"]);
+  assert.deepEqual(orphanedEntries([...MODULE_CLASSIFICATION, orphanEntry], inEnumerationOnDisk()), ["anno-renamed-away.ts"]);
 });
 
 test("planted violation: a drifted advisory line citation is reported by lineCitationProblems(), and a correct one is not", () => {
@@ -794,7 +803,7 @@ test("planted violation: a drifted advisory line citation is reported by lineCit
   // the exported const's name -- so a citation planted there must be
   // rejected by the same containment check the real scan uses.
   const drifted: ModuleClassificationEntry = {
-    module: "r2000-synthetic-drift.ts",
+    module: "anno-synthetic-drift.ts",
     scope: "in-enumeration",
     verdict: "glue",
     basis: {

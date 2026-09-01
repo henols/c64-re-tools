@@ -198,7 +198,7 @@ the test cannot pass for the wrong reason.
 | `acme-verify.ts` | `acme-gate.ts` | `import { ACME_BIN }` | ✓ WIRED — one home for the env-var name |
 | `acme-verify.test.ts` | `acme-gate.ts` | `acmeSkipReasonFor()` / `assertAcmeRequiredIfEnvSet()` | ✓ WIRED — Phase 27 hard-fail gate reaches this phase |
 | `anno-cli.ts` | `anno-export-asm.ts` | `import { exportAsm }` (line 126) | ✓ WIRED — verifier ran the verb end-to-end |
-| `vice-proxy.ts:307` | `anno-cli.ts` | dynamic `import` → `runR2000Cli` | ✓ WIRED — the real entry point |
+| `vice-proxy.ts:307` | `anno-cli.ts` | dynamic `import` → `runAnnoCli` | ✓ WIRED — the real entry point |
 | `ExportAsmResult.expectedBytes` | the IMAGE | built from image bytes, not exported text | ✓ WIRED — export-vs-image, not export-vs-itself |
 
 ### Data-Flow Trace (Level 4)
@@ -217,7 +217,7 @@ the test cannot pass for the wrong reason.
 | Real ACME present | `acme --version` | `release 0.97 ("Zem")` | ✓ PASS |
 | Oracle suite, ACME required | `VICE_REQUIRE_ACME=1 node --test acme-verify.test.ts` | 39 pass / 0 fail / **0 skipped** | ✓ PASS |
 | Exporter suite, ACME required | `VICE_REQUIRE_ACME=1 node --test anno-export-asm.test.ts` | 80 pass / 0 fail / **0 skipped** | ✓ PASS |
-| Full automated suite | `VICE_REQUIRE_ACME=1 npm run test:automated` | 2918 tests, **2912 pass / 0 fail**, 1 skip (r2000 upstream clone, unrelated) | ✓ PASS |
+| Full automated suite | `VICE_REQUIRE_ACME=1 npm run test:automated` | 2918 tests, **2912 pass / 0 fail**, 1 skip (anno upstream clone, unrelated) | ✓ PASS |
 | Typecheck | `npx tsc --noEmit` | clean | ✓ PASS |
 | CLI verb end-to-end | `vice-proxy.ts anno export-asm ...` | wrote `out.a`, exit 0, states it was NOT assembled | ✓ PASS |
 | Export → real ACME → byte-diff | `acme -f plain -o out.bin out.a; cmp` | exit 0, **BYTE-IDENTICAL** | ✓ PASS |
@@ -266,7 +266,7 @@ and all three are claimed by plan frontmatter. The `Complete` markings are **ear
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
 | — | — | `TBD` / `FIXME` / `XXX` | — | **None** across all phase-modified source, scripts and skill markdown |
-| `src/mcp/vice/anno-cli.ts` | 302 | doc-comment tense: "The call site at `runR2000Cli()` **sits** OUTSIDE that function's `try`" reads as present state, but CR-01 moved `checkAcceptedOptions()` inside the `try` (line 1431, inside `try {` at 1416) | ℹ️ Info | The enclosing paragraph is explicitly historical ("Reproduced against the shipped table **before this fix**"), so the meaning is recoverable. Cosmetic tense drift only — no behaviour, no gate, no criterion affected. Not a gap. |
+| `src/mcp/vice/anno-cli.ts` | 302 | doc-comment tense: "The call site at `runAnnoCli()` **sits** OUTSIDE that function's `try`" reads as present state, but CR-01 moved `checkAcceptedOptions()` inside the `try` (line 1431, inside `try {` at 1416) | ℹ️ Info | The enclosing paragraph is explicitly historical ("Reproduced against the shipped table **before this fix**"), so the meaning is recoverable. Cosmetic tense drift only — no behaviour, no gate, no criterion affected. Not a gap. |
 
 ### Human Verification Required
 

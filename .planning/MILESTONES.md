@@ -35,8 +35,8 @@ qualifications are recorded rather than smoothed over:
   three screens below says it *"STAYS `Gaps Found`"*. Plan 29-11 correctly
   declined to move a Phase 28 row and routed it to *"a Phase 28 verification pass
   or a milestone audit"*. This close ran neither, so the contradiction ships.
-- **Three Validated capabilities have no route.** `R2000-13` (generated enums)
-  and `R2000-14`/`R2000-15` (the symbol round trip) were withdrawn with the
+- **Three Validated capabilities have no route.** `ANNO-13` (generated enums)
+  and `ANNO-14`/`ANNO-15` (the symbol round trip) were withdrawn with the
   removal, and **no phase owns their return**. This is a deliberate regression
   under the 2026-08-26 "no parity is owed" decision, not an oversight — the
   heuristics survive as live code, and the withdrawal notes under PROJECT.md →
@@ -47,7 +47,7 @@ qualifications are recorded rather than smoothed over:
 - The coverage census's four inline comparisons against a rented analyser's `Display` strings are now one import of `block-class.ts`, and a zero-overlap second vocabulary substituted through that boundary holds every census byte count exact while moving only the divergence sub-report.
 - A working `.annostore` on disk: `node:sqlite` behind one structurally-asserted seam, a frozen twelve-member type vocabulary, and one `lo_hi_address` range that survives a close and a reopen readable by value, with `revertTo(0)` restoring the prior state.
 - The narrowest-range-wins paint index is now proven exact at all 65,536 addresses against a test-only linear-scan oracle that shares no code path with it — zero disagreements over a 2,000-range overlapping fixture proven non-degenerate on both axes — with $FFFF, both inclusive ends, length 1, the equal-length tie-break and the empty/single-row cases each pinned separately and each observed RED against a deliberately broken production rule.
-- `blockClassAt` now accepts the store's lowercase twelve alongside the external analyser's capitalised four, with the false header rationale replaced and both vocabularies pinned by derived total cross-checks whose reddening was observed — no census number, fixture byte or line of `r2000-coverage.ts` moved.
+- `blockClassAt` now accepts the store's lowercase twelve alongside the external analyser's capitalised four, with the false header rationale replaced and both vocabularies pinned by derived total cross-checks whose reddening was observed — no census number, fixture byte or line of `anno-coverage.ts` moved.
 - Five annotation kinds persisted over the existing DDL with a validator set that refuses rather than guesses — a label denylist derived from the real 256-entry opcode table, comment text bounded in UTF-8 bytes, and the split-orientation control observed red against a deliberately collapsed implementation.
 - Split-and-preserve proven across all five overlap cases with a union-form byte invariant plus a covered-address subset invariant, and a `CONFIDENCE_GRADES`-derived contradicted-comment report returned as data on the successful write — with both plantings observed red and the phase's planted-violation model corrected by measurement.
 - One combined test proves durability and revert together across a real `SIGKILL` in a separate OS process — with the removed `COMMIT` observed reddening both halves — plus the cross-process stale-revision refusal, four corrupt-file refusals with the tail residual stated rather than claimed, and a snapshot ring bounded at a single-homed constant.
@@ -72,9 +72,9 @@ qualifications are recorded rather than smoothed over:
 - `anno_enum_usage` associates one address with one project enum by enum ID at `SCHEMA_VERSION` 3, and the version refusal is proven — behaviourally and structurally — to have stayed a single witness with no migration arm.
 - `STORE-06` now answers from the bytes: cross-references union the decoded code, the typed split ADDRESS tables and the stored non-derivable rows into one sorted de-duplicated list, search runs byte-exact over three independently disableable corpora with truncation detectable — and a two-halved control proves a derived query leaves the store byte-for-byte unchanged, with the planted violation observed reddening it.
 - Nine capability modules and the CLI moved out from under the retired prefix — driven entry by entry from the classification registry rather than by a glob — with the registry gaining a checked `ModuleFate`, the module floor re-expressed as a measured raise to 15, and every gate entry that named a moved path re-pointed and re-bucketed in the same commit as its `git mv`.
-- The `r2000` CLI drops from eight verbs to two, and its `coverage` verb now reads labels, comments, ranges and derived cross-references out of the Phase 28 SQLite annotation store — proven verdict-for-verdict identical against all twelve committed coverage fixtures, with the 512-lookup round-trip ceiling deleted rather than carried.
+- The `anno` CLI drops from eight verbs to two, and its `coverage` verb now reads labels, comments, ranges and derived cross-references out of the Phase 28 SQLite annotation store — proven verdict-for-verdict identical against all twelve committed coverage fixtures, with the 512-lookup round-trip ceiling deleted rather than carried.
 - `MCP-01` turned from a claim into a checked property in both directions: `anno-derivation.test.ts` now walks the Phase 19 manifest and asserts a route for each of its 16 curated-or-adapt verbs and the absence of all 4 omit verbs under both spellings, while `anno-register.ts` gives the 4 unclassified surface verbs a committed home that fails — naming the verb — when a fifth appears without a requirement id and a named consumer.
-- Every absorbed analysis procedure now executes on the owned annotation surface in both trees a user can receive it from — 17 old-family tool names re-pointed onto 18 verbs that actually exist, six withdrawn CLI verbs each described as withdrawn with a dated return condition, the `r2000` subcommand renamed to `anno` across its three halves in one commit, and the one guard that contradicted the cut resolved with the skill named as the side that moved.
+- Every absorbed analysis procedure now executes on the owned annotation surface in both trees a user can receive it from — 17 old-family tool names re-pointed onto 18 verbs that actually exist, six withdrawn CLI verbs each described as withdrawn with a dated return condition, the `anno` subcommand renamed to `anno` across its three halves in one commit, and the one guard that contradicted the cut resolved with the skill named as the side that moved.
 - The retired static-analysis integration's glue is gone — 14 files and 8,221 lines removed entry by entry from the classification registry, with its two pinned false-pass transcripts carried forward, both capability modules' heuristics extracted out of their dying routes as live code, and three guards re-pointed onto subjects that still exist and re-proven by plants against the real post-deletion tree.
 - The planning record now describes what happened rather than what was planned: `D-01`'s falsified coexistence claims are edited with the decision cited by id and the clauses they replace quoted verbatim, Phases 30-32 are narrowed with all 28 requirements still owned by exactly one phase (cross-checked mechanically), the ordering constraint that made an in-phase deletion safe is restated as an intra-phase rule rather than erased, and the removal gate's temporary allow-list is closed with an emptiness assertion observed firing under a plant.
 - `anno_disassemble` now refuses an out-of-image address exactly as `anno_read_region` does, a nested `anno_batch_execute` on the documented store inheritance finally validates and executes, and `anno_save_project` reads its revision once.
@@ -91,14 +91,14 @@ qualifications are recorded rather than smoothed over:
 - Every block now asserts its own origin and its own exclusive end -- both observed making real ACME 0.97 exit 1 on a planted length change with no output file written -- all twelve `DATA_TYPES` members round-trip byte-identically off the vocabulary's own frozen array, and an embedded line break in comment text is refused by name at the store boundary and again at the export boundary.
 - A confined, non-overwriting `anno export-asm <image> --store FILE [--out FILE] [--force]` that emits ACME source from an annotation store and states in its own second output line that it assembled nothing — with all nine of the CLI's path arguments now inventoried, the verb floor raised on both sides of its exact equality, the invocation gate's three per-verb tables extended, and the false "returns in Phase 30" forecast in the floor's own doc replaced by what actually happened.
 - Every in-tree statement that `anno export-asm` was withdrawn-and-returning-in-a-numbered-phase is discharged with its real invocation and its test-only-oracle caveat; every statement that `gen-enums`/`export-lbl`/`import-lbl`/`.d64` extraction returns in that phase is re-pointed to an explicit no-owner note; and a new guard tied to `parseAnnoCliVerbs()` fails when a dispatched verb is documented as withdrawn — observed failing once, naming both skill trees.
-- Eight prose deltas re-syncing Phase 19's upstream snapshot record onto surviving subjects — trigger 3 now names `CURATED_ANNO_TOOLS`/`anno-tools.ts`, trigger 1 names `anno-derivation.test.ts`, and `r2000_undo` carries `requirement_id: STORE-04` as a decided omission discharged by `revertTo(handle, revision)` per `D2`.
+- Eight prose deltas re-syncing Phase 19's upstream snapshot record onto surviving subjects — trigger 3 now names `CURATED_ANNO_TOOLS`/`anno-tools.ts`, trigger 1 names `anno-derivation.test.ts`, and `anno_undo` carries `requirement_id: STORE-04` as a decided omission discharged by `revertTo(handle, revision)` per `D2`.
 - `REPOINT-03`'s sentence turned from a recorded grep into two committed assertions: every ABS-02 attribution block in both skill trees is now scored for one byte-exact `Adapted from <name>.` line and one byte-exact two-space-indented `Source repository:` line, compared as relations plus a per-tree floor, with a one-byte plant on each line proving the byte-exactness is real.
 - The `skill-attribution-headers` permanent exemption's justification is auditable again — both gate citations and the STATE.md decision line now name ROADMAP Phase 31 criterion 1 with a dated `D-01` renumbering parenthetical, the content clause preserved verbatim — and this phase's four judgements (the inferred `STORE-04` id, date-don't-delete, no permanent prose gate, and the deliberate non-promotion) are one dated `- [Phase 31]:` Decisions entry instead of a diff a later reader would have to reconstruct.
 - The two-tree ABS-02 naming-line guard now actually reads two trees in CI, and its documented `grep -rx` whole-line byte equality is true at block boundaries by construction rather than by luck — plus a durable disposition record for all 11 code-review findings.
 - One audited guard proven end to end — the guard derives it from the object store at `0394cbc`, the registry names it, the harness plants `ANNO_CLI_VERB_FLOOR = 3` → `4`, `anno-verb-coverage.test.ts` is captured exiting 1 against a green control that exited 0, and the tree comes back byte-identical.
 - Six of eight repo-level guard scripts now accept a repository-contained `--root <dir>` (up from one), the table generator's WRITE target included, so the phase-32 sweep can plant against a synthetic tree without touching `docs/tool-support.md` — and D-07's 1/7 split is now a measurement with per-script code-shape reasons instead of a research assumption.
 - `docs-linerefs.test.ts` now scans a declared two-document set instead of one hard-coded path, with a citation-aware exactly-one-per-document bullet predicate, a per-document non-vacuity floor, and five planted violations that drive the real rule from in-memory bodies — so `.planning/PROJECT.md`'s `vice-proxy.ts` citations can no longer go stale unnoticed the way they did through v0.7.0.
-- A declared, re-derivable 50-member swept set with one mechanically-derived verdict row per file — and three measured corrections to the phase's own published figures: CONTEXT.md's "26 `r2000_`" reconciles exactly as a case-insensitive count (research said it could not), research's own 373/338 tree-wide totals reproduce at no commit, and the gate's predicate reaches 37 tracked files where the plan's census reaches 35.
+- A declared, re-derivable 50-member swept set with one mechanically-derived verdict row per file — and three measured corrections to the phase's own published figures: CONTEXT.md's "26 `anno_`" reconciles exactly as a case-insensitive count (research said it could not), research's own 373/338 tree-wide totals reproduce at no commit, and the gate's predicate reaches 37 tracked files where the plan's census reaches 35.
 - All 15 renamed set-A guards observed exiting non-zero against their new subjects under recorded minimal plants, each paired with a green exit-0 control, with the tree restored byte-identical — and the renamed group measured at 15, not the plan's 16.
 - All 18 re-pointed set-A guards that survived under their original path observed exiting non-zero against their new subjects behind green exit-0 controls, with every guard's unplanted runtime measured against the harness's 15s bound first — including `vice-proxy.test.ts`, which does not terminate at 300106ms unscoped and was made measurable rather than recorded unmeasurable.
 - The 25 remaining audited members recorded — 7 `deleted` with two-sided proofs of absence, 16 net-new set-B guards, and the 2 deferred set-C fates against their NEW triggers — taking `guard-fates.json` to a complete 61-row bijection and `check-guard-fates.mjs` to exit 0 for the first time since it landed, with the guard, the harness and every floor byte-identical to what plan 32-01 committed while it was red.
@@ -166,9 +166,9 @@ Any fix touches `src/`, which Phase 23 was forbidden from doing.
 committed tests read live paths under `.planning/phases/` — two of them by
 hard-coded relative path to
 `phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`
-(`r2000-upstream-audit.test.ts`, `skill-attribution.test.ts`), plus
-`r2000-answer-key.test.ts` (`phases/11-*/evidence/`, no existence guard),
-`r2000-coverage.test.ts` (`phases/19-*/evidence/`) and `r2000-verify.test.ts`
+(`anno-derivation.test.ts`, `skill-attribution.test.ts`), plus
+`absorbed-answer-key.test.ts` (`phases/11-*/evidence/`, no existence guard),
+`anno-coverage.test.ts` (`phases/19-*/evidence/`) and `anno-verify.test.ts`
 (`phases/10-*/evidence/`). `.planning/milestones/` holds no `*-phases/` archive
 because this project has never archived them, for that reason. Archiving here
 would also mislabel Phases 1-19 under the v0.6.0 label. If phase archival is
@@ -191,17 +191,17 @@ with live requirement text that v0.8.0 will carry forward unchanged.
 
 **Key accomplishments:**
 
-- Ran the Architecture Change Procedure's six steps in full for the D-17/D-18 per-call-lifecycle reversal, allocated D-36 superseding D-32's `r2000_get_address_details` exclusion, and pinned both with `docs-r2000-decisions.test.ts`, proven non-vacuous by three live red-then-green planted-violation probes against the real committed documents.
-- Added `ensureProjectSettings()` and `R2000ProjectSettingsError` to `r2000-project.ts` -- a read-parse-force-rewrite pass over an existing `.regen2000proj` that silently forces `use_illegal_opcodes` to `true` and refuses by name on a `settings.system` mismatch, a missing file, or malformed JSON, proven by 11 new unit tests including a committed non-vacuity control and a live red-then-green probe.
-- Promoted `withR2000Session()`'s one-shot spawn/handshake logic into a long-lived `openR2000Session()` primitive, built a new `r2000-session.ts` single-slot lifecycle owner on top of it (reuse-on-same-path, evict-on-path-change, evict-on-external-write), rewired `runR2000Tool()` through it with its save-per-mutation body byte-identical, landed D18-09's three-scenario save-discipline planted-violation gate watched red-then-green, and — while proving the plan's own full-suite requirement — found and fixed a real cross-session staleness bug the persistent-session design introduced for `r2000-symbols.ts`'s separate one-shot import/export flow.
-- A crashed or wedged regenerator2000 session is now recoverable and attributable: between-call deaths respawn transparently, mid-call/wedge deaths fail loud and are never retried, a named restart budget refuses a genuinely broken project after repeated crashes, and the proxy's own exit no longer orphans a live child — with the SIGKILLed-proxy risk answered by measurement, not assumption.
-- `r2000_read_region` joins the curated surface with both views and a documented 4096-byte cap (`R2000_READ_REGION_MAX_BYTES`), and `r2000_get_address_details` is now curated as a four-read client-side composition (`composeAddressDetails()`) under D-36 — never calling upstream's own same-named tool, which live-reconfirmed still answers `OutOfRange` at every address on a full 64K project.
-- A single FIFO queue now owns each persistent regenerator2000 session, preserving whole-operation call-and-save ordering and surfacing stuck contention as a named timeout.
+- Ran the Architecture Change Procedure's six steps in full for the D-17/D-18 per-call-lifecycle reversal, allocated D-36 superseding D-32's `anno_get_address_details` exclusion, and pinned both with `docs-absorbed-decisions.test.ts`, proven non-vacuous by three live red-then-green planted-violation probes against the real committed documents.
+- Added `ensureProjectSettings()` and `AnnoProjectSettingsError` to `anno-project.ts` -- a read-parse-force-rewrite pass over an existing `.regen2000proj` that silently forces `use_illegal_opcodes` to `true` and refuses by name on a `settings.system` mismatch, a missing file, or malformed JSON, proven by 11 new unit tests including a committed non-vacuity control and a live red-then-green probe.
+- Promoted `withAnnoSession()`'s one-shot spawn/handshake logic into a long-lived `openAnnoSession()` primitive, built a new `anno-session.ts` single-slot lifecycle owner on top of it (reuse-on-same-path, evict-on-path-change, evict-on-external-write), rewired `runAnnoTool()` through it with its save-per-mutation body byte-identical, landed D18-09's three-scenario save-discipline planted-violation gate watched red-then-green, and — while proving the plan's own full-suite requirement — found and fixed a real cross-session staleness bug the persistent-session design introduced for `anno-symbols.ts`'s separate one-shot import/export flow.
+- A crashed or wedged the external analyser session is now recoverable and attributable: between-call deaths respawn transparently, mid-call/wedge deaths fail loud and are never retried, a named restart budget refuses a genuinely broken project after repeated crashes, and the proxy's own exit no longer orphans a live child — with the SIGKILLed-proxy risk answered by measurement, not assumption.
+- `anno_read_region` joins the curated surface with both views and a documented 4096-byte cap (`ANNO_READ_REGION_MAX_BYTES`), and `anno_get_address_details` is now curated as a four-read client-side composition (`composeAddressDetails()`) under D-36 — never calling upstream's own same-named tool, which live-reconfirmed still answers `OutOfRange` at every address on a full 64K project.
+- A single FIFO queue now owns each persistent the external analyser session, preserving whole-operation call-and-save ordering and surfacing stuck contention as a named timeout.
 - The phase is closed by a live settings round trip, full Node 22 gate, package checks, and explicit evidence for all six requirements.
-- The seventh skill `routine-queue-walker` lands absorbed from regenerator2000 @`493f840…` with a six-field attribution header, the packaging guard now asserts a relation instead of the literal six, both notices files are true in the same commit, two mechanical guards hold the attribution chain shut (each proven to fire), and D18-16 is answered by a three-run measurement showing the stdio child does not multiplex.
+- The seventh skill `routine-queue-walker` lands absorbed from the external analyser @`493f840…` with a six-field attribution header, the packaging guard now asserts a relation instead of the literal six, both notices files are true in the same commit, two mechanical guards hold the attribution chain shut (each proven to fire), and D18-16 is answered by a three-run measurement showing the stdio child does not multiplex.
 - All five upstream analyze procedures are now absorbed at one pinned commit — `analyze-blocks` and `analyze-symbol` into `c64-memory-mapping`, `analyze-routine` and a deferred REFERENCE-ONLY `analyze-basic` into `c64-program-recon` — with one attribution block per source path rather than per file, a registry asserted equal to the manifest's own procedure set, a BASIC trigger vocabulary proven absent from every description, and the tarball that actually ships the prose finally carrying a notices document asserted against its own packed payload.
-- A derived-from-bytes coverage census that regenerator2000's own block table cannot move by a single byte, with a four-class widened dispatch scan, two label figures, a comment-vacuity measure, a bytes-versus-store reproducibility seal, and six committed controls — five that must fail for a named reason, one that must pass.
-- The coverage instrument became runnable — an eighth `r2000` CLI verb that reads the store through the held session and prints three separately named measures with no aggregate anywhere — and packer identity became a project-owned recon finding whose name field has exactly one assignment site, inside an external oracle's branch.
+- A derived-from-bytes coverage census that the external analyser's own block table cannot move by a single byte, with a four-class widened dispatch scan, two label figures, a comment-vacuity measure, a bytes-versus-store reproducibility seal, and six committed controls — five that must fail for a named reason, one that must pass.
+- The coverage instrument became runnable — an eighth `anno` CLI verb that reads the store through the held session and prints three separately named measures with no aggregate anywhere — and packer identity became a project-owned recon finding whose name field has exactly one assignment site, inside an external oracle's branch.
 - A pairwise Jaccard trigger-collision gate over all seven skill descriptions — threshold 0.35 justified by the measurement that produced it, empty allowlist, wired blocking into CI — plus three descriptions sharpened by a dispatcher read the metric never fired on, five dated decisions with checkable reversal conditions, and a green seven-step phase gate.
 - The one measure whose whole subject is refusing to be talked into a clean verdict can no longer be talked into one: a hex string that merely touches a caller's short form, or a label name embedded in a longer identifier, buys nothing — proven by two controls that were observed red before the fix and green after.
 - The census now has a committed false-positive control that was proven red before the gate landed: two 64-byte programs differing only in a seven-byte prologue, generated together under four enforced invariants, reporting `reachedAsInstruction` 55 and 7 against the pre-19-08 instrument and 7 and 7 now — with the phase's validation record extended rather than rewritten, and `REQUIREMENTS.md` verified honest without being touched.
@@ -213,7 +213,7 @@ with live requirement text that v0.8.0 will carry forward unchanged.
 - `hasDispatchContext()`'s stack-return branch now demands a `pha` at each paired load's own successor and an `rts` after both, so the round-3 blocker payload — 15 code bytes that manufactured eight "proven" entry points and 47 of 64 bytes of code-or-table — reports nothing.
 - `hasDispatchContext()`'s second true-returning site now compares the indirect jump's operand against the vector the pairing's own two stores built, and a source-derived pin asserts that BOTH branches consult the pairing — so a presence-only branch reds the suite by name instead of satisfying declarations its own author writes.
 - A thousand 6502 arrangements composed from a ten-fragment alphabet across 72 stratified families, each one's expected verdict COMPUTED by a six-rule oracle that never touches a byte, and one set equality asserting in both directions that the dispatch instrument proves exactly the arrangements that carry a proven data-flow link.
-- The anti-regression mechanism's own hole is closed: a control target is now a (shape, route) pair, the disjunction that let a class-4-only control vouch for the class-3 route is deleted, and the route set — its call sites, publication sites, seam sources and gate ordering — is read from `r2000-coverage.ts`'s own text rather than mirrored by hand.
+- The anti-regression mechanism's own hole is closed: a control target is now a (shape, route) pair, the disjunction that let a class-4-only control vouch for the class-3 route is deleted, and the route set — its call sites, publication sites, seam sources and gate ordering — is read from `anno-coverage.ts`'s own text rather than mirrored by hand.
 - All seven gates this round added consolidated into one traceable table — the payload each must decline with its measured values, the payload it must still accept, the plant, the test observed red and its counts — with D-07's three clauses each mapped to the row that discharges it, WR-03 marked CLOSED with its evidence and its residual, D-08 recorded as a one-way contingency nobody acted on, and the full workspace suite run once, green.
 - One decodability predicate read by the recursive descent, the linear sweep and the entry-point gate — closing WR-03, the second inflation route on `reachedAsInstruction`, so a 94%-garbage image reports four bytes of code instead of sixty-four while its legal twin still reports all sixty-four.
 
@@ -240,14 +240,14 @@ dropped:
 - BUILD-01 … BUILD-06 — rebuildable source and the reassembly gate
 - EQUIV-01 … EQUIV-04 — equivalence and modifiability
 
-**Why.** Measured on a committed 279-byte fixture, regenerator2000 unannotated
+**Why.** Measured on a committed 279-byte fixture, the external analyser unannotated
 flat-decodes; dxa recovered 72% of data bytes with zero false positives and
 resolved a dispatch table unaided; Ghidra, given dxa's map and volatile I/O
 blocks, resolved the indirect dispatch, the self-modifying write, and the
 index/stride/split-pointer facts. Full record and reproduction material:
 `.planning/notes/dxa-ghidra-pivot.md` and
 `.planning/notes/dxa-ghidra-pivot-evidence/`. This reverses D-R1/D-R2 from
-`.planning/notes/regenerator2000-integration.md`.
+`.planning/notes/external-analyser-integration.md`.
 
 **What shipped instead.** This milestone is named for what it actually
 delivered — the persistent session and the coverage instrument — not for the
@@ -345,7 +345,7 @@ guards discovered. `node scripts/check-npm-packages.mjs` → OK, 0 leaks.
 
 ---
 
-## v0.3.0 regenerator2000 static-analysis backend (Shipped: 2026-08-21)
+## v0.3.0 the external analyser static-analysis backend (Shipped: 2026-08-21)
 
 **Phases completed:** 4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks
 **Requirements:** 12/12 in-scope satisfied (4 of the original 16 cut or folded 2026-08-17)
@@ -355,10 +355,10 @@ guards discovered. `node scripts/check-npm-packages.mjs` → OK, 0 leaks.
 **Final audit:** round 2, status `passed` — 12/12 requirements, 4/4 phases, 12/12 integration, 4/4 flows, zero open gaps
 **Known deferred items at close:** 19 (18 pending todos + Phase 03's UAT gap; see STATE.md → Deferred Items)
 
-**Delivered:** recon findings stop being prose. regenerator2000 is adopted as a
+**Delivered:** recon findings stop being prose. The external analyser is adopted as a
 static-analysis backend — a persistent, queryable annotation store plus a
 recursive-descent disassembler with an auto-analyzer — reached through 17 curated
-`r2000_*` tools and a `vice-mcp r2000 <verb>` CLI, entirely container-side, and
+`anno_*` tools and a `vice-mcp anno <verb>` CLI, entirely container-side, and
 structurally incapable of touching VICE. Register writes read as bit names,
 symbols flow both ways between the store and a live emulator, and the flat
 linear `toacme` decoder it makes obsolete is deleted.
@@ -367,7 +367,7 @@ linear `toacme` decoder it makes obsolete is deleted.
 
 - **Probed the five load-bearing assumptions before building on them, then
   honoured the answer.** A standalone go/no-go phase tested a real
-  regenerator2000 0.9.20 against seven criteria and recorded a verdict of
+  the external analyser 0.9.20 against seven criteria and recorded a verdict of
   **`degrade`** (rule `R4`) when criterion 3(4) — `.vsf` machine-type
   derivation — proved to be a coincidental default fallback rather than a
   genuine read of the snapshot's own `"C64SC"` field. The milestone shipped
@@ -377,11 +377,11 @@ linear `toacme` decoder it makes obsolete is deleted.
   licence, and a Debian-release/glibc mismatch that breaks a naive multi-stage
   container build.
 
-- **Made "regenerator2000 never touches VICE" a property of the code, twice
-  over.** `r2000-launch.ts` is the sole spawn seam: `--vice` is unreachable by
+- **Made "the external analyser never touches VICE" a property of the code, twice
+  over.** `anno-launch.ts` is the sole spawn seam: `--vice` is unreachable by
   fixed per-verb argv builders *and* denied by a scan that throws
-  `R2000ViceFlagError`, both pinned by tests proven to fail under live
-  reintroduction. The whole `r2000_*` family registers proxy-locally through
+  `AnnoViceFlagError`, both pinned by tests proven to fail under live
+  reintroduction. The whole `anno_*` family registers proxy-locally through
   `buildViceTool()` and never reaches `forwardToVice()`, so CLAUDE.md's
   derived-tool path-translation constraint is satisfied by construction rather
   than by an interception — and the family behaves identically on the fork and
@@ -389,19 +389,19 @@ linear `toacme` decoder it makes obsolete is deleted.
 
 - **Turned a raw binary into an analysed project with no human in the loop.** A
   pure-Node `.regen2000proj` synthesiser (gzip + base64 + minimal JSON) that a
-  real regenerator2000 loads and exports ACME from, with the
+  real the external analyser loads and exports ACME from, with the
   `use_illegal_opcodes`/`system` pair forced explicitly — the keystroke
   bootstrap Phase 9 proved automatable defaults it to `false`, under which an
   export proves nothing about 6510 illegal opcodes. Plus a container-side
   `.d64` reader with a cycle-guarded sector-chain walk that refuses to guess,
-  a `vice-mcp r2000 <verb>` subcommand reaching its CLI before any MCP server
+  a `vice-mcp anno <verb>` subcommand reaching its CLI before any MCP server
   side effect runs, and one seam parsing `--verify`'s output that keys strictly
   on ACME's own result line — proven in both directions on real transcripts,
   including an exit-1 run where ACME still passed and an exit-0 run where ACME
   never ran.
 
 - **Built the annotation store and proved it holds knowledge, by sealed
-  question.** 17 curated `r2000_*` tools over a hand-rolled newline-delimited
+  question.** 17 curated `anno_*` tools over a hand-rolled newline-delimited
   JSON-RPC client (chosen over `@mastra/mcp`'s `MCPClient` by a five-property
   live measurement, yielding six distinct named failure modes). Its usefulness
   was then tested falsifiably rather than asserted: session A annotated a
@@ -413,7 +413,7 @@ linear `toacme` decoder it makes obsolete is deleted.
   `sta $d011` now renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` in real
   ACME-exported source, from a digest-pinned bit-name table generated
   re-runnably from `memmap.json`. A 23-step transcript against genuine
-  unpatched stock `x64sc` (VICE 3.9) closes `R2000-14`/`R2000-15` end to end: a
+  unpatched stock `x64sc` (VICE 3.9) closes `ANNO-14`/`ANNO-15` end to end: a
   store-written label resolves live, and a name discovered by disassembling the
   running program — never read off source — is written back into the store. The
   store became canonical and the Markdown memory map a generated view with a
@@ -422,7 +422,7 @@ linear `toacme` decoder it makes obsolete is deleted.
 - **Deleted the thing this milestone earned the right to remove.** The 14-line
   `toacme` wrapper (`cmdDisasm`), its dispatch entry, its usage line, and ~50
   lines of `SKILL.md` caveats structural to a flat linear decoder are gone; both
-  playbooks point at the single live-verified `r2000 export-asm`/`verify` route,
+  playbooks point at the single live-verified `anno export-asm`/`verify` route,
   and a whole-tree grep gate proven to bite on a non-`SKILL.md` file keeps it
   gone.
 

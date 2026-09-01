@@ -312,7 +312,7 @@ noise rather than signal. Reviewed and **not** folded:
   (`PKG-*`).
 - `2026-08-20-warp-over-resource-set-refuted-on-stock-3-10.md` — a settled
   refutation, no action in this phase.
-- `2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md` — test-gate
+- `2026-08-21-migrate-hand-copied-acme-gates-to-anno-test-gate.md` — test-gate
   refactor, Phase 15/16 territory.
 - `2026-08-21-phase-08-review-wr-04-through-wr-12-never-dispositioned.md` and
   `2026-08-21-phase-09-review-in-01-in-03-never-dispositioned.md` — **Phase 15**

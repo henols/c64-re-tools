@@ -2,13 +2,13 @@
 phase: 09-the-assumption-probe-go-no-go
 plan: 08
 subsystem: infra
-tags: [regenerator2000, go-no-go, verdict, discoverability, state-md, roadmap]
+tags: [the external analyser, go-no-go, verdict, discoverability, state-md, roadmap]
 
 requires:
   - phase: 09-the-assumption-probe-go-no-go
-    provides: "docs/phase9-regenerator2000-probe-findings.md — the durable, normative go/no-go verdict (degrade, rule R4) and its two live scope amendments, written by plan 09-07"
+    provides: "docs/phase9-external-analyser-probe-findings.md — the durable, normative go/no-go verdict (degrade, rule R4) and its two live scope amendments, written by plan 09-07"
 provides:
-  - "A STATE.md ### Decisions entry naming the verdict, the rule that fired, its triggering input, the installed regenerator2000 version, and the literal path to the findings document — without restating the seven per-criterion outcomes"
+  - "A STATE.md ### Decisions entry naming the verdict, the rule that fired, its triggering input, the installed analyser version, and the literal path to the findings document — without restating the seven per-criterion outcomes"
   - "Two STATE.md Blockers/Concerns entries recording the verdict's accepted limits (vsf machine-type trust; explicit use_illegal_opcodes setting), each citing the findings document's Accepted limits section by entry number"
   - "An updated STATE.md Current Position recording Phase 9 complete and the verdict-appropriate next step for Phase 10"
   - "ROADMAP.md Phase 9 Notes, checkboxes and both Progress-table rows updated to 8/8 Complete, with a verdict pointer"
@@ -30,10 +30,10 @@ key-files:
 key-decisions:
   - "Ran sequentially on main, no worktree, per this plan's own worktree: false frontmatter — its deliverable IS STATE.md/ROADMAP.md content, and worktree mode strips executor writes to those two files"
   - "Added a Phase 11 Notes pointer even though the verdict produced no scope amendment there, because Phase 11's own pre-existing Notes explicitly anticipated a criterion-3(3) format mismatch contingency; the pointer states that contingency did not fire rather than staying silent and leaving a later reader to re-derive it"
-  - "Did not touch docs/phase9-regenerator2000-probe-findings.md — verified unmodified after every edit, per the plan's own verification requirement"
+  - "Did not touch docs/phase9-external-analyser-probe-findings.md — verified unmodified after every edit, per the plan's own verification requirement"
   - "Advanced STATE.md's Current Position body text by hand (Phase 9 complete, 8/8) rather than by GSD SDK, since this is prose the plan explicitly assigns this task to write; frontmatter progress counters were left untouched for the orchestrator's own state.advance-plan/update-progress calls"
 
-requirements-completed: [R2000-16]
+requirements-completed: [ANNO-16]
 
 duration: ~10min
 completed: 2026-08-20
@@ -41,7 +41,7 @@ completed: 2026-08-20
 
 # Phase 9 Plan 08: Verdict Discoverability Summary
 
-**STATE.md and ROADMAP.md now each point a reader at `docs/phase9-regenerator2000-probe-findings.md`'s `degrade`/`R4` verdict without copying its seven per-criterion outcomes, closing R2000-16 criterion 5.**
+**STATE.md and ROADMAP.md now each point a reader at `docs/phase9-external-analyser-probe-findings.md`'s `degrade`/`R4` verdict without copying its seven per-criterion outcomes, closing ANNO-16 criterion 5.**
 
 ## Performance
 
@@ -53,7 +53,7 @@ completed: 2026-08-20
 
 - `.planning/STATE.md` `### Decisions` gained one `[Phase 09]` entry naming the verdict
   (`degrade`), the rule (`R4`), its triggering input (`c3_4_vsf_load: partial`), the
-  installed version (`regenerator2000 0.9.20`), and the literal path to the findings
+  installed version (`the external analyser 0.9.20`), and the literal path to the findings
   document — with the seven per-criterion outcomes deliberately left out.
 - Both accepted limits from the findings document's `## Accepted limits` section were
   added to `## Blockers/Concerns` as one line each, naming what each breaks and citing
@@ -111,7 +111,7 @@ Each task was committed atomically:
 **1. [Informational] Task 2's automated `<verify>` command asserts a stronger claim than the plan's own acceptance criteria require**
 
 - **Found during:** Task 2 verification
-- **Issue:** The plan's automated check for Task 2 includes `! grep -q 'Plans\*\*: TBD' .planning/ROADMAP.md` — a file-wide assertion that no `**Plans**: TBD` line exists anywhere in `ROADMAP.md`. But Phase 10 and Phase 11 legitimately still read `**Plans**: TBD` (their plans have not been written — writing them is explicitly out of scope for this milestone-gate-discoverability plan and forbidden by `R2000-16`'s own "no further plan before this closes" wording). The plan's own acceptance criteria for Task 2 confirm the intent was narrower: "`### Phase 9`'s `**Plans**:` line ... is present and accurate" — i.e., scoped to Phase 9's line, which was never `TBD` to begin with (it already read `8 plans in 5 waves` at plan-authoring time).
+- **Issue:** The plan's automated check for Task 2 includes `! grep -q 'Plans\*\*: TBD' .planning/ROADMAP.md` — a file-wide assertion that no `**Plans**: TBD` line exists anywhere in `ROADMAP.md`. But Phase 10 and Phase 11 legitimately still read `**Plans**: TBD` (their plans have not been written — writing them is explicitly out of scope for this milestone-gate-discoverability plan and forbidden by `ANNO-16`'s own "no further plan before this closes" wording). The plan's own acceptance criteria for Task 2 confirm the intent was narrower: "`### Phase 9`'s `**Plans**:` line ... is present and accurate" — i.e., scoped to Phase 9's line, which was never `TBD` to begin with (it already read `8 plans in 5 waves` at plan-authoring time).
 - **Resolution:** Did not touch Phase 10's or Phase 11's `**Plans**: TBD` lines — changing them would misrepresent unplanned phases as planned, directly violating this same plan's acceptance criterion "Phase 10's and Phase 11's existing success criteria are not reworded in place" in spirit (plan counts are equally not this plan's business to invent). All acceptance criteria and the plan's `<verification>` prose (which says "ROADMAP Phase 9 lists all eight plans; `**Plans**: TBD` is gone" — scoped to Phase 9) are satisfied; the file-wide `grep` in the automated check is over-broad and does not pass as literally written. Recorded here rather than silently ignored.
 - **Files modified:** none (informational only)
 - **Verification:** Confirmed both Phase 9's plan list is complete/ticked and Phase 10/11's `TBD` lines are untouched and correctly still `TBD`.
@@ -133,7 +133,7 @@ None - no external service configuration required.
 
 - Phase 9 is complete (8/8 plans). The `degrade` verdict is now discoverable from both
   `.planning/STATE.md` and `.planning/ROADMAP.md` without a reader needing to already
-  know the findings document's filename — closing `R2000-16` criterion 5.
+  know the findings document's filename — closing `ANNO-16` criterion 5.
 - Phase 10 planning may begin. Its planner must apply the two named amendments at their
   targets (criterion 3 / `.vsf` machine-type trust; criterion 4 / explicit
   `use_illegal_opcodes`) — both are now recorded in the Phase 10 Notes, beside the

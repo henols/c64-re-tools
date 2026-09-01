@@ -1,7 +1,7 @@
 # Phase 9: The Assumption Probe (Go/No-Go) - Research
 
 **Researched:** 2026-08-19
-**Domain:** Rust CLI/TUI interop (regenerator2000), pty automation, VICE label-file and
+**Domain:** Rust CLI/TUI interop (the external analyser), pty automation, VICE label-file and
 snapshot-file formats, container toolchain measurement
 **Confidence:** MEDIUM-HIGH — every claim below is either source-verified at a recorded
 commit/line, or an explicit source-verified correction to the grounding notes. The one
@@ -14,7 +14,7 @@ terminal — is flagged LOW and is the phase's entire reason to exist.
 
 | ID | Description | Research Support |
 |----|-------------|------------------|
-| R2000-16 | Five load-bearing assumptions checked against a real regenerator2000 build before any further plan is written, each answered in the repo with recorded evidence, any failure recorded as an accepted limit stating what it breaks: (1) pty tolerance for HTTP MCP mode, (2) `--export_asm --assembler acme` reassembly, (3) `--export_lbl` format match with `vice_symbols_load`, (4) `.vsf` load carrying machine type/start address, (5) container-side Rust toolchain build time and image-size cost. | This document's Code Examples give the exact command shape for each sub-assumption; Architecture Patterns' diagram sequences them; the Standard Stack/Package Legitimacy sections cover (5)'s install-cost prerequisite; the State of the Art section records the one correction to the assumed bootstrap mechanic that changes how (1) must actually be tested (keystroke-driven, not MCP-call-driven) |
+| ANNO-16 | Five load-bearing assumptions checked against a real analyser build before any further plan is written, each answered in the repo with recorded evidence, any failure recorded as an accepted limit stating what it breaks: (1) pty tolerance for HTTP MCP mode, (2) `--export_asm --assembler acme` reassembly, (3) `--export_lbl` format match with `vice_symbols_load`, (4) `.vsf` load carrying machine type/start address, (5) container-side Rust toolchain build time and image-size cost. | This document's Code Examples give the exact command shape for each sub-assumption; Architecture Patterns' diagram sequences them; the Standard Stack/Package Legitimacy sections cover (5)'s install-cost prerequisite; the State of the Art section records the one correction to the assumed bootstrap mechanic that changes how (1) must actually be tested (keystroke-driven, not MCP-call-driven) |
 
 </phase_requirements>
 
@@ -22,20 +22,20 @@ terminal — is flagged LOW and is the phase's entire reason to exist.
 
 This phase has no code to plan — it has a **sequence of five recorded experiments** and a
 **verdict artifact**. The grounding notes
-(`.planning/notes/regenerator2000-integration.md`) already did the analysis; this research
+(`.planning/notes/external-analyser-integration.md`) already did the analysis; this research
 re-verified every cited claim against the actual upstream repository at its current `main`
 (commit `df4bc94`, 2026-08-09, tag-equivalent to published crate `0.9.20`) and found the
 ROADMAP's source citations for `main.rs:710` and `file_io.rs:125-127` to be **still
 accurate — no drift**.
 
 It also found one thing the grounding notes got **materially wrong**, and it is the single
-most important correction in this document: **`r2000_save_project` cannot create the
+most important correction in this document: **`anno_save_project` cannot create the
 first `.regen2000proj` file.** Its own handler refuses with `-32603 No active project
 path` unless `app_state.project_path` is already `Some`, and the *only* code path that
 ever sets `project_path` for a freshly-loaded raw binary is the TUI's own "Save As" dialog
 (`Alt+S`, then a filename prompt, then Enter) — there is no MCP tool and no CLI flag that
 performs this. The pty bootstrap the grounding notes described (`pty → auto-analyze →
-r2000_save_project → project file exists`) is missing a step: **synthesized keystrokes
+anno_save_project → project file exists`) is missing a step: **synthesized keystrokes
 through the pty**, not just an MCP call over HTTP. This changes what "the pty question"
 even means — it is not "does raw-mode survive a non-tty", it is "can this project drive
 a TUI menu action through a pty with no human", which is exactly the shape of problem
@@ -60,19 +60,19 @@ strings `"C64"`/`"C128"`/`"VIC20"`/`"PET"`/`"PLUS4"`, while a genuine stock VICE
 snapshot's own `machine_name` is `"C64SC"`, which matches none of them — the displayed
 "Commodore 64" is a coincidental fallback default (`dialog_import_context.rs:37`'s
 `unwrap_or(current_system)`), not a genuine read of the snapshot. Not previously
-documented anywhere in this phase; see `docs/phase9-regenerator2000-probe-findings.md`'s
+documented anywhere in this phase; see `docs/phase9-external-analyser-probe-findings.md`'s
 Accepted limits for what it breaks.]
 
 `--verify-roundtrip` shells out to a **real**
 `acme` binary with `--cpu 6510 --format cbm`, compares assembled bytes to the original,
-and is a much cheaper gate than building one. And `cargo install regenerator2000` is
+and is a much cheaper gate than building one. And `cargo install analyser` is
 **verified published** on crates.io (v0.9.20, 2026-07-11, license `MIT OR Apache-2.0` —
 not solely Apache-2.0 as the grounding notes state; correct `THIRD-PARTY-NOTICES.md`
 accordingly). **[Note, 2026-08-20: this document already had the dual license right —
-`REQUIREMENTS.md`'s own `R2000-03` phrasing still says "Apache-2.0 notice" only. That
+`REQUIREMENTS.md`'s own `ANNO-03` phrasing still says "Apache-2.0 notice" only. That
 correction still needs applying to `REQUIREMENTS.md`/`THIRD-PARTY-NOTICES.md`, out of
 scope for this file; flagged in
-`docs/phase9-regenerator2000-probe-findings.md`'s Corrections section for Phase 10.]**
+`docs/phase9-external-analyser-probe-findings.md`'s Corrections section for Phase 10.]**
 
 **Primary recommendation:** Run criterion 1 (install + version + container cost) and
 criterion 2 (pty + **keystroke-driven** Save-As bootstrap, using `tmux` since it is not on
@@ -91,11 +91,11 @@ against, since getting this wrong invalidates the finding:
 
 | Capability | Primary Tier | Secondary Tier | Rationale |
 |------------|-------------|----------------|-----------|
-| pty + TUI bootstrap probe | regenerator2000 process (host, under `tmux`/`script`) | — | The TUI, raw-mode terminal, and MCP HTTP server all live in one Rust process; there is no client/server split to reason about here |
-| MCP HTTP handshake probe | Node harness script (throwaway, `.claude/mcp/vice/node_modules`) | regenerator2000 HTTP server (`127.0.0.1:3000/mcp`) | The harness is a genuine MCP **client**; the already-installed `@modelcontextprotocol/sdk`'s `StreamableHTTPClientTransport` is the correct tier to drive it from, not raw curl |
-| Reassembly verification | regenerator2000's own `--verify-roundtrip` (in-process, shells to `acme`) | — | Do not build a second gate; the tool already owns this responsibility per D-R... (grounding notes) |
+| pty + TUI bootstrap probe | the external analyser process (host, under `tmux`/`script`) | — | The TUI, raw-mode terminal, and MCP HTTP server all live in one Rust process; there is no client/server split to reason about here |
+| MCP HTTP handshake probe | Node harness script (throwaway, `.claude/mcp/vice/node_modules`) | the external analyser HTTP server (`127.0.0.1:3000/mcp`) | The harness is a genuine MCP **client**; the already-installed `@modelcontextprotocol/sdk`'s `StreamableHTTPClientTransport` is the correct tier to drive it from, not raw curl |
+| Reassembly verification | the external analyser's own `--verify-roundtrip` (in-process, shells to `acme`) | — | Do not build a second gate; the tool already owns this responsibility per D-R... (grounding notes) |
 | Symbol format check | Static text comparison (no running process needed) | `stock-symbols.ts`'s regex (already in this repo) | Both sides' formats are now known from source; verification is comparing two known grammars, not running two live systems against each other |
-| `.vsf` load check | VICE emulator (produces the `.vsf` via `vice_snapshot_save`) | regenerator2000 (`--headless --export_asm` or an MCP query against the loaded state) | The emulator produces evidence; regenerator2000 consumes and must be asked what it saw (via `--verify` output or an MCP `analysis_tools` query) to prove machine-type/start-address, not just "it didn't crash" |
+| `.vsf` load check | VICE emulator (produces the `.vsf` via `vice_snapshot_save`) | the external analyser (`--headless --export_asm` or an MCP query against the loaded state) | The emulator produces evidence; the external analyser consumes and must be asked what it saw (via `--verify` output or an MCP `analysis_tools` query) to prove machine-type/start-address, not just "it didn't crash" |
 | Container toolchain cost | Docker (host-invoked, ephemeral) | — | No devcontainer config exists in this repo yet; a throwaway Dockerfile is required, not a modification to a shipped one |
 
 ## Standard Stack
@@ -108,7 +108,7 @@ selected — this table exists to record exactly what was verified and how.
 
 | Package | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
-| `regenerator2000` | 0.9.20 (crates.io, published 2026-07-11) `[VERIFIED: crates.io registry]` | The subject of the entire probe | It is the milestone's proposed static-analysis backend; there is no alternative to research — R2000-16 exists to validate this exact tool |
+| `the external analyser` | 0.9.20 (crates.io, published 2026-07-11) `[VERIFIED: crates.io registry]` | The subject of the entire probe | It is the milestone's proposed static-analysis backend; there is no alternative to research — ANNO-16 exists to validate this exact tool |
 
 ### Supporting
 
@@ -126,26 +126,26 @@ selected — this table exists to record exactly what was verified and how.
 |------------|-----------|----------|
 | `tmux send-keys` for the pty bootstrap | A hand-rolled Node `child_process` + raw pty write (no `node-pty` dependency exists in this repo) | `node-pty` is a native addon not currently a dependency anywhere in this codebase — adding it for a one-time probe is disproportionate. `tmux` is a single `apt-get install tmux`, matches the ROADMAP's own stated tool ("script/tmux"), and is scriptable non-interactively (`tmux new-session -d`, `tmux send-keys`, `tmux capture-pane`) |
 | `script -qec` alone | `tmux` | `script` cannot inject input after the child starts (it only replays what you give it up front, or connects your real terminal to it) — it answers "does raw mode survive a pty" but not "can we drive the Save-As dialog", which is now known to be the actual requirement |
-| Raw `curl` JSON-RPC against `/mcp` | `@modelcontextprotocol/sdk`'s `StreamableHTTPClientTransport` | `rmcp`'s `LocalSessionManager` expects proper MCP Streamable-HTTP session bookkeeping (an `Mcp-Session-Id` response header echoed on subsequent requests); the official SDK client handles this correctly, curl would have to reimplement it by hand and risks a false negative that is actually a protocol-handshake bug in the harness, not in regenerator2000 |
+| Raw `curl` JSON-RPC against `/mcp` | `@modelcontextprotocol/sdk`'s `StreamableHTTPClientTransport` | `rmcp`'s `LocalSessionManager` expects proper MCP Streamable-HTTP session bookkeeping (an `Mcp-Session-Id` response header echoed on subsequent requests); the official SDK client handles this correctly, curl would have to reimplement it by hand and risks a false negative that is actually a protocol-handshake bug in the harness, not in the external analyser |
 
 **Installation:**
 ```bash
 # tmux (system package, not part of this repo's dependency graph)
 sudo apt-get install -y tmux
 
-# regenerator2000 itself — the plan's job, not this research's
-cargo install regenerator2000
+# the external analyser itself — the plan's job, not this research's
+cargo install analyser
 ```
 
-**Version verification:** `regenerator2000` was confirmed on crates.io directly (not
+**Version verification:** `the external analyser` was confirmed on crates.io directly (not
 merely "training knowledge"):
 
 ```
-curl -s -A "c64-re-tools-research (contact)" https://crates.io/api/v1/crates/regenerator2000
+curl -s -A "c64-re-tools-research (contact)" https://crates.io/api/v1/crates/analyser
 ```
 
 returned `newest_version: "0.9.20"`, `created_at: 2026-01-05`, `license: "MIT OR
-Apache-2.0"`, `published_by.login: "ricardoquesada"` (matches the GitHub repo owner
+Apache-2.0"`, `published_by.login: "the upstream author"` (matches the GitHub repo owner
 exactly — not a typosquat), `edition: "2024"`, `rust_version: null` (no MSRV pinned in
 `Cargo.toml`; edition 2024 itself requires Rust ≥ 1.85, which this host's `rustc 1.85.1`
 satisfies exactly at the floor, not with headroom — worth noting as a real toolchain
@@ -156,7 +156,7 @@ constraint for whatever container image Phase 9(5) builds).
 the binding constraint was never the edition-2024 floor of 1.85.** Plan 09-01 first
 derived `rustc >= 1.88` from the crate's own committed `Cargo.lock` pins (`ratatui
 0.30.0`, `image 0.25.10`, `vergen 9.1.0`, `icu_properties 2.2.0`), but a real `cargo
-install regenerator2000` on `rustc 1.85.1` failed outright — no invocation, plain or
+install the external analyser` on `rustc 1.85.1` failed outright — no invocation, plain or
 `--locked`, could build this crate on 1.85.1. Plan 09-02 then found `>= 1.88` itself
 undercounted the floor: a real cold `docker build` against `rust:1.88-slim` (rustc
 1.88.0) also failed to compile, with `quantette@0.6.0 requires rustc 1.90`,
@@ -169,7 +169,7 @@ criterion in this phase is qualified by 1.97.1, not 1.85.1.
 **Important caveat for the plan:** the git clone used for *this research's* source
 reading is at commit `df4bc94` (pushed 2026-08-09), which is *after* the crates.io
 publish date of `0.9.20` (2026-07-11) even though `Cargo.toml` still says version
-`0.9.20` at that commit. **`cargo install regenerator2000` may not fetch code
+`0.9.20` at that commit. **`cargo install analyser` may not fetch code
 byte-identical to what this research read.** The plan should record the actual installed
 `--version` output and, if it's material to a finding, diff against `df4bc94` rather than
 assume equivalence. This is exactly why criterion 1 asks for the version to be "recorded",
@@ -185,12 +185,12 @@ identity, download counts, and linked source repo were all inspected):
 
 | Package | Registry | Age | Downloads | Source Repo | slopcheck | Disposition |
 |---------|----------|-----|-----------|-------------|-----------|-------------|
-| `regenerator2000` | crates.io | Created 2026-01-05 (~7 months); GitHub repo created 2025-12-20 | 869 total / 249 recent (small but real, matches "163 GitHub stars, young project" framing already in the grounding notes) | `https://github.com/ricardoquesada/regenerator2000` (matches `published_by.login: ricardoquesada` exactly) | Not run (see above) | **Approved, `[ASSUMED]`** — manually cross-checked publisher identity against the linked GitHub repo owner rather than trusting registry presence alone (per this document's package-name provenance rule) |
+| `the external analyser` | crates.io | Created 2026-01-05 (~7 months); GitHub repo created 2025-12-20 | 869 total / 249 recent (small but real, matches "163 GitHub stars, young project" framing already in the grounding notes) | `an upstream repository` (matches `published_by.login: the upstream author` exactly) | Not run (see above) | **Approved, `[ASSUMED]`** — manually cross-checked publisher identity against the linked GitHub repo owner rather than trusting registry presence alone (per this document's package-name provenance rule) |
 | `tmux` | Debian apt (trixie) | N/A — standard Debian package, not a language-ecosystem install | N/A | N/A | N/A | Approved — a well-known system package, out of scope for slopcheck's npm/PyPI/crates focus |
 
 **Packages removed due to slopcheck `[SLOP]` verdict:** none (slopcheck did not run).
 **Packages flagged as suspicious `[SUS]`:** none found by manual check, but the planner
-must still gate the `cargo install regenerator2000` step behind a
+must still gate the `cargo install analyser` step behind a
 `checkpoint:human-verify` task per the graceful-degradation rule, since slopcheck itself
 never actually ran.
 
@@ -202,7 +202,7 @@ never actually ran.
                     ┌─────────────────────────────────────────┐
                     │  Host shell (tmux session, detached)     │
                     │                                          │
-  cargo install ──▶ │  regenerator2000 --mcp-server game.prg   │
+  cargo install ──▶ │  the external analyser --mcp-server game.prg   │
                     │  (NOT --headless — this is the           │
                     │   bootstrap-only invocation)              │
                     │                                          │
@@ -224,11 +224,11 @@ never actually ran.
                     ┌───────────────┴───────────────────────────┐
                     │  Node harness (StreamableHTTPClientTransport)│
                     │  POST http://127.0.0.1:3000/mcp              │
-                    │  initialize → tools/call r2000_save_project  │
+                    │  initialize → tools/call anno_save_project  │
                     │  (now succeeds — project_path is Some)       │
                     └───────────────────────────────────────────┘
                                     │
-                    regenerator2000 --headless --mcp-server-stdio \
+                    the external analyser --headless --mcp-server-stdio \
                                     game.regen2000proj  ◀── unlocks
                                     │
               ┌─────────────────────┼─────────────────────────┐
@@ -247,7 +247,7 @@ anticipate, not a `file:line` drift against a specific citation.]
    --verify-roundtrip                │                    writes game.vsf
               │                     ▼                         │
    real `acme` process       compare out.lbl's lines           ▼
-   assembles out.a  ────▶    against stock-symbols.ts's   regenerator2000
+   assembles out.a  ────▶    against stock-symbols.ts's   the external analyser
    diff bytes vs raw_data    VICE_LABEL_LINE_RE (static,   game.vsf
    (in-process, no          no running process needed)     --headless
     external gate needed)                                  --export_asm
@@ -261,7 +261,7 @@ anticipate, not a `file:line` drift against a specific citation.]
 
 ```
 docs/
-└── phase9-regenerator2000-probe-findings.md    # durable, re-readable evidence + verdict
+└── phase9-external-analyser-probe-findings.md    # durable, re-readable evidence + verdict
                                                   # (normative, like phase0-binmon-findings.md)
 
 .planning/phases/09-the-assumption-probe-go-no-go/
@@ -287,8 +287,8 @@ phase), rather than treated as black boxes (the state the grounding notes were w
 **Example — the two grammars, both confirmed at their respective current `main`:**
 
 ```
-# Producer: ricardoquesada/regenerator2000@df4bc94
-# crates/regenerator2000-core/src/parser/vice_lbl.rs:36-42 (generate_vice_labels)
+# Producer: an upstream repository@df4bc94
+# crates/external-analyser-core/src/parser/vice_lbl.rs:36-42 (generate_vice_labels)
 al C:{addr:04x} .{name}\n            # e.g. "al C:1000 .start\n"
 
 # Consumer: this repo's stock-symbols.ts:69 (VICE_LABEL_LINE_RE)
@@ -299,14 +299,14 @@ Both sides agree on: literal lowercase `al`, literal `C:` (uppercase C), a hex a
 (producer always emits exactly 4 digits; consumer accepts 1–4, either case), a
 mandatory `.` before the name, and the name is `\S+` on the consumer side (no embedded
 whitespace tolerated). **The one thing this static comparison cannot settle:** whether
-regenerator2000 only emits labels of `LabelKind::User` (confirmed at
+The external analyser only emits labels of `LabelKind::User` (confirmed at
 `file_io.rs:732-748`'s `export_vice_labels`, which filters `if label.kind ==
 LabelKind::User`) — i.e., **auto-analyzer-derived labels are never exported**, only
 labels a session explicitly annotated. If the probe's test binary was never annotated
 (only auto-analyzed), `--export_lbl` will produce a syntactically valid but **empty**
 file, which would look like a pass on format but tells you nothing about the actual
 round trip. The plan must annotate at least one label (via an MCP `modification_tools`
-call, e.g. `r2000_set_label_name`, before exporting) or explicitly record "the file was
+call, e.g. `anno_set_label_name`, before exporting) or explicitly record "the file was
 empty because no user label was set" as a separate, non-format-related finding.
 
 ### Anti-Patterns to Avoid
@@ -321,7 +321,7 @@ empty because no user label was set" as a separate, non-format-related finding.
   answers "does the terminal not crash" but not "can we complete the bootstrap
   without a human", because the bootstrap requires synthesized keystrokes, which
   `script` cannot inject after launch. Use `tmux`.
-- **Treating a successful `r2000_save_project` MCP call in isolation as proof the pty
+- **Treating a successful `anno_save_project` MCP call in isolation as proof the pty
   question is answered.** It will always fail with `-32603` on a freshly-loaded raw
   binary, **by design**, regardless of pty behavior — that failure means nothing about
   raw-mode/pty tolerance; it's an unrelated precondition. Don't let a green herring here
@@ -336,20 +336,20 @@ empty because no user label was set" as a separate, non-format-related finding.
 
 | Problem | Don't Build | Use Instead | Why |
 |---------|-------------|-------------|-----|
-| Export → assemble → diff reassembly gate | A Node script that shells to `acme` and diffs bytes | `regenerator2000 --verify --assembler acme` (`--verify` implies `--headless`) | Already does exactly this, in-process, against all four assemblers with graceful "not found in PATH" skip handling |
+| Export → assemble → diff reassembly gate | A Node script that shells to `acme` and diffs bytes | `analyser --verify --assembler acme` (`--verify` implies `--headless`) | Already does exactly this, in-process, against all four assemblers with graceful "not found in PATH" skip handling |
 | MCP Streamable-HTTP handshake | Raw `curl` + hand-rolled `Mcp-Session-Id` header bookkeeping | `@modelcontextprotocol/sdk`'s `StreamableHTTPClientTransport`, already vendored in `.claude/mcp/vice/node_modules` | The transport's session semantics are non-trivial (rmcp's `LocalSessionManager`); the official client already implements them correctly |
 | VICE label-file parsing/generation | A second parser for `al C:xxxx .name` | `stock-symbols.ts`'s existing `VICE_LABEL_LINE_RE` (consumer) and `parser/vice_lbl.rs`'s `generate_vice_labels`/`parse_vice_labels` (producer) — read both, don't write a third | Both already exist and are now confirmed compatible by source; a third implementation is a place for the comparison itself to be wrong |
 
 **Key insight:** every one of this phase's five assumptions already has a real,
 maintained implementation to check against on at least one side (this repo's
-`stock-symbols.ts`, regenerator2000's own `--verify-roundtrip`, VICE's own `DUMP`
+`stock-symbols.ts`, the external analyser's own `--verify-roundtrip`, VICE's own `DUMP`
 command). The phase's job is comparison and observation, never construction.
 
 ## Common Pitfalls
 
 ### Pitfall 1: Confusing "the MCP call failed" with "the pty question failed"
 
-**What goes wrong:** Running `r2000_save_project` right after `--mcp-server game.prg`
+**What goes wrong:** Running `anno_save_project` right after `--mcp-server game.prg`
 starts, seeing `-32603 No active project path`, and recording criterion 2 as a hard
 failure (→ reconsider).
 **Why it happens:** The grounding notes' own bootstrap description implied a single MCP
@@ -407,14 +407,14 @@ Open Question 3 / Assumption A3, now both closed).
 that conflates "the Rust toolchain needed to `cargo install`" with "the toolchain needed
 to *run* the resulting binary".
 **Why it happens:** A single-stage Dockerfile (`FROM rust:X` then `cargo install
-regenerator2000`) keeps `rustc`/`cargo`/`~/.cargo/registry` baked into the final image
+The external analyser`) keeps `rustc`/`cargo`/`~/.cargo/registry` baked into the final image
 forever, when only the compiled binary is actually needed at runtime.
 **How to avoid:** Measure **two** numbers explicitly, per the research questions: (a) a
 single-stage build's final size (what you'd ship if you never multi-stage it), and (b) a
 multi-stage build's final size (builder stage discarded, only the binary `COPY --from=`'d
 into a slim runtime image — e.g. `node:24-slim`, since that already matches this
 project's actual Node MCP server runtime requirement). These are genuinely different
-numbers and the milestone's install-documentation criterion (Phase 10, `R2000-03`) needs
+numbers and the milestone's install-documentation criterion (Phase 10, `ANNO-03`) needs
 to know which one a real deployment would actually pay.
 
 **[CORRECTED 2026-08-20 by Phase 9 probe (plan 09-02;
@@ -438,10 +438,10 @@ diff against — recorded explicitly rather than silently treated as deltas.
 
 ```bash
 # Verify publication before installing (already done in this research; reproduce in the plan)
-curl -s -A "c64-re-tools-probe (contact-email)" https://crates.io/api/v1/crates/regenerator2000
+curl -s -A "c64-re-tools-probe (contact-email)" https://crates.io/api/v1/crates/analyser
 
-cargo install regenerator2000
-regenerator2000 --version    # record verbatim
+cargo install analyser
+The external analyser --version    # record verbatim
 ```
 
 ### Exact command shape — criterion 1(5): container toolchain cost, both numbers
@@ -451,25 +451,25 @@ regenerator2000 --version    # record verbatim
 FROM rust:1.85-slim  # or whatever tag actually resolves at plan time -- verify with
                      # `docker manifest inspect rust:1.85-slim-<debian-codename>` first;
                      # this research did not resolve a working tag on this host
-RUN cargo install regenerator2000
-ENTRYPOINT ["regenerator2000"]
+RUN cargo install analyser
+ENTRYPOINT ["analyser"]
 ```
 
 ```dockerfile
 # Multi-stage (what the shipped devcontainer image would actually need)
 FROM rust:1.85-slim AS builder
-RUN cargo install regenerator2000 --root /out
+RUN cargo install analyser --root /out
 
 FROM node:24-slim
-COPY --from=builder /out/bin/regenerator2000 /usr/local/bin/regenerator2000
+COPY --from=builder /out/bin/analyser /usr/local/bin/analyser
 ```
 
 ```bash
 # Time and size, both variants:
-time docker build -f Dockerfile.single -t r2000-single .
-time docker build -f Dockerfile.multi  -t r2000-multi  .
-docker image inspect r2000-single --format '{{.Size}}'
-docker image inspect r2000-multi  --format '{{.Size}}'
+time docker build -f Dockerfile.single -t anno-single .
+time docker build -f Dockerfile.multi  -t anno-multi  .
+docker image inspect anno-single --format '{{.Size}}'
+docker image inspect anno-multi  --format '{{.Size}}'
 # Baseline for comparison -- this repo has no existing devcontainer image, so there is
 # no "before" size to diff against; report absolute sizes, not a delta, and say so.
 ```
@@ -480,24 +480,24 @@ docker image inspect r2000-multi  --format '{{.Size}}'
 # tmux is not currently on PATH on this host -- install first.
 sudo apt-get install -y tmux
 
-tmux new-session -d -s r2000probe "regenerator2000 --mcp-server /path/to/game.prg"
+tmux new-session -d -s annoprobe "the external analyser --mcp-server /path/to/game.prg"
 
 # Wait for the TUI to actually render + the MCP server to report started, by polling
 # the captured pane content rather than a fixed sleep:
-until tmux capture-pane -t r2000probe -p | grep -q "MCP Server active"; do sleep 0.5; done
-tmux capture-pane -t r2000probe -p > evidence/criterion2-pty-transcript-initial.txt
+until tmux capture-pane -t annoprobe -p | grep -q "MCP Server active"; do sleep 0.5; done
+tmux capture-pane -t annoprobe -p > evidence/criterion2-pty-transcript-initial.txt
 
 # Drive the Save-As bootstrap. Alt+S is the confirmed global hotkey
-# (crates/regenerator2000-tui/src/events/input.rs:239, matches menu_model.rs:28's
+# (crates/external-analyser-tui/src/events/input.rs:239, matches menu_model.rs:28's
 # "Save As..." / "Alt+S" binding). The dialog's default filename was NOT observed in
 # this research session -- record what it actually shows.
-tmux send-keys -t r2000probe Escape  # ensure no other dialog/menu is focused first
-tmux send-keys -t r2000probe M-s     # Alt+S in tmux's key notation
+tmux send-keys -t annoprobe Escape  # ensure no other dialog/menu is focused first
+tmux send-keys -t annoprobe M-s     # Alt+S in tmux's key notation
 sleep 1
-tmux capture-pane -t r2000probe -p > evidence/criterion2-pty-transcript-after-alt-s.txt
-tmux send-keys -t r2000probe Enter   # accept the (observed) default filename
+tmux capture-pane -t annoprobe -p > evidence/criterion2-pty-transcript-after-alt-s.txt
+tmux send-keys -t annoprobe Enter   # accept the (observed) default filename
 sleep 1
-tmux capture-pane -t r2000probe -p > evidence/criterion2-pty-transcript-after-enter.txt
+tmux capture-pane -t annoprobe -p > evidence/criterion2-pty-transcript-after-enter.txt
 
 ls -la /path/to/game.regen2000proj   # the actual go/no-go observable
 ```
@@ -516,13 +516,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const transport = new StreamableHTTPClientTransport(new URL("http://127.0.0.1:3000/mcp"));
-const client = new Client({ name: "r2000-probe", version: "0.0.0" });
+const client = new Client({ name: "anno-probe", version: "0.0.0" });
 await client.connect(transport);
 
 const tools = await client.listTools();
 console.log(JSON.stringify(tools, null, 2));
 
-const result = await client.callTool({ name: "r2000_save_project", arguments: {} });
+const result = await client.callTool({ name: "anno_save_project", arguments: {} });
 console.log(JSON.stringify(result, null, 2));
 ```
 
@@ -533,15 +533,15 @@ Run with: `node --experimental-vm-modules evidence/mcp-harness.mjs` from inside
 ### Exact command shape — criterion 3(2): reassembly, preferring the built-in gate
 
 ```bash
-regenerator2000 --headless --mcp-server-stdio  game.regen2000proj  # NOT this -- wrong mode
-regenerator2000 --headless --assembler acme --verify game.regen2000proj
+The external analyser --headless --mcp-server-stdio  game.regen2000proj  # NOT this -- wrong mode
+The external analyser --headless --assembler acme --verify game.regen2000proj
 # stdout: "  ✓ acme — byte-identical (N bytes)"  or  "  ✗ acme — N of M bytes differ"
 ```
 
 ### Exact command shape — criterion 3(3): `--export_lbl`
 
 ```bash
-regenerator2000 --headless --export_lbl out.lbl game.regen2000proj
+The external analyser --headless --export_lbl out.lbl game.regen2000proj
 cat out.lbl    # expect lines shaped exactly: al C:1000 .somelabel
 ```
 
@@ -561,13 +561,13 @@ end-to-end consumption, not only the static grammar match.
 
 ```
 # 1. In a running VICE instance (either backend), after loading/depacking a program:
-vice_snapshot_save { name: "probe", description: "R2000-16(4) probe" }
+vice_snapshot_save { name: "probe", description: "ANNO-16(4) probe" }
 #   -> writes a real VICE snapshot via the emulator's own DUMP (0x41) command
 
-# 2. Hand the resulting .vsf to regenerator2000:
-regenerator2000 --mcp-server /path/to/probe.vsf   # under tmux, same bootstrap as above
+# 2. Hand the resulting .vsf to the external analyser:
+The external analyser --mcp-server /path/to/probe.vsf   # under tmux, same bootstrap as above
 #   then, once a .regen2000proj exists:
-regenerator2000 --headless --export_asm out.a probe.regen2000proj
+The external analyser --headless --export_asm out.a probe.regen2000proj
 #   inspect out.a's header comment / origin for the carried machine type and start
 #   address, or query it via an MCP `analysis_tools` call against the live process
 #   before headless-exporting, to avoid re-deriving from export text alone.
@@ -577,10 +577,10 @@ regenerator2000 --headless --export_asm out.a probe.regen2000proj
 
 | Old Approach (what the grounding notes assumed) | Current Approach (this research's finding) | When Changed | Impact |
 |--------------------------------------------------|----------------------------------------------|---------------|--------|
-| `r2000_save_project` alone bootstraps a fresh `.regen2000proj` | `r2000_save_project` requires a pre-existing `project_path`; only the TUI's `Alt+S` Save-As dialog sets it for the first time | Discovered this session, reading `session_tools.rs:185-193` and `dialog_save_as.rs:368` at `df4bc94` | Criterion 2's automation target is "drive one TUI keystroke sequence through a pty", not "make one MCP call" — directly changes what Phase 10's `R2000-09` automated bootstrap has to implement if the verdict is *proceed* |
-| Grounding notes said Apache-2.0 | Confirmed dual `MIT OR Apache-2.0` (crates.io API + `LICENSE-MIT`/`LICENSE-APACHE` both present in the repo, `README.md:187`) | Discovered this session | `THIRD-PARTY-NOTICES.md` (Phase 10, `R2000-03`) should record both licenses, not only Apache-2.0 |
+| `anno_save_project` alone bootstraps a fresh `.regen2000proj` | `anno_save_project` requires a pre-existing `project_path`; only the TUI's `Alt+S` Save-As dialog sets it for the first time | Discovered this session, reading `session_tools.rs:185-193` and `dialog_save_as.rs:368` at `df4bc94` | Criterion 2's automation target is "drive one TUI keystroke sequence through a pty", not "make one MCP call" — directly changes what Phase 10's `ANNO-09` automated bootstrap has to implement if the verdict is *proceed* |
+| Grounding notes said Apache-2.0 | Confirmed dual `MIT OR Apache-2.0` (crates.io API + `LICENSE-MIT`/`LICENSE-APACHE` both present in the repo, `README.md:187`) | Discovered this session | `THIRD-PARTY-NOTICES.md` (Phase 10, `ANNO-03`) should record both licenses, not only Apache-2.0 |
 
-**Deprecated/outdated:** none identified — regenerator2000 is 8 months old and actively
+**Deprecated/outdated:** none identified — the external analyser is 8 months old and actively
 maintained (last push 2026-08-09 per the grounding notes, confirmed by this session's
 clone).
 
@@ -597,7 +597,7 @@ clone).
 
 **Resolved by Phase 9 probe (2026-08-20):**
 
-- **A1 [CORRECTED — confirmed TRUE, not merely assumed]:** `tmux send-keys -t r2000probe
+- **A1 [CORRECTED — confirmed TRUE, not merely assumed]:** `tmux send-keys -t annoprobe
   M-s` registered as Alt+S on the **first attempt**, no fallback keystroke encoding
   needed. Source: `evidence/criterion2-pty-transcript.txt` ("The Save-As dialog opened
   on the first attempt -- no retry with an alternative keystroke encoding was needed").
@@ -617,7 +617,7 @@ clone).
 - **A4 [CORRECTED — the base image tag that actually resolved]:** not
   `rust:1.85-slim-<codename>` as this document's Code Examples sketched (unresolved at
   research time). `rust:1.90-slim` resolves and (after the rustc-floor correction above)
-  is the tag that actually builds regenerator2000; the multi-stage builder additionally
+  is the tag that actually builds the external analyser; the multi-stage builder additionally
   needed `rust:1.90-slim-bookworm` specifically, to match the `node:22-slim` runtime
   stage's Debian release and avoid a `GLIBC_2.38`/`GLIBC_2.39 not found` runtime failure.
   Source: `evidence/criterion1-container-toolchain-cost.txt`.
@@ -635,9 +635,9 @@ clone).
      correctly has `project_path` populated on load, or whether there's a second edge
      case where it's cleared.
    - Recommendation: the probe's own transcript will show this directly the first time
-     `r2000_save_project` is called post-bootstrap; no separate investigation needed.
+     `anno_save_project` is called post-bootstrap; no separate investigation needed.
    - **[CLOSED 2026-08-20 by Phase 9 probe]:** it is populated, and the error path is not
-     hit again. A fresh `r2000_save_project` call over the still-live MCP connection,
+     hit again. A fresh `anno_save_project` call over the still-live MCP connection,
      issued after the bootstrap completed, succeeded with `"Project saved to
      .../probe-illegal.regen2000proj"` and no `-32603`. Source:
      `evidence/criterion2-pty-transcript.txt` (`SAVE_PROJECT_POST_BOOTSTRAP: succeeded`).
@@ -722,11 +722,11 @@ set to be tested, not a substitute for testing).
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| R2000-16(5) | Real build present, version recorded, container cost measured | manual-only (a one-time measurement, not a repeatable regression test) | `cargo install regenerator2000 && regenerator2000 --version`; `docker build` timing + `docker image inspect` | ❌ Wave 0 — throwaway Dockerfiles need writing |
-| R2000-16(1) | pty tolerance + keystroke-driven bootstrap produces a `.regen2000proj` | manual-only, transcript-captured | `tmux` sequence under Code Examples | ❌ Wave 0 — `tmux` not installed |
-| R2000-16(2) | `--export_asm --assembler acme` reassembles | manual-only, but uses regenerator2000's own automated gate | `regenerator2000 --headless --assembler acme --verify game.regen2000proj` | ❌ Wave 0 — needs a `.regen2000proj` from R2000-16(1) first |
-| R2000-16(3) | `--export_lbl` format matches `vice_symbols_load` | manual-only + a static grammar diff (scriptable, near-zero cost) | `regenerator2000 --headless --export_lbl out.lbl game.regen2000proj` then run `VICE_LABEL_LINE_RE` against every line | ❌ Wave 0 |
-| R2000-16(4) | `.vsf` loads carrying machine type + start address | manual-only, transcript-captured | See Code Examples, criterion 3(4) | ❌ Wave 0 — needs a live VICE session to produce the `.vsf` first |
+| ANNO-16(5) | Real build present, version recorded, container cost measured | manual-only (a one-time measurement, not a repeatable regression test) | `cargo install analyser && the external analyser --version`; `docker build` timing + `docker image inspect` | ❌ Wave 0 — throwaway Dockerfiles need writing |
+| ANNO-16(1) | pty tolerance + keystroke-driven bootstrap produces a `.regen2000proj` | manual-only, transcript-captured | `tmux` sequence under Code Examples | ❌ Wave 0 — `tmux` not installed |
+| ANNO-16(2) | `--export_asm --assembler acme` reassembles | manual-only, but uses the external analyser's own automated gate | `analyser --headless --assembler acme --verify game.regen2000proj` | ❌ Wave 0 — needs a `.regen2000proj` from ANNO-16(1) first |
+| ANNO-16(3) | `--export_lbl` format matches `vice_symbols_load` | manual-only + a static grammar diff (scriptable, near-zero cost) | `analyser --headless --export_lbl out.lbl game.regen2000proj` then run `VICE_LABEL_LINE_RE` against every line | ❌ Wave 0 |
+| ANNO-16(4) | `.vsf` loads carrying machine type + start address | manual-only, transcript-captured | See Code Examples, criterion 3(4) | ❌ Wave 0 — needs a live VICE session to produce the `.vsf` first |
 
 **Justification for "manual-only" everywhere:** every one of these is a **one-time
 go/no-go observation against a live external tool**, exactly the category this project's
@@ -748,7 +748,7 @@ third-party binary *actually does*, once, on this specific host.
 ### Wave 0 Gaps
 
 - [ ] `tmux` installed (or `expect` as a verified fallback)
-- [ ] `regenerator2000` installed and `--version` recorded
+- [ ] `the external analyser` installed and `--version` recorded
 - [ ] A real test `.prg` chosen or built (see Phase Requirements → Test Map; no fixture
       exists in-repo today — the closest candidate is `acme-build`'s own
       `template.a`, assembled via `node .claude/skills/acme-build/scripts/acme.mjs build
@@ -759,7 +759,7 @@ third-party binary *actually does*, once, on this specific host.
 - [ ] A throwaway Node harness script for the MCP HTTP handshake (`evidence/mcp-harness.mjs`
       above)
 - [ ] Two throwaway Dockerfiles for the single-stage/multi-stage size comparison
-- [ ] `docs/phase9-regenerator2000-probe-findings.md` created (does not exist yet)
+- [ ] `docs/phase9-external-analyser-probe-findings.md` created (does not exist yet)
 
 ## Security Domain
 
@@ -781,33 +781,33 @@ but three real items apply:
 
 | Pattern | STRIDE | Standard Mitigation |
 |---------|--------|---------------------|
-| Supply-chain risk on `cargo install regenerator2000` (arbitrary code execution via `build.rs` or a malicious crate version) | Tampering | Verified publisher identity matches the GitHub repo owner (crates.io `published_by.login: ricardoquesada`); `slopcheck` unavailable this session — planner must gate the actual install behind `checkpoint:human-verify` per the graceful-degradation rule |
-| The MCP HTTP server binds `127.0.0.1:3000` with **no authentication at all** (confirmed: `RegeneratorOps`/`StreamableHttpService` carries no auth middleware in the source read this session) | Elevation of Privilege / Information Disclosure | D-R1/D-R4 already scope this correctly: it is loopback-only, inside a devcontainer's own network namespace, never exposed to a host network interface. The probe must run it on a machine/namespace where nothing else can reach `127.0.0.1:3000` — do not run the probe on a shared or multi-tenant host without checking for port collisions with anything else already bound there |
-| `--vice` flag, if ever passed during the probe (even "just to see") | Denial of Service | **Standing hard constraint, repeated here deliberately:** never pass `--vice` to regenerator2000 in this probe, experimentally or otherwise — stock VICE's binary monitor serves exactly one client and a second `connect()` is indistinguishable from a wedge to this project's own broker/wedge-triage machinery |
+| Supply-chain risk on `cargo install analyser` (arbitrary code execution via `build.rs` or a malicious crate version) | Tampering | Verified publisher identity matches the GitHub repo owner (crates.io `published_by.login: the upstream author`); `slopcheck` unavailable this session — planner must gate the actual install behind `checkpoint:human-verify` per the graceful-degradation rule |
+| The MCP HTTP server binds `127.0.0.1:3000` with **no authentication at all** (confirmed: `AnalyserOps`/`StreamableHttpService` carries no auth middleware in the source read this session) | Elevation of Privilege / Information Disclosure | D-R1/D-R4 already scope this correctly: it is loopback-only, inside a devcontainer's own network namespace, never exposed to a host network interface. The probe must run it on a machine/namespace where nothing else can reach `127.0.0.1:3000` — do not run the probe on a shared or multi-tenant host without checking for port collisions with anything else already bound there |
+| `--vice` flag, if ever passed during the probe (even "just to see") | Denial of Service | **Standing hard constraint, repeated here deliberately:** never pass `--vice` to the external analyser in this probe, experimentally or otherwise — stock VICE's binary monitor serves exactly one client and a second `connect()` is indistinguishable from a wedge to this project's own broker/wedge-triage machinery |
 
 ## Sources
 
 ### Primary (HIGH confidence)
 
-- `ricardoquesada/regenerator2000@df4bc94` (main, 2026-08-09) — cloned and read directly
+- `an upstream repository@df4bc94` (main, 2026-08-09) — cloned and read directly
   this session: `src/main.rs` (full CLI dispatch, `setup_terminal`, `spawn_input_thread`,
-  `validate_headless_mode`, `run_verify`, `export_labels`), `crates/regenerator2000-core/
+  `validate_headless_mode`, `run_verify`, `export_labels`), `crates/external-analyser-core/
   src/mcp/http.rs` (HTTP MCP server, port/bind, rmcp `StreamableHttpService`),
-  `crates/regenerator2000-core/src/mcp/handler.rs` (initialize/tools-list/tools-call
-  dispatch, protocol version `2024-11-05`), `crates/regenerator2000-core/src/mcp/tools/
-  session_tools.rs` (`r2000_save_project`'s precondition and error text),
-  `crates/regenerator2000-core/src/state/file_io.rs` (`.prg`/`.vsf`/`.bin` load branches,
+  `crates/external-analyser-core/src/mcp/handler.rs` (initialize/tools-list/tools-call
+  dispatch, protocol version `2024-11-05`), `crates/external-analyser-core/src/mcp/tools/
+  session_tools.rs` (`anno_save_project`'s precondition and error text),
+  `crates/external-analyser-core/src/state/file_io.rs` (`.prg`/`.vsf`/`.bin` load branches,
   `save_project`, `export_vice_labels`/`import_vice_labels`),
-  `crates/regenerator2000-core/src/parser/vice_lbl.rs` (label-file grammar, both
-  directions), `crates/regenerator2000-core/src/parser/vice_vsf.rs` (VSF magic, C64MEM/
-  MAINCPU module parsing), `crates/regenerator2000-core/src/exporter/verify.rs`
+  `crates/external-analyser-core/src/parser/vice_lbl.rs` (label-file grammar, both
+  directions), `crates/external-analyser-core/src/parser/vice_vsf.rs` (VSF magic, C64MEM/
+  MAINCPU module parsing), `crates/external-analyser-core/src/exporter/verify.rs`
   (`--verify-roundtrip`'s actual `acme`/`64tass`/`cl65`/`java` invocations),
-  `crates/regenerator2000-tui/src/events/input.rs` (global `Alt+S` hotkey),
-  `crates/regenerator2000-tui/src/ui/menu/menu_model.rs` and `menu_action.rs` (menu
-  binding, dialog construction), `crates/regenerator2000-tui/src/ui/dialog_save_as.rs`
+  `crates/external-analyser-tui/src/events/input.rs` (global `Alt+S` hotkey),
+  `crates/external-analyser-tui/src/ui/menu/menu_model.rs` and `menu_action.rs` (menu
+  binding, dialog construction), `crates/external-analyser-tui/src/ui/dialog_save_as.rs`
   (where `project_path` is first set), `README.md` (install, license), root `Cargo.toml`
   (edition, dependency versions), `LICENSE-MIT`/`LICENSE-APACHE` (both present).
-- `https://crates.io/api/v1/crates/regenerator2000` — live registry API call this
+- `https://crates.io/api/v1/crates/analyser` — live registry API call this
   session, confirming publication, version, license string, publisher identity, download
   counts, edition, and `rust_version`.
 - This repo, read directly this session: `.claude/mcp/vice/stock-symbols.ts` (VICE label
@@ -822,8 +822,8 @@ but three real items apply:
   probe must bridge manually, not something the existing skill already does),
   `.planning/ROADMAP.md` (Phase 9 success criteria, standing constraints, known upstream
   limits — all cited line numbers cross-checked and found current), `.planning/notes/
-  regenerator2000-integration.md` (grounding notes — built on, one correction made),
-  `.planning/REQUIREMENTS.md` (`R2000-16`'s five sub-assumptions verbatim),
+  external-analyser-integration.md` (grounding notes — built on, one correction made),
+  `.planning/REQUIREMENTS.md` (`ANNO-16`'s five sub-assumptions verbatim),
   `.planning/STATE.md` (deferred items, no conflicting decisions), `./CLAUDE.md`
   (`--vice` prohibition, GSD workflow enforcement), `.planning/config.json`
   (`nyquist_validation: true`, `security_enforcement: true`, `security_asvs_level: 1`,
@@ -879,11 +879,11 @@ by observation, replacing inference:**
   upgraded to HIGH.** Memory content and start address are HIGH-confidence (independently
   byte-verified twice, including after a real cross-connection correction); machine type
   is a confirmed coincidental default, not a genuine derivation — see the `.vsf`
-  correction above and `docs/phase9-regenerator2000-probe-findings.md`'s criterion 3(4)
+  correction above and `docs/phase9-external-analyser-probe-findings.md`'s criterion 3(4)
   section and Accepted limits.]**
 
 **Research date:** 2026-08-19
-**Valid until:** ~14 days for the upstream-source-derived claims (regenerator2000 is
+**Valid until:** ~14 days for the upstream-source-derived claims (the external analyser is
 young and active — last push 2026-08-09, prior push cadence suggests re-verification of
 line numbers is cheap insurance if planning slips past early September); the crates.io
 registry facts (version, license, publisher) are stable until the next upstream release.

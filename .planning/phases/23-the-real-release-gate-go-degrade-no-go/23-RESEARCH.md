@@ -11,13 +11,13 @@
 
 ### Locked Decisions
 
-- **D-01: regenerator2000 is excluded entirely.** No r2000 binary, no
-  `r2000-coverage.ts` structural census, no r2000 output as an oracle, a
+- **D-01: The external analyser is excluded entirely.** No anno binary, no
+  `anno-coverage.ts` structural census, no anno output as an oracle, a
   baseline or a screening tool anywhere in this phase. It is `CUT-01` scope and
   is being deleted in Phase 25; building the gate on the thing being removed
   would make the gate worthless the moment the cutover lands. This overrides the
-  otherwise-tempting reuse of `r2000-coverage.ts`'s widened
-  `scanIndirectDispatch()`. *(User decision, verbatim intent: "Don't use r2000
+  otherwise-tempting reuse of `anno-coverage.ts`'s widened
+  `scanIndirectDispatch()`. *(User decision, verbatim intent: "Don't use anno
   for anything, it has to be removed.")*
   — **Reversibility:** reversible — nothing is built on the exclusion; it only
   narrows which tools a probe plan may invoke.
@@ -114,7 +114,7 @@
   explicitly, which weakens the pre-commitment it exists to provide.
 
 - **D-10: The verdict is machine-readable frontmatter in a durable findings
-  document**, mirroring `docs/phase9-regenerator2000-probe-findings.md`:
+  document**, mirroring `docs/phase9-external-analyser-probe-findings.md`:
   `verdict: go|degrade|no-go` plus `verdict_rule_applied: R<N>`. The document
   reproduces the full rule and walks the actual outcome values through it, so a
   reader can mechanically re-derive the verdict rather than take it on trust.
@@ -146,9 +146,9 @@ being put to the user, and a planner may revisit any of them on evidence:
   (Phase 24) vendors it and must vendor the same one the gate measured.
 - **`PROOF-04` audit depth:** a source read of `analyzer.rs` (1,506 lines),
   function by function, each matched to a dxa/Ghidra replacement or accepted as
-  lost with its cost. **No r2000 execution** (follows from D-01). The source is
+  lost with its cost. **No anno execution** (follows from D-01). The source is
   available offline at
-  `~/.cargo/registry/src/*/regenerator2000-core-0.9.20/src/analyzer.rs` — no
+  `~/.cargo/registry/src/*/external-analyser-core-0.9.20/src/analyzer.rs` — no
   network needed.
 - **Ghidra pre-scripts:** reuse `BankProbe3.java`'s `getBlock()`-first guard
   pattern verbatim; it exists specifically to stop an unhandled
@@ -162,10 +162,10 @@ being put to the user, and a planner may revisit any of them on evidence:
 
 ### Deferred Ideas (OUT OF SCOPE)
 
-- **`r2000-coverage.ts` is not in `CUT-02`'s survivor list.** The bytes-derived
+- **`anno-coverage.ts` is not in `CUT-02`'s survivor list.** The bytes-derived
   coverage census v0.5.0 just shipped appears to fall inside `CUT-01`'s 19,181
   deleted lines. Consistent with D-01 and with the owner's stated intent that
-  r2000 "has to be removed", so it is not raised as a defect — but Phase 25's
+  anno "has to be removed", so it is not raised as a defect — but Phase 25's
   planner should confirm the deletion is intended rather than incidental.
 - **Fetching a corpus from public archives** (CSDb / Internet Archive) — offered
   and not taken. Would give third-party reproducibility; revisit only if the
@@ -267,7 +267,7 @@ to judge itself (D-06).
 | Code/data classification **under test** | dxa 0.1.5 | — | The subject of criterion 1, never an oracle |
 | Typed xrefs + computed-jump resolution **under test** | Ghidra `ReferenceManager` | `DecompInterface` for structural facts | The subject of criterion 2; `DataTypeManager` returns nothing on 6502 |
 | Evidence rendering (disassembly excerpts) | `vice_disassemble`, or `disasm-*.ts` (CUT-02 survivors) | — | Neither is an engine under test; permitted for *rendering*, not for adjudication |
-| `analyzer.rs` capability list | Crate source read offline | — | D-01 forbids *running* r2000; reading is explicitly allowed |
+| `analyzer.rs` capability list | Crate source read offline | — | D-01 forbids *running* anno; reading is explicitly allowed |
 | The verdict | Plan 23-01's pre-committed rule | git log ordering | D-07 — ordering *is* the mechanism |
 
 ---
@@ -300,7 +300,7 @@ to judge itself (D-06).
 | `.planning/notes/dxa-ghidra-pivot-evidence/ExportAnalysis.java` | `## CLASSIFICATION` (per-byte code/data/undef) + `## REFERENCES` (typed xrefs) | **Not** the trap — see Pitfall 5. Its `## STRUCTS` section is the trap; its classification and reference sections are exactly what criteria 1 and 2 need |
 | `.planning/notes/dxa-ghidra-pivot-evidence/vicderive.mjs` | Derives bank/screen/charset/sprite pointers from recovered register values | Cross-check on `write-set`'s own derivation |
 | `src/mcp/vice/disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts` | In-house 6502 decode (CUT-02 survivor) | **Evidence rendering only.** Using it to *find* candidate sites edges toward being an oracle; prefer `vice_memory_search` + `vice_disassemble` for discovery |
-| `src/mcp/vice/r2000-d64.ts` | `.d64` parsing (CUT-02 survivor) | Only if file-level access is wanted over autostart |
+| `src/mcp/vice/anno-d64.ts` | `.d64` parsing (CUT-02 survivor) | Only if file-level access is wanted over autostart |
 
 ### Alternatives considered
 
@@ -430,7 +430,7 @@ Notes for the planner:
              │        under ≥2 observed $01 states     │
              │                                         │
              │   criterion 4: analyzer.rs source read  │
-             │        (offline, no r2000 execution)    │
+             │        (offline, no anno execution)    │
              ▼                                         ▼
   ┌──────────────────────────────────────────────────────────────┐
   │ VERDICT  docs/phase23-real-release-gate-findings.md   (D-10)  │
@@ -529,9 +529,9 @@ than trusts.
 ```yaml
 ---
 phase: 09-the-assumption-probe-go-no-go
-requirement: R2000-16
+requirement: ANNO-16
 probe_date: 2026-08-20
-regenerator2000_version: 0.9.20
+regeneratoanno_version: 0.9.20
 verdict: degrade
 verdict_rule_applied: R4
 criteria:
@@ -544,7 +544,7 @@ criteria:
   c3_4_vsf_load: partial
 ---
 ```
-`[VERIFIED: docs/phase9-regenerator2000-probe-findings.md:1-19]`
+`[VERIFIED: docs/phase9-external-analyser-probe-findings.md:1-19]`
 
 Phase 23's frontmatter must additionally carry the corpus identity (D-04) and
 the tool pins, because the numbers are meaningless without them:
@@ -1272,9 +1272,9 @@ vice_execution_run    → leave the machine running, exactly once
 ## analyzer.rs capability inventory (PROOF-04 starting point)
 
 Read offline this session from
-`~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/analyzer.rs`
+`~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/external-analyser-core-0.9.20/src/analyzer.rs`
 — 1,506 lines, of which **25 are `#[test]` functions** (roughly lines 700-1506),
-so the substantive body is ~700 lines. Reading is permitted; running r2000 is not (D-01).
+so the substantive body is ~700 lines. Reading is permitted; running anno is not (D-01).
 
 | Entry point | Line | What it does | Candidate replacement |
 |-------------|------|--------------|-----------------------|
@@ -1282,13 +1282,13 @@ so the substantive body is ~700 lines. Reading is permitted; running r2000 is no
 | `analyze_instruction(...)` | 285 | Per-addressing-mode operand → label-type attribution | Ghidra reference *kind* (`READ`/`WRITE`/`READ_WRITE`/`DATA`) |
 | `promote_return_labels(...)` | 372 | Promotes `Branch`/`Jump`/`Subroutine` to `Return` when the target's first byte is `RTS ($60)` or `RTI ($40)` — the IDA `locret_` convention | **No Ghidra equivalent surfaced by the pivot.** Candidate "lost" entry; cost is cosmetic label quality |
 | `update_usage(...)` | 419 | Ref counting + first-seen-type, feeding first-wins label selection. **[CORRECTED — the per-`LabelType` count map is built at line 427 and NEVER READ: `analyze` destructures it as `_types_map` at line 202. Within `analyzer.rs` the counting is dead code; selection is purely first-wins, with no ranking mechanism for a replacement to reproduce. See criterion-4 audit correction 4.]** | Store-side concern |
-| `follow_indirect_jumps(...)` | 445 | On `JMP ($xxxx)` (`0x6C`), if `$xxxx` is an `Address`-typed block inside the binary, read the 16-bit pointer and register a jump target label + xref | **Directly overlaps criterion 2.** Ghidra's `COMPUTED_JUMP` covers the constant case; the r2000 version needs the block already typed `Address`, so it is not obviously stronger — this comparison is criterion 4's most load-bearing row |
+| `follow_indirect_jumps(...)` | 445 | On `JMP ($xxxx)` (`0x6C`), if `$xxxx` is an `Address`-typed block inside the binary, read the 16-bit pointer and register a jump target label + xref | **Directly overlaps criterion 2.** Ghidra's `COMPUTED_JUMP` covers the constant case; the anno version needs the block already typed `Address`, so it is not obviously stronger — this comparison is criterion 4's most load-bearing row |
 | `guess_scope_end(state, start)` | 546 | Scope end = first `RTS`/`RTI` at or after `start`, or the next virtual splitter. **[CORRECTED — the splitter branch is CONDITIONAL: it returns the previous line's last byte only `if bytes > 0` (lines 561-564). On a zero-length visual line the guard fails, nothing is returned, and the scan continues PAST the splitter looking for an `RTS`/`RTI`. A reimplementation treating the splitter as an unconditional terminator would not match. See criterion-4 audit correction 5.]** | Ghidra `Function.getBody()` |
 | `flow_analyze(state, start)` | 581 | Worklist reachability from an entry, returning covered `Range<usize>` spans. **[CORRECTED — two structural limits the one-line summary hides: it reads `state.raw_data` and NEVER consults `state.block_types`, so it decodes straight into data blocks; and its `JMP` arm is guarded by `op.mode == AddressingMode::Absolute` (line 647), so `JMP ($xxxx)` terminates the span without queueing anything. It structurally cannot follow the construct `follow_indirect_jumps` exists to handle, and the two passes never combine. See criterion-4 audit correction 6.]** | Ghidra `analyzeAll()` + `Disassemble Entry Points` |
 | `AnalysisResult` | 8 | `{ labels, cross_refs }` | The annotation store's schema (`STORE-01`) |
 
 Supporting vocabularies the audit must account for, because each is a concrete
-fact r2000 records and the replacement must either record or drop:
+fact anno records and the replacement must either record or drop:
 
 - **`LabelType` (11 variants used; the enum declares **14** — `Predefined = 10`,
   `UserDefined = 11` and `LocalUserDefined = 12` at `state/types.rs:361-378` are
@@ -1307,7 +1307,7 @@ fact r2000 records and the replacement must either record or drop:
   see `evidence/criterion4-analyzer-audit.md` correction 3):** `Code`, `Address`, `DataWord`,
   `LoHiAddress`, `HiLoAddress`, `LoHiWord`, `HiLoWord`. The split-pointer table
   handling (`LoHiAddress` with a virtual-splitter-aware pair walk) is the
-  concrete r2000 capability Ghidra answers with the `CONCAT11` idiom in the
+  concrete anno capability Ghidra answers with the `CONCAT11` idiom in the
   decompiler — a *different shape of answer*, and the audit must say whether
   that shape is sufficient for `STORE-01`'s per-range typing.
 
@@ -1338,7 +1338,7 @@ Two audit disciplines worth fixing in 23-01:
 
 **Deprecated / not to be used here:**
 
-- regenerator2000, in every form, including `r2000-coverage.ts` (D-01).
+- the external analyser, in every form, including `anno-coverage.ts` (D-01).
 - `DataTypeManager.getAllComposites()` / `getDefinedData()` for structural facts
   (REQUIREMENTS Out of Scope: "the single most expensive mistake available in
   this design").
@@ -1388,7 +1388,7 @@ Copy the built `dxa`, its tarball hash line, and every transcript into
 **Missing dependencies with fallback:**
 
 - dxa — build from source, pinned (5 seconds, no dependencies).
-- `analyzer.rs` — present offline in the cargo registry; no network, no r2000 run.
+- `analyzer.rs` — present offline in the cargo registry; no network, no anno run.
 
 ---
 
@@ -1503,7 +1503,7 @@ is inert here; these are the ones that bite.
 | **Any host-facing path goes through `hostpath.ts` / `containerpath.ts`** | If a probe script needs a host path, it goes through the seam or it is not a probe script that belongs in the repo |
 | **`test:automated` hides CI failures** (memory) | Run the full `npm test` before calling the phase done |
 | **No devcontainer in this repo** (memory) | dxa and Ghidra install on the host, not in a container |
-| **No r2000 testing / r2000 is being removed** (memory + D-01) | Reinforces D-01 from two directions |
+| **No anno testing / anno is being removed** (memory + D-01) | Reinforces D-01 from two directions |
 
 ---
 
@@ -1624,7 +1624,7 @@ live unknown should read the measuring plans' `## ACCEPTED LIMIT` sections inste
   pivot's fixture exactly
 - `xa` 2.4.1-0.1 — round-trip tested both dxa processor modes
 - `x64sc` — both builds version-probed (`/usr/bin` 3.9, `/usr/local/bin` 3.10)
-- `~/.cargo/registry/src/*/regenerator2000-core-0.9.20/src/analyzer.rs` — read
+- `~/.cargo/registry/src/*/external-analyser-core-0.9.20/src/analyzer.rs` — read
 - `src/mcp/vice/tools-manifest.json` (62 tools) and `tools-manifest.stock.json`
   (38 tools) — full tool lists and input schemas
 - `src/mcp/vice/stock-checkpoints.ts` — trace guard, `TRACE_HITS_PER_SECOND_LIMIT`,
@@ -1636,7 +1636,7 @@ live unknown should read the measuring plans' `## ACCEPTED LIMIT` sections inste
 - `.planning/notes/dxa-ghidra-pivot-evidence/` — `README.md`, `dxa.out`,
   `ghidra3.txt`, `fixture.a`, `fixture.lbl`, `BankProbe3.java`, `Decomp.java`,
   `ExportAnalysis.java`, `ApplyHints2.java`
-- `docs/phase9-regenerator2000-probe-findings.md` — the verdict frontmatter shape
+- `docs/phase9-external-analyser-probe-findings.md` — the verdict frontmatter shape
 - `.planning/phases/09-the-assumption-probe-go-no-go/09-07-PLAN.md` — the
   pre-committed `R1..R5` rule
 - `.planning/ROADMAP.md` Phase 23 entry, `.planning/REQUIREMENTS.md`,

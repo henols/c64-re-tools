@@ -8,7 +8,7 @@
 
 This phase has no upstream `CONTEXT.md` — `/gsd-discuss-phase` was not run. The settled design constraints therefore live in the ROADMAP Phase 30 section and in `REQUIREMENTS.md`'s `EXPORT-01/02/03`, and are reproduced verbatim in `## User Constraints` below. They are treated with locked-decision authority.
 
-Three findings dominate the plan. **First, the phase is a rebuild in a healthier state than the ROADMAP implies.** `r2000-verify.ts` and `r2000-launch.ts` are genuinely gone from the tree, but the *hard* half of the export — the ACME source generator — already exists and already reassembles byte-exactly under a real ACME: `disasm-renderer.ts` emits `!cpu 6510`, substitutes `!byte $xx` for every non-expressible opcode, forces operand width with `+2`, and gates symbol substitution away from immediate and zero-page operands, and `disasm-roundtrip.test.ts` already drives it through a real `acme` process across all 256 opcodes. What is missing is a *store-driven* front end (blocks → ranges → decode → render) and the verdict layer. Plan around extending, not re-deriving.
+Three findings dominate the plan. **First, the phase is a rebuild in a healthier state than the ROADMAP implies.** `anno-verify.ts` and `anno-launch.ts` are genuinely gone from the tree, but the *hard* half of the export — the ACME source generator — already exists and already reassembles byte-exactly under a real ACME: `disasm-renderer.ts` emits `!cpu 6510`, substitutes `!byte $xx` for every non-expressible opcode, forces operand width with `+2`, and gates symbol substitution away from immediate and zero-page operands, and `disasm-roundtrip.test.ts` already drives it through a real `acme` process across all 256 opcodes. What is missing is a *store-driven* front end (blocks → ranges → decode → render) and the verdict layer. Plan around extending, not re-deriving.
 
 **Second, there are four false-pass vectors, not the two the ROADMAP names, and one of them is undocumented anywhere in this repo.** ACME **leaves a pre-existing output file untouched when it fails** — a fixed output path plus a previously-successful run makes the byte-diff pass against stale bytes while ACME exits 1. The verify path must assemble into a fresh `mkdtemp` directory (or unlink and re-stat) and must require the output file to have been *created by this run*. The other three are: `spawnSync` returning `status: null` on ENOENT (so a truthiness check reads a missing assembler as a pass — reproduced live), a trusted aggregate line (the founding incident), and ACME exiting 0 on a genuinely wrong byte.
 
@@ -43,12 +43,12 @@ No `CONTEXT.md` exists for this phase. The following are copied verbatim from `R
 
 ### Locked Decisions (ROADMAP notes, verbatim)
 
-- **Ordering constraint 2, and where its subject now lives:** `r2000-launch.ts` was deleted in **Phase 29** (plan 29-10) under `D-01`, so the window this constraint warns about is **open now**, from the v0.7.0 Phase 29 close until this phase lands. The constraint is **honoured rather than broken**, and the mechanism is `D-02`/`D-14`: no export route was invented ahead of this phase's oracle. `export-asm`, `export-lbl`, `import-lbl` and `gen-enums` are **withdrawn** with dated notices in both skill trees and in `PROJECT.md`, so nothing makes an unverified reassembly claim inside the window — there is no claim to sit at fixture level. What this phase must therefore do is *rebuild* the route, not re-verify a surviving one.
-- **The "reuse the existing `--verify` seam" premise is false, and three researchers flagged it independently as the most dangerous item in the milestone.** `r2000-verify.ts` (184 lines) imports from `r2000-launch.ts` and parses *regenerator2000's* per-assembler transcript; it never invokes ACME, and it dies with its subject. Only the **discipline** survives. Plan this as a rebuild, not a rename.
+- **Ordering constraint 2, and where its subject now lives:** `anno-launch.ts` was deleted in **Phase 29** (plan 29-10) under `D-01`, so the window this constraint warns about is **open now**, from the v0.7.0 Phase 29 close until this phase lands. The constraint is **honoured rather than broken**, and the mechanism is `D-02`/`D-14`: no export route was invented ahead of this phase's oracle. `export-asm`, `export-lbl`, `import-lbl` and `gen-enums` are **withdrawn** with dated notices in both skill trees and in `PROJECT.md`, so nothing makes an unverified reassembly claim inside the window — there is no claim to sit at fixture level. What this phase must therefore do is *rebuild* the route, not re-verify a surviving one.
+- **The "reuse the existing `--verify` seam" premise is false, and three researchers flagged it independently as the most dangerous item in the milestone.** `anno-verify.ts` (184 lines) imports from `anno-launch.ts` and parses *the external analyser's* per-assembler transcript; it never invokes ACME, and it dies with its subject. Only the **discipline** survives. Plan this as a rebuild, not a rename.
 - The natural repair reopens the incident the seam exists to prevent: `spawnSync("acme", ...).status === 0` has the same hole one level over — a missing binary yields `status: null`, and a truthiness check reads a missing assembler as a pass. The recorded false pass, verbatim: `x ACME — ACME not found in PATH (skipped)` / `ok All roundtrip verifications passed.` / `EXIT=0` — exit zero, an aggregate line reading as a full pass, and the one assembler this project cares about never ran.
 - Spawn ACME with an **argv array**, never a shell string, matching `src/skills/acme-build/scripts/acme.mjs`'s argv verbatim so the two agree by inspection; never treat an ACME stderr *warning* as a failure. The verify module is a **deliberate second implementation** of that spawn, because `src/mcp/vice/**` and `src/skills/**` are separate npm packages and cannot import each other.
-- The committed golden witness of the target output format is `notes/dxa-ghidra-pivot-evidence/r2000.asm`, which carries four live `=*+$01` labels. The idiom was run against real ACME 0.97 during research: `smc_operand = * + $01` before `lda #$00` assembles `sta smc_operand` as `8d 02 08`, correctly targeting the operand byte.
-- Re-record both pinned transcripts — the honest pass and the false-pass trap — from **real ACME output**, not from the deleted producer's. **Both were carried forward by plan 29-10 before their module was deleted and now live in `.planning/phases/29-the-mcp-surface/fixtures/`** — `verify-honest-pass.txt`, `verify-false-pass-trap.txt`, and a `README.md` recording their provenance (`regenerator2000 0.9.20` + ACME 0.97, Phase 10) and this obligation. They are carried as **the shape to reproduce, not content to assert against**: asserting against these bytes would re-pin this phase's oracle to the very producer it replaces, which is what the re-record obligation in this same sentence exists to prevent. The two statements agree deliberately.
+- The committed golden witness of the target output format is `notes/dxa-ghidra-pivot-evidence/anno.asm`, which carries four live `=*+$01` labels. The idiom was run against real ACME 0.97 during research: `smc_operand = * + $01` before `lda #$00` assembles `sta smc_operand` as `8d 02 08`, correctly targeting the operand byte.
+- Re-record both pinned transcripts — the honest pass and the false-pass trap — from **real ACME output**, not from the deleted producer's. **Both were carried forward by plan 29-10 before their module was deleted and now live in `.planning/phases/29-the-mcp-surface/fixtures/`** — `verify-honest-pass.txt`, `verify-false-pass-trap.txt`, and a `README.md` recording their provenance (`the external analyser 0.9.20` + ACME 0.97, Phase 10) and this obligation. They are carried as **the shape to reproduce, not content to assert against**: asserting against these bytes would re-pin this phase's oracle to the very producer it replaces, which is what the re-record obligation in this same sentence exists to prevent. The two statements agree deliberately.
 - Run the ACME hard-fail gate from Phase 27 at this phase's boundary too. It is the cheapest red available in the milestone and it protects every claim in this phase.
 
 ### Claude's Discretion
@@ -250,13 +250,13 @@ The golden witness uses the compact spelling with no spaces and the label on its
 f_0900 =*+$01
 f_08FF              ora (zpp_10,x)       ; x-ref: $083e
 ```
-[VERIFIED: .planning/notes/dxa-ghidra-pivot-evidence/r2000.asm:202-203]
+[VERIFIED: .planning/notes/dxa-ghidra-pivot-evidence/anno.asm:202-203]
 
-**Correction to the ROADMAP note:** it says the witness "carries four live `=*+$01` labels". It carries **six** — at lines 51, 81, 135, 145, 202 and 205 [VERIFIED: `grep -n '\* *+ *\$01' .planning/notes/dxa-ghidra-pivot-evidence/r2000.asm`]. Also, the file's real path is `.planning/notes/dxa-ghidra-pivot-evidence/r2000.asm`; the ROADMAP note's `notes/dxa-ghidra-pivot-evidence/r2000.asm` does not resolve from the repo root. Both are documentation drift, not design drift.
+**Correction to the ROADMAP note:** it says the witness "carries four live `=*+$01` labels". It carries **six** — at lines 51, 81, 135, 145, 202 and 205 [VERIFIED: `grep -n '\* *+ *\$01' .planning/notes/dxa-ghidra-pivot-evidence/anno.asm`]. Also, the file's real path is `.planning/notes/dxa-ghidra-pivot-evidence/anno.asm`; the ROADMAP note's `notes/dxa-ghidra-pivot-evidence/anno.asm` does not resolve from the repo root. Both are documentation drift, not design drift.
 
 The witness reassembles cleanly under its own header command:
 ```
-$ acme --cpu 6510 --format cbm -o r2000.prg r2000.asm
+$ acme --cpu 6510 --format cbm -o anno.prg anno.asm
 EXIT=0   # 281 bytes, load address 01 08
 ```
 [VERIFIED: live ACME 0.97 run this session]
@@ -408,7 +408,7 @@ zpf = $10
 
 Same source with `zpf = $10` moved **above** `* = $0801` → `a5 10 60`, 3 bytes, silent.
 
-**How to avoid:** emit **every** symbol definition in a header block before the first `* =`, exactly as the golden witness does (`.planning/notes/dxa-ghidra-pivot-evidence/r2000.asm:19-42` is an "EXTERNAL LABELS" block). Then assert `*` at both ends of every block so a widening is caught even if a definition is ever missed.
+**How to avoid:** emit **every** symbol definition in a header block before the first `* =`, exactly as the golden witness does (`.planning/notes/dxa-ghidra-pivot-evidence/anno.asm:19-42` is an "EXTERNAL LABELS" block). Then assert `*` at both ends of every block so a widening is caught even if a definition is ever missed.
 
 ### Pitfall 5: The symbol *definition's hex-digit count* decides the operand width
 
@@ -546,7 +546,7 @@ Rules, in the order the ROADMAP states them:
 5. More than one authoritative line disagreeing ⇒ refuse to guess (`"failed"` with a reason naming the disagreement).
 6. `"ok"` requires: the output file did not exist before the spawn, exists after, and its bytes equal the input's exactly.
 
-**What "ACME's own result lines" means for a direct spawn.** With regenerator2000 gone there is no per-assembler transcript. The direct-spawn analogue, measured live with `-v2`:
+**What "ACME's own result lines" means for a direct spawn.** With the external analyser gone there is no per-assembler transcript. The direct-spawn analogue, measured live with `-v2`:
 
 ```
 First pass.
@@ -657,13 +657,13 @@ const MSVC = /^(.*?)\((\d+)\)\s*:\s*(Error|Warning|Serious error)\s*(?:\(([^)]*)
 
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
-| `r2000-verify.ts` parses regenerator2000's per-assembler transcript | Direct ACME spawn + byte-diff; only the **discipline** survives | Phase 29 plan 29-10, 2026-08-30 (commit `1d40ad0`) | The module and its test are gone from disk; only comment references remain in `block-class.test.ts:18`, `module-classification.ts:603,618,690`, `scripts/check-npm-packages.mjs:240-249` [VERIFIED: `grep -rn 'r2000-verify\|r2000-launch'` over `src/`, `scripts/`, `docs/`] |
+| `anno-verify.ts` parses the external analyser's per-assembler transcript | Direct ACME spawn + byte-diff; only the **discipline** survives | Phase 29 plan 29-10, 2026-08-30 (commit `1d40ad0`) | The module and its test are gone from disk; only comment references remain in `block-class.test.ts:18`, `module-classification.ts:603,618,690`, `scripts/check-npm-packages.mjs:240-249` [VERIFIED: `grep -rn 'anno-verify\|anno-launch'` over `src/`, `scripts/`, `docs/`] |
 | Eight `anno` CLI verbs | **Two** (`coverage`, `render-memmap`) | Phase 29 plan 29-07, D-14, 2026-08-29 | `ANNO_CLI_VERB_FLOOR` dropped 8 → 2 as a *replacement over a new subject*, with a documented obligation to raise it per verb that lands |
-| `r2000_*` MCP tools | 19 `anno_*` tools, registered through `buildViceTool()` directly | Phase 29 | See § MCP-02 below |
-| The subcommand token `r2000` | `anno` | Phase 29 plan 29-09 | `scripts/lib/anno-cli-verbs.mjs`'s header names three halves that must move together |
+| `anno_*` MCP tools | 19 `anno_*` tools, registered through `buildViceTool()` directly | Phase 29 | See § MCP-02 below |
+| The subcommand token `anno` | `anno` | Phase 29 plan 29-09 | `scripts/lib/anno-cli-verbs.mjs`'s header names three halves that must move together |
 
 **Deprecated/outdated in the phase brief itself:**
-- ROADMAP: "`notes/dxa-ghidra-pivot-evidence/r2000.asm`" → the real path is `.planning/notes/dxa-ghidra-pivot-evidence/r2000.asm`.
+- ROADMAP: "`notes/dxa-ghidra-pivot-evidence/anno.asm`" → the real path is `.planning/notes/dxa-ghidra-pivot-evidence/anno.asm`.
 - ROADMAP: "four live `=*+$01` labels" → there are **six**.
 - ROADMAP: "`spawnSync("acme", ...).status === 0` has the same hole" → measured, `=== 0` is safe against ENOENT; the hole is truthiness. The *rule* stands regardless.
 - `scripts/lib/anno-cli-verbs.mjs` and `anno-cli.ts:24` say `gen-enums`/`export-lbl`/`import-lbl` "return in **Phase 30**", but no Phase 30 requirement or criterion covers them. See Open Question 1.
@@ -677,7 +677,7 @@ const MSVC = /^(.*?)\((\d+)\)\s*:\s*(Error|Warning|Serious error)\s*(?:\(([^)]*)
 | A3 | `-f cbm` against a `.prg` input is the right diff shape for the common case. | Alternatives Considered, Pitfall 7 | Low-medium. A flat 64K capture (`flatImageOrigin()` ⇒ origin 0) diffs differently; the plan needs both shapes. |
 | A4 | The five verdict rules map onto `-v2`'s per-segment lines as "ACME's own result lines". | Code Examples 2 | Medium. This is my mapping of a rule written for a different producer onto the new one. An alternative reading is that with a direct spawn the *byte-diff per block* is itself the result-line set and `-v2` is corroboration only. **The planner should state which reading it adopts, explicitly.** |
 | A5 | Criterion 5's "with that refusal removed" means a planted-violation harness against `setLabel()`'s guard, not a schema change. | Pitfall 9 | Low. The `unique` DDL constraint would still fire on a schema-level removal, so the harness reading is the only one that produces the intended ACME-side observation. |
-| A6 | The "fixture that actually contains self-modifying code" (criterion 3) can be the golden witness `r2000.asm` or a purpose-built minimal fixture. | Pattern 1 | Low. The witness has six live `=*+$01` labels and reassembles clean, so it satisfies the letter; a minimal fixture is easier to reason about. Either works; the plan should pick one and say why. |
+| A6 | The "fixture that actually contains self-modifying code" (criterion 3) can be the golden witness `anno.asm` or a purpose-built minimal fixture. | Pattern 1 | Low. The witness has six live `=*+$01` labels and reassembles clean, so it satisfies the letter; a minimal fixture is easier to reason about. Either works; the plan should pick one and say why. |
 | A7 | The `28-*` and `29-*` phase artifacts contain no further binding constraint on export beyond what is quoted here. | throughout | Low-medium. I read `29-RESEARCH.md`'s Phase-30 references and `module-classification.ts`'s two relevant entries, not all 44 SUMMARY files. |
 
 ## Open Questions
@@ -758,7 +758,7 @@ Test files are colocated `*.test.ts` next to the module. `test-gate.mjs`'s `auto
 
 - **Per task commit:** `cd src/mcp/vice && npm run test:automated` (~45 s, floor 0 failures)
 - **Per wave merge:** same, plus `npm run typecheck`
-- **Phase gate:** `cd src/mcp/vice && VICE_REQUIRE_ACME=1 npm test` (the full glob, CI's command — this is the Phase 27 hard-fail gate at the boundary), plus `node scripts/check-npm-packages.mjs`, `node scripts/check-no-regenerator2000.mjs`, `node scripts/check-skill-tool-coverage.mjs`, `node scripts/check-skill-cli-invocations.mjs`, `node scripts/check-skill-fork-honesty.mjs`
+- **Phase gate:** `cd src/mcp/vice && VICE_REQUIRE_ACME=1 npm test` (the full glob, CI's command — this is the Phase 27 hard-fail gate at the boundary), plus `node scripts/check-npm-packages.mjs`, `node scripts/check-no-analyser.mjs`, `node scripts/check-skill-tool-coverage.mjs`, `node scripts/check-skill-cli-invocations.mjs`, `node scripts/check-skill-fork-honesty.mjs`
 
 ### Wave 0 Gaps
 
@@ -810,7 +810,7 @@ for (const annoDef of ANNO_TOOL_DEFINITIONS) {
 `anno-tools.ts:49-60` states the same thing from the other side and adds the corollary that binds this phase: **the module must never import `hostpath.ts`**, because both the store path and the image path are **proxy-local** filesystem paths and translating either would point the code at a file on the wrong side of the container boundary. `hostpath-consumers.test.ts` keeps that consumer set at exactly five modules and names `anno-tools.ts` as forbidden.
 
 **Concretely for Phase 30:**
-- If the export lands as a **CLI verb only**, `forwardToVice()` is not on any path it takes — `runR2000Cli()` is reached through `vice-proxy.ts`'s subcommand branch, not the tool dispatcher. Nothing to do.
+- If the export lands as a **CLI verb only**, `forwardToVice()` is not on any path it takes — `runAnnoCli()` is reached through `vice-proxy.ts`'s subcommand branch, not the tool dispatcher. Nothing to do.
 - If an `anno_export_asm` **tool** is added to `ANNO_TOOL_DEFINITIONS`, it inherits the family's construction-level satisfaction automatically, **and inherits the prohibition**: it must not import `hostpath.ts`/`containerpath.ts`, and every path it handles is container-side already.
 - Either way, **do not import `hostpath.ts` into any new module in this phase.** `hostpath-consumers.test.ts` will red, and the failure will look unrelated.
 
@@ -821,7 +821,7 @@ The two `rewriteArguments()` line citations in CLAUDE.md (`vice-proxy.ts:3050`, 
 ### Primary (HIGH confidence)
 
 - **Live ACME 0.97 "Zem" runs on this host, 2026-08-30** — every behavioural claim about ACME in this document. Fixtures in `/tmp/claude-1000/.../scratchpad/acme/`. Covered: `=*+$01` placement (both directions), duplicate-symbol error text (both spellings, both `--msvc` and default), `!if`/`!error` `*` assertions (pass and fail), `!pseudopc` PC-undefined error, warnings-with-exit-0 (LXA, JMP($xxff), oversized addressing mode), the stale-output-on-failure trap, `-f plain` gap zero-filling, `-f cbm` load-address prefix, `!cpu 6510` in-source vs `--cpu` flag, `--strict-segments` overlap promotion, symbol-definition hex-digit width rule (4 forms), forward-reference widening, `+1`/`+2` size forcing, enum-on-immediate byte-identity, enum-on-address divergence, `Number does not fit in 8 bits.`, `jam` → `$02` vs `!byte $12` → `$12`, `-v1`/`-v2` stdout vs diagnostics stderr, `-Wtype-mismatch` gating the `!addr` symbol-file marker, `spawnSync` `status: null` on ENOENT/EACCES, and a full clean reassembly of the golden witness.
-- **Files read this session** — `src/mcp/vice/`: `acme-gate.ts`, `acme-gate.test.ts` (header + child-probe region), `anno-acme-ident.ts`, `anno-cli.ts` (header), `anno-coverage.ts:1340-1470`, `anno-coverage.test.ts:1400-1430`, `anno-store.ts` (DDL, `setLabel`, `listLabels`, exports index), `anno-types.ts` (vocabularies, row shapes, `storePathWithinWorkspace`), `anno-tools.ts:40-100`, `block-class.ts`, `disasm-opcodes.ts:1-210`, `disasm-renderer.ts` (full), `disasm-roundtrip.test.ts:1-140`, `module-classification.ts:130-200,595-720`, `prg-image.ts` (full), `shipped-modules.ts` (exports), `spawn-seam.test.ts:1-80,160-300`, `test-gate.mjs` (full), `vice-proxy.ts:3370-3395`, `package.json`; plus `src/skills/acme-build/scripts/acme.mjs` (full), `scripts/lib/anno-cli-verbs.mjs` (full), `scripts/check-npm-packages.mjs:230-270`, `.github/workflows/ci.yml:37-170`, `.planning/notes/dxa-ghidra-pivot-evidence/r2000.asm`, `.planning/phases/29-the-mcp-surface/fixtures/{README.md,verify-honest-pass.txt,verify-false-pass-trap.txt}`.
+- **Files read this session** — `src/mcp/vice/`: `acme-gate.ts`, `acme-gate.test.ts` (header + child-probe region), `anno-acme-ident.ts`, `anno-cli.ts` (header), `anno-coverage.ts:1340-1470`, `anno-coverage.test.ts:1400-1430`, `anno-store.ts` (DDL, `setLabel`, `listLabels`, exports index), `anno-types.ts` (vocabularies, row shapes, `storePathWithinWorkspace`), `anno-tools.ts:40-100`, `block-class.ts`, `disasm-opcodes.ts:1-210`, `disasm-renderer.ts` (full), `disasm-roundtrip.test.ts:1-140`, `module-classification.ts:130-200,595-720`, `prg-image.ts` (full), `shipped-modules.ts` (exports), `spawn-seam.test.ts:1-80,160-300`, `test-gate.mjs` (full), `vice-proxy.ts:3370-3395`, `package.json`; plus `src/skills/acme-build/scripts/acme.mjs` (full), `scripts/lib/anno-cli-verbs.mjs` (full), `scripts/check-npm-packages.mjs:230-270`, `.github/workflows/ci.yml:37-170`, `.planning/notes/dxa-ghidra-pivot-evidence/anno.asm`, `.planning/phases/29-the-mcp-surface/fixtures/{README.md,verify-honest-pass.txt,verify-false-pass-trap.txt}`.
 - **Live suite run** — `npm run test:automated`, 2771 tests / 2765 pass / 0 fail / 1 skip / 5 todo / 45 s.
 
 ### Secondary (MEDIUM confidence)

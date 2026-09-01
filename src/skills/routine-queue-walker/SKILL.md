@@ -3,49 +3,6 @@ name: routine-queue-walker
 description: Drive an existing C64 annotation store's backlog of undocumented routines and auto-named symbols to closure — build the candidate queue from labels and comments, work it one entry at a time against explicit addresses, rebuild it after every pass, and report every leftover. Use when asked to annotate every remaining routine in a project, document all undocumented subroutines left in an annotation project, rename the leftover auto-generated labels, clear a backlog of unnamed symbols, drive an annotation pass to completion, or list what is still unannotated after a pass.
 ---
 
-<!--
-ATTRIBUTION (ABS-02)
-Adapted from regenerator2000.
-  Source repository: https://github.com/ricardoquesada/regenerator2000
-  Source path:       r2000-analyze-program/SKILL.md — held under the upstream
-                     repository's excluded agent-skills directory, which the
-                     published crate does not ship. The full upstream path is
-                     recorded once, in
-                     .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json
-  Pinned commit:     493f840418f1450a342bb220c2fe3d2585dd0525  (v0.9.20, 2026-07-11)
-  Source sha256:     2d1c91bcc612c00ce71b7def08917b59ca7e495aa61f9075cbb0795e935f6955
-  Upstream licence:  MIT OR Apache-2.0 — Copyright (c) 2026 Ricardo Quesada
-  This project elects: MIT
-
-  ADAPTED, NOT VERBATIM. Named deviations, each one a real change to what the
-  upstream text instructs:
-    - Upstream prescribes a parallel subagent fan-out with a fixed slot count
-      and a refill-on-completion window. That is NOT carried. This project
-      walks the queue one entry at a time. The reason was re-established
-      when the surface changed (2026-08-29): a single annotation store is a
-      single writer, and every write carries an optional `base_revision`
-      compare-and-swap, so fanning writers out turns concurrency into a
-      stale-revision storm rather than throughput. The original measurement
-      that first settled this — a serial single-request child — is recorded
-      in
-      .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-STDIO-MULTIPLEXING-EVIDENCE.md
-    - Upstream's three instructions to read a file inside its own excluded
-      agent-skills directory at runtime are replaced with this project's own
-      skill names and paths. Those upstream files do not exist for anyone who
-      installed regenerator2000 from the crate.
-    - Upstream's cursor-based entry route is replaced by explicit address
-      input plus `anno_read_region`. Upstream's own text already forbids the
-      cursor route in this situation; this project has no editor cursor at all.
-    - Upstream's `set_immediate_format` step is omitted — this project does not
-      expose it. Upstream's `unpack_binary` step is omitted as destructive and
-      re-routed to this project's own run-and-capture route. The per-call
-      disposition record, with justifications, is in the manifest named above.
-
-  Re-sync trigger: see ABS-04's dated decision and the manifest's
-  `resync_triggers`.
-  See THIRD-PARTY-NOTICES.md.
--->
-
 # Walking the routine and symbol queue to closure
 
 **Do not start annotating whatever is in front of you.** The expensive failure

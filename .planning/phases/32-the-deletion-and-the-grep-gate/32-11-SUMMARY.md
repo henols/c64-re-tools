@@ -317,10 +317,10 @@ returns 1.
 | 3 | `--json` alone and both orderings with `--root` | exit 0, byte-identical JSON in all three |
 | 4 | `npm run typecheck` (in `src/mcp/vice`) | exit 0, no diagnostics |
 | 5 | `npm run test:automated` (in `src/mcp/vice`) | 2986 tests, 2979 pass, **1 fail**, 1 skipped, 5 todo — see below |
-| 6 | `node scripts/check-no-regenerator2000.mjs` | exit 0, scanned 407 files, 0 temporarily allow-listed |
+| 6 | `node scripts/check-no-analyser.mjs` | exit 0, scanned 407 files, 0 temporarily allow-listed |
 | 7 | `git status --porcelain` before/after the test run | byte-identical |
 
-`grep -aic r2000 src/mcp/vice/audit-root-args.test.ts` returns **0** — the file is
+`grep -aic anno src/mcp/vice/audit-root-args.test.ts` returns **0** — the file is
 inside the removal gate's scope and carries zero occurrences of the deleted
 subject's literal name (checked with `grep -a`, per the NUL-byte hazard recorded
 for `anno-memmap-render.ts`). `[edge:CUT-06/adjacency]` holds.

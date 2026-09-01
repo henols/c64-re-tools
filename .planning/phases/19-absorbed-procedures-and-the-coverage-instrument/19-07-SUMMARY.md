@@ -2,11 +2,11 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 07
 subsystem: docs
-tags: [licensing, mit, attribution, regenerator2000, third-party-notices, npm-packaging, node-test, gap-closure]
+tags: [licensing, mit, attribution, the external analyser, third-party-notices, npm-packaging, node-test, gap-closure]
 
 requires:
   - phase: 19-absorbed-procedures-and-the-coverage-instrument
-    provides: "the absorbed regenerator2000 procedure prose, its five pinned upstream digests, the per-file ATTRIBUTION (ABS-02) headers, and the three THIRD-PARTY-NOTICES.md documents 19-01/19-02 landed"
+    provides: "the absorbed analyser procedure prose, its five pinned upstream digests, the per-file ATTRIBUTION (ABS-02) headers, and the three THIRD-PARTY-NOTICES.md documents 19-01/19-02 landed"
 provides:
   - "MIT's inclusion condition discharged BY ARTIFACT: the upstream 1072-byte LICENSE-MIT reproduced byte-for-byte in all three notices files, each hashing to sha256 e2579ce7a10784ea205270fc7775e75c07b283f7a5f6e1fdd31f20f8b8a4973b"
   - "A corrected statement of where the notice actually travels, true of this commit's own files[] lists — replacing a sentence that was packed to consumers and falsified three ways by the tree that shipped it"
@@ -39,7 +39,7 @@ key-files:
 
 key-decisions:
   - "Human decision (Task 2 checkpoint), option id `approve-wording-release-on-reverification`: the corrected wording and the MIT election are APPROVED as-is; the release is a separate later act. The named condition that lifts the release hold is: \"Phase 19 re-verification returns no gaps.\""
-  - "INCORPORATION_CLAIM_PATTERN is derived from the incorporated-material heading's shared phrase (`regenerator2000 analysis procedures`), NOT from NOTICE_SECTION_HEADING. Keying the claim on the notice section would make the presence test tautological — a file would owe the notice exactly when it already carried it, and deleting the notice would delete the obligation with it."
+  - "INCORPORATION_CLAIM_PATTERN is derived from the incorporated-material heading's shared phrase (`the external analyser analysis procedures`), NOT from NOTICE_SECTION_HEADING. Keying the claim on the notice section would make the presence test tautological — a file would owe the notice exactly when it already carried it, and deleting the notice would delete the obligation with it."
   - "The forbidden-claim check normalises whitespace on both haystack and needle, so re-wrapping the paragraph cannot smuggle the deleted sentence back in. Demonstrated: the demo-2 plant was deliberately reflowed across three lines and was still caught."
   - "All three planted-violation demonstrations were run against a DISPOSABLE SHADOW TREE built with `git archive HEAD`, not by editing a real notices file. This plan's must_haves forbid a plant-and-revert against a real notices file; the acceptance criteria's `git checkout --` mechanics would have violated that prohibition, so the prohibition won. The evidence is equivalent — the real, uncopied guard code ran and produced the real failure messages recorded below."
   - "`git stash` was NOT used at any point (prohibited in this execution environment — the stash stack is shared across worktrees)."
@@ -134,14 +134,14 @@ What this decision does and does not do:
 at a branch:
 
 ```
-curl -sfL https://raw.githubusercontent.com/ricardoquesada/regenerator2000/493f840418f1450a342bb220c2fe3d2585dd0525/LICENSE-MIT -o /tmp/upstream-LICENSE-MIT
+curl -sfL https://raw.githubusercontent.com/an upstream repository/493f840418f1450a342bb220c2fe3d2585dd0525/LICENSE-MIT -o /tmp/upstream-LICENSE-MIT
 ```
 
 verified as `e2579ce7a10784ea205270fc7775e75c07b283f7a5f6e1fdd31f20f8b8a4973b`, 1072 bytes. The
 temporary file was not committed and does not exist in the repository.
 
 **The three extracted-block digests**, re-verified by this continuation agent before proceeding
-(extracting the ````text` fence under `## Upstream MIT permission notice (regenerator2000)` and
+(extracting the ````text` fence under `## Upstream MIT permission notice (the external analyser)` and
 piping to `sha256sum`):
 
 | File | Bytes | sha256 |
@@ -167,7 +167,7 @@ at all — while the false claim itself did.
 
 > MIT's own inclusion condition is discharged here by reproduction rather
 > than by assertion: the upstream permission notice and copyright are
-> reproduced in full, byte-for-byte, in **Upstream MIT permission notice (regenerator2000)**
+> reproduced in full, byte-for-byte, in **Upstream MIT permission notice (the external analyser)**
 > below. Each absorbed file additionally carries its own per-file
 > `ATTRIBUTION (ABS-02)` header naming the source repository, the source path,
 > the pinned commit, the sha256 of the upstream bytes, the upstream licence and
@@ -255,7 +255,7 @@ All three overlapping forbidden entries fired, and the re-wrapped plant was caug
 
 ### 3. The notice section removed entirely (`installer/THIRD-PARTY-NOTICES.md`)
 
-The whole `## Upstream MIT permission notice (regenerator2000)` section was deleted. The shadow's
+The whole `## Upstream MIT permission notice (the external analyser)` section was deleted. The shadow's
 `node scripts/check-npm-packages.mjs` went from exit 0 to **exit 1**:
 
 ```
@@ -358,13 +358,13 @@ failures will therefore persist until those plans land, and this SUMMARY does no
 
 - **Found during:** Task 3 design.
 - **Issue:** The plan says to derive the claim pattern "from the section heading Task 1's files
-  already carry". Read as the NEW `## Upstream MIT permission notice (regenerator2000)` heading,
+  already carry". Read as the NEW `## Upstream MIT permission notice (the external analyser)` heading,
   that would make the presence test tautological — a file would owe the notice exactly when it
   already carried one, and deleting the notice would delete the obligation with it. Additionally,
   the repo-root pointer states its incorporation claim as a bullet, not a heading, so a
   whole-heading match would have excluded it.
 - **Fix:** The pattern is the shared PHRASE from the pre-existing incorporated-material heading,
-  `regenerator2000 analysis procedures`, which all three files carry and which is independent of
+  `the external analyser analysis procedures`, which all three files carry and which is independent of
   the notice section. The reasoning is recorded in the constant's own doc comment so it cannot be
   "simplified" back into a tautology later.
 - **Commit:** `f941eef`.

@@ -18,7 +18,7 @@ provides:
   - "Phases 30, 31 and 32 narrowed — not renumbered — with every requirement still owned by exactly one phase, cross-checked mechanically"
   - "Ordering constraint 3 restated as an INTRA-phase constraint of Phase 29, with the 4f048bb precedent named — it is why 29-02 ran before 29-10"
   - "MCP-02's and MCP-05's coexistence clauses edited with D-01 cited by id; MCP-05's guard-list sentence untouched per D-13"
-  - "The R2000-14/R2000-15 withdrawal recorded beside SEAM-02 in PROJECT.md's own wording — one statement in two places"
+  - "The ANNO-14/ANNO-15 withdrawal recorded beside SEAM-02 in PROJECT.md's own wording — one statement in two places"
   - "CUT-04's retention in Phase 32 recorded with its reason in BOTH the roadmap and the requirements record, in agreement"
   - "The removal gate's temporary allow-list is EMPTY and the gate asserts its own emptiness, observed firing under a planted entry"
   - "The phase's closing measurements: failing-file set, wall time, gate scanned-file count and per-class breakdown, and the new floors"
@@ -42,7 +42,7 @@ key-files:
   modified:
     - .planning/ROADMAP.md
     - .planning/REQUIREMENTS.md
-    - scripts/check-no-regenerator2000.mjs
+    - scripts/check-no-analyser.mjs
 
 key-decisions:
   - "Discretion 5 taken as research recommended: NARROW, do not renumber. Only the rows whose phase actually moved were rewritten."
@@ -93,7 +93,7 @@ coverage:
         status: pass
     human_judgment: false
   - id: D5
-    description: "The R2000-14/R2000-15 withdrawal appears beside SEAM-02 with both requirement ids, the temporary nature of the loss and Phase 30 as the return condition, matching PROJECT.md"
+    description: "The ANNO-14/ANNO-15 withdrawal appears beside SEAM-02 with both requirement ids, the temporary nature of the loss and Phase 30 as the return condition, matching PROJECT.md"
     verification:
       - kind: other
         ref: "PROJECT.md:140 and .planning/REQUIREMENTS.md SEAM-02 sub-bullet carry the same claims in the same wording; the Phase 30 roadmap note names .planning/phases/29-the-mcp-surface/fixtures/"
@@ -107,7 +107,7 @@ coverage:
         ref: "planted one entry into the emptied block -> gate exits 1 with the emptiness assertion named -> reverted; git status --porcelain clean (transcript below)"
         status: pass
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs -> OK, '0 temporarily allow-listed across 0 entries'"
+        ref: "node scripts/check-no-analyser.mjs -> OK, '0 temporarily allow-listed across 0 entries'"
         status: pass
     human_judgment: false
   - id: D7
@@ -173,7 +173,7 @@ The check rejects duplicates in either direction, so "exactly one phase" is enfo
 
 Constraint 3 said *"the removal follows the skill re-pointing (31 → 32)"*. `D-01` put both subjects inside Phase 29, so the rule did not stop applying — it changed scale. It is now recorded as an **intra-phase** constraint of Phase 29, naming the wave sequence that satisfied it (gate at wave 1, re-pointing at wave 5, deletion at wave 7) and the **`4f048bb` precedent** it exists against — the milestone closed over an already-red `docs-review-disposition.test.ts` with nothing forcing anyone to notice. **This is why plan 29-02 ran before plan 29-10**, and deleting the constraint would have deleted that reason.
 
-Constraints 2 and 4 now say where their subjects live. Constraint 2 is the interesting one: `r2000-launch.ts` is already deleted, so the no-oracle window is **open now**. It is recorded as **honoured rather than broken**, with the mechanism named — `D-02`/`D-14` withdrew `export-asm`, `export-lbl`, `import-lbl` and `gen-enums` with dated notices instead of inventing an export route ahead of the oracle, so *nothing claims anything inside the window*. There is no claim sitting at fixture level because there is no claim.
+Constraints 2 and 4 now say where their subjects live. Constraint 2 is the interesting one: `anno-launch.ts` is already deleted, so the no-oracle window is **open now**. It is recorded as **honoured rather than broken**, with the mechanism named — `D-02`/`D-14` withdrew `export-asm`, `export-lbl`, `import-lbl` and `gen-enums` with dated notices instead of inventing an export route ahead of the oracle, so *nothing claims anything inside the window*. There is no claim sitting at fixture level because there is no claim.
 
 ### The two coexistence clauses, edited with what they said preserved
 
@@ -185,7 +185,7 @@ Constraints 2 and 4 now say where their subjects live. Constraint 2 is the inter
 
 ### The withdrawal is recorded beside the requirements it affects
 
-`SEAM-02` is the requirement whose text names the symbol round trip as a ✓ Validated capability implemented by `-symbols`. It now carries the withdrawal record: both requirement ids (`R2000-14`, `R2000-15`), that this is **a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away**, and that **it returns in Phase 30**. The wording is `PROJECT.md`'s own, deliberately, so a reader comparing the two finds one statement in two places rather than two statements. The corresponding Phase 30 roadmap note names where the carried-forward fixtures live — `.planning/phases/29-the-mcp-surface/fixtures/` — and repeats that they are **the shape to reproduce, not content to assert against**, agreeing with the re-record obligation in the same sentence rather than contradicting it.
+`SEAM-02` is the requirement whose text names the symbol round trip as a ✓ Validated capability implemented by `-symbols`. It now carries the withdrawal record: both requirement ids (`ANNO-14`, `ANNO-15`), that this is **a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away**, and that **it returns in Phase 30**. The wording is `PROJECT.md`'s own, deliberately, so a reader comparing the two finds one statement in two places rather than two statements. The corresponding Phase 30 roadmap note names where the carried-forward fixtures live — `.planning/phases/29-the-mcp-surface/fixtures/` — and repeats that they are **the shape to reproduce, not content to assert against**, agreeing with the re-record obligation in the same sentence rather than contradicting it.
 
 ### `CUT-04`'s retention is a recorded decision, in two places, in agreement
 
@@ -208,7 +208,7 @@ The block is now closed by an **emptiness assertion**, with the dated header kep
 
 ```
 $ <plant { path: "src/mcp/vice/anno-coverage.ts", plan: "29-11", count: 2 }>
-$ node scripts/check-no-regenerator2000.mjs
+$ node scripts/check-no-analyser.mjs
 check-no-<subject>: FAIL
   - temporary allow-list: the block must be EMPTY (opened 2026-08-29, closed
     2026-08-30 by plan 29-11), but it holds 1 entry: src/mcp/vice/anno-coverage.ts
@@ -216,7 +216,7 @@ check-no-<subject>: FAIL
   - temporary allow-list: src/mcp/vice/anno-coverage.ts is pinned at 2
     occurrence(s) for plan 29-11, got 0. ...
 EXIT=1
-$ <revert>   ->   node scripts/check-no-regenerator2000.mjs -> OK, EXIT=0
+$ <revert>   ->   node scripts/check-no-analyser.mjs -> OK, EXIT=0
                   git status --porcelain (tracked): clean
 ```
 
@@ -246,7 +246,7 @@ Both the **new** assertion and the **retained** count assertion fired by name �
 | File | Baseline | Now | Explanation |
 |---|---|---|---|
 | `vice-proxy.test.ts` | **41** (lower bound), **HUNG** | **not run** | Excluded by an explicit reserved-file instruction (Deviation 1). It is `MANUAL_ONLY_TESTS` entry 2, documented *"must never be executed"*. Its three stale tool-name assertions and its hang are **unchanged and known**. This is neither a repair nor a regression — it is an **unmeasured member**, stated rather than banked as an improvement. |
-| `r2000-session.test.ts` | **5** | **gone** | Deleted by plan 29-10. Leaves the set **by construction**, not by repair — `29-BASELINE.md` predicted this and required it be said. |
+| `anno-session.test.ts` | **5** | **gone** | Deleted by plan 29-10. Leaves the set **by construction**, not by repair — `29-BASELINE.md` predicted this and required it be said. |
 | `audit-integrity.test.ts` | **2** | **gone** | Left the set at wave 3: 29-05's Rule 2 deviation registered a legitimate unregistered docs guard. Not this plan's doing. |
 | `repo-root.test.ts` | — | **absent** | 29-10 saw this appear inside its worktree and predicted it would pass on merge into the main checkout. **Confirmed:** it passes here. The prediction is discharged rather than left open. |
 
@@ -295,7 +295,7 @@ For comparison, the pre-phase gate reported **395 files scanned, 118 permanently
 
 | Floor | Where | Value | Note |
 |---|---|---|---|
-| Module floor | `hostpath-consumers.test.ts` — `ANNO_MODULE_FLOOR` | **16** (`15 + 1`) | **Replaces** `R2000_MODULE_FLOOR = 14`; **16** `anno-*.ts` production modules on disk |
+| Module floor | `hostpath-consumers.test.ts` — `ANNO_MODULE_FLOOR` | **16** (`15 + 1`) | **Replaces** `ANNO_MODULE_FLOOR = 14`; **16** `anno-*.ts` production modules on disk |
 | Skill tool-name floor | `scripts/check-skill-tool-coverage.mjs` | **18** | **Raised** from 10 by 29-09; **18** distinct `anno_*` names extracted from the skill tree, all curated |
 | Curated surface | `CURATED_ANNO_TOOLS` | **19** entries | Derived from `ANNO_TOOL_DEFINITIONS`, never a second hand-typed list |
 | CLI verb floor | `scripts/lib/anno-cli-verbs.mjs` — `ANNO_CLI_VERB_FLOOR` | **2** | 2/2 parsed verbs resolved by at least one skill file |
@@ -305,7 +305,7 @@ For comparison, the pre-phase gate reported **395 files scanned, 118 permanently
 
 | Check | Result |
 |---|---|
-| `node scripts/check-no-regenerator2000.mjs` | **OK** — exit 0 |
+| `node scripts/check-no-analyser.mjs` | **OK** — exit 0 |
 | `node scripts/check-skill-tool-coverage.mjs` | **OK** — exit 0 |
 | `node scripts/check-skill-fork-honesty.mjs` | **OK** — exit 0 |
 | `node scripts/check-npm-packages.mjs` | **OK** — exit 0 (`@henols/vice-mcp` 78 files; `@henols/c64-re-tools` 34 files / 7 skills) |
@@ -382,7 +382,7 @@ The plan's standing prohibition — *"a criterion or clause falsified by an owne
 ## Next Phase Readiness
 
 - **Phase 29 is ready to close.** All 12 plans executed; typecheck, `test:automated`, all five CI scripts, the documentation guards and the tool-support drift check are green; the removal gate carries no temporary exception.
-- **Ready for Phase 30**, which inherits: the carried-forward transcripts at `.planning/phases/29-the-mcp-surface/fixtures/` with a re-record obligation stated in two agreeing places; the withdrawn `R2000-14`/`R2000-15` round trip with Phase 30 named as its return condition; the frozen coverage-fixture writer whose re-point is Phase 30's work; and constraint 2's window recorded as honoured-because-nothing-claims rather than as a debt.
+- **Ready for Phase 30**, which inherits: the carried-forward transcripts at `.planning/phases/29-the-mcp-surface/fixtures/` with a re-record obligation stated in two agreeing places; the withdrawn `ANNO-14`/`ANNO-15` round trip with Phase 30 named as its return condition; the frozen coverage-fixture writer whose re-point is Phase 30's work; and constraint 2's window recorded as honoured-because-nothing-claims rather than as a debt.
 - **Ready for Phase 31**, narrowed to `REPOINT-03`/`REPOINT-04`, and told which half of its own criterion 1 already landed.
 - **Ready for Phase 32**, narrowed to `CUT-04`/`CUT-06`, with `CUT-04`'s retention reasoned in two agreeing places, the two deferred guard fates named, and its scope explicitly described as having **grown**.
 - **One item a human must action:** the reserved decision about `src/mcp/vice/vice-proxy.test.ts` — its three stale tool-name assertions and its hang. It blocks nothing in this phase and it is the last thing standing between this repo and an unqualified full-glob run.

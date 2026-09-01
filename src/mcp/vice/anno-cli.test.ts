@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import {
-  runR2000Cli,
+  runAnnoCli,
   VERB_OPTIONS,
   checkAcceptedOptions,
   symbolsFromStore,
@@ -45,7 +45,7 @@ import {
 } from "./anno-cli.ts";
 import { openStore, closeStore, setLabel, setComment, setDataType, putXref, listLabels, listComments, listRanges } from "./anno-store.ts";
 import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
-import type { R2000Comment, R2000CrossReference, R2000Symbol } from "./anno-coverage.ts";
+import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
 import type { BlockEntry } from "./block-class.ts";
 import { repoRoot } from "./repo-root.ts";
 
@@ -290,12 +290,12 @@ test("bin: both invocations terminate on their own within the timeout, not via s
   assert.equal(
     helpResult.signal,
     null,
-    "r2000 --help was killed by the spawn timeout -- the dispatch may have fallen through into startStdio(), which never returns",
+    "anno --help was killed by the spawn timeout -- the dispatch may have fallen through into startStdio(), which never returns",
   );
   assert.equal(
     unknownVerbResult.signal,
     null,
-    "r2000 no-such-verb was killed by the spawn timeout -- the dispatch may have fallen through into startStdio(), which never returns",
+    "anno no-such-verb was killed by the spawn timeout -- the dispatch may have fallen through into startStdio(), which never returns",
   );
 });
 
@@ -305,7 +305,7 @@ test("bin: both invocations terminate on their own within the timeout, not via s
 
 test("each removed verb is still rejected, and the rejection names the verbs that exist", async () => {
   for (const verb of REMOVED_VERBS) {
-    const { result: code, stdout, stderr } = await withCapturedConsole(() => runR2000Cli([verb, "some.project"]));
+    const { result: code, stdout, stderr } = await withCapturedConsole(() => runAnnoCli([verb, "some.project"]));
     assert.notEqual(code, 0, `the removed verb "${verb}" must be rejected, not dispatched`);
     assert.match(stderr, new RegExp(`unknown verb "${verb}"`), `the refusal must name the verb the caller typed`);
     for (const survivor of SURVIVING_VERBS) {
@@ -355,7 +355,7 @@ test("render-memmap: a missing annotation store is refused rather than CREATED",
   await withWorkspaceTempDir(async (dir) => {
     const missing = join(dir, "does-not-exist.annostore");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", missing, "--provenance", join(dir, "sidecar.json")]),
+      runAnnoCli(["render-memmap", missing, "--provenance", join(dir, "sidecar.json")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /annotation store not found/i);
@@ -369,7 +369,7 @@ test("render-memmap: a store path outside the workspace root is refused by the O
     const outside = join(dir, "escaped.annostore");
     writeFileSync(outside, "");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", outside, "--provenance", join(dir, "sidecar.json")]),
+      runAnnoCli(["render-memmap", outside, "--provenance", join(dir, "sidecar.json")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /outside the workspace root/i);
@@ -380,7 +380,7 @@ test("render-memmap: a missing --provenance is refused", async () => {
   await withWorkspaceTempDir(async (dir) => {
     const storePath = join(dir, "game.annostore");
     writeFileSync(storePath, "");
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["render-memmap", storePath]));
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["render-memmap", storePath]));
     assert.notEqual(code, 0);
     assert.match(stderr, /--provenance.*required/i);
   });
@@ -391,7 +391,7 @@ test("render-memmap: a nonexistent --provenance file is refused", async () => {
     const storePath = join(dir, "game.annostore");
     writeFileSync(storePath, "");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", join(dir, "does-not-exist.json")]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", join(dir, "does-not-exist.json")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /provenance sidecar not found/i);
@@ -400,21 +400,21 @@ test("render-memmap: a nonexistent --provenance file is refused", async () => {
 
 test("render-memmap: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["render-memmap", "some.project", "--provenance", "x.json", "--not-a-real-flag"]),
+    runAnnoCli(["render-memmap", "some.project", "--provenance", "x.json", "--not-a-real-flag"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /unknown option/i);
 });
 
 test("render-memmap: --provenance with no value is refused", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["render-memmap", "some.project", "--provenance"]));
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["render-memmap", "some.project", "--provenance"]));
   assert.notEqual(code, 0);
   assert.match(stderr, /--provenance requires a value/i);
 });
 
 test("render-memmap: --out followed by a flag-shaped token is refused (not silently consumed as the value)", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["render-memmap", "some.project", "--provenance", "x.json", "--out", "--check"]),
+    runAnnoCli(["render-memmap", "some.project", "--provenance", "x.json", "--out", "--check"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /--out requires a value/i);
@@ -425,27 +425,27 @@ test("render-memmap: --out followed by a flag-shaped token is refused (not silen
 // ---------------------------------------------------------------------------
 
 test("coverage: a missing project positional is refused with the two-path usage line", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["coverage"]));
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage"]));
   assert.notEqual(code, 0);
   assert.match(stderr, /usage: coverage <image> --store FILE/);
 });
 
 test("coverage: --store is REQUIRED and is never derived from <project> (D-02: this CLI does not guess)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["coverage", "some.project"]));
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage", "some.project"]));
   assert.notEqual(code, 0);
   assert.match(stderr, /--store FILE is required/);
   assert.match(stderr, /will not derive its path from <project>/);
 });
 
 test("coverage: --store with no value is refused, not silently given the next token", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(["coverage", "some.project", "--store"]));
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage", "some.project", "--store"]));
   assert.notEqual(code, 0);
   assert.match(stderr, /--store requires a value/i);
 });
 
 test("coverage: --store followed by a flag-shaped token is refused (WR-08 posture)", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["coverage", "some.project", "--store", "--force"]),
+    runAnnoCli(["coverage", "some.project", "--store", "--force"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /--store requires a value/i);
@@ -453,7 +453,7 @@ test("coverage: --store followed by a flag-shaped token is refused (WR-08 postur
 
 test("coverage: an unknown option is refused with a non-zero exit code", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["coverage", "some.project", "--store", "s.store", "--not-a-real-flag"]),
+    runAnnoCli(["coverage", "some.project", "--store", "s.store", "--not-a-real-flag"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /unknown option/i);
@@ -461,7 +461,7 @@ test("coverage: an unknown option is refused with a non-zero exit code", async (
 
 test("coverage: --sample must be a positive integer", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runR2000Cli(["coverage", "some.project", "--store", "s.store", "--sample", "0"]),
+    runAnnoCli(["coverage", "some.project", "--store", "s.store", "--sample", "0"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /--sample must be a positive integer/);
@@ -472,7 +472,7 @@ test("coverage: a path outside the workspace root is refused by the ONE confinem
     const outside = join(dir, "elsewhere.project");
     writeFileSync(outside, "{}");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["coverage", outside, "--store", join(dir, "elsewhere.store")]),
+      runAnnoCli(["coverage", outside, "--store", join(dir, "elsewhere.store")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /outside the workspace root/i);
@@ -485,7 +485,7 @@ test("coverage: an absent store is refused BY NAME rather than created (gone and
     writeFileSync(projectPath, JSON.stringify({ origin: 0x0810, raw_data_base64: "" }));
     const storePath = join(dir, "annotations.store");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["coverage", projectPath, "--store", storePath]),
+      runAnnoCli(["coverage", projectPath, "--store", storePath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /annotation store not found/i);
@@ -499,7 +499,7 @@ test("coverage: an absent project file is refused before the store is opened", a
     const storePath = join(dir, "annotations.store");
     closeStore(openStore(storePath, { workspaceRoot: repoRoot() }));
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["coverage", join(dir, "nope.project"), "--store", storePath]),
+      runAnnoCli(["coverage", join(dir, "nope.project"), "--store", storePath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /project file not found/i);
@@ -528,10 +528,10 @@ interface FixtureStore {
   control: string;
   expect_clean: boolean;
   expect_measure: string | null;
-  symbols: R2000Symbol[];
-  comments: R2000Comment[];
+  symbols: AnnoSymbol[];
+  comments: AnnoComment[];
   blocks: BlockEntry[];
-  cross_references: R2000CrossReference[];
+  cross_references: AnnoCrossReference[];
 }
 
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
@@ -649,7 +649,7 @@ test("coverage end to end: the verb runs against a real store and prints all thr
 
     const outPath = join(dir, "report.json");
     const { result: code, stdout } = await withCapturedConsole(() =>
-      runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
     );
     assert.equal(code, 0, stdout);
     assert.match(stdout, /MEASURE 1 of 3 -- structural byte census/);
@@ -679,14 +679,14 @@ test("coverage: --out refuses to clobber an existing file unless --force is give
     const outPath = join(dir, "report.json");
     writeFileSync(outPath, "PRE-EXISTING");
     const { result: refused, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
     );
     assert.notEqual(refused, 0);
     assert.match(stderr, /refusing to overwrite/i);
     assert.equal(readFileSync(outPath, "utf8"), "PRE-EXISTING");
 
     const { result: forced } = await withCapturedConsole(() =>
-      runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", outPath, "--force"]),
+      runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", outPath, "--force"]),
     );
     assert.equal(forced, 0);
     assert.notEqual(readFileSync(outPath, "utf8"), "PRE-EXISTING");
@@ -725,7 +725,7 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
       // Far more labels than the 512-lookup ceiling the retired round-trip
       // loop carried. The point of the assertion is the COUNT: a surviving cap
       // would silently answer for the lowest 512 addresses only.
-      const symbols: R2000Symbol[] = [];
+      const symbols: AnnoSymbol[] = [];
       for (let i = 0; i < 600; i++) {
         const address = 0x1000 + i;
         setLabel(handle, { address, name: `lbl_${i}`, kind: "User" });
@@ -794,7 +794,7 @@ test("every verb's own documented options are still accepted, one assertion per 
       const value = placeholderValue[opt];
       if (value) argv.push(value);
     }
-    const { stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+    const { stderr } = await withCapturedConsole(() => runAnnoCli(argv));
     assert.doesNotMatch(
       stderr,
       /is not accepted by this verb/,
@@ -806,7 +806,7 @@ test("every verb's own documented options are still accepted, one assertion per 
 test("an unaccepted option is refused for every verb it does not belong to (IN-06 generalisation)", async () => {
   for (const verb of Object.keys(VERB_OPTIONS)) {
     const argv = [verb, "some.project", "--totally-not-a-real-flag"];
-    const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
     assert.notEqual(code, 0, `verb "${verb}" must refuse an unaccepted flag`);
     assert.match(stderr, new RegExp(`^${verb}:`), `verb "${verb}"'s refusal must be prefixed with its own name`);
     assert.match(stderr, /--totally-not-a-real-flag/);
@@ -823,7 +823,7 @@ test("an unaccepted option is refused for every verb it does not belong to (IN-0
 // `if (!accepted) return undefined` short-circuit, and `accepted.includes(...)`
 // threw. Reproduced against the committed code before the fix:
 //
-//   $ node -e 'import("./anno-cli.ts").then(m => m.runR2000Cli(["hasOwnProperty","game.prg","--force"]))'
+//   $ node -e 'import("./anno-cli.ts").then(m => m.runAnnoCli(["hasOwnProperty","game.prg","--force"]))'
 //   TypeError: accepted.includes is not a function
 //
 // The identical defect was found and fixed one directory over in this same
@@ -879,7 +879,7 @@ test("PRECONDITION: VALUE_TAKING_PAIRS is non-empty and covers every verb (30-RE
 test("a SINGLE-dash token is refused as a missing value, not swallowed as one (30-REVIEW WR-09)", async () => {
   for (const { verb, option } of VALUE_TAKING_PAIRS) {
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli([verb, "some.project", option, "-x"]),
+      runAnnoCli([verb, "some.project", option, "-x"]),
     );
     assert.notEqual(code, 0, `${verb} ${option} -x must be refused`);
     assert.match(
@@ -897,7 +897,7 @@ test("a SINGLE-dash token is refused as a missing value, not swallowed as one (3
 
 test("a BARE dash is refused too -- no verb in this CLI reads stdin (30-REVIEW WR-09)", async () => {
   for (const { verb, option } of VALUE_TAKING_PAIRS) {
-    const { result: code } = await withCapturedConsole(() => runR2000Cli([verb, "some.project", option, "-"]));
+    const { result: code } = await withCapturedConsole(() => runAnnoCli([verb, "some.project", option, "-"]));
     assert.notEqual(code, 0, `${verb} ${option} - must be refused`);
   }
 });
@@ -909,7 +909,7 @@ test("PAIRED DIRECTION: an ordinary value is still accepted at every value-takin
   // message and a different reason).
   for (const { verb, option } of VALUE_TAKING_PAIRS) {
     const { stderr } = await withCapturedConsole(() =>
-      runR2000Cli([verb, "some.project", option, "ordinary-value.txt"]),
+      runAnnoCli([verb, "some.project", option, "ordinary-value.txt"]),
     );
     assert.doesNotMatch(
       stderr,
@@ -931,7 +931,7 @@ test("PAIRED DIRECTION: an ordinary value is still accepted at every value-takin
 // ---------------------------------------------------------------------------
 
 test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08)", () => {
-  const stripped = stripCommentsAndLiterals(readFileSync(R2000_CLI_SOURCE_PATH, "utf8"));
+  const stripped = stripCommentsAndLiterals(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
   // The DECLARATION is not a call site. Counting it is an off-by-one this
   // test caught on itself the first time it ran, which is the shape of the
   // defect it exists against.
@@ -948,7 +948,7 @@ test("refuseOverwrite()'s call-site count matches the number its own doc states 
   // And the doc really does say three, in the paragraph that states a count.
   // Read off disk rather than retyped, so a doc that reverts to "two" fails
   // here rather than passing because this file has its own copy.
-  const doc = readFileSync(R2000_CLI_SOURCE_PATH, "utf8");
+  const doc = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
   assert.match(
     doc,
     /stated as the THREE call sites it\s+\* actually has/,
@@ -967,7 +967,7 @@ test("an Object.prototype key used as a verb is refused, not thrown (30-REVIEW C
     let stderr = "";
     let thrown: unknown;
     try {
-      const captured = await withCapturedConsole(() => runR2000Cli([key, "game.prg", "--force"]));
+      const captured = await withCapturedConsole(() => runAnnoCli([key, "game.prg", "--force"]));
       code = captured.result;
       stderr = captured.stderr;
     } catch (err) {
@@ -976,7 +976,7 @@ test("an Object.prototype key used as a verb is refused, not thrown (30-REVIEW C
     assert.equal(
       thrown,
       undefined,
-      `runR2000Cli(["${key}", ...]) threw instead of returning an exit code -- ` +
+      `runAnnoCli(["${key}", ...]) threw instead of returning an exit code -- ` +
         `the never-throw contract is broken for inherited keys again: ${thrown instanceof Error ? thrown.message : String(thrown)}`,
     );
     assert.equal(code, 1, `verb "${key}" must return exit code 1`);
@@ -1038,7 +1038,7 @@ test("checkAcceptedOptions() returns undefined for every inherited key, and neve
 // measured count of write sites this file still has.
 // ---------------------------------------------------------------------------
 
-const R2000_CLI_SOURCE_PATH = join(HERE, "anno-cli.ts");
+const ANNO_CLI_SOURCE_PATH = join(HERE, "anno-cli.ts");
 
 /**
  * Blanks every line comment, block comment, quoted string and template
@@ -1225,7 +1225,7 @@ function findWriteFileSyncCalls(source: string): { stripped: string; indices: nu
 }
 
 test("structural (WR-09): every writeFileSync( in anno-cli.ts is inside a try block, with a non-vacuous floor and named positive-control sites", () => {
-  const source = readFileSync(R2000_CLI_SOURCE_PATH, "utf8");
+  const source = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
   const { stripped, indices } = findWriteFileSyncCalls(source);
 
   // Non-vacuity floor -- a scanner that silently found zero call sites would
@@ -1307,7 +1307,7 @@ test("in-process (WR-09): render-memmap with --out inside a non-existent directo
     writeFileSync(provenancePath, JSON.stringify(RENDER_SIDECAR, null, 2));
     const outPath = join(dir, "no-such-dir", "memory-map.md");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /^render-memmap:/);
@@ -1377,7 +1377,7 @@ test("CR-02 (A): render-memmap --out outside the workspace root is refused by th
       const provenancePath = makeSidecar(ws);
       const escaped = join(outside, "memory-map.md");
       const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", escaped]),
+        runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", escaped]),
       );
       assert.notEqual(code, 0, "an --out outside the workspace root must not succeed");
       assert.match(stderr, /outside the workspace root/i, "the refusal must name the confinement, not some downstream symptom");
@@ -1403,7 +1403,7 @@ test("CR-03 (B): render-memmap --provenance outside the workspace root is refuse
       const token = "QQZZORACLE";
       writeFileSync(secret, `${token}\nmore private lines\n`);
       const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["render-memmap", storePath, "--provenance", secret]),
+        runAnnoCli(["render-memmap", storePath, "--provenance", secret]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i, "the read must be refused BY THE CONFINEMENT, before the file is opened at all");
@@ -1423,7 +1423,7 @@ test("CR-02/WR-08 (C): render-memmap refuses to overwrite an existing in-workspa
     const original = "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n";
     writeFileSync(outPath, original);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /refusing to overwrite the existing file/i);
@@ -1440,7 +1440,7 @@ test("CR-02/WR-08 (D, over-refusal control): render-memmap --force DOES overwrit
     const outPath = join(ws, "memory-map.md");
     writeFileSync(outPath, "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n");
     const { result: code, stdout } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--force"]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--force"]),
     );
     assert.equal(code, 0, "--force must be an ACCEPTED option of this verb and must succeed");
     assert.match(stdout, /wrote/i);
@@ -1466,7 +1466,7 @@ test("CR-02 (E): coverage --out outside the workspace root is refused, and creat
       closeStore(openStore(storePath, { workspaceRoot: ws }));
       const escaped = join(outside, "coverage.json");
       const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", escaped]),
+        runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", escaped]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
@@ -1483,7 +1483,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
 
     // --check BEFORE anything is rendered: "missing".
     const missing = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
     );
     assert.notEqual(missing.result, 0);
     assert.match(missing.stderr, /missing/i);
@@ -1491,7 +1491,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
 
     // The write itself.
     const wrote = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
     );
     assert.equal(wrote.result, 0, wrote.stderr);
     assert.equal(existsSync(outPath), true);
@@ -1499,7 +1499,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
 
     // --check against the freshly written file: "in sync".
     const inSync = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
     );
     assert.equal(inSync.result, 0, inSync.stderr);
     assert.match(inSync.stdout, /in sync/i);
@@ -1509,7 +1509,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
     onDisk[onDisk.length - 2] = "a hand edit that was never rendered";
     writeFileSync(outPath, onDisk.join("\n"));
     const drifted = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
     );
     assert.notEqual(drifted.result, 0);
     assert.match(drifted.stderr, /drifted at line/i);
@@ -1518,7 +1518,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
     const projectPath = join(ws, "game.project");
     writeFileSync(projectPath, JSON.stringify({ origin: 0x0810, raw_data_base64: "" }));
     const covOut = join(ws, "coverage.json");
-    const cov = await withCapturedConsole(() => runR2000Cli(["coverage", projectPath, "--store", storePath, "--out", covOut]));
+    const cov = await withCapturedConsole(() => runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", covOut]));
     assert.equal(existsSync(covOut), true, "an in-workspace coverage --out must still be written");
     assert.ok(cov.stdout.includes(covOut), "the coverage 'wrote' line must name the file that was actually written");
   });
@@ -1529,7 +1529,7 @@ test("(G) over-refusal control: the DEFAULT output path (no --out) still resolve
     const storePath = makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath]),
     );
     assert.equal(code, 0, stderr);
     const derived = join(ws, "memory-map.md");
@@ -1558,7 +1558,7 @@ test("CR-03 (H): an in-workspace sidecar that is not JSON fails naming the path 
     const provenancePath = join(ws, "sidecar.json");
     writeFileSync(provenancePath, `${token}\nnot json at all\n`);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath]),
     );
     assert.notEqual(code, 0);
     assert.ok(stderr.includes(provenancePath), "the failure must still NAME the sidecar it could not parse");
@@ -1579,7 +1579,7 @@ test("CR-03 (I): a sidecar that IS valid JSON but is not a valid provenance head
     // failure would lose the diagnostic this verb depends on.
     writeFileSync(provenancePath, JSON.stringify({ capturePath: "/tmp/x.raw" }));
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath]),
     );
     assert.notEqual(code, 0);
     assert.doesNotMatch(stderr, /not valid JSON/i, "a SCHEMA failure must not be reported as a SYNTAX failure");
@@ -1592,7 +1592,7 @@ test("CR-03 (J, over-refusal control): a valid sidecar still renders", async () 
     const storePath = makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["render-memmap", storePath, "--provenance", provenancePath, "--out", join(ws, "ok.md")]),
+      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", join(ws, "ok.md")]),
     );
     assert.equal(code, 0, stderr);
     assert.match(stdout, /wrote/i);
@@ -1652,7 +1652,7 @@ test("export-asm: writes ACME source to the derived default path beside the STOR
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, "--store", storePath]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath]),
     );
     assert.equal(code, 0, stderr);
 
@@ -1690,7 +1690,7 @@ test("export-asm: --out overrides the destination, and both runs produce byte-id
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const chosen = join(ws, "chosen.a");
-    const first = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", chosen]));
+    const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", chosen]));
     assert.equal(first.result, 0, first.stderr);
     const firstBytes = readFileSync(chosen);
 
@@ -1698,7 +1698,7 @@ test("export-asm: --out overrides the destination, and both runs produce byte-id
     // property is DETERMINISM, so it is asserted on the bytes rather than on a
     // count that could coincide.
     const second = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", chosen, "--force"]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", chosen, "--force"]),
     );
     assert.equal(second.result, 0, second.stderr);
     assert.deepEqual(readFileSync(chosen), firstBytes, "a second export over an unchanged store must be byte-identical");
@@ -1712,7 +1712,7 @@ test("export-asm: an existing destination is refused without --force, and the fi
     writeFileSync(outPath, "PRECIOUS\n");
 
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /refusing to overwrite the existing file/i);
@@ -1722,7 +1722,7 @@ test("export-asm: an existing destination is refused without --force, and the fi
     // And the opposite direction, so the refusal is a discrimination rather
     // than a blanket one.
     const forced = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", outPath, "--force"]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outPath, "--force"]),
     );
     assert.equal(forced.result, 0, forced.stderr);
     assert.match(readFileSync(outPath, "utf8"), /^!cpu 6510/);
@@ -1758,7 +1758,7 @@ test("export-asm: --out on the annotation store is refused, and --force does NOT
       ["export-asm", imagePath, "--store", storePath, "--out", storePath],
       ["export-asm", imagePath, "--store", storePath, "--out", storePath, "--force"],
     ]) {
-      const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+      const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
       assert.notEqual(code, 0, `argv=${JSON.stringify(argv)} must be refused`);
       assert.match(stderr, /refusing to write the exported source/i, stderr);
       assert.match(stderr, /annotation store/i, `the refusal must name WHICH input it would have destroyed: ${stderr}`);
@@ -1776,7 +1776,7 @@ test("export-asm: --out on the image is refused, and --force does NOT lift it (3
       ["export-asm", imagePath, "--store", storePath, "--out", imagePath],
       ["export-asm", imagePath, "--store", storePath, "--out", imagePath, "--force"],
     ]) {
-      const { result: code, stderr } = await withCapturedConsole(() => runR2000Cli(argv));
+      const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
       assert.notEqual(code, 0, `argv=${JSON.stringify(argv)} must be refused`);
       assert.match(stderr, /refusing to write the exported source/i, stderr);
       assert.match(stderr, /image/i, `the refusal must name WHICH input it would have destroyed: ${stderr}`);
@@ -1791,7 +1791,7 @@ test("export-asm: PAIRED DIRECTION -- an --out that is NOT an input still writes
     const { storePath, imagePath } = makeExportableProject(ws);
     const outPath = join(ws, "not-an-input.a");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
     );
     assert.equal(code, 0, stderr);
     assert.match(readFileSync(outPath, "utf8"), /^!cpu 6510/);
@@ -1807,7 +1807,7 @@ test("export-asm: a --store outside the workspace root is refused by the ONE sea
       const escaped = join(outside, "escaped.annostore");
       const escapedOut = join(outside, "escaped.a");
       const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["export-asm", imagePath, "--store", escaped, "--out", escapedOut]),
+        runAnnoCli(["export-asm", imagePath, "--store", escaped, "--out", escapedOut]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
@@ -1824,7 +1824,7 @@ test("export-asm: an --out outside the workspace root is refused even when both 
       const escapedOut = join(outside, "PRECIOUS.a");
       writeFileSync(escapedOut, "PRECIOUS\n");
       const { result: code, stderr } = await withCapturedConsole(() =>
-        runR2000Cli(["export-asm", imagePath, "--store", storePath, "--out", escapedOut, "--force"]),
+        runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", escapedOut, "--force"]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
@@ -1840,7 +1840,7 @@ test("export-asm: a missing annotation store is refused rather than CREATED", as
     const { imagePath } = makeExportableProject(ws);
     const missing = join(ws, "does-not-exist.annostore");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, "--store", missing]),
+      runAnnoCli(["export-asm", imagePath, "--store", missing]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /annotation store not found/i);
@@ -1853,7 +1853,7 @@ test("export-asm: a nonexistent image is refused by name", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", join(ws, "no-such.prg"), "--store", storePath]),
+      runAnnoCli(["export-asm", join(ws, "no-such.prg"), "--store", storePath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /image not found/i);
@@ -1864,17 +1864,17 @@ test("export-asm: a missing --store, and a --store with no value, are each refus
   await withWorkspaceTempDir(async (ws) => {
     const { imagePath } = makeExportableProject(ws);
 
-    const absent = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath]));
+    const absent = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath]));
     assert.notEqual(absent.result, 0);
     assert.match(absent.stderr, /--store FILE is required/);
     assert.match(absent.stderr, /will not derive its path from <image>/);
 
-    const noValue = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath, "--store"]));
+    const noValue = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store"]));
     assert.notEqual(noValue.result, 0);
     assert.match(noValue.stderr, /--store requires a value/);
 
     // A flag-shaped "value" is a missing value, not a path called `--force`.
-    const flagShaped = await withCapturedConsole(() => runR2000Cli(["export-asm", imagePath, "--store", "--force"]));
+    const flagShaped = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", "--force"]));
     assert.notEqual(flagShaped.result, 0);
     assert.match(flagShaped.stderr, /--store requires a value/);
   });
@@ -1884,7 +1884,7 @@ test("export-asm: an unknown option is refused by checkAcceptedOptions() BEFORE 
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, "--store", storePath, "--nonsense"]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--nonsense"]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /^export-asm: unknown option "--nonsense"/);
@@ -1899,7 +1899,7 @@ test("export-asm: more than one positional is refused rather than silently ignor
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runR2000Cli(["export-asm", imagePath, imagePath, "--store", storePath]),
+      runAnnoCli(["export-asm", imagePath, imagePath, "--store", storePath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /usage: export-asm <image>/);

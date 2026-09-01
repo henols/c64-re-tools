@@ -68,7 +68,7 @@ here and the cheapest.
 ### CR-02 — `plant()` writes bytes that differ from the bytes it records
 
 `text.replace(find, replace)` still honours `$$` and other `$`-patterns in the replacement
-string. Row `src/mcp/vice/r2000-enum-gen.test.ts` records
+string. Row `src/mcp/vice/anno-enum-gen.test.ts` records
 `` replace: return `$${address…padStart(5, "0")}`; `` but what reached disk was
 `` return `${address…padStart(5, "0")}`; `` — the `$` sigil was silently consumed. The
 evidence at `32-sweep-renamed-rows.md:3889` is therefore not reproducible from its own record.
@@ -138,6 +138,6 @@ settled before more is invested in the seam: either give it a caller or record w
 
 Related open broken windows from the same phase, tracked separately in `.planning/WINDOWS.md`:
 #28 (`audit-gate.mjs --json` cannot signal a structural error through its exit status), #29
-(`r2000-upstream-audit.test.ts` is a rename the derivation cannot express), #30
+(`anno-derivation.test.ts` is a rename the derivation cannot express), #30
 (`block-class.ts:196`'s `"Undefined"` arm is already inert), #31 (the guard rejects
 `observedRed` on `kept-unchanged`), #32 (`fork-live.test.ts` has no exercise route anywhere).

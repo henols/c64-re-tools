@@ -68,7 +68,7 @@ Quality is therefore this file's responsibility, not the guard's.
 | WR-02 | `autoPrefixNamesRemaining` and `multiCallerUndocumented.count` are pre-dedup lengths reported beside deduped address lists | `fixed` — every reported count derives from its own deduped list, regression-tested in both places | 19-06 | `cbdbf97` |
 | WR-03 | the descent walk counts illegal/JAM opcodes as instructions; the linear sweep does not | `deferred-with-owner` — **owner: Phase 20's first use of the instrument.** Reason: the correct fix is gated on the project's `use_illegal_opcodes` setting (Phase 18 forces it on, deliberately), making it a behaviour decision that needs its own dated record rather than an inline patch | 19-08 (deferred) | — |
 | WR-04 | the cross-reference bound is printed but never recorded in the JSON report | `deferred-with-owner` — **owner: Phase 20.** Reason: a report-shape addition that would widen the schema change 19-08 already made, for a reporting nicety no gap depends on | 19-08 (deferred) | — |
-| WR-05 | `--sample` silently accepts and truncates non-integer input | `deferred-with-owner` — **owner: Phase 20, CLI cluster.** Reason: `r2000-cli.ts` is untouched by all seven gap-closure plans and is in no plan's `files_modified` | 19-08 (deferred) | — |
+| WR-05 | `--sample` silently accepts and truncates non-integer input | `deferred-with-owner` — **owner: Phase 20, CLI cluster.** Reason: `anno-cli.ts` is untouched by all seven gap-closure plans and is in no plan's `files_modified` | 19-08 (deferred) | — |
 | WR-06 | the entire coverage CLI surface is untested | `deferred-with-owner` — **owner: Phase 20, CLI cluster.** Reason: closing it means authoring a CLI test suite, a scope expansion beyond the reproduced instrument defects. This is also the honest limit on `19-VALIDATION.md`'s one green-run-only COV-01 row, and is named there | 19-08 (deferred) | — |
 | WR-07 | `parseCoverageArgs`'s `unknownOption` branch is unreachable | `deferred-with-owner` — **owner: Phase 20, CLI cluster.** Same file, same reason | 19-08 (deferred) | — |
 | WR-08 | the oracle's raw stdout reaches a second, unsanitised report field | `deferred-with-owner` — **owner: Phase 20, carried with WR-09.** The *risk* is recorded accepted in 19-08's threat register as `T-19G-08-06` (both `spawnSync` sites already pass an argument array with `shell: false`; the field is JSON data with no markup or shell sink downstream). The deferral does **not** cover the other half: the module header's claim is still false as written, which is a documentation defect and is still unfixed | 19-08 (deferred) | — |
@@ -79,13 +79,13 @@ Quality is therefore this file's responsibility, not the guard's.
 | WR-13 | the anchored multi-caller rule's label-name branch is still satisfied by an ordinary English word that happens to be a caller's name | `fixed` — see the paragraph below | 19-12 | `8c7a75c` |
 | WR-14 | the class-4 stack-return scan feeds `provenDispatchTargets()` with no gate at all — no register match, no target plausibility, a guessed entry count | `fixed` — see the paragraph below | 19-11 | `c95bdaf` |
 | WR-15 | one unrelated indexed load between a genuine split-table pair silently downgrades the whole pairing to advisory | `fixed` — see the paragraph below | 19-11 | `084f17a` |
-| IN-01 | `r2000-coverage.ts` carries a shebang but is a pure library | `rejected-with-reason` — the shebang is retained. Reason, in 19-08's words: out-of-scope cosmetics; *"harmless; removing it risks nothing but gains nothing"*. Recorded so the decision is not re-litigated. Still present at `r2000-coverage.ts:1` | 19-08 | — |
+| IN-01 | `anno-coverage.ts` carries a shebang but is a pure library | `rejected-with-reason` — the shebang is retained. Reason, in 19-08's words: out-of-scope cosmetics; *"harmless; removing it risks nothing but gains nothing"*. Recorded so the decision is not re-litigated. Still present at `anno-coverage.ts:1` | 19-08 | — |
 | IN-02 | fixture regeneration is host-dependent despite the stated determinism contract | `deferred-with-owner` — **owner: Phase 20.** 19-08 deferred it *to 19-09* and 19-09 did not honour it: 19-09 edited `make-coverage-fixtures.mjs` and added no per-host qualifier, so the exposure grew from six files to eight. 19-10 added the FP2 pair under the same unqualified claim, so it stands at **ten** fixture directories today (measured: `ls -d fixtures/coverage/*/ \| wc -l` = 10, against the pinned `COMMITTED_CONTROL_FIXTURES = 10`). The determinism *contract* is checked by measurement each run (`19-VALIDATION.md`, twice-run generator with empty porcelain); what remains unqualified is the module header's claim about host-independence | 19-08 → 19-09 (not honoured) | — |
-| IN-03 | `stripComments()` has no regex-literal awareness | `deferred-with-owner` — **owner: Phase 20.** Reason: different module family (`scripts/lib/r2000-cli-verbs.mjs`); no gap depends on it, and the file is untouched by every gap-closure plan | 19-08 (deferred) | — |
+| IN-03 | `stripComments()` has no regex-literal awareness | `deferred-with-owner` — **owner: Phase 20.** Reason: different module family (`scripts/lib/anno-cli-verbs.mjs`); no gap depends on it, and the file is untouched by every gap-closure plan | 19-08 (deferred) | — |
 | IN-04 | `computeStructuralCensus` never checks that `origin + size` stays inside the 16-bit space | `fixed-narrowed-then-superseded` — the census was bounded; the sibling *scan* was not, and that residual was re-filed as **IN-05** | 19-08 | `1706d8b` |
 | IN-05 | `scanIndirectDispatch()` was not given IN-04's 16-bit bound, so the report can still carry addresses above `$FFFF` | `fixed` — see the paragraph below | 19-12 | `c213093` |
 
-**`IN-06` does not exist.** `19-REVIEW.md:477` cross-references "`r2000-cli.ts`'s WR-08/IN-06"
+**`IN-06` does not exist.** `19-REVIEW.md:477` cross-references "`anno-cli.ts`'s WR-08/IN-06"
 inside WR-10's prose, but the review declares no `IN-06` heading and the guard's regex sees none.
 Named here so this ledger is a complete accounting of every id the review's *text* mentions, with
 nothing dispositioned against an id that has nothing to dispose of. First recorded by 19-08.
@@ -152,7 +152,7 @@ the matter was settled. It is fixed, at its root, with a control that had teeth.
 ### WR-13 — FIXED (plan 19-12, commit `8c7a75c`)
 
 The anchored multi-caller rule from `CR-01` still counted a caller as named when an ordinary English
-word happened to be that caller's label — and regenerator2000 label names are routinely `loop`,
+word happened to be that caller's label — and the external analyser label names are routinely `loop`,
 `init`, `main`, `start`, `data`, `table`, `draw`.
 
 **The control that holds it down:** `citesCallerByName()` demands a *reference*, not a coincidence —

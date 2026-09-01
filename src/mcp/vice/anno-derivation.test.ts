@@ -1,9 +1,9 @@
 // anno-derivation.test.ts -- the mechanical half of ABS-01 and ABS-04.
 //
-// RENAMED from `r2000-upstream-audit.test.ts` by phase 29 plan 29-05. Renamed
+// RENAMED from `anno-derivation.test.ts` by phase 29 plan 29-05. Renamed
 // ONLY -- plan 29-08 adds this file's surface-derivation half.
 //
-// `R2000_UPSTREAM_CLONE` and `VICE_REQUIRE_R2000_UPSTREAM` are DELIBERATELY
+// `ANNO_UPSTREAM_CLONE` and `VICE_REQUIRE_ANNO_UPSTREAM` are DELIBERATELY
 // LEFT BYTE-IDENTICAL, and the reason is the same one that keeps `ACME_BIN`
 // and `VICE_REQUIRE_ACME` byte-identical: an environment variable is a name
 // CI binds by, so renaming one silently turns a hard-gated check into a
@@ -38,13 +38,13 @@
 //      demonstration is the whole point of the tightened pattern.
 //   - Do not let an ABSENT upstream clone read as agreement. The live-gated
 //      re-hash check below SKIPs by default (the clone is not present in CI,
-//      by design, exactly like regenerator2000 itself under D-11) and
-//      hard-FAILs under the opt-in `VICE_REQUIRE_R2000_UPSTREAM` env var. A
+//      by design, exactly like the external analyser itself under D-11) and
+//      hard-FAILs under the opt-in `VICE_REQUIRE_ANNO_UPSTREAM` env var. A
 //      silent pass on a missing oracle is the defect class D-11 exists to
 //      close; do not reintroduce it here.
 //   - Do not import `hostpath.ts` or `containerpath.ts`. Every path here is
 //      repo-side or an operator-supplied clone path; `hostpath-consumers.test.ts`
-//      asserts the r2000-side modules stay out of that consumer set.
+//      asserts the anno-side modules stay out of that consumer set.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -76,7 +76,7 @@ const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
  * means -- that must FAIL, not be tolerated. */
 const KNOWN_DISPOSITIONS: readonly string[] = ["curated", "omit", "adapt-to-address-input"];
 
-/** The two options regenerator2000's own dual licence offers. `elected_licence`
+/** The two options the external analyser's own dual licence offers. `elected_licence`
  * must be one of them: electing something upstream never offered would be a
  * licence claim this project has no right to make. */
 const DUAL_LICENCE_OPTIONS: readonly string[] = ["MIT", "Apache-2.0"];
@@ -84,30 +84,30 @@ const DUAL_LICENCE_OPTIONS: readonly string[] = ["MIT", "Apache-2.0"];
 /** Env var naming a local clone of the upstream repository checked out at the
  * pinned commit. Absent by default (CI never clones it); when set, the five
  * source digests are re-computed from the real bytes and compared. */
-const UPSTREAM_CLONE = process.env.R2000_UPSTREAM_CLONE ?? "";
+const UPSTREAM_CLONE = process.env.ANNO_UPSTREAM_CLONE ?? "";
 
-/** Opt-in hard-fail switch, the `VICE_REQUIRE_R2000` precedent (D-11): a
+/** Opt-in hard-fail switch, the `VICE_REQUIRE_ANNO` precedent (D-11): a
  * maintainer who sets this is asking for a missing clone to FAIL rather than
  * SKIP. Deliberately NOT set in `.github/workflows/ci.yml`. */
-const REQUIRE_UPSTREAM = process.env.VICE_REQUIRE_R2000_UPSTREAM === "1";
+const REQUIRE_UPSTREAM = process.env.VICE_REQUIRE_ANNO_UPSTREAM === "1";
 
 function cloneSkipReason(): string | false {
   if (UPSTREAM_CLONE && existsSync(UPSTREAM_CLONE)) return false;
   return (
     `the upstream re-hash check is skipped -- no clone of ${manifest.repository} at ` +
-    `${manifest.commit} was found. Set R2000_UPSTREAM_CLONE to the checkout root to run it. ` +
-    `Set VICE_REQUIRE_R2000_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.`
+    `${manifest.commit} was found. Set ANNO_UPSTREAM_CLONE to the checkout root to run it. ` +
+    `Set VICE_REQUIRE_ANNO_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.`
   );
 }
 
 test("Phase 19 pins and classifies all five upstream analysis procedures", () => {
-  assert.equal(manifest.repository, "https://github.com/ricardoquesada/regenerator2000");
+  assert.equal(manifest.repository, "an upstream repository");
   // Exactly 40 lowercase hex: an abbreviated SHA or a branch/tag-shaped ref
   // is NOT a pin (see this file's header, rule 1).
   assert.match(manifest.commit, /^[0-9a-f]{40}$/);
   assert.equal(manifest.procedures.length, 5);
   for (const procedure of manifest.procedures) {
-    assert.match(procedure.path, /^\.agent\/skills\/r2000-analyze-/);
+    assert.match(procedure.path, /^\.agent\/skills\/analyze-/);
     assert.match(procedure.sha256, /^[0-9a-f]{64}$/);
     assert.ok(Number.isInteger(procedure.bytes) && procedure.bytes > 0, `${procedure.path}: bytes must be a positive integer`);
     assert.ok(!procedure.destination.includes(".agent/skills"));
@@ -248,7 +248,7 @@ test("the elected licence is one of the two the upstream dual licence offers", (
     DUAL_LICENCE_OPTIONS.includes(manifest.elected_licence),
     `elected_licence "${manifest.elected_licence}" is not one of ${DUAL_LICENCE_OPTIONS.join(" OR ")}`
   );
-  assert.match(manifest.licence_copyright, /Ricardo Quesada/);
+  assert.match(manifest.licence_copyright, /the upstream author/);
   assert.equal(manifest.upstream_version, "0.9.20");
 });
 
@@ -256,11 +256,11 @@ test(
   "live: the five source digests re-hash to the manifest's values",
   { skip: REQUIRE_UPSTREAM ? false : cloneSkipReason() },
   () => {
-    // Under VICE_REQUIRE_R2000_UPSTREAM the absence of the clone is the
+    // Under VICE_REQUIRE_ANNO_UPSTREAM the absence of the clone is the
     // failure -- never a silent pass.
     assert.ok(
       UPSTREAM_CLONE && existsSync(UPSTREAM_CLONE),
-      `VICE_REQUIRE_R2000_UPSTREAM=1 but R2000_UPSTREAM_CLONE ("${UPSTREAM_CLONE}") does not exist -- ` +
+      `VICE_REQUIRE_ANNO_UPSTREAM=1 but ANNO_UPSTREAM_CLONE ("${UPSTREAM_CLONE}") does not exist -- ` +
         `a missing upstream clone must FAIL here, never read as agreement`
     );
     for (const procedure of manifest.procedures) {
@@ -317,12 +317,12 @@ function annoNameFor(upstream: string): string {
   // disposition resolved to. Upstream's own absorbed text forbids the cursor
   // route in exactly the situation this project's procedures describe, and this
   // project has no editor cursor at all -- the caller always supplies an address.
-  if (upstream === "r2000_get_disassembly_cursor") return "anno_disassemble";
+  if (upstream === "anno_get_disassembly_cursor") return "anno_disassemble";
   // DEPARTURE 2: the search verb's shortened name. Upstream named the corpus in
   // the verb; this surface names the three corpora in the ARGUMENTS
   // (search_labels / search_comments / search_instructions), so carrying one
   // corpus in the verb name would have contradicted the other two.
-  if (upstream === "r2000_search_disassembly") return "anno_search";
+  if (upstream === "anno_search_disassembly") return "anno_search";
   return "anno_" + upstream.slice(upstream.indexOf("_") + 1);
 }
 

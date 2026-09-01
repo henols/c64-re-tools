@@ -138,7 +138,7 @@ status: complete
 
 - `.planning/phases/29-the-mcp-surface/29-15-e2e.sh` — **created.** Extracts the in-repo invocation from `SKILL.md`, asserts exactly one non-empty extracted line before running anything, builds a real in-tree store + sidecar, runs the documented command, asserts exit 0 plus row count, `[unknown]` count and render digest independently, then runs the corroborating gates. Removes its fixture (and any borrowed deps link) on every exit path.
 - `src/skills/c64-program-recon/SKILL.md` — both invocation lines corrected; falsified note deleted and replaced; maintainer note about the generated twin added.
-- `src/skills/c64-program-recon/templates/memory-map.template.md` — both invocation lines corrected; the opening paragraph's retired `r2000_*` tool-family prefix updated to `anno_*`.
+- `src/skills/c64-program-recon/templates/memory-map.template.md` — both invocation lines corrected; the opening paragraph's retired `anno_*` tool-family prefix updated to `anno_*`.
 - `src/mcp/vice/module-classification.ts` — the two `c64-program-recon/SKILL.md` prose citations re-measured. Nothing else touched: no verdict, no rationale, no fate, no requirement anchor, no citation deleted.
 - `src/mcp/vice/host-scripts.test.ts` — `EXPECTED_TRACKED_SHELL_SCRIPTS` gained the fifth entry (deviation, below).
 
@@ -155,7 +155,7 @@ status: complete
 `grep -c 'annostore'` → `SKILL.md:4`, `memory-map.template.md:2`.
 
 Fifth site, one sentence away and corrected with them: `memory-map.template.md:4` said the store is
-"written through the `r2000_*` tools described in `../SKILL.md`". It now says `anno_*`.
+"written through the `anno_*` tools described in `../SKILL.md`". It now says `anno_*`.
 
 ## The deleted note and its replacement
 
@@ -179,7 +179,7 @@ Fifth site, one sentence away and corrected with them: `memory-map.template.md:4
 > can tell which one to believe.
 
 The replacement follows `acme-build/SKILL.md:137-143`'s dated-withdrawal shape. It deliberately does
-NOT spell the retired analyser's name — the first draft did, and `check-no-regenerator2000.mjs`
+NOT spell the retired analyser's name — the first draft did, and `check-no-analyser.mjs`
 would have refused the commit.
 
 `grep -n '2026-08-30' src/skills/c64-program-recon/SKILL.md` → `263:`.
@@ -337,14 +337,14 @@ the shell-script census gained an entry rather than a filter.
 **3. [Rule 1 - Bug] The census rationale comment named the retired analyser**
 - **Found during:** final gate sweep
 - **Issue:** the comment added in `4c9b479` spelled the removal gate's own filename, which contains
-  the retired subject's name. `check-no-regenerator2000.mjs` exited 1 on `host-scripts.test.ts:198`
+  the retired subject's name. `check-no-analyser.mjs` exited 1 on `host-scripts.test.ts:198`
   as an unexempted reintroduction (CUT-02).
 - **Fix:** the comment names the gate by role rather than by filename. **No exemption and no
   allow-list entry was added** — widening an exemption to cover an avoidable mention is what that
   gate's "WHAT NOT TO DO #2" forbids, and it would have broken this plan's own "allow-list still 0
   entries" assertion.
 - **Files modified:** `src/mcp/vice/host-scripts.test.ts`
-- **Verification:** `node scripts/check-no-regenerator2000.mjs` → exit 0; `node --test host-scripts.test.ts` → 4 pass
+- **Verification:** `node scripts/check-no-analyser.mjs` → exit 0; `node --test host-scripts.test.ts` → 4 pass
 - **Committed in:** `b7491ba`
 
 **4. [Rule 1 - Bug] The `anno-d64.ts` prose citation was stale before this plan touched it**
@@ -415,7 +415,7 @@ None - no external service configuration required.
   invocation by running it; it does not generalise. Argument-checking every documented invocation is
   plan 29-16 task 3.
 - **If `29-15-e2e.sh` is ever promoted out of `.planning/` into the scanned tree**, it needs a
-  `check-no-regenerator2000.mjs` allow-list entry, and this round's "temporary allow-list is EMPTY"
+  `check-no-analyser.mjs` allow-list entry, and this round's "temporary allow-list is EMPTY"
   assertion stops being true.
 
 ## Self-Check: PASSED

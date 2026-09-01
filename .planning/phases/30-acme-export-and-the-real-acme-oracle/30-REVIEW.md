@@ -78,7 +78,7 @@ code, and all three are on the surfaces the phase context specifically asked abo
 2. A **crashed or hung ACME is scored `"skipped"`**, i.e. as "no assembler ran". That
    conflates a real failed observation with an absent toolchain, which is the exact
    category error the module's own header says it exists to prevent.
-3. `runR2000Cli()` **throws an unhandled `TypeError`** for a whole class of first
+3. `runAnnoCli()` **throws an unhandled `TypeError`** for a whole class of first
    arguments, breaking its documented never-throw contract. The identical defect was found
    and fixed one directory over in this same phase, and the fix was not carried into the
    CLI it mirrors.
@@ -99,9 +99,9 @@ style note.
 `VERB_OPTIONS` is a plain object literal (`:275`), so it inherits from `Object.prototype`;
 an inherited key is **truthy**, sails past the `if (!accepted) return undefined` guard at
 `:294`, and then `accepted.includes(token)` at `:296` throws because the value is a
-function. The call at `:1331` sits **outside** `runR2000Cli()`'s `try` block (`:1338`), so
+function. The call at `:1331` sits **outside** `runAnnoCli()`'s `try` block (`:1338`), so
 the exception escapes the function entirely — violating the never-throw contract stated in
-this file's own header ("`runR2000Cli()` returns an exit code and never terminates the
+this file's own header ("`runAnnoCli()` returns an exit code and never terminates the
 process itself … never a thrown stack trace for an expected, user-facing failure") and in
 `checkAcceptedOptions()`'s own JSDoc ("Never throws -- this file's never-throw posture
 applies here too").
@@ -109,7 +109,7 @@ applies here too").
 Reproduced against the committed code:
 
 ```
-$ node -e 'import("./anno-cli.ts").then(m => m.runR2000Cli(["hasOwnProperty","game.prg","--force"]))'
+$ node -e 'import("./anno-cli.ts").then(m => m.runAnnoCli(["hasOwnProperty","game.prg","--force"]))'
 TypeError: accepted.includes is not a function
 ```
 
@@ -133,7 +133,7 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
 }
 ```
 
-Add a control per inherited key to `anno-cli.test.ts` asserting `runR2000Cli()` returns 1
+Add a control per inherited key to `anno-cli.test.ts` asserting `runAnnoCli()` returns 1
 with the unknown-verb message rather than throwing. Consider also moving the
 `checkAcceptedOptions()` call at `:1331` inside the existing `try`, so the last-resort net
 at `:1356` covers it — but that is defence in depth, not the fix.

@@ -25,7 +25,7 @@ created: 2026-08-31
 | **Quick run command** | `cd src/mcp/vice && node --test skill-attribution.test.ts anno-derivation.test.ts skill-description-overlap.test.ts` |
 | **Full suite command** | `cd src/mcp/vice && npm run test:automated` |
 | **Estimated runtime** | ~0.5 s (quick, 53 tests) / ~47 s (full, 2918 tests) |
-| **Gate ladder (non-test)** | `node scripts/check-no-regenerator2000.mjs`, `check-skill-description-overlap.mjs`, `check-skill-tool-coverage.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-cli-invocations.mjs`, `check-npm-packages.mjs` |
+| **Gate ladder (non-test)** | `node scripts/check-no-analyser.mjs`, `check-skill-description-overlap.mjs`, `check-skill-tool-coverage.mjs`, `check-skill-fork-honesty.mjs`, `check-skill-cli-invocations.mjs`, `check-npm-packages.mjs` |
 
 **Measured baseline, 2026-08-31:** 2918 tests / **0 fail** / exit 0 / ~47 s. Typecheck exit 0.
 All seven CI gate scripts exit 0.
@@ -45,7 +45,7 @@ All seven CI gate scripts exit 0.
 ## Sampling Rate
 
 - **After every task commit:** `cd src/mcp/vice && node --test skill-attribution.test.ts anno-derivation.test.ts skill-description-overlap.test.ts`
-  **plus** `node scripts/check-no-regenerator2000.mjs`
+  **plus** `node scripts/check-no-analyser.mjs`
 - **After every plan wave:** `cd src/mcp/vice && npm run typecheck && npm run test:automated`,
   then the full gate ladder above
 - **Before `/gsd-verify-work` (phase gate):** full suite green at **0 failures** with **no VICE
@@ -64,18 +64,18 @@ satisfy.
 |-----------|-----|------------|-----------|-------------------|-------------|--------|
 | The `ABS-02` chain is intact: 5 blocks / 3 files / 6 fields / digest equality / adaptation statement, over `src/skills` | REPOINT-03 | licence-obligation-dropped | unit | `node --test skill-attribution.test.ts` | ✅ `src/mcp/vice/skill-attribution.test.ts` | ⬜ pending |
 | **10 instances across two trees, each with its two naming lines byte-identical** | REPOINT-03 | licence-obligation-dropped | unit | `node --test skill-attribution.test.ts` (NEW assertion) | ❌ **W0** — no assertion covers this claim today | ⬜ pending |
-| Deleting an attribution header FAILS rather than silences (both trees, block + hit pins) | REPOINT-03 | exemption-widening | integration | `node scripts/check-no-regenerator2000.mjs` | ✅ + `removal-gate.test.ts` | ⬜ pending |
+| Deleting an attribution header FAILS rather than silences (both trees, block + hit pins) | REPOINT-03 | exemption-widening | integration | `node scripts/check-no-analyser.mjs` | ✅ + `removal-gate.test.ts` | ⬜ pending |
 | The twin tree carries the same headers, proven against the **shipped** copy | REPOINT-03 | licence-obligation-dropped | integration | `node scripts/check-npm-packages.mjs` | ✅ `scripts/check-npm-packages.mjs` | ⬜ pending |
 | `description:` is substantively rewritten (names the annotation store, not the analyser) | REPOINT-03 | — | **manual-only** | — | ⚠️ human judgment | ⬜ pending |
 | `ABS-03`'s pairwise trigger-collision check passes over all seven descriptions | REPOINT-03 | — | integration | `node scripts/check-skill-description-overlap.mjs` | ✅ + `skill-description-overlap.test.ts` | ⬜ pending |
 | CLAUDE.md's project-skills table stays byte-identical to every `description:` | REPOINT-03 | record-answering-twice | integration | same command | ✅ | ⬜ pending |
 | Manifest schema survives the edit (pin shape, 5 procedures, known dispositions, licence, triggers with mechanisms) | REPOINT-04 | input-validation-weakened | unit | `node --test anno-derivation.test.ts` | ✅ `src/mcp/vice/anno-derivation.test.ts` | ⬜ pending |
 | Every non-curated call still carries a justification **and** a citation naming a file line | REPOINT-04 | record-answering-twice | unit | same | ✅ (`:144-222`) | ⬜ pending |
-| `r2000_undo`'s `requirement_id` is a well-formed requirement id | REPOINT-04 | input-validation-weakened | unit | same | ✅ (`:207-213`) — optional field, shape-gated | ⬜ pending |
+| `anno_undo`'s `requirement_id` is a well-formed requirement id | REPOINT-04 | input-validation-weakened | unit | same | ✅ (`:207-213`) — optional field, shape-gated | ⬜ pending |
 | The omission is **not reversed**: `omit` verbs absent under any spelling; manifest ↔ surface agree both directions | REPOINT-04 | record-answering-twice | unit | same (`derivationVerdict`, `:405-425`, `:451-478`) | ✅ | ⬜ pending |
 | Manifest ↔ attribution-header agreement survives the edit (procedure count, path set, digests) | REPOINT-04 | pin-recomputed | unit | `node --test skill-attribution.test.ts` (`:419-459`, `:475-507`) | ✅ | ⬜ pending |
 | The manifest is edited **in the same commit** as what it describes | REPOINT-04 | record-answering-twice | **manual-only** | `git show --stat <sha>` | ⚠️ **no mechanical enforcement exists** (Finding 6) | ⬜ pending |
-| No manifest prose names a deleted module or symbol | REPOINT-04 | — | integration | `grep -n "r2000-tools\|r2000-session\|r2000-upstream-audit\|CURATED_R2000_TOOLS" <manifest>` → 0 | ❌ **W0 (optional)** — plan-level criterion at minimum | ⬜ pending |
+| No manifest prose names a deleted module or symbol | REPOINT-04 | — | integration | `grep -n "anno-tools\|anno-session\|anno-upstream-audit\|CURATED_ANNO_TOOLS" <manifest>` → 0 | ❌ **W0 (optional)** — plan-level criterion at minimum | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

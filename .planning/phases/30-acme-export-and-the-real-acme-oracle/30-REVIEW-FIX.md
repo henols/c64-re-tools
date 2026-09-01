@@ -54,7 +54,7 @@ WR-11) — a fix asserted from reading alone is not evidence in this tree.
 **Files modified:** `src/mcp/vice/anno-cli.ts`, `src/mcp/vice/anno-cli.test.ts`
 **Commit:** `b30bd82`
 
-Reproduced first: `runR2000Cli(["hasOwnProperty","game.prg","--force"])` threw
+Reproduced first: `runAnnoCli(["hasOwnProperty","game.prg","--force"])` threw
 `TypeError: accepted.includes is not a function` and escaped the function entirely, breaking
 the never-throw contract stated in the file's own header *and* in `checkAcceptedOptions()`'s
 own JSDoc.
@@ -64,7 +64,7 @@ checker (`scripts/lib/anno-cli-invocations.mjs`) already uses for the same defec
 same phase. `Array.isArray()` rather than a bare truthiness test, so an own key whose value is
 somehow not an array also falls through to "unknown verb" rather than reaching `.includes()`.
 
-The pre-dispatch call also moved *inside* `runR2000Cli()`'s `try` — defence in depth, as the
+The pre-dispatch call also moved *inside* `runAnnoCli()`'s `try` — defence in depth, as the
 reviewer framed it, not the fix. The contract should not depend on one callee staying careful.
 
 Controls: eight inherited keys (the five reproduced plus `isPrototypeOf`,

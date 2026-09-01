@@ -19,9 +19,9 @@ backward-compatible argument shape, and the three capabilities stock provably
 cannot have (`vice_sid_get_state`, `vice_keyboard_matrix`,
 `vice_keyboard_restore`) refuse by name and say which backend provides them.
 
-**As of v0.3.0 recon findings are state, not prose.** regenerator2000 is a
+**As of v0.3.0 recon findings are state, not prose.** the external analyser is a
 required, container-side, static-analysis-only prerequisite reached through **17
-curated `r2000_*` tools** and a `vice-mcp r2000 <verb>` CLI. It holds a
+curated `anno_*` tools** and a `vice-mcp anno <verb>` CLI. It holds a
 persistent, queryable annotation store — labels, comments, block types, scopes,
 cross-references — and a recursive-descent disassembler with an auto-analyzer.
 It is structurally incapable of touching VICE (`--vice` unreachable *and*
@@ -30,7 +30,7 @@ generated bit-name enums, symbols flow both ways between the store and a live
 emulator, and the flat linear `toacme` decoder this replaced is deleted.
 
 **As of v0.5.0 that session persisted — and as of v0.7.0 it is gone, replaced by
-a store this project owns.** The two paragraphs above are history: regenerator2000
+a store this project owns.** The two paragraphs above are history: The external analyser
 is **deleted**, not deprecated. v0.7.0 shipped `.annostore`, a `node:sqlite`
 annotation store behind one seam, holding labels, comments, a frozen twelve-member
 per-range type vocabulary, scopes and project enums, with durability and revert
@@ -43,7 +43,7 @@ retired integration's glue left the tree behind a grep gate observed biting, 14
 files and 8,221 lines removed entry by entry from a committed classification
 registry. Seven skills ship, not six.
 
-*The `R2000-13`, `R2000-14` and `R2000-15` capabilities (generated enums, and the
+*The `ANNO-13`, `ANNO-14` and `ANNO-15` capabilities (generated enums, and the
 symbol round trip in both directions) went with the removal and **no phase owns
 their return** — see the withdrawal notes under Validated rather than assuming
 they still work.*
@@ -90,14 +90,14 @@ visible.
 
 *Decisive reason.* The outlives-the-session property this statement would gain
 belongs to a component structurally incapable of driving VICE at all —
-`R2000-01` records that regenerator2000 is never launched with `--vice`, guarded
+`ANNO-01` records that the external analyser is never launched with `--vice`, guarded
 in code, not only documented. This statement's subject is a session driving a
 *live* emulator; folding in the persistence axis would make one sentence's
 subject two structurally separate subsystems, which is a category error, not a
 style objection. v0.4.0 also produced zero new evidence on the question: every
 item weighed for restating is Phase 11 (v0.3.0) evidence — the two-session
-sealed-question test (`R2000-10`), the symbol round trip (`R2000-14`/`R2000-15`),
-and the 17 curated `r2000_*` tools — re-weighed one milestone later, not new.
+sealed-question test (`ANNO-10`), the symbol round trip (`ANNO-14`/`ANNO-15`),
+and the 17 curated `anno_*` tools — re-weighed one milestone later, not new.
 
 *Case against this verdict, carried rather than resolved.* Phase 11's
 two-session sealed-question test is genuinely the strongest evidence this
@@ -122,7 +122,7 @@ a live emulator, so the statement stands byte-identical for a fourth close. But
 the persistence axis it declines to name is no longer a rented one: `.annostore`
 is this project's own store, its durability is proven across a real `SIGKILL` in
 a separate OS process, and `STORE-06` answers cross-references and search from
-the bytes. The `R2000-01` argument quoted above — that the outlives-the-session
+the bytes. The `ANNO-01` argument quoted above — that the outlives-the-session
 property belongs to a component structurally incapable of driving VICE — still
 holds structurally (the `anno_*` family registers proxy-locally and never reaches
 `forwardToVice()`), so the category-error reasoning is intact and the verdict does
@@ -156,20 +156,20 @@ rather than re-confirmed a fifth time.
 - ✓ The binary-monitor assumptions are confirmed empirically against a real VICE build before client design is locked — v0.2.0 (13-check probe run against stock 3.9 and fork 3.10; all five UNVERIFIED items resolved)
 - ✓ Cycle timing and "is the emulator still advancing" work on the stock backend — v0.2.0
 - ✓ A user can install this from a package manager and is never silently given a wrong answer by a backend that cannot do the thing — v0.2.0 (`docs/tool-support.md` generated from both manifests with a byte-identity drift guard)
-- ✓ Five load-bearing assumptions checked against a real regenerator2000 build before any plan is written, with the pty/HTTP-MCP one gating the rest — Phase 9 (`R2000-16`; verdict `degrade` via rule `R4`, see [`docs/phase9-regenerator2000-probe-findings.md`](../docs/phase9-regenerator2000-probe-findings.md))
-- ✓ `c64-program-recon` writes findings as queryable annotation state, not only Markdown prose, so a later session can query instead of re-deriving — Phase 11 (`R2000-10`; proven by the two-session falsifiability test — session B answered a question sealed before it existed, from store queries alone)
-- ✓ A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program — Phase 11 (`R2000-11`; the 17 curated `r2000_*` tools)
-- ✓ Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers — Phase 11 (`R2000-13`; `lda #$1b`/`sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME)
-  - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `gen-enums` CLI verb that delivered `R2000-13` was removed with the rest of the retired analyser's delivery paths. The heuristics survive as live code in `anno-enum-gen.ts` — the naming vocabulary, the adjacent-pair rule, the one-variant-per-distinct-value plan and the identifier gate — so what left is the fetch and the install around them, not the knowledge. **No phase currently owns its return**: an earlier note paired it with the ACME export oracle's rebuild, and that rebuild covered the export route only. The by-hand route (`anno_create_project_enum` plus `anno_apply_enum_usage`) is open in the meantime and writes exactly the same rows into the store.
-- ✓ Symbols annotated in regenerator2000 export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip — Phase 11 (`R2000-14`, `R2000-15`; demonstrated as one closed loop against genuine unpatched stock `x64sc`, with the inbound name's prior absence shown rather than claimed)
-  - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `export-lbl` and `import-lbl` CLI verbs that delivered `R2000-14` and `R2000-15` were removed together with the rest of the retired analyser's delivery paths, because both reached that analyser through `anno-symbols.ts` and would have typechecked, dispatched, and then failed at the first call. **This is a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away** — the round trip was demonstrated end to end against genuine unpatched stock `x64sc`, and that demonstration still stands as a record of what worked. **It does NOT return in the phase this note used to name.** That phase rebuilt the ACME export route only — `export-asm` returned on 2026-08-31 behind a real-ACME byte-diff oracle — and no requirement and no success criterion of it covered `export-lbl` or `import-lbl`, so **no phase currently owns the symbol round trip's return**. Until one does, a reader checking whether the symbol round trip works should read this line as: it does not, the reason is a superseded sequencing forecast rather than a defect, and that forecast is corrected here rather than deleted, because deleting the notice would erase the record that a Validated capability went missing.
-- ✓ regenerator2000 is adopted as a **static-analysis** backend and is never launched with `--vice`, guarded in code rather than only documented — v0.3.0 Phase 10 (`R2000-01`; two independent guarantees — unreachable by fixed per-verb argv builders *and* denied by a scan throwing `R2000ViceFlagError`, both pinned by tests proven to fail under live reintroduction)
-- ✓ It runs on the same side of the container boundary as the MCP proxy, so no path translation applies — v0.3.0 Phase 10 (`R2000-02`; the `r2000_*` family registers proxy-locally via `buildViceTool()` and never reaches `forwardToVice()`, asserted structurally by `hostpath-consumers.test.ts` over a `readdirSync`-derived module set. **Scope honesty:** the two-projects-at-once half is a *stated* upstream limit, not a detected one, and the devcontainer half is documented rather than exercised — no devcontainer exists in this repo)
-- ✓ It is a declared prerequisite named in the install documentation alongside VICE, with its licence notice in `THIRD-PARTY-NOTICES.md` — v0.3.0 Phase 10 (`R2000-03`; the notice records the **true dual `MIT OR Apache-2.0`** licence. The requirement as written said "Apache-2.0", which the Phase 9 probe falsified; every Apache-2.0-only mention in the living documents was corrected)
-- ✓ `acme-build`'s `disasm` verb and its `toacme`-on-PATH prerequisite are removed, replaced by a regenerator2000 route — v0.3.0 Phase 10 (`R2000-05`; `cmdDisasm`, its dispatch entry, its usage line and ~50 lines of decoder-shaped `SKILL.md` caveats deleted, with a whole-tree grep gate proven to bite on a non-`SKILL.md` file)
-- ✓ A `.prg` or flat 64K capture becomes reassemblable ACME source matching this project's `!cpu 6510` expectations, **verified by reassembly** rather than asserted — v0.3.0 Phase 10 (`R2000-06`; `--verify`'s output parsed by one seam keying strictly on ACME's own result line, proven in both directions on real transcripts — an exit-1 run where ACME still passed, an exit-0 run where ACME never ran)
+- ✓ Five load-bearing assumptions checked against a real analyser build before any plan is written, with the pty/HTTP-MCP one gating the rest — Phase 9 (`ANNO-16`; verdict `degrade` via rule `R4`, see [`docs/phase9-external-analyser-probe-findings.md`](../docs/phase9-external-analyser-probe-findings.md))
+- ✓ `c64-program-recon` writes findings as queryable annotation state, not only Markdown prose, so a later session can query instead of re-deriving — Phase 11 (`ANNO-10`; proven by the two-session falsifiability test — session B answered a question sealed before it existed, from store queries alone)
+- ✓ A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program — Phase 11 (`ANNO-11`; the 17 curated `anno_*` tools)
+- ✓ Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers — Phase 11 (`ANNO-13`; `lda #$1b`/`sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME)
+  - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `gen-enums` CLI verb that delivered `ANNO-13` was removed with the rest of the retired analyser's delivery paths. The heuristics survive as live code in `anno-enum-gen.ts` — the naming vocabulary, the adjacent-pair rule, the one-variant-per-distinct-value plan and the identifier gate — so what left is the fetch and the install around them, not the knowledge. **No phase currently owns its return**: an earlier note paired it with the ACME export oracle's rebuild, and that rebuild covered the export route only. The by-hand route (`anno_create_project_enum` plus `anno_apply_enum_usage`) is open in the meantime and writes exactly the same rows into the store.
+- ✓ Symbols annotated in the external analyser export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip — Phase 11 (`ANNO-14`, `ANNO-15`; demonstrated as one closed loop against genuine unpatched stock `x64sc`, with the inbound name's prior absence shown rather than claimed)
+  - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `export-lbl` and `import-lbl` CLI verbs that delivered `ANNO-14` and `ANNO-15` were removed together with the rest of the retired analyser's delivery paths, because both reached that analyser through `anno-symbols.ts` and would have typechecked, dispatched, and then failed at the first call. **This is a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away** — the round trip was demonstrated end to end against genuine unpatched stock `x64sc`, and that demonstration still stands as a record of what worked. **It does NOT return in the phase this note used to name.** That phase rebuilt the ACME export route only — `export-asm` returned on 2026-08-31 behind a real-ACME byte-diff oracle — and no requirement and no success criterion of it covered `export-lbl` or `import-lbl`, so **no phase currently owns the symbol round trip's return**. Until one does, a reader checking whether the symbol round trip works should read this line as: it does not, the reason is a superseded sequencing forecast rather than a defect, and that forecast is corrected here rather than deleted, because deleting the notice would erase the record that a Validated capability went missing.
+- ✓ the external analyser is adopted as a **static-analysis** backend and is never launched with `--vice`, guarded in code rather than only documented — v0.3.0 Phase 10 (`ANNO-01`; two independent guarantees — unreachable by fixed per-verb argv builders *and* denied by a scan throwing `AnnoViceFlagError`, both pinned by tests proven to fail under live reintroduction)
+- ✓ It runs on the same side of the container boundary as the MCP proxy, so no path translation applies — v0.3.0 Phase 10 (`ANNO-02`; the `anno_*` family registers proxy-locally via `buildViceTool()` and never reaches `forwardToVice()`, asserted structurally by `hostpath-consumers.test.ts` over a `readdirSync`-derived module set. **Scope honesty:** the two-projects-at-once half is a *stated* upstream limit, not a detected one, and the devcontainer half is documented rather than exercised — no devcontainer exists in this repo)
+- ✓ It is a declared prerequisite named in the install documentation alongside VICE, with its licence notice in `THIRD-PARTY-NOTICES.md` — v0.3.0 Phase 10 (`ANNO-03`; the notice records the **true dual `MIT OR Apache-2.0`** licence. The requirement as written said "Apache-2.0", which the Phase 9 probe falsified; every Apache-2.0-only mention in the living documents was corrected)
+- ✓ `acme-build`'s `disasm` verb and its `toacme`-on-PATH prerequisite are removed, replaced by an external analyser route — v0.3.0 Phase 10 (`ANNO-05`; `cmdDisasm`, its dispatch entry, its usage line and ~50 lines of decoder-shaped `SKILL.md` caveats deleted, with a whole-tree grep gate proven to bite on a non-`SKILL.md` file)
+- ✓ A `.prg` or flat 64K capture becomes reassemblable ACME source matching this project's `!cpu 6510` expectations, **verified by reassembly** rather than asserted — v0.3.0 Phase 10 (`ANNO-06`; `--verify`'s output parsed by one seam keying strictly on ACME's own result line, proven in both directions on real transcripts — an exit-1 run where ACME still passed, an exit-0 run where ACME never ran)
   - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14), RETURNED 2026-08-31 — and the route that came back is not the route described above.** The `--verify` seam this line describes parsed the retired external analyser's own transcript and went when the analyser went. What returned is `anno export-asm <image> --store FILE [--out FILE] [--force]`, rebuilt over the annotation store: `<image>` and `--store` are two separate arguments and neither is derived from the other, `--out` defaults to a `.a` beside the **store**, and an existing destination is refused rather than overwritten unless `--force` is passed. **The verb writes source text and runs no assembler** — its own second printed line says so in as many words — because the real-ACME byte-diff oracle is deliberately **test-only** (`src/mcp/vice/acme-verify.ts`, absent from the published package by a committed assertion and unreachable at runtime). So the "verified by reassembly" claim above describes the removed route: verification now happens in this repository's test suite, hard-failed in CI with `VICE_REQUIRE_ACME=1`, and never in the shipped verb.
-- ✓ Project bootstrap from a raw binary is automated rather than a documented manual step — v0.3.0 Phase 10 (`R2000-09`; a pure-Node `.regen2000proj` synthesiser a real regenerator2000 loads, with `use_illegal_opcodes`/`system` forced explicitly, plus a container-side `.d64` reader that refuses to guess between matching entries)
+- ✓ Project bootstrap from a raw binary is automated rather than a documented manual step — v0.3.0 Phase 10 (`ANNO-09`; a pure-Node `.regen2000proj` synthesiser a real analyser loads, with `use_illegal_opcodes`/`system` forced explicitly, plus a container-side `.d64` reader that refuses to guess between matching entries)
 
 - ✓ The three highest-value carried items are verified against real binaries instead of internal proxies — v0.4.0 Phase 13 (`EXTV-01`/`EXTV-02`/`EXTV-03`; `VERIF-02`'s fixtures re-recorded from a real binary, the `--help` discriminator confirmed against both real stock and real fork with transcripts committed, and the four spec-driven Phase 3 wire details run — details the binary contradicted were corrected at source rather than annotated)
 - ✓ A milestone audit cannot record `status: passed` while any `docs-*.test.ts` guard is red — v0.4.0 Phase 12 (`GATE-01`; mechanically enforced as a precondition, not documented). Every open code-review finding across all phases is dispositioned and `docs-review-disposition.test.ts` runs green from a clean checkout — Phase 15 (`GATE-02`)
@@ -179,19 +179,19 @@ rather than re-confirmed a fifth time.
 - ✓ Core Value is confirmed on two milestones of evidence, resolving the flag left at the v0.3.0 close — v0.4.0 Phase 17 (`CORE-01` decided **keep-dated** at a `gate="blocking-human"` checkpoint, with the case against the verdict carried rather than resolved and a specific reversal condition stated; pinned by `docs-core-value-decision.test.ts`. The provenance record was itself corrected by plan 17-04 after UAT gap `G-17-1` — see the `*Provenance.*` paragraph under Core Value)
 - ✓ The plugin payload lives under `src/` with `.mcp.json` merged, and `QUAL-01..03` are closed — v0.4.0 Phase 16 (`PKG-01`..`PKG-04`; both published tarballs still validated by `scripts/check-npm-packages.mjs`)
 
-- ✓ A regenerator2000 project stays open across many tool calls in one working session, with crash detection between calls, save-before-return persistence and a single-owner write path — v0.5.0 Phase 18 (`SESS-01`..`SESS-04`)
-- ✓ The curated `r2000_*` surface covers what the absorbed procedures actually call, `r2000_get_address_details`'s D-32 refusal is re-decided (D-36 supersedes D-32; client-side composition), and which packer a binary used is a recon finding — v0.5.0 Phase 18 (`SURF-01`..`SURF-03`)
+- ✓ an external analyser project stays open across many tool calls in one working session, with crash detection between calls, save-before-return persistence and a single-owner write path — v0.5.0 Phase 18 (`SESS-01`..`SESS-04`)
+- ✓ The curated `anno_*` surface covers what the absorbed procedures actually call, `anno_get_address_details`'s D-32 refusal is re-decided (D-36 supersedes D-32; client-side composition), and which packer a binary used is a recon finding — v0.5.0 Phase 18 (`SURF-01`..`SURF-03`)
 - ✓ All five upstream analyze procedures are absorbed into this project's skills at a pinned upstream commit, attributed per file and in `THIRD-PARTY-NOTICES.md`, with no dependency on `.agent/skills/` and no pairwise trigger collision across all seven skill descriptions — v0.5.0 Phase 19 (`ABS-01`..`ABS-04`; a seventh skill, `routine-queue-walker`, shipped with them)
 - ✓ Coverage is a derived-from-bytes census the store's own block table cannot move by a single byte, reported as three distinct numbers and defended by six committed controls against a vacuous pass — v0.5.0 Phase 19 (`COV-01`/`COV-02`; `COV-01` closed under an accepted override, since the replacement plan for the instrument *is* the dxa+Ghidra pivot)
 
-- ✓ Per-range typing covers the full **12-member** vocabulary read off `r2000_set_data_type`'s own schema, with the four split layouts as first-class members — the milestone's one irreversible decision — v0.7.0 Phase 28 (`STORE-01`; the control that can go red is a mis-oriented `lo_hi_address` table producing a **differing resolved-target set**, since a "it reassembles clean" assertion cannot go red here)
+- ✓ Per-range typing covers the full **12-member** vocabulary read off `anno_set_data_type`'s own schema, with the four split layouts as first-class members — the milestone's one irreversible decision — v0.7.0 Phase 28 (`STORE-01`; the control that can go red is a mis-oriented `lo_hi_address` table producing a **differing resolved-target set**, since a "it reassembles clean" assertion cannot go red here)
 - ✓ Durability and revert are proven by **one combined planted-violation test** — mutate → `SIGKILL` → fresh process → reopen reads the mutation back by value → revert returns the prior value, and removing the commit makes that same test go red — v0.7.0 Phase 28 (`STORE-04`; a truncated store file is refused, never returned partial)
 - ✓ An annotation store this project owns holds labels, comments, per-range typing, scopes, project enums, revert and persistence, reached through an MCP surface registered proxy-locally so it never reaches `forwardToVice()` — v0.7.0 Phases 28-29 (`STORE-01`..`STORE-07`, `MCP-02`; `.annostore` over `node:sqlite` behind one structurally-asserted seam, the narrowest-range-wins paint index proven exact at all 65,536 addresses against an independent linear-scan oracle, and the family registered through `buildViceTool()` so CLAUDE.md's derived-tool constraint is satisfied by construction rather than by an interception)
 - ✓ The store's tool surface is derived from Phase 19's `upstream-procedure-manifest.json` rather than guessed, so every already-absorbed analysis step has a route instead of a hole — v0.7.0 Phase 29 (`MCP-01`; `anno-derivation.test.ts` walks the manifest and asserts a route for each of its 16 curated-or-adapt verbs **and** the absence of all 4 `omit` verbs under both spellings — a checked property in both directions, not a claim)
 - ✓ The store exports ACME source verified by a real ACME invoked by a verify path built for this purpose — v0.7.0 Phase 30 (`EXPORT-01`..`EXPORT-03`; `anno export-asm` writes source and **assembles nothing**, saying so in its own second output line, because the byte-diff oracle is deliberately test-only — `acme-verify.ts`, absent from the published package by a committed assertion. A missing assembler and a corrupted byte are both *observed* refusals, each paired with a control proven able to bite, against real ACME 0.97)
 - ✓ Cross-references and search over the typed decode stay answerable, built on the surviving `disasm-*` decoders rather than carried across as a parity obligation — v0.7.0 Phase 29 (`STORE-06`; cross-references union the decoded code, the typed split ADDRESS tables and the stored non-derivable rows into one sorted de-duplicated list, search runs byte-exact over three independently disableable corpora, and a two-halved control proves a derived query leaves the store byte-for-byte unchanged)
 - ✓ The five absorbed analysis procedures are re-pointed onto the new surface with their heuristics intact and their `ABS-02` attribution headers preserved rather than stripped with the code — v0.7.0 Phases 29-31 (`REPOINT-01`..`REPOINT-04`; 17 old-family tool names re-pointed onto 18 verbs that exist, and every attribution block in both skill trees scored for a byte-exact `Adapted from` line and a byte-exact two-space-indented `Source repository:` line, with a one-byte plant on each proving the byte-exactness is real)
-- ✓ The regenerator2000 integration glue is deleted behind a grep gate observed biting on a planted reintroduction in each tree it covers, with the attribution instances explicitly exempted and that exemption carrying its own non-vacuity assertion — v0.7.0 Phases 29 and 32 (`CUT-01`..`CUT-06`; 14 files and 8,221 lines removed entry by entry from the classification registry, with the gate's scope `(git ls-files − .planning/) ∪ packFiles("installer")` — 395 files — and a recorded transcript of it going red on four evasion routes and on a deleted attribution block. Measured net removal: 26,023 lines pre-phase at `8f21d77` → 19,714 surviving at `f16d0b1`, **6,309 net removed**)
+- ✓ the external analyser integration glue is deleted behind a grep gate observed biting on a planted reintroduction in each tree it covers, with the attribution instances explicitly exempted and that exemption carrying its own non-vacuity assertion — v0.7.0 Phases 29 and 32 (`CUT-01`..`CUT-06`; 14 files and 8,221 lines removed entry by entry from the classification registry, with the gate's scope `(git ls-files − .planning/) ∪ packFiles("installer")` — 395 files — and a recorded transcript of it going red on four evasion routes and on a deleted attribution block. Measured net removal: 26,023 lines pre-phase at `8f21d77` → 19,714 surviving at `f16d0b1`, **6,309 net removed**)
 - ✓ Every guard and CI script pinned to the deleted subject is given an explicit fate before the phase gate, with each re-pointed guard's own planted violation re-run — v0.7.0 Phases 29 and 32 (`MCP-05`, `CUT-06`; every guard moved in the commit that broke it, each re-proven by a planted violation observed red and reverted, and three guards re-pointed onto subjects that still exist and re-proven against the real post-deletion tree)
 
 ### Active
@@ -211,10 +211,10 @@ v0.7.0 removal with no phase owning their return. They are named here as well as
 in their Validated notes, because a reader scanning only this list would
 otherwise miss that the project regressed on them deliberately:
 
-- `R2000-13` — generated bit-name enums from `memmap.json` (`gen-enums` withdrawn;
+- `ANNO-13` — generated bit-name enums from `memmap.json` (`gen-enums` withdrawn;
   the heuristics survive as live code in `anno-enum-gen.ts`, and the by-hand route
   through `anno_create_project_enum` + `anno_apply_enum_usage` writes identical rows)
-- `R2000-14` / `R2000-15` — the symbol round trip (`export-lbl` / `import-lbl`
+- `ANNO-14` / `ANNO-15` — the symbol round trip (`export-lbl` / `import-lbl`
   withdrawn; both reached the retired analyser through `anno-symbols.ts`)
 
 
@@ -225,12 +225,12 @@ otherwise miss that the project regressed on them deliberately:
 *Audited at the v0.7.0 close, 2026-09-01. Every entry's reasoning still holds and
 none was removed — but three now describe a **deleted** subject and are kept
 deliberately, because deleting the boundary would erase the record of why the
-capability was never built. The two regenerator2000 surplus entries and the
+capability was never built. The two the external analyser surplus entries and the
 `--vice` invariant entry all read as history now: `--vice` in particular was a
 load-bearing runtime invariant and is today a property of code that no longer
 exists, so its guarantee is inherited by the `anno_*` family's proxy-local
 registration rather than carried by those guards. Added this milestone by owner
-decision: **parity with regenerator2000's feature set**, **a per-edit inverse-command
+decision: **parity with the external analyser's feature set**, **a per-edit inverse-command
 undo journal**, **an entry in `capability-registry.ts` for the store**, **any new
 runtime dependency such as `better-sqlite3`**, **an interval-tree library**,
 **bank-qualified addressing as a modelled feature**, and **multi-assembler output**
@@ -246,9 +246,9 @@ runtime dependency such as `better-sqlite3`**, **an interval-tree library**,
 - **Distributed / multi-host broker** — outside the current single-host architecture; no demand established.
 - **Fixing the unauthenticated emulator endpoint exposure** — real (documented in `.planning/codebase/CONCERNS.md`), but a property of the external fork and its `0.0.0.0` bind, not of this project's scope.
 - **Tool surplus on either backend, absent a caller** *(added v0.2.0, 2026-08-17)* — 17 requirements were cut against one measured test: *does a shipped skill call it, or does something a skill calls depend on it?* Cut: client-side screenshots and the PNG encoder (`SHOT-01..05`), call backtrace (`DERIV-02`), checkpoint groups and ignore counts (`DERIV-03`), memory fill and every `*_set_state` write half, all nine stock-only gains (`GAIN-01..09`, Phase 6 entire), disk detach, and the parity harness. Each stays in `milestones/v0.2.0-REQUIREMENTS.md` marked `CUT` with rationale, so restoring one is a scope decision rather than archaeology. **The fork's other 33 uncalled tools are surplus, not a gap.**
-- **regenerator2000 capability surplus, absent a caller** *(added v0.3.0, cut 2026-08-17)* — 4 of the original 16 `R2000-*` requirements were folded or cut on the same measured test v0.2.0 used. Cut: HTML export with clickable xrefs (`R2000-07` — a shareable artifact no skill produces or consumes; still available ad-hoc via `--export_html`); the two-project limit as a reported error (`R2000-04` — folded into install documentation, since building detection for an upstream port collision is work in the wrong place); the static-vs-live tool-selection axis (`R2000-12` — folded into v0.2.0's `SKILL-01`, which already rewrote the same playbooks); and the `.vsf`/`.raw` bridge as its own requirement (`R2000-08` — it is which file extension you hand over, not a deliverable). Each stays in `milestones/v0.3.0-REQUIREMENTS.md` with rationale. A separate MCP-server-standup phase was dissolved into a task at the same time.
-- **`.vsf` as a regenerator2000 bootstrap input** *(added v0.3.0, D-34; closed `wont-fix` by Phase 15 plan 15-12)* — the synthesis route hands over `.prg` / `.d64` / flat-64K only. Phase 9 found that a `.vsf`'s machine type reads correct only by coincidence: `"C64SC"` matches none of regenerator2000's literal arms, so it falls through to that tool's own C64 default and a non-C64 snapshot would be misreported. Prefer `.vsf` for anything *leaving* the emulator; that preference does not extend to this input set. Filed as `.planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md` — reverses only if a consumer has `.vsf` captures and cannot re-capture as `.raw`.
-- **Launching regenerator2000 with `--vice`, in any form** *(added v0.3.0, D-R1/D-07)* — not a scoping preference but a load-bearing invariant. It is what makes the whole `r2000_*` family backend-agnostic and keeps the binary monitor's single-client rule intact. Guarded twice in code, not documented once.
+- **the external analyser capability surplus, absent a caller** *(added v0.3.0, cut 2026-08-17)* — 4 of the original 16 `ANNO-*` requirements were folded or cut on the same measured test v0.2.0 used. Cut: HTML export with clickable xrefs (`ANNO-07` — a shareable artifact no skill produces or consumes; still available ad-hoc via `--export_html`); the two-project limit as a reported error (`ANNO-04` — folded into install documentation, since building detection for an upstream port collision is work in the wrong place); the static-vs-live tool-selection axis (`ANNO-12` — folded into v0.2.0's `SKILL-01`, which already rewrote the same playbooks); and the `.vsf`/`.raw` bridge as its own requirement (`ANNO-08` — it is which file extension you hand over, not a deliverable). Each stays in `milestones/v0.3.0-REQUIREMENTS.md` with rationale. A separate MCP-server-standup phase was dissolved into a task at the same time.
+- **`.vsf` as an external analyser bootstrap input** *(added v0.3.0, D-34; closed `wont-fix` by Phase 15 plan 15-12)* — the synthesis route hands over `.prg` / `.d64` / flat-64K only. Phase 9 found that a `.vsf`'s machine type reads correct only by coincidence: `"C64SC"` matches none of the external analyser's literal arms, so it falls through to that tool's own C64 default and a non-C64 snapshot would be misreported. Prefer `.vsf` for anything *leaving* the emulator; that preference does not extend to this input set. Filed as `.planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md` — reverses only if a consumer has `.vsf` captures and cannot re-capture as `.raw`.
+- **Launching the external analyser with `--vice`, in any form** *(added v0.3.0, D-R1/D-07)* — not a scoping preference but a load-bearing invariant. It is what makes the whole `anno_*` family backend-agnostic and keeps the binary monitor's single-client rule intact. Guarded twice in code, not documented once.
 - **Uniform tool lists across backends** *(added v0.2.0)* — superseded the original "the MCP surface must not change" constraint and `.planning/intel/decisions.md`'s `DEC-preserve-mcp-surface`. Stock advertises only what it implements. A skill written against the full fork surface therefore *breaks* on stock rather than degrading, which is why the playbooks must name the stock route or the fork requirement.
 
 ## Context
@@ -263,7 +263,7 @@ new package. Seven skills ship. The `vice` tool surface is 62 tools on the fork
 backend and 38 on stock, plus 18 `anno_*` tools that are backend-independent by
 construction. External prerequisites: a VICE build (stock `x64sc` ≥ 3.9, or the
 fork), and ACME on `$PATH` for `acme-build` and for the test-only export oracle.
-regenerator2000 is **no longer a prerequisite** — it was removed this milestone.
+The external analyser is **no longer a prerequisite** — it was removed this milestone.
 
 **Known issues carried out of v0.7.0**, all disclosed in `STATE.md` →
 `### Acknowledged at the v0.7.0 close`: 10 pending todos, of which the
@@ -296,7 +296,7 @@ autoload path, with a `mustNotExist` CI gate proving the old locations cannot
 silently reappear. Node ≥ 22.18, TypeScript run directly via native
 type-stripping (no build step for the shipped server). Stock backend: 38 tools,
 9 derived client-side. Fork backend: 62 tools, unchanged. Static-analysis
-surface: 17 curated `r2000_*` tools plus 7 `vice-mcp r2000` CLI verbs, all
+surface: 17 curated `anno_*` tools plus 7 `vice-mcp anno` CLI verbs, all
 container-side. Test suite at close: **2395 tests / 2351 pass / 0 fail** / 39
 skipped / 5 todo / 24 suites — the full `npm test` glob, not `test:automated`,
 which skips `MANUAL_ONLY_TESTS`.
@@ -362,7 +362,7 @@ archived out of `.planning/phases/` at milestone close, unlike the roadmap and
 requirements. Two committed guards read them directly:
 `docs-review-disposition.test.ts` asserts at least 150 review findings found
 there and explicitly excludes `.planning/milestones/`, and
-`r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no
+`absorbed-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no
 existence guard. Archiving them would turn both red. `.planning/phases/`
 therefore accumulates across milestones by design, not by omission.
 
@@ -370,7 +370,7 @@ therefore accumulates across milestones by design, not by omission.
 codebase map. `.planning/intel/` holds the ingested doc set: decisions,
 constraints, `CAND-*` scope items, and resolutions. `.planning/INGEST-CONFLICTS.md`
 records two user-resolved precedence warnings (W1, W2).
-`.planning/notes/regenerator2000-integration.md` grounds v0.3.0 (D-R1..D-R4).
+`.planning/notes/external-analyser-integration.md` grounds v0.3.0 (D-R1..D-R4).
 
 **Shipping history.** Newest tag `v0.4.0`; the version number resolves from a
 single `VERSION` template rather than being hand-maintained in six places
@@ -406,11 +406,11 @@ of the planning label at any time.
 - **Tech stack**: Node ≥ 22.18 (native TypeScript type-stripping — the shipped server has no build step). Host-bound `.mts` files must still be compiled by `build.ts` into committed `resources/*.mjs`, and `resources-sync.test.ts` fails CI on drift.
 - **Architecture**: Any host-facing path or hostname must go through `hostpath.ts` / `containerpath.ts` / `container-guard.mts`. The project maintains a tested closed consumer set for host-path logic.
 - **Architecture**: The broker's single-owner `inFlight` launch guard must stay a synchronous check-and-set with no `await` between. It exists because of the 2026-08-01 triple-launch outage and is regression-tested.
-- **Dependency**: regenerator2000 is a **required, container-side prerequisite**, not an optional accelerator (D-R2). Install is `cargo install regenerator2000` — no upstream release assets exist — and its real toolchain floor is **rustc ≥ 1.90**, transitive and undeclared in its own `Cargo.toml` (not edition 2024's 1.85; `--locked` does not work around it). Licence is the dual **`MIT OR Apache-2.0`**, not Apache-2.0 alone.
-- **Architecture**: regenerator2000 is **never** launched with `--vice` (D-R1/D-07). `r2000-launch.ts` is the sole spawn seam for CLI verbs and `r2000-mcp-client.ts` the second, necessary async spawn site; both are guard-before-spawn, checked as a property over the shipped module set (`package.json` `files[]`, not a raw directory listing) by `r2000-spawn-seam.test.ts`.
-- **Capability**: regenerator2000's keystroke-bootstrapped project defaults `use_illegal_opcodes: false`, under which an ACME export contains no illegal-opcode mnemonic at all — so an unqualified default run proves nothing about 6510 illegal opcodes. The synthesiser forces the `use_illegal_opcodes`/`system` pair explicitly.
-- **Capability**: regenerator2000 reads a `.vsf`'s machine type by matching literal arms that `"C64SC"` does not match, falling through to its own C64 default. A C64 snapshot reads correct only by coincidence; a non-C64 one would be misreported. Hand it `.prg` / `.d64` / flat-64K (D-34).
-- **Capability**: regenerator2000's MCP HTTP mode has no `--mcp-port`/`--mcp-bind`, so only one project can be served at a time. This is a **stated** limit carried in the install docs, not a detected-and-reported one (`R2000-04` was cut). The `--mcp-server-stdio` route is unaffected.
+- **Dependency**: The external analyser is a **required, container-side prerequisite**, not an optional accelerator (D-R2). Install is `cargo install analyser` — no upstream release assets exist — and its real toolchain floor is **rustc ≥ 1.90**, transitive and undeclared in its own `Cargo.toml` (not edition 2024's 1.85; `--locked` does not work around it). Licence is the dual **`MIT OR Apache-2.0`**, not Apache-2.0 alone.
+- **Architecture**: The external analyser is **never** launched with `--vice` (D-R1/D-07). `anno-launch.ts` is the sole spawn seam for CLI verbs and `anno-mcp-client.ts` the second, necessary async spawn site; both are guard-before-spawn, checked as a property over the shipped module set (`package.json` `files[]`, not a raw directory listing) by `spawn-seam.test.ts`.
+- **Capability**: The external analyser's keystroke-bootstrapped project defaults `use_illegal_opcodes: false`, under which an ACME export contains no illegal-opcode mnemonic at all — so an unqualified default run proves nothing about 6510 illegal opcodes. The synthesiser forces the `use_illegal_opcodes`/`system` pair explicitly.
+- **Capability**: The external analyser reads a `.vsf`'s machine type by matching literal arms that `"C64SC"` does not match, falling through to its own C64 default. A C64 snapshot reads correct only by coincidence; a non-C64 one would be misreported. Hand it `.prg` / `.d64` / flat-64K (D-34).
+- **Capability**: The external analyser's MCP HTTP mode has no `--mcp-port`/`--mcp-bind`, so only one project can be served at a time. This is a **stated** limit carried in the install docs, not a detected-and-reported one (`ANNO-04` was cut). The `--mcp-server-stdio` route is unaffected.
 - **Testing**: `vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested — their correctness only means anything against a real emulator's timing. Preserve the documented invariants (exactly one resume per wait; poll on `hit_count`, never on paused state).
 
 ## Engineering Governance
@@ -433,7 +433,7 @@ requirements in `ENGINEERING_RULES.md` have passed, and the wording of the compl
 exceed the available evidence.
 
 Where correctness depends on external behavior (for example stock/fork VICE, ACME,
-regenerator2000, package installation, or the real broker launch path), an internal mock or
+The external analyser, package installation, or the real broker launch path), an internal mock or
 same-assumption fixture does not replace the relevant external oracle unless the reduced evidence
 ceiling is explicitly recorded.
 
@@ -452,12 +452,12 @@ ceiling is explicitly recorded.
 | Cut scope by measured caller, not by judgment (2026-08-17) | Diffing the six skills' actual `vice_*` usage against both manifests answers "is this needed" mechanically | ✓ Good — 29 open requirements → 14, Phase 6 removed whole, and every cut names its requirements so reversal is a scope decision |
 | Trim the stock manifest instead of keeping surface shape uniform (D-07) | Advertising a tool the backend cannot serve is the dishonesty the milestone exists to remove | ✓ Good — and it forced `SKILL-01`: playbooks now name the stock route or the fork requirement at the point of use |
 | Run the walkthrough for real rather than assert it (Phase 8.1) | The one claim in the milestone with no witness was the install-to-capture flow | ✓ Good — and it **failed**, exposing the `Drive8Type=0` defect. Phase 8.2 fixed it and re-ran to a verified 65536-byte capture. The cheapest defect this milestone found came from refusing to assume |
-| Make the assumption probe a standalone go/no-go **phase**, not a criterion inside one (v0.3.0, 2026-08-19) | `R2000-16`'s failure mode is reconsider-the-milestone, not replan-the-phase. A phase boundary makes that gate structural rather than skippable | ✓ Good — and the gate fired for real: criterion 3(4) scored `partial`, rule `R4` selected `degrade`, and the input set narrowed to `.prg`/`.d64`/flat-64K. It also corrected three of its own research inputs (rustc floor, dual licence, a glibc mismatch). A probe that cannot say no is theatre |
+| Make the assumption probe a standalone go/no-go **phase**, not a criterion inside one (v0.3.0, 2026-08-19) | `ANNO-16`'s failure mode is reconsider-the-milestone, not replan-the-phase. A phase boundary makes that gate structural rather than skippable | ✓ Good — and the gate fired for real: criterion 3(4) scored `partial`, rule `R4` selected `degrade`, and the input set narrowed to `.prg`/`.d64`/flat-64K. It also corrected three of its own research inputs (rustc floor, dual licence, a glibc mismatch). A probe that cannot say no is theatre |
 | Honour the `degrade` verdict rather than override it | The rule was written and its inputs recorded *before* the answer was known; overriding it would have made every future gate advisory | ✓ Good — cost one input format, kept the mechanism credible. `R4` specifically, not `R3`: the bootstrap was **not** the degraded element, so Phase 10 still delivered full automation |
-| Register the `r2000_*` family proxy-locally via `buildViceTool()`, never through `forwardToVice()` | CLAUDE.md's derived-tool constraint says a tool behind `call()` receives host-translated paths and acts on them inside the container | ✓ Good — the constraint is satisfied **by construction**: neither `rewriteArguments()` call site is reachable from the family, so there is no interception to forget. Also makes the family backend-agnostic for free |
+| Register the `anno_*` family proxy-locally via `buildViceTool()`, never through `forwardToVice()` | CLAUDE.md's derived-tool constraint says a tool behind `call()` receives host-translated paths and acts on them inside the container | ✓ Good — the constraint is satisfied **by construction**: neither `rewriteArguments()` call site is reachable from the family, so there is no interception to forget. Also makes the family backend-agnostic for free |
 | Guard `--vice` twice — unreachable by construction *and* denied by a scan | A single guard is one refactor away from silently lapsing, and the invariant is what keeps the family backend-agnostic and the binary monitor's single-client rule intact | ✓ Good — both pinned by tests proven to fail under live reintroduction mutations, not merely written |
 | Synthesise `.regen2000proj` in pure Node instead of using the tmux keystroke bootstrap the probe had already proven automatable | The keystroke route works, but defaults `use_illegal_opcodes: false` — under which an export proves nothing about illegal opcodes | ✓ Good — the working route was rejected for the correct one. Forces the `use_illegal_opcodes`/`system` pair explicitly, pinned by planted-violation-verified tests |
-| Hand-roll the newline-delimited JSON-RPC client instead of using `@mastra/mcp`'s `MCPClient` | Decided by a five-property live measurement against the real binary, not by preference | ✓ Good — yields six distinct named failure modes instead of one opaque one, plus independent persistence verification for `r2000_save_project` |
+| Hand-roll the newline-delimited JSON-RPC client instead of using `@mastra/mcp`'s `MCPClient` | Decided by a five-property live measurement against the real binary, not by preference | ✓ Good — yields six distinct named failure modes instead of one opaque one, plus independent persistence verification for `anno_save_project` |
 | Make the store canonical and the Markdown memory map a generated view | A hand-edited map and a queryable store cannot both be the truth | ✓ Good — `render-memmap --check` plus a render-digest drift guard makes the divergence mechanical rather than a review item |
 | Prove the store's value by sealed question, not by assertion (Phase 11 criteria 1) | "A later session can query instead of re-deriving" is exactly the kind of claim that reads true and tests nothing | ✓ Good — session A sealed a question with a hashed answer key; a genuinely separate session B answered from tool calls alone and the canonical line hashed identically (`e64463d8…`). The strongest evidence this milestone produced |
 | Close every audit finding behind a guard proven non-vacuous, not merely fixed (Phase 11.1) | An audit finding fixed without a guard is a finding that returns | ✓ Good — each guard demonstrated by a planted violation or a real reverted edit before acceptance. The completeness guard then found **27** undispositioned findings against a pre-measured 8, and the audit closed `passed` |
@@ -468,11 +468,11 @@ ceiling is explicitly recorded.
 | Promote unclosable items with a **named owner** rather than closing or carrying them (DEBT-01, v0.4.0) | "Every item is fixed" is unachievable and invites a dishonest ledger; "every item is carried" is what this project did for three closes. A promotion with an owner is checkable and neither | ✓ Good — 19 inherited items → 0 pending, with 9 promoted into named buckets in `milestones/v0.4.0-REQUIREMENTS.md`. The ledger reads 0 honestly rather than by redefinition, and `docs-deferred-ledger.test.ts` was fixed to be *able* to express zero (its non-vacuity floor had asserted `pending.length >= 2`) |
 | Widen `docs-review-disposition.test.ts`'s parser rather than trust its green run (v0.4.0 Phase 15) | The guard keyed on level-3-colon-only headings, which is a property of how findings happened to be written, not of what a finding is | ✓ Good — 119 visible findings became 150, and the 9 the widening exposed were dispositioned back to green. A guard whose scope is narrower than its subject reports clean for the wrong reason |
 | Acknowledge the pre-close artifact audit's 16 items rather than resolve them (v0.4.0 close, 2026-08-23) | All 16 are bookkeeping — `status:` fields never flipped after their work landed, plus quick-task directories from this and earlier milestones. None is a requirement gap, an integration gap, or an unverified phase; the milestone audit scored 16/16, 6/6, 12/12, 4/4 with zero blockers | — Pending — recorded as `closeout_type=override_closeout` and itemised in `STATE.md` → `### Acknowledged at the v0.4.0 close`. Acknowledgment is verdict-preserving and self-invalidating: each suppression lapses the moment its artifact's observed state changes, so none of it can hide a *new* problem. Revisit at the next close, where a still-acknowledged item is evidence the bookkeeping never got fixed |
-| Do **not** archive phase directories at milestone close, unlike the roadmap and requirements (v0.4.0 close, 2026-08-23) | Two committed guards read `.planning/phases/` directly: `docs-review-disposition.test.ts` asserts ≥150 review findings found there and explicitly *excludes* `.planning/milestones/`, and `r2000-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard. The default-on archival would turn both red | ⚠️ Revisit — `--no-archive-phases` passed at this close (and effectively at the two before it). `.planning/phases/` accumulates across milestones by design, not omission. The clean fix is to teach both guards to read the archive too; until then this is a standing constraint on the close procedure, not a preference |
-| D-36 (decided 2026-08-24) supersedes D-32: `r2000_get_address_details` is curated as a client-side composition, not excluded | `r2000_get_address_details` is curated and composed **entirely client-side** from the four already-curated reads `r2000_get_symbols`, `r2000_get_comments`, `r2000_get_blocks` and `r2000_get_cross_references`, and never calls upstream's same-named tool at all (D18-27/D18-28). Why: `handler.rs:1894`'s `raw_data.len() as u16` wraps 65536 to 0, so on a full 64K project upstream's tool answers `OutOfRange` for every address — re-confirmed live against the installed 0.9.20 during v0.5.0 research on 2026-08-23. Composition makes that defect unreachable by construction rather than detected and routed around. The tool keeps its upstream name (D18-29) so Phase 19's absorbed procedures need no rewriting, with the composed nature stated in the tool description rather than encoded in the name. This reverses if an upstream fix to regenerator2000 issue #42 (https://github.com/ricardoquesada/regenerator2000/issues/42) lands in a released version this project installs, which would let the composition be retired in favour of the native tool. This trigger is manually tracked, not mechanically probed, the same way this project's other retain-with-reversal-criteria decisions state their own triggers (see the fork-backend retention row above). Standing position: a pull request against a repository this project does not own is a follow-up, not a deliverable — which is why the fix is recorded as this project's reversal trigger rather than as work | ⚠️ Revisit — pinned by the committed guard `docs-absorbed-decisions.test.ts` |
-| Classify every `r2000-*` module as capability-or-glue by **what it does**, and record the verdict *before* anything is deleted (SEAM-02, Phase 27, 2026-08-27) | The next phases delete ~12k lines by prefix. A classification produced *after* the deletion window opens is a rationalisation, not a gate; and a verdict justified by the name prefix is the one justification that begs the question the record exists to answer | ✓ Good — 19 entries committed as `module-classification.ts` with a 16-direction enforcing guard whose non-vacuity threshold is **derived from the registry** rather than pinned (a pinned literal goes red on a correct tree — this project's recorded scar). Proven non-vacuous the hard way: a **real** unclassified `r2000-*.ts` was created on disk and Direction 1 went red naming it. Direction 4 rejects a prefix-as-justification across `basis`, every consumer path, every symbol and every requirement id. Residual carried as `D-27-05-B`: `contested` is prose-only and `note` is exempt from the prefix scan, so a *future* contested verdict has no mechanical gate |
+| Do **not** archive phase directories at milestone close, unlike the roadmap and requirements (v0.4.0 close, 2026-08-23) | Two committed guards read `.planning/phases/` directly: `docs-review-disposition.test.ts` asserts ≥150 review findings found there and explicitly *excludes* `.planning/milestones/`, and `absorbed-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard. The default-on archival would turn both red | ⚠️ Revisit — `--no-archive-phases` passed at this close (and effectively at the two before it). `.planning/phases/` accumulates across milestones by design, not omission. The clean fix is to teach both guards to read the archive too; until then this is a standing constraint on the close procedure, not a preference |
+| D-36 (decided 2026-08-24) supersedes D-32: `anno_get_address_details` is curated as a client-side composition, not excluded | `anno_get_address_details` is curated and composed **entirely client-side** from the four already-curated reads `anno_get_symbols`, `anno_get_comments`, `anno_get_blocks` and `anno_get_cross_references`, and never calls upstream's same-named tool at all (D18-27/D18-28). Why: `handler.rs:1894`'s `raw_data.len() as u16` wraps 65536 to 0, so on a full 64K project upstream's tool answers `OutOfRange` for every address — re-confirmed live against the installed 0.9.20 during v0.5.0 research on 2026-08-23. Composition makes that defect unreachable by construction rather than detected and routed around. The tool keeps its upstream name (D18-29) so Phase 19's absorbed procedures need no rewriting, with the composed nature stated in the tool description rather than encoded in the name. This reverses if an upstream fix to the external analyser issue #42 (an upstream repositoryissues/42) lands in a released version this project installs, which would let the composition be retired in favour of the native tool. This trigger is manually tracked, not mechanically probed, the same way this project's other retain-with-reversal-criteria decisions state their own triggers (see the fork-backend retention row above). Standing position: a pull request against a repository this project does not own is a follow-up, not a deliverable — which is why the fix is recorded as this project's reversal trigger rather than as work | ⚠️ Revisit — pinned by the committed guard `docs-absorbed-decisions.test.ts` |
+| Classify every `anno-*` module as capability-or-glue by **what it does**, and record the verdict *before* anything is deleted (SEAM-02, Phase 27, 2026-08-27) | The next phases delete ~12k lines by prefix. A classification produced *after* the deletion window opens is a rationalisation, not a gate; and a verdict justified by the name prefix is the one justification that begs the question the record exists to answer | ✓ Good — 19 entries committed as `module-classification.ts` with a 16-direction enforcing guard whose non-vacuity threshold is **derived from the registry** rather than pinned (a pinned literal goes red on a correct tree — this project's recorded scar). Proven non-vacuous the hard way: a **real** unclassified `anno-*.ts` was created on disk and Direction 1 went red naming it. Direction 4 rejects a prefix-as-justification across `basis`, every consumer path, every symbol and every requirement id. Residual carried as `D-27-05-B`: `contested` is prose-only and `note` is exempt from the prefix scan, so a *future* contested verdict has no mechanical gate |
 | Answer a split table's re-interpretation with **DISCLOSE**, not refuse (CR-10, Phase 28, 2026-08-29) | Success criterion 3's operative failure word is *silently*. Refusing outright would make split tables editable only wholesale, and recording the original extent on disk would be a `SCHEMA_VERSION` bump. | ✓ Good — `retype()`'s pre-delete gate builds one re-interpretation record per fragmented split row and `setDataType()` returns it as data on a **successful** result, carrying both entry-pair sets and a computed `preservedEntryPairs`. The split layout's pairing rule now has exactly one definition (`splitPartnerOffsets`, `anno-types.ts:1431`) consumed by both the resolver and the writer, so the two cannot disagree silently. Ended the six-round CR-05 → CR-10 blocker chain. |
-| Owe **no parity** to regenerator2000, and drop the engine coupling with it (v0.7.0 open, 2026-08-26) | v0.6.0's Phase 25 carried the gate *"nothing may delete r2000 before a replacement demonstrably produces the same facts"*, which makes the removal hostage to a feature set this project did not choose; and Phase 25's *"populated from the engines' output"* dependency on the held Phase 24 would have made the milestone corpus-dependent, and therefore unreachable while Phase 23's `no-go` stands | ✓ Good — both removed, and the pair is what made v0.7.0 *reachable at all*: the store stands on the `disasm-*` decoders this project already owns, so a milestone shipped in 7 days under a live `no-go` gate. The cost is stated rather than hidden — `R2000-13`/`R2000-14`/`R2000-15` went with the removal and no phase owns their return |
+| Owe **no parity** to the external analyser, and drop the engine coupling with it (v0.7.0 open, 2026-08-26) | v0.6.0's Phase 25 carried the gate *"nothing may delete anno before a replacement demonstrably produces the same facts"*, which makes the removal hostage to a feature set this project did not choose; and Phase 25's *"populated from the engines' output"* dependency on the held Phase 24 would have made the milestone corpus-dependent, and therefore unreachable while Phase 23's `no-go` stands | ✓ Good — both removed, and the pair is what made v0.7.0 *reachable at all*: the store stands on the `disasm-*` decoders this project already owns, so a milestone shipped in 7 days under a live `no-go` gate. The cost is stated rather than hidden — `ANNO-13`/`ANNO-14`/`ANNO-15` went with the removal and no phase owns their return |
 | Persist the store in `node:sqlite`, not atomic JSON (D1, v0.7.0 open, 2026-08-26) | Decided on **evidence grounds, not the performance margin** (1.16 ms vs 16.0 ms per edit). SQLite's planted violation — drop the `COMMIT` — reliably reddens; atomic-JSON's — remove the `fsync` — frequently still passes because the page cache serves the read. A guard that cannot be made to fail has not been written | ✓ Good — the choice paid off exactly where it was argued: one combined test proves durability and revert together across a real `SIGKILL` in a separate OS process, with the removed `COMMIT` observed reddening **both** halves. `better-sqlite3` was rejected separately on 11.4 MB unpacked per consumer and a hard `MODULE_NOT_FOUND` off its eight prebuild targets |
 | Classify, then delete — the registry decides each file's fate, never a glob (Phases 29 and 32, 2026-08-27 → 2026-08-31) | Extends SEAM-02's classification from a record into the *driver* of the removal. A prefix glob deletes by name, which is the one justification that begs the question the record exists to answer | ✓ Good — 14 files and 8,221 lines removed entry by entry with a checked `ModuleFate`, nine modules `git mv`'d out from under the retired prefix with every gate entry re-pointed **in the same commit** as its move, and both capability modules' heuristics extracted out of their dying routes as live code rather than deleted with them |
 | Make the export oracle test-only, and say so in the shipped verb's own output (EXPORT-01, Phase 30, 2026-08-31) | A verb that claims verification it does not perform is the dishonesty this project keeps removing. `acme-verify.ts` needs a real ACME on `$PATH`, which no consumer is promised | ✓ Good — `anno export-asm` states in its second printed line that it assembled nothing, `acme-verify.ts` is absent from the published package by a committed assertion, and CI hard-fails with `VICE_REQUIRE_ACME=1`. The v0.3.0 `--verify` line under Validated was corrected rather than left reading true |
@@ -505,7 +505,7 @@ Full record: [`MILESTONES.md`](MILESTONES.md) ·
 [`milestones/v0.7.0-ROADMAP.md`](milestones/v0.7.0-ROADMAP.md) ·
 [`milestones/v0.7.0-REQUIREMENTS.md`](milestones/v0.7.0-REQUIREMENTS.md)
 
-**This project stopped renting its analysis state.** regenerator2000 is deleted —
+**This project stopped renting its analysis state.** the external analyser is deleted —
 not deprecated, not wrapped — and what replaced it is `.annostore`: a
 `node:sqlite` store behind one seam, with a frozen twelve-member type vocabulary,
 a narrowest-range-wins paint index proven exact at all 65,536 addresses against an
@@ -597,11 +597,11 @@ the four spec-driven Phase 3 wire details finally run against a real binary, one
 came back **refuted** — `vice_disk_attach`'s advertised no-side-effect promise
 is false, and was corrected at source rather than annotated.
 
-**Prior milestone — v0.3.0 regenerator2000 static-analysis backend**, 2026-08-21:
+**Prior milestone — v0.3.0 the external analyser static-analysis backend**, 2026-08-21:
 4 phases (9, 10, 11, inserted 11.1), 36 plans, 101 tasks, 12/12 in-scope
 requirements, 3 days, 268 commits, audit round 2 **`passed`** — the first
 `passed` this project recorded. Recon findings stop being prose: 17 curated
-`r2000_*` tools and 7 `vice-mcp r2000` CLI verbs over a persistent annotation
+`anno_*` tools and 7 `vice-mcp anno` CLI verbs over a persistent annotation
 store, container-side and structurally incapable of touching VICE; register
 writes render as generated bit-name enums; symbols flow both ways between the
 store and a live emulator; the flat linear `toacme` decoder is deleted,
@@ -628,7 +628,7 @@ tasks, 13/27 requirements.
 (Phases 18-22), aiming to turn a C64 binary into rebuildable, subsystem-split,
 fully-symbolised ACME source. **It delivered the first half and cut the second.**
 
-**Delivered:** a regenerator2000 session that survives many tool calls with
+**Delivered:** an external analyser session that survives many tool calls with
 crash recovery and a FIFO call queue; all five upstream analyze procedures
 absorbed and attributed at one pinned commit; a seventh skill
 (`routine-queue-walker`); and a derived-from-bytes coverage census that the
@@ -643,12 +643,12 @@ fourteen requirements they carried (DECOMP-*, BUILD-*, EQUIV-*) are re-mapped
 to v0.6.0, not dropped.
 
 **The pivot, and why it reverses D-R1/D-R2.** Those phases assumed
-regenerator2000 as the analysis substrate. Measured on a committed 279-byte
+The external analyser as the analysis substrate. Measured on a committed 279-byte
 fixture (141 code / 138 data bytes) exercising split pointer tables, an
 RTS-trick dispatch, a bounded indexed array, a stride-5 record array, inline
 `JSR` parameters and self-modifying code:
 
-- **r2000 unannotated flat-decodes** — every data table rendered as garbage
+- **anno unannotated flat-decodes** — every data table rendered as garbage
   instructions. So does `da65` with no info file.
 - **dxa**, with zero hints, typed 72% of data bytes as data with **zero false
   positives**, found every routine from the BASIC `SYS`, and resolved a
@@ -659,7 +659,7 @@ RTS-trick dispatch, a bounded indexed array, a stride-5 record array, inline
   bound, the split-pointer `CONCAT11` idiom and the record stride — all in the
   **decompiler** layer, not the listing's data types.
 
-r2000 is consequently reduced from "the analysis engine" to an annotation store
+anno is consequently reduced from "the analysis engine" to an annotation store
 plus an ACME printer, both of which this project can own. `cc65` (da65/ca65/
 ld65) is not adopted: da65's `RANGE TYPE` vocabulary cannot express a
 split-address table or a struct, so everything Ghidra recovers dies at that
@@ -723,7 +723,7 @@ is a todo rather than a Phase 23 deliverable.
 
 **Opened 2026-08-25.** Decided at the v0.5.0 close and scoped in this session.
 
-**Goal:** Replace regenerator2000 as the analysis substrate with dxa + Ghidra
+**Goal:** Replace the external analyser as the analysis substrate with dxa + Ghidra
 and an annotation store this project owns — proving the pivot's numbers hold on
 real cracked code *before* anything is built on them.
 
@@ -739,7 +739,7 @@ real cracked code *before* anything is built on them.
 - The 105-byte undocumented-opcode SLEIGH extension
 - An owned annotation store — labels, comments, per-range typing, scopes, enums,
   undo, persistence — with an MCP surface and an ACME exporter
-- 19,181 lines of regenerator2000 integration glue deleted
+- 19,181 lines of the external analyser integration glue deleted
 - Automatic annotation: the `memmap.json` join, `$01` bank-state derivation, VIC
   graphics-map derivation
 
@@ -754,18 +754,18 @@ session, not a second cut — see "Next Milestone Goals" below.
 |---|---|---|
 | **23** | The real-release gate | dxa + Ghidra re-run against the `c64-provenance-diff` fixtures — real releases, already committed, already provenance-classified. Measures data-recovery rate and false positives on real packed/cracked code, whether constant propagation still resolves indirect dispatch when the index is *computed* rather than an immediate `ldx #$02`, whether the `analyzer.rs` work being dropped was doing something the pair does not replace, and how the auto-annotation join behaves against ROM banking. Go / degrade / no-go on Phase 9's pattern — which came back `degrade` and shipped a smaller, correct milestone |
 | **24** (A) | The two engines | dxa vendored plus a listing parser; Ghidra headless harness; `ApplyHints` (volatile I/O blocks + dxa's map); `ExportAnalysis` against `DecompInterface`; the undocumented-opcode SLEIGH extension (`docs/undocumented-opcodes-ghidra.md`, all 105 bytes) — stock Ghidra's `6502.slaspec` defines 57 instructions, all documented, so this is the one real toolchain gap |
-| **25** (B) | The annotation store | labels, comments, per-range typing, scopes, enums, undo, persistence; MCP surface; ACME exporter. Deletes 19,181 lines of r2000 integration glue (9,087 non-test + 9,928 test) |
+| **25** (B) | The annotation store | labels, comments, per-range typing, scopes, enums, undo, persistence; MCP surface; ACME exporter. Deletes 19,181 lines of anno integration glue (9,087 non-test + 9,928 test) |
 | **26** (C) | Automatic annotation | the `memmap.json` join and its three selection rules; `$01` bank-state derivation; VIC graphics-map derivation |
 
 **Phase numbering starts at 23.** 20-22 are cut and never reused.
 
 **Reuse rather than rebuild:** `disasm-opcodes.ts`/`disasm-decoder.ts`/
 `disasm-renderer.ts` (2,555 lines) already decode 6502 including illegal
-opcodes; `r2000-d64.ts` (310 lines) is standalone; `memmap.json` plus
-`r2000-regbits-gen.ts` plus `r2000-enum-gen.ts` already own machine knowledge
+opcodes; `anno-d64.ts` (310 lines) is standalone; `memmap.json` plus
+`anno-regbits-gen.ts` plus `anno-enum-gen.ts` already own machine knowledge
 and enum generation.
 
-**Dropped deliberately:** r2000's unpacker (~5,400 lines including the CPU it
+**Dropped deliberately:** anno's unpacker (~5,400 lines including the CPU it
 needs, with claimed 100% unp64 benchmark parity). Owner decision 2026-08-25:
 depack-by-running via `c64-ram-capture` is sufficient.
 
@@ -797,8 +797,8 @@ and the per-phase `VERIFICATION.md` files are the evidence of record.
 **Opened after Phase 23's `no-go`.** Decided in that session.
 
 **Goal:** This project owns the annotation state it has been renting from
-regenerator2000, and the analysis procedures already absorbed from it run on
-that store instead — with regenerator2000 deleted outright, no parity owed to
+The external analyser, and the analysis procedures already absorbed from it run on
+that store instead — with the external analyser deleted outright, no parity owed to
 it, and no procedural knowledge lost with it.
 
 **Target features:**
@@ -812,7 +812,7 @@ it, and no procedural knowledge lost with it.
   five absorbed procedures call as `curated` / `omit` /
   `adapt-to-address-input` — a diff, not a judgement call
 - Per-range typing at the full vocabulary `DECOMP-01` will need later — **12
-  members**, read off `r2000_set_data_type`'s own schema. Not the 7 first named
+  members**, read off `anno_set_data_type`'s own schema. Not the 7 first named
   here: "table" is four distinct split layouts, the one structure the pivot
   notes record `da65` as unable to express
 - Durability and undo proven by planted violation, not a passing happy path
@@ -823,7 +823,7 @@ it, and no procedural knowledge lost with it.
   `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts`
 - The five absorbed procedures re-pointed onto the new surface with their
   heuristics intact, and their attribution headers preserved
-- The regenerator2000 integration glue deleted behind a grep gate observed
+- the external analyser integration glue deleted behind a grep gate observed
   biting in each tree it covers — the `toacme` pattern, whose own gate was
   **not** whole-tree
 - Every guard pinned to the deleted subject given an explicit fate before the
@@ -831,11 +831,11 @@ it, and no procedural knowledge lost with it.
 
 **Two scope decisions taken at the open, 2026-08-26, both owner decisions.**
 
-1. **No parity is owed to regenerator2000.** v0.6.0's Phase 25 carried a gate —
-   *"nothing may delete r2000 before a replacement demonstrably produces the
-   same facts"* — and `STORE-04` was worded as *"the capability `R2000-11`
+1. **No parity is owed to the external analyser.** v0.6.0's Phase 25 carried a gate —
+   *"nothing may delete anno before a replacement demonstrably produces the
+   same facts"* — and `STORE-04` was worded as *"the capability `ANNO-11`
    shipped, carried across the substrate swap rather than lost in it"*. Both are
-   **removed**. regenerator2000 is out of scope and is eliminated; the store is
+   **removed**. The external analyser is out of scope and is eliminated; the store is
    built to what this project needs, not to upstream's feature set.
 2. **The engine coupling is dropped with it.** Phase 25's *"populated from the
    engines' output"* dependency on Phase 24, and its criterion 3's *"against a
@@ -851,15 +851,15 @@ attribution header per destination:
 
 | upstream procedure | absorbed into | what it carries |
 |---|---|---|
-| `r2000-analyze-blocks` | `c64-memory-mapping` | code / data-byte / word / address-table / lo-hi-split-table recognition heuristics |
-| `r2000-analyze-symbol` | `c64-memory-mapping` | hardware-register / global-block / ROM-routine / pointer / flag / counter / state-variable patterns |
-| `r2000-analyze-routine` | `c64-program-recon` | the seven-step routine procedure and its pitfalls |
-| `r2000-analyze-basic` | `c64-program-recon` | BASIC V2 keyword token table and line anatomy |
-| `r2000-analyze-program` | `routine-queue-walker` | full-program orchestration, adapted away from upstream's parallel fan-out |
+| `analyze-blocks` | `c64-memory-mapping` | code / data-byte / word / address-table / lo-hi-split-table recognition heuristics |
+| `analyze-symbol` | `c64-memory-mapping` | hardware-register / global-block / ROM-routine / pointer / flag / counter / state-variable patterns |
+| `analyze-routine` | `c64-program-recon` | the seven-step routine procedure and its pitfalls |
+| `analyze-basic` | `c64-program-recon` | BASIC V2 keyword token table and line anatomy |
+| `analyze-program` | `routine-queue-walker` | full-program orchestration, adapted away from upstream's parallel fan-out |
 
 The prose is therefore already this project's. What is **not** already this
 project's is the route underneath it: every absorbed step is written against
-`r2000_*` tool calls. Deleting the tool surface without re-pointing them leaves
+`anno_*` tool calls. Deleting the tool surface without re-pointing them leaves
 the knowledge intact and the procedure inert — which is the failure this
 milestone's skill half exists to prevent.
 
@@ -872,7 +872,7 @@ not a documentation-only edit.
 **Two consequences worth stating before planning, because both fail silently:**
 
 - **The grep gate's scope is the hard part, and it is measured.** 291 tracked
-  files mention regenerator2000; **55** outside `.planning/`. So roughly 236
+  files mention the external analyser; **55** outside `.planning/`. So roughly 236
   legitimately keep the word permanently, and the gate must be neither
   whole-tree (236 false fires, and it gets switched off) nor `src/skills/`-only
   (blind to `docs/`, `scripts/`, `installer/` and both tarballs). The `toacme`
@@ -881,24 +881,24 @@ not a documentation-only edit.
   `docs/stock-vice-parity.md`.
 - **The exemption set is 10 instances across two trees, not three headers.**
   Five `ATTRIBUTION (ABS-02)` blocks live in three files under `src/skills/`,
-  each carrying two "regenerator2000" lines, and five more sit in the
+  each carrying two "the external analyser" lines, and five more sit in the
   gitignored-but-shipped `installer/skills/` tree. Separately,
-  `routine-queue-walker/SKILL.md:3`'s YAML `description:` names regenerator2000
+  `routine-queue-walker/SKILL.md:3`'s YAML `description:` names the external analyser
   and must change **substantively** rather than be exempted — which re-triggers
   the pairwise trigger-collision gate across all seven skill descriptions
   (`ABS-03`). The exemption needs its own non-vacuity assertion: deleting an
   attribution block must trip it.
 - **Nine guards and two CI scripts are pinned to the deleted subject**, not the
-  three first named here, and 13 non-`r2000-`named test files reference it. Two
+  three first named here, and 13 non-`anno-`named test files reference it. Two
   break on *registration* rather than deletion:
   `generate-tool-support-table.mjs:104` hard-codes a regex matching
-  `R2000_TOOL_DEFINITIONS`, so renaming the collection matches nothing, hits a
+  `ANNO_TOOL_DEFINITIONS`, so renaming the collection matches nothing, hits a
   documented throw branch, and reddens `docs/tool-support.md`'s byte-identity
   guard — and that regex is deliberately triplicated in two more files.
-  `check-skill-tool-coverage.mjs:49` statically imports `CURATED_R2000_TOOLS`
+  `check-skill-tool-coverage.mjs:49` statically imports `CURATED_ANNO_TOOLS`
   and throws `ERR_MODULE_NOT_FOUND` on deletion. `hostpath-consumers.test.ts`
-  itself goes red on three tests, one via a hard-coded `R2000_MODULE_FLOOR = 14`.
-- **`r2000-test-gate.ts` is a keeper with a glue-shaped name.** It owns the ACME
+  itself goes red on three tests, one via a hard-coded `ANNO_MODULE_FLOOR = 14`.
+- **`anno-test-gate.ts` is a keeper with a glue-shaped name.** It owns the ACME
   hard-fail switch CI binds to by name (`ci.yml:45-140`) — `ACME_BIN`,
   `VICE_REQUIRE_ACME`, `assertAcmeRequiredIfEnvSet` — imported by
   `disasm-roundtrip.test.ts`, this project's real-ACME oracle. Deleted as
@@ -906,7 +906,7 @@ not a documentation-only edit.
   missing" to "silent skip", in CI, green. It must be renamed **before** the
   grep gate lands.
 - **Prefix-driven deletion would silently un-ship six more survivors than
-  `CUT-02` names**: `r2000-test-gate`, `-acme-ident`, `-confidence`,
+  `CUT-02` names**: `anno-test-gate`, `-acme-ident`, `-confidence`,
   `-symbols`, `-verify` and `-memmap-render` (behind a live Key Decision). The
   delete criterion is capability, not the name prefix.
   - **Updated 2026-08-29 (Phase 29):** the symbols module survives under its
@@ -914,22 +914,22 @@ not a documentation-only edit.
     29-07 is its **ROUTE, not its knowledge** — the two CLI verbs that reached
     it are gone, so the module's `exportLabels`/`importLabels` remain on disk
     with no caller until Phase 30 rebuilds the route over the store. The
-    `R2000-14`/`R2000-15` capability line above carries the matching dated
+    `ANNO-14`/`ANNO-15` capability line above carries the matching dated
     withdrawal. This paragraph's own claim still holds and is the reason the
     module was not deleted with its verbs.
 
 **Reuse rather than rebuild:** `disasm-opcodes.ts` / `disasm-decoder.ts` /
 `disasm-renderer.ts` already decode 6502 including illegal opcodes
 (**1,042 non-test lines** — the seed's 2,555 is the total including tests);
-`r2000-d64.ts` is standalone; `memmap.json` plus `r2000-regbits-gen.ts` plus
-`r2000-enum-gen.ts` already own the machine knowledge and enum generation. All
-of it survives, under names that no longer say `r2000`.
+`anno-d64.ts` is standalone; `memmap.json` plus `anno-regbits-gen.ts` plus
+`anno-enum-gen.ts` already own the machine knowledge and enum generation. All
+of it survives, under names that no longer say `anno`.
 
 **The deletion is smaller than it looks, and the difference matters.** The
-`r2000-*.ts` surface measures **25,759** lines (10,102 non-test + 15,657 test) —
+`anno-*.ts` surface measures **25,759** lines (10,102 non-test + 15,657 test) —
 itself a correction to the 19,181 `CUT-01` and `CUT-02` assert. But roughly
 **12.9k of that survives under new names**, so the net deletion is about
-**12.4k**. `r2000-coverage.ts` (2,292 lines + 6,484 test) needs only two
+**12.4k**. `anno-coverage.ts` (2,292 lines + 6,484 test) needs only two
 functions repointed. A phase sized at 25.7k deletes the coverage instrument and
 the enum generator.
 
@@ -983,7 +983,7 @@ phases, rewritten: decomposition to closure, rebuildable source and the
 reassembly gate, equivalence and modifiability — carrying `DECOMP-01..04`,
 `BUILD-01..06` and `EQUIV-01..04`, whose text stands in
 [`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md).
-`BUILD-01` is already reworded from "per regenerator2000 scope" to "per
+`BUILD-01` is already reworded from "per the external analyser scope" to "per
 annotation-store scope". These were re-mapped from v0.7.0 to v0.9.0 on
 2026-08-26: each is written against a substrate v0.7.0 now builds, and
 `DECOMP-01` in particular is what `STORE-01`'s typing vocabulary is sized for,
@@ -1002,7 +1002,7 @@ and owned rather than inherited silently.
    there by v0.4.0, because both are pull requests against projects this repo
    does not own: a `KEYBOARD_MATRIX_SET` opcode for VICE's binary monitor (~60
    lines in `monitor_binary.c` calling `keyboard_set_keyarr_any`, closing stock's
-   hardest loss for everyone, not just this plugin), and regenerator2000's
+   hardest loss for everyone, not just this plugin), and the external analyser's
    `--mcp-port` / `--mcp-bind` (~5 lines, unblocking two projects at once and a
    host-side TUI — currently a *stated* limit in this project's install
    documentation precisely because it cannot be fixed downstream). Neither is a
@@ -1055,17 +1055,17 @@ template with a resolver seam replaced six hand-maintained strings, and one
 <details>
 <summary>Previous milestone detail — v0.3.0 phase-by-phase narrative (archived 2026-08-21)</summary>
 
-**v0.3.0 regenerator2000 static-analysis backend — as it was tracked during execution:**
+**v0.3.0 the external analyser static-analysis backend — as it was tracked during execution:**
 
-**Goal:** Adopt regenerator2000 as a static-analysis-only backend so recon findings
+**Goal:** Adopt the external analyser as a static-analysis-only backend so recon findings
 become queryable, undoable state instead of Markdown prose — and the symbol round
 trip between static annotation and the live emulator finally closes.
 
 **Target features (all delivered):**
-- The `R2000-16` assumption probe answered against a real build, as a standalone
+- The `ANNO-16` assumption probe answered against a real build, as a standalone
   go/no-go gate before any further plan is written — the pty/HTTP-MCP question
   decides whether project bootstrap is automatable at all
-- regenerator2000 adopted static-analysis-only, never launched with `--vice`,
+- the external analyser adopted static-analysis-only, never launched with `--vice`,
   guarded in code rather than only documented; runs container-side so no path
   translation applies
 - Project bootstrap from a raw binary automated rather than a documented manual step
@@ -1087,7 +1087,7 @@ trip between static annotation and the live emulator finally closes.
   byte-identical once `use_illegal_opcodes` is on, and an unmodified
   `--export_lbl` file is consumed by the live `vice_symbols_load`. The fifth is a
   genuine `partial` — a `.vsf` carries its start address, but `"C64SC"` matches
-  none of regenerator2000's literal arms and falls through to its own C64
+  none of the external analyser's literal arms and falls through to its own C64
   default, so a non-C64 snapshot would be misreported. `R4` not `R3`: the
   bootstrap was **not** the degraded element, so Phase 10 still delivered
   automation. The probe also corrected its own inputs — rustc floor ≥ 1.90, the
@@ -1096,7 +1096,7 @@ trip between static annotation and the live emulator finally closes.
 - **Phase 10 (9 plans).** The adoption boundary made structural, the bootstrap
   automated, and the removal earned: `--vice` guarded twice, a pure-Node
   `.regen2000proj` synthesiser, a cycle-guarded `.d64` reader that refuses to
-  guess, the `vice-mcp r2000` subcommand, one `--verify`-parsing seam keyed on
+  guess, the `vice-mcp anno` subcommand, one `--verify`-parsing seam keyed on
   ACME's own result line, and `cmdDisasm`/`toacme` deleted behind a whole-tree
   grep gate.
 - **Phase 11 (12 plans).** The store, the enums and the round trip: 17 curated
@@ -1348,7 +1348,7 @@ field. Phase 4's open decoder bound (`decode()`'s `startAddress` silently wrappi
 backtrace. The `UP-01`/`UP-02`/`QUAL-01..03` traceability note above is confirmed a false
 positive of a body-vs-table scan: those IDs sit under "Future Requirements — deferred, not in
 this roadmap", and the v0.2.0 traceability table is correct to omit them, as it is to omit the
-proposed `R2000-*` v0.3.0 set.
+proposed `anno-*` v0.3.0 set.
 
 **Previously:** Phase 8 (Capability Honesty and the Install Story) complete —
 2026-08-18, and it is the milestone's last phase. `capability-registry.ts` is now
@@ -1396,9 +1396,9 @@ no blockers, and the milestone was archived and tagged on 2026-08-19.)*
 **Phase 11 complete — the annotation store is on the tool surface, and the symbol
 loop is closed.** 2026-08-21. 12 plans, 7 waves, verification `passed` (4/4 roadmap
 criteria, 5/5 requirement IDs). This project became an MCP *client* for the first
-time (`r2000-mcp-client.ts`, a hand-rolled JSON-RPC client chosen after measuring
+time (`anno-mcp-client.ts`, a hand-rolled JSON-RPC client chosen after measuring
 that `@mastra/mcp`'s `MCPClient` cannot retrieve a spawned child's exit code), and
-exposes 17 curated `r2000_*` tools registered proxy-locally — so they never reach
+exposes 17 curated `anno_*` tools registered proxy-locally — so they never reach
 `forwardToVice()` and the derived-tool path constraint holds by construction.
 
 Two claims rest on evidence rather than tests, and both were verified independently:
@@ -1414,18 +1414,18 @@ hand-maintained document, and the recon / memory-mapping / ram-capture playbooks
 emit store entries instead of prose.
 
 **Open and recorded, non-blocking:** `T-11-NAME-INJECT` — label names are not
-validated on entry via `r2000_set_label_name` or `--import_lbl`. Code review
+validated on entry via `anno_set_label_name` or `--import_lbl`. Code review
 finding WR-04 widened its blast radius: the generated memory map writes label and
 comment text unescaped into Markdown table cells, and comments may be multi-line.
 Five warning-level review findings total in `11-REVIEW.md`; none critical.
 
 **Bookkeeping note (written at Phase 11 close, resolved at the v0.3.0 close):**
-Phase 10's requirements (`R2000-01`, `-02`, `-03`, `-05`, `-06`, `-09`) were
+Phase 10's requirements (`ANNO-01`, `-02`, `-03`, `-05`, `-06`, `-09`) were
 left in Active at the time — Phase 10 closed without graduating them and Phase
 11 did not touch them, so they were not closed by a phase that had not
 delivered them. All six were graduated to Validated at the v0.3.0 milestone
-close, two with scope-honesty caveats recorded (`R2000-02`'s devcontainer and
-two-projects halves; `R2000-03`'s licence, which the Phase 9 probe falsified as
+close, two with scope-honesty caveats recorded (`ANNO-02`'s devcontainer and
+two-projects halves; `ANNO-03`'s licence, which the Phase 9 probe falsified as
 written).
 
 </details>
@@ -1440,8 +1440,8 @@ rather than cut — their numbers reserved and their requirement text unchanged,
 because nothing about them was falsified, only their substrate is missing;
 v0.6.0's Phase 25 taken forward as the whole of v0.7.0, since its own goal
 carries no corpus dependency and is therefore reachable while the `no-go`
-stands; two owner decisions recorded — no parity is owed to regenerator2000
-(Phase 25's "same facts" gate and `STORE-04`'s `R2000-11` carry-across both
+stands; two owner decisions recorded — no parity is owed to the external analyser
+(Phase 25's "same facts" gate and `STORE-04`'s `ANNO-11` carry-across both
 removed), and the Phase 24 engine coupling dropped with it; the frame-exact
 emulator stop named in "Next Milestone Goals" as the unowned single gate on the
 held phases; and `DECOMP-*`/`BUILD-*`/`EQUIV-*` re-mapped from v0.7.0 to
@@ -1450,7 +1450,7 @@ v0.9.0. Phase numbering continues at 27.*
 *Corrected the same day, after v0.7.0's four research agents measured against the
 tree what this section had asserted from reading. Eight premises were wrong and
 are fixed above: the data-type vocabulary is 12 members, not 7; the existing
-`--verify` seam invokes regenerator2000 rather than ACME, so an ACME verify path
+`--verify` seam invokes the external analyser rather than ACME, so an ACME verify path
 is real scope and not a rename; the `=*+$01` idiom works under real ACME 0.97 but
 exists nowhere in this codebase, so it must be built rather than preserved; typed
 label prefixes number 11 and are already owned by `AUTO_NAME_PREFIX_RE`; the
@@ -1460,7 +1460,7 @@ exempted; nine guards and two CI scripts are pinned to the deleted subject, two 
 them breaking on registration rather than deletion; the skill re-pointing surface
 is 82 tool names and 13 CLI verbs across five files, one an executable and one a
 template; and the store needs no `capability-registry.ts` entry at all. Also
-corrected: the `r2000-*` surface is 25,759 lines against `CUT-01`/`CUT-02`'s
+corrected: the `anno-*` surface is 25,759 lines against `CUT-01`/`CUT-02`'s
 19,181, of which ~12.9k survives renamed, so the net deletion is ~12.4k; the
 `disasm-*` reuse is 1,042 non-test lines, not 2,555; and this file's
 `rewriteArguments()` citations had drifted to `:3029`/`:2964`/`:1508`/`:1484`,

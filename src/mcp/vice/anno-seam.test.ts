@@ -252,7 +252,7 @@ test("package.json files[] ships every anno-* production module on disk and no a
   const annoEntries = pkg.files.filter((entry) => entry.startsWith("anno-")).sort();
   // `.json` IS in the derivation, and it is a decision rather than a widening
   // (plan 29-05). The family gained a SHIPPED GENERATED DATA FILE when
-  // r2000-regbits.json was renamed to anno-regbits.json: it is listed in
+  // anno-regbits.json was renamed to anno-regbits.json: it is listed in
   // files[] because a skill playbook cites it by filename as the curated
   // bit-name table, and it is neither a test file nor a test-only spawned
   // helper -- the two things this assertion exists to keep OUT. Leaving the

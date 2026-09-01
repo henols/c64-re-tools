@@ -347,7 +347,7 @@ test("negative control (MCP-03/WR-08): a loop-variable regex left un-re-pointed 
   // The regex matches `ANNO_TOOL_DEFINITIONS`. Point the loop at anything else
   // and `annoDef` stops resolving as a loop variable, so the generator tries to
   // resolve it as a single-const synthetic tool, fails, and throws.
-  const unmatched = syntheticProxySource("R2000_TOOL_DEFINITIONS");
+  const unmatched = syntheticProxySource("SOME_OTHER_TOOL_DEFINITIONS");
   assert.throws(
     () => discoverSyntheticToolNames(unmatched),
     (err) => {

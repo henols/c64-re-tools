@@ -62,10 +62,10 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 // assertAcmeRequiredIfEnvSet, imported above) -- this file established the
 // ACME_BIN/VICE_REQUIRE_ACME convention originally, but the probe itself now
 // lives in one place. That seam stands under its own name, outside the
-// regenerator2000 filename prefix, so a prefix-driven cleanup of the
-// regenerator2000 surface cannot take the ACME hard-FAIL with it (SEAM-01).
+// the external analyser filename prefix, so a prefix-driven cleanup of the
+// the external analyser surface cannot take the ACME hard-FAIL with it (SEAM-01).
 // Prehistory of the consolidation itself:
-// 2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md.
+// 2026-08-21-migrate-hand-copied-acme-gates-to-anno-test-gate.md.
 // ---------------------------------------------------------------------------
 
 /** Computed exactly once, by the shared seam. Every ACME-dependent test in

@@ -161,7 +161,7 @@ coverage:
     requirement: "STORE-03"
     verification:
       - kind: integration
-        ref: "cd src/mcp/vice && npm run test:automated (broker stopped) — 2561 tests, 6 fail, all six in r2000-session.test.ts (the five named plan 18-06: baseline failures plus the named load-sensitive flake at :615)"
+        ref: "cd src/mcp/vice && npm run test:automated (broker stopped) — 2561 tests, 6 fail, all six in anno-session.test.ts (the five named plan 18-06: baseline failures plus the named load-sensitive flake at :615)"
         status: pass
       - kind: other
         ref: "cd src/mcp/vice && npm run typecheck"
@@ -210,7 +210,7 @@ status: complete
 ## Decisions Made
 
 - **A4's non-vacuity is proven by relabelling, not by exchanging.** The plan instructed "build a second index from the same spans with the ids exchanged and assert the resolved id is 7". That is unreachable under the rule it is testing: exchanging 7 and 9 between two *identical* spans is a no-op on the row set, so the answer stays 9. The intent — the assertion must not be satisfiable by a hard-coded answer — is met by two checks instead: reversing array order keeps the answer 9 (so sort stability does not decide it), and relabelling one row to id 3 flips the answer to 7 (so the answer tracks the id). The contradiction and its resolution are commented in the test.
-- **The import-purity assertion pins the specifier set, not `import type`.** `anno-index.ts` imports two error classes it *throws* (`AnnoAddressError`, `AnnoRangeShapeError`), which are runtime values, so a type-only import is unreachable. What the constraint is actually for — the index must not acquire a runtime dependency on the store, a decoder or the filesystem — is stated directly by a family-prefix loop (`node:`, `./anno-store`, `./hostpath`, `./containerpath`, `./vice`, `./disasm-`, `./r2000-`) plus a `deepEqual` to the one-element specifier list, plus the dynamic-`import(` prohibition a specifier scan cannot see.
+- **The import-purity assertion pins the specifier set, not `import type`.** `anno-index.ts` imports two error classes it *throws* (`AnnoAddressError`, `AnnoRangeShapeError`), which are runtime values, so a type-only import is unreachable. What the constraint is actually for — the index must not acquire a runtime dependency on the store, a decoder or the filesystem — is stated directly by a family-prefix loop (`node:`, `./anno-store`, `./hostpath`, `./containerpath`, `./vice`, `./disasm-`, `./anno-`) plus a `deepEqual` to the one-element specifier list, plus the dynamic-`import(` prohibition a specifier scan cannot see.
 - **The module-level-mutable anchor gained an optional `export ` prefix.** `block-class.test.ts`'s column-zero anchor works for that module because it has no exported module-level bindings; every one of `anno-index.ts`'s is exported, so the unprefixed anchor would have missed a memoising `export const cache = new Map()` entirely. The `const`-bound-mutable-container half is kept in full, WR-04 comment included.
 - **The fixture's spans come from a small palette.** A continuous span distribution makes equal-length overlaps rare by construction (a 1..4096 draw over 2,000 rows gives roughly one row per span value). Shared *exact* spans are what make the tie-break half of the agreement non-vacuous.
 - **The disagreement list is capped and the total counted separately.** See the deviation below.
@@ -262,7 +262,7 @@ status: complete
 
 ## Issues Encountered
 
-- **`npm run test:automated` exits 1 on a clean tree, as the plan documents.** The gate is the failure list, not the exit code. Reconciled item by item with the VICE broker confirmed stopped (`systemctl --user is-active vice-broker` → `inactive`, no `x64sc` process): **2561 tests, 6 failures, all six in `r2000-session.test.ts`** — the five named `plan 18-06:` tests plus the named load-sensitive flake `"stub: a child that answers nothing within the call timeout…"` at `:615`. **No failure in any other file.** Test count rose 2548 → 2561, which is this plan's 13 tests.
+- **`npm run test:automated` exits 1 on a clean tree, as the plan documents.** The gate is the failure list, not the exit code. Reconciled item by item with the VICE broker confirmed stopped (`systemctl --user is-active vice-broker` → `inactive`, no `x64sc` process): **2561 tests, 6 failures, all six in `anno-session.test.ts`** — the five named `plan 18-06:` tests plus the named load-sensitive flake `"stub: a child that answers nothing within the call timeout…"` at `:615`. **No failure in any other file.** Test count rose 2548 → 2561, which is this plan's 13 tests.
 - **The measured exhaustive-loop cost on this host is higher than the research host's 279 ms** — 415–922 ms across runs, 576–775 ms for the whole file. Recorded honestly rather than restating the research figure. Still an order of magnitude under the plan's 5 s bar, so the conclusion (exhaustive, no `MANUAL_ONLY_TESTS`, no sampling) is unchanged.
 
 ## User Setup Required

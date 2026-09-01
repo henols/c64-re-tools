@@ -229,8 +229,8 @@ below is renumbered to stay contiguous.)
      refused by name (D-05-02, Phase 5).** No in-repo producer emits either.
      `'auto'` and `'vice'` parse the confirmed `al C:xxxx .Name` VICE
      label-file syntax; a 0-symbol load is an explained success, not an
-     error. `regenerator2000`'s `--export_lbl` is **assumed** to emit the same
-     syntax, unverified pending `R2000-16(c)`, and the parser skips
+     error. `the external analyser`'s `--export_lbl` is **assumed** to emit the same
+     syntax, unverified pending `ANNO-16(c)`, and the parser skips
      unrecognised lines rather than refusing the file because of it.
    - **`vice_sprite_inspect`'s `format: 'png_base64'` is omitted from the
      stock enum and refused by name (D-05-03, Phase 5).** Same "no skill

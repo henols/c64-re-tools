@@ -49,7 +49,7 @@ entry matching no row as a hard failure naming that entry.
 ## CORRECTION: the renamed group is FIFTEEN, and this plan owns FOURTEEN of them
 
 `32-06-PLAN.md`'s `<objective>` table enumerates **16** renamed set-A members
-and names `src/mcp/vice/r2000-upstream-audit.test.ts` -> `anno-derivation.test.ts`
+and names `src/mcp/vice/anno-derivation.test.ts` -> `anno-derivation.test.ts`
 as its row 6. That mapping is **not derivable** and was not used.
 
 The plan instructs, in as many words, to re-derive before trusting the table
@@ -62,17 +62,17 @@ rename detection first and the name-descendant predicate second:
 setA 43 setB 16 setC 2
 renamed count: 15
 --- samePath 21 gone 7
-GONE  src/mcp/vice/r2000-launch.test.ts
-GONE  src/mcp/vice/r2000-mcp-client.test.ts
-GONE  src/mcp/vice/r2000-project.test.ts
-GONE  src/mcp/vice/r2000-session.test.ts
-GONE  src/mcp/vice/r2000-symbol-roundtrip.test.ts
-GONE  src/mcp/vice/r2000-upstream-audit.test.ts
-GONE  src/mcp/vice/r2000-verify.test.ts
+GONE  src/mcp/vice/anno-launch.test.ts
+GONE  src/mcp/vice/anno-mcp-client.test.ts
+GONE  src/mcp/vice/anno-project.test.ts
+GONE  src/mcp/vice/anno-session.test.ts
+GONE  src/mcp/vice/anno-symbol-roundtrip.test.ts
+GONE  src/mcp/vice/anno-derivation.test.ts
+GONE  src/mcp/vice/anno-verify.test.ts
 ```
 
 21 + 15 + 7 = 43, which reconciles with `SET_A_FLOOR`. `nameDescendantCandidates()`
-for `r2000-upstream-audit.test.ts` yields `anno-upstream-audit.test.ts`,
+for `anno-derivation.test.ts` yields `anno-upstream-audit.test.ts`,
 `absorbed-upstream-audit.test.ts` and `upstream-audit.test.ts`; none exists at
 `AUDIT_END`, and git's `-M` heuristic does not score it either. Calling it
 "renamed" onto `anno-derivation.test.ts` would need exactly the hand-typed map
@@ -83,7 +83,7 @@ This is not a new finding — it was already measured and recorded in
 7 gone, not the plan's 16 / 6"), which also notes that an earlier research
 draft said 13 and that neither 13 nor 16 reproduces. The forward-map split is
 **descriptive**; no floor depends on it, so nothing was edited to make either
-reading win. `r2000-upstream-audit.test.ts` enters the registry as `deleted`
+reading win. `anno-derivation.test.ts` enters the registry as `deleted`
 or `superseded` in the wave-5 sweep that owns the `gone` members.
 
 Arithmetic for this plan, therefore:
@@ -108,7 +108,7 @@ convenience and neither weakens the claim; both are consequences of measured
 facts, and this plan modifies no script, so each is routed around rather than
 patched.
 
-1. **`scripts/lib/r2000-cli-verbs.d.mts`** — the harness's third documented
+1. **`scripts/lib/anno-cli-verbs.d.mts`** — the harness's third documented
    argv convention, `["--run", "typecheck"]`, spawns `npm --run typecheck`.
    npm 11 rejects that form. Measured, first attempt:
 
@@ -130,7 +130,7 @@ patched.
    conventions, `--run` is the only one that had never been exercised, and it
    does not work as written.
 
-2. **`src/mcp/vice/r2000-cli.test.ts`** — the full
+2. **`src/mcp/vice/anno-cli.test.ts`** — the full
    `node --test anno-cli.test.ts` takes **20596ms** measured, against the
    harness's `GUARD_RUN_TIMEOUT_MS` of 15000ms. A timeout is mapped to status
    1, so an unscoped run would have timed out on BOTH legs: the green control
@@ -181,7 +181,7 @@ contract.
 
 `src/mcp/vice/anno-memmap-render.ts` carries a NUL byte at offset 15097
 (line 315), and it IS this sweep's plant target for the
-`r2000-memmap-render.test.ts` row. That is byte-safe as a property of the
+`anno-memmap-render.test.ts` row. That is byte-safe as a property of the
 harness, not of the choice: `plant()` captures the original with
 `readFileSync(abs)` and **no encoding**, performs the find/replace over a
 `latin1` round-trip (byte-preserving for every code unit, NUL included), and
@@ -242,7 +242,7 @@ Written by `scripts/audit-mutation-harness.mjs`. Every field below is a captured
 
 **Byte-identical.** Every plant was reverted.
 
-## `src/mcp/vice/r2000-verb-coverage.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-verb-coverage.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -465,7 +465,7 @@ ok 10 - planted control: an UNRELATED `returned` does not discharge a stale with
 # duration_ms 656.98046
 ```
 
-## `scripts/lib/r2000-cli-verbs.mjs` — verdict `re-pointed`
+## `scripts/lib/anno-cli-verbs.mjs` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -499,7 +499,7 @@ check-skill-tool-coverage: FAIL
   - anno render-memmap: parsed from anno-cli.ts's dispatch switch but named by NO skill file. Resolve by: (1) documenting it in a playbook, (2) removing the verb, or (3) recording it as a scope decision.
 ```
 
-## `scripts/lib/r2000-cli-verbs.d.mts` — verdict `re-pointed`
+## `scripts/lib/anno-cli-verbs.d.mts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -526,7 +526,7 @@ Raw output:
 anno-verb-coverage.test.ts(24,29): error TS2305: Module '"../../../scripts/lib/anno-cli-verbs.mjs"' has no exported member 'verbsMissingFromSkills'.
 ```
 
-## `src/mcp/vice/docs-r2000-decisions.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/docs-absorbed-decisions.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -550,8 +550,8 @@ ok 2 - 2. ARCHITECTURE.md's Architecture Change Record names D-17/D-18, carries 
   duration_ms: 1.42465
   type: 'test'
   ...
-# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
-ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
+# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
+ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
   ---
   duration_ms: 0.830046
   type: 'test'
@@ -602,8 +602,8 @@ ok 2 - 2. ARCHITECTURE.md's Architecture Change Record names D-17/D-18, carries 
   duration_ms: 0.763159
   type: 'test'
   ...
-# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
-ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
+# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
+ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
   ---
   duration_ms: 0.429393
   type: 'test'
@@ -647,7 +647,7 @@ ok 5 - 5. cross-document consistency: every PROJECT.md line naming D-32 also nam
 # duration_ms 248.628816
 ```
 
-## `src/mcp/vice/r2000-answer-key.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/absorbed-answer-key.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -856,7 +856,7 @@ ok 10 - gated: assembling criterion 1's fixture source under real ACME reproduce
 # duration_ms 236.67203
 ```
 
-## `src/mcp/vice/r2000-spawn-seam.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/spawn-seam.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -1069,7 +1069,7 @@ ok 11 - planted violation: duplicating backend-detect.mts's spawn statement into
 # duration_ms 946.96654
 ```
 
-## `src/mcp/vice/r2000-cli.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-cli.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -1159,7 +1159,7 @@ not ok 1 - VERB_OPTIONS carries exactly the surviving verbs
 # duration_ms 2636.820492
 ```
 
-## `src/mcp/vice/r2000-confidence.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-confidence.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -1420,7 +1420,7 @@ ok 15 - searchQueryForGrade returns a string that appears verbatim in a graded c
 # duration_ms 229.454819
 ```
 
-## `src/mcp/vice/r2000-coverage-grammar.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-coverage-grammar.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -1848,7 +1848,7 @@ ok 22 - the suite stays inside its 30-second budget, so a runaway enumeration is
 # duration_ms 1253.232346
 ```
 
-## `src/mcp/vice/r2000-coverage.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-coverage.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -3427,7 +3427,7 @@ ok 126 - CR-05 (H, control): where the runtime names a parse POSITION the reason
 # duration_ms 1485.46538
 ```
 
-## `src/mcp/vice/r2000-d64.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-d64.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -3693,7 +3693,7 @@ ok 16 - sectorsPerTrack covers all four standard 1541 zones
 # duration_ms 226.138758
 ```
 
-## `src/mcp/vice/r2000-enum-gen.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-enum-gen.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -3861,8 +3861,8 @@ ok 26 - buildEnumGenerationReport: a run below its ceiling says NOTHING about tr
   duration_ms: 0.506378
   type: 'test'
   ...
-# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
-ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
+# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
+ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
   ---
   duration_ms: 0.372422
   type: 'test'
@@ -4190,8 +4190,8 @@ ok 26 - buildEnumGenerationReport: a run below its ceiling says NOTHING about tr
   duration_ms: 0.459623
   type: 'test'
   ...
-# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
-ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
+# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
+ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
   ---
   duration_ms: 0.3689
   type: 'test'
@@ -4217,7 +4217,7 @@ ok 28 - anno-enum-gen.ts never references the machine-global save_global_enum() 
 
 **1. Date and provenance.** Written 2026-09-01 during gap-closure round 1 for phase 32,
 plan 32-14, closing Gap 3 of `32-VERIFICATION.md`. It concerns the
-`src/mcp/vice/r2000-enum-gen.test.ts` section immediately above and no other section in
+`src/mcp/vice/anno-enum-gen.test.ts` section immediately above and no other section in
 this file.
 
 **2. What was wrong (`CR-02`).** The recorded replacement was not the replacement applied.
@@ -4283,7 +4283,7 @@ green at 61 rows both before and after this correction, with the same measured l
 reordered, renumbered, retitled or edited.
 
 
-## `src/mcp/vice/r2000-memmap-render.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-memmap-render.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -4488,7 +4488,7 @@ not ok 1 - parseProvenanceHeader accepts a fully-filled valid header
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.test.ts:66:18)
@@ -4508,7 +4508,7 @@ not ok 2 - parseProvenanceHeader accepts an optional rasterPositions array
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.test.ts:74:18)
@@ -4602,7 +4602,7 @@ not ok 15 - the render digest is identical across two renders of the same store 
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4626,7 +4626,7 @@ not ok 16 - changing a LABEL in the store changes the render digest -- the diges
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4650,7 +4650,7 @@ not ok 17 - changing a COMMENT in the store changes the render digest
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4674,7 +4674,7 @@ not ok 18 - changing a RANGE in the store changes the render digest
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4698,7 +4698,7 @@ not ok 19 - changing the SIDECAR BYTES alone changes the render digest, even whe
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4728,7 +4728,7 @@ not ok 21 - renders a golden memory map from a hand-built store plus a fixture s
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4752,7 +4752,7 @@ not ok 22 - the render digest and the --check verdict AGREE: the identical tree 
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4775,7 +4775,7 @@ not ok 23 - a store with ZERO ranges, labels and comments renders a banner and a
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4798,7 +4798,7 @@ not ok 24 - --check names the LOWEST differing line when the file differs on sev
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4822,7 +4822,7 @@ not ok 25 - an address whose store comment carries [unknown] appears under Open 
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4846,7 +4846,7 @@ not ok 26 - comment evidence containing BOTH a pipe and an embedded newline rend
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a2cdc88cd26fc28b0/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4870,7 +4870,7 @@ not ok 26 - comment evidence containing BOTH a pipe and an embedded newline rend
 # duration_ms 978.441582
 ```
 
-## `src/mcp/vice/r2000-regbits.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-regbits.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -5099,7 +5099,7 @@ ok 13 - non-vacuity: a synthetic memmap entry whose desc is unmappable and absen
 # duration_ms 394.669348
 ```
 
-## `src/mcp/vice/r2000-tools.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-tools.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 

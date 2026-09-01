@@ -44,7 +44,7 @@ key-files:
 
 key-decisions:
   - "Followed the guard's own derivation over the plan's arithmetic throughout (D-01): 7 deleted not 6, 16 set B not 15, 61 rows not 60. The registry header already pinned setBFloor=16/totalFloor=61; the plan's 60 was a planning-time reading."
-  - "r2000-upstream-audit.test.ts recorded `deleted` with the measured R091 rename to anno-derivation.test.ts disclosed in full on the row, in evidence section 5 and in the windows ledger — rather than `superseded`, which would collide with the successor's own independently derived set-B row on the duplicate-newSubject check. Every machine-checkable claim the row makes is literally true; the relationship is simply not expressible in the registry as written."
+  - "anno-derivation.test.ts recorded `deleted` with the measured R091 rename to anno-derivation.test.ts disclosed in full on the row, in evidence section 5 and in the windows ledger — rather than `superseded`, which would collide with the successor's own independently derived set-B row on the duplicate-newSubject check. Every machine-checkable claim the row makes is literally true; the relationship is simply not expressible in the registry as written."
   - "No observedRed on any kept-unchanged row. The plan's task text offers one as optional STRENGTHENING; the committed guard's predicate REJECTS it outright, so following the plan text would have redded the registry. The guard won and the conflict is recorded."
   - "The derivation was NOT modified to resolve the rename blind spot, even though doing so is a strengthening and would have produced exactly the plan's predicted 60. Changing a derivation predicate and two committed floors at the wave that closes the phase is architectural; it is written up as a recommended fix for a plan that owns the guard."
   - "Both set-C members verdict `kept-unchanged`, each removalTrigger stating in terms that its ORIGINAL trigger is already satisfied and is NOT sufficient — the sentence without which the two read as unexplained survivors."
@@ -119,11 +119,11 @@ coverage:
     human_judgment: true
     rationale: "The census is mechanical, but the JUDGEMENT that block-class.ts:196's already-inert arm should be RECORDED rather than removed — on the grounds that this phase has no build remit — is a scoping call a human should confirm, since the arm is now known to be justified by a condition that does not hold for it."
   - id: D7
-    description: "r2000-upstream-audit.test.ts's rename recorded honestly under a `deleted` verdict the registry cannot express otherwise"
+    description: "anno-derivation.test.ts's rename recorded honestly under a `deleted` verdict the registry cannot express otherwise"
     requirement: CUT-04
     verification:
       - kind: automated
-        ref: "git show --format='' --name-status -M c59fcef → `R091 src/mcp/vice/r2000-upstream-audit.test.ts src/mcp/vice/anno-derivation.test.ts`; successor header states the rename; all five predecessor test names present in the successor today; 207 → 478 line growth measured as the reason end-to-end -M does not score it"
+        ref: "git show --format='' --name-status -M c59fcef → `R091 src/mcp/vice/anno-derivation.test.ts src/mcp/vice/anno-derivation.test.ts`; successor header states the rename; all five predecessor test names present in the successor today; 207 → 478 line growth measured as the reason end-to-end -M does not score it"
         status: pass
     human_judgment: true
     rationale: "Whether `deleted`-with-full-disclosure is the right call versus halting the phase to strengthen the derivation (which would move SET_B_FLOOR 16→15 and TOTAL_FLOOR 61→60) is a scoping decision outside this plan's remit. The plan forbids modifying the guard; the fix is written up in evidence section 5 and windows 29. A human should confirm the deferral."
@@ -207,30 +207,30 @@ predicate re-run, not a second hand-typed list.
 
 | historical path | removing commit | plan |
 |---|---|---|
-| `r2000-launch.test.ts` | `1d40ad0` | 29-10 |
-| `r2000-mcp-client.test.ts` | `1d40ad0` | 29-10 |
-| `r2000-project.test.ts` | `1d40ad0` | 29-10 |
-| `r2000-session.test.ts` | `1d40ad0` | 29-10 |
-| `r2000-symbol-roundtrip.test.ts` | `1d40ad0` | 29-10 |
-| **`r2000-upstream-audit.test.ts`** | **`c59fcef`** | **29-05** |
-| `r2000-verify.test.ts` | `1d40ad0` | 29-10 |
+| `anno-launch.test.ts` | `1d40ad0` | 29-10 |
+| `anno-mcp-client.test.ts` | `1d40ad0` | 29-10 |
+| `anno-project.test.ts` | `1d40ad0` | 29-10 |
+| `anno-session.test.ts` | `1d40ad0` | 29-10 |
+| `anno-symbol-roundtrip.test.ts` | `1d40ad0` | 29-10 |
+| **`anno-derivation.test.ts`** | **`c59fcef`** | **29-05** |
+| `anno-verify.test.ts` | `1d40ad0` | 29-10 |
 
 Each row's note records what the file **used to assert** and, where the coverage was relocated rather
-than lost, where it went — `r2000-project.test.ts`'s four input-validator tests, for instance, were
+than lost, where it went — `anno-project.test.ts`'s four input-validator tests, for instance, were
 relocated verbatim into `prg-image.test.ts`, which carries its own set-B row.
 
-## The finding that matters most: `r2000-upstream-audit.test.ts` is a rename
+## The finding that matters most: `anno-derivation.test.ts` is a rename
 
 Plan 32-07 handed this member over by name expecting `deleted` or `superseded`. Investigating the
 removing commit — whose subject is `refactor(29-05): move the four unpaired guard tests` — produced this:
 
 ```
 $ git show --format="" --name-status -M c59fcef
-R091	src/mcp/vice/r2000-upstream-audit.test.ts	src/mcp/vice/anno-derivation.test.ts
+R091	src/mcp/vice/anno-derivation.test.ts	src/mcp/vice/anno-derivation.test.ts
 ```
 
 A 91 %-similarity **rename**, corroborated three ways: the commit subject; the successor's own header
-(*"RENAMED from `r2000-upstream-audit.test.ts` by phase 29 plan 29-05. Renamed ONLY"*); and **all five**
+(*"RENAMED from `anno-derivation.test.ts` by phase 29 plan 29-05. Renamed ONLY"*); and **all five**
 predecessor test names surviving verbatim in `anno-derivation.test.ts` today.
 
 **Why the derivation misses it.** Both of `deriveForwardMap()`'s mechanisms fail here — end-to-end
@@ -272,11 +272,11 @@ Reading them mattered. The naive count flags 8 members; only **2** survive the r
 
 | member | raw count | what the lines actually are | verdict |
 |---|---:|---|---|
-| `check-no-regenerator2000.mjs` | 31 | exemption-table entries removed as the files they exempted were deleted | kept-unchanged |
-| `module-classification.test.ts` | 14 | mostly invented `r2000-synthetic-*` fixture names — **but two assertion operands were INVERTED** | **re-pointed** |
-| `shipped-modules.test.ts` | 9 | `R2000_BIN` inside synthetic source strings driving the comment stripper | kept-unchanged |
-| `anno-derivation.test.ts` | 7 | **`import { CURATED_R2000_TOOLS } from "./r2000-tools.ts"` removed**, consumers with it | **re-pointed** |
-| `check-no-regenerator2000.d.mts` | 1 | a header cross-reference comment | kept-unchanged |
+| `check-no-analyser.mjs` | 31 | exemption-table entries removed as the files they exempted were deleted | kept-unchanged |
+| `module-classification.test.ts` | 14 | mostly invented `anno-synthetic-*` fixture names — **but two assertion operands were INVERTED** | **re-pointed** |
+| `shipped-modules.test.ts` | 9 | `ANNO_BIN` inside synthetic source strings driving the comment stripper | kept-unchanged |
+| `anno-derivation.test.ts` | 7 | **`import { CURATED_ANNO_TOOLS } from "./anno-tools.ts"` removed**, consumers with it | **re-pointed** |
+| `check-no-analyser.d.mts` | 1 | a header cross-reference comment | kept-unchanged |
 | `anno-index.test.ts` | 1 | an added import-family entry naming the dead family to **forbid** it | kept-unchanged |
 | `anno-seam.test.ts` | 1 | an added rename-note comment | kept-unchanged |
 | `anno-store.test.ts` | 1 | an assertion **message** string | kept-unchanged |
@@ -294,11 +294,11 @@ not widened to reach them.
 | member | plant | guard | red | control |
 |---|---|---|---:|---:|
 | `anno-derivation.test.ts` | `anno-tools.ts`: `name: "anno_search"` → `"anno_searchZZ"` | `node --test anno-derivation.test.ts` | 1 | 0 |
-| `module-classification.test.ts` | `module-classification.ts`: `module: "anno-regbits.json"` → `"r2000-regbits.json"` | `node --test module-classification.test.ts` | 1 | 0 |
+| `module-classification.test.ts` | `module-classification.ts`: `module: "anno-regbits.json"` → `"anno-regbits.json"` | `node --test module-classification.test.ts` | 1 | 0 |
 
 Both plants target the guard's **live** subject. The first breaks the manifest-to-surface route so
 `derivationVerdict()` reports `anno_searchZZ: classified by NEITHER the manifest NOR the register`
-(`not ok 9`, `:451`). The second makes `classificationFor("r2000-regbits.json")` resolve, failing the
+(`not ok 9`, `:451`). The second makes `classificationFor("anno-regbits.json")` resolve, failing the
 exact assertion the measured re-pointing had inverted (`not ok 6`, `:483`).
 
 ## Assumption A7 resolved — and why reading the plan's file alone would have been a real mistake
@@ -390,7 +390,7 @@ Contributed by plan: 32-01 → 1, 32-06 → 14, 32-07 → 21, **32-08 → 25**.
   direction applies to it. The relation that governs it is the discharge-closure check, which resolves
   the fate's `to` field — untouched by that plant.
 - **Fix:** retargeted onto the exact operand the measured re-pointing inverted —
-  `module: "anno-regbits.json"` → `"r2000-regbits.json"`, making `classificationFor("r2000-regbits.json")`
+  `module: "anno-regbits.json"` → `"anno-regbits.json"`, making `classificationFor("anno-regbits.json")`
   resolve. Control exit 0, planted exit 1, `not ok 6` at `:483`.
 - **Both attempts are recorded on the row.** No guard was weakened and no row reclassified.
 - **Committed in:** `34d2d37`.

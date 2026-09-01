@@ -2,7 +2,7 @@
 phase: 15-debt-and-review-disposition
 plan: 07
 subsystem: testing
-tags: [test-isolation, fixture-provenance, test-gate-migration, r2000, acme, binmon, debt-disposition]
+tags: [test-isolation, fixture-provenance, test-gate-migration, anno, acme, binmon, debt-disposition]
 
 requires:
   - phase: 15-debt-and-review-disposition
@@ -10,7 +10,7 @@ requires:
 provides:
   - "build-atomic.test.ts's cleanup-scan assertion is scoped to a private per-run wrapper directory, immune to any of the ten other build()-calling test files planting a .build-tmp-* sibling in the shared system temp root"
   - "cpuhistory-get.json and cpuhistory-get-multi.json correctly record capturedFrom: fork:/usr/local/bin/x64sc (was mislabelled stock); fixtures README documents the kind token is operator-supplied, not derived"
-  - "r2000-cli.test.ts, r2000-project.test.ts and disasm-roundtrip.test.ts import their ACME/regenerator2000 availability gates from r2000-test-gate.ts instead of carrying local copies; the seam's HONEST SCOPE paragraph (which documented this exact migration as outstanding) is deleted"
+  - "anno-cli.test.ts, anno-project.test.ts and disasm-roundtrip.test.ts import their ACME/analyser availability gates from anno-test-gate.ts instead of carrying local copies; the seam's HONEST SCOPE paragraph (which documented this exact migration as outstanding) is deleted"
   - "Three pending todos closed with cited, re-verified Resolutions in .planning/todos/completed/"
 affects: [15-09, 15-11, 15-12]
 
@@ -33,13 +33,13 @@ key-files:
     - .claude/mcp/vice/fixtures/binmon/cpuhistory-get.json
     - .claude/mcp/vice/fixtures/binmon/cpuhistory-get-multi.json
     - .claude/mcp/vice/fixtures/binmon/README.md
-    - .claude/mcp/vice/r2000-test-gate.ts
-    - .claude/mcp/vice/r2000-cli.test.ts
-    - .claude/mcp/vice/r2000-project.test.ts
+    - .claude/mcp/vice/anno-test-gate.ts
+    - .claude/mcp/vice/anno-cli.test.ts
+    - .claude/mcp/vice/anno-project.test.ts
     - .claude/mcp/vice/disasm-roundtrip.test.ts
     - .planning/todos/completed/2026-08-22-build-atomic-cleanup-test-races-on-shared-tmp.md (moved from pending/)
     - .planning/todos/completed/2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock.md (moved from pending/)
-    - .planning/todos/completed/2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md (moved from pending/)
+    - .planning/todos/completed/2026-08-21-migrate-hand-copied-acme-gates-to-anno-test-gate.md (moved from pending/)
     - .planning/STATE.md
 
 key-decisions:
@@ -82,20 +82,20 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
-    description: "Task 3: r2000-cli.test.ts, r2000-project.test.ts, and disasm-roundtrip.test.ts's local ACME/regenerator2000 gate copies replaced with imports from r2000-test-gate.ts; the seam's stale HONEST SCOPE paragraph deleted; the unbounded-probe timeout divergence converged on the seam's bounded 10s spawnSync."
+    description: "Task 3: anno-cli.test.ts, anno-project.test.ts, and disasm-roundtrip.test.ts's local ACME/analyser gate copies replaced with imports from anno-test-gate.ts; the seam's stale HONEST SCOPE paragraph deleted; the unbounded-probe timeout divergence converged on the seam's bounded 10s spawnSync."
     requirement: null
     verification:
       - kind: unit
-        ref: "measured before/after pass-count table across all four files (r2000-cli.test.ts, disasm-roundtrip.test.ts, r2000-answer-key.test.ts as unmigrated control, r2000-project.test.ts), both default and VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1 opt-in runs -- every cell identical pre- and post-migration (64/64/0/0, 5/5/0/0, 10/10/0/0, 13/13/0/0; combined 92/92/0/0)"
+        ref: "measured before/after pass-count table across all four files (anno-cli.test.ts, disasm-roundtrip.test.ts, absorbed-answer-key.test.ts as unmigrated control, anno-project.test.ts), both default and VICE_REQUIRE_ANNO=1 VICE_REQUIRE_ACME=1 opt-in runs -- every cell identical pre- and post-migration (64/64/0/0, 5/5/0/0, 10/10/0/0, 13/13/0/0; combined 92/92/0/0)"
         status: pass
       - kind: unit
-        ref: "r2000-cli.test.ts test 35 (11-VERIFICATION.md's cited criterion-3 evidence) reports identical name and ok verdict before and after, under the opt-in run"
+        ref: "anno-cli.test.ts test 35 (11-VERIFICATION.md's cited criterion-3 evidence) reports identical name and ok verdict before and after, under the opt-in run"
         status: pass
       - kind: unit
         ref: "npm run typecheck exits 0; npm run test:automated 2110/2105/0/5, unchanged"
         status: pass
       - kind: other
-        ref: "grep confirms no local probeAcme/probeR2000/ACME_AVAILABLE/R2000_AVAILABLE definitions remain in the three migrated files; HONEST SCOPE absent from r2000-test-gate.ts"
+        ref: "grep confirms no local probeAcme/probeAnno/ACME_AVAILABLE/ANNO_AVAILABLE definitions remain in the three migrated files; HONEST SCOPE absent from anno-test-gate.ts"
         status: pass
     human_judgment: false
   - id: D4
@@ -117,7 +117,7 @@ status: complete
 
 # Phase 15 Plan 7: Fix Three Genuinely Cheap Pending Todos (Test Isolation, Fixture Mislabel, Gate Migration) Summary
 
-**Fixed a test-isolation flake by scoping build-atomic.test.ts's cleanup scan to a private wrapper directory, corrected two cpuhistory-get* fixture sidecars that mislabelled the fork binary as stock, and migrated three hand-copied ACME/regenerator2000 test gates onto the shared r2000-test-gate.ts seam — all three proven by planted violations or measured before/after baselines, never a single green run, with no migrated file's pass count changed.**
+**Fixed a test-isolation flake by scoping build-atomic.test.ts's cleanup scan to a private wrapper directory, corrected two cpuhistory-get* fixture sidecars that mislabelled the fork binary as stock, and migrated three hand-copied ACME/analyser test gates onto the shared anno-test-gate.ts seam — all three proven by planted violations or measured before/after baselines, never a single green run, with no migrated file's pass count changed.**
 
 ## Performance
 
@@ -131,18 +131,18 @@ status: complete
 
 - **Task 1 (test-isolation flake):** `build-atomic.test.ts`'s `tempSiblingsOf()` scan was rescoped from the shared `os.tmpdir()` (via `dirname(outDir)`, where `outDir` itself lived directly under `tmpdir()`) to a private `mkdtempSync()` wrapper directory holding both the success and failure out-dirs. Proven non-vacuous with a planted violation: a directory named `.build-tmp-planted-probe-*` created directly in `/tmp` reddened the pre-fix assertion (`actual: ['.build-tmp-planted-probe-12345']`) and was invisible to the post-fix assertion (green) against the identical plant. Confirmed the ten-file `build()` concurrency surface by direct grep (`grep -rl "from \"./build.ts\"" *.test.ts`): `broker-control.test.ts`, `broker-e2e.test.ts`, `broker-kill.test.ts`, `broker-launch.test.ts`, `resources-sync.test.ts` (the sharpest collision — its own scratch dir is also `mkdtempSync(tmpdir())`-rooted), `stock-broker-live.test.ts`, `stock-live-broker-monitor.test.ts`, `vice-broker-acquire.test.ts`, `vice-broker-launch.test.ts`, `vice-broker-supervision.test.ts`.
 - **Task 2 (fixture mislabel):** `cpuhistory-get.json` and `cpuhistory-get-multi.json`'s `capturedFrom` corrected from `stock:/usr/local/bin/x64sc` to `fork:/usr/local/bin/x64sc` — kind token only, one changed line per file, bytes and path unchanged. Re-measured the binary identity live this session rather than trusting the finding's own citation: `/usr/local/bin/x64sc --help` names `-mcpserver` 5 times (fork), `/usr/bin/x64sc --help` names it 0 times (genuine stock — the correctly-labelled sibling `cpuhistory-get-unsupported.json`'s own path, left untouched). Confirmed no test asserts either file's `capturedFrom` by literal name (`binmon-fixtures.test.ts`'s `EXTV-01` test is scoped to exactly `display-get`/`event-interleaved`/`checkpoint-list`). Fixtures README's provenance table rows corrected and a new note added recording that the kind token is operator-supplied (`CAPTURE_BACKEND_KIND`), not derived — the root cause named as a follow-on rather than fixed, since deriving it would touch `probe-binmon.mjs`, which plan 15-05 already marked evidence-immutable for `13-REVIEW.md WR-02`.
-- **Task 3 (gate migration):** `r2000-cli.test.ts` (which carried both a `probeR2000()` and a `probeAcme()` local copy), `r2000-project.test.ts` (a third, independently-divergent `probeR2000()` copy — confirmed present, correcting the todo's original two-file scope), and `disasm-roundtrip.test.ts` (the file that established the ACME convention originally) now import `R2000_BIN`/`skipReasonFor`/`assertR2000RequiredIfEnvSet` and/or `ACME_BIN`/`acmeSkipReasonFor`/`assertAcmeRequiredIfEnvSet` from `r2000-test-gate.ts`. The timeout divergence the todo named (two local `probeAcme()` copies passed no `spawnSync` timeout; the seam passes 10s) is resolved by converging on the seam's bounded probe. `r2000-test-gate.ts`'s stale HONEST SCOPE paragraph — which documented exactly this migration as outstanding — is deleted.
-- **Migration proven non-regressive by a measured before/after table**, not a single post-fix run: the pre-migration tree was captured (`git diff` saved to a patch, `git checkout --` the four files, both default and `VICE_REQUIRE_R2000=1 VICE_REQUIRE_ACME=1` opt-in counts measured), then the migration patch was reapplied and re-measured. Both regenerator2000 (0.9.20) and ACME (0.97 "Zem") are genuinely installed on this host, so all four cells below are independent proof, not duplicate skip paths:
+- **Task 3 (gate migration):** `anno-cli.test.ts` (which carried both a `probeAnno()` and a `probeAcme()` local copy), `anno-project.test.ts` (a third, independently-divergent `probeAnno()` copy — confirmed present, correcting the todo's original two-file scope), and `disasm-roundtrip.test.ts` (the file that established the ACME convention originally) now import `ANNO_BIN`/`skipReasonFor`/`assertAnnoRequiredIfEnvSet` and/or `ACME_BIN`/`acmeSkipReasonFor`/`assertAcmeRequiredIfEnvSet` from `anno-test-gate.ts`. The timeout divergence the todo named (two local `probeAcme()` copies passed no `spawnSync` timeout; the seam passes 10s) is resolved by converging on the seam's bounded probe. `anno-test-gate.ts`'s stale HONEST SCOPE paragraph — which documented exactly this migration as outstanding — is deleted.
+- **Migration proven non-regressive by a measured before/after table**, not a single post-fix run: the pre-migration tree was captured (`git diff` saved to a patch, `git checkout --` the four files, both default and `VICE_REQUIRE_ANNO=1 VICE_REQUIRE_ACME=1` opt-in counts measured), then the migration patch was reapplied and re-measured. Both the external analyser (0.9.20) and ACME (0.97 "Zem") are genuinely installed on this host, so all four cells below are independent proof, not duplicate skip paths:
 
   | File | Default (before → after) | Opt-in (before → after) |
   |---|---|---|
-  | `r2000-cli.test.ts` | 64/64/0/0 → 64/64/0/0 | 64/64/0/0 → 64/64/0/0 |
+  | `anno-cli.test.ts` | 64/64/0/0 → 64/64/0/0 | 64/64/0/0 → 64/64/0/0 |
   | `disasm-roundtrip.test.ts` | 5/5/0/0 → 5/5/0/0 | 5/5/0/0 → 5/5/0/0 |
-  | `r2000-answer-key.test.ts` (unmigrated control) | 10/10/0/0 → 10/10/0/0 | 10/10/0/0 → 10/10/0/0 |
-  | `r2000-project.test.ts` | 13/13/0/0 → 13/13/0/0 | 13/13/0/0 → 13/13/0/0 |
+  | `absorbed-answer-key.test.ts` (unmigrated control) | 10/10/0/0 → 10/10/0/0 | 10/10/0/0 → 10/10/0/0 |
+  | `anno-project.test.ts` | 13/13/0/0 → 13/13/0/0 | 13/13/0/0 → 13/13/0/0 |
   | combined | 92/92/0/0 → 92/92/0/0 | 92/92/0/0 → 92/92/0/0 |
 
-  `11-VERIFICATION.md`'s cited `r2000-cli.test.ts` test 35 ("criterion 3 … renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` … reassembles under real ACME") reports identical name and `ok` verdict before and after, under the opt-in run.
+  `11-VERIFICATION.md`'s cited `anno-cli.test.ts` test 35 ("criterion 3 … renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` … reassembles under real ACME") reports identical name and `ok` verdict before and after, under the opt-in run.
 - **Process note, corrected in-plan:** a multi-path `git add` command aborted silently after `git mv`-ing a todo when one of its three pathspecs (the now-nonexistent pre-move `pending/` path) failed to match — this dropped Task 2's Resolution text and STATE.md ledger edit from commit `6def094` (which landed as an empty-content rename only). Caught immediately by a post-commit `git show --stat` check showing `0 insertions` where substantial content was expected, and corrected in follow-up commit `40246ef` before proceeding to Task 3. Lesson recorded in `patterns-established`.
 - All three todos moved `pending/` → `completed/` with cited `## Resolution` sections naming the closing commit, the proof method, and (Task 2) a named follow-on owner. `STATE.md`'s Deferred Items ledger reconciled in the same commit as each move (pending 15 → 12 across the three closes; total 16 → 13); one historical-prose mention of Task 3's own todo stem was reworded to a paraphrase (matching the existing pattern for the fork-backend-removal todo) so `docs-deferred-ledger.test.ts`'s completed-stem check does not trip.
 - **DEBT-01 is NOT marked complete** — it is a shared requirement ID still declared by sibling plans 15-09, 15-11 and 15-12 per the shared-ID gate (#2388); `requirements.ready-ids` correctly withholds it. Likewise DEBT-02 is untouched by this plan (already partially closed by 15-06, remainder owned by 15-09).
@@ -151,7 +151,7 @@ status: complete
 
 1. **Task 1: Scope build-atomic.test.ts's cleanup scan to a private parent** - `7484afa` (fix), `f663a97` (docs: close todo + STATE.md ledger)
 2. **Task 2: Correct the two cpuhistory-get sidecars' provenance labels** - `d67f0ef` (fix), `6def094` (docs: close todo, rename-only due to the git-add process defect), `40246ef` (docs: land the dropped Resolution content + STATE.md ledger)
-3. **Task 3: Migrate the hand-copied ACME/regenerator2000 gates** - `185187a` (fix), `4ea813d` (docs: close todo + STATE.md ledger)
+3. **Task 3: Migrate the hand-copied ACME/analyser gates** - `185187a` (fix), `4ea813d` (docs: close todo + STATE.md ledger)
 
 _No plan-metadata commit follows this file per the atomic close-out invariant — this SUMMARY, STATE.md, and ROADMAP.md are committed together in the standard `git_commit_metadata` step immediately after this file is written._
 
@@ -161,13 +161,13 @@ _No plan-metadata commit follows this file per the atomic close-out invariant �
 - `.claude/mcp/vice/fixtures/binmon/cpuhistory-get.json` - `capturedFrom` corrected `stock` → `fork`
 - `.claude/mcp/vice/fixtures/binmon/cpuhistory-get-multi.json` - `capturedFrom` corrected `stock` → `fork`
 - `.claude/mcp/vice/fixtures/binmon/README.md` - provenance table rows corrected; new operator-supplied-kind note added
-- `.claude/mcp/vice/r2000-test-gate.ts` - HONEST SCOPE paragraph deleted, header updated to name all three consumers
-- `.claude/mcp/vice/r2000-cli.test.ts` - local `probeR2000()`/`probeAcme()` copies replaced with seam imports
-- `.claude/mcp/vice/r2000-project.test.ts` - local `probeR2000()` copy replaced with seam imports
+- `.claude/mcp/vice/anno-test-gate.ts` - HONEST SCOPE paragraph deleted, header updated to name all three consumers
+- `.claude/mcp/vice/anno-cli.test.ts` - local `probeAnno()`/`probeAcme()` copies replaced with seam imports
+- `.claude/mcp/vice/anno-project.test.ts` - local `probeAnno()` copy replaced with seam imports
 - `.claude/mcp/vice/disasm-roundtrip.test.ts` - local `probeAcme()` copy replaced with seam imports
 - `.planning/todos/completed/2026-08-22-build-atomic-cleanup-test-races-on-shared-tmp.md` - moved from `pending/`; `## Resolution` cites `7484afa`
 - `.planning/todos/completed/2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock.md` - moved from `pending/`; `## Resolution` cites `d67f0ef`
-- `.planning/todos/completed/2026-08-21-migrate-hand-copied-acme-gates-to-r2000-test-gate.md` - moved from `pending/`; `## Resolution` cites `185187a`
+- `.planning/todos/completed/2026-08-21-migrate-hand-copied-acme-gates-to-anno-test-gate.md` - moved from `pending/`; `## Resolution` cites `185187a`
 - `.planning/STATE.md` - Deferred Items ledger reconciled across all three closes (pending 15 → 12, total 16 → 13); one historical stem-mention reworded
 
 ## Decisions Made
@@ -198,4 +198,4 @@ Three of the phase's genuinely-cheap pending todos are closed with cited, re-ver
 
 ## Self-Check: PASSED
 
-All modified files confirmed present on disk with expected content: `build-atomic.test.ts` (private wrapper present, 6/6 tests pass x3), both `cpuhistory-get*.json` files (`capturedFrom` starts with `fork:`), `fixtures/binmon/README.md` (fork mentions present, operator-supplied note added), `r2000-test-gate.ts` (HONEST SCOPE absent), all three migrated test files (no local probe definitions remain, seam imports present), all three completed todos (each with exactly one `## Resolution` heading citing a resolvable commit sha: `7484afa`, `d67f0ef`, `185187a` — all confirmed present in `git log --oneline --all`), `STATE.md` (12 pending todos on disk matches the ledger's stated count). Plan-level `<verification>` re-run: `npm run typecheck` exits 0; `npm run test:automated` exits 0 on two consecutive runs (2110/2105/0/5 both times); `node --test build-atomic.test.ts` exits 0 on three consecutive runs (6/6 each); the opt-in run of all four regenerator2000/ACME test files matches the pre-migration baseline cell for cell; all three todos confirmed in `.planning/todos/completed/`, none remaining in `.planning/todos/pending/`.
+All modified files confirmed present on disk with expected content: `build-atomic.test.ts` (private wrapper present, 6/6 tests pass x3), both `cpuhistory-get*.json` files (`capturedFrom` starts with `fork:`), `fixtures/binmon/README.md` (fork mentions present, operator-supplied note added), `anno-test-gate.ts` (HONEST SCOPE absent), all three migrated test files (no local probe definitions remain, seam imports present), all three completed todos (each with exactly one `## Resolution` heading citing a resolvable commit sha: `7484afa`, `d67f0ef`, `185187a` — all confirmed present in `git log --oneline --all`), `STATE.md` (12 pending todos on disk matches the ledger's stated count). Plan-level `<verification>` re-run: `npm run typecheck` exits 0; `npm run test:automated` exits 0 on two consecutive runs (2110/2105/0/5 both times); `node --test build-atomic.test.ts` exits 0 on three consecutive runs (6/6 each); the opt-in run of all four the external analyser/ACME test files matches the pre-migration baseline cell for cell; all three todos confirmed in `.planning/todos/completed/`, none remaining in `.planning/todos/pending/`.

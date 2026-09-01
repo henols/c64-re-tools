@@ -11,12 +11,12 @@ structural path guard)
 
 | New/Modified File | Role | Data Flow | Closest Analog | Match Quality |
 |---|---|---|---|---|
-| `skill-acme-build-cli.test.ts` (new, PKG-02) | test | request-response (subprocess CLI) | `.claude/mcp/vice/disasm-roundtrip.test.ts` (ACME-gated subprocess spawn) + `.claude/mcp/vice/r2000-cli.test.ts` (argv-subcommand CLI test structure) | exact (role+flow) |
-| `skill-memory-mapping-cli.test.ts` (new, PKG-02) | test | request-response (in-process import + subprocess) | `.claude/mcp/vice/r2000-cli.test.ts` (mixes in-process `runR2000Cli()` calls with subprocess bin-level tests) | exact |
-| `skill-program-recon-cli.test.ts` (new, PKG-02) | test | request-response (subprocess CLI, pure arithmetic) | `.claude/mcp/vice/r2000-cli.test.ts` (subprocess pattern, no external binary dependency) | exact |
+| `skill-acme-build-cli.test.ts` (new, PKG-02) | test | request-response (subprocess CLI) | `.claude/mcp/vice/disasm-roundtrip.test.ts` (ACME-gated subprocess spawn) + `.claude/mcp/vice/anno-cli.test.ts` (argv-subcommand CLI test structure) | exact (role+flow) |
+| `skill-memory-mapping-cli.test.ts` (new, PKG-02) | test | request-response (in-process import + subprocess) | `.claude/mcp/vice/anno-cli.test.ts` (mixes in-process `runAnnoCli()` calls with subprocess bin-level tests) | exact |
+| `skill-program-recon-cli.test.ts` (new, PKG-02) | test | request-response (subprocess CLI, pure arithmetic) | `.claude/mcp/vice/anno-cli.test.ts` (subprocess pattern, no external binary dependency) | exact |
 | `comment-phase-pointers.test.ts` (new, PKG-03) | test (guard) | batch (scan-all-shipped-source) | `.claude/mcp/vice/docs-dangling-refs.test.ts` (FLOW-02 test + `extractStringLiterals()` + `ASSIGNMENT_RES` + `shippedTsModules()`) | exact |
 | Guard fixture for PKG-03 (new, under `fixtures/`, if planner wants a permanent fixture rather than the inline planted-violation style) | fixture/test-data | file-I/O | `.claude/mcp/vice/fixtures/planted-review-fixture.md` + `docs-review-disposition.test.ts`'s fixture-driven tests | exact |
-| ~15 literal-path consumers swept for PKG-01 (`.mcp.json`, `plugin.json`, `scripts/*.mjs`, `scripts/package.sh`, `scripts/ensure-mcp-deps.sh`, `installer/scripts/sync-skills.mjs`, `assumption-label-discipline.test.ts`, `version.test.ts`, `r2000-cli.ts`, `package.json`) | config/utility/test (mixed) | transform (path literal find-replace) | `repo-root.ts`'s own header — narrates the prior 3 moves and the exact literal-sweep discipline; `wireMcp()` is the merge-logic analog (see below) | role-match |
+| ~15 literal-path consumers swept for PKG-01 (`.mcp.json`, `plugin.json`, `scripts/*.mjs`, `scripts/package.sh`, `scripts/ensure-mcp-deps.sh`, `installer/scripts/sync-skills.mjs`, `assumption-label-discipline.test.ts`, `version.test.ts`, `anno-cli.ts`, `package.json`) | config/utility/test (mixed) | transform (path literal find-replace) | `repo-root.ts`'s own header — narrates the prior 3 moves and the exact literal-sweep discipline; `wireMcp()` is the merge-logic analog (see below) | role-match |
 | PROJECT.md PKG-04 accepted-risk entry (new row) | config (documentation) | transform | `PROJECT.md`'s FORK-01 row (Key Decisions table, line 278) | exact |
 | (Not modified, but must survive) `repo-root.ts` branch 4 + `repo-root.test.ts`'s synthetic pin | utility / test | transform | itself — this is the file the move's depth constraint is checked against | n/a (constraint, not new file) |
 | (Not modified, but must survive as-is) `vice-proxy.test.ts`'s network-call structural guard | test | batch (directory scan) | itself — uses bare filenames via `readdirSync(HERE)`, so it needs **zero change** on the move | n/a (verify-only) |
@@ -26,7 +26,7 @@ structural path guard)
 ### `skill-acme-build-cli.test.ts` / `skill-program-recon-cli.test.ts` (test, subprocess CLI)
 
 **Analog:** `.claude/mcp/vice/disasm-roundtrip.test.ts` (for the ACME-gate shape) and
-`.claude/mcp/vice/r2000-cli.test.ts` (for general subprocess-CLI test structure)
+`.claude/mcp/vice/anno-cli.test.ts` (for general subprocess-CLI test structure)
 
 **Imports pattern** (`disasm-roundtrip.test.ts:42-57`):
 ```typescript
@@ -40,14 +40,14 @@ import { join } from "node:path";
 
 import { OPCODES, type OpcodeEntry, type AddressingMode } from "./disasm-opcodes.ts";
 // ...
-import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./anno-test-gate.ts";
 ```
 Reach the skill script under test the same way — a relative path computed from `HERE`
 (`dirname(fileURLToPath(import.meta.url))`), one level up out of the MCP package directory
 and back down into `src/skills/...` (post-move; verify exact hop count against final layout —
 see PKG-01 target-shape note below).
 
-**The ACME availability gate (reuse verbatim, do not reimplement)** — `r2000-test-gate.ts:114-162`:
+**The ACME availability gate (reuse verbatim, do not reimplement)** — `anno-test-gate.ts:114-162`:
 ```typescript
 export const ACME_BIN: string = process.env.ACME_BIN ?? "acme";
 // probeAcme(): spawnSync(ACME_BIN, ["--version"...]) falling back to ["--help"...]
@@ -68,7 +68,7 @@ export function assertAcmeRequiredIfEnvSet(assert: ...) {
 ```
 Usage site (`disasm-roundtrip.test.ts:57,72,75`):
 ```typescript
-import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./anno-test-gate.ts";
 const SKIP_REASON: string | false = acmeSkipReasonFor("disasm-roundtrip.test.ts");
 // exactly one test always runs, never skipped:
 test("ACME availability gate (D-08)", () => {
@@ -76,7 +76,7 @@ test("ACME availability gate (D-08)", () => {
 });
 ```
 **Never write a second `command -v acme` check.** Import `ACME_BIN`/`acmeSkipReasonFor`/
-`assertAcmeRequiredIfEnvSet` from `r2000-test-gate.ts` directly — this is the seam
+`assertAcmeRequiredIfEnvSet` from `anno-test-gate.ts` directly — this is the seam
 RESEARCH.md's "Don't Hand-Roll" table names explicitly.
 
 **Core subprocess-spawn pattern** (`disasm-roundtrip.test.ts:93`, argv array, never a shell string):
@@ -85,7 +85,7 @@ const r = spawnSync(ACME_BIN, ["-f", "plain", "-o", outPath, srcPath], { encodin
 ```
 Apply the identical discipline to spawning `acme.mjs`/`derive.mjs`: `spawnSync("node", [scriptPath, ...args], { encoding: "utf8" })`, never `spawnSync(\`node ${scriptPath} ${args}\`, { shell: true })`.
 
-**Temp-dir scratch pattern** (`disasm-roundtrip.test.ts` imports `mkdtempSync`/`rmSync` from `node:fs`, `tmpdir` from `node:os`) — use for `acme.mjs new`/`build` output, matching `r2000-cli.test.ts`'s `withTempDir()` helper (`r2000-cli.test.ts:60+`).
+**Temp-dir scratch pattern** (`disasm-roundtrip.test.ts` imports `mkdtempSync`/`rmSync` from `node:fs`, `tmpdir` from `node:os`) — use for `acme.mjs new`/`build` output, matching `anno-cli.test.ts`'s `withTempDir()` helper (`anno-cli.test.ts:60+`).
 
 **Error-path convention:** `ok = status === 0 && the output file exists` — never treat stderr content alone as failure (ACME emits legal warnings). Apply the same "check exit status + expected artifact, not stderr" rule when asserting on `acme.mjs build`.
 
@@ -93,11 +93,11 @@ Apply the identical discipline to spawning `acme.mjs`/`derive.mjs`: `spawnSync("
 
 ### `skill-memory-mapping-cli.test.ts` (test, in-process import + subprocess)
 
-**Analog:** `.claude/mcp/vice/r2000-cli.test.ts`
+**Analog:** `.claude/mcp/vice/anno-cli.test.ts`
 
-**In-process import pattern** (`r2000-cli.test.ts:18-19`):
+**In-process import pattern** (`anno-cli.test.ts:18-19`):
 ```typescript
-import { runR2000Cli, VERB_OPTIONS } from "./r2000-cli.ts";
+import { runAnnoCli, VERB_OPTIONS } from "./anno-cli.ts";
 ```
 Mirror this for `driver.mjs`'s one exported symbol (`driver.mjs:534`, `export { lookup };`,
 guarded so importing does not also run the CLI):
@@ -114,7 +114,7 @@ invoke the `memmap` verb from a test** — it fetches over the network and overw
 committed file; RESEARCH.md flags this explicitly.
 
 **Console-capture pattern**, if `annotate` writes to stdout rather than a file
-(`r2000-cli.test.ts:33-56`, `withCapturedConsole()`):
+(`anno-cli.test.ts:33-56`, `withCapturedConsole()`):
 ```typescript
 async function withCapturedConsole<T>(fn: () => Promise<T>): Promise<{ result: T; stdout: string; stderr: string }> {
   const origLog = console.log;
@@ -140,7 +140,7 @@ prefer real subprocess spawning matching the other two new test files, for consi
 
 ### `skill-program-recon-cli.test.ts` (test, subprocess, pure arithmetic)
 
-**Analog:** `.claude/mcp/vice/r2000-cli.test.ts` (structure only — `derive.mjs` needs no
+**Analog:** `.claude/mcp/vice/anno-cli.test.ts` (structure only — `derive.mjs` needs no
 availability gate at all, unlike the other two, since it has no external dependency).
 
 Spawn `derive.mjs vic`/`sprites`/`vectors` with `spawnSync("node", [scriptPath, verb, ...flags], { encoding: "utf8" })` and assert on stdout content directly (VIC bank/mode decode is fully deterministic). For `vectors`, write a synthetic 65536-byte buffer to a temp file first (`mkdtempSync`/`writeFileSync`, same as `disasm-roundtrip.test.ts`'s scratch-file pattern) and pass its path as the CLI argument.
@@ -375,16 +375,16 @@ count/order exactly.
 ## Shared Patterns
 
 ### ACME availability gating
-**Source:** `.claude/mcp/vice/r2000-test-gate.ts:114-162` (`ACME_BIN`, `acmeSkipReasonFor`,
+**Source:** `.claude/mcp/vice/anno-test-gate.ts:114-162` (`ACME_BIN`, `acmeSkipReasonFor`,
 `assertAcmeRequiredIfEnvSet`)
 **Apply to:** `skill-acme-build-cli.test.ts` (the only one of the three new PKG-02 tests
 needing this)
 ```typescript
-import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./r2000-test-gate.ts";
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./anno-test-gate.ts";
 ```
 
 ### Subprocess spawning discipline (argv array, never shell string)
-**Source:** `disasm-roundtrip.test.ts:93`, `r2000-cli.test.ts` (bin-level tests)
+**Source:** `disasm-roundtrip.test.ts:93`, `anno-cli.test.ts` (bin-level tests)
 **Apply to:** all three PKG-02 test files
 ```typescript
 spawnSync("node", [scriptPath, verb, ...args], { encoding: "utf8" })
@@ -420,5 +420,5 @@ held up under verification.
 ## Metadata
 
 **Analog search scope:** `.claude/mcp/vice/*.test.ts` (all colocated tests), `.claude/mcp/vice/repo-root.ts`, `repo-root.test.ts`, `vice-proxy.test.ts`, `installer/bin/cli.mjs`, `.claude/mcp/vice/fixtures/`, `.planning/PROJECT.md`
-**Files scanned:** ~12 read directly this session (`r2000-cli.test.ts`, `disasm-roundtrip.test.ts`, `r2000-test-gate.ts`, `docs-dangling-refs.test.ts`, `docs-review-disposition.test.ts`, `repo-root.ts`, `repo-root.test.ts`, `vice-proxy.test.ts`, `installer/bin/cli.mjs`, `PROJECT.md`), all citations verified at current HEAD (2026-08-22), matching RESEARCH.md's own citations with two confirmed line-number drifts already noted by RESEARCH.md itself (`stock-dispatch.ts` 614-615 → 633-634)
+**Files scanned:** ~12 read directly this session (`anno-cli.test.ts`, `disasm-roundtrip.test.ts`, `anno-test-gate.ts`, `docs-dangling-refs.test.ts`, `docs-review-disposition.test.ts`, `repo-root.ts`, `repo-root.test.ts`, `vice-proxy.test.ts`, `installer/bin/cli.mjs`, `PROJECT.md`), all citations verified at current HEAD (2026-08-22), matching RESEARCH.md's own citations with two confirmed line-number drifts already noted by RESEARCH.md itself (`stock-dispatch.ts` 614-615 → 633-634)
 **Pattern extraction date:** 2026-08-22

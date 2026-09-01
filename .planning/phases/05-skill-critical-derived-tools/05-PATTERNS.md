@@ -245,7 +245,7 @@ function curateLabels(vsPath, symbols) {
 }
 ```
 
-`vice_symbols_load`'s own parser is the read-side inverse: for each line, `line.match(/^al\s+C:([0-9a-f]+)\s+\.(\S+)/i)` capturing BOTH the hex address (group 1) and the name (group 2), skipping (not refusing the whole file on) any non-matching line — the Pitfall-5 defensive posture the research calls for. Per Pitfall 5, do NOT claim regenerator2000-compatibility; only claim the confirmed ACME `--vicelabels` shape.
+`vice_symbols_load`'s own parser is the read-side inverse: for each line, `line.match(/^al\s+C:([0-9a-f]+)\s+\.(\S+)/i)` capturing BOTH the hex address (group 1) and the name (group 2), skipping (not refusing the whole file on) any non-matching line — the Pitfall-5 defensive posture the research calls for. Per Pitfall 5, do NOT claim external-analyser-compatibility; only claim the confirmed ACME `--vicelabels` shape.
 
 **Argument validation (`path`) — analog `stock-paths.ts`'s `sanitizeSnapshotName()` (lines 148-166), read but adapted for a DIFFERENT direction (read, not host-emulator-side write):**
 

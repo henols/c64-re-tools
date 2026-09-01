@@ -114,7 +114,7 @@ coverage:
         ref: "grep -c 'export const DOCS_GUARD_FLOOR = 7;' scripts/audit-gate.mjs == 1 (untouched)"
         status: pass
       - kind: other
-        ref: "node scripts/check-no-regenerator2000.mjs exits 0; grep -ac 'regenerator2000' src/mcp/vice/docs-linerefs.test.ts == 0"
+        ref: "node scripts/check-no-analyser.mjs exits 0; grep -ac 'the external analyser' src/mcp/vice/docs-linerefs.test.ts == 0"
         status: pass
     human_judgment: false
   - id: D5
@@ -191,8 +191,8 @@ Every `<automated>` command in the plan hardcodes the **orchestrator's** checkou
 | `cd src/mcp/vice; npm run typecheck` | exit 0 |
 | `node scripts/audit-gate.mjs --json` | exit 0 — `allowed true redGuards [] derivedDocsGuards 9` |
 | `grep -c 'export const DOCS_GUARD_FLOOR = 7;' scripts/audit-gate.mjs` | `1` — floor unmoved |
-| `node scripts/check-no-regenerator2000.mjs` | exit 0 |
-| `grep -ac 'regenerator2000' src/mcp/vice/docs-linerefs.test.ts` | `0` |
+| `node scripts/check-no-analyser.mjs` | exit 0 |
+| `grep -ac 'the external analyser' src/mcp/vice/docs-linerefs.test.ts` | `0` |
 | `git status --porcelain -- src/mcp/vice/fixtures/` | empty |
 | `git diff --exit-code -- .planning/PROJECT.md` | exit 0 |
 | `cd src/mcp/vice; npm run test:automated` | exit 1 — `# tests 2950  # pass 2943  # fail 1  # skipped 1` (see Deviations) |

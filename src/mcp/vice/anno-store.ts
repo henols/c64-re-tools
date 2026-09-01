@@ -174,7 +174,7 @@ import {
   type XrefAccessKind,
   type XrefRow,
 } from "./anno-types.ts";
-import { CONFIDENCE_GRADES, parseConfidencePrefix, R2000ConfidenceGradeError } from "./anno-confidence.ts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix, AnnoConfidenceGradeError } from "./anno-confidence.ts";
 // Imported for ONE purpose: the family predicate the guarded regions below use to
 // decide "rethrow unchanged" versus "wrap". Every `Anno*Error` in `anno-types.ts`
 // already extends it, so nothing new enters the module graph -- `anno-types.ts`
@@ -2260,7 +2260,7 @@ function collectContradictedComments(db: DatabaseSync, start: number, endInclusi
       const parsed = parseConfidencePrefix(row.text);
       grade = parsed.grade === null ? null : parsed.grade.bracket;
     } catch (e) {
-      if (e instanceof R2000ConfidenceGradeError) {
+      if (e instanceof AnnoConfidenceGradeError) {
         throw new AnnoCommentGradeError(
           `the comment at address ${row.address} ($${row.address.toString(16).padStart(4, "0")}) carries a bracket token the store cannot ` +
             `interpret, so it cannot say whether typing that address as ${dataType} makes the comment false: ${e.message}`,
@@ -2936,7 +2936,7 @@ export function listComments(handle: AnnoStoreHandle): CommentRow[] {
  *
  * NO NESTING, and that is a faithful mirror rather than a shortcut: the schema
  * this store mirrors says in as many words that nested scopes are not supported
- * (`r2000-tools.ts:320-324`). Inventing nesting here would create annotations no
+ * (`anno-tools.ts:320-324`). Inventing nesting here would create annotations no
  * exporter downstream can express.
  *
  * The shape check passes a NON-SPLIT data type on purpose. `assertRangeShape()`

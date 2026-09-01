@@ -2,7 +2,7 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 20
 subsystem: testing
-tags: [r2000, coverage-census, recursive-descent, disassembler, illegal-opcodes, source-derived-pins]
+tags: [anno, coverage-census, recursive-descent, disassembler, illegal-opcodes, source-derived-pins]
 
 # Dependency graph
 requires:
@@ -21,7 +21,7 @@ provides:
   - "PINs 5–8: the predicate's definition count, its three placed call sites, the decoder's illegal flag read at exactly one comment-stripped site, and the statement order that keeps an illegal byte unreached"
   - "A measured twelve-fixture + Phase 11 regression table proving the tightening moved no committed census number"
   - "Decision 6 — dated, with its rejected alternative, its residual sized at 93 stable undocumented opcodes, and a checkable reversal condition"
-affects: [phase-20, coverage-report-consumers, r2000-census]
+affects: [phase-20, coverage-report-consumers, anno-census]
 
 actuals:
   tokens: 11757
@@ -38,8 +38,8 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md
     - .planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-VALIDATION.md
 
@@ -51,7 +51,7 @@ key-decisions:
   - "requirements-completed is deliberately empty: this plan's own prohibition forbids ticking a REQUIREMENTS.md checkbox, and COV-01 stays open pending phase verification"
 
 patterns-established:
-  - "PIN family continuation: PINs 5–8 join 19-16's pairing-consultation pin and 19-18's PINs 1–4 as readers of functionBodyFromSource(), the one source reader in r2000-coverage.test.ts — no second extractor was written"
+  - "PIN family continuation: PINs 5–8 join 19-16's pairing-consultation pin and 19-18's PINs 1–4 as readers of functionBodyFromSource(), the one source reader in anno-coverage.test.ts — no second extractor was written"
   - "A behaviour-preserving planted violation as the load-bearing demonstration: plant 28 changed no report number and no report-level control noticed, so only the source-derived pins caught it"
 
 requirements-completed: []
@@ -62,7 +62,7 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-03: the descent stops at an illegal opcode instead of claiming it -- four code bytes are four, not sixty-four"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-03: the descent stops at an illegal opcode instead of claiming it -- four code bytes are four, not sixty-four"
         status: pass
     human_judgment: false
   - id: D2
@@ -70,10 +70,10 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-03 both directions: the same payload filled with `nop` still reports every one of its sixty-four bytes reached"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-03 both directions: the same payload filled with `nop` still reports every one of its sixty-four bytes reached"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-03: the two members of the pair are the same length and differ at exactly the sixty filler offsets"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-03: the two members of the pair are the same length and differ at exactly the sixty filler offsets"
         status: pass
     human_judgment: false
   - id: D3
@@ -81,27 +81,27 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-03: reachedAsInstruction never exceeds linearSweepDecodable -- the report cannot contradict itself about its own bytes"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-03: reachedAsInstruction never exceeds linearSweepDecodable -- the report cannot contradict itself about its own bytes"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-03: the four byte classes still sum to rangeBytes for both members -- the byte the descent stopped claiming became unreached"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-03: the four byte classes still sum to rangeBytes for both members -- the byte the descent stopped claiming became unreached"
         status: pass
     human_judgment: false
   - id: D4
-    description: "One decodability predicate with exactly three consumers — the descent, the linear sweep and isPlausibleEntryPoint() — held in place by four source-derived pins over r2000-coverage.ts's own comment-stripped text, including the statement-order assertion the counting pins cannot make."
+    description: "One decodability predicate with exactly three consumers — the descent, the linear sweep and isPlausibleEntryPoint() — held in place by four source-derived pins over anno-coverage.ts's own comment-stripped text, including the statement-order assertion the counting pins cannot make."
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#PIN 5: the decodability predicate is DECLARED exactly once and CALLED from exactly three sites"
+        ref: "src/mcp/vice/anno-coverage.test.ts#PIN 5: the decodability predicate is DECLARED exactly once and CALLED from exactly three sites"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#PIN 6: the three call sites are the descent, the linear sweep and the entry-point gate -- and nothing else"
+        ref: "src/mcp/vice/anno-coverage.test.ts#PIN 6: the three call sites are the descent, the linear sweep and the entry-point gate -- and nothing else"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#PIN 7: the decoder's illegal flag is READ at exactly one site in the module, inside the predicate"
+        ref: "src/mcp/vice/anno-coverage.test.ts#PIN 7: the decoder's illegal flag is READ at exactly one site in the module, inside the predicate"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#PIN 8: the descent consults the predicate BEFORE the loop that marks class zero"
+        ref: "src/mcp/vice/anno-coverage.test.ts#PIN 8: the descent consults the predicate BEFORE the loop that marks class zero"
         status: pass
     human_judgment: false
   - id: D5
@@ -109,10 +109,10 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-03 regression: every committed coverage fixture reports the SAME reached count it did before the tightening"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-03 regression: every committed coverage fixture reports the SAME reached count it did before the tightening"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-03 regression: the previously-unseen Phase 11 fixture's census is unchanged at 68 of 100"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-03 regression: the previously-unseen Phase 11 fixture's census is unchanged at 68 of 100"
         status: pass
     human_judgment: false
   - id: D6
@@ -120,10 +120,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#LIVE non-vacuity: both routes are recomputed from the committed fixture and both reproduce the sealed line"
+        ref: "src/mcp/vice/anno-coverage.test.ts#LIVE non-vacuity: both routes are recomputed from the committed fixture and both reproduce the sealed line"
         status: pass
       - kind: integration
-        ref: "cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts (22 pass, 0 fail)"
+        ref: "cd src/mcp/vice && node --test anno-coverage-grammar.test.ts (22 pass, 0 fail)"
         status: pass
     human_judgment: false
   - id: D7
@@ -138,7 +138,7 @@ coverage:
     description: "Decision 6 in 19-DECISIONS.md: dated, with the measured contradiction, the rejected alternative and why it was rejected, the residual sized at 93 stable undocumented opcodes out of 105 illegal-flagged entries, and a named checkable reversal condition."
     verification:
       - kind: integration
-        ref: "cd src/mcp/vice && node --test docs-r2000-decisions.test.ts docs-dangling-refs.test.ts docs-deferred-ledger.test.ts audit-integrity.test.ts (63 pass, 0 fail)"
+        ref: "cd src/mcp/vice && node --test docs-absorbed-decisions.test.ts docs-dangling-refs.test.ts docs-deferred-ledger.test.ts audit-integrity.test.ts (63 pass, 0 fail)"
         status: pass
     human_judgment: true
     rationale: "The guards prove the decision record is well-formed and consistent with the rest of the phase's documents. Whether the tradeoff itself is the right one for a C64 reverse-engineering instrument — under-reporting a census when a program executes a `lax` — is a judgment about the domain that no test asserts."
@@ -164,7 +164,7 @@ status: complete
 ## Accomplishments
 
 - **WR-03 is closed, and it was a different mechanism from everything else in this round.** Every other plan here guards `provenDispatchTargets()` and what may seed a recursive descent. This one is the census's own classification: the descent walked straight THROUGH an illegal opcode and claimed its bytes as executed code, while the linear sweep eight lines below it in the same function refused to count them. Measured before: `reachedAsInstruction=64`, `unreached=0`, `linearSweepDecodable=4` on a 64-byte image whose only real code is four bytes. Measured after: `4`, `60`, `4`.
-- **The root cause was WR-14's pattern one level over, and the fix is the same extraction.** Three places in `r2000-coverage.ts` answer "is this byte an instruction a program executes". The linear sweep asked. `isPlausibleEntryPoint()` asked. The recursive descent — the one producing the headline number — never did. `isDecodableAsInstruction()` is now the one definition, and the descent, the sweep and the entry-point gate are its three consumers.
+- **The root cause was WR-14's pattern one level over, and the fix is the same extraction.** Three places in `anno-coverage.ts` answer "is this byte an instruction a program executes". The linear sweep asked. `isPlausibleEntryPoint()` asked. The recursive descent — the one producing the headline number — never did. `isDecodableAsInstruction()` is now the one definition, and the descent, the sweep and the entry-point gate are its three consumers.
 - **The tightening discriminates rather than refuses.** `NOP_FILLED_IMAGE` is byte-identical to `JAM_FILLED_IMAGE` except that its sixty filler bytes are `$ea`, and it still reports all sixty-four bytes reached. The pair is built by one function from one filler byte, and "the only difference is the filler" is itself an assertion (same length, differing at exactly sixty of sixty-four offsets) rather than a comment.
 - **The report can no longer contradict itself, stated as a general relation.** `reachedAsInstruction <= linearSweepDecodable` is asserted over four payloads as the anti-contradiction property, not as a fact about `$02`. Once both figures read one predicate, a byte the sweep refuses is a byte the descent cannot have walked through.
 - **Four source-derived pins keep the three readers on one predicate**, continuing 19-18's route-pin family and reusing `functionBodyFromSource()` rather than writing a second extractor. PIN 8 is the one the others cannot make: it asserts the predicate is consulted BEFORE the class-zero marking loop, which is the difference between leaving an illegal byte `unreached` and claiming it and then abandoning it.
@@ -182,8 +182,8 @@ _Task 1 carried `tdd="true"` and produced the RED/GREEN pair. No REFACTOR commit
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` — `isDecodableAsInstruction()` added as a type-predicate at module level with the incident written into its doc comment; the descent's guard replaced (before the marking loop, with the reason for that placement written where a reorderer would read it); the linear sweep's two-line skip re-expressed through the predicate with its meaning explicitly unchanged; `isPlausibleEntryPoint()` composed from the predicate plus its in-image bound.
-- `src/mcp/vice/r2000-coverage.test.ts` — section 3b (the WR-03 minimal pair, the anti-contradiction relation, and the twelve-fixture + Phase 11 regression statements); section 9c (PINs 5–8 with `CENSUS_SIGNATURE`, `PREDICATE_SIGNATURE`, `censusBodyText()`); `PHASE_11_FIXTURE_PATH` hoisted so two sections read one path spelling.
+- `src/mcp/vice/anno-coverage.ts` — `isDecodableAsInstruction()` added as a type-predicate at module level with the incident written into its doc comment; the descent's guard replaced (before the marking loop, with the reason for that placement written where a reorderer would read it); the linear sweep's two-line skip re-expressed through the predicate with its meaning explicitly unchanged; `isPlausibleEntryPoint()` composed from the predicate plus its in-image bound.
+- `src/mcp/vice/anno-coverage.test.ts` — section 3b (the WR-03 minimal pair, the anti-contradiction relation, and the twelve-fixture + Phase 11 regression statements); section 9c (PINs 5–8 with `CENSUS_SIGNATURE`, `PREDICATE_SIGNATURE`, `censusBodyText()`); `PHASE_11_FIXTURE_PATH` hoisted so two sections read one path spelling.
 - `.planning/phases/…/19-DECISIONS.md` — Decision 6 plus its cross-reference row. 81 insertions, 0 deletions.
 - `.planning/phases/…/19-VALIDATION.md` — the round-4 plan-19-20 section: the measured contradiction, the twelve-fixture before/after table, the four pins, the three planted violations, the Decision-6 residual, and the observed prohibitions. 170 insertions, 0 deletions across two appends (plus two in-place corrections to this plan's own new rows, which are why the net is still zero deletions only because they were made before the commit).
 
@@ -204,7 +204,7 @@ _Task 1 carried `tdd="true"` and produced the RED/GREEN pair. No REFACTOR commit
 - **Issue:** The plan prescribed removing the illegal test from the predicate — "the pre-fix behaviour, expressed as a one-word edit" — and predicted the WR-03 control would red reporting `reachedAsInstruction=64`, `unreached=0`, `linearSweepDecodable=4`. The measurement was **64 / 0 / 64**. Loosening the SHARED predicate necessarily loosens the sweep as well, so the two figures move together and the general `reachedAsInstruction <= linearSweepDecodable` relation does **not** red under that plant.
 - **Fix:** Recorded the measurement as observed rather than reporting the predicted numbers, and explained why: it is the design working. Once both figures read one predicate, no edit expressible as a change to that predicate can make them contradict; only an edit that un-shares them can. Then ran **plant 27** — the descent's guard reverted alone, leaving the sweep strict — which is the literal pre-fix state and reproduced `64 / 0 / 4` exactly, with the general relation red and PINs 5, 6 and 8 red by name.
 - **Files modified:** `19-VALIDATION.md` (record only; both plants were working-tree-only)
-- **Verification:** `diff -q` against the byte-exact pre-plant copy (sha256 `9574ff73…4ea09`) after every restore; `git diff --quiet -- src/mcp/vice/r2000-coverage.ts` exits 0.
+- **Verification:** `diff -q` against the byte-exact pre-plant copy (sha256 `9574ff73…4ea09`) after every restore; `git diff --quiet -- src/mcp/vice/anno-coverage.ts` exits 0.
 - **Committed in:** `8ddfb04`
 
 **2. [Rule 2 — Missing critical] A third plant, because a behaviour-preserving drift was the untested case**
@@ -221,7 +221,7 @@ _Task 1 carried `tdd="true"` and produced the RED/GREEN pair. No REFACTOR commit
 - **Found during:** Task 1
 - **Issue:** The plan's acceptance criteria list ten known fixture values (7, 7, 17, 17, 30 × 6) and refer to "the two FP3 values from plan 19-15" without naming them. Recording an unmeasured number in a regression table would make the table a wish rather than a measurement.
 - **Fix:** Measured both at HEAD before writing the table: **15 and 15**. The regression table records measured values throughout.
-- **Files modified:** `src/mcp/vice/r2000-coverage.test.ts`, `19-VALIDATION.md`
+- **Files modified:** `src/mcp/vice/anno-coverage.test.ts`, `19-VALIDATION.md`
 - **Verification:** the per-fixture assertions pass, and the recorded table is asserted set-equal to `fixtureDirs()` in both directions.
 - **Committed in:** `c0677e6`, `8ddfb04`
 
@@ -243,7 +243,7 @@ _Task 1 carried `tdd="true"` and produced the RED/GREEN pair. No REFACTOR commit
 
 **Plant 26's prediction was wrong, and the honest result is more interesting than the predicted one.** See deviation 1. The plan expected the one-word predicate edit to reproduce the pre-fix 64/0/4; it reproduces 64/0/64, because a shared predicate makes the two figures agree by construction even when both are wrong. Plant 27 was run to establish the pre-fix numbers the round-3 verification reported, and reproduced them exactly. The residual observation worth carrying: **the general `reachedAsInstruction <= linearSweepDecodable` relation cannot red under any edit to the shared predicate** — it can only red under an edit that un-shares the two readers, which is exactly what PINs 5, 6 and 8 exist to catch. The relation and the pins are therefore complementary, not redundant.
 
-**Two pre-existing contention flakes did not appear.** `vice-proxy.test.ts`'s wall-clock budgets and `r2000-session.test.ts`'s 200 ms call timeout each stayed green across two full-suite runs (2589 pass and 2593 pass, both 0 fail). They remain in `deferred-items.md`; nothing about their shape changed and nothing was widened.
+**Two pre-existing contention flakes did not appear.** `vice-proxy.test.ts`'s wall-clock budgets and `anno-session.test.ts`'s 200 ms call timeout each stayed green across two full-suite runs (2589 pass and 2593 pass, both 0 fail). They remain in `deferred-items.md`; nothing about their shape changed and nothing was widened.
 
 ## User Setup Required
 
@@ -264,15 +264,15 @@ None — no external service configuration required.
 
 - All five modified/created files exist on disk.
 - All five commits (`c0677e6`, `751face`, `8ddfb04`, `ded3352`, `fd26f51`) exist in `git log --all`.
-- `cd src/mcp/vice && node --test r2000-coverage.test.ts` — **107 pass, 0 fail**, exit 0.
-- `cd src/mcp/vice && node --test r2000-coverage-grammar.test.ts` — **22 pass, 0 fail**.
+- `cd src/mcp/vice && node --test anno-coverage.test.ts` — **107 pass, 0 fail**, exit 0.
+- `cd src/mcp/vice && node --test anno-coverage-grammar.test.ts` — **22 pass, 0 fail**.
 - `cd src/mcp/vice && npx tsc --noEmit` — exit 0.
-- `cd src/mcp/vice && node --test docs-r2000-decisions.test.ts docs-dangling-refs.test.ts docs-deferred-ledger.test.ts audit-integrity.test.ts comment-phase-pointers.test.ts` — **79 pass, 0 fail**.
+- `cd src/mcp/vice && node --test docs-absorbed-decisions.test.ts docs-dangling-refs.test.ts docs-deferred-ledger.test.ts audit-integrity.test.ts comment-phase-pointers.test.ts` — **79 pass, 0 fail**.
 - Full suite (`npm test`, not the `test:automated` subset) — **2593 pass, 0 fail, 40 skipped, 5 todo** over 24 suites.
-- `grep -c 'COVERAGE_SCHEMA_VERSION = 2' src/mcp/vice/r2000-coverage.ts` → **1**.
+- `grep -c 'COVERAGE_SCHEMA_VERSION = 2' src/mcp/vice/anno-coverage.ts` → **1**.
 - `git status --porcelain src/mcp/vice/fixtures/coverage` — empty.
 - `git diff --name-only` lists none of `ANSWER.md`, `ANSWER.sha256`, `QUESTION.md`, `19-CONTEXT.md`, `19-REVIEW.md`, `.planning/REQUIREMENTS.md`.
 - `19-DECISIONS.md` **81 insertions / 0 deletions**; `19-VALIDATION.md` **170 insertions / 0 deletions**.
-- No scope-reduction vocabulary (`v1`, `for now`, `simplified`, `placeholder`, `future phase`) and no phase number in any new string literal in `r2000-coverage.ts`.
+- No scope-reduction vocabulary (`v1`, `for now`, `simplified`, `placeholder`, `future phase`) and no phase number in any new string literal in `anno-coverage.ts`.
 
 _Commit accounting for `actuals.commits: 8`: four task commits (`c0677e6`, `751face`, `8ddfb04`, `ded3352`), the SUMMARY (`fd26f51`), the self-check append (`5ad356d`), the STATE/ROADMAP metadata commit (`5c7ecef`), and this correction. `actuals.tokens` is `chars/4` over the realized `+` lines of the four task commits (47,027 chars), against a plan estimate of 40,000 — an overestimate of roughly 3.4x._

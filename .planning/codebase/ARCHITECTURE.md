@@ -549,7 +549,7 @@ named in `stock-dispatch.test.ts`.
 ### Deleting by name glob
 
 **What happens:** A retirement is driven by a module-name pattern (e.g.
-`r2000`-named files) rather than by what each module actually implements.
+`anno`-named files) rather than by what each module actually implements.
 **Why it's wrong:** Ten of the sixteen non-test modules in that family
 implemented capabilities unrelated to the analyser (disk geometry, register
 bit layout, ACME identifier legality, coverage census, confidence grades,

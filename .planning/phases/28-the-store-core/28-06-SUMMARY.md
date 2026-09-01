@@ -21,7 +21,7 @@ provides:
   - "anno-durability.test.ts: the ONE combined durability-and-revert proof STORE-04 demands, with its planted counterpart in the same shape through the same helper"
   - "The cross-process stale-revision refusal, observed across two genuinely separate OS processes with both error fields and both rows' fates asserted"
   - "node:sqlite bounded in the TEST tree by a declared, deepEqual+length-paired one-element list"
-affects: [store query surface, r2000 annotation tooling, any later plan that adds a store test]
+affects: [store query surface, anno annotation tooling, any later plan that adds a store test]
 
 # Actuals (#2632) -- same estimateTokens scale (chars/4) as the plan's estimate.
 actuals:
@@ -208,7 +208,7 @@ coverage:
     description: "Phase-close whole-glob evidence run reconciled item by item against the 44-failure clean baseline, with the VICE broker stopped and the leaked vice-proxy.test.ts child terminated by hand"
     verification:
       - kind: manual_procedural
-        ref: "cd src/mcp/vice && npm test -- 2748 tests / 2632 pass / 44 fail; failures grouped by location: 39 vice-proxy.test.ts + 5 r2000-session.test.ts, zero elsewhere"
+        ref: "cd src/mcp/vice && npm test -- 2748 tests / 2632 pass / 44 fail; failures grouped by location: 39 vice-proxy.test.ts + 5 anno-session.test.ts, zero elsewhere"
         status: pass
     human_judgment: true
     rationale: "The run does not terminate unaided and its exit code is not the gate -- the failure LIST is, reconciled by file against a documented baseline. Both steps (terminating the hung child by PID, and the item-by-item reconciliation) are human judgment, not an automated assertion."
@@ -305,9 +305,9 @@ All runs with the **VICE broker confirmed stopped** (verified by reading `/proc/
 | Store test files | `cd src/mcp/vice && node --test anno-store.test.ts anno-seam.test.ts anno-durability.test.ts anno-types.test.ts anno-index.test.ts anno-overlap.test.ts test-gate.test.ts shipped-modules.test.ts` | **114 tests / 114 pass / 0 fail** |
 | Typecheck | `cd src/mcp/vice && npm run typecheck` | exit 0 |
 | Tarball validator | `node scripts/check-npm-packages.mjs` | `check-npm-packages: OK` — `@henols/vice-mcp` 80 files; neither new file listed |
-| Routine gate | `cd src/mcp/vice && npm run test:automated` | exit 1 on the baseline alone: **2621 tests / 2582 pass / 5 fail** — all 5 the named `plan 18-06:` tests in `r2000-session.test.ts` (`regenerator2000` absent from `PATH`). **Zero failures in any other file.** The `:615` load-sensitive flake did not appear. |
+| Routine gate | `cd src/mcp/vice && npm run test:automated` | exit 1 on the baseline alone: **2621 tests / 2582 pass / 5 fail** — all 5 the named `plan 18-06:` tests in `anno-session.test.ts` (`the external analyser` absent from `PATH`). **Zero failures in any other file.** The `:615` load-sensitive flake did not appear. |
 | Glob membership | `automatedTestFiles()` | `anno-durability.test.ts` present (113 files), `anno-durability-mutator.mjs` absent, `MANUAL_ONLY_TESTS` still 9 entries — **no edit** |
-| **Phase-close evidence run** | `cd src/mcp/vice && npm test` | **2748 tests / 2632 pass / 44 fail** — reconciled by `location:` field: **39 `vice-proxy.test.ts` + 5 `r2000-session.test.ts` = 44**, exactly the documented clean baseline. **Zero failures in any phase-28 file.** |
+| **Phase-close evidence run** | `cd src/mcp/vice && npm test` | **2748 tests / 2632 pass / 44 fail** — reconciled by `location:` field: **39 `vice-proxy.test.ts` + 5 `anno-session.test.ts` = 44**, exactly the documented clean baseline. **Zero failures in any phase-28 file.** |
 
 **Phase-close run mechanics, recorded because they are not reproducible from the command alone.** `npm test` does not terminate unaided: its results were complete and static at ~550 s, and the hung `vice-proxy.test.ts` child was then terminated **by PID** (`kill -TERM 285308`), identified by walking `ps` from the `npm` process I spawned down through `sh -c` to `node --test` to its one live grandchild. Nothing outside that tree was signalled, and no pattern kill was used anywhere. The runner printed its summary immediately afterwards.
 

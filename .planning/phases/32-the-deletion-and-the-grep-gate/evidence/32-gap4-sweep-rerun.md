@@ -23,7 +23,7 @@ Written by `scripts/audit-mutation-harness.mjs`. Every field below is a captured
 
 **Byte-identical.** Every plant was reverted.
 
-## `src/mcp/vice/r2000-verb-coverage.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-verb-coverage.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -246,7 +246,7 @@ ok 10 - planted control: an UNRELATED `returned` does not discharge a stale with
 # duration_ms 410.679476
 ```
 
-## `scripts/lib/r2000-cli-verbs.mjs` — verdict `re-pointed`
+## `scripts/lib/anno-cli-verbs.mjs` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -280,7 +280,7 @@ check-skill-tool-coverage: FAIL
   - anno render-memmap: parsed from anno-cli.ts's dispatch switch but named by NO skill file. Resolve by: (1) documenting it in a playbook, (2) removing the verb, or (3) recording it as a scope decision.
 ```
 
-## `scripts/lib/r2000-cli-verbs.d.mts` — verdict `re-pointed`
+## `scripts/lib/anno-cli-verbs.d.mts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -307,7 +307,7 @@ Raw output:
 anno-verb-coverage.test.ts(24,29): error TS2305: Module '"../../../scripts/lib/anno-cli-verbs.mjs"' has no exported member 'verbsMissingFromSkills'.
 ```
 
-## `src/mcp/vice/docs-r2000-decisions.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/docs-absorbed-decisions.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -331,8 +331,8 @@ ok 2 - 2. ARCHITECTURE.md's Architecture Change Record names D-17/D-18, carries 
   duration_ms: 0.552083
   type: 'test'
   ...
-# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
-ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
+# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
+ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
   ---
   duration_ms: 0.303336
   type: 'test'
@@ -383,8 +383,8 @@ ok 2 - 2. ARCHITECTURE.md's Architecture Change Record names D-17/D-18, carries 
   duration_ms: 0.540759
   type: 'test'
   ...
-# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
-ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and r2000-mcp-client.ts
+# Subtest: 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
+ok 3 - 3. ARCHITECTURE.md carries Rule A21 naming resolveStorePath, ChildProcess, and anno-mcp-client.ts
   ---
   duration_ms: 0.304731
   type: 'test'
@@ -428,7 +428,7 @@ ok 5 - 5. cross-document consistency: every PROJECT.md line naming D-32 also nam
 # duration_ms 122.742168
 ```
 
-## `src/mcp/vice/r2000-answer-key.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/absorbed-answer-key.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -637,7 +637,7 @@ ok 10 - gated: assembling criterion 1's fixture source under real ACME reproduce
 # duration_ms 172.76507
 ```
 
-## `src/mcp/vice/r2000-spawn-seam.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/spawn-seam.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -850,7 +850,7 @@ ok 11 - planted violation: duplicating backend-detect.mts's spawn statement into
 # duration_ms 623.859324
 ```
 
-## `src/mcp/vice/r2000-cli.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-cli.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -940,7 +940,7 @@ not ok 1 - VERB_OPTIONS carries exactly the surviving verbs
 # duration_ms 1563.929506
 ```
 
-## `src/mcp/vice/r2000-confidence.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-confidence.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -1201,7 +1201,7 @@ ok 15 - searchQueryForGrade returns a string that appears verbatim in a graded c
 # duration_ms 122.291285
 ```
 
-## `src/mcp/vice/r2000-coverage-grammar.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-coverage-grammar.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -1629,7 +1629,7 @@ ok 22 - the suite stays inside its 30-second budget, so a runaway enumeration is
 # duration_ms 637.868997
 ```
 
-## `src/mcp/vice/r2000-coverage.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-coverage.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -3208,7 +3208,7 @@ ok 126 - CR-05 (H, control): where the runtime names a parse POSITION the reason
 # duration_ms 761.562273
 ```
 
-## `src/mcp/vice/r2000-d64.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-d64.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -3474,7 +3474,7 @@ ok 16 - sectorsPerTrack covers all four standard 1541 zones
 # duration_ms 140.125152
 ```
 
-## `src/mcp/vice/r2000-enum-gen.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-enum-gen.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -3642,8 +3642,8 @@ ok 26 - buildEnumGenerationReport: a run below its ceiling says NOTHING about tr
   duration_ms: 0.168336
   type: 'test'
   ...
-# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
-ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
+# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
+ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
   ---
   duration_ms: 0.109272
   type: 'test'
@@ -3971,8 +3971,8 @@ ok 26 - buildEnumGenerationReport: a run below its ceiling says NOTHING about tr
   duration_ms: 0.279986
   type: 'test'
   ...
-# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
-ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so R2000-13's re-runnability stays expressible
+# Subtest: buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
+ok 27 - buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible
   ---
   duration_ms: 0.219874
   type: 'test'
@@ -3994,7 +3994,7 @@ ok 28 - anno-enum-gen.ts never references the machine-global save_global_enum() 
 # duration_ms 151.531373
 ```
 
-## `src/mcp/vice/r2000-memmap-render.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-memmap-render.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -4199,7 +4199,7 @@ not ok 1 - parseProvenanceHeader accepts a fully-filled valid header
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.test.ts:66:18)
@@ -4219,7 +4219,7 @@ not ok 2 - parseProvenanceHeader accepts an optional rasterPositions array
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     TestContext.<anonymous> (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.test.ts:74:18)
@@ -4313,7 +4313,7 @@ not ok 15 - the render digest is identical across two renders of the same store 
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4337,7 +4337,7 @@ not ok 16 - changing a LABEL in the store changes the render digest -- the diges
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4361,7 +4361,7 @@ not ok 17 - changing a COMMENT in the store changes the render digest
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4385,7 +4385,7 @@ not ok 18 - changing a RANGE in the store changes the render digest
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4409,7 +4409,7 @@ not ok 19 - changing the SIDECAR BYTES alone changes the render digest, even whe
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4439,7 +4439,7 @@ not ok 21 - renders a golden memory map from a hand-built store plus a fixture s
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4463,7 +4463,7 @@ not ok 22 - the render digest and the --check verdict AGREE: the identical tree 
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4486,7 +4486,7 @@ not ok 23 - a store with ZERO ranges, labels and comments renders a banner and a
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4509,7 +4509,7 @@ not ok 24 - --check names the LOWEST differing line when the file differs on sev
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4533,7 +4533,7 @@ not ok 25 - an address whose store comment carries [unknown] appears under Open 
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4557,7 +4557,7 @@ not ok 26 - comment evidence containing BOTH a pipe and an embedded newline rend
     provenance sidecar has 1 problem(s):
       - captureSha256: must be exactly 64 hex characters, got "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" (length 64)
   code: 'ERR_TEST_FAILURE'
-  name: 'R2000ProvenanceHeaderError'
+  name: 'AnnoProvenanceHeaderError'
   stack: |-
     parseProvenanceHeader (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:244:11)
     renderMemoryMap (file:///home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/anno-memmap-render.ts:416:22)
@@ -4581,7 +4581,7 @@ not ok 26 - comment evidence containing BOTH a pipe and an embedded newline rend
 # duration_ms 809.640926
 ```
 
-## `src/mcp/vice/r2000-regbits.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-regbits.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -4810,7 +4810,7 @@ ok 13 - non-vacuity: a synthetic memmap entry whose desc is unmappable and absen
 # duration_ms 231.041248
 ```
 
-## `src/mcp/vice/r2000-tools.test.ts` — verdict `re-pointed`
+## `src/mcp/vice/anno-tools.test.ts` — verdict `re-pointed`
 
 ### Green false-positive control (run BEFORE any plant)
 
@@ -5790,7 +5790,7 @@ Raw output:
 sync-skills: copied 7 skill(s) into /home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/installer/skills: acme-build, c64-memory-mapping, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker, vice-wedge-triage
 sync-skills: excluded 6 non-shipping entries (test files, fixtures/, test-corpus.mjs)
 check-npm-packages: FAIL
-  - vice-mcp: missing anno-cli.ts -- R2000-09 would ship a package that throws ERR_MODULE_NOT_FOUND
+  - vice-mcp: missing anno-cli.ts -- ANNO-09 would ship a package that throws ERR_MODULE_NOT_FOUND
   - vice-mcp: anno-cli.ts is imported by vice-proxy.ts but is not in the published tarball -- Rule 2 (see 6801cf5, 897faf6)
 ```
 
@@ -7028,8 +7028,8 @@ ok 4 - every module this phase adds is absent from the hostpath.ts consumer set 
   duration_ms: 21.785206
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
-ok 5 - the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+# Subtest: the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+ok 5 - the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
   ---
   duration_ms: 1.23783
   type: 'test'
@@ -7046,14 +7046,14 @@ ok 7 - INT-01's positive control: the modules the audit found uncovered are pres
   duration_ms: 0.836827
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
-ok 8 - the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+# Subtest: the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+ok 8 - the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
   ---
   duration_ms: 20.848957
   type: 'test'
   ...
-# Subtest: planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
-ok 9 - planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+# Subtest: planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+ok 9 - planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
   ---
   duration_ms: 0.754919
   type: 'test'
@@ -7165,8 +7165,8 @@ ok 4 - every module this phase adds is absent from the hostpath.ts consumer set 
   duration_ms: 15.193439
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
-ok 5 - the annotation module family (D-08/R2000-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+# Subtest: the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
+ok 5 - the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)
   ---
   duration_ms: 0.81813
   type: 'test'
@@ -7183,8 +7183,8 @@ ok 7 - INT-01's positive control: the modules the audit found uncovered are pres
   duration_ms: 0.415901
   type: 'test'
   ...
-# Subtest: the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
-not ok 8 - the annotation module family (D-08/R2000-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+# Subtest: the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
+not ok 8 - the annotation module family (D-08/ANNO-02) is absent from the consumer set -- the rented analyser ran container-side (D-R4), the mirror image of DERIV-07's wrongly-translated screenshot path
   ---
   duration_ms: 14.327561
   type: 'test'
@@ -7209,8 +7209,8 @@ not ok 8 - the annotation module family (D-08/R2000-02) is absent from the consu
     Test.run (node:internal/test_runner/test:1101:12)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-# Subtest: planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
-ok 9 - planted violation (INT-01 proof): a synthetic r2000-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+# Subtest: planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
+ok 9 - planted violation (INT-01 proof): a synthetic anno-shaped source that DOES import hostpath.ts is reported by the same predicate the real scan uses
   ---
   duration_ms: 0.439005
   type: 'test'
@@ -9254,7 +9254,7 @@ not ok 1 - tools/list survives a missing or corrupt snapshot
   location: '/home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/src/mcp/vice/vice-proxy.test.ts:570:1'
   failureType: 'testCodeFailure'
   error: |-
-    expected only the synthetic and r2000_* tools for /tmp/vice-proxy-manifest-bad-kItHzQ/does-not-exist.json
+    expected only the synthetic and anno_* tools for /tmp/vice-proxy-manifest-bad-kItHzQ/does-not-exist.json
     + actual - expected
     
       [
@@ -9366,39 +9366,39 @@ not ok 1 - tools/list survives a missing or corrupt snapshot
 # duration_ms 1058.266022
 ```
 
-## `src/mcp/vice/r2000-launch.test.ts` — verdict `deleted`
+## `src/mcp/vice/anno-launch.test.ts` — verdict `deleted`
 
 **SKIPPED.** verdict `deleted` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `src/mcp/vice/r2000-mcp-client.test.ts` — verdict `deleted`
+## `src/mcp/vice/anno-mcp-client.test.ts` — verdict `deleted`
 
 **SKIPPED.** verdict `deleted` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `src/mcp/vice/r2000-project.test.ts` — verdict `deleted`
+## `src/mcp/vice/anno-project.test.ts` — verdict `deleted`
 
 **SKIPPED.** verdict `deleted` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `src/mcp/vice/r2000-session.test.ts` — verdict `deleted`
+## `src/mcp/vice/anno-session.test.ts` — verdict `deleted`
 
 **SKIPPED.** verdict `deleted` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `src/mcp/vice/r2000-symbol-roundtrip.test.ts` — verdict `deleted`
+## `src/mcp/vice/anno-symbol-roundtrip.test.ts` — verdict `deleted`
 
 **SKIPPED.** verdict `deleted` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `src/mcp/vice/r2000-upstream-audit.test.ts` — verdict `deleted`
+## `src/mcp/vice/anno-derivation.test.ts` — verdict `deleted`
 
 **SKIPPED.** verdict `deleted` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `src/mcp/vice/r2000-verify.test.ts` — verdict `deleted`
+## `src/mcp/vice/anno-verify.test.ts` — verdict `deleted`
 
 **SKIPPED.** verdict `deleted` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `scripts/check-no-regenerator2000.d.mts` — verdict `kept-unchanged`
+## `scripts/check-no-analyser.d.mts` — verdict `kept-unchanged`
 
 **SKIPPED.** verdict `kept-unchanged` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
-## `scripts/check-no-regenerator2000.mjs` — verdict `kept-unchanged`
+## `scripts/check-no-analyser.mjs` — verdict `kept-unchanged`
 
 **SKIPPED.** verdict `kept-unchanged` owes no observed-red evidence (D-05); its evidence is the recorded removal trigger and classification, not a planted guard run. Not measured, and not silently omitted.
 
@@ -9449,7 +9449,7 @@ ok 4 - the elected licence is one of the two the upstream dual licence offers
   type: 'test'
   ...
 # Subtest: live: the five source digests re-hash to the manifest's values
-ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of https://github.com/ricardoquesada/regenerator2000 at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set R2000_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_R2000_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
+ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of an upstream repository at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set ANNO_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_ANNO_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
   ---
   duration_ms: 0.085391
   type: 'test'
@@ -9527,7 +9527,7 @@ ok 4 - the elected licence is one of the two the upstream dual licence offers
   type: 'test'
   ...
 # Subtest: live: the five source digests re-hash to the manifest's values
-ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of https://github.com/ricardoquesada/regenerator2000 at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set R2000_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_R2000_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
+ok 5 - live: the five source digests re-hash to the manifest's values # SKIP the upstream re-hash check is skipped -- no clone of an upstream repository at 493f840418f1450a342bb220c2fe3d2585dd0525 was found. Set ANNO_UPSTREAM_CLONE to the checkout root to run it. Set VICE_REQUIRE_ANNO_UPSTREAM=1 to make its absence a FAILURE instead of a SKIP.
   ---
   duration_ms: 0.096344
   type: 'test'
@@ -9767,7 +9767,7 @@ ok 20 - module-classification.ts is absent from package.json's files[] array (bo
 
 ### Planted run
 
-- **Plant:** `src/mcp/vice/module-classification.ts`: `module: "anno-regbits.json",` → `module: "r2000-regbits.json",`
+- **Plant:** `src/mcp/vice/module-classification.ts`: `module: "anno-regbits.json",` → `module: "anno-regbits.json",`
 - **Planted command:** `node --test module-classification.test.ts`
 - **cwd:** `src/mcp/vice`
 - **Exit status:** `1` (must be non-zero)
@@ -10033,34 +10033,34 @@ exits the run 1. This is the amplifier the verifier recorded as `IN-10`.
 $ node scripts/audit-mutation-harness.mjs --all \
     --out .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap4-sweep-rerun.md
 audit-mutation-harness: selected 61 row(s)
-  OBSERVED RED  src/mcp/vice/r2000-verb-coverage.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-verb-coverage.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-verb-coverage.test.ts
-  OBSERVED RED  scripts/lib/r2000-cli-verbs.mjs: guard exit status 1 (control exit status 0)
+  OBSERVED RED  scripts/lib/anno-cli-verbs.mjs: guard exit status 1 (control exit status 0)
                 command: node scripts/check-skill-tool-coverage.mjs
-  UNMEASURABLE  scripts/lib/r2000-cli-verbs.d.mts: the UNPLANTED control did not exit 0, so a subsequent red would prove nothing about the plant. Recorded as UNMEASURABLE rather than as an observed red.
-  OBSERVED RED  src/mcp/vice/docs-r2000-decisions.test.ts: guard exit status 1 (control exit status 0)
+  UNMEASURABLE  scripts/lib/anno-cli-verbs.d.mts: the UNPLANTED control did not exit 0, so a subsequent red would prove nothing about the plant. Recorded as UNMEASURABLE rather than as an observed red.
+  OBSERVED RED  src/mcp/vice/docs-absorbed-decisions.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test docs-absorbed-decisions.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-answer-key.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/absorbed-answer-key.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test absorbed-answer-key.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-spawn-seam.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/spawn-seam.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test spawn-seam.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-cli.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-cli.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test --test-name-pattern VERB_OPTIONS carries exactly the surviving verbs anno-cli.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-confidence.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-confidence.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-confidence.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-coverage-grammar.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-coverage-grammar.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-coverage-grammar.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-coverage.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-coverage.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-coverage.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-d64.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-d64.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-d64.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-enum-gen.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-enum-gen.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-enum-gen.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-memmap-render.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-memmap-render.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-memmap-render.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-regbits.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-regbits.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-regbits.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-tools.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-tools.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-tools.test.ts
   OBSERVED RED  scripts/audit-gate.mjs: guard exit status 1 (control exit status 0)
                 command: node scripts/audit-gate.mjs
@@ -10097,15 +10097,15 @@ audit-mutation-harness: selected 61 row(s)
   OBSERVED RED  src/mcp/vice/tool-support-table.test.mjs: guard exit status 1 (control exit status 0)
                 command: node --test --test-name-pattern derived-union equality tool-support-table.test.mjs
   UNMEASURABLE  src/mcp/vice/vice-proxy.test.ts: the UNPLANTED control did not exit 0, so a subsequent red would prove nothing about the plant. Recorded as UNMEASURABLE rather than as an observed red.
-  SKIPPED       src/mcp/vice/r2000-launch.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-mcp-client.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-project.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-session.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-symbol-roundtrip.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-upstream-audit.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-verify.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       scripts/check-no-regenerator2000.d.mts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
-  SKIPPED       scripts/check-no-regenerator2000.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-launch.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-mcp-client.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-project.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-session.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-symbol-roundtrip.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-derivation.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-verify.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       scripts/check-no-analyser.d.mts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
+  SKIPPED       scripts/check-no-analyser.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   SKIPPED       scripts/lib/anno-cli-invocations.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   SKIPPED       src/mcp/vice/acme-gate.test.ts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   OBSERVED RED  src/mcp/vice/anno-derivation.test.ts: guard exit status 1 (control exit status 0)
@@ -10162,35 +10162,35 @@ exit=0
 $ node scripts/audit-mutation-harness.mjs --all \
     --out .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap4-sweep-rerun.md
 audit-mutation-harness: selected 61 row(s)
-  OBSERVED RED  src/mcp/vice/r2000-verb-coverage.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-verb-coverage.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-verb-coverage.test.ts
-  OBSERVED RED  scripts/lib/r2000-cli-verbs.mjs: guard exit status 1 (control exit status 0)
+  OBSERVED RED  scripts/lib/anno-cli-verbs.mjs: guard exit status 1 (control exit status 0)
                 command: node scripts/check-skill-tool-coverage.mjs
-  OBSERVED RED  scripts/lib/r2000-cli-verbs.d.mts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  scripts/lib/anno-cli-verbs.d.mts: guard exit status 1 (control exit status 0)
                 command: node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
-  OBSERVED RED  src/mcp/vice/docs-r2000-decisions.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/docs-absorbed-decisions.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test docs-absorbed-decisions.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-answer-key.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/absorbed-answer-key.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test absorbed-answer-key.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-spawn-seam.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/spawn-seam.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test spawn-seam.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-cli.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-cli.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test --test-name-pattern VERB_OPTIONS carries exactly the surviving verbs anno-cli.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-confidence.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-confidence.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-confidence.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-coverage-grammar.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-coverage-grammar.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-coverage-grammar.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-coverage.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-coverage.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-coverage.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-d64.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-d64.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-d64.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-enum-gen.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-enum-gen.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-enum-gen.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-memmap-render.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-memmap-render.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-memmap-render.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-regbits.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-regbits.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-regbits.test.ts
-  OBSERVED RED  src/mcp/vice/r2000-tools.test.ts: guard exit status 1 (control exit status 0)
+  OBSERVED RED  src/mcp/vice/anno-tools.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test anno-tools.test.ts
   OBSERVED RED  scripts/audit-gate.mjs: guard exit status 1 (control exit status 0)
                 command: node scripts/audit-gate.mjs
@@ -10230,15 +10230,15 @@ audit-mutation-harness: selected 61 row(s)
                 command: node --test --test-name-pattern derived-union equality tool-support-table.test.mjs
   OBSERVED RED  src/mcp/vice/vice-proxy.test.ts: guard exit status 1 (control exit status 0)
                 command: node --test --test-name-pattern tools/list survives a missing or corrupt snapshot vice-proxy.test.ts
-  SKIPPED       src/mcp/vice/r2000-launch.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-mcp-client.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-project.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-session.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-symbol-roundtrip.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-upstream-audit.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       src/mcp/vice/r2000-verify.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
-  SKIPPED       scripts/check-no-regenerator2000.d.mts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
-  SKIPPED       scripts/check-no-regenerator2000.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-launch.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-mcp-client.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-project.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-session.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-symbol-roundtrip.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-derivation.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       src/mcp/vice/anno-verify.test.ts: verdict deleted -- owes no observed-red evidence (D-05)
+  SKIPPED       scripts/check-no-analyser.d.mts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
+  SKIPPED       scripts/check-no-analyser.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   SKIPPED       scripts/lib/anno-cli-invocations.mjs: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   SKIPPED       src/mcp/vice/acme-gate.test.ts: verdict kept-unchanged -- owes no observed-red evidence (D-05)
   OBSERVED RED  src/mcp/vice/anno-derivation.test.ts: guard exit status 1 (control exit status 0)

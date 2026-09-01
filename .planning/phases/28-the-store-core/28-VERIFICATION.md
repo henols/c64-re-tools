@@ -62,8 +62,8 @@ re_verification: # round 7, after the sixth gap-closure round (28-23, one plan, 
       `./node_modules/.bin/tsc --noEmit` exits 0.
     - >-
       Regression gate outside the phase: 7 failures, all attributed, NONE a phase-28 code regression.
-      Five are `r2000-session.test.ts` plan-18-06 cases failing `R2000SpawnError` — I confirmed
-      `command -v regenerator2000` is EMPTY on this host, so the cause is a genuinely absent external
+      Five are `anno-session.test.ts` plan-18-06 cases failing `AnnoSpawnError` — I confirmed
+      `command -v the external analyser` is EMPTY on this host, so the cause is a genuinely absent external
       binary, environmental and pre-existing (the same five as rounds 5 and 6). The other two are the
       docs guards reddened by the round-7 code-review commit `413eda1`:
       `docs-review-disposition.test.ts` (AUDIT-01) is 6/7 and I ran it MYSELF — its failure message
@@ -633,7 +633,7 @@ Every command below was executed in this process; the results are the real outpu
 | **WR-32 measurement** | replay `SEQUENCE` and count `dropContained` removals per step | **lost 0 / reported 0 on all twelve steps** — matches the reviewer digit for digit | ✗ **FAIL (confirms the WARNING)** |
 | WR-32 non-vacuity check | same replay, recording `vanished` / `reported` sizes | **8, 8, 8, 8 and 10 on the five fragmenting steps** — the invariant compares non-empty sets | ✓ PASS (this is what keeps the must-have non-vacuous) |
 | WR-32's missing geometry is reachable | drive `$1000..$1009 byte` over the 16-byte table | ACCEPTED, one record, survivor `$100a..$100f`, two wholly-contained pairs | ✓ PASS (confirms the coverage gap is real) |
-| `regenerator2000` present on PATH | `command -v regenerator2000` | empty | ✓ PASS (confirms the 5 regression failures are environmental) |
+| `the external analyser` present on PATH | `command -v the external analyser` | empty | ✓ PASS (confirms the 5 regression failures are environmental) |
 | Docs guard names exactly the 5 new ids | `node --test docs-review-disposition.test.ts` | 6/7; message names `IN-12, IN-13, IN-14, WR-31, WR-32` and nothing else | ✓ PASS (confirms the attribution) |
 
 ### Probe Execution

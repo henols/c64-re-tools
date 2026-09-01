@@ -31,6 +31,6 @@ the tail. That reproduces the store's own cross-reference bookkeeping without re
 ## Result
 
 The two routes agree on all three fields, so this line hashes to the sealed
-`ANSWER.sha256`. `r2000-coverage.test.ts` recomputes BOTH routes live from the committed fixture
+`ANSWER.sha256`. `anno-coverage.test.ts` recomputes BOTH routes live from the committed fixture
 on every run, so the agreement is re-proved rather than merely asserted here — and a missing or
 emptied marker fence in this file FAILS that test rather than skipping it (T-19-VACUOUS-CHECK).

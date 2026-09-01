@@ -1,8 +1,8 @@
 # Session B Answer — Criterion 1 (D-26), Plan 11-09
 
 This is the second, independent execution context for criterion 1's two-session
-falsifiability proof. It answers `QUESTION.md` using only the curated `r2000_*`
-tool surface (`runR2000Tool()` in `.claude/mcp/vice/r2000-tools.ts`) against the
+falsifiability proof. It answers `QUESTION.md` using only the curated `anno_*`
+tool surface (`runAnnoTool()` in `.claude/mcp/vice/anno-tools.ts`) against the
 committed store `evidence/criterion1/recon-subject.regen2000proj`. The store was
 never opened as raw text — every value below came from a named tool call.
 
@@ -14,10 +14,10 @@ label=border_bump_up confidence=probable-data blocktype=byte xrefcount=2
 
 ## Derivation
 
-Every call below was made through `runR2000Tool(name, { project, ...args })` —
-the same dispatcher `vice-proxy.ts` uses for the `r2000_*` MCP surface — driven
-from a small Node driver script that imports `runR2000Tool` directly (this
-session has no live MCP connection exposing `r2000_*` tools, so the dispatcher
+Every call below was made through `runAnnoTool(name, { project, ...args })` —
+the same dispatcher `vice-proxy.ts` uses for the `anno_*` MCP surface — driven
+from a small Node driver script that imports `runAnnoTool` directly (this
+session has no live MCP connection exposing `anno_*` tools, so the dispatcher
 was invoked programmatically rather than through a tool-call transport; the
 function called and its guards — `assertCuratedTool()`, `resolveStorePath()` —
 are identical either way). `project` was
@@ -26,7 +26,7 @@ on every call.
 
 ### Part 1 — label at address 2124 ($084C)
 
-**Call:** `r2000_get_symbols({ start_address: 2124, end_address: 2124 })`
+**Call:** `anno_get_symbols({ start_address: 2124, end_address: 2124 })`
 
 **Response fragment:**
 ```json
@@ -46,7 +46,7 @@ lowercased with the rest of the line).
 
 ### Part 2 — confidence grade on the comment for block 2156-2163 ($086C-$0873)
 
-**Call:** `r2000_get_comments({ start_address: 2156, end_address: 2163 })`
+**Call:** `anno_get_comments({ start_address: 2156, end_address: 2163 })`
 
 **Response fragment:**
 ```json
@@ -65,7 +65,7 @@ contents (`probable-data`), already lowercase and hyphenated exactly as
 
 ### Part 3 — block type for range 2156-2163 (lowercased)
 
-**Call:** `r2000_get_blocks({})` (no `block_type` filter — the full block list
+**Call:** `anno_get_blocks({})` (no `block_type` filter — the full block list
 was inspected and the entry covering the requested range picked out by its
 address range)
 
@@ -87,7 +87,7 @@ ambiguity about which entry answers the question.
 
 ### Part 4 — cross-reference count for address 2128 ($0850)
 
-**Call:** `r2000_get_cross_references({ address: 2128 })`
+**Call:** `anno_get_cross_references({ address: 2128 })`
 
 **Response fragment:**
 ```json
@@ -106,41 +106,41 @@ ambiguity about which entry answers the question.
 - `.planning/STATE.md` (required initial-read context)
 - `./CLAUDE.md` (project instructions)
 - `.planning/phases/11-annotation-store-enums-and-the-symbol-round-trip/11-05-SUMMARY.md` (explicitly permitted per `prior_wave_context` — tool mechanics only, not plan 11-07)
-- `.claude/mcp/vice/r2000-tools.ts` (API documentation named in Task 1's `read_first` — the curated tool definitions, the allow-list, and `runR2000Tool()` itself, which this session called directly)
-- `.claude/mcp/vice/r2000-cli.ts` (named in Task 1's `read_first`; read in full — the CLI has no query verbs reaching `r2000_get_*`, so the driver script called `runR2000Tool()` directly instead)
-- `.claude/mcp/vice/r2000-answer-key.test.ts` (named in Task 2's `read_first` — read to learn the `<!-- CANONICAL-ANSWER-LINE -->` marker convention and the extraction/hashing mechanics before writing this file's own canonical-line fence)
+- `.claude/mcp/vice/anno-tools.ts` (API documentation named in Task 1's `read_first` — the curated tool definitions, the allow-list, and `runAnnoTool()` itself, which this session called directly)
+- `.claude/mcp/vice/anno-cli.ts` (named in Task 1's `read_first`; read in full — the CLI has no query verbs reaching `anno_get_*`, so the driver script called `runAnnoTool()` directly instead)
+- `.claude/mcp/vice/absorbed-answer-key.test.ts` (named in Task 2's `read_first` — read to learn the `<!-- CANONICAL-ANSWER-LINE -->` marker convention and the extraction/hashing mechanics before writing this file's own canonical-line fence)
 
 **Not read** (the forbidden set, confirmed by name): `evidence/criterion1/ANSWER.md`,
 `evidence/criterion1/ANSWER.sha256`, `evidence/criterion1/SESSION-A-TRANSCRIPT.md`,
 `evidence/criterion1/fixture/recon-subject.a`, `evidence/criterion1/fixture/recon-subject.prg`,
 `11-07-PLAN.md`, `11-07-SUMMARY.md`, and no `git log -p`/`git show`/`git log` was run
 over plan 11-07's commits. `recon-subject.regen2000proj` itself was never opened as
-text or JSON — every value above came from an `r2000_*` tool call's own response.
+text or JSON — every value above came from an `anno_*` tool call's own response.
 
 ## Store completeness
 
 Nothing the question asked for came back empty or missing. All four parts were
 answered by a single, unambiguous tool-call response each; no truncation applied
-(none of the four calls used `r2000_search_disassembly`, whose only silent-cap
+(none of the four calls used `anno_search_disassembly`, whose only silent-cap
 risk is `max_results`).
 
 ## Verdict
 
-**MATCH.** `r2000-answer-key.test.ts`'s new session-B comparison test recomputes
+**MATCH.** `absorbed-answer-key.test.ts`'s new session-B comparison test recomputes
 sha256 over this file's own canonical line and asserts it equals the sealed
 `ANSWER.sha256` — it passes.
 
 - **Session B's canonical line:** `label=border_bump_up confidence=probable-data blocktype=byte xrefcount=2`
 - **Session B's sha256:** `e64463d8cef8fbb7699620a3c207de08a36b1189afd9700452a448d91d8c08cc`
 - **Sealed `ANSWER.sha256`:** `e64463d8cef8fbb7699620a3c207de08a36b1189afd9700452a448d91d8c08cc`
-- **Number of `r2000_*` calls used:** 4 (`r2000_get_symbols`, `r2000_get_comments`, `r2000_get_blocks`, `r2000_get_cross_references`)
+- **Number of `anno_*` calls used:** 4 (`anno_get_symbols`, `anno_get_comments`, `anno_get_blocks`, `anno_get_cross_references`)
 
 Criterion 1's two-session evidence is complete: this session, blind to session
 A's prose (the only session-A artifacts touched were the committed store and
 the question), reconstructed the same four facts session A recorded — a human
 naming decision (the label), a confidence judgement that no byte-level
 classifier can read off the bytes, a reachability-based block classification,
-and a cross-reference count — entirely through the curated `r2000_*` query
+and a cross-reference count — entirely through the curated `anno_*` query
 surface. `ANSWER.md` was not read at any point before or during this
 comparison; the match was verified mechanically by the extended test, not by
 eye.

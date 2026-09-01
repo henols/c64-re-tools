@@ -23,7 +23,7 @@ any thing it has to be removed, lets use vice to go to the code where we
 areintrested in om reverse engeenger"*
 
 **Notes:** The free text was read as two standing constraints rather than an
-area selection — r2000 excluded as an instrument (it is `CUT-01` scope), and
+area selection — anno excluded as an instrument (it is `CUT-01` scope), and
 VICE as the means of reaching the code under study. Both were applied to every
 subsequent question in the session and are recorded as `D-01` / `D-02`.
 
@@ -159,13 +159,13 @@ silent gaps.
   build 0.1.5 throwaway but pin the exact version, since `DXA-01` must vendor
   the same one the gate measured.
 - `PROOF-04` audit depth — source read of `analyzer.rs` from the local cargo
-  registry, no r2000 execution.
+  registry, no anno execution.
 - Ghidra pre-script technique — reuse `BankProbe3.java`'s `getBlock()`-first
   guard verbatim.
 
 ## Deferred Ideas
 
-- `r2000-coverage.ts` is absent from `CUT-02`'s survivor list and so appears to
+- `anno-coverage.ts` is absent from `CUT-02`'s survivor list and so appears to
   fall inside `CUT-01`'s deletion. Consistent with the owner's intent; flagged
   for Phase 25's planner to confirm as deliberate.
 - Fetching a corpus from public archives — revisit only if the supplied image

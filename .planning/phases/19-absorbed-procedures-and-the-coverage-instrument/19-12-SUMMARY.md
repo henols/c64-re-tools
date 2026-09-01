@@ -2,7 +2,7 @@
 phase: 19-absorbed-procedures-and-the-coverage-instrument
 plan: 12
 subsystem: testing
-tags: [r2000, coverage-instrument, multi-caller-rule, dispatch-scan, 16-bit-bound, negative-controls]
+tags: [anno, coverage-instrument, multi-caller-rule, dispatch-scan, 16-bit-bound, negative-controls]
 
 # Dependency graph
 requires:
@@ -21,7 +21,7 @@ provides:
   - "`effectiveEnd` in `scanIndirectDispatch()` — ONE clamped bound, derived the same way as the census's, read by all five sites that previously recomputed origin-plus-length"
   - "`tableWalkPayload()` and `stackReturnTopOfSpacePayload()` — origin-parameterised payloads that make 'the same program at two origins' true by construction"
   - "The extended out-of-16-bit-space test: four bounded assertions over the dispatch sub-report, the one-address-space assertion against the census beside it, and the non-vacuity half"
-affects: [phase-20, phase-21, r2000-coverage, coverage-report-consumers]
+affects: [phase-20, phase-21, anno-coverage, coverage-report-consumers]
 
 actuals:
   tokens: 7087
@@ -38,8 +38,8 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - src/mcp/vice/r2000-coverage.ts
-    - src/mcp/vice/r2000-coverage.test.ts
+    - src/mcp/vice/anno-coverage.ts
+    - src/mcp/vice/anno-coverage.test.ts
 
 key-decisions:
   - "WR-13 fixed by DEMANDING A REFERENCE, not by removing the name branch: a caller's label name counts only when backticked, introduced by a caller-naming word from `CALLER_CITATION_WORDS`, or followed by its own parenthesised hex address"
@@ -60,7 +60,7 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-13: a caller's label name counts only when the comment USES it as a reference -- an ordinary English word in ordinary prose names no caller"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-13: a caller's label name counts only when the comment USES it as a reference -- an ordinary English word in ordinary prose names no caller"
         status: pass
     human_judgment: false
   - id: D2
@@ -68,10 +68,10 @@ coverage:
     requirement: "COV-02"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#WR-13: the fixture-level both-directions statement -- NC5 stays CLEAN and NC4 is still caught by `reproducibility`"
+        ref: "src/mcp/vice/anno-coverage.test.ts#WR-13: the fixture-level both-directions statement -- NC5 stays CLEAN and NC4 is still caught by `reproducibility`"
         status: pass
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#ANCHORING: a colliding longer hex never satisfies the multi-caller rule -- NC4 plus $8106 is still undocumented, and the well-documented control is still clean"
+        ref: "src/mcp/vice/anno-coverage.test.ts#ANCHORING: a colliding longer hex never satisfies the multi-caller rule -- NC4 plus $8106 is still undocumented, and the well-documented control is still clean"
         status: pass
     human_judgment: false
   - id: D3
@@ -79,7 +79,7 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts#a census whose origin plus size would leave the 16-bit space is bounded, AND SO IS ITS OWN DISPATCH SUB-REPORT"
+        ref: "src/mcp/vice/anno-coverage.test.ts#a census whose origin plus size would leave the 16-bit space is bounded, AND SO IS ITS OWN DISPATCH SUB-REPORT"
         status: pass
     human_judgment: false
   - id: D4
@@ -87,15 +87,15 @@ coverage:
     requirement: "COV-01"
     verification:
       - kind: other
-        ref: "grep over scanIndirectDispatch() for `safeOrigin + size` / `>= size` — only the single derivation at r2000-coverage.ts:793 remains"
+        ref: "grep over scanIndirectDispatch() for `safeOrigin + size` / `>= size` — only the single derivation at anno-coverage.ts:793 remains"
         status: pass
     human_judgment: false
   - id: D5
-    description: "The instrument remains read-only by construction: no filesystem write and no live-session import in `r2000-coverage.ts` after this run's edits"
+    description: "The instrument remains read-only by construction: no filesystem write and no live-session import in `anno-coverage.ts` after this run's edits"
     requirement: "COV-01"
     verification:
       - kind: unit
-        ref: "src/mcp/vice/r2000-coverage.test.ts (committed source-level assertion; full file run 71/71) "
+        ref: "src/mcp/vice/anno-coverage.test.ts (committed source-level assertion; full file run 71/71) "
         status: pass
     human_judgment: false
 
@@ -140,8 +140,8 @@ Both findings are disposed **fixed-and-cited**. This section is the disposition 
 
 ## Files Created/Modified
 
-- `src/mcp/vice/r2000-coverage.ts` — `CALLER_CITATION_WORDS` + `CALLER_CITATION_ALTERNATION` (new module-level constants), `citesCallerByName()` (new non-exported helper carrying the WR-13 decision record), `namesACaller()`'s name branch rewired to it, and `effectiveEnd` derived once in `scanIndirectDispatch()` and read by all five bound sites.
-- `src/mcp/vice/r2000-coverage.test.ts` — two new WR-13 tests, two new origin-parameterised payload builders, a `scanAt()` helper, and the extended out-of-16-bit-space test.
+- `src/mcp/vice/anno-coverage.ts` — `CALLER_CITATION_WORDS` + `CALLER_CITATION_ALTERNATION` (new module-level constants), `citesCallerByName()` (new non-exported helper carrying the WR-13 decision record), `namesACaller()`'s name branch rewired to it, and `effectiveEnd` derived once in `scanIndirectDispatch()` and read by all five bound sites.
+- `src/mcp/vice/anno-coverage.test.ts` — two new WR-13 tests, two new origin-parameterised payload builders, a `scanAt()` helper, and the extended out-of-16-bit-space test.
 
 ## WR-13: the decision, verbatim in effect
 
@@ -153,7 +153,7 @@ Both findings are disposed **fixed-and-cited**. This section is the disposition 
 
 Marker words are matched at their lowercase and sentence-initial-capital spellings rather than case-insensitively, because the NAME half of the same regex is case-SENSITIVE (`Init` is a different symbol from `init`).
 
-**Why bare presence is not enough:** regenerator2000 label names are routinely ordinary English words — `loop`, `init`, `main`, `start`, `data`, `table`, `draw` — and an ordinary description of what a routine does will contain one by accident. A label counted as documented stays in `labels.kindRatio.user` and stays in the reproducibility sample, so the measure that exists to catch it can no longer see it.
+**Why bare presence is not enough:** the external analyser label names are routinely ordinary English words — `loop`, `init`, `main`, `start`, `data`, `table`, `draw` — and an ordinary description of what a routine does will contain one by accident. A label counted as documented stays in `labels.kindRatio.user` and stays in the reproducibility sample, so the measure that exists to catch it can no longer see it.
 
 **The alternative weighed and REJECTED:** drop the name branch entirely and accept only the hex form, which CR-01's fix already anchors correctly. Strictly safer and strictly simpler. Rejected because it would silently reclassify every project whose annotator cites callers by name rather than by address — a real and reasonable convention — turning a measure of documentation quality into a measure of citation style, with no signal to the operator that the rule had changed underneath them.
 
@@ -176,7 +176,7 @@ The pre-fix value was confirmed directly by evaluating the old pattern `(?<![0-9
 
 ## IN-05: the sites changed, with their line numbers AS FOUND
 
-All five read the single derived bound at (post-edit) `r2000-coverage.ts:793`:
+All five read the single derived bound at (post-edit) `anno-coverage.ts:793`:
 `const effectiveEnd = Math.min(safeOrigin + size, 0x10000);`
 
 | # | Site (line number as found, pre-edit) | Before | After |
@@ -228,13 +228,13 @@ None — plan executed exactly as written. Both tasks landed with the tightening
 
 **One pre-existing, load-sensitive flake, already logged — not re-logged, not chased.**
 
-`r2000-session.test.ts` → `stub: a child that answers nothing within the call timeout rejects with R2000TimeoutError, is killed, and the crash counter increases by 1` failed in both PARALLEL full-suite runs on this machine (`expected 1, actual 0` on the crash counter, at `r2000-session.test.ts:631`). It is `deferred-items.md` item 3, found by 19-11 with the identical signature.
+`anno-session.test.ts` → `stub: a child that answers nothing within the call timeout rejects with AnnoTimeoutError, is killed, and the crash counter increases by 1` failed in both PARALLEL full-suite runs on this machine (`expected 1, actual 0` on the crash counter, at `anno-session.test.ts:631`). It is `deferred-items.md` item 3, found by 19-11 with the identical signature.
 
 Evidence that it is not this plan's:
 
 - Standalone run of the file: `# tests 25 / # pass 25 / # fail 0`.
 - **Serial full-suite run: `# tests 2580 / # pass 2535 / # fail 0`** — the recorded full-suite line for this plan.
-- `r2000-session.ts` and `r2000-session.test.ts` import nothing from `r2000-coverage.ts`; there is no path from either file this plan edits to the failing assertion, which is a wall-clock child-process timeout.
+- `anno-session.ts` and `anno-session.test.ts` import nothing from `anno-coverage.ts`; there is no path from either file this plan edits to the failing assertion, which is a wall-clock child-process timeout.
 
 No timeout was widened, no planning document was edited to make the tree look green, and the deferred item was not re-logged.
 
@@ -242,7 +242,7 @@ No timeout was widened, no planning document was edited to make the tree look gr
 
 | Check | Result |
 |-------|--------|
-| `node --test r2000-coverage.test.ts` | `# tests 71 / # pass 71 / # fail 0` |
+| `node --test anno-coverage.test.ts` | `# tests 71 / # pass 71 / # fail 0` |
 | `npm test` (FULL suite, serial schedule) | **`# tests 2580 / # pass 2535 / # fail 0`** (parallel schedule: `# fail 1`, deferred item 3 — see above) |
 | `npx tsc --noEmit -p tsconfig.json` | exit 0 |
 | `git diff src/mcp/vice/fixtures/` | empty |
@@ -257,7 +257,7 @@ No timeout was widened, no planning document was edited to make the tree look gr
 
 ## Threat Flags
 
-None. No new network endpoint, auth path, file access pattern or schema change. `r2000-coverage.ts` remains read-only by construction (no filesystem write, no live-session import), and the two registered high-severity threats T-19G-12-01 and T-19G-12-02 are the two findings this plan mitigates.
+None. No new network endpoint, auth path, file access pattern or schema change. `anno-coverage.ts` remains read-only by construction (no filesystem write, no live-session import), and the two registered high-severity threats T-19G-12-01 and T-19G-12-02 are the two findings this plan mitigates.
 
 ## Known Stubs
 
@@ -279,5 +279,5 @@ None — no external service configuration required.
 
 ## Self-Check: PASSED
 
-- `src/mcp/vice/r2000-coverage.ts`, `src/mcp/vice/r2000-coverage.test.ts` and this SUMMARY all exist on disk.
+- `src/mcp/vice/anno-coverage.ts`, `src/mcp/vice/anno-coverage.test.ts` and this SUMMARY all exist on disk.
 - All three commits exist in `git log --all`: `8c7a75c` (Task 1), `c213093` (Task 2), `a7d8a93` (this SUMMARY).

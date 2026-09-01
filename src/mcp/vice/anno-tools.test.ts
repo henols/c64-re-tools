@@ -265,7 +265,7 @@ test("anno-tools.ts never throws a bare Error -- every refusal is an AnnoStoreEr
 //
 // `stripCommentsAndStrings` below is shared by every structural guard added in
 // this plan. A single-pass character scanner and NOT a regex, for the reason
-// `scripts/lib/r2000-cli-verbs.mjs:47-60` records and this repo's own
+// `scripts/lib/anno-cli-verbs.mjs:47-60` records and this repo's own
 // `docs-dangling-refs.test.ts` MEASURED: a regex-alternation extractor silently
 // missed a literal at the exact site a real defect lived. Template-literal
 // INTERPOLATIONS are preserved as code, because `${someIdentifier}` is an
@@ -1122,7 +1122,7 @@ test("an image outside the workspace root, or absent, is refused by name -- the 
 // ---------------------------------------------------------------------------
 // Plan 29-06 Task 3: the batch verb.
 //
-// The gate cases below are PORTED from `r2000-tools.test.ts`'s own batch suite
+// The gate cases below are PORTED from `anno-tools.test.ts`'s own batch suite
 // before that file is deleted, so the D-33 discipline survives the module it
 // was written against. The depth-cap and empty-array cases are NEW -- the
 // original validator had neither, and was safe from unbounded recursion only

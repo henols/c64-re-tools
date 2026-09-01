@@ -58,7 +58,7 @@ Route values are exactly two: `--root` (point the guard at a synthetic tree) or 
 | `scripts/check-skill-fork-honesty.mjs` | set A | no | **yes** | `--root` | Cheap and self-contained. `ROOT`/`VICE_DIR`/`SKILLS_DIR`/`README_PATH`/`PARITY_DOC_PATH` were one block at `:74-78`. One outlier, `ACME_BUILD_SKILL_PATH` at `:533`, was derived from `SKILLS_DIR` and moved into `paths()` with the rest. (`VICE_DIR` is declared and never used — left as-is, out of scope.) |
 | `scripts/check-skill-description-overlap.mjs` | **no** (its audited-set member is the lib it drives, `scripts/lib/skill-descriptions.mjs`, set A) | no | **yes** | `--root` | Cheap, but NOT self-contained until fixed: `CLAUDE_MD` was declared at `:179`, ~100 lines from the `:72-73` block. Moved into `paths()`. See §4. |
 | `scripts/check-skill-cli-invocations.mjs` | **no** (its audited-set member is the lib it drives, `scripts/lib/anno-cli-invocations.mjs`, set B) | no | **yes** | `--root` **with a fixture requirement** | Cheap, with one real complication: the `execFileSync` of `installer/scripts/sync-skills.mjs` with `cwd: ROOT` at `:71`. See §3. |
-| `scripts/check-no-regenerator2000.mjs` | set B | no | **no — deliberately** | `worktree` | Two named side effects make a synthetic root require a *git repository with a working npm package*. See §5. |
+| `scripts/check-no-analyser.mjs` | set B | no | **no — deliberately** | `worktree` | Two named side effects make a synthetic root require a *git repository with a working npm package*. See §5. |
 | `scripts/check-npm-packages.mjs` | set A | no | **no — not attempted** | `worktree` | Same class of blocker: `packFiles()` at `:147-148` runs `execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: dir })`, called with `join(ROOT, "src/mcp/vice")` at `:175` and `join(ROOT, "installer")` at `:326`. A synthetic root would have to carry two installable npm packages, one of which runs a `prepack` hook (`installer/package.json:52`). |
 
 **Count: 6 of the 8 repo-level scripts now accept `--root`, up from 1.** Two are recorded as
@@ -78,7 +78,7 @@ The guard that can be observed failing on their behalf IS one of these check scr
 | `scripts/lib/skill-descriptions.mjs` (+ `.d.mts`) | `check-skill-description-overlap.mjs:70` imports it |
 | `scripts/lib/skill-honesty-checks.mjs` | `check-skill-fork-honesty.mjs:71` imports it |
 | `scripts/lib/skill-corpus.d.mts` | declaration for `skill-corpus.mjs`, imported by all four skill guards |
-| `scripts/lib/r2000-cli-verbs.mjs` / `.d.mts` (renamed successors) | `check-skill-tool-coverage.mjs:52` imports `anno-cli-verbs.mjs` |
+| `scripts/lib/anno-cli-verbs.mjs` / `.d.mts` (renamed successors) | `check-skill-tool-coverage.mjs:52` imports `anno-cli-verbs.mjs` |
 
 So a route is needed for eight scripts, not six, and that is why both non-audited check
 scripts received `--root` in this plan.
@@ -151,7 +151,7 @@ here as the measurement that justifies the `--root` route for this row.
 
 ---
 
-## 5. `scripts/check-no-regenerator2000.mjs` — a deliberate `worktree` route
+## 5. `scripts/check-no-analyser.mjs` — a deliberate `worktree` route
 
 **Not given `--root`, on purpose.** `ROOT` at `:120` is consumed by two functions whose
 side effects treat the root as a workspace rather than a directory of text:
@@ -227,7 +227,7 @@ one untouched.
 
 ## 7. Plant-fixture constraints carried forward to plan 32-06
 
-Both are exact pins in `scripts/check-no-regenerator2000.mjs`, enforced with `===` at
+Both are exact pins in `scripts/check-no-analyser.mjs`, enforced with `===` at
 `:962` (`total === cls.prefixHits`). Tripping either reds the removal gate on the commit that
 adds the fixture.
 
@@ -259,9 +259,9 @@ outputs captured and diffed:
 | `check-skill-description-overlap.mjs` | 0 | 0 | byte-identical |
 | `check-skill-cli-invocations.mjs` | 0 | 0 | identical apart from the PID in Node's `ExperimentalWarning` |
 
-`node scripts/check-no-regenerator2000.mjs` → exit 0. `node scripts/audit-gate.mjs --json` →
+`node scripts/check-no-analyser.mjs` → exit 0. `node scripts/audit-gate.mjs --json` →
 `allowed: true`, `redGuards: []`, `structuralErrors: []`. `npm run typecheck` → exit 0.
-`grep -ac 'regenerator2000' scripts/check-skill-fork-honesty.mjs` → 2, unchanged (`:19` and
+`grep -ac 'the external analyser' scripts/check-skill-fork-honesty.mjs` → 2, unchanged (`:19` and
 `:408`), so no exact-count exemption moved.
 
 `grep -Ec 'process\.env\.[A-Z_]*ROOT|WAIVER|--skip|--force'` → **0 for all five**. No

@@ -252,7 +252,7 @@ Zero undispositioned `16-REVIEW.md` findings remain. `audit-integrity.test.ts`'s
 
 `cd src/mcp/vice && npm run typecheck`: exit 0.
 `node scripts/check-npm-packages.mjs`: OK (`@henols/vice-mcp` 73 files, `@henols/c64-re-tools` 31 files/6 skills) -- the new guard test and the two new *.test.mjs assertions do not leak into either tarball.
-`node scripts/check-skill-tool-coverage.mjs`: OK (37 `vice_*`, 10 `r2000_*`).
+`node scripts/check-skill-tool-coverage.mjs`: OK (37 `vice_*`, 10 `anno_*`).
 `node scripts/check-skill-fork-honesty.mjs`: OK.
 `bash scripts/package.sh`: OK, 984 files.
 `node --test 'src/skills/*/scripts/*.test.mjs'`: 97 tests, `# fail 0` (up from the 95 measured at plan time, +2 from this plan's two new behavioural tests).

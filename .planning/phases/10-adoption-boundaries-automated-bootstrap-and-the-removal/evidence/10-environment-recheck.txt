@@ -2,18 +2,18 @@ Phase 10 Plan 02 -- Task 1: environment re-check against RESEARCH.md's 2026-08-2
 Executed: 2026-08-20T15:08:26Z (execution-time re-check, this plan run)
 
 =============================================================================
-1. regenerator2000 --version
+1. The external analyser --version
 =============================================================================
-$ regenerator2000 --version
-regenerator2000 0.9.20
+$ analyser --version
+The external analyser 0.9.20
 
 =============================================================================
-2. regenerator2000 --help
+2. The external analyser --help
 =============================================================================
-$ regenerator2000 --help
+$ analyser --help
 An interactive disassembler for the MOS 6502, focused on Commodore 8-bit computers
 
-Usage: regenerator2000 [OPTIONS] [FILE]
+Usage: The external analyser [OPTIONS] [FILE]
 
 Arguments:
   [FILE]  File to load (.prg, .crt, .t64, .d64, .d71, .d81, .vsf, .dis65, .bin, .raw, .regen2000proj)
@@ -52,7 +52,7 @@ Options:
 
 Supported file types: .prg, .crt, .t64, .d64, .d71, .d81, .vsf, .dis65, .bin, .raw, .regen2000proj
 
-Config directory: /home/henrik/.config/regenerator2000
+Config directory: /home/henrik/.config/analyser
 
 =============================================================================
 3. acme --version
@@ -97,9 +97,9 @@ flag this phase depends on is present with identical spelling. No re-research tr
 =============================================================================
 
 Source read directly from:
-  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/project.rs
-  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/settings.rs
-  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regenerator2000-core-0.9.20/src/state/types.rs
+  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/external-analyser-core-0.9.20/src/state/project.rs
+  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/external-analyser-core-0.9.20/src/state/settings.rs
+  ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/external-analyser-core-0.9.20/src/state/types.rs
 
 | Ground truth item                                   | Value                                   | Cited file:line                                          |
 |------------------------------------------------------|------------------------------------------|-----------------------------------------------------------|

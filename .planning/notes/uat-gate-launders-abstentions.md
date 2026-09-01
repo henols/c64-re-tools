@@ -139,7 +139,7 @@ Fixed, not filed. Four pieces:
 tagged item can be legitimately passed. All three of `27-UAT.md`'s entries carry a
 substantive `note:`; item 2 accepts its `backstop` concurrency abstention as "not
 applicable — single-threaded, pure, no interruptible path" and shows its work down
-to `r2000-coverage.ts:2173`. That is an earned pass. Phase 28's were keypresses.
+to `anno-coverage.ts:2173`. That is an earned pass. Phase 28's were keypresses.
 The difference is a **resolution-side** field (`note:` / `decision:` /
 `source: human_decision`), so that is what the guard requires. Question-side
 fields (`expected:`, `why_human:`) deliberately do not count — they are written at

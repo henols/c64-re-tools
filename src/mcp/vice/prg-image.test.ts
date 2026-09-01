@@ -6,7 +6,7 @@
 // header claims.
 //
 // PROVENANCE OF THE FIRST FOUR TESTS: they were RELOCATED VERBATIM out of
-// `r2000-project.test.ts` together with the functions they cover -- same
+// `anno-project.test.ts` together with the functions they cover -- same
 // titles, same fixtures, same regex matchers. That is deliberate. Their whole
 // value is that they are the already-committed regression for the refusals
 // standing between a truncated capture and a silently wrong load address; a
@@ -40,7 +40,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_PATH = join(HERE, "prg-image.ts");
 
 // ---------------------------------------------------------------------------
-// Relocated verbatim from r2000-project.test.ts.
+// Relocated verbatim from anno-project.test.ts.
 // ---------------------------------------------------------------------------
 
 test("parsePrg: extracts a little-endian load address and the remaining body", () => {

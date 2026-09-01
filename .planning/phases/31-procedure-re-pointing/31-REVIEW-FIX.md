@@ -99,7 +99,7 @@ a total.
   docs guard is red (D-12-02)`; `# fail 0` once this file exists.
 - `cd src/mcp/vice && node --test anno-derivation.test.ts` → `# tests 9 / # pass 8 / # fail 0 /
   # skipped 1` (the pre-existing expected skip). The `REPOINT-04` non-regression.
-- `node scripts/check-no-regenerator2000.mjs` → exit 0; 400 files scanned (370 tracked outside
+- `node scripts/check-no-analyser.mjs` → exit 0; 400 files scanned (370 tracked outside
   `.planning/` + 30 shipped-but-untracked installer paths, floor 350); 157 permanently exempt;
   temporary allow-list empty. `attribution-guard-test 14` and `skill-attribution-headers 24`
   both unmoved.
@@ -109,8 +109,8 @@ a total.
   allowlist 0, CLAUDE.md table 7/7 byte-identical); `node scripts/check-skill-tool-coverage.mjs`;
   `node scripts/check-skill-fork-honesty.mjs`.
 - Per-path subject-token pins, both unmoved:
-  `grep -o 'regenerator2000' src/mcp/vice/skill-attribution.test.ts | wc -l` → **12**;
-  `grep -c 'regenerator2000' .github/workflows/ci.yml` → **1**.
+  `grep -o 'the external analyser' src/mcp/vice/skill-attribution.test.ts | wc -l` → **12**;
+  `grep -c 'the external analyser' .github/workflows/ci.yml` → **1**.
 
 ### `npm run test:automated` — the failure LIST, not the exit code
 
@@ -321,7 +321,7 @@ INSIDE `skill-attribution.test.ts` are now asserted to agree on block COUNT per 
 the new `attributionBlockLines()` closes the single-line-block hole on its own side. What was NOT
 done is the consolidation the finding actually asks for: moving a shared
 `skillAttributionBlockSpans()` into `scripts/lib/skill-corpus.mjs` and having both
-`scripts/check-no-regenerator2000.mjs` and this test delegate to it. That requires editing the
+`scripts/check-no-analyser.mjs` and this test delegate to it. That requires editing the
 removal gate's block extractor, and `31-VERIFICATION.md` § "Scope note for any gap-closure round"
 fences this round to two files. The gate's own damage remains bounded by its exact hit-count pins
 rather than by the anchor agreement its header claims — which is the finding's real content and
@@ -334,7 +334,7 @@ stays true.
 
 The fix the finding proposes is correct: anchor on the stable requirement id `REPOINT-03`, which
 does not renumber, instead of `ROADMAP Phase 31 criterion 1`. It is not applied because both
-sites are inside `scripts/check-no-regenerator2000.mjs`, which this round may not touch — the
+sites are inside `scripts/check-no-analyser.mjs`, which this round may not touch — the
 verification report's scope note names two files and `.planning/` documents, and the standing
 prohibition is that no pin, needle or scope predicate in that gate moves. Accepting a known
 recurrence risk is the honest position here rather than pretending the citation is durable: this
@@ -354,7 +354,7 @@ carries real risk against zero correctness gain. Left as is deliberately.
 
 Same class as `WR-02` (a cross-cutting seam re-derived locally) and deferred to the same trigger:
 Phase 32's `CUT-04` audit. The fix requires a shared export consumed by
-`scripts/check-no-regenerator2000.mjs`, which this round may not edit. Pre-existing; not
+`scripts/check-no-analyser.mjs`, which this round may not edit. Pre-existing; not
 introduced or worsened by phase 31.
 
 ### IN-03: The new constants deepen module-load coupling to an archivable `.planning/` path — ACCEPTED, no change
@@ -378,7 +378,7 @@ This round edited exactly three files:
 **Deliberately NOT touched**, verified by
 `git status --porcelain` over each path returning empty:
 `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json`,
-`scripts/check-no-regenerator2000.mjs`, `.planning/STATE.md`, `.planning/ROADMAP.md`,
+`scripts/check-no-analyser.mjs`, `.planning/STATE.md`, `.planning/ROADMAP.md`,
 `.planning/REQUIREMENTS.md`. Nothing under `src/skills/**` was edited and no planted violation
 was ever written into either skill tree — every plant lives in memory as a string.
 `installer/skills/**` was produced only by the existing `sync-skills.mjs` producer.

@@ -12,7 +12,7 @@
 // module-load `const`. By the time any test body runs, the probe has already
 // happened, so assigning `process.env.ACME_BIN` in-process cannot affect it.
 // No in-process test can prove criterion 1. The precedent copied here is
-// `r2000-launch.test.ts`'s slow-child timeout test: spawn `process.execPath`
+// `anno-launch.test.ts`'s slow-child timeout test: spawn `process.execPath`
 // with an `env` override and import the module under test by absolute path,
 // built with `JSON.stringify(join(HERE, ...))`, so a genuinely new module load
 // sees the overridden environment.

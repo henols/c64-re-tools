@@ -18,7 +18,7 @@ Eighteen `anno_*` MCP tools registered proxy-locally through `buildViceTool()`,
 plus a two-verb `vice-mcp anno` CLI. ACME export behind a real-ACME 0.97
 byte-diff oracle that is deliberately test-only. All five absorbed analysis
 procedures re-pointed onto the new surface with their attribution headers
-byte-preserved. And regenerator2000 deleted outright — 14 files, 8,221 lines,
+byte-preserved. And the external analyser deleted outright — 14 files, 8,221 lines,
 6,309 net after the surviving code was renamed rather than removed.
 
 ### What Worked
@@ -34,7 +34,7 @@ capability modules' heuristics were extracted out of their dying routes as live
 code precisely because the registry forced someone to look at them.
 
 **Proving a guard non-vacuous by doing the thing, not by writing a fixture.** The
-strongest instance this milestone: a *real* unclassified `r2000-*.ts` was created
+strongest instance this milestone: a *real* unclassified `anno-*.ts` was created
 on disk and Direction 1 went red naming it. The removal gate was watched going
 red on four evasion routes and on a deleted attribution block. This is now the
 project's default acceptance bar and it keeps paying — Phase 32 found that a
@@ -49,7 +49,7 @@ promoted on a re-read of a summary is a weaker artifact than it looks.
 
 **Dropping the parity obligation at the open.** The single highest-leverage
 decision of the milestone was made before any plan: no parity is owed to
-regenerator2000, and the engine coupling goes with it. That is what made a
+The external analyser, and the engine coupling goes with it. That is what made a
 store-and-cutover milestone reachable in 7 days under a live `no-go` gate.
 
 ### What Was Inefficient
@@ -129,7 +129,7 @@ accounting, and it points at the same place both retro sections do.
 
 ### What Was Built
 
-A regenerator2000 session that survives many tool calls, with crash recovery,
+an external analyser session that survives many tool calls, with crash recovery,
 a restart budget and a FIFO call queue. All five upstream analyze procedures
 absorbed at one pinned commit, plus a seventh skill. A derived-from-bytes
 coverage census the store's own block table cannot move by a byte, with six
@@ -275,7 +275,7 @@ this project had carried across three closes.
   throughout. Found and fixed during this close.
 - **The close procedure fights the guards it installed.** Default-on phase
   archival would have turned `docs-review-disposition.test.ts` and
-  `r2000-answer-key.test.ts` red, because both read `.planning/phases/` directly
+  `absorbed-answer-key.test.ts` red, because both read `.planning/phases/` directly
   and one explicitly excludes `.planning/milestones/`. Three consecutive closes
   have now had to pass `--no-archive-phases`. The guards are right and the
   archival is right; nobody taught them about each other.
@@ -337,7 +337,7 @@ this project had carried across three closes.
   something rather than reading it.
 ---
 
-## Milestone: v0.3.0 — regenerator2000 static-analysis backend
+## Milestone: v0.3.0 — the external analyser static-analysis backend
 
 **Shipped:** 2026-08-21
 **Phases:** 4 (9, 10, 11, inserted 11.1) | **Plans:** 36 | **Tasks:** 101
@@ -347,11 +347,11 @@ this project had carried across three closes.
 ### What Was Built
 
 A second axis. v0.2.0 was about *which* live emulator qualifies; v0.3.0 is about
-what survives the session. regenerator2000 is adopted as a required,
+what survives the session. The external analyser is adopted as a required,
 container-side, static-analysis-only prerequisite reached through 17 curated
-`r2000_*` tools and 7 `vice-mcp r2000` CLI verbs:
+`anno_*` tools and 7 `vice-mcp anno` CLI verbs:
 
-- **A go/no-go probe phase** that drove a real regenerator2000 0.9.20 against
+- **A go/no-go probe phase** that drove a real analyser 0.9.20 against
   seven criteria and returned `degrade` (rule `R4`), narrowing the input set to
   `.prg`/`.d64`/flat-64K. No product code — the deliverable is evidence.
 - **The adoption boundary made structural:** `--vice` unreachable by fixed
@@ -369,7 +369,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 
 ### What Worked
 
-- **A gate that can say no, honoured when it did.** `R2000-16` was promoted from a
+- **A gate that can say no, honoured when it did.** `ANNO-16` was promoted from a
   criterion inside Phase 9 to a standalone phase precisely because its failure
   mode is reconsider-the-milestone. It came back `partial` on criterion 3(4), rule
   `R4` fired, and the milestone shipped *smaller* than proposed. The rule and its
@@ -391,13 +391,13 @@ container-side, static-analysis-only prerequisite reached through 17 curated
   finding stale document claims by hand, round after round. Making them
   mechanical worked immediately: this close found two stale counts *and* a red
   guard because the instruments exist.
-- **Structural satisfaction beats remembered discipline.** The `r2000_*` family
+- **Structural satisfaction beats remembered discipline.** The `anno_*` family
   satisfies CLAUDE.md's derived-tool path-translation constraint by construction —
   neither `rewriteArguments()` call site is reachable from it — so there is no
   interception for a future refactor to forget.
 - **Density.** 36 plans in 3 days against v0.2.0's 87 in 8, with a `passed` audit
   instead of `tech_debt`. Smaller scope helped, but so did arriving with the
-  research already done (`notes/regenerator2000-integration.md`) and refusing to
+  research already done (`notes/external-analyser-integration.md`) and refusing to
   re-derive it.
 
 ### What Was Inefficient
@@ -623,7 +623,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | Milestone | Tests (approx. green) | Live-evidence suites | Zero-Dep Additions |
 |-----------|-----------------------|----------------------|--------------------|
 | v0.2.0 | ~1400+ | 3 (`stock-live`, `stock-live-triage`, `stock-broker-live`) | disassembler, PETSCII table, all derived tools — 0 new npm deps |
-| v0.3.0 | ~2066 | 3 carried + r2000 live gates (real `regenerator2000 0.9.20` + genuine stock `x64sc`) | `.regen2000proj` synthesiser, `.d64` reader, NDJSON JSON-RPC client, ACME-ident seam — 0 new npm deps |
+| v0.3.0 | ~2066 | 3 carried + anno live gates (real `the external analyser 0.9.20` + genuine stock `x64sc`) | `.regen2000proj` synthesiser, `.d64` reader, NDJSON JSON-RPC client, ACME-ident seam — 0 new npm deps |
 | v0.4.0 | **2351** (0 fail, 39 skipped, 5 todo, 24 suites) | 4 carried + `fork-live.test.ts` (the fork's `-mcpserver` HTTP transport exercised live for the first time, 6/6) | `audit-gate.mjs`, `hop-chain-comments` + `comment-phase-pointers` guards, `skill-corpus.mjs`, 18 `wireMcp()` cases — 0 new npm deps |
 | v0.7.0 | 0 failures on `test:automated` (the project's floor; the whole-glob `npm test` still does not terminate unaided — `vice-proxy.test.ts` leaks two LISTEN sockets) | real ACME 0.97 as a byte-diff oracle, hard-failed in CI with `VICE_REQUIRE_ACME=1` | the annotation store on `node:sqlite` — a **built-in** at this project's Node floor; `better-sqlite3` rejected on 11.4 MB/consumer and 8 prebuild targets — 0 new npm deps |
 
