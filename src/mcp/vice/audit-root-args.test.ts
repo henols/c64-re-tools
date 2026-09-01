@@ -427,17 +427,42 @@ test("--root naming the repository root itself is accepted and writes identical 
 });
 
 // ===========================================================================
-// THE SIX-SCRIPT MATRIX -- `gaps[1].missing[2]`, stated verbatim: "At least
-// one spawnSync test per `--root`-ised script: contained root reads the
+// THE ROOT-ACCEPTING MATRIX -- `gaps[1].missing[2]`, stated verbatim: "At
+// least one spawnSync test per `--root`-ised script: contained root reads the
 // synthetic tree; out-of-repo root exits 1 with REFUSED; `--root=<dir>` exits
 // non-zero."
 //
-// Six scripts accept a root. Until plan 32-11 each of them carried its OWN
-// copy of the same nine-line reader, so ONE defect shipped six times (IN-06)
-// and a per-script test was the only thing that would have caught it. The
-// table below is the whole population, and the completeness guard beneath it
-// derives that population FROM DISK -- so a seventh root-accepting script
-// added later fails this file by omission rather than passing unnoticed.
+// MEASURED, 2026-09-01: EIGHT top-level `scripts/*.mjs` accept a root. Until
+// plan 32-11 each of the first six carried its OWN copy of the same nine-line
+// reader, so ONE defect shipped six times (IN-06) and a per-script test was
+// the only thing that would have caught it.
+//
+// THE POPULATION IS DERIVED FROM THE FLAG, and that is the whole content of
+// the completeness guard beneath this table. A `scripts/*.mjs` whose source
+// carries the token `--root` is a member WHETHER OR NOT it uses the shared
+// seam -- because a script that hand-rolls the reader is the defect this file
+// exists to catch, and keying on the seam excludes exactly those.
+//
+// WHAT THIS CORRECTS, recorded rather than quietly fixed (2026-09-01, phase 32
+// gap-closure round 2, plan 32-18, closing `CR-08`/Gap 5). The predicate here
+// used to be `src.includes("parseRootArg(")` -- the REMEDY, not the flag -- so
+// the set compared against MATRIX was "scripts that already use the seam",
+// which is tautologically the set MATRIX covers. Measured at that HEAD: eight
+// scripts accepted `--root` and six contained `parseRootArg(`, and the two
+// invisible ones were EXACTLY the two still hand-rolling the reader
+// (`audit-gate` and `audit-mutation-harness`). This docblock asserted the
+// opposite twice, and the second time in the present tense: it claimed the
+// table was the whole population, and that "a seventh root-accepting script
+// added later fails this file by omission rather than passing unnoticed" --
+// while the seventh and eighth already existed and already passed unnoticed.
+// A guard added by a phase whose success criterion is "none passes vacuously"
+// was itself passing vacuously with respect to its own stated purpose.
+//
+// The forward-looking promise, restated correctly: a NINTH root-accepting
+// script added later fails this file BY OMISSION rather than passing
+// unnoticed. The correct response to that failure is a MATRIX row with a typed
+// expectation and its own spawned test -- never a predicate exception, an
+// exclusion list or a skip.
 // ===========================================================================
 
 /** How each script is expected to behave when handed a CONTAINED root that is
@@ -514,9 +539,11 @@ const SPLIT_READ_REFUSAL = "SPLIT READ REFUSED";
 
 /** Read a script exactly as bytes-to-text, with no transcoding surprises.
  *  `latin1` matches this phase's document-sweep convention. MEASURED, not
- *  assumed: none of the six scripts carries a NUL byte (asserted below), so a
- *  plain text read loses nothing here -- the hazard that motivates `grep -a`
- *  elsewhere in this repository does not apply to this population. */
+ *  assumed: no member of the ROOT-ACCEPTING POPULATION carries a NUL byte
+ *  (asserted below, driven from the population function rather than from a
+ *  hard-coded list, so the measurement cannot fall behind the way the matrix
+ *  did), so a plain text read loses nothing here -- the hazard that motivates
+ *  `grep -a` elsewhere in this repository does not apply to this population. */
 function scriptText(script: string): string {
   return readFileSync(join(ROOT, "scripts", `${script}.mjs`), "latin1");
 }
@@ -554,34 +581,159 @@ function declaredSplitReadImports(text: string): string[] {
   return [...block[1]!.matchAll(/from:\s*"([^"]+)"/g)].map((m) => m[1]!).sort();
 }
 
-/** Every top-level `scripts/*.mjs` that calls the shared argv seam. Derived
- *  from disk rather than listed, so the completeness guard below measures the
- *  tree instead of restating this file's own table. `scripts/lib/` is excluded
- *  because that is where the seam itself lives. */
-function scriptsUsingTheSharedParser(): string[] {
+/** The `--root` flag itself -- the token the population is keyed on. Named as a
+ *  constant so the population predicate and the assertion messages below cannot
+ *  drift apart from each other. */
+const ROOT_FLAG = "--root";
+
+interface PopulationWalk {
+  /** Every top-level `scripts/*.mjs` this walk VISITED, basename INCLUDING the
+   *  extension. This is the set the independent cross-check compares against;
+   *  it is deliberately the visited set rather than the population, because a
+   *  file silently skipped by the walk never reaches the `--root` test at all. */
+  visited: string[];
+  /** The members: visited files whose source carries the `--root` token, with
+   *  the extension stripped so they compare directly against MATRIX rows. */
+  accepting: string[];
+}
+
+/** Every top-level `scripts/*.mjs` that ACCEPTS a root, HOWEVER IT READS IT.
+ *
+ *  DERIVING FROM THE FLAG RATHER THAN FROM THE REMEDY IS LOAD-BEARING, and is
+ *  the single correction plan 32-18 exists to make: a script that hand-rolls
+ *  the argv reader is precisely the defect this file exists to catch (IN-06),
+ *  and keying the population on a call to the shared seam excludes exactly
+ *  those. See the MATRIX docblock above for what that cost when it was keyed on
+ *  `parseRootArg(` instead.
+ *
+ *  Derived from disk rather than listed, so the completeness guard below
+ *  measures the tree instead of restating this file's own table. `scripts/lib/`
+ *  is excluded by `entry.isFile()` because that is where the seam itself lives.
+ *  The read is the same `latin1` byte-preserving read `scriptText()` uses, so a
+ *  NUL byte cannot silently truncate it and shrink the population. */
+function walkRootAcceptingScripts(): PopulationWalk {
   const dir = join(ROOT, "scripts");
-  const out: string[] = [];
+  const visited: string[] = [];
+  const accepting: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".mjs")) continue;
-    const src = readFileSync(join(dir, entry.name), "utf8");
-    if (src.includes("parseRootArg(")) out.push(entry.name.replace(/\.mjs$/, ""));
+    visited.push(entry.name);
+    const src = readFileSync(join(dir, entry.name), "latin1");
+    if (src.includes(ROOT_FLAG)) accepting.push(entry.name.replace(/\.mjs$/, ""));
+  }
+  return { visited: visited.sort(), accepting: accepting.sort() };
+}
+
+function scriptsAcceptingARoot(): string[] {
+  return walkRootAcceptingScripts().accepting;
+}
+
+/** THE INDEPENDENT SIDE of the population cross-check, and the choice of
+ *  mechanism IS the entire content of this function.
+ *
+ *  The walk above is `readdirSync` + `isFile()` + a Node-side read, inside this
+ *  process. Comparing it against a SECOND `readdirSync` carrying the same
+ *  filter would be an assertion that CANNOT DISAGREE -- a tautological guard
+ *  added to the very file whose tautological population is the defect being
+ *  closed here. So the second side is not a Node directory read at all: a shell
+ *  is spawned and IT expands the glob, in another process, with no `isFile()`
+ *  test and no Node-side read. A Node-side filter change, a read failure, or a
+ *  byte that defeats a Node read therefore moves ONE number and not the other,
+ *  which is exactly the class of skip this cross-check exists to catch.
+ *
+ *  THE SHELL COMMAND IS FIXED, because the obvious form is the wrong one.
+ *  `printf '%s\n' scripts/*.mjs` emits one path per line. Do NOT use a bare
+ *  `ls scripts/*.mjs`: measured in this repository against this plan's own
+ *  probe, an `ls` whose glob matches a DIRECTORY descends into it and prints
+ *  its contents under a `scripts/<name>:` header preceded by a blank line,
+ *  emitting the directory's name with a trailing colon instead of the path
+ *  itself. That defeats the probe twice over -- a phantom empty-string member
+ *  and a colon-suffixed member enter the listing side, so the assertion reds
+ *  for the wrong reason and a reader records a red that does not mean what it
+ *  appears to mean. `ls -d scripts/*.mjs` is an acceptable equivalent; `ls`
+ *  without `-d` is not. The two filters below guard that form against being
+ *  reintroduced later rather than trusting this comment. */
+function shellListedMjs(): string[] {
+  const r = spawnSync("/bin/sh", ["-c", "printf '%s\\n' scripts/*.mjs"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, `the independent shell listing failed: ${r.stderr}`);
+  const raw = (r.stdout ?? "").split("\n");
+  const out: string[] = [];
+  for (const line of raw) {
+    const path = line.trim();
+    // Both of these are the SIGNATURE OF A BARE `ls` recursing into a directory
+    // member: a blank separator line, and the directory's own name emitted with
+    // a trailing colon as a group header. Dropped explicitly so reintroducing
+    // that form cannot quietly inject two phantom members.
+    if (path.length === 0) continue;
+    if (path.endsWith(":")) continue;
+    // An unexpanded glob means NO match, not a member literally named `*.mjs`.
+    if (path.includes("*")) continue;
+    out.push(path.slice(path.lastIndexOf("/") + 1));
   }
   return out.sort();
 }
 
-test("the matrix covers EVERY script wired to the shared argv seam", () => {
-  const onDisk = scriptsUsingTheSharedParser();
+test("the population walk sees every scripts/*.mjs an independent mechanism sees", () => {
+  const walked = walkRootAcceptingScripts().visited;
+  const listed = shellListedMjs();
+
+  // Reported in BOTH directions, and as NAMED LISTS rather than counts. A count
+  // comparison tells you a number moved; a list comparison names the file --
+  // and this gap exists precisely because a guard reported a state without
+  // naming the members it could not see.
+  const walkedNotListed = walked.filter((n) => !listed.includes(n));
+  const listedNotWalked = listed.filter((n) => !walked.includes(n));
+
+  const why =
+    "The population walk and this listing are DELIBERATELY DIFFERENT MECHANISMS: the walk is " +
+    "readdirSync + isFile() + a Node read inside this process; the listing is a spawnSync " +
+    "shell glob expansion in another process with no isFile() filter and no Node read. " +
+    "COLLAPSING THEM INTO THE SAME MECHANISM SILENTLY VOIDS THIS CHECK -- two readdirSync " +
+    "calls sharing a filter cannot disagree, which is the exact tautology this file was " +
+    "corrected to remove. An equality produced by a census must be provably a real one here: " +
+    "a plain census over this repository's sources has already produced one false decision.";
+
+  assert.deepEqual(
+    walkedNotListed,
+    [],
+    `a file the walk visited is absent from the independent listing. ${why}`,
+  );
+  assert.deepEqual(
+    listedNotWalked,
+    [],
+    "a scripts/*.mjs is present on disk but was SKIPPED by the population walk, so it could " +
+      `never have been tested for the ${ROOT_FLAG} token. ${why}`,
+  );
+  assert.deepEqual(walked, listed, `the two mechanisms disagree about scripts/*.mjs. ${why}`);
+});
+
+test("the matrix covers EVERY root-accepting script", () => {
+  const onDisk = scriptsAcceptingARoot();
   const covered = MATRIX.map((r) => r.script).sort();
+  // Both sides sorted by the same comparison, so the verdict does not depend on
+  // directory-listing order and a row added in any position is equivalent
+  // (`[edge:CUT-04/ordering]`).
   assert.deepEqual(
     onDisk,
     covered,
-    "a root-accepting script exists that this file does not exercise (or vice versa). " +
-      "The whole point of the shared seam is that no consumer is left untested -- add the " +
-      "missing row to MATRIX rather than relaxing this assertion.",
+    `a script accepting ${ROOT_FLAG} exists that this file does not exercise (or vice versa). ` +
+      "The population is derived from the FLAG, not from the shared seam, so a script that " +
+      "hand-rolls the reader is a member too -- that is the whole point. Add the missing row " +
+      "to MATRIX with a typed expectation and its own spawned test. Do NOT relax this " +
+      "assertion, and do NOT add an exclusion list, an unmigrated-scripts array or a skip: " +
+      "removing a " +
+      "member from measurement is the defect this guard was corrected to stop having.",
   );
+  // A NON-VACUITY FLOOR, to be RAISED and NEVER LOWERED. It was six while the
+  // population was keyed on the shared seam; the flag-derived population is
+  // eight. Lowering it would silently re-admit the state this guard exists to
+  // report.
   assert.ok(
-    covered.length >= 6,
-    `expected at least the six known consumers, measured ${covered.length}`,
+    covered.length >= 8,
+    `expected at least the eight known root-accepting scripts, measured ${covered.length}`,
   );
 });
 
@@ -870,13 +1022,24 @@ test("a declared boolean flag is never swallowed as the root's value", () => {
 // checked against a copy of it.
 // ===========================================================================
 
-test("the six scripts carry no NUL byte, so a text read of them loses nothing", () => {
+test("no root-accepting script carries a NUL byte, so a text read of them loses nothing", () => {
   // Recorded as a MEASURED fact rather than an assumption. A source file in
   // this repository is known to carry a NUL byte, which hides it from a plain
   // `grep` and has already produced one false decision; the predicates above
   // read text, so the population they read must be verified NUL-free rather
   // than presumed so.
-  for (const { script } of MATRIX) {
+  //
+  // DRIVEN FROM THE POPULATION FUNCTION, not from MATRIX and not from a
+  // hard-coded list. Keying this on MATRIX would make it measure whatever the
+  // table happens to carry -- the same remedy-shaped derivation that let two
+  // root-accepting scripts go unseen here for a whole round.
+  const population = scriptsAcceptingARoot();
+  assert.ok(
+    population.length >= 8,
+    "the NUL sweep must cover the whole root-accepting population; it selected " +
+      `${population.length}: ${population.join(", ")}`,
+  );
+  for (const script of population) {
     assert.ok(
       !scriptText(script).includes("\u0000"),
       `${script}.mjs carries a NUL byte -- the text predicates above would silently ` +
