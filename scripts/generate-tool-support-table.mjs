@@ -345,8 +345,10 @@ export function generateToolSupportTable(options = {}) {
 // before the write, so a refused root leaves the filesystem untouched.
 //
 // THIS FILE NO LONGER HAS AN ARGV READER OF ITS OWN. It had one, and it was
-// the same nine lines `scripts/audit-gate.mjs` still carries: match the exact
-// token `--root`, take `argv[i + 1]`. That reader silently discarded
+// the same nine lines `scripts/audit-gate.mjs` carried until plan 32-16
+// migrated it too: match the exact token `--root`, take `argv[i + 1]`. (This
+// sentence read "still carries" until that migration landed; see the
+// correction below.) That reader silently discarded
 // `--root=<dir>`, a valueless `--root` and every typo, so the invocation fell
 // through to the default root -- and because THIS is the one audited script
 // that WRITES, a mistyped root overwrote the real `docs/tool-support.md` and
@@ -355,10 +357,30 @@ export function generateToolSupportTable(options = {}) {
 // is the single containment seam.
 //
 // The old comment here claimed "same argv shape as `scripts/audit-gate.mjs`'s
-// own `parseArgs()`". That is now false, deliberately: this file uses the
-// shared strict parser and that file still has its own copy. `WR-13` is the
-// reason it was NOT migrated in this round -- `audit-gate.mjs` carries five
-// further flags, and no verifier finding asks for them to be touched here.
+// own `parseArgs()`". That claim is now false in BOTH halves: this file uses
+// the shared strict parser, and so does that one.
+//
+// CORRECTION (2026-09-01, phase 32 gap-closure round 2, plan 32-16).
+// `scripts/audit-gate.mjs` IS now on the shared strict parser: it reads its
+// arguments through `parseRootArg()` too, declaring `--json` and `--hook` as
+// `booleanFlags`, and its own hand-rolled reader is gone. The note that stood
+// here SAID that file had deliberately not been migrated (`WR-13`), and gave
+// as its reason that the file carried five further flags. That reason was
+// FALSE when it was written. Measured: `audit-gate.mjs` accepts three flags in
+// total -- `--root`, `--json` and `--hook` -- and has no selector rule at all.
+// The description belonged to `scripts/audit-mutation-harness.mjs`, which does
+// carry five flags (`--root`, `--row`, `--rows`, `--all`, `--out`) and does
+// enforce an exactly-one-of-`--row`/`--rows`/`--all` rule. A justification
+// written about one file was copied into six, which is `IN-06` one layer up:
+// the same copy-a-claim-without-checking-it failure, in the comments rather
+// than in the code. It is corrected here rather than deleted, because a note
+// recording how a wrong claim spread is the cheapest protection against it
+// spreading again.
+//
+// `audit-gate.mjs` is on the argv seam but deliberately NOT on the containment
+// seam. The measurement behind that asymmetry, and its named reversal trigger,
+// are recorded in that file's own header -- once, there, rather than restated
+// in each of the six files this correction touches.
 // Plan 32-11 migrates the remaining consumers.
 function main() {
   let rootArg;

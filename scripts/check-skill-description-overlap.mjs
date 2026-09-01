@@ -120,11 +120,27 @@ function paths(root) {
 // `lib/audit-root.mjs` is now the single argv seam, as `resolveContainedRoot()`
 // is the single containment seam.
 //
-// The old claim is now false, deliberately: this file uses the shared strict
-// parser and `scripts/audit-gate.mjs` still carries its own copy. That file was
-// NOT migrated in this round (`WR-13`) because it carries five further flags
-// with their own exactly-one-selector rule, and no verifier finding asks this
-// round to touch them.
+// CORRECTION (2026-09-01, phase 32 gap-closure round 2, plan 32-16).
+// `scripts/audit-gate.mjs` IS now on the shared strict parser: it reads its
+// arguments through `parseRootArg()` too, declaring `--json` and `--hook` as
+// `booleanFlags`, and its own hand-rolled reader is gone. The note that stood
+// here SAID that file had deliberately not been migrated (`WR-13`), and gave
+// as its reason that the file carried five further flags with their own
+// exactly-one-selector rule. That reason was FALSE when it was written.
+// Measured: `audit-gate.mjs` accepts three flags in total -- `--root`,
+// `--json` and `--hook` -- and has no selector rule at all. The description
+// belonged to `scripts/audit-mutation-harness.mjs`, which does carry five
+// flags (`--root`, `--row`, `--rows`, `--all`, `--out`) and does enforce an
+// exactly-one-of-`--row`/`--rows`/`--all` rule. A justification written about
+// one file was copied into six, which is `IN-06` one layer up: the same
+// copy-a-claim-without-checking-it failure, in the comments rather than in the
+// code. It is corrected here rather than deleted, because a note recording how
+// a wrong claim spread is the cheapest protection against it spreading again.
+//
+// `audit-gate.mjs` is on the argv seam but deliberately NOT on the containment
+// seam. The measurement behind that asymmetry, and its named reversal trigger,
+// are recorded in that file's own header -- once, there, rather than restated
+// in each of the six files this correction touches.
 
 // An ARGUMENT REJECTION. Reported before anything is resolved or read, and
 // kept at exit 1 like the refusal below: the two are separated by their
