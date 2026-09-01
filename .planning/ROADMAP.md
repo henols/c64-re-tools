@@ -772,7 +772,7 @@ not exist until the last guard has moved.
   1. **Every guard and CI script pinned to the deleted subject has a recorded fate, and none passes vacuously — audited over the whole re-pointed set at once, retrospectively.** This is `CUT-04`, and it is the one cut requirement Phase 29 deliberately did **not** pull forward; see the note below for why. Each re-pointed guard's own planted violation is re-run against its **new** subject and observed red — a guard that cannot be made to fail has not been re-pointed. The three that went red **by construction** (`docs-linerefs`, `docs-dangling-refs`, and `docs-absorbed-decisions` — renamed from `docs-r2000-decisions` by plan 29-05, in the same commit as `scripts/audit-gate.mjs`'s registry entry, per `D-12`) were **pre-declared before the deletion**, so an unpredicted red stayed distinguishable from a predicted one, and each was discharged by rewriting content rather than by loosening the guard; this phase re-checks that judgement over the settled tree rather than re-taking it. `check-skill-fork-honesty.mjs`'s direct contradiction is **already resolved** — plan 29-09 named the *skill* as the side that moves, replacing the live `"r2000 export-asm"` instruction with a dated withdrawal notice and re-pointing the guard's positive check at that notice's literal (`CUT-05`, recorded against Phase 29).
   2. **No living document points a user at a deleted route** (`CUT-06`): install documentation, `CLAUDE.md`'s regenerator2000 constraint bullets and its `r2000_*` clause, `PROJECT.md`'s constraints and Key Decisions rows — including its already-stale `vice-proxy.ts` line citations and its `D-36` row's pointer at the **pre-rename** guard file name `docs-r2000-decisions.test.ts`, which no longer exists on disk — `ARCHITECTURE.md`'s Rule A21, `THIRD-PARTY-NOTICES.md`'s dual-licence notice — which **remains true** for the retained prose — and all seven skill playbooks. The **phase-close gate half** of this criterion (full `npm test` over the whole glob with the **broker stopped**, both `check-*.mjs` CI scripts, `docs/tool-support.md` byte-identical, and every `docs-*.test.ts` guard green — the last a precondition of recording any milestone-audit status, enforced by a real `PreToolUse` hook rather than by convention) was first carried out at **Phase 29's** close and is **re-run** here rather than established here.
 
-**Plans**: 19/19 plans executed — 9/9 original, plus 5/5 gap-closure (round 1), plus 5/5 gap-closure (round 2)
+**Plans**: 19/21 plans executed — 9/9 original, plus 5/5 gap-closure (round 1), plus 5/5 gap-closure (round 2), plus 0/2 gap-closure (round 3, planned 2026-09-01)
 
 Plans:
 **Wave 1**
@@ -836,6 +836,16 @@ Plans:
 
 - [x] 32-18-PLAN.md — Gap 5 (`CR-08`): the completeness guard's population derived from the FLAG rather than from the remedy, captured RED naming both scripts before it is taken green by adding rows — no exclusion list; plus the mechanical half of the `CR-05` precondition declaration and the write-freedom assertion that pins 32-16's containment decision
 - [x] 32-19-PLAN.md — The restore-on-signal invariant, landed rather than carried: three exports make the harness's own registered handler reachable from an in-process driver that creates the window `main()` does not have, without injecting an `await`; `WR-03`'s latch doubt settled by mutating the file between the two restore calls
+
+**Gap closure, round 3** *(planned 2026-09-01 from `32-VERIFICATION.md`, `status: gaps_found`, 14/16 must-haves, TWO gaps — one of them a regression introduced by round 2's own remedy, exactly as round 2 inherited one from round 1. Run with `/gsd-execute-phase 32 --gaps-only`; these two carry `gap_closure: true` and the nineteen above are untouched. Their wave numbers are their own, independent of Waves 1–7 and of rounds 1 and 2's gap-closure waves. The verifier's own judgement was that one focused plan could close both; it is split into two because they overlap on three files and so cannot run concurrently, and because a single plan carrying both fixes, two new fixture drivers, a standing contract-test group and a 61-row whole-set sweep exceeds one executor's context budget. Every fix lands with a guard that is watched failing first — the discipline neither earlier round applied.)*
+
+**Gap-closure wave 1**
+
+- [ ] 32-20-PLAN.md — TRACER, Gap 2 (`CR-10`): the restore machinery stops being disarmable. The module-level latch on the now-exported restore path was set once and never reset, so any in-process consumer that completed one restore cycle permanently no-opped all four handlers; it is deleted, the map clear it already ends with being the idempotence it was added for. Lands with the discriminating case — plant, restore, plant AGAIN, signal — captured RED against a re-introduced latch before it is trusted, plus `WR-29` (the porcelain attribution admits the tree a mis-contained plant lands in) and `WR-28`; and the `WINDOWS.md` entry-33 close paired atomically with its successor entry, appended first
+
+**Gap-closure wave 2** *(blocked on gap-closure wave 1 — three files in common, and the whole-set sweep is the workload a disarmable restore path would endanger)*
+
+- [ ] 32-21-PLAN.md — Gap 1 (`CR-09`): the plant post-condition measures the introduction AT ITS SITE rather than as a whole-file difference, so an overlapping replacement is accepted instead of refused; the `costs nothing` sentence deleted and the measured case named; `CR-11`'s silent latin1 truncation and `WR-34`'s misattributed refusal closed in the same function; a standing plant-contract case group answering `WR-36`; the refused-plant write-back fork settled as a recorded decision with its rejected branch named; and the `--all` sweep re-run to `measured=35` with the registry finally written, closing `WINDOWS.md` entry 35
 
 Notes:
 
@@ -1229,7 +1239,7 @@ in a milestone archive.
 | 29. The MCP Surface | v0.7.0 | 21/21 | Complete | 2026-08-30 |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | Complete | 2026-08-31 |
 | 31. Procedure Re-pointing | v0.7.0 | 4/4 | Complete | 2026-08-31 |
-| 32. The Deletion and the Grep Gate | v0.7.0 | 19/19 | In Progress | - |
+| 32. The Deletion and the Grep Gate | v0.7.0 | 19/21 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
