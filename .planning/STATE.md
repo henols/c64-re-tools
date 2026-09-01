@@ -6,10 +6,10 @@ current_phase: 32
 current_phase_name: The Deletion and the Grep Gate
 status: executing
 stopped_at: Phase 32 gap-closure round 2 planned — 5 plans (32-15..32-19) across 3 waves, verification passed
-last_updated: "2026-09-01T10:41:10.130Z"
+last_updated: "2026-09-01T12:09:14.221Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 32 execution started
-state_head: ccb55f9392fca89496faf425cfffe842c91ec479
+state_head: 42f83bc79feb720ad009522e50acd350ad2c2298
 progress:
   total_phases: 6
   completed_phases: 5
@@ -924,6 +924,7 @@ forbidden from modifying anything under `src/`.
 | 260821-a86 | Close Phase 11's three open SECURITY.md findings: WR-01's parent-realpath containment in `resolveStorePath()` (deepest-existing-ancestor walk + dangling-symlink-component refusal), T-11-NAME-INJECT's REJECT policy on both label-name entry routes (`r2000_set_label_name` outer *and* batch-inner, `importLabels()` naming the offending `.lbl` line) via a new dependency-free `r2000-acme-ident.ts` seam, and WR-04's Markdown-cell escaping in `renderMemoryMap()`; `11-SECURITY.md` flipped to `threats_open: 0` / `status: verified` | 2026-08-21 | de788b9, bb08c46, 2c287cb | passed (orchestrator re-ran the gates independently: `tsc --noEmit` clean, `test:automated` 1947 tests / 1942 pass / 0 fail / 5 pre-existing todo, `check-npm-packages.mjs` green, all three controls confirmed present in source) | [260821-a86-fix-phase-11-security-md-open-findings-w](./quick/260821-a86-fix-phase-11-security-md-open-findings-w/) |
 | 260821-jd8 | Close 10-REVIEW.md's WR-08, Phase 10's last open security finding: `parseArgs()`'s `--entry`/`--out` refused a missing or flag-shaped value (`bootstrap x.prg --out --entry FOO` wrote a project literally named `--entry`); reused `parseExportLblArgs()`'s existing guard shape across all three verbs that route through `parseArgs()` (`bootstrap`, `export-asm`, `verify`); pinned by 10 new tests proven non-vacuous against a scratch pre-fix revert; assigned T-10-19, `10-SECURITY.md` flipped to `threats_open: 0` / `status: verified`; pending todo moved to `completed/` with a Resolution section | 2026-08-21 | 3541886, e0fd305 | — | [260821-jd8-close-wr-08-flag-shaped-option-values](./quick/260821-jd8-close-wr-08-flag-shaped-option-values/) |
 | 260823-kf6 | Correct STATE.md's carried-forward ledger: QUAL-01/02/03 closed by PKG-02/03/04, plus DEBT-04's closure note | 2026-08-23 | 793d8bc, 8205ef9, 0bc005c, a2ea0a0 | passed (orchestrator re-read all three corrected sites — STATE.md's table, STATE.md's Deferred Items prose, REQUIREMENTS.md's DEBT-04 note — and confirmed they agree on one surviving open row (`UP-01`/`UP-02`); the derived `0 items` count, the `UP-01`/`UP-02` row and REQUIREMENTS.md's open `### Control-Plane Bind Follow-on` all preserved; `PKG-04` recorded as accepted risk, not narrowed. The one `npm test` failure (`audit-integrity.test.ts` T-12-04, a hard-coded `tech_debt` count of 3 against 4 audit files) independently confirmed pre-existing — introduced by `76f7b15`, the pre-task HEAD, and this task touched no audit file) | [260823-kf6-correct-state-md-s-carried-forward-ledge](./quick/260823-kf6-correct-state-md-s-carried-forward-ledge/) |
+| 260901-n24 | Bump the Node engine floor to >=24.0.0 (vice-mcp engines, CI node-version, all stated requirements) | 2026-09-01 | 42f83bc | — | — |
 
 ### Blockers/Concerns
 
