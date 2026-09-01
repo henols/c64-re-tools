@@ -41,6 +41,36 @@
 // before they were trusted -- see
 // `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-restore-disarm.md`.
 //
+// ITS SCOPE IS NOW THE PLANT CONTRACT AS WELL (2026-09-01, plan 32-21, gap 1 /
+// `CR-09` / `WR-36`). Everything above is about the RESTORE machinery. The
+// case group at the foot of this file is about the other half of the same
+// function: what `plant()` ACCEPTS, what it REFUSES, and whether the bytes it
+// writes are the bytes the descriptor records.
+//
+// `WR-36` is why it is here rather than in a one-off manual run. It records that
+// three of the harness's behaviours -- the plant post-condition arithmetic, the
+// SKIPPED reporting and the refused-plant reporting -- shipped with NO standing
+// coverage at all, in a phase whose own criterion is that *a guard that cannot be
+// made to fail has not been re-pointed*. Reproduced with a NUL-safe census at
+// plan time: only `audit-root-args.test.ts` and this file referenced the harness
+// at all, and neither exercised any of the three.
+//
+// THE TWO HALVES SHARE THIS FILE BECAUSE THEY SHARE THE PLUMBING. Both drive the
+// harness through a spawned child that imports it, both point it at a throwaway
+// scratch root under `SCRATCH_PREFIX`, both assert an empty attributable
+// porcelain delta, and both clean up in a `t.after` that runs on assertion
+// failure. Splitting them would duplicate `porcelain()`,
+// `attributablePorcelainDelta()`, `deadline()` and the survivor-killing hook
+// into a second file, and two copies of a concurrency-sensitive porcelain filter
+// is exactly how one of them silently stops matching the other.
+//
+// THE FILE'S NAME IS LEFT UNCHANGED DELIBERATELY, not by oversight. It now
+// covers more than restoration and a name like `audit-harness.test.ts` would
+// read better -- but a rename is a file DELETION plus a file addition in the
+// diff, and this phase's wave merging refuses any branch whose diff deletes a
+// file (`cleanup-wave`'s deletion check). The cost of the accurate name is a
+// hand-merged branch; the cost of the inaccurate one is this paragraph.
+//
 // WHAT NOT TO DO:
 //
 //   1. Do NOT import the harness into THIS process. Importing it registers a
@@ -97,6 +127,7 @@ const FIXTURES = join(HERE, "fixtures", "harness-signal");
 const SIGNAL_DRIVER = join(FIXTURES, "signal-window-driver.mjs");
 const LATCH_DRIVER = join(FIXTURES, "restore-latch-driver.mjs");
 const DISARM_DRIVER = join(FIXTURES, "restore-disarm-driver.mjs");
+const PLANT_CONTRACT_DRIVER = join(FIXTURES, "plant-contract-driver.mjs");
 
 /** Matches the `/.harness-signal-scratch-*` entry `.gitignore` carries. The
  * scratch root MUST live inside the repository -- `resolveContainedRoot()`
@@ -857,3 +888,279 @@ test("the attempt log is complete and every recorded exit code is the discrimina
   );
   console.log(`ATTEMPT-LOG\n${rows.join("\n")}`);
 });
+
+// ---------------------------------------------------------------------------
+// THE PLANT CONTRACT (2026-09-01, plan 32-21, gap 1 / `CR-09` / `WR-36`)
+// ---------------------------------------------------------------------------
+//
+// The cases below are about `plant()`'s OTHER half: what it accepts, what it
+// refuses, and whether the bytes it writes are the bytes the descriptor
+// records. See the third block of this file's header for why they share a file
+// with the restore cases, and why the file keeps its name.
+
+/** One line of JSON from `plant-contract-driver.mjs`. Every field is the
+ * driver's OBSERVATION, not its opinion: the parent asserts on these rather
+ * than on the child's exit status, which reports only whether an observation
+ * could be made at all. */
+interface PlantContractVerdict {
+  case: string;
+  planted: boolean;
+  /** The harness's own refusal, verbatim, or `null` when the plant was accepted. */
+  refusalMessage: string | null;
+  targetByteIdentical: boolean;
+  lengthBefore: number;
+  lengthAfter: number;
+  lengthDelta: number;
+  /** `replace.length - find.length`, the delta an exact substitution produces. */
+  expectedDelta: number;
+  matchIndex: number | null;
+  /** Measured by re-reading the FILE, which is what makes it able to catch a
+   * write path that diverges from a string-level check inside the harness. */
+  replacementVerbatimAtMatchIndex: boolean;
+  bytesAtMatchIndexBase64: string | null;
+  recordedReplacementBase64: string;
+  originalBase64: string;
+  afterBase64: string;
+  pendingRestoreCount: number;
+}
+
+/**
+ * Runs ONE named plant-contract case in its OWN child process against its OWN
+ * scratch root. One case per child on purpose: a case that throws or corrupts
+ * its target cannot then mask another, and no case inherits another's
+ * captured-originals map.
+ */
+async function runPlantContractCase(
+  caseName: string,
+  register: (child: PipedChild, scratch: string) => void,
+): Promise<PlantContractVerdict> {
+  const scratch = mkdtempSync(join(ROOT, SCRATCH_PREFIX));
+  const porcelainBefore = porcelain();
+
+  const child = spawn(process.execPath, [PLANT_CONTRACT_DRIVER, scratch, caseName], {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  register(child, scratch);
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (c: string) => {
+    stdout += c;
+  });
+  child.stderr.on("data", (c: string) => {
+    stderr += c;
+  });
+
+  const exited = new Promise<number | null>((res) => child.on("exit", (code) => res(code)));
+  const exitDeadline = deadline(EXIT_DEADLINE_MS);
+  const outcome = await Promise.race([exited, exitDeadline.promise]);
+  exitDeadline.cancel();
+  if (outcome === "timeout") {
+    child.kill("SIGKILL");
+    assert.fail(
+      `plant-contract case ${caseName}: the driver did not exit within ${EXIT_DEADLINE_MS} ms. ` +
+        `stdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
+  }
+
+  // A NON-ZERO exit means the driver could not make an observation at all -- bad
+  // arguments, an unknown case, an unexpected throw OUTSIDE `plant()`. A REFUSED
+  // plant is still exit 0, because a refusal is an observation and several cases
+  // below expect one.
+  assert.equal(
+    outcome,
+    0,
+    `plant-contract case ${caseName}: the driver could not make an observation. ` +
+      `stdout:\n${stdout}\nstderr:\n${stderr}`,
+  );
+
+  const lastLine = stdout.trim().split("\n").at(-1) ?? "";
+  const verdict = JSON.parse(lastLine) as PlantContractVerdict;
+  assert.equal(
+    verdict.case,
+    caseName,
+    `plant-contract case ${caseName}: the driver reported a verdict for a DIFFERENT case ` +
+      `(${verdict.case}); the assertions below would be measuring the wrong thing.`,
+  );
+
+  assert.deepEqual(
+    attributablePorcelainDelta(porcelainBefore, porcelain()),
+    [],
+    `plant-contract case ${caseName}: the run left porcelain entries this test is responsible ` +
+      "for -- a write escaped the scratch root.",
+  );
+
+  rmSync(scratch, { recursive: true, force: true });
+  return verdict;
+}
+
+function plantContractCase(
+  caseName: string,
+  title: string,
+  check: (v: PlantContractVerdict) => void,
+): void {
+  test(`plant contract / ${caseName}: ${title}`, async (t) => {
+    const live: Array<{ child: PipedChild; scratch: string }> = [];
+    t.after(() => {
+      for (const { child, scratch } of live) {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        rmSync(scratch, { recursive: true, force: true });
+      }
+    });
+
+    const verdict = await runPlantContractCase(caseName, (child, scratch) =>
+      live.push({ child, scratch }),
+    );
+    check(verdict);
+  });
+}
+
+// GAP 1 ITSELF. The descriptor's replacement is its find with one newline
+// prepended, and the find sits on its own line -- so the occurrence the mutation
+// introduces textually OVERLAPS an occurrence that was already in the file. The
+// whole-file difference form computes `1 - 1 = 0` and refuses an HONEST
+// descriptor. This is modelled on the real committed row
+// `src/mcp/vice/hop-chain-comments.test.ts`, which has exactly this shape.
+plantContractCase(
+  "overlap-accepted",
+  "a replacement that textually overlaps its own pre-existing occurrence is accepted, and the " +
+    "file grows by exactly one byte at the match position",
+  (v) => {
+    assert.equal(
+      v.planted,
+      true,
+      `the overlap descriptor was REFUSED: ${String(v.refusalMessage)}\nThis is gap 1: the plant ` +
+        "post-condition cannot see a replacement that overlaps its own pre-existing occurrence, " +
+        "so it refuses an honest descriptor and blocks the whole-set registry write-back.",
+    );
+    assert.equal(v.refusalMessage, null);
+    assert.equal(v.expectedDelta, 1, "the case's own arithmetic: one prepended newline");
+    assert.equal(
+      v.lengthDelta,
+      1,
+      "the mutation must change the file by exactly one byte -- the mutation is REAL even though " +
+        "the whole-file difference computes 0",
+    );
+    assert.equal(
+      v.replacementVerbatimAtMatchIndex,
+      true,
+      "the recorded replacement must land verbatim at the unique match position",
+    );
+    assert.equal(v.targetByteIdentical, false, "nothing was written, so nothing was proved");
+
+    // The exact byte shape, asserted rather than inferred from the length: the
+    // bytes on disk are the pre-plant bytes with ONE newline inserted at the
+    // match position and nothing else moved.
+    const before = Buffer.from(v.originalBase64, "base64");
+    const after = Buffer.from(v.afterBase64, "base64");
+    const idx = v.matchIndex;
+    assert.ok(idx !== null && idx >= 0, "the find must have a unique match position");
+    const expected = Buffer.concat([
+      before.subarray(0, idx as number),
+      Buffer.from("\n", "latin1"),
+      before.subarray(idx as number),
+    ]);
+    assert.ok(
+      after.equals(expected),
+      "the bytes on disk are not the pre-plant bytes with exactly one newline inserted at the " +
+        "match position. Compared as Buffers, not as text.",
+    );
+  },
+);
+
+// ROUND 2'S OWN CASE. It must not regress while round 3's is fixed: the
+// replacement already occurs once ELSEWHERE in the target, non-overlapping.
+plantContractCase(
+  "pre-existing-replacement-accepted",
+  "a replacement that already occurs elsewhere in the target, non-overlapping, is still accepted",
+  (v) => {
+    assert.equal(
+      v.planted,
+      true,
+      `round 2's own case regressed -- the plant was REFUSED: ${String(v.refusalMessage)}`,
+    );
+    assert.equal(v.refusalMessage, null);
+    assert.equal(
+      v.lengthDelta,
+      v.expectedDelta,
+      "the length delta must be exactly `replace.length - find.length`",
+    );
+    assert.equal(v.replacementVerbatimAtMatchIndex, true);
+    assert.equal(v.targetByteIdentical, false);
+  },
+);
+
+// THE PIN ON THE `CR-02` FIX, and what makes the corrected post-condition
+// non-tautological. The replacement carries `$&`, which
+// `String.prototype.replace` expands to the matched substring when it is given a
+// replacement STRING. Reverting the harness's replacer FUNCTION to a replacement
+// string makes this case red, reported by the post-condition's own message.
+plantContractCase(
+  "substitution-is-verbatim",
+  "a replacement carrying a match-substitution pattern reaches disk BYTE FOR BYTE, uninterpreted",
+  (v) => {
+    assert.equal(v.planted, true, `the plant was REFUSED: ${String(v.refusalMessage)}`);
+    assert.equal(
+      v.bytesAtMatchIndexBase64,
+      v.recordedReplacementBase64,
+      "the bytes at the match position are NOT the recorded replacement's bytes. A replacement " +
+        "STRING would have expanded `$&` to the matched text; a replacer FUNCTION returns it " +
+        "verbatim. This is the CR-02 divergence class: the harness writing bytes the row does " +
+        "not record.",
+    );
+    assert.equal(v.replacementVerbatimAtMatchIndex, true);
+    assert.equal(v.lengthDelta, v.expectedDelta);
+  },
+);
+
+plantContractCase(
+  "find-absent-refused",
+  "a find that matches zero times is refused, the measured count is named, and nothing is written",
+  (v) => {
+    assert.equal(v.planted, false, "a find matching zero times must never be planted");
+    assert.match(
+      v.refusalMessage ?? "",
+      /occurs 0 time\(s\)/,
+      "the refusal must name the MEASURED occurrence count, not merely that it was wrong",
+    );
+    assert.equal(v.targetByteIdentical, true, "a refused plant must write nothing");
+    assert.equal(
+      v.pendingRestoreCount,
+      0,
+      "a refused plant must capture nothing into the restore machinery",
+    );
+  },
+);
+
+plantContractCase(
+  "find-twice-refused",
+  "a find that matches twice is refused, the measured count is named, and nothing is written",
+  (v) => {
+    assert.equal(v.planted, false, "an ambiguous find must never be planted");
+    assert.match(
+      v.refusalMessage ?? "",
+      /occurs 2 time\(s\)/,
+      "the refusal must name the MEASURED occurrence count",
+    );
+    assert.equal(v.targetByteIdentical, true);
+    assert.equal(v.pendingRestoreCount, 0);
+  },
+);
+
+plantContractCase(
+  "empty-replacement-refused",
+  "an empty `replace` field is refused BY NAME and nothing is written",
+  (v) => {
+    assert.equal(v.planted, false);
+    assert.match(
+      v.refusalMessage ?? "",
+      /field `replace` must be a non-empty string/,
+      "the refusal must name the offending FIELD",
+    );
+    assert.equal(v.targetByteIdentical, true);
+    assert.equal(v.pendingRestoreCount, 0);
+  },
+);
