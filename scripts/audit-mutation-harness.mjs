@@ -310,9 +310,84 @@ export function plant(root, row) {
     }
   }
 
+  // CR-11 (2026-09-01, plan 32-21): REFUSE A DESCRIPTOR THAT CANNOT BE WRITTEN
+  // FAITHFULLY, and refuse it HERE -- after the non-empty-string field loop
+  // above, and BEFORE the containment call and every read and write below.
+  //
+  // The mutated text is written through a `latin1` buffer at the foot of this
+  // function, and that encoding TRUNCATES any code point above U+00FF (U+2014
+  // EM DASH becomes the single byte 0x14). The post-condition further down
+  // compares STRINGS, so it would compare the untruncated value and agree with
+  // itself while the bytes reaching disk differ from the bytes the row records.
+  // The divergence would be SILENT -- which is the one property that separates
+  // this from every other refusal in this function.
+  //
+  // ONLY THE DESCRIPTOR CAN CAUSE IT. The pre-mutation text is itself obtained
+  // by decoding the original bytes as `latin1`, so every code point in it is
+  // already inside the range by construction; that leaves this row's own `find`
+  // and `replace` as the only possible sources.
+  //
+  // MEASURED BASIS, so this reads as a hardening rather than a guess: 35
+  // committed plant descriptors, 0 of them carrying any code point above
+  // U+00FF. Nothing is wrong on disk today and this refusal must therefore move
+  // no current row's outcome -- a claim the whole-set sweep confirms rather than
+  // asserts. Fail-closed and no wider: no normalisation step, no transcoding
+  // fallback, no warning-only mode and no per-row opt-out. A descriptor that
+  // cannot be written faithfully is refused, which is the same rule the rest of
+  // this instrument uses.
+  for (const field of ["find", "replace"]) {
+    const value = descriptor[field];
+    if (Buffer.from(value, "latin1").toString("latin1") === value) continue;
+    let offendingIndex = -1;
+    let offendingCodePoint = 0;
+    let cursor = 0;
+    for (const ch of value) {
+      const cp = ch.codePointAt(0);
+      if (cp > 0xff) {
+        offendingIndex = cursor;
+        offendingCodePoint = cp;
+        break;
+      }
+      cursor += ch.length;
+    }
+    throw new Error(
+      `row ${row.historicalPath}: plant descriptor field \`${field}\` is NOT ` +
+        "latin1-representable -- code point U+" +
+        `${offendingCodePoint.toString(16).toUpperCase().padStart(4, "0")} at index ` +
+        `${offendingIndex}. The mutated text is written through a latin1 buffer, which would ` +
+        "TRUNCATE it, while the post-condition below compares the untruncated string -- so the " +
+        "bytes on disk would differ from the bytes this row records and NOTHING would say so. " +
+        "Refused before any path resolution and before any read or write (CR-11).",
+    );
+  }
+
   // Contain the plant target: a registry value must not be able to name a path
   // outside the tree this run was pointed at.
-  const abs = resolveContainedRoot(join(root, descriptor.file), { repoRoot: root });
+  //
+  // WR-34 (2026-09-01, plan 32-21): THE CHECK IS RIGHT; ITS ATTRIBUTION WAS NOT.
+  // `resolveContainedRoot()` speaks in the vocabulary of the `--root` FLAG,
+  // because that is what it was written for and what its five other callers pass
+  // it. Here the path comes from a REGISTRY ROW, so a wrong registry value was
+  // reported as a refusal of a command-line argument the operator never passed,
+  // pointing them at the wrong thing to fix. This is a MESSAGE CHANGE ONLY:
+  // same resolver, same arguments, same containment decision, same repository
+  // reference, and the underlying refusal is carried VERBATIM as the cause. The
+  // containment check is correct and load-bearing and nothing about it moves --
+  // the `bad-plant-target-attribution` case in
+  // `src/mcp/vice/audit-harness-restore.test.ts` asserts the refusal happens in
+  // BOTH the before and after states for exactly that reason, so a nicer message
+  // cannot be mistaken for, or quietly become, a relaxation.
+  let abs;
+  try {
+    abs = resolveContainedRoot(join(root, descriptor.file), { repoRoot: root });
+  } catch (err) {
+    throw new Error(
+      `row ${row.historicalPath}: this row's \`plant.file\` field names a path ` +
+        `(${JSON.stringify(descriptor.file)}) that is outside the tree this run was pointed at. ` +
+        "The path came from the REGISTRY, not from a `--root` argument, so the row is what needs " +
+        `correcting. Containment refusal, verbatim: ${err?.message ?? String(err)} (WR-34)`,
+    );
+  }
   if (!existsSync(abs)) {
     throw new Error(`row ${row.historicalPath}: plant target ${abs} does not exist.`);
   }
@@ -359,26 +434,73 @@ export function plant(root, row) {
   // `replace` form already occurs once elsewhere in the same file, so an HONEST
   // descriptor computed 2 and threw. That aborted every whole-set sweep at that
   // row and, worse, told the operator to edit the recorded evidence to satisfy
-  // the check. The count is now INTRODUCED occurrences -- post-mutation minus
-  // pre-existing -- which is the quantity the assertion always meant. The
-  // narrowing costs nothing: a `replace` that never reaches the mutated text
-  // still computes 0 and a write that introduces it more than once still
-  // computes > 1, and both still throw before any byte is written.
-  const preExisting = text.split(descriptor.replace).length - 1;
-  const afterMutation = mutated.split(descriptor.replace).length - 1;
-  const introduced = afterMutation - preExisting;
-  if (introduced !== 1) {
+  // the check. The count became INTRODUCED occurrences -- post-mutation minus
+  // pre-existing -- which is the quantity the assertion always meant.
+  //
+  // CR-09 (2026-09-01, plan 32-21): AND THAT SECOND FORM WAS BLIND IN ITS TURN.
+  // A subtraction of whole-file TOTALS cannot see a replacement that textually
+  // OVERLAPS its own pre-existing occurrence: the two share bytes rather than
+  // merely coinciding in value, so the total does not move and the difference
+  // comes out 0. The measured case is the committed row
+  // `src/mcp/vice/hop-chain-comments.test.ts`, which plants into
+  // `src/mcp/vice/absorbed-answer-key.test.ts` with a recorded replacement equal
+  // to its recorded `find` with one newline prepended. Measured: `find` occurs
+  // 1 time, the replacement occurs 1 time BEFORE the mutation and 1 time AFTER
+  // it, the difference is 0 -- and the mutation is REAL, changing the file by
+  // exactly +1 byte. So an HONEST descriptor was REFUSED; and because a refused
+  // plant sets the run's hard-failure flag, the whole-set registry write-back
+  // could not be reached at all while that row stood.
+  //
+  // WHERE THAT DEFECT CAME FROM, recorded rather than quietly corrected. The
+  // sentence that used to close the paragraph above -- asserting that the
+  // narrowing to introduced occurrences was free of cost -- was adopted VERBATIM
+  // from round 2's own gap text, which promised the overlap case was still
+  // caught by that form. It was not caught; it was REFUSED. The defect is
+  // INHERITED from the gap text rather than invented by the executor who applied
+  // it, and it was that executor who found it, recorded it in this file's own
+  // refusal comment and filed it as an open `unmet-truth` (`.planning/WINDOWS.md`
+  // entry 35) before any review existed. The sentence is DELETED rather than
+  // reworded, and it is deliberately not re-quoted here, because this file's own
+  // census greps for it.
+  //
+  // THE PER-SITE FORM BELOW IS EXACT UNDER OVERLAP. It stops counting totals and
+  // measures the introduction AT ITS SITE, from two facts that hold for an
+  // overlapping and a non-overlapping replacement alike: the mutated text begins
+  // with the recorded replacement at the unique match position, and the length
+  // delta is exactly the replacement's length minus the find's. Both are
+  // computed BEFORE any byte is written and both remain HARD throws.
+  //
+  // AND IT IS NOT A TAUTOLOGY, though a reader could reasonably suspect one.
+  // While the substitution goes through a replacer FUNCTION both facts hold BY
+  // CONSTRUCTION -- which is the point rather than an objection, because the
+  // check is a standing PIN on the CR-02 fix immediately above it. Revert that
+  // fix to a replacement STRING, and give a descriptor a replacement carrying a
+  // match-substitution pattern, and the position assertion goes FALSE while the
+  // length delta diverges from the expected one, so this post-condition is what
+  // reports the regression. The standing guard is the `substitution-is-verbatim`
+  // case in `src/mcp/vice/audit-harness-restore.test.ts`, watched failing
+  // against exactly that reverted form before it was trusted.
+  //
+  // The occurrence check above has already asserted that `find` matches exactly
+  // once, so the position below is unique BY CONSTRUCTION. It is taken with the
+  // literal index-of operation and never with a regular expression: a pattern
+  // here would reopen the very interpretation hole CR-02 closed.
+  const matchIndex = text.indexOf(descriptor.find);
+  const expectedLengthDelta = descriptor.replace.length - descriptor.find.length;
+  const actualLengthDelta = mutated.length - text.length;
+  const landedAtMatchIndex = mutated.startsWith(descriptor.replace, matchIndex);
+  if (!landedAtMatchIndex || actualLengthDelta !== expectedLengthDelta) {
     throw new Error(
       `row ${row.historicalPath}: plant post-condition FAILED for ${descriptor.file} -- the ` +
-        `recorded \`replace\` string occurs ${preExisting} time(s) in that file BEFORE the ` +
-        `mutation and ${afterMutation} time(s) after it, so the mutation would INTRODUCE it ` +
-        `${introduced} time(s); exactly 1 is required. A mismatch means the bytes this harness ` +
-        "would write are not the bytes this row records, so the row would promise a reader a " +
-        "hand-reproducible find/replace that does not reproduce. Nothing was written. The three " +
-        "counts are reported separately so the divergence can be located: whether the " +
-        "replacement reaches the mutated text at all, whether the write lands it more than " +
-        "once, and how many times it was already present independently of this mutation " +
-        "(CR-02, CR-06).",
+        "recorded `replace` string did not land verbatim at the unique match position. At index " +
+        `${matchIndex} the mutated text ${landedAtMatchIndex ? "DOES" : "does NOT"} begin with ` +
+        `the recorded replacement, and the mutation changes the text by ${actualLengthDelta} ` +
+        `character(s) where an exact substitution would change it by ${expectedLengthDelta}. ` +
+        "Either fact failing means the bytes this harness would write are not the bytes this row " +
+        "records -- the CR-02 divergence class -- so the row would promise a reader a " +
+        "hand-reproducible find/replace that does not reproduce. Nothing was written. Do NOT " +
+        "edit the recorded evidence to satisfy this check: the descriptor is the record and the " +
+        "instrument is what moves (CR-02, CR-06, CR-09).",
     );
   }
 
@@ -954,6 +1076,10 @@ function main() {
     for (const row of selected) {
       const report = measureRow(root, row, baseline);
       reports.push(report);
+      // A REFUSED plant reaches this line through `report.failed`, which is what
+      // suppresses the registry write-back below. That is a DECISION, taken
+      // 2026-09-01 and recorded in full at the suppression-cause enumeration
+      // further down -- read it there before changing this line.
       if (report.unmeasurable || report.failed) hardFailure = true;
       if (report.observedRed) {
         // Write the captured evidence back into the row in memory; the whole
@@ -983,6 +1109,48 @@ function main() {
   const allSkipped = reports.length > 0 && measuredCount === 0;
   if (allSkipped) hardFailure = true;
 
+  // THE WRITE-BACK DECISION, RECORDED 2026-09-01 (plan 32-21, gap 1). A REFUSED
+  // PLANT BLOCKS THE WHOLE-SET REGISTRY WRITE-BACK, and the refused-plant flag
+  // is NOT separated from the failed flag. The round-3 verifier traced the chain
+  // -- a refusal sets the row's failed flag, which sets this run's hard-failure
+  // flag, which suppresses the write-back -- and asked that it be settled
+  // explicitly rather than left as an unexamined consequence. It is settled the
+  // way it stands, on these grounds:
+  //
+  //  1. THE BASIS. This instrument's entire product is non-vacuity evidence. A
+  //     PARTIAL write-back would produce a registry mixing freshly-measured
+  //     evidence for some rows with committed evidence for others, with nothing
+  //     in the file recording which is which -- so a reader could not tell a
+  //     re-measured row from a stale one. That is precisely the laundering this
+  //     phase exists against, and it would be introduced by the instrument whose
+  //     job is to prevent it.
+  //  2. THE PRECEDENT. This repository's gate design carries no relaxation
+  //     hatches by standing decision, and this instrument already applies the
+  //     same fail-closed rule twice within twenty lines of here: to a selection
+  //     that matched zero rows, and to a selection every row of which was
+  //     skipped -- both on the stated ground that an empty measurement is not a
+  //     green. A refused plant is the same shape of non-measurement.
+  //  3. REACHABILITY, PROVEN RATHER THAN ARGUED. This path was never
+  //     PERMANENTLY unreachable by POLICY. It was unreachable because of the
+  //     post-condition arithmetic defect that refused an honest descriptor
+  //     (CR-09, corrected in the plant function above). With that corrected, the
+  //     whole-set `--all` run recorded in
+  //     `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap1-overlap-and-writeback.md`
+  //     reaches this branch and writes the registry. That run is the proof; the
+  //     argument is not.
+  //  4. THE REJECTED BRANCH, NAMED. Separating the refused-plant flag from the
+  //     failed flag -- so that a refusal reports against its row without
+  //     suppressing the write-back for the others -- was considered and is
+  //     REJECTED on ground 1, not on effort. The suppression-cause enumeration
+  //     below therefore stays exactly as it is, with the refusal remaining a
+  //     SEPARATELY NAMED cause, so a suppressed write-back always tells the
+  //     operator which of the four fired.
+  //
+  // REVERSIBILITY: reversible. The rejected branch is a two-line change at this
+  // same site; no on-disk format changes, no published contract breaks, and the
+  // registry's own bytes are unaffected by the choice. Recorded here rather than
+  // only in a SUMMARY so a later reader finds the reasoning where the code is.
+  //
   // The line that reports the SUPPRESSED write-back has to name the reason that
   // actually fired. There are now four, and printing one of them for all four
   // would be the instrument stating something it did not measure.
