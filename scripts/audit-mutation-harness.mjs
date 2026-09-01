@@ -31,6 +31,77 @@
 // consulted and long before anything is planted. The standing mechanical guard
 // for it is plan 32-18's matrix row; this note is its written half.
 //
+// THE EXPORT COUNT IS NO LONGER ZERO, AND THAT IS DELIBERATE (2026-09-01, plan
+// 32-19). Plan 32-14 measured this module's export count as 0 and treated
+// keeping it at 0 as a discipline -- its own words, recorded in its SUMMARY:
+// "no flag, hook or export was added to widen the window". Read alone, the
+// three `export` keywords below therefore look like that discipline being
+// quietly abandoned, so the reasoning is written here rather than left to be
+// inferred.
+//
+// What plan 32-14 was disciplined ABOUT was widening THE INSTRUMENT to make an
+// assertion possible. It set out to observe the advertised restore-on-signal
+// invariant -- SIGINT or SIGTERM delivered while a plant is on disk exits 130
+// and restores every captured original -- and it could not, in ten attempts,
+// five per signal, every one of which landed inside the plant window. The
+// measured cause is not a narrow window; it is the ABSENCE of one. `main()` and
+// everything it calls are wholly synchronous, so Node has no opportunity to
+// dispatch a JavaScript signal handler while that stack is running: the signal
+// is queued, the stack unwinds, `finally { revert }` and `finally { restoreAll }`
+// run, and the process exits 0 with the queued callback undelivered. Its
+// conclusion, verbatim: "The verifier's four attempts did not miss a narrow
+// window. There is no window."
+//
+// That leaves exactly two routes, and the verifier's own either-or names both:
+// inject an `await` into the plant window, or create the window OUTSIDE this
+// module with an in-process driver. Plan 32-19 takes the second and refuses the
+// first. Injecting an `await` would change how this instrument behaves when it
+// is really run, in order to test how it behaves when it is really run -- the
+// precise shape of defect this phase exists against. Exporting `plant`,
+// `restoreAll` and `pendingRestoreCount` changes NO code path that a real
+// invocation takes:
+//
+//   - NO `await` was injected and none exists. The module is still WHOLLY
+//     SYNCHRONOUS: in CODE, `await`, `async ` and `.then(` occur 0 times, so the
+//     runtime behaviour of a real `node scripts/audit-mutation-harness.mjs`
+//     invocation is byte-for-byte the behaviour plan 32-14 measured.
+//
+//     MEASURE IT WITH THE DISCRIMINATING FORM, NOT THE BARE ONE. Plan 32-14's
+//     bare `grep -c 'await\|async \|\.then(' scripts/audit-mutation-harness.mjs`
+//     returned 0 and no longer does: as of this note it returns 4, and all four
+//     hits are the sentences you are reading. The note SELF-MATCHES. This is the
+//     same shape as the `pgrep -af vice-broker` trap recorded in
+//     `evidence/32-close-gate.md` §2b, where the bare probe found its own command
+//     line and would have asserted a live broker on an idle host: a measurement
+//     whose instrument is inside its own subject. Recording 4 as "an `await` was
+//     injected" would be as wrong as recording 0 by rewording this paragraph
+//     until the grep agreed with it. The form that measures the intended fact
+//     excludes comment lines:
+//
+//       grep -n 'await\|async \|\.then(' scripts/audit-mutation-harness.mjs \
+//         | grep -vE ':[[:space:]]*(//|\*)'
+//
+//     It exits 1 with no output -- zero code occurrences -- and it is the form
+//     any later round should use on this file.
+//   - NO flag, environment variable, hook, delay or test mode was added. The
+//     five flags are still `--root`, `--row`, `--rows`, `--all`, `--out`.
+//   - `main()` still runs ONLY under the `IS_ENTRY_POINT` guard at the foot of
+//     this file -- the same idiom `scripts/check-guard-fates.mjs` uses -- so
+//     importing this module registers the four process handlers below WITHOUT
+//     running a sweep, reading the registry or writing a byte. That property is
+//     what makes the real handler reachable from a driver, and it already
+//     existed; this plan did not add it.
+//   - The exported surface is exactly three symbols and stops there. `revert`,
+//     `runGuard`, `measureRow`, `selectRows` and `main` stay private, and
+//     `pendingRestoreCount()` returns the map's SIZE rather than the map, so a
+//     consumer can observe the restore machinery without being able to mutate
+//     it. An export surface outlives the reason it was added; this one is sized
+//     to the reason.
+//
+// Do not widen it further to make a later test easier. If an invariant cannot be
+// observed without changing this instrument's runtime behaviour, that is a
+// finding to record, not a licence to change it.
+//
 // WHAT NOT TO DO:
 //  - Do not let a run leave a plant behind. A crashed harness leaving a
 //    mutation in the tree would corrupt this phase's own closing gate run,
@@ -98,7 +169,7 @@ const EXCERPT_MAX = 4000;
 const originals = new Map();
 let restored = false;
 
-function restoreAll() {
+export function restoreAll() {
   if (restored) return;
   restored = true;
   for (const [abs, bytes] of originals) {
@@ -113,6 +184,16 @@ function restoreAll() {
     }
   }
   originals.clear();
+}
+
+/**
+ * How many captured originals are still pending restoration. Read-only BY
+ * CONSTRUCTION: it returns the map's SIZE, never the map, so a consumer can
+ * observe that a restore happened without acquiring the ability to add, drop or
+ * rewrite an entry in the restore machinery. See the 2026-09-01 header note.
+ */
+export function pendingRestoreCount() {
+  return originals.size;
 }
 
 // `finally` and `exit` can both fire; `restored` makes the second call a no-op.
@@ -173,7 +254,7 @@ function assertTreeClean(root, baseline, when) {
  * `latin1` round-trip, which is byte-preserving for every code unit including
  * NUL, rather than a UTF-8 decode that would rewrite invalid sequences.
  */
-function plant(root, row) {
+export function plant(root, row) {
   const descriptor = row.plant;
   if (descriptor === null || typeof descriptor !== "object") {
     throw new Error(`row ${row.historicalPath}: no \`plant\` descriptor.`);
