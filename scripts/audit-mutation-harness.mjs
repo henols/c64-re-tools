@@ -216,14 +216,37 @@ function plant(root, row) {
   // an entire phase before a verifier noticed by reading the captured excerpt.
   // A divergence between record and reality is now a HARD FAILURE, not a quiet
   // one, and it is caught BEFORE any byte is written.
-  const applied = mutated.split(descriptor.replace).length - 1;
-  if (applied !== 1) {
+  //
+  // CR-06 (2026-09-01): the reasoning above is unchanged and was never the
+  // defect; the ARITHMETIC under it was. The first form counted TOTAL
+  // occurrences of `replace` in the mutated text and demanded exactly 1. That
+  // conflates two different facts that happen to share a string: an occurrence
+  // the mutation INTRODUCED, and an occurrence that was ALREADY IN THE FILE
+  // before a byte was written. Row `scripts/lib/skill-honesty-checks.mjs` is the
+  // case that exposed it -- its `find` occurs exactly once and the un-negated
+  // `replace` form already occurs once elsewhere in the same file, so an HONEST
+  // descriptor computed 2 and threw. That aborted every whole-set sweep at that
+  // row and, worse, told the operator to edit the recorded evidence to satisfy
+  // the check. The count is now INTRODUCED occurrences -- post-mutation minus
+  // pre-existing -- which is the quantity the assertion always meant. The
+  // narrowing costs nothing: a `replace` that never reaches the mutated text
+  // still computes 0 and a write that introduces it more than once still
+  // computes > 1, and both still throw before any byte is written.
+  const preExisting = text.split(descriptor.replace).length - 1;
+  const afterMutation = mutated.split(descriptor.replace).length - 1;
+  const introduced = afterMutation - preExisting;
+  if (introduced !== 1) {
     throw new Error(
       `row ${row.historicalPath}: plant post-condition FAILED for ${descriptor.file} -- the ` +
-        `recorded \`replace\` string occurs ${applied} time(s) in the mutated text, expected ` +
-        "exactly 1. The mutation that would reach disk is not the mutation this descriptor " +
-        "records, so the row would promise a reader a hand-reproducible find/replace it cannot " +
-        "perform. Nothing was written. Fix the descriptor rather than the assertion (CR-02).",
+        `recorded \`replace\` string occurs ${preExisting} time(s) in that file BEFORE the ` +
+        `mutation and ${afterMutation} time(s) after it, so the mutation would INTRODUCE it ` +
+        `${introduced} time(s); exactly 1 is required. A mismatch means the bytes this harness ` +
+        "would write are not the bytes this row records, so the row would promise a reader a " +
+        "hand-reproducible find/replace that does not reproduce. Nothing was written. The three " +
+        "counts are reported separately so the divergence can be located: whether the " +
+        "replacement reaches the mutated text at all, whether the write lands it more than " +
+        "once, and how many times it was already present independently of this mutation " +
+        "(CR-02, CR-06).",
     );
   }
 
@@ -455,6 +478,32 @@ function selectRows(registry, { row, rows, all }) {
 function measureRow(root, row, baseline) {
   const report = { historicalPath: row.historicalPath, verdict: row.verdict };
 
+  // D-05: rows are TYPED, and the VERDICT decides what evidence the row owes.
+  // `re-pointed` owes an observed red. `kept-unchanged` owes proof its subject
+  // still exists untouched, and `deleted` owes proof of absence plus the commit
+  // that removed it -- evidence that lives in the row's `removalTrigger` and its
+  // recorded classification, not in a planted guard run. Those rows therefore
+  // carry no `plant` and no `guard` BY DESIGN. Running the guard on them anyway
+  // threw `no \`guard\` descriptor` and aborted every whole-set sweep at registry
+  // index 22, before the sweep could reach a single later row (CR-06). They are
+  // reported as SKIPPED, in their own position in registry order, and never
+  // filtered out of the report -- an omitted row and a row that owes nothing are
+  // different facts and a reader has to be able to tell them apart.
+  //
+  // The opposite direction stays STRICT and must not be weakened. The skip is
+  // driven by the VERDICT, never by the absence of a descriptor: a `re-pointed`
+  // row that has lost its `plant` or `guard` falls straight through to the
+  // existing hard failure below, so a missing descriptor can never disappear
+  // into this branch.
+  if (row.verdict === "kept-unchanged" || row.verdict === "deleted") {
+    report.skipped = true;
+    report.reason =
+      `verdict \`${row.verdict}\` owes no observed-red evidence (D-05); its evidence is the ` +
+      "recorded removal trigger and classification, not a planted guard run. Not measured, and " +
+      "not silently omitted.";
+    return report;
+  }
+
   assertTreeClean(root, baseline, `before row ${row.historicalPath}`);
 
   // 1b. The GREEN false-positive control, BEFORE any plant.
@@ -475,7 +524,33 @@ function measureRow(root, row, baseline) {
   }
 
   // 2. Plant.
-  const planted = plant(root, row);
+  //
+  // A REFUSED plant is a HARD FAILURE of the run, and it stays one: nothing was
+  // written (every throw in `plant()` fires before the write), the registry
+  // write-back is suppressed, and the process still exits 1. What changed is its
+  // BLAST RADIUS. Thrown out of the row loop, one bad descriptor aborted the
+  // whole sweep at its own index and left every later row unmeasured AND
+  // unreported -- so a whole-set run could never complete, and the state of the
+  // other 60 rows was hidden behind the first refusal (IN-10; and measured again
+  // in plan 32-15, where a THIRD row -- `src/mcp/vice/hop-chain-comments.test.ts`,
+  // whose `replace` is its own `find` prefixed with a newline, so the introduced
+  // occurrence textually OVERLAPS the pre-existing one and the difference comes
+  // out 0 -- aborted the sweep even after the post-condition arithmetic was
+  // corrected). Reported against the row instead, with the refusal's own message
+  // carried verbatim. The assertion is not weakened and the row is not skipped:
+  // it is attempted, refused, and named.
+  let planted;
+  try {
+    planted = plant(root, row);
+  } catch (err) {
+    report.failed = true;
+    report.plantRefused = true;
+    report.reason =
+      "the plant descriptor was REFUSED before any byte was written, so no guard run was " +
+      `attempted for this row and no evidence can be recorded from it: ${err?.message ?? String(err)}`;
+    report.control = control;
+    return report;
+  }
   let planted_run;
   try {
     // 3. Run only that guard.
@@ -563,7 +638,11 @@ function evidenceMarkdown({ root, reports, baseline, after, measuredAt }) {
   lines.push(`- **Commit measured:** \`${head}\``);
   lines.push(`- **Measured at:** ${measuredAt}`);
   lines.push(`- **Root:** \`${root}\``);
-  lines.push(`- **Rows measured:** ${reports.length}`);
+  const skippedCount = reports.filter((r) => r.skipped).length;
+  lines.push(
+    `- **Rows selected:** ${reports.length} (${reports.length - skippedCount} measured, ` +
+      `${skippedCount} skipped)`,
+  );
   lines.push("");
   lines.push("## Tree state");
   lines.push("");
@@ -589,6 +668,14 @@ function evidenceMarkdown({ root, reports, baseline, after, measuredAt }) {
   for (const report of reports) {
     lines.push(`## \`${report.historicalPath}\` — verdict \`${report.verdict}\``);
     lines.push("");
+    // D-05. A skipped row carries no control and no planted run; it keeps its
+    // place in the report so the reader can reconcile the section count against
+    // the registry's row count without recomputing anything.
+    if (report.skipped) {
+      lines.push(`**SKIPPED.** ${report.reason}`);
+      lines.push("");
+      continue;
+    }
     if (report.unmeasurable) {
       lines.push(`**UNMEASURABLE.** ${report.reason}`);
       lines.push("");
@@ -624,6 +711,22 @@ function evidenceMarkdown({ root, reports, baseline, after, measuredAt }) {
     if (report.failed) {
       lines.push(`**HARNESS FAILURE.** ${report.reason}`);
       lines.push("");
+    }
+    // A refused plant has a green control and NO planted run. Render what exists
+    // rather than dereferencing a run that was never made.
+    if (report.plantRefused) {
+      lines.push(`Control command: \`${report.control.command}\` (cwd \`${report.control.cwd}\`)`);
+      lines.push(`Control exit status: \`${report.control.status}\` (must be 0)`);
+      lines.push("");
+      lines.push("Raw control output:");
+      lines.push("");
+      lines.push("\`\`\`");
+      lines.push(`${report.control.stdout}\n${report.control.stderr}`.trimEnd());
+      lines.push("\`\`\`");
+      lines.push("");
+      lines.push("**No planted run was made.** The plant was refused, so there is nothing to report.");
+      lines.push("");
+      continue;
     }
     const red = report.observedRed;
     lines.push("### Green false-positive control (run BEFORE any plant)");
@@ -729,6 +832,29 @@ function main() {
 
   const after = porcelain(root);
 
+  const skippedCount = reports.filter((r) => r.skipped).length;
+  const measuredCount = reports.length - skippedCount;
+
+  // A selection every one of whose rows was SKIPPED measured nothing, and an
+  // empty measurement is not a green -- the same rule the zero-row check above
+  // enforces, applied to the case where the selector DID match. Kept as a
+  // separate message on purpose: "your selector matched nothing" and "your
+  // selector matched only rows that owe nothing" are different mistakes with
+  // different remedies, and folding them together would hide which one happened.
+  const allSkipped = reports.length > 0 && measuredCount === 0;
+  if (allSkipped) hardFailure = true;
+
+  // The line that reports the SUPPRESSED write-back has to name the reason that
+  // actually fired. There are now four, and printing one of them for all four
+  // would be the instrument stating something it did not measure.
+  const suppressionCauses = [];
+  if (allSkipped) suppressionCauses.push("every selected row was skipped");
+  if (reports.some((r) => r.plantRefused)) suppressionCauses.push("a row's plant was refused");
+  if (reports.some((r) => r.unmeasurable)) suppressionCauses.push("a row was unmeasurable");
+  if (reports.some((r) => r.failed && !r.plantRefused)) {
+    suppressionCauses.push("a row's guard exited 0 with the violation planted");
+  }
+
   // Registry write-back. Only reached when every selected row produced a
   // captured, non-zero-exit observed red.
   if (!hardFailure) {
@@ -741,10 +867,24 @@ function main() {
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, evidenceMarkdown({ root, reports, baseline, after, measuredAt }));
 
-  console.log(`audit-mutation-harness: measured ${reports.length} row(s)`);
+  console.log(`audit-mutation-harness: selected ${reports.length} row(s)`);
   for (const report of reports) {
+    // D-05. Printed in the row's own position in registry order, so the report
+    // reconciles line-for-line against the registry rather than silently
+    // shrinking to the measured subset.
+    if (report.skipped) {
+      console.log(
+        `  SKIPPED       ${report.historicalPath}: verdict ${report.verdict} -- owes no ` +
+          "observed-red evidence (D-05)",
+      );
+      continue;
+    }
     if (report.unmeasurable) {
       console.log(`  UNMEASURABLE  ${report.historicalPath}: ${report.reason}`);
+      continue;
+    }
+    if (report.plantRefused) {
+      console.log(`  PLANT REFUSED ${report.historicalPath}: ${report.reason}`);
       continue;
     }
     if (report.failed) {
@@ -758,9 +898,23 @@ function main() {
     );
     console.log(`                command: ${report.observedRed.command}`);
   }
+  console.log(
+    `  counts: measured=${measuredCount} skipped=${skippedCount} total=${reports.length}`,
+  );
+  if (allSkipped) {
+    console.error(
+      `audit-mutation-harness: FAIL -- all ${reports.length} selected row(s) were SKIPPED. Every ` +
+        "one of them carries a verdict that owes no observed-red evidence (D-05), so this run " +
+        "measured nothing, and an empty measurement is not a green. This is a DIFFERENT failure " +
+        "from a selector that matched zero rows: the selector matched, and everything it matched " +
+        "owes nothing.",
+    );
+  }
   console.log(`  evidence: ${outPath}`);
   console.log(
-    `  registry: ${hardFailure ? "NOT written (a row was unmeasurable or exited 0)" : registryPath}`,
+    `  registry: ${
+      hardFailure ? `NOT written (${suppressionCauses.join("; ")})` : registryPath
+    }`,
   );
   console.log(
     `  tree: ${after === baseline ? "restored byte-identical to the baseline" : "DIRTY -- EVIDENCE VOID"}`,

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 17
+open_count: 19
 waived_count: 12
 fixed_count: 5
-total_count: 34
-last_updated: 2026-08-31T22:34:07.678Z
+total_count: 36
+last_updated: 2026-09-01T07:18:16.264Z
 ---
 
 # Broken Windows Ledger
@@ -49,6 +49,8 @@ last_updated: 2026-08-31T22:34:07.678Z
 | 32 | 32 | unrun-verify | src/mcp/vice/fork-live.test.ts |  | fork-live.test.ts cannot be exercised on this development host and its opt-in run is a guaranteed red: the non-upstream fork (the -mcpserver build) is NOT installed here. Measured in plan 32-09's close-gate run at 0d7d328: /usr/bin/x64sc reports 'x64sc (VICE 3.9)', /usr/local/bin/x64sc reports 'x64sc (VICE 3.10)', and '/usr/local/bin/x64sc -help / grep -ci mcpserver' returns 0 -- so BOTH x64sc binaries on PATH are genuine unpatched stock, and the /usr/local one that shadows stock is a locally-built stock 3.10, not the fork. Running 'VICE_LIVE_FORK_BIN=/usr/local/bin/x64sc node --test fork-live.test.ts' gives 6 tests / 0 pass / 6 fail, every one 'waitForEndpointReady: http://127.0.0.1:PORT/mcp (fork binary /usr/local/bin/x64sc) never answered within 20000ms (last error: TypeError: fetch failed)'. Consequence: fork-live.test.ts's 6 tests reach their default-SKIP branch both locally and on CI and have NO exercise route anywhere, so nothing currently proves them. This also corrects a standing assumption that 'the fork shadows stock on PATH' -- at /usr/local/bin it does not, it is a second stock build. Not fixed: installing the fork is out of phase 32's scope (ROADMAP.md scopes this phase to contain no build work by design). | open |  | 2026-08-31T19:22:26.336Z |  |
 | 33 | 32 | unmet-truth | scripts/audit-mutation-harness.mjs | 103 | Restore-on-signal invariant still behaviour-unverified: SIGINT/SIGTERM handlers cannot run mid-plant because main() is wholly synchronous; 10/10 attempts landed in the window and the child still exited 0, not 130 (plan 32-14 Task 3) | open |  | 2026-08-31T22:34:00.734Z |  |
 | 34 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-sweep-renamed-rows.md | 3889 | Plan 32-14's one authorised in-place correction was measured to be a NO-OP: the value the fixed harness applies is byte-identical to the committed Plant line, so numstat is 70 additions / 0 deletions, not the 1 deletion the plan's acceptance criterion anticipated | open |  | 2026-08-31T22:34:07.678Z |  |
+| 35 | 32 | unmet-truth | src/mcp/vice/hop-chain-comments.test.ts |  | guard-fates row cannot be re-measured by the committed harness: its plant.replace is its own plant.find with a newline prepended, so the introduced occurrence overlaps the pre-existing one and the post-condition refuses it (PLANT REFUSED in the 32-15 --all sweep) | open |  | 2026-09-01T07:18:08.572Z |  |
+| 36 | 32 | deviation | src/mcp/vice/repo-root.test.ts | 249 | the !supervisorDir.includes('.claude') substring predicate fails unconditionally when the suite runs from a GSD worktree under .claude/worktrees/, so npm run test:automated cannot reach its 0-failure floor from there (measured 2994/2987/1 in plan 32-15) | open |  | 2026-09-01T07:18:16.264Z |  |
 
 ````json
 [
@@ -458,6 +460,30 @@ last_updated: 2026-08-31T22:34:07.678Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-31T22:34:07.678Z",
+    "resolved_at": null
+  },
+  {
+    "id": 35,
+    "kind": "unmet-truth",
+    "phase": "32",
+    "file": "src/mcp/vice/hop-chain-comments.test.ts",
+    "line": null,
+    "description": "guard-fates row cannot be re-measured by the committed harness: its plant.replace is its own plant.find with a newline prepended, so the introduced occurrence overlaps the pre-existing one and the post-condition refuses it (PLANT REFUSED in the 32-15 --all sweep)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T07:18:08.572Z",
+    "resolved_at": null
+  },
+  {
+    "id": 36,
+    "kind": "deviation",
+    "phase": "32",
+    "file": "src/mcp/vice/repo-root.test.ts",
+    "line": 249,
+    "description": "the !supervisorDir.includes('.claude') substring predicate fails unconditionally when the suite runs from a GSD worktree under .claude/worktrees/, so npm run test:automated cannot reach its 0-failure floor from there (measured 2994/2987/1 in plan 32-15)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T07:18:16.264Z",
     "resolved_at": null
   }
 ]
