@@ -772,7 +772,7 @@ not exist until the last guard has moved.
   1. **Every guard and CI script pinned to the deleted subject has a recorded fate, and none passes vacuously — audited over the whole re-pointed set at once, retrospectively.** This is `CUT-04`, and it is the one cut requirement Phase 29 deliberately did **not** pull forward; see the note below for why. Each re-pointed guard's own planted violation is re-run against its **new** subject and observed red — a guard that cannot be made to fail has not been re-pointed. The three that went red **by construction** (`docs-linerefs`, `docs-dangling-refs`, and `docs-absorbed-decisions` — renamed from `docs-r2000-decisions` by plan 29-05, in the same commit as `scripts/audit-gate.mjs`'s registry entry, per `D-12`) were **pre-declared before the deletion**, so an unpredicted red stayed distinguishable from a predicted one, and each was discharged by rewriting content rather than by loosening the guard; this phase re-checks that judgement over the settled tree rather than re-taking it. `check-skill-fork-honesty.mjs`'s direct contradiction is **already resolved** — plan 29-09 named the *skill* as the side that moves, replacing the live `"r2000 export-asm"` instruction with a dated withdrawal notice and re-pointing the guard's positive check at that notice's literal (`CUT-05`, recorded against Phase 29).
   2. **No living document points a user at a deleted route** (`CUT-06`): install documentation, `CLAUDE.md`'s regenerator2000 constraint bullets and its `r2000_*` clause, `PROJECT.md`'s constraints and Key Decisions rows — including its already-stale `vice-proxy.ts` line citations and its `D-36` row's pointer at the **pre-rename** guard file name `docs-r2000-decisions.test.ts`, which no longer exists on disk — `ARCHITECTURE.md`'s Rule A21, `THIRD-PARTY-NOTICES.md`'s dual-licence notice — which **remains true** for the retained prose — and all seven skill playbooks. The **phase-close gate half** of this criterion (full `npm test` over the whole glob with the **broker stopped**, both `check-*.mjs` CI scripts, `docs/tool-support.md` byte-identical, and every `docs-*.test.ts` guard green — the last a precondition of recording any milestone-audit status, enforced by a real `PreToolUse` hook rather than by convention) was first carried out at **Phase 29's** close and is **re-run** here rather than established here.
 
-**Plans**: 15/19 plans executed — 9/9 original, plus 5/5 gap-closure (round 1), plus 1/5 gap-closure (round 2); 4 round-2 gap-closure plans remain
+**Plans**: 19/19 plans executed — 9/9 original, plus 5/5 gap-closure (round 1), plus 5/5 gap-closure (round 2)
 
 Plans:
 **Wave 1**
@@ -829,13 +829,13 @@ Plans:
 
 **Gap-closure wave 2** *(blocked on gap-closure wave 1)*
 
-- [ ] 32-16-PLAN.md — Gap 2, first half: `scripts/audit-gate.mjs` onto the shared strict parser, with the containment asymmetry taken as a recorded decision on a measured basis (this script never writes) rather than as an omission; plus the six live comment blocks asserting a non-migration that no longer exists, whose stated reason was already false
-- [ ] 32-17-PLAN.md — Gap 2, second half: `parseRootArg()` grows a declared `valueFlags` list, `scripts/audit-mutation-harness.mjs` — the sole producer of this phase's observed-red evidence — joins the seam with its exactly-one-selector rule intact, and the false model citation at `scripts/lib/audit-root.mjs:119-122` is corrected
+- [x] 32-16-PLAN.md — Gap 2, first half: `scripts/audit-gate.mjs` onto the shared strict parser, with the containment asymmetry taken as a recorded decision on a measured basis (this script never writes) rather than as an omission; plus the six live comment blocks asserting a non-migration that no longer exists, whose stated reason was already false
+- [x] 32-17-PLAN.md — Gap 2, second half: `parseRootArg()` grows a declared `valueFlags` list, `scripts/audit-mutation-harness.mjs` — the sole producer of this phase's observed-red evidence — joins the seam with its exactly-one-selector rule intact, and the false model citation at `scripts/lib/audit-root.mjs:119-122` is corrected
 
 **Gap-closure wave 3** *(blocked on gap-closure wave 2)*
 
-- [ ] 32-18-PLAN.md — Gap 5 (`CR-08`): the completeness guard's population derived from the FLAG rather than from the remedy, captured RED naming both scripts before it is taken green by adding rows — no exclusion list; plus the mechanical half of the `CR-05` precondition declaration and the write-freedom assertion that pins 32-16's containment decision
-- [ ] 32-19-PLAN.md — The restore-on-signal invariant, landed rather than carried: three exports make the harness's own registered handler reachable from an in-process driver that creates the window `main()` does not have, without injecting an `await`; `WR-03`'s latch doubt settled by mutating the file between the two restore calls
+- [x] 32-18-PLAN.md — Gap 5 (`CR-08`): the completeness guard's population derived from the FLAG rather than from the remedy, captured RED naming both scripts before it is taken green by adding rows — no exclusion list; plus the mechanical half of the `CR-05` precondition declaration and the write-freedom assertion that pins 32-16's containment decision
+- [x] 32-19-PLAN.md — The restore-on-signal invariant, landed rather than carried: three exports make the harness's own registered handler reachable from an in-process driver that creates the window `main()` does not have, without injecting an `await`; `WR-03`'s latch doubt settled by mutating the file between the two restore calls
 
 Notes:
 
@@ -1229,7 +1229,7 @@ in a milestone archive.
 | 29. The MCP Surface | v0.7.0 | 21/21 | Complete | 2026-08-30 |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | Complete | 2026-08-31 |
 | 31. Procedure Re-pointing | v0.7.0 | 4/4 | Complete | 2026-08-31 |
-| 32. The Deletion and the Grep Gate | v0.7.0 | 15/19 | In Progress | - |
+| 32. The Deletion and the Grep Gate | v0.7.0 | 19/19 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

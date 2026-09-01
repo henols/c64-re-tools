@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 32 (The Deletion and the Grep Gate) — EXECUTING
-Plan: 14 of 19 executed — executing gap-closure round 2 (32-15..32-19) to close CR-06, the --root gap and CR-08, plus the restore-on-signal item
-Status: Executing Phase 32 gap-closure round 2 (--gaps-only)
-Last activity: 2026-09-01 — Phase 32 gap-closure round 2 execution started
+Plan: 19 of 19 executed — gap-closure round 2 (32-15..32-19) executed and merged; awaiting phase verification
+Status: Phase 32 all plans executed, in phase gates (code review, regression, verification)
+Last activity: 2026-09-01 — Phase 32 gap-closure round 2 executed
 
 ## Performance Metrics
 
