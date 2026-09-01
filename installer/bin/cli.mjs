@@ -34,7 +34,7 @@ const SKILLS_SRC = join(PKG_ROOT, "skills");
 // deliberately does NOT import it: it ships without the seam file (its
 // `files[]` is `bin/`, `skills/`, `README.md`) and targets node >= 18, which
 // cannot type-strip the seam's `.ts` the way the vice-mcp package's own
-// node >= 22.18 runtime can. What follows is exactly the seam's own
+// node >= 24 runtime can. What follows is exactly the seam's own
 // precedence step 1 -- "read my own package.json's `.version`, trust it
 // when it is a real published number" -- not a second, independent
 // implementation of the resolution algorithm; there is no template/`-`
@@ -52,7 +52,7 @@ const MCP_PKG = "@henols/vice-mcp";
 // literal, NOT imported, because this package deliberately ships without
 // that seam file (see the comment above) and targets node >= 18, which
 // cannot type-strip a `.ts` import the way the vice-mcp package's own
-// node >= 22.18 runtime can. This is the same disclosed divergence as
+// node >= 24 runtime can. This is the same disclosed divergence as
 // `SELF_VERSION` above: one literal, kept in sync by hand, documented here
 // so a future edit to the seam's placeholder is not missed.
 const MCP_DEV_PLACEHOLDER = "0.0.0-dev";
@@ -127,7 +127,7 @@ What it does:
   1. Copies bundled skills into <target>/.claude/skills/
   2. Adds a 'vice' server to <target>/.mcp.json (other servers are preserved)
 
-Requires Node >= 22.18 to RUN the vice MCP server (this installer runs on Node >= 18).`;
+Requires Node >= 24 to RUN the vice MCP server (this installer runs on Node >= 18).`;
 
 function viceServerEntry(vendor) {
   return {
@@ -265,7 +265,7 @@ function main() {
     console.error("Dry run -- nothing was written.");
   } else {
     console.error("Done. Restart Claude Code in this project so it picks up the skills and MCP server.");
-    console.error("Note: running the vice MCP server requires Node >= 22.18 (or >= 23.6).");
+    console.error("Note: running the vice MCP server requires Node >= 24.");
   }
 }
 

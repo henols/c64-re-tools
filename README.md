@@ -33,7 +33,7 @@ This copies the six skills into `<project>/.claude/skills/` and wires the
 `vice` MCP server into `<project>/.mcp.json` (launched via `npx -y @henols/vice-mcp`).
 Existing servers and skills are preserved; pass `--force` to overwrite, `--dry-run`
 to preview, `--vendor` to install the server locally instead of via `npx`. Running
-the MCP server requires **Node ≥ 22.18** (or ≥ 23.6).
+the MCP server requires **Node ≥ 24**.
 
 The two published packages:
 

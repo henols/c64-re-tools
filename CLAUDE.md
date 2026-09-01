@@ -42,7 +42,7 @@ state — and keep working when the emulator misbehaves.
 - **Dependency**: `CPUHISTORY_GET` (0x86) requires **VICE ≥ 3.10**. Debian trixie/forky/sid and all current Ubuntu ship 3.9, which lacks the opcode entirely. Homebrew and official builds are fine.
 - **Capability**: SID `$D400–$D418` is write-only in hardware and the binary monitor has no SID command — read-back is unrecoverable on stock. VIC-II/CIA *internal* state (raster-IRQ latch, timer latches) is likewise unavailable; only the readable register map is.
 - **Capability**: Matrix keyboard is not recoverable on stock. `KEYBOARD_FEED` (0x72) injects buffer text only.
-- **Tech stack**: Node ≥ 22.18 (native TypeScript type-stripping — the shipped server has no build step). Host-bound `.mts` files must still be compiled by `build.ts` into committed `resources/*.mjs`, and `resources-sync.test.ts` fails CI on drift.
+- **Tech stack**: Node ≥ 24 (native TypeScript type-stripping — the shipped server has no build step). Host-bound `.mts` files must still be compiled by `build.ts` into committed `resources/*.mjs`, and `resources-sync.test.ts` fails CI on drift.
 - **Architecture**: Any host-facing path or hostname must go through `hostpath.ts` / `containerpath.ts` / `container-guard.mts`. The project maintains a tested closed consumer set for host-path logic.
 - **Architecture**: The broker's single-owner `inFlight` launch guard must stay a synchronous check-and-set with no `await` between. It exists because of the 2026-08-01 triple-launch outage and is regression-tested.
 - **Testing**: `vice-sync.ts`'s checkpoint-wait functions are deliberately not unit-tested — their correctness only means anything against a real emulator's timing. Preserve the documented invariants (exactly one resume per wait; poll on `hit_count`, never on paused state).
@@ -59,7 +59,7 @@ state — and keep working when the emulator misbehaves.
 - 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `src/skills/acme-build/template.a`
 - Markdown - all skill documentation (`SKILL.md` files), project docs (`docs/`, `README.md`)
 ## Runtime
-- Node.js. The MCP server (`@henols/vice-mcp`) requires **Node >= 22.18** (or >= 23.6) because it runs TypeScript directly via Node's native type-stripping (no build/transpile step at runtime). See `engines` in `src/mcp/vice/package.json:29`.
+- Node.js. The MCP server (`@henols/vice-mcp`) requires **Node >= 24** because it runs TypeScript directly via Node's native type-stripping (no build/transpile step at runtime). See `engines` in `src/mcp/vice/package.json:29`.
 - The installer package (`@henols/c64-re-tools`) only requires **Node >= 18** (`installer/package.json:11`) since it is plain `.mjs`.
 - `type: "module"` (ESM) throughout — both packages and all skill scripts.
 - npm. Lockfiles present: `src/mcp/vice/package-lock.json` (committed). The `installer/` package has no committed lockfile.
@@ -102,7 +102,7 @@ state — and keep working when the emulator misbehaves.
 - `scripts/package.sh` - builds the installable plugin release zip (used by CI).
 - `scripts/check-npm-packages.mjs` - validates, via `npm pack --dry-run --json`, that both published tarballs (`@henols/vice-mcp`, `@henols/c64-re-tools`) contain exactly the right files (no `node_modules/`, no test files, no fixtures leaked; skills present).
 ## Platform Requirements
-- Node.js >= 22.18 (or >= 23.6) to run/test the MCP server; Node >= 18 to run the installer.
+- Node.js >= 24 to run/test the MCP server; Node >= 18 to run the installer.
 - ACME cross-assembler on `$PATH` for the `acme-build` skill.
 - A reachable host running VICE (`x64sc`, custom `-mcpserver` build) for any live emulator interaction — the MCP server itself has no in-process emulator.
 - Docker/devcontainer awareness baked in: code checks `isInsideContainer()` (`src/mcp/vice/container-guard.mts`) to decide between `host.docker.internal` and `127.0.0.1` as the default VICE host.

@@ -43,7 +43,7 @@ you pass `--force`.
 ## Requirements
 
 - **This installer** runs on Node ≥ 18.
-- **The VICE MCP server** it wires up requires **Node ≥ 22.18** (or ≥ 23.6), and a
+- **The VICE MCP server** it wires up requires **Node ≥ 24**, and a
   host with VICE (`x64sc`) reachable from the MCP client. See the
   [`@henols/vice-mcp`](https://www.npmjs.com/package/@henols/vice-mcp) readme.
 
