@@ -368,7 +368,7 @@ export function generateToolSupportTable(options = {}) {
 // as its reason that the file carried five further flags. That reason was
 // FALSE when it was written. Measured: `audit-gate.mjs` accepts three flags in
 // total -- `--root`, `--json` and `--hook` -- and has no selector rule at all.
-// The description belonged to `scripts/audit-mutation-harness.mjs`, which does
+// The description belonged to `scripts/audit-mutation-harness.mjs` (RETIRED), which does
 // carry five flags (`--root`, `--row`, `--rows`, `--all`, `--out`) and does
 // enforce an exactly-one-of-`--row`/`--rows`/`--all` rule. A justification
 // written about one file was copied into six, which is `IN-06` one layer up:

@@ -1161,8 +1161,8 @@ function main() {
   // Reported before anything is derived or read, and kept at exit 1 like the
   // FAIL and REFUSED paths below: all three are separated by their MESSAGE
   // (`BAD ARGUMENTS --` versus `audit-gate: FAIL` versus `audit-gate:
-  // REFUSED`), never by their status. This is the call-site shape
-  // `check-guard-fates.mjs` records verbatim; do not invent a second one.
+  // REFUSED`), never by their status. This is the shared call-site shape every
+  // root-accepting script here uses; do not invent a second one.
   let rootArg;
   let json = false;
   let hook = false;

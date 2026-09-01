@@ -305,7 +305,7 @@ Eight rules, each traced to something already decided in this repo or cross-chec
 - [Rizin Handbook: Adding Metadata to Disassembly](https://book.rizin.re/src/disassembling/adding_metadata.html), [Introducing Projects in Rizin](https://rizin.re/posts/introducing-projects/)
 - [Binary Ninja `FileMetadata`](https://api.binary.ninja/binaryninja.filemetadata-module.html), [Important Concepts (user vs auto actions)](https://docs.binary.ninja/dev/concepts.html), [`BinaryView` C++ API](https://api.binary.ninja/cpp/group__binaryview.html)
 - [6502bench SourceGen: More Details](https://6502bench.com/sgmanual/intro-details.html), [Editors](https://6502bench.com/sgmanual/editors.html), [Instruction and Data Analysis](https://6502bench.com/sgmanual/analysis.html), [fadden/6502bench](https://github.com/fadden/6502bench)
-- [the external analyser docs](https://analyser.readthedocs.io/en/latest/), [the earlier analyser (n0stalgia) v1.3 release notes](https://www.nightfallcrew.com/16/05/2013/regenerator-disassembler-v1-3-by-n0stalgia/), [Infiltrator Disassembler V1.0 (CSDb)](https://csdb.dk/release/?id=100129)
+- [Infiltrator Disassembler V1.0 (CSDb)](https://csdb.dk/release/?id=100129)
 
 **LLM/MCP consumer shaping (MEDIUM):**
 - [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp), [jtsylve/re-mcp](https://github.com/jtsylve/re-mcp) and [its announcement](https://jtsylve.blog/post/2026/05/04/ida-mcp-becomes-re-mcp), [bethington/ghidra-mcp](https://github.com/bethington/ghidra-mcp)

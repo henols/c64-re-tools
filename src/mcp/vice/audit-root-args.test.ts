@@ -214,7 +214,7 @@ test("parseRootArg: a declared boolean flag is reported, never eaten as a value"
 // ---------------------------------------------------------------------------
 // UNIT -- declared VALUE-taking flags (plan 32-17).
 //
-// WHY THESE EXIST: `scripts/audit-mutation-harness.mjs` -- the one instrument
+// WHY THESE EXIST: `scripts/audit-mutation-harness.mjs` (RETIRED) -- the one instrument
 // in this phase that both MUTATES the working tree and WRITES the registry and
 // the evidence file -- could not join this seam, because its `--row`, `--rows`
 // and `--out` are value-taking flags the parser did not know about. It
@@ -552,8 +552,8 @@ function runScript(script: string, args: string[]): RunResult {
 //
 // The predicates are declared once and driven against BOTH the real files and
 // the planted texts below -- following this repository's planted-violation
-// convention (see `guard-fates.test.ts`): a violation is planted against the
-// REAL predicate, never against a re-implementation of it.
+// convention: a violation is planted against the REAL predicate, never against
+// a re-implementation of it.
 
 /** The message prefix the four refusing scripts print. Contract surface: it is
  *  what the matrix above asserts and what the rule below looks for. */

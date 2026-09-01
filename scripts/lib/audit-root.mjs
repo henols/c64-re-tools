@@ -119,7 +119,7 @@ export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}
 // PROVENANCE CORRECTION, 2026-09-01 (plan 32-17). What this paragraph used to
 // say, in reported speech -- deliberately NOT re-quoted verbatim, so that a
 // census for the false sentence returns a real zero rather than matching this
-// correction: it credited `scripts/audit-mutation-harness.mjs`'s reader with
+// correction: it credited `scripts/audit-mutation-harness.mjs` (RETIRED)'s reader with
 // the shape and the error style, described it as the single copy that did
 // reject an unrecognised token and print a usage line, and declared it the
 // model which, unreused elsewhere, was reused here.

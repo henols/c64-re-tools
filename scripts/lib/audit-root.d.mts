@@ -1,6 +1,5 @@
-// Type declarations for audit-root.mjs, so the colocated tests
-// (src/mcp/vice/guard-fates.test.ts, src/mcp/vice/audit-root-args.test.ts)
-// typecheck under strict mode. This file is a CI-only helper with no runtime
+// Type declarations for audit-root.mjs, so the colocated test
+// (src/mcp/vice/audit-root-args.test.ts) typechecks under strict mode. This file is a CI-only helper with no runtime
 // role, so it stays out of src/mcp/vice/package.json's files[] like its .mjs
 // sibling.
 
