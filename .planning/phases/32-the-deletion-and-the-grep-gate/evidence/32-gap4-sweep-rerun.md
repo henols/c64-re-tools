@@ -10344,3 +10344,144 @@ re-run until it agreed, its descriptor was not edited, the assertion was not rel
 and no opt-out was added to the registry. Its recorded `observedRed` from an earlier phase is
 untouched. What this run establishes about it is exactly one thing: the committed instrument,
 at this commit, cannot re-measure that one row, and it says so by name.
+
+
+---
+
+# Appended 2026-09-01 — plan 32-15 Task 3: the close-gate half, re-run
+
+Ordering constraint 5: nothing in this round is recorded green over a guard that was already
+red. Every figure below carries the broker state it was taken under.
+
+## Machine state, re-read
+
+Same read-only method as Task 2 (`evidence/32-close-gate.md`'s broker-state block — the
+`ps ... | grep -v grep` form, not `pgrep -af`, which self-matches). Nothing was stopped or
+started; the unit is a systemd user unit and D-13 forbids touching it.
+
+```
+$ systemctl --user is-active vice-broker
+inactive
+exit=4
+```
+
+```
+$ ps -eo pid,args | grep -i vice-broker | grep -v grep
+exit=1          (no output)
+```
+
+```
+$ ps -eo pid,args | grep -i x64sc | grep -v grep
+exit=1          (no output)
+```
+
+**Broker state for every figure in this section: unit `inactive` (exit 4), no broker process,
+no emulator process.** This matters and is not decoration: a LIVE broker reds the BACK-05
+ordering test deterministically, so a suite figure recorded without its broker state is
+uninterpretable.
+
+## The automated suite
+
+Commit measured: `24fe94a` (Task 2's commit; `git status --porcelain` empty before the run).
+
+```
+$ cd src/mcp/vice && npm run test:automated
+# tests 2994
+# suites 24
+# pass 2987
+# fail 1
+# cancelled 0
+# skipped 1
+# todo 5
+# duration_ms 63828.642015
+exit=1
+```
+
+**The whole-glob `npm test` was NOT run.** It blocks indefinitely on `vice-proxy.test.ts`;
+`evidence/32-close-gate.md` §2b records that non-completion as the measured result, with the
+partial TAP it produced before its bound fired, and states in its own words that the
+whole-glob form was not run to green. That record is cited here and the decision is not
+re-taken. This section makes no claim about the whole-glob form.
+
+### The floor moved by one, and the cause is named
+
+The recorded floor is **0 failures**; `32-VERIFICATION.md`'s Addendum measured
+**2994 / 2988 pass / 0 fail / 1 skipped / 5 todo** at `05ca6c6`. This run is
+**2994 / 2987 pass / 1 fail / 1 skipped / 5 todo** — the same total, one test moved from pass
+to fail. The older 44-, 7- and 5-failure baselines are superseded and are not cited.
+
+The one failure, quoted from the TAP:
+
+```
+not ok 1521 - path agreement (D-3, D-6, THE regression this task exists to catch): the
+launcher's own repo_root (resources/ and tools/ copies) agrees with Node's
+supervisorDir()/dirname(EPOCH_FILE), and the agreed path is not under .claude
+  location: '.../src/mcp/vice/repo-root.test.ts:178:1'
+  error: 'the agreed directory must not sit under .claude -- got
+    /home/henrik/dev/henrik/git/c64-re-tools/.claude/worktrees/agent-a4a0c6d63845e64ef/.vice-supervisor
+    (the exact regression a naive move would introduce)'
+```
+
+**Cause: the location this suite was run from, not a change in this plan.** The assertion at
+`src/mcp/vice/repo-root.test.ts:248-251` is a plain substring predicate:
+
+```js
+assert.ok(
+  !nodeVals.supervisorDir.includes(".claude"),
+  `the agreed directory must not sit under .claude -- got ${nodeVals.supervisorDir} ...`
+);
+```
+
+This plan executes inside a GSD worktree whose root **is** `<repo>/.claude/worktrees/agent-…`,
+so the resolved `.vice-supervisor` path contains `.claude` by construction and the predicate
+cannot hold from here regardless of the code under test. The substantive half of the same
+test — the two `assert.equal` checks that the launcher's `repo_root` and Node's
+`supervisorDir()` / `dirname(EPOCH_FILE)` AGREE, which is the regression the test was written
+to catch — **passed**. Only the location predicate fired.
+
+Not caused by this plan, measured rather than asserted:
+
+```
+$ git diff --name-only 52b4c75..HEAD
+.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap4-sweep-rerun.md
+scripts/audit-mutation-harness.mjs
+```
+
+```
+$ git log --oneline -1 -- src/mcp/vice/repo-root.test.ts
+fd4e54b test(18-07): close persistent session phase gate
+```
+
+Neither this plan's two changed paths is read by `repo-root.test.ts`, and the test itself has
+not been touched since phase 18. **The baseline is not raised to 1.** The floor stays 0, and
+this reading is recorded as a location-dependent finding: the automated suite cannot reach
+its recorded floor from inside a `.claude/worktrees/` worktree, and any suite figure taken
+there must carry that fact beside it exactly as the broker state is carried.
+
+## The gate scripts
+
+```
+$ node scripts/check-guard-fates.mjs
+check-guard-fates: OK -- setA=43 setB=16 setC=2 total=61 rows=61 (floors setA=43 setB=16 setC=2 total=61)
+  derived from 273 path(s) at 0394cbc; forward map 21 same-path / 15 renamed / 7 gone; set B 22 raw candidate(s) minus 6 already-claimed successor(s); set C parsed from .planning/ROADMAP.md line 846.
+exit=0
+```
+
+Byte-identical to the reading taken before any change in this plan, and to the reading taken
+after Task 2.
+
+```
+$ node scripts/audit-gate.mjs
+audit-gate: OK -- 9 docs guards green, 7 milestone audits scanned, 5 declaring a gated status
+exit=0
+```
+
+Identical to the line `32-VERIFICATION.md`'s Addendum records.
+
+## Tree state
+
+`git status --porcelain` was empty before these readings and empty after them, apart from
+this file, which is the only thing Task 3 writes. A scratch directory
+`src/mcp/vice/.anno-cli-test-JHuYPJ/` appeared while the suite was mid-flight and was removed
+by the suite itself before it exited; it is recorded here because it was observed, not
+because it survived.
