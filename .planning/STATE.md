@@ -148,9 +148,9 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 32 (The Deletion and the Grep Gate) — EXECUTING
-Plan: 19 of 19 executed — gap-closure round 2 (32-15..32-19) executed and merged; awaiting phase verification
-Status: Phase 32 all plans executed, in phase gates (code review, regression, verification)
-Last activity: 2026-09-01 — Phase 32 gap-closure round 2 executed
+Plan: 19 of 19 executed — gap-closure round 2 (32-15..32-19) merged; verification round 3 scored 14/16, gaps_found
+Status: Phase 32 NOT complete — two gaps remain, both in code merged in round 2 (CR-09 plant arithmetic, CR-10 restore latch), each confirmed independently by the verifier against the SUMMARY that claimed otherwise
+Last activity: 2026-09-01 — Phase 32 verification round 3: gaps found
 
 ## Performance Metrics
 
