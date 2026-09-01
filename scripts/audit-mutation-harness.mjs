@@ -167,11 +167,8 @@ const EXCERPT_MAX = 4000;
 
 /** absolute path -> original bytes, captured BEFORE the first write. */
 const originals = new Map();
-let restored = false;
 
 export function restoreAll() {
-  if (restored) return;
-  restored = true;
   for (const [abs, bytes] of originals) {
     try {
       writeFileSync(abs, bytes);
@@ -196,7 +193,45 @@ export function pendingRestoreCount() {
   return originals.size;
 }
 
-// `finally` and `exit` can both fire; `restored` makes the second call a no-op.
+// `finally` and `exit` can both fire, so a second call must be harmless. THE
+// MECHANISM THAT MAKES IT HARMLESS IS `originals.clear()` AT THE END OF
+// `restoreAll()`, AND NOTHING ELSE (2026-09-01, plan 32-20). A second call
+// iterates an empty map and writes nothing. There is no flag, counter, set or
+// size check anywhere on this path, and none must be added: two mechanisms for
+// one property is how the defect below came back once already.
+//
+// WHAT THIS REPLACED, AND WHY IT HAD TO GO. Until this date the same property
+// was supplied by a module-level boolean that `restoreAll()` read and set on
+// entry. It was set on the FIRST call and never reset. That was harmless while
+// nothing outside this file could call `restoreAll()` -- and it stopped being
+// harmless the moment plan 32-19 exported the plant and restore-all functions so
+// an in-process driver could reach the four handlers below. From then on, any
+// consumer that completed ONE restore cycle permanently no-opped the `exit`,
+// `SIGINT`, `SIGTERM` and `uncaughtException` handlers for the rest of the
+// process: the handler still ran and still exited 130, but it restored nothing,
+// so a plant captured after that cycle was left on disk.
+//
+// MEASURED, not inferred. The round-3 verifier reproduced it against a scratch
+// root with its own driver -- plant, restore, plant again, SIGINT -- and
+// recorded `EXIT=130`, `pendingRestoreCount()` = 1, and the second plant still on
+// disk. Carried as `CR-10` and as gap 2 of that round's verification report.
+//
+// THE SHIPPED CLI PATH WAS NEVER AFFECTED, and this note must not be read as
+// saying otherwise. `main()` reverts per row from inside the row loop, and that
+// per-row revert deletes its entry from the captured-originals map without ever
+// consulting any latch; `restoreAll()` itself is called exactly once, in the
+// `finally` after that loop. So the latch could never be set while a plant was
+// on disk during a real sweep, and the verifier's own 61-row `--all` run
+// finished `tree: restored byte-identical to the baseline`.
+//
+// WHY THE COMMITTED TEST DID NOT CATCH IT (`WR-27`). The sentinel case in
+// `src/mcp/vice/audit-harness-restore.test.ts` writes a hand-made sentinel
+// between two `restoreAll()` calls and asserts it survives. That distinguishes a
+// no-op from a re-write, which is exactly what `WR-03` asked, and it is green
+// either way here -- it cannot distinguish a latch from the map clear. The case
+// that CAN is the second-window pair in the same file, added with this change and
+// watched failing against a deliberately re-introduced latch before it was
+// trusted.
 process.on("exit", restoreAll);
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
