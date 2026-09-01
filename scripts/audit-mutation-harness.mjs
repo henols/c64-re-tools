@@ -15,6 +15,22 @@
 // `src/mcp/vice/package.json`. A CI job that mutates the working tree to prove
 // a point is a CI job that can leave the tree mutated.
 //
+// AN UNDECLARED PRECONDITION, DISCHARGED 2026-09-01 (CR-05, plan 32-17). Every
+// one of the 35 observed reds this instrument recorded was sound -- but sound
+// BECAUSE NOBODY USED THE `--root` FLAG, not because the flag was safe.
+// Measured: `--root` appears in `guard.argv` in 0 of 61 registry rows, and all
+// 35 plants are worktree plants. Until this date the reader below took
+// `argv[i + 1]` with no missing-value check, so a valueless `--root` silently
+// resolved to the repository root: with a real row name and `--all`, an
+// operator who believed they had targeted a synthetic tree would have planted
+// mutations into the REAL working tree and rewritten the REAL registry and
+// evidence file. The soundness of this phase's entire observed-red corpus
+// therefore rested on an operator habit rather than on the code. Reading argv
+// through `parseRootArg()` makes it a property of the code: every malformed
+// form of all four flags is a hard, named error raised BEFORE containment is
+// consulted and long before anything is planted. The standing mechanical guard
+// for it is plan 32-18's matrix row; this note is its written half.
+//
 // WHAT NOT TO DO:
 //  - Do not let a run leave a plant behind. A crashed harness leaving a
 //    mutation in the tree would corrupt this phase's own closing gate run,
@@ -52,7 +68,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveContainedRoot } from "./lib/audit-root.mjs";
+import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(HERE);
@@ -409,36 +425,33 @@ function excerptOf(run) {
 // CLI
 // ---------------------------------------------------------------------------
 
+// ARGV IS READ THROUGH THE SHARED SEAM, not here (plan 32-17). The loop this
+// replaces took `argv[i + 1]` with no missing-value check, so a valueless
+// `--root` yielded `undefined`, which `resolveContainedRoot()` maps to the
+// repository root with NO message -- and the run went on to read the real
+// registry while the operator believed they had pointed it at a synthetic
+// tree. `--row`, `--rows` and `--out` carried the identical hole, and the
+// trailing-flag form swallowed the NEXT flag as a value. The three rules for a
+// malformed value now come from `parseRootArg()`, which is why `valueFlags`
+// exists: restating them here would have recreated `IN-06` inside the very
+// file the seam was extracted from.
+//
+// What stays here is the one rule the parser has no business knowing: the
+// exactly-one-of selector rule is about THIS instrument's semantics, not about
+// argv shape.
 function parseArgs(argv) {
-  let root;
-  let row;
-  let rows;
-  let all = false;
-  let out;
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--root") {
-      root = argv[i + 1];
-      i += 1;
-    } else if (a === "--row") {
-      row = argv[i + 1];
-      i += 1;
-    } else if (a === "--rows") {
-      rows = argv[i + 1];
-      i += 1;
-    } else if (a === "--all") {
-      all = true;
-    } else if (a === "--out") {
-      out = argv[i + 1];
-      i += 1;
-    } else {
-      throw new Error(
-        `unrecognised argument ${JSON.stringify(a)}. Usage: node ` +
-          "scripts/audit-mutation-harness.mjs (--row <historicalPath> | --rows <p,p,...> | " +
-          "--all) [--root <dir>] [--out <file>]",
-      );
-    }
-  }
+  const parsed = parseRootArg(argv, {
+    script: "audit-mutation-harness",
+    booleanFlags: ["--all"],
+    valueFlags: ["--row", "--rows", "--out"],
+  });
+
+  const root = parsed.root;
+  const row = parsed.values["--row"];
+  const rows = parsed.values["--rows"];
+  const all = parsed.flags["--all"] === true;
+  const out = parsed.values["--out"];
+
   const selectors = [row !== undefined, rows !== undefined, all].filter(Boolean).length;
   if (selectors !== 1) {
     throw new Error(
@@ -765,8 +778,18 @@ function main() {
   try {
     args = parseArgs(process.argv.slice(2));
   } catch (err) {
-    console.error(`audit-mutation-harness: USAGE -- ${err?.message ?? String(err)}`);
-    process.exit(2);
+    // An ARGUMENT REJECTION. The message already begins with
+    // `BAD ARGUMENTS --` when it came from the shared parser, and with the
+    // selector rule's own text when it came from this file. Either way it
+    // exits 1, like the containment REFUSAL below: the seam's own header
+    // records that an argv rejection must not mint a new exit code, and that
+    // the two classes are separated by their MESSAGE rather than by their
+    // status. This script was the one consumer violating that: until plan
+    // 32-17 it printed a bespoke usage-word prefix of its own and exited 2.
+    // The literal is not reproduced here, so a census for it returns a real
+    // zero rather than matching this comment.
+    console.error(`audit-mutation-harness: ${err?.message ?? String(err)}`);
+    process.exit(1);
   }
 
   let root;
