@@ -475,6 +475,18 @@ test("--root naming the repository root itself is accepted and writes identical 
  *   - "refuses": the script binds its comparison data through a static import
  *     that cannot follow a root override, so ANY contained root that is not
  *     the default root is refused outright.
+ *   - "uncontained-read-only": the script accepts an UNCONTAINED root BY
+ *     DESIGN, and that asymmetry is a decision rather than an omission (plan
+ *     32-16, recorded in `scripts/audit-gate.mjs`'s own header). The basis is
+ *     measured, not assumed: the script performs NO FILESYSTEM WRITE, so the
+ *     trust boundary containment guards -- which tree a script WRITES -- does
+ *     not exist for it; and its own test suite REQUIRES the uncontained path,
+ *     pointing it at `mkdtempSync(tmpdir())` trees outside the repository for
+ *     a reason recorded at `audit-integrity.test.ts`. The expectation is
+ *     therefore PAIRED WITH THE WRITE-FREEDOM ASSERTION at the bottom of this
+ *     file, which REVOKES the acceptance the moment a write appears. It is not
+ *     an escape hatch for a script whose test is inconvenient: carrying this
+ *     value costs you a standing proof that you still write nothing.
  *
  *  WHAT CHANGED HERE AND WHY (plan 32-12): plan 32-11 wrote the "refuses"
  *  expectation deliberately loose -- "non-zero plus a diagnostic naming the
@@ -485,11 +497,19 @@ test("--root naming the repository root itself is accepted and writes identical 
  *  the specific literal, because the loose shape is satisfied by BOTH the old
  *  incidental stop and the new principled refusal, and a test that cannot tell
  *  them apart cannot detect a regression back to the first. */
-type ContainedExpectation = "repo-root" | "synthetic-corpus" | "refuses";
+type ContainedExpectation =
+  | "repo-root"
+  | "synthetic-corpus"
+  | "refuses"
+  | "uncontained-read-only";
 
 interface MatrixRow {
   script: string;
   contained: ContainedExpectation;
+  /** Arguments this script needs before the behaviour under test is REACHABLE.
+   *  Supplied in code and NEVER from argv, an environment variable or a file --
+   *  the same rule `booleanFlags` and `valueFlags` already carry at the seam. */
+  extraArgs?: string[];
 }
 
 const MATRIX: MatrixRow[] = [
@@ -499,6 +519,27 @@ const MATRIX: MatrixRow[] = [
   { script: "check-skill-fork-honesty", contained: "refuses" },
   { script: "check-skill-cli-invocations", contained: "refuses" },
   { script: "check-skill-description-overlap", contained: "synthetic-corpus" },
+  // WHY THIS ROW CARRIES A SELECTOR, AND WHY THE ROW NAME IS DELIBERATELY
+  // NON-EXISTENT. The harness enforces "exactly one of --row, --rows, --all"
+  // inside `parseArgs()`, which runs BEFORE `resolveContainedRoot()`; a row
+  // that spawned it with no selector would hit the selector rule instead of
+  // the behaviour under test, and the case would pass for the wrong reason.
+  //
+  // The selector's VALUE is a row name that matches nothing in the registry,
+  // and that is a SAFETY property, not an accident. Row selection resolves
+  // AFTER containment, so if a future change ever reordered the two, this
+  // invocation would find NO ROW TO PLANT and stop -- rather than planting a
+  // mutation into the real working tree from inside a unit test. `--all` here
+  // would sweep it. Do NOT replace this with a real `historicalPath`: the
+  // non-existence is the fail-safe (T-32-30).
+  {
+    script: "audit-mutation-harness",
+    contained: "repo-root",
+    extraArgs: ["--row", "zz-no-such-registry-row-exists.mjs"],
+  },
+  // Uncontained by design (plan 32-16). Needs no extra arguments: `--root` is
+  // its only positional concern and both its other flags are optional booleans.
+  { script: "audit-gate", contained: "uncontained-read-only" },
 ];
 
 function runScript(script: string, args: string[]): RunResult {
@@ -739,9 +780,9 @@ test("the matrix covers EVERY root-accepting script", () => {
 
 // --- Case 1 of 3, per script: the equals form ------------------------------
 
-for (const { script } of MATRIX) {
+for (const { script, extraArgs = [] } of MATRIX) {
   test(`${script}: the equals form exits non-zero and names itself`, () => {
-    const r = runScript(script, ["--root=/tmp/definitely-not-here"]);
+    const r = runScript(script, ["--root=/tmp/definitely-not-here", ...extraArgs]);
     assert.notEqual(r.status, 0, `expected a non-zero exit, got ${r.status}`);
     assert.ok(
       r.stderr.includes(`${script}: BAD ARGUMENTS --`),
@@ -752,15 +793,54 @@ for (const { script } of MATRIX) {
 
 // --- Case 2 of 3, per script: an out-of-repository root --------------------
 
-for (const { script } of MATRIX) {
+// TYPED, NOT UNIVERSAL (plan 32-18). This case used to run for every row and
+// assert that EVERY script refuses an out-of-repository root. That is true of
+// seven of the eight and FALSE OF THE EIGHTH BY DESIGN, so the two directions
+// are now two separate tests keyed on the expectation. Asserting both in one
+// generic case would let either pass for the other's reason -- and `audit-gate`
+// and `audit-mutation-harness` are exactly the adjacency that needs separating:
+// both accept `--root`, both are on the shared argv seam, and they differ ONLY
+// in containment (`[edge:CUT-06/adjacency]`).
+
+for (const { script, contained, extraArgs = [] } of MATRIX) {
+  if (contained === "uncontained-read-only") continue;
   test(`${script}: an out-of-repository root exits 1 with REFUSED`, () => {
     const outside = mkdtempSync(join(tmpdir(), "audit-root-args-"));
     try {
-      const r = runScript(script, ["--root", outside]);
+      const r = runScript(script, ["--root", outside, ...extraArgs]);
       assert.equal(r.status, 1, `expected exit 1, got ${r.status} (stderr: ${r.stderr})`);
       assert.ok(
         r.stderr.includes(`${script}: REFUSED --`),
         `stderr must carry the containment-refusal prefix naming this script, got: ${r.stderr}`,
+      );
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- Case 2b: the OPPOSITE direction, for the uncontained-by-design rows -----
+
+for (const { script, contained, extraArgs = [] } of MATRIX) {
+  if (contained !== "uncontained-read-only") continue;
+  test(`${script}: an out-of-repository root is ACCEPTED as an argument, by design`, () => {
+    const outside = mkdtempSync(join(tmpdir(), "audit-root-args-"));
+    try {
+      const r = runScript(script, ["--root", outside, ...extraArgs]);
+      // The claim is NOT "it exits 0" -- an empty directory carries none of
+      // this gate's inputs, so it will fail on its own terms. The claim is that
+      // the run REACHED the gate's own logic instead of being turned away at
+      // the argument boundary. Both refusal prefixes must therefore be absent.
+      assert.ok(
+        !r.stderr.includes(`${script}: REFUSED --`),
+        "this script is uncontained BY DESIGN (it performs no write, see the write-freedom " +
+          "assertion below); an out-of-repository root must NOT be turned away by the " +
+          `containment seam, got: ${r.stderr}`,
+      );
+      assert.ok(
+        !r.stderr.includes(`${script}: BAD ARGUMENTS --`),
+        "an existing out-of-repository directory is a well-formed value for this flag; it " +
+          `must not be reported as an argument rejection, got: ${r.stderr}`,
       );
     } finally {
       rmSync(outside, { recursive: true, force: true });
@@ -776,13 +856,13 @@ for (const { script } of MATRIX) {
 // empty -- if a future change made the refusal depend on what the tree carries,
 // this case would stop passing, which is the point.
 
-for (const { script, contained } of MATRIX) {
+for (const { script, contained, extraArgs = [] } of MATRIX) {
   if (contained !== "refuses") continue;
   test(`${script}: a contained root that is not the default root is a SPLIT READ refusal`, (t) => {
     const fixture = mkdtempSync(join(ROOT, ".audit-root-synth-"));
     t.after(() => rmSync(fixture, { recursive: true, force: true }));
     try {
-      const r = runScript(script, ["--root", fixture]);
+      const r = runScript(script, ["--root", fixture, ...extraArgs]);
       assert.notEqual(
         r.status,
         0,
@@ -845,12 +925,12 @@ for (const { script, contained } of MATRIX) {
 // check in plan 32-12's evidence record confirms the tree is byte-identical
 // afterwards.
 
-for (const { script, contained } of MATRIX) {
+for (const { script, contained, extraArgs = [] } of MATRIX) {
   if (contained !== "refuses") continue;
   test(`${script}: every spelling that RESOLVES to the repository root is accepted`, () => {
-    const baseline = runScript(script, []);
+    const baseline = runScript(script, [...extraArgs]);
     for (const spelling of [".", ROOT, join(ROOT, "scripts", ".."), "./scripts/.."]) {
-      const r = runScript(script, ["--root", spelling]);
+      const r = runScript(script, ["--root", spelling, ...extraArgs]);
       assert.equal(
         r.status,
         baseline.status,
@@ -1088,12 +1168,21 @@ test("split-read contract: every root-accepting script that binds ../src statica
   // it as "still no violations found".
   assert.deepEqual(
     clean.sort(),
-    ["check-guard-fates", "check-skill-description-overlap"],
+    [
+      "audit-gate",
+      "audit-mutation-harness",
+      "check-guard-fates",
+      "check-skill-description-overlap",
+    ],
     "the clean controls changed. `check-skill-description-overlap` is the one skill gate that " +
       "honours an arbitrary contained root for BOTH halves of its comparison, and " +
-      "`check-guard-fates` derives everything it needs from a git object store. If either now " +
-      "binds a ../src import, it needs a refusal too; if a THIRD script became clean, its " +
-      "refusal may have been deleted.",
+      "`check-guard-fates` derives everything it needs from a git object store. `audit-gate` " +
+      "and `audit-mutation-harness` joined this population in plan 32-18 when it was keyed on " +
+      "the FLAG rather than on the shared seam; MEASURED there, neither binds a ../src " +
+      "specifier statically, so the split-read contract is satisfied for both by carrying no " +
+      "matching import at all rather than by carrying a refusal. If any of the four now binds " +
+      "a ../src import, it needs a refusal too; if a FIFTH script became clean, its refusal " +
+      "may have been deleted.",
   );
   for (const script of clean) {
     assert.deepEqual(
@@ -1169,5 +1258,167 @@ test("split-read contract: the predicate REPORTS a planted violation, and clears
     false,
     "the predicate must clear a text that carries the refusal -- otherwise it is reporting the " +
       "import, not the missing refusal, and every refusing script would be a false positive",
+  );
+});
+
+// ===========================================================================
+// THE WRITE-FREEDOM ASSERTION over `scripts/audit-gate.mjs` -- the SOLE
+// MECHANICAL REVOCATION of plan 32-16's containment acceptance (`T-32-22`).
+//
+// That plan accepted `audit-gate` as uncontained on a MEASURED basis: the
+// script performs no filesystem write, so the trust boundary containment
+// guards -- which tree a script WRITES -- does not exist for it. Its header
+// records the acceptance and names its own reversal trigger. This is where
+// that trigger is armed: an acceptance whose reversal depends on somebody
+// remembering it is not a reversal condition, it is a hope.
+//
+// TWO HALVES, because they fail in DIFFERENT DIRECTIONS. A deny-list over call
+// sites is open-ended (a write can always be spelled a new way); an allow-list
+// over the import surface is closed (a directly-imported name must be bound
+// before it can be called). Neither alone is enough, and neither is a
+// completeness proof -- the residual holes are NAMED below rather than implied.
+// ===========================================================================
+
+const UNCONTAINED_BY_DESIGN = MATRIX.filter(
+  (r) => r.contained === "uncontained-read-only",
+).map((r) => r.script);
+
+/** Source with whole-line comments and trailing line comments removed.
+ *
+ *  STRIPPING COMMENTS FIRST IS LOAD-BEARING, and the reason is measured rather
+ *  than defensive: `audit-gate.mjs` DISCUSSES writes in prose throughout its
+ *  header and its Bash-writer section, and plan 32-16 added a further header
+ *  note whose stated reversal condition is a write call appearing in this file.
+ *  An unstripped count would therefore red on the prose that documents the
+ *  assertion -- a self-invalidating header, which is the shape plan 32-16
+ *  already avoids for its own containment-resolver count. Same form here. */
+function withoutComments(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => (line.trim().startsWith("//") ? "" : line.replace(/\/\/.*$/, "")))
+    .join("\n");
+}
+
+/** The ENUMERATED filesystem-write API set. Enumerated rather than gestured at
+ *  because a `writeFileSync`-only check is MEASURED-INADEQUATE: it would miss
+ *  every other member below. Extend this list when Node grows a new write API;
+ *  do not narrow it. */
+const FS_WRITE_APIS = [
+  "writeFileSync",
+  "appendFileSync",
+  "createWriteStream",
+  "mkdirSync",
+  "rmSync",
+  "rmdirSync",
+  "unlinkSync",
+  "renameSync",
+  "cpSync",
+  "copyFileSync",
+  "truncateSync",
+  "writeSync",
+  // The `node:fs/promises` forms.
+  "writeFile(",
+  "appendFile(",
+  "copyFile(",
+] as const;
+
+for (const script of UNCONTAINED_BY_DESIGN) {
+  test(`${script}: E1 -- the DIRECT fs import surface is exactly the read-only set`, () => {
+    const text = scriptText(script);
+
+    // Every name bound from `node:fs`, in declaration order.
+    const fsImports = [...text.matchAll(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/g)]
+      .flatMap((m) => m[1]!.split(","))
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .sort();
+
+    assert.deepEqual(
+      fsImports,
+      ["readFileSync", "readdirSync"],
+      `${script}.mjs must bind ONLY read APIs from node:fs. A new name here means the ` +
+        "performs-no-filesystem-write basis recorded in this script's header and in plan " +
+        "32-16's `T-32-22` is REVOKED, and the script must be moved onto the containment seam " +
+        "in `lib/audit-root.mjs`. " +
+        "SCOPE, stated because an unqualified completeness claim is exactly the CR-08 shape " +
+        "this round exists to remove: this assertion is CLOSED over the DIRECT fs IMPORT " +
+        "SURFACE and over nothing wider. Within that surface a write API cannot be called " +
+        "without first being bound, so any fs name outside the permitted set is a failure. It " +
+        "is NOT a claim that no filesystem write is reachable by any means. " +
+        "This is an allow-list over an IMPORT SURFACE -- the exact OPPOSITE of an exclusion " +
+        "list over a population, which removes members from measurement. This plan's " +
+        "prohibition forbids the latter; the two differ in object and in direction, and this " +
+        "one removes nothing from any population.",
+    );
+
+    assert.equal(
+      /from\s*"node:fs\/promises"/.test(text),
+      false,
+      `${script}.mjs must bind nothing from node:fs/promises -- the promise forms are writes ` +
+        "this file's E2 count would still see, but binding them at all breaks the read-only basis",
+    );
+    assert.equal(
+      /import\s+\*\s+as\s+\w+\s+from\s*"node:fs/.test(text),
+      false,
+      `${script}.mjs must take no fs NAMESPACE import: a namespace binding makes every write ` +
+        "API reachable under one name, which would defeat this allow-list entirely",
+    );
+    assert.equal(
+      /require\(\s*"node:fs|import\(\s*"node:fs|require\(\s*"fs"|import\(\s*"fs"/.test(
+        withoutComments(text),
+      ),
+      false,
+      `${script}.mjs must perform no require() or dynamic import() of an fs module -- a ` +
+        "dynamic binding is invisible to the static allow-list above",
+    );
+  });
+
+  test(`${script}: E2 -- zero filesystem-write calls over comment-stripped source`, () => {
+    const stripped = withoutComments(scriptText(script));
+    const found = FS_WRITE_APIS.filter((api) => stripped.includes(api));
+
+    assert.deepEqual(
+      found,
+      [],
+      `${script}.mjs calls a filesystem-write API (${found.join(", ")}). CONSEQUENCE, not just ` +
+        "a fact: the performs-no-filesystem-write basis recorded in this script's header " +
+        "and accepted in plan 32-16 as `T-32-22` is REVOKED. This script now writes, so the " +
+        "trust boundary containment guards DOES exist for it, and it must be moved onto the " +
+        "containment seam in `lib/audit-root.mjs` rather than having this assertion relaxed. " +
+        "TWO RESIDUAL HOLES, named as MEASURED limits rather than hypotheticals so this pair " +
+        "is read as a scoped instrument and not as a completeness proof it cannot give. " +
+        "(1) A write reached through a name outside the enumerated set AND not bound at " +
+        "import time -- an openSync with a write flag, say -- evades this count, which is why " +
+        "E1's import-surface check exists beside it. " +
+        "(2) Present in this file TODAY rather than merely conceivable: it binds `spawnSync` " +
+        "from `node:child_process`, so a write performed BY A SPAWNED PROCESS is outside BOTH " +
+        "halves -- E1 sees no fs binding because there is none, and E2 counts no enumerated " +
+        "fs API because none is called. Neither half claims to cover it.",
+    );
+
+    // The stdio control, asserted rather than left implicit. This file's
+    // `process.stderr.write(` calls MUST NOT be caught: stdio is not a
+    // filesystem write, and a bare `.write(` pattern would red on a correct
+    // file -- making the assertion worthless in the other direction.
+    assert.ok(
+      stripped.includes("process.stderr.write("),
+      `${script}.mjs is expected to carry process.stderr.write( calls in live code; if it no ` +
+        "longer does, this stdio control has stopped controlling for anything and the " +
+        "enumerated-set anchoring above is no longer being exercised in the negative direction",
+    );
+  });
+}
+
+test("the write-freedom pair actually guards something", () => {
+  // NON-VACUITY. A pair of assertions that select no script proves nothing --
+  // the same empty-antecedent failure `CUT-03` forbids and the same shape this
+  // whole plan exists to remove one layer up.
+  assert.deepEqual(
+    UNCONTAINED_BY_DESIGN,
+    ["audit-gate"],
+    "the uncontained-by-design population changed. This expectation is not a general escape " +
+      "hatch: a script may carry it ONLY while the write-freedom pair above proves it still " +
+      "writes nothing. A new member needs its own recorded basis, in its own header, with the " +
+      "same measurement.",
   );
 });
