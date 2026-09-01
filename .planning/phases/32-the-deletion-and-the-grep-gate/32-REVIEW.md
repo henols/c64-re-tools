@@ -1,10 +1,10 @@
 ---
 phase: 32-the-deletion-and-the-grep-gate
-reviewed: 2026-09-01T12:00:00Z
+reviewed: 2026-09-01T16:00:00Z
 depth: standard
-round: 3
-supersedes: c9df889043110be9d7b573b31610fded359be9eb
-files_reviewed: 20
+round: 4
+supersedes: e35af74 (round-3 report)
+files_reviewed: 22
 files_reviewed_list:
   - .github/workflows/ci.yml
   - .gitignore
@@ -23,692 +23,548 @@ files_reviewed_list:
   - src/mcp/vice/audit-harness-restore.test.ts
   - src/mcp/vice/audit-root-args.test.ts
   - src/mcp/vice/docs-linerefs.test.ts
+  - src/mcp/vice/fixtures/harness-signal/plant-contract-driver.mjs
+  - src/mcp/vice/fixtures/harness-signal/restore-disarm-driver.mjs
   - src/mcp/vice/fixtures/harness-signal/restore-latch-driver.mjs
   - src/mcp/vice/fixtures/harness-signal/signal-window-driver.mjs
   - src/mcp/vice/guard-fates.test.ts
 findings:
-  critical: 3
-  warning: 10
-  info: 5
-  total: 18
+  critical: 1
+  warning: 36
+  info: 15
+  total: 52
 status: issues_found
 ---
 
-# Phase 32: Code Review Report (Round 3)
+# Phase 32: Code Review Report (Round 4)
 
 **Reviewed:** 2026-09-01
 **Depth:** standard
-**Files Reviewed:** 20
+**Files Reviewed:** 22
 **Status:** issues_found
-**Replaces:** round-2 report at blob `c9df889043110be9d7b573b31610fded359be9eb`
+**Replaces:** round-3 report at commit `e35af74`
 
 ## Summary
 
 Measured on the current tree before writing anything:
 
-- `node --test audit-root-args.test.ts guard-fates.test.ts docs-linerefs.test.ts audit-harness-restore.test.ts`
-  → 100/100 pass, 10.2 s.
-- `npm run test:automated` → `tests 3017 / pass 3011 / fail 0 / skipped 1 / todo 5`, 50.4 s,
-  `git status --porcelain` unchanged before and after (four pre-existing untracked docs only).
-- `audit-harness-restore.test.ts` run six times concurrently → 6/6 green, ~2.2 s each.
-- Population census: eight `scripts/*.mjs` carry the `--root` token (`audit-gate`,
-  `audit-mutation-harness`, `check-guard-fates`, `check-skill-cli-invocations`,
-  `check-skill-description-overlap`, `check-skill-fork-honesty`, `check-skill-tool-coverage`,
-  `generate-tool-support-table`) and MATRIX carries exactly those eight.
+- `node --test audit-harness-restore.test.ts` → **15/15 pass**, 2.2 s.
+- `npm run test:automated` → `tests 3027 / pass 3021 / fail 0 / skipped 1 / todo 5`, 47.5 s.
+- `npx tsc --noEmit` in `src/mcp/vice` → exit 0.
+- `git status --porcelain` byte-identical before and after (four pre-existing untracked docs only).
+- Registry replay of all 61 rows through the harness's own plant arithmetic (read-only reimplementation): **35 rows carry a plant, 0 fail the new post-condition, 0 fail the strict `slice`-splice equality, 0 carry a code point above U+00FF.**
+- `JSON.stringify(registry, null, 2) + "\n"` is byte-identical to the committed `guard-fates.json`, so the write-back is a genuine no-op on an unchanged sweep.
 
-Four of round 2's criticals were genuinely aimed at and three of them landed. `CR-05` is closed:
-the harness now reads argv through `parseRootArg()` with `valueFlags: ["--row","--rows","--out"]`,
-so `--root` with no value, `--root --all`, `--out` as the last token and every typo are hard
-`BAD ARGUMENTS --` rejections at exit 1 before the registry is opened. `CR-08` is closed properly:
-the completeness population is now derived from the flag (`src.includes("--root")`), it selects
-eight, `audit-gate` and `audit-mutation-harness` are both inside it with typed expectations, and
-the guard is additionally cross-checked against a shell glob expanded in another process so the
-two sides cannot be the same mechanism. `CR-02`'s post-condition arithmetic was changed from total
-occurrences to introduced occurrences, which unblocked `scripts/lib/skill-honesty-checks.mjs`
-exactly as round 2 asked. And the restore-on-signal invariant plan 32-14 could not observe is now
-observed for real, through an out-of-process driver rather than by injecting an `await` into the
-instrument — that is the right call and it was executed cleanly.
+**The three round-3 criticals are genuinely closed, and I proved each one non-vacuously
+rather than taking the tests' word for it.** I copied the harness, its seam and the four
+drivers into a scratch tree outside the repository and ran five mutations against the
+committed fixtures:
 
-Three things are broken anyway, all three in the harness, all three in the class this phase exists
-to police.
+| mutation applied to the copied harness | case that should go red | observed |
+|---|---|---|
+| post-condition reverted to the whole-file `post - pre` difference | `overlap-accepted` | `planted=false` → **RED** |
+| `CR-02` replacer function reverted to a replacement STRING | `substitution-is-verbatim` | `planted=false` → **RED** |
+| the `latin1`-representability loop deleted | `non-latin1-refused` | `planted=true` → **RED** |
+| the `restored` latch re-introduced | disarm `SIGINT`/`SIGTERM` second window | `exitCode=130`, `fileByteIdentical=false`, second plant still on disk → **RED** |
+| `originals.clear()` removed from `restoreAll()` | the `WR-03` no-op case | `sentinelIntactAfterSecondCall=false`, driver exit 1 → **RED** |
 
-1. **The post-condition is still wrong, and one committed evidence row still cannot be
-   re-measured.** Round 2's suggested fix (`applied - before !== 1`) was adopted verbatim,
-   including its incorrect claim that the form "still catches" the overlap case. It does not: it
-   *mis-fires* on it. Replaying every recorded plant against the current tree,
-   `src/mcp/vice/hop-chain-comments.test.ts` — whose `replace` is its own `find` with a leading
-   newline — computes `pre=1, post=1, introduced=0` and is refused. That is the same defect
-   round 2 recorded, moved one row over, and the response this round was to contain the refusal
-   to its own row rather than to fix the arithmetic. Because `plantRefused` sets `report.failed`,
-   `hardFailure` is still set, so **an `--all` sweep still cannot write the registry back** — the
-   consequence round 2 recorded as `IN-10` is now permanent rather than incidental. (`CR-09`)
-2. **The restore latch is a permanent one-shot, and exporting `plant()`/`restoreAll()` made that
-   reachable.** `restoreAll()` sets `restored = true` and never clears it, so after the first call
-   every later plant is unprotected. Reproduced live against the real exported API: plant →
-   `restoreAll()` → plant again → SIGINT gives exit 130 with the mutation still on disk, and the
-   ordinary exit path leaves it too. The module header's "Restoration is idempotent and registered
-   on the normal path AND on `exit`, `SIGINT`, `SIGTERM` and `uncaughtException`" is false for any
-   consumer that restores more than once. (`CR-10`)
-3. **The `latin1` round trip silently writes bytes the descriptor does not record.** A `replace`
-   containing any code point above U+00FF is truncated to one byte by
-   `Buffer.from(mutated, "latin1")`, while the post-condition — which compares JS strings — reports
-   "introduced 1" and passes. Demonstrated: `→` is written as the single byte `0x92`, not
-   `e2 86 92`. That is precisely the record-versus-reality divergence the CR-02 post-condition was
-   added to make impossible, surviving inside it. Latent today (0 of 35 descriptors carry a
-   non-ASCII `find` or `replace`), silent when it fires. (`CR-11`)
+Every one of the five discriminates. `CR-09`, `CR-10`, `CR-11`, `WR-03`, `WR-27`, `WR-29`
+and `IN-10` are closed. Round 3 asked for exact-equality arithmetic; the executor shipped a
+different two-fact form (position + length delta) and argued it is exact under overlap — it
+is, for the replacer-function code path, and the `substitution-is-verbatim` pin is what
+keeps it from being a tautology. That call is sound and it was executed well.
 
-Behind those, the WR-03 investigation is measured but not decisive (`WR-27`), the new porcelain
-narrowing dropped the one tree a mis-contained plant would actually land in (`WR-29`), and the
-`audit-gate` uncontained-by-design acceptance rests on a "performs no filesystem write" basis whose
-own paired guard names the hole it omits (`WR-32`). Most of round 2's warnings are untouched:
-`docs-linerefs.test.ts`, `check-guard-fates.mjs`'s `redOwed()`, `check-guard-fates.d.mts` and
-`ci.yml` were not modified this round at all, so `WR-06`–`WR-10`, `WR-14`, `WR-19`, `WR-23`,
-`WR-25`, `WR-26`, `IN-01`, `IN-04` and `IN-08` stand verbatim.
+**What is still wrong.** Nothing new rises to Critical. `CR-07` — the one round-3 critical
+nobody touched — is still open and still live: `check-skill-cli-invocations.mjs:266-271`
+`rmSync`s and repopulates `installer/skills/` at module scope on the default root, the
+adjacency loop at `audit-root-args.test.ts:930-932` drives it five times, and four other
+test files read that tree under a parallel runner.
+
+Behind that, three of the four things this round set out to fix are only **half** closed, and
+in each case the unclosed half is the one the phase's own standard names:
+
+1. `WR-34` was fixed for `plant.file` and left alone for `guard.cwd` (`:560`) — which still
+   reports a bad **registry** value as a `--root` refusal, and, worse, throws out of
+   `measureRow()` entirely and aborts the whole sweep. That is exactly the blast-radius
+   defect plan 32-15 built the per-row containment for, surviving on the guard half of the
+   same function (`WR-37`).
+2. `WR-28`'s poll-loop liveness check was added — twice, once per copy — but the
+   `'exit'`-versus-`'close'` half and the 200 ms negative-control hold were not, so the race
+   the finding describes is unchanged (`WR-28`, and `WR-40` on the duplication that made the
+   fix have to be written twice).
+3. `WR-36` is closed for `plant()` and untouched for everything else. Nothing in the tree
+   imports or spawns `measureRow()`, `selectRows()` or `main()`, so the D-05 verdict skip —
+   whose own comment at `:743-748` names "driven by the VERDICT, never by the absence of a
+   descriptor" as the load-bearing property — and the refused-plant containment that is the
+   entire point of plan 32-15 both still ship with zero standing coverage.
+
+One measured vacuity worth naming: in `bad-plant-target-attribution`, the assertion carrying
+the comment *"This assertion is the one that must never change"* (`planted === false`) passes
+under a **total** containment relaxation, because the escape target does not exist and
+`existsSync` refuses it first. I removed the containment check entirely in the copied tree and
+that assertion stayed green (`WR-38`). The test as a whole still goes red, via the
+`/OUTSIDE the repository root/` message match — so it is not a vacuous test, but the assertion
+labelled as the containment guard is not the one doing the guarding.
+
+Everything else round 3 recorded against `check-guard-fates.mjs`, `check-guard-fates.d.mts`,
+`docs-linerefs.test.ts`, `guard-fates.test.ts`, `audit-gate.mjs`, `lib/audit-root.mjs`,
+`audit-root-args.test.ts` and `.gitignore` stands verbatim: `git diff e35af74..HEAD` is empty
+for every one of those files.
 
 ---
 
-## Round-2 Finding Dispositions
+## Round-1/2/3 Finding Dispositions
 
-Re-verified against the current tree this round. Round-1 ids `CR-01`–`CR-04`, `IN-06`, `IN-07`
-remain closed as recorded in round 2 and are not repeated here.
+Re-verified against the current tree. Ids dispositioned as closed in earlier rounds
+(`CR-01`–`CR-04`, `WR-13`, `IN-06`, `IN-07`) are not repeated.
 
 | id | disposition | evidence |
 |---|---|---|
-| CR-05 | **Closed.** `parseArgs()` now calls `parseRootArg(argv, { script, booleanFlags: ["--all"], valueFlags: ["--row","--rows","--out"] })`; all four flags get the missing/flag-shaped/repeated rules. Spawned matrix rows cover the harness. | `audit-mutation-harness.mjs:523-546`; `audit-root.mjs:224-330`; `audit-root-args.test.ts:531-538` |
-| CR-06 | **Partially closed; recurs at a new row.** The `skill-honesty-checks` case is fixed. The new arithmetic mis-fires on an overlapping `replace` → `CR-09`. | `audit-mutation-harness.mjs:332-348`; registry row `src/mcp/vice/hop-chain-comments.test.ts` |
-| CR-07 | **Still stands, untouched.** The adjacency-accept loop still runs `check-skill-cli-invocations` five times (one baseline + four spellings), and that gate still `execFileSync`s `installer/scripts/sync-skills.mjs`, which `rmSync`s and repopulates `installer/skills/` while other test files read it under a parallel runner. No mitigation was added. | `audit-root-args.test.ts:928-948`; `check-skill-cli-invocations.mjs:265-270`; `installer/scripts/sync-skills.mjs:74-82` |
-| CR-08 | **Closed.** Population derived from `ROOT_FLAG` over a `latin1` read of every `scripts/*.mjs`, cross-checked against an out-of-process shell glob, with a `>= 8` non-vacuity floor and typed per-row expectations. Both previously-invisible scripts are now members. | `audit-root-args.test.ts:628-681, 720-777` |
-| WR-01 | **Still stands.** `timedOut: true` at `:442` is unconditional inside `if (result.error)`; ENOENT/EACCES is still reported to the operator as "The control TIMED OUT." | `audit-mutation-harness.mjs:421-443, 611` |
-| WR-02 | **Still stands.** `maxBuffer` is on `porcelain()` (`:223`) only; the guard `spawnSync` at `:412-418` still keeps Node's 1 MiB default. | `audit-mutation-harness.mjs:223` vs `:412-418` |
-| WR-03 | **Open, and now measured — with the wrong question asked.** A test exists, it passes, and it is blind to the latch's real defect. See `WR-27` and `CR-10`. | `restore-latch-driver.mjs:92-125`; `audit-harness-restore.test.ts:449-510` |
-| WR-04 | **Still stands (latent).** No `realpathSync` anywhere in the seam or the harness; `git ls-files -s \| awk '$1=="120000"'` is still empty. | `audit-root.mjs:30-33` |
-| WR-05 | **Still stands.** `resolveBin()` still maps `argv[0] === "--run"` to `npm`. Re-measured: `npm --run typecheck` prints `Unknown command: "typecheck"` and exits 1. No registry row uses the convention (0 of 61), so it is documented-but-dead. | `audit-mutation-harness.mjs:373-384` |
-| WR-06 | **Still stands, untouched.** `redOwed()` requires `control.exitStatus === 0` and nothing else; no `command` equality, no `plant`, no tie to `row.newSubject`. All 35 committed rows satisfy the stricter rule (measured: 0 rows with `control.command !== command`), which remains a property of the producer. | `check-guard-fates.mjs:728-761` |
-| WR-07 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged this round |
-| WR-08 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged this round |
-| WR-09 | **Still stands, untouched.** `docs-linerefs.test.ts` has no diff since round 2. | `git diff 05ca6c6..HEAD -- src/mcp/vice/docs-linerefs.test.ts` is empty |
-| WR-10 | **Still stands, untouched.** | `ci.yml` unchanged this round |
+| CR-05 | **Closed** (round 3). Unchanged. | `audit-mutation-harness.mjs:680-703` |
+| CR-06 | **Closed.** Superseded by the `CR-09` fix; the `pre-existing-replacement-accepted` case is the standing pin, and it is red under the reverted arithmetic. | `plant-contract-driver.mjs:146-150`; mutation table above |
+| CR-07 | **STILL OPEN, untouched.** `check-skill-cli-invocations.mjs:266-271` runs `installer/scripts/sync-skills.mjs` at module scope whenever the resolved root is the repository; that script `rmSync`s and repopulates `installer/skills/` (`sync-skills.mjs:74-80`). The adjacency loop spawns the gate five times (baseline + four spellings), all resolving to the repository root. Four other test files read `installer/skills/`. No mitigation added. | `audit-root-args.test.ts:928-948`; `check-skill-cli-invocations.mjs:266-271`; `installer/scripts/sync-skills.mjs:74-80`; `grep -rl installer/skills src/mcp/vice/*.test.ts` → 5 files |
+| CR-08 | **Closed** (round 3). Unchanged. | `audit-root-args.test.ts:628-681` |
+| CR-09 | **CLOSED.** Post-condition rewritten to position + length-delta at the unique match site (`:488-505`). Replayed over all 35 committed descriptors: 0 refusals, and `mutated` equals the strict `slice`-splice for every one. The `--all` sweep reaches the write-back (`evidence/32-gap1-overlap-and-writeback.md:546-563`: `measured=35 skipped=26 total=61`, 0 `PLANT REFUSED`, 0 `UNMEASURABLE`, `registry: <path>`). Reverting the arithmetic reds `overlap-accepted`. | `audit-mutation-harness.mjs:488-505`; mutation table |
+| CR-10 | **CLOSED.** The `restored` latch is deleted; `originals.clear()` is the only idempotence mechanism (`:171-184`, and the note at `:196-234` records why). Re-introducing the latch in a copied tree reds both disarm cases: `exitCode=130`, `fileByteIdentical=false`, `SECOND-PLANT-STILL-THERE`. | `audit-mutation-harness.mjs:171-184`; `restore-disarm-driver.mjs`; `audit-harness-restore.test.ts:815-863`; mutation table |
+| CR-11 | **CLOSED.** A non-latin1-representable `find`/`replace` is refused by name, code point and index, before path resolution and before any read or write (`:338-362`). Deleting the loop reds `non-latin1-refused`. Measured basis re-confirmed independently: 0 of 70 descriptor fields carry a code point above U+00FF. | `audit-mutation-harness.mjs:338-362`; mutation table |
+| WR-01 | **Still stands.** `timedOut: true` at `:599` is unconditional inside `if (result.error)`; ENOENT/EACCES/ENOBUFS all report "The control TIMED OUT." | `audit-mutation-harness.mjs:578-600, 767` |
+| WR-02 | **Still stands.** `maxBuffer` is on `porcelain()` (`:258`) only; the guard `spawnSync` at `:569-575` keeps Node's 1 MiB default, and an overflow lands in the `result.error` branch above → reported as a timeout. | `audit-mutation-harness.mjs:258` vs `:569-575` |
+| WR-03 | **CLOSED.** The doubt was whether the second `restoreAll()` is a genuine no-op. It is, `originals.clear()` is the mechanism, and removing that clear reds the case (`sentinelIntactAfterSecondCall=false`, driver exit 1). | `restore-latch-driver.mjs:92-134`; mutation table |
+| WR-04 | **Still stands (latent).** No `realpathSync` in the seam or the harness. | `audit-root.mjs:31-34, 84-88` |
+| WR-05 | **Still stands.** `resolveBin()` still maps `argv[0] === "--run"` to `npm`; 0 of 61 rows use the convention. | `audit-mutation-harness.mjs:530-541` |
+| WR-06 | **Still stands, untouched.** `redOwed()` requires `control.exitStatus === 0` and nothing else — no `command` equality, no `plant`, no tie to `row.newSubject`. | `check-guard-fates.mjs:728-761` |
+| WR-07 | **Still stands, untouched.** | `git diff e35af74..HEAD -- scripts/check-guard-fates.mjs` empty |
+| WR-08 | **Still stands, untouched.** | as above |
+| WR-09 | **Still stands, untouched.** | `git diff e35af74..HEAD -- src/mcp/vice/docs-linerefs.test.ts` empty |
+| WR-10 | **Still stands.** The only `ci.yml` change this round is `node-version: 22` → `24` in four jobs. | `git diff e35af74..HEAD -- .github/workflows/ci.yml` |
 | WR-11 | **Open by operator decision (2026-09-01).** Unchanged. | — |
-| WR-12 | **Still stands.** `evidenceMarkdown()` still wraps plant strings in single backticks (`:841`) and output in bare fences. | `audit-mutation-harness.mjs:841, 745-753, 834-836, 849-851` |
-| WR-13 | **Closed.** `audit-gate.mjs` is on the shared strict parser (`:1170-1180`), its hand-rolled reader is gone, and the six copied comment blocks that asserted the non-migration were corrected in place. The containment half is a recorded decision with a mechanically-armed reversal trigger (`E1`/`E2`), not an omission — but see `WR-32` for what the recorded basis leaves out. | `audit-gate.mjs:54-87, 1159-1182`; `audit-root-args.test.ts:1326-1418` |
-| WR-14 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged this round |
-| WR-15 | **Still stands, and drifted again.** `.gitignore:53` still cites `scripts/audit-mutation-harness.mjs:654`. Line 654 is now `revert(planted.absolute);`. The claim lives at `:758` and `:1024`. | `sed -n 654p scripts/audit-mutation-harness.mjs` |
-| WR-16 | **Still stands.** `resolve(base, rootArg)` is unchanged and neither `usageLine()` nor `resolveContainedRoot`'s `@param` mentions the base. Worse this round: `audit-gate.mjs:1187` does `resolve(rootArg ?? …)` against the **process cwd**, so the eight root-accepting scripts now disagree with each other about what a relative `--root` means. | `audit-root.mjs:86`; `audit-gate.mjs:1187` |
-| WR-17 | **Still stands.** `carriesSplitReadRefusal()` is still a bare `text.includes(...)`. | `audit-root-args.test.ts:614-616` |
-| WR-18 | **Still stands.** `staticSrcImports()` still matches only the script's own text. | `audit-root-args.test.ts:600-604` |
-| WR-19 | **Still stands, untouched.** | `docs-linerefs.test.ts` unchanged this round |
-| WR-20 | **Still stands.** `generate-tool-support-table` is still a `"refuses"` row and still takes the adjacency loop, so the committed `docs/tool-support.md` is still written six times per run. | `audit-root-args.test.ts:419-427, 928-948` |
-| WR-21 | **Still stands, verbatim.** Both budget notes still say "four scripts x four runs (one unflagged baseline plus three spellings) = 16" and "Total end-to-end runs: 19". The loop at `:930` iterates **four** spellings → 20 runs for the loop alone, plus three more completed runs = 23. | `audit-root-args.test.ts:44-51, 915-925, 930` |
-| WR-22 | **Still stands.** `splitReadRefusalReason` is still absent from `audit-root.d.mts`; the file declares two of three exports. | `audit-root.d.mts:1-26` |
-| WR-23 | **Still stands, untouched.** `check-guard-fates.d.mts` has no diff; `GuardFateObservedRed` still omits `plant`. | `check-guard-fates.d.mts:17-24` |
-| WR-24 | **Still stands.** `usageLine()` still emits `[--root <dir>]` unconditionally for all eight consumers. | `audit-root.mjs:168-175` |
-| WR-25 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged this round |
-| WR-26 | **Still stands, untouched.** | `ci.yml`, `check-guard-fates.mjs`, `docs-linerefs.test.ts` unchanged this round |
+| WR-12 | **Still stands.** `evidenceMarkdown()` wraps plant strings in single backticks at `:998`. | `audit-mutation-harness.mjs:998` |
+| WR-14 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged |
+| WR-15 | **Still stands, and drifted a THIRD time.** `.gitignore:53` cites `scripts/audit-mutation-harness.mjs:654`; line 654 is now the excerpt regex `/(not ok \|AssertionError\|…)/`. The claim now lives at `:915` and `:1227`. Round 3 recorded it as `:758`/`:1024`; those have moved too. | `sed -n 654p scripts/audit-mutation-harness.mjs`; `grep -n "EVIDENCE VOID\|evidence is void"` |
+| WR-16 | **Still stands.** `resolve(base, rootArg)` at `audit-root.mjs:86` is repo-root-relative; `audit-gate.mjs:1187` does `resolve(rootArg ?? …)` against the process cwd. The eight root-accepting scripts still disagree about what a relative `--root` means. | `audit-root.mjs:86`; `audit-gate.mjs:1187` |
+| WR-17 | **Still stands.** `carriesSplitReadRefusal()` is a bare `text.includes(...)`. | `audit-root-args.test.ts:607-611` |
+| WR-18 | **Still stands.** `staticSrcImports()` matches only the script's own text. | `audit-root-args.test.ts:602-605` |
+| WR-19 | **Still stands, untouched.** | `docs-linerefs.test.ts` unchanged |
+| WR-20 | **Still stands.** `generate-tool-support-table` is still a `"refuses"` row and still takes the adjacency loop, so the committed `docs/tool-support.md` is written five times per run. | `audit-root-args.test.ts:419-427, 928-948` |
+| WR-21 | **Still stands, verbatim.** `:919` still says "four scripts x four runs (one unflagged baseline plus three spellings) = 16" and `:50` still says "Total end-to-end runs: 19". The loop at `:932` iterates **four** spellings → 20 for the loop alone. | `audit-root-args.test.ts:50, 919, 932` |
+| WR-22 | **Still stands.** `splitReadRefusalReason` is absent from `audit-root.d.mts`; two of three exports declared. | `audit-root.d.mts:1-26` |
+| WR-23 | **Still stands, untouched.** `GuardFateObservedRed` omits `plant`. | `check-guard-fates.d.mts:17-24` |
+| WR-24 | **Still stands.** `usageLine()` emits `[--root <dir>]` unconditionally. | `audit-root.mjs:173-179` |
+| WR-25 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged |
+| WR-26 | **Still stands, untouched.** | `ci.yml` / `check-guard-fates.mjs` / `docs-linerefs.test.ts` unchanged in substance |
+| WR-27 | **CLOSED.** The latch is gone, so the criticism ("cannot distinguish the latch from `originals.clear()`") is moot; the discriminating second-window pair now exists and is red against a re-introduced latch. | `audit-harness-restore.test.ts:642-863`; mutation table |
+| WR-28 | **Partially closed.** The plant-poll loop now carries the `!exited` liveness check (`:411-422`, and again at `:762-773`). NOT done: the exit promise still resolves on `'exit'` rather than `'close'` (`:361-368`, `:691-698`), and the negative control's hold is still 200 ms (`:337`). See the finding below. | `audit-harness-restore.test.ts:337, 361-368, 411-422` |
+| WR-29 | **CLOSED.** `src/` is admitted, with a derivation re-run against the registry (23/10/2 split recorded at `:238-280`), minus `/fixtures/` and dot-prefixed segments — both exclusions carry a measured 0-of-35 cost. | `audit-harness-restore.test.ts:238-305` |
+| WR-30 | **Still stands.** `.gitignore:63-66` still says the test "asserts `git status --porcelain` is byte-identical across an interrupted run". It does not — `porcelainByteIdentical` is recorded, not asserted (`audit-harness-restore.test.ts:198-200, 282-284, 463`). The entry is still load-bearing for the reason round 3 gave; the sentence naming why is still false. | `.gitignore:57-66`; `audit-harness-restore.test.ts:198-200, 463` |
+| WR-31 | **Still stands.** `src.includes(ROOT_FLAG)` under a docblock promising "ACCEPTS a root, HOWEVER IT READS IT". | `audit-root-args.test.ts:641, 663` |
+| WR-32 | **Still stands.** The header's no-write basis still omits `runGuardsLive()`'s `spawnSync(process.execPath, ["--test", …])` over `docs-*.test.ts` found under the uncontained root. | `audit-gate.mjs:66-77, 1187`, `:263` |
+| WR-33 | **Partially addressed, still stands.** `withoutComments()` now blanks whole-line comments first, but the trailing arm `line.replace(/\/\/.*$/, "")` is still applied to code lines, so `const doc = "see https://x"; writeFileSync(p, doc);` still strips to zero write calls. Only-false-greens direction unchanged, and E2 is the sole mechanical revocation of `T-32-22`. | `audit-root-args.test.ts:1295-1300` |
+| WR-34 | **Half closed.** `plant.file` is re-attributed to the registry with the containment refusal carried verbatim (`:367-390`), and the `bad-plant-target-attribution` case pins it. `guard.cwd` at `:560` is untouched: a bad registry `cwd` still produces `--root "/x" resolves to … which is OUTSIDE the repository root`. Reproduced directly against the seam. | `audit-mutation-harness.mjs:560`; `audit-root.mjs:95-101` |
+| WR-35 | **Still stands.** `resolveBin()` unchanged; `guard.argv` is handed to `process.execPath` with no allow-list, so `argv: ["-e", "<js>"]` in the registry would be evaluated — contradicting the header clause at `:126-128`. | `audit-mutation-harness.mjs:126-128, 530-541, 569-575` |
+| WR-36 | **Partially closed.** `plant()` now has eight named contract cases, all non-vacuous (mutation table). NOT closed: nothing imports or spawns `measureRow()`, `selectRows()` or `main()`, so the D-05 verdict skip (`:749-756`) and the refused-plant containment (`:793-804`) — plan 32-15's whole deliverable — still have zero coverage. | `grep -rl audit-mutation-harness` → only the four drivers + two test files, none of which reach `measureRow()` |
 | IN-01 | **Still stands.** | `grep -rn allowExtra scripts/ src/` |
-| IN-02 | **Still stands.** `after = porcelain(root)` at `:937` precedes both writes. | `audit-mutation-harness.mjs:937-972` |
-| IN-03 | **Still stands.** | `audit-mutation-harness.mjs:172-187` |
-| IN-04 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged this round |
-| IN-05 | **Still stands.** `grep -n unhandledRejection scripts/audit-mutation-harness.mjs` is empty. | `audit-mutation-harness.mjs:200-213` |
-| IN-10 | **Still stands, and hardened into a permanent condition.** `if (!hardFailure) writeFileSync(registryPath, …)` is unchanged, and `CR-09` guarantees `hardFailure` on every `--all` run, so `--all` can never write the registry today. | `audit-mutation-harness.mjs:922, 964-966` |
+| IN-02 | **Still stands.** `after = porcelain(root)` at `:1098` precedes both the registry write (`:1168`) and the evidence write (`:1175`). | `audit-mutation-harness.mjs:1098, 1168, 1175` |
+| IN-03 | **Still stands.** | `audit-mutation-harness.mjs:171-194` |
+| IN-04 | **Still stands, untouched.** | `check-guard-fates.mjs` unchanged |
+| IN-05 | **Still stands.** `grep -n unhandledRejection scripts/audit-mutation-harness.mjs` is empty. | `audit-mutation-harness.mjs:235-248` |
+| IN-08 | **Still stands, untouched.** | `ci.yml` / `check-guard-fates.mjs` unchanged in substance |
+| IN-10 | **CLOSED.** `--all` reaches the write-back. Recorded run: `counts: measured=35 skipped=26 total=61`, `registry: <path>`, `tree: restored byte-identical to the baseline`, 0 `PLANT REFUSED`, 0 `UNMEASURABLE`. Independently corroborated: the registry round-trips byte-identically through `JSON.stringify(…, null, 2) + "\n"`. | `evidence/32-gap1-overlap-and-writeback.md:546-563` |
+| IN-11 | **Still stands.** `lines.push("\`\`\`")` at `:974` and `:976`, against `lines.push("```")` everywhere else in the same function. | `audit-mutation-harness.mjs:974, 976` |
+| IN-12 | **Still stands.** The six-file CORRECTION block is unchanged in all six. | `grep -c "CORRECTION" scripts/*.mjs` |
+| IN-13 | **Still stands, drifted.** Now at `generate-tool-support-table.mjs:384`. | `grep -n "Plan 32-11 migrates" scripts/` |
+| IN-14 | **Still stands.** The attempt-log test at `:865-890` still reads a module-level array populated by the tests above it. The new disarm and plant-contract cases deliberately do not push, which is the right call and is documented at `:646-655`. | `audit-harness-restore.test.ts:865-890` |
+| IN-15 | **Still stands.** `booleanFlags` has no `seen` check. | `audit-root.mjs:292-295` |
 
 ---
 
 ## Narrative Findings (AI reviewer)
 
-New ids continue from round 2 so no id is ever reused: criticals start at `CR-09`, warnings at
-`WR-27`, info at `IN-11`.
+New ids continue: warnings from `WR-37`, info from `IN-16`. No new Critical.
 
 ## Critical Issues
 
-### CR-09: the corrected post-condition mis-fires on an overlapping `replace`, so one committed row is still un-reproducible and `--all` can never write the registry
+### CR-07: the adjacency loop rebuilds `installer/skills/` five times while four other test files read it
 
-**File:** `scripts/audit-mutation-harness.mjs:332-348`
+**File:** `src/mcp/vice/audit-root-args.test.ts:928-948`;
+`scripts/check-skill-cli-invocations.mjs:266-271`;
+`installer/scripts/sync-skills.mjs:74-80`
 
-**Issue:** Round 2's `CR-06` fix was adopted exactly as written, including the sentence "Note the
-overlap case (`replace` containing `find`, or splicing joining boundaries) is still caught by this
-form." It is not caught — it is *mis-fired on*. The check is:
-
-```js
-const preExisting  = text.split(descriptor.replace).length - 1;
-const afterMutation = mutated.split(descriptor.replace).length - 1;
-const introduced = afterMutation - preExisting;
-if (introduced !== 1) throw …
-```
-
-When `replace` textually overlaps the region it replaces, the new occurrence and the pre-existing
-one share bytes and `split` counts them as one. The registry has such a row today. Its descriptor
-is `find: "// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1"` and
-`replace: "\n" + find` — i.e. insert a blank line. Replaying every recorded plant against the
-current tree with the harness's own code:
-
-```
-$ node -e '…replay plant() arithmetic over all 61 rows…'
-FAIL src/mcp/vice/hop-chain-comments.test.ts occ 1 pre 1 post 1
-rows with plant: 35 failing: 1
-```
-
-`pre = 1` because the file already contains a newline immediately before the comment; `post = 1`
-because after the insert it still contains exactly one `"\n// src/mcp/vice -> …"`. `introduced`
-comes out `0` and the plant is refused. The bytes that would reach disk are exactly the bytes the
-descriptor records; a reader applying the find/replace by hand reproduces it perfectly. The
-instrument refuses its own honest evidence.
-
-The harness header already knows this (`:626-633` names this row and says the difference "comes
-out 0 … even after the post-condition arithmetic was corrected"). The response was to contain the
-refusal to its own row instead of fixing the arithmetic. That containment does not remove the
-consequence, because `measureRow()` sets `report.failed = true` alongside `report.plantRefused`
-(`:640-641`), `main()` sets `hardFailure` from `report.failed` (`:922`), and the write-back is
-gated on `!hardFailure` (`:964`). So:
-
-- Round 2 recorded that "one of the 35 machine-captured rows can no longer be re-measured by the
-  committed instrument." That is **still true**, of a different row.
-- Round 2's `IN-10` ("`--all` currently cannot write the registry at all") is no longer a passing
-  state — it is now a permanent property of the committed tree.
-
-**Fix:** Stop counting occurrences at all. The invariant the assertion actually wants is "the bytes
-written are the bytes a hand-applied splice of this descriptor produces", and that is an equality,
-not a count:
+**Issue:** Carried forward from round 3, untouched, and re-verified live this round. At module
+scope — before any check runs — `check-skill-cli-invocations.mjs` does:
 
 ```js
-const at = text.indexOf(descriptor.find);
-const expected = text.slice(0, at) + descriptor.replace + text.slice(at + descriptor.find.length);
-if (mutated !== expected) {
-  throw new Error(
-    `row ${row.historicalPath}: plant post-condition FAILED for ${descriptor.file} -- applying ` +
-      "the recorded `find`/`replace` by hand at the single match site does not produce the text " +
-      "this harness would write. The row would promise a reader a reproduction that does not " +
-      "reproduce. Nothing was written.",
-  );
+if (P.root === DEFAULT_ROOT) {
+  execFileSync(process.execPath, [P.syncScript], { cwd: P.root, stdio: "pipe" });
 }
 ```
 
-`find` is already proven to occur exactly once at `:287-295`, so `indexOf` is unambiguous. This
-form is exact, is immune to overlap and to pre-existing occurrences alike, and — unlike a count —
-cannot pass while the written bytes differ (see `CR-11`, which the byte-level variant of this same
-comparison also closes). After fixing, re-run
-`node scripts/audit-mutation-harness.mjs --row src/mcp/vice/hop-chain-comments.test.ts` and confirm
-the recorded red still reproduces, then re-run `--all` and confirm the registry write-back is
-reached.
+and `sync-skills.mjs` then does `rmSync(DEST, { recursive: true, force: true })` followed by a
+`cpSync` repopulation of `installer/skills/`. The adjacency-accept loop spawns that gate five
+times per run — one unflagged baseline plus the four spellings `".", ROOT,
+join(ROOT,"scripts",".."), "./scripts/.."`, every one of which resolves to the repository root
+and therefore takes the sync branch. Five `rm -rf`-and-rebuild cycles of a shared tree, inside
+`node --test '*.test.*'` running ~120 files concurrently, while `ci-suite-coverage.test.ts`,
+`anno-verb-coverage.test.ts`, `skill-attribution.test.ts` and `removal-gate.test.ts` all read
+`installer/skills/`.
 
----
+`installer/skills/` is gitignored, so this is invisible to every porcelain assertion in the
+suite — including `attributablePorcelainDelta()`. The failure mode is a sibling reading a
+half-populated tree and reporting a missing skill, which reads as a real regression.
 
-### CR-10: `restoreAll()`'s `restored` latch never resets, so any plant made after the first restore is left on disk — including on SIGINT
+It has not been observed failing here (the full suite was green twice today), which is what
+makes it a latent scheduling hazard rather than a broken build — but the window is a real
+`rm -rf` of a directory four other files read, and it is opened four extra times purely to
+test flag spellings.
 
-**File:** `scripts/audit-mutation-harness.mjs:170-187` (the latch), `:200-213` (the handlers it
-guards), `:257` and `:172` (the newly exported surface that makes it reachable)
-
-**Issue:** The latch is a module-lifetime one-shot:
-
-```js
-let restored = false;
-export function restoreAll() {
-  if (restored) return;
-  restored = true;
-  for (const [abs, bytes] of originals) { … }
-  originals.clear();
-}
-```
-
-Nothing ever sets `restored` back to `false`, and `plant()` does not clear it. Once any consumer
-has called `restoreAll()` — which plan 32-19's own `restore-latch-driver.mjs` does twice — the
-`exit`, `SIGINT`, `SIGTERM` and `uncaughtException` handlers are all permanently disarmed.
-
-Reproduced against the real exported API (scratch tree, no repository files touched):
-
-```
-$ node drv.mjs "$PWD"          # plant → restoreAll() → plant again → SIGINT
-cycle1 after restore: "ORIGINAL_MARKER\n" pending 0
-cycle2 planted: "PLANTED_TWO\n" pending 1
-exit=130
-FINAL ON DISK: PLANTED_TWO
-```
-
-Exit code 130 — the handler ran and reported success — with the mutation still on disk. The
-ordinary path is no better:
-
-```
-$ node drv2.mjs "$PWD"         # plant → restoreAll() → plant again → normal exit
-driver exit hook, pending=1
-exit=0
-FINAL: P2
-```
-
-This directly contradicts the file's own first WHAT-NOT-TO-DO rule ("Do not let a run leave a plant
-behind … Restoration is idempotent and registered on the normal path AND on `exit`, `SIGINT`,
-`SIGTERM` and `uncaughtException`") and the invariant plan 32-19 exists to have observed.
-
-Two aggravating facts. First, the latch is not merely dangerous, it is **redundant**:
-`originals.clear()` already makes a second call a no-op, so removing the latch changes nothing
-about the double-fire case it was written for. Second, the CLI is safe only by accident of call
-order — `measureRow()` uses `revert()` per row and `main()` calls `restoreAll()` exactly once, in
-the `finally` after the loop, after which nothing plants. Plan 32-19 turned a private invariant
-into a public API without re-examining it.
-
-**Fix:** Delete the latch; `originals.clear()` is the idempotence.
+**Fix:** The gate's own comment already establishes that the sync only runs on the default
+root. The cheapest correct change is to stop paying for it four extra times — hoist one
+baseline run and assert the four spellings against a *root that is not the default* but still
+resolves to it is not possible by construction, so instead serialise: mark the adjacency test
+`{ concurrency: 1 }` is not enough (the hazard is cross-file). Prefer one of:
 
 ```js
-export function restoreAll() {
-  for (const [abs, bytes] of originals) {
-    try { writeFileSync(abs, bytes); } catch (err) { /* shout, keep going */ }
-  }
-  originals.clear();
-}
+// scripts/check-skill-cli-invocations.mjs -- skip the regeneration when it cannot matter
+if (P.root === DEFAULT_ROOT && process.env.CHECK_SKILL_CLI_SKIP_SYNC !== "1") { … }
 ```
 
-If a latch is wanted for a different reason, scope it to the process-exit path only, or clear it in
-`plant()` (`restored = false;` next to `originals.set(...)`). Then extend
-`restore-latch-driver.mjs` with the case that would have caught this: `plant → restoreAll → plant →
-SIGINT`, asserting the second plant is also reverted.
-
----
-
-### CR-11: a non-ASCII `replace` is silently truncated to one byte by the `latin1` write, and the post-condition passes
-
-**File:** `scripts/audit-mutation-harness.mjs:286` (read), `:304` (substitute), `:332-334`
-(post-condition), `:351` (write)
-
-**Issue:** The plant pipeline decodes the target as `latin1`, substitutes in JS-string space, and
-re-encodes with `Buffer.from(mutated, "latin1")`. `latin1` encoding takes the low byte of every
-code unit, so any character above U+00FF is silently truncated. The post-condition compares JS
-strings and therefore cannot see it:
-
-```
-string post-condition introduced: 1
-bytes written:                        …0a 92 4f 4b 0a…
-bytes a hand-edit in UTF-8 would produce: …0a e2 86 92 4f 4b 0a…
-```
-
-(`→`, U+2192, written as the single byte `0x92`.) The descriptor records `→OK`; the file receives
-an invalid UTF-8 byte. Every downstream consumer — the guard being run, `git diff`, and the reader
-following the descriptor by hand — sees something other than what the row promises. This is the
-exact record-versus-reality divergence the CR-02 post-condition block (`:306-331`) says it makes
-impossible, surviving inside the post-condition itself.
-
-The mirror case is a non-ASCII `find`: the JSON-decoded JS string will never match the `latin1`
-view of the file's UTF-8 bytes, so the plant fails with "plant `find` string occurs 0 time(s)",
-which blames the descriptor for what is an encoding mismatch.
-
-Latent today — measured, 0 of the 35 descriptors carry a non-ASCII byte in `find` or `replace` — but
-this repository's sources are full of `→` and typographic dashes, so the first descriptor that
-targets such a line hits it, and it fails silently in the write direction.
-
-**Fix:** Make the post-condition a byte comparison, which closes this and `CR-09` in one move:
-
-```js
-const at = text.indexOf(descriptor.find);
-const expected = text.slice(0, at) + descriptor.replace + text.slice(at + descriptor.find.length);
-const outBytes = Buffer.from(mutated, "latin1");
-if (mutated !== expected || outBytes.toString("latin1") !== mutated) { throw … }
-```
-
-and reject a descriptor that cannot survive the transport at all, up front beside the other field
-checks at `:269-276`:
-
-```js
-for (const field of ["find", "replace"]) {
-  if (/[^\x00-\xff]/.test(descriptor[field])) {
-    throw new Error(
-      `row ${row.historicalPath}: plant descriptor field \`${field}\` carries a code point above ` +
-        "U+00FF. This harness reads and writes through a byte-preserving `latin1` round trip, so " +
-        "such a character cannot be matched against the file's bytes and cannot be written back " +
-        "unchanged. Record the descriptor in the file's own byte encoding.",
-    );
-  }
-}
-```
+driven from the test — which the no-relaxation-hatch rule forbids — or, better, drop the four
+adjacency spellings for **this one script** and cover them against
+`check-skill-description-overlap` instead (the one skill gate with no static-import refusal
+and no working-tree side effect), recording in the loop's budget note why the invocations gate
+is excluded. Either way, the note at `:919-926` that calls the sync "idempotent" should say
+that idempotent-at-rest is not the property at stake; concurrent readability is.
 
 ---
 
 ## Warnings
 
-### WR-27: the WR-03 latch test cannot distinguish the latch from `originals.clear()`, and is blind to the defect the latch actually has
+### WR-37: a bad `guard.cwd`, `guard.argv` or missing `guard` still aborts the entire sweep — the per-row containment covers only `plant()`
 
-**File:** `src/mcp/vice/fixtures/harness-signal/restore-latch-driver.mjs:92-125`;
-`src/mcp/vice/audit-harness-restore.test.ts:449-510`
+**File:** `scripts/audit-mutation-harness.mjs:543-560` (the throws), `:761` and `:808` (the
+unguarded call sites), `:793-804` (the containment that exists for the other half)
 
-**Issue:** The driver's docblock states the discrimination it believes it makes: "a genuine no-op →
-the sentinel SURVIVES; a second write → the sentinel is overwritten." Both branches are decided by
-`originals.clear()`, not by `restored`. With the latch deleted, the second `restoreAll()` iterates
-an empty map and the sentinel survives identically — so the test passes with and without the thing
-it names in its title, and it proves nothing about the latch.
+**Issue:** Plan 32-15's stated deliverable is that one bad descriptor is reported *against its
+row* instead of aborting the sweep, and the comment at `:779-792` records exactly that:
+"Thrown out of the row loop, one bad descriptor aborted the whole sweep at its own index and
+left every later row unmeasured AND unreported". That containment was built around `plant()`
+only:
 
-The property that *is* latch-specific is the one nobody asked about: whether the latch survives
-into a subsequent plant. It does, and it is a defect (`CR-10`). A driver added specifically to
-settle a doubt about this flag exercised the one sequence in which the flag is inert.
+```js
+let planted;
+try { planted = plant(root, row); } catch (err) { report.plantRefused = true; … return report; }
+```
 
-**Fix:** Add the discriminating sequence to the same driver — `plant → restoreAll() →
-pendingRestoreCount() === 0 → plant again → pendingRestoreCount() === 1 → restoreAll() → assert the
-second plant was reverted` — and restate the driver's docblock so it claims only what it measures.
-Note the current claim would then need to say "both outcomes of the sentinel test are produced by
-`originals.clear()`; the latch is measured by the re-plant case below."
+`runGuard()` is called twice with no such wrapper — once for the green control at `:761`,
+before any plant, and once for the planted run at `:808`. It throws on four distinct registry
+defects: no `guard` descriptor (`:546`), a non-array or empty `guard.argv` (`:549`), a
+non-string argv element (`:553-557`), and a `guard.cwd` that escapes the root (`:560`). Every
+one of those propagates out of `measureRow()`, out of the row loop, into `main()`'s
+`catch (err) { restoreAll(); process.exit(1); }` at `:1090-1093` — aborting the sweep at that
+index, leaving every later row unmeasured *and unreported*, and writing no evidence file at
+all. That is the identical shape, with the identical consequence, one function away from the
+fix.
 
-### WR-28: the negative control's 200 ms hold races the parent's plant poll, and the poll loop cannot notice the child already exited
+The `guard.cwd` case additionally carries the wrong attribution (the unclosed half of
+`WR-34`). Reproduced against the seam directly:
 
-**File:** `src/mcp/vice/audit-harness-restore.test.ts:219, 243-250, 254-270, 280-300`
+```
+$ node -e 'resolveContainedRoot(join("/tmp/fake-root","../elsewhere"),{repoRoot:"/tmp/fake-root"})'
+--root "/tmp/elsewhere" resolves to /tmp/elsewhere, which is OUTSIDE the repository root /tmp/fake-root
+```
 
-**Issue:** Two related ordering hazards in `runAttempt`, both live only on the `"none"` control,
-where `holdMs = 200`.
+— a refusal of a command-line flag the operator did not pass, for a value that came from the
+registry.
 
-1. The marker loop bails out on `!exited`. `'exit'` fires when the child terminates; the parent's
-   `stdout` `'data'` handler may not have been called yet, because piped stdio is drained
-   independently and `'close'` — not `'exit'` — is the event that guarantees the streams are done.
-   So a fast control can produce "the driver exited (code 0) before emitting its planted marker"
-   when the marker was in fact emitted.
-2. The plant-poll loop at `:284-300` has no `exited` check at all. If the 200 ms hold elapses before
-   the parent's first `readFileSync`, the harness's `exit` handler has already restored the file,
-   `plantedBytes.includes(marker.replacement)` never becomes true, and the loop spins for the full
-   `PLANT_POLL_DEADLINE_MS` (20 s) before failing with "The plant did not reach disk" — a diagnosis
-   that is false and points a reader at `plant()`.
+Latent today: all 35 measured rows carry a well-formed `guard`, and no row sets `cwd` at all.
 
-Not reproduced on this host: six concurrent runs of the file were 6/6 green at ~2.2 s each, and the
-full `test:automated` suite (3017 tests, 50 s) was green. The exposure is a 2–4 core CI runner
-executing ~120 test files under `node --test '*.test.*'`, where a 200 ms budget between a child's
-`stdout.write` and the parent's first poll is not obviously safe.
+**Fix:** Two changes at one site. Wrap both `runGuard()` calls the same way `plant()` is
+wrapped, with a distinct `report.guardDescriptorRefused` flag added to the
+`suppressionCauses` enumeration at `:1157-1163` so a suppressed write-back still names which
+of the now-five causes fired:
 
-**Fix:** Resolve the exit promise on `'close'`, not `'exit'`, and give the plant poll the same
-liveness check the marker loop has:
+```js
+let control;
+try {
+  control = runGuard(root, row, "control (unplanted)");
+} catch (err) {
+  report.failed = true;
+  report.guardDescriptorRefused = true;
+  report.reason =
+    "this row's `guard` descriptor was REFUSED before the control run, so nothing was " +
+    `measured for it and no evidence can be recorded: ${err?.message ?? String(err)}`;
+  return report;
+}
+```
+
+and re-attribute the `cwd` containment exactly as `plant.file` was, at `:560`:
+
+```js
+let cwd;
+try {
+  cwd = resolveContainedRoot(join(root, relativeCwd), { repoRoot: root });
+} catch (err) {
+  throw new Error(
+    `row ${row.historicalPath}: this row's \`guard.cwd\` field names a path ` +
+      `(${JSON.stringify(relativeCwd)}) outside the tree this run was pointed at. The path came ` +
+      "from the REGISTRY, not from a `--root` argument, so the row is what needs correcting. " +
+      `Containment refusal, verbatim: ${err?.message ?? String(err)} (WR-34)`,
+  );
+}
+```
+
+Then add the two cases to `plant-contract-driver.mjs`'s sibling coverage (see `WR-36`).
+
+### WR-28: the exit promise still resolves on `'exit'`, and the negative control's hold is still 200 ms
+
+**File:** `src/mcp/vice/audit-harness-restore.test.ts:337, 361-368, 691-698`
+
+**Issue:** Half of round 3's `WR-28` was taken — the plant-poll loop now checks `!exited`
+(`:411-422`, mirrored at `:762-773`) — and that is a real improvement: a dead child now fails
+fast and by name instead of spinning for 20 s and blaming `plant()`. The other half was not.
+
+`exitPromise` still resolves on `'exit'`:
 
 ```ts
-const exitPromise = new Promise<void>((res) => child.on("close", (code, sig) => { … res(); }));
-…
-assert.ok(!exited, `${signal} attempt ${index}: the driver exited before the parent could observe ` +
-  "the plant on disk — the hold is too short for this machine, not evidence about plant().");
+const exitPromise = new Promise<void>((resolveExit) => {
+  child.on("exit", (code, sig) => { exited = true; … });
+});
 ```
 
-and raise the control's hold to something with headroom (2000 ms), since the control is signalled
-by *not* signalling and its cost is bounded by the hold only when the assertions all pass.
+`'exit'` fires when the child terminates; `'close'` is the event that additionally guarantees
+the piped stdio streams are drained. So `exited` can become `true` while the marker line is
+still sitting unread in the parent's stream. Both liveness checks — the marker loop at
+`:377-381` and the plant-poll loop the fix just added at `:418-422` — then fire on a run that
+would have succeeded, with a message that positively asserts the driver never emitted its
+marker. **Adding the second `!exited` check widened the exposure to this race rather than
+narrowing it.**
 
-### WR-29: the narrowed porcelain assertion excludes `src/`, the tree a mis-contained plant would actually land in
+The only attempt where the child can plausibly beat the parent is the negative control, whose
+hold is still `signal === "none" ? 200 : 30000` at `:337`. 200 ms between the child's
+`stdout.write` and the parent's first `readFileSync` is comfortable on this host (six
+concurrent runs of the file were 6/6 green at ~2.2 s each; the full suite was green twice
+today) and is not obviously comfortable on a 2-core CI runner executing ~120 test files.
 
-**File:** `src/mcp/vice/audit-harness-restore.test.ts:174-187`
-
-**Issue:** The narrowing itself is correct and well argued — a whole-repo byte comparison measures
-the suite, not the subject. But the attributable set is `.planning/`, `scripts/`, and anything
-containing `.harness-signal-scratch-`, justified as "the places a mis-contained harness run actually
-writes are its own registry and evidence paths under `.planning/`, and `scripts/`". That misses the
-harness's *primary* write: the plant. Of the 35 committed plant descriptors, 26 target
-`src/mcp/vice/…`. A plant that escaped the scratch root would land in `src/`, and `src/` is not in
-the filter — so the one class of escape this assertion is offered against is the one it cannot see.
-
-**Fix:** Add the trees the harness plants into:
+**Fix:** Resolve on `'close'` in both `runAttempt` and `runDisarmAttempt`, and raise the
+control's hold. The control is signalled by *not* signalling, so a longer hold costs wall
+clock only when something is already wrong:
 
 ```ts
-path.startsWith(".planning/") ||
-path.startsWith("scripts/") ||
-path.startsWith("src/") ||
-path.startsWith("docs/") ||
-path.includes(SCRATCH_PREFIX)
-```
-
-`src/` does carry concurrent-fixture churn from sibling test files, so if that proves noisy, filter
-instead on the specific basenames the scratch driver writes (`plant-target.txt`,
-`latch-target.txt`) plus the three prefixes — but do not leave the plant target's real home out of
-the set.
-
-### WR-30: `.gitignore`'s new entry justifies itself with an assertion the test stopped making in the same round
-
-**File:** `.gitignore:57-66`
-
-**Issue:** The entry says the ignore is "LOAD-BEARING rather than tidiness: that test asserts
-`git status --porcelain` is byte-identical across an interrupted run, and an untracked scratch root
-would appear in porcelain and make the assertion untestable." The entry landed in `b55ec3f`; commit
-`e61ee28` ("scope the porcelain assertion to what this test can be responsible for") then replaced
-that assertion with `attributablePorcelainDelta`, which explicitly *records* rather than asserts
-byte-identity (`audit-harness-restore.test.ts:129-131, 169-173`). The stated reason is now false.
-
-The entry is still load-bearing, for a different reason: `attributablePorcelainDelta` filters on
-`path.includes(SCRATCH_PREFIX)`, and `porcelainAfter` is taken at `:332` while the scratch root
-still exists on disk (`rmSync` is at `:341`), so an un-ignored scratch root would fail every attempt
-as an attributable entry. That is the sentence the comment should carry. This is the second false
-line-citation in the same file (`WR-15` is the first) and the second one written this round.
-
-**Fix:** Replace the "asserts byte-identical" sentence with the real mechanism: "that test's
-`attributablePorcelainDelta()` treats any porcelain entry naming this prefix as attributable, and
-it reads porcelain while the scratch root still exists — so an un-ignored scratch root fails every
-attempt." While there, fix `WR-15` by dropping `:654` from the entry above.
-
-### WR-31: the population predicate keys on the literal `--root` while the docblock claims "HOWEVER IT READS IT"
-
-**File:** `src/mcp/vice/audit-root-args.test.ts:628-681`
-
-**Issue:** The correction to `CR-08` is right in direction and the cross-check against a shell glob
-is a genuinely good piece of engineering. But the member test is `src.includes("--root")`, and the
-function is documented as "Every top-level `scripts/*.mjs` that ACCEPTS a root, HOWEVER IT READS
-IT." Those are different sets. A script accepting `--repo-root`, `--tree`, `--dir` or a positional
-directory argument accepts a root and is invisible — `"--repo-root".includes("--root")` is `false`.
-The docblock's promise is exactly the CR-08 shape (a completeness claim wider than the derivation),
-one spelling narrower.
-
-The exposure is real but small: nothing accepts a root under another spelling today, and the guard
-over-selects rather than under-selects for the common cases (a script that only *mentions* `--root`
-in prose becomes a member and fails loudly).
-
-**Fix:** Either narrow the claim to what is measured — "every top-level `scripts/*.mjs` whose source
-carries the literal token `--root`, however it reads it" — or widen the derivation to a regex over
-directory-shaped flags, e.g. `/--(root|repo-root|tree|dir)\b/`, and say in the docblock which
-spellings are in scope and that a new spelling must be added here.
-
-### WR-32: `audit-gate`'s uncontained-by-design basis omits that it executes arbitrary code from the uncontained root
-
-**File:** `scripts/audit-gate.mjs:66-77` (the recorded basis), `:1187-1188` and `:244-269` (the
-path it omits); `src/mcp/vice/audit-root-args.test.ts:1376-1400` (where the omission is named)
-
-**Issue:** The acceptance is recorded as: "this script performs no filesystem write … Containment
-exists in `lib/audit-root.mjs` for a flag that decides which tree a script reads AND WRITES; the
-trust boundary it guards is the write, and there is no write here." The direct-write half is true
-and is now mechanically pinned by `E1`/`E2`. The conclusion does not follow, because `main()` does:
-
-```js
-const root = resolve(rootArg ?? join(HERE, ".."));   // uncontained, and cwd-relative
-const viceDir = join(root, "src", "mcp", "vice");
+const exitPromise = new Promise<void>((resolveExit) => {
+  child.on("close", (code, sig) => { exited = true; exitCode = code; killedBy = sig; resolveExit(); });
+});
 …
-runGuardsLive(viceDir, guardFiles);                  // spawnSync(process.execPath, ["--test", …files])
+const holdMs = signal === "none" ? 2000 : 30000;
 ```
 
-`docsGuardFiles(viceDir)` lists `docs-*.test.ts` from the operator-supplied tree and
-`runGuardsLive` executes them with `node --test`. That is arbitrary code execution rooted at the
-uncontained path, which subsumes any filesystem write the containment seam exists to bound. The
-E2 assertion message names this hole precisely — "a write performed BY A SPAWNED PROCESS is outside
-BOTH halves" — but that disclosure lives in a test's failure string, while the *header that records
-the acceptance* states the no-write basis without it. A reader consulting the decision gets the
-narrower fact and the broader conclusion.
+`'close'` carries the same `(code, signal)` arguments, so nothing else moves.
 
-The threat model is a local, operator-invoked CLI, so this is not an authorization boundary — but
-it is an audit instrument's recorded basis being wider than its measurement, which is the class this
-phase treats as a correctness defect.
+### WR-38: the assertion labelled "the one that must never change" passes with containment removed entirely
 
-**Fix:** Amend the header's basis to state both halves honestly, e.g. "performs no filesystem write
-of its own (mechanically pinned by `E1`/`E2`), and DOES execute `node --test` over `docs-*.test.ts`
-found under the resolved root — which is why the acceptance is scoped to an operator-supplied root
-on a local CLI and would not survive this script being invoked with a root derived from any
-untrusted input." Also reconcile `resolve(rootArg ?? …)` at `:1187` with the seam's repo-root base
-(`WR-16`): today a relative `--root` means one thing for `audit-gate` and another for the other
-seven.
+**File:** `src/mcp/vice/audit-harness-restore.test.ts:1209-1215`;
+`src/mcp/vice/fixtures/harness-signal/plant-contract-driver.mjs:128-132`
 
-### WR-33: `withoutComments()` strips from the first `//` on a line, so a write call sharing a line with a `//`-bearing literal evades E2
-
-**File:** `src/mcp/vice/audit-root-args.test.ts:1295-1301`
-
-**Issue:** The stripper is `line.replace(/\/\/.*$/, "")`, applied without any awareness of string,
-template or regex literals. Anything after the first `//` on a line disappears, including code. So
-
-```js
-const doc = "see https://example.invalid"; writeFileSync(p, doc);
-```
-
-strips to `const doc = "see ` and E2 reports zero write calls. Stripping comments first is the right
-call and its rationale (the header discusses writes in prose) is sound — but the mechanism can only
-produce false *greens*, and E2 is the sole mechanical revocation of `T-32-22`. An instrument whose
-only failure direction is "silently passes" is the shape this round is meant to be removing.
-
-No live instance today: `audit-gate.mjs` has no such line.
-
-**Fix:** Strip only lines whose *first non-whitespace* is `//` (which is what the block comment's
-own rationale needs — the header and the prose are whole-line comments), and drop the
-trailing-comment arm:
+**Issue:** The `bad-plant-target-attribution` case opens with
 
 ```ts
-.map((line) => (line.trim().startsWith("//") ? "" : line))
-```
-
-then, if a trailing-comment case ever appears, handle it by moving the prose onto its own line
-rather than by widening the stripper. Add a self-check asserting the stripper leaves at least one
-known `FS_WRITE_APIS` token intact in a planted string, so a future widening cannot silently blind
-the count.
-
-### WR-34: a bad registry `plant.file` or `guard.cwd` is reported as a `--root` containment refusal
-
-**File:** `scripts/audit-mutation-harness.mjs:280` and `:403`; message text at
-`scripts/lib/audit-root.mjs:98-105`
-
-**Issue:** Both call sites reuse `resolveContainedRoot()` to contain a *registry-supplied* path:
-
-```js
-const abs = resolveContainedRoot(join(root, descriptor.file), { repoRoot: root });   // :280
-const cwd = resolveContainedRoot(join(root, relativeCwd), { repoRoot: root });        // :403
-```
-
-The containment check is correct and worth having. Its message is not, in this context: it is
-hard-coded to begin `--root "<path>" resolves to … which is OUTSIDE the repository root`, so a
-malformed `plant.file` or `guard.cwd` in the registry is reported to the operator as a problem with
-the `--root` flag they may not even have passed. `resolveContainedRoot`'s own docblock promises "a
-refusal is never confusable with a typo failure"; here it is confusable with a completely different
-flag. In the plant case the misleading text is also copied verbatim into the evidence markdown via
-`report.reason` (`:642-644`).
-
-**Fix:** Give `resolveContainedRoot()` an optional `what` label used in place of the hard-coded
-`--root`:
-
-```js
-export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [], what = "--root" } = {})
-…
-throw new Error(`${what} ${JSON.stringify(String(rootArg))} resolves to ${resolved}, which is …`);
-```
-
-and pass `what: \`plant.file for row ${row.historicalPath}\`` / `what: "guard.cwd"` at the two
-harness call sites.
-
-### WR-35: `guard.argv` is spawned against `process.execPath` with no allow-list, so registry text can be evaluated — contradicting the header's own rule
-
-**File:** `scripts/audit-mutation-harness.mjs:126-128` (the rule), `:373-384` (`resolveBin`),
-`:412-418` (the spawn)
-
-**Issue:** The WHAT-NOT-TO-DO block states: "Never build a shell string. Every subprocess gets an
-argv ARRAY, `shell: true` is never set, and no text read from the registry or from a scanned file is
-ever evaluated, imported or shell-executed." The first two clauses hold. The third does not.
-`resolveBin()` documents three conventions and then says it "branches on NOTHING else -- it spawns
-exactly the argv the row carries", so `guard.argv` is handed to `node` unvalidated. `node` itself
-interprets `-e` / `--eval`, `-p`, `--import`, `-r` / `--require`. A registry row with
-`argv: ["-e", "<js>"]` is evaluated; a row with `argv: ["scripts/anything.mjs"]` under a
-`--root`-supplied tree runs that tree's code. Both are within the spawn's reach today.
-
-This is an operator-invoked instrument reading a committed registry, so no privilege boundary is
-crossed. The finding is that a stated safety rule is false and there is nothing enforcing the three
-conventions the docblock enumerates.
-
-**Fix:** Enforce the enumerated conventions rather than documenting them, in `resolveBin()` or
-beside the argv validation at `:394-401`:
-
-```js
-const a0 = descriptor.argv[0];
-const ok =
-  a0 === "--test" ||
-  (a0 === "--run" && descriptor.argv.length === 2) ||
-  (/^[\w./-]+\.(mjs|cjs|js|ts)$/.test(a0) && !a0.startsWith("-") && !a0.includes(".."));
-if (!ok) throw new Error(
-  `row ${row.historicalPath}: \`guard.argv[0]\` is ${JSON.stringify(a0)}, which is not one of the ` +
-    "three documented conventions. A Node flag such as `-e`, `--import` or `-r` would make this " +
-    "instrument evaluate registry text, which its own header forbids.",
+assert.equal(
+  v.planted,
+  false,
+  "CONTAINMENT WAS RELAXED. A registry value naming a path outside the tree this run was " +
+    "pointed at must be refused, in this state and in every earlier one. This assertion is " +
+    "the one that must never change.",
 );
 ```
 
-and correct the header clause to "no text read from the registry is evaluated as source; `argv[0]`
-is checked against the three conventions above before the spawn."
+`ESCAPING_FILE` is `"../plant-contract-escape-target.txt"`, and no such file exists. So when
+containment refuses, the refusal comes from `resolveContainedRoot`; when it does **not**,
+`plant()` falls through to `if (!existsSync(abs))` at `:391` and refuses anyway. Measured — I
+replaced `resolveContainedRoot`'s body with an unconditional `return resolved;` in a copied
+tree and re-ran the case:
 
-### WR-36: plan 32-15's three harness behaviour changes shipped with zero automated coverage
+```
+planted=false
+msg=row fixtures/…: plant target /…/work/plant-contract-escape-target.txt does not exist.
+```
 
-**File:** `scripts/audit-mutation-harness.mjs:332-348` (arithmetic), `:592-599` (D-05 skip),
-`:636-647` (per-row plant refusal); no test file exercises any of them
+The assertion that is documented as the containment guard stayed green against a total
+containment removal. The test as a whole did go red, on
+`assert.match(msg, /OUTSIDE the repository root/)` and on ``assert.match(msg, /`plant\.file`/)``
+— so the case is not vacuous. But the discrimination is being done by two message-shape
+assertions that read as diagnosis checks, while the one carrying the "must never change"
+comment does nothing.
 
-**Issue:** Only two files in the tree import the harness, and both are the 32-19 signal/latch
-drivers, which call `plant()`, `restoreAll()` and `pendingRestoreCount()` only. Nothing imports or
-spawns `measureRow()`, `selectRows()` or `main()`. So:
+That inversion matters here specifically: the comment tells the next maintainer which
+assertion is load-bearing, and a future round loosening the "cosmetic" message matches would
+silently take the containment coverage with them.
 
-- the post-condition arithmetic changed and nothing asserts it — which is why `CR-09` survived the
-  change that was made to fix it;
-- the `kept-unchanged` / `deleted` skip is a new branch with no test that it is driven by the
-  *verdict* and not by a missing descriptor (the comment at `:586-591` states that as the
-  load-bearing property);
-- the "a refused plant is contained to its own row" behaviour, which is the whole point of plan
-  32-15, is unobserved.
+**Fix:** Make the escape target a path that EXISTS and is safe to point at, so the only
+possible refusal is the containment one. The parent already creates the scratch root with
+`mkdtempSync`; have it create a *second* scratch dir, seed a target inside it, and pass its
+path to the driver as a third argument:
 
-`plant()` is now exported and cheap to drive against a scratch tree, exactly as
-`restore-latch-driver.mjs` does — so the coverage is available for the price of the fixture pattern
-this round already established.
+```ts
+const escapeHome = mkdtempSync(join(ROOT, SCRATCH_PREFIX));           // sibling of `scratch`
+writeFileSync(join(escapeHome, "escape-target.txt"), "ESCAPE_TARGET_ANCHOR\n");
+spawn(process.execPath, [PLANT_CONTRACT_DRIVER, scratch, caseName, escapeHome], …);
+```
 
-**Fix:** Add a `plant()` table test alongside `audit-harness-restore.test.ts`, driven through a
-scratch root, covering: `find` occurring 0 / 1 / 2 times; a `replace` that overlaps the match
-(the `CR-09` shape, currently refused and which must pass after the fix); a `replace` already
-present elsewhere in the file (the `CR-06` shape, must pass); a non-`worktree` `kind`; and a
-`plant.file` that escapes the root. Then extend it to `measureRow()`'s verdict skip and refusal
-containment by exporting a `measureRow` seam or by spawning the CLI against a synthetic registry
-inside a scratch root.
+with the driver resolving `file` as `relative(scratch, join(escapeHome, "escape-target.txt"))`.
+Then removing containment makes the plant SUCCEED, `v.planted` goes `true`, and the assertion
+whose comment claims to be the guard actually is one. Watch it fail against the relaxed
+resolver before trusting it, the same discipline `restore-disarm-driver.mjs` records.
+Alternatively, keep the non-existent target and rewrite the comment to say the containment
+discrimination is carried by the `/OUTSIDE the repository root/` match — but then move that
+match to the top of the case so it reads as the primary assertion.
+
+### WR-39: `attributablePorcelainDelta()`'s stated claim is wider than what it can measure
+
+**File:** `src/mcp/vice/audit-harness-restore.test.ts:217-305, 462-464`
+
+**Issue:** The docblock states the purpose as "proving the harness did not write outside the
+scratch root it was pointed at". Three properties of the implementation make the measurement
+narrower than that:
+
+1. **It reads porcelain after the child has exited** (`:462`, after the `await` on
+   `exitPromise` at `:447-451`). By that point the harness's registered `exit`/signal handler
+   has already restored every captured original, so a mis-contained plant that *was* restored
+   leaves no trace at all. What the assertion actually proves is "no write escaped the scratch
+   root **and survived restoration**".
+2. **It is a set difference over whole porcelain LINES.** A mis-contained plant into a tracked
+   file that was already dirty at `porcelainBefore` produces the identical ` M path` line, so
+   the delta is empty. Not hypothetical on a developer tree mid-phase.
+3. **`const path = l.slice(3)` does not handle porcelain's quoting or rename form.** Git
+   quotes any path containing a space, a quote, a backslash or a non-ASCII byte (`?? "src/a
+   b.txt"`), and renames render as `R  old -> new`. A quoted path starts with `"`, so
+   `startsWith("src/")` is false and the entry is silently unattributable.
+
+None of these is live today — all 35 plant targets are plain ASCII paths, and the drivers
+write only inside their scratch roots. The finding is that a filter whose only failure
+direction is "silently admits nothing" is being relied on as the escape detector, in a phase
+whose standard is that a recorded basis must not be wider than its measurement.
+
+**Fix:** Narrow the docblock's claim to what it measures, and fix (3) cheaply:
+
+```ts
+const raw = l.slice(3);
+// Porcelain quotes paths with spaces/non-ASCII, and renames render as `old -> new`.
+// Take the DESTINATION and unquote, so neither form can slip past the prefix tests.
+const path = (raw.includes(" -> ") ? raw.slice(raw.indexOf(" -> ") + 4) : raw)
+  .replace(/^"(.*)"$/, "$1");
+```
+
+For (1), the honest sentence is "…did not leave a write outside the scratch root behind"; if
+the stronger property is wanted, take a third porcelain reading *while the child is still
+held* (between the plant-poll loop and the `child.kill`) and record it alongside
+`porcelainByteIdentical`.
+
+### WR-40: `runDisarmAttempt()` is a ~110-line near-duplicate of `runAttempt()`, and the `WR-28` fix already had to be written twice
+
+**File:** `src/mcp/vice/audit-harness-restore.test.ts:331-489` versus `:642-813`
+
+**Issue:** The two routines share, line for line with only the marker constant and the
+assertion text changed: the scratch/porcelain setup, the spawn, the two stdout/stderr
+accumulators, the exit-promise block, the marker poll loop, the plant poll loop with its two
+liveness assertions, the "bytes are not identical to original" vacuity guard, the signal, the
+raced exit wait, the byte comparison, the porcelain delta and the `readdirSync` + `rmSync`.
+`runPlantContractCase()` at `:933-998` carries a third copy of the spawn-and-collect half.
+
+The docblock at `:642-656` argues the split is deliberate, and its reason is sound as far as
+it goes — the attempt log asserts exactly five signalled attempts per signal and must not be
+widened. But that argues for not pushing onto `attempts`, not for copying the plumbing: a
+`recordInLog: boolean` parameter, or a shared `driveOnePlantWindow()` returning the raw
+observations with the two routines layering their own assertions on top, satisfies it.
+
+The cost is not hypothetical. The `WR-28` liveness check landed in **the same commit twice**
+— `:411-422` and `:762-773` — with a comment at the second site explaining it is a mirror of
+the first. The next fix to the poll/exit machinery needs three edits, and the third copy
+(`runPlantContractCase`) has neither liveness check today.
+
+**Fix:** Extract the spawn-and-accumulate block and the two poll loops into one helper
+parameterised by `{ driverPath, args, markerPrefix, recordInLog }`, returning
+`{ child, stdout, stderr, exited, exitCode, killedBy, markerLine, plantedBytes }`. Keep the
+two test bodies and their distinct assertion sets exactly as they are; only the plumbing
+moves. Then apply `WR-28`'s `'close'` fix once.
+
+### WR-01 through WR-06, WR-09 through WR-12, WR-14 through WR-26, WR-30 through WR-36
+
+All carried forward unchanged from round 3 with the dispositions and evidence recorded in the
+table above. Their fix text in the round-3 report at commit `e35af74` still applies verbatim;
+it is not restated here. The two with corrected line citations are:
+
+- **WR-15** — `.gitignore:53` cites `scripts/audit-mutation-harness.mjs:654`; the claim now
+  lives at `:915` (`"This run's evidence is void."`) and `:1227` (`DIRTY -- EVIDENCE VOID`).
+  This citation has now drifted in three consecutive rounds, in a repository that owns a
+  mechanical line-reference test. Either cite the *file* with no line number, or add the
+  `.gitignore` citation to `docs-linerefs.test.ts`'s checked set.
+- **WR-13** — closed, but note `WR-32` and `WR-16` both name what the recorded acceptance in
+  `audit-gate.mjs:54-87` still leaves out.
 
 ---
 
 ## Info
 
-### IN-11: two `lines.push()` calls spell a fence with backslash-escaped backticks
+### IN-16: the driver's byte-level comparison cannot detect a `latin1` truncation, though its comment says it can
 
-**File:** `scripts/audit-mutation-harness.mjs:817, 819`
-**Issue:** `lines.push("\`\`\`")` inside a double-quoted string. `\`` is not a recognised escape, so
-JS yields a plain backtick and the output is correct — but every other fence in the same function
-is `lines.push("```")` (`:745`, `:781`, `:834`, `:849`). The odd pair reads as an escaping bug on
-first sight, in the one branch (`plantRefused`) that is new this round.
-**Fix:** Make them `lines.push("```")` to match the other seven.
+**File:** `src/mcp/vice/fixtures/harness-signal/plant-contract-driver.mjs:246-254`
+**Issue:** The comment says the pair `bytesAtMatchIndexBase64` / `recordedReplacementBase64`
+detects "the harness writing bytes the row does not record". `recordedReplacementBytes` is
+computed as `Buffer.from(spec.replace, "latin1")` — the *same* truncating encode the harness
+uses — so for a non-latin1 descriptor both sides truncate identically and compare equal.
+Measured: with the `CR-11` refusal deleted, `non-latin1-refused` reports `planted=true` and
+`bytesEq=true`; only the `planted === false` assertion and
+`replacementVerbatimAtMatchIndex=false` catch it. The pair does discriminate the `$&` class it
+is actually used for (`substitution-is-verbatim`, `bytesEq=false` under the reverted replacer).
+**Fix:** Say what it measures — "the `$&`-expansion class" — or compute the expected bytes with
+`Buffer.from(spec.replace, "utf8")` when the descriptor is non-latin1, so the comparison can
+see the truncation it names.
 
-### IN-12: the six-file "CORRECTION" block is itself the duplication it condemns
+### IN-17: the three accepted plant-contract cases never assert the pending count the driver's header promises
 
-**File:** `scripts/check-guard-fates.mjs:847-867`, `check-skill-cli-invocations.mjs`,
-`check-skill-description-overlap.mjs:123-143`, `check-skill-fork-honesty.mjs`,
-`check-skill-tool-coverage.mjs`, `generate-tool-support-table.mjs:360-383`
-**Issue:** The block explains that "a justification written about one file was copied into six,
-which is `IN-06` one layer up", and then says the containment reasoning is "recorded … once, there,
-rather than restated in each of the six files this correction touches" — in a ~20-line paragraph
-that is itself restated verbatim in all six. The next drift will therefore need six edits again.
-**Fix:** Reduce five of the six to a one-line pointer at the sixth (or at `lib/audit-root.mjs`),
-keeping the full account in a single place, and say which place.
+**File:** `src/mcp/vice/audit-harness-restore.test.ts:1027-1117`;
+`plant-contract-driver.mjs:65-69`
+**Issue:** The driver's WHAT-NOT-TO-DO block states the contract explicitly: "the verdict
+reports `pendingRestoreCount()` as 1 after an accepted plant and must report 0 after a refused
+one." Five refused cases assert the 0 half. None of the three accepted cases asserts the 1
+half, so an accepted plant that failed to register its original for restoration would pass.
+**Fix:** Add `assert.equal(v.pendingRestoreCount, 1, …)` to `overlap-accepted`,
+`pre-existing-replacement-accepted` and `substitution-is-verbatim`.
 
-### IN-13: a stale forward reference to a completed plan
+### IN-18: `--out` is resolved outside any try/catch, after the registry write-back, and silently reinterprets an absolute path
 
-**File:** `scripts/generate-tool-support-table.mjs:383`
-**Issue:** `// Plan 32-11 migrates the remaining consumers.` sits directly under the correction that
-records 32-16/32-17 finishing that work. There are no remaining consumers.
-**Fix:** Delete the line, or replace it with "all eight consumers are on the seam as of plan 32-17".
+**File:** `scripts/audit-mutation-harness.mjs:1171-1175`
+**Issue:** Every other resolution in `main()` is wrapped and reported (`:1034-1039`,
+`:1055-1061`). `resolveContainedRoot(join(root, args.out ?? …))` is not, so a `--out` naming a
+path outside the root surfaces as an `uncaughtException` stack through the handler at `:242`,
+at exit 1 with no `audit-mutation-harness: REFUSED --` prefix — after the registry has already
+been rewritten. Separately, `join(root, "/tmp/x")` yields `<root>/tmp/x`, so an absolute
+`--out` is silently reinterpreted as root-relative rather than refused.
+**Fix:** Wrap it in the same shape as `:1034-1039`, move it above the write-back so a bad
+`--out` costs nothing, and reject an absolute value in `parseArgs()` with a message naming the
+root the path will be taken relative to.
 
-### IN-14: the attempt-log test depends on top-level test ordering and doubles unrelated failures
+### IN-19: `split()` cannot count self-overlapping matches, so the "exactly once" uniqueness claim is not enforced for a self-overlapping `find`
 
-**File:** `src/mcp/vice/audit-harness-restore.test.ts:512-536`
-**Issue:** It asserts over a module-level `attempts` array populated by the three tests above it, so
-it relies on `node:test`'s default sequential top-level execution and on all ten signalled attempts
-completing. Running with `--test-name-pattern`, adding `concurrency`, or a single failed attempt
-turns it into a second, confusing red on top of the real one.
-**Fix:** Turn it into a `t.after()` on the last signal test, or gate it: `if (signalled.length === 0)
-return;` with a comment naming the reason, so it reports only when it has something to report.
+**File:** `scripts/audit-mutation-harness.mjs:397-405`
+**Issue:** `text.split(descriptor.find).length - 1` counts *non-overlapping* matches:
+`"ababab".split("abab").length - 1 === 1`, while a reader scanning by hand finds a match at
+index 0 and another at index 2. The refusal text says "a plant that matches more than once is
+ambiguous about what it proved" — that ambiguity exists for a self-overlapping `find` and the
+check reports 1. `text.replace` then takes the first, which happens to be what a
+left-to-right hand application does, so nothing is currently mis-planted. Measured: 0 of 35
+committed `find` strings self-overlap.
+**Fix:** Count with an `indexOf` scan advancing by 1 rather than by `find.length`, or state in
+the refusal comment that the count is non-overlapping and that a self-overlapping `find`
+resolves to its leftmost match by definition.
 
-### IN-15: `parseRootArg` rejects a repeated value flag but accepts a repeated boolean flag silently
+### IN-01 through IN-05, IN-08, IN-11 through IN-15
 
-**File:** `scripts/lib/audit-root.mjs:280-284`
-**Issue:** `if (booleanFlags.includes(token)) { flags[token] = true; continue; }` has no `seen`
-check, so `--json --json` is accepted while `--row a --row b` is a hard error. The repeated-flag
-rule's own justification ("no invocation's meaning depends on which copy the parser happened to
-keep") applies equally to a boolean; the asymmetry is undocumented.
-**Fix:** Either reject a repeated boolean with the same message shape, or state in the docblock that
-booleans are idempotent by definition and a repeat is therefore harmless.
+Carried forward unchanged from round 3 with the dispositions and evidence recorded in the
+table above; the fix text at commit `e35af74` still applies. `IN-13`'s line has moved to
+`scripts/generate-tool-support-table.mjs:384`.
 
 ---
 
 _Reviewed: 2026-09-01_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
-_Round: 3 — replaces blob `c9df889043110be9d7b573b31610fded359be9eb`_
+_Round: 4 — replaces the round-3 report at commit `e35af74`_
