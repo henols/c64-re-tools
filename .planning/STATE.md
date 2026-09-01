@@ -6,15 +6,15 @@ current_phase: 32
 current_phase_name: The Deletion and the Grep Gate
 status: executing
 stopped_at: Phase 32 gap-closure round 2 planned — 5 plans (32-15..32-19) across 3 waves, verification passed
-last_updated: "2026-09-01T10:34:49.163Z"
+last_updated: "2026-09-01T10:41:10.130Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 32 execution started
-state_head: 08fa7fabfafd5c38e3b9e8794c80af84c1cf38e0
+state_head: ccb55f9392fca89496faf425cfffe842c91ec479
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 80
-  completed_plans: 73
+  completed_plans: 78
   percent: 83
 ---
 
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 32 (The Deletion and the Grep Gate) — READY TO EXECUTE
-Plan: 19 of 21 executed — gap-closure round 3 (32-20, 32-21) PLANNED and verified by the plan-checker, not yet executed; 19/19 prior plans merged
-Status: Phase 32 NOT complete — the two round-3 gaps (CR-09 plant arithmetic, CR-10 restore latch) are now PLANNED but unfixed; run /gsd-execute-phase 32 --gaps-only
-Last activity: 2026-09-01 — Phase 32 gap-closure round 3 planned: 32-20 (tracer, CR-10) and 32-21 (CR-09), plan-checker VERIFICATION PASSED after one revision round
+Phase: 32 (The Deletion and the Grep Gate) — EXECUTING (gap-closure round 3)
+Plan: 19 of 21 executed — round-3 gap plans 32-20 (tracer, CR-10 restore latch) and 32-21 (CR-09 plant arithmetic) now dispatching under /gsd-execute-phase 32 --gaps-only
+Status: Phase 32 NOT complete — the two round-3 gaps are planned and under execution; 19/19 prior plans merged
+Last activity: 2026-09-01 — Phase 32 gap-closure round 3 execution started (waves 1-2: 32-20 then 32-21)
 
 ## Performance Metrics
 
