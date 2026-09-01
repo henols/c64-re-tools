@@ -707,6 +707,18 @@ recorded but **at least twelve consumers**, several of them the audit instrument
 themselves — which is why teaching them to read the archive is scoped work for a
 phase, not a step inside a close.
 
+*Two adjacent consumers WERE fixed at this close, because the close mandates the
+operations that broke them rather than merely permitting one.* `git rm`ing
+`REQUIREMENTS.md` and collapsing `ROADMAP.md` are required steps, and they
+reddened 6 tests across three files. Both now prefer the live document and fall
+back to the newest `milestones/v*-` archive, throwing rather than returning a
+smaller set when neither carries the subject: `anno-register.test.ts`'s
+DIRECTION 5 membership check (plus `anno-register.ts`'s `anno_search` consumer
+citation, re-pointed to the archived path) and `check-guard-fates.mjs`'s set-C
+parse of `### Phase 32`. That is the same fallback shape the phase-directory
+consumers need — it is now demonstrated to work, which lowers the cost of the
+scoped work above rather than doing it.
+
 ---
 *Roadmap created: 2026-08-12 for milestone v0.2.0*
 *v0.2.0 shipped and collapsed 2026-08-19 → `milestones/v0.2.0-ROADMAP.md`*

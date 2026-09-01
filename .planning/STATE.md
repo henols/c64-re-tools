@@ -167,7 +167,7 @@ recorded in their own sections.
 Phase: Milestone v0.7.0 complete — archived 2026-09-01
 Plan: 80 of 80 executed across Phases 27-32
 Status: Awaiting next milestone. `.planning/REQUIREMENTS.md` removed at the close (fresh one written by `/gsd-new-milestone`); `ROADMAP.md` collapsed to milestone groupings with the held v0.6.0 Phase 24/26 detail and the load-bearing per-phase Progress table both preserved. Phase directories were **not** archived — archival was tried at this close and measured to redden 9 tests across 5 files, so they were restored.
-Last activity: 2026-09-01 — Milestone v0.7.0 completed and archived
+Last activity: 2026-09-01 — Milestone v0.7.0 completed and archived. Two guards were fixed during the close itself: `git rm`ing `REQUIREMENTS.md` and collapsing `ROADMAP.md` are mandated close steps and reddened 6 tests, so `anno-register.test.ts` and `check-guard-fates.mjs` now fall back to the `milestones/v*-` archive (preferring the live document, throwing rather than shrinking when neither carries the subject). `npm run test:automated`: 0 failures. `tsc --noEmit`: clean.
 
 ## Performance Metrics
 
