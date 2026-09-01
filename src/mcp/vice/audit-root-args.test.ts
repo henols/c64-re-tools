@@ -211,6 +211,150 @@ test("parseRootArg: a declared boolean flag is reported, never eaten as a value"
   assert.equal(absent.flags["--json"], undefined);
 });
 
+// ---------------------------------------------------------------------------
+// UNIT -- declared VALUE-taking flags (plan 32-17).
+//
+// WHY THESE EXIST: `scripts/audit-mutation-harness.mjs` -- the one instrument
+// in this phase that both MUTATES the working tree and WRITES the registry and
+// the evidence file -- could not join this seam, because its `--row`, `--rows`
+// and `--out` are value-taking flags the parser did not know about. It
+// therefore kept its own reader, and that reader took `argv[i + 1]` with no
+// missing-value check: `--row <path> --root` yielded `root === undefined`,
+// which `resolveContainedRoot()` maps to the repository root with no message,
+// so the run read the REAL registry while the operator believed they had
+// pointed it at a synthetic tree. The alternative to the option proved below
+// -- restating the three rules inside the harness -- would have recreated
+// `IN-06` inside the very file this seam was extracted from.
+//
+// Each case drives the REAL exported parser, one rule per test, in the shape
+// the nine `--root` cases above already use.
+// ---------------------------------------------------------------------------
+
+function valueRefusal(
+  argv: string[],
+  options: { booleanFlags?: string[]; valueFlags?: string[] } = {},
+): Error {
+  try {
+    parseRootArg(argv, { script: SCRIPT_NAME, ...options });
+  } catch (e) {
+    return e as Error;
+  }
+  return assert.fail(
+    `expected parseRootArg(${JSON.stringify(argv)}) to throw; it returned normally, ` +
+      "which is the silent-fallback defect this seam exists to prevent",
+  );
+}
+
+test("parseRootArg: a declared value flag's value is returned under its own token", () => {
+  const parsed = parseRootArg(["--row", "src/a.ts", "--root", "/a"], {
+    script: SCRIPT_NAME,
+    valueFlags: ["--row"],
+  });
+  assert.equal(parsed.values["--row"], "src/a.ts");
+  assert.equal(parsed.root, "/a");
+  assert.deepEqual(parsed.flags, {});
+});
+
+test("parseRootArg: a declared value flag as the LAST argument is REJECTED, naming ITSELF", () => {
+  const e = valueRefusal(["--root", "/a", "--row"], { valueFlags: ["--row"] });
+  assert.match(e.message, /^BAD ARGUMENTS --/);
+  assert.ok(e.message.includes("`--row`"), `message must name --row, got: ${e.message}`);
+  assert.ok(
+    !e.message.includes("`--root` requires"),
+    `message must not blame --root, got: ${e.message}`,
+  );
+});
+
+test("parseRootArg: a declared value flag followed by a flag is a MISSING value", () => {
+  const e = valueRefusal(["--row", "--all"], {
+    booleanFlags: ["--all"],
+    valueFlags: ["--row"],
+  });
+  assert.match(e.message, /^BAD ARGUMENTS --/);
+  assert.ok(e.message.includes("`--row`"), `message must name --row, got: ${e.message}`);
+  assert.ok(
+    e.message.includes('"--all"'),
+    `message must quote the following token, got: ${e.message}`,
+  );
+});
+
+test("parseRootArg: a declared value flag given an empty string is REJECTED", () => {
+  const e = valueRefusal(["--out", ""], { valueFlags: ["--out"] });
+  assert.match(e.message, /^BAD ARGUMENTS --/);
+  assert.ok(e.message.includes("`--out`"), `message must name --out, got: ${e.message}`);
+  assert.match(e.message, /empty/i);
+  assert.match(e.message, /NOT a request for a default/);
+});
+
+test("parseRootArg: a repeated value flag is REJECTED, not resolved by position", () => {
+  const e = valueRefusal(["--rows", "a,b", "--rows", "c,d"], { valueFlags: ["--rows"] });
+  assert.match(e.message, /^BAD ARGUMENTS --/);
+  assert.ok(e.message.includes("`--rows`"), `message must name --rows, got: ${e.message}`);
+  assert.ok(e.message.includes('"a,b"'), `message must quote the first value, got: ${e.message}`);
+  assert.ok(e.message.includes('"c,d"'), `message must quote the second value, got: ${e.message}`);
+});
+
+test("parseRootArg: value flags and boolean flags parse identically in any order", () => {
+  const options = {
+    script: SCRIPT_NAME,
+    booleanFlags: ["--all"],
+    valueFlags: ["--row"],
+  };
+  const a = parseRootArg(["--all", "--row", "X", "--root", "Y"], options);
+  const b = parseRootArg(["--row", "X", "--root", "Y", "--all"], options);
+  const c = parseRootArg(["--root", "Y", "--all", "--row", "X"], options);
+  assert.deepEqual(a, b);
+  assert.deepEqual(b, c);
+  assert.equal(a.root, "Y");
+  assert.equal(a.values["--row"], "X");
+  assert.equal(a.flags["--all"], true);
+});
+
+test("parseRootArg: unusual-but-valid paths are accepted unchanged as value-flag values", () => {
+  for (const path of ["./a/b.ts", "a/b.ts", "/abs/a/b.ts", "-not-a-flag"]) {
+    const parsed = parseRootArg(["--out", path], {
+      script: SCRIPT_NAME,
+      valueFlags: ["--out"],
+    });
+    assert.equal(parsed.values["--out"], path);
+  }
+});
+
+test("parseRootArg: an undeclared flag is still unrecognised when valueFlags is supplied", () => {
+  const e = valueRefusal(["--roww", "src/a.ts"], { valueFlags: ["--row"] });
+  assert.match(e.message, /^BAD ARGUMENTS --/);
+  assert.ok(
+    e.message.includes("--roww"),
+    `message must quote the unrecognised token, got: ${e.message}`,
+  );
+});
+
+test("parseRootArg: the widened signature is ADDITIVE -- values is empty when unused", () => {
+  const unflagged = parseRootArg([], { script: SCRIPT_NAME });
+  assert.deepEqual(unflagged.values, {});
+  assert.deepEqual(unflagged.flags, {});
+  assert.equal(unflagged.root, undefined);
+
+  const rootOnly = parseRootArg(["--root", "/a"], { script: SCRIPT_NAME });
+  assert.deepEqual(rootOnly.values, {});
+  assert.deepEqual(rootOnly.flags, {});
+  assert.equal(rootOnly.root, "/a");
+});
+
+test("parseRootArg: a token declared in BOTH lists is a CALLER error, not a rejection", () => {
+  const e = valueRefusal(["--root", "/a"], {
+    booleanFlags: ["--dup"],
+    valueFlags: ["--dup"],
+  });
+  assert.ok(
+    !e.message.startsWith("BAD ARGUMENTS --"),
+    `a caller mistake must not be reported as an operator rejection, got: ${e.message}`,
+  );
+  assert.ok(e.message.includes("--dup"), `message must name the token, got: ${e.message}`);
+  assert.match(e.message, /parseRootArg:/);
+  assert.match(e.message, /caller/i);
+});
+
 // ===========================================================================
 // PROCESS -- the real writing script, spawned. These are the phase-32
 // verifier's own reproduced commands, inverted into acceptance criteria.

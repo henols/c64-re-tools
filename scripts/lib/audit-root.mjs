@@ -116,10 +116,30 @@ export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}
 // guesses is what produced that, so this one never guesses: every malformed
 // form is a hard, named error.
 //
-// The shape and the error style are taken from
-// `scripts/audit-mutation-harness.mjs`'s reader -- the one copy that DID throw
-// on an unrecognised token and printed a usage line with it. That is the model
-// that was not reused; it is reused here.
+// PROVENANCE CORRECTION, 2026-09-01 (plan 32-17). What this paragraph used to
+// say, in reported speech -- deliberately NOT re-quoted verbatim, so that a
+// census for the false sentence returns a real zero rather than matching this
+// correction: it credited `scripts/audit-mutation-harness.mjs`'s reader with
+// the shape and the error style, described it as the single copy that did
+// reject an unrecognised token and print a usage line, and declared it the
+// model which, unreused elsewhere, was reused here.
+//
+// That overstated it, and the overstatement is why a live defect stayed
+// invisible through a whole gap-closure round -- a reader checking this seam's
+// provenance was told the file it named was already correct. Measured: the
+// harness's reader DID reject an unrecognised token, but it took `argv[i + 1]`
+// with no missing-value check, so it carried the valueless-value half of the
+// same defect on `--root`, `--row`, `--rows` and `--out`. `node
+// scripts/audit-mutation-harness.mjs --row <path> --root` reached row
+// selection -- meaning it had already read the REAL registry -- and said
+// nothing about `--root`. It was never a clean model.
+//
+// The seam itself was nevertheless written NEW rather than copied, exactly as
+// the paragraph above records; that part was always true. As of plan 32-17 the
+// harness is a CONSUMER of this seam rather than an unmigrated model of it.
+// The lesson is kept here rather than deleted: a provenance claim vouches for
+// another file's correctness, so check it against that file before writing it
+// down.
 //
 // WHAT NOT TO DO:
 //  - Do not add a permissive mode. No env var, no `--lenient`, no "warn and
@@ -138,6 +158,11 @@ export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}
 //  - Do not mint a new exit code for an argv rejection. Every message below
 //    begins with the literal `BAD ARGUMENTS --` precisely so the two classes
 //    are separated by their MESSAGE, not by their status.
+//  - Do not source `valueFlags` -- or `booleanFlags` -- from anywhere but the
+//    CALLER's own code. Never from argv, stdin, an environment variable or a
+//    file. A parser that could be TOLD what to accept could be told to accept
+//    whatever the operator happened to type, which reintroduces the defect
+//    through the fix.
 
 /** Every message this function throws begins with this, so a caller can tell
  *  an argv rejection from a containment refusal by reading the message. */
@@ -145,32 +170,88 @@ const BAD = "BAD ARGUMENTS --";
 
 /** The usage line quoted back with every rejection, so a refusal always shows
  *  the operator the accepted spelling rather than only the rejected one. */
-function usageLine(script, booleanFlags) {
+function usageLine(script, booleanFlags, valueFlags = []) {
   const extras = booleanFlags.map((f) => ` [${f}]`).join("");
-  return `Usage: node scripts/${script}.mjs [--root <dir>]${extras}`;
+  // A declared value flag is shown WITH its placeholder, so a rejection of
+  // `--row` with no value shows the operator the spelling that carries one.
+  const valued = valueFlags.map((f) => ` [${f} <value>]`).join("");
+  return `Usage: node scripts/${script}.mjs [--root <dir>]${extras}${valued}`;
 }
 
 /**
- * Reads a `--root` argument (and any declared value-less flags) STRICTLY.
+ * The three malformed-value rules, applied ONCE and shared by `--root` and by
+ * every declared value flag. Duplicating them per flag would be `IN-06` at a
+ * smaller scale, in the file the seam was extracted from.
+ *
+ * @param {{ flag: string, value: string|undefined, seen: string|undefined,
+ *           usage: string }} options
+ * @throws {Error} on a missing, flag-shaped, empty or repeated value.
+ */
+function rejectMalformedValue({ flag, value, seen, usage }) {
+  // `--root` is documented as taking a DIRECTORY; a declared value flag may
+  // take anything, so its noun stays generic rather than claiming more than
+  // the parser knows.
+  const noun = flag === "--root" ? "directory" : "value";
+  const theDefault = flag === "--root" ? "the default root" : "a default";
+
+  // A following token that is itself a flag is a MISSING value, not a value.
+  // Treating `--root --json` as "root is --json" is exactly the kind of
+  // guess that turns a typo into a write against the wrong tree.
+  if (value === undefined || value.startsWith("--")) {
+    const why =
+      value === undefined
+        ? "the last argument"
+        : `followed by ${JSON.stringify(value)}, which is itself a flag`;
+    throw new Error(`${BAD} \`${flag}\` requires a ${noun}, but it was ${why}. ${usage}`);
+  }
+
+  if (value === "") {
+    throw new Error(
+      `${BAD} \`${flag}\` was given an empty value. An empty string is not a ${noun}, and it ` +
+        `is specifically NOT a request for ${theDefault} -- silently falling back to the ` +
+        `default root is the defect this parser exists to remove. ${usage}`,
+    );
+  }
+
+  if (seen !== undefined) {
+    throw new Error(
+      `${BAD} \`${flag}\` was given more than once: ${JSON.stringify(seen)} and ` +
+        `${JSON.stringify(value)}. A repeated flag is rejected rather than resolved by ` +
+        "position, so no invocation's meaning depends on which copy the parser happened to " +
+        `keep. ${usage}`,
+    );
+  }
+}
+
+/**
+ * Reads a `--root` argument (plus any declared value-less and value-taking
+ * flags) STRICTLY.
  *
  * @param {string[]} argv  normally `process.argv.slice(2)`.
- * @param {{ script: string, booleanFlags?: string[] }} options
+ * @param {{ script: string, booleanFlags?: string[], valueFlags?: string[] }} options
  *        `script` is the invoking script's own base name, used ONLY in error
  *        messages so a refusal names its source -- this repository's guards
  *        are invoked as their own file names (D-12-11) and their errors read
  *        the same way. `booleanFlags` lists the value-less flags the caller
- *        also accepts; they are supplied in code, never from argv.
- * @returns {{ root: string | undefined, flags: Record<string, boolean> }}
+ *        also accepts. `valueFlags` lists the VALUE-taking flags it also
+ *        accepts; each one gets exactly the three rules `--root` gets -- a
+ *        missing value, a flag-shaped value and a repeat are all hard errors.
+ *        BOTH lists are supplied in code, never from argv.
+ * @returns {{ root: string | undefined, flags: Record<string, boolean>,
+ *             values: Record<string, string> }}
  *          `root` is the RAW string value, or `undefined` when the flag was
  *          absent (the normal, unflagged invocation). `flags` carries one
- *          `true` entry per declared boolean flag that actually appeared,
- *          keyed by the flag token exactly as declared -- no name mangling,
- *          so a reader of the call site and a reader of the lookup cannot
- *          disagree about the key.
+ *          `true` entry per declared boolean flag that actually appeared, and
+ *          `values` one entry per declared value flag that actually appeared,
+ *          both keyed by the flag token exactly as declared -- no name
+ *          mangling, so a reader of the call site and a reader of the lookup
+ *          cannot disagree about the key.
  * @throws {Error} on ANY malformed form. Never warns, never continues, never
- *         falls back to the default root.
+ *         falls back to the default root. Also throws -- WITHOUT the
+ *         `BAD ARGUMENTS --` prefix -- on a CALLER mistake, so an operator
+ *         rejection and a programming error stay distinguishable.
  */
-export function parseRootArg(argv, { script, booleanFlags = [] } = {}) {
+export function parseRootArg(argv, { script, booleanFlags = [], valueFlags = [] } = {}) {
   if (typeof script !== "string" || script.length === 0) {
     throw new Error(
       "parseRootArg: `script` is required and must be a non-empty base name -- a rejection " +
@@ -179,13 +260,31 @@ export function parseRootArg(argv, { script, booleanFlags = [] } = {}) {
     );
   }
 
-  const usage = usageLine(script, booleanFlags);
+  // A token in BOTH lists cannot be parsed unambiguously -- it would have to
+  // consume the next token and not consume it. That is a CALLER mistake, not
+  // an operator one, so it is not a `BAD ARGUMENTS --` rejection: the two
+  // classes stay tellable apart by their message, the same rule that separates
+  // an argv rejection from a containment refusal.
+  for (const token of valueFlags) {
+    if (booleanFlags.includes(token)) {
+      throw new Error(
+        `parseRootArg: ${JSON.stringify(token)} is declared in BOTH \`booleanFlags\` and ` +
+          "`valueFlags`. A token cannot both take a value and not take one, so this is a " +
+          "caller error in the invoking script, not a malformed invocation -- fix the " +
+          "declaration rather than the command line.",
+      );
+    }
+  }
+
+  const usage = usageLine(script, booleanFlags, valueFlags);
   const tokens = Array.isArray(argv) ? argv : [];
 
   /** @type {string | undefined} */
   let root;
   /** @type {Record<string, boolean>} */
   const flags = {};
+  /** @type {Record<string, string>} */
+  const values = {};
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
@@ -207,45 +306,29 @@ export function parseRootArg(argv, { script, booleanFlags = [] } = {}) {
       );
     }
 
-    if (token !== "--root") {
+    const isRoot = token === "--root";
+    if (!isRoot && !valueFlags.includes(token)) {
       throw new Error(`${BAD} unrecognised argument ${JSON.stringify(token)}. ${usage}`);
     }
 
     const value = tokens[i + 1];
 
-    // A following token that is itself a flag is a MISSING value, not a value.
-    // Treating `--root --json` as "root is --json" is exactly the kind of
-    // guess that turns a typo into a write against the wrong tree.
-    if (value === undefined || value.startsWith("--")) {
-      const why =
-        value === undefined
-          ? "the last argument"
-          : `followed by ${JSON.stringify(value)}, which is itself a flag`;
-      throw new Error(`${BAD} \`--root\` requires a directory, but it was ${why}. ${usage}`);
-    }
+    // The SAME three rules for `--root` and for every declared value flag,
+    // from one place. A rejection names the offending flag rather than
+    // blaming `--root` for a mistake made on `--row`.
+    rejectMalformedValue({
+      flag: token,
+      value,
+      seen: isRoot ? root : values[token],
+      usage,
+    });
 
-    if (value === "") {
-      throw new Error(
-        `${BAD} \`--root\` was given an empty value. An empty string is not a directory, and ` +
-          "it is specifically NOT a request for the default root -- silently falling back to " +
-          `the default root is the defect this parser exists to remove. ${usage}`,
-      );
-    }
-
-    if (root !== undefined) {
-      throw new Error(
-        `${BAD} \`--root\` was given more than once: ${JSON.stringify(root)} and ` +
-          `${JSON.stringify(value)}. A repeated flag is rejected rather than resolved by ` +
-          "position, so no invocation's meaning depends on which copy the parser happened to " +
-          `keep. ${usage}`,
-      );
-    }
-
-    root = value;
+    if (isRoot) root = value;
+    else values[token] = value;
     i += 1;
   }
 
-  return { root, flags };
+  return { root, flags, values };
 }
 
 // ---------------------------------------------------------------------------
