@@ -1076,6 +1076,10 @@ function main() {
     for (const row of selected) {
       const report = measureRow(root, row, baseline);
       reports.push(report);
+      // A REFUSED plant reaches this line through `report.failed`, which is what
+      // suppresses the registry write-back below. That is a DECISION, taken
+      // 2026-09-01 and recorded in full at the suppression-cause enumeration
+      // further down -- read it there before changing this line.
       if (report.unmeasurable || report.failed) hardFailure = true;
       if (report.observedRed) {
         // Write the captured evidence back into the row in memory; the whole
@@ -1105,6 +1109,48 @@ function main() {
   const allSkipped = reports.length > 0 && measuredCount === 0;
   if (allSkipped) hardFailure = true;
 
+  // THE WRITE-BACK DECISION, RECORDED 2026-09-01 (plan 32-21, gap 1). A REFUSED
+  // PLANT BLOCKS THE WHOLE-SET REGISTRY WRITE-BACK, and the refused-plant flag
+  // is NOT separated from the failed flag. The round-3 verifier traced the chain
+  // -- a refusal sets the row's failed flag, which sets this run's hard-failure
+  // flag, which suppresses the write-back -- and asked that it be settled
+  // explicitly rather than left as an unexamined consequence. It is settled the
+  // way it stands, on these grounds:
+  //
+  //  1. THE BASIS. This instrument's entire product is non-vacuity evidence. A
+  //     PARTIAL write-back would produce a registry mixing freshly-measured
+  //     evidence for some rows with committed evidence for others, with nothing
+  //     in the file recording which is which -- so a reader could not tell a
+  //     re-measured row from a stale one. That is precisely the laundering this
+  //     phase exists against, and it would be introduced by the instrument whose
+  //     job is to prevent it.
+  //  2. THE PRECEDENT. This repository's gate design carries no relaxation
+  //     hatches by standing decision, and this instrument already applies the
+  //     same fail-closed rule twice within twenty lines of here: to a selection
+  //     that matched zero rows, and to a selection every row of which was
+  //     skipped -- both on the stated ground that an empty measurement is not a
+  //     green. A refused plant is the same shape of non-measurement.
+  //  3. REACHABILITY, PROVEN RATHER THAN ARGUED. This path was never
+  //     PERMANENTLY unreachable by POLICY. It was unreachable because of the
+  //     post-condition arithmetic defect that refused an honest descriptor
+  //     (CR-09, corrected in the plant function above). With that corrected, the
+  //     whole-set `--all` run recorded in
+  //     `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap1-overlap-and-writeback.md`
+  //     reaches this branch and writes the registry. That run is the proof; the
+  //     argument is not.
+  //  4. THE REJECTED BRANCH, NAMED. Separating the refused-plant flag from the
+  //     failed flag -- so that a refusal reports against its row without
+  //     suppressing the write-back for the others -- was considered and is
+  //     REJECTED on ground 1, not on effort. The suppression-cause enumeration
+  //     below therefore stays exactly as it is, with the refusal remaining a
+  //     SEPARATELY NAMED cause, so a suppressed write-back always tells the
+  //     operator which of the four fired.
+  //
+  // REVERSIBILITY: reversible. The rejected branch is a two-line change at this
+  // same site; no on-disk format changes, no published contract breaks, and the
+  // registry's own bytes are unaffected by the choice. Recorded here rather than
+  // only in a SUMMARY so a later reader finds the reasoning where the code is.
+  //
   // The line that reports the SUPPRESSED write-back has to name the reason that
   // actually fired. There are now four, and printing one of them for all four
   // would be the instrument stating something it did not measure.
