@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 22
 waived_count: 12
 fixed_count: 5
-total_count: 36
-last_updated: 2026-09-01T07:18:16.264Z
+total_count: 39
+last_updated: 2026-09-01T07:45:46.468Z
 ---
 
 # Broken Windows Ledger
@@ -51,6 +51,9 @@ last_updated: 2026-09-01T07:18:16.264Z
 | 34 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-sweep-renamed-rows.md | 3889 | Plan 32-14's one authorised in-place correction was measured to be a NO-OP: the value the fixed harness applies is byte-identical to the committed Plant line, so numstat is 70 additions / 0 deletions, not the 1 deletion the plan's acceptance criterion anticipated | open |  | 2026-08-31T22:34:07.678Z |  |
 | 35 | 32 | unmet-truth | src/mcp/vice/hop-chain-comments.test.ts |  | guard-fates row cannot be re-measured by the committed harness: its plant.replace is its own plant.find with a newline prepended, so the introduced occurrence overlaps the pre-existing one and the post-condition refuses it (PLANT REFUSED in the 32-15 --all sweep) | open |  | 2026-09-01T07:18:08.572Z |  |
 | 36 | 32 | deviation | src/mcp/vice/repo-root.test.ts | 249 | the !supervisorDir.includes('.claude') substring predicate fails unconditionally when the suite runs from a GSD worktree under .claude/worktrees/, so npm run test:automated cannot reach its 0-failure floor from there (measured 2994/2987/1 in plan 32-15) | open |  | 2026-09-01T07:18:16.264Z |  |
+| 37 | 32 | deviation | scripts/lib/audit-root.mjs | 13 | Stale line citation: cites audit-gate.mjs:1147-1151 as the WR-03 try/catch; plan 32-16's 40-line header block moved it to ~1191. Not fixed here because plan 32-17 owns this file in the same wave. | open |  | 2026-09-01T07:45:46.016Z |  |
+| 38 | 32 | deviation | src/mcp/vice/audit-root-args.test.ts | 428 | Completeness assertion red by design after plan 32-16 migrated audit-gate.mjs to parseRootArg(): audit-gate joins the derived population with no MATRIX row. Plan 32-18 owns the row and its own criteria require this red. Deliberately NOT relaxed. | open |  | 2026-09-01T07:45:46.201Z |  |
+| 39 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/32-18-PLAN.md |  | Plan 32-18 cites audit-gate.mjs:90 for the fs import surface; plan 32-16's header block moved that import to :130. The names bound are unchanged. | open |  | 2026-09-01T07:45:46.468Z |  |
 
 ````json
 [
@@ -484,6 +487,42 @@ last_updated: 2026-09-01T07:18:16.264Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T07:18:16.264Z",
+    "resolved_at": null
+  },
+  {
+    "id": 37,
+    "kind": "deviation",
+    "phase": "32",
+    "file": "scripts/lib/audit-root.mjs",
+    "line": 13,
+    "description": "Stale line citation: cites audit-gate.mjs:1147-1151 as the WR-03 try/catch; plan 32-16's 40-line header block moved it to ~1191. Not fixed here because plan 32-17 owns this file in the same wave.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T07:45:46.016Z",
+    "resolved_at": null
+  },
+  {
+    "id": 38,
+    "kind": "deviation",
+    "phase": "32",
+    "file": "src/mcp/vice/audit-root-args.test.ts",
+    "line": 428,
+    "description": "Completeness assertion red by design after plan 32-16 migrated audit-gate.mjs to parseRootArg(): audit-gate joins the derived population with no MATRIX row. Plan 32-18 owns the row and its own criteria require this red. Deliberately NOT relaxed.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T07:45:46.201Z",
+    "resolved_at": null
+  },
+  {
+    "id": 39,
+    "kind": "deviation",
+    "phase": "32",
+    "file": ".planning/phases/32-the-deletion-and-the-grep-gate/32-18-PLAN.md",
+    "line": null,
+    "description": "Plan 32-18 cites audit-gate.mjs:90 for the fs import surface; plan 32-16's header block moved that import to :130. The names bound are unchanged.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T07:45:46.468Z",
     "resolved_at": null
   }
 ]
