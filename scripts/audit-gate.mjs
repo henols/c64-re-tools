@@ -51,6 +51,46 @@
 //    around each hit -- full-length coverage, bounded regex cost. See the
 //    comment above `bashTargetsMilestoneAudit()`.
 //
+// ARGV SEAM YES, CONTAINMENT SEAM NO -- a decision, with its measurement and
+// its reversal trigger (2026-09-01, phase 32 gap-closure round 2, plan 32-16):
+// this script reads its arguments through `parseRootArg()` in
+// `lib/audit-root.mjs`, the single argv seam. Before this round it hand-rolled
+// that reader, and three malformed invocations -- `--root=/tmp`, a bare
+// `--root`, and the typo `--rooot /tmp` -- each produced the FULL real-tree
+// report at exit 0, indistinguishable from an unflagged run: an unrecognised
+// token was dropped silently and a valueless flag fell through. All three are
+// now a hard `audit-gate: BAD ARGUMENTS --` at exit 1. Captured before and
+// after in
+// `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-gap2-audit-gate-seam.md`.
+//
+// It is deliberately NOT wired to `resolveContainedRoot()`, and that asymmetry
+// is a decision rather than an omission. The basis is measured, not assumed:
+// this script performs no filesystem write. Over comment-stripped source,
+// across the whole write API set -- not the single most obvious member of it
+// -- the count is 0, and the fs import surface is exactly
+// `{ readdirSync, readFileSync }` from `node:fs`, with nothing bound from
+// `node:fs/promises`, no namespace import and no dynamic form. (The five
+// `process.stderr.write(` calls in this file are outside that set on purpose:
+// stdio is not a filesystem write.) Containment exists in `lib/audit-root.mjs`
+// for a flag that decides which tree a script reads AND WRITES; the trust
+// boundary it guards is the write, and there is no write here.
+//
+// The second half of the basis is that this script's own test suite REQUIRES
+// the uncontained path: `src/mcp/vice/audit-integrity.test.ts` points it at
+// `mkdtempSync(tmpdir())` trees outside the repository, for the reason
+// recorded at that file's `:162-171` -- a committed fixture literally named
+// `docs-*.test.ts` would join the real guard glob and red CI permanently.
+// Adding containment here would force either relocating that idiom or opening
+// an `allowExtra` wide enough for any temp directory, and the latter is the
+// relaxation hatch the bullet above forbids.
+//
+// REVERSAL TRIGGER, named rather than left to memory: the moment a filesystem
+// write appears in this file, the basis is gone and containment becomes
+// required. That is not a note anyone has to remember -- plan 32-18 pins it
+// mechanically, with a typed matrix expectation recording this script as
+// uncontained-by-design and an assertion that its write count is 0. A write
+// added here reds that assertion.
+//
 // SCOPE FENCE: this gates only the milestone audit's frontmatter `status:`
 // line. It does not gate phase `VERIFICATION.md` files, it is not invoked
 // by `/gsd-complete-milestone` itself, and `status: gaps_found` is never
@@ -91,6 +131,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { parseRootArg } from "./lib/audit-root.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1115,25 +1156,28 @@ function hookMain(rootArg) {
   });
 }
 
-function parseArgs(argv) {
-  let root;
+function main() {
+  // ARGUMENT REJECTION versus every other failure this script reports.
+  // Reported before anything is derived or read, and kept at exit 1 like the
+  // FAIL and REFUSED paths below: all three are separated by their MESSAGE
+  // (`BAD ARGUMENTS --` versus `audit-gate: FAIL` versus `audit-gate:
+  // REFUSED`), never by their status. This is the call-site shape
+  // `check-guard-fates.mjs` records verbatim; do not invent a second one.
+  let rootArg;
   let json = false;
   let hook = false;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--root") {
-      root = argv[i + 1];
-      i += 1;
-    } else if (argv[i] === "--json") {
-      json = true;
-    } else if (argv[i] === "--hook") {
-      hook = true;
-    }
+  try {
+    const parsed = parseRootArg(process.argv.slice(2), {
+      script: "audit-gate",
+      booleanFlags: ["--json", "--hook"],
+    });
+    rootArg = parsed.root;
+    json = parsed.flags["--json"] === true;
+    hook = parsed.flags["--hook"] === true;
+  } catch (err) {
+    console.error(`audit-gate: ${err?.message ?? String(err)}`);
+    process.exit(1);
   }
-  return { root, json, hook };
-}
-
-function main() {
-  const { root: rootArg, json, hook } = parseArgs(process.argv.slice(2));
 
   if (hook) {
     hookMain(rootArg);
