@@ -22,9 +22,26 @@ current_phase_name: The Deletion and the Grep Gate
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-01 after Phase 32)
+See: .planning/PROJECT.md (updated 2026-09-01 at the v0.7.0 close — full evolution review)
 
-**Current focus:** Milestone v0.7.0 close — all 6 phases and 80/80 plans complete; next action is `/gsd-complete-milestone v0.7.0`
+**Current focus:** Planning the next milestone. v0.7.0 shipped 2026-09-01; no
+milestone is open and `.planning/REQUIREMENTS.md` was removed at the close.
+Next action is `/gsd-new-milestone`, which writes a fresh one. Candidate scope,
+in the order PROJECT.md → Next Milestone Goals records it: the **unowned
+frame-exact emulator stop** (the single gate on Phase 23's `R1` branch and
+therefore on the held Phases 24 and 26), then **v0.8.0** — those held phases
+carrying `DXA-*`, `GHID-*`, `OPC-*`, `AUTO-*` and `PROOF-*` unchanged — then
+**v0.9.0**, the rebuild half (`DECOMP-*`, `BUILD-*`, `EQUIV-*`) on the substrate
+v0.7.0 just built. Phase numbering resumes at **33**.
+
+**Shipped:** v0.7.0 Own the Annotation Store — 2026-09-01 (6 phases 27-32, 80
+plans, 214 tasks, 28/28 requirements, 690 commits, 7 days, `override_closeout`).
+This project stopped renting its analysis state: regenerator2000 is deleted and
+`.annostore` replaced it, reached through 18 `anno_*` tools registered
+proxy-locally. **No milestone audit was run** — the third close in a row without
+one, and the cost is named rather than absorbed: `STORE-03`'s traceability row
+contradicts its own prose and ships unresolved, because Phase 29 routed it to
+exactly the verification pass or audit this close did not run.
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -147,9 +164,9 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: Milestone v0.7.0 complete
-Plan: —
-Status: Awaiting next milestone
+Phase: Milestone v0.7.0 complete — archived 2026-09-01
+Plan: 80 of 80 executed across Phases 27-32
+Status: Awaiting next milestone. `.planning/REQUIREMENTS.md` removed at the close (fresh one written by `/gsd-new-milestone`); `ROADMAP.md` collapsed to milestone groupings with the held v0.6.0 Phase 24/26 detail and the load-bearing per-phase Progress table both preserved. Phase directories were **not** archived — archival was tried at this close and measured to redden 9 tests across 5 files, so they were restored.
 Last activity: 2026-09-01 — Milestone v0.7.0 completed and archived
 
 ## Performance Metrics
