@@ -54,6 +54,17 @@ dist/
 # test failure instead of a corruption of the next harness run.
 /.audit-root-synth-*/
 
+# Scratch roots built by src/mcp/vice/audit-harness-restore.test.ts, into which
+# the mutation harness's exported plant() writes a real mutation that a signal
+# then interrupts. Same containment reason as the entry above -- they MUST live
+# inside the repository because resolveContainedRoot() refuses anything outside
+# it -- and they are removed in a `t.after` that runs even when an assertion
+# fails. This entry is LOAD-BEARING rather than tidiness: that test asserts
+# `git status --porcelain` is byte-identical across an interrupted run, and an
+# untracked scratch root would appear in porcelain and make the assertion
+# untestable.
+/.harness-signal-scratch-*/
+
 # Local editor config, machine-specific, never shared.
 /.vscode/
 
