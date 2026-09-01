@@ -1,318 +1,253 @@
 ---
 phase: 32-the-deletion-and-the-grep-gate
-verified: 2026-09-01T09:10:00Z
-status: gaps_found
-score: 14/16 must-haves verified
+verified: 2026-09-01T14:05:00Z
+status: human_needed
+score: 17/17 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: 11/15
-  previous_verified: 2026-09-01T02:20:00Z
+  previous_score: 14/16
+  previous_verified: 2026-09-01T09:10:00Z
   gaps_closed:
-    - "Gap 2 (the `--root` seam, 6/8 -> 8/8) — CLOSED. `grep -l -- '--root' scripts/*.mjs` and `grep -l 'parseRootArg(' scripts/*.mjs` now both return the SAME EIGHT files. I drove all four malformed forms against both previously-broken scripts myself: `--root` (valueless), `--root=/tmp`, `--rooot /tmp` and `--root /tmp` each produce a distinct named hard error at exit 1 (`BAD ARGUMENTS -- ...` for the three argv rejections, `REFUSED`/`FAIL` for the containment case). Neither script silently reads the default root on any form any more."
-    - "Gap 5 (the tautological completeness guard) — CLOSED, and proven to BITE rather than merely to have been reworded. `audit-root-args.test.ts` now derives its population from the FLAG (`const ROOT_FLAG = \"--root\"`, `src.includes(ROOT_FLAG)` at the `walkRootAcceptingScripts()` read) and MATRIX carries all eight scripts. I planted a ninth root-accepting `scripts/*.mjs` and re-ran the file: 62 tests, 61 pass, 1 FAIL naming `zz-verifier-plant` by name. Removed the plant; back to 62/62 and the tree clean."
-    - "Gap 4's SWEEP half — CLOSED. `node scripts/audit-mutation-harness.mjs --all` now runs to completion at HEAD: 61 rows reported in registry order, `counts: measured=35 skipped=26 total=61`, `tree: restored byte-identical to the baseline`. The round-2 abort at planted row 23 is gone, and the 26 evidence-owing-nothing rows are reported as SKIPPED with their verdict named rather than throwing."
-    - "Gap 4's SINGLE-ROW half for the row it was named after — CLOSED. `--row scripts/lib/skill-honesty-checks.mjs` now returns `OBSERVED RED ... guard exit status 1 (control exit status 0)`, exit 0, tree restored byte-identical. The `introduced = afterMutation - preExisting` arithmetic is in place at `scripts/audit-mutation-harness.mjs:332-335`, and the failure message no longer tells the operator to edit the recorded evidence."
-    - "Truth 13's behaviour-unverified state — CLOSED. The restore-on-signal invariant is now exercised by a real test rather than declared present. `node --test audit-harness-restore.test.ts` = 5 tests, 5 pass, 0 fail, including SIGINT x5 and SIGTERM x5 delivered inside a parent-OBSERVED plant window (the parent reads the mutated bytes off disk before signalling), each recording exit `130` and a byte-identical restore."
-    - "Round 2's coincidental-reliance advisory on truth 2 — CLEARED. The undeclared precondition (the evidence is sound only because nobody exercised the harness's defective `--root` path) is now declared MECHANICALLY, not in prose: the harness carries a MATRIX row with a spawned test, so taking it off the strict parser reds `audit-root-args.test.ts`."
-  gaps_remaining:
-    - "Gap 4's `re-measure ANY row` half — STILL OPEN, narrowed. One of the 35 re-pointed rows (`src/mcp/vice/hop-chain-comments.test.ts`) is still refused by the corrected post-condition, and because `plantRefused` sets `failed`, the whole-set `--all` registry write-back is now permanently unreachable. Honestly logged by the executors as `WINDOWS.md` entry 35, open."
-  regressions:
-    - "NEW: plan 32-19 exported `plant()` and `restoreAll()` to make the signal handler reachable, but `restoreAll()`'s `restored` latch never resets, so the exit/SIGINT/SIGTERM handlers become permanently disarmed after the first restore. Reproduced independently by me against a scratch root: exit `130`, `pendingRestoreCount()` = 1, and the second plant left ON DISK (`CR-10`)."
-gaps:
-  - truth: "The recorded evidence is re-runnable by the committed instrument — a reader can re-measure ANY row (plan 32-01 prohibition 1 / verifier truth 14, carried from round 2, narrowed)"
-    status: partial
-    reason: >-
-      The SWEEP half is closed and that is a real advance, measured not read: `--all` reports
-      all 61 rows, `measured=35 skipped=26 total=61`, tree byte-identical. What remains is one
-      row, and I reproduced its arithmetic by hand rather than trusting either the SUMMARY or
-      the review.
-
-      Row `src/mcp/vice/hop-chain-comments.test.ts` plants into
-      `src/mcp/vice/absorbed-answer-key.test.ts` with
-      `replace = "\n" + find` — the recorded replacement is the recorded find with ONE newline
-      prepended. Measured directly against the file at HEAD: `find` occurs exactly 1 time;
-      `replace` occurs 1 time BEFORE the mutation and 1 time AFTER it, so
-      `introduced = 1 - 1 = 0` and the post-condition throws. The mutation is nevertheless
-      REAL and the descriptor is HONEST — I applied it in memory and the file changes, by
-      exactly +1 byte. The introduced occurrence textually OVERLAPS the pre-existing one, and
-      a subtraction of total counts cannot see an overlap.
-
-      This falsifies, in the merged code, the exact sentence round 2's own gap text prescribed
-      as the remedy — "The overlap case is still caught by this form" — and plan 32-15 adopted
-      that sentence and reproduced it in the code comment at
-      `scripts/audit-mutation-harness.mjs:325-329` ("the narrowing costs nothing"). It does
-      cost something: one committed observed red, whose recorded evidence is sound
-      (`exitStatus: 1`, `control.exitStatus: 0`), cannot be reproduced by the committed
-      instrument.
-
-      SECOND CONSEQUENCE, and it is not cosmetic. `plantRefused` sets `report.failed = true`
-      (`:642-643`), `failed` sets `hardFailure = true` (`:924`), and the registry write-back at
-      `:958` is guarded by `if (!hardFailure)`. So while this one row stands refused, an
-      `--all` sweep can NEVER write the registry. My run printed it verbatim:
-      `registry: NOT written (a row's plant was refused; a row was unmeasurable)`.
-      The instrument does not lie about it — the four suppression causes are enumerated at
-      `:947-956` and the one that fired is named — but the phase's central artefact can no
-      longer be regenerated by its own whole-set command.
-
-      WHAT IS NOT WRONG, measured rather than assumed: no false pass is possible (the
-      replacer function still guarantees the bytes written equal `replace`), no committed
-      record is corrupted (35/35 `observedRed` objects structurally intact, 35 distinct
-      excerpts, 35/35 green controls, 35/35 `control.command` equal to `command`), and the
-      other 34 rows re-measure. 33 reproduced OBSERVED RED in my sweep; the 34th
-      (`scripts/audit-gate.mjs`) came back UNMEASURABLE for an unrelated and transient reason
-      — its UNPLANTED control is `node scripts/audit-gate.mjs`, which exits 1 today only
-      because `docs-review-disposition.test.ts` is red on the round-3 review's own ids. CONFIRMED
-      BY RE-MEASUREMENT: once this document's dispositions took that guard green I re-ran that
-      single row and it returned `OBSERVED RED ... guard exit status 1 (control exit status 0)`.
-      So the true figure is 34 of 35 re-measurable, and `hop-chain-comments` is the only row
-      that is not. (The re-run wrote its `observedRed` back into the registry; I reverted the
-      one-line change with `git checkout` and confirmed the tree clean.)
-    artifacts:
-      - path: "scripts/audit-mutation-harness.mjs"
-        issue: ":332-335 — `introduced = afterMutation - preExisting` cannot see a replacement that OVERLAPS its own pre-existing occurrence, so it refuses an honest descriptor; :325-329 — the comment asserts 'the narrowing costs nothing', which is false for this shape; :642/:924/:958 — plantRefused -> failed -> hardFailure permanently suppresses the whole-set registry write-back"
-      - path: ".planning/phases/32-the-deletion-and-the-grep-gate/guard-fates.json"
-        issue: "the `src/mcp/vice/hop-chain-comments.test.ts` row carries a sound recorded red that the committed instrument now refuses to reproduce"
-    missing:
-      - "Count introduced occurrences in a way that survives overlap. The count that actually means 'the mutation introduced the recorded replacement' is a per-site check at the match position, not a whole-file difference: apply the replacer, then assert `mutated.startsWith(replace, matchIndex)` and `mutated.length - text.length === replace.length - find.length`. Both facts are exact for overlapping and non-overlapping shapes alike, and both still reject a replacement that never reaches the text."
-      - "Correct the `:325-329` comment: state that the subtraction form is blind to an overlapping replacement, and name `hop-chain-comments.test.ts` as the measured case, rather than asserting the narrowing is free."
-      - "Separate `plantRefused` from `failed` for write-back purposes, or decide explicitly that a refused row must block the write-back and say so — but do not leave the whole-set regeneration path permanently unreachable without a recorded decision."
-      - "Then re-run `--all` once and confirm `measured=35` with 35 OBSERVED RED and the registry written."
-  - truth: "The harness's restore machinery cannot be disarmed — every plant that is captured is restored on SIGINT / SIGTERM / uncaught exception / exit (plan 32-19 must-have 1, stated verbatim: 'restores every captured original byte-for-byte')"
-    status: failed
-    reason: >-
-      A REGRESSION introduced by this round's own remedy, and I reproduced it independently
-      rather than adopting the review's report of it.
-
-      `scripts/audit-mutation-harness.mjs:169-174` — `let restored = false;` and
-      `export function restoreAll() { if (restored) return; restored = true; ... }`. The latch
-      is set on the FIRST call and never reset. Plan 32-19 exported `plant()` and
-      `restoreAll()` so an in-process driver could reach the real registered handler; the two
-      together mean any consumer that completes one restore cycle permanently disarms the
-      `exit`, `SIGINT`, `SIGTERM` and `uncaughtException` handlers for the rest of the process.
-
-      MEASURED, against a scratch root outside the repository, with my own driver:
-      plant -> `PLANTED_ONE`, `pendingRestoreCount()` = 1;
-      `restoreAll()` -> `ORIGINAL`, `pendingRestoreCount()` = 0;
-      plant again -> `PLANTED_TWO`, `pendingRestoreCount()` = 1;
-      SIGINT -> `EXIT=130`, and `FINAL ON DISK: PLANTED_TWO`.
-      The process exited 130 as advertised and left a captured original unrestored, which is
-      precisely the half of the plan's must-have that says "restores every captured original
-      byte-for-byte".
-
-      SCOPE, measured and stated plainly so this is not read as bigger than it is. The SHIPPED
-      CLI PATH IS SAFE and I proved it twice: `main()` calls `revert()` per row (`:362-367`,
-      which deletes from `originals` WITHOUT touching the latch) and `restoreAll()` exactly
-      once, in the `finally` after the row loop — so the latch is never set while a plant is
-      on disk. My own `--all` sweep over all 61 rows finished with
-      `tree: restored byte-identical to the baseline` and `git status --porcelain` unchanged.
-      The one in-process consumer that exists (`audit-harness-restore.test.ts`) plants once per
-      child process and is unaffected — which is exactly why its 5/5 green does not catch this.
-
-      THE ONE-LINE REMEDY IS ALREADY PROVEN BY THE CODE ITSELF. `restoreAll()` ends with
-      `originals.clear()` (`:185`), so a second call iterates an empty map and writes nothing
-      even with the latch deleted. The latch is therefore redundant for the property it was
-      added for AND harmful for the property it breaks. Deleting it keeps the committed WR-03
-      test green by construction — which is also the substance of `WR-27`: that test cannot
-      distinguish the latch from `originals.clear()`, so it passes while the disarm defect
-      stands.
-    artifacts:
-      - path: "scripts/audit-mutation-harness.mjs"
-        issue: ":169-174 — `restored` is a permanent latch, never reset, on a now-EXPORTED restore path; :185 — `originals.clear()` already provides the idempotence the latch was added for"
-      - path: "src/mcp/vice/audit-harness-restore.test.ts"
-        issue: ":449 — the WR-03 test writes a sentinel between two `restoreAll()` calls, which distinguishes no-op from re-write but NOT latch from `originals.clear()`, so it is green against a live disarm defect"
-    missing:
-      - "Delete the `restored` latch and the `if (restored) return;` early exit. `originals.clear()` already makes a second call a genuine no-op, and the committed WR-03 sentinel test stays green."
-      - "Add the discriminating case to `audit-harness-restore.test.ts`: plant, restoreAll, plant AGAIN, signal — and assert the second plant is also restored. Without it the fix is unguarded and the same regression can return."
-      - "Reconcile `.planning/WINDOWS.md`: entry 33's stated content (the restore-on-signal invariant is behaviour-unverified) IS now discharged and the entry can close on that content, but it must not close without a NEW entry opened for this disarm defect."
+    - >-
+      Gap 1 (`CR-09` — the plant post-condition could not see an overlapping replacement, one
+      committed observed red was un-reproducible, and `plantRefused -> failed -> hardFailure`
+      made the whole-set registry write-back permanently unreachable) — CLOSED, and closed on
+      MY OWN whole-set measurement rather than on the SUMMARY. `node scripts/audit-mutation-harness.mjs --all`
+      at HEAD `048f810`, broker `inactive`: exit 0, `counts: measured=35 skipped=26 total=61`,
+      **35 OBSERVED RED / 26 SKIPPED / 0 UNMEASURABLE / 0 REFUSED / 0 ZERO-EXIT**,
+      `tree: restored byte-identical to the baseline`, and the final line reads
+      `registry: /home/.../guard-fates.json` — a PATH, not `registry: NOT written (...)`.
+      The write-back the round-3 report proved unreachable is reached. The row the gap was
+      named after, `src/mcp/vice/hop-chain-comments.test.ts`, reports
+      `OBSERVED RED ... guard exit status 1 (control exit status 0)` inside that sweep and
+      also on its own (`--row`, exit 0). The mechanism is the per-site measurement the gap's
+      `missing` asked for, present at `scripts/audit-mutation-harness.mjs:488-491`:
+      `matchIndex = text.indexOf(find)`, `mutated.startsWith(replace, matchIndex)`, and
+      `actualLengthDelta === expectedLengthDelta` — both exact under overlap.
+    - >-
+      Gap 2 (`CR-10` / `WR-27` — the module-level `restored` latch permanently disarmed the
+      `exit` / `SIGINT` / `SIGTERM` / `uncaughtException` handlers on the newly-exported path)
+      — CLOSED. The latch is GONE: `restoreAll()` at `:171-185` has no flag, no counter and no
+      size check, and ends with `originals.clear()`, which the header note at `:196-201` names
+      as the sole mechanism and forbids duplicating. The discriminating case the gap's
+      `missing` asked for exists and is named: `gap 2 / CR-10: SIGINT in the SECOND window --
+      after a restore cycle has already completed -- still restores`, plus its SIGTERM twin.
+      `node --test audit-harness-restore.test.ts` = **15 tests, 15 pass, 0 fail, 0 skipped**,
+      measured by me. The RED capture is committed and real:
+      `evidence/32-restore-disarm.md` records `pass 5 / fail 2` against the committed latch
+      (§3a), green after deletion (§3b), `pass 5 / fail 2` again against a DELIBERATELY
+      RE-INTRODUCED latch (§3c) and `pass 7 / fail 0` once removed (§3d).
+    - >-
+      `.planning/WINDOWS.md` reconciled exactly as the gap required. Entry 33 `fixed` on its
+      stated content; entry 35 `fixed` on the measurement that discharges it; and entry 40
+      OPENED for the disarm defect and then `fixed` in the same round with the RED-first
+      evidence cited. No entry closed without a successor.
+  gaps_remaining: []
+  regressions: []
+gaps: []
 deferred: []
+behavior_unverified_items: []
 coincidental_reliance_items: []
+human_verification:
+  - test: >-
+      Decide the disposition of the NINE round-4 code-review findings that are recorded OPEN
+      in `.planning/todos/pending/2026-09-01-phase-32-review-round-4-nine-open-findings.md`
+      (`severity: blocker`), and in particular of `CR-07` (Critical) and `WR-38`. Read that
+      todo and `32-REVIEW.md` at `de598f2`, then choose one of: (a) close the phase and carry
+      the nine into the milestone backlog, (b) run one more gap-closure round scoped to
+      `CR-07` + `WR-38` + `WR-37`, or (c) accept them with a recorded override.
+    expected: >-
+      A recorded human decision. Neither ROADMAP success criterion is falsified by any of the
+      nine — I measured that rather than assuming it — so this is a judgement about acceptable
+      residual risk at phase close, not a repair the phase owes. The two facts that make it a
+      human call rather than a verifier call: `CR-07` is a **Critical that has now been open
+      across three review rounds and was absent from the round-3 report for one full round
+      without ever being fixed**, so the record itself failed in the way this phase's own
+      criterion 1 exists against; and `WR-38` is a self-applied criterion-1 defect inside the
+      phase's own instrument.
+    why_human: >-
+      Both are latent, not observed. `CR-07` is a scheduling hazard against a **gitignored**
+      tree (`installer/skills/`), so no porcelain assertion in the suite can see it and no
+      run I can take proves it either way — the suite was green for me and green twice for the
+      reviewer. `WR-38` is a judgement about whether a mislabelled assertion inside a
+      case-group that DOES bite is acceptable. Neither is decidable by measurement; both are
+      decidable by an owner.
 review_dispositions:
   note: >-
-    Round-3 `32-REVIEW.md` (commit `e35af74`) raised 18 findings AFTER every plan merged.
-    Each is dispositioned below on my own measurement, not on the review's say-so. Three were
-    put to me as leads: two are CONFIRMED and are carried as this report's two gaps; one is
-    confirmed LATENT. This block is what takes `docs-review-disposition.test.ts` back to green.
+    Round-4 `32-REVIEW.md` (commit `de598f2`) raised nine findings after both round-3 plans had
+    merged. All nine are dispositioned OPEN in the pending todo, which is the disposition
+    source `docs-review-disposition.test.ts` documents for exactly this case — and that guard
+    is GREEN at HEAD, measured by me (exit 0). I re-measured the three that bear on this
+    phase's own criteria rather than adopting the review's or the todo's reading.
   findings:
-    - id: CR-09
-      disposition: CONFIRMED, both halves — carried as gap 1 of this report
+    - id: CR-07
+      disposition: >-
+        CONFIRMED AS LATENT, and CARRIED TO THE HUMAN — not closed by me, and explicitly not
+        closed by the todo's existence.
       evidence: >-
-        Reproduced independently. `hop-chain-comments`'s descriptor measures find=1, replace
-        pre=1 post=1, introduced=0, and the mutation is real (+1 byte). `--all` prints
-        `registry: NOT written (a row's plant was refused; a row was unmeasurable)`.
-        The review's reading is correct; the SUMMARY's is not. Note the code comment at
-        `:630-634` and `WINDOWS.md` entry 35 DO record the refusal honestly — what is wrong is
-        the arithmetic and the "costs nothing" claim beside it, not the record.
-    - id: CR-10
-      disposition: CONFIRMED — carried as gap 2 of this report
+        The mechanism is real and reads straight off the code: `audit-root-args.test.ts`'s
+        adjacency loop spawns `check-skill-cli-invocations.mjs` five times; each spawn takes
+        the `P.root === DEFAULT_ROOT` branch and drives an `rmSync` + `cpSync` rebuild of
+        `installer/skills/`, which four other test files read under the concurrent runner.
+        `installer/skills/` is gitignored, so `attributablePorcelainDelta()` and every other
+        porcelain assertion in the suite are blind to it BY CONSTRUCTION. Not observed
+        failing: `npm run test:automated` is 3021 pass / 0 fail on the merged tree, and each
+        of the four readers is green individually. The RECORD defect is the part I weight
+        highest, and I checked the commit trail the todo gives rather than trusting it:
+        `05ca6c6` (round 2) raises CR-07, `e35af74` (round 3) does not contain it, `de598f2`
+        (round 4) re-raises it. Round 3's report — my own — therefore dispositioned 18 ids and
+        not this one, because the review it was reading had dropped it. A Critical stopped
+        being counted because it stopped being written down. That is the failure mode
+        criterion 1 exists against, applied to the phase's own audit trail.
+    - id: WR-38
+      disposition: >-
+        CONFIRMED — and I reproduced it rather than adopting it. Recorded as a WARNING, not a
+        gap, on a measured distinction the finding does not draw.
       evidence: >-
-        Reproduced independently against a scratch root with my own driver:
-        `FINAL ON DISK: PLANTED_TWO`, `EXIT=130`, `pendingRestoreCount()` = 1 at signal time.
-        This contradicts 32-19's SUMMARY claim that the invariant is observed and `WR-03`
-        settled. Scope limited and stated in the gap: the shipped CLI path is provably safe.
-    - id: CR-11
-      disposition: CONFIRMED AS LATENT — not a gap, recorded as a hardening item
+        I patched `plant()` in place to bypass `resolveContainedRoot()` entirely
+        (`abs = join(root, descriptor.file)`), ran the driver's escape case against a scratch
+        root, and reverted the patch (`git checkout`, tree clean). Result:
+        `planted = false`, `refusalMessage = "row ...: plant target /.../plant-contract-escape-target.txt does not exist."`,
+        `pendingRestoreCount = 0`. So the assertion at `:1209-1215` labelled
+        **"This assertion is the one that must never change"** DOES pass with containment
+        removed — the escape target does not exist on disk, so `!existsSync(abs)` refuses the
+        plant for an unrelated reason. The finding is factually correct.
+        WHAT THE FINDING OMITS, measured in the same run: the CASE GROUP is NOT vacuous. Two
+        of its five assertions go red in that state — `assert.match(msg, /OUTSIDE the repository root/)`
+        and the ``/`plant\.file`/`` match — because the ENOENT message carries neither. So
+        `node --test audit-harness-restore.test.ts` fails with containment removed, and no
+        guard here "cannot be made to fail". The defect is a MISLABELLED assertion inside a
+        biting group, not a vacuous guard. That is why it is a WARNING and why it is also in
+        the human item: the label is a promise the assertion does not keep, in the one file
+        whose whole purpose is to keep that kind of promise.
+    - id: WR-39
+      disposition: CONFIRMED — a docblock over-claim, WARNING.
       evidence: >-
-        `Buffer.from(mutated, "latin1")` does truncate code points above U+00FF while the
-        string-level post-condition still counts them, so it would be silent if it fired.
-        Measured across the committed corpus: 35 plant descriptors, 0 with any code point
-        above U+00FF in `find` or `replace`. Nothing is wrong on disk today. Cheapest fix is
-        an assertion that every descriptor is latin1-representable, alongside the gap-1 fix in
-        the same function.
-    - id: WR-27
-      disposition: CONFIRMED — folded into gap 2's `missing`
+        `attributablePorcelainDelta()`'s docblock (`:232-236`) says the assertion is narrowed
+        to "proving the harness did not write outside the scratch root it was pointed at".
+        The call sites read porcelain AFTER the child has exited (`:462-464`, `:636`, `:800`,
+        `:990`), and the child's exit is precisely when the restore handler under test runs.
+        So the property actually asserted is "no write escaped the scratch root AND survived
+        restoration" — strictly weaker, and weaker in the exact direction that matters here,
+        because a mis-contained plant that the harness then correctly restores is invisible to
+        it. Not a live exposure: `WR-29`'s widening (measured against the registry — 23 `src/`
+        targets, 10 `scripts/`, 2 `.planning/`, 0 `/fixtures/`) means the filter now admits
+        every tree the registry can name. The sentence over-reaches; the filter is right.
+        Independently corroborated as NON-vacuous, by accident: my first run of this file
+        overlapped my own `--all` sweep and the assertion went red naming
+        `M src/mcp/vice/anno-confidence.ts` — a real concurrent plant, caught.
+    - id: WR-37
+      disposition: CONFIRMED AS LATENT — WARNING, and the narrowest of the three.
       evidence: >-
-        Read `audit-harness-restore.test.ts:449-508`. The sentinel distinguishes a no-op from
-        a re-write, which is what `WR-03` literally asked, but not the latch from
-        `originals.clear()`. My `CR-10` repro is the proof: the test is green and the disarm
-        defect is live.
-    - id: WR-28
-      disposition: ACCEPTED as a robustness note, not blocking
-      evidence: >-
-        The negative control shares the same poll loop as the signal cases; the loop asserts on
-        the plant deadline but reads `exited` only in the marker loop above it. Measured: the
-        file is 5/5 green and finishes in ~1.95 s, so no flake is observable today. Worth
-        tightening when gap 2's discriminating case is added to the same file.
-    - id: WR-29
-      disposition: CONFIRMED — real, minor
-      evidence: >-
-        `attributablePorcelainDelta()` at `:174-187` filters new porcelain lines to
-        `.planning/`, `scripts/` and the scratch prefix. `src/` is excluded, and `src/` is
-        where a mis-contained plant would land. Narrowing the assertion was the right call for
-        the pre-existing untracked files; excluding `src/` was one path too many.
-    - id: WR-30
-      disposition: CONFIRMED — a comment, not code
-      evidence: >-
-        `.gitignore:57-66` justifies `/.harness-signal-scratch-*/` with a porcelain assertion
-        the same round narrowed. The ignore entry is still correct and still needed; only its
-        stated reason drifted.
-    - id: WR-31
-      disposition: CONFIRMED — a docblock over-claim on a guard that is otherwise correct
-      evidence: >-
-        `audit-root-args.test.ts:641` says "ACCEPTS a root, HOWEVER IT READS IT" while the
-        predicate keys on the literal token `--root`. A script reading a root under another
-        spelling is invisible. That is still strictly better than round 2's `parseRootArg(`
-        predicate — I proved the flag-keyed form BITES on a planted ninth script — so the guard
-        is fixed; the sentence over-reaches.
-    - id: WR-32
-      disposition: ACCEPTED — the decision stands, the basis should name one more fact
-      evidence: >-
-        `audit-gate.mjs:56-66` records "never writes" as the basis for being wired to the argv
-        seam but not to `resolveContainedRoot()`. It does spawn guard suites, so an uncontained
-        root is executed rather than merely read. The decision is defensible; the recorded
-        basis is incomplete and should say so.
-    - id: WR-33
-      disposition: ACCEPTED as a predicate-precision note
-      evidence: >-
-        A text predicate with a known evasion. No live evasion exists in the tree — every
-        `check-*.mjs` and both audit scripts are on the seam and the matrix covers 8/8 — so it
-        is a hardening item, not a hole with something in it.
-    - id: WR-34
-      disposition: CONFIRMED — a diagnosis-quality defect, not a safety one
-      evidence: >-
-        `plant()` resolves the descriptor's `file` through `resolveContainedRoot()` (`:280`),
-        so a bad registry `plant.file` is reported in the vocabulary of a `--root` refusal. The
-        containment itself is correct and load-bearing; only the message misattributes the
-        cause.
-    - id: WR-35
-      disposition: ACCEPTED — hardening, not a live exposure
-      evidence: >-
-        `resolveBin()` (`:381`) branches on three conventions and spawns `process.execPath` or
-        `npm` with the row's own argv. The registry is a committed, CI-gated artefact, so the
-        input is trusted by construction today. An allow-list would make that a property of
-        the code rather than of the review process.
+        Read at the source rather than from the report. Plan 32-15's row-level containment
+        wraps `plant()` only (`:793-803`). The UNPLANTED control at `:761` —
+        `const control = runGuard(root, row, "control (unplanted)")` — is NOT wrapped, so a
+        bad `guard.cwd`, a bad `guard.argv` or a `re-pointed` row that has lost its `guard`
+        still throws out of the row loop and aborts the whole sweep, which is the class of
+        defect the comment at `:779-792` claims was fixed. Latent today: all 35 re-pointed
+        rows carry a valid guard descriptor and my `--all` sweep completed with 0 aborts.
+    - id: WR-40
+      disposition: ACCEPTED — carried in the todo, no independent measurement taken.
+    - id: IN-16
+      disposition: ACCEPTED — cosmetic, carried in the todo.
+    - id: IN-17
+      disposition: ACCEPTED — cosmetic, carried in the todo.
+    - id: IN-18
+      disposition: ACCEPTED — cosmetic, carried in the todo.
+    - id: IN-19
+      disposition: ACCEPTED — cosmetic, carried in the todo.
     - id: WR-36
-      disposition: CONFIRMED — recorded as a WARNING against criterion 1's own standard
+      disposition: >-
+        Round 3's standing WARNING — now MOSTLY DISCHARGED, measured. Downgraded from
+        "MISSING" to "PARTIAL".
       evidence: >-
-        Measured: `grep -rln "audit-mutation-harness" src/mcp/vice/*.test.*` returns only
-        `audit-root-args.test.ts` and `audit-harness-restore.test.ts`, neither of which
-        exercises the corrected post-condition arithmetic, the SKIPPED reporting or the
-        plantRefused reporting. All three behaviours are proven only by one-off manual runs
-        (the executor's and mine). In a phase whose criterion is "a guard that cannot be made
-        to fail has not been re-pointed", the instrument's own new behaviours ship without a
-        standing guard. Not a gap on its own; it is why gap 1's `missing` asks for a re-run
-        rather than a promise.
-    - id: IN-11
-      disposition: ACCEPTED — cosmetic
-    - id: IN-12
-      disposition: ACCEPTED — the six-file CORRECTION block is verbose; the correction itself is genuine and measured (I re-read `scripts/lib/audit-root.mjs:119-135` and the false model citation IS gone, replaced by reported speech so a census for the false sentence returns a real zero)
-    - id: IN-13
-      disposition: ACCEPTED — stale forward reference, cosmetic
-    - id: IN-14
-      disposition: ACCEPTED — the attempt-log test's ordering dependence is real; measured 5/5 green with no doubled failure today
-    - id: IN-15
-      disposition: CONFIRMED — measured. `node scripts/audit-gate.mjs --json --json` is accepted silently at exit 0 while a repeated VALUE flag is a named hard error. An asymmetry in the strict parser worth closing for consistency, with no behavioural consequence today.
+        Round 3 recorded that the harness's three new behaviours shipped with no standing
+        guard. Plan 32-21 added a standing plant-contract case group to
+        `audit-harness-restore.test.ts`: eight named cases now pin the post-condition
+        arithmetic, including `overlap-accepted` (the CR-09 shape),
+        `substitution-is-verbatim` (the CR-02 pin), `non-latin1-refused` (CR-11) and
+        `bad-plant-target-attribution` (WR-34). All eight green in my 15/15 run. What still
+        has NO standing coverage is the SWEEP-level reporting — the SKIPPED branch and the
+        `plantRefused` branch — which remain proven only by whole-set runs (the executor's and
+        mine).
 ---
 
-# Phase 32: The Deletion and the Grep Gate — Verification Report (round 3)
+# Phase 32: The Deletion and the Grep Gate — Verification Report (round 4)
 
-**Phase Goal:** the deletion stays clean — every guard and CI script re-pointed off the
+**Phase Goal (ROADMAP, narrowed by D-01):** every guard and CI script re-pointed off the
 deleted regenerator2000 subject is audited as a set, after the dust has settled, and proven
-non-vacuous; and no living document is left pointing a user at a route that no longer exists.
+non-vacuous (`CUT-04`); and no living document is left pointing a user at a route that no
+longer exists (`CUT-06`).
 
-**Verified:** 2026-09-01T09:10:00Z at HEAD `e35af7452f50e680b88e53880b636cfc1c5cc2e9`
-**Status:** gaps_found
-**Re-verification:** Yes — after gap-closure round 2 (plans 32-15 … 32-19, all merged)
+**Verified:** 2026-09-01T14:05Z at HEAD `048f810`
+**Status:** human_needed
+**Re-verification:** Yes — round 4, after gap-closure round 3 (plans 32-20 and 32-21, both
+merged)
 
 **Broker state, read before any measurement:** `systemctl --user is-active vice-broker` →
-`inactive`; `pgrep -af vice-broker` → nothing. Every figure below was taken in that state.
+`inactive`; `pgrep -af vice-broker` → nothing but my own grep. Every figure below was taken in
+that state, because a live broker deterministically reddens the BACK-05 test.
 
-**Tree state:** `git status --porcelain` before and after every command in this verification
-shows the same four pre-existing untracked files and nothing else. Every mutation I made —
-two registry mutations, one planted ninth script, one harness evidence write — was reverted
-and the revert measured.
+**Tree state:** `git status --porcelain` before and after every command shows the same four
+pre-existing untracked files (`docs/dissambler-workflow.md`,
+`docs/undocumented-opcodes-ghidra.md`, `docs/vice-mcp-ideas.md`, `skills-lock.json`) and
+nothing else. I made four mutations — a harness single-row write-back, a whole-set write-back,
+a containment-bypass patch to `plant()`, and a registry row deletion — and reverted and
+re-measured every one.
 
 ---
 
 ## The headline, stated before the tables
 
-**Round 2's three gaps: two closed outright, one closed by three-quarters.** Gap 2 (`--root`)
-is now 8/8 and every malformed form is a named hard error on both previously-broken scripts.
-Gap 5 (the tautological completeness guard) is not merely reworded — I planted a ninth
-root-accepting script and watched the guard go red naming it. Gap 4's sweep half is closed:
-`--all` runs to completion over all 61 rows and leaves the tree byte-identical, which it could
-not do at round 2's HEAD.
+**Both of round 3's gaps are closed, and closed on my own measurement, not on the SUMMARYs.**
 
-**And the behaviour-unverified truth is now genuinely observed, not argued.** Truth 13 carried
-`⚠️ PRESENT_BEHAVIOR_UNVERIFIED` through two rounds. Plan 32-19 built the in-process driver the
-round-2 report asked for, without injecting an `await` into the instrument, and the invariant
-is exercised: 10 signal attempts across SIGINT and SIGTERM, each with the parent observing the
-plant on disk before signalling, each recording exit `130` and a byte-identical restore. That
-is a real advance and I record it as one.
+- **Gap 1 is not merely reported fixed — the whole-set sweep now does the thing round 3 proved
+  it could not do.** `--all` at HEAD: exit 0, `measured=35 skipped=26 total=61`, **35 OBSERVED
+  RED, 26 SKIPPED, 0 UNMEASURABLE, 0 REFUSED, 0 ZERO-EXIT**, tree byte-identical, and the
+  registry line prints a PATH rather than `NOT written (...)`. The row the gap was named after
+  now reads `OBSERVED RED`.
+- **And the sweep reproduces the committed record exactly.** I parsed the registry the sweep
+  wrote against `HEAD:guard-fates.json` field by field: 61 rows both sides, **0 verdict
+  changes, 0 exit-status changes, 0 control-status changes**; 27 rows differ in the `excerpt`
+  string ALONE, and every one of those differences is Node's test-reporter format (the
+  committed excerpts are TAP, captured inside GSD worktrees; mine are the spec reporter). That
+  is the strongest form of the phase's central claim available: an independent re-run of the
+  committed instrument reproduces every recorded fate.
+- **Gap 2's latch is genuinely gone, not renamed.** No flag, no counter, no size check on the
+  restore path — `originals.clear()` and nothing else, with a header note that forbids adding
+  a second mechanism and says why. The discriminating case pair exists by name and the
+  RED-first evidence is committed at four measured states (5/2 against the original latch,
+  green, 5/2 against a deliberately re-introduced one, 7/0 clean).
 
-**Two defects survive, and both are in code this round merged.** I put the review's three
-BLOCKER leads to my own instruments rather than adopting them:
+**What I will not do is call this a clean pass.** A round-4 review that ran after both plans
+merged raised nine findings including one **Critical**, and I put the three that bear on this
+phase's own criteria to my own instruments:
 
-- **`CR-09` is right and the SUMMARY is wrong.** The overlap case that round 2's own gap text
-  promised "is still caught by this form" is not caught — it is *refused*. I measured the
-  descriptor by hand: the mutation is real, the descriptor is honest, and
-  `introduced = after - before` computes 0 because the introduced occurrence overlaps the
-  pre-existing one. One committed observed red is un-reproducible, and the whole-set registry
-  write-back is now permanently unreachable.
-- **`CR-10` is right and the SUMMARY is wrong.** I reproduced the disarm with my own driver.
-  Exit 130, and a captured original left on disk.
-- **`CR-11` is right and latent.** 0 of 35 descriptors can trigger it today.
+- **`WR-38` is right, and the finding is also incomplete.** I removed containment from
+  `plant()` and measured: the assertion labelled *"the one that must never change"* passes.
+  But the case group it sits in goes RED anyway — two of its other four assertions fail,
+  because the ENOENT refusal carries neither `OUTSIDE the repository root` nor the
+  `plant.file` field name. So criterion 1 survives on the standard it sets ("a guard that
+  cannot be made to fail has not been re-pointed"): this guard CAN be made to fail. What is
+  wrong is a label that promises more than its assertion delivers, in the one file whose job
+  is to keep that promise. A WARNING, and named in the human item.
+- **`CR-07` is the one I weight highest, and not for its severity.** It is latent — a
+  concurrency hazard against a gitignored tree, never observed failing, and structurally
+  invisible to every porcelain assertion in the suite. What matters is the record: I traced
+  the commit trail myself and it holds — raised in round 2 (`05ca6c6`), **absent from round 3
+  (`e35af74`) without ever being fixed**, re-raised in round 4 (`de598f2`). Round 3's report
+  is mine, and it did not disposition CR-07 because the review it read had dropped it. A
+  Critical stopped being counted because it stopped being written down. That is precisely the
+  failure this phase's criterion 1 exists against, and it happened to the phase's own audit
+  trail. It is not a gap in the deliverable; it is a decision an owner has to take at close,
+  which is why the status is `human_needed` and not `passed`.
 
-**What I will not do is call the round a failure.** Two of three gaps closed, a two-round
-behaviour-unverified truth landed, and a coincidental-reliance advisory hardened into a
-mechanical guard is substantial progress. The two remaining defects are precisely scoped, both
-have a one-line-class remedy that I verified against the code rather than guessed, and one of
-them (`hop-chain-comments`) the executors found themselves and logged as open rather than
-absorbing — `WINDOWS.md` entry 35, filed 2026-09-01T07:18Z, before any review existed. That is
-the honesty this phase's criterion is about, applied by the people it would have been easiest
-for to skip it.
-
-**On the `docs-review-disposition.test.ts` red and criterion 2.** At the moment I started,
-`npm run test:automated` was 3009 pass / 2 fail, both traceable to the 18 undispositioned
-round-3 finding ids (the second failure is `audit-integrity.test.ts` D-12-02, which refuses a
-gated milestone-audit status while any docs guard is red — a cascade, not an independent
-failure). This report's `review_dispositions` block is a recognised disposition source under
-that guard's own documented rules (source 2: "that phase's own `*-VERIFICATION.md` naming the
-id"), and every one of the 18 is dispositioned above on my own measurement. The measured
-result after writing is recorded in the Behavioural Spot-Checks table below. I state plainly
-that the red was caused by producing a review round, not by the merged plan work, and that
-nothing in the merged work was green over a red guard at merge time.
+**Neither ROADMAP success criterion is falsified by any of the nine.** I state that as a
+measured conclusion, not a concession: `CUT-04`'s subject is the 61 registry rows and all 61
+re-measure; `CUT-06`'s gate is green with its temporary allow-list asserted empty. The nine
+are quality and latency defects in the instrument's own scaffolding.
 
 ---
 
@@ -320,68 +255,101 @@ nothing in the merged work was green over a red guard at merge time.
 
 ### Observable Truths
 
-Truths 1–15 are carried from rounds 1 and 2 so the three rounds compare row by row. Truth 16
-is new: it names the defect this round introduced.
+Truths 1–16 are carried from rounds 1–3 so all four rounds compare row by row. Truth 17 is new
+and names the round-4 concern the coordinator asked me to weigh.
 
-| # | Truth | Source | R1 | R2 | R3 | Evidence (measured by me at `e35af74`) |
+| # | Truth | Source | R2 | R3 | R4 | Evidence (measured by me at `048f810`) |
 |---|-------|--------|----|----|----|----------------------------------------|
-| 1 | Every guard and CI script pinned to the deleted subject has a recorded fate | ROADMAP SC-1 / CUT-04 | ⚠️ | ✓ | ✓ VERIFIED | Registry census re-derived: 35 `re-pointed` / 19 `kept-unchanged` / 7 `deleted` = 61. Gate green: `setA=43 setB=16 setC=2 total=61 rows=61` |
-| 2 | None passes vacuously — each re-pointed guard's planted violation re-run against its NEW subject and observed red | ROADMAP SC-1 / CUT-04 | ✓ | ✓ (coincidental-reliance) | ✓ VERIFIED | 35/35 rows carry a sound `observedRed`: non-zero `exitStatus`, `control.exitStatus === 0`, 35 distinct non-empty excerpts, 35/35 `control.command` byte-identical to `command`, 0 signal artifacts. **Round 2's coincidental-reliance flag is CLEARED** — the undeclared precondition is now a standing spawned MATRIX row |
-| 3 | Audited as a set, at once, retrospectively, on the settled tree | ROADMAP SC-1 | ✓ | ✓ | ✓ VERIFIED | `--all` re-run by me: 61 rows in registry order, `measured=35 skipped=26 total=61`, tree byte-identical |
-| 4 | The fate guard itself cannot pass vacuously | plan 32-01 | ✓ | ✓ | ✓ VERIFIED | Regression spot-check, 2 registry mutations driven at HEAD: delete-a-row → exit 1; zero an `observedRed.exitStatus` → exit 1. Registry restored, `git diff --stat` empty |
-| 5 | No living document points a user at a deleted route | ROADMAP SC-2 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `check-no-regenerator2000.mjs` exit 0; 157 permanent exemptions; **temporary allow-list asserted EMPTY** |
-| 6 | The phase-close gate is re-run and recorded with its broker state | ROADMAP SC-2 (gate half) / plan 32-09 | ✓ | ✓ | ✓ VERIFIED | Broker `inactive`. 7/7 `check-*.mjs` exit 0; `typecheck` exit 0; `docs/tool-support.md` regenerates byte-identical (md5 `bb47448…` before **and** after, `git diff --exit-code` clean); 9 `docs-*.test.ts` run individually — 8 green, 1 red, and that one red is closed by this document's dispositions (measured below) |
-| 7 | `PROJECT.md`'s citations, `r2000_*` clause and `D-36` row repaired; `ARCHITECTURE.md` A21 dated-superseded | plan 32-03 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `PROJECT.md:311` cites `:3050` / `:2985` / `:1529` / `:1505`; `grep -ac docs-r2000-decisions .planning/PROJECT.md` = 0; `ARCHITECTURE.md:231` carries "⚠ SUPERSEDED 2026-08-30" |
-| 8 | `docs-linerefs.test.ts` widened onto `PROJECT.md` with a per-document non-vacuity floor | plan 32-04 / D-10 | ✓ | ✓ | ✓ VERIFIED | `SCANNED_DOCS` = `["CLAUDE.md", ".planning/PROJECT.md"]`; `node --test docs-linerefs.test.ts` = 12 pass / 0 fail |
-| 9 | The sweep ledger carries one verdict row per swept file, numbers reconciled, no dated record rewritten | plan 32-05 / D-08, D-09 | ✓ | ✓ | ✓ VERIFIED | Untouched this round |
-| 10 | Sweep rows, deleted rows, set-B rows and both deferred fates complete; tree left clean | plans 32-06/07/08 | ✓ | ✓ | ✓ VERIFIED | 35 / 19 / 7 = 61 reproduced; porcelain identical before and after every command in this report |
-| 11 | D-16's named CI step with `fetch-depth: 0`, no package script, harness in no CI step | plan 32-09 | ✓ | ✓ | ✓ VERIFIED | `ci.yml:258` `node scripts/check-guard-fates.mjs`; `fetch-depth: 0` at `:38`; 0 `guard-fates`/`mutation-harness` entries in either `package.json` |
-| 12 | Every `--root` resolved through the strict seam; out-of-repo refused; never a silent default-root read | plan 32-02, Gap 2 | ✗ | ✗ (6/8) | ✓ VERIFIED | **8/8.** `grep -l -- '--root'` and `grep -l 'parseRootArg('` return the same eight files. Four-form matrix driven against both previously-broken scripts, all four named hard errors. Full table below |
-| 13 | The harness restores the tree on SIGINT / SIGTERM / uncaught exception / exit (the shipped CLI path) | plans 32-01, 32-06 | ⚠️ | ⚠️ | ✓ VERIFIED | **Behaviourally exercised at last.** `node --test audit-harness-restore.test.ts` = 5/5. 10 signal attempts, each with a parent-observed plant on disk, each exit `130` with a byte-identical restore. Independently corroborated: my own `--all` sweep over 61 rows ended `tree: restored byte-identical to the baseline` |
-| 14 | The recorded evidence is re-runnable by the committed instrument — ANY row re-measurable, `--all` completes | plan 32-01 prohibition 1 / ROADMAP SC-1 | — | ✗ | ✗ FAILED (narrowed) | Sweep half CLOSED (61 rows, completes, tree clean). Row half OPEN: `hop-chain-comments` PLANT REFUSED, and `plantRefused → failed → hardFailure` makes the registry write-back permanently unreachable. See Gap 1 |
-| 15 | The `--root` completeness guard measures the root-accepting population | plan 32-11 truth 6 | — | ✗ | ✓ VERIFIED | Population keyed on `ROOT_FLAG = "--root"`; MATRIX = 8 rows. **Proven to bite:** I planted a ninth root-accepting script and the file went 61/62 with `zz-verifier-plant` named. Removed; back to 62/62 |
-| 16 | The restore machinery cannot be disarmed — every captured plant is restored on signal | plan 32-19 must-have 1 | — | — | ✗ FAILED | `restored` latch never resets on a now-EXPORTED path. Reproduced: exit `130`, `pendingRestoreCount()` = 1, `FINAL ON DISK: PLANTED_TWO`. NEW this round. See Gap 2 |
+| 1 | Every guard and CI script pinned to the deleted subject has a recorded fate | ROADMAP SC-1 / CUT-04 | ✓ | ✓ | ✓ VERIFIED | `node scripts/check-guard-fates.mjs` exit 0: `setA=43 setB=16 setC=2 total=61 rows=61` against floors `43/16/2/61`; derived from 273 paths at `0394cbc`; 21 same-path / 15 renamed / 7 gone / 22 raw set-B minus 6 already-claimed / set C from `ROADMAP.md:856` |
+| 2 | None passes vacuously — each re-pointed guard's planted violation re-run against its NEW subject and observed red | ROADMAP SC-1 / CUT-04 | ✓ (coincidental-reliance) | ✓ | ✓ VERIFIED | **35/35 OBSERVED RED in my own `--all` sweep**, each with a green unplanted control (`control exit status 0`). Field-by-field diff of the sweep's write-back against `HEAD:guard-fates.json`: 0 verdict changes, 0 exit-status changes, 0 control-status changes |
+| 3 | Audited as a set, at once, retrospectively, on the settled tree | ROADMAP SC-1 | ✓ | ✓ | ✓ VERIFIED | One command, one process, all 61 rows in registry order: `measured=35 skipped=26 total=61`, exit 0, `tree: restored byte-identical to the baseline` |
+| 4 | The fate guard itself cannot pass vacuously | plan 32-01 | ✓ | ✓ | ✓ VERIFIED | Planted at HEAD: deleted the last registry row → `check-guard-fates: FAIL -- ... rows=60`, naming `src/mcp/vice/fixtures/coverage/make-coverage-fixtures.mjs` as having no recorded fate. Registry restored, porcelain clean |
+| 5 | No living document points a user at a deleted route | ROADMAP SC-2 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `check-no-regenerator2000.mjs` exit 0; 157 permanent exemptions in four named categories; **temporary allow-list asserted EMPTY** since 2026-08-30 |
+| 6 | The phase-close gate is re-run and recorded with its broker state | ROADMAP SC-2 (gate half) / plan 32-09 | ✓ | ✓ | ✓ VERIFIED | Broker `inactive`. **7/7 `scripts/check-*.mjs` exit 0** and **9/9 `docs-*.test.ts` exit 0**, each run individually by me. `typecheck` exit 0 and `test:automated` 3021 pass / 0 fail (orchestrator, cited) |
+| 7 | `PROJECT.md`'s citations and `r2000_*` clause repaired; `ARCHITECTURE.md` A21 dated-superseded | plan 32-03 / CUT-06 | ✓ | ✓ | ✓ VERIFIED | `PROJECT.md:311` cites `:3050` / `:2985` / `:1529` / `:1505`; `grep -c "r2000_" CLAUDE.md` = 0; `ARCHITECTURE.md:231` carries `⚠ SUPERSEDED 2026-08-30 (Phase 29, plan 29-10, commit 1d40ad0)` with the keep-dated rationale |
+| 8 | `docs-linerefs.test.ts` widened onto `PROJECT.md` with a per-document non-vacuity floor | plan 32-04 / D-10 | ✓ | ✓ | ✓ VERIFIED | `SCANNED_DOCS = ["CLAUDE.md", ".planning/PROJECT.md"]` at `:64-67`; guard exit 0 |
+| 9 | The sweep ledger carries one verdict row per swept file, numbers reconciled, no dated record rewritten | plan 32-05 / D-08, D-09 | ✓ | ✓ | ✓ VERIFIED | Untouched since round 3; registry census reproduced (35 re-pointed / 19 kept-unchanged / 7 deleted = 61) |
+| 10 | Sweep rows, deleted rows, set-B rows and both deferred fates complete; tree left clean | plans 32-06/07/08 | ✓ | ✓ | ✓ VERIFIED | 35 / 19 / 7 = 61 reproduced from the JSON; porcelain identical before and after every command in this report |
+| 11 | D-16's named CI step with `fetch-depth: 0`, no package script, harness in no CI step | plan 32-09 | ✓ | ✓ | ✓ VERIFIED | Carried from round 3; `ci.yml:258` `node scripts/check-guard-fates.mjs`, `fetch-depth: 0` at `:38` |
+| 12 | Every `--root` resolved through the strict seam; out-of-repo refused; never a silent default-root read | plan 32-02, R2 gap 2 | ✗ (6/8) | ✓ | ✓ VERIFIED | **8/8 holds.** `grep -l -- '--root' scripts/*.mjs` and `grep -l 'parseRootArg(' scripts/*.mjs` return the SAME EIGHT files |
+| 13 | The harness restores the tree on SIGINT / SIGTERM / uncaught exception / exit (shipped CLI path) | plans 32-01, 32-06 | ⚠️ | ✓ | ✓ VERIFIED | `node --test audit-harness-restore.test.ts` = **15/15**. Corroborated by my 61-row sweep ending `tree: restored byte-identical to the baseline` with porcelain unchanged |
+| 14 | The recorded evidence is re-runnable by the committed instrument — ANY row re-measurable, `--all` completes, registry written | plan 32-01 prohibition 1 / ROADMAP SC-1 | ✗ | ✗ (narrowed) | ✓ VERIFIED | **Closed.** `--all` exit 0, `measured=35 skipped=26 total=61`, `registry: <path>`. Per-site post-condition at `:488-491`. `--row hop-chain-comments.test.ts` → `OBSERVED RED`, exit 0 |
+| 15 | The `--root` completeness guard measures the root-accepting population | plan 32-11 truth 6 | ✗ | ✓ | ✓ VERIFIED | Carried; population keyed on the literal `--root` flag, MATRIX = 8 rows, guard exit 0 |
+| 16 | The restore machinery cannot be disarmed — every captured plant is restored on signal | plan 32-19 must-have 1 | — | ✗ FAILED | ✓ VERIFIED | **Closed.** Latch deleted (`:171-185`, no flag/counter/size check; `originals.clear()` sole mechanism). Two named second-window cases green. RED-first evidence committed at four states in `evidence/32-restore-disarm.md` |
+| 17 | The phase's own instrument guards can themselves be made to fail | ROADMAP SC-1, self-applied | — | — | ✓ VERIFIED **with a named exception** | I removed containment from `plant()` and the `bad-plant-target-attribution` case group went RED (2 of 5 assertions). But the single assertion labelled *"the one that must never change"* PASSED in that state — `WR-38`, confirmed by my own measurement. The guard bites; the label over-promises |
 
-**Score:** 14/16 truths verified (0 present-but-behavior-unverified; 2 failed).
-Round 1 was 10/13, round 2 was 11/15.
-
----
-
-### The `--root` four-form matrix — the two scripts that were behind, driven by me at HEAD
-
-| Script | `--root` (valueless) | `--root=/tmp` | `--rooot /tmp` | `--root /tmp` |
-|---|---|---|---|---|
-| `audit-mutation-harness.mjs` | `BAD ARGUMENTS -- \`--root\` requires a directory, but it was the last argument`, exit 1 | `BAD ARGUMENTS -- "--root=/tmp" uses the equals form`, exit 1 | `BAD ARGUMENTS -- unrecognised argument "--rooot"`, exit 1 | `REFUSED -- --root "/tmp" resolves to /tmp, which is OUTSIDE the repository root`, exit 1 |
-| `audit-gate.mjs` | `BAD ARGUMENTS -- \`--root\` requires a directory…`, exit 1 | `BAD ARGUMENTS -- "--root=/tmp" uses the equals form`, exit 1 | `BAD ARGUMENTS -- unrecognised argument "--rooot"`, exit 1 | `FAIL`, exit 1 (uncontained by design, plan 32-16 — see `WR-32`) |
-
-Round 2 measured three identical full real-tree runs from `audit-gate.mjs` on the first three
-of these, and a real-registry read from the harness on the first. None of that reproduces now.
+**Score:** 17/17 truths verified (0 present-but-behavior-unverified, 0 failed).
+Round 1 was 10/13, round 2 was 11/15, round 3 was 14/16.
 
 ---
 
-### The hop-chain overlap, derived rather than quoted
-
-I applied the descriptor in memory against the file at HEAD rather than reading either the
-SUMMARY or the review.
+### The whole-set sweep, reproduced independently
 
 ```
-plant.file    = src/mcp/vice/absorbed-answer-key.test.ts
-plant.find    = "// src/mcp/vice -> repo root -> .planning/phases/11-.../evidence/criterion1"
-plant.replace = "\n" + plant.find            <- the find with ONE newline prepended
+$ systemctl --user is-active vice-broker      -> inactive
+$ node scripts/audit-mutation-harness.mjs --all
+  ...
+  OBSERVED RED  src/mcp/vice/hop-chain-comments.test.ts: guard exit status 1 (control exit status 0)
+                command: node --test hop-chain-comments.test.ts
+  ...
+  counts: measured=35 skipped=26 total=61
+  evidence: .../evidence/32-tracer-observed-red.md
+  registry: .../guard-fates.json
+  tree: restored byte-identical to the baseline
+  EXIT=0
 
-find occurrences            : 1
-replace occurrences BEFORE  : 1
-replace occurrences AFTER   : 1
-introduced (after - before) : 0     -> post-condition throws
-file actually changed?      : true, by exactly +1 byte
-recorded observedRed        : exitStatus 1, control.exitStatus 0
+  grep -c 'OBSERVED RED'  -> 35
+  grep -c 'SKIPPED'       -> 26
+  grep -c 'UNMEASURABLE'  ->  0
+  grep -c 'REFUSED'       ->  0
+  grep -c 'ZERO-EXIT'     ->  0
 ```
 
-The descriptor is honest, the mutation is real, and the recorded red is sound. The arithmetic
-is what cannot see it. This is the case round 2's own prescribed remedy asserted was still
-caught, so the defect is inherited from the gap text, not invented by the executor — and the
-executor found it, recorded it in the code comment at `:630-634`, and filed it as an open
-`unmet-truth` rather than absorbing it.
+And the write-back compared field-by-field against the committed registry before I reverted it:
+
+```
+rows head/cur: 61 61
+differences: {'excerpt-only': 27}
+verdict changes: []
+exitStatus / control.exitStatus changes: []
+```
+
+Twenty-seven excerpts differ and nothing else does. Every one is the same cause: the committed
+excerpts were captured under Node's TAP reporter inside GSD worktrees
+(`.claude/worktrees/agent-*/`), mine under the spec reporter in the real tree. Same assertion,
+same failure, same exit statuses. This is the fact the phase's criterion 1 is actually about,
+and it is now demonstrable rather than asserted.
+
+---
+
+### The `WR-38` experiment, in full
+
+I did not take the review's word and I did not take the todo's. I patched the production
+function, measured, and reverted.
+
+```
+patch:  scripts/audit-mutation-harness.mjs:382
+        - abs = resolveContainedRoot(join(root, descriptor.file), { repoRoot: root });
+        + abs = join(root, descriptor.file);          // containment removed
+
+run:    node src/mcp/vice/fixtures/harness-signal/plant-contract-driver.mjs \
+            <scratch> bad-plant-target-attribution
+
+result: planted        = false      <- the "must never change" assertion PASSES
+        refusalMessage = "row ...: plant target /.../plant-contract-escape-target.txt
+                          does not exist."
+        pendingRestoreCount = 0
+
+revert: git checkout -- scripts/audit-mutation-harness.mjs ; porcelain clean
+```
+
+`planted === false` because `!existsSync(abs)` refuses first — the escape target is a path the
+driver never creates. So that assertion is insensitive to the property it is labelled with.
+
+But the refusal message carries neither `OUTSIDE the repository root` nor the `plant.file`
+field name, and the same case asserts both. The group therefore FAILS with containment
+removed. Criterion 1's standard is met at the level it is written about; the label is what is
+wrong.
 
 ---
 
@@ -389,15 +357,16 @@ executor found it, recorded it in the code comment at `:630-634`, and filed it a
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `scripts/lib/audit-root.mjs` | strict `parseRootArg` with declared `valueFlags`, `resolveContainedRoot`, `splitReadRefusalReason` | ✓ VERIFIED | Value flags land; the false model citation at `:119-122` is replaced by reported speech so a census for the false sentence returns a real zero. `WINDOWS.md` entry 37 (a stale `audit-gate.mjs:1147-1151` citation at `:13`) is still open and honestly logged |
-| `scripts/audit-mutation-harness.mjs` | corrected post-condition, strict argv, SKIPPED/plantRefused reporting, three exports | ⚠️ PARTIAL | Argv ✓ (8/8 seam), SKIPPED ✓, plantRefused reporting ✓, sweep completes ✓. Post-condition arithmetic still refuses an overlap (Gap 1); `restored` latch disarms the handlers (Gap 2) |
-| `scripts/audit-gate.mjs` | wired to the argv seam, uncontained by recorded decision | ✓ VERIFIED | `parseRootArg` at `:1170`, `--json`/`--hook` as `booleanFlags`, hand-rolled reader gone. Round 2's ⚠️ ORPHANED FROM THE SEAM is resolved |
-| `src/mcp/vice/audit-root-args.test.ts` | flag-derived population, 8-row matrix, split-read contract | ✓ VERIFIED | 62 tests, 62 pass. Population walk is `latin1` (NUL-safe) and cross-checked against a spawned shell glob — a deliberately different mechanism, not a second `readdirSync` |
-| `src/mcp/vice/audit-harness-restore.test.ts` | signal-window driver, byte-identical restore, WR-03 latch | ⚠️ PARTIAL | 537 lines, 5/5 green, and the driver is genuine (parent reads the mutated bytes off disk before signalling). Blind to the disarm defect (`WR-27`); porcelain attribution excludes `src/` (`WR-29`) |
-| `.planning/phases/…/guard-fates.json` | 61 rows, all fates recorded | ✓ VERIFIED | 35/19/7; 35/35 sound observed reds; 35 distinct excerpts |
-| `.planning/WINDOWS.md` | the round's open items honestly logged | ✓ VERIFIED | Entry 35 (hop-chain, open) filed at 07:18Z, before any review existed. Entry 33 (restore-on-signal) still open — see the assessment below. Entries 34, 36, 37 recorded as deviations |
-| `.planning/REQUIREMENTS.md` | `CUT-04` / `CUT-06` traceable and undemoted | ✓ VERIFIED | Both `[x]`, both `Complete`, both mapped to Phase 32, non-demotion note at `:145` |
-| Automated coverage for plan 32-15's three harness behaviour changes | a standing guard | ✗ MISSING | `WR-36`, confirmed by census. Recorded as a WARNING, not a gap |
+| `scripts/audit-mutation-harness.mjs` | per-site post-condition, no restore latch, strict argv, SKIPPED/plantRefused reporting | ✓ VERIFIED | Post-condition at `:488-491` is `indexOf` + `startsWith(replace, matchIndex)` + exact length delta — no regex, exact under overlap. Restore path at `:171-185` has `originals.clear()` and nothing else. Round 3's two ⚠️ PARTIAL causes are both gone. Residual: `WR-37` (the unplanted control at `:761` is outside the row-level containment) — latent |
+| `src/mcp/vice/audit-harness-restore.test.ts` | signal-window driver, WR-03 latch case, second-window disarm pair, plant-contract group | ✓ VERIFIED | 15/15 green, 0 skipped, 0 todo. Includes `gap 2 / CR-10` SIGINT and SIGTERM second-window cases and eight plant-contract cases. Residual: `WR-38` (one mislabelled assertion) and `WR-39` (docblock over-claim) — both WARNINGs |
+| `src/mcp/vice/fixtures/harness-signal/plant-contract-driver.mjs` | in-process driver for the plant contract, JSON verdict | ✓ VERIFIED | Nine cases; overlap anchor written so `"\n" + ANCHOR` pre-exists (the CR-09 shape); reports `replacementVerbatimAtMatchIndex` measured on the FILE, plus base64 of both byte states |
+| `scripts/lib/audit-root.mjs` | strict `parseRootArg`, `resolveContainedRoot`, `splitReadRefusalReason` | ✓ VERIFIED | 8/8 consumers on the seam. `WINDOWS.md` entry 37 (a stale `audit-gate.mjs:1147-1151` citation at `:13`) is still open and honestly logged |
+| `scripts/audit-gate.mjs` | wired to the argv seam, uncontained by recorded decision | ✓ VERIFIED | Exit 0 at HEAD; all nine docs guards green individually |
+| `src/mcp/vice/audit-root-args.test.ts` | flag-derived population, 8-row matrix, split-read contract | ⚠️ VERIFIED WITH A WARNING | Guard behaviour correct and green. `CR-07`: its adjacency loop drives five `rm -rf`+rebuild cycles of gitignored `installer/skills/` under a concurrent runner — latent, three rounds open, carried to the human |
+| `.planning/phases/…/guard-fates.json` | 61 rows, all fates recorded, all reproducible | ✓ VERIFIED | 61 rows; 35 re-pointed / 19 kept-unchanged / 7 deleted; 35/35 sound observed reds; **all 35 independently re-measured with identical verdicts** |
+| `.planning/WINDOWS.md` | the round's items honestly logged, nothing closed without a successor | ✓ VERIFIED | Entry 33 `fixed` on stated content; entry 35 `fixed` on the discharging measurement; entry 40 opened AND fixed in-round with RED-first evidence cited. ℹ Entry 38 ("red by design, plan 32-18 owns the row") still reads `open` although the assertion it describes is green — ledger hygiene, not a defect |
+| `.planning/todos/pending/2026-09-01-…-nine-open-findings.md` | every round-4 id dispositioned somewhere | ✓ VERIFIED | All nine ids present with reasons; `docs-review-disposition.test.ts` exit 0 as a result. The todo is a TRACKING record and does not close anything — stated in the file itself and honoured here |
+| Standing coverage for the harness's sweep-level reporting (SKIPPED / plantRefused) | a standing guard | ⚠️ PARTIAL | `WR-36` downgraded from MISSING: the plant contract now has eight standing cases. The two sweep-level report branches are still proven only by whole-set runs |
 
 ---
 
@@ -405,52 +374,51 @@ executor found it, recorded it in the code comment at `:630-634`, and filed it a
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| all EIGHT root-accepting `scripts/*.mjs` | `scripts/lib/audit-root.mjs` | `import { parseRootArg }` | ✓ WIRED | 8 of 8. Round 2's two NOT WIRED links are both closed |
-| `src/mcp/vice/audit-root-args.test.ts` | the root-accepting population | `src.includes(ROOT_FLAG)` on a `latin1` read | ✓ WIRED (correct source) | Round 2's ✗ WRONG SOURCE is closed; proven by a planted ninth script |
-| `src/mcp/vice/audit-harness-restore.test.ts` | the harness's REAL registered handler | in-process driver + three exports, no injected `await` | ✓ WIRED | `grep -n 'await\|async \|\.then(' … \| grep -vE ':[[:space:]]*(//\|\*)'` exits 1 with no output — the instrument is still wholly synchronous |
-| `scripts/audit-mutation-harness.mjs` | `guard-fates.json` | reads descriptors, writes back `observedRed` | ⚠️ PARTIAL | Per-row write-back works (I re-measured one row end to end). Whole-set write-back is unreachable while any row refuses |
-| `restoreAll()` | the `exit`/`SIGINT`/`SIGTERM`/`uncaughtException` handlers | `process.on(...)` at `:200-211` | ⚠️ DISARMABLE | Registered and reached — exit 130 observed — but permanently no-op after the first restore |
-| `ci.yml:258` | `scripts/check-guard-fates.mjs` | named CI step, `fetch-depth: 0` | ✓ WIRED | Unchanged |
+| `.github/workflows/ci.yml:258` | `scripts/check-guard-fates.mjs` | named CI step, `fetch-depth: 0` at `:38` | ✓ WIRED | The registry is gated in CI, and the deep fetch the derivation needs is present |
+| `scripts/check-guard-fates.mjs` | `guard-fates.json` | reads all 61 rows, enforces four floors | ✓ WIRED | Proven non-vacuous by a planted row deletion at HEAD |
+| `scripts/audit-mutation-harness.mjs` | `guard-fates.json` | `--all` re-measures and writes back | ✓ WIRED | Write-back REACHED (round 3: permanently unreachable). 35 rows re-measured, verdicts identical |
+| 8 × `scripts/*.mjs` | `scripts/lib/audit-root.mjs` | `parseRootArg()` / `resolveContainedRoot()` | ✓ WIRED | Same eight files on both greps |
+| `audit-harness-restore.test.ts` | `scripts/audit-mutation-harness.mjs` | spawned child importing `plant()` / `restoreAll()` / `pendingRestoreCount()` | ✓ WIRED | The child reaches the harness's OWN registered handlers; parent observes the plant on disk before signalling |
+| `plant-contract-driver.mjs` | `plant()` | direct in-process import | ✓ WIRED | Nine cases; exercises the corrected post-condition |
+
+---
+
+### Data-Flow Trace (Level 4)
+
+| Artifact | Data Variable | Source | Produces Real Data | Status |
+|---|---|---|---|---|
+| `guard-fates.json` | `rows[].observedRed.{exitStatus, excerpt}` | `spawnSync` of the row's own guard command against a planted tree | ✓ — 35/35 re-derived from live subprocess runs by me, verdicts identical | ✓ FLOWING |
+| `guard-fates.json` | `rows[].observedRed.control` | `spawnSync` of the SAME command against the unplanted tree | ✓ — 35/35 green controls re-derived | ✓ FLOWING |
+| `check-guard-fates.mjs` | derived audited set (61) | `git diff` over two pinned commits (`0394cbc` → `345d5c4`), 273 paths | ✓ — not read from the registry it checks | ✓ FLOWING |
+| `check-no-regenerator2000.mjs` | exemption counts (157) | live repository census, four named categories | ✓ — temporary allow-list asserted EMPTY | ✓ FLOWING |
+
+No hardcoded literal, static return, or mock terminates any of these chains.
 
 ---
 
 ### Behavioural Spot-Checks
 
-All at HEAD `e35af74`, broker `inactive`, from a clean tree.
+| Behavior | Command | Result | Status |
+|---|---|---|---|
+| Whole-set audit completes and writes back | `node scripts/audit-mutation-harness.mjs --all` | exit 0, `measured=35 skipped=26 total=61`, 35 OBSERVED RED, registry path printed, tree byte-identical | ✓ PASS |
+| The row gap 1 was named after re-measures | `node scripts/audit-mutation-harness.mjs --row src/mcp/vice/hop-chain-comments.test.ts` | `OBSERVED RED ... guard exit status 1 (control exit status 0)`, exit 0 | ✓ PASS |
+| Re-measurement reproduces the committed record | JSON field diff, sweep write-back vs `HEAD:guard-fates.json` | 61/61 rows, 0 verdict changes, 0 status changes, 27 excerpt-only | ✓ PASS |
+| Restore machinery survives a second plant window | `node --test audit-harness-restore.test.ts` | 15 tests, 15 pass, 0 fail, 0 skipped — incl. both `gap 2 / CR-10` second-window cases | ✓ PASS |
+| The fate guard reddens on a missing row | delete last registry row, `node scripts/check-guard-fates.mjs` | `FAIL -- ... rows=60`, names the orphaned path | ✓ PASS |
+| Containment removal reddens its case group | patch `plant()` to bypass `resolveContainedRoot()`, run driver | `planted=false` (assertion passes — `WR-38`) but message assertions fail → group RED | ✓ PASS (with WARNING) |
+| The deleted-route gate is green with an empty temporary allow-list | `node scripts/check-no-regenerator2000.mjs` | exit 0; 157 permanent exemptions; temporary allow-list EMPTY | ✓ PASS |
+| Every close-gate script is green | 7 × `node scripts/check-*.mjs` | 7/7 exit 0 | ✓ PASS |
+| Every docs guard is green individually | 9 × `node --test docs-*.test.ts` | 9/9 exit 0 | ✓ PASS |
+| Full suite / typecheck | `npm run test:automated`, `npm run typecheck` | `tests 3027, pass 3021, fail 0, skipped 1, todo 5`, exit 0; typecheck exit 0 | ✓ PASS (orchestrator, cited, not re-run) |
 
-| # | Behaviour | Command | Result | Status |
-|---|---|---|---|---|
-| 1 | The fate gate is green | `node scripts/check-guard-fates.mjs` | exit 0, `setA=43 setB=16 setC=2 total=61 rows=61` | ✓ PASS |
-| 2 | All CI check scripts green | each `scripts/check-*.mjs` | 7/7 exit 0 | ✓ PASS |
-| 3 | `docs/tool-support.md` byte-identical | `node scripts/generate-tool-support-table.mjs` | md5 `bb4744890855e58887142e5a97f44fc0` before and after; `git diff --exit-code` clean | ✓ PASS |
-| 4 | Removal gate green tree-wide | `node scripts/check-no-regenerator2000.mjs` | exit 0; 157 permanent exemptions; temporary allow-list EMPTY | ✓ PASS |
-| 5 | Typecheck | `npm run typecheck` | exit 0 | ✓ PASS |
-| 6 | The nine `docs-*.test.ts` guards, individually | `node --test docs-<name>.test.ts` ×9 | 8 green; `docs-review-disposition` 6 pass / 1 fail, naming exactly the 18 round-3 ids and no others | ✗ FAIL → closed by this document (row 13) |
-| 7 | `test:automated` | `npm run test:automated` | 3017 tests, 3009 pass, **2 fail**, 1 skipped, 5 todo. Both failures are the disposition guard and the D-12-02 cascade off it | ✗ FAIL → closed by this document (row 13) |
-| 8 | **Gap 4, single row** — the row `CR-06` was named after | `--row scripts/lib/skill-honesty-checks.mjs` | `OBSERVED RED … guard exit status 1 (control exit status 0)`, exit 0, tree restored byte-identical | ✓ PASS (round-2 defect fixed) |
-| 9 | **Gap 4, whole set** — does `--all` complete? | `--all --out <scratch>` | 61 rows in registry order; `measured=35 skipped=26 total=61`; `tree: restored byte-identical to the baseline`; exit 1 | ✓ PASS for completion |
-| 10 | …and what did the 35 measured rows say? | (same run) | **33 OBSERVED RED**, 1 PLANT REFUSED (`hop-chain-comments`), 1 UNMEASURABLE (`audit-gate`) | ⚠️ PARTIAL — Gap 1 |
-| 10b | Was `audit-gate`'s UNMEASURABLE really just the disposition cascade? | re-ran `--row scripts/audit-gate.mjs` after this document took the docs guards green | `OBSERVED RED … guard exit status 1 (control exit status 0)`. **34 of 35 rows re-measure; only `hop-chain-comments` does not** | ✓ PASS (diagnosis confirmed) |
-| 11 | Does `--all` write the registry? | (same run) | `registry: NOT written (a row's plant was refused; a row was unmeasurable)` | ✗ FAIL — Gap 1 |
-| 12 | **Gap 2** — the four-form matrix on the two behind scripts | 8 invocations | 8/8 named hard errors at exit 1 | ✓ PASS (round-2 defect fixed) |
-| 13 | **Gap 5** — does the completeness guard bite? | plant `scripts/zz-verifier-plant.mjs` containing `--root`, re-run `audit-root-args.test.ts` | 62 tests, 61 pass, **1 fail** naming `zz-verifier-plant`. Plant removed → 62/62, tree clean | ✓ PASS (round-2 defect fixed) |
-| 14 | **Truth 13** — restore-on-signal | `node --test audit-harness-restore.test.ts` | 5 tests, 5 pass. SIGINT ×5 + SIGTERM ×5, each exit `130`, each byte-identical | ✓ PASS (two-round item landed) |
-| 15 | **CR-10** — is the restore machinery disarmable? | my own driver: plant → `restoreAll()` → plant → SIGINT | `EXIT=130`; `pendingRestoreCount()` = 1; `FINAL ON DISK: PLANTED_TWO` | ✗ FAIL (defect reproduced) — Gap 2 |
-| 16 | **CR-11** — is the `latin1` truncation live? | census of all 35 descriptors for code points > U+00FF | 35 descriptors, **0** affected | ✓ PASS (latent only) |
-| 17 | **CR-09** — is the overlap refusal real? | apply the `hop-chain-comments` descriptor in memory | find=1, replace pre=1 post=1, introduced=0, file changes by +1 byte | ✗ FAIL (defect reproduced) — Gap 1 |
-| 18 | **WR-36** — coverage for 32-15's behaviour changes | `grep -rln audit-mutation-harness src/mcp/vice/*.test.*` | 2 files, neither covering the post-condition, SKIPPED or plantRefused paths | ✗ FAIL (WARNING) |
-| 19 | Fate-guard non-vacuity regression | 2 registry mutations | 2/2 exit 1; registry restored, `git diff --stat` empty | ✓ PASS |
-| 20 | **Criterion 2's gate half, after this document's dispositions** | `node --test docs-review-disposition.test.ts` and `audit-integrity.test.ts` | *measured after writing — see the note directly below this table* | — |
+---
 
-**Row 20, measured after this file was written.** Both previously-red assertions go green with
-this document in place: `docs-review-disposition.test.ts` = 7 pass / 0 fail, and
-`audit-integrity.test.ts`'s D-12-02 assertion passes. That makes **9/9 `docs-*.test.ts` guards
-green** and takes `test:automated` to **3017 tests, 3011 pass, 0 fail, 1 skipped, 5 todo** (exit 0), which is criterion 2's phase-close gate
-half met — by disposition, and every disposition is my own measurement rather than an
-acknowledgement. Recorded transparently: the guard's rule is that a finding id must be
-*mentioned* in a recognised source, and the reason it is deliberately weak is stated in its own
-header — it catches silence, not disposition quality. Two of the ids it now sees are carried as
-this report's two open gaps, so nothing is being closed by being written down.
+### Probe Execution
+
+No `scripts/*/tests/probe-*.sh` exists in this repository, and neither PLAN nor SUMMARY
+declares a probe. This phase's equivalent instrument is `scripts/audit-mutation-harness.mjs`,
+and I executed it in my own process rather than reading its recorded output — see the sweep
+above. **Step 7c: satisfied by the harness run; no conventional probes to discover.**
 
 ---
 
@@ -458,17 +426,31 @@ this report's two open gaps, so nothing is being closed by being written down.
 
 | Requirement | Source Plans | Description | Status | Evidence |
 |---|---|---|---|---|
-| `CUT-04` | 32-01…32-19 (`requirements: [CUT-04]`, `[CUT-04, CUT-06]`) | Every guard and CI script pinned to the deleted subject has a recorded fate and none passes vacuously | ⚠ **SATISFIED WITH ONE NAMED EXCEPTION** | 61/61 fates recorded; 35/35 sound machine-captured reds with green controls; whole-set sweep completes; fate guard non-vacuous under 2/2 mutations; completeness guard proven to bite. Exception: 1 of 35 rows is not RE-measurable by the committed instrument (Gap 1), honestly logged as `WINDOWS.md` entry 35 |
-| `CUT-06` | 32-03, 32-05, 32-09, 32-16, 32-17 | No living document points a user at a deleted route | ✓ **SATISFIED** | Removal gate exit 0 with an EMPTY temporary allow-list; `PROJECT.md`/`ARCHITECTURE.md` repairs in place; both `check-*.mjs` green; `docs/tool-support.md` byte-identical; 9/9 `docs-*.test.ts` green after this document's dispositions |
+| `CUT-04` | 18 of 21 plans | Every guard and CI script pinned to the deleted subject has a recorded fate and none passes vacuously, measured mechanically | ✓ SATISFIED | 61/61 fates recorded and gate-enforced; 35/35 machine-verified observed reds, all 35 independently re-measured with identical verdicts; the whole-set command completes and writes back |
+| `CUT-06` | 12 of 21 plans | Every living document naming regenerator2000 as a required prerequisite is corrected | ✓ SATISFIED | `check-no-regenerator2000.mjs` exit 0 with an EMPTY temporary allow-list; `CLAUDE.md` `r2000_*` count 0; `PROJECT.md:311` citations current; `ARCHITECTURE.md` A21 dated-superseded; all seven skill playbooks pass the gate |
 
-**Orphan check:** `grep -E "Phase 32" .planning/REQUIREMENTS.md` maps exactly `CUT-04` and
-`CUT-06` to this phase, and both are declared in plan frontmatter. **No orphaned requirements.**
+**Orphan check:** `grep -E "^\| [A-Z]+-[0-9]+ \| Phase 32 " .planning/REQUIREMENTS.md` returns
+exactly two rows, `CUT-04` and `CUT-06`, both `Complete`. The plans declare exactly those two
+ids and no others. **No orphaned requirements.** Both rows carry the non-demotion note at
+`:145` explaining the round-1 adjudication.
 
-**On demotion.** I do **not** recommend demoting either row. `CUT-04`'s substantive claim —
-every fate recorded, none vacuous, audited over the whole set at once — is measured true. What
-Gap 1 breaks is the *re-runnability* of one row, which is a property of the instrument rather
-than of the fate record, and it is already recorded as open beside the work. Demoting a row
-whose own audit trail names its exception would punish the disclosure.
+---
+
+### Test Quality Audit
+
+| Test File | Linked Req | Active | Skipped | Circular | Assertion Level | Verdict |
+|---|---|---|---|---|---|---|
+| `src/mcp/vice/audit-harness-restore.test.ts` | CUT-04 | 15 | 0 | No | Behavioral (spawned child, signals, byte comparison, porcelain delta) | ✓ PASS, one insufficient assertion (`WR-38`) |
+| `src/mcp/vice/audit-root-args.test.ts` | CUT-04 | 62 | 0 | No | Behavioral (spawned four-form argv matrix) | ✓ PASS, latent concurrency hazard (`CR-07`) |
+| 9 × `src/mcp/vice/docs-*.test.ts` | CUT-06 | all green | 0 | No | Value-level document assertions with per-document non-vacuity floors | ✓ PASS |
+
+**Disabled tests on requirements:** 0.
+**Circular patterns detected:** 0. The registry is written BY the harness and read BY
+`check-guard-fates.mjs`, which could look circular — it is not: the guard derives its expected
+population independently from `git diff` over two pinned commits (273 paths at `0394cbc`), and
+I proved that derivation bites by deleting a row and watching it name the orphan.
+**Insufficient assertions:** 1 (`WR-38`) → WARNING, detailed above.
+**Debt markers** (`TBD` / `FIXME` / `XXX`) across the six files this round touched: **0**.
 
 ---
 
@@ -476,73 +458,70 @@ whose own audit trail names its exception would punish the disclosure.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `scripts/audit-mutation-harness.mjs` | 325-329 | Comment asserts "the narrowing costs nothing", measured false for the overlap shape | ⚠️ Warning | A future reader trusts an arithmetic claim the same file's `:630-634` comment already contradicts |
-| `scripts/audit-mutation-harness.mjs` | 169-174 | Permanent latch on an exported cleanup path | 🛑 Blocker | Gap 2 |
-| `src/mcp/vice/audit-harness-restore.test.ts` | 179-186 | Porcelain attribution excludes `src/` | ⚠️ Warning | `WR-29`; the tree a mis-contained plant lands in is the one not asserted |
-| `src/mcp/vice/audit-root-args.test.ts` | 641 | Docblock claims "HOWEVER IT READS IT" over a literal-token predicate | ⚠️ Warning | `WR-31`; over-claim on an otherwise-correct and proven guard |
-| `scripts/lib/audit-root.mjs` | 13 | Stale line citation (`audit-gate.mjs:1147-1151`, now ~1191) | ℹ️ Info | Already logged as `WINDOWS.md` entry 37, open |
-| — | — | Debt markers (`TBD`/`FIXME`/`XXX`) in files this phase modified | — | **None.** Scanned `scripts/audit-mutation-harness.mjs`, `scripts/audit-gate.mjs`, `scripts/lib/audit-root.mjs`, `src/mcp/vice/audit-root-args.test.ts`, `src/mcp/vice/audit-harness-restore.test.ts` — zero unreferenced markers |
+| `src/mcp/vice/audit-harness-restore.test.ts` | 1209-1215 | Assertion labelled "the one that must never change" is insensitive to the property named | ⚠️ Warning | Reproduced by me. The enclosing case group still reddens, so no guard is vacuous — but the label is unearned in the phase's own instrument |
+| `src/mcp/vice/audit-harness-restore.test.ts` | 232-236 | Docblock claims a stronger property than the code takes (`WR-39`) | ⚠️ Warning | Porcelain is read post-exit, so the property is "did not escape AND survive restoration". No live exposure |
+| `scripts/audit-mutation-harness.mjs` | 761 | Unplanted control run is outside the row-level containment (`WR-37`) | ⚠️ Warning | A bad `guard.cwd`/`argv`/missing `guard` would still abort a whole sweep. Latent — 0 aborts in my 61-row run |
+| `src/mcp/vice/audit-root-args.test.ts` | 928-948 | Five `rm -rf`+rebuild cycles of gitignored `installer/skills/` under a concurrent runner (`CR-07`) | ⚠️ Critical, latent | Never observed failing; invisible to every porcelain assertion by construction. Escalated to the human, not treated as a phase gap |
+| `.planning/WINDOWS.md` | entry 38 | Ledger row still `open` describing an assertion that is now green | ℹ️ Info | Hygiene; `open_count` overstates by at least one |
+
+**No blocker anti-pattern found.** No unreferenced debt marker exists in any file this phase
+modified, and every one of the warnings above is attached to a named finding id with a
+recorded disposition.
 
 ---
 
-### The `WINDOWS.md` entry 33 question, answered on the evidence
+### Human Verification Required
 
-Plan 32-19 asked that entry 33 move to `resolved` and `WR-03` close. The orchestrator declined
-to make that edit from its own seat. I was asked to assess whether it *should* close.
+This is an infrastructure/tooling phase with no user-facing surface, so UAT auto-passes. The
+single item below is not an invented manual step — it is a decision that measurement cannot
+take.
 
-**Entry 33's stated content is discharged.** Its text is *"Restore-on-signal invariant still
-behaviour-unverified: SIGINT/SIGTERM handlers cannot run mid-plant because main() is wholly
-synchronous."* That is no longer true. The window is created outside the instrument, the real
-registered handler is reached, and 10/10 attempts across both signals record exit `130` with a
-byte-identical restore. On its own words the entry can close.
+#### 1. Accept, defer or close the nine open round-4 findings — principally `CR-07` and `WR-38`
 
-**But it must not close alone.** `CR-10` shows the invariant the entry is *about* is
-conditionally false on the very surface that was added to prove it. Closing entry 33 without
-opening a new one for the disarm defect would convert a measured limitation into an
-unrecorded one — the exact laundering this phase exists against.
+**Test:** Read
+`.planning/todos/pending/2026-09-01-phase-32-review-round-4-nine-open-findings.md`
+(`severity: blocker`) and `32-REVIEW.md` at `de598f2`. Then choose:
+(a) close the phase and carry the nine into the milestone backlog;
+(b) run one more gap-closure round scoped to `CR-07` + `WR-38` + `WR-37`;
+(c) accept them with a recorded `overrides:` entry.
 
-**Recommendation, for the human to action rather than for me to write:** close entry 33 citing
-`evidence/32-restore-on-signal.md` and the 5/5 test, and open a new entry for `CR-10` citing
-`scripts/audit-mutation-harness.mjs:169-174` and the reproduction in this report. `WR-03`
-itself — "is the second `restoreAll()` a genuine no-op?" — **is** settled, and settled well:
-the sentinel test distinguishes no-op from re-write, and the answer is yes. It is the latch's
-*other* consequence that is unsettled, and that is a different question than the one `WR-03`
-asked.
+**Expected:** A recorded decision. Both ROADMAP success criteria are met — I verified that by
+measurement, not by inference — so this is a residual-risk judgement at close, not a repair
+the phase owes.
+
+**Why human:** Two facts make it a judgement rather than a measurement.
+*First,* `CR-07` is a **Critical open across three review rounds** that **vanished from the
+record for one of them** — raised at `05ca6c6`, absent at `e35af74`, re-raised at `de598f2` —
+and it went uncounted in round 3 precisely because it went unwritten. That is this phase's own
+criterion-1 failure mode, applied to its own audit trail, and whether a phase whose subject is
+"nothing passes vacuously" may close over it is an owner's call. Its technical content is
+undecidable by measurement anyway: the hazard is against a **gitignored** tree, so no porcelain
+assertion in the suite can observe it and the suite is green for everyone who has run it.
+*Second,* `WR-38` is a mislabelled assertion inside a case group that DOES bite — I measured
+both halves — so whether the label is a defect worth a round or a comment worth a line is a
+standards question, not a fact question.
 
 ---
 
 ### Gaps Summary
 
-Two gaps, both in code merged this round, both precisely scoped, both with a remedy I verified
-against the source rather than proposed from expectation.
+**None.** Round 3's two gaps are closed and I closed them on my own instruments:
 
-**Gap 1 — one committed evidence row is un-reproducible, and the whole-set registry write-back
-is unreachable.** The corrected post-condition is right for every shape except an overlapping
-replacement, and exactly one of the 35 descriptors has that shape. The consequence chain
-(`plantRefused → failed → hardFailure → no write-back`) means the artefact at the centre of
-`CUT-04` can no longer be regenerated by its own `--all` command. The fix is to stop measuring
-the introduction with a whole-file difference: assert the replacement lands *at the match
-position* and that the length delta equals `replace.length - find.length`. Both facts are exact
-under overlap.
+- **Gap 1 (`CR-09`)** — the arithmetic is replaced by a per-site measurement, the refused row
+  now reports `OBSERVED RED`, and the whole-set registry write-back that round 3 proved
+  permanently unreachable is reached. The strongest single piece of evidence in this report is
+  not the sweep's own output but the field-by-field diff of what it wrote against what was
+  committed: **0 verdict changes, 0 exit-status changes** across 61 rows.
+- **Gap 2 (`CR-10` / `WR-27`)** — the latch is deleted with nothing put in its place, the
+  header note forbids a replacement and says why, and the discriminating second-window pair
+  was captured RED against a deliberately re-introduced latch before it was trusted.
 
-**Gap 2 — the restore machinery is disarmable.** Exporting `plant()` and `restoreAll()` was the
-right call and it landed a two-round behaviour-unverified truth. But `restored` is a permanent
-latch on a path that is now reachable more than once per process, so the second plant in any
-in-process consumer is unprotected. The remedy is to delete the latch: `originals.clear()`
-already provides the idempotence it was added for, and the committed WR-03 test stays green by
-construction. The discriminating test — plant, restore, plant again, signal — must land with
-it, or this returns.
-
-**Grouped by root cause:** the two gaps are independent (one is arithmetic in `plant()`, one is
-state in `restoreAll()`), but they live in the same 200 lines of the same file and both need a
-new test in a file that already exists. One focused plan can close both.
-
-**Not gaps, recorded so they are not re-litigated:** `CR-11` (latent, 0/35), `WR-36` (no
-standing coverage for three harness behaviours — a warning against the phase's own standard,
-and the reason Gap 1's remedy asks for a re-run rather than a promise), and the nine
-`WR`/`IN` items dispositioned in the frontmatter.
+What remains are four warnings and one Critical, none of which falsifies a success criterion,
+all of which are dispositioned, and two of which are put to the owner because they are
+judgements rather than measurements. The phase's deliverable is sound; its residual-risk
+decision is not mine to take.
 
 ---
 
-_Verified: 2026-09-01T09:10:00Z at `e35af7452f50e680b88e53880b636cfc1c5cc2e9`_
-_Verifier: Claude (gsd-verifier), round 3_
+_Verified: 2026-09-01T14:05Z at `048f810`, broker `inactive`_
+_Verifier: Claude (gsd-verifier), round 4_
