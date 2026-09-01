@@ -1239,7 +1239,7 @@ in a milestone archive.
 | 29. The MCP Surface | v0.7.0 | 21/21 | Complete | 2026-08-30 |
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | Complete | 2026-08-31 |
 | 31. Procedure Re-pointing | v0.7.0 | 4/4 | Complete | 2026-08-31 |
-| 32. The Deletion and the Grep Gate | v0.7.0 | 21/21 | In Progress | - |
+| 32. The Deletion and the Grep Gate | v0.7.0 | 21/21 | Complete | 2026-09-01 |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
