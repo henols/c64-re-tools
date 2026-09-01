@@ -68,7 +68,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, execFileSync, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,6 +99,12 @@ const MARKER_DEADLINE_MS = 20000;
 const PLANT_POLL_DEADLINE_MS = 20000;
 const EXIT_DEADLINE_MS = 20000;
 const POLL_INTERVAL_MS = 2;
+
+/** What `spawn(..., { stdio: ["ignore", "pipe", "pipe"] })` actually returns.
+ * NOT `ChildProcessWithoutNullStreams`: stdin is IGNORED here, so it really is
+ * `null`, and that looser alias would type it as a `Writable` that does not
+ * exist -- which `tsc --noEmit` rejects rather than letting through. */
+type PipedChild = ChildProcessByStdio<null, Readable, Readable>;
 
 interface PlantedMarker {
   /** Absolute path of the planted target. */
@@ -135,6 +142,23 @@ function porcelain(): string {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * A deadline for `Promise.race`, WITH A CANCEL. `Promise.race` does not cancel
+ * the loser, so a bare `race([work, sleep(20000)])` leaves a live 20-second
+ * timer behind every single time the work wins. Eleven of those held this
+ * file's runner open for 21 s of wall clock against roughly 1 s of actual work
+ * -- bounded, so not the unterminating-file hazard, but a twenty-fold tax on
+ * the automated suite in exchange for nothing. Cancelling the loser takes the
+ * same file back to about a second.
+ */
+function deadline(ms: number): { promise: Promise<"timeout">; cancel: () => void } {
+  let handle: NodeJS.Timeout | undefined;
+  const promise = new Promise<"timeout">((res) => {
+    handle = setTimeout(() => res("timeout"), ms);
+  });
+  return { promise, cancel: () => clearTimeout(handle) };
+}
+
+/**
  * Runs one attempt end to end. `signal` of `"none"` is the NEGATIVE CONTROL: the
  * driver is allowed to finish on its own, which exercises the ordinary `exit`
  * path -- the same path all ten of plan 32-14's attempts took.
@@ -142,7 +166,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 async function runAttempt(
   signal: "SIGINT" | "SIGTERM" | "none",
   index: number,
-  register: (child: ChildProcessWithoutNullStreams, scratch: string) => void,
+  register: (child: PipedChild, scratch: string) => void,
 ): Promise<Attempt> {
   const scratch = mkdtempSync(join(ROOT, SCRATCH_PREFIX));
   const holdMs = signal === "none" ? 200 : 30000;
@@ -242,8 +266,12 @@ async function runAttempt(
   if (signal !== "none") child.kill(signal);
 
   // 4. Bounded wait for exit.
-  const exitTimer = sleep(EXIT_DEADLINE_MS).then(() => "timeout" as const);
-  const outcome = await Promise.race([exitPromise.then(() => "exited" as const), exitTimer]);
+  const exitDeadline = deadline(EXIT_DEADLINE_MS);
+  const outcome = await Promise.race([
+    exitPromise.then(() => "exited" as const),
+    exitDeadline.promise,
+  ]);
+  exitDeadline.cancel();
   assert.equal(
     outcome,
     "exited",
@@ -277,7 +305,7 @@ async function runAttempt(
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   test(`${signal} delivered inside the plant window exits 130 and restores byte-for-byte`, async (t) => {
-    const live: Array<{ child: ChildProcessWithoutNullStreams; scratch: string }> = [];
+    const live: Array<{ child: PipedChild; scratch: string }> = [];
     t.after(() => {
       for (const { child, scratch } of live) {
         if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -322,7 +350,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 test("negative control: the same driver finishing WITHOUT a signal exits 0 and is also byte-identical", async (t) => {
-  const live: Array<{ child: ChildProcessWithoutNullStreams; scratch: string }> = [];
+  const live: Array<{ child: PipedChild; scratch: string }> = [];
   t.after(() => {
     for (const { child, scratch } of live) {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -374,10 +402,9 @@ test("WR-03: after a first restoreAll(), a second call is a genuine no-op rather
   });
 
   const exited = new Promise<number | null>((res) => r.on("exit", (code) => res(code)));
-  const outcome = await Promise.race([
-    exited,
-    sleep(EXIT_DEADLINE_MS).then(() => "timeout" as const),
-  ]);
+  const latchDeadline = deadline(EXIT_DEADLINE_MS);
+  const outcome = await Promise.race([exited, latchDeadline.promise]);
+  latchDeadline.cancel();
   if (outcome === "timeout") {
     r.kill("SIGKILL");
     assert.fail(`the latch driver did not exit within ${EXIT_DEADLINE_MS} ms`);
