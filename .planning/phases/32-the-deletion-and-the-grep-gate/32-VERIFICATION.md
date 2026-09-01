@@ -525,3 +525,37 @@ decision is not mine to take.
 
 _Verified: 2026-09-01T14:05Z at `048f810`, broker `inactive`_
 _Verifier: Claude (gsd-verifier), round 4_
+
+---
+
+## Acknowledged Gaps
+
+Recorded by `/gsd-verify-work 32` at phase close (2026-09-01), per the `scan_phase_artifacts`
+step. These are open items the operator explicitly chose to carry rather than fix. The
+acknowledgement is not implicit: it is the recorded answer to `32-UAT.md` test 1, option **(a)
+— close the phase and carry the nine into the milestone backlog**.
+
+| Item | Scope | Severity | Why acknowledged rather than fixed |
+|------|-------|----------|-------------------------------------|
+| `.planning/todos/pending/2026-09-01-phase-32-review-round-4-nine-open-findings.md` | 9 findings — `CR-07` (Critical), `WR-37`, `WR-38`, `WR-39`, `WR-40`, `IN-16`, `IN-17`, `IN-18`, `IN-19` | blocker | All nine were raised **by** the `execute:post` review that runs after the round-3 gap-closure plans (32-20, 32-21) had already merged, so no plan in that round could have addressed them. Neither ROADMAP success criterion is falsified by any of them — the verifier measured that (17/17 must-haves, `behavior_unverified: 0`). Closing them is a further gap-closure round, not a repair this phase owes. |
+| `.planning/todos/pending/2026-08-31-phase-32-review-twenty-five-open-findings.md` | 25 findings — `CR-01`–`CR-04`, `WR-01`–`WR-14`, `IN-01`–`IN-07`; 8 of them (`CR-09`, `CR-10`, `CR-11`, `WR-27`, `WR-28`, `WR-29`, `WR-34`, `WR-36`) were subsequently closed by plans 32-20/32-21 | blocker | Same structure: raised by the advisory review at the tail of the executing round. Dispositioned in the todo rather than by editing a SUMMARY or this file, because those are evidence written by the agent that did the work and editing them from the orchestrator seat to turn a guard green is fact-laundering. |
+
+**The `CR-07` record is the one a future reader should not inherit silently.** It is a
+Critical that has now been open across three review rounds, and it was **absent from the
+round-3 report for one full round without ever being fixed** (`05ca6c6` raised it, `e35af74`
+dropped it, `de598f2` re-raised it). That omission is also why the disposition guard was green
+between those two commits — an unresolved Critical stopped being counted because it stopped
+being written down. That is precisely the failure mode this phase's own criterion 1 exists
+against, which is why it was escalated to a human decision rather than absorbed.
+
+**Security audit intersection (2026-09-01, `32-SECURITY.md`).** All nine were checked against
+the 119-row threat register for the single question *"does this falsify a mitigation the
+register claims, at severity ≥ high?"* — **none does**. `CR-07` is an *unregistered* flag, not
+a falsified mitigation: no register row claims `installer/skills/` is isolated under the
+parallel runner, and `installer/scripts/sync-skills.mjs` reads no argv (`DEST` is fixed by
+module location), so there is no untrusted-input path — only a concurrency hazard on a
+gitignored build artifact. `threats_open: 0` at the `high` block threshold.
+
+**Next round, when it is planned:** scope it `CR-07` + `WR-38` + `WR-37` first, per the
+ranking in the round-4 todo — `/gsd-plan-phase 32 --gaps` then
+`/gsd-execute-phase 32 --gaps-only`.
