@@ -5,15 +5,15 @@ milestone_name: Own the Annotation Store
 current_phase: 32
 current_phase_name: The Deletion and the Grep Gate
 status: executing
-stopped_at: Phase 32 planned — 9 plans across 7 waves, verification passed
-last_updated: "2026-08-31T22:07:17.493Z"
+stopped_at: Phase 32 gap-closure round 2 planned — 5 plans (32-15..32-19) across 3 waves, verification passed
+last_updated: "2026-09-01T06:12:27.541Z"
 last_activity: 2026-09-01
-last_activity_desc: Phase 32 execution started
-state_head: a1ba55d3b2aeb75a902b496653e90b87c13d06fa
+last_activity_desc: Phase 32 gap-closure round 2 planned
+state_head: 854509159714632d8f7c21f8a13db4dcf4ce9f04
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 73
+  total_plans: 78
   completed_plans: 68
   percent: 83
 ---
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 32 (The Deletion and the Grep Gate) — EXECUTING
-Plan: 14 of 14 — gap-closure round 1 verified 11/15, THREE gaps remain (CR-05, CR-06, CR-08); phase NOT complete
-Status: Phase 32 blocked on gap-closure round 2
-Last activity: 2026-09-01 — Phase 32 execution started
+Phase: 32 (The Deletion and the Grep Gate) — READY TO EXECUTE
+Plan: 14 of 19 executed — gap-closure round 2 planned (32-15..32-19) to close CR-06, the --root gap and CR-08, plus the restore-on-signal item
+Status: Phase 32 ready to execute gap-closure round 2
+Last activity: 2026-09-01 — Phase 32 gap-closure round 2 planned
 
 ## Performance Metrics
 
