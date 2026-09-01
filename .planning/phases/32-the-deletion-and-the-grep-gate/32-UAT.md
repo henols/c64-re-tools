@@ -1,32 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 32-the-deletion-and-the-grep-gate
 source: [32-VERIFICATION.md]
 started: 2026-09-01T13:30:00Z
-updated: 2026-09-01T13:30:00Z
+updated: 2026-09-01T14:30:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Disposition the nine round-4 code-review findings, in particular CR-07 (Critical) and WR-38
-expected: |
-  A recorded human decision. Neither ROADMAP success criterion is falsified by any of the
-  nine — the verifier measured that rather than assuming it — so this is a judgement about
-  acceptable residual risk at phase close, not a repair the phase owes.
-
-  The two facts that make it a human call rather than a verifier call:
-
-  - `CR-07` is a **Critical that has now been open across three review rounds and was absent
-    from the round-3 report for one full round without ever being fixed**, so the record
-    itself failed in the way this phase's own criterion 1 exists against.
-  - `WR-38` is a self-applied criterion-1 defect inside the phase's own instrument.
-
-  Choose one of:
-    (a) close the phase and carry the nine into the milestone backlog
-    (b) run one more gap-closure round scoped to `CR-07` + `WR-38` + `WR-37`
-    (c) accept them with a recorded override
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -41,14 +23,39 @@ read_first:
   - `.planning/phases/32-the-deletion-and-the-grep-gate/32-REVIEW.md` (at `de598f2` — full evidence for all nine)
   - `.planning/phases/32-the-deletion-and-the-grep-gate/32-VERIFICATION.md` (§ human_verification, and the WR-38 experiment the verifier ran)
 
-result: [pending]
+result: pass
+source: human_decision
+decision: |
+  Option (a) — close phase 32 and carry all nine round-4 findings into the milestone
+  backlog. Recorded from the operator's verbatim response at the gate: "pass".
+
+  What this decides, explicitly, so the record is not a keypress:
+
+  - Neither ROADMAP success criterion for phase 32 is falsified by any of the nine —
+    the verifier measured that (32-VERIFICATION.md: 17/17 must-haves, behavior_unverified: 0,
+    overrides_applied: 0). The phase closes on its own criteria, not by waiving them.
+  - The nine stay OPEN. They are already tracked, with full cross-round evidence, in
+    `.planning/todos/pending/2026-09-01-phase-32-review-round-4-nine-open-findings.md`
+    (severity: blocker). Closing the phase does not close them and does not reduce their
+    severity. This is (a), a carry, NOT (c) — no override is applied and none is recorded.
+  - `CR-07` (Critical) is accepted as residual risk for now on the measured ground that it
+    is a LATENT scheduling hazard against the gitignored `installer/skills/` tree, not an
+    observed failure: the suite was green twice on 2026-09-01. Its three-round trail —
+    raised at `05ca6c6`, absent from `e35af74` without ever being fixed, re-raised at
+    `de598f2` — is preserved in the todo precisely so the next reader inherits the gap in
+    the record rather than the silence.
+  - `WR-38` (the assertion labelled "the one that must never change" that still passes with
+    containment removed) is accepted as a known self-applied criterion-1 defect at that one
+    site, and the todo ranks it first for the next round.
+  - Deferred to a future gap-closure round, not to nobody: `/gsd-plan-phase 32 --gaps` →
+    `/gsd-execute-phase 32 --gaps-only`, scoped CR-07 + WR-38 + WR-37 first.
 
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
