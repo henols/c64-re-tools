@@ -6,15 +6,15 @@ current_phase: 32
 current_phase_name: The Deletion and the Grep Gate
 status: executing
 stopped_at: Phase 32 gap-closure round 2 planned — 5 plans (32-15..32-19) across 3 waves, verification passed
-last_updated: "2026-09-01T06:12:27.541Z"
+last_updated: "2026-09-01T06:36:01.846Z"
 last_activity: 2026-09-01
-last_activity_desc: Phase 32 gap-closure round 2 planned
-state_head: 854509159714632d8f7c21f8a13db4dcf4ce9f04
+last_activity_desc: Phase 32 execution started
+state_head: c800ab22b934956ee97f9cfdb7b31b079891adae
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 78
-  completed_plans: 68
+  completed_plans: 73
   percent: 83
 ---
 
@@ -147,10 +147,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 32 (The Deletion and the Grep Gate) — READY TO EXECUTE
-Plan: 14 of 19 executed — gap-closure round 2 planned (32-15..32-19) to close CR-06, the --root gap and CR-08, plus the restore-on-signal item
-Status: Phase 32 ready to execute gap-closure round 2
-Last activity: 2026-09-01 — Phase 32 gap-closure round 2 planned
+Phase: 32 (The Deletion and the Grep Gate) — EXECUTING
+Plan: 14 of 19 executed — executing gap-closure round 2 (32-15..32-19) to close CR-06, the --root gap and CR-08, plus the restore-on-signal item
+Status: Executing Phase 32 gap-closure round 2 (--gaps-only)
+Last activity: 2026-09-01 — Phase 32 gap-closure round 2 execution started
 
 ## Performance Metrics
 
