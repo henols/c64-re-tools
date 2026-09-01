@@ -38,7 +38,7 @@
 // guards that pinned totals and reddened on correct trees.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,7 +54,42 @@ const MANIFEST_PATH = resolve(
   HERE,
   "../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json",
 );
-const REQUIREMENTS_PATH = resolve(HERE, "../../../.planning/REQUIREMENTS.md");
+/**
+ * The requirements document this register's ids are checked against.
+ *
+ * WHY THE FALLBACK: `/gsd-complete-milestone` **deletes** `.planning/REQUIREMENTS.md`
+ * at every milestone close (`git rm`, so the history is kept) and a fresh one is
+ * only written when the next milestone opens. Between those two events the live
+ * document does not exist, and this guard's DIRECTION 5 read of it threw ENOENT —
+ * observed at the v0.7.0 close on 2026-09-01, reddening four tests in this file.
+ *
+ * The archived copy is the same document: `milestone complete` writes
+ * `.planning/milestones/<version>-REQUIREMENTS.md` from the live file before
+ * removing it, so the id set is identical. Falling back to the NEWEST archive
+ * (lexicographic max of the `v*-REQUIREMENTS.md` names) keeps the membership
+ * check real across the gap instead of turning it off.
+ *
+ * Do NOT "fix" this by relaxing the membership assertion to a shape check — the
+ * whole basis of this register is that a cited id is a REAL one, which is
+ * precisely the rubber stamp D-08's prohibition names.
+ */
+function requirementsPath(): string {
+  const live = resolve(HERE, "../../../.planning/REQUIREMENTS.md");
+  if (existsSync(live)) return live;
+  const archiveDir = resolve(HERE, "../../../.planning/milestones");
+  const archived = existsSync(archiveDir)
+    ? readdirSync(archiveDir).filter((n) => /^v.*-REQUIREMENTS\.md$/.test(n)).sort()
+    : [];
+  if (archived.length === 0) {
+    throw new Error(
+      `no requirements document found: ${live} is absent and ${archiveDir} holds no v*-REQUIREMENTS.md. ` +
+        "One of the two must exist -- an absent set would make DIRECTION 5's membership check vacuous.",
+    );
+  }
+  return join(archiveDir, archived[archived.length - 1]);
+}
+
+const REQUIREMENTS_PATH = requirementsPath();
 
 /** The surface, as names. Taken from the definition table rather than from
  * `CURATED_ANNO_TOOLS` in the scan below, so the ordering direction can drive

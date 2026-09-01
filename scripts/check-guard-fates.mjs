@@ -55,7 +55,7 @@
 // `REGISTRY_REL_PATH`.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -361,6 +361,42 @@ function deriveSetB(root, claimedNewSubjects) {
 // ---------------------------------------------------------------------------
 
 /**
+ * The roadmap text set C is parsed out of.
+ *
+ * WHY THE FALLBACK: at a milestone close `/gsd-complete-milestone` archives the
+ * live `ROADMAP.md` to `.planning/milestones/<version>-ROADMAP.md` and then
+ * COLLAPSES the live one to milestone groupings -- the per-phase `### Phase NN`
+ * detail sections, which are exactly what `ROADMAP_SECTION_RE` matches, move
+ * into the archive. Observed at the v0.7.0 close on 2026-09-01: the collapse
+ * removed `### Phase 32` and this check failed "no section matching", reddening
+ * itself and its two test consumers.
+ *
+ * The archived copy is the SAME document, snapshotted before the collapse, so
+ * the mandate this check reads is byte-identical there. The live file is still
+ * preferred -- during an open milestone it is the authority and the archive of
+ * the previous one must not shadow it. Only when the live file genuinely lacks
+ * the section is the newest archive consulted.
+ *
+ * Deliberately NOT a silent widening: if neither document carries the section,
+ * `parseDeferredFateNote` still throws. A reworded note must stay LOUD.
+ */
+function readRoadmapText(root) {
+  const live = readFileSync(join(root, ROADMAP_REL_PATH), "utf8");
+  if (live.split("\n").some((line) => ROADMAP_SECTION_RE.test(line))) return live;
+
+  const archiveDir = join(root, ".planning", "milestones");
+  if (!existsSync(archiveDir)) return live;
+  const archived = readdirSync(archiveDir)
+    .filter((n) => /^v.*-ROADMAP\.md$/.test(n))
+    .sort();
+  for (let i = archived.length - 1; i >= 0; i--) {
+    const text = readFileSync(join(archiveDir, archived[i]), "utf8");
+    if (text.split("\n").some((line) => ROADMAP_SECTION_RE.test(line))) return text;
+  }
+  return live; // let parseDeferredFateNote throw with its own message
+}
+
+/**
  * Isolates this phase's section of the roadmap, then the deferred-fates note
  * inside it, then every backticked token in that note that names a source
  * file. Throws -- never returns a smaller set -- when the section or the note
@@ -479,8 +515,7 @@ export function deriveAuditedSet({ root, roadmapText } = {}) {
   const trackedPaths = git(root, ["ls-files", "-z", "--full-name"])
     .split("\0")
     .filter(Boolean);
-  const roadmap =
-    roadmapText !== undefined ? roadmapText : readFileSync(join(root, ROADMAP_REL_PATH), "utf8");
+  const roadmap = roadmapText !== undefined ? roadmapText : readRoadmapText(root);
   const setCParse = resolveSetC({ roadmapText: roadmap, trackedPaths });
 
   const { members: setA, listedCount } = deriveSetA(root);

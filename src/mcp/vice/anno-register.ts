@@ -163,7 +163,12 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     consumers: [
       { path: "src/mcp/vice/anno-derive.ts", symbol: "searchAnnotations" },
       { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_search" },
-      { path: ".planning/REQUIREMENTS.md", symbol: "STORE-06" },
+      // Re-pointed at the v0.7.0 close, 2026-09-01: `/gsd-complete-milestone`
+      // `git rm`s `.planning/REQUIREMENTS.md` and archives it under
+      // `milestones/<version>-REQUIREMENTS.md`. The cited text is unchanged --
+      // this names the file STORE-06 is actually declared in today, so
+      // DIRECTION 5's "every path exists" check stays a real check.
+      { path: ".planning/milestones/v0.7.0-REQUIREMENTS.md", symbol: "STORE-06" },
     ],
     requirements: ["STORE-06"],
     rationale:
