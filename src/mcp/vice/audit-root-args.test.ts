@@ -427,17 +427,42 @@ test("--root naming the repository root itself is accepted and writes identical 
 });
 
 // ===========================================================================
-// THE SIX-SCRIPT MATRIX -- `gaps[1].missing[2]`, stated verbatim: "At least
-// one spawnSync test per `--root`-ised script: contained root reads the
+// THE ROOT-ACCEPTING MATRIX -- `gaps[1].missing[2]`, stated verbatim: "At
+// least one spawnSync test per `--root`-ised script: contained root reads the
 // synthetic tree; out-of-repo root exits 1 with REFUSED; `--root=<dir>` exits
 // non-zero."
 //
-// Six scripts accept a root. Until plan 32-11 each of them carried its OWN
-// copy of the same nine-line reader, so ONE defect shipped six times (IN-06)
-// and a per-script test was the only thing that would have caught it. The
-// table below is the whole population, and the completeness guard beneath it
-// derives that population FROM DISK -- so a seventh root-accepting script
-// added later fails this file by omission rather than passing unnoticed.
+// MEASURED, 2026-09-01: EIGHT top-level `scripts/*.mjs` accept a root. Until
+// plan 32-11 each of the first six carried its OWN copy of the same nine-line
+// reader, so ONE defect shipped six times (IN-06) and a per-script test was
+// the only thing that would have caught it.
+//
+// THE POPULATION IS DERIVED FROM THE FLAG, and that is the whole content of
+// the completeness guard beneath this table. A `scripts/*.mjs` whose source
+// carries the token `--root` is a member WHETHER OR NOT it uses the shared
+// seam -- because a script that hand-rolls the reader is the defect this file
+// exists to catch, and keying on the seam excludes exactly those.
+//
+// WHAT THIS CORRECTS, recorded rather than quietly fixed (2026-09-01, phase 32
+// gap-closure round 2, plan 32-18, closing `CR-08`/Gap 5). The predicate here
+// used to be `src.includes("parseRootArg(")` -- the REMEDY, not the flag -- so
+// the set compared against MATRIX was "scripts that already use the seam",
+// which is tautologically the set MATRIX covers. Measured at that HEAD: eight
+// scripts accepted `--root` and six contained `parseRootArg(`, and the two
+// invisible ones were EXACTLY the two still hand-rolling the reader
+// (`audit-gate` and `audit-mutation-harness`). This docblock asserted the
+// opposite twice, and the second time in the present tense: it claimed the
+// table was the whole population, and that "a seventh root-accepting script
+// added later fails this file by omission rather than passing unnoticed" --
+// while the seventh and eighth already existed and already passed unnoticed.
+// A guard added by a phase whose success criterion is "none passes vacuously"
+// was itself passing vacuously with respect to its own stated purpose.
+//
+// The forward-looking promise, restated correctly: a NINTH root-accepting
+// script added later fails this file BY OMISSION rather than passing
+// unnoticed. The correct response to that failure is a MATRIX row with a typed
+// expectation and its own spawned test -- never a predicate exception, an
+// exclusion list or a skip.
 // ===========================================================================
 
 /** How each script is expected to behave when handed a CONTAINED root that is
@@ -450,6 +475,18 @@ test("--root naming the repository root itself is accepted and writes identical 
  *   - "refuses": the script binds its comparison data through a static import
  *     that cannot follow a root override, so ANY contained root that is not
  *     the default root is refused outright.
+ *   - "uncontained-read-only": the script accepts an UNCONTAINED root BY
+ *     DESIGN, and that asymmetry is a decision rather than an omission (plan
+ *     32-16, recorded in `scripts/audit-gate.mjs`'s own header). The basis is
+ *     measured, not assumed: the script performs NO FILESYSTEM WRITE, so the
+ *     trust boundary containment guards -- which tree a script WRITES -- does
+ *     not exist for it; and its own test suite REQUIRES the uncontained path,
+ *     pointing it at `mkdtempSync(tmpdir())` trees outside the repository for
+ *     a reason recorded at `audit-integrity.test.ts`. The expectation is
+ *     therefore PAIRED WITH THE WRITE-FREEDOM ASSERTION at the bottom of this
+ *     file, which REVOKES the acceptance the moment a write appears. It is not
+ *     an escape hatch for a script whose test is inconvenient: carrying this
+ *     value costs you a standing proof that you still write nothing.
  *
  *  WHAT CHANGED HERE AND WHY (plan 32-12): plan 32-11 wrote the "refuses"
  *  expectation deliberately loose -- "non-zero plus a diagnostic naming the
@@ -460,11 +497,19 @@ test("--root naming the repository root itself is accepted and writes identical 
  *  the specific literal, because the loose shape is satisfied by BOTH the old
  *  incidental stop and the new principled refusal, and a test that cannot tell
  *  them apart cannot detect a regression back to the first. */
-type ContainedExpectation = "repo-root" | "synthetic-corpus" | "refuses";
+type ContainedExpectation =
+  | "repo-root"
+  | "synthetic-corpus"
+  | "refuses"
+  | "uncontained-read-only";
 
 interface MatrixRow {
   script: string;
   contained: ContainedExpectation;
+  /** Arguments this script needs before the behaviour under test is REACHABLE.
+   *  Supplied in code and NEVER from argv, an environment variable or a file --
+   *  the same rule `booleanFlags` and `valueFlags` already carry at the seam. */
+  extraArgs?: string[];
 }
 
 const MATRIX: MatrixRow[] = [
@@ -474,6 +519,27 @@ const MATRIX: MatrixRow[] = [
   { script: "check-skill-fork-honesty", contained: "refuses" },
   { script: "check-skill-cli-invocations", contained: "refuses" },
   { script: "check-skill-description-overlap", contained: "synthetic-corpus" },
+  // WHY THIS ROW CARRIES A SELECTOR, AND WHY THE ROW NAME IS DELIBERATELY
+  // NON-EXISTENT. The harness enforces "exactly one of --row, --rows, --all"
+  // inside `parseArgs()`, which runs BEFORE `resolveContainedRoot()`; a row
+  // that spawned it with no selector would hit the selector rule instead of
+  // the behaviour under test, and the case would pass for the wrong reason.
+  //
+  // The selector's VALUE is a row name that matches nothing in the registry,
+  // and that is a SAFETY property, not an accident. Row selection resolves
+  // AFTER containment, so if a future change ever reordered the two, this
+  // invocation would find NO ROW TO PLANT and stop -- rather than planting a
+  // mutation into the real working tree from inside a unit test. `--all` here
+  // would sweep it. Do NOT replace this with a real `historicalPath`: the
+  // non-existence is the fail-safe (T-32-30).
+  {
+    script: "audit-mutation-harness",
+    contained: "repo-root",
+    extraArgs: ["--row", "zz-no-such-registry-row-exists.mjs"],
+  },
+  // Uncontained by design (plan 32-16). Needs no extra arguments: `--root` is
+  // its only positional concern and both its other flags are optional booleans.
+  { script: "audit-gate", contained: "uncontained-read-only" },
 ];
 
 function runScript(script: string, args: string[]): RunResult {
@@ -514,9 +580,11 @@ const SPLIT_READ_REFUSAL = "SPLIT READ REFUSED";
 
 /** Read a script exactly as bytes-to-text, with no transcoding surprises.
  *  `latin1` matches this phase's document-sweep convention. MEASURED, not
- *  assumed: none of the six scripts carries a NUL byte (asserted below), so a
- *  plain text read loses nothing here -- the hazard that motivates `grep -a`
- *  elsewhere in this repository does not apply to this population. */
+ *  assumed: no member of the ROOT-ACCEPTING POPULATION carries a NUL byte
+ *  (asserted below, driven from the population function rather than from a
+ *  hard-coded list, so the measurement cannot fall behind the way the matrix
+ *  did), so a plain text read loses nothing here -- the hazard that motivates
+ *  `grep -a` elsewhere in this repository does not apply to this population. */
 function scriptText(script: string): string {
   return readFileSync(join(ROOT, "scripts", `${script}.mjs`), "latin1");
 }
@@ -554,42 +622,167 @@ function declaredSplitReadImports(text: string): string[] {
   return [...block[1]!.matchAll(/from:\s*"([^"]+)"/g)].map((m) => m[1]!).sort();
 }
 
-/** Every top-level `scripts/*.mjs` that calls the shared argv seam. Derived
- *  from disk rather than listed, so the completeness guard below measures the
- *  tree instead of restating this file's own table. `scripts/lib/` is excluded
- *  because that is where the seam itself lives. */
-function scriptsUsingTheSharedParser(): string[] {
+/** The `--root` flag itself -- the token the population is keyed on. Named as a
+ *  constant so the population predicate and the assertion messages below cannot
+ *  drift apart from each other. */
+const ROOT_FLAG = "--root";
+
+interface PopulationWalk {
+  /** Every top-level `scripts/*.mjs` this walk VISITED, basename INCLUDING the
+   *  extension. This is the set the independent cross-check compares against;
+   *  it is deliberately the visited set rather than the population, because a
+   *  file silently skipped by the walk never reaches the `--root` test at all. */
+  visited: string[];
+  /** The members: visited files whose source carries the `--root` token, with
+   *  the extension stripped so they compare directly against MATRIX rows. */
+  accepting: string[];
+}
+
+/** Every top-level `scripts/*.mjs` that ACCEPTS a root, HOWEVER IT READS IT.
+ *
+ *  DERIVING FROM THE FLAG RATHER THAN FROM THE REMEDY IS LOAD-BEARING, and is
+ *  the single correction plan 32-18 exists to make: a script that hand-rolls
+ *  the argv reader is precisely the defect this file exists to catch (IN-06),
+ *  and keying the population on a call to the shared seam excludes exactly
+ *  those. See the MATRIX docblock above for what that cost when it was keyed on
+ *  `parseRootArg(` instead.
+ *
+ *  Derived from disk rather than listed, so the completeness guard below
+ *  measures the tree instead of restating this file's own table. `scripts/lib/`
+ *  is excluded by `entry.isFile()` because that is where the seam itself lives.
+ *  The read is the same `latin1` byte-preserving read `scriptText()` uses, so a
+ *  NUL byte cannot silently truncate it and shrink the population. */
+function walkRootAcceptingScripts(): PopulationWalk {
   const dir = join(ROOT, "scripts");
-  const out: string[] = [];
+  const visited: string[] = [];
+  const accepting: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".mjs")) continue;
-    const src = readFileSync(join(dir, entry.name), "utf8");
-    if (src.includes("parseRootArg(")) out.push(entry.name.replace(/\.mjs$/, ""));
+    visited.push(entry.name);
+    const src = readFileSync(join(dir, entry.name), "latin1");
+    if (src.includes(ROOT_FLAG)) accepting.push(entry.name.replace(/\.mjs$/, ""));
+  }
+  return { visited: visited.sort(), accepting: accepting.sort() };
+}
+
+function scriptsAcceptingARoot(): string[] {
+  return walkRootAcceptingScripts().accepting;
+}
+
+/** THE INDEPENDENT SIDE of the population cross-check, and the choice of
+ *  mechanism IS the entire content of this function.
+ *
+ *  The walk above is `readdirSync` + `isFile()` + a Node-side read, inside this
+ *  process. Comparing it against a SECOND `readdirSync` carrying the same
+ *  filter would be an assertion that CANNOT DISAGREE -- a tautological guard
+ *  added to the very file whose tautological population is the defect being
+ *  closed here. So the second side is not a Node directory read at all: a shell
+ *  is spawned and IT expands the glob, in another process, with no `isFile()`
+ *  test and no Node-side read. A Node-side filter change, a read failure, or a
+ *  byte that defeats a Node read therefore moves ONE number and not the other,
+ *  which is exactly the class of skip this cross-check exists to catch.
+ *
+ *  THE SHELL COMMAND IS FIXED, because the obvious form is the wrong one.
+ *  `printf '%s\n' scripts/*.mjs` emits one path per line. Do NOT use a bare
+ *  `ls scripts/*.mjs`: measured in this repository against this plan's own
+ *  probe, an `ls` whose glob matches a DIRECTORY descends into it and prints
+ *  its contents under a `scripts/<name>:` header preceded by a blank line,
+ *  emitting the directory's name with a trailing colon instead of the path
+ *  itself. That defeats the probe twice over -- a phantom empty-string member
+ *  and a colon-suffixed member enter the listing side, so the assertion reds
+ *  for the wrong reason and a reader records a red that does not mean what it
+ *  appears to mean. `ls -d scripts/*.mjs` is an acceptable equivalent; `ls`
+ *  without `-d` is not. The two filters below guard that form against being
+ *  reintroduced later rather than trusting this comment. */
+function shellListedMjs(): string[] {
+  const r = spawnSync("/bin/sh", ["-c", "printf '%s\\n' scripts/*.mjs"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, `the independent shell listing failed: ${r.stderr}`);
+  const raw = (r.stdout ?? "").split("\n");
+  const out: string[] = [];
+  for (const line of raw) {
+    const path = line.trim();
+    // Both of these are the SIGNATURE OF A BARE `ls` recursing into a directory
+    // member: a blank separator line, and the directory's own name emitted with
+    // a trailing colon as a group header. Dropped explicitly so reintroducing
+    // that form cannot quietly inject two phantom members.
+    if (path.length === 0) continue;
+    if (path.endsWith(":")) continue;
+    // An unexpanded glob means NO match, not a member literally named `*.mjs`.
+    if (path.includes("*")) continue;
+    out.push(path.slice(path.lastIndexOf("/") + 1));
   }
   return out.sort();
 }
 
-test("the matrix covers EVERY script wired to the shared argv seam", () => {
-  const onDisk = scriptsUsingTheSharedParser();
+test("the population walk sees every scripts/*.mjs an independent mechanism sees", () => {
+  const walked = walkRootAcceptingScripts().visited;
+  const listed = shellListedMjs();
+
+  // Reported in BOTH directions, and as NAMED LISTS rather than counts. A count
+  // comparison tells you a number moved; a list comparison names the file --
+  // and this gap exists precisely because a guard reported a state without
+  // naming the members it could not see.
+  const walkedNotListed = walked.filter((n) => !listed.includes(n));
+  const listedNotWalked = listed.filter((n) => !walked.includes(n));
+
+  const why =
+    "The population walk and this listing are DELIBERATELY DIFFERENT MECHANISMS: the walk is " +
+    "readdirSync + isFile() + a Node read inside this process; the listing is a spawnSync " +
+    "shell glob expansion in another process with no isFile() filter and no Node read. " +
+    "COLLAPSING THEM INTO THE SAME MECHANISM SILENTLY VOIDS THIS CHECK -- two readdirSync " +
+    "calls sharing a filter cannot disagree, which is the exact tautology this file was " +
+    "corrected to remove. An equality produced by a census must be provably a real one here: " +
+    "a plain census over this repository's sources has already produced one false decision.";
+
+  assert.deepEqual(
+    walkedNotListed,
+    [],
+    `a file the walk visited is absent from the independent listing. ${why}`,
+  );
+  assert.deepEqual(
+    listedNotWalked,
+    [],
+    "a scripts/*.mjs is present on disk but was SKIPPED by the population walk, so it could " +
+      `never have been tested for the ${ROOT_FLAG} token. ${why}`,
+  );
+  assert.deepEqual(walked, listed, `the two mechanisms disagree about scripts/*.mjs. ${why}`);
+});
+
+test("the matrix covers EVERY root-accepting script", () => {
+  const onDisk = scriptsAcceptingARoot();
   const covered = MATRIX.map((r) => r.script).sort();
+  // Both sides sorted by the same comparison, so the verdict does not depend on
+  // directory-listing order and a row added in any position is equivalent
+  // (`[edge:CUT-04/ordering]`).
   assert.deepEqual(
     onDisk,
     covered,
-    "a root-accepting script exists that this file does not exercise (or vice versa). " +
-      "The whole point of the shared seam is that no consumer is left untested -- add the " +
-      "missing row to MATRIX rather than relaxing this assertion.",
+    `a script accepting ${ROOT_FLAG} exists that this file does not exercise (or vice versa). ` +
+      "The population is derived from the FLAG, not from the shared seam, so a script that " +
+      "hand-rolls the reader is a member too -- that is the whole point. Add the missing row " +
+      "to MATRIX with a typed expectation and its own spawned test. Do NOT relax this " +
+      "assertion, and do NOT add an exclusion list, an unmigrated-scripts array or a skip: " +
+      "removing a " +
+      "member from measurement is the defect this guard was corrected to stop having.",
   );
+  // A NON-VACUITY FLOOR, to be RAISED and NEVER LOWERED. It was six while the
+  // population was keyed on the shared seam; the flag-derived population is
+  // eight. Lowering it would silently re-admit the state this guard exists to
+  // report.
   assert.ok(
-    covered.length >= 6,
-    `expected at least the six known consumers, measured ${covered.length}`,
+    covered.length >= 8,
+    `expected at least the eight known root-accepting scripts, measured ${covered.length}`,
   );
 });
 
 // --- Case 1 of 3, per script: the equals form ------------------------------
 
-for (const { script } of MATRIX) {
+for (const { script, extraArgs = [] } of MATRIX) {
   test(`${script}: the equals form exits non-zero and names itself`, () => {
-    const r = runScript(script, ["--root=/tmp/definitely-not-here"]);
+    const r = runScript(script, ["--root=/tmp/definitely-not-here", ...extraArgs]);
     assert.notEqual(r.status, 0, `expected a non-zero exit, got ${r.status}`);
     assert.ok(
       r.stderr.includes(`${script}: BAD ARGUMENTS --`),
@@ -600,15 +793,54 @@ for (const { script } of MATRIX) {
 
 // --- Case 2 of 3, per script: an out-of-repository root --------------------
 
-for (const { script } of MATRIX) {
+// TYPED, NOT UNIVERSAL (plan 32-18). This case used to run for every row and
+// assert that EVERY script refuses an out-of-repository root. That is true of
+// seven of the eight and FALSE OF THE EIGHTH BY DESIGN, so the two directions
+// are now two separate tests keyed on the expectation. Asserting both in one
+// generic case would let either pass for the other's reason -- and `audit-gate`
+// and `audit-mutation-harness` are exactly the adjacency that needs separating:
+// both accept `--root`, both are on the shared argv seam, and they differ ONLY
+// in containment (`[edge:CUT-06/adjacency]`).
+
+for (const { script, contained, extraArgs = [] } of MATRIX) {
+  if (contained === "uncontained-read-only") continue;
   test(`${script}: an out-of-repository root exits 1 with REFUSED`, () => {
     const outside = mkdtempSync(join(tmpdir(), "audit-root-args-"));
     try {
-      const r = runScript(script, ["--root", outside]);
+      const r = runScript(script, ["--root", outside, ...extraArgs]);
       assert.equal(r.status, 1, `expected exit 1, got ${r.status} (stderr: ${r.stderr})`);
       assert.ok(
         r.stderr.includes(`${script}: REFUSED --`),
         `stderr must carry the containment-refusal prefix naming this script, got: ${r.stderr}`,
+      );
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+}
+
+// --- Case 2b: the OPPOSITE direction, for the uncontained-by-design rows -----
+
+for (const { script, contained, extraArgs = [] } of MATRIX) {
+  if (contained !== "uncontained-read-only") continue;
+  test(`${script}: an out-of-repository root is ACCEPTED as an argument, by design`, () => {
+    const outside = mkdtempSync(join(tmpdir(), "audit-root-args-"));
+    try {
+      const r = runScript(script, ["--root", outside, ...extraArgs]);
+      // The claim is NOT "it exits 0" -- an empty directory carries none of
+      // this gate's inputs, so it will fail on its own terms. The claim is that
+      // the run REACHED the gate's own logic instead of being turned away at
+      // the argument boundary. Both refusal prefixes must therefore be absent.
+      assert.ok(
+        !r.stderr.includes(`${script}: REFUSED --`),
+        "this script is uncontained BY DESIGN (it performs no write, see the write-freedom " +
+          "assertion below); an out-of-repository root must NOT be turned away by the " +
+          `containment seam, got: ${r.stderr}`,
+      );
+      assert.ok(
+        !r.stderr.includes(`${script}: BAD ARGUMENTS --`),
+        "an existing out-of-repository directory is a well-formed value for this flag; it " +
+          `must not be reported as an argument rejection, got: ${r.stderr}`,
       );
     } finally {
       rmSync(outside, { recursive: true, force: true });
@@ -624,13 +856,13 @@ for (const { script } of MATRIX) {
 // empty -- if a future change made the refusal depend on what the tree carries,
 // this case would stop passing, which is the point.
 
-for (const { script, contained } of MATRIX) {
+for (const { script, contained, extraArgs = [] } of MATRIX) {
   if (contained !== "refuses") continue;
   test(`${script}: a contained root that is not the default root is a SPLIT READ refusal`, (t) => {
     const fixture = mkdtempSync(join(ROOT, ".audit-root-synth-"));
     t.after(() => rmSync(fixture, { recursive: true, force: true }));
     try {
-      const r = runScript(script, ["--root", fixture]);
+      const r = runScript(script, ["--root", fixture, ...extraArgs]);
       assert.notEqual(
         r.status,
         0,
@@ -693,12 +925,12 @@ for (const { script, contained } of MATRIX) {
 // check in plan 32-12's evidence record confirms the tree is byte-identical
 // afterwards.
 
-for (const { script, contained } of MATRIX) {
+for (const { script, contained, extraArgs = [] } of MATRIX) {
   if (contained !== "refuses") continue;
   test(`${script}: every spelling that RESOLVES to the repository root is accepted`, () => {
-    const baseline = runScript(script, []);
+    const baseline = runScript(script, [...extraArgs]);
     for (const spelling of [".", ROOT, join(ROOT, "scripts", ".."), "./scripts/.."]) {
-      const r = runScript(script, ["--root", spelling]);
+      const r = runScript(script, ["--root", spelling, ...extraArgs]);
       assert.equal(
         r.status,
         baseline.status,
@@ -870,13 +1102,24 @@ test("a declared boolean flag is never swallowed as the root's value", () => {
 // checked against a copy of it.
 // ===========================================================================
 
-test("the six scripts carry no NUL byte, so a text read of them loses nothing", () => {
+test("no root-accepting script carries a NUL byte, so a text read of them loses nothing", () => {
   // Recorded as a MEASURED fact rather than an assumption. A source file in
   // this repository is known to carry a NUL byte, which hides it from a plain
   // `grep` and has already produced one false decision; the predicates above
   // read text, so the population they read must be verified NUL-free rather
   // than presumed so.
-  for (const { script } of MATRIX) {
+  //
+  // DRIVEN FROM THE POPULATION FUNCTION, not from MATRIX and not from a
+  // hard-coded list. Keying this on MATRIX would make it measure whatever the
+  // table happens to carry -- the same remedy-shaped derivation that let two
+  // root-accepting scripts go unseen here for a whole round.
+  const population = scriptsAcceptingARoot();
+  assert.ok(
+    population.length >= 8,
+    "the NUL sweep must cover the whole root-accepting population; it selected " +
+      `${population.length}: ${population.join(", ")}`,
+  );
+  for (const script of population) {
     assert.ok(
       !scriptText(script).includes("\u0000"),
       `${script}.mjs carries a NUL byte -- the text predicates above would silently ` +
@@ -925,12 +1168,21 @@ test("split-read contract: every root-accepting script that binds ../src statica
   // it as "still no violations found".
   assert.deepEqual(
     clean.sort(),
-    ["check-guard-fates", "check-skill-description-overlap"],
+    [
+      "audit-gate",
+      "audit-mutation-harness",
+      "check-guard-fates",
+      "check-skill-description-overlap",
+    ],
     "the clean controls changed. `check-skill-description-overlap` is the one skill gate that " +
       "honours an arbitrary contained root for BOTH halves of its comparison, and " +
-      "`check-guard-fates` derives everything it needs from a git object store. If either now " +
-      "binds a ../src import, it needs a refusal too; if a THIRD script became clean, its " +
-      "refusal may have been deleted.",
+      "`check-guard-fates` derives everything it needs from a git object store. `audit-gate` " +
+      "and `audit-mutation-harness` joined this population in plan 32-18 when it was keyed on " +
+      "the FLAG rather than on the shared seam; MEASURED there, neither binds a ../src " +
+      "specifier statically, so the split-read contract is satisfied for both by carrying no " +
+      "matching import at all rather than by carrying a refusal. If any of the four now binds " +
+      "a ../src import, it needs a refusal too; if a FIFTH script became clean, its refusal " +
+      "may have been deleted.",
   );
   for (const script of clean) {
     assert.deepEqual(
@@ -1006,5 +1258,167 @@ test("split-read contract: the predicate REPORTS a planted violation, and clears
     false,
     "the predicate must clear a text that carries the refusal -- otherwise it is reporting the " +
       "import, not the missing refusal, and every refusing script would be a false positive",
+  );
+});
+
+// ===========================================================================
+// THE WRITE-FREEDOM ASSERTION over `scripts/audit-gate.mjs` -- the SOLE
+// MECHANICAL REVOCATION of plan 32-16's containment acceptance (`T-32-22`).
+//
+// That plan accepted `audit-gate` as uncontained on a MEASURED basis: the
+// script performs no filesystem write, so the trust boundary containment
+// guards -- which tree a script WRITES -- does not exist for it. Its header
+// records the acceptance and names its own reversal trigger. This is where
+// that trigger is armed: an acceptance whose reversal depends on somebody
+// remembering it is not a reversal condition, it is a hope.
+//
+// TWO HALVES, because they fail in DIFFERENT DIRECTIONS. A deny-list over call
+// sites is open-ended (a write can always be spelled a new way); an allow-list
+// over the import surface is closed (a directly-imported name must be bound
+// before it can be called). Neither alone is enough, and neither is a
+// completeness proof -- the residual holes are NAMED below rather than implied.
+// ===========================================================================
+
+const UNCONTAINED_BY_DESIGN = MATRIX.filter(
+  (r) => r.contained === "uncontained-read-only",
+).map((r) => r.script);
+
+/** Source with whole-line comments and trailing line comments removed.
+ *
+ *  STRIPPING COMMENTS FIRST IS LOAD-BEARING, and the reason is measured rather
+ *  than defensive: `audit-gate.mjs` DISCUSSES writes in prose throughout its
+ *  header and its Bash-writer section, and plan 32-16 added a further header
+ *  note whose stated reversal condition is a write call appearing in this file.
+ *  An unstripped count would therefore red on the prose that documents the
+ *  assertion -- a self-invalidating header, which is the shape plan 32-16
+ *  already avoids for its own containment-resolver count. Same form here. */
+function withoutComments(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => (line.trim().startsWith("//") ? "" : line.replace(/\/\/.*$/, "")))
+    .join("\n");
+}
+
+/** The ENUMERATED filesystem-write API set. Enumerated rather than gestured at
+ *  because a `writeFileSync`-only check is MEASURED-INADEQUATE: it would miss
+ *  every other member below. Extend this list when Node grows a new write API;
+ *  do not narrow it. */
+const FS_WRITE_APIS = [
+  "writeFileSync",
+  "appendFileSync",
+  "createWriteStream",
+  "mkdirSync",
+  "rmSync",
+  "rmdirSync",
+  "unlinkSync",
+  "renameSync",
+  "cpSync",
+  "copyFileSync",
+  "truncateSync",
+  "writeSync",
+  // The `node:fs/promises` forms.
+  "writeFile(",
+  "appendFile(",
+  "copyFile(",
+] as const;
+
+for (const script of UNCONTAINED_BY_DESIGN) {
+  test(`${script}: E1 -- the DIRECT fs import surface is exactly the read-only set`, () => {
+    const text = scriptText(script);
+
+    // Every name bound from `node:fs`, in declaration order.
+    const fsImports = [...text.matchAll(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/g)]
+      .flatMap((m) => m[1]!.split(","))
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .sort();
+
+    assert.deepEqual(
+      fsImports,
+      ["readFileSync", "readdirSync"],
+      `${script}.mjs must bind ONLY read APIs from node:fs. A new name here means the ` +
+        "performs-no-filesystem-write basis recorded in this script's header and in plan " +
+        "32-16's `T-32-22` is REVOKED, and the script must be moved onto the containment seam " +
+        "in `lib/audit-root.mjs`. " +
+        "SCOPE, stated because an unqualified completeness claim is exactly the CR-08 shape " +
+        "this round exists to remove: this assertion is CLOSED over the DIRECT fs IMPORT " +
+        "SURFACE and over nothing wider. Within that surface a write API cannot be called " +
+        "without first being bound, so any fs name outside the permitted set is a failure. It " +
+        "is NOT a claim that no filesystem write is reachable by any means. " +
+        "This is an allow-list over an IMPORT SURFACE -- the exact OPPOSITE of an exclusion " +
+        "list over a population, which removes members from measurement. This plan's " +
+        "prohibition forbids the latter; the two differ in object and in direction, and this " +
+        "one removes nothing from any population.",
+    );
+
+    assert.equal(
+      /from\s*"node:fs\/promises"/.test(text),
+      false,
+      `${script}.mjs must bind nothing from node:fs/promises -- the promise forms are writes ` +
+        "this file's E2 count would still see, but binding them at all breaks the read-only basis",
+    );
+    assert.equal(
+      /import\s+\*\s+as\s+\w+\s+from\s*"node:fs/.test(text),
+      false,
+      `${script}.mjs must take no fs NAMESPACE import: a namespace binding makes every write ` +
+        "API reachable under one name, which would defeat this allow-list entirely",
+    );
+    assert.equal(
+      /require\(\s*"node:fs|import\(\s*"node:fs|require\(\s*"fs"|import\(\s*"fs"/.test(
+        withoutComments(text),
+      ),
+      false,
+      `${script}.mjs must perform no require() or dynamic import() of an fs module -- a ` +
+        "dynamic binding is invisible to the static allow-list above",
+    );
+  });
+
+  test(`${script}: E2 -- zero filesystem-write calls over comment-stripped source`, () => {
+    const stripped = withoutComments(scriptText(script));
+    const found = FS_WRITE_APIS.filter((api) => stripped.includes(api));
+
+    assert.deepEqual(
+      found,
+      [],
+      `${script}.mjs calls a filesystem-write API (${found.join(", ")}). CONSEQUENCE, not just ` +
+        "a fact: the performs-no-filesystem-write basis recorded in this script's header " +
+        "and accepted in plan 32-16 as `T-32-22` is REVOKED. This script now writes, so the " +
+        "trust boundary containment guards DOES exist for it, and it must be moved onto the " +
+        "containment seam in `lib/audit-root.mjs` rather than having this assertion relaxed. " +
+        "TWO RESIDUAL HOLES, named as MEASURED limits rather than hypotheticals so this pair " +
+        "is read as a scoped instrument and not as a completeness proof it cannot give. " +
+        "(1) A write reached through a name outside the enumerated set AND not bound at " +
+        "import time -- an openSync with a write flag, say -- evades this count, which is why " +
+        "E1's import-surface check exists beside it. " +
+        "(2) Present in this file TODAY rather than merely conceivable: it binds `spawnSync` " +
+        "from `node:child_process`, so a write performed BY A SPAWNED PROCESS is outside BOTH " +
+        "halves -- E1 sees no fs binding because there is none, and E2 counts no enumerated " +
+        "fs API because none is called. Neither half claims to cover it.",
+    );
+
+    // The stdio control, asserted rather than left implicit. This file's
+    // `process.stderr.write(` calls MUST NOT be caught: stdio is not a
+    // filesystem write, and a bare `.write(` pattern would red on a correct
+    // file -- making the assertion worthless in the other direction.
+    assert.ok(
+      stripped.includes("process.stderr.write("),
+      `${script}.mjs is expected to carry process.stderr.write( calls in live code; if it no ` +
+        "longer does, this stdio control has stopped controlling for anything and the " +
+        "enumerated-set anchoring above is no longer being exercised in the negative direction",
+    );
+  });
+}
+
+test("the write-freedom pair actually guards something", () => {
+  // NON-VACUITY. A pair of assertions that select no script proves nothing --
+  // the same empty-antecedent failure `CUT-03` forbids and the same shape this
+  // whole plan exists to remove one layer up.
+  assert.deepEqual(
+    UNCONTAINED_BY_DESIGN,
+    ["audit-gate"],
+    "the uncontained-by-design population changed. This expectation is not a general escape " +
+      "hatch: a script may carry it ONLY while the write-freedom pair above proves it still " +
+      "writes nothing. A new member needs its own recorded basis, in its own header, with the " +
+      "same measurement.",
   );
 });
