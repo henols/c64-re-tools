@@ -1164,3 +1164,78 @@ plantContractCase(
     assert.equal(v.pendingRestoreCount, 0);
   },
 );
+
+// `CR-11`, the SILENT TRUNCATION closed while it is still latent. The mutated
+// text is written through a latin1 buffer, which truncates any code point above
+// U+00FF, while the post-condition compares the untruncated string. Before the
+// refusal existed this case showed the OPPOSITE and silent outcome: a
+// SUCCESSFUL plant whose on-disk bytes are not the bytes the descriptor
+// records. Measured across the committed corpus: 35 plant descriptors, 0 with
+// any code point above U+00FF -- so this refusal must move no live row, a claim
+// the whole-set sweep then confirms rather than asserts.
+plantContractCase(
+  "non-latin1-refused",
+  "a descriptor that is not latin1-representable is refused BY NAME rather than truncated in " +
+    "silence",
+  (v) => {
+    assert.equal(
+      v.planted,
+      false,
+      "the plant SUCCEEDED. The write path truncates every code point above U+00FF while the " +
+        "post-condition counts the untruncated string, so this plant put bytes on disk that are " +
+        "NOT the bytes the descriptor records -- and said nothing. That is CR-11.",
+    );
+    const msg = v.refusalMessage ?? "";
+    assert.match(msg, /`replace`/, "the refusal must name the offending FIELD");
+    assert.match(msg, /U\+2014/, "the refusal must name the offending CODE POINT");
+    assert.match(msg, /at index \d+/, "the refusal must name the offending code point's INDEX");
+    assert.equal(v.targetByteIdentical, true, "a refused plant must write nothing");
+    assert.equal(v.pendingRestoreCount, 0);
+  },
+);
+
+// `WR-34`, a DIAGNOSIS-QUALITY defect and nothing more. The plant function
+// resolves the descriptor's file through the containment resolver, so a wrong
+// REGISTRY value was reported in the vocabulary of a command-line `--root`
+// refusal -- naming an argument the operator never passed. Containment itself is
+// correct, load-bearing and UNCHANGED; only the attribution moves. This case
+// asserts the refusal happens in BOTH states, so a message improvement cannot be
+// mistaken for, or quietly become, a relaxation.
+plantContractCase(
+  "bad-plant-target-attribution",
+  "a plant target that escapes the run's tree is refused, and the refusal is attributed to the " +
+    "REGISTRY rather than to a `--root` argument nobody passed",
+  (v) => {
+    assert.equal(
+      v.planted,
+      false,
+      "CONTAINMENT WAS RELAXED. A registry value naming a path outside the tree this run was " +
+        "pointed at must be refused, in this state and in every earlier one. This assertion is " +
+        "the one that must never change.",
+    );
+    const msg = v.refusalMessage ?? "";
+    assert.match(
+      msg,
+      /OUTSIDE the repository root/,
+      "the underlying containment refusal must be carried VERBATIM as the cause -- its absence " +
+        "would mean the resolver was bypassed rather than re-attributed",
+    );
+    assert.ok(
+      msg.startsWith("row "),
+      "the refusal still opens in the vocabulary of a COMMAND-LINE root refusal, which names an " +
+        `argument the operator did not pass. It must name the ROW first. Got: ${msg}`,
+    );
+    assert.match(
+      msg,
+      /`plant\.file`/,
+      "the refusal must name the descriptor FIELD the offending path came from",
+    );
+    assert.match(
+      msg,
+      /plant-contract-escape-target\.txt/,
+      "the refusal must quote the offending registry VALUE",
+    );
+    assert.equal(v.targetByteIdentical, true);
+    assert.equal(v.pendingRestoreCount, 0);
+  },
+);

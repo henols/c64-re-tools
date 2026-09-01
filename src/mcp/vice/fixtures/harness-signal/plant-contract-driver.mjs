@@ -116,6 +116,21 @@ const FIND_TWICE = "HARNESS_PLANT_CONTRACT_TWICE";
 const FIND_ABSENT = "HARNESS_PLANT_CONTRACT_ABSENT_FIND";
 const FIND_D = "HARNESS_PLANT_CONTRACT_FIND_D";
 
+const FIND_E = "HARNESS_PLANT_CONTRACT_FIND_E";
+/** `CR-11`. Carries U+2014 EM DASH -- a code point ABOVE U+00FF. The harness
+ * writes the mutated text through a `latin1` buffer, which truncates anything
+ * above that range (U+2014 becomes the single byte 0x14), while a string-level
+ * post-condition compares the untruncated string. Before the latin1 refusal
+ * existed this descriptor therefore planted SUCCESSFULLY and left bytes on disk
+ * that are NOT the bytes it records -- silently. */
+const REPLACE_E = "HARNESS_PLANT_CONTRACT_E—TAIL";
+
+/** `WR-34`. A plant target that escapes the scratch root the run was pointed
+ * at. `resolveContainedRoot()` refuses it in BOTH the before and after states of
+ * the attribution change -- which is what proves containment was not relaxed to
+ * make a message read better. */
+const ESCAPING_FILE = "../plant-contract-escape-target.txt";
+
 /**
  * Every case this driver knows how to run. `lines` are written after a fixed
  * header line and before the binary tail, so any string named in `lines` is
@@ -154,6 +169,17 @@ const CASES = {
     lines: [FIND_D],
     find: FIND_D,
     replace: "",
+  },
+  "non-latin1-refused": {
+    lines: [FIND_E],
+    find: FIND_E,
+    replace: REPLACE_E,
+  },
+  "bad-plant-target-attribution": {
+    lines: [ANCHOR],
+    find: ANCHOR,
+    replace: `${ANCHOR}_PLANTED`,
+    file: ESCAPING_FILE,
   },
 };
 

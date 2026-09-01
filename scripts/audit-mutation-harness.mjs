@@ -310,9 +310,84 @@ export function plant(root, row) {
     }
   }
 
+  // CR-11 (2026-09-01, plan 32-21): REFUSE A DESCRIPTOR THAT CANNOT BE WRITTEN
+  // FAITHFULLY, and refuse it HERE -- after the non-empty-string field loop
+  // above, and BEFORE the containment call and every read and write below.
+  //
+  // The mutated text is written through a `latin1` buffer at the foot of this
+  // function, and that encoding TRUNCATES any code point above U+00FF (U+2014
+  // EM DASH becomes the single byte 0x14). The post-condition further down
+  // compares STRINGS, so it would compare the untruncated value and agree with
+  // itself while the bytes reaching disk differ from the bytes the row records.
+  // The divergence would be SILENT -- which is the one property that separates
+  // this from every other refusal in this function.
+  //
+  // ONLY THE DESCRIPTOR CAN CAUSE IT. The pre-mutation text is itself obtained
+  // by decoding the original bytes as `latin1`, so every code point in it is
+  // already inside the range by construction; that leaves this row's own `find`
+  // and `replace` as the only possible sources.
+  //
+  // MEASURED BASIS, so this reads as a hardening rather than a guess: 35
+  // committed plant descriptors, 0 of them carrying any code point above
+  // U+00FF. Nothing is wrong on disk today and this refusal must therefore move
+  // no current row's outcome -- a claim the whole-set sweep confirms rather than
+  // asserts. Fail-closed and no wider: no normalisation step, no transcoding
+  // fallback, no warning-only mode and no per-row opt-out. A descriptor that
+  // cannot be written faithfully is refused, which is the same rule the rest of
+  // this instrument uses.
+  for (const field of ["find", "replace"]) {
+    const value = descriptor[field];
+    if (Buffer.from(value, "latin1").toString("latin1") === value) continue;
+    let offendingIndex = -1;
+    let offendingCodePoint = 0;
+    let cursor = 0;
+    for (const ch of value) {
+      const cp = ch.codePointAt(0);
+      if (cp > 0xff) {
+        offendingIndex = cursor;
+        offendingCodePoint = cp;
+        break;
+      }
+      cursor += ch.length;
+    }
+    throw new Error(
+      `row ${row.historicalPath}: plant descriptor field \`${field}\` is NOT ` +
+        "latin1-representable -- code point U+" +
+        `${offendingCodePoint.toString(16).toUpperCase().padStart(4, "0")} at index ` +
+        `${offendingIndex}. The mutated text is written through a latin1 buffer, which would ` +
+        "TRUNCATE it, while the post-condition below compares the untruncated string -- so the " +
+        "bytes on disk would differ from the bytes this row records and NOTHING would say so. " +
+        "Refused before any path resolution and before any read or write (CR-11).",
+    );
+  }
+
   // Contain the plant target: a registry value must not be able to name a path
   // outside the tree this run was pointed at.
-  const abs = resolveContainedRoot(join(root, descriptor.file), { repoRoot: root });
+  //
+  // WR-34 (2026-09-01, plan 32-21): THE CHECK IS RIGHT; ITS ATTRIBUTION WAS NOT.
+  // `resolveContainedRoot()` speaks in the vocabulary of the `--root` FLAG,
+  // because that is what it was written for and what its five other callers pass
+  // it. Here the path comes from a REGISTRY ROW, so a wrong registry value was
+  // reported as a refusal of a command-line argument the operator never passed,
+  // pointing them at the wrong thing to fix. This is a MESSAGE CHANGE ONLY:
+  // same resolver, same arguments, same containment decision, same repository
+  // reference, and the underlying refusal is carried VERBATIM as the cause. The
+  // containment check is correct and load-bearing and nothing about it moves --
+  // the `bad-plant-target-attribution` case in
+  // `src/mcp/vice/audit-harness-restore.test.ts` asserts the refusal happens in
+  // BOTH the before and after states for exactly that reason, so a nicer message
+  // cannot be mistaken for, or quietly become, a relaxation.
+  let abs;
+  try {
+    abs = resolveContainedRoot(join(root, descriptor.file), { repoRoot: root });
+  } catch (err) {
+    throw new Error(
+      `row ${row.historicalPath}: this row's \`plant.file\` field names a path ` +
+        `(${JSON.stringify(descriptor.file)}) that is outside the tree this run was pointed at. ` +
+        "The path came from the REGISTRY, not from a `--root` argument, so the row is what needs " +
+        `correcting. Containment refusal, verbatim: ${err?.message ?? String(err)} (WR-34)`,
+    );
+  }
   if (!existsSync(abs)) {
     throw new Error(`row ${row.historicalPath}: plant target ${abs} does not exist.`);
   }
