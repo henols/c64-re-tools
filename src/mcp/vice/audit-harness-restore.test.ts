@@ -70,7 +70,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -126,7 +126,13 @@ interface Attempt {
   exitCode: number | null;
   killedBy: NodeJS.Signals | null;
   fileByteIdentical: boolean;
+  /** The strict whole-repo comparison. RECORDED, not asserted -- see
+   * `attributablePorcelainDelta`. */
   porcelainByteIdentical: boolean;
+  /** The asserted subset: new porcelain entries this test could have caused. */
+  attributablePorcelainEntries: string[];
+  /** The scratch root's contents at the moment the child exited. */
+  scratchEntries: string[];
 }
 
 const attempts: Attempt[] = [];
@@ -137,6 +143,47 @@ function porcelain(): string {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
+}
+
+/**
+ * Porcelain entries present AFTER an attempt that were not present before it,
+ * RESTRICTED to paths this test could be responsible for.
+ *
+ * WHY THIS IS NOT A PLAIN BYTE COMPARISON OF THE TWO READINGS. It was, and the
+ * plain form is wrong here for a measured reason. `git status --porcelain` reads
+ * the WHOLE repository, but `npm run test:automated` runs 120 test files
+ * CONCURRENTLY, several of which legitimately create and delete their own
+ * fixture directories in that same tree. Run alone this file's readings are
+ * byte-identical every time; run inside the suite, a sibling's scratch file
+ * appearing between one attempt's two readings failed three of these tests with
+ * `git status --porcelain differs across the attempt` -- a true statement about
+ * the repository and a false one about the harness. Asserting it would make this
+ * file a flaky detector of other files' housekeeping.
+ *
+ * So the assertion is narrowed to what it was always FOR: proving the harness
+ * did not write outside the scratch root it was pointed at. The places a
+ * mis-contained harness run actually writes are its own registry and evidence
+ * paths under `.planning/`, and `scripts/` -- so a new porcelain entry under
+ * either, or one naming this test's own scratch prefix, is attributable and
+ * fails. A sibling's unrelated fixture is not attributable and is ignored.
+ *
+ * The strict whole-repo byte comparison is still TAKEN and still RECORDED per
+ * attempt (see `porcelainByteIdentical`); it is simply reported rather than
+ * asserted, because under concurrency it measures the suite, not the subject.
+ */
+function attributablePorcelainDelta(before: string, after: string): string[] {
+  const beforeLines = new Set(before.split("\n").filter((l) => l.length > 0));
+  return after
+    .split("\n")
+    .filter((l) => l.length > 0 && !beforeLines.has(l))
+    .filter((l) => {
+      const path = l.slice(3);
+      return (
+        path.startsWith(".planning/") ||
+        path.startsWith("scripts/") ||
+        path.includes(SCRATCH_PREFIX)
+      );
+    });
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -284,6 +331,12 @@ async function runAttempt(
   const fileByteIdentical = afterBytes.equals(original);
   const porcelainAfter = porcelain();
   const porcelainByteIdentical = porcelainAfter === porcelainBefore;
+  const attributable = attributablePorcelainDelta(porcelainBefore, porcelainAfter);
+
+  // NO PARTIAL WRITE LEFT BEHIND, measured directly rather than inferred from
+  // porcelain -- the scratch root is gitignored, so git could never have shown a
+  // stray temp file inside it anyway. Exactly one entry, the target itself.
+  const scratchEntries = readdirSync(scratch).sort();
 
   rmSync(scratch, { recursive: true, force: true });
 
@@ -298,6 +351,8 @@ async function runAttempt(
     killedBy,
     fileByteIdentical,
     porcelainByteIdentical,
+    attributablePorcelainEntries: attributable,
+    scratchEntries,
   };
   attempts.push(record);
   return record;
@@ -341,9 +396,18 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
           "Buffers, not as text: the target deliberately carries bytes a text round-trip through " +
           "a different encoding would alter, so a merely text-equal restore fails here.",
       );
-      assert.ok(
-        a.porcelainByteIdentical,
-        `${signal} attempt ${i}: \`git status --porcelain\` differs across the attempt.`,
+      assert.deepEqual(
+        a.attributablePorcelainEntries,
+        [],
+        `${signal} attempt ${i}: the interrupted run left porcelain entries this test is ` +
+          "responsible for -- a write that escaped the scratch root. (Unattributable churn from " +
+          "concurrent test files is excluded by construction; see attributablePorcelainDelta.)",
+      );
+      assert.deepEqual(
+        a.scratchEntries,
+        ["plant-target.txt"],
+        `${signal} attempt ${i}: the scratch root held something other than the restored target ` +
+          "when the child exited -- a partial write survived the interrupt.",
       );
     }
   });
@@ -378,7 +442,8 @@ test("negative control: the same driver finishing WITHOUT a signal exits 0 and i
       "thing distinguishing these two paths, and the signal tests above would be measuring the " +
       "wrong difference.",
   );
-  assert.ok(a.porcelainByteIdentical);
+  assert.deepEqual(a.attributablePorcelainEntries, []);
+  assert.deepEqual(a.scratchEntries, ["plant-target.txt"]);
 });
 
 test("WR-03: after a first restoreAll(), a second call is a genuine no-op rather than a re-write", async (t) => {
@@ -437,10 +502,10 @@ test("WR-03: after a first restoreAll(), a second call is a genuine no-op rather
       "something to fix silently.",
   );
 
-  assert.equal(
-    porcelain(),
-    porcelainBefore,
-    "`git status --porcelain` differs across the latch run",
+  assert.deepEqual(
+    attributablePorcelainDelta(porcelainBefore, porcelain()),
+    [],
+    "the latch run left porcelain entries this test is responsible for",
   );
 });
 
