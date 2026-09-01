@@ -2,6 +2,126 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v0.7.0 — Own the Annotation Store
+
+**Shipped:** 2026-09-01 (`override_closeout`)
+**Phases:** 6 (27-32) | **Plans:** 80 | **Tasks:** 214 | **Requirements:** 28/28
+
+### What Was Built
+
+`.annostore` — a `node:sqlite` annotation store behind one structurally-asserted
+seam, holding labels, comments, a frozen twelve-member per-range type vocabulary,
+scopes and project enums, with a narrowest-range-wins paint index proven exact at
+all 65,536 addresses against an independent linear-scan oracle. Durability and
+revert proven together across a real `SIGKILL` in a separate OS process.
+Eighteen `anno_*` MCP tools registered proxy-locally through `buildViceTool()`,
+plus a two-verb `vice-mcp anno` CLI. ACME export behind a real-ACME 0.97
+byte-diff oracle that is deliberately test-only. All five absorbed analysis
+procedures re-pointed onto the new surface with their attribution headers
+byte-preserved. And regenerator2000 deleted outright — 14 files, 8,221 lines,
+6,309 net after the surviving code was renamed rather than removed.
+
+### What Worked
+
+**Classifying before deleting, and letting the registry drive the deletion.**
+Phase 27 committed `module-classification.ts` — 19 modules judged
+capability-or-glue by what they do — *before* the deletion window opened, with a
+16-direction guard whose non-vacuity threshold is derived from the registry
+rather than pinned. Phases 29 and 32 then deleted entry by entry from that
+registry rather than by prefix glob. A glob would have deleted by name, which is
+the one justification that begs the question the record exists to answer. Two
+capability modules' heuristics were extracted out of their dying routes as live
+code precisely because the registry forced someone to look at them.
+
+**Proving a guard non-vacuous by doing the thing, not by writing a fixture.** The
+strongest instance this milestone: a *real* unclassified `r2000-*.ts` was created
+on disk and Direction 1 went red naming it. The removal gate was watched going
+red on four evasion routes and on a deleted attribution block. This is now the
+project's default acceptance bar and it keeps paying — Phase 32 found that a
+single-commit-site control was matching the *word* `commit` rather than commit
+statements, so a working `db.exec("end")` had been passing it unchanged.
+
+**A verifier that re-executes rather than reads.** `MCP-04` sat BLOCKED through
+several rounds and moved only when the round-6 verifier re-ran both findings
+through `runAnnoTool()` rather than reading the fixes. That is the property that
+made the promotion trustworthy, and it is worth naming as a rule: a verdict
+promoted on a re-read of a summary is a weaker artifact than it looks.
+
+**Dropping the parity obligation at the open.** The single highest-leverage
+decision of the milestone was made before any plan: no parity is owed to
+regenerator2000, and the engine coupling goes with it. That is what made a
+store-and-cutover milestone reachable in 7 days under a live `no-go` gate.
+
+### What Was Inefficient
+
+**Phase 28 ran six verification rounds on one blocker chain** (`CR-05` → `CR-10`),
+21 of the milestone's 80 plans landing in a single phase. Each round closed by
+real work rather than re-reading, so the rounds were not wasted — but the chain's
+shape (a snapshot-ring invariant re-broken at a third cause, then a fourth) says
+the ring's ownership model should have been settled once at the top rather than
+patched per-symptom. `reconcileSnapshotRing` eventually *abstained* from the
+pointer-row direction entirely, which is the design that should have been reached
+in round 1.
+
+**Sizing claims were asserted, then measured, then corrected — twice.** `CUT-01`
+carried three falsified figures (19,181 lines; 25,759; ~12.4k net) before Phase 32
+ran the actual measurement and got 6,309. A number in a requirement that no one
+has run is a guess wearing a requirement's clothes.
+
+**The archival experiment at close cost a full test cycle.** Phase directories
+were archived per the default, and it reddened 9 tests across 5 files — nine
+`docs-*` guards, `check-guard-fates`, `anno-register`'s basis-integrity path
+check, `acme-verify`'s fixtures. Restoring returned the suite to its floor. The
+standing constraint was recorded as "two guards"; it is at least twelve
+consumers. Measuring it was worth the cycle, but the record should have been
+accurate four closes ago.
+
+### Patterns Established
+
+- **Classification registry as deletion driver.** A committed per-module fate,
+  written before the deletion window, consulted per entry — not a glob.
+- **A checked `ModuleFate`** so a module cannot leave the tree without a recorded
+  reason.
+- **Non-vacuity thresholds derived from the artifact, never pinned.** A pinned
+  literal goes red on a correct tree — this project's own recorded scar, and it
+  was avoided by construction this milestone.
+- **Withdrawal notes that correct a superseded forecast rather than delete it.**
+  Three Validated capabilities lost their routes; each note says so, names that no
+  phase owns the return, and preserves the record that the capability once worked.
+- **An oracle that refuses to trust the exit status.** The ACME verify layer
+  refuses the exit code, refuses the aggregate line, and carries `skipped` as a
+  third outcome that is never a pass.
+
+### Key Lessons
+
+1. **Delete from a record, not from a pattern.** Every line removed this milestone
+   was removed because an entry said so. The two things that survived the deletion
+   — extracted heuristics, preserved attribution — survived because the registry
+   made someone decide about them individually.
+2. **A guard that cannot be made to fail has not been written.** Restated because
+   it caught a live false pass this milestone (`db.exec("end")`), not because it
+   sounds good.
+3. **Measure the claim in the requirement.** Three wrong sizing figures shipped in
+   a requirement's text across two milestones before anyone ran the count.
+4. **Record a constraint's blast radius, not just its existence.** "Do not archive
+   phase directories" was carried for four closes with a two-guard justification;
+   the real cost is twelve-plus consumers, and nobody knew until it was measured.
+5. **Skipping the milestone audit has a name and a cost.** This close skipped it,
+   as the two before it did. The cost is concrete: `STORE-03`'s row/prose
+   contradiction was explicitly routed to *"a Phase 28 verification pass or a
+   milestone audit"* and ships unresolved. A second milestone carrying the same
+   row would be evidence the audit should not have been skipped twice.
+
+### Cost Observations
+
+Not instrumented this milestone — no per-model or per-session accounting was
+collected, so no mix is reported rather than an estimated one. What is measured:
+690 commits over 7 days across 6 phases and 80 plans, with 21 of those plans
+(26%) absorbed by Phase 28's six-round blocker chain and a further 21 by Phase
+32's three gap-closure rounds. Two phases therefore carried **53%** of the
+milestone's plans — the clearest efficiency signal available without token
+accounting, and it points at the same place both retro sections do.
+
 ## Milestone: v0.5.0 — Persistent Session and the Coverage Instrument
 
 **Shipped:** 2026-08-25 (`override_closeout`)
@@ -494,6 +614,9 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.2.0 | 9 | 87 | First GSD milestone. Introduced measured scope cuts, decimal-phase insertion on audit gaps, and live-evidence gates as first-class artifacts |
 | v0.3.0 | 4 | 36 | First `passed` audit. Introduced the recorded-verdict go/no-go phase, guard-proven-non-vacuous as an acceptance bar, bidirectional and derived-not-enumerated guards, and mechanical guarding of *planning* documents |
 | v0.4.0 | 6 | 44 | First milestone with zero inherited debt at close. Introduced gate-first phase sequencing, promote-with-named-owner as a third disposition, dated decisions pinned by live-file guards, and acknowledgment as a disclosed self-invalidating state |
+| v0.5.0 | 2 executed, 3 cut | 27 | Closed `override_closeout` with 13/27 requirements. Introduced derived-from-bytes measurement the measured artifact cannot move, and a pairwise trigger-collision gate across skill descriptions |
+| v0.6.0 | 1 of 4 | 6 of 11 | **Closed incomplete by its own gate** (`no-go`, rule `R1`). First time a pre-committed verdict cancelled the milestone that wrote it — honoured rather than overridden |
+| v0.7.0 | 6 | 80 | First large deletion. Introduced the classification registry as *deletion driver* (never a prefix glob), a checked `ModuleFate`, and non-vacuity thresholds derived from the artifact rather than pinned |
 
 ### Cumulative Quality
 
@@ -502,12 +625,23 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.2.0 | ~1400+ | 3 (`stock-live`, `stock-live-triage`, `stock-broker-live`) | disassembler, PETSCII table, all derived tools — 0 new npm deps |
 | v0.3.0 | ~2066 | 3 carried + r2000 live gates (real `regenerator2000 0.9.20` + genuine stock `x64sc`) | `.regen2000proj` synthesiser, `.d64` reader, NDJSON JSON-RPC client, ACME-ident seam — 0 new npm deps |
 | v0.4.0 | **2351** (0 fail, 39 skipped, 5 todo, 24 suites) | 4 carried + `fork-live.test.ts` (the fork's `-mcpserver` HTTP transport exercised live for the first time, 6/6) | `audit-gate.mjs`, `hop-chain-comments` + `comment-phase-pointers` guards, `skill-corpus.mjs`, 18 `wireMcp()` cases — 0 new npm deps |
+| v0.7.0 | 0 failures on `test:automated` (the project's floor; the whole-glob `npm test` still does not terminate unaided — `vice-proxy.test.ts` leaks two LISTEN sockets) | real ACME 0.97 as a byte-diff oracle, hard-failed in CI with `VICE_REQUIRE_ACME=1` | the annotation store on `node:sqlite` — a **built-in** at this project's Node floor; `better-sqlite3` rejected on 11.4 MB/consumer and 8 prebuild targets — 0 new npm deps |
 
 | Milestone | Audit verdict | Rounds | Open gaps at close | Deferred at close |
 |-----------|---------------|--------|--------------------|-------------------|
 | v0.2.0 | `tech_debt` | 4 | 0 blocking | 13 (hand-counted) |
 | v0.3.0 | **`passed`** | 2 | 0 | 19 (derived + guarded both directions) |
 | v0.4.0 | `tech_debt` | 1 | **0** | **0** pending todos (+ 9 promoted with named owners; 16 bookkeeping items acknowledged) |
+| v0.5.0 | not run | — | — | 5 newly acknowledged, 16 carried |
+| v0.6.0 | not run (gate's findings doc is the audit of record) | — | intent NOT delivered under 3 accepted overrides | — |
+| v0.7.0 | **not run** | — | 0 against its own 28 requirements | 15 newly acknowledged, 21 carried, **8 disclosed as un-acknowledgeable** |
+
+**Three consecutive closes without a milestone audit.** v0.5.0, v0.6.0 and
+v0.7.0 all shipped on per-phase `VERIFICATION.md` evidence alone. For v0.6.0 that
+was defensible — its own gate had already recorded the intent as not delivered.
+For v0.7.0 the cost is concrete and named: Phase 29 routed `STORE-03`'s row/prose
+contradiction to *"a Phase 28 verification pass or a milestone audit"*, and
+neither ran. The trend to watch is not any single skip but the third one in a row.
 
 The deferred count rising 13 → 19 while the verdict improved is not a
 contradiction: v0.3.0 is the first milestone whose ledger is *derived* from
