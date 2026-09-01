@@ -1285,7 +1285,7 @@ written).
 
 ---
 
-*Last updated: 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
+*Last updated: 2026-09-01 after Phase 32 (The Deletion and the Grep Gate) — the last phase of milestone v0.7.0; the Active list above moves to Validated at the v0.7.0 close, not here. Previously 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
 Annotation Store**. Written after Phase 23's pre-committed gate returned
 `no-go` (rule `R1`). Changes at this open: v0.6.0 moved from "Current
 Milestone" to "Held", shipping Phase 23 alone, with Phases 24 and 26 **held**

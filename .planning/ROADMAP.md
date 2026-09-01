@@ -380,7 +380,7 @@ have.
 - [x] **Phase 29: The MCP Surface** - The store is reachable through a family derived from Phase 19's manifest, registered proxy-locally — and the family it replaces is deleted in the same phase, with every guard moved by the change that broke it and the removal gate observed biting first (**widened by `D-01`**) (completed 2026-08-30)
 - [x] **Phase 30: ACME Export and the Real-ACME Oracle** - Exported source is correct because a real ACME assembles it and the bytes match, through a verify path built for this purpose and standing before the deletion window opens (completed 2026-08-31)
 - [x] **Phase 31: Procedure Re-pointing** - The `ABS-02` attribution chain is byte-identical across both trees and Phase 19's manifest is re-synced in the commit that changes what it describes (**narrowed by `D-01`**: the re-pointing itself landed in Phase 29) (completed 2026-08-31)
-- [ ] **Phase 32: The Deletion and the Grep Gate** - Every guard re-pointed off the deleted subject is proven non-vacuous as a set on a settled tree, and no living document is left pointing a user at a route that no longer exists (**narrowed by `D-01`**: the deletion and the grep gate landed in Phase 29)
+- [x] **Phase 32: The Deletion and the Grep Gate** - Every guard re-pointed off the deleted subject is proven non-vacuous as a set on a settled tree, and no living document is left pointing a user at a route that no longer exists (**narrowed by `D-01`**: the deletion and the grep gate landed in Phase 29) (completed 2026-09-01)
 
 ## v0.7.0 Own the Annotation Store (Phase Details)
 

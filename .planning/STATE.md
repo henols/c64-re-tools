@@ -4,27 +4,27 @@ milestone: v0.7.0
 milestone_name: Own the Annotation Store
 current_phase: 32
 current_phase_name: The Deletion and the Grep Gate
-status: executing
-stopped_at: Phase 32 gap-closure round 2 planned — 5 plans (32-15..32-19) across 3 waves, verification passed
-last_updated: "2026-09-01T12:09:14.221Z"
+status: completed
+stopped_at: Phase 32 complete — all phases complete
+last_updated: "2026-09-01T14:06:37.178Z"
 last_activity: 2026-09-01
-last_activity_desc: Phase 32 execution started
-state_head: 42f83bc79feb720ad009522e50acd350ad2c2298
+last_activity_desc: Phase 32 complete
+state_head: f9621c0eb447511b698240e9947bb805cd44d7d6
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 80
-  completed_plans: 78
-  percent: 83
+  completed_plans: 80
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-29 after Phase 28)
+See: .planning/PROJECT.md (updated 2026-09-01 after Phase 32)
 
-**Current focus:** Phase 32 — The Deletion and the Grep Gate
+**Current focus:** Milestone v0.7.0 close — all 6 phases and 80/80 plans complete; next action is `/gsd-complete-milestone v0.7.0`
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
@@ -147,16 +147,16 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 32 (The Deletion and the Grep Gate) — EXECUTING (gap-closure round 3)
-Plan: 19 of 21 executed — round-3 gap plans 32-20 (tracer, CR-10 restore latch) and 32-21 (CR-09 plant arithmetic) now dispatching under /gsd-execute-phase 32 --gaps-only
-Status: Phase 32 NOT complete — the two round-3 gaps are planned and under execution; 19/19 prior plans merged
-Last activity: 2026-09-01 — Phase 32 gap-closure round 3 execution started (waves 1-2: 32-20 then 32-21)
+Phase: 32 (The Deletion and the Grep Gate) — COMPLETE
+Plan: 21 of 21 executed — 9 original, plus 5 + 5 + 2 across three gap-closure rounds
+Status: Milestone v0.7.0 complete — all 6 phases, 80/80 plans. Phase 32 verified (17/17 must-haves), UAT passed, security threats_open: 0, nyquist_compliant
+Last activity: 2026-09-01 — Phase 32 closed: UAT test 1 dispositioned (option a), 32-SECURITY.md and 32-VALIDATION.md written, verification canonicalized to passed
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 252
+- Total plans completed: 273
 - Average duration: —
 - Total execution time: —
 
@@ -190,6 +190,7 @@ Last activity: 2026-09-01 — Phase 32 gap-closure round 3 execution started (wa
 | 29 | 21 | - | - |
 | 30 | 6 | - | - |
 | 31 | 4 | - | - |
+| 32 | 21 | - | - |
 
 **Recent Trend:**
 
@@ -928,6 +929,47 @@ forbidden from modifying anything under `src/`.
 
 ### Blockers/Concerns
 
+- **Phase 32 carried items (2026-09-01), none blocking the milestone close.** The phase
+  closed at 17/17 must-haves with `behavior_unverified: 0` after three gap-closure rounds
+  (21/21 plans), UAT test 1 passed, `32-SECURITY.md` `threats_open: 0`, and
+  `32-VALIDATION.md` `nyquist_compliant: true`. Four residuals ride forward, all recorded
+  rather than silently inherited. (1) **Nine round-4 review findings stay OPEN**, carried to
+  the milestone backlog by an explicit operator decision at the UAT gate (option (a)):
+  `CR-07`, `WR-37`..`WR-40`, `IN-16`..`IN-19`, tracked in
+  `.planning/todos/pending/2026-09-01-phase-32-review-round-4-nine-open-findings.md`
+  (severity: blocker), with the disposition and its reasoning also recorded in
+  `32-VERIFICATION.md` § Acknowledged Gaps. **`CR-07` is a Critical that has been open
+  across three review rounds and was absent from the round-3 report for one full round
+  without ever being fixed** — read that record before re-reviewing it, because the gap in
+  the record is the part worth inheriting knowingly. It is a latent scheduling hazard
+  (`audit-root-args.test.ts` rebuilds the gitignored `installer/skills/` tree five times per
+  run while four other test files read it under a parallel runner), not an observed failure;
+  the suite was green twice on 2026-09-01. (2) **Three accepted-open security risks**, all
+  medium and below the `high` block threshold: `AR-32-01` (lexical containment vs. an in-repo
+  outward symlink, `WR-04`), `AR-32-02` (`evidenceMarkdown()` fence injection, `WR-12`),
+  `AR-32-03` (`redOwed()` looseness, `WR-06` — basis re-measured 35/35 honest today, but
+  measured rather than enforced). (3) **`WR-38` is a self-applied criterion-1 defect**: the
+  assertion labelled "the one that must never change" at `audit-harness-restore.test.ts:1209`
+  still passes with containment removed. The case as a unit still bites — the following
+  assertion at `:1217` does discriminate — so the mitigation is intact and only the label is
+  wrong. Rank it first in any round 5. (4) **The earlier 25-finding ledger stays OPEN** in
+  `.planning/todos/pending/2026-08-31-phase-32-review-twenty-five-open-findings.md`, minus
+  the 8 closed by plans 32-20/32-21.
+
+  Not a residual, but recorded because it has now cost time three times:
+  `repo-root.test.ts`'s `the agreed path is not under .claude` case **fails inside a worktree
+  executor** and passes on the main checkout. Phase 32's own `deferred-items.md` logs it
+  again (1 failure out of 2941). Environment-induced; re-measure after merge.
+
+  Also measured at this close and left alone deliberately: STATE.md's Performance Metrics
+  **"Total plans completed" reads 273 while 280 `*-SUMMARY.md` files exist on disk** — a
+  pre-existing 7-plan drift (252 vs 259 before this transition), not introduced by it. The
+  milestone-scoped counters are correct (`total_plans: 80`, `completed_plans: 80`,
+  `percent: 100`). Not "fixed" here because the all-time counter's inclusion rule is
+  undocumented — phases 06, 20-22 and 24-26 have no summaries on disk — and redefining a
+  project metric from the orchestrator seat to make a number agree is the same move this
+  project's guards exist against.
+
 - **Phase 31 carried items (2026-08-31), none blocking Phase 32.** The phase closed at
   13/13 on re-verification round 2 after one gap-closure round (31-04), and three
   residuals ride forward, all recorded rather than silently inherited. (1) **Five review
@@ -1368,8 +1410,9 @@ per-entry `status:` field itself, so it self-invalidates identically. The other
 
 ## Session Continuity
 
-Last session: 2026-08-31T13:24:41.603Z
-Stopped at: Phase 32 context gathered
+Last session: 2026-09-01
+Stopped at: Phase 32 complete, milestone v0.7.0 ready to close
+Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
