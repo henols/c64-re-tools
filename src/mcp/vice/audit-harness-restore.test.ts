@@ -199,11 +199,54 @@ function porcelain(): string {
  * file a flaky detector of other files' housekeeping.
  *
  * So the assertion is narrowed to what it was always FOR: proving the harness
- * did not write outside the scratch root it was pointed at. The places a
- * mis-contained harness run actually writes are its own registry and evidence
- * paths under `.planning/`, and `scripts/` -- so a new porcelain entry under
- * either, or one naming this test's own scratch prefix, is attributable and
- * fails. A sibling's unrelated fixture is not attributable and is ignored.
+ * did not write outside the scratch root it was pointed at. A new porcelain
+ * entry under a tree the registry can actually name, or one naming this test's
+ * own scratch prefix, is attributable and fails. A sibling's unrelated fixture
+ * is not attributable and is ignored.
+ *
+ * `WR-29`: EXCLUDING `src/` OUTRIGHT WAS ONE PATH TOO MANY, and `src/` is where
+ * a mis-contained plant would most often land. The admitted set is derived from
+ * the committed registry rather than guessed, and the derivation was re-run
+ * against `guard-fates.json` at the commit this note was written rather than
+ * copied from the plan that asked for it:
+ *
+ *   61 rows, of which 35 carry a plant descriptor
+ *     23 target a path under `src/`
+ *     10 target a path under `scripts/`
+ *      2 target a path under `.planning/` (`.planning/PROJECT.md` and an
+ *        `ANSWER.sha256` under a phase-11 evidence directory)
+ *      0 target a path containing a `/fixtures/` segment
+ *
+ * That basis supports exactly one conclusion, and this filter states no more
+ * than it: all three trees the registry can name are admitted -- `.planning/`
+ * and `scripts/` already were, and `src/` is added here -- so the admission now
+ * covers every mis-containment target the registry can produce. `src/` paths
+ * containing a `/fixtures/` segment stay excluded, which costs nothing against
+ * that basis (0 of 35) and keeps out the concurrent sibling-fixture churn the
+ * narrowing was originally written against.
+ *
+ * THE `/fixtures/` EXCLUSION ALONE WAS NOT ENOUGH, AND THAT IS A MEASUREMENT
+ * RATHER THAN A PRECAUTION. The first form of this widening admitted every
+ * non-`fixtures/` `src/` path, and `npm run test:automated` immediately red two
+ * cases in this file with `?? src/mcp/vice/.anno-cli-test-6kraqX/` and
+ * `?? src/mcp/vice/.anno-cli-test-8OGMOQ/` -- a concurrent sibling's own scratch
+ * directory, a true statement about the repository and a false one about the
+ * harness. Restricting the admission to `src/mcp/vice/` would NOT have helped:
+ * that churn is inside `src/mcp/vice/`. What separates it from every real target
+ * is that it is a HIDDEN directory. Measured both ways at the same commit:
+ *
+ *   - every in-repo scratch root any automated sibling creates under `src/` is
+ *     dot-prefixed -- `.anno-cli-test-`, `.anno-memmap-cross-root-`,
+ *     `.anno-memmap-empty-`, `.audit-root-synth-`, plus `anno-memmap-render`'s
+ *     parameterised `.${prefix}-` form, which is dot-prefixed by construction.
+ *     The one non-dot prefix in the tree, `vice-proxy-evidence-test-`, is
+ *     created under `.planning/` by a manual-only file that this gate never
+ *     runs -- and `.planning/` stays admitted unconditionally on purpose,
+ *     because it is where a mis-contained run writes its registry and evidence.
+ *   - 0 of the 23 `src/` plant targets contain a dot-prefixed path segment.
+ *
+ * So a `src/` path with a dot-prefixed segment is excluded. It costs nothing
+ * against the registry basis and removes the whole measured churn class.
  *
  * The strict whole-repo byte comparison is still TAKEN and still RECORDED per
  * attempt (see `porcelainByteIdentical`); it is simply reported rather than
@@ -216,9 +259,15 @@ function attributablePorcelainDelta(before: string, after: string): string[] {
     .filter((l) => l.length > 0 && !beforeLines.has(l))
     .filter((l) => {
       const path = l.slice(3);
+      const segments = path.split("/");
+      const admissibleSrcPath =
+        path.startsWith("src/") &&
+        !path.includes("/fixtures/") &&
+        !segments.some((s) => s.startsWith("."));
       return (
         path.startsWith(".planning/") ||
         path.startsWith("scripts/") ||
+        admissibleSrcPath ||
         path.includes(SCRATCH_PREFIX)
       );
     });
@@ -328,6 +377,18 @@ async function runAttempt(
       planted = false;
     }
     if (planted) break;
+    // WR-28. This loop used to read ONLY its own deadline, so a driver that died
+    // before its plant became observable spun for the full 20 seconds and then
+    // failed with a message about a deadline rather than about the dead child.
+    // The marker loop above already gets this right; this mirrors it. No passing
+    // run's outcome changes -- an early exit already failed here, just slowly and
+    // uninterpretably. Applied to the SHARED routine so the negative control and
+    // both signal paths all get it.
+    assert.ok(
+      !exited,
+      `${signal} attempt ${index}: the driver exited (code ${String(exitCode)}) before its plant ` +
+        `became observable in ${marker.target}. stdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
     assert.ok(
       Date.now() < plantDeadline,
       `${signal} attempt ${index}: the recorded replacement never appeared in ${marker.target} ` +
