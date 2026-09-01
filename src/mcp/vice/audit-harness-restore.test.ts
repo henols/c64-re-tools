@@ -24,6 +24,23 @@
 // then awaits a timer. Real handlers, a real plant on disk, and an event loop
 // that is turning. The harness is not modified, widened, flagged or delayed.
 //
+// ITS SCOPE IS NOW TWO PROPERTIES, NOT ONE (2026-09-01, plan 32-20, gap 2 /
+// `CR-10`). Everything above is the REACHABILITY property: that the harness's own
+// registered handler can be reached at all. The round-3 verifier then measured a
+// second property this file was blind to -- whether the restore machinery can be
+// DISARMED. It can, and the defect arrived with this very file's own remedy:
+// exporting `plant()` and `restoreAll()` made the restore path reachable more
+// than once per process, while `restoreAll()` was guarded by a module-level
+// boolean that was set on the first call and never reset. A consumer that
+// completed one restore cycle therefore permanently no-opped all four handlers.
+// Reproduced against a scratch root as `plant -> restoreAll -> plant -> SIGINT`
+// giving `EXIT=130`, `pendingRestoreCount()` = 1 and the second plant still on
+// disk. The five cases already here could not see it: each of their children
+// plants exactly once. The two second-window cases below are the discriminating
+// ones, and they were watched failing against a deliberately re-introduced latch
+// before they were trusted -- see
+// `.planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-restore-disarm.md`.
+//
 // WHAT NOT TO DO:
 //
 //   1. Do NOT import the harness into THIS process. Importing it registers a
@@ -79,6 +96,7 @@ const ROOT = resolve(HERE, "..", "..", ".."); // <root>
 const FIXTURES = join(HERE, "fixtures", "harness-signal");
 const SIGNAL_DRIVER = join(FIXTURES, "signal-window-driver.mjs");
 const LATCH_DRIVER = join(FIXTURES, "restore-latch-driver.mjs");
+const DISARM_DRIVER = join(FIXTURES, "restore-disarm-driver.mjs");
 
 /** Matches the `/.harness-signal-scratch-*` entry `.gitignore` carries. The
  * scratch root MUST live inside the repository -- `resolveContainedRoot()`
@@ -90,6 +108,11 @@ const SCRATCH_PREFIX = ".harness-signal-scratch-";
 /** The line the signal driver emits AFTER its plant reaches disk. Everything the
  * parent needs to make an authoritative byte comparison rides on it. */
 const MARKER = "HARNESS-SIGNAL-DRIVER-PLANTED ";
+
+/** The line the DISARM driver emits after its SECOND plant reaches disk -- a
+ * distinct prefix so a first-window marker could never satisfy a second-window
+ * wait. */
+const DISARM_MARKER = "HARNESS-DISARM-DRIVER-PLANTED-TWICE ";
 
 /** Attempts per signal. Five, matching plan 32-14's attempt log, so the two
  * rounds are directly comparable row for row. */
@@ -114,6 +137,21 @@ interface PlantedMarker {
   /** The descriptor's recorded replacement, so the parent can observe the plant
    * on disk rather than trust the marker alone. */
   replacement: string;
+}
+
+/** What the DISARM driver reports. It is a superset of `PlantedMarker`: the same
+ * three fields the byte comparison needs, plus the three pending counts that
+ * prove the child really completed a restore cycle and really re-planted. */
+interface DisarmMarker extends PlantedMarker {
+  /** The FIRST plant's replacement, recorded so a reader of a failure can tell
+   * which of the two mutations was left on disk. */
+  firstReplacement: string;
+  /** The driver's own observation that the first cycle put the pre-plant bytes
+   * back. If this is false the second window was never entered cleanly. */
+  restoredAfterFirstCycle: boolean;
+  pendingAfterFirstPlant: number;
+  pendingAfterRestore: number;
+  pendingAfterSecondPlant: number;
 }
 
 interface Attempt {
@@ -508,6 +546,229 @@ test("WR-03: after a first restoreAll(), a second call is a genuine no-op rather
     "the latch run left porcelain entries this test is responsible for",
   );
 });
+
+/**
+ * One SECOND-WINDOW attempt end to end: the child plants, completes a restore
+ * cycle, plants AGAIN, and is signalled while that second plant is on disk.
+ *
+ * WHY THIS DOES NOT REUSE `runAttempt`, AND WHY IT DOES NOT PUSH ONTO
+ * `attempts`. The attempt log below is a transcript of plan 32-14's ten
+ * first-window attempts, kept row-comparable across rounds, and the log's own
+ * test asserts EXACTLY five signalled attempts per signal. Widening it would
+ * silently redefine what a later reader is comparing against, and `IN-14`
+ * already records that test's ordering dependence. So these cases record
+ * nothing there. They reuse every helper that matters -- `porcelain()`,
+ * `attributablePorcelainDelta()`, `deadline()`, `sleep()` and the caller's
+ * kill-and-remove cleanup hook -- and only the marker shape and the two extra
+ * pending-count assertions differ.
+ */
+async function runDisarmAttempt(
+  signal: "SIGINT" | "SIGTERM",
+  register: (child: PipedChild, scratch: string) => void,
+): Promise<{
+  exitCode: number | null;
+  killedBy: NodeJS.Signals | null;
+  fileByteIdentical: boolean;
+  attributablePorcelainEntries: string[];
+  scratchEntries: string[];
+  marker: DisarmMarker;
+}> {
+  const scratch = mkdtempSync(join(ROOT, SCRATCH_PREFIX));
+  const porcelainBefore = porcelain();
+
+  const child = spawn(process.execPath, [DISARM_DRIVER, scratch, "30000"], {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  register(child, scratch);
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+
+  let exited = false;
+  let exitCode: number | null = null;
+  let killedBy: NodeJS.Signals | null = null;
+  const exitPromise = new Promise<void>((resolveExit) => {
+    child.on("exit", (code, sig) => {
+      exited = true;
+      exitCode = code;
+      killedBy = sig;
+      resolveExit();
+    });
+  });
+
+  // 1. Wait for the SECOND-plant marker.
+  const markerDeadline = Date.now() + MARKER_DEADLINE_MS;
+  let markerLine: string | undefined;
+  for (;;) {
+    markerLine = stdout.split("\n").find((l) => l.startsWith(DISARM_MARKER));
+    if (markerLine !== undefined) break;
+    assert.ok(
+      !exited,
+      `${signal} disarm: the driver exited (code ${String(exitCode)}) before emitting its ` +
+        `second-plant marker. stdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
+    assert.ok(
+      Date.now() < markerDeadline,
+      `${signal} disarm: no second-plant marker within ${MARKER_DEADLINE_MS} ms. ` +
+        `stdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
+    await sleep(POLL_INTERVAL_MS);
+  }
+  const marker = JSON.parse(markerLine.slice(DISARM_MARKER.length)) as DisarmMarker;
+  const original = Buffer.from(marker.originalBase64, "base64");
+
+  // 2. The child really did complete a restore cycle and really did re-plant.
+  //    Without these the case could pass while measuring a first window, which
+  //    is what `signal-window-driver.mjs` already covers.
+  assert.equal(
+    marker.pendingAfterFirstPlant,
+    1,
+    `${signal} disarm: the driver's first plant did not register a captured original`,
+  );
+  assert.equal(
+    marker.restoredAfterFirstCycle,
+    true,
+    `${signal} disarm: the driver's first restoreAll() did not put the pre-plant bytes back, so ` +
+      "the second window was never entered from a clean state",
+  );
+  assert.equal(
+    marker.pendingAfterRestore,
+    0,
+    `${signal} disarm: pendingRestoreCount() was not 0 after the first restore cycle, so no ` +
+      "cycle completed and this case would not be exercising the second window at all",
+  );
+  assert.equal(
+    marker.pendingAfterSecondPlant,
+    1,
+    `${signal} disarm: pendingRestoreCount() was not 1 after the second plant, so the driver ` +
+      "never actually re-planted and there would be nothing for the handler to restore",
+  );
+
+  // 3. Observe the SECOND plant directly on disk before signalling.
+  const plantDeadline = Date.now() + PLANT_POLL_DEADLINE_MS;
+  let polls = 0;
+  let planted = false;
+  let plantedBytes: Buffer = Buffer.alloc(0);
+  while (!planted) {
+    polls += 1;
+    try {
+      plantedBytes = readFileSync(marker.target);
+      planted = plantedBytes.includes(marker.replacement);
+    } catch {
+      planted = false;
+    }
+    if (planted) break;
+    // WR-28, applied here as well as in the shared routine: a driver that died
+    // before its plant became observable must fail immediately and by name.
+    assert.ok(
+      !exited,
+      `${signal} disarm: the driver exited (code ${String(exitCode)}) before its second plant ` +
+        `became observable in ${marker.target}. stdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
+    assert.ok(
+      Date.now() < plantDeadline,
+      `${signal} disarm: the second replacement never appeared in ${marker.target} within ` +
+        `${PLANT_POLL_DEADLINE_MS} ms after ${polls} poll(s).`,
+    );
+    await sleep(POLL_INTERVAL_MS);
+  }
+  assert.ok(
+    !plantedBytes.equals(original),
+    `${signal} disarm: the target's bytes while the SECOND plant is supposedly on disk are ` +
+      "IDENTICAL to its pre-plant bytes. Nothing was mutated, so this attempt would pass " +
+      "vacuously.",
+  );
+
+  // 4. Signal, inside the SECOND window.
+  child.kill(signal);
+
+  const exitDeadline = deadline(EXIT_DEADLINE_MS);
+  const outcome = await Promise.race([
+    exitPromise.then(() => "exited" as const),
+    exitDeadline.promise,
+  ]);
+  exitDeadline.cancel();
+  assert.equal(
+    outcome,
+    "exited",
+    `${signal} disarm: the driver was still alive ${EXIT_DEADLINE_MS} ms after the signal was sent.`,
+  );
+
+  const afterBytes = readFileSync(marker.target);
+  const fileByteIdentical = afterBytes.equals(original);
+  const attributablePorcelainEntries = attributablePorcelainDelta(porcelainBefore, porcelain());
+  const scratchEntries = readdirSync(scratch).sort();
+
+  rmSync(scratch, { recursive: true, force: true });
+
+  return {
+    exitCode,
+    killedBy,
+    fileByteIdentical,
+    attributablePorcelainEntries,
+    scratchEntries,
+    marker,
+  };
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  test(`gap 2 / CR-10: ${signal} in the SECOND window -- after a restore cycle has already completed -- still restores`, async (t) => {
+    const live: Array<{ child: PipedChild; scratch: string }> = [];
+    t.after(() => {
+      for (const { child, scratch } of live) {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        rmSync(scratch, { recursive: true, force: true });
+      }
+    });
+
+    const a = await runDisarmAttempt(signal, (child, scratch) => live.push({ child, scratch }));
+
+    assert.equal(
+      a.exitCode,
+      130,
+      `${signal} disarm: expected exit code 130 from the harness's own ${signal} handler, got ` +
+        `${String(a.exitCode)} (killed by ${String(a.killedBy)}).`,
+    );
+    assert.equal(
+      a.killedBy,
+      null,
+      `${signal} disarm: the child was terminated BY the signal (${String(a.killedBy)}) rather ` +
+        "than exiting through its own handler.",
+    );
+
+    // THE DISCRIMINATING ASSERTION FOR THIS PAIR. The exit code above is 130
+    // with the defect present too -- the handler DOES run; it is `restoreAll()`
+    // that returns without writing. So what separates a disarmed machine from a
+    // sound one is this byte comparison, and only in the SECOND window.
+    assert.ok(
+      a.fileByteIdentical,
+      `${signal} disarm: the SECOND plant (${a.marker.replacement}) was NOT restored. The ` +
+        "process exited 130 through the harness's own handler and still left a captured " +
+        "original unrestored -- the restore machinery was disarmed by the first completed " +
+        "restore cycle. Compared as Buffers, not as text.",
+    );
+    assert.deepEqual(
+      a.attributablePorcelainEntries,
+      [],
+      `${signal} disarm: the interrupted run left porcelain entries this test is responsible for.`,
+    );
+    assert.deepEqual(
+      a.scratchEntries,
+      ["disarm-target.txt"],
+      `${signal} disarm: the scratch root held something other than the restored target when the ` +
+        "child exited -- a partial write survived the interrupt.",
+    );
+  });
+}
 
 test("the attempt log is complete and every recorded exit code is the discriminating one", () => {
   const signalled = attempts.filter((a) => a.signal !== "none");
