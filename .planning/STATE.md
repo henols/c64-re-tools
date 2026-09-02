@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-05-PLAN.md
-last_updated: "2026-09-02T19:57:17.062Z"
+stopped_at: Completed 33-06-PLAN.md
+last_updated: "2026-09-02T20:34:13.446Z"
 last_activity: 2026-09-02
-last_activity_desc: "33-04 executed: vsf-slice.ts slices a flat 64K image out of the .vsf C64MEM body by a strict module-table walk from a derived offset of 58, with eight named refusals each proven by a committed synthetic fixture; the skill reaches it by CLI invocation rather than a second copy of the layout; SLICER: deliberately not emitted (ACCEPTED LIMIT — 33-07 owns it)"
-state_head: 6b6601ff4794e208cec3f07dc3daf6d8b186de3d
+last_activity_desc: "33-06 executed: the launch profile threads from both client acquire write sites, through normaliseLaunchProfile() as the ONE narrowing site (unknown keys refused by name, refusals never enqueue), onto InstanceRecord.profile, into D-16 eligibility as a SYNCHRONOUS pre-probe filter that leaves a mismatched warm instance ready and un-killed, and out to buildViceArgs(); carried forward across respawn/recycle as a Rule 2 deviation; D-18 stays in 33-11 by design"
+state_head: f89d3f88debc67e431d399c5a369225e2de18822
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -178,8 +178,31 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 5 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05); next pointer at plan 6 of 12
-Status: Wave 2 complete — `33-03`, `33-04` and `33-05` all landed; wave 3 (`33-06`) is next.
+Plan: 6 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06); next pointer at plan 7 of 12
+Status: Wave 3 in progress — `33-06` landed; `33-07` (which owns the `SLICER:` gate
+line) is the remaining wave-3 plan, and the wave gate is taken once it lands.
+`33-06` threaded `D-15`'s launch profile from the container-side client, through the
+control plane, into the warm-floor eligibility rule, and out to `buildViceArgs()`. A run
+can now REQUEST warp and headless as an additive optional `profile` on the broker's
+**existing** seven-op `acquire` — not an eighth op, because `ControlRequest` already
+carries an index signature. `normaliseLaunchProfile()` is the ONE narrowing site: object
+or absent, `warp`/`headless` boolean or absent, unknown keys refused **by name** with the
+existing `bad_request` code, and a refusal that never enqueues and never reaches
+`onAcquire`. `D-16` is implemented as **ineligibility**, and both wrong answers are
+asserted absent — a mismatched warm instance is neither retro-warped (there is no runtime
+`WarpMode` resource on stock at all) nor killed to make room (a named anti-pattern); it
+stays `ready`, in the map, un-killed, and the acquire falls through to a dedicated cold
+launch. The eligibility filter's POSITION is the load-bearing part and is pinned by line
+number twice: it is a synchronous `continue` sitting before the readiness-probe `await`,
+so the single-owner `inFlight` guard — synchronous by requirement, because of the
+2026-08-01 triple-launch outage — gains no new suspension point. Two Rule 1 and one
+Rule 2 deviation, all strengthening: `_snapshotState()`'s documented deep-copy contract
+would have quietly become false (`profile` is the record's second nested object), and the
+profile was not carried forward across crash-respawn or recycle, which would have
+reintroduced exactly `D-16`'s undetectable lie one respawn later — a recycled warped
+instance returning unwarped while its record still claimed warp. `D-18` is deliberately
+NOT here: it is a live, broker-stopped measurement governed by `D-10`/`D-11` and lives in
+`33-11`, widened there to cover `-console` as well as `-warp`.
 `33-05` made the stock argv deterministic by construction: `buildViceArgs()`'s stock
 branch now emits `REPRO-01`'s determinism block **unconditionally** — `-seed 4242` plus
 the three `raminit*` zeros plus `+autostart-delay-random`, in one fixed order between
@@ -433,6 +456,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 33 P03 | 66 min | 2 tasks | 3 files |
 | Phase 33 P04 | 22 min | 3 tasks | 16 files |
 | Phase 33 P05 | 22 min | 3 tasks | 5 files |
+| Phase 33 P06 | 33 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -845,6 +869,9 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-05: STOCK_DETERMINISM_SEED and STOCK_DETERMINISM_FLAGS are exported and Object.freeze-d, so the seed has one definition — readonly is erased at runtime; a caller mutating the shared array would produce a launch whose argv no longer matches the seed a capture record cited.
 - [Phase 33]: 33-05: the idempotency test observes the -remotemonitor one-time note, not the binmon one — warnedBinmonBindWidened is module state the pre-existing note-once test already consumes, so exactly-one is unobservable on that note from any later test; the text-monitor note is genuinely unconsumed.
 - [Phase 33]: 33-05: the re-grounded warp sentence carries no speedup number; the measured ~1.97x lives in the code comment beside the -warp emission — 1.97x is a fact about this host. Publishing it in a generated public capability table would present it as a fact about the tool.
+- [Phase 33]: 33-06: the launch profile rides handleAcquire()'s existing per-acquire options bag, not a fifth positional parameter — The real broker wiring already builds a fresh HandleAcquireDeps object per acquire, so per-request data threads through it naturally, and `backend` already sets the precedent of a non-injected configuration value living there. A fifth positional argument after an optional fourth is legal but unreadable at every call site.
+- [Phase 33]: 33-06: the launch profile is carried FORWARD across crash-respawn and recycle, which the plan did not name (Rule 2) — launchSupervised() builds a brand new InstanceRecord on every replacement. Without carrying the profile, a recycled or crash-respawned {warp:true} instance comes back UNWARPED while its record no longer matches what the caller asked for -- reintroducing exactly the undetectable mismatch D-16 and T-33-24 exist to exclude, one respawn later. Same defect class CR-01 already caused once in this function (a stock instance respawning with the fork's argv). Threaded via an optional seventh parameter, mirroring CR-02's own remoteMonitorPort carry-forward.
+- [Phase 33]: 33-06: buildViceArgs() deliberately does NOT re-validate the profile shape — `profile?.warp` stays a truthiness test, so a boundary-refused string value still switches the fixed literal flag on. Re-deriving the check there would create the second narrowing site this plan exists to avoid, and the VALUE stays structurally unreachable either way -- asserted by a test that plants a string via an unsound cast and requires it to appear in no argv element and as no substring of one.
 
 ### Pending Todos
 
@@ -1637,8 +1664,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:57:16.770Z
-Stopped at: Completed 33-05-PLAN.md
+Last session: 2026-09-02T20:33:26.637Z
+Stopped at: Completed 33-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md

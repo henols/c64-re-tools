@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 open_count: 24
-waived_count: 12
-fixed_count: 8
-total_count: 44
-last_updated: 2026-09-02T19:32:03.207Z
+waived_count: 13
+fixed_count: 9
+total_count: 46
+last_updated: 2026-09-02T20:35:29.422Z
 ---
 
 # Broken Windows Ledger
@@ -59,6 +59,8 @@ last_updated: 2026-09-02T19:32:03.207Z
 | 42 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-wallclock-control.md |  | WARP_BRACKET_CONTROL: red was reached by region overshoot, not by the spurious timeout ROADMAP success criterion 5 names; the timeout form was not observed (ACCEPTED LIMIT 1) | open |  | 2026-09-02T19:03:23.913Z |  |
 | 43 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-autostart-sequencing.md |  | AUTOSTART_FRAME_EXACT: not-achieved — a frame-anchored post-load stop on danish.d64 reaches 66 differing addresses at jitter 4000, OVER D-22's committed cap of 64; 33-10 must record its jitters and must not retry until the allow-list fits | open |  | 2026-09-02T19:03:33.398Z |  |
 | 44 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-04-slicer-substrate.md |  | SLICER: gate input not emitted by 33-04 -- SCHEMA.md 2.4 requires capture-predicate.test.ts and capture-seam.test.ts transcripts too, and neither file exists yet; 33-07 owns 33-slicer-validation.md and must emit the line | open |  | 2026-09-02T19:32:03.207Z |  |
+| 45 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-06-PLAN.md |  | 33-06 Task 1's own <verify> demands broker-control.test.ts report fail 0, while Task 1's action text widens attemptAcquire()'s signature -- which two PRE-EXISTING structural tests pin as a literal string. Honouring the plan's Task-1/Task-2 split literally would have committed a knowingly-red suite. The two pinned signatures were updated inside Task 1's commit, and the boundary-refusal/eligibility cases the plan assigns to Task 2 landed there too (same file, same commit). Task 2 delivered its full remaining scope. Same shape as 33-05's own deviation 1. Recorded so a later re-run of the plan text does not read the placement as a regression. | waived | Provenance record, not a defect: the plan's own Task-1 <verify> gate and its Task-1/Task-2 split are mutually unsatisfiable for broker-control.test.ts, and the implementation is correct. Every acceptance criterion of both tasks is met; nothing to fix, kept as history. | 2026-09-02T20:35:13.880Z | 2026-09-02T20:35:29.422Z |
+| 46 | 33 | deviation | src/mcp/vice/broker-launch.mts |  | The launch profile was not carried forward across crash-respawn or recycle (handleExit -> launchSupervised builds a brand new InstanceRecord). A recycled or crash-respawned {warp:true} instance would have come back UNWARPED with a record that no longer matched what the caller asked for -- reintroducing D-16/T-33-24's undetectable mismatch one respawn later, the same defect class CR-01 already caused once in this function. Fixed inside 33-06 Task 1's commit 11f897d via an optional seventh launchSupervised() parameter, mirroring CR-02's remoteMonitorPort carry-forward at both handleExit call sites. | fixed |  | 2026-09-02T20:35:14.413Z | 2026-09-02T20:35:28.860Z |
 
 ````json
 [
@@ -589,6 +591,30 @@ last_updated: 2026-09-02T19:32:03.207Z
     "reason": "",
     "recorded_at": "2026-09-02T19:32:03.207Z",
     "resolved_at": null
+  },
+  {
+    "id": 45,
+    "kind": "deviation",
+    "phase": "33",
+    "file": ".planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-06-PLAN.md",
+    "line": null,
+    "description": "33-06 Task 1's own <verify> demands broker-control.test.ts report fail 0, while Task 1's action text widens attemptAcquire()'s signature -- which two PRE-EXISTING structural tests pin as a literal string. Honouring the plan's Task-1/Task-2 split literally would have committed a knowingly-red suite. The two pinned signatures were updated inside Task 1's commit, and the boundary-refusal/eligibility cases the plan assigns to Task 2 landed there too (same file, same commit). Task 2 delivered its full remaining scope. Same shape as 33-05's own deviation 1. Recorded so a later re-run of the plan text does not read the placement as a regression.",
+    "status": "waived",
+    "reason": "Provenance record, not a defect: the plan's own Task-1 <verify> gate and its Task-1/Task-2 split are mutually unsatisfiable for broker-control.test.ts, and the implementation is correct. Every acceptance criterion of both tasks is met; nothing to fix, kept as history.",
+    "recorded_at": "2026-09-02T20:35:13.880Z",
+    "resolved_at": "2026-09-02T20:35:29.422Z"
+  },
+  {
+    "id": 46,
+    "kind": "deviation",
+    "phase": "33",
+    "file": "src/mcp/vice/broker-launch.mts",
+    "line": null,
+    "description": "The launch profile was not carried forward across crash-respawn or recycle (handleExit -> launchSupervised builds a brand new InstanceRecord). A recycled or crash-respawned {warp:true} instance would have come back UNWARPED with a record that no longer matched what the caller asked for -- reintroducing D-16/T-33-24's undetectable mismatch one respawn later, the same defect class CR-01 already caused once in this function. Fixed inside 33-06 Task 1's commit 11f897d via an optional seventh launchSupervised() parameter, mirroring CR-02's remoteMonitorPort carry-forward at both handleExit call sites.",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-02T20:35:14.413Z",
+    "resolved_at": "2026-09-02T20:35:28.860Z"
   }
 ]
 ````
