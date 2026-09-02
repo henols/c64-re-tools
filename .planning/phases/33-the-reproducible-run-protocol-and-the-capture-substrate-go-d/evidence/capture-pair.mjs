@@ -166,6 +166,13 @@ const MEMSPACE_MAIN = 0x00;
 const DRIVE_ROM_START = 0xe000;
 const DRIVE_ROM_END = 0xffff;
 
+/** The `@bank:`-bearing checkpoint condition used as check (b) of the main-CPU
+ *  memspace assertion. Every comparison parenthesised: conditions have NO
+ *  operator precedence (`mon_parse.y:168`), so an unparenthesised comparison
+ *  chain silently parses into something always-false. Bare integers are hex by
+ *  default (`monitor.c:1597`), so both literals are written with `$`. */
+const BANK_CONDITION = "(@ram:$0400 == $20)";
+
 // --- small helpers -----------------------------------------------------------
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -789,24 +796,40 @@ function comparePair({ labelA, labelB, allowListPath }) {
  * THE MAIN-CPU MEMSPACE ASSERTION, stated before it is run.
  *
  * A drive checkpoint hit sets `default_memspace` (`monitor.c:3393-3396`) and NO
- * binary-monitor command resets it. After that, every command that carries NO
- * memspace byte -- `ADVANCE_INSTRUCTIONS` (0x71) is the canonical one -- acts on
- * the DRIVE CPU while looking exactly like it acted on the main one. There is no
- * "read default_memspace" command, so the state cannot be queried; it can only
- * be OBSERVED through a command that depends on it.
+ * binary-monitor command resets it. After that, per `33-RESEARCH.md`'s pitfall
+ * `P10`, TWO things go wrong and they are the assertion's two checks:
  *
- * The assertion: read the main CPU's PC and unit 8's PC, both with an EXPLICIT
- * memspace byte; issue ONE `ADVANCE_INSTRUCTIONS` (which carries no memspace);
- * read both PCs again.
+ *   (a) `ADVANCE_INSTRUCTIONS` (0x71) -- which carries NO memspace byte -- steps
+ *       the DRIVE CPU rather than the main one, while looking exactly like it
+ *       stepped the main one.
+ *   (b) a `@bank:`-bearing checkpoint condition FAILS OUTRIGHT.
  *
- *   PASS    iff the MAIN PC moved and the DRIVE PC did not.
- *   REFUSE  otherwise, naming which processor actually moved.
+ * There is no "read default_memspace" command, so the state cannot be queried;
+ * it can only be OBSERVED through commands that depend on it. The assertion is
+ * therefore the conjunction of the two checks `P10` names:
  *
- * A `PASS` therefore means "a memspace-less command still reaches the main CPU
- * on this session", which is precisely the assumption
- * `stock-reproducible-run.ts` documents itself as immune to by construction.
+ *   PASS    iff a memspace-less `ADVANCE_INSTRUCTIONS` moved the MAIN CPU's PC
+ *           AND a `@bank:`-bearing condition was accepted.
+ *   REFUSE  iff either check fails, naming which one and what it observed.
+ *
+ * BOTH sub-results are always recorded separately, whatever the conjunction
+ * says, so a reader can re-derive the verdict under a narrower definition
+ * instead of taking this one on trust.
+ *
+ * WHY THE STEPPING CHECK DOES *NOT* REQUIRE THE DRIVE CPU TO STAY PUT.
+ * MEASURED, and it is the reason the first run of this verb was voided: an
+ * earlier draft of this function passed only when the main PC moved AND the
+ * drive PC did not. On a machine with `Drive8TrueEmulation=1` the drive CPU runs
+ * concurrently with the main one, so advancing the main CPU advances emulated
+ * time and the drive PC moves too -- observed on the CLEAN machine
+ * (`main $ea31 -> $ffea`, `drive $d125 -> $d127`, both moved). That draft could
+ * therefore never pass on any true-drive-emulation machine, i.e. it was an
+ * assertion that always refuses, which is exactly what the clean control exists
+ * to catch. It caught it. The drive PC is still read and recorded on both sides
+ * -- it is evidence about what the step did -- but it is not a pass condition.
  */
 async function assertMainCpuMemspace(client, mainIds, driveIds, tag) {
+  // --- check (a): does a memspace-less command still step the MAIN CPU? ---
   const beforeMain = await readRegisters(client, mainIds, MEMSPACE_MAIN);
   const beforeDrive = driveIds ? await readRegisters(client, driveIds, MEMSPACE_DRIVE8) : null;
   const adv = await client.send(
@@ -821,14 +844,63 @@ async function assertMainCpuMemspace(client, mainIds, driveIds, tag) {
   const mainMoved = afterMain.pc !== beforeMain.pc;
   const driveMoved = beforeDrive !== null && afterDrive.pc !== beforeDrive.pc;
   log(`MEMSPACE_ASSERTION_${tag} advance_err=0x${adv.errorCode.toString(16).padStart(2, "0")}`);
-  log(`  main  PC ${hex4(beforeMain.pc)} -> ${hex4(afterMain.pc)} moved=${mainMoved}`);
-  if (beforeDrive) log(`  drive PC ${hex4(beforeDrive.pc)} -> ${hex4(afterDrive.pc)} moved=${driveMoved}`);
-  const passed = mainMoved && !driveMoved;
+  log(`  (a) stepping: main  PC ${hex4(beforeMain.pc)} -> ${hex4(afterMain.pc)} moved=${mainMoved}`);
+  if (beforeDrive) {
+    log(`  (a) stepping: drive PC ${hex4(beforeDrive.pc)} -> ${hex4(afterDrive.pc)} moved=${driveMoved} (recorded, NOT a pass condition -- see the header)`);
+  }
+  const steppingOk = mainMoved;
+  log(
+    `  (a) VERDICT ${steppingOk ? "pass" : "REFUSAL"}: a memspace-less ADVANCE_INSTRUCTIONS ${
+      steppingOk
+        ? `moved the MAIN CPU (${hex4(beforeMain.pc)} -> ${hex4(afterMain.pc)})`
+        : `did NOT step the main CPU -- it stayed at ${hex4(beforeMain.pc)}${beforeDrive ? `, while unit 8 moved ${hex4(beforeDrive.pc)} -> ${hex4(afterDrive.pc)}` : ""}, so the command acted on another processor while reporting as if it acted on this one`
+    }`,
+  );
+
+  // --- check (b): is a @bank:-bearing condition still accepted? ---
+  // Run TWICE on each side, on two independently armed checkpoints, so a single
+  // failure cannot be attributed to "the second CONDITION_SET of a session
+  // fails" rather than to the memspace state.
+  const bank = [];
+  for (let i = 0; i < 2; i += 1) {
+    const cp = await armExec(client, { start: 0x0326, temporary: false });
+    const res = await client
+      .send(
+        CommandType.ConditionSet,
+        proto.conditionSetBody({ checkpointNum: cp.checkpoint.id, expression: BANK_CONDITION }),
+        { timeoutMs: 10000 },
+      )
+      .then((r) => ({ cp: cp.checkpoint.id, err: r.errorCode, message: null }))
+      .catch((e) => ({ cp: cp.checkpoint.id, err: null, message: e.message }));
+    bank.push(res);
+    log(
+      `  (b) bank condition ${i + 1}/2 on cp=${res.cp}: ${
+        res.err === null ? `THREW -- ${res.message}` : `err=0x${res.err.toString(16).padStart(2, "0")}`
+      }`,
+    );
+    await client.send(CommandType.CheckpointDelete, proto.cpNumBody(cp.checkpoint.id)).catch(() => {});
+  }
+  const bankOk = bank.every((r) => r.err === 0x00);
+  log(`  (b) VERDICT ${bankOk ? "pass" : "REFUSAL"}: the condition \`${BANK_CONDITION}\` was ${bankOk ? "accepted on both attempts" : "REFUSED"}`);
+
+  const passed = steppingOk && bankOk;
   const message = passed
-    ? `PASS: one memspace-less ADVANCE_INSTRUCTIONS moved the MAIN CPU (${hex4(beforeMain.pc)} -> ${hex4(afterMain.pc)}) and left unit 8 at ${beforeDrive ? hex4(beforeDrive.pc) : "(not read)"}`
-    : `REFUSAL: a memspace-less ADVANCE_INSTRUCTIONS did not step the main CPU. main PC stayed at ${hex4(beforeMain.pc)}${beforeDrive ? `, unit 8 moved ${hex4(beforeDrive.pc)} -> ${hex4(afterDrive.pc)}` : ""}. default_memspace is contaminated: a drive checkpoint hit set it (monitor.c:3393-3396) and NO binary-monitor command resets it, so every memspace-less command from here on acts on the drive CPU while reporting as if it acted on the main one.`;
-  log(`  ${message}`);
-  return { passed, message, beforeMain, afterMain, beforeDrive, afterDrive };
+    ? `PASS: a memspace-less command still reaches the main CPU (check a) and a @bank:-bearing condition is still accepted (check b)`
+    : `REFUSAL: ${[
+        steppingOk ? null : "a memspace-less ADVANCE_INSTRUCTIONS did not step the main CPU (check a)",
+        bankOk ? null : `a @bank:-bearing condition was refused (check b): ${bank.map((r) => (r.err === null ? r.message : `err=0x${r.err.toString(16).padStart(2, "0")}`)).join("; ")}`,
+      ]
+        .filter(Boolean)
+        .join(" AND ")}. default_memspace is contaminated: a drive checkpoint hit set it (monitor.c:3393-3396) and NO binary-monitor command resets it, so the monitor's default target is no longer the main CPU and nothing over this wire can put it back.`;
+  log(`  ${tag} ASSERTION ${passed ? "PASS" : "REFUSES"} -- ${message}`);
+  return {
+    passed,
+    steppingOk,
+    bankOk,
+    message,
+    stepping: { beforeMain: beforeMain.pc, afterMain: afterMain.pc, mainMoved, beforeDrive: beforeDrive?.pc ?? null, afterDrive: afterDrive?.pc ?? null, driveMoved },
+    bank,
+  };
 }
 
 async function runMemspace({ label, target }) {
@@ -837,6 +909,7 @@ async function runMemspace({ label, target }) {
   log(`PROBE_DIR ${PROBE_DIR}`);
   log(`DATE_UTC ${new Date().toISOString()}`);
   log(`RELEASE_SHA256 ${sha256(fs.readFileSync(RELEASE))}`);
+  log(`BANK_CONDITION ${BANK_CONDITION}`);
   preflight();
   const broker = await startBroker();
   const out = { label, steps: [] };
@@ -885,23 +958,15 @@ async function runMemspace({ label, target }) {
     log(`COUNTED reached=${counted.reached} hits=${counted.hits} target=${target} reason=${counted.reason ?? "-"}`);
 
     // STEP 1 -- the clean control, FIRST. Without it a later refusal is
-    // indistinguishable from an assertion that always refuses.
-    log(`--- STEP 1: clean control (no drive checkpoint hit yet) ---`);
+    // indistinguishable from an assertion that always refuses. It has already
+    // caught exactly that once; see assertMainCpuMemspace()'s header.
+    log(`--- STEP 1: the CLEAN control -- no drive checkpoint hit yet ---`);
     const clean = await assertMainCpuMemspace(client, mainIds, driveIds, "CLEAN");
-    out.steps.push({ step: "clean", passed: clean.passed, message: clean.message });
-
-    // A @bank:-bearing condition on the clean machine, for the P10 comparison.
-    log(`--- STEP 1b: a @bank:-bearing condition on the CLEAN machine ---`);
-    const probeCp = await armExec(client, { start: 0x0326, temporary: false });
-    const cleanCond = await client
-      .send(CommandType.ConditionSet, proto.conditionSetBody({ checkpointNum: probeCp.checkpoint.id, expression: "(@ram:$0400 == $20)" }), { timeoutMs: 10000 })
-      .then((r) => ({ err: r.errorCode, msg: null }))
-      .catch((e) => ({ err: null, msg: e.message }));
-    log(`BANK_CONDITION_CLEAN err=${cleanCond.err === null ? "(threw)" : `0x${cleanCond.err.toString(16).padStart(2, "0")}`}${cleanCond.msg ? ` message=${cleanCond.msg}` : ""}`);
-    await client.send(CommandType.CheckpointDelete, proto.cpNumBody(probeCp.checkpoint.id)).catch(() => {});
+    out.steps.push({ step: "clean", ...clean });
 
     // STEP 2 -- contaminate deliberately: ONE checkpoint on the DRIVE memspace,
-    // wire byte 0x01 (unit 8) through the encoder's own mapping. NEVER 0x08.
+    // wire byte 0x01 (unit 8) through the encoder's own mapping. NEVER 0x08,
+    // which is VICE's internal enum and is rejected by the monitor.
     log(`--- STEP 2: contaminate with ONE drive-memspace checkpoint hit (wire memspace 0x01) ---`);
     const driveCp = await armExec(client, {
       start: DRIVE_ROM_START,
@@ -922,26 +987,19 @@ async function runMemspace({ label, target }) {
       log(`CHECKPOINT_INFO none within budget -- the drive checkpoint did not hit`);
     }
     out.steps.push({ step: "contaminate", hit: oneHit.hit, frame: oneHit.frame ?? null });
-    // Delete the drive checkpoint so nothing below can attribute a later halt
-    // to it. Deleting it does NOT reset default_memspace -- that is the point.
+    // Delete the drive checkpoint so nothing below can attribute a later halt to
+    // it. Deleting it does NOT reset default_memspace -- that is the point.
     await client.send(CommandType.CheckpointDelete, proto.cpNumBody(driveCp.checkpoint.id)).catch(() => {});
 
-    // STEP 3 -- the same assertion again.
+    // STEP 3 -- the SAME assertion again.
     log(`--- STEP 3: the SAME assertion, after exactly one drive checkpoint hit ---`);
     const dirty = await assertMainCpuMemspace(client, mainIds, driveIds, "CONTAMINATED");
-    out.steps.push({ step: "contaminated", passed: dirty.passed, message: dirty.message });
-
-    log(`--- STEP 3b: the same @bank:-bearing condition on the CONTAMINATED machine ---`);
-    const probeCp2 = await armExec(client, { start: 0x0326, temporary: false });
-    const dirtyCond = await client
-      .send(CommandType.ConditionSet, proto.conditionSetBody({ checkpointNum: probeCp2.checkpoint.id, expression: "(@ram:$0400 == $20)" }), { timeoutMs: 10000 })
-      .then((r) => ({ err: r.errorCode, msg: null }))
-      .catch((e) => ({ err: null, msg: e.message }));
-    log(`BANK_CONDITION_CONTAMINATED err=${dirtyCond.err === null ? "(threw)" : `0x${dirtyCond.err.toString(16).padStart(2, "0")}`}${dirtyCond.msg ? ` message=${dirtyCond.msg}` : ""}`);
-    out.steps.push({ step: "bank-condition", clean: cleanCond, contaminated: dirtyCond });
+    out.steps.push({ step: "contaminated", ...dirty });
 
     const value = clean.passed && !dirty.passed ? "refuses" : "did-not-refuse";
     log(`DERIVED_MEMSPACE_ASSERTION ${value}`);
+    log(`SUBCHECK_STEPPING clean=${clean.steppingOk ? "pass" : "refuse"} contaminated=${dirty.steppingOk ? "pass" : "refuse"} discriminates=${clean.steppingOk && !dirty.steppingOk}`);
+    log(`SUBCHECK_BANK_CONDITION clean=${clean.bankOk ? "pass" : "refuse"} contaminated=${dirty.bankOk ? "pass" : "refuse"} discriminates=${clean.bankOk && !dirty.bankOk}`);
     out.value = value;
     client.disconnect?.();
   } finally {
