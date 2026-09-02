@@ -271,6 +271,34 @@ Capture the power-on image as the very first action against a fresh machine, the
 idle-capture twice more and run `floor` over the set. State the result as a
 floor, not a complete set — more captures can only widen it.
 
+## Slice the image out of a snapshot instead of transcribing it
+
+`scripts/vsf-slice.mjs` produces the flat 64K image by slicing a VICE `.vsf`
+snapshot's memory module body. Two verbs:
+
+```bash
+node scripts/vsf-slice.mjs slice run1.vsf --out run1.bin   # writes exactly 65536 bytes
+node scripts/vsf-slice.mjs digest run1.vsf                 # sha256 + size, writing no file
+```
+
+Add `--json` to either for the same summary as one JSON object — it carries the
+snapshot's memory-module minor, the observed body length, and the three CPU port
+read-back values.
+
+**The one thing that matters operationally: this route has no transcription
+step, so the `$D000-$DFFF` volatility rule above does *not* apply to an image
+produced this way.** That rule exists because `vice_memory_read` samples live
+I/O. The snapshot array is RAM *under* I/O, not the register read view, so those
+4096 addresses are ordinary RAM in a sliced image and a difference there is a
+real difference. Do not carry the exclusion across from the memory-read route.
+
+A malformed snapshot is **refused**, by name, naming the offending value and the
+valid range — it is never truncated into a plausible short image. The `.vsf`
+byte layout lives in exactly one place, `vsf-slice.ts` on the MCP side; this
+script resolves it via `VICE_MCP_DIR`, the in-repo path, or the
+`@henols/vice-mcp` package, and refuses naming every path it tried when no rung
+resolves rather than falling back to a second copy of the layout.
+
 ## Feeding the memory map's provenance sidecar
 
 `c64-program-recon`'s generated memory map (`vice-mcp anno render-memmap`) takes a small provenance
@@ -326,6 +354,7 @@ split: the workflow fits in one file, which is the right call when it does.
 | Path | Covers |
 |---|---|
 | `scripts/compare.mjs` | Difference classification and the drift floor. Pure logic over captures you already have — `node $C` with no arguments prints the rules. |
+| `scripts/vsf-slice.mjs` | `slice` / `digest` — the flat 64K image sliced out of a `.vsf` snapshot with no transcription step. The layout lives in `vsf-slice.ts` on the MCP side; this wrapper resolves it and refuses by name when it cannot. Covered by `scripts/vsf-slice.test.mjs`. |
 | `templates/capture-record.template.md` | The per-capture record: identity, machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
 | `scripts/d64-parse.mjs` | `.d64` directory, BAM, and `--json` fakery detection. Fixture-tested against both real images by `scripts/d64-parse.test.mjs`. |
 | `scripts/dump-artifacts.mjs` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |

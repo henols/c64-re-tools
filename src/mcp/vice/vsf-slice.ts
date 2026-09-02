@@ -249,8 +249,8 @@ export function listSnapshotModules(bytes: Uint8Array): SnapshotModule[] {
   if (bytes.length < minimum) {
     throw new VsfSliceError(
       `listSnapshotModules: input is ${bytes.length} byte(s) -- a .vsf needs at least ${minimum} ` +
-        `(a ${FIRST_MODULE_OFFSET}-byte file header plus one ${MODULE_HEADER_LEN}-byte module header). ` +
-        `Refusing rather than returning a short read.`,
+        `(a ${FIRST_MODULE_OFFSET}-byte file header plus one ${MODULE_HEADER_LEN}-byte module header) -- ` +
+        `refusing rather than returning a short read.`,
     );
   }
   if (!hasSnapshotMagic(bytes)) {
@@ -274,7 +274,7 @@ export function listSnapshotModules(bytes: Uint8Array): SnapshotModule[] {
         `listSnapshotModules: malformed module header at offset ${offset} ` +
           `(name=${JSON.stringify(name)}, major=${major}, minor=${minor}, size=${size}); a module ` +
           `size must be at least ${MODULE_HEADER_LEN} and must not run past the ${bytes.length}-byte ` +
-          `file. Refusing rather than rescanning -- a byte-by-byte rescan can lock onto a false ` +
+          `file -- refusing rather than rescanning, because a byte-by-byte rescan can lock onto a false ` +
           `module name inside RAM data and return a garbage image.`,
       );
     }
@@ -295,7 +295,7 @@ export function listSnapshotModules(bytes: Uint8Array): SnapshotModule[] {
     throw new VsfSliceError(
       `listSnapshotModules: the module table walk ended at offset ${offset} but the file is ` +
         `${bytes.length} byte(s) -- the two must be equal. ${modules.length} module(s) parsed ` +
-        `cleanly, so the geometry changed rather than the modules being malformed. Refusing rather ` +
+        `cleanly, so the geometry changed rather than the modules being malformed -- refusing rather ` +
         `than trusting a walk that did not account for the whole file.`,
     );
   }
@@ -326,7 +326,7 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
     throw new VsfSliceError(
       `sliceC64Mem: module name "${C64MEM_MODULE_NAME}" is duplicated -- ${matches.length} modules ` +
         `carry it (at offsets ${matches.map((m) => m.offset).join(", ")}). A duplicated module name ` +
-        `is a malformed snapshot; refusing rather than taking the first.`,
+        `is a malformed snapshot -- refusing rather than taking the first.`,
     );
   }
 
@@ -335,7 +335,7 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
     throw new VsfSliceError(
       `sliceC64Mem: ${C64MEM_MODULE_NAME} body is ${c64mem.bodyLength} byte(s), need at least ` +
         `${MIN_C64MEM_BODY_LEN} (${RAM_OFFSET}-byte port prefix + ${RAM_SIZE} RAM + 3 port ` +
-        `read-back bytes). Refusing a short read rather than returning a truncated image.`,
+        `read-back bytes) -- refusing a short read rather than returning a truncated image.`,
     );
   }
 
@@ -348,7 +348,7 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
   if (view.length !== RAM_SIZE) {
     throw new VsfSliceError(
       `sliceC64Mem: the ${C64MEM_MODULE_NAME} RAM array at offset ${ramStart} is ${view.length} ` +
-        `byte(s) inside a ${bytes.length}-byte file, not ${RAM_SIZE}. Refusing rather than ` +
+        `byte(s) inside a ${bytes.length}-byte file, not ${RAM_SIZE} -- refusing rather than ` +
         `returning a short image.`,
     );
   }
@@ -372,4 +372,241 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
     snapshotMinor: c64mem.minor,
     bodyLength: c64mem.bodyLength,
   };
+}
+
+// ===========================================================================
+// CLI_REGION_BEGIN
+//
+// Everything ABOVE this marker is the pure library: bytes in, values out, no
+// imports, no I/O. Everything BELOW it is the process entry point, and it is
+// the ONLY part of this file allowed to touch the filesystem.
+//
+// `vsf-slice.test.ts` splits this file's raw source on the marker at the top
+// of this banner -- which therefore appears EXACTLY ONCE in this file, and the
+// test fails loudly rather than scanning the wrong region if a second copy
+// ever shows up -- and asserts the region before it performs no
+// filesystem, subprocess or network I/O and reads no `process.` property. So
+// the purity claim in this file's header stays a checked property rather than
+// becoming a comment that a later edit quietly falsified -- it just applies to
+// the library region, which is the region every importer gets.
+//
+// WHY THE ENTRY POINT LIVES HERE AT ALL, rather than in a sibling CLI module:
+// the skill-side wrapper needs a route to this layout knowledge across a
+// package boundary. `anno-d64.ts`'s header records the constraint as measured
+// -- the MCP server ships as one npm package whose `files[]` covers only
+// `src/mcp/vice/`, the skills ship in the other package, and a plain
+// cross-package import resolves on neither installer route. Its own answer
+// was a second, independent copy of a *stable, published* disk format. That
+// answer is wrong for this format: the `.vsf` layout is version-sensitive,
+// this file's header documents one already-stale copy of it, and a second
+// copy of the one authoritative reading of a version-sensitive format is
+// exactly the divergence hazard the single-seam convention exists to remove.
+// So the module carries a CLI entry point and the skill invokes it. The
+// reasoning is repeated in the wrapper's own header, where the next reader of
+// that file will be.
+//
+// WHAT NOT TO DO:
+//   - Never let `main()` run on import. The guard at the bottom compares
+//     `process.argv[1]` against this module's own URL, with `resolve()` and
+//     NOT `realpathSync()`, so the check itself is pure path arithmetic and
+//     importing this module still performs no I/O. `capture-predicate.ts`
+//     imports it, and so does the structural census.
+//   - Never rewrite, prefix or soften a refusal message at this boundary. The
+//     library's messages already name the offending value and the valid
+//     range; the CLI prints `err.message` verbatim, and the skill-side test
+//     asserts the module's own wording reaches the caller's stderr.
+//   - Never move a byte offset or a length constant down here. Every layout
+//     fact belongs above the marker, where the structural guards and the
+//     library's own tests can see it.
+// ===========================================================================
+
+import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+
+const USAGE = `usage: node vsf-slice.ts <verb>
+
+  slice <snapshot.vsf> --out <image.bin> [--json]
+      Slice the C64MEM module's RAM array out of <snapshot.vsf> and write it
+      to <image.bin> as exactly 65536 bytes. Prints one summary line carrying
+      the C64MEM module minor, the observed body length and the three port
+      read-back values (data_out, data_read, dir_read). With --json, prints
+      that same summary as one JSON object instead.
+
+  digest <snapshot.vsf>
+      Print the sha256 and the length of the sliced image, writing no file.
+
+A malformed snapshot is REFUSED: this module's own message goes to stderr and
+the exit status is non-zero. It is never truncated into a plausible short
+image, and no offset is ever guessed.
+`;
+
+interface CliArgs {
+  positional: string[];
+  out?: string;
+  json: boolean;
+}
+
+function parseCliArgs(argv: string[]): CliArgs {
+  const positional: string[] = [];
+  let out: string | undefined;
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--out") {
+      const value = argv[i + 1];
+      if (value === undefined) {
+        throw new VsfSliceError("vsf-slice: --out needs a path");
+      }
+      out = value;
+      i++;
+      continue;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg.startsWith("--")) {
+      throw new VsfSliceError(`vsf-slice: unknown flag ${arg} -- this CLI has --out and --json`);
+    }
+    positional.push(arg);
+  }
+  return { positional, out, json };
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** The one place that reads a snapshot path off the command line. The library
+ * above deliberately has no path parameter, so this is where path resolution
+ * lives -- and it stays a thin read with no path arithmetic of its own, so
+ * nothing here needs either host/container translation seam. */
+function readSnapshot(path: string): Uint8Array {
+  return readFileSync(path);
+}
+
+function cmdSlice(argv: string[]): number {
+  const { positional, out, json } = parseCliArgs(argv);
+  if (positional.length !== 1) {
+    console.error(
+      `vsf-slice: slice needs exactly one <snapshot.vsf>, got ${positional.length}`,
+    );
+    return 1;
+  }
+  if (out === undefined) {
+    console.error("vsf-slice: slice needs --out <image.bin> -- refusing to slice with nowhere to put the image");
+    return 1;
+  }
+
+  const snapshot = positional[0];
+  const slice = sliceC64Mem(readSnapshot(snapshot));
+  writeFileSync(out, slice.ram);
+
+  if (json) {
+    console.log(
+      JSON.stringify({
+        snapshot,
+        out,
+        imageBytes: slice.ram.length,
+        sha256: sha256(slice.ram),
+        snapshotMinor: slice.snapshotMinor,
+        bodyLength: slice.bodyLength,
+        dataOut: slice.dataOut,
+        dataRead: slice.dataRead,
+        dirRead: slice.dirRead,
+      }),
+    );
+  } else {
+    console.log(
+      `vsf-slice: wrote ${out} (${slice.ram.length} bytes) from C64MEM minor ` +
+        `${slice.snapshotMinor}, body ${slice.bodyLength} bytes; data_out=${slice.dataOut} ` +
+        `data_read=${slice.dataRead} dir_read=${slice.dirRead}`,
+    );
+  }
+  return 0;
+}
+
+function cmdDigest(argv: string[]): number {
+  const { positional, json } = parseCliArgs(argv);
+  if (positional.length !== 1) {
+    console.error(
+      `vsf-slice: digest needs exactly one <snapshot.vsf>, got ${positional.length}`,
+    );
+    return 1;
+  }
+
+  const snapshot = positional[0];
+  const slice = sliceC64Mem(readSnapshot(snapshot));
+
+  if (json) {
+    console.log(
+      JSON.stringify({
+        snapshot,
+        imageBytes: slice.ram.length,
+        sha256: sha256(slice.ram),
+        snapshotMinor: slice.snapshotMinor,
+        bodyLength: slice.bodyLength,
+        dataOut: slice.dataOut,
+        dataRead: slice.dataRead,
+        dirRead: slice.dirRead,
+      }),
+    );
+  } else {
+    console.log(`${sha256(slice.ram)}  ${slice.ram.length} bytes  ${snapshot}`);
+  }
+  return 0;
+}
+
+/** Entry point for the `vsf-slice` CLI. Returns an exit code and never calls
+ * `process.exit()` itself -- the guard below does that, exactly once, which
+ * keeps this function callable in a test without terminating the runner.
+ * Deliberately NOT exported: the module's exported surface is the library
+ * above, and every exported function there takes bytes rather than a path. */
+function main(argv: string[]): number {
+  const [verb, ...rest] = argv;
+  if (verb === undefined) {
+    console.error("vsf-slice: no verb given");
+    console.log(USAGE);
+    return 1;
+  }
+  if (verb === "--help" || verb === "-h") {
+    console.log(USAGE);
+    return 0;
+  }
+
+  try {
+    switch (verb) {
+      case "slice":
+        return cmdSlice(rest);
+      case "digest":
+        return cmdDigest(rest);
+      default:
+        console.error(
+          `vsf-slice: unknown verb "${verb}" -- this CLI has exactly two: slice and digest`,
+        );
+        console.log(USAGE);
+        return 1;
+    }
+  } catch (err) {
+    // VERBATIM, and prefixed with nothing. The library's refusals already
+    // name the offending value and the valid range, and the skill-side test
+    // matches on that wording reaching the caller's stderr.
+    console.error(err instanceof Error ? err.message : String(err));
+    return 1;
+  }
+}
+
+/** True iff this module IS the process entry point. `resolve()` and not
+ * `realpathSync()`: path arithmetic only, so importing this module performs no
+ * I/O. */
+function isProcessEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  return resolve(entry) === fileURLToPath(import.meta.url);
+}
+
+if (isProcessEntryPoint()) {
+  process.exit(main(process.argv.slice(2)));
 }
