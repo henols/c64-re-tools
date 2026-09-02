@@ -281,8 +281,10 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     reason:
       "Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist " +
       "subset that never shipped on stock. Its advertised WarpMode resource is fork-only: stock " +
-      "has no runtime warp resource at all, and warp on stock is a launch-time flag, not a " +
-      "resource that can be toggled while running.",
+      "has no runtime WarpMode resource at all -- measured err=0x01 OBJECT_MISSING over " +
+      "RESOURCE_GET (0x51) on VICE 3.9 -- and runtime warp toggling on stock exists only as a " +
+      "text-monitor command, a channel this project does not dial, so on the stock backend warp " +
+      "is requested at launch time.",
   },
   {
     name: "vice_joystick_tap",
