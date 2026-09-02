@@ -757,17 +757,37 @@ reconsidered.
 **Plans**: 12 plans in 7 waves — `33-01` the pre-committed decision rules (nothing else, git order is the proof); `33-02` the research reconciliation and the suite-baseline repair; `33-03` the live autostart-sequencing probe with the wall-clock and warp-bracket controls; `33-04` the `.vsf` `C64MEM` slicer; `33-05` the determinism block, the launch-knob argv and the re-grounded warp sentence; `33-06` the control-plane launch profile and warm-instance eligibility; `33-07` the equivalence predicate, the stop-identity oracle and `CAP-03`'s structural bar; `33-08` the allow-list derivation method and the three-field reproducibility key; `33-09` `runReproducible()` and the two optional `vice_run_until` arguments; `33-10` the real release captured twice, the derivation on it, and the memspace refusal; `33-11` the three remaining observed-red controls and the `probeReady` re-check; `33-12` the verdict, its downstream binding and the folded-todo ledger. The two halves run concurrently: `33-04` / `33-07` / `33-08` (the emulator-free capture substrate) are independent of the stop, and `33-01` lands before every measuring plan by construction.
 
 Plans:
+**Wave 1**
+
 - [ ] 33-01-PLAN.md — GATE-01: the pre-committed go/degrade/no-go decision rules, schema and evidence conventions
 - [ ] 33-02-PLAN.md — reconcile the three falsified decisions; repair one root cause of the known-red suite baseline
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 33-03-PLAN.md — CAP-04's opening measurement: the autostarted anchor-counted sequence, plus the wall-clock and warp-bracket controls red
 - [ ] 33-04-PLAN.md — CAP-01: the strict `.vsf` module-table walk and `C64MEM` slice, with its refusal fixtures and skill route
 - [ ] 33-05-PLAN.md — REPRO-01/REPRO-05: the stock determinism block, `-console`/`-warp` argv, and the re-grounded warp sentence
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 33-06-PLAN.md — REPRO-05: the additive acquire `profile` and the warm-instance eligibility rule
 - [ ] 33-07-PLAN.md — CAP-02/CAP-03/REPRO-03: the equivalence predicate, the stop-identity oracle, and the structural bar
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 33-08-PLAN.md — REPRO-04/CAP-02: the N>=3 allow-list derivation under a voiding cap, and the three-field reproducibility key
 - [ ] 33-09-PLAN.md — REPRO-02/REPRO-03: `runReproducible()` behind one optional argument, refusing without a frame anchor
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 33-10-PLAN.md — CAP-04: a real release captured twice, the derivation on it, and the memspace assertion observed refusing
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 33-11-PLAN.md — the three remaining observed-red controls, and `probeReady` re-checked under warp and console
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 33-12-PLAN.md — GATE-01: the recorded verdict, its binding on Phases 34-38, and the folded-todo ledger
 
 Notes:
@@ -1044,7 +1064,6 @@ predicate matches `\bbinPath\b`, so a host-tool executor spawning **Ghidra** is
 counted as an *emulator* spawn site; and `hostpath-consumers.test.ts`'s
 non-vacuity floor is pinned over the `anno-*` prefix, so a new `ghidra-*` /
 `dxa-*` family sits outside its scan entirely.
-
 
 ## Progress
 

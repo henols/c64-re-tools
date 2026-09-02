@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
-current_phase_name: The Reproducible-Run Protocol and the Capture Substrate
+current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: planning
-stopped_at: Phase 33 context gathered
-last_updated: "2026-09-02T13:44:46.928Z"
+stopped_at: Phase 33 planned — 12 plans in 7 waves
+last_updated: "2026-09-02T16:24:39.410Z"
 last_activity: 2026-09-02
-last_activity_desc: "Phase 33 context captured: 29 decisions across gate rules, red controls, run-protocol surface and capture substrate"
-state_head: 71ba5f772387e25d28b9dd13c1a2c70bd4d99aea
+last_activity_desc: "Phase 33 planned: 12 plans in 7 waves, 30 tasks, 70 verify commands; 10/10 requirements and 29/29 decisions covered"
+state_head: f7434fc26809dc4cb2d54db30ff25435fe1c5567
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 12
   completed_plans: 0
   percent: 0
 ---
@@ -176,10 +176,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — not started
-Plan: 0 of 0 executed (phase not yet planned)
-Status: Roadmap approved. 6 phases (33-38), 43 requirements, all mapped, 0 unmapped. Ready for `/gsd-discuss-phase 33` or `/gsd-plan-phase 33`.
-Last activity: 2026-09-02 — Milestone v0.8.0 roadmap created: 6 phases (33-38), 43/43 requirements mapped
+Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — READY TO EXECUTE
+Plan: 0 of 12 executed
+Status: Planned. 12 plans in 7 waves (30 tasks, 70 verify commands); 10/10 requirements and 29/29 CONTEXT decisions covered; plan-checker clean at 0 blockers. Wave 1 plan 33-01 is `autonomous: false` and opens with a blocking `checkpoint:decision` on the GATE-01 rule text. Ready for `/gsd-execute-phase 33`.
+Last activity: 2026-09-02 — Phase 33 planned: research, pattern map and validation strategy written; 12 plans created and revised twice against the plan-checker
 
 ## Performance Metrics
 
