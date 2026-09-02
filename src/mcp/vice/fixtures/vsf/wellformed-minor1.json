@@ -1,0 +1,9 @@
+{
+  "capturedFrom": "synthetic:make-fixtures.mjs",
+  "viceVersion": "3.9.0.0 (layout modelled on the measured 3.9 snapshot, not captured from it)",
+  "capturedAt": "2026-09-02T19:13:06.531Z",
+  "command": "node src/mcp/vice/fixtures/vsf/make-fixtures.mjs",
+  "synthetic": true,
+  "fileBytes": 65690,
+  "note": "A well-formed snapshot with a MAINCPU module, a C64MEM module at module minor 1 whose body is exactly 65555 bytes (4-byte port prefix + 65536 RAM + 3-byte suffix + 12 bytes of minor-1 fields), and a trailing GLUE module, with the strict module-table walk ending exactly at the file length. RAM byte i is (i * 7 + 13) & 0xff, so the first four RAM bytes are 13,20,27,34 and cannot be confused with the port prefix 231,47,0,0. Port suffix is data_out=39, data_read=55, dir_read=47, matching the measured live reading."
+}
