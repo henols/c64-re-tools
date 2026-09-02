@@ -20,6 +20,7 @@ import {
   brokerJsonPath,
   readBrokerLiveness,
   openBrokerControl,
+  acquireOverControlPlane,
   classifyConnectHost,
   resolveControlTarget,
   CONTROL_CONNECT_TIMEOUT_MS,
@@ -41,6 +42,8 @@ import {
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
 } from "./broker-control.mts";
+// Phase 33, plan 33-06 (D-15): the profile shape from its one definition.
+import type { LaunchProfile } from "./broker-launch.mts";
 // Namespace import, read-only, for the export-list closure test below --
 // the whole point is comparing the module's OWN live key set against an
 // expected list, so this must be the real module object, not a destructured
@@ -300,7 +303,10 @@ function startRawSocketServer(): Promise<{ server: Server; port: number; sockets
 }
 
 interface FullBrokerDeps {
-  onAcquire?: (id: string) => Promise<AcquireOutcome>;
+  /** Phase 33, plan 33-06: widened with the same OPTIONAL second parameter
+   * StartControlListenerOptions.onAcquire took, so a test can observe the
+   * profile that ARRIVED on the host side as well as the bytes that left. */
+  onAcquire?: (id: string, profile?: LaunchProfile) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
   onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
@@ -1302,5 +1308,150 @@ test("structural: none of the six retiring D-12 mechanisms exists anywhere in th
     [],
     `a retiring D-12 mechanism identifier reappeared in non-test source: ${JSON.stringify(offenders)} -- ` +
       "keeping any one of the six retiring mechanisms means two competing authorities on whether a lease is alive."
+  );
+});
+
+// =============================================================================
+// Phase 33, plan 33-06 (REPRO-05, D-15): the profile reaches the broker from
+// BOTH acquire write sites.
+//
+// This file's client has TWO independent acquire writers -- the raw
+// `socket.write` inside acquireOverControlPlane() and the `sendAndAwaitLine`
+// inside openBrokerControl()'s session. A field added to only one of them
+// silently never arrives for callers on the other path, which is the same
+// defect class as a tool argument that is accepted and dropped. Both are
+// asserted here, on the BYTES that actually left the client (`rawLines`) and
+// on the value that arrived at the host's own onAcquire.
+//
+// The second property, asserted separately for both sites: a profile-less
+// acquire's wire line carries NO `profile` key at all. That is what makes an
+// absent profile byte-identical to the pre-33-06 line rather than merely
+// equivalent in meaning.
+// =============================================================================
+
+const ALWAYS_GRANT = async (): Promise<AcquireOutcome> => ({
+  ok: true,
+  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" },
+});
+
+test("acquire profile (33-06, write site 1 of 2): acquireOverControlPlane() puts {warp:true} on the wire and it arrives at the broker's onAcquire", async () => {
+  const received: Array<LaunchProfile | undefined> = [];
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: async (_id: string, profile?: LaunchProfile) => {
+      received.push(profile);
+      return ALWAYS_GRANT();
+    },
+  });
+  try {
+    const handle = await acquireOverControlPlane(dir, { profile: { warp: true } });
+    handle.release();
+    const acquireLine = rawLines.find((l) => l.op === "acquire");
+    assert.ok(acquireLine, `an acquire line must have been written; saw ${JSON.stringify(rawLines)}`);
+    assert.deepEqual(acquireLine!.profile, { warp: true }, "the raw BYTES leaving the client must carry the profile");
+    assert.deepEqual(received[0], { warp: true }, "and it must arrive at the broker's own onAcquire");
+  } finally {
+    server.close();
+  }
+});
+
+test("acquire profile (33-06, write site 1 of 2, edge: empty): acquireOverControlPlane() with no profile writes a line with NO profile key -- byte-identical to the pre-33-06 line", async () => {
+  const received: Array<LaunchProfile | undefined> = [];
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: async (_id: string, profile?: LaunchProfile) => {
+      received.push(profile);
+      return ALWAYS_GRANT();
+    },
+  });
+  try {
+    const handle = await acquireOverControlPlane(dir);
+    handle.release();
+    const acquireLine = rawLines.find((l) => l.op === "acquire");
+    assert.ok(acquireLine);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(acquireLine!, "profile"),
+      false,
+      "the key must be OMITTED, not written as null or {} -- this is what keeps a profile-less acquire's wire line byte-identical",
+    );
+    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "op", "token"], "the profile-less line's key set must be exactly the three keys it always was");
+    assert.equal(received[0], undefined);
+  } finally {
+    server.close();
+  }
+});
+
+test("acquire profile (33-06, write site 2 of 2): openBrokerControl().acquire({profile}) puts {warp:true, headless:true} on the wire and it arrives at the broker's onAcquire", async () => {
+  const received: Array<LaunchProfile | undefined> = [];
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: async (_id: string, profile?: LaunchProfile) => {
+      received.push(profile);
+      return ALWAYS_GRANT();
+    },
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true, `openBrokerControl must succeed: ${JSON.stringify(opened)}`);
+    if (!opened.ok) return;
+    const acquired = await opened.session.acquire({ profile: { warp: true, headless: true } });
+    assert.equal(acquired.ok, true, `acquire must succeed: ${JSON.stringify(acquired)}`);
+    const acquireLine = rawLines.find((l) => l.op === "acquire");
+    assert.ok(acquireLine, `an acquire line must have been written; saw ${JSON.stringify(rawLines)}`);
+    assert.deepEqual(acquireLine!.profile, { warp: true, headless: true });
+    assert.deepEqual(received[0], { warp: true, headless: true });
+    await opened.session.release();
+  } finally {
+    server.close();
+  }
+});
+
+test("acquire profile (33-06, write site 2 of 2, edge: empty): openBrokerControl().acquire() with no profile writes a line with NO profile key, and a timeout-only options object does not introduce one", async () => {
+  const received: Array<LaunchProfile | undefined> = [];
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: async (_id: string, profile?: LaunchProfile) => {
+      received.push(profile);
+      return ALWAYS_GRANT();
+    },
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    // A deadline-only options object is the shape every pre-33-06 caller
+    // passes -- it must not start writing a profile key.
+    const acquired = await opened.session.acquire({ timeoutMs: 3000 });
+    assert.equal(acquired.ok, true, `acquire must succeed: ${JSON.stringify(acquired)}`);
+    const acquireLine = rawLines.find((l) => l.op === "acquire");
+    assert.ok(acquireLine);
+    assert.equal(Object.prototype.hasOwnProperty.call(acquireLine!, "profile"), false);
+    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "op", "token"]);
+    assert.equal(received[0], undefined);
+    await opened.session.release();
+  } finally {
+    server.close();
+  }
+});
+
+test("structural (33-06): BOTH acquire write sites in vice-broker-client.ts include the profile fragment -- a field added to only one would silently never arrive for callers on the other path", () => {
+  const source = readFileSync(join(HERE, "vice-broker-client.ts"), "utf8");
+  // The two writers are structurally different (a raw socket.write of a
+  // JSON.stringify, and a sendAndAwaitLine payload object), so they are
+  // located by their shared `op: "acquire"` literal and each checked for the
+  // shared fragment helper. Counting is what makes "both" an assertion
+  // rather than "at least one".
+  const acquireWriteSites = [...source.matchAll(/op: "acquire"[^\n]*/g)].map((m) => m[0]);
+  assert.equal(acquireWriteSites.length, 2, `expected exactly two acquire write sites; found ${acquireWriteSites.length}: ${JSON.stringify(acquireWriteSites)}`);
+  for (const site of acquireWriteSites) {
+    assert.match(
+      site,
+      /acquireProfileFragment\(/,
+      `every acquire write site must spread the shared profile fragment; this one does not: ${site}`,
+    );
+  }
+  // And the fragment itself must be the one place the omit-when-absent
+  // decision is made -- a second inline `profile:` spelling at a write site
+  // would be a second copy of that decision.
+  assert.equal(
+    [...source.matchAll(/function acquireProfileFragment\(/g)].length,
+    1,
+    "acquireProfileFragment() must be declared exactly once -- it is the single decision site for whether the key appears at all",
   );
 });

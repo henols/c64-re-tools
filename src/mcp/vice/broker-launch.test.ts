@@ -2444,3 +2444,105 @@ test("buildViceArgs (33-05, T-33-04): VICE_ARGS still short-circuits ahead of BO
   assert.deepEqual(forkArgs, ["/bin/sleep", "600"]);
   assert.ok(!stockArgs.includes("-console") && !stockArgs.includes("-warp"), "no profile flag may leak past the VICE_ARGS short-circuit");
 });
+
+// ---------------------------------------------------------------------------
+// Phase 33, plan 33-06 (T-33-04): the anti-smuggling assertion, made
+// ELEMENT-WISE rather than by inspecting the whole array against one expected
+// value.
+//
+// The whole-argv assertions elsewhere in this file already pin what the stock
+// branch returns TODAY. This one pins a different, stronger property that
+// survives future additions to the block: no argv element is EVER derived
+// from a `profile` VALUE. `profile` maps to exactly two literal flag tokens
+// and to nothing else -- there is no `extraArgs`, no passthrough string, and
+// no place a caller-supplied value can land. `VICE_ARGS` remains the single
+// deliberate operator-only whole-argv override.
+//
+// If a future plan adds a legitimate stock flag, it belongs in the allow-list
+// below. If a future plan makes an argv element a FUNCTION of a profile
+// value, this test reds -- which is the point.
+// ---------------------------------------------------------------------------
+
+/** Every literal token the stock branch is permitted to emit. Built from the
+ * exported determinism block plus the fixed flags, so the block cannot drift
+ * away from this list; the ip4:// address string is the ONE computed element
+ * and is matched by shape below rather than listed here. */
+const STOCK_LITERAL_ARGV_TOKENS: ReadonlySet<string> = new Set([
+  "-default",
+  "-console",
+  "-warp",
+  "-drive8type",
+  "1541",
+  ...STOCK_DETERMINISM_FLAGS,
+  "-binarymonitor",
+  "-binarymonitoraddress",
+  "-remotemonitor",
+  "-remotemonitoraddress",
+]);
+
+test("buildViceArgs (33-06, T-33-04): with {warp:true, headless:true} every returned element is either a literal stock flag token or the ip4:// address string -- no argv element is ever derived from a profile VALUE", () => {
+  const args = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "", profile: { warp: true, headless: true } });
+
+  // Element-wise, with the offending element named -- a deepEqual against a
+  // whole expected array would fail for an ordinary flag addition too and so
+  // would not distinguish "the argv changed" from "a profile value reached
+  // argv", which is the only failure this test is about.
+  for (const [i, element] of args.entries()) {
+    const isLiteral = STOCK_LITERAL_ARGV_TOKENS.has(element);
+    const isAddress = /^ip4:\/\/[^\s]+:\d+$/.test(element);
+    assert.ok(
+      isLiteral || isAddress,
+      `argv[${i}] = ${JSON.stringify(element)} is neither a literal stock flag token nor an ip4:// address. ` +
+        `A profile must map to fixed literal flags only (T-33-04); an element derived from a profile VALUE is an argv-injection surface. Full argv: ${JSON.stringify(args)}`,
+    );
+  }
+  // And the two knobs really did land -- otherwise the loop above would pass
+  // vacuously on an argv that ignored the profile entirely.
+  assert.ok(args.includes("-console"), "headless must still have produced -console");
+  assert.ok(args.includes("-warp"), "warp must still have produced -warp");
+  assert.equal(args.filter((a) => /^ip4:\/\//.test(a)).length, 1, "exactly one computed element -- the binmon bind address");
+});
+
+test("buildViceArgs (33-06, T-33-04): the same element-wise property holds with a SECOND (-remotemonitor) port requested, where two computed address strings exist", () => {
+  const args = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "", remoteMonitorPort: 6511, profile: { warp: true, headless: true } });
+  for (const [i, element] of args.entries()) {
+    assert.ok(
+      STOCK_LITERAL_ARGV_TOKENS.has(element) || /^ip4:\/\/[^\s]+:\d+$/.test(element),
+      `argv[${i}] = ${JSON.stringify(element)} is neither a literal stock flag token nor an ip4:// address; full argv: ${JSON.stringify(args)}`,
+    );
+  }
+  assert.equal(args.filter((a) => /^ip4:\/\//.test(a)).length, 2, "two computed elements -- the binmon and text-monitor bind addresses");
+});
+
+test("buildViceArgs (33-06, T-33-04): a profile carrying a STRING value cannot reach argv -- the type forbids it, and even an unsound cast produces no element carrying the string", () => {
+  // The wire boundary refuses this shape outright (broker-control.mts's
+  // normaliseLaunchProfile(), asserted in broker-control.test.ts). This case
+  // closes the route STRUCTURALLY one layer deeper: even if a malformed
+  // profile somehow reached the builder, there is no code path from a profile
+  // VALUE into an argv element, so the smuggled string appears nowhere.
+  const smuggled = "--attack-flag";
+  const args = buildViceArgs(6510, {
+    backend: "stock",
+    viceArgsEnv: "",
+    profile: { warp: smuggled } as unknown as { warp?: boolean; headless?: boolean },
+  });
+  assert.equal(args.includes(smuggled), false, "the smuggled string must not appear as an argv element");
+  assert.equal(
+    args.some((a) => a.includes(smuggled)),
+    false,
+    "and must not appear as a SUBSTRING of any argv element either -- no interpolation site exists for a profile value",
+  );
+  for (const [i, element] of args.entries()) {
+    assert.ok(
+      STOCK_LITERAL_ARGV_TOKENS.has(element) || /^ip4:\/\/[^\s]+:\d+$/.test(element),
+      `argv[${i}] = ${JSON.stringify(element)} escaped the literal-token allow-list under a smuggled profile value`,
+    );
+  }
+  // A truthy non-boolean does still switch the flag on (`profile?.warp` is a
+  // truthiness test, deliberately -- it is not this function's job to
+  // re-validate a shape the boundary already refused, and re-deriving that
+  // check here would create the second narrowing site 33-06 exists to avoid).
+  // Recorded as an observation, not a complaint: the flag is a fixed literal
+  // either way, so the smuggled VALUE is still unreachable.
+  assert.ok(args.includes("-warp"), "a truthy value switches the fixed literal flag on; the value itself remains unreachable");
+});

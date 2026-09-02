@@ -47,6 +47,12 @@ import {
 // actually enforces C7's prohibition, and it passes trivially by having
 // nothing to grep for.
 import { REQUEST_ID_PATTERN, isValidRequestId } from "./vice-broker-client.ts";
+// Phase 33, plan 33-06: the restart-tolerance case at the foot of this file
+// checks a revived, profile-less record against the REAL profileEligible()
+// out of the built artifact, so it needs the same `build()` idiom every other
+// file that tests emitted output uses. This is the only test in this file
+// that touches the build step.
+import { build } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -311,4 +317,82 @@ test("structural: no broker module hand-rolls a second copy of the request-id pa
     const text = readFileSync(join(HERE, rel), "utf8");
     assert.doesNotMatch(text, HAND_ROLLED_PATTERN, `${rel} must not hand-roll a copy of REQUEST_ID_PATTERN`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 33, plan 33-06 (REPRO-05, D-16, T-33-25): InstanceRecord.profile and
+// RESTART TOLERANCE.
+//
+// The case that matters is not the happy one. A broker restarted mid-phase
+// reads state-directory records SERIALISED BEFORE this field existed, so the
+// property that has to hold is: a record with no `profile` key at all is
+// still a valid InstanceRecord, and is treated as profile-less -- which IS
+// the warm floor's behaviour today. That degrades an older record to today's
+// semantics rather than to an error, and it is pinned here rather than left
+// implicit (the threat register accepts T-33-25 on exactly that basis).
+// ---------------------------------------------------------------------------
+
+test("InstanceRecord.profile (33-06): absent by default, and accepts the documented warp/headless shape with no default value of its own", () => {
+  const instance = makeInstance();
+  assert.equal(instance.profile, undefined, "a freshly constructed record carries no profile by default -- never `{}`, never a default");
+  assert.equal(Object.prototype.hasOwnProperty.call(instance, "profile"), false, "and carries no `profile` KEY at all, which is what 'absent means profile-less' requires");
+
+  instance.profile = { warp: true, headless: true };
+  assert.deepEqual(instance.profile, { warp: true, headless: true });
+});
+
+test("_snapshotState (33-06): profile survives the snapshot's deep copy, and mutating the copy does not reach live broker state", () => {
+  const state = createBrokerState();
+  state.instances.set(6600, makeInstance({ port: 6600, profile: { warp: true } }));
+  const snapshot = _snapshotState(state);
+  assert.deepEqual(snapshot.instances[0]!.profile, { warp: true }, "profile must survive the copy");
+
+  snapshot.instances[0]!.profile!.warp = false;
+  assert.deepEqual(state.instances.get(6600)!.profile, { warp: true }, "profile is the SECOND nested object on a record after viceArgs -- a shallow spread would hand a caller a reference into live state");
+  assert.deepEqual(_snapshotState(state).instances[0]!.profile, { warp: true });
+});
+
+test("_snapshotState (33-06): a profile-less record's snapshot carries no `profile` key -- the copy must not invent one", () => {
+  const state = createBrokerState();
+  state.instances.set(6600, makeInstance({ port: 6600 }));
+  const snapshot = _snapshotState(state);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(snapshot.instances[0]!, "profile"),
+    false,
+    "a snapshot must not add a `profile: undefined` key the record itself does not carry",
+  );
+});
+
+test("InstanceRecord.profile (33-06, T-33-25, restart tolerance): a record SERIALISED WITHOUT a profile key round-trips to a valid InstanceRecord and is treated as profile-less by profileEligible -- the case a broker restarted mid-phase actually reads", async () => {
+  // Serialise the way a pre-33-06 broker would have: build the record, strip
+  // the field entirely (not set it to undefined -- the key must be genuinely
+  // ABSENT, which is what an older writer produced), then round-trip through
+  // JSON exactly as a state-directory read would.
+  const preFieldRecord = makeInstance({ port: 6600, pid: 4242 });
+  const serialised = JSON.stringify(preFieldRecord);
+  assert.equal(serialised.includes('"profile"'), false, "this test's own precondition: the serialised form must carry no profile key at all");
+
+  const revived = JSON.parse(serialised) as InstanceRecord;
+  // Still a valid InstanceRecord: every REQUIRED field survived, and the
+  // optional one is simply absent.
+  assert.equal(revived.port, 6600);
+  // This file's makeInstance() helper defaults to "launching" -- asserted
+  // against the fixture's own value rather than a hardcoded one, so this
+  // case is about the profile field and not about the helper's defaults.
+  assert.equal(revived.state, preFieldRecord.state);
+  assert.equal(revived.pid, 4242);
+  assert.equal(revived.expectedIdentity, "x64sc");
+  assert.deepEqual(revived.viceArgs, preFieldRecord.viceArgs);
+  assert.equal(Object.prototype.hasOwnProperty.call(revived, "profile"), false);
+
+  // And the eligibility rule -- read off the SAME built artifact production
+  // uses, never a local reimplementation -- treats it as profile-less.
+  build();
+  const { profileEligible } = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
+    profileEligible: (record: InstanceRecord, requested?: { warp?: boolean; headless?: boolean }) => boolean;
+  };
+  assert.equal(profileEligible(revived), true, "an older, profile-less record must remain eligible for a profile-less acquire -- today's warm-floor behaviour, not an error");
+  assert.equal(profileEligible(revived, {}), true, "and for an explicit empty profile");
+  assert.equal(profileEligible(revived, { warp: false, headless: false }), true, "and for a both-false profile");
+  assert.equal(profileEligible(revived, { warp: true }), false, "but NOT for a warp request -- it was not launched warped and cannot be retro-warped");
 });
