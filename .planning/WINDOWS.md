@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 23
+open_count: 24
 waived_count: 12
 fixed_count: 8
-total_count: 43
-last_updated: 2026-09-02T19:03:33.398Z
+total_count: 44
+last_updated: 2026-09-02T19:32:03.207Z
 ---
 
 # Broken Windows Ledger
@@ -58,6 +58,7 @@ last_updated: 2026-09-02T19:03:33.398Z
 | 41 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-02-PLAN.md |  | 33-02 Task 2's first automated verify greps the WHOLE of STATE.md for the two phase-32-review todo stems, but both stems legitimately appear in the historical '### Acknowledged at the v0.7.0 close' table (lines ~1474-1475) and its prose (~1488-1489); the command is unsatisfiable without deleting milestone-close history. Ran the section-and-table-cell-scoped equivalent instead, mirroring docs-deferred-ledger.test.ts's own stemHasOwnTableCell semantics. | open |  | 2026-09-02T17:56:38.934Z |  |
 | 42 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-wallclock-control.md |  | WARP_BRACKET_CONTROL: red was reached by region overshoot, not by the spurious timeout ROADMAP success criterion 5 names; the timeout form was not observed (ACCEPTED LIMIT 1) | open |  | 2026-09-02T19:03:23.913Z |  |
 | 43 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-autostart-sequencing.md |  | AUTOSTART_FRAME_EXACT: not-achieved — a frame-anchored post-load stop on danish.d64 reaches 66 differing addresses at jitter 4000, OVER D-22's committed cap of 64; 33-10 must record its jitters and must not retry until the allow-list fits | open |  | 2026-09-02T19:03:33.398Z |  |
+| 44 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-04-slicer-substrate.md |  | SLICER: gate input not emitted by 33-04 -- SCHEMA.md 2.4 requires capture-predicate.test.ts and capture-seam.test.ts transcripts too, and neither file exists yet; 33-07 owns 33-slicer-validation.md and must emit the line | open |  | 2026-09-02T19:32:03.207Z |  |
 
 ````json
 [
@@ -575,6 +576,18 @@ last_updated: 2026-09-02T19:03:33.398Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-02T19:03:33.398Z",
+    "resolved_at": null
+  },
+  {
+    "id": 44,
+    "kind": "deviation",
+    "phase": "33",
+    "file": ".planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-04-slicer-substrate.md",
+    "line": null,
+    "description": "SLICER: gate input not emitted by 33-04 -- SCHEMA.md 2.4 requires capture-predicate.test.ts and capture-seam.test.ts transcripts too, and neither file exists yet; 33-07 owns 33-slicer-validation.md and must emit the line",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T19:32:03.207Z",
     "resolved_at": null
   }
 ]
