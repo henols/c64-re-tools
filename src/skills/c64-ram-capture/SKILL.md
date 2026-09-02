@@ -17,6 +17,7 @@ and name the offending address when it is wrong.
 S=src/skills/c64-ram-capture/scripts    # from the repo root
 P=$S/d64-parse.mjs   A=$S/dump-artifacts.mjs
 C=$S/compare.mjs     L=$S/releases.mjs
+T=$S/derive-transients.mjs
 
 node $P directory --image path/to/image.d64      # what's on the disk (--json flags faked entries)
 node $P bam       --image path/to/image.d64      # disk name, DOS type, occupied track ranges
@@ -28,10 +29,13 @@ node $L list                                     # the valid --release ids
 node $C digest  dump.bin                         # sha256 + size, for the capture record
 node $C compare a.bin b.bin                      # classify every difference, exit 1 on FAIL
 node $C floor   a.bin b.bin c.bin                # drift floor across a capture set
+
+node $T derive --release <id> --out transients/<id>.json a.bin b.bin c.bin
+node $T check  --allow-list transients/<id>.json a.bin b.bin
 ```
 
-All three modules read only committed files and the JSON **you** wrote from your
-own `mcp__plugin_c64-re-tools_vice__*` calls. They contact nothing.
+Every module above reads only committed files and the JSON **you** wrote from
+your own `mcp__plugin_c64-re-tools_vice__*` calls. They contact nothing.
 
 **Prerequisite: a resolvable project root.** `scripts/project-paths.mjs` uses
 `C64RE_PROJECT_ROOT` when it is set, and otherwise walks up from the toolkit's
@@ -127,6 +131,17 @@ Read state before you resume, and resume exactly once at the end.
 
 Hold keys down across a gate by releasing them at the trigger checkpoint in
 step 3, never earlier.
+
+**Fill the record's reproducibility key in the same step.**
+`templates/capture-record.template.md`'s Identity table carries three rows that
+are one key, not three facts: `binary sha256`, `argv digest` and `seed`. The
+seed alone is **not** the key — measured, the same seed with a reordered argv
+yielded a 76-byte-different image, so two captures whose argv digests differ are
+different keys and must not be compared as a pair. A record with any of those
+three blank is not a reproducible capture and the void protocol applies. The
+table also carries a `capture route` row (`memory-read` or `snapshot`), and
+**on the snapshot route the `$D000-$DFFF` volatility rule below does not
+apply** — a difference there is a real difference.
 
 `assemble` runs the same assertions and writes nothing, so it is the cheap check
 on a set of chunks before committing them.
@@ -271,6 +286,48 @@ Capture the power-on image as the very first action against a fresh machine, the
 idle-capture twice more and run `floor` over the set. State the result as a
 floor, not a complete set — more captures can only widen it.
 
+## Derive a per-release transient allow-list
+
+`scripts/derive-transients.mjs` is the named, repeatable derivation. **The
+method is what carries forward between releases; no address set ever does.** Two
+verbs:
+
+```bash
+node $T derive --release <id> --out transients/<id>.json run1.bin run2.bin run3.bin
+node $T check  --allow-list transients/<id>.json runA.bin runB.bin
+```
+
+`derive` takes **N ≥ 3** runs of the same release under the same protocol at the
+same stop and writes the **union of addresses differing across every pairwise
+comparison** — one entry per address, carrying which pairings it differed in,
+the distinct bytes seen, and an empty attribution line for you to fill. Fewer
+than three images is refused naming the count and the minimum; an image that is
+not exactly 65536 bytes is refused naming the path and the length. It prints
+`TRANSIENT_COUNT: <n>` at column 0, so a measurement gets transcribed rather
+than paraphrased.
+
+**Over the cap of 64 addresses the derivation is VOID:** non-zero exit, **no
+artifact written**, and the message says what the overflow means — the stop is
+not frame-exact. That is a fact to record, not a threshold to raise. `--cap`
+only ever *narrows*; a value above 64 is refused by name, and the union is never
+truncated to fit, because a truncated list makes every later comparison pass on
+bytes nobody vetted. Overflow is a **measured** outcome: 0 differing addresses
+at a frame-exact `READY` stop, 66 at a frame-anchored autostarted stop at
+jitter 4000 ms, 300 at a wall-clock autostarted stop on a real release, 1242 at
+a wall-clock `READY` stop with the determinism block applied.
+
+Re-deriving over an existing artifact is **refused without `--force`**, with the
+no-inheritance rule in the message: an inherited list cannot be distinguished
+afterwards from an honestly derived one.
+
+`check` re-checks one pair against an already-committed derivation without
+re-deriving it, printing `CHECK_VERDICT: equivalent | not-equivalent` and exiting
+1 when not equivalent. Note what it does **not** carry: no address range is a
+volatile span, and there is no bit-count tolerance at any address — a one-bit
+difference outside the list fails. Those two rules belong to `compare.mjs` and
+are deliberately not inherited. `src/skills/c64-ram-capture/transients/README.md`
+holds the artifact shape, the committed method and the cap's reasoning.
+
 ## Slice the image out of a snapshot instead of transcribing it
 
 `scripts/vsf-slice.mjs` produces the flat 64K image by slicing a VICE `.vsf`
@@ -355,7 +412,9 @@ split: the workflow fits in one file, which is the right call when it does.
 |---|---|
 | `scripts/compare.mjs` | Difference classification and the drift floor. Pure logic over captures you already have — `node $C` with no arguments prints the rules. |
 | `scripts/vsf-slice.mjs` | `slice` / `digest` — the flat 64K image sliced out of a `.vsf` snapshot with no transcription step. The layout lives in `vsf-slice.ts` on the MCP side; this wrapper resolves it and refuses by name when it cannot. Covered by `scripts/vsf-slice.test.mjs`. |
-| `templates/capture-record.template.md` | The per-capture record: identity, machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
+| `scripts/derive-transients.mjs` | `derive` / `check` — the per-release transient allow-list, derived from N ≥ 3 runs as the pairwise union, under a committed cap of 64 that **voids** rather than warns. Covered by `scripts/derive-transients.test.mjs`. |
+| `transients/README.md` | The committed derivation method, the artifact shape, the cap's reasoning with its four measured reference points, and the rule that no address set is inherited between releases. Its `.gitignore` refuses every image byte form. |
+| `templates/capture-record.template.md` | The per-capture record: identity including the three-row reproducibility key and the `capture route` row, machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
 | `scripts/d64-parse.mjs` | `.d64` directory, BAM, and `--json` fakery detection. Fixture-tested against both real images by `scripts/d64-parse.test.mjs`. |
 | `scripts/dump-artifacts.mjs` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |
 | `RELEASES.json.example` | A copyable release-registry shape — see `## Release registry shape` above. |

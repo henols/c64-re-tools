@@ -1,0 +1,38 @@
+# Why this file exists BEFORE the first derivation does.
+#
+# This directory holds the per-release transient allow-lists that
+# `../scripts/derive-transients.mjs derive` writes. It sits beside capture
+# output, and an operator will be writing to it mid-session with a shell full
+# of image paths, so it refuses every image byte form outright.
+#
+# The timing is the point (threat T-33-06). A directory that starts refusing
+# images AFTER the first capture lands has already had one commit's worth of
+# opportunity to leak one. So this file is committed before any derivation
+# exists rather than added the first time somebody notices a stray image.
+#
+# The derived allow-lists themselves are deliberately NOT ignored: they are
+# the committed artifacts this directory is for. Do not add a pattern here
+# that would refuse them.
+
+# Flat RAM captures and program images.
+*.bin
+*.prg
+*.p00
+*.raw
+
+# Disk and tape images.
+*.d64
+*.d71
+*.d81
+*.g64
+*.tap
+*.t64
+
+# Cartridge images and emulator snapshots.
+*.crt
+*.vsf
+
+# Archives, which is how an image arrives when it does not arrive as itself.
+*.zip
+*.gz
+*.7z
