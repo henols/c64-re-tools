@@ -211,7 +211,7 @@ function moduleSpecifiers(src: string): string[] {
   const code = codeOnly(src, true);
   return [...code.matchAll(/["']([^"'\n]*)["']/g)]
     .map((m) => m[1])
-    .filter((s) => /^(node:|\.{1,2}\/)/.test(s));
+    .filter((s) => /^node:/.test(s) || (s.includes("/") && !/\s/.test(s)));
 }
 
 test("neither module imports anything but node builtins -- no path-translation seam, and not each other", () => {
