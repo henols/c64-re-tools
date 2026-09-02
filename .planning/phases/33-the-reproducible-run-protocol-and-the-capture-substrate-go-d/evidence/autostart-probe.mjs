@@ -81,7 +81,7 @@
 // (evidence convention 1) -- transcripts are never reconstructed afterwards.
 // -----------------------------------------------------------------------------
 
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
@@ -466,6 +466,7 @@ async function launch({ warp = false, initbreak = false } = {}) {
   const port = await freePort();
   const argv = buildArgv(port, { warp, initbreak });
   const child = spawn(VICE_BIN, argv, { stdio: ["ignore", "pipe", "pipe"] });
+  LAUNCHED.add(child);
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (d) => {
@@ -495,6 +496,7 @@ async function launch({ warp = false, initbreak = false } = {}) {
       try {
         child.kill("SIGKILL");
       } catch {}
+      LAUNCHED.delete(child);
     },
   };
 }
@@ -700,7 +702,71 @@ function log(...parts) {
   process.stdout.write(`${parts.join(" ")}\n`);
 }
 
+/**
+ * D-11 IN CODE, not in shell discipline.
+ *
+ * Every live run in this phase must be taken with the VICE broker stopped and
+ * no other `x64sc` alive, because a live broker reddens the BACK-05 assertion
+ * deterministically and any concurrent emulator competes for the host
+ * scheduler -- which is what decides the halt moment, which is what decides
+ * the stop identity past the start of a disk load.
+ *
+ * This ran as a shell habit first and FAILED: five `-initbreak reset` runs
+ * threw before `closeRun()` and orphaned their emulators, which then sat
+ * halted in the monitor for sixteen minutes while later measurements were
+ * taken. Those measurements were voided and re-run. The guard belongs here, in
+ * the one place no invocation can forget it.
+ *
+ * `pgrep -x x64sc` (exact match), NOT `pgrep -af x64sc` -- the `-af` form
+ * matches the checking shell's own command line and always reports a false
+ * positive.
+ */
+function preflight() {
+  let broker = "unknown";
+  try {
+    broker = execFileSync("systemctl", ["--user", "is-active", "vice-broker"], { encoding: "utf8" }).trim();
+  } catch (err) {
+    broker = (err.stdout ?? "").trim() || "inactive";
+  }
+  let alive = "";
+  try {
+    alive = execFileSync("pgrep", ["-x", "x64sc"], { encoding: "utf8" }).trim();
+  } catch {
+    alive = ""; // pgrep exits 1 with no match
+  }
+  log(`PREFLIGHT_BROKER ${broker}`);
+  log(`PREFLIGHT_X64SC ${alive ? alive.split("\n").join(",") : "(none)"}`);
+  if (broker !== "inactive") {
+    throw new Error(`D-11 REFUSAL: vice-broker is "${broker}", expected "inactive". Measurement not taken.`);
+  }
+  if (alive) {
+    throw new Error(
+      `D-11 REFUSAL: ${alive.split("\n").length} other x64sc process(es) alive (${alive.split("\n").join(",")}). Measurement not taken.`,
+    );
+  }
+}
+
+// Every launched child is registered here so no throw can orphan one. The
+// orphan episode above is exactly what this exists for.
+const LAUNCHED = new Set();
+function reapAll() {
+  for (const child of LAUNCHED) {
+    try {
+      child.kill("SIGKILL");
+    } catch {}
+  }
+  LAUNCHED.clear();
+}
+process.on("exit", reapAll);
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    reapAll();
+    process.exit(130);
+  });
+}
+
 function banner(mode) {
+  preflight();
   log(`PROBE_MODE ${mode}`);
   log(`PROBE_DIR ${PROBE_DIR}`);
   log(`RELEASE ${RELEASE}`);
