@@ -138,9 +138,37 @@ rm -f "$ZIP" "$ZIP.sha256"
 note "building $ZIP from tracked files at HEAD ..."
 git archive --format=zip --prefix="${NAME}-${VERSION}/" -o "$ZIP" HEAD
 
-# Guard: the artifact must never contain node_modules or the deployment target.
-if unzip -l "$ZIP" | grep -qE '/(node_modules|tools)/'; then
-  fail "artifact unexpectedly contains node_modules/ or tools/ — check .gitignore / tracked files"
+# Guard: the artifact must never contain a dependency tree or the host-launcher
+# deployment target.
+#
+# BOTH HALVES ARE ANCHORED DIFFERENTLY, AND THAT IS THE POINT.
+#
+#   - `node_modules/` is forbidden AT ANY DEPTH. A vendored dependency tree is
+#     never legitimate in this artifact wherever it sits.
+#   - `tools/` is forbidden ONLY AT THE ARCHIVE ROOT, because that is what the
+#     name means here: `<project>/tools/` is the gitignored directory
+#     `install-resources.ts` deploys the host launcher scripts into. A
+#     directory called `tools` nested anywhere else is an ordinary directory.
+#
+# WHY THE SECOND ANCHOR EXISTS (2026-09-02). This guard used to match
+# `/(node_modules|tools)/` anywhere in the listing, which made it fire on
+# `.planning/phases/23-*/evidence/tools/` -- nine committed evidence files that
+# have nothing to do with the deployment target. `git archive HEAD` packs the
+# whole tracked tree including `.planning/`, so those files are in every
+# artifact, and the build step had been RED on every push since at least
+# 2026-08-29 with no version able to ship. A guard that cannot distinguish the
+# thing it protects against from an unrelated directory of the same name is a
+# guard that gets switched off; this one names what it found instead.
+#
+# Listing via `unzip -Z1` (zipinfo mode) gives one bare path per line, so the
+# patterns match PATHS rather than a column-formatted table.
+ARCHIVE_PATHS="$(unzip -Z1 "$ZIP")"
+LEAKED="$(printf '%s\n' "$ARCHIVE_PATHS" \
+  | grep -E "(^|/)node_modules/|^${NAME}-${VERSION}/tools/" || true)"
+if [ -n "$LEAKED" ]; then
+  echo "package: leaked paths:" >&2
+  printf '  %s\n' $LEAKED >&2
+  fail "artifact contains a node_modules/ tree or the tools/ deployment target — check .gitignore / tracked files"
 fi
 
 sha256sum "$ZIP" | awk -v f="$(basename "$ZIP")" '{print $1"  "f}' > "$ZIP.sha256"
