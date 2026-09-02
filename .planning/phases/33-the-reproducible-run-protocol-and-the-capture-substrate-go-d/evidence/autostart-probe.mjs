@@ -929,9 +929,9 @@ async function runS2({ jitterMs, loadMs = 20000, target = 400, label = "s2" }) {
 
 // --- S3: arm while halted, BEFORE AUTOSTART ---------------------------------
 
-async function runS3({ jitterMs, target = 400, label = "s3", initbreak = false }) {
-  banner(`s3 label=${label} initbreak=${initbreak}`);
-  const run = await openRun({ jitterMs, initbreak, mode: "s3" });
+async function runS3({ jitterMs, target = 400, label = "s3", initbreak = false, warp = false }) {
+  banner(`s3 label=${label} initbreak=${initbreak} warp=${warp}`);
+  const run = await openRun({ jitterMs, initbreak, warp, mode: "s3" });
   const { monitor, ids } = run;
 
   const armed = await armAnchor(monitor, { temporary: false });
@@ -1065,7 +1065,88 @@ async function runControlB({ jitterMs = 0, bracketMs = 20000, target = 400, labe
   log(`VSF ${vsf ?? "(none)"}`);
 }
 
+// --- warp isolation ----------------------------------------------------------
+//
+// Does `-warp` accelerate emulated time on THIS build and THIS launch profile
+// at all? Asked without any autostart in the loop, because AUTOSTART manages
+// warp itself and would confound the answer. Free-run a recorded wall-clock
+// interval from the KERNAL READY prompt, then read the jiffy clock: the ratio
+// of emulated seconds to wall-clock seconds IS the warp factor.
+
+async function runWarpCheck({ warp, runMs = 5000, label }) {
+  banner(`warpcheck label=${label} warp=${warp}`);
+  const run = await openRun({ jitterMs: 0, warp, mode: "warpcheck" });
+  const { monitor } = run;
+  log(`FREE_RUN_MS ${runMs}`);
+  const t0 = Date.now();
+  await freeRun(monitor, runMs);
+  const elapsed = Date.now() - t0;
+  const ping = await monitor.send(Cmd.Ping, Buffer.alloc(0));
+  log(`PING err=0x${ping.errorCode.toString(16).padStart(2, "0")}`);
+  log(`WALLCLOCK_ELAPSED_MS ${elapsed}`);
+  const vsf = await closeRun(run, { snapshotName: `${label}.vsf` });
+  log(`VSF ${vsf ?? "(none)"}`);
+}
+
+// --- the wall-clock bracket, as an explicit region assertion -----------------
+//
+// The `controlB` mode below brackets an autostarted run and asks whether the
+// anchor still fires. MEASURED: it does, because AUTOSTART manages warp itself
+// during the load and `-warp` buys no material emulated time after it -- so
+// that instance of the control comes out `not-red` and says nothing about
+// wall-clock bracketing.
+//
+// This mode isolates the mechanism the control is actually about, with no
+// autostart in the loop: free-run a wall-clock interval, then assert the
+// machine landed in the emulated-time region a bracket CALIBRATED UNWARPED
+// expects. The jiffy clock is the region coordinate, and it is emulated time,
+// which is the thing a wall-clock bracket cannot see.
+
+async function runBracket({ warp, bracketMs, lo, hi, label }) {
+  banner(`bracket label=${label} warp=${warp}`);
+  const run = await openRun({ jitterMs: 0, warp, mode: "bracket" });
+  const { monitor } = run;
+  log(`BRACKET_BUDGET_MS ${bracketMs} (wall clock)`);
+  log(`BRACKET_EXPECTED_JIFFY_WINDOW ${lo}..${hi} (calibrated on an UNWARPED run)`);
+  const t0 = Date.now();
+  await freeRun(monitor, bracketMs);
+  const elapsed = Date.now() - t0;
+  const ping = await monitor.send(Cmd.Ping, Buffer.alloc(0));
+  log(`PING err=0x${ping.errorCode.toString(16).padStart(2, "0")}`);
+  log(`WALLCLOCK_ELAPSED_MS ${elapsed}`);
+  const vsf = await closeRun(run, { snapshotName: `${label}.vsf` });
+  if (!vsf) {
+    log(`BRACKET_REGION indeterminate (no snapshot)`);
+    return;
+  }
+  const { ram } = sliceC64Mem(fs.readFileSync(vsf));
+  const jiffies = (ram[0x00a0] << 16) | (ram[0x00a1] << 8) | ram[0x00a2];
+  log(`BRACKET_JIFFY_AT_END ${jiffies} (${(jiffies / 60).toFixed(2)} emulated seconds)`);
+  const inside = jiffies >= lo && jiffies <= hi;
+  log(`BRACKET_REGION ${inside ? "inside" : "OUTSIDE"} the expected window`);
+  log(`BRACKET_OVERSHOOT_FACTOR ${(jiffies / ((lo + hi) / 2)).toFixed(2)}x of the window centre`);
+  log(`VSF ${vsf}`);
+}
+
 // --- diff mode ---------------------------------------------------------------
+
+/**
+ * Print the KERNAL jiffy clock (`TI`) from each snapshot's RAM slice: `$00A0`
+ * MSB, `$00A1`, `$00A2` LSB, incremented 60 times per emulated second by the
+ * `$EA31` IRQ handler. It is therefore a direct, objective measure of how much
+ * EMULATED time a run consumed -- which is exactly the quantity a wall-clock
+ * bracket cannot see and warp multiplies.
+ */
+function runJiffy(paths) {
+  log(`PROBE_MODE jiffy`);
+  for (const p of paths) {
+    const { ram } = sliceC64Mem(fs.readFileSync(p));
+    const jiffies = (ram[0x00a0] << 16) | (ram[0x00a1] << 8) | ram[0x00a2];
+    log(`JIFFY ${path.basename(p)} raw=$${ram[0x00a0].toString(16).padStart(2, "0")}${ram[0x00a1]
+      .toString(16)
+      .padStart(2, "0")}${ram[0x00a2].toString(16).padStart(2, "0")} jiffies=${jiffies} emulated_seconds=${(jiffies / 60).toFixed(2)}`);
+  }
+}
 
 function runDiff(aPath, bPath) {
   log(`PROBE_MODE diff`);
@@ -1102,7 +1183,13 @@ async function main() {
       await runS2({ jitterMs, target, loadMs, label: label ?? `s2-j${jitterMs}` });
       break;
     case "s3":
-      await runS3({ jitterMs, target, label: label ?? `s3-j${jitterMs}`, initbreak: argv.includes("--initbreak") });
+      await runS3({
+        jitterMs,
+        target,
+        label: label ?? `s3-j${jitterMs}`,
+        initbreak: argv.includes("--initbreak"),
+        warp: argv.includes("--warp"),
+      });
       break;
     case "s4":
       await runS4({ jitterMs, loadMs, offset: Number(argValue(argv, "--offset", "200")), label: label ?? `s4-j${jitterMs}` });
@@ -1116,9 +1203,28 @@ async function main() {
     case "diff":
       runDiff(argv[1], argv[2]);
       break;
+    case "bracket":
+      await runBracket({
+        warp: argv.includes("--warp"),
+        bracketMs: Number(argValue(argv, "--bracket-ms", "10000")),
+        lo: Number(argValue(argv, "--expect-lo", "0")),
+        hi: Number(argValue(argv, "--expect-hi", "0")),
+        label: label ?? (argv.includes("--warp") ? "bracket-warp" : "bracket-plain"),
+      });
+      break;
+    case "warpcheck":
+      await runWarpCheck({
+        warp: argv.includes("--warp"),
+        runMs: Number(argValue(argv, "--run-ms", "5000")),
+        label: label ?? (argv.includes("--warp") ? "warpcheck-warp" : "warpcheck-plain"),
+      });
+      break;
+    case "jiffy":
+      runJiffy(argv.slice(1));
+      break;
     default:
       process.stderr.write(
-        "usage: autostart-probe.mjs <s1|s2|s3|s4|controlA|controlB|diff> [--jitter ms] [--target n] [--load-ms ms] [--wait-ms ms] [--bracket-ms ms] [--label name]\n",
+        "usage: autostart-probe.mjs <s1|s2|s3|s4|controlA|controlB|diff|jiffy> [--jitter ms] [--target n] [--load-ms ms] [--wait-ms ms] [--bracket-ms ms] [--label name]\n",
       );
       process.exitCode = 2;
   }
