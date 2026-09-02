@@ -5,8 +5,8 @@ milestone_name: Own the Annotation Store
 status: Awaiting next milestone
 stopped_at: Phase 32 complete — all phases complete
 last_updated: "2026-09-01T16:17:56.657Z"
-last_activity: 2026-09-01
-last_activity_desc: Milestone v0.7.0 completed and archived
+last_activity: 2026-09-02
+last_activity_desc: "Quick task 260902-ech: stripped unverified chat-artifact citations from docs/undocumented-opcodes-ghidra.md"
 state_head: 83112c1d3b402a86b26276d6fd08998c8de56710
 progress:
   total_phases: 6
@@ -944,6 +944,7 @@ forbidden from modifying anything under `src/`.
 | 260823-kf6 | Correct STATE.md's carried-forward ledger: QUAL-01/02/03 closed by PKG-02/03/04, plus DEBT-04's closure note | 2026-08-23 | 793d8bc, 8205ef9, 0bc005c, a2ea0a0 | passed (orchestrator re-read all three corrected sites — STATE.md's table, STATE.md's Deferred Items prose, REQUIREMENTS.md's DEBT-04 note — and confirmed they agree on one surviving open row (`UP-01`/`UP-02`); the derived `0 items` count, the `UP-01`/`UP-02` row and REQUIREMENTS.md's open `### Control-Plane Bind Follow-on` all preserved; `PKG-04` recorded as accepted risk, not narrowed. The one `npm test` failure (`audit-integrity.test.ts` T-12-04, a hard-coded `tech_debt` count of 3 against 4 audit files) independently confirmed pre-existing — introduced by `76f7b15`, the pre-task HEAD, and this task touched no audit file) | [260823-kf6-correct-state-md-s-carried-forward-ledge](./quick/260823-kf6-correct-state-md-s-carried-forward-ledge/) |
 | 260901-n24 | Bump the Node engine floor to >=24.0.0 (vice-mcp engines, CI node-version, all stated requirements) | 2026-09-01 | 42f83bc | — | — |
 | 260901-qzp | Erase the retired external analyser's name from the whole tree — ~20,200 occurrences across 612 files; retires the removal gate, the attribution chain and the fate-audit subsystem, preserving their non-subject coverage | 2026-09-01 | 09150c8 |  | [260901-qzp-purge-external-analyser-name-from-tree](./quick/260901-qzp-purge-external-analyser-name-from-tree/) |
+| 260902-ech | Strip the 6 unverified chat-artifact citations from `docs/undocumented-opcodes-ghidra.md` (5 carried `utm_source=chatgpt.com`; `[4]` pointed at a third-party VICE fork mirror) — 7 inline markers and 6 link definitions removed, 776 -> 766 lines, the author's own "not yet compiled" caveat preserved | 2026-09-02 | 6749c66 |  | [260902-ech-strip-unverifiable-chatgpt-artifact-cita](./quick/260902-ech-strip-unverifiable-chatgpt-artifact-cita/) |
 
 ### Blockers/Concerns
 

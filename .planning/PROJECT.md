@@ -973,7 +973,7 @@ should come sooner.
 **v0.8.0 — the two engines and automatic annotation**, once a corpus exists:
 v0.6.0's held Phases 24 and 26, carrying `DXA-01..03`, `GHID-01..05`,
 `OPC-01..03`, `AUTO-01..07` and `PROOF-01..03` unchanged. The SLEIGH source
-already exists in full — `docs/undocumented-opcodes-ghidra.md`, 776 lines, all
+already exists in full — `docs/undocumented-opcodes-ghidra.md`, 766 lines, all
 105 bytes, unstable instructions modelled as black-box userops and the
 `65c02.slaspec` collision already handled — so that work integrates and verifies
 rather than writes from scratch.

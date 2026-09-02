@@ -102,7 +102,7 @@ resolved computed jumps, self-modifying write targets — must come through
 (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), not addresses alone.
 
 **Where it agrees with settled scope.** The SLEIGH point is already owned: the
-extension source exists in full at `docs/undocumented-opcodes-ghidra.md` (776 lines,
+extension source exists in full at `docs/undocumented-opcodes-ghidra.md` (766 lines,
 all 105 bytes, unstable instructions modelled as black-box userops, `@include`
 layering written against the `65c02.slaspec` collision). `OPC-01..03` integrate and
 verify it; they do not write it. Sequenced **ahead of** the acceptance run, not after.
