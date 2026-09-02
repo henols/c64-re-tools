@@ -754,7 +754,7 @@ reconsidered.
   4. **A depacked flat 64K image comes out of a snapshot slice with no transcription step anywhere, and the equivalence predicate is proven able to fail.** The image is the `C64MEM` module body (4 bytes of port/PLA state, then 65536 bytes of RAM). A byte planted **outside** the enumerated transient allow-list fails the comparison, observed red; the allow-list is enumerated rather than range-shaped, under a committed size cap, and re-derived per release with the *method* carried forward rather than any address set; and the `$0000`/`$0001` 6510-port overlay is normalised **in code**, never in a reader's head.
   5. **A machine-readable go / degrade / no-go verdict is recorded against rules committed to git before any measurement exists, with no judgement step** — and it **cannot** return `could-not-run` for want of a capture, because its `go` inputs include the protocol's jitter-immunity and the seed's effect, both measurable before a corpus exists. The phase's opening measurement is the binary-monitor re-instrumentation probe on an **autostarted** real release with true drive emulation in the loop, with the wall-clock-anchoring negative control **observed red** (MEASURED to reproduce the original failure: same instruction, `LIN` 116 / 223 / 267) and the warp-invalidated wall-clock bracket observed timing out spuriously. A real release is captured twice and the pair satisfies criterion 4's predicate; a shortfall is a named **gate input**, never a silent omission. Warp and headless are **additive** launch knobs a run can request, not a whole-argv override, with `-default` still at index 0 ahead of `-binarymonitor`.
 
-**Plans**: 8/12 plans executed in 7 waves — `33-01` the pre-committed decision rules (nothing else, git order is the proof); `33-02` the research reconciliation and the suite-baseline repair; `33-03` the live autostart-sequencing probe with the wall-clock and warp-bracket controls; `33-04` the `.vsf` `C64MEM` slicer; `33-05` the determinism block, the launch-knob argv and the re-grounded warp sentence; `33-06` the control-plane launch profile and warm-instance eligibility; `33-07` the equivalence predicate, the stop-identity oracle and `CAP-03`'s structural bar; `33-08` the allow-list derivation method and the three-field reproducibility key; `33-09` `runReproducible()` and the two optional `vice_run_until` arguments; `33-10` the real release captured twice, the derivation on it, and the memspace refusal; `33-11` the three remaining observed-red controls and the `probeReady` re-check; `33-12` the verdict, its downstream binding and the folded-todo ledger. The two halves run concurrently: `33-04` / `33-07` / `33-08` (the emulator-free capture substrate) are independent of the stop, and `33-01` lands before every measuring plan by construction.
+**Plans**: 9/12 plans executed in 7 waves — `33-01` the pre-committed decision rules (nothing else, git order is the proof); `33-02` the research reconciliation and the suite-baseline repair; `33-03` the live autostart-sequencing probe with the wall-clock and warp-bracket controls; `33-04` the `.vsf` `C64MEM` slicer; `33-05` the determinism block, the launch-knob argv and the re-grounded warp sentence; `33-06` the control-plane launch profile and warm-instance eligibility; `33-07` the equivalence predicate, the stop-identity oracle and `CAP-03`'s structural bar; `33-08` the allow-list derivation method and the three-field reproducibility key; `33-09` `runReproducible()` and the two optional `vice_run_until` arguments; `33-10` the real release captured twice, the derivation on it, and the memspace refusal; `33-11` the three remaining observed-red controls and the `probeReady` re-check; `33-12` the verdict, its downstream binding and the folded-todo ledger. The two halves run concurrently: `33-04` / `33-07` / `33-08` (the emulator-free capture substrate) are independent of the stop, and `33-01` lands before every measuring plan by construction.
 
 Plans:
 **Wave 1**
@@ -776,7 +776,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 33-08-PLAN.md — REPRO-04/CAP-02: the N>=3 allow-list derivation under a voiding cap, and the three-field reproducibility key
-- [ ] 33-09-PLAN.md — REPRO-02/REPRO-03: `runReproducible()` behind one optional argument, refusing without a frame anchor
+- [x] 33-09-PLAN.md — REPRO-02/REPRO-03: `runReproducible()` behind one optional argument, refusing without a frame anchor
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -1113,7 +1113,7 @@ in a milestone archive.
 | 30. ACME Export and the Real-ACME Oracle | v0.7.0 | 6/6 | Complete | 2026-08-31 |
 | 31. Procedure Re-pointing | v0.7.0 | 4/4 | Complete | 2026-08-31 |
 | 32. The Deletion and the Grep Gate | v0.7.0 | 21/21 | Complete | 2026-09-01 |
-| 33. The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) | v0.8.0 | 8/12 | In Progress | - |
+| 33. The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) | v0.8.0 | 9/12 | In Progress | - |
 | 34. The Host-Tool Execution Seam | v0.8.0 | 0/0 | Not started | - |
 | 35. dxa, Vendored and Parsed | v0.8.0 | 0/0 | Not started | - |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 0/0 | Not started | - |
