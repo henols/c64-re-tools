@@ -227,6 +227,40 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
   let closureError = null;
   const STATIC_IMPORT_RE = /^\s*import\s[^;]*?from\s+"(\.\/[^"]+)"/gm;
   const DYNAMIC_IMPORT_RE = /import\s*\(\s*"(\.\/[^"]+)"\s*\)/g;
+  // A STATEMENT-LEVEL `import type ... from "./x"` is NOT a runtime edge and
+  // must not be walked (added 2026-09-02 by plan 33-09; the walk had been
+  // blind to the distinction since it was written).
+  //
+  // WHY, and why this is not a weakening of the gate: under
+  // `verbatimModuleSyntax` an `import type` statement erases COMPLETELY at
+  // compile time -- it emits nothing, resolves nothing, and the specifier
+  // never reaches a module loader. This tree already relies on exactly that
+  // property elsewhere and says so normatively: stock-handler.ts's header
+  // permits a type-only import of stock-dispatch.ts precisely because it
+  // "creates no runtime cycle even though stock-dispatch.ts imports this file
+  // at runtime". A module reachable ONLY through erased imports genuinely does
+  // not need to ship; one reachable through any VALUE import is still caught,
+  // because that import is still matched below.
+  //
+  // THE INCIDENT: plan 33-06 added `import type { LaunchProfile } from
+  // "./broker-launch.mts"` to vice-broker-client.ts -- correctly, so the
+  // launch-profile shape has ONE definition rather than a second local copy
+  // the host could not honour. That turned this walk red with no runtime
+  // impact whatever, and Phase 3's Rule 2 remedy (add the module to `files[]`,
+  // see 6801cf5, 897faf6) is NOT AVAILABLE for this class: the host-bound
+  // `.mts` broker family imports its siblings by their COMPILED `.mjs`
+  // specifiers (`./broker-state.mjs`, `./broker-epoch.mjs`,
+  // `./backend-detect.mjs`), and those paths exist only inside `resources/`,
+  // never at the package root. Listing broker-launch.mts therefore cascades
+  // into three more entries that cannot be satisfied by any file that exists.
+  // (container-guard.mts is listable only because it has NO local imports at
+  // all.) So the erased-import distinction is the repair, and adding the
+  // module to `files[]` is the one that would have been wrong.
+  //
+  // Deliberately statement-level only. `import { type Foo, Bar } from "./x"`
+  // -- the INLINE type modifier -- still emits an import statement under
+  // `verbatimModuleSyntax`, so it IS a runtime edge and IS still walked.
+  const TYPE_ONLY_IMPORT_RE = /^\s*import\s+type\s/;
   while (stack.length && !closureError) {
     const f = stack.pop();
     if (seen.has(f)) continue;
@@ -238,7 +272,9 @@ for (const [file, req] of REQUIRED_DERIVED_MODULES) {
       continue;
     }
     const deps = [
-      ...[...src.matchAll(STATIC_IMPORT_RE)].map((m) => m[1]),
+      ...[...src.matchAll(STATIC_IMPORT_RE)]
+        .filter((m) => !TYPE_ONLY_IMPORT_RE.test(m[0]))
+        .map((m) => m[1]),
       ...[...src.matchAll(DYNAMIC_IMPORT_RE)].map((m) => m[1]),
     ];
     for (const rawDep of deps) {
