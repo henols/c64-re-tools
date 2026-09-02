@@ -1253,32 +1253,42 @@ the fact GATE-01 must hear.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All five questions were absorbed into the twelve plans of this phase on 2026-09-02. Each carries a
+dated **Resolution** bullet naming the plan that now owns it. No measured finding, transcript or
+`## Decisions This Research Falsifies` entry was changed by this pass — the resolutions are
+pointers, not new conclusions.
 
 1. **Will `C0_CAPTURE_PAIR` actually be `not-obtained`?**
    - What we know: the corpus is on disk (M7), `AUTOSTART` works on it, `Drive8TrueEmulation` is 1, and `$EA31` is a live anchor on `danish` after its load. `D-04` pre-maps a `not-obtained` narrowing that costs Phases 35/36/37/38 their real-image exercise.
    - What's unclear: whether a *frame-exact* autostarted stop is achievable in this phase (Q2 below). `not-obtained` is now much less likely than `D-04` assumes, but `fail` has become correspondingly more likely.
    - Recommendation: keep `D-04`'s pre-mapping exactly as written — it is a pre-commitment and its value comes from being written before the answer is known. But do **not** let the plan treat `not-obtained` as the expected branch; the corpus exists.
+   - **Resolution (2026-09-02, absorbed by `33-10`):** `D-04`'s pre-mapping is carried verbatim and `not-obtained` is not the expected branch. `33-10` routes the `C0_CAPTURE_PAIR` verdict through `GATE-01` as a real three-way decision — `pass` / `fail` / `not-obtained` — with a `git rev-list --count` order proof that the pre-commitment was written first, and no abstain construction. `33-01` records the same three branches as the pre-commitment side. A `not-obtained` verdict is therefore reachable but never assumed.
 
 2. **What is the correct anchor-counted sequence for an autostarted release?**
    - What we know: `AUTOSTART` power-cycles (`autostart.c:1437`). A wall-clock-anchored stop after it is measured red (M6). One attempt at *arm-while-halted → `RESET 1` → `AUTOSTART` → count hits* produced no usable stop (`PC=$FD75`, `LIN=0`, `hits=0`).
    - What's unclear: whether a pre-armed stopping checkpoint survives `AUTOSTART`'s power cycle; whether the autostart state machine needs the machine free-running through the load before any stopping checkpoint may be armed; whether the anchor should instead be armed *after* the load using a hit-count offset recorded from the `AUTOSTART` reply.
    - Recommendation: make this the phase's **first measuring plan** after `33-01`, ahead of everything else in the `REPRO-*` half. It is the only unknown that can turn `C0_CAPTURE_PAIR` into `fail`. Probe `CHECKPOINT_LIST` (0x14) immediately after `AUTOSTART` to settle the survival question in one call.
+   - **Resolution (2026-09-02, absorbed by `33-03`):** `33-03` is the phase's first measuring plan after `33-01`, and it queries `CHECKPOINT_LIST` (0x14) immediately after `AUTOSTART` exactly as recommended, so survival across the power cycle is settled by one observed reply rather than inferred. It records every attempted sequence with its outcome, runs twice at two jitters, and commits the verbatim reply plus the column-0 `AUTOSTART_FRAME_EXACT` / `AUTOSTART_SEQUENCE` outcome lines — including a named non-achievement, which keeps the `fail` branch honest instead of hiding it.
 
 3. **Should the two pre-existing `test:automated` failures be fixed inside this phase?**
    - What we know: 5 failures, 3 files, 2 root causes, none caused by Phase 33 (P8). One root cause is two stale `STATE.md` rows; the other is four requirement ids the v0.8.0 rewrite dropped.
    - What's unclear: whether reconciling `STORE-01`/`STORE-04`/`STORE-06`/`MCP-04` belongs to this phase at all — they are v0.7.0 store ids and the fix might legitimately be a `REQUIREMENTS.md` carried-ids section rather than a code change.
    - Recommendation: fix the **two `STATE.md` rows** in this phase (they are two lines, they unblock the `audit-integrity` cascade, and the three folded todos touch that same section anyway). File the four requirement ids as a separate concern rather than absorbing it. Either way, state the real baseline in every transcript.
+   - **Resolution (2026-09-02, absorbed by `33-02`):** `33-02` fixes the two `STATE.md` rows and files `STORE-01` / `STORE-04` / `STORE-06` / `MCP-04` as a separate concern, noting that the right repair may be a carried-ids section in `REQUIREMENTS.md` rather than a code change — so this phase does not absorb it. The real baseline is stated in every transcript and every suite gate: 5 failing tests in 3 files at phase open, 2 in 1 (`anno-register.test.ts`) after `33-02`, with the residual named as out-of-phase. `33-12` records that trajectory in `STATE.md` and files no Deferred Items row for it.
 
 4. **Does `D-22`'s cap of 64 survive its first real frame-exact derivation?**
    - What we know: 0 transients at a frame-exact READY-prompt stop; 300 at a wall-clock autostarted stop. Nothing measured between.
    - What's unclear: a real release at a frame-exact stop has its own frame counters, RNG, sprite positions and music-player pointers. There is no measurement of that number.
    - Recommendation: leave 64 as the pre-commitment. If the first frame-exact derivation overflows it, that is `GATE-01` hearing a fact — record the overflow and the actual count as gate evidence rather than raising the cap.
+   - **Resolution (2026-09-02, absorbed by `33-08` and `33-10`):** the cap stays at 64. `33-08` reads `D-22` and `D-23` verbatim and implements the cap as a void, not a warning (`33-07` restates that same distinction). `33-10` goes further and *guards* the pre-commitment: it asserts the committed cap is still literally 64 and treats a count of `0` as the failure signal, because raising the cap after seeing an overflow is the one repair `D-22` forbids. An overflow is therefore recorded as gate evidence with its actual count, exactly as recommended.
 
 5. **Does `probeReady` need a different budget under `-console`, under `-warp`, or both?**
    - What we know: `-warp` is behaviour-neutral to the byte (M4). One `-console` launch had not bound at 3000 ms but had at 5000 ms.
    - What's unclear: whether that was startup variance or a systematic `-console` cost. `D-18` names only warp.
    - Recommendation: widen `D-18`'s re-check to cover `-console` as well as `-warp`. It is the same plan and the same probe.
+   - **Resolution (2026-09-02, absorbed by `33-11`):** `33-11` re-checks `probeReady`'s budget under both `-warp` and `-console`, in one plan against the same probe, so the open half of `A2` (a full `-console` capture run was never completed) is closed by measurement before `profile.headless` ships. `33-06` carries the same probe seam on the implementation side.
 
 ---
 
