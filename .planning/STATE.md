@@ -4,17 +4,17 @@ milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
-status: planning
-stopped_at: Phase 33 planned — 12 plans in 7 waves
-last_updated: "2026-09-02T16:24:39.410Z"
+status: executing
+stopped_at: Completed 33-01-PLAN.md
+last_updated: "2026-09-02T17:20:10.658Z"
 last_activity: 2026-09-02
-last_activity_desc: "Phase 33 planned: 12 plans in 7 waves, 30 tasks, 70 verify commands; 10/10 requirements and 29/29 decisions covered"
-state_head: f7434fc26809dc4cb2d54db30ff25435fe1c5567
+last_activity_desc: "33-01 executed: GATE-01's go/degrade/no-go rules R1..R9, the outcome-line schema and the evidence conventions pre-committed at 2a8ef95"
+state_head: 2b45f3c7fa59a0b1d93640613ba2b54868d8de15
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -24,8 +24,9 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-02 at the v0.8.0 open)
 
-**Current focus:** Milestone **v0.8.0 Frame-Exact Capture and the Two Engines**,
-opened 2026-09-02. Defining requirements. Scope, decided at the open: the
+**Current focus:** Phase 33 — The Reproducible-Run Protocol and the Capture
+Substrate (Go/Degrade/No-Go) — executing, in milestone **v0.8.0 Frame-Exact
+Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
 **frame-exact emulator stop** owned for the first time behind a pre-committed
 go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
 64K extraction that closes the other capture blocker, `PROOF-01`..`PROOF-03`
@@ -176,10 +177,20 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — READY TO EXECUTE
-Plan: 0 of 12 executed
-Status: Planned. 12 plans in 7 waves (30 tasks, 70 verify commands); 10/10 requirements and 29/29 CONTEXT decisions covered; plan-checker clean at 0 blockers. Wave 1 plan 33-01 is `autonomous: false` and opens with a blocking `checkpoint:decision` on the GATE-01 rule text. Ready for `/gsd-execute-phase 33`.
-Last activity: 2026-09-02 — Phase 33 planned: research, pattern map and validation strategy written; 12 plans created and revised twice against the plan-checker
+Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
+Plan: 1 of 12 executed (33-01); next pointer at plan 2 of 12
+Status: Wave 1 in progress. `33-01` is complete: `GATE-01`'s go / degrade / no-go
+rules `R1`..`R9`, the outcome-line schema and the phase evidence conventions are
+committed at `2a8ef95` — the only commit reachable from itself that touches
+`.planning/phases/33-…/evidence/`, so the rules provably predate every measurement
+in this phase (`git rev-list --count 2a8ef95 -- <evidence>` is `1`). The rule set is
+total over all 108 input tuples and `could-not-run` has no antecedent, so this gate
+cannot abstain — the defect its Phase 23 predecessor carried and hit. **The rules are
+frozen from this commit forward**; an ambiguity found later is recorded as an
+`## ACCEPTED LIMIT` in the measuring plan's own evidence file plus an explicit
+override in the findings document, and the rule text does not move. `33-02` runs
+concurrently in wave 1 and writes nothing under `evidence/`.
+Last activity: 2026-09-02 — 33-01 executed: GATE-01's decision rules pre-committed
 
 ## Performance Metrics
 
@@ -360,6 +371,7 @@ Last activity: 2026-09-02 — Phase 33 planned: research, pattern map and valida
 | Phase 29 P29-10 | 84 | - tasks | - files |
 | Phase 29 P29-11 | 22 | - tasks | - files |
 | Phase 30 P06 | 62 min | 3 tasks | 16 files |
+| Phase 33 P01 | 20 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -757,6 +769,9 @@ Recent decisions affecting current work:
 - [Phase 30]: Plan 30-06's new documented-status guard reports a withdrawal claim only when the same markdown paragraph carries no record that the verb came back; a paragraph stating both the 2026-08-29 withdrawal and the 2026-08-31 return is clean by design, because a dated notice must be corrected rather than deleted.
 - [Phase 30]: PROJECT.md gained two NEW dated sub-notes (ANNO-13/gen-enums and ANNO-06/export-asm) rather than only editing existing ones: plan 30-06 assumed those withdrawal notes already existed there and they did not, so the record was completed instead of the assumption being carried.
 - [Phase 31]: Four judgements, recorded 2026-08-31 so a later reader finds them as decisions rather than reconstructing them from a diff. (1) `STORE-04` is the id plan 31-01 recorded on `anno_undo`'s `omit` disposition, and it is INFERRED, not quoted: no document says "the criterion for `anno_undo` is `STORE-04`" in those words -- `D2`'s closing sentence is that `STORE-04` is scoped to what a planted-violation test can prove, and `STORE-04` is the only requirement whose text contains "an edit can be reverted". The DIRECTION is not inferred: the omission stands, verified three independent ways (`D2`, the Out-of-Scope row, and the live surface carrying no undo route under any spelling across 19 curated verbs), and 31-01 put that reasoning in the justification prose (`STORE-04` / `revertTo` / `D2` all assert present, all three were 0 before) rather than leaning on the id, with the key landing in the siblings' slot -- `anno_undo` now reads `omit STORE-04 disposition,justification,upstream_citation,requirement_id,sites`. Reverses if a later record names a different criterion: a one-token edit the justification prose survives unchanged. (2) Retired requirement ids and superseded phase numbers stay in the manifest as dated past-tense facts; only live routes were re-pointed. 31-01's commit `7adcbaf` is 9 insertions against 8 deletions over one file, and the four retired tokens (`anno-tools`, `anno-session`, `anno-upstream-audit`, `CURATED_ANNO_TOOLS`) went 5 matching lines -> `0 0 0 0` while `SURF-01`, `SURF-03` and Phase 20/21 survived with a date attached. A decision with its reasoning deleted is indistinguishable from an oversight a year later. Reverses per-token: a successor requirement id existing for one of them makes that one a route, and it gets re-pointed. (3) NO permanent gate was built over the manifest's prose, deliberately -- this is the recorded fate of 31-VALIDATION.md's optional Wave 0 item, and the zero-hit sweep stays a plan-time acceptance criterion rather than a committed assertion. Two reasons agree: `anno-derivation.test.ts` is this phase's own verifier for the manifest, so editing it would make the record and its checker move together; and a permanent zero-hit assertion would be WRONG under this phase's governing rule, because a dated past-tense sentence may legitimately name a retired module in a record whose whole purpose is to be a dated snapshot -- which is exactly what judgement 2 just wrote into it. Reverses on recurrence: a second occurrence of this prose drift turns "no mechanical reader" from a tolerated gap into a demonstrated one, and the instrument is then a curated allow-list of dated mentions, never a bare zero. (4) `REPOINT-03` and `REPOINT-04` were NOT promoted by this phase's plans, and the non-promotion is the decision, not an omission: both rows stay Pending with their checkboxes unticked. Criterion 1 measured true on disk before any plan ran -- 31-02 recorded 5 blocks / 5 `Adapted from` lines / 5 `  Source repository:` lines per tree, 10/10/10 across both, and the ABS-03 runner green at 7 skills scanned, 21 pairs compared, observed maximum 0.250 under a 0.35 threshold, allowlist size 0, 7 CLAUDE.md rows all byte-identical -- so the temptation to flip the rows was real. They stay Pending because this project's standing rule is that a status row does not move ahead of the re-verification verdict that scores it, and because the evidence 31-02 produced is a committed assertion whose whole point is that `/gsd-verify-work` can re-run it rather than read a claim about it. Reverses on the Phase 31 verification verdict, at which point the two checkboxes, the two traceability rows and the promotion paragraph move in ONE edit per REQUIREMENTS.md's four-sites-one-edit rule.
+- [Phase 33]: GATE-01 decision rules frozen at commit 2a8ef95 (33-01) — the only commit reachable from itself touching the phase evidence directory — Ordering is the entire mechanism: git rev-list --count 2a8ef95 -- evidence/ is 1, so the rules provably predate every measurement in the phase. No test guard (D-06); an ambiguity found later is an ACCEPTED LIMIT in the measuring plan plus an explicit override in the findings document, and the rule text does not move.
+- [Phase 33]: GATE-01 cannot abstain: R9 carries no antecedent and the rule set is total over all 108 input tuples — Five inputs with domains 3/3/2/2/3 give 108 tuples, partitioned 54/18/12/8/8/4/2/1/1 across R1..R9 — 84 no-go, 23 degrade, exactly 1 go. The three no-go rules read only corpus-free inputs, and C0_CAPTURE_PAIR: not-obtained is an input value reaching only degrade (D-02/D-03). This removes the defect Phase 23 gate carried and hit.
+- [Phase 33]: Task 1 blocking decision gate resolved by the human owner before dispatch with the selection proceed — no value adjusted — An autonomous executor that approves its own pre-commitment has produced no pre-commitment. harden-capture-pair was declined because making C0_CAPTURE_PAIR: fail a no-go would make a captured-and-failed pair fatal while never obtaining a pair stayed only degrade, and D-04 deliberately leaves fail unmapped so its narrowing is authored against the recorded cause.
 
 ### Pending Todos
 
@@ -1525,9 +1540,9 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T13:44:46.673Z
-Stopped at: Phase 33 context gathered
-Resume file: .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-CONTEXT.md
+Last session: 2026-09-02T17:20:10.394Z
+Stopped at: Completed 33-01-PLAN.md
+Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,

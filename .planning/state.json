@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v0.7.0 — Own the Annotation Store",
+  "milestone": "v0.8.0 — Frame-Exact Capture and the Two Engines",
   "phases": [
     {
       "number": "1",
@@ -177,12 +177,42 @@
       "number": "32",
       "name": "The Deletion and the Grep Gate",
       "status": "complete"
+    },
+    {
+      "number": "33",
+      "name": "The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)",
+      "status": "pending"
+    },
+    {
+      "number": "34",
+      "name": "The Host-Tool Execution Seam",
+      "status": "pending"
+    },
+    {
+      "number": "35",
+      "name": "dxa, Vendored and Parsed",
+      "status": "pending"
+    },
+    {
+      "number": "36",
+      "name": "The SLEIGH Language and the Ghidra Harness",
+      "status": "pending"
+    },
+    {
+      "number": "37",
+      "name": "The Importer and the Automatic Annotation Join",
+      "status": "pending"
+    },
+    {
+      "number": "38",
+      "name": "PROOF-01..03 on Real Cracked Code",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 33 of 6 · 0% · executing"
   },
-  "updated_at": "2026-09-01T16:17:56.765Z"
+  "updated_at": "2026-09-02T17:19:01.533Z"
 }
