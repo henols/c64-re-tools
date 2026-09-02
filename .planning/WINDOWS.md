@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 21
 waived_count: 12
 fixed_count: 8
-total_count: 40
-last_updated: 2026-09-01T11:42:54.584Z
+total_count: 41
+last_updated: 2026-09-02T17:56:38.934Z
 ---
 
 # Broken Windows Ledger
@@ -55,6 +55,7 @@ last_updated: 2026-09-01T11:42:54.584Z
 | 38 | 32 | deviation | src/mcp/vice/audit-root-args.test.ts | 428 | Completeness assertion red by design after plan 32-16 migrated audit-gate.mjs to parseRootArg(): audit-gate joins the derived population with no MATRIX row. Plan 32-18 owns the row and its own criteria require this red. Deliberately NOT relaxed. | open |  | 2026-09-01T07:45:46.201Z |  |
 | 39 | 32 | deviation | .planning/phases/32-the-deletion-and-the-grep-gate/32-18-PLAN.md |  | Plan 32-18 cites audit-gate.mjs:90 for the fs import surface; plan 32-16's header block moved that import to :130. The names bound are unchanged. | open |  | 2026-09-01T07:45:46.468Z |  |
 | 40 | 32 | unmet-truth | scripts/audit-mutation-harness.mjs |  | Restore machinery was DISARMABLE on the exported path: restoreAll() was guarded by a module-level boolean latch set on the first call and never reset, so once plan 32-19 exported plant()/restoreAll() any in-process consumer that completed one restore cycle permanently no-opped the exit, SIGINT, SIGTERM and uncaughtException handlers for the rest of the process. Round-3 verifier reproduced it against a scratch root (plant -> restoreAll -> plant -> SIGINT): EXIT=130, pendingRestoreCount() = 1, FINAL ON DISK: PLANTED_TWO (CR-10, gap 2). The SHIPPED CLI PATH WAS NEVER AFFECTED -- main() reverts per row from inside the row loop, which deletes from the captured-originals map without touching any latch, and calls restoreAll() exactly once in the finally after that loop, so the latch could never be set while a plant was on disk; the verifier 61-row --all sweep finished tree: restored byte-identical to the baseline. FIXED by plan 32-20: the latch is deleted with nothing replacing it, relying on the originals.clear() the same function already ends with, and pinned by the two second-window cases in src/mcp/vice/audit-harness-restore.test.ts, which were watched failing against a deliberately re-introduced latch (5 pass / 2 fail) and green once it was removed (7 pass / 0 fail). Successor to entry 33, appended before that entry closed. Evidence: .planning/phases/32-the-deletion-and-the-grep-gate/evidence/32-restore-disarm.md | fixed | Fixed by plan 32-20 in the same round it was recorded. The module-level latch is deleted from scripts/audit-mutation-harness.mjs with nothing replacing it, relying on the originals.clear() the same function already ends with, and the two second-window cases in src/mcp/vice/audit-harness-restore.test.ts were watched FAILING against a deliberately re-introduced latch (5 pass / 2 fail) before they were trusted, then green once it was removed (7 pass / 0 fail). recorded_at and resolved_at are seconds apart because the defect was found and fixed in the same round -- that is a record of that arc, not a backdated close. Bite proof in full: evidence/32-restore-disarm.md. | 2026-09-01T10:58:05.666Z | 2026-09-01T10:58:25.297Z |
+| 41 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-02-PLAN.md |  | 33-02 Task 2's first automated verify greps the WHOLE of STATE.md for the two phase-32-review todo stems, but both stems legitimately appear in the historical '### Acknowledged at the v0.7.0 close' table (lines ~1474-1475) and its prose (~1488-1489); the command is unsatisfiable without deleting milestone-close history. Ran the section-and-table-cell-scoped equivalent instead, mirroring docs-deferred-ledger.test.ts's own stemHasOwnTableCell semantics. | open |  | 2026-09-02T17:56:38.934Z |  |
 
 ````json
 [
@@ -537,6 +538,18 @@ last_updated: 2026-09-01T11:42:54.584Z
     "reason": "Fixed by plan 32-20 in the same round it was recorded. The module-level latch is deleted from scripts/audit-mutation-harness.mjs with nothing replacing it, relying on the originals.clear() the same function already ends with, and the two second-window cases in src/mcp/vice/audit-harness-restore.test.ts were watched FAILING against a deliberately re-introduced latch (5 pass / 2 fail) before they were trusted, then green once it was removed (7 pass / 0 fail). recorded_at and resolved_at are seconds apart because the defect was found and fixed in the same round -- that is a record of that arc, not a backdated close. Bite proof in full: evidence/32-restore-disarm.md.",
     "recorded_at": "2026-09-01T10:58:05.666Z",
     "resolved_at": "2026-09-01T10:58:25.297Z"
+  },
+  {
+    "id": 41,
+    "kind": "deviation",
+    "phase": "33",
+    "file": ".planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-02-PLAN.md",
+    "line": null,
+    "description": "33-02 Task 2's first automated verify greps the WHOLE of STATE.md for the two phase-32-review todo stems, but both stems legitimately appear in the historical '### Acknowledged at the v0.7.0 close' table (lines ~1474-1475) and its prose (~1488-1489); the command is unsatisfiable without deleting milestone-close history. Ran the section-and-table-cell-scoped equivalent instead, mirroring docs-deferred-ledger.test.ts's own stemHasOwnTableCell semantics.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T17:56:38.934Z",
+    "resolved_at": null
   }
 ]
 ````
