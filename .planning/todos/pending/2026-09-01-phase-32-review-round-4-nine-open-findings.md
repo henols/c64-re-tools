@@ -159,3 +159,43 @@ written to close — and the post-merge gate on the merged tree was green (`type
 `test:automated` 3021 pass / 0 fail, broker `inactive`) *before* this review report existed.
 Both round-3 plans' own bite proofs were captured RED and GREEN. The nine findings here are
 additions to the backlog, not a retraction of round 3.
+
+---
+
+## TRIAGE, 2026-09-02 — 8 of these 9 no longer have a subject
+
+Quick task `260901-qzp` retired `scripts/audit-mutation-harness.mjs`,
+`src/mcp/vice/audit-harness-restore.test.ts` and the four `fixtures/harness-signal/` drivers,
+because their subject was the erased analyser name. Every round-4 finding except `CR-07` was
+written against those files.
+
+A finding against a deleted file is **moot**, not fixed — there is no longer any code for the
+defect to be in. Recorded here rather than by editing the review.
+
+### Moot — the file the finding names no longer exists (8)
+
+| Finding | Named file, now deleted |
+|---|---|
+| WR-37 | `audit-mutation-harness.mjs` — a bad `guard.cwd` / `guard.argv` / missing `guard` aborting the sweep |
+| WR-38 | `audit-harness-restore.test.ts:1209-1215` **and** `fixtures/harness-signal/plant-contract-driver.mjs:128-132` |
+| WR-39 | `audit-mutation-harness.mjs` — `attributablePorcelainDelta()`'s over-wide claim |
+| WR-40 | `audit-mutation-harness.mjs` — `runDisarmAttempt()` duplicating `runAttempt()` |
+| IN-16 | `fixtures/harness-signal/` driver — the `latin1` truncation the byte comparison cannot see |
+| IN-17 | the three accepted plant-contract cases and their pending count |
+| IN-18 | `audit-mutation-harness.mjs` — `--out` resolved outside any try/catch, after the registry write-back |
+| IN-19 | `audit-mutation-harness.mjs` — `split()` cannot count self-overlapping matches |
+
+### Still live — and it is the Critical (1)
+
+**`CR-07`** — `scripts/check-skill-cli-invocations.mjs:266-271` runs
+`installer/scripts/sync-skills.mjs` at module scope whenever the resolved root is the
+repository, and that script `rmSync`s and repopulates `installer/skills/`
+(`sync-skills.mjs:74-80`). Four other test files read `installer/skills/`. **Every file this
+finding names still exists**, so the race is untouched by the deletions and this is now the
+whole of the round-4 backlog.
+
+It is also a **repeat deferral** — see "The CR-07 record" above — which means it has now
+survived being deferred while the reason for deferring it (a large surrounding backlog) has
+mostly evaporated. It should be the next thing fixed from this phase.
+
+**Net: of 9, 8 are moot and 1 — the Critical, CR-07 — is live.**

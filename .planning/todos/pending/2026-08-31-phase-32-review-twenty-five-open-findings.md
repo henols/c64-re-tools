@@ -141,3 +141,69 @@ Related open broken windows from the same phase, tracked separately in `.plannin
 (`anno-derivation.test.ts` is a rename the derivation cannot express), #30
 (`block-class.ts:196`'s `"Undefined"` arm is already inert), #31 (the guard rejects
 `observedRed` on `kept-unchanged`), #32 (`fork-live.test.ts` has no exercise route anywhere).
+
+---
+
+## TRIAGE, 2026-09-02 — 21 of these 25 no longer have a subject
+
+Quick task `260901-qzp` erased the retired external analyser's name from the tree and, in
+doing so, **retired three subsystems whose subject was that name**: `check-guard-fates.mjs`,
+`scripts/audit-mutation-harness.mjs`, `src/mcp/vice/guard-fates.test.ts`,
+`src/mcp/vice/audit-harness-restore.test.ts`, the four `fixtures/harness-signal/` drivers and
+the `guard-fates.json` registry. Most of this backlog was written against exactly those files.
+
+A finding against a deleted file is not "fixed" and must not be recorded as fixed. It is
+**moot**: there is no longer any code for the defect to be in. Recorded here rather than by
+editing the review, for the same anti-laundering reason this file already gives.
+
+### Moot — the file the finding names no longer exists (17)
+
+| Finding | Named file, now deleted |
+|---|---|
+| CR-02 | `audit-mutation-harness.mjs` — `plant()`'s `$`-pattern replacement |
+| CR-04 | `audit-mutation-harness.mjs` — `status: null` on a signal kill |
+| WR-01 | `audit-mutation-harness.mjs:599` |
+| WR-02 | `audit-mutation-harness.mjs:258, :569-575` |
+| WR-03 | `audit-mutation-harness.mjs` — the `restored` latch (also already CLOSED in round 4) |
+| WR-05 | `audit-mutation-harness.mjs:530-541` — `resolveBin()` |
+| WR-06 | `check-guard-fates.mjs` — `checkGuardFates()` / `redOwed()` |
+| WR-07 | `check-guard-fates.mjs` — `removingCommit` validation |
+| WR-08 | `check-guard-fates.mjs` — `TOTAL_FLOOR` vs the sub-floors |
+| WR-10 | the blocking CI gate that ran `check-guard-fates.mjs`; the step is gone from `ci.yml` |
+| WR-12 | `audit-mutation-harness.mjs:998` — `evidenceMarkdown()` |
+| WR-14 | `check-guard-fates.mjs` — `--json` on the derive/load failure path |
+| IN-02 | `audit-mutation-harness.mjs:1098, :1168, :1175` |
+| IN-03 | `audit-mutation-harness.mjs:171-194` — `restoreAll()` |
+| IN-04 | `check-guard-fates.mjs` — `nameDescendantCandidates()` |
+| IN-05 | `audit-mutation-harness.mjs:235-248` — no `unhandledRejection` |
+| WR-15 | the `.gitignore:53` citation of `audit-mutation-harness.mjs:654`; that comment was rewritten by `260901-qzp` and no longer cites a line at all |
+
+### Closed by the phase-32 gap rounds, measured 2026-09-02 (4)
+
+| Finding | Evidence |
+|---|---|
+| CR-01 | Six scripts now import the shared strict `parseRootArg` from `scripts/lib/audit-root.mjs`; the only remaining local `parseArgs` is in the unrelated `scripts/version.mjs`. The equals form is now **refused**, not discarded — `audit-root-args.test.ts` asserts it "refuses and leaves the REAL table byte-identical". |
+| IN-01 | `allowExtra` now has a production caller: `scripts/audit-gate.mjs`. |
+| IN-06 | Follows CR-01 — the parser was extracted, not fixed six times. |
+| IN-07 | Follows CR-01 — the refusal preamble now lives in the shared seam. |
+
+### Still live — target survives and the defect stands (4)
+
+| Finding | Why it survives |
+|---|---|
+| **CR-03** | `CAPABILITY_REGISTRY`, `CURATED_ANNO_TOOLS`, `VERB_OPTIONS`, `DENY_LIST` are still static `import`s from `../src/mcp/vice/*.ts` in the surviving skill gates, so a synthetic `--root` still compares a synthetic corpus against the real registry. Unchanged by the deletions. A design question, not a patch. |
+| **WR-04** | `resolveContainedRoot()` is still lexical. `realpathSync` appears in `audit-root.mjs` **only in a comment explaining why it is deliberately absent** (`:31-34`), so the containment claim is still false under a symlink. |
+| **WR-09** | `docs-linerefs.test.ts` still carries the unreachable `isFunctionStart` arm (4 occurrences). |
+| **WR-13** | `audit-root.mjs`'s single-seam claim. Partly overtaken: the harness that was one of the unmigrated consumers is gone, so this needs re-measuring against the surviving six rather than re-asserting. |
+
+### Needs an operator decision, not a fix (1)
+
+- **WR-11** — "the `--root` seam ships with zero callers and zero tests; all 35 plants are
+  `kind: "worktree"`". The 35 plants and the registry are now **deleted**, so the seam's
+  caller count has genuinely changed and the original measurement is stale. The question the
+  finding actually asks — *give the seam a caller or record why it stays* — is now sharper,
+  because six scripts use it while the instrument that justified building it is gone. Left
+  open by operator decision (2026-09-01) and still open.
+
+**Net: of 25, 17 are moot, 4 are closed, 3 are live (CR-03, WR-04, WR-09) plus WR-13 to
+re-measure and WR-11 awaiting a decision.**
