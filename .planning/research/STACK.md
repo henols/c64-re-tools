@@ -1,34 +1,30 @@
 # Stack Research
 
-**Domain:** An owned, persistent, undoable annotation store with per-range interval typing over a 64K address space, reached through a proxy-local MCP surface (v0.7.0, "Own the Annotation Store")
-**Researched:** 2026-08-26
-**Confidence:** HIGH — every number, version and API fact below was produced this session by running the real thing on this host, reading the upstream git source, or querying the npm registry API. Nothing is recalled from training data. See "Sources and evidence ceilings" for what each claim rests on and which two claims are weaker.
+**Domain:** Deterministic emulator capture + offline 6502 static-analysis pipeline (additions to a mature Claude Code plugin)
+**Milestone:** v0.8.0 — "Frame-Exact Capture and the Two Engines"
+**Researched:** 2026-09-02
+**Confidence:** HIGH for (a) and (c), HIGH for (b), MEDIUM for (d)
 
-> **Note on the confidence seam.** `gsd-tools query classify-confidence` has no provider id for "ran the binary locally / read upstream git". Its taxonomy returns `LOW` for `npm`/`registry`/`local` and `MEDIUM` for `context7`. That taxonomy is inverted relative to this project's own normative hierarchy (`ENGINEERING_RULES.md` §7: *real external system / live end-to-end behavior* is the top tier). The confidence tiers stated in this document follow §7, which is the governing rule here, and every claim names its oracle so a reader can re-grade it.
+## How to read the evidence labels in this document
 
----
+This project treats an unmeasured claim as a defect class, so every load-bearing
+statement below carries one of four labels. Nothing here is recalled from model
+memory; where I could not run it, I say so and name the probe.
 
-## Headline finding
+| Label | Meaning |
+|---|---|
+| **MEASURED** | I ran it on this host during this research pass. The command and its output are reproduced or summarised verbatim. |
+| **SOURCE** | Read directly out of VICE / Ghidra source or an installed artefact's own metadata on this host. |
+| **PRIMARY (repo)** | This repository's own recorded transcript from a real run — Phase 23 `evidence/tools/instrument-provenance.txt` or `notes/text-monitor-channel-live-probe.md`. Carried forward, not re-derived. |
+| **UNVERIFIED** | Not established. The probe that would settle it is named. |
 
-**No new runtime dependency. One new built-in module.**
-
-The store is built on **`node:sqlite`** — a Node built-in since v22.5.0, out from behind `--experimental-sqlite` since v22.13.0, therefore already unconditionally available at this project's declared floor of `>=22.18.0`. It adds:
-
-- zero entries to `dependencies`
-- zero bytes to either published tarball
-- zero change to `package-lock.json`, so the `SessionStart` lockfile-hash gate stays a no-op
-- zero build step (it is `internalBinding('sqlite')`, not a native addon)
-- zero change to the documented prerequisite story
-
-`ENGINEERING_RULES.md` §4's six-point dependency bar is therefore **not triggered at all** — there is no new dependency to justify. The prior milestone's conclusion ("no new runtime dependency was needed") holds for this milestone too, and for a stronger reason: the capability that previously had to be hand-rolled is now in the runtime.
-
-Three things stay owned code, deliberately, because measurement says the libraries are worse:
-
-| Concern | Decision | Why |
-|---|---|---|
-| Per-range typing / narrowest-wins lookup | **~60–120 lines of owned code** (paint array + run-length) | 0.018 µs/lookup vs 42.6 µs for the SQL formulation and 4.6 µs for a naive scan. Every surveyed interval-tree package returns *all* overlapping intervals with no narrowest-wins tie-break, so you write the deciding logic regardless. Measured, cross-validated. |
-| Undo | **Inverse-command journal in the same SQLite transaction** | SQLite savepoints do not survive process exit; the session/changeset extension is exposed but `sqlite3changeset_invert` is **not**, so inverses cannot be derived mechanically. |
-| Tool-argument validation | **Owned, hand-rolled, named-error** | `vice-proxy.ts:3216-3230` performs *no* argument validation by design (`validate: (value) => ({ value })` always succeeds). Do not add `zod` — it is present only as a transitive `@mastra` dependency. |
+**Instruments used.** Genuine unpatched stock **VICE 3.9** at `/usr/bin/x64sc`
+(`x64sc (VICE 3.9)`, MEASURED); the fork at `/usr/local/bin/x64sc` is **VICE 3.10**
+and shadows it on `PATH` (MEASURED). **Ghidra 12.1.3 PUBLIC** (build 2026-Aug-17)
+at `/home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC`. **OpenJDK 21.0.12.1**
+(Debian 13). **dxa 0.1.5** built from the pinned tarball during this pass.
+`DISPLAY=:0` was available, so every VICE launch below was a real GUI-backed
+`x64sc` process, not a stub.
 
 ---
 
@@ -38,387 +34,854 @@ Three things stay owned code, deliberately, because measurement says the librari
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| `node:sqlite` (`DatabaseSync`) | Built-in. Bundles **SQLite 3.50.4** on the Node 22.22.0 on this host (`SELECT sqlite_version()`, run live). Added Node v22.5.0; flag removed v22.13.0 / v23.4.0 (nodejs/node PR #55890) | The durable store: symbols, comments, typed ranges, scopes, enums, edit journal | The only option that satisfies **all** of: no build step, no dependency, no prerequisite-story change, crash-safe transactions, and a real query language for the search/xref surface. Live-verified: mutate → `SIGKILL` with no `close()` → reopen returns the mutation, `PRAGMA integrity_check` = `ok`. Also verified working under Node's native type-stripping from a `.ts` file, and typechecking clean against the project's already-installed `@types/node` 24.13.3 (`node_modules/@types/node/sqlite.d.ts` exists). |
-| Owned paint-array interval index | new, ~60–120 lines | Narrowest-range-wins address → range lookup over the 64K space | O(1) lookup at **0.018 µs**; full rebuild for 2,700 ranges costs **7.5 ms**, so rebuild-on-mutation is affordable and no incremental-maintenance code is needed. The pattern already exists in this repo: `anno-coverage.ts`'s `toRuns()` paints a `Uint8Array` then run-length-compacts it. Extend an established seam rather than adding a parallel one (`ENGINEERING_RULES.md` §1). |
-| Owned inverse-command journal | new, one SQLite table | Undo / redo across process restart | Satisfies the milestone's exact durability wording — *mutate → kill → reopen returns the mutation* — because the mutation and its inverse commit in **one** transaction. Measured **1.16 ms/edit** on ext4/NVMe with `synchronous=FULL`, i.e. the same order as a bare `fsync()`: transactional integrity costs nothing above the durability floor. |
-| `disasm-opcodes.ts` / `disasm-decoder.ts` / `disasm-renderer.ts` | existing, 1,042 lines | The typed decode the store annotates, and the ACME rendering | Already model `illegal-opcode` and `acme-unassemblable` as `DisasmNote`s and already round-trip byte-exact through real ACME (`disasm-roundtrip.test.ts`). `decode(bytes, startAddress, opts)` is the seam the store's typed-range engine calls per `code` range. |
-| `memmap.json` + `anno-regbits-gen.ts` + `anno-enum-gen.ts` | existing, 995 lines + 959 address entries | Machine knowledge and project enum generation | Retarget, do not rewrite. `anno-enum-gen.ts` already owns `registerKeyFor()`, `variantNameFor()`, `pairImmediateLoadsToStores()`, `createOrUpdateEnum()` — the whole enum pipeline. Only its I/O tail (which currently talks to an external analyser project) changes. Note `memmap.json` is **duplicated** at `src/skills/c64-memory-mapping/memmap.json` and `installer/skills/c64-memory-mapping/memmap.json`; the installer copy is synced by `installer/scripts/sync-skills.mjs`, so a retarget must not read the installer copy. |
-| ACME | 0.97 "Zem" (31 Jan 2021), at `/home/henrik/.local/bin/acme` on this host | External oracle for the ACME export | The reassembly gate. **See the correction below** — the route is *not* `anno-verify.ts`. |
-| `anno-test-gate.ts` → rename | existing, 166 lines | The shared ACME-availability seam (`ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()`) | This is the surviving ACME gate. It carries an `anno-` name but is **not** the external analyser glue — it must be renamed and kept, and the whole-tree grep gate must not eat it. |
+| **stock VICE `x64sc` text monitor** (`-remotemonitor`) | **≥ 3.9** — no higher floor | The monotonic cycle clock (`stopwatch`) and bulk instruction stepping (`step <n>`) that a frame-exact stop is built out of | It is the **only** route to a monotonic cycle counter on stock. `mon_register6502.c`'s 6510 register list has **no STOPWATCH entry** (SOURCE), so `REGISTERS_GET`/`REGISTERS_AVAILABLE` over the binary monitor cannot see it; `mon_stopwatch_show()` prints `*vice_interface->clk - stopwatch_start_time[mem]` as text only (SOURCE, `monitor.c:1508-1514`). The port is **already launched and allocated on every stock instance** and has never been dialed (PRIMARY, `broker-launch.mjs:165`, `broker-state.mts:117-137`). |
+| **stock VICE binary monitor** (`-binarymonitor`) | **≥ 3.9** for the stop primitive; **≥ 3.10** only if `CPUHISTORY_GET` is wanted | Checkpoint arm/hit/stop, memory read, snapshot `DUMP` | The checkpoint stop is **instruction-exact** on stock — see the measurement below. This is the existing `vice.ts` transport; nothing changes. |
+| **`-raminitstartrandom 0 -raminitrepeatrandom 0 -raminitrandomchance 0`** | launch-time flags, **≥ 3.9** | Removes RAM-init nondeterminism | **This is the single highest-value finding in this document.** Without it, three cold boots stopped at a bit-identical cycle and still produced three different 64K images. With it, three cold boots produced **one identical sha256**. MEASURED. |
+| **dxa** | **0.1.5** (pinned, `sha256 8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799`) | Code/data discovery on a headerless 6502 image | Still the current and only release (MEASURED); vendored + built, never assumed on `$PATH`. Plain `make`, no dependencies beyond a C compiler. |
+| **Ghidra** | **12.1.3 PUBLIC** (`ghidra_12.1.3_PUBLIC_20260817.zip`, published 2026-08-18) | Semantic recovery via `analyzeHeadless` + `DecompInterface` | **Confirmed the current latest release** as of 2026-09-02 — the same version Phase 23 probed, so the recorded command line and the two committed scripts are still valid against it. MEASURED via `gh api repos/NationalSecurityAgency/ghidra/releases/latest`. |
+| **OpenJDK** | **≥ 21**, no upper bound | Ghidra runtime | `application.java.min=21`, `application.java.max=` (empty), `application.java.compiler=21` read straight out of the installed `application.properties` (SOURCE). Host has 21.0.12.1 from Debian 13. |
+| **`support/sleigh`** | ships inside Ghidra 12.1.3 | Compiles `.slaspec` → `.sla` | A processor-language extension needs **no Gradle, no Ghidra source build, and no GUI install step**. MEASURED end to end (below). |
+| **Node `node:sqlite` + `@mastra/mcp`** | unchanged | Store + MCP framing | **No new npm runtime dependency is needed for any of (a), (b), (c) or (d).** Everything new is either a launch flag, a vendored C program, a JVM already on the host, or plain-Node protocol code. |
 
 ### Supporting Libraries
 
-**None.** No `npm install` runs in this milestone.
-
-| Library | Version present | Status for this milestone |
-|---------|---------|-------------|
-| `@mastra/mcp` | 1.15.0 (declared) | Unchanged. Serves the stdio surface; the store's tools register through `buildViceTool()` at `vice-proxy.ts:3263`, exactly as the 17 `anno_*` tools do at `:3402`. |
-| `@mastra/core` | 1.55.0 (declared) | Unchanged, untouched. |
-| `@modelcontextprotocol/sdk` | 1.30.0 (transitive) | **Precision correction to a carried belief:** the repo *does* already import it directly — `vice-proxy.ts:174` imports `CallToolRequestSchema` from `@modelcontextprotocol/sdk/types.js`. The prohibition in `anno-mcp-client.ts`'s header is scoped to that module (a *client* transport), not repo-wide. Do not widen the direct-import surface for the store; it needs nothing from the SDK. |
-| `zod` | 4.4.3 (transitive, via `@mastra`) | **Do not import.** Undeclared transitive. See "What NOT to Use". |
-| `@types/node` | 24.13.3 (dev) | Already ships `sqlite.d.ts`. No bump needed. Confirmed: `createSession` / `applyChangeset` typed; **no `invert`** anywhere in it. |
-| `typescript` | 7.0.2 (dev) | Typechecks `node:sqlite` usage clean under `--strict --module nodenext`. Verified. |
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| *(none)* | — | — | Deliberate. Every capability below is reachable with Node builtins (`net`, `child_process`, `fs`, `crypto`) plus this repo's existing seams. Adding an interval-tree, a SQLite driver, or a listing-parser library is already Out of Scope per `milestones/v0.7.0-REQUIREMENTS.md` and nothing found here reopens that. |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `node --test '*.test.*'` | All store tests | No new framework. Colocated `*.test.ts`. |
-| Real ACME 0.97 | The reassembly oracle for the export | Extend `disasm-roundtrip.test.ts`'s pattern: spawn `acme` with an **argv array** (never a shell string), byte-diff the result, and never treat an ACME stderr *warning* as failure (ACME 0.97 documents warnings on stderr). Gate through `anno-test-gate.ts`'s `acmeSkipReasonFor()` / `VICE_REQUIRE_ACME`, so CI fails on a missing ACME while a local run skips visibly. |
-| `--disable-warning=ExperimentalWarning` | Silences the Node-22-only `node:sqlite` warning | Verified working on 22.22.0. **Do not make any test assert stderr is empty** as a proxy for success — see "Version Compatibility". |
-| `db.exec("PRAGMA integrity_check")` | Post-crash assertion in the durability test | Returns `{ integrity_check: 'ok' }` after an uncommitted-close `SIGKILL`. Live-verified. |
-| `node:sqlite`'s exported `backup()` | Pre-destructive safety copy | Mirrors the existing `incident-record.ts` "write evidence before any destructive action" precedent. Not the undo mechanism. |
+| `gcc` + `make` | Build vendored dxa | `CFLAGS = -Wall -Wmissing-prototypes -O2`, six objects, no configure step (SOURCE, dxa `Makefile`). Reproducible: the built binary's sha256 matched Phase 23's `DXA_BINARY_SHA256` exactly (MEASURED). |
+| `support/sleigh` | Compile the undocumented-opcode language | `sleigh <in.slaspec> <out.sla>`, or `sleigh -a <dir>` for a whole directory. Options include `-DNAME=VALUE`, `-i <options-file>`, `-n` (list NOP constructors), `-l` (pattern conflicts) — all MEASURED from `sleigh` with no arguments. |
+| `support/analyzeHeadless` | Run the harness | Full option list MEASURED from `support/analyzeHeadlessREADME.md` — see § (c). |
+| `ant` (optional) | Alternative sleigh driver | `Ghidra/Processors/6502/data/build.xml` drives `SleighCompile` under Ant. **Not needed** — `support/sleigh` is the direct route. |
+| Gradle ≥ 8.5 | Only for extensions that ship **Java** | `application.gradle.min=8.5` (SOURCE). Not on this host's `PATH` (MEASURED) and **not required** for a language-only extension. |
 
 ---
 
-## 1. Persistence format — the decision, and every option measured
+## (a) The frame-exact emulator stop
 
-### The measurements (real disk, not tmpfs)
+### Verdict up front
 
-Run on `/dev/nvme0n1p4`, ext4 — **not** in `/tmp`, which is a 16 GB tmpfs on this host and makes every `fsync()` nearly free, understating the JSON route's cost by ~2×. Seed store: 6,000 symbols, 3,000 comments, 2,500 typed ranges (561 KB as JSON, 712 KB as SQLite). Workload: 2,000 mutating tool calls, each durable on return (the project's existing `save-before-return` contract, D18-08).
+**A frame-exact, cycle-exact, cross-run-reproducible stop is achievable on genuine
+stock VICE 3.9, today, with no new dependency and no fork requirement.** It is
+*not* built out of VICE's event record/replay machinery — that route is
+unreachable programmatically. It is built out of three things stock already has:
+a **deterministic RAM init**, an **instruction-exact checkpoint stop**, and the
+**text monitor's monotonic cycle counter**.
 
-| Route | Per mutating call | Scales with | Notes |
+### A.1 Event record / replay — RULED OUT, with source-level reasons
+
+This was the obvious candidate and it does not survive contact with the source.
+
+**What the machinery is.** `event.c` (1336 lines) records a linked list of typed
+events, each stamped `list->current->clk = maincpu_clk` (SOURCE, `event.c:365`),
+and replays them by `alarm_set(event_alarm, clk)` on the **main-CPU alarm
+context** (SOURCE, `event.c:387-393`, `event_init()` at `:1330`). So a replay *is*
+cycle-scheduled rather than wall-clock-scheduled — the determinism property is
+real. Recorded event types are exactly: `RESETCPU`, `KEYBOARD_MATRIX`,
+`KEYBOARD_RESTORE`, `KEYBOARD_DELAY`, `KEYBOARD_CLEAR`, `JOYSTICK_VALUE`,
+`JOYSTICK_DELAY`, `DATASETTE`, `ATTACHDISK`, `ATTACHTAPE`, `ATTACHIMAGE`,
+`RESOURCE`, `INITIAL`, `SYNC_TEST`, `TIMESTAMP`, `LIST_END` (SOURCE,
+`event.c:342-358`, `:478-528`). It is an **input** log, not a state log: nothing
+about RTC, CIA TOD seeding or drive-mechanism phase is captured. The *state* comes
+from the paired snapshots — `event_record_start_trap()` writes `start.vsf`
+(`EventStartSnapshot`) and `event_record_stop_trap()` writes `end.vsf`
+(`EventEndSnapshot`), and **the event list is stored as a module inside `end.vsf`**,
+not as a separate history file (SOURCE, `event.c:692-707`, `:777-788`,
+`event_playback_start_trap()` at `:824-860` opens the *end* snapshot to read the
+event module, then loads the *start* snapshot).
+
+**Why it is unreachable.** Three independent blockers, each measured:
+
+1. **There is no `-record` / `-recordevents` command-line option, on either
+   binary.** `cmdline_options[]` in `event.c` registers exactly six options:
+   `-playback`, `-eventsnapshotdir`, `-eventstartsnapshot`, `-eventendsnapshot`,
+   `-eventstartmode`, `-eventimageinc`/`+eventimageinc` (SOURCE, `event.c:1289-1311`).
+   Confirmed against both binaries: `/usr/bin/x64sc -record` → `Unknown option
+   '-record'. Error parsing command-line options, bailing out.` exit 255
+   (MEASURED); grepping `-help` for `^[-+](record|playback|event)` on the 3.10
+   fork returns the same six (MEASURED). **Playback is launch-time; recording is not.**
+2. **`event_record_start()` has no non-UI caller.** A GitHub code search over
+   `VICE-Team/svn-mirror` returns exactly six files: `vice-event.h`, `event.c`,
+   `debug.c` (under `#ifdef DEBUG`), `arch/gtk3/actions-snapshot.c`,
+   `arch/sdl/actions-snapshot.c`, `arch/sdl/menu_snapshot.c` (MEASURED). It is
+   reachable only as UI actions `ACTION_HISTORY_RECORD_START` /
+   `_STOP` / `ACTION_HISTORY_PLAYBACK_START` / `_STOP` /
+   `ACTION_HISTORY_MILESTONE_SET` / `_RESET` (SOURCE,
+   `arch/gtk3/actions-snapshot.c:90,112,121,165-184`).
+3. **No binary-monitor opcode addresses it, on any version.** The repo's own
+   `enum t_binary_command` inventory has no event/history command (PRIMARY,
+   `docs/phase0-binmon-findings.md` §5, mirrored in `probe-binmon.mjs`'s `CMD`
+   table), and the text monitor has none either — see the trap below.
+
+**A trap worth naming explicitly.** The stock text monitor's command list does
+contain `playback (pb)` and `record (rec)` under the heading **"Command file
+commands"** (MEASURED). `help record` returns: *"Syntax: record "<filename>" —
+After this command, all commands entered are written to the specified file until
+the STOP command is entered."* (MEASURED). This is **monitor-command scripting,
+not event history**. Anything that plans against "the monitor has `record`" is
+planning against the wrong feature.
+
+**Does it work under `x64sc`?** `event.c` is machine-generic and compiled into
+`x64sc`, and `-playback` is present in `x64sc -help` (MEASURED), so playback
+almost certainly does. **Whether a `.vsf`+event-module pair produced by a GUI
+recording replays cycle-identically is UNVERIFIED** — the probe would be: record
+by hand in the GTK3 UI (History ▸ Start recording), stop, then relaunch twice with
+`-eventstartmode 3 -playback -eventendsnapshot end.vsf` and compare the 64K at a
+fixed cycle. It is not worth doing, because blocker 1 makes the *recording* half
+unautomatable and this project needs a route a broker can drive.
+
+### A.2 What binary-monitor / text-monitor facilities actually give you
+
+Each row is either measured on stock 3.9 this pass, or carried from this repo's own
+recorded live probe.
+
+| Facility | Route | Floor | What it gives, measured |
 |---|---|---|---|
-| **`node:sqlite`, WAL + `synchronous=FULL`, one txn per edit incl. journal insert** | **1.16 ms** | edit size | The recommendation. |
-| Append-only NDJSON + `fsync()` per edit | 1.36 ms | edit size | Same order — the cost *is* the fsync. But you then own torn-tail detection, compaction, recovery and index rebuild. |
-| Whole-file JSON + atomic rename (`write` → `fsync` → `rename` → `fsync(dir)`) | **16.03 ms** | **total store size** | 14× slower and getting worse as the project grows. At 766 KB already; a fully annotated 64K program with per-address comments is several MB. |
-| SQLite narrowest-range lookup via SQL | 42.6 µs / lookup | — | 2.8 s for one full 64K pass. See §2. |
+| **Checkpoint stop** | binmon `CHECKPOINT_SET` (0x12) / text `break exec $addr` | 3.9 | **Instruction-exact.** Stopping at `$EA31` reported `#1 (Stop on  exec ea31)  116/$074,  30/$1e` and registers `.;ea31 …`, i.e. **PC == the checkpoint address, exactly**, in every one of nine runs (MEASURED). Contrast the fork's HTTP path, which the frame-exact todo records as pausing "roughly a frame later, at a wall-clock-determined instruction". |
+| **`RL` / `CY` conditions** | text `break exec $a if (RL == $30)` / binmon `CONDITION_SET` (0x22) | 3.9 | Accepted and echoed back: `Setting checkpoint 1 condition to: ( RL == $30 )`; `break` then lists `Condition: ( RL == $30 )` (MEASURED). `help condition` confirms *"RL can be used to refer to the current rasterline, and CY refers to the current cycle in the line"* (MEASURED). CLAUDE.md's precedence and hex-literal warnings both still apply. |
+| **`ignore <cp> <count>`** | text only | 3.9 | Machine-counted crossings. `help ignore`: *"Ignore a checkpoint a given number of crossings"* (MEASURED). **The count is parsed in the monitor's radix, i.e. hex by default** — see the `step` measurement below for the proof. This is the 3.9 substitute for the absent binmon `checkpoint_set_ignore_count` (PRIMARY: Phase 23 records 3.9 "lacks `vice_checkpoint_set_ignore_count`"). |
+| **`ADVANCE_INSTRUCTIONS` (0x71)** | binmon | 3.9 | Works (PRIMARY, assumption A2 probe). **Count field is `uint16` → hard cap 65535 per call** (SOURCE, `probe-binmon.mjs:486-495`). |
+| **`step [<count>]` / `z`** | text | 3.9 | The same primitive **without the 16-bit cap**: `z $854d0` → `Stepping through the next 546000 instruction(s)` (MEASURED). |
+| **`stopwatch` / `sw`** | text only | 3.9 | **The monotonic cycle counter.** `help stopwatch`: *"Print the CPU cycle counter of the current device. 'reset' sets the counter to 0."* `stopwatch reset` → `Stopwatch reset to 0.`; then `z` (1 instruction) → `Stopwatch: 0`; then `z 100` (= 256 instructions) → `Stopwatch: 911` (MEASURED). Implementation is `clk − stopwatch_start_time[mem]` (SOURCE). |
+| **`registers` / `r`** | text | 3.9 | Prints `LIN CYC  STOPWATCH` as a *text column* (SOURCE, `mon_register6502.c:202`). The STOPWATCH column is **not** a register in `mon_reg_list_6510[]` (SOURCE, `:57-71`), so `REGISTERS_GET` cannot return it. This is the mechanism behind CLAUDE.md's "no monotonic cycle register" — now with the exact reason. |
+| **`CPUHISTORY_GET` (0x86)** | binmon | **3.10** | Absent on 3.9 (PRIMARY). But `chis <n>` over the **text** channel returns full history entries **with per-entry cycle counts on 3.9** (PRIMARY, text-monitor live probe). So the *capability* floor is 3.9; only the *opcode* floor is 3.10. |
+| **`warp [on\|off]`** | text | 3.9 | Runtime warp, and it reports state (PRIMARY). The `-warp` launch flag also works (MEASURED — every probe run used it). |
+| **`bsave "<f>" 0 <a1> <a2>`** | text | 3.9 | 64K dump straight to a host file: `bank ram` then `bsave "…" 0 0000 ffff` → `Saving file '…' from $0000 to $ffff`, 65536 bytes on disk (MEASURED). A second, independent capture route beside `.vsf` slicing. |
+| **`dump` / `undump`** | text + binmon 0x41/0x42 | 3.9 | `.vsf` write/read, the input to the already-validated `C64MEM` slicing todo. |
+| **`-limitcycles <n>`** | launch | 3.9 | *"Specify number of cycles to run before quitting with an error"* (MEASURED). **Not useful** — it quits, so there is nothing left to capture from. |
+| **`-seed <value>`** | launch | 3.9 | *"Set random seed (for debugging)"* (MEASURED). VICE logs the seed it chose (`Main: random seed was: 0x6a97fb2c`, MEASURED). Present in every probe run's log; **not needed** once the three `raminit*` flags are set — see A.4. |
 
-### Options, with verdicts
+### A.3 Constructing a monotonic frame counter — the answer
 
-| Option | Version (verified via registry API, 2026-08-26) | Build step? | Verdict |
+CLAUDE.md is right that there is no monotonic cycle *register* and that `LIN`/`CYC`
+are not monotonic. The frame counter is therefore **derived**, from two inputs:
+
+- `clk`, read as text `stopwatch` — monotonic, 64-bit, rebasable to 0 at a chosen
+  anchor.
+- **cycles-per-frame**, a constant of the video standard. All four values read
+  straight out of `src/c64/c64.h` (SOURCE):
+
+| `MachineVideoStandard` | lines | cycles/line | **cycles/frame** | cycles/sec |
+|---|---|---|---|---|
+| PAL | 312 | 63 | **19656** | 985248 |
+| NTSC | 263 | 65 | **17095** | 1022730 |
+| NTSC-old | 262 | 64 | **16768** | 1022730 |
+| PAL-N (Drean) | 312 | 65 | **20280** | 1023440 |
+
+`frame = floor((clk − clk_anchor) / cyclesPerFrame)`, and "stop at frame F" becomes
+"stop at the first instruction boundary at or after `clk_anchor + F·cyclesPerFrame`".
+
+**The PAL constant was confirmed empirically, not just read.** Anchoring at `$E453`
+and converging to exactly 50 × 19656 = 982800 cycles later landed at `LIN 260` in
+every run — **the same raster line as the anchor's `LIN 260`**, differing only by
+the 2-cycle instruction-boundary overshoot (`CYC 057` → `CYC 059`). If 19656 were
+wrong the raster line would have drifted. MEASURED, three runs.
+
+The other three standards are **UNVERIFIED on this host**; the probe is the same
+recipe re-run under `-ntsc` / `-ntscold` / `-paln` asserting `LIN` equality across
+a whole number of frames. Note CLAUDE.md's safety rule: `MachineVideoStandard` is
+one of the three resources that **power-cycles the machine**, so this must be a
+launch flag, never a runtime resource set.
+
+### A.4 The measured recipe, and the two results that matter
+
+Nine cold `x64sc` launches, three experiments. Every launch used
+`/usr/bin/x64sc -default -remotemonitor -remotemonitoraddress ip4://127.0.0.1:<port>
+-sounddev dummy -warp` and drove the text monitor over a plain Node `net` socket.
+
+**The recipe:**
+
+1. Launch with RAM-init randomness off: `-raminitstartrandom 0 -raminitrepeatrandom 0 -raminitrandomchance 0`.
+2. `device c:` — pin the default memspace (CLAUDE.md's `default_memspace` remedy).
+3. `break exec $E453` — a **once-per-reset** KERNAL address.
+4. `reset 1` (power cycle), then `g`, then **wait for the machine's own hit report**.
+5. `stopwatch reset` — rebase the monotonic clock to 0 at that anchor.
+6. Converge on `F · 19656`: read `stopwatch`, `step $<hex estimate>` using ~3.6
+   cycles/instruction, repeat. **Converged in 6 rounds every time.**
+7. Capture (`bank ram` + `bsave`, or `dump` a `.vsf`).
+
+**Result 1 — the stop is exact, and the residual is RAM init.** Three runs with
+default RAM init:
+
+| run | anchor (`registers` at `$E453`) | stop | 64K sha256 |
 |---|---|---|---|
-| **`node:sqlite`** | Built-in; SQLite 3.50.4 on Node 22.22.0 | **None** | **ADOPT** |
-| `better-sqlite3` | **13.0.3**, published 2026-08-05, `engines.node >= 22`, MIT, 159 versions | No compiler on 8 targets — but see below | **REJECT** |
-| `node-sqlite3-wasm` | **0.8.60**, published 2026-07-28, zero deps, MIT | None (WASM) | **NOT NEEDED** — the only reason to reach for it is a platform `node:sqlite` does not exist on, and there is none: it is in the runtime. |
-| `sqlite3` (node-sqlite3) | **6.0.1**, published 2026-03-12, BSD-3, has `install` script, deps on `prebuild-install` + `tar` | Yes (prebuild-install, node-gyp fallback) | **REJECT** — async API, install script, four transitive deps. |
-| Plain JSON + atomic rename | owned | None | **REJECT as primary** — 16 ms/edit scaling with store size, and a *weaker planted violation* (below). Keep the **technique** for the deterministic text export. |
-| Append-only NDJSON + compaction | owned | None | **REJECT** — same durability cost as SQLite, but you hand-build recovery, compaction and every index. `ENGINEERING_RULES.md` §4(2): the platform is not insufficient here. |
-| `lmdb` | **3.5.6**, published 2026-06-18, `gypfile: true`, install script, 6 transitive deps incl. `msgpackr`, `node-addon-api@^6` | Yes | **REJECT** — native, gyp, and a key/value store means you hand-build the query surface anyway. |
-| `classic-level` / `level` | **3.0.0** / **10.0.0**, both published 2025-04-20, `gypfile: true`, `node-gyp-build` | Yes | **REJECT** — same reasons. |
-| `lowdb` | **7.0.1**, published **2023-12-26** (2.7 years stale), deps on `steno@^4.0.2` | None | **REJECT** — it *is* the whole-file-JSON route, plus a dependency, plus staleness. |
-| `write-file-atomic` | **8.0.0**, published 2026-05-08, ISC. `engines.node: "^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0"` | None | **REJECT, and note why:** its engines floor is **above** this project's declared `>=22.18.0`. Adopting it forces an `engines` bump on `@henols/vice-mcp`, i.e. a breaking change to the documented prerequisite for an atomic-rename helper that is ~15 lines of `node:fs`. |
-| `proper-lockfile` | 4.1.2, published **2021-01-25** | None | **REJECT** — 5.5 years stale, and the store is single-writer by construction (container-side, one project, the existing FIFO-queue pattern). SQLite's own locking covers the rest. |
+| d1 | `.;e453 97 01 84 fd 2f 37 10100001 260 057    2060661` | `.;e5cd … 260 059     982802` | `20bd1f5c…` |
+| d2 | *byte-identical* | *byte-identical* | `4ae4a1a5…` |
+| d3 | *byte-identical* | *byte-identical* | `2d7988d1…` |
 
-### Why `better-sqlite3` 13.0.3 loses, precisely
+The **absolute** power-on-to-`$E453` cycle count is `2060661` in all three runs, and
+the stop is `PC=$e5cd`, `LIN 260`, `CYC 059`, `clk 982802` in all three. The stop is
+already frame-exact. **The images still differ — 1554 scattered single bytes,
+1514 disjoint ranges, plus `$0000-$0001`** (MEASURED three-way diff). That is
+uninitialised-RAM noise, not a stop defect.
 
-This deserves detail because the "native build breaks the no-build-step constraint" intuition is now *out of date* and would be the wrong reason to reject it.
+**Result 2 — pinning RAM init closes it completely.** Three further runs, same
+recipe plus the three flags:
 
-Verified by downloading and unpacking `better-sqlite3-13.0.3.tgz` (11.4 MB) this session:
+| run | anchor | stop | 64K sha256 |
+|---|---|---|---|
+| e1 | `.;e453 … 260 057    2060661` | `.;e5cd … 260 059     982802` | `39a71b108cd6b59876647b391035d569d1361c04d9fb50c8bf259d965f19902b` |
+| e2 | *identical* | *identical* | **same** |
+| e3 | *identical* | *identical* | **same** |
 
-- `gypfile: false`, **no `install`/`postinstall` script**. It ships **eight prebuilt `.node` binaries** in `prebuilds/`: `linux-{x64,arm64}`, `linuxmusl-{x64,arm64}`, `darwin-{x64,arm64}`, `win32-{x64,arm64}`. On any of those, **no compiler is needed** — the "no build step" constraint is genuinely satisfied.
-- So it must lose on other grounds, and it does:
-  1. **11.4 MB download / 27.3 MB unpacked, per consumer, always.** All eight binaries plus the full SQLite amalgamation (`deps/**`, `src/**`) install unconditionally; there is no `optionalDependencies` platform split. Adding it changes `package-lock.json`, so `scripts/ensure-mcp-deps.sh` fires a real `npm ci` for every existing user's next session.
-  2. **No fallback off the eight targets.** `lib/binding.js` (read this session) falls through to `require(path.join(__dirname,'..','build','Release','better_sqlite3.node'))`. With no install script, that file never exists → a hard `MODULE_NOT_FOUND` on e.g. `linux-armv7`, `freebsd`, `s390x`, `linux-riscv64`. That is *worse* than the old node-gyp behaviour, which at least compiled.
-  3. **It buys nothing.** Everything the store needs — WAL, `synchronous=FULL`, savepoints, user-defined functions, `json_extract`, FTS5, R*Tree, generated columns, session/changeset — is present in `node:sqlite`, all confirmed live (below).
-  4. `ENGINEERING_RULES.md` §4(1) and §4(2) both fail: existing runtime code *does* provide the capability, and the standard library is *not* insufficient.
+**Bit-identical 64K across three independent cold boots.** This is the capability
+the frame-exact-stop todo says nothing owns.
 
-### What `node:sqlite` on Node 22.22.0 actually has — probed, not assumed
+**Result 3 — the control, i.e. what wall-clock stopping actually costs.** Three
+runs that anchored on a *wall-clock* moment instead (`reset 1`, sleep, then arm a
+`$EA31` checkpoint with `ignore … $64`) produced identical `PC`, `A`, `X`, `Y`,
+`SP` and flags — and `LIN` of **116, 223 and 267**, with `clk` of 3702666, 5065678
+and 6149527. Same instruction, three different frames. MEASURED. This is the
+negative control the go/degrade/no-go gate should reuse: it is observed *red*
+without the fix.
 
-Every line below was executed on this host:
+### A.5 Five operational pitfalls, each measured
 
-```
-sqlite_version()               3.50.4
-PRAGMA journal_mode = WAL      -> 'wal'          (works)
-PRAGMA synchronous             -> 2 (FULL)       (default!)
-PRAGMA foreign_keys            -> 1 (ON)         (default — unlike the sqlite3 CLI)
-BEGIN / SAVEPOINT / ROLLBACK TO / RELEASE / COMMIT   all work
-db.function("ovl", fn)         user-defined functions work
-json_extract('{"a":5}','$.a')  -> 5              (JSON1 compiled in)
-GENERATED ALWAYS AS (...) VIRTUAL                works
-CREATE VIRTUAL TABLE ... USING rtree(...)        works
-CREATE VIRTUAL TABLE ... USING fts5(...)         works
-DatabaseSync.prototype:  open close prepare exec function location aggregate
-                         createSession applyChangeset enableLoadExtension
-                         loadExtension  + [Symbol.dispose]
-StatementSync.prototype: run get all iterate columns setAllowBareNamedParameters
-                         setAllowUnknownNamedParameters setReadBigInts setReturnArrays
-module exports:          DatabaseSync StatementSync constants backup
-```
+1. **Any monitor command halts the machine at a wall-clock-determined point.**
+   After `g`, sending `registers` re-entered the monitor at `$fd70` with
+   `clk 1336612` — a position nothing in the procedure chose (MEASURED). The
+   text-monitor probe note already says the channel "halts the machine on command,
+   exactly like the binary monitor"; the consequence for this milestone is sharper:
+   **a stop is only deterministic if a checkpoint hit or a counted `step` caused
+   it.** Never let a command race a running machine.
+2. **`reset 1` from the monitor runs past the reset vector before returning
+   control.** A breakpoint on `$FCE2` set *before* `reset 1` **never fires** — the
+   prompt after `g` already reads `(C:$fd79)` (MEASURED, twice). Anchor on an
+   address the reset sequence reaches *later*; `$E453` works.
+3. **Integer arguments are hex by default, including step and ignore counts.**
+   `z 100` printed `Stepping through the next 256 instruction(s)` (MEASURED). This
+   is the same `monitor.c:1597` radix rule CLAUDE.md records for conditions, and it
+   silently multiplies a step count by ~2.56. Always write `$`-prefixed literals.
+4. **`step` overshoots the target by design.** The CPU cannot stop mid-instruction,
+   so a convergence loop lands on the **first instruction boundary at or after**
+   the target — `982802` for a target of `982800`, identically in all six runs
+   (MEASURED). That is deterministic and fine; it must be *specified*, not treated
+   as jitter.
+5. **The text channel is a second channel with the same serialisation discipline.**
+   `vice-sync.ts`'s invariants — exactly one resume per wait, poll on `hit_count`
+   never on paused state — apply to it unchanged. Whether a text client and a
+   binary client can be connected *simultaneously* without one's halt/resume
+   corrupting the other's view remains **UNVERIFIED** (the text-monitor note's own
+   "Not probed" item, and I did not close it: every probe here used the text channel
+   alone). The probe: arm a checkpoint over binmon, drive `stopwatch` over text, and
+   assert the binmon `STOPPED` PC equals the text `registers` PC.
 
-Two of these are load-bearing findings:
+### A.6 Version floors for (a)
 
-- **`foreign_keys` defaults to `1`** in `node:sqlite`, unlike raw SQLite/the CLI. So `ON DELETE CASCADE` on the range/scope tables is enforced without an explicit pragma. Rely on it, but set it explicitly anyway so the schema is self-documenting.
-- **FTS5 is compiled in.** The milestone's *"search over the typed decode"* requirement can be an FTS5 virtual table over comments and labels rather than owned substring matching, at zero dependency cost. (Weigh against: FTS5 tokenisation is tuned for prose, and label search wants prefix/identifier matching — `LIKE 'f_%'` on an indexed column may serve better. Both are free; decide at plan time.)
-
-### Recommended pragmas and file layout
-
-```sql
-PRAGMA journal_mode = WAL;      -- crash-safe, and commit cost ≈ one fsync
-PRAGMA synchronous = FULL;      -- already the default; state it explicitly
-PRAGMA foreign_keys = ON;       -- already the default; state it explicitly
-```
-
-**One honest cost of WAL:** it leaves `<name>.db-wal` and `<name>.db-shm` alongside the database. On a clean `close()` they are removed; after a `SIGKILL` they **persist** (observed: 12,392-byte `-wal`, 32,768-byte `-shm`). So the store is *not* single-file at rest after an unclean exit. If single-file-at-rest matters more than throughput, `journal_mode = DELETE` + `synchronous = FULL` gives one file with the same crash guarantee at higher per-commit cost. **Recommendation: keep WAL** and treat the sidecars as what they are — recovery state that the next `open()` consumes.
-
-**Where the file lives.** Not `.vice-supervisor/` — that is gitignored, host-synchronised, and owned by the broker's lifecycle. Mirror the existing `anno_*` convention instead: the store path is an **explicit tool argument**, resolved through `repo-root.ts`'s `repoRoot()` when relative. Add `*.db-wal` / `*.db-shm` to `.gitignore`.
-
-**Commit the export, not the database.** This project has already decided the shape of this problem — Key Decisions: *"Make the store canonical and the Markdown memory map a generated view … `render-memmap --check` plus a render-digest drift guard makes the divergence mechanical rather than a review item."* Apply the same pattern: SQLite is the working store; a deterministic, sorted, newline-stable text export (written with the atomic-rename technique) is the git-diffable artifact, guarded by an `--check` digest comparison. This is the correct home for the JSON/atomic-rename technique that lost as the primary store.
-
----
-
-## 2. Interval / range data structure — owned, and the measurements say so
-
-### Measured, on this host, cross-validated
-
-Domain: 2,500 narrow ranges (16 bytes each) plus 200 wide overlapping ranges (2,001 bytes each) — deliberately including overlap, so narrowest-wins is actually exercised.
-
-| Approach | Per lookup | One full 64K pass | Retained memory | Build cost |
-|---|---|---|---|---|
-| **Paint array (`Int32Array(65536)` of winning range ids)** | **0.018 µs** | **1.2 ms** | 256 KB | 7.5 ms for 2,700 ranges |
-| Sorted-by-`lo` array + binary search + bounded forward walk | 0.31 µs | 20 ms | ~0 | O(n log n) sort |
-| Naive O(n) scan over all ranges — *the shape `anno-coverage.ts`'s `classAt()` already has* | 4.6 µs | **301 ms** | 0 | none |
-| SQL `WHERE lo<=? AND hi>=? ORDER BY (hi-lo) LIMIT 1`, index on `lo` | 42.6 µs | **2.8 s** | 0 | none |
-
-The paint array and the sorted+binary-search implementation were cross-checked against each other on **all 65,536 addresses: 0 disagreements.** That is two independently written implementations agreeing, not one implementation agreeing with itself.
-
-A better-indexed SQL formulation (e.g. a materialised `width` generated column with a composite index) would improve on 42.6 µs — but not by the 2,400× needed to close the gap, and it cannot beat an array index.
-
-### Verdict: ~60–120 lines of owned code. No library.
-
-The deciding fact is that **the domain is bounded at 64K**. An interval tree exists to avoid materialising a sparse or unbounded key space; a C64 address space is neither. A 256 KB `Int32Array` *is* the index, and its lookup is a single array read.
-
-Design, concretely, so a planner does not re-derive it:
-
-- SQLite's `range` table is the **source of truth**; the paint array is a derived in-memory index rebuilt from it.
-- Build: `Int32Array(65536).fill(-1)` for winner range-id, plus a parallel `Int32Array(65536).fill(0x7fffffff)` for winner width. For each range, for each address in it, overwrite iff `width < currentWidth`. **Narrowest-wins is resolved at paint time, not at query time.** Tie-break for equal widths must be explicit (recommend: higher `range.id`, i.e. the more recent edit wins) and pinned by a test — an unspecified tie-break is exactly the kind of thing that produces a non-reproducible export.
-- Rebuild cost is 7.5 ms, so **rebuild on mutation**. Do not write incremental-maintenance code; it is the classic source of index-drift bugs and it buys single-digit milliseconds.
-- Queries the paint array does **not** serve — *"list every range covering address X"*, *"list ranges intersecting [a,b]"* — go against the SQLite table. The paint array answers exactly one question: *which range wins at X*.
-- Run-length compaction for the JSON/tool-response surface: reuse `anno-coverage.ts`'s `toRuns()` shape (`{start, end, class}`), which already exists and is already tested. Its header states the reason ("the census reports runs rather than a per-byte array so the report stays JSON-safe and stays deep-comparable between two runs") and it applies unchanged.
-- **If the domain ever exceeds 64K** (banked ROM/RAM under I/O, an REU): switch to the sorted+binary-search variant at 0.31 µs and ~0 memory, or paint per bank. Both were measured; neither needs a library. State this so a later banking milestone does not reach for a package.
-
-### Libraries surveyed — all rejected, with dates
-
-| Package | Latest | Published | Status | Why rejected |
-|---|---|---|---|---|
-| `@flatten-js/interval-tree` | 2.0.3 | 2025-11-07 | Maintained; ESM; MIT; deps on `tslib@^2.8.1` | The only genuinely maintained candidate. Returns **all** overlapping intervals with no narrowest-wins tie-break, so the deciding logic is yours regardless — and its lookup can only be slower than an array read. A dependency for the easy half of the problem. |
-| `node-interval-tree` | 2.1.2 | 2022-12-12 | Stale ~3.7y; CJS; deps on `shallowequal` | Same semantics gap, plus staleness and a CJS interop wrinkle. |
-| `interval-tree-1d` | 1.0.4 | 2021-06-03 | Stale ~5.2y; deps on `binary-search-bounds` | Same. |
-| `static-interval-tree` | 1.3.0 | 2016-03-24 | Stale ~10.4y; **no `license` field in the manifest** | Rejected on the licence gap alone; this repo maintains `THIRD-PARTY-NOTICES.md`. |
-| `interval-tree2` | 1.1.0 | 2015-09-23 | Stale ~10.9y; 3 versions ever | Abandoned. |
-| `augmented-interval-tree` | 0.1.0 | 2017-06-25 | **One version, ever** | Abandoned. |
-| `mnemonist` | 0.40.4 | 2026-04-30 | Well maintained; MIT | Excellent general structure library, but has no interval structure with narrowest-wins. Nothing to take. |
-
----
-
-## 3. Undo model
-
-The requirement is precise and it eliminates most of the field: *"mutate → kill → reopen returns the mutation, and removing the save makes that same test go red."* That is a **durability** requirement on the undo history too — undo must survive the kill, or a session that crashes loses the ability to undo the edits it recovered.
-
-### Recommendation: inverse-command journal, committed in the same transaction as the mutation
-
-```sql
-CREATE TABLE edit_log (
-  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id   TEXT    NOT NULL,   -- one composite tool call = one undoable unit
-  tool       TEXT    NOT NULL,   -- which MCP tool produced it (audit trail)
-  forward    TEXT    NOT NULL,   -- JSON: the op that was applied
-  inverse    TEXT    NOT NULL,   -- JSON: the op that reverses it
-  undone     INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT    NOT NULL
-);
-CREATE INDEX edit_log_group ON edit_log(group_id);
-```
-
-- **One transaction per mutating tool call**: `BEGIN` → apply mutation → insert the `edit_log` row(s) → `COMMIT`. Measured 1.16 ms including the journal insert.
-- **Undo** = highest `seq` with `undone = 0`; apply its `inverse` and set `undone = 1`, all in one transaction. Composite calls undo as a `group_id`, atomically.
-- **Redo** = lowest contiguous `seq` with `undone = 1`; re-apply `forward`. A new edit truncates the redo tail (standard, and the alternative — branching history — is scope this milestone does not have).
-- **Every inverse must be constructible at edit time.** This is the real design constraint, and it is where undo models fail: `set_label(addr, name)` inverts to `set_label(addr, previousName)` *or* `delete_label(addr)` depending on prior state, so the mutation handler must **read the prior state inside the same transaction** before writing. A handler that computes the inverse after the write, or from the arguments alone, is wrong. Make that a reviewed invariant, not an assumption.
-- **Range typing needs an interval-aware inverse.** `set_type([lo,hi], "table")` may split, shadow or fully cover several existing ranges. The honest inverse is *"restore this exact list of prior range rows over [lo,hi]"* — so the inverse payload carries the displaced rows, not a single reverse op. This is the single most likely place for an undo bug; plan a test that types overlapping ranges in three layers, undoes twice, and asserts byte-for-byte equality of the paint array.
-
-### Rejected alternatives, each for a specific reason
-
-| Approach | Verified state | Why rejected |
+| Mechanism | Floor | Consequence |
 |---|---|---|
-| **SQLite `SAVEPOINT`** | Works: `BEGIN; INSERT; SAVEPOINT sp1; INSERT; ROLLBACK TO sp1; RELEASE sp1; COMMIT;` executed live and left exactly the pre-savepoint row | Savepoints are **intra-transaction and in-process**. They do not exist after `close()`, let alone after a `SIGKILL`. They cannot be the undo model. **Do use them** for atomicity *within* one composite tool call (e.g. "type this range and rename every label inside it") so a partial failure leaves no half-applied edit. |
-| **SQLite session / changeset extension** | Exposed and working: `db.createSession({table})`, `session.changeset()` (22-byte changeset for one insert), `session.patchset()`, `db.applyChangeset(cs)` → `true`, applied cleanly to a second database. `constants` exports the eight `SQLITE_CHANGESET_*` conflict codes | **`sqlite3changeset_invert` is not exposed.** No `invert` on the session or changeset, and no `invert` anywhere in `@types/node@24.13.3`'s `sqlite.d.ts` (grepped). Without it you would hand-decode SQLite's changeset binary format to derive an inverse — a large, undocumented-in-Node surface for something a `JSON` column gives free. **Revisit trigger:** if Node exposes `invert`, changesets become a strictly better undo log (they capture *actual* row deltas rather than a hand-maintained inverse, eliminating the "inverse computed wrong" bug class). Worth recording as a named reversal criterion in this project's usual style. |
-| **Snapshot-diff / copy-on-write snapshots** | `backup()` is exported from `node:sqlite` and works | Full snapshots of a 712 KB database per edit is wasteful, and *presenting* what an undo did then requires diffing two databases — work the command log gives for free. **Do use `backup()`** for a single pre-destructive-operation safety copy (bulk retype, import, schema migration), mirroring `incident-record.ts`'s "write evidence before any destructive action" precedent. |
-| **Immutable persistent structures (`immer` 11.1.18, 2026-08-19)** | Maintained, zero deps | In-memory only: the undo stack dies with the process, which is precisely the requirement it must satisfy. Plus a dependency for a data-structure discipline TypeScript already expresses. |
-| **Append-only op log as the *only* store (event sourcing)** | Measured 1.36 ms/edit | This *is* the journal, minus the queryable projection. Keeping both — a queryable current state and a journal — in one transactional file is what SQLite is for. Choosing the log alone means rebuilding all state by replay on every open, and owning compaction. |
+| Instruction-exact checkpoint stop | **3.9** | none |
+| `RL` / `CY` checkpoint conditions | **3.9** | none |
+| `ignore <cp> <count>` (text) | **3.9** | none |
+| `step <count>` (text) / `ADVANCE_INSTRUCTIONS` (binmon) | **3.9** | binmon capped at 65535/call |
+| `stopwatch` monotonic clock (text) | **3.9** | **text channel mandatory** |
+| `raminit*` determinism flags | **3.9** | none |
+| `warp` at runtime (text) | **3.9** | supersedes the launch-time-only assumption for warp specifically |
+| `CPUHISTORY_GET` (0x86) | **3.10** | not needed — `chis` over text covers 3.9 |
+| `DISPLAY_GET` (0x84) | **3.9**, api ≥ 2 | not needed for (a) |
+| Event record/replay **recording** | **no version** | unreachable on every version |
 
-### A non-obvious testability argument for SQLite over atomic JSON
+**The whole of (a) therefore lands on a VICE 3.9 floor** — the version Debian
+trixie/forky/sid and all current Ubuntu ship. No user is asked to upgrade, and no
+part of it requires the fork.
 
-`ENGINEERING_RULES.md` §6 requires the durability guard to be **observed failing under a planted violation**. The two routes are not equally testable:
+### A.7 Integration points for (a)
 
-- **SQLite:** the planted violation is "drop the `COMMIT`" or "move the `edit_log` insert outside the transaction." A `SIGKILL` after that reliably loses the mutation, so the guard reliably reddens.
-- **Atomic JSON:** the planted violation is "remove the `fsync()`." That frequently **still passes**, because the page cache serves the subsequent read on the same machine — you only lose the write on a power cut or kernel panic, which a test cannot stage. A guard that cannot be made to fail is not evidence (§6's closing line).
-
-So SQLite is the better choice on *evidence quality*, independent of speed. Worth stating in the plan, because it is the kind of reasoning this project's own history says gets skipped.
+- **`broker-launch.mjs`** must add the three `raminit*` flags to the **stock** argv.
+  The `-default -drive8type 1541` ordering invariant and the memory-recorded rule
+  that `-default` must precede `-binarymonitor` both stay. **The fork argv must
+  stay byte-identical** — that is a standing regression gate, so this is a
+  stock-only argv change, and `broker-launch.test.ts` will need the new pin.
+  *Open scoping question the roadmap should decide, not this document: whether
+  determinism flags are always on (changing every stock launch, including
+  non-capture ones) or a launch-mode dimension like headless/warp — the latter
+  reopens the warm-instance-per-mode complexity the warp todo already wrestles with.*
+- **A text-monitor client is new code.** `monitorClient` needs the
+  `channel: "binary" | "text"` discriminator Phase 3's banner already predicted.
+  It is line-oriented ASCII with a `(C:$xxxx)` prompt — trivial protocol, but its
+  halt semantics make it a first-class serialisation participant, not a side-channel.
+- **`vice-sync.ts`** gains the convergence loop. Its two documented invariants are
+  preserved by construction: the loop never resumes (it steps), and it polls the
+  clock rather than a paused flag.
+- **Capability registry / manifest.** A frame-exact-stop tool is **stock-capable and
+  fork-degraded** — the inverse of the usual direction, and the first such entry.
+  Worth stating loudly in `docs/tool-support.md`, because it contradicts the
+  reasonable prior that the fork is the richer backend.
 
 ---
 
-## Integration with the existing module set
+## (b) dxa — vendored and built at a pinned version
 
-### A correction the roadmapper needs: the `--verify` seam does not survive the deletion
+### B.1 Upstream state, re-verified 2026-09-02
 
-The milestone text says the ACME export is *"verified by a real ACME through the existing `--verify` seam."* Read directly this session, that seam is **the external analyser's**, not ACME's:
-
-- `anno-verify.ts` (184 lines) imports `buildVerifyArgs` and `runAnno` from `anno-launch.ts` and parses **`analyser --verify`'s stdout** with `VERIFY_LINE_PATTERN = /^[✓✗]\s+(.+?)\s+[—–-]\s+(.+)$/`. It never invokes ACME. When the external analyser is deleted, `anno-verify.ts` and `buildVerifyArgs` die with it.
-
-The genuinely surviving ACME oracle is a different pair of files, and the plan must name them:
-
-| File | Lines | Fate |
+| Fact | Value | Label |
 |---|---|---|
-| `anno-test-gate.ts` | 166 | **Rename and keep.** Owns `ACME_BIN`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()` and the `VICE_REQUIRE_ACME` convention. Not the external analyser glue despite the name — the grep gate must exempt or the rename must precede it. |
-| `disasm-roundtrip.test.ts` | 427 | **The pattern to extend.** Already spawns real ACME with an argv array, byte-diffs the reassembly, and documents the "never treat a warning as failure" rule. Its "ACME availability gate (D-08)" test always runs and is never skipped. |
-| `src/skills/acme-build/scripts/acme.mjs` | — | The shipped `build` / `sym` / `new` route. Unchanged. |
-| `anno-verify.ts`, `anno-launch.ts::buildVerifyArgs` | 184 + part of 357 | **Deleted with the subject.** The store's own verify must be re-built against ACME directly. |
+| Tarball URL | `https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz` | MEASURED (fetched, HTTPS, exit 0) |
+| Size | 37 987 bytes | MEASURED |
+| sha256 | `8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799` | MEASURED — **matches Phase 23's pin byte-for-byte** |
+| Current release | **0.1.5 is still the only one.** The dist directory lists exactly `dxa-0.1.5.tar.gz` and `xa-2.4.1.tar.gz` | MEASURED |
+| Upstream activity | Still dormant: newest file in the tarball is dated 2022-03-26 | MEASURED |
+| Signature / upstream checksum | **None.** No `.asc`, `.sig`, `.sha*` or `.md5` in the dist listing or inside the tarball | MEASURED |
+| Debian packaging | None. `dpkg -L xa65` has no `dxa` | PRIMARY (Phase 23) |
+| Corroboration for the pin | FreeBSD ports `devel/dxa65` distinfo only | PRIMARY (Phase 23) |
+| Build | `make` → 6 objects → `dxa`, **exit 0, zero warnings shown**, binary sha256 `0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523` | MEASURED — **identical to Phase 23's `DXA_BINARY_SHA256`**, so the build is reproducible across a 7-day gap on this host |
+| Self-described maturity | *"Please keep in mind this is still considered \"alpha\" software"* — in **`INSTALL`, not the man page** | MEASURED (Phase 23 recorded this citation correction; re-confirmed) |
 
-This is a real scope item, not a rename: the store needs a new `verify` path that emits ACME source to a temp dir, spawns ACME, and byte-diffs against the source bytes. `disasm-roundtrip.test.ts` already contains every technique needed.
+**Licence — and a packaging gap to plan around.** GPL-2.0-or-later. **There is no
+`LICENSE`, `COPYING` or `GPL` file anywhere in the tarball** (MEASURED, full `ls -a`).
+The notice exists only as a per-file C comment header, e.g. `main.c:1-23`:
 
-### The `=*+$01` mid-instruction label idiom — verified against real ACME
+> `Based on d65 Copyright (C) 1993, 1994 Marko M\"akel\"a` /
+> `Changes for dxa (C) 2005-2019 Cameron Kaiser` /
+> *"…under the terms of the GNU General Public License … either version 2 of the
+> License, or (at your option) any later version."*
 
-The seed asks that this be *preserved rather than rediscovered*. It exists nowhere in the codebase today (grepped), so it must be **built**, and it does work. Verified live with ACME 0.97 on this host:
+Consequences for `THIRD-PARTY-NOTICES.md`: the notice must be **quoted from the
+source headers** (there is no file to copy), and this project must supply the
+GPL-2.0 licence text itself. Note the two-party copyright — Mäkelä 1993-94 for d65,
+Kaiser 2005-2019 for dxa — and that the header says 2005-2019 while the tarball is
+2022, an internal inconsistency worth reproducing rather than smoothing.
 
-```asm
-!cpu 6510
-* = $0801
-start
-smc_operand = * + $01
-        lda #$00
-        sta $d020
-        lda #$01
-        sta smc_operand
-        rts
+**`make` needs:** a C compiler and nothing else. No `configure`, no autotools, no
+libraries. `Makefile` hardcodes `CC = gcc` and `CFLAGS = -Wall -Wmissing-prototypes -O2`
+(SOURCE) — a vendored build should override `CC`/`CFLAGS` from the environment
+rather than patch the file. `make test` exists (`tests/{Makefile,test01.t,test02.t}`)
+and is worth wiring as a post-build gate. Optional `LONG_OPTIONS` in `options.h`
+enables `--long-form` flags; **leave it off** — the short flags are always present,
+and a build-time toggle that changes the CLI surface is exactly the kind of drift a
+pinned vendored tool should not have.
+
+### B.2 Output format — MEASURED, and it confirms a parser is mandatory
+
+There is **no machine-readable output mode**. `-a` has three values only:
+`disabled` (default), `enabled` (address prefix), `dump` (address + hexdump)
+(MEASURED from the man page). `-a dump` is the richest and is what a parser should
+consume. Real output, from `dxa -U -a dump -p all-nmos6502` on a 41-byte `.prg`
+built for this pass:
+
+```
+              	.word $0801
+              	* = $0801
+
+; 12 byte BASIC header.
+0801 0b 08 0a 	.byt $0b,$08,$0a
+0804 00 9e 32 	.byt $00,$9e,$32
+...
+080d          l80d:
+080d a9 00    	lda #$00
+080f 8d 20 d0 	sta $d020
+0814          l814:
+0814 bd 30 08 	lda $0830,x
+081b 10 f7    	bpl l814
+0820 4c 0d 08 	jmp l80d
+0823 48       	pha
+0824 45 4c    	eor $4c
+0826 4c 4f 00 	jmp $004f
 ```
 
-`acme -o smc2.prg -l smc2.lbl` exits 0; the label file reads `smc_operand = $802`; the emitted bytes are `a9 00 8d 20 d0 a9 01 8d 02 08 60` — i.e. `sta smc_operand` assembled as `8d 02 08`, correctly targeting the operand byte of the preceding `lda #$00`. The `= * - 1` form placed *after* the instruction resolves identically. **Confidence: HIGH, real-assembler oracle.**
+Five line shapes, all present above:
 
-### Typed label prefixes — already owned, and richer than the seed says
+| Shape | Grammar | Meaning |
+|---|---|---|
+| statement | `^([0-9a-f]{4}) ((?:[0-9a-f]{2} )+)\s*\t(.*)$` | address, 1-3 hex bytes, TAB, xa-syntax statement |
+| label | `^([0-9a-f]{4})\s+(\S+):$` | label on its **own** line under `-a dump` |
+| comment | `^; .*$` | e.g. `; 12 byte BASIC header.` |
+| addressless pseudo-op | `^\s+\t(\.word\|\* =).*$` | the load-address preamble |
+| blank | `^$` | separator |
 
-`anno-coverage.ts:1384` already owns the vocabulary:
+Code-vs-data classification: `.byt` (three bytes per line) → data; `.word` → data,
+and specifically an address-table entry under `-t detect-internal`; anything else →
+code. **`;` comments are semantic, not decoration** (`; 12 byte BASIC header.` is
+dxa telling you what `-U` decided).
+
+**The false-positive direction is visible in that very sample.** The trailing
+`"HELLO"` string at `$0823` decoded as `pha / eor $4c / jmp $004f` — data called
+code, the dangerous direction, exactly as the roadmap records (`FIXTURE_FALSE_POSITIVES: 3`).
+Forcing it with `-b '?0823-0828'` correctly re-emitted it as `.byt` (MEASURED). That
+is the `AUTO-07` graphics-feedback loop in miniature and it demonstrably works.
+
+**A refusal signal a parser can key on, and one it cannot.** `-v` writes a phase log
+to **stderr** — `dxa: SYS 2061 found, marking as entry point` /
+`dxa: BASIC text marked as dead through $080c` / `dxa: disassembling $0801-$0829` /
+`dxa: scanning sure section $080d` / `dxa: Searching for address tables.` /
+`dxa: Dumping the source code.` (MEASURED). That is a real progress/decision trace
+worth capturing alongside the listing. But **`-d strict` did *not* exit non-zero** on
+my fixture (`exit 0`, MEASURED) even though the man page says a consistency error
+"will occur and disassembly will stop" — so `DXA-03`'s "refuses by name" gate must be
+**this project's parser refusing**, not dxa's exit status. Whether `-d strict` ever
+exits non-zero is **UNVERIFIED**; the probe is a deliberately inconsistent fixture
+where a declared routine falls into illegal opcodes, asserting the exit code.
+
+### B.3 The flags that matter
+
+| Flag | Purpose | Note |
+|---|---|---|
+| **`-b xxxx-yyyy`** | Declare a data block (hex, inclusive) | Three strengths: bare, `!xxxx-yyyy` = *also no vectors in it*, `?xxxx-yyyy` = *completely unused, so no routine may reference into it*. `?` is the strong form and the man page warns it can misfire on real C64 code that legitimately references `$CFFF`, `$9FEA`/`$9FEB`, and `BIT`-skip addresses like `$1A9`/`$2A9`. |
+| **`-B <file>`** | Data blocks from a file, one per line | **The programmatic route** for `AUTO-07`'s feedback from the store. Prefer over building a long argv. |
+| `-r xxxx` / `-R <file>` | Declare a routine / routines from a file | The entry-point hint set. |
+| `-l <file>` | Read labels in `xa -l` symbol-file format | A **second** already-existing bridge between the store and dxa, beside `-B`. |
+| **`-p <set>`** | Instruction set | Six values: `standard-nmos6502` (default), `r65c02`, `all-nmos6502`, `rational-nmos6502`, `useful-nmos6502`, `traditional-nmos6502`. For cracked code use **`all-nmos6502`**. Note dxa's own five-way judgment taxonomy of illegal opcodes is a ready-made cross-check on the SLEIGH extension's coverage decisions. |
+| **`-a dump`** | Address + hexdump prefix | Mandatory for the parser. |
+| **`-G` / `-g xxxx`** | Auto start-address vs. explicit | `.prg` → `-G` (default, consumes the first two bytes). **Flat 64K → `-g0000`.** |
+| `-q` / `-Q` | Suppress / emit the `.word` load address | Use `-q` for flat images to avoid a phantom `.word` at the top. |
+| **`-U`** | Detect a BASIC header, parse `SYS`, mark the header dead | Works: MEASURED `SYS 2061 found`. Turns step 1 of `c64-program-recon` into a flag. Man page: likely to become the default upstream. |
+| `-d <mode>` | Data-block detection: `poor` (default), `strict`, `skip-scanning` | `poor` maximises code; `skip-scanning` is the conservative setting for graphics-heavy images. |
+| `-t <mode>` | Address tables: `ignore`, `detect-all`, `detect-internal` (default) | This is the dispatch-table discovery that feeds `PROOF-02`. |
+| `-J` / `-j` | JSR may not return (PRIMM-style inline data) | `-J` matters for crack/loader code. |
+| `-M`, `-W`, `-C`, `-O`, `-E` | jump-to-self valid; BRK as routine exit; obfuscated branches; one-byte routines; external labels | Each is a knob on the false-positive/negative tradeoff `PROOF-01` measures. |
+
+**Hard limit:** files longer than 64K, or which extend past `$FFFF` given the load
+address, are **truncated with a warning** (SOURCE, man page NOTES). A 65536-byte
+flat image at `$0000` fits exactly. A 30 464-line listing came out of a random 64K
+image in well under the 120 s timeout, exit 0 (MEASURED) — so runtime is not a
+concern and the "megabyte-scale export" worry in (d) is about Ghidra, not dxa.
+
+### B.4 Integration points for (b)
+
+- Vendor the tarball, or the pinned URL + digest, and build with `make` behind a
+  digest gate. The digest must be written **before** the fetch, as Phase 23 did.
+- The listing parser is **owned code**, a new sibling module — never appended to
+  `vice-proxy.ts`.
+- Its output is a code/data map that lands in `.annostore` through the existing
+  12-member type vocabulary. `.byt` → a data type; statements → code. Nothing new
+  in the store schema.
+- The `-B` and `-l` file inputs are the store→dxa direction and want a small
+  emitter each, not a new protocol.
+- **dxa never touches VICE.** Like the `anno_*` family it is backend-agnostic by
+  construction — but unlike `anno_*` it is a **host binary**, so it is a (d) consumer.
+
+---
+
+## (c) Ghidra headless + a SLEIGH extension
+
+Phase 23's evidence is primary and is **extended, not re-derived**: the recorded
+command line (`-processor 6502:LE:16:default`, `-loader BinaryLoader`,
+`-loader-baseAddr 0x0`, `-noanalysis`, `-preScript`, `-postScript`,
+`-analysisTimeoutPerFile`, `-deleteProject`), the committed `ExportAnalysis23.java`
+and `FlatVolatile.java` using `DecompInterface`, and its three operational
+constraints (no dot-prefixed path element; **exit 0 even when a post-script throws**,
+so the run log must be grepped for `ERROR REPORT SCRIPT ERROR`; block-total vs.
+image-size line count on the `.prg` route) all stand.
+
+### C.1 Versions, verified
+
+| Item | Value | Label |
+|---|---|---|
+| Latest Ghidra release | **12.1.3**, tag `Ghidra_12.1.3_build`, published 2026-08-18 | MEASURED (`gh api …/releases/latest`) |
+| Sole asset | `ghidra_12.1.3_PUBLIC_20260817.zip` | MEASURED |
+| Zip size | **569 445 154 bytes (543 MiB)** | MEASURED |
+| Zip sha256 | `93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54` | MEASURED (release digest field) |
+| Unpacked size | **882 MiB** | MEASURED (`du -sh`) |
+| Installed build metadata | `application.version=12.1.3`, `application.build.date=2026-Aug-17 1710 UTC`, `application.release.name=PUBLIC`, `application.revision.ghidra=8b4c91d4…` | SOURCE |
+| JDK floor / ceiling | **min 21, no max**; compiler 21 | SOURCE (`application.properties`) |
+| Host JDK | OpenJDK 21.0.12.1 (Debian 13) | MEASURED |
+| Gradle floor | 8.5 — **only for Java-bearing extensions** | SOURCE |
+| Licence | Apache-2.0 | recalled, and consistent with the shipped `LICENSE.txt` per processor module — the **full-tree licence audit is UNVERIFIED**; the probe is reading `$GHIDRA/licenses/` and the top-level `LICENSE`. |
+
+**Phase 23 probed the version that is still current.** No Ghidra upgrade is pending
+and no command-line drift has to be re-established.
+
+### C.2 `analyzeHeadless` — the complete option surface
+
+Read verbatim from `support/analyzeHeadlessREADME.md` (MEASURED):
 
 ```
-AUTO_NAME_PREFIX_RE = /^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)/
+analyzeHeadless <project_location> <project_name>[/<folder_path>] | ghidra://<server>[:<port>]/<repo>[/<folder>]
+    [[-import [<directory>|<file>]+] | [-process [<project_file>]]]
+    [-preScript <ScriptName> [<arg>]*]   [-postScript <ScriptName> [<arg>]*]
+    [-scriptPath "<path1>[;<path2>...]"] [-propertiesPath "<path1>[;...]"]
+    [-scriptlog <file>] [-log <file>] [-overwrite] [-recursive [<depth>]]
+    [-readOnly] [-deleteProject] [-noanalysis]
+    [-processor <languageID>] [-cspec <compilerSpecID>]
+    [-analysisTimeoutPerFile <seconds>]
+    [-keystore <path>] [-connect [<userID>]] [-p] [-commit ["<comment>"]]
+    [-okToDelete] [-max-cpu <cores>] [-librarySearchPaths <path1>[;...]]
+    [-loader <name>] [-loader-<argname> <argvalue>]
 ```
 
-Eleven prefixes, not the five the seed lists (`zpp_`/`zpa_`/`f_`/`a_`/`e_`). `anno-coverage.test.ts:946` pins all eleven, and `src/skills/routine-queue-walker/SKILL.md:154,200` documents them for users. **Move this regex into the store's naming module; do not re-derive a subset from the seed.** A five-prefix reimplementation would silently stop recognising `p_`, `j_`, `s_`, `b_`, `r_`, `zpf_` as auto-generated — which is exactly the signal `routine-queue-walker` builds its backlog from.
+Options Phase 23 did not use that this milestone should weigh: **`-process`** (run
+scripts against files already in a project, i.e. **no re-import**), **`-readOnly`**,
+**`-log` / `-scriptlog`** (a *file* to grep instead of parsing stdout — directly
+useful given the exit-0-on-throw defect), **`-max-cpu`**, **`-propertiesPath`**
+(pass script arguments without stuffing them into argv), and `-recursive`.
 
-### The model interfaces already exist
+### C.3 Two more operational constraints, found this pass
 
-`anno-coverage.ts:192-224` already defines the four record shapes, and they map 1:1 onto the store's tables:
+Both extend Phase 23's list of three.
 
-| Existing interface | Becomes |
+4. **`analyzeHeadless` does not create the project *location* directory.** With a
+   non-existent `<project_location>`: `ERROR Abort due to Headless analyzer error:
+   Directory not found: /home/henrik/c64-re-tools-lang-probe … java.io.FileNotFoundException`,
+   exit 1 (MEASURED). It creates the *project* inside an existing directory, not the
+   directory. `mkdir -p` is a precondition, and it composes badly with constraint 1
+   (no dot-prefixed element) — so the harness needs an explicit, non-hidden,
+   pre-created scratch location.
+5. **The `ZERO_PAGE` / `STACK` "Failed to add language defined memory block due to
+   conflict" INFO lines are *not* specific to the flat-64K route.** Phase 23 recorded
+   them as appearing "in the flat-64K route only". They also appear for a **4096-byte**
+   image at `-loader-baseAddr 0x0` (MEASURED). The real trigger is "the image covers
+   `$0000-$01FF`", not "the image is 64K". A harness that greps its log for a failure
+   keyword must exempt them on *any* base-0 import, which is a slightly wider
+   exemption than the recorded note implies.
+
+### C.4 The SLEIGH extension — the drop-in route WORKS, and the committed source DOES NOT COMPILE
+
+Two findings, one good and one that changes planning.
+
+**Finding 1 — a 6502 language variant installs headlessly with no Ghidra build and
+no Gradle. MEASURED end to end.** Minimum file set:
+
+```
+$GHIDRA/Ghidra/Extensions/<ModuleName>/
+  Module.manifest            # may be EMPTY -- the shipped 6502 module's is zero-length (SOURCE)
+  extension.properties       # name= description= author= createdOn= version=
+  data/sleighArgs.txt        # may be empty
+  data/languages/
+    <name>.ldefs             # declares processor/endian/size/variant/version/slafile/processorspec/id
+    <name>.slaspec           # @include "<path>/6502.slaspec"  +  @include "6502_undocumented.sinc"
+    <name>.sla               # produced by support/sleigh
+    6502.pspec  6502.cspec   # copied from Ghidra/Processors/6502/data/languages/
+```
+
+Built with `support/sleigh <name>.slaspec <name>.sla`, then:
+
+```
+analyzeHeadless <dir> langprobe -import tiny.bin \
+  -processor 6502:LE:16:nmos -loader BinaryLoader -loader-baseAddr 0x0 -noanalysis -deleteProject
+→ INFO  Using Language/Compiler: 6502:LE:16:nmos:default (ProgramLoader)
+→ INFO  REPORT: Import succeeded (HeadlessAnalyzer)          [exit 0]
+```
+
+**No `gradle` on this host's `PATH`, and none needed.** `support/buildExtension.gradle`
+and the Gradle ≥ 8.5 floor apply only to extensions that ship compiled Java.
+The probe extension was removed afterwards, leaving the install as found.
+
+The `.ldefs` used a **new `variant`** (`nmos`) under the existing `processor="6502"`,
+giving language id `6502:LE:16:nmos`. That is the collision-free shape the
+undocumented-opcode doc's `@include` layering already argues for: stock
+`6502:LE:16:default` and `65C02:LE:16:default` are untouched, so the `65c02.slaspec`
+opcode-byte collision the doc warns about cannot arise.
+
+**Finding 2 — `docs/undocumented-opcodes-ghidra.md`'s extension source does not
+compile under Ghidra 12.1.3. This contradicts the roadmap.** ROADMAP.md states
+*"the extension source exists in full at `docs/undocumented-opcodes-ghidra.md`
+(766 lines, all 105 bytes) … `OPC-01..03` integrate and verify it; they do not
+write it."* Extracted verbatim from the fence (547 lines of `.sinc`), wrapped in
+`@include "6502.slaspec"` + `@include "6502_undocumented.sinc"`, and compiled:
+
+```
+ERROR 6502_undocumented.sinc:217: ... Main section: Could not resolve at least 1 variable size
+ERROR 6502_undocumented.sinc:390: ...   (same)
+ERROR 6502_undocumented.sinc:449: ...   (same)
+ERROR 6502_undocumented.sinc:458: ...   (same)
+ERROR 6502_undocumented.sinc:493: ...   (same)
+ERROR 6502_undocumented.sinc:504: ...   (same)
+ERROR 6502_undocumented.sinc:518: ...   (same)
+ERROR 6502_undocumented.sinc:525: ...   (same)
+WARN  2 NOP constructors found
+ERROR No output produced
+```
+
+**8 failing constructors; no `.sla` emitted.** MEASURED.
+
+**The control passed.** Stock `6502.slaspec`, compiled in the same scratch
+directory with the same `sleigh` binary, produced a **5094-byte** `.sla` — byte-size
+identical to the shipped `6502.sla` — with only benign warnings (`1 NOP constructors`,
+`Unreferenced table: 'ADDR8'`). So the 8 errors are in the extension source, not in
+the harness. That is a fix-observed-green / defect-observed-red pair, in the form
+this project's standing constraints require.
+
+**Root cause, one class for all 8.** Every failure is an **unsized value used where
+SLEIGH needs an explicit size**, in two flavours:
+
+- *Userop return has no intrinsic size* (lines 390, 458, 493, 504, 518, 525): all six
+  `define pcodeop` calls — `unstableXAA`, `unstableLAXImmediate`, `unstableAHXStore`,
+  `unstableTASStore`, `unstableSHXStore`, `unstableSHYStore` — are consumed as
+  `local value:1 = unstableXXX(...)` or `A = unstableXAA(...)`.
+- *Constant token field feeding a sized expression* (line 449): `undocSBC(imm8)`,
+  whose macro body does `zext(value)` on an operand that carries no size.
+
+Line 217 (`:NOP imm16 is op=0x0c` with `local ignored:1 = *:1 imm16;`) is the same
+family. All are mechanically fixable; none suggests the *semantic modelling* is wrong.
+
+**Consequence for the roadmap, stated plainly.** `OPC-01..03` must be planned as
+**fix, compile, and verify**, not "integrate and verify". The good news is that the
+gate is now cheap and objective: a green `support/sleigh` compile producing a `.sla`
+is a mechanical pass/fail, and `sleigh -n` / `-l` / `-c` give conflict and NOP
+diagnostics for free. Also carry forward from the doc's own accuracy notes: `XAA`
+(`$8B`) and immediate `LAX/LXA` (`$AB`) stay black-box userops (electrically
+unstable), and `AHX`/`TAS`/`SHX`/`SHY` keep the nominal effective address for
+static references while the *stored value* is a userop — which is exactly why those
+six declarations exist and why fixing them must not collapse them into deterministic
+p-code.
+
+### C.5 Vendoring vs. fetching Ghidra
+
+**Recommendation: fetch at first use, never commit.** 543 MiB zip / 882 MiB unpacked
+against a repo whose entire payload is ~155k lines of TypeScript. Apache-2.0 permits
+redistribution, so this is a size and freshness decision, not a licence one.
+
+- Ghidra becomes a **declared host prerequisite** alongside VICE and ACME, recorded
+  by **version, never by install path** — the discipline Phase 23 already adopted
+  because its probe install's own README disclaims being depended on.
+- If a fetch step is wanted, the release digest is publishable and stable:
+  `93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54`.
+- What *is* committed: the harness scripts (`ExportAnalysis23.java`,
+  `FlatVolatile.java` and their successors), the `.slaspec`/`.sinc`/`.ldefs`
+  extension sources, and the `sleigh` invocation. Not the `.sla` — it is a build
+  artefact of a specific Ghidra version, and this project already has the
+  generated-but-committed pattern (`resources/*.mjs` + `resources-sync.test.ts`) if
+  a committed `.sla` with a drift guard is preferred. **Decide deliberately**: a
+  committed `.sla` pins the Ghidra version; a built one does not.
+
+### C.6 Version floors for (c)
+
+| Mechanism | Floor |
 |---|---|
-| `AnnoSymbol { address, name, kind, type? }` | `symbol` table. `kind` ∈ `User`/`Auto`/`System`; `type` ∈ `Subroutine`/`AbsoluteAddress`/… |
-| `AnnoComment { address, type, comment }` | `comment` table. `type` ∈ `line`/`side` — **keep both**; the ACME renderer needs the distinction. |
-| `AnnoBlockEntry { start_address, end_address, type }` | `range` table. **Widen `type`** from anno's `BlockType` Display strings to the milestone's full seven-value vocabulary: `code`, `byte`, `word`, `address`, `petscii`, `screencode`, `table`. |
-| `AnnoCrossReference { address, callers[] }` | `xref` table, or a derived view over the typed decode. |
+| `analyzeHeadless` + `BinaryLoader` + `-loader-baseAddr` | any modern Ghidra; **12.1.3 verified** |
+| `DecompInterface` structural export | 12.1.3 verified (Phase 23) |
+| `support/sleigh` standalone compile | 12.1.3 verified |
+| Drop-in language extension, no Gradle | 12.1.3 verified |
+| JDK | **21**, no upper bound |
+| Gradle | 8.5 — **not required** |
 
-Rename off the `anno` prefix, keep the field names (they are already the wire shape the absorbed procedures speak), and note `start_address`/`end_address` are **inclusive** in the existing code — carry that, and document it, because half-open vs closed is the other classic interval bug.
+---
 
-### Where `anno-coverage.ts`'s `classAt()` must NOT be copied
+## (d) The execution seam — running a JVM-scale host tool from a container-side skill
 
-`classAt()` (line 342) is a linear scan over `classRuns` — the 4.6 µs/lookup shape measured above, 301 ms per full 64K pass. Its own comment says why it is acceptable there ("Linear over runs, which is what keeps the census JSON-safe"), and for a once-per-census lookup it is. **Do not carry that shape into the store's hot path**, which is queried once per decoded instruction across the whole image. Use the paint array. Note this explicitly in the plan, because copying the nearest existing function is the obvious move and it is the wrong one here.
+**Confidence MEDIUM.** This is the one section resting partly on survey rather than
+measurement, and it is the section the roadmap should treat as a decision to make,
+not a conclusion to adopt.
 
-### Tool-surface registration and argument validation
+### D.1 The constraints, restated with numbers
 
-- Register through `buildViceTool()` (`vice-proxy.ts:3263`), following the existing `anno_*` precedent at `:3402`. This satisfies the architecture constraint **by construction**: neither `rewriteArguments()` call site (`:3029` inside `forwardToVice()`, `:1508` inside `gatherWedgeEvidence()`) is reachable, so there is no interception to forget and the store is backend-agnostic for free. Re-check those line numbers at plan time — `docs-linerefs.test.ts` guards two of them and PROJECT.md warns they drift.
-- **The proxy validates nothing.** `vice-proxy.ts:3216-3230`: `rawJsonSchemaAsStandardSchema()` returns `validate: (value) => ({ value })`, and the header says so plainly — *"this proxy has never validated argument shape itself."* So every store tool receives **unvalidated** arguments. Validate in the store: address range `0x0000–0xFFFF`, `lo <= hi`, `type` in the seven-value set, label matches `assertLegalAcmeIdentifier()` (`anno-acme-ident.ts`, `MAX_ACME_IDENTIFIER_LENGTH = 200`) — throwing named error subclasses per the existing `ViceError` convention. **Do not add `zod`.**
-- **`anno-acme-ident.ts` (97 lines) is a keeper.** It already enforces ACME identifier legality, which is what stops an illegal label reaching the exporter and failing the ACME oracle late instead of at the setter.
+- `seeds/host-tool-executor.md` is explicit that host binaries are reached over the
+  broker's container-out seam and never `spawnSync`'d from a skill script — and it
+  is framed around **stateless** tools (`c1541`, `petcat`, `cartconv`, `acme`) with
+  short-lived open/send/close connections. **Ghidra is nowhere in that seed.**
+- `MAX_LINE_BYTES = 65536`, confirmed in **both** the authored `broker-control.mts:242`
+  and the compiled `resources/broker-control.mjs:42` (MEASURED). On overflow the socket
+  is `destroy()`ed with no error frame — indistinguishable from a drop.
+- `ControlRequestKind` is a closed 7-member union: `acquire | release | recycle |
+  status | host_state | monitor_claim | monitor_release` (SOURCE). Nothing runs a
+  host binary.
+- **The broker's process fate is shared.** `broker-kill.mts:367-374` turns any
+  unhandled throw into kill-and-exit. Running a JVM inline would make every live
+  emulator hostage to a Ghidra bug. The seed already names this the decisive coupling.
+- **JVM startup measured on this host: 12 591 ms and 17 386 ms** to reach
+  `Headless startup complete` — before any import or analysis. This is the number
+  that makes "one `analyzeHeadless` per request" untenable at interactive pace.
 
-### The tool surface is a diff, not a design
+### D.2 What comparable projects do
 
-`.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json` exists and already classifies every verb the five absorbed procedures call as `curated` / `omit` / `adapt-to-address-input`. Derive the store's surface from it. No stack implication — just: the input exists, at that path, and it survives (it is a `.planning/phases/` artifact, which this project deliberately does not archive).
+Every implementation surveyed converges on the same shape: **one resident JVM
+holding the project open, reached over a localhost socket, returning results
+in-process** — explicitly because per-invocation JVM startup is prohibitive. Named:
+**PyGhidra**, which is *in-tree* (`Ghidra/Features/PyGhidra/ghidra_scripts` appears
+in `analyzeHeadless`'s own script-path list, MEASURED); **pyghidra-mcp**
+(clearbluejar); **ghidra-headless-mcp** (mrphrazer); **ghidra-cli** (akiselev), which
+connects a CLI to a Java bridge inside Ghidra's JVM via a `ServerSocket` on a dynamic
+localhost port. Confidence MEDIUM (web survey, cross-corroborated across four
+independent projects; none inspected at source level here).
+
+That is a striking structural parallel: **it is the same design as this project's own
+VICE broker** — a long-lived host daemon holding expensive state, a localhost control
+socket, dynamic port allocation, leases.
+
+### D.3 Three realistic options
+
+| Option | Shape | Fits the seed? | Cost |
+|---|---|---|---|
+| **1. Namespaced job op on the existing broker port** — `ghidra_*` prefixed ops routed at the top of `handleLine` before any lease-bearing path, handed a deps object containing **none** of the seven VICE callbacks; work runs in a **child process**; the reply is a **job id**, and results are **files whose paths come back through `containerpath.ts`** | Extends the seed's own design rather than contradicting it: prefix routing (its "namespaced ops"), child-process isolation (its constraint 1's decisive answer), path-not-payload (its constraint 2's stated remedy) | The seed's "no lease, no session, no warm state" assumption breaks: a 12-17 s startup plus multi-minute analysis needs **async jobs**, which the broker has never had. It has leases, not jobs. That is genuinely new machinery. |
+| **2. A second leased subsystem beside the VICE pool** — a resident Ghidra JVM with its own lease, its own port, supervised by the same broker | Matches what every surveyed project does, and matches the broker's own proven architecture | Most new code. Two pools to supervise, and the single-owner `inFlight` launch-guard discipline has to be replicated (or generalised) without weakening the one that exists — CLAUDE.md pins it as a synchronous check-and-set because of a real outage. |
+| **3. Widen the stateless executor and eat the startup cost** — one `analyzeHeadless` per request, results as file paths | Smallest delta, closest to the seed as written | 12-17 s dead time per call, and the container-side client must hold a connection open for minutes against a 64 KiB-line protocol with no chunking and no heartbeat. Realistic **only** if Ghidra runs once per corpus item as a batch step, not per query. |
+
+**Opinion.** For v0.8.0's actual need — a raw image in, a structural export out,
+once per corpus item — **option 1 with a batch framing is the right size**, and
+`-process` (run scripts against files already imported, no re-import) plus
+`-log`/`-scriptlog` to a file makes one JVM invocation cover many post-scripts. The
+`.asm`/`.c`/`.json` three-file idea from the pasted proposal fits this naturally:
+they are **files**, which is exactly what the 64 KiB cap forces anyway.
+
+Option 2 is the right end state if Ghidra ever becomes interactive (an agent asking
+"decompile this function" mid-session), and the milestone should say which of those
+two futures it is building toward rather than discovering it later.
+
+**Open question this document does not settle, and neither does the todo:** whether
+`program.json` should exist at all, or whether the Ghidra post-script should write
+**directly into `.annostore`** through the `anno_*` verbs. The post-script runs
+host-side inside a JVM; `.annostore` is a `node:sqlite` file behind a container-side
+seam. Writing to it from Java would either duplicate the seam in a second language or
+require the JVM to call back through the broker — both of which are worse than
+emitting a file the container-side importer consumes. **Recommendation: emit files
+host-side, import container-side through the existing seam.** That keeps
+`STORE-*`'s single-seam property intact and keeps Java out of the store's schema.
+
+### D.4 The retroactive migration this milestone inherits
+
+The seed's retroactive scope means **acme-build's `spawnSync("acme", …)` PATH ladder
+(`scripts/acme.mjs:124`) and `packer-finding.mjs:247,306` move behind the same seam**,
+with a grep gate banning external-binary spawns in `src/skills/*/scripts/`. dxa
+becomes a **third** consumer of that gate on day one. Whatever seam (d) chooses has
+at least four callers immediately — which argues for building it properly rather than
+bolting a Ghidra-shaped hole into the control plane.
 
 ---
 
 ## Installation
 
+No npm changes. All of this is host prerequisites, launch flags and vendored source.
+
 ```bash
-# Core:       nothing. node:sqlite is built in at the project's existing Node floor.
-# Supporting: nothing.
-# Dev:        nothing.
+# (a) frame-exact stop -- nothing to install. Stock VICE >= 3.9 already suffices.
+#     x64sc must be launched with BOTH monitors and the determinism flags:
+x64sc -default \
+      -binarymonitor -binarymonitoraddress ip4://127.0.0.1:$BINPORT \
+      -remotemonitor -remotemonitoraddress ip4://127.0.0.1:$TXTPORT \
+      -raminitstartrandom 0 -raminitrepeatrandom 0 -raminitrandomchance 0 \
+      -warp -sounddev dummy
+#     (-default MUST precede -binarymonitor, and -drive8type 1541 ordering is pinned)
+
+# (b) dxa 0.1.5 -- vendored, digest-gated, built
+echo '8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799  dxa-0.1.5.tar.gz' > dxa-0.1.5.tar.gz.sha256
+curl -fsSL -o dxa-0.1.5.tar.gz https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
+sha256sum -c dxa-0.1.5.tar.gz.sha256          # refuse the build if this fails
+tar xzf dxa-0.1.5.tar.gz && cd dxa-0.1.5 && make && make test
+# -> ./dxa, sha256 0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523
+
+# (c) Ghidra 12.1.3 -- host prerequisite, fetched not committed
+#     https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
+#     sha256 93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54  (543 MiB)
+#     requires JDK >= 21 (Debian 13: apt install openjdk-21-jdk)
+#
+#     SLEIGH extension -- no Gradle, no Ghidra rebuild:
+mkdir -p "$GHIDRA/Ghidra/Extensions/C64Nmos6502/data/languages"
+: > "$GHIDRA/Ghidra/Extensions/C64Nmos6502/Module.manifest"     # empty is correct
+: > "$GHIDRA/Ghidra/Extensions/C64Nmos6502/data/sleighArgs.txt"
+# + extension.properties, *.ldefs (variant="nmos", id="6502:LE:16:nmos"),
+#   *.slaspec, 6502.pspec, 6502.cspec
+"$GHIDRA/support/sleigh" 6502_nmos.slaspec 6502_nmos.sla
 ```
-
-`src/mcp/vice/package.json` is unchanged — same two `dependencies`, same two `devDependencies`, same `engines: { node: ">=22.18.0" }`. `package-lock.json` is unchanged, so `scripts/ensure-mcp-deps.sh` stays a no-op for every existing user. Both published tarballs gain only source files, so `scripts/check-npm-packages.mjs` needs new `files[]` entries and nothing else.
-
-The only prerequisite unchanged-but-worth-restating: **real ACME on `$PATH`** for the export oracle, already documented.
-
----
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When the alternative wins |
-|-------------|-------------|---------------------------|
-| `node:sqlite` | `better-sqlite3` 13.0.3 | If a measured hot path needs better-sqlite3's faster statement path, *and* the 11.4 MB install plus the hard failure off its eight prebuild targets are accepted. Neither applies: measured cost is 1.16 ms/edit against a durability floor of one fsync. |
-| `node:sqlite` | `node-sqlite3-wasm` 0.8.60 | Only on a platform lacking `node:sqlite`. None exists — it is in the runtime on every platform Node ships for. |
-| `node:sqlite` | JSON + atomic rename | If the store were tiny and write-rare (< ~50 KB, a handful of edits per session). At 6,000 symbols it is 16 ms/edit and rising. **Keep the technique for the git-diffable text export.** |
-| `node:sqlite` WAL | `node:sqlite` `journal_mode = DELETE` | If single-file-at-rest after an unclean exit is a hard requirement (e.g. a user copies the store while a crashed process's sidecars are on disk). Same crash guarantee, higher commit cost. |
-| Paint array | Sorted array + binary search | If the address space exceeds 64K (banking, REU) or 256 KB of retained memory becomes objectionable. 0.31 µs/lookup, cross-validated against the paint array on all 65,536 addresses. |
-| Owned interval index | `@flatten-js/interval-tree` 2.0.3 | If the domain became unbounded/sparse *and* narrowest-wins were dropped in favour of all-overlaps. Neither is true. |
-| Inverse-command journal | SQLite changesets | If Node exposes `sqlite3changeset_invert`. Record as a named reversal trigger — it would remove the "inverse computed wrong" bug class entirely. |
-| Owned validation | `zod` 4.4.3 | Never, at the current dependency posture: `zod` is an undeclared transitive of `@mastra`. If the project ever declares it directly and deliberately, revisit. |
-| FTS5 for search | `LIKE 'prefix%'` on an indexed column | Both are free (FTS5 is compiled in). FTS5 suits prose comments; `LIKE`/`GLOB` suits identifier and prefix matching, which is what `AUTO_NAME_PREFIX_RE` queries look like. Decide per query at plan time; not a stack decision. |
-
----
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| Text-monitor `stopwatch` for the monotonic clock | `CPUHISTORY_GET` (0x86) newest-entry cycle count over binmon | Only on VICE ≥ 3.10 *and* only if the text channel is unavailable. It forces a 3.10 floor that excludes every current Debian/Ubuntu — and `chis` over text gives the same data on 3.9. |
+| Converge to a cycle target by counted `step` | Checkpoint condition on `(RL == N)` + `ignore <F-1>` | Better when the program *has* an address executed exactly once per frame (its own raster IRQ). Fewer round trips. But it is **not general**: `$EA31` is CIA-timer driven at ~60.4 Hz, not frame-locked, and my measurement shows it landing on `LIN` 116/223/267 across runs. Use it as a fast path with the cycle-target loop as the fallback. |
+| `-raminit*` determinism flags | `-seed <value>` | `-seed` is a plausible-looking single lever and I did **not** establish that it alone fixes RAM init; the three `raminit*` flags demonstrably do. Prefer the flags. Setting `-seed` as well costs nothing and pins any other RNG consumer. |
+| `bsave` 64K to a host file | `.vsf` `dump` + `C64MEM` slicing | `.vsf` is the already-validated route and carries chip state too; `bsave` is a cheap independent cross-check that the slicer is correct. Use both, at least once, as a two-instrument agreement test. |
+| dxa `-B <file>` for data blocks | Long `-b` argv | `-b` for a handful of hand-authored ranges; `-B` for anything derived from the store. |
+| Fetch Ghidra at first use | Vendor the 543 MiB zip | Vendor only if a hermetic offline build becomes a hard requirement. Apache-2.0 permits it; repo size does not. |
+| Emit `.asm`/`.c`/`.json` files, import container-side | Ghidra post-script writes `.annostore` directly | Never, in my view — it duplicates the store seam in Java or forces a JVM→broker callback. |
+| Option 1 (namespaced job op) for (d) | Option 2 (leased Ghidra subsystem) | When Ghidra becomes interactive rather than batch. |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `better-sqlite3` 13.0.3 | 11.4 MB / 27.3 MB per consumer, unconditionally; no fallback off its eight prebuild targets (hard `MODULE_NOT_FOUND` on armv7/freebsd/s390x); changes the lockfile hash so every user's next session runs `npm ci`; and fails `ENGINEERING_RULES.md` §4(1) and §4(2) outright | `node:sqlite` |
-| `sqlite3` 6.0.1 | `install` script, `prebuild-install` + `tar` transitive deps, async-callback API | `node:sqlite` |
-| `lmdb` 3.5.6, `classic-level` 3.0.0, `level` 10.0.0 | `gypfile: true` + install scripts (a real build step); and a key/value store means hand-building the entire query surface | `node:sqlite` |
-| `lowdb` 7.0.1 | Last published 2023-12-26; it *is* the whole-file-JSON route (16 ms/edit, scaling with store size) with a dependency attached | Owned atomic-rename for the text export; `node:sqlite` for the store |
-| `write-file-atomic` 8.0.0 | `engines.node: "^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0"` — **above** this project's declared `>=22.18.0` floor. Adopting it forces a breaking `engines` bump for a ~15-line `node:fs` helper | ~15 lines of owned `node:fs`: `open` → `writeFile(fd)` → `fsyncSync(fd)` → `close` → `rename` → `fsync` the directory |
-| `proper-lockfile` 4.1.2 | 5.5 years stale; the store is single-writer by construction and SQLite handles the rest | SQLite locking + the existing FIFO-queue pattern |
-| Any interval-tree package | `static-interval-tree` has **no licence field**; `interval-tree2` and `augmented-interval-tree` are abandoned (2015 / one version ever); `node-interval-tree` and `interval-tree-1d` are 3.7–5.2 years stale; and the one maintained option (`@flatten-js/interval-tree` 2.0.3) still has no narrowest-wins semantics, so you write the deciding logic anyway | ~60–120 lines of owned paint-array code, extending `anno-coverage.ts`'s existing `toRuns()` pattern |
-| `immer` 11.1.18 | In-memory undo dies at process exit — the exact requirement it must satisfy | Inverse-command journal in SQLite |
-| `zod` 4.4.3 | Present only as an undeclared transitive of `@mastra`; a direct import is the same phantom-dependency defect class `anno-mcp-client.ts`'s header already names. And the proxy validates nothing anyway, so validation is store-local logic, not a schema layer | Owned validators throwing named `ViceError` subclasses; `anno-acme-ident.ts` for label legality |
-| `uuid`, `nanoid` | `node:crypto.randomUUID()` is built in | `randomUUID()` for `edit_log.group_id` |
-| Copying `anno-coverage.ts`'s `classAt()` into the store hot path | Linear over runs: 4.6 µs/lookup, 301 ms per full 64K pass, 250× slower than the paint array | The paint array. Leave `classAt()` where it is — it is correct for the census's once-per-report use. |
-| Keeping `anno-verify.ts` as "the ACME seam" | It parses **the external analyser's** `--verify` output and calls `runAnno()`; it dies with the subject | Build the ACME verify path on `disasm-roundtrip.test.ts`'s pattern, gated by the renamed `anno-test-gate.ts` |
-| A five-prefix reimplementation of the typed label prefixes | `AUTO_NAME_PREFIX_RE` already owns **eleven**; dropping six silently breaks `routine-queue-walker`'s backlog construction | Move the existing regex |
-| A test asserting the store's stderr is empty | `node:sqlite` emits an unconditional `ExperimentalWarning` on the Node 22 line | Assert on results; suppress with `--disable-warning=ExperimentalWarning` if noise matters |
+| **VICE event record/replay** as the frame-exact mechanism | Recording has **no command-line option and no non-UI caller on any version** — `event_record_start()` is reachable only from GTK3/SDL UI actions (MEASURED + SOURCE). Playback is launch-time only. | The measured recipe in § A.4. |
+| The text monitor's **`record` / `playback`** commands | They are **monitor-command file** scripting, not event history (MEASURED via `help record`). Mistaking them is a live trap. | Nothing — they are not relevant to determinism. |
+| `-limitcycles` | Quits the emulator with an error at the cycle limit (MEASURED), so no capture survives. | The counted-`step` convergence loop. |
+| Treating `LIN`/`CYC` as a frame counter | Not monotonic, and measurably drift across runs at the same instruction (`LIN` 116/223/267, MEASURED). | Derive frames from `stopwatch` / cycles-per-frame. |
+| Expecting a `STOPWATCH` register over the binary monitor | `mon_reg_list_6510[]` has no such entry (SOURCE). It is a text-only print column. | Text channel. |
+| Bare decimal literals in monitor commands | Hex by default: `z 100` steps **256** instructions (MEASURED). | `$`-prefixed literals everywhere, always. |
+| A breakpoint on `$FCE2` as a post-`reset 1` anchor | `reset 1` runs past the reset vector before returning control; the breakpoint never fires (MEASURED, twice). | `$E453` or another later once-per-reset address. |
+| Trusting `analyzeHeadless`'s exit status | **Exit 0 even when a post-script throws** (PRIMARY, Phase 23). | Grep the run log — now easier via `-log` / `-scriptlog` to a file. |
+| Trusting `dxa -d strict`'s exit status | Exited **0** on my inconsistent fixture (MEASURED), contradicting the man page's "disassembly will stop". | The owned parser's own by-name refusal (`DXA-03`). |
+| Planning `OPC-01..03` as "integrate the existing source" | **It does not compile** — 8 constructors, `No output produced`, with a passing control (MEASURED). | Plan fix→compile→verify, gated on a green `sleigh` run. |
+| Gradle, or a Ghidra source build, for the SLEIGH extension | Neither is needed for a language-only extension (MEASURED end to end). | `support/sleigh` + a drop-in `Ghidra/Extensions/<Name>/` module. |
+| A new npm runtime dependency (`better-sqlite3`, an interval tree, a parser combinator) | Already Out of Scope, and nothing here needs one. | Node builtins + owned code. |
+| Running Ghidra inline in the broker process | `broker-kill.mts:367-374` makes any unhandled throw kill the whole VICE pool. | Child process, always. |
+| Returning a Ghidra export inline over the control channel | 64 KiB line cap, and overflow `destroy()`s the socket with no error frame (MEASURED, both halves). | Write host-side, return a `containerpath.ts`-translated path. |
+| `spawnSync` of any external binary from a skill script | The seed's rule, and a grep gate is planned. dxa would be the third violation. | The (d) seam. |
 
----
+## Stack Patterns by Variant
+
+**If the target is PAL (the C64 crack-scene default):**
+- cyclesPerFrame = **19656**; confirmed empirically by `LIN` equality across 50 frames.
+
+**If the target is NTSC / NTSC-old / PAL-N:**
+- 17095 / 16768 / 20280 from `c64.h` (SOURCE), **UNVERIFIED on this host**.
+- `MachineVideoStandard` is a **power-cycling** resource — set it at launch, never at runtime.
+
+**If the backend is `stock`:**
+- Everything in (a) works at a **3.9** floor. The text-monitor client is required.
+
+**If the backend is `fork`:**
+- The 3.10 fork has the same six event options and the same absent `-record` (MEASURED),
+  so (a)'s recipe is *portable* — but the fork's HTTP-mediated stop is the thing the
+  todo measured as non-frame-exact, so a frame-exact tool is **stock-first and
+  fork-degraded**. Confirming (or refuting) that the fork's `-remotemonitor` text
+  channel restores exactness is **UNVERIFIED**; the probe is `det5.mjs`'s recipe run
+  against `/usr/local/bin/x64sc`.
+
+**If a devcontainer is in play:**
+- dxa, Ghidra, `acme`, `c1541`, `petcat` are all **host-side**. Nothing in (b) or (c)
+  may be spawned from a skill script. Note there is **no devcontainer in this repo** —
+  the seam is for consumers, so its correctness cannot be demonstrated here and must
+  be asserted structurally, the way `hostpath-consumers.test.ts` already does.
 
 ## Version Compatibility
 
-| Package A | Compatible with | Notes |
-|-----------|-----------------|-------|
-| `node:sqlite` | Node **>= 22.13.0** without any flag | Added v22.5.0 behind `--experimental-sqlite`; flag removed in **v22.13.0 / v23.4.0** (nodejs/node PR #55890, read from `doc/api/sqlite.md`'s YAML changelog on the `v22.x` branch). The project's `engines` floor of `>=22.18.0` already clears it — **no `engines` bump needed.** |
-| `node:sqlite` stability | **1.1 Active development** on the `v22.x` line; **1.2 Release candidate** since **v24.15.0 / v25.7.0** (PR #61262) | Read from the `v22.x`, `v24.x`, `v25.x` and `main` branches of `doc/api/sqlite.md` this session. Node 22 entered maintenance 2025-10-21 and is EOL **2027-04-30** (`nodejs/Release/schedule.json`); Node 24 is Active LTS. So the *practical* trajectory is toward RC, and a user on Node 24+ already gets RC. |
-| Experimental warning | Emitted on Node 22 only | `lib/sqlite.js` on `v22.x` calls `emitExperimentalWarning('SQLite')` unconditionally at module load. On `v24.x`, `v25.x` and `main` the file is just `module.exports = internalBinding('sqlite')` — **no warning at all.** It goes to stderr, so it cannot corrupt the stdout JSON-RPC channel. Suppress with `--disable-warning=ExperimentalWarning` (verified working on 22.22.0) if `smoke.mjs` or a test is stderr-sensitive. |
-| API drift risk | **Additive only, so far** | Diffing `doc/api/sqlite.md`'s method headings `v22.x` vs `main`: **20 additions, 0 removals.** Only two signature changes, both adding *optional* parameters (`loadExtension(path[, entryPoint])`, `prepare(sql[, options])`). New on `main`: `enableDefensive`, `setAuthorizer`, `limits`, `serialize`/`deserialize`, `createTagStore`, `statement.close()`, `statement.stat()`, `resetStats()`, `[Symbol.dispose]` on session and statement, and the `sqlTagStore` family. This is real evidence that "might change at any time" has, in practice, meant "gains things" — the strongest available answer to the stability objection. Mitigate anyway: **confine `node:sqlite` behind one seam module** (the project's established single-seam pattern) so a future break is a one-file fix, and express the schema in SQL rather than in driver API calls. |
-| `@types/node` 24.13.3 | `node:sqlite` | `sqlite.d.ts` present; `createSession`/`applyChangeset` typed at lines 531/561; **no `invert`**. Typechecks clean under `--strict --module nodenext --target es2022`. Verified by running `tsc`. |
-| Node native type-stripping | `node:sqlite` | Verified: a `.ts` file doing `import { DatabaseSync, type StatementSync } from "node:sqlite"` runs directly on Node 22.22.0 and typechecks clean. No build step. |
-| Statements on Node 22 | No `statement.close()` | `StatementSync.prototype` on 22.22.0 has `run get all iterate columns setAllowBareNamedParameters setAllowUnknownNamedParameters setReadBigInts setReturnArrays` — no `close`. Statements are GC'd. `main` adds `close()` and `[Symbol.dispose]`. Do not write code that depends on explicit statement disposal. |
-| ACME | 0.97 "Zem" (31 Jan 2021) | Unchanged. `label = * + $01` verified working. |
+| Component | Compatible with | Notes |
+|---|---|---|
+| stock VICE 3.9 | the entire (a) recipe | MEASURED. No 3.10 requirement anywhere in (a). |
+| stock VICE 3.9 | `CPUHISTORY_GET` (0x86) | **INCOMPATIBLE** — opcode absent. `chis` over text is the 3.9 route. |
+| Ghidra 12.1.3 | JDK 21 (no max) | MEASURED (`application.java.min=21`, empty max). |
+| Ghidra 12.1.3 | Gradle 8.5 | Only for Java-bearing extensions. Not needed here. |
+| Ghidra 12.1.3 | Phase 23's recorded command line | Same version — no drift to re-establish. |
+| Ghidra 12.1.3 `support/sleigh` | `docs/undocumented-opcodes-ghidra.md` | **INCOMPATIBLE as committed** — 8 errors, no output. Control (`6502.slaspec`) compiles clean. |
+| dxa 0.1.5 | images > 64K or extending past `$FFFF` | Truncated with a warning (SOURCE). Segment first. |
+| dxa 0.1.5 | `-p all-nmos6502` output → `xa` | Man page warns illegal-opcode output may be unintelligible to `xa`. This project reassembles with **ACME**, not `xa`, so it must not assume round-trip. |
+| Node ≥ 24 | everything new | No change; `net` + `child_process` + `crypto` are builtins. |
+
+## Sources
+
+**MEASURED on this host, 2026-09-02** (HIGH confidence — primary):
+- `/usr/bin/x64sc --version` → `x64sc (VICE 3.9)`; `/usr/local/bin/x64sc --version` → `x64sc (VICE 3.10)`
+- `/usr/bin/x64sc -help` (1828 lines) — the six `event*` options, `-playback`, `-seed`, `-limitcycles`, the seven `-raminit*` options, absence of `-record`
+- `/usr/bin/x64sc -record` → `Unknown option '-record'`, exit 255
+- 9 cold `x64sc` launches driven over `-remotemonitor`: `help`, `help {reset,break,ignore,stopwatch,until,bsave,record,warp,cpuhistory,step,condition}`, `device c:`, `break exec`, `ignore`, `g`, `step`, `stopwatch [reset]`, `registers`, `bank ram`, `bsave`, `quit`. Transcripts and the six 64K dumps under `/home/henrik/.cache/c64-re-tools/frame-probe/`
+- 3-way byte diff of `d1/d2/d3-ram.bin` → 1554 bytes / 1514 ranges; `e1/e2/e3-ram.bin` → identical sha256
+- dxa: fetch + `sha256sum -c` + `make` + `make`-built binary digest + `man -l dxa.1` + `-a dump` / `-v` / `-d strict` / `-b '?…'` / flat-64K runs, under `/home/henrik/.cache/c64-re-tools/dxa-probe/`
+- `https://www.floodgap.com/retrotech/xa/dists/` directory listing
+- `gh api repos/NationalSecurityAgency/ghidra/releases/latest` → 12.1.3, asset name/size/sha256
+- `support/sleigh` on the extracted `.sinc` (8 errors, no output) and on stock `6502.slaspec` (clean, 5094 bytes) — the control pair
+- `support/analyzeHeadless` with `-processor 6502:LE:16:nmos` against a drop-in extension → `Using Language/Compiler: 6502:LE:16:nmos:default`, exit 0; and the `Directory not found` abort, exit 1
+- `grep MAX_LINE_BYTES src/mcp/vice/broker-control.mts src/mcp/vice/resources/broker-control.mjs` → 65536 in both
+
+**SOURCE — read directly** (HIGH confidence):
+- VICE `src/event.c` (1336 lines), `src/monitor/mon_register6502.c`, `src/monitor/monitor.c`, `src/arch/gtk3/actions-snapshot.c`, `src/c64/c64.h`, `src/vicii/vicii-timing.{c,h}` — fetched from `raw.githubusercontent.com/VICE-Team/svn-mirror/main/`
+- GitHub code search `event_record_start repo:VICE-Team/svn-mirror` → 6 files
+- Ghidra 12.1.3 `application.properties`, `Ghidra/Processors/6502/{Module.manifest,data/languages/*,data/build.xml,data/sleighArgs.txt}`, `Extensions/Ghidra/Skeleton/*`, `support/analyzeHeadlessREADME.md`, `support/launch.properties`
+- dxa 0.1.5 `Makefile`, `INSTALL`, `main.c` licence header, `dxa.1`
+- This repo: `src/mcp/vice/probe-binmon.mjs` (`CMD` table, `advanceInstructionsBody`), `broker-control.mts:30,242`
+
+**PRIMARY (repo)** (HIGH confidence — recorded real runs, carried not re-derived):
+- `.planning/phases/23-…/evidence/tools/instrument-provenance.txt` — the dxa pin and build, Ghidra 12.1.3 + JDK 21, the `analyzeHeadless` command line, the dot-path abort, the exit-0-on-script-throw defect, `VICE_BACKEND: fork 3.10`
+- `.planning/notes/text-monitor-channel-live-probe.md` — `sw`, `chis 4`, `warp`, `device c:`, `bt`, `prof`, `io`, `memmapshow` on stock 3.9, and the halt-on-command semantics
+- `.planning/todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md` — the 201-vs-1 divergence measurement
+- `.planning/seeds/host-tool-executor.md` — the container-out rule and its seven design constraints
+- `CLAUDE.md` / `PROJECT.md` — the settled protocol and capability constraints. **Nothing here contradicts them.** Three are *scoped* by new evidence, none refuted: (i) "no monotonic cycle register" — true of registers; the text `stopwatch` is the remedy, and `mon_register6502.c` now explains why; (ii) "`CPUHISTORY_GET` requires 3.10" — true of the opcode, not the capability; (iii) "warp must be launch-time" — true of the resource, not the `warp` command.
+
+**Web survey** (LOW→MEDIUM confidence — cross-corroborated across four independent projects, none inspected at source level):
+- [ghidra-cli (akiselev)](https://github.com/akiselev/ghidra-cli), [ghidra-headless-mcp (mrphrazer)](https://github.com/mrphrazer/ghidra-headless-mcp), [pyghidra-mcp (clearbluejar)](https://clearbluejar.github.io/posts/pyghidra-mcp-headless-ghidra-mcp-server-for-project-wide-multi-binary-analysis/), [Ghidra PyGhidra README](https://www.ghidradocs.com/11.4_PUBLIC/Ghidra/Features/PyGhidra/pypkg/README.html), [Ghidra Tip 0x05: Headless execution](https://maxkersten.nl/2024/06/30/ghidra-tip-0x05-headless-execution/) — all converging on one resident JVM behind a localhost socket
+
+**UNVERIFIED, each with its probe:**
+1. NTSC / NTSC-old / PAL-N cycles-per-frame → re-run the § A.4 recipe under `-ntsc`/`-ntscold`/`-paln`, assert `LIN` equality across a whole number of frames.
+2. Whether the recipe survives an **autostarted program** (the real use case, where drive timing enters) → autostart a `.prg`, anchor on its own entry, converge, compare 64K across two cold runs.
+3. Whether a text client and a binary client can be connected **simultaneously** without one's halt/resume corrupting the other's view → arm a checkpoint over binmon, read `stopwatch` over text, assert the two report the same PC.
+4. Whether the **fork** backend's text channel restores frame-exactness → same recipe against `/usr/local/bin/x64sc`.
+5. Whether a GUI-recorded event history **replays** cycle-identically → hand-record in GTK3, relaunch twice with `-eventstartmode 3 -playback`, compare 64K at a fixed cycle. *Low value: the recording half is unautomatable regardless.*
+6. Whether `dxa -d strict` **ever** exits non-zero → a fixture where a declared routine falls into illegal opcodes; assert the exit code.
+7. Ghidra's **full-tree licence** position beyond the per-module `LICENSE.txt` → read `$GHIDRA/licenses/` and the top-level `LICENSE`.
+8. The **RTC / CIA TOD** contribution to cross-run divergence → it did not surface, because with `raminit*` pinned the images were identical; it may resurface once a real program runs long enough to read TOD. Probe: extend the frame target by 100× and re-compare.
 
 ---
-
-## Sources and evidence ceilings
-
-Ordered by `ENGINEERING_RULES.md` §7's hierarchy. **HIGH** = real external system, live end-to-end.
-
-**HIGH — run live on this host (Node 22.22.0, ext4/NVMe, ACME 0.97):**
-- `node:sqlite` capability probe: SQLite version, WAL, `synchronous`/`foreign_keys` defaults, savepoints, UDFs, JSON1, FTS5, R*Tree, generated columns, full `DatabaseSync`/`StatementSync` prototype enumeration, `backup` export, `[Symbol.dispose]`.
-- Session/changeset probe: `createSession`, `changeset()` (22 bytes), `patchset()`, cross-database `applyChangeset()` → `true`. **Absence of `invert` confirmed** by prototype enumeration *and* by grepping `@types/node@24.13.3`'s `sqlite.d.ts`.
-- **Durability test:** insert → `process.kill(pid,'SIGKILL')` with no `close()` (exit 137) → reopen → row present → `PRAGMA integrity_check` = `ok`. Sidecar sizes observed.
-- **Persistence benchmark**, 2,000 mutating calls over a 6,000-symbol / 3,000-comment / 2,500-range store, run on ext4/NVMe *and* on tmpfs to quantify the tmpfs distortion (SQLite 0.026 ms on tmpfs vs 1.16 ms on disk — a 45× understatement, which is why the tmpfs run is not quoted).
-- **Interval benchmark:** paint array, sorted+binary-search, naive scan and the SQL formulation, plus a cross-validation of paint vs binary-search across all 65,536 addresses (0 disagreements).
-- **ACME oracle:** `smc_operand = * + $01` and the `= * - 1` variant assembled by real ACME 0.97, exit 0, label file and emitted bytes inspected.
-- `tsc --noEmit --strict --module nodenext` on a `node:sqlite`-using `.ts` file, and the same file executed directly under type-stripping.
-- `better-sqlite3-13.0.3.tgz` downloaded (11.4 MB), unpacked, `lib/binding.js` read for the fallback path, `prebuilds/` enumerated (8 binaries), `files[]`/`scripts`/`optionalDependencies` read from the shipped manifest.
-
-**HIGH — upstream source of truth, read directly:**
-- `doc/api/sqlite.md` and `lib/sqlite.js` on `nodejs/node` branches `v22.x`, `v24.x`, `v25.x`, `main` (stability levels, flag-removal PRs #55890/#61262, warning presence, method-heading diff).
-- `nodejs/Release/schedule.json` (Node 22 maintenance 2025-10-21, EOL 2027-04-30).
-- npm registry API (`registry.npmjs.org`) for every version, publish date, `engines`, `gypfile`, install-script and dependency claim in this document.
-- This repository's own committed source: `vice-proxy.ts` (`buildViceTool` :3263, SDK import :174, no-validation seam :3216-3230, `anno_*` registration :3402), `anno-coverage.ts` (`AnnoSymbol`/`AnnoComment`/`AnnoBlockEntry`/`AnnoCrossReference` :192-224, `ClassRun`/`toRuns`/`classAt` :272-347, `AUTO_NAME_PREFIX_RE` :1384), `anno-verify.ts` (external-analyser-not-ACME, `VERIFY_LINE_PATTERN`), `disasm-roundtrip.test.ts`, `anno-test-gate.ts`, `anno-acme-ident.ts`, `repo-root.ts`, `package.json`, `.gitignore`.
-- `.planning/PROJECT.md`, `.planning/ENGINEERING_RULES.md`, `.planning/seeds/own-the-annotation-store.md`.
-
-**MEDIUM — inference from directly-read evidence, not itself executed:**
-- *"Adopting `better-sqlite3` triggers `npm ci` for every existing user's next session."* Follows from `scripts/ensure-mcp-deps.sh` being gated on a lockfile sha256 (per CLAUDE.md) plus the fact that a new dependency changes the lockfile. The hook was not run.
-- *"No fallback off `better-sqlite3`'s eight prebuild targets."* Read from `lib/binding.js`'s fall-through to a `build/Release` path that no install script creates. Not tested on an armv7/freebsd host — no such host available.
-
-**Gaps, stated rather than smoothed:**
-- Node **24/25/26** were not available on this host, so the "no `ExperimentalWarning` on 24+" claim rests on reading `lib/sqlite.js` on those branches, not on running them. Source-level, high-confidence, but not live.
-- The 1.16 ms/edit figure is one machine's NVMe. A consumer on spinning rust or a network filesystem will be slower — but so will *every* route, since all of them are fsync-bound. The *ratio* between routes is the durable finding, not the absolute.
-- FTS5-vs-`LIKE` for the search surface was confirmed *available* but not benchmarked. Left as a plan-time decision.
-
----
-*Stack research for: owned annotation store with per-range interval typing, undo and crash-safe persistence (v0.7.0)*
-*Researched: 2026-08-26*
+*Stack research for: deterministic emulator capture + offline 6502 static analysis*
+*Researched: 2026-09-02*

@@ -1,742 +1,614 @@
 # Architecture Research
 
-**Domain:** Owned annotation store for a C64 reverse-engineering MCP plugin — v0.7.0
-**Researched:** 2026-08-26
-**Confidence:** HIGH for every integration point, guard, and line reference below (all obtained by direct inspection of this repository's own source at HEAD, not inferred and not re-derived from planning prose). MEDIUM for the store-internals recommendations (persistence shape, module split), which are design judgements grounded in the project's own established patterns rather than facts read off disk.
-
-> **Confidence-seam note, recorded rather than silently overridden.** `gsd_run query classify-confidence --provider local-source-read --verified` returns `LOW`. That taxonomy models *external* documentation providers; it has no provider id for first-party source inspection, which is the strongest available evidence for questions about this repository. Every claim tagged HIGH below cites the file and symbol it was read from, so a reader can re-verify in one command rather than trusting a tier label.
-
----
-
-## Executive answer, up front
-
-Four of this research's findings change the shape of the roadmap, so they lead:
-
-1. **`capability-registry.ts` needs no new entries, and adding one would be a factual error.** It holds only the *per-backend delta*. A proxy-local family has no delta. Backend-agnosticism is made structural somewhere else entirely — in **`stock-dispatch.test.ts`'s `BACKEND_SEAM_BYPASS_KEYS`** (§1.2).
-2. **Neither `tools-manifest.json` nor `tools-manifest.stock.json` is modified** — verified: `grep -c anno` returns `0` on both, and `refresh-manifest.ts` would wipe a hand-added entry on the next refresh. `docs/tool-support.md` likewise contains zero anno mentions.
-3. **The deletion is ~12k lines, not ~25.7k.** Of the 25,759 lines across `src/mcp/vice/anno-*.ts`, roughly **13,700 survive under new names** — `anno-coverage.ts` alone (2,292 + 6,484 test) has no anno-process coupling at all beyond two string literals. Framing the milestone as a 25.7k-line deletion will produce a phase plan that deletes reusable assets (§2.4).
-4. **There are more guards pinned to the deleted subject than the three named at scoping — nine, plus two CI scripts** (§5.3). Two of them (`scripts/generate-tool-support-table.mjs`, `scripts/check-skill-tool-coverage.mjs`) are CI gates that go red or throw *the moment the new family is registered*, before any deletion happens.
+**Domain:** Integrating a frame-exact emulator stop and a dxa + Ghidra-headless analysis
+pipeline into an existing, mature container-in / host-out MCP architecture
+**Researched:** 2026-09-02
+**Tree state:** every `file:line` below was read at HEAD `36f8c7c` — see § Citation Ledger
+**Confidence:** HIGH on integration points and guard breakage (read from the tree);
+MEDIUM on the frame-exact mechanism (reasoned from settled protocol constraints, not
+probed this session); LOW on Ghidra-in-CI cost (nothing probed)
 
 ---
 
-## Standard Architecture
+## Executive Answer
 
-### System Overview — where the annotation family sits
+Four findings reframe the question before any of (a)–(e) is answered. Each is read from
+the tree, not inferred.
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                    Claude Code  (MCP client, stdio)                          │
-└───────────────────────────────────┬──────────────────────────────────────────┘
-                                    │ JSON-RPC over stdin/stdout
-┌───────────────────────────────────▼──────────────────────────────────────────┐
-│  vice-proxy.ts   — the ONE stdio entry point / tool registry                 │
-│                                                                              │
-│  tools{}  registration, in source order (position is asserted, see §1.2):    │
-│   1. for (const def of manifestTools)   → buildBackendAwareTool()  ← fork/stock│
-│   2. RESULT_CONTINUE_TOOL.name          → buildViceTool()   ← BYPASS #1       │
-│   3. RECYCLE_TOOL.name                  → buildBackendAwareTool()            │
-│   4. DIAGNOSE_TOOL.name                 → buildBackendAwareTool()            │
-│   5. for (const annoDef of ANNO_TOOL_DEFINITIONS) → buildViceTool() ← BYPASS #2│
-│                                                    (was: annoDef, :3401-3402)│
-│                                                                              │
-│  rewriteArguments()  defined :2009 — exactly TWO call sites, both ABOVE:      │
-│      :1531  inside gatherWedgeEvidence()  (fn starts :1507)                  │
-│      :3052  inside forwardToVice()        (fn starts :2987)                  │
-│  ⇒ Neither is reachable from a buildViceTool() runner. BY CONSTRUCTION.       │
-└──────┬───────────────────────────────────────────────────┬───────────────────┘
-       │ BYPASS #2: no transport of any kind               │ direct tools
-┌──────▼───────────────────────────────────────────┐  ┌────▼──────────────────┐
-│           THE OWNED ANNOTATION STORE (new)        │  │ vice.ts   call()      │
-├───────────────────────────────────────────────────┤  │ DENY_LIST, retry      │
-│  anno-tools.ts   surface: defs, allow-list,       │  │ epoch/restart detect  │
-│                  arg validation, runAnnoTool()    │  └────┬──────────────────┘
-├──────────────┬───────────────┬────────────────────┤       │ HTTP / binmon
-│ anno-store.ts│ anno-xref.ts  │ anno-acme-export.ts│  ┌────▼──────────────────┐
-│  THE ONE     │ xrefs+search  │ ACME printer       │  │  host VICE (x64sc)    │
-│  persistence │ over typed    │ =*+$01, prefixes   │  └───────────────────────┘
-│  seam        │ decode        │                    │
-├──────────────┴───────────────┴────────────────────┤
-│  anno-model.ts   pure model: ranges, 12-member    │
-│                  type vocabulary, invariants      │
-├───────────────────────────────────────────────────┤
-│  SURVIVING OWNED MODULES (renamed, not rebuilt)   │
-│  disasm-opcodes/decoder/renderer · acme-ident     │
-│  d64 · prg-image · regbits-gen · enum-gen         │
-│  memmap-render · confidence · coverage            │
-├───────────────────────────────────────────────────┤
-│  repo-root.ts  repoRoot()  — container-side only  │
-│  ✗ NEVER hostpath.ts (asserted, §1.3)             │
-└───────────────────────┬───────────────────────────┘
-                        │ atomic write, container-side
-              ┌─────────▼──────────────┐
-              │ <workspace>/*.c64anno  │  one JSON doc: model + undo journal
-              └────────────────────────┘
-```
+1. **`vice-sync.ts` has zero importers anywhere in the repository.** `grep -rn 'from
+   "./vice-sync'` over `src/mcp/vice/*.ts` and `*.mts` returns exactly one hit —
+   `vice-sync.test.ts:22` — and `grep -rn "vice-sync\|runToCheckpoint\|waitCheckpointHit"
+   src/skills/` returns nothing. It is in `package.json`'s `files[]` (line 13) and is
+   pinned into the 5-member host-path consumer set (`hostpath-consumers.test.ts:144`), but
+   no live tool call reaches it. Its two invariants are **doctrine carried by comment
+   citation** across at least five sibling modules, not behaviour on any hot path.
+   *Consequence:* "both invariants must survive" does not mean "edit `vice-sync.ts`
+   carefully". It means every new wait is written against the same two rules, in the
+   idiom of the module it lives in.
 
-### Component Responsibilities
+2. **The live stock wait already ports invariant 1 into a stock-native form, and already
+   supersedes invariant 2.** `stock-run-until.ts:6` — "resumes the machine exactly once,
+   waits **event-driven** for THAT checkpoint's own `CHECKPOINT_INFO`" — with its own
+   header at `:26-27` naming `vice-sync.ts`'s rule by quotation. There is no polling at
+   all, so "poll on `hit_count`, never on paused state" is satisfied *a fortiori*: it
+   waits on the checkpoint's own event, keyed by checkpoint id, never on paused state.
+   This is the precedent the frame-exact stop follows.
 
-| Component | Responsibility | Typical implementation in this repo |
-|-----------|----------------|-------------------------------------|
-| `anno-tools.ts` | The tool surface: `ANNO_TOOL_DEFINITIONS`, `CURATED_ANNO_TOOLS`, `assertCuratedTool()`, `resolveStorePath()`, `runAnnoTool()` | Direct structural analogue of `anno-tools.ts` (1,214 lines), minus the child-process runner |
-| `anno-store.ts` | The ONE place that reads/writes the store file, applies a mutation, appends to the undo journal, and rewrites atomically | New; no analogue exists (this is what was rented from upstream `state/`) |
-| `anno-model.ts` | Pure model + invariants: address ranges, the data-type vocabulary, label/comment/scope/enum records. No I/O, no imports beyond `acme-ident.ts` | New |
-| `anno-xref.ts` | Cross-references and search derived from the typed decode | New, built on `disasm-decoder.ts`'s `decode()` |
-| `anno-acme-export.ts` | ACME source printer honouring block types, scopes, enums, `=*+$01`, typed prefixes | New, built on `disasm-renderer.ts` |
-| `acme-verify.ts` | Spawn a real ACME, parse **ACME's own** diagnostics, byte-compare the reassembled `.prg` | Rewrite of `anno-verify.ts` (184 lines) — see the correction in §3.3 |
-| `coverage.ts` | Derived-from-bytes coverage census the store's block table cannot move | Rename of `anno-coverage.ts`, two functions repointed (§2.3) |
+3. **The frame arithmetic is already built.** `stock-timing.ts` holds
+   `readCycleBaseline()` (`:274` — Route A reads `CPUHISTORY_GET`'s newest entry's
+   monotonic uint64 `cycle`, exact for any bracket on VICE ≥ 3.10; Route B reconstructs
+   from `LIN`/`CYC` and refuses across a proven frame boundary),
+   `resolveVideoStandard()` (`:147`), `VIDEO_STANDARDS` with `cyclesPerLine` /
+   `screenLines` per standard (`:70-73`), and `positionWithinFrame()` (`:200`). A frame
+   index is `absoluteCycle / (cyclesPerLine * screenLines)` over values this module
+   already produces. Nothing new has to be measured to *compute* a frame.
+
+4. **The measured nondeterminism was measured on the fork, and the fork's stop is
+   asynchronous by construction.** The todo's table is fork evidence: "The fork's
+   stopping exec checkpoint reports its hit but pauses roughly a frame later, at a
+   wall-clock-determined instruction." CLAUDE.md records, from stock source, that a
+   stock checkpoint is evaluated **synchronously from inside the CPU loop**
+   (`mon_breakpoint.c:557-562`, `mon_breakpoint_event()` called before `cp->stop` is
+   checked). Those are different stop mechanisms with different determinism properties,
+   and **no measurement of the stock stop's frame reproducibility exists in this
+   repository.** *Consequence:* step zero of the frame-exact phase is a re-measurement on
+   stock. It may find the capability already present, or already one refinement away.
+
+The rest of this document answers (a)–(e) on those four facts.
 
 ---
 
-## 1. Integration points, by file and symbol
-
-### 1.1 Registration: `vice-proxy.ts`, lines 194 and 3401–3402
-
-Two edits, both 1:1 substitutions of the existing anno route:
-
-```ts
-// vice-proxy.ts:194 — the only static import of the family
-import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
-//  →   import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
-
-// vice-proxy.ts:3401-3402 — the registration loop
-for (const annoDef of ANNO_TOOL_DEFINITIONS) {
-  tools[annoDef.name] = buildViceTool(annoDef, (args) => runAnnoTool(annoDef.name, args));
-}
-//  →   for (const annoDef of ANNO_TOOL_DEFINITIONS) {
-//        tools[annoDef.name] = buildViceTool(annoDef, (args) => runAnnoTool(annoDef.name, args));
-//      }
-```
-
-`buildViceTool()` is defined at `vice-proxy.ts:3263`. It calls `createTool()` and nothing else — no `forwardToVice()`, no `call()`, no `ensureViceSession()`, no `rewriteArguments()`.
-
-**The `buildViceTool()`-vs-`forwardToVice()` constraint, addressed directly.** CLAUDE.md's constraint is satisfied *by construction* for this family, and the construction is verifiable in one command:
+## System Overview — where the two new subsystems attach
 
 ```
-$ grep -n "rewriteArguments(" src/mcp/vice/vice-proxy.ts
-1531:    const { args: translated } = rewriteArguments({ path: screenshotContainerPath }, ...);
-2009:function rewriteArguments(
-3052:    const rewritten = rewriteArguments(args, name);
+┌──────────────────────── CONTAINER SIDE (or host, undifferentiated) ─────────────────┐
+│                                                                                      │
+│  Claude Code / MCP client                                                            │
+│         │ stdio JSON-RPC                                                             │
+│         v                                                                            │
+│  vice-proxy.ts  ── tools/list from manifest, tools/call dispatch                    │
+│    ├─ manifest loop ──> buildBackendAwareTool ──> forwardToVice() :2985             │
+│    │                                                 │ rewriteArguments() :3050      │
+│    │                                                 v                               │
+│    │                                            vice.ts call() :697                  │
+│    │                                            DENY_LIST :201                       │
+│    ├─ RESULT_CONTINUE_TOOL ──> buildViceTool  (bypass #1)                            │
+│    └─ anno_* loop :3388     ──> buildViceTool  (bypass #2)                           │
+│                                    │                                                 │
+│                                    v                                                 │
+│                              anno-store.ts openStore() :432   ── .annostore           │
+│                              (the ONE node:sqlite namer)                             │
+│                                                                                      │
+│  vice-broker-client.ts ── { op:"acquire", id, token } :372 / :867                    │
+│         │                                                                            │
+└─────────┼────────────────────────────────────────────────────────────────────────────┘
+          │  TCP control channel, newline-JSON, MAX_LINE_BYTES = 65536
+          │  (broker-control.mts:242) · per-boot token, tokensMatch() :267
+          v
+┌──────────────────────── HOST SIDE ──────────────────────────────────────────────────┐
+│  vice-broker.mjs (compiled from .mts by build.ts, deployed to <root>/tools)          │
+│    broker-control.mts handleLine() :508 ── flat if/else over ControlRequestKind :30  │
+│    broker-launch.mts  buildViceArgs() :153 · maintainWarmFloor() :953 · inFlight :78 │
+│    vice-broker.mts    selectWarmInstance() :473 · handleRelease() :929               │
+│    broker-kill.mts    verifiedKill() :126 · uncaughtException -> kill+exit :367-374  │
+│         │                                                                            │
+│         v                                                                            │
+│    x64sc  (stock binary monitor  |  fork -mcpserver)                                 │
+│                                                                                      │
+│  ┌── NEW in v0.8.0 ────────────────────────────────────────────────────────────┐     │
+│  │  dxa (vendored C, pinned, built)      Ghidra analyzeHeadless (JVM)          │     │
+│  │        │                                     │                              │     │
+│  │        └── code/data map ───────────────────>│ pre-script: volatile carve   │     │
+│  │                                              │ post-script: DecompInterface │     │
+│  │                                              v                              │     │
+│  │                                    program.json / .asm / .c  (host FS)      │     │
+│  └───────────────────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-Exactly two call sites (`:1531` inside `gatherWedgeEvidence()`, `:3052` inside `forwardToVice()`), and the registration at `:3401` reaches neither, because `buildViceTool()`'s `execute` closes over the caller-supplied `run` and no forwarding path. Nothing to intercept, therefore nothing to forget. **This is not a property to be re-established — it is inherited unchanged, provided the new registration uses `buildViceTool()` and the runner lives in a module that does not import `vice-proxy.ts`.** Confirmed HIGH.
-
-Two secondary facts about this line region, both load-bearing:
-
-- **CLAUDE.md's line citations are currently accurate** (`:3052` / `:2987` / `:1531` / `:1507`, verified above) and `docs-linerefs.test.ts` checks each cited line actually contains a `rewriteArguments()` call or a function declaration. Deleting the import at `:194` and rewriting `:3401-3402` in place is line-neutral. **Any plan that adds net lines to `vice-proxy.ts` above `:1507` turns `docs-linerefs.test.ts` red and requires a same-commit CLAUDE.md update.** Prefer putting new code in sibling modules — which is also what PROJECT.md's own "Known debt" section already instructs ("`vice-proxy.ts` remains large and is the sole tool-surface seam — client-side derivations go in sibling modules, never appended to it").
-- `.planning/PROJECT.md`'s copy of the same constraint is **stale** (`:3029` / `:2964` / `:1508` / `:1484`). `docs-linerefs.test.ts` reads only `CLAUDE.md`, so this is green-but-wrong. Worth a one-line fix in whichever plan touches the constraint.
-
-### 1.2 Backend-agnosticism is made structural here — not in `capability-registry.ts`
-
-**`src/mcp/vice/stock-dispatch.test.ts`** is the guard that makes the property structural. Four assertions matter, all around lines 1485–1575:
-
-| Symbol / line | What it asserts | Required change |
-|---|---|---|
-| `proxyToolRegistrations()` (:1485) | Regex-scans `vice-proxy.ts` for `tools[<key>] = <rhs>;`, returning `[key, rhs]` pairs keyed by **raw captured text** | none — but see the loop-variable naming note below |
-| `BACKEND_SEAM_BYPASS_KEYS` (:1504) | `["RESULT_CONTINUE_TOOL.name", "annoDef.name"]` — the exact allow-list of registrations permitted to bypass `buildBackendAwareTool()` | `"annoDef.name"` → `"annoDef.name"` |
-| `assert.deepEqual(bypassing, BACKEND_SEAM_BYPASS_KEYS)` (:1527) | **Ordered** exact equality against the registrations that lack `buildBackendAwareTool(` | the new loop must stay **after** `RESULT_CONTINUE_TOOL` in source order, or the array order must change with it |
-| the runner-purity test (:1549) | Slices `runAnnoTool()`'s body out of `anno-tools.ts` and asserts it contains none of `["forwardToVice", "ensureViceSession", "rewriteArguments"]` | repoint at `runAnnoTool(` in `anno-tools.ts`; **this is the mechanical expression of the CLAUDE.md constraint and must not be dropped** |
-| the manifest-absence test (:1563) | Every `CURATED_ANNO_TOOLS` name is absent from both manifests | repoint at `CURATED_ANNO_TOOLS` |
-| `import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";` (:44) | static import — breaks on deletion | repoint |
-
-Also `registrations.length >= 5` (:1508) — a non-vacuity floor that stays satisfied by a 1:1 swap.
-
-**Do not add anything to `capability-registry.ts`.** Read at HEAD: 26 entries, all `vice_*`, zero `anno_*`. Its header states the exclusion rule explicitly — the registry is the *set difference between the two backend manifests*, minus registration artifacts. A proxy-local family is in neither manifest, so it contributes no delta. Its own doc comment names `vice_diagnose`/`vice_recycle` as the precedent: "A naive set-difference over the two manifests misclassifies them as a divergence; they are not one, and including them here would be a factual error, not merely an omission." The same reasoning covers the annotation family exactly. The registry's four consumers (`vice-proxy.ts`, `stock-dispatch.ts`, `scripts/generate-tool-support-table.mjs`, `scripts/check-skill-fork-honesty.mjs`) need no registry-driven change.
-
-**`scripts/generate-tool-support-table.mjs` DOES need a change, and it throws if it does not get one.** `discoverSyntheticToolNames()` (:104) hard-codes:
-
-```js
-const ANNO_LOOP_VAR_RE = /for\s*\(\s*const\s+(\w+)\s+of\s+ANNO_TOOL_DEFINITIONS\s*\)/;
-...
-if (ident === annoLoopVar) continue; // excluded structurally, not by name
-```
-
-Rename the collection to `ANNO_TOOL_DEFINITIONS` and this regex matches nothing, `annoLoopVar` becomes `null`, and the captured `annoDef` identifier falls into the documented **throw** branch ("Any OTHER captured identifier that resolves to neither a loop-variable pattern nor a `const IDENT: ToolDefinition = {...}` declaration throws"). `docs/tool-support.md` is generated from this script under a byte-identity drift guard, so the failure surfaces as a red drift guard with a confusing message. The identical regex is **independently duplicated by design** in two more places, each of which must move in the same commit:
-
-- `src/mcp/vice/tool-support-table.test.mjs:66`
-- `src/mcp/vice/capability-registry.test.ts:161`
-
-(The triplication is deliberate — "each is a separate witness proving the other two right" — so all three change, and none is refactored into a shared helper.)
-
-### 1.3 `hostpath-consumers.test.ts` — what it requires of the new modules
-
-Read in full at HEAD. Three requirements, and one already-red-on-deletion hazard the scoping did not name.
-
-**(a) The store is NOT a host-path consumer, and must not become one.** `EXPECTED_IMPORTERS` is a five-element `deepEqual` plus `assert.equal(importers.length, 5)`:
-
-```ts
-const EXPECTED_IMPORTERS = ["containerpath.ts", "install-resources.ts", "stock-paths.ts", "vice-proxy.ts", "vice-sync.ts"];
-```
-
-Any new `anno-*.ts` importing `hostpath.ts` — statically, multi-line, or via `await import()` (all three shapes are detected, with planted-violation proofs) — fails this test. **The store persists to a project file, and that does not make it a host-path consumer**, because the file is resolved container-side against `repoRoot()`, never translated to a host view. The store file is read and written by the MCP process itself; nothing outside the container ever opens it. Contrast `stock-paths.ts`, which is in the consumer set precisely because it hands a path to the *emulator*, which lives on the host.
-
-The pattern to carry over verbatim is **`resolveStorePath()`** in `anno-tools.ts` (: search `export function resolveStorePath`). It is already the right shape and needs only its extension literal changed:
-
-1. reject non-string / empty
-2. require the expected extension (`.regen2000proj` → `.c64anno`)
-3. `resolve(repoRoot(), trimmed)`
-4. `isContained(resolved, root)` — workspace containment
-5. `realpathSync` both sides and re-check containment — symlink escape
-6. on `ENOENT`, `resolveViaDeepestExistingAncestor()` — so a not-yet-created store file still gets a canonicalised parent rather than falling back to the literal path
-
-`anno-tools.ts`'s own header states the rule the new module inherits: *"Never import the VICE host-path/container-path translation modules here … a project path is resolved against `repoRoot()` only. Asserted structurally by the closed host-path consumer-set test."*
-
-**(b) The anno-family absence tests must become anno-family absence tests.** The file contains a `readdirSync`-derived family scan that is *itself* pinned to the deleted subject:
-
-```ts
-function annoProductionModules(): string[] {
-  return topLevelProductionModules().filter((name) => /^anno-.*\.ts$/.test(name));
-}
-const ANNO_MODULE_FLOOR = 14;
-```
-
-Three tests break on deletion, not one:
-- the floor test (`modules.length >= 14`) — goes red at 0
-- the INT-01 positive control naming `anno-acme-ident.ts`, `anno-regbits-gen.ts`, `anno-symbols.ts`, `anno-test-gate.ts` by literal filename — goes red on rename
-- the absence test, whose own `assert.ok(annoModules.length > 0)` non-vacuity guard goes red
-
-So **`hostpath-consumers.test.ts` is a fourth guard pinned to the deletion**, alongside the three named at scoping. Its fate: repoint the pattern to `/^anno-.*\.ts$/`, set a floor equal to the *measured* new count, and re-point the positive control at four real new filenames. The planted-violation tests (the `importsHostpath()` proofs) are subject-independent and carry over unchanged.
-
-**(c) `DERIVED_TOOL_MODULES` is not affected.** It maps `STOCK_DERIVED_TOOLS` entries to filenames and asserts key-set equality with `STOCK_DERIVED_TOOLS`. The annotation family is not a stock-derived tool (it is not in either manifest, so it cannot be derived from one), so it must **not** be added here — the same by-construction reasoning as `capability-registry.ts`.
-
-### 1.4 The test-availability gate must be split before anything is deleted
-
-`src/mcp/vice/anno-test-gate.ts` owns **two** gates, not one:
-
-| half | symbols | consumers that must survive the deletion |
-|---|---|---|
-| the external analyser | `ANNO_BIN`, `probeAnno()`, `ANNO_AVAILABLE`, `skipReasonFor()`, `assertAnnoRequiredIfEnvSet()` | all anno tests (deleted) + `anno-launch.ts`, `anno-mcp-client.ts` (deleted) |
-| **ACME** | `ACME_BIN`, `probeAcme()`, `ACME_AVAILABLE`, `acmeSkipReasonFor()`, `assertAcmeRequiredIfEnvSet()` | **`disasm-roundtrip.test.ts`**, **`skill-acme-build-cli.test.ts`** — both survive |
-
-Two surviving tests import the ACME half from a module whose name must go. Extract the ACME half to `acme-test-gate.ts` (or `bin-test-gate.ts`) **before** the deletion, and carry over its two documented invariants verbatim: the module must stay absent from `package.json` `files[]` (a test-only helper has no place in the tarball — `anno-verify.test.ts` asserts this mechanically), and its filename must not match the `*.test.*` glob.
 
 ---
 
-## 2. New vs modified components, explicitly separated
+## (a) Where the frame-exact stop lives
 
-### 2.1 NEW modules
+### The three candidate homes, and which is wrong
 
-| Module | Lines (est.) | Responsibility | Depends on |
-|---|---|---|---|
-| `anno-model.ts` | ~350 | Pure model + invariants: ranges, the data-type vocabulary, label/comment/scope/enum records, non-overlap, ACME-legal names | `acme-ident.ts` only |
-| `anno-store.ts` | ~500 | **The ONE persistence seam.** open/create, apply-mutation, undo journal, atomic write, `resolveStorePath()` | `anno-model.ts`, `repo-root.ts`, `node:fs` |
-| `anno-tools.ts` | ~1,100 | Tool surface + allow-list + arg validation + `runAnnoTool()` | `anno-store.ts`, `anno-xref.ts`, `anno-acme-export.ts`, `acme-ident.ts` |
-| `anno-xref.ts` | ~400 | Cross-references and search over the typed decode | `disasm-decoder.ts`, `anno-model.ts` |
-| `anno-acme-export.ts` | ~600 | ACME printer: block types, scopes, enums, `=*+$01`, typed prefixes | `disasm-renderer.ts`, `anno-model.ts` |
-| `acme-verify.ts` | ~250 | Spawn real ACME, parse **ACME's own** output, byte-compare the reassembled `.prg` | `node:child_process` |
-| `acme-test-gate.ts` | ~60 | The extracted ACME availability gate (§1.4) | — |
-| `anno-cli.ts` | ~900 | `vice-mcp anno <verb>` — the surviving CLI verbs | the above |
+| Candidate | Verdict | Why |
+|-----------|---------|-----|
+| Edit `vice-sync.ts` | **Wrong home** | Zero importers (finding 1). Editing it changes no behaviour and cannot be tested — its five emulator-dependent primitives are five machine-visible `todo` entries at `vice-sync.test.ts:107-143`, deliberately. It is the doctrine document. |
+| New sibling in the stock family, next to `stock-run-until.ts` | **Right home for the mechanism** | `stock-run-until.ts:145` (`handleRunUntil`) already owns the live stopping-checkpoint wait, already resumes exactly once, already waits event-driven on `CHECKPOINT_INFO` (`waitForCheckpointHit()` at `:113`), and already reuses `stock-timing.ts`'s cycle primitives' sibling pattern. |
+| `buildViceArgs()` + the acquire protocol | **Only if the mechanism is launch-time** | That is the full structural cost the headless todo already priced. See below. |
 
-### 2.2 MODIFIED existing files
+### The mechanism, and why it probably is not launch-time
 
-| File | Change | Why |
-|---|---|---|
-| `src/mcp/vice/vice-proxy.ts` | `:194` import; `:3401-3402` loop (loop var → `annoDef`) | the registration (§1.1) |
-| `src/mcp/vice/stock-dispatch.test.ts` | `:44` import; `BACKEND_SEAM_BYPASS_KEYS` `:1504`; runner-purity test `:1549`; manifest-absence test `:1563` | structural backend-agnosticism (§1.2) |
-| `src/mcp/vice/capability-registry.ts` | **NONE** | proxy-local ⇒ no per-backend delta (§1.2) |
-| `src/mcp/vice/tools-manifest.json` / `.stock.json` | **NONE** | family is in neither, by design; `refresh-manifest.ts` would wipe an entry anyway |
-| `docs/tool-support.md` | **NONE** (regenerated byte-identical) | contains zero anno mentions today |
-| `src/mcp/vice/capability-registry.test.ts` | `:161` loop-var regex | one of three independent witnesses (§1.2) |
-| `src/mcp/vice/tool-support-table.test.mjs` | `:66` loop-var regex | second witness |
-| `scripts/generate-tool-support-table.mjs` | `:104` `ANNO_LOOP_VAR_RE` | third witness; **throws** if missed (§1.2) |
-| `src/mcp/vice/hostpath-consumers.test.ts` | family regex, floor, positive control (3 tests) | §1.3(b) |
-| `src/mcp/vice/package.json` `files[]` | remove 15 `anno-*.ts` entries + `anno-regbits.json`; add the new/renamed set | `check-npm-packages.mjs`'s transitive-closure walk (static **and** dynamic imports) fails otherwise |
-| `scripts/check-npm-packages.mjs` | `REQUIRED_DERIVED_MODULES` `:201` (`["anno-cli.ts", "ANNO-09"]`); the anno family names in the closure-walk comment `:218` | a listed-but-absent file fails the `need()` |
-| `scripts/check-skill-tool-coverage.mjs` | `:49` static import of `CURATED_ANNO_TOOLS`; `ANNO_TOOL_NAME_RE` `:88`; the ≥10-name non-vacuity floor `:447`; the CLI-verb section `:457-490` | **CI gate — throws `ERR_MODULE_NOT_FOUND` on deletion** |
-| `scripts/lib/anno-cli-verbs.mjs` + `.d.mts` | rename; repoint the dispatch-switch parse at `anno-cli.ts`; `ANNO_CLI_VERB_FLOOR` | parses the CLI's own switch, never a hand-typed array |
-| `scripts/check-skill-fork-honesty.mjs` | the ANNO-05 deletion pin `:412-500`; the positive pointer `need(... includes("anno export-asm"))` `:504` | **a direct contradiction: the pointer string must change or the new gate fires on it** (§5.2) |
-| `scripts/audit-gate.mjs` | `:136` `"docs-absorbed-decisions.test.ts"` in the gated-guard list | guard fate (§5.3) |
-| `src/skills/*/SKILL.md` (5 files) + 4 reference/template/script files | ~148 `anno` and ~27 `the external analyser` mentions re-pointed; `routine-queue-walker`'s `description:` frontmatter rewritten | the five absorbed procedures' routes (§4, step 5) |
-| `CLAUDE.md` | the `anno_*` clause in the Architecture constraint bullet | the family it names ceases to exist |
-| `.planning/ARCHITECTURE.md` | Rule A21 (`resolveStorePath`, `ChildProcess`, `anno-mcp-client.ts`) | pinned by `docs-absorbed-decisions.test.ts` (§5.3) |
+**Recommended primary mechanism — cycle-aligned refinement, entirely runtime.**
 
-### 2.3 RENAMED / REPOINTED — survives, do not rebuild
+```
+1. arm stopping exec checkpoint at addr          (existing: stock-run-until.ts:244)
+2. one resume, wait for CHECKPOINT_INFO          (existing: :113, invariant 1 preserved)
+3. read absolute cycle                           (existing: readCycleBaseline() :274)
+4. compute frame index + intra-frame position     (existing: positionWithinFrame() :200,
+                                                    VIDEO_STANDARDS :70-73)
+5. advance to the next frame boundary            (existing wire op: ADVANCE_INSTRUCTIONS
+                                                    0x71, advanceInstructionsBody()
+                                                    stock-protocol.ts:751; handler
+                                                    stock-execution.ts:257)
+6. re-read cycle; assert landed position         (new: the alignment assertion)
+```
 
-| Today | Becomes | Non-test lines | Repoint needed |
-|---|---|---|---|
-| `anno-acme-ident.ts` | `acme-ident.ts` | 97 | none (zero imports) |
-| `anno-d64.ts` | `d64.ts` | 310 | none (zero imports) |
-| `anno-confidence.ts` | `confidence.ts` | 233 | none (zero imports) |
-| `anno-regbits-gen.ts` + `anno-regbits.json` | `regbits-gen.ts` + `regbits.json` | 421 | none (zero imports) |
-| `anno-memmap-render.ts` | `memmap-render.ts` | 531 | none (zero imports) |
-| `anno-enum-gen.ts` | `enum-gen.ts` | 574 | drop `anno-tools.ts` → `anno-store.ts` |
-| `anno-symbols.ts` | `anno-symbols.ts` | 388 | drop `anno-launch.ts` / `anno-mcp-client.ts` / `anno-tools.ts` → `anno-store.ts`; keeps `stock-symbols.ts` (the live round trip) |
-| `anno-coverage.ts` | `coverage.ts` | 2,292 | **two functions only**: `storeBlockTypeAt()` (:1662) and `classFromStore()` (:1683) compare against upstream's Rust `Display` strings `"Code"` / `"Undefined"`; retarget at the store's own type representation. Its `decodeRawData` import becomes unnecessary (base64 is an upstream wire artifact). Everything else — including `AUTO_NAME_PREFIX_RE` (:1384) — is untouched |
-| `anno-project.ts` (part) | `prg-image.ts` | ~60 of 344 | `parsePrg()`, `flatImageOrigin()` are pure and reusable; `synthesizeProject()` / `ensureProjectSettings()` / `decodeRawData()` are anno-shaped and go |
-| `anno-verify.ts` | `acme-verify.ts` | 184 | **rewrite, not rename** — see §3.3 |
+Steps 1–5 are existing code. Only step 6 and the loop around 5 are new. This mechanism
+needs **no launch flag, no acquire-frame field, and no warm-floor change**, which is
+decisive: it sidesteps the entire structural blocker the headless todo documents.
 
-Surviving test files by the same rule: `anno-d64.test.ts` (396), `anno-confidence.test.ts` (154), `anno-regbits.test.ts` (250), `anno-memmap-render.test.ts` (464), `anno-enum-gen.test.ts` (353), `anno-coverage.test.ts` (4,315), `anno-coverage-grammar.test.ts` (2,169) — **8,101 test lines survive**, the great majority of it the coverage instrument's own six anti-vacuity controls.
+**Why not VICE event record/replay.** It is launch-time (`-eventstart` / `-eventplayback`),
+so it drags in every cost the headless todo enumerates — a mode field on the acquire
+frame, mode-aware warm-instance eligibility, a launch-mode field on `InstanceRecord`, and
+a decision about what `maintainWarmFloor()` pre-warms. It also cannot be retrofitted to a
+warm instance, so `selectWarmInstance()` (`vice-broker.mts:473`) would hand a
+record/replay-requesting caller a plain interactive instance silently — the one outcome
+the todo says to rule out. Recommend against it as the primary mechanism, and re-evaluate
+only if the re-measurement in step zero shows the cycle-aligned refinement cannot close
+the gap.
 
-### 2.4 DELETED outright
+**Two hard preconditions on the recommended mechanism, both from settled constraints.**
 
-| File | Lines | Why it cannot survive |
-|---|---|---|
-| `anno-launch.ts` | 357 | the `the external analyser` spawn seam |
-| `anno-mcp-client.ts` | 795 | the NDJSON JSON-RPC client to the child |
-| `anno-session.ts` | 693 | the long-lived child session, FIFO queue, crash recovery |
-| `anno-tools.ts` | 1,214 | replaced by `anno-tools.ts` (surface shape carried, body replaced) |
-| `anno-cli.ts` | 1,503 | replaced by `anno-cli.ts` (verbs carried, bodies replaced) |
-| `anno-project.ts` (rest) | ~284 | `.regen2000proj` synthesis |
-| `anno-test-gate.ts` (anno half) | ~55 | the availability probe for a binary no longer used |
-| their `*.test.ts` | 527 + 775 + 966 + 1,029 + 1,650 + 437 + 627 + 617 + 192 + 247 | see §5.3 for the guard-by-guard fate |
+- **VICE ≥ 3.10 for Route A.** `CPUHISTORY_GET` (0x86) does not exist on 3.9 —
+  Debian trixie/forky/sid and all current Ubuntu ship 3.9. Route B (`LIN`/`CYC`) is exact
+  only *within* one frame and refuses across a proven boundary
+  (`stock-timing.ts:15-18`), which is precisely the measurement a frame-exact stop needs.
+  So on 3.9 the honest answer is a **named refusal**, matching `capability-registry.ts`'s
+  established idiom (Rule A7), not a degraded guess. Do not "guess a `+ k * cyclesPerFrame`
+  correction" — `stock-timing.ts:30-31` forbids it by name.
+- **`default_memspace` contamination breaks step 5 outright.** CLAUDE.md's settled
+  constraint: a drive checkpoint hit sets `default_memspace` (`monitor.c:3393-3396`) and
+  nothing resets it, after which `ADVANCE_INSTRUCTIONS` steps the **drive** CPU. Since
+  `buildViceArgs()` emits `-drive8type 1541` unconditionally on stock
+  (`broker-launch.mts:202`), drive emulation is always live. Any alignment loop built on
+  `ADVANCE_INSTRUCTIONS` must therefore either prove no drive checkpoint was ever armed in
+  the session, or fail closed. This is the single most likely silent-wrong-answer in the
+  whole mechanism.
 
-**Measured deletion arithmetic** (`wc -l src/mcp/vice/anno-*.ts`): 25,759 total = 10,102 non-test + 15,657 test. Genuinely deleted: **~5,300 non-test + ~7,100 test ≈ 12,400 lines.** Surviving under new names: **~4,800 non-test + ~8,100 test ≈ 12,900 lines.** *A roadmap phase written to "delete 25,700 lines" will delete the coverage instrument and the enum generator. Size the deletion phase at ~12k and the rename phase separately.*
+### The invariants, restated as obligations on the new module
+
+| Invariant | How it survives | Where it is checked |
+|-----------|-----------------|---------------------|
+| Exactly one resume per wait | Step 2 resumes once; steps 5's `ADVANCE_INSTRUCTIONS` is a step, **not** a resume — it is opcode 0x71, not `EXIT`/run. State this in the module header the way `stock-run-until.ts:26-27` states it. | Header prose + a unit assertion counting `CommandType.Exit` sends, which `stock-run-until.test.ts` already establishes as an idiom |
+| Poll on `hit_count`, never on paused state | Do not poll. Wait event-driven on `CHECKPOINT_INFO`, keyed on request-id-first demux (Rule A8) — `CHECKPOINT_INFO` (0x11) shares a response type with a legitimate command reply, noted at `stock-run-until.ts:79` | The demux is already guarded; the new module inherits it by using `session.client.send()` |
+| Never delete a VICE-marked `temporary` checkpoint | `stock-run-until.ts` arms a temporary checkpoint and takes a **different cleanup action on each of three paths** (hit / timeout / restarted) — only the timeout path deletes (`:20-24`). Copy that shape; do not add an undifferentiated `finally { delete }`. | `stock-run-until.test.ts` |
+
+### The tool-surface decision, and the cheap route
+
+Two ways to expose it, with very different guard costs:
+
+- **Cheap (recommended): an optional `align` argument on the existing `vice_run_until`.**
+  SKILL-01 permits exactly this — "stock may add optional parameters but never removes,
+  retypes, or newly-requires one" — and `manifest-arg-compat.test.ts` is the guard that
+  encodes it. No new tool name, no change to the 38 or 62 counts, no new manifest entry,
+  no new registration line in `vice-proxy.ts`. On the fork the argument refuses by name.
+- **Expensive: a new `vice_frame_stop` tool.** Reddens `stock-dispatch.test.ts:1167` and
+  `:1173-1174` (the table's key count is asserted `=== 38` three ways) and requires a
+  `tools-manifest.stock.json` entry plus a regenerated `docs/tool-support.md`. Only take
+  this if the semantics genuinely cannot ride `vice_run_until`.
+
+**Do not create a third proxy-local family for it.** `stock-dispatch.test.ts:1510` pins
+`BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "annoDef.name"]` in an
+**order-sensitive** `deepEqual`, with its own comment at `:1508-1509`: "A THIRD entry
+collides here rather than being absorbed into a superset." That is a deliberate speed
+bump, not a bug.
+
+### If headless *is* also wanted (it is a separate, additive concern)
+
+The guard shapes prescribe the design. `broker-launch.test.ts:1761`, `:1773-1776` and
+`:1787-1797` are three whole-argv `assert.deepEqual` assertions; `:1799` and `:1806` are
+ordering assertions written to *survive* additions. So:
+
+- The mode must be an **optional field that defaults to absent**, so the no-mode argv
+  stays byte-identical and all three `deepEqual` assertions keep passing unchanged. This
+  also preserves the fork's byte-identical-argv promise (a Validated v0.2.0 requirement).
+- `InstanceRecord` already has the exact precedent: `remoteMonitorPort?: number` at
+  `broker-state.mts:142`, whose own comment (`:117-127`) says "Optional — additive, same
+  convention as every field group above". Add `launchMode?` the same way.
+- Any new flag goes **after** `-default` (index 0, or `-drive8type` is silently clobbered
+  back to its compiled-in value — `broker-launch.mts:182-192`).
+- **Warp is not a launch dimension.** The premise was corrected and verified live on
+  2026-08-27 against `/usr/bin/x64sc`: the text monitor's `warp on` / `warp off` works,
+  and `broker-launch.mts:213` already appends `-remotemonitor` on every stock launch with
+  the port recorded at `broker-state.mts:142` — and **nothing in the tree dials it.** Warp
+  is a runtime operation on an existing, allocated, unused channel.
 
 ---
 
-## Recommended project structure
+## (b) Where a JVM-scale host tool executes — three architectures, costed
 
-```
-src/mcp/vice/
-├── anno-model.ts             # pure model, invariants, type vocabulary
-├── anno-store.ts             # THE persistence seam (atomic write + undo journal)
-├── anno-tools.ts             # ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS, runAnnoTool()
-├── anno-xref.ts              # xrefs + search over the typed decode
-├── anno-acme-export.ts       # ACME printer
-├── anno-symbols.ts           # VICE .lbl import/export (the live round trip)
-├── anno-cli.ts               # `vice-mcp anno <verb>`
-├── acme-verify.ts            # spawn real ACME, parse ACME's own output, byte-compare
-├── acme-ident.ts             # (renamed) legal ACME identifiers
-├── acme-test-gate.ts         # (extracted) ACME availability gate — NOT in files[]
-├── prg-image.ts              # (extracted) parsePrg / flatImageOrigin
-├── d64.ts  confidence.ts  coverage.ts  memmap-render.ts
-├── regbits-gen.ts  regbits.json  enum-gen.ts        # (renamed) machine knowledge
-├── disasm-opcodes.ts  disasm-decoder.ts  disasm-renderer.ts   # UNCHANGED
-└── vice-proxy.ts  vice.ts  repo-root.ts  hostpath.ts  ...      # unchanged seams
-```
+### Shared constraints all three must satisfy (read from the tree, not assumed)
 
-### Structure rationale
+| Constraint | Source | Consequence |
+|-----------|--------|-------------|
+| 64 KiB hard line cap, socket `destroy()`ed on overflow with no error frame | `broker-control.mts:242`, `:376` | Megabyte exports **cannot** ride the socket inline in any option. Overflow is indistinguishable from a connection drop. |
+| Any unhandled throw in the broker process kills the whole VICE pool | `broker-kill.mts:367-374` (`uncaughtException` / `unhandledRejection` → `run(…, 1)`) | Host-tool work runs in a **child process**, never inline, in all three options. Non-negotiable. |
+| Single-threaded event loop | broker is plain Node | A multi-minute synchronous run would stall acquires, the warm floor and monitor claims. Async spawn only. |
+| The connection IS the lease | `broker-control.mts:388-397` — `socket.on("close")` fires `onRelease` when `requestIdForThisConnection` is set | A host-tool connection must be routed **before** any lease-bearing path and handed a deps object containing none of the seven VICE callbacks (`broker-control.mts:145-180`). |
+| `ControlRequestKind` is a byte-exact-pinned 7-member union | type at `broker-control.mts:30`; guard at `broker-control.test.ts:877-890` asserts the **exact declaration string** | Adding *any* op is a reviewed decision that reds a committed guard. Identical cost in all three options — this is not a discriminator. |
+| Wire skew between separately-deployed halves | `build.ts` → committed `resources/*.mjs`, deployed by `install-resources.ts` into `<root>/tools` | A running broker can be older than the client dialing it. The 7 unprefixed ops cannot be renamed. |
 
-- **`anno-` prefix, one family, derivable from disk.** `hostpath-consumers.test.ts` and `spawn-seam.test.ts` both derive their module set with `readdirSync` + a name regex rather than a hand-typed list, precisely because a hand-typed list went stale (INT-01 found four uncovered modules). A single stable prefix keeps that idiom working and gives the removal gate a one-line rule: *no shipped module name may contain `anno`, and no shipped tool name may contain `anno_`.*
-- **`acme-` prefix for the assembler-facing half.** `acme-verify.ts`, `acme-ident.ts` and `acme-test-gate.ts` are about ACME, not about annotation. Keeping them out of the `anno-` family means the store's family floor counts only store modules, and the ACME gate's extraction (§1.4) reads as an obvious boundary rather than an accident.
-- **Names that no longer say `anno`, per the seed's own instruction** — "All of it survives, under names that no longer say `anno`."
-- **Nothing appended to `vice-proxy.ts`.** Two lines change; everything else is a sibling module. This preserves both the `docs-linerefs.test.ts` line citations and the project's own standing instruction about that file's size.
+### Option B1 — widen the existing `host-tool-executor` seam to cover stateful tools
 
----
-
-## 3. Architectural patterns
-
-### Pattern 1: One store document, atomically rewritten, with the undo journal inside it
-
-**What:** the store is a single JSON document at `<workspace>/<name>.c64anno` containing both the current model **and** a bounded undo journal. Every mutating tool call: validate → apply in memory → append the inverse operation to the journal → serialise → write `tmp` → `rename()` → return.
-
-**When:** always. There is no in-memory-only mode and no explicit save verb governing durability.
-
-**Trade-offs:** a full rewrite per mutation is O(document) rather than O(mutation), but the document is kilobytes-to-low-hundreds-of-KB for a 64K address space, and the alternative — a journal as system of record plus a derived snapshot — is two sources of truth, which is exactly what "single seam per concern" forbids. The rename is the atomicity primitive; no dependency is added.
-
-**Why the journal lives *inside* the document:** the durability requirement is *"mutate → kill → reopen returns the mutation, and removing the save makes that same test go red."* If the undo journal were in-memory only, `mutate → kill → reopen → undo` would silently fail, and the planted-violation test would pass while undo was broken across a restart. Persisting both together makes one atomic write the only durability primitive there is.
-
-```ts
-// anno-store.ts — the shape that makes the planted-violation test bite
-export function applyMutation(path: string, m: Mutation): StoreDoc {
-  const doc = loadStore(path);                 // parse-or-create
-  const inverse = invertMutation(doc, m);      // computed BEFORE the apply
-  const next = { ...applyToModel(doc, m), journal: pushBounded(doc.journal, inverse) };
-  writeAtomic(path, next);                     // tmp + rename — remove this line and durability dies
-  return next;
-}
-```
-
-Deleting `writeAtomic()` breaks the durability test *and* the undo-across-restart test with one edit. That is what makes the planted violation non-vacuous.
-
-### Pattern 2: Persist-before-return, not save-on-demand
-
-**What:** `anno_save`-shaped verbs do not govern durability. Persistence is inside the mutation path, before the tool returns its result to the caller.
-
-**When to use:** every mutating tool.
-
-**Trade-offs:** the five absorbed procedures each end with an `anno_save_project` step. Rather than delete that step from the playbooks (which loses a real procedural beat — "you are done with this routine"), map it onto **`anno_checkpoint`**, which marks an undo boundary and is a no-op for durability. The prose survives, the meaning sharpens, and the manifest-derived surface keeps a 1:1 route for the call. **Do not keep a save verb that is load-bearing for durability** — the previous architecture's need for `saveAndVerify()` (never trust the child's own text response) existed only because persistence lived in another process.
-
-### Pattern 3: The data-type vocabulary is 12 members, not 7
-
-PROJECT.md's Active list names seven ("code, byte, word, address, PETSCII, screencode, table"). The surface being replaced already exposes **twelve**, read verbatim from `anno-tools.ts`'s `anno_set_data_type` schema:
-
-```
-code · byte · word · address · petscii · screencode
-lo_hi_address · hi_lo_address · lo_hi_word · hi_lo_word
-external_file · undefined
-```
-
-"table" is a compression of four distinct split-layout members, and `external_file` / `undefined` have no representative in the seven. **Adopt all twelve.** Reasons, both concrete: (a) `DECOMP-01` is what the vocabulary is sized for, and a split-address table is precisely the structure the pivot notes record `da65`'s `RANGE TYPE` as *unable* to express — losing it here reintroduces the export-boundary problem the pivot exists to avoid; (b) the surviving coverage census classifies against block types today, so a narrowed vocabulary silently narrows the census.
-
-### Pattern 4: Typed label prefixes are already owned — 11, not 5
-
-The seed names five (`zpp_`/`zpa_`/`f_`/`a_`/`e_`). `anno-coverage.ts:1384` — a **surviving** module — already owns the authoritative set:
-
-```ts
-export const AUTO_NAME_PREFIX_RE = /^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)/;
-```
-
-Eleven prefixes, exercised by a real fixture list in `anno-coverage.test.ts:946`. The exporter and the store's naming rules should both read this one constant rather than re-declaring a subset. A committed real-world witness of the output format exists at `.planning/notes/dxa-ghidra-pivot-evidence/anno.asm` — including four live `=*+$01` mid-instruction labels at lines 51, 81, 135, 145 — which makes an excellent golden fixture for the exporter.
-
----
-
-## 4. Data flow
-
-### (a) Setting a label / comment / data type
-
-```
-Claude Code
-  │ tools/call { name: "anno_set_label_name", arguments: { project, address, name } }
-  ▼
-vice-proxy.ts  CallToolRequestSchema override
-  │  DENY_LIST check (vice.ts) — runs first, always
-  │  tools["anno_set_label_name"].execute(args)      ← buildViceTool() closure, :3402
-  ▼
-anno-tools.ts  runAnnoTool("anno_set_label_name", args)
-  │  assertCuratedTool(name)                          ← allow-list, incl. batch recursion
-  │  assertLegalAcmeIdentifier(name)                  ← acme-ident.ts, reused as-is
-  │  resolveStorePath(project)                        ← repoRoot() + containment + realpath
-  ▼
-anno-store.ts  applyMutation(path, { kind: "set-label", ... })
-  │  loadStore → invertMutation → applyToModel → pushBounded(journal)
-  │  ★ writeAtomic(tmp) + rename()   ← PERSISTENCE HAPPENS HERE
-  ▼
-returns { content: [...], isError: false } to vice-proxy.ts → wire
-```
-
-**Persistence relative to the tool-call boundary:** *inside* it, before the result is constructed. Nothing is buffered across calls, so there is no session, no crash-recovery state machine, and no `saveAndVerify()` — the three most expensive pieces of the architecture being deleted (`anno-session.ts` 693 + `anno-mcp-client.ts` 795 + their 1,741 test lines) exist only because persistence lived in another process.
-
-**Transport reachability:** zero. `runAnnoTool()` imports `anno-store.ts`, `anno-xref.ts`, `anno-acme-export.ts`, `acme-ident.ts` — none of which imports `vice.ts` or `vice-proxy.ts`. `stock-dispatch.test.ts:1549`'s repointed runner-purity test asserts this mechanically over the function body.
-
-### (b) Querying cross-references
-
-```
-tools/call anno_get_cross_references { project, address }
-  ▼
-runAnnoTool → resolveStorePath → anno-store.ts  loadStore(path)     ← READ ONLY, no write
-  ▼
-anno-xref.ts  crossReferencesTo(model, address)
-  │  for each block typed "code": disasm-decoder.ts  decode(bytes, origin)
-  │    → collect operand targets from absolute/indirect/relative modes
-  │  for each block typed address / lo_hi_address / hi_lo_address:
-  │    → walk the table, emit a reference per entry (this is why "table" must
-  │      stay four distinct members — the walk differs per layout)
-  ▼
-returns [{ from, kind: "jsr"|"jmp"|"read"|"write"|"table-entry", ... }]
-```
-
-**No write occurs**, so no journal entry and no file rewrite. The read-only/mutating split is what makes the `anno_checkpoint` mapping in Pattern 2 safe.
-
-**Design decision — derive or cache?** Derive. The xref index is a pure function of (bytes, block types), and caching it inside the store document creates a second truth that can disagree with the block table — the exact failure `COV-01`'s derived-from-bytes census was built to make impossible. A full 64K decode is single-digit milliseconds with `disasm-decoder.ts`; cache in memory per process if profiling ever demands it, never on disk.
-
-### (c) ACME export → real-ACME reassembly verification round trip
-
-```
-anno_export_acme { project, out }           (or `vice-mcp anno export-asm`)
-  ▼
-anno-store.ts  loadStore                    → model
-  ▼
-anno-acme-export.ts  renderProgram(model, bytes)
-  │  !cpu 6510 header; per-block: code → disasm-renderer.ts, data → typed emitters
-  │  labels with typed prefixes (AUTO_NAME_PREFIX_RE's vocabulary)
-  │  comments as ; lines; scopes as ACME zones
-  │  SMC write targets → `LABEL =*+$01` mid-instruction idiom
-  │  register writes → generated enum names (enum-gen.ts)
-  ▼  writes <out>.a
-acme-verify.ts  verifyReassembly({ source, expectedBytes })
-  │  spawnSync("acme", ["--cpu","6510","-f","cbm","--msvc","-v1","-o",tmp.prg, source])
-  │  ★ verdict from ACME's OWN parsed diagnostics + existsSync(prg)
-  │    — NEVER from the exit code alone (see the correction below)
-  │  byte-compare tmp.prg body against expectedBytes
-  ▼
-returns { ok, diags, firstDivergingAddress }
-```
-
-**§3.3 — a correction to the milestone's own premise, and the most important architectural finding in this section.** PROJECT.md's Active list says the store *"exports ACME source verified by a real ACME through the existing `--verify` seam."* Read at HEAD, `anno-verify.ts` does **not** invoke ACME. It invokes `analyser --verify` (`import { buildVerifyArgs, runAnno } from "./anno-launch.ts"`) and parses **the external analyser's** per-assembler summary transcript:
-
-```
-✗ ACME — ACME not found in PATH (skipped)
-✓ All roundtrip verifications passed.
-EXIT=0
-```
-
-So the "existing seam" is *inside the thing being deleted*. What survives the deletion is the **discipline**, not the code:
-
-1. never derive the verdict from the exit status (the transcript above is exit 0 with ACME never having run)
-2. never trust an aggregate summary line
-3. require **unanimity** across every ACME result line, first non-ok drives the verdict (WR-04)
-4. refuse to guess when more than one authoritative line is present
-5. `"skipped"` and `"ok"` are different outcomes and must never be conflated
-
-The invocation half must be built new. **`src/skills/acme-build/scripts/acme.mjs` already does exactly this** (`spawnSync("acme", ["--cpu","6510","-f","cbm","-Wtype-mismatch","--strict-segments","--msvc","-v1", ...])`, with an `ACME` library probe, `--msvc` diagnostic parsing, and an `ok = r.status === 0 && existsSync(prg)` verdict). It is the right model, but it lives in `src/skills/` — a *different npm package* — so `src/mcp/vice/` cannot import it. `acme-verify.ts` is therefore a deliberate second implementation of the spawn, keeping `acme.mjs`'s argv verbatim so the two agree by inspection.
-
-**Plan-level consequence:** a phase criterion worded "reuse the existing `--verify` seam" is unachievable as written. Word it as *"reuse `acmeVerdict()`'s five verdict rules, replacing the anno invocation with a direct ACME spawn matching `acme.mjs`'s argv."* `anno-verify.test.ts` (247 lines) pins two real transcripts verbatim — the honest pass and the false-pass trap — which are anno-format and must be re-recorded from real ACME output. This is a genuine cost the deletion incurs; do not plan it as a rename.
-
-### (d) Undo
-
-```
-tools/call anno_undo { project }
-  ▼
-runAnnoTool → resolveStorePath → anno-store.ts  undo(path)
-  │  doc = loadStore(path)                    ← journal read from DISK, not memory
-  │  if (doc.journal.length === 0) → refuse by name, no write
-  │  const inverse = doc.journal.at(-1)
-  │  next = { ...applyToModel(doc, inverse), journal: doc.journal.slice(0, -1) }
-  │  ★ writeAtomic + rename                   ← the undo is itself durable
-  ▼
-returns the reverted state summary
-```
-
-**Why the journal must be on disk:** the acceptance bar is a planted violation across a process kill. `mutate → kill → reopen → undo` only works if the inverse operation was persisted by the mutating call. An in-memory journal makes undo a within-process convenience and the durability test would still pass — which is exactly the "a test written by the same pass that wrote the code proves less than it looks like it does" failure this project has been taught six times.
-
-**Note the manifest disposition, deliberately departed from.** `upstream-procedure-manifest.json` classifies `anno_undo` as **`omit`**, with the recorded rationale that a curated tool must serve a named criterion and undo did not. v0.7.0's Active list *supplies* that criterion ("undo … proven by planted violation"). The manifest's own third re-sync trigger anticipates precisely this: *"A future phase needs an upstream call this manifest currently disposes of as omitted … Adding one requires updating that entry's disposition in the same commit, so the manifest cannot silently disagree."* **Update the `anno_undo` disposition in the same commit that adds `anno_undo`,** or `anno-derivation.test.ts`'s "every non-curated upstream call carries a justification and a citation" assertion becomes a record of a decision that has been reversed.
-
----
-
-## 5. The removal's mechanics
-
-### 5.1 The gate, modelled on the `toacme` precedent
-
-The precedent is `scripts/check-skill-fork-honesty.mjs:412-500` (the ANNO-05 deletion pin). Its properties, each of which the new gate should copy:
-
-| property | how `toacme`'s gate does it |
+| | |
 |---|---|
-| **whole-tree, not a file list** | walks the `skillFiles` corpus already collected — every `.md` and `.mjs` under `src/skills`. Its own header: *"a file-by-file version of this exact assertion is the same structural blindness that let … a stale reference dangle through an earlier `--include=SKILL.md`-shaped pass while that narrower gate reported clean. Do not narrow this back to a fixed file list."* |
-| **substantive checks run BEFORE the exemption is consulted** | WR-03's fix. The `toacme` and `cmdDisasm` checks execute unconditionally; only the third, narrower `disasm`-token check consults the exemption. A line reading `// see acme.mjs cmdDisasm / toacme, evidence: "disasm"` previously short-circuited all three. |
-| **exemption scoped to the LINE and to the specific check**, never to the file | `DISASM_LINE_EXEMPTION = 'evidence: "disasm"'` |
-| **exemption non-vacuity counter** | `need(exemptionHits === 1, ...)` — a second hit means the exemption is hiding a second reintroduction |
-| **a positive check that the replacement pointer still exists** | `need(acmeBuildSkillSource.includes("anno export-asm"), "the deletion must not be 'fixed' by deleting the pointer to the proven route too")` |
-| **proven by a planted reintroduction**, not merely written | the milestone's own wording; the `toacme` gate was observed biting on a non-`SKILL.md` file |
+| **NEW** | `host-tool-exec.mts` (host-side, child-spawning executor) + its compiled `resources/host-tool-exec.mjs`; a container-side `host-tool-client.ts`; a typed per-tool allowlist (seed constraint 5); a token-discovery route for skill scripts (seed constraint 3) |
+| **MODIFIED** | `broker-control.mts` (`ControlRequestKind` + a namespace-prefixed branch at the top of `handleLine()` `:508`, before the token gate at `:528` reads lease state); `build.ts`'s `HOST_BOUND_ARTIFACTS` (`:42-50`, exact-set assertion); `package.json` `files[]`; `acme.mjs` + `packer-finding.mjs` (the seed's retroactive scope) |
+| **Cost** | The seed's own framing is *stateless, short-lived open/send/close*. Ghidra is a JVM with a persistent project directory, a multi-minute run and a megabyte export. Widening the seam to cover it means the same seam now carries two lifetime models — the exact "half-migrated seam is the state that rots" failure the seed argues against, applied to itself. |
+| **Benefit** | One seam, one grep gate banning `spawnSync` of an external binary in `src/skills/*/scripts/`, one token-discovery answer, four cheap first consumers (`petcat`, `c1541`, `cartconv`, `acme`) get a home. |
 
-Recommended scope for the v0.7.0 gate: **`src/`, `scripts/`, `docs/`, `README.md`, `package.json`** — the shipped tree. Deliberately **exclude `.planning/`**, matching the `toacme` precedent (`grep -rln toacme` finds 20+ `.planning/` files today and the gate is green). Planning artifacts are the historical record; a gate over them would demand rewriting history.
+### Option B2 — a leased Ghidra subsystem alongside the VICE pool
 
-### 5.2 The exemption — and two corrections to its stated shape
+| | |
+|---|---|
+| **NEW** | A second pool manager reusing `inFlight`'s shape (`broker-launch.mts:78-93`, `:373-378`, `:452-457`), `verifiedKill()` (`broker-kill.mts:126`), a persisted `ghidra.json` mirroring `broker.json` (`vice-broker.mts:239`, `:965`), and a fragile no-retry probe mirroring `vice-probe.ts:51`'s 1500 ms budget; a `ghidra.*` op namespace |
+| **MODIFIED** | `broker-control.mts` (union + dispatch + a second deps object); `broker-kill.mts` (a second kill-and-exit subject); `build.ts` artifact set; `host-scripts.test.ts` if a launch wrapper is a `.sh` |
+| **Cost** | **The lease has no subject.** A VICE instance is leased because it is a *stateful long-lived process with one binary-monitor client* (Rule A10). Phase 23's own recorded `analyzeHeadless` command line used `-deleteProject` — the project directory is created and destroyed per run. If the project dir is derived deterministically from the image content hash and deleted at the end, there is **no cross-call state to lease**. Building the lease machinery for a stateless-between-runs subsystem is the most expensive of the three and buys the least. |
+| **Benefit** | Real if — and only if — a *warm* Ghidra JVM is later wanted to amortise JVM startup across many runs. That is a measured optimisation, not a starting design. `.planning/ARCHITECTURE.md`'s Rule A21 is the dated record of this project already choosing a long-lived child once and reversing it on measured grounds; its reversal condition ("if per-call open/close is measured to be the dominant cost") is the right bar here too. |
 
-**Correction 1: there are five `ATTRIBUTION (ABS-02)` blocks, not three, across three files.** Measured:
+### Option B3 — filesystem handoff, control messages only over the socket
 
-```
-src/skills/c64-program-recon/SKILL.md     : 2   (lines 293, 495)
-src/skills/c64-memory-mapping/SKILL.md    : 2   (lines 225, 476)
-src/skills/routine-queue-walker/SKILL.md  : 1   (line 7)
-```
+| | |
+|---|---|
+| **NEW** | A container-side `ghidra-run.ts` that sends one control request and reads a *path*; the pre-script and post-script as committed `.java` files; the SLEIGH extension as committed `.slaspec`; a container-side importer for the export |
+| **MODIFIED** | `broker-control.mts` (union + one namespaced op returning `{ ok, outPath, logPath, exitCode }`, all far under 64 KiB); `install-resources.ts`'s deploy set (**by walk, no code change** — see below); `hostpath.ts` / `containerpath.ts` consumer set |
+| **Cost** | The path must be translated in both directions (`hostPath()` at `hostpath.ts:209`, `containerPath()` at `containerpath.ts:151`), which reddens `hostpath-consumers.test.ts:144` — a reviewed 5-member set. Requires the shared mount to actually exist; on a host-native install (this repo's own common case, per seed constraint 7) it is a no-op. |
+| **Benefit** | **This is what the seed's own constraint 2 already prescribes**: "Bulk results must be written to a file host-side and returned as a path (translated back through `containerpath.ts`)". And it is what the pivot prototype already *did* — `ExportAnalysis.java:13` writes via `PrintWriter(new FileWriter(...))`; `autoannotate2.mjs:1-3` reads it with `readFileSync`. Primary evidence from an executed run, not a design sketch. |
 
-**Correction 2: each block carries TWO lines containing "the external analyser", not one** — the `Adapted from the external analyser.` line and the `Source repository: an upstream repository` line. So the exemption set is **10 lines across 5 blocks in 3 files**, and the non-vacuity counter should require exactly 10, not 3. Verified line numbers:
+### Recommendation
 
-```
-routine-queue-walker/SKILL.md   :   8,   9
-c64-memory-mapping/SKILL.md     : 226, 227, 477, 478
-c64-program-recon/SKILL.md      : 294, 295, 496, 502
-```
+**B3 for the artifact, B1's namespace for the control message.** Not a compromise — the
+two options answer different questions. Ghidra's statefulness is a *host filesystem* fact
+(a project directory), not a *protocol* fact, so it needs no lease; its bulk output is a
+*file*, so it must not ride the socket. What remains on the socket is a short request and
+a short reply, which is exactly the shape the host-tool executor was designed for. Take
+B1's seam and namespace, add `ghidra` and `dxa` as named ops with typed argument shapes
+(never argv passthrough — seed constraint 5), and let the answer be a path.
 
-**Recommended exemption predicate — block-scoped, not line-string-scoped.** The `toacme` gate exempts a literal string. Here the safer rule is structural: a line is exempt only if it falls inside an `ATTRIBUTION (ABS-02)` block *and* matches one of the two attribution shapes (`^\s*Adapted from the external analyser\.$` or the pinned repository URL). This is stronger than a substring exemption because prose smuggled into an attribution block on a *new* line is still caught, and it dovetails with `skill-attribution.test.ts`'s existing `attributionBlocks()` extractor — reuse that function rather than writing a second block parser (the "one definition of what counts" discipline `hostpath-consumers.test.ts`'s `importsHostpath()` already establishes).
+**One unexpectedly clean delivery channel, verified.** `install-resources.ts` deploys
+`resources/` to `<root>/tools` by a **recursive walk** (`:99-114`), explicitly so "a file
+added under `resources/lib/` later deploys with no code change here" (`:96-98`). And
+`resources-sync.test.ts` scopes its byte-identity comparison to
+`GENERATED_EXTENSIONS = [".mjs"]` (`:34`), with its own comment at `:30-32`: "everything
+else (the shell scripts, `lib/`) is hand-authored and outside the comparison set BY
+CONSTRUCTION". So a committed `.java` post-script or a `.slaspec` under `resources/` is
+**auto-deployed host-side and outside resources-sync's scope** — an existing, tested,
+container→host file-delivery channel with no new mechanism. Caveat: a `.sh` there *is*
+caught, by `host-scripts.test.ts:202-209`.
 
-**A third mention is NOT exempt and must change substantively:** `routine-queue-walker/SKILL.md:3`, the YAML `description:` frontmatter — *"Drive an existing **the external analyser** annotation project's backlog…"*. That is the skill's trigger text, not attribution. It must be rewritten to name the owned store. Note the coupling: `skill-attribution.test.ts` runs a **pairwise trigger-collision gate over all seven skill descriptions**, so rewriting this description must be re-checked against the other six.
-
-**The direct contradiction to resolve inside one plan.** `scripts/check-skill-fork-honesty.mjs:504` asserts `acme-build/SKILL.md` still contains the literal string `"anno export-asm"`. If the skills are cleansed, that `need()` fails; if the string stays, the new gate fires on it. Both halves must move in the same commit: repoint the positive check at the new verb (`"anno export-asm"`) and update the skill text together. **Discovering this at the gate is the predictable failure mode**; PROJECT.md's Active list already asks for every guard to have "an explicit fate before the phase gate."
-
-### 5.3 Guard fates — nine tests plus two CI scripts
-
-The scoping named three. The measured set is larger. Every row below was confirmed by reading the file.
-
-| Guard | Pinned to | Recommended fate |
-|---|---|---|
-`spawn-seam.test.ts` (627) | `EXPECTED_ANNO_SPAWN_SITES` + `assertNoViceFlag` before every anno spawn; derives its module set from `package.json` `files[]`; reads `.planning/phases/18-*/evidence/` | **Delete with the subject.** The `--vice` invariant it enforces is moot when nothing spawns anno. Its `codeOnly()` string-literal stripper and `shippedTsModules()` idiom are reused by `stock-dispatch.test.ts:2889,2919` — **extract those two helpers first** or that file breaks. |
-`docs-absorbed-decisions.test.ts` (in `scripts/audit-gate.mjs:136`) | `.planning/ARCHITECTURE.md`'s Rule A21 (names `resolveStorePath`, `ChildProcess`, `anno-mcp-client.ts`) and PROJECT.md's D-36 row | **Split.** The D-36/D-32 supersession assertions are pure historical-record checks and stay green if the Key Decisions rows stay (they should — Key Decisions is a ledger, not live documentation). Rule A21 describes a module that ceases to exist: mark it superseded with a date in `.planning/ARCHITECTURE.md` and narrow the guard to assert the supersession note, or retire rule+guard together and remove the name from `audit-gate.mjs:136`. **Removing the name from `audit-gate.mjs` without removing the test, or vice versa, breaks the audit gate** — its own comment records that the two were added in the same commit for this reason. |
-`absorbed-answer-key.test.ts` (282) | `.planning/phases/11-*/evidence/criterion1/` with **no existence guard**; the sealed-question hash chain; a committed ACME fixture byte-compare | **Rename and keep** (`sealed-question.test.ts`). It is an evidence-integrity guard over a historical artifact, not a test of anno code. Keeping it also keeps PROJECT.md's "do not archive phase directories" decision intact — deleting it would silently relax one of that decision's two stated reasons and should be an explicit choice, not a side effect. |
-**`hostpath-consumers.test.ts`** (326) | `annoProductionModules()`, `ANNO_MODULE_FLOOR = 14`, an INT-01 positive control naming four anno filenames | **Repoint** (§1.3b). Three tests go red on deletion. |
-`anno-verb-coverage.test.ts` (192) | `parseAnnoCliVerbs()` over `anno-cli.ts`'s dispatch switch; `REAL_VERBS` (8) | **Rewrite** against `anno-cli.ts`. |
-`anno-symbol-roundtrip.test.ts` (617) | the live anno↔VICE symbol round trip; reads `.planning/phases/` | **Rewrite** as `anno-symbol-roundtrip.test.ts`. The capability (`ANNO-14`/`ANNO-15`) survives in `anno-symbols.ts`; only the static half's provider changes. |
-`anno-verify.test.ts` (247) | two verbatim anno `--verify` transcripts; asserts `anno-test-gate.ts` is absent from `files[]` | **Rewrite** (§3.3). Fixtures must be re-recorded from real ACME. Preserve the `files[]`-absence assertion, repointed at `acme-test-gate.ts`. |
-`anno-derivation.test.ts` (207) | `.planning/phases/19-*/upstream-procedure-manifest.json` — **not** anno code | **Rename and keep** (`upstream-procedure-audit.test.ts`). This guards the manifest the new tool surface is *derived from*; deleting it removes the derivation's own integrity check at the exact moment it matters most. |
-`skill-attribution.test.ts` | the same Phase 19 manifest; the six-field headers; the byte-exact MIT notice; the pairwise trigger-collision gate | **Keep unchanged, and treat as the acceptance gate for the skill-repointing phase.** Every attribution edit must leave it green. |
-`scripts/check-skill-tool-coverage.mjs` | static `import { CURATED_ANNO_TOOLS } from "../src/mcp/vice/anno-tools.ts"`; `ANNO_TOOL_NAME_RE`; ≥10-name floor; CLI-verb floor 8 | **Repoint.** Throws `ERR_MODULE_NOT_FOUND` the moment `anno-tools.ts` is deleted. |
-`scripts/generate-tool-support-table.mjs` + its two independent witnesses | `ANNO_LOOP_VAR_RE` hard-codes `ANNO_TOOL_DEFINITIONS` | **Repoint all three** (§1.2). **Throws — and therefore reddens `docs/tool-support.md`'s byte-identity drift guard — the moment the collection is renamed, i.e. before any deletion.** |
-
-**Ordering consequence.** Two of these (the last two rows) break on the *registration*, not on the deletion. They must be handled in the same phase that registers the new family, or the phase closes with a red CI gate. This is the single most important sequencing fact in this document after §5.4.
-
-### 5.4 Five committed tests read live `.planning/phases/` paths
-
-`spawn-seam.test.ts`, `skill-attribution.test.ts`, `absorbed-answer-key.test.ts`, `anno-coverage.test.ts`, `anno-verify.test.ts` (plus `anno-session.test.ts`, `anno-tools.test.ts`, `anno-symbol-roundtrip.test.ts`, `anno-derivation.test.ts` — nine in total by measurement). Two are worst-case: `absorbed-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with **no existence guard**, and `skill-attribution.test.ts` / `anno-derivation.test.ts` read the Phase 19 manifest by an absolute relative path.
-
-**Roadmap constraint, restated for the planner:** `.planning/phases/` accumulates by design (PROJECT.md Key Decisions, 2026-08-23), and the milestone close must pass `--no-archive-phases`. The set of guards forcing that just changed shape — two of them (`docs-review-disposition.test.ts`, `skill-attribution.test.ts`) survive v0.7.0 regardless, so the constraint stands even if `absorbed-answer-key.test.ts` is deleted. Do not treat the deletion as a route to relaxing it.
+**Reject B2's lease for now, and record the reversal condition** the way Rule A21 records
+its own: reintroduce a leased warm JVM only if per-run JVM startup is *measured* to
+dominate a real analysis session.
 
 ---
 
-## 6. Suggested build order
+## (c) Where the recovered facts land
 
-Six phases. Every dependency below is a real one read off the code, not a preference.
+### The two candidates
 
-### Phase 27 — Extract the shared seams the deletion would take with it
+- **(i)** Ghidra post-script writes `program.json` / `analysis.json`; a container-side
+  importer reads it into `.annostore`.
+- **(ii)** The post-script writes into the store directly.
 
-**Deliver:** `acme-test-gate.ts` (the ACME half of `anno-test-gate.ts`, §1.4); `prg-image.ts` (`parsePrg`, `flatImageOrigin`); the `codeOnly()` / `shippedTsModules()` helpers `stock-dispatch.test.ts:2889,2919` borrows from `spawn-seam.test.ts`. Repoint `disasm-roundtrip.test.ts` and `skill-acme-build-cli.test.ts` at the new ACME gate.
+### Option (ii) is structurally unavailable, on this project's own rules
 
-**Why first:** these are the modules with surviving consumers *outside* the anno family. Every one of them is a silent breakage if the deletion runs first, and each is a pure move with no behaviour change — the cheapest possible phase, and it makes every later phase's diff readable.
+| Rule | How (ii) violates it |
+|------|----------------------|
+| Single seam per concern | `anno-seam.test.ts` asserts `node:sqlite` is named by **exactly one** module of the shipped set (`THE_ONE_SEAM = "anno-store.ts"`, `:28`), with a *second* declared list for test files precisely because "outside the scope of the guard is how a dependency spreads unnoticed" (`:33-46`). A Java SQLite writer is outside every guard's scope entirely — not a violation the guard catches, a violation it cannot see. |
+| Confinement | `openStore()` (`anno-store.ts:432-450`) refuses a store path outside `workspaceRoot` **before** resolution and long before `new DatabaseSync`, and its escape hatch is deliberately named `unconfinedModuleDerivedPath` so a grep finds it. `anno-confinement.test.ts:5-13` records a real escape reproduced through a symlink. A Java writer would have to re-implement that, plus the narrowest-range-wins paint index (proven exact at all 65,536 addresses against an independent oracle), plus the revert journal. |
+| Container-in / host-out | The store lives container-side; the JVM runs host-side. (ii) requires the `.annostore` file itself on a shared mount, writable by a host process — inverting the split and making the store's durability guarantee (proven across a real `SIGKILL` in a separate OS process) a claim about two processes in two languages on two sides of a mount. |
 
-**Green bar:** full `npm test` unchanged (not `test:automated` — that skips `MANUAL_ONLY_TESTS`). No anno module deleted yet.
+### Option (i) is right, and its drift objection has a structural answer
 
-### Phase 28 — The store: model, persistence, undo
+The todo's own sharpest question is whether `program.json` "should be an intermediate at
+all, or whether … making `.asm` a rendering of the store rather than a third parallel
+output that can drift from it." The answer is a role assignment, not a file-count
+decision:
 
-**Deliver:** `anno-model.ts`, `anno-store.ts`. The 12-member type vocabulary. Ranges, scopes, project enums, labels, comments. Atomic write + in-document undo journal. `resolveStorePath()` carried over from `anno-tools.ts` with the extension literal changed.
+| Artifact | Role | Drift risk |
+|----------|------|-----------|
+| `program.json` (Ghidra export) | **Transient evidence** of one run, with a recorded content hash. Never read after import. Belongs in the evidence tree, not a deliverable set. | None — it is not a model, so nothing can drift *from* it |
+| `.annostore` | **The one authoritative model.** Every fact the importer accepts becomes a store row. | n/a |
+| `program.asm` | A **rendering of the store**, via the already-shipped `anno export-asm` (EXPORT-01..03, under a real-ACME byte-diff oracle) | None — derived on demand |
+| `program.c` | Decompiler output. **Not a model and not derivable from the store.** Keep it as evidence beside `program.json`, with the same hash discipline. | None, provided nothing reads it back as input |
 
-**Deliver the two planted-violation proofs here, not later:** (i) mutate → kill process → reopen returns the mutation, and *deleting `writeAtomic()` turns it red*; (ii) mutate → kill → reopen → undo reverts, and *making the journal in-memory turns it red*.
+That preserves the three-output *contract* the proposal contributes (its genuinely new
+idea) while destroying the drift hazard: two of the three outputs are evidence, one is a
+rendering, and the model is the store.
 
-**Why second:** everything else reads or writes this. It has no dependency on the tool surface, the exporter, or any deletion.
+**The importer is cheap, and this is the one surface that is extensible without a guard
+fight.** The `anno_*` tool count is deliberately **not** pinned — `anno-tools.test.ts:208`
+and `anno-derivation.test.ts:477` both assert only `ANNO_TOOL_DEFINITIONS.length > 0`.
+Adding tools flows through the existing single registration loop at `vice-proxy.ts:3388`,
+so it adds **no** entry to `BACKEND_SEAM_BYPASS_KEYS` and keeps MCP-02 satisfied by
+construction. (Observation: `ANNO_TOOL_DEFINITIONS.length` reads **19** at HEAD, where
+`PROJECT.md` says 18 — a stale prose count, not a guard failure, since nothing pins it.)
 
-**Green bar:** the two planted violations observed red, then green. No MCP surface exists yet, so no CI gate moves.
+**Two obligations the importer inherits, both from Phase 23's measured evidence.**
 
-### Phase 29 — The MCP surface, derived from the Phase 19 manifest
+1. `analyzeHeadless` **exits 0 even when a post-script throws**. The importer must grep
+   the run log for `ERROR REPORT SCRIPT ERROR` or every assertion built on its output is
+   worthless. This belongs in the *importer*, container-side, not in the post-script.
+2. Cross-references must carry their access kind (`READ` / `WRITE` / `READ_WRITE` /
+   `COMPUTED_JUMP`) — the pivot's own three decisive facts are all kind-bearing. The
+   store's `STORE-06` cross-reference union already produces a sorted de-duplicated list;
+   the import must not flatten kind out on the way in.
 
-**Deliver:** `anno-tools.ts` (`ANNO_TOOL_DEFINITIONS`, `CURATED_ANNO_TOOLS`, `assertCuratedTool()` incl. batch recursion, `runAnnoTool()`); `anno-xref.ts`; the `vice-proxy.ts` two-line registration; **and every guard that moves on registration** — `stock-dispatch.test.ts` (six sites), the three loop-var-regex witnesses, `scripts/check-skill-tool-coverage.mjs`, `package.json` `files[]`, `scripts/check-npm-packages.mjs`.
+---
 
-**The surface is a diff, not a judgement call.** The manifest's union across the five procedures is:
-
-| verb (upstream name) | manifest disposition | new name |
-|---|---|---|
-| `set_label_name`, `set_comment`, `set_data_type`, `read_region`, `get_binary_info`, `get_blocks`, `get_symbols`, `get_comments`, `get_cross_references`, `get_address_details`, `disassemble`, `create_project_enum`, `apply_enum_usage`, `batch_execute`, `save_project` | `curated` | `anno_*` |
-| `get_disassembly_cursor` | `adapt-to-address-input` | **no tool** — callers always supply an explicit address; `anno_read_region` answers the need (D18-24/D18-25). This is the manifest's own instruction, already honoured today. |
-| `undo` | `omit` | **`anno_undo` — deliberate departure**, criterion now supplied. Update the manifest disposition in the same commit (§4d). |
-| `toggle_splitter`, `set_immediate_format` | `omit`, each naming the requirement that would supply a criterion (`DECOMP-01`/`BUILD-02`, `BUILD-03`) | **omit** — those requirements are re-mapped to v0.9.0 |
-| `unpack_binary` | `omit` | **omit** — the unpacker was dropped by owner decision 2026-08-25; depack-by-running via `c64-ram-capture` |
-
-Plus the three the current surface has beyond the manifest union (`add_scope`, `search_disassembly`, `update_project_enum`, `delete_project_enum`) — 19 curated names today, and every one is exercised by at least one skill file (`scripts/check-skill-tool-coverage.mjs`'s ≥10-distinct-name floor is measured over `src/skills/**`).
-
-**Why third:** the manifest is a committed artifact (available now, no dependency), but the surface must exist before the skills can be re-pointed to it, and before the deletion can be safe.
-
-**Green bar:** `npm test` green **including** `tool-support-table.test.mjs` and `docs/tool-support.md`'s byte-identity drift guard; `node scripts/check-skill-tool-coverage.mjs` exits 0; `node scripts/check-npm-packages.mjs` green. **Both anno and anno families are registered simultaneously at this phase's close.** That is the point: the replacement is demonstrably ready before anything is removed.
-
-### Phase 30 — The ACME exporter and the real-ACME round trip
-
-**Deliver:** `anno-acme-export.ts`; `acme-verify.ts` (a direct ACME spawn matching `acme.mjs`'s argv, carrying `acmeVerdict()`'s five verdict rules — §3.3); the `=*+$01` idiom; the 11-prefix typed labels read from `AUTO_NAME_PREFIX_RE`; enum rendering via the renamed `enum-gen.ts`; `anno-symbols.ts` and the VICE `.lbl` round trip.
-
-**Verify externally, per the project's own six-times-learned lesson:** the acceptance oracle is a real ACME 0.97 reassembling the export to bytes identical to the input, using `.planning/notes/dxa-ghidra-pivot-evidence/anno.asm` as the committed golden witness of the target format. Re-record `anno-verify.test.ts`'s two transcripts from real ACME output — the honest pass and a deliberately-constructed false-pass trap.
-
-**Why fourth:** needs the store (28) and the surface (29). Independent of the deletion.
-
-### Phase 31 — Re-point the five absorbed procedures
-
-**Deliver:** every `anno_*` tool call and `anno <verb>` CLI invocation in `src/skills/` re-pointed — ~148 `anno` mentions across 10 files, concentrated in `c64-memory-mapping/SKILL.md` (53), `c64-program-recon/SKILL.md` (51) and `routine-queue-walker/SKILL.md` (21). Heuristics preserved verbatim: block classification, symbol data-flow patterns, the BASIC V2 token table, the seven-step routine procedure. `routine-queue-walker`'s YAML `description:` rewritten. All five `ATTRIBUTION (ABS-02)` blocks left **byte-identical**.
-
-**Why fifth, and why not merged into the deletion phase:** this is prose surgery with a mechanical acceptance gate (`skill-attribution.test.ts` green, including the pairwise trigger-collision check over all seven descriptions). Merging it with a 12k-line deletion produces a diff no reviewer can read, and the milestone's own framing names this as the half that prevents "the knowledge intact and the procedure inert."
-
-**Green bar:** `skill-attribution.test.ts` green; `check-skill-tool-coverage.mjs` green with **zero** `anno_*` names extracted and its floor re-expressed over `anno_*`; `check-skill-fork-honesty.mjs` green with the positive pointer repointed to `"anno export-asm"` (§5.2).
-
-### Phase 32 — The deletion and the gate
-
-**Deliver:** delete the ~12.4k lines in §2.4; rename the ~12.9k in §2.3; repoint `coverage.ts`'s two functions; discharge every guard fate in §5.3; build the whole-tree grep gate with the 10-line block-scoped attribution exemption and its exactly-10 non-vacuity counter; **observe the gate biting on a planted reintroduction** before accepting it; update `CLAUDE.md`'s constraint bullet, `.planning/ARCHITECTURE.md`'s Rule A21, and `scripts/audit-gate.mjs:136` in step with `docs-absorbed-decisions.test.ts`'s chosen fate.
-
-**Why last, and why this ordering is not negotiable:** the replacement is registered at 29, exercised at 30, and depended on by the skills at 31. Deleting before 31 leaves the absorbed procedures pointing at nothing — the exact failure the milestone's skill half exists to prevent. Deleting before 29 breaks `scripts/check-skill-tool-coverage.mjs` at module load and leaves CI red with no replacement to point at.
-
-**Green bar:** full `npm test`; both `check-*.mjs` CI scripts; `docs/tool-support.md` byte-identical; all six `docs-*.test.ts` guards green (a precondition of recording the milestone-audit status, enforced by a real `PreToolUse` hook via `scripts/audit-gate.mjs`); the grep gate observed red on a planted reintroduction and green after its revert; **and the gate observed green over the untouched attribution blocks** — the specific false-positive the exemption exists for.
-
-### Dependency graph
+## (d) Suggested build order, with the dependency edges named
 
 ```
-27 (extract shared seams)
- └─► 28 (store: model, persistence, undo)
-      └─► 29 (MCP surface + every registration-time guard)   ← anno and anno coexist here
-           ├─► 30 (ACME exporter + real-ACME round trip)
-           └─► 31 (re-point the five absorbed procedures)
-                └─► 32 (deletion + grep gate + guard fates)   ← anno gone
-                     ▲
-                  30 ─┘   (32 needs 30's exporter, since check-skill-fork-honesty.mjs's
-                           positive pointer must name a verb that exists)
+  P-A  Frame-exact stop                    P-B  Snapshot 64K extraction
+       (re-measure on stock first)              (.vsf C64MEM slice, method proven)
+         │                                        │
+         │  ── both feed ──>  P-C  Real-corpus capture ── the substrate
+         │                          │
+         │                          │   [gate: pre-committed go/degrade/no-go rules,
+         │                          │    committed to git BEFORE any measurement]
+         v                          v
+  P-D  Host-tool executor seam  ──> P-E  dxa vendored + map parser
+       (B1 namespace + child-proc)         (DXA-01..03)
+                                            │
+                                            │ dxa's map is what makes Ghidra
+                                            │ work at all — 0 functions, 0 code
+                                            │ bytes with zero hints
+                                            v
+                                     P-F  SLEIGH extension
+                                          (OPC-01..03; source already exists,
+                                           766 lines, docs/undocumented-opcodes-ghidra.md)
+                                            │
+                                            │ MUST precede the acceptance run
+                                            v
+                                     P-G  Ghidra harness + volatile carve
+                                          (GHID-01..05; control observed RED)
+                                            │
+                                            v
+                                     P-H  Importer: export -> .annostore
+                                            │
+                                            v
+                                     P-I  Automatic annotation join
+                                          (AUTO-01..07)
+                                            │
+                                            v
+                                     P-J  PROOF-01..03 on real cracked code
 ```
 
----
+### Edges, each named
 
-## 7. Anti-patterns specific to this milestone
+| Edge | Why it is real |
+|------|----------------|
+| P-A → P-C | The frame-exact stop is "the single gate" on securing a corpus. Without it two runs of the same release diverge at 201 multi-bit addresses, measured snapshot-to-snapshot with no transcription anywhere. |
+| P-B → P-C | Removes the *other* capture blocker (hex transcription lost a 32 KB write to truncation and an 8 KB write to ten dropped characters). Method already validated against `danish_r2_handoff.vsf`. Independent of P-A — **can run in parallel.** |
+| P-D → P-E, P-D → P-G | Both engines are host binaries. Reaching them by `spawnSync` from a skill script is the recorded prohibition, and two skill scripts already violate it (`acme.mjs:124`, `packer-finding.mjs:247,306`). Building the executor after the engines means writing the violation twice and migrating it. |
+| P-E → P-G | Load-bearing, and the strongest edge in the graph: Ghidra alone with zero hints produced **0 functions and 0 code bytes** on the pivot fixture. "The map from dxa is not an optimisation; it is what makes Ghidra work at all on a headerless 6502 image." |
+| P-F → P-G's acceptance run | Explicitly sequenced by the roadmap: GHID-04's acceptance is "structural facts recovered from *real cracked code*", which "is not honestly claimable while 105 opcode bytes are undecodable, because crack and packer code is exactly where that gap bites." Integration of P-F is cheap (the SLEIGH source exists in full); its *verification* needs P-G's harness, which is why they stay in one phase group with F ahead of G's acceptance. |
+| P-G → P-H | Nothing to import until the export exists. |
+| P-H → P-I | AUTO-01's criterion reads annotations back **out of the store**, not out of the pipeline's stdout. |
+| P-C → P-J | PROOF-01..03 are "real measurements on real cracked code rather than `could-not-run`". |
 
-### Anti-pattern 1: Adding the annotation family to `capability-registry.ts`
+### Two ordering choices worth arguing explicitly
 
-**What people do:** treat "26 entries declare every tool's support level per backend" as meaning *every tool has an entry*.
-**Why it's wrong:** the registry is a *delta*, not a census. Its header names the exact precedent (`vice_diagnose`/`vice_recycle`) and calls the inclusion "a factual error, not merely an omission." An entry would also render a spurious row in `docs/tool-support.md`, breaking its byte-identity guard.
-**Instead:** add the loop-variable name to `stock-dispatch.test.ts`'s `BACKEND_SEAM_BYPASS_KEYS` and leave the registry alone. That is where the property is enforced.
-
-### Anti-pattern 2: Hand-adding the family to a manifest
-
-**What people do:** add `anno_*` entries to `tools-manifest.json` so `tools/list` "knows about them".
-**Why it's wrong:** both manifests are regenerated by `refresh-manifest.ts` from a live **host VICE** server's own `tools/list`. An annotation store is never that host, so a hand-added entry is silently wiped on the next refresh. `vice-proxy.ts:3387-3400` already records this in a comment, and `stock-dispatch.test.ts:1563` asserts the absence in both directions.
-**Instead:** register proxy-locally; `tools/list` is served from the same `tools{}` object `buildViceTool()` populates.
-
-### Anti-pattern 3: Routing the family through `buildBackendAwareTool()`
-
-**What people do:** reach for the "one backend-aware registration seam" because its doc comment says never to bypass it.
-**Why it's wrong:** on the non-fork arm it calls `dispatchStock()`, which has no table entry for an `anno_*` name and **refuses by name** — so the entire store would be unreachable on the stock backend. `vice-proxy.ts:3387` says it outright: "`buildBackendAwareTool()` would be flatly wrong here (there is nothing for it to dispatch to on either backend)."
-**Instead:** `buildViceTool()` directly, listed as an asserted exception in `BACKEND_SEAM_BYPASS_KEYS`.
-
-### Anti-pattern 4: Importing `hostpath.ts` to "find where the store file goes"
-
-**What people do:** reason that a file path crossing a boundary needs translation.
-**Why it's wrong:** the store file never leaves the container. Translating it would be the mirror image of DERIV-07's wrongly-translated screenshot path — the bug `hostpath-consumers.test.ts`'s closed consumer set exists to prevent. The five-element `deepEqual` fails immediately.
-**Instead:** `repoRoot()` + `resolveStorePath()`'s six-step containment ladder.
-
-### Anti-pattern 5: An explicit save verb that governs durability
-
-**What people do:** carry `anno_save_project` across as `anno_save`, with mutations buffered in memory until it is called.
-**Why it's wrong:** it reintroduces the entire failure class the deletion is meant to remove — a save that reports success without persisting (which is why `saveAndVerify()` exists today), and an undo journal that dies with the process. It also makes the durability planted violation vacuous: removing the save would break an explicit call, not the mutation path.
-**Instead:** persist-before-return; map the procedures' save step onto `anno_checkpoint` (an undo boundary, durability-neutral).
-
-### Anti-pattern 6: Narrowing the type vocabulary to the seven names in PROJECT.md
-
-**What people do:** implement exactly the seven listed, folding four split-table layouts into one "table".
-**Why it's wrong:** the split-address table is the structure the pivot notes record `da65` as unable to express, and losing it recreates the export-boundary loss the pivot exists to avoid. It also silently narrows the surviving coverage census.
-**Instead:** all twelve, read verbatim off `anno_set_data_type`'s schema.
-
-### Anti-pattern 7: A grep gate that exempts by file, or that consults the exemption first
-
-**What people do:** exempt the three SKILL.md files wholesale, or check `if (exempt) continue` at the top of the loop.
-**Why it's wrong:** WR-03 in this repo's own history: a line reading `// see acme.mjs cmdDisasm / toacme, evidence: "disasm"` short-circuited all three checks because the exemption substring appeared anywhere on it. File-level exemption is strictly worse — it blesses ~148 mentions in the three files that carry the most.
-**Instead:** block-scoped, shape-matched, per-check exemption; substantive checks first; an exactly-10 non-vacuity counter.
+- **P-A's first task is a measurement, not an implementation.** Re-measure two runs on
+  the **stock** backend before writing any alignment code. Finding 4: the recorded
+  divergence is fork evidence, and stock's checkpoint fires synchronously from inside the
+  CPU loop. This could collapse P-A to a verification phase, or narrow it to step 6 alone.
+  Building the refinement loop first and then discovering it was unnecessary is the
+  avoidable version of this — and it is the same failure class this project has recorded
+  six times: an internal check standing in for an external one.
+- **P-D before P-E/P-G, not after.** Tempting to inline `spawnSync("dxa", …)` "just for
+  the measurement phase" and migrate later. The seed's own rationale refuses it: "a
+  half-migrated seam is the state that rots, and a retroactive migration is what makes the
+  rule mechanically enforceable." The grep gate that bans the pattern can only be written
+  once nothing violates it.
 
 ---
 
-## Integration Points
+## (e) Guards and tests that will go red
 
-### External tools
+Ordered by how surprising the breakage is. "Mechanical" = update the pinned set in the
+same commit that changes the subject. "Reviewed decision" = the guard exists to force an
+argument, and papering over it is the defect.
 
-| Tool | Integration pattern | Gotchas |
-|---|---|---|
-| **ACME 0.97 "Zem"** | `spawnSync("acme", ["--cpu","6510","-f","cbm","--msvc","-v1","-o",prg,src])`, argv matched to `src/skills/acme-build/scripts/acme.mjs` | probe `$ACME`, `/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme` for the library. **Never derive the verdict from the exit code** — parse `--msvc` diagnostics and `existsSync(prg)`. Absence is an expected SKIP in CI, gated by the extracted `acme-test-gate.ts`. |
-| **the external analyser** | **removed** | `cargo install` only, rustc ≥ 1.90, ~5 min build — which is why `VICE_REQUIRE_ANNO` was never set in CI. Its removal deletes a documented install prerequisite from the README. |
-| **VICE (`x64sc`)** | unchanged; the store never touches it | the annotation family's independence from it is the whole point of the `buildViceTool()` route. |
+### Reviewed decisions — the guard is the point
 
-### Internal boundaries
+| Guard | Location | Trips on | Note |
+|-------|----------|----------|------|
+| `ControlRequestKind` byte-exact declaration | `broker-control.test.ts:877-890` (subject: `broker-control.mts:30`) | **Any** new control-plane op — `dxa.*`, `ghidra.*`, `tool.*` | Asserts the exact union string with the message "the union must be exactly … plus plan 05's `monitor_claim`/`monitor_release`". Unavoidable in all three (b) options. |
+| `BACKEND_SEAM_BYPASS_KEYS` — 2 entries, order-sensitive | `stock-dispatch.test.ts:1510` | A third proxy-local tool family registered via `buildViceTool()` | Its own comment: "A THIRD entry collides here rather than being absorbed into a superset." **Avoid by extending `ANNO_TOOL_DEFINITIONS` instead of adding a family.** |
+| `EXPECTED_IMPORTERS` — 5-member host-path consumer set | `hostpath-consumers.test.ts:144` | Any new module importing `hostpath.ts` — i.e. anything translating a Ghidra/dxa artifact path | Header `:15-24`: "Widening the five-member list below is a REVIEWED DECISION, not a mechanical fix for a failing test." Also forbids adding any `STOCK_DERIVED_TOOLS` member to it. |
+| `EXPECTED_EMULATOR_SPAWN_SITES` — exactly 1 entry | `spawn-seam.test.ts:263-297` | **A trap:** the discovery predicate matches `\bbinPath\b` (`EMULATOR_BIN_SHAPE` at `:179`, `identNamesEmulatorBinary()` at `:191`). A host-tool executor that writes `spawnSync(binPath, [...])` for *Ghidra* is discovered as an "emulator spawn site" and reds the `=== 1` assertion at `:293-295`. | Avoid by naming the local something else (`toolPath`, `ghidraPath`), or widen the set deliberately. |
+| `MANUAL_ONLY_TESTS` — exactly nine files | `test-gate.test.ts:16` | A new live suite (live Ghidra, live frame-exact) not added to the list | Consequence: it silently runs in `test:automated` and fails on any machine without Ghidra. |
 
-| Boundary | Communication | Notes |
-|---|---|---|
-| `vice-proxy.ts` ↔ `anno-tools.ts` | one static import + one 2-line loop | the only coupling; asserted by `stock-dispatch.test.ts`'s registration scan |
-| `anno-tools.ts` ↔ `anno-store.ts` | direct call, synchronous | the store is the only writer; `anno-tools.ts` never touches `node:fs` itself |
-| `anno-*` ↔ `hostpath.ts` | **forbidden** | asserted by `hostpath-consumers.test.ts`'s 5-element consumer set |
-| `anno-*` ↔ `vice.ts` / `forwardToVice()` | **forbidden, by construction** | asserted by the repointed runner-purity test at `stock-dispatch.test.ts:1549` |
-| `src/mcp/vice/**` ↔ `src/skills/**` | **no imports either way** — separate npm packages | why `acme-verify.ts` re-implements `acme.mjs`'s spawn rather than importing it |
-| `coverage.ts` ↔ the store | reads block types | the only surviving coupling to upstream's response format (two functions, §2.3) |
+### Mechanical, but easy to miss
+
+| Guard | Location | Trips on |
+|-------|----------|----------|
+| Whole-argv `assert.deepEqual` × 3 | `broker-launch.test.ts:1761`, `:1773-1776`, `:1787-1797` | Any unconditional new launch flag. **Avoidable**: an optional field defaulting to absent keeps all three green, and `:1799`/`:1806` are written to survive additions. |
+| Fork argv byte-identity | `broker-launch.test.ts:1761` | Any change to the fork branch — this is a Validated v0.2.0 promise, not just a test |
+| `HOST_BOUND_ARTIFACTS` — exact emitted set | `build.ts:42-50`; drift checked by `resources-sync.test.ts` | A new host-bound `.mts` (`host-tool-exec.mts`, a ghidra launcher). `build()` **throws** on an unexpected or missing artifact; the committed `resources/*.mjs` must be rebuilt and committed in the same change. |
+| `EXPECTED_TRACKED_SHELL_SCRIPTS` — repo-wide `git ls-files -- *.sh`, 5 entries | `host-scripts.test.ts:202-220` | **Any** new `.sh` anywhere in the tree — a dxa `build.sh`, a `analyzeHeadless` wrapper. Repo-wide set equality; nothing scopes it to `src/`. |
+| `REAL_VERBS` + skill-documentation coverage | `anno-verb-coverage.test.ts:53`, scanning **both** `src/skills/` and `installer/skills/` (`:227`) | A new CLI verb (`anno import-ghidra`, `dxa map`) undocumented in either skill tree |
+| `check-skill-tool-coverage.mjs` | `scripts/check-skill-tool-coverage.mjs` | Its allowlists are designed to "SHRINK BY FAILING": `PENDING_LATER_PHASE` entries are asserted **absent** from the stock manifest, so landing one fails until the stale entry is deleted |
+| `check-skill-cli-invocations.mjs` | `scripts/` | A documented invocation whose arguments do not actually work (29-REVIEW.md CR-04) |
+| `shippedTsModules()` throws on a `files[]` entry missing from disk | `shipped-modules.ts:151-162`; `shipped-modules.test.ts:55` | Adding a module to `files[]` before it exists, or renaming without updating it. Cascades into every structural guard that scans the shipped set. |
+| `scripts/check-npm-packages.mjs` leak checks | `:92-105` — `node_modules/`, `*.test.*`, `fixtures/`, `test-corpus.mjs` | Committing Ghidra/dxa **fixtures** under `fixtures/`. Vendored C source under `vendor/` is *not* caught — decide `files[]` membership deliberately. |
+| `ci-suite-coverage.test.ts` | whole file | A committed test file in a directory with no matching step in `ci.yml`'s `build` job. A new `vendor/dxa/` or Ghidra script test dir needs a CI step in the same commit. |
+| `docs-deferred-ledger.test.ts` — fails in **both** directions | `:101`, `:116` | Resolving the frame-exact / headless / vsf / Ghidra-proposal todos without moving their `STATE.md` Deferred Items rows, and vice versa |
+| `docs-linerefs.test.ts` | reads CLAUDE.md | Any edit shifting `vice-proxy.ts`'s `rewriteArguments()` call sites. Verified correct at HEAD: `:3050` / `:2985` / `:1529` / `:1505`. **Note the historical pattern** — these citations were stale twice before, and the second time only because the guard read CLAUDE.md and not `PROJECT.md`'s copy. Adding an interception near `forwardToVice()` shifts all four. |
+| `docs-dangling-refs.test.ts` | whole file | A shipped string literal naming a phase number. Phase 23's evidence scripts are `ExportAnalysis23.java` / `FlatVolatile.java` — **rename on promotion out of `.planning/phases/`**; the guard is scoped to normative documents, but the naming habit is the hazard. |
+| `absorbed-answer-key.test.ts` | reads `.planning/phases/11-*/evidence/` with no existence guard | Any phase archival. Independently recorded: phase dirs accumulate by design. |
+| `audit-integrity.test.ts` | `:28` cites `vice-sync.ts`'s untested waits by name | Retiring or restructuring `vice-sync.ts` |
+
+### A stale claim this milestone must correct, and what correcting it costs
+
+`capability-registry.ts:280-286` states, inside `vice_machine_config_set`'s reason: "warp
+on stock is a launch-time flag, not a resource that can be toggled while running." That
+was **refuted live** on 2026-08-27 (`warp` / `warp on` / `warp off` all answered on stock
+3.9's text monitor). `docs/tool-support.md:54` reproduces the sentence verbatim because it
+is **generated** from the registry, under a byte-identity drift guard
+(`tool-support-table.test.mjs`). So the correction is one commit touching two files —
+registry text plus regenerated table — and skipping the regeneration reds the drift guard.
+
+### Two known-red baselines to establish before trusting any run
+
+- **Stop the broker first.** A live broker reddens the BACK-05 assertion
+  deterministically. That is not a flake, and a phase measuring against a live-broker run
+  will read a false baseline.
+- **Use `npm run test:automated`, not `npm test`.** The whole-glob run does not terminate
+  unaided (`vice-proxy.test.ts` leaks two LISTEN sockets), and `test:automated` skips the
+  nine `MANUAL_ONLY_TESTS`. The clean floor for `test:automated` is **0** failures.
+
+---
+
+## Anti-Patterns specific to this integration
+
+### Anti-Pattern 1: Putting the frame-exact stop behind `vice.ts`'s `call()`
+
+**What people do:** implement the alignment loop as a helper called from behind `call()`.
+**Why it's wrong:** MCP-02. `rewriteArguments()` runs at `vice-proxy.ts:3050`, inside
+`forwardToVice()` (`:2985`) and before `call()`. Anything behind `call()` receives
+host-translated paths. The alignment loop takes no paths *today*, which is exactly how
+this becomes a latent bug the day someone adds a snapshot-on-align argument.
+**Do this instead:** live in the stock family (`stock-dispatch.ts`'s
+`withDerivedTool(...)`), or ride `vice_run_until`'s existing dispatch. Never a new
+proxy-local family (`stock-dispatch.test.ts:1510`).
+
+### Anti-Pattern 2: Running the JVM inline in the broker process
+
+**What people do:** `await spawn(...)` the analyser from a control handler.
+**Why it's wrong:** two independent failures. `broker-kill.mts:367-374` turns any
+unhandled throw into kill-and-exit for the **entire VICE pool** — a Ghidra bug becomes a
+lost capture in flight. And the single-threaded loop stalls acquires, the warm floor and
+monitor claims for the run's whole multi-minute duration.
+**Do this instead:** a child process, async spawn, its failure a response frame.
+
+### Anti-Pattern 3: Letting the export ride the socket
+
+**What people do:** return `program.json` inline as newline-JSON.
+**Why it's wrong:** `MAX_LINE_BYTES = 65536` (`broker-control.mts:242`) and overflow
+`destroy()`s the socket at `:376` **with no error frame** — client-side it is
+indistinguishable from a connection drop, i.e. from a wedge. This fails in production on
+the first real image, not in testing on the fixture.
+**Do this instead:** write host-side, return a path, translate through
+`containerpath.ts:151`.
+
+### Anti-Pattern 4: Writing the structural export against `DataTypeManager`
+
+**What people do:** the obvious Ghidra-scripting route.
+**Why it's wrong:** measured on the pivot fixture, `getAllComposites()` and
+`getDefinedData()` return essentially nothing on 6502. `DecompInterface` yields the index
+bound, the split-pointer `CONCAT11` idiom and the record stride directly. Recorded as "the
+single most expensive mistake available in this design."
+**Do this instead:** `DecompInterface`, with a committed control asserting the
+`DataTypeManager` route returns essentially nothing, so the mistake cannot be re-made
+silently.
+
+### Anti-Pattern 5: Asserting the volatile carve is present
+
+**What people do:** a test that checks `setVolatile(true)` was called.
+**Why it's wrong:** the failure is silent — Ghidra deletes hardware writes as dead stores
+with no warning. Measured on `bank.a`: three of four `$01` writes and a `$d020` write
+eliminated under defaults. An assertion that the fix is present proves nothing about
+whether it is *measuring* the deletion.
+**Do this instead:** a control that removes the flag and observes the writes
+*disappearing* — red without the fix, green with it. Set it via `mem.getBlock(addr)` +
+`setVolatile(true)` on the **existing** block; creating a conflicting block throws
+`MemoryConflictException` and drops the whole run back to non-volatile.
+
+### Anti-Pattern 6: Trusting a green `analyzeHeadless` exit code
+
+**What people do:** check `exitCode === 0`.
+**Why it's wrong:** it exits 0 even when a post-script throws. Recorded in Phase 23's
+`instrument-provenance.txt` alongside two siblings: it **refuses** a project directory
+containing a dot-prefixed path element (so `.planning/...` as a project path fails), and
+on the `.prg` route the classification line count is the **block total**, not the image
+size.
+**Do this instead:** grep the run log for `ERROR REPORT SCRIPT ERROR`, container-side, in
+the importer.
 
 ---
 
-## Open questions for the planner
+## Internal Boundaries — summary of what is NEW vs MODIFIED
 
-1. **Tool prefix.** `anno_*` is assumed throughout. `store_*` and `vice_anno_*` are alternatives; `vice_*` is unavailable (it would collide with the manifest namespace and confuse `check-skill-tool-coverage.mjs`'s extraction regexes). Whichever is chosen, the grep gate's rule becomes "no shipped tool name may contain `anno_`", which is prefix-independent.
-2. **`docs-absorbed-decisions.test.ts` / Rule A21.** Two defensible fates (§5.3). This is a decision, not a mechanical fix, and it moves `scripts/audit-gate.mjs`.
-3. **`absorbed-answer-key.test.ts`.** Keeping it preserves the "do not archive phase directories" decision's second leg. Deleting it should be an explicit choice recorded as such.
-4. **Store file naming and multiplicity.** One store per binary under analysis, or one per workspace? `resolveStorePath()` takes a caller-supplied path today, which supports many; the absorbed procedures all pass `project` explicitly. Recommend keeping caller-supplied.
-
----
-
-## Sources
-
-All HIGH-confidence claims read directly at HEAD (`main`, 2026-08-26):
-
-- `src/mcp/vice/vice-proxy.ts` — `:194`, `:1507`, `:1531`, `:2009`, `:2987`, `:3052`, `:3263` (`buildViceTool`), `:3323` (`buildBackendAwareTool`), `:3387-3402`
-- `src/mcp/vice/capability-registry.ts` — full file; 26 entries, header exclusion rules
-- `src/mcp/vice/hostpath-consumers.test.ts` — full file; `EXPECTED_IMPORTERS`, `annoProductionModules()`, `ANNO_MODULE_FLOOR`, `DERIVED_TOOL_MODULES`
-- `src/mcp/vice/anno-tools.ts` — header, `ANNO_TOOL_DEFINITIONS` (19 names), `CURATED_ANNO_TOOLS:634`, `resolveStorePath()`, `anno_set_data_type` schema (12-member enum)
-- `src/mcp/vice/stock-dispatch.test.ts` — `:44`, `:1485-1575`
-- `src/mcp/vice/anno-verify.ts` — header, `:47` (`buildVerifyArgs`/`runAnno` import), exports
-- `src/mcp/vice/anno-test-gate.ts` — both gate halves; consumer scan
-- `src/mcp/vice/anno-coverage.ts` — `:131-134`, `:1384`, `:1662`, `:1683`
-- `src/mcp/vice/anno-project.ts`, `anno-symbols.ts` — export lists
-- `src/mcp/vice/docs-linerefs.test.ts`, `capability-registry.test.ts:154-174`, `tool-support-table.test.mjs:62-78`
-- `src/mcp/vice/package.json` — `files[]` (15 anno entries + `anno-regbits.json`)
-- `scripts/check-skill-fork-honesty.mjs:412-510` — the `toacme` gate precedent
-- `scripts/check-skill-tool-coverage.mjs:35-520`, `scripts/generate-tool-support-table.mjs:85-135`, `scripts/check-npm-packages.mjs:190-240`, `scripts/audit-gate.mjs:106-140`
-- `src/skills/acme-build/scripts/acme.mjs:100-170` — the real-ACME spawn
-- `src/skills/*/SKILL.md` — 5 `ATTRIBUTION (ABS-02)` blocks, 10 exempt lines, measured mention counts
-- `.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json` — 5 procedures, 20-verb union, 3 re-sync triggers, 5 disposition rationales
-- `.planning/notes/dxa-ghidra-pivot-evidence/anno.asm` — committed real ACME export with 4 `=*+$01` labels
-- `.planning/PROJECT.md` (Current Milestone v0.7.0, Constraints, Key Decisions), `CLAUDE.md`, `.planning/seeds/own-the-annotation-store.md`
-
-Measurements: `wc -l src/mcp/vice/anno-*.ts` (25,759 = 10,102 non-test + 15,657 test); `grep -c anno` on both manifests and `docs/tool-support.md` (0, 0, 0); `grep -rc the external analyser src/skills` (27 across 8 files); `grep -rc anno src/skills` (~148 across 10 files).
+| Boundary | New | Modified |
+|----------|-----|----------|
+| Frame-exact stop | `stock-frame-stop.ts` (or ~40 lines inside `stock-run-until.ts`) | `stock-dispatch.ts` (arg schema only, if riding `vice_run_until`); `tools-manifest.stock.json` only if a new tool name is chosen |
+| Snapshot 64K extraction | a `.vsf` module-walking slicer (pure, container-side, no emulator) | `c64-ram-capture/SKILL.md` |
+| Host-tool executor | `host-tool-exec.mts` + `resources/host-tool-exec.mjs`; `host-tool-client.ts`; typed allowlist; skill-side token discovery | `broker-control.mts` (union + top-of-`handleLine` routing + a callback-free deps object); `build.ts:42-50`; `package.json` `files[]`; `acme.mjs`; `packer-finding.mjs` |
+| dxa | `vendor/dxa/` at a pinned version; a listing parser that refuses by name; `THIRD-PARTY-NOTICES.md` GPLv2+ entry | `ci.yml` (build step) |
+| Ghidra | pre-script + post-script `.java` under `resources/` (auto-deployed by walk); `.slaspec` extension; a container-side runner | `ci.yml`; `capability-registry.ts` warp text + regenerated `docs/tool-support.md:54` |
+| Fact landing | an importer module + 1–3 new `ANNO_TOOL_DEFINITIONS` entries | nothing structural — the loop at `vice-proxy.ts:3388` already covers it, and the tool count is unpinned |
+| Automatic annotation join | a join module (the pivot's `autoannotate2.mjs` / `vicderive.mjs` are the prototypes) | `memmap.json` becomes a pipeline data source rather than a skill input |
 
 ---
-*Architecture research for: owned annotation store, v0.7.0*
-*Researched: 2026-08-26*
+
+## Citation Ledger
+
+Every `file:line` in this document was read at HEAD `36f8c7c`. Paths are relative to
+`src/mcp/vice/` unless prefixed.
+
+| Claim | Citation | Verified |
+|-------|----------|----------|
+| `rewriteArguments()` inside `forwardToVice()`, before `call()` | `vice-proxy.ts:3050` / `:2985` | ✅ matches CLAUDE.md |
+| Second `rewriteArguments()` site in `gatherWedgeEvidence()` | `vice-proxy.ts:1529` / `:1505` | ✅ matches CLAUDE.md |
+| `anno_*` registered via `buildViceTool()` | `vice-proxy.ts:3388` | ✅ |
+| `buildViceTool` definition | `vice-proxy.ts:3250` | ✅ |
+| `vice.ts` transport seam / deny-list | `vice.ts:697` / `:201` | ✅ |
+| `buildViceArgs()` / `VICE_ARGS` short-circuit / stock argv | `broker-launch.mts:153` / `:163` / `:202` / `:213` | ✅ |
+| Warm floor default / `maintainWarmFloor()` / `inFlight` | `broker-launch.mts:850` / `:953` / `:78`, `:373-378`, `:452-457` | ✅ |
+| Acquire frame — **two** sites, not one | `vice-broker-client.ts:372` **and `:867`** | ✅ (the todo names only `:372`) |
+| `selectWarmInstance()` / `handleRelease()` / backend param | `vice-broker.mts:473` / `:929` / `:404` | ✅ |
+| `remoteMonitorPort` additive-optional precedent | `broker-state.mts:117-141` | ✅ |
+| 64 KiB cap + silent destroy | `broker-control.mts:242` / `:376` | ✅ |
+| `ControlRequestKind` 7-member union | `broker-control.mts:30` | ✅ |
+| Seven VICE callbacks in deps | `broker-control.mts:145-180` | ✅ |
+| Token gate before any state read | `broker-control.mts:267`, `:528` | ✅ |
+| Connection close IS the release | `broker-control.mts:388-397` | ✅ |
+| `unknown op` → `bad_request` | `broker-control.mts:655` | ✅ |
+| `verifiedKill()` / kill-and-exit handlers | `broker-kill.mts:126` / `:367-374` | ✅ |
+| `broker.json` arbiter | `vice-broker.mts:239`, `:965` | ✅ |
+| `vice-sync.ts` invariants block | `vice-sync.ts:28-32` | ✅ |
+| `waitCheckpointHit` / `runToCheckpoint` / `readCheckpoint` | `vice-sync.ts:227` / `:262` / `:197` | ✅ |
+| Five `todo` entries, no stub | `vice-sync.test.ts:107-143` | ✅ |
+| `vice-sync.ts` has no importer in the shipped tree | `grep -rn 'from "./vice-sync' *.ts *.mts` → only `vice-sync.test.ts:22` | ✅ |
+| `stock-run-until.ts` event-driven, one resume | `:6`, `:26-27`, `:113`, `:145` | ✅ |
+| Cycle baseline / video standard / frame arithmetic | `stock-timing.ts:274` / `:147` / `:70-73` / `:200` | ✅ |
+| `ADVANCE_INSTRUCTIONS` encode + handler | `stock-protocol.ts:751`; `stock-execution.ts:257` | ✅ |
+| `openStore()` confinement-by-default | `anno-store.ts:432-450` | ✅ |
+| `node:sqlite` named by exactly one shipped module | `anno-seam.test.ts:28`, `:33-46` | ✅ |
+| Confinement escape reproduced via symlink | `anno-confinement.test.ts:5-13` | ✅ |
+| `ANNO_TOOL_DEFINITIONS.length` unpinned (`> 0`) | `anno-tools.test.ts:208`; `anno-derivation.test.ts:477` | ✅ (actual length 19) |
+| Stock tool count pinned three ways | `stock-dispatch.test.ts:1167`, `:1173-1174` | ✅ |
+| Fork surface pinned at 62 | `fork-manifest-surface.test.ts:58-65` | ✅ |
+| `BACKEND_SEAM_BYPASS_KEYS`, order-sensitive, 2 entries | `stock-dispatch.test.ts:1508-1510` | ✅ |
+| `proxyToolRegistrations()` regex-scans `tools[...] =` lines | `stock-dispatch.test.ts:1486-1493` | ✅ |
+| 5-member host-path consumer set | `hostpath-consumers.test.ts:144`; header `:15-24` | ✅ |
+| `HOST_BOUND_ARTIFACTS` exact-set assertion | `build.ts:42-50`, `:101-102` | ✅ |
+| `resources-sync` scoped to `.mjs` only | `resources-sync.test.ts:34`, `:25-33` | ✅ |
+| `install-resources.ts` deploys by recursive walk | `install-resources.ts:87-114` | ✅ |
+| `EXPECTED_TRACKED_SHELL_SCRIPTS`, 5 entries, repo-wide | `host-scripts.test.ts:202-220` | ✅ |
+| `EXPECTED_EMULATOR_SPAWN_SITES` = 1, matches `binPath` | `spawn-seam.test.ts:263`, `:179`, `:191`, `:293-295` | ✅ |
+| `MANUAL_ONLY_TESTS` = nine files | `test-gate.test.ts:16` | ✅ |
+| Whole-argv `deepEqual` × 3; ordering tests survive additions | `broker-launch.test.ts:1761`, `:1773-1776`, `:1787-1797`, `:1799`, `:1806` | ✅ |
+| Deferred ledger fails both directions | `docs-deferred-ledger.test.ts:101`, `:116` | ✅ |
+| `shippedTsModules()` from `files[]`, throws on missing | `shipped-modules.ts:151-162` | ✅ |
+| Tarball leak checks | `scripts/check-npm-packages.mjs:92-105` | ✅ |
+| Test-only host oracle absent from `files[]` (the pattern) | `acme-verify.test.ts:1649-1655` | ✅ |
+| `VICE_REQUIRE_ACME=1` hard-fail in CI (the pattern) | `.github/workflows/ci.yml:167`; `acme-gate.test.ts:146` | ✅ |
+| Refuted warp claim, and its generated copy | `capability-registry.ts:280-286`; `docs/tool-support.md:54` | ✅ |
+| Ghidra export written as a file, read by Node | `.planning/notes/dxa-ghidra-pivot-evidence/ExportAnalysis.java:13`; `autoannotate2.mjs:1-3`, `:21` | ✅ |
+| Ghidra alone: 0 functions, 0 code bytes | `.planning/notes/dxa-ghidra-pivot.md` measurement table | ✅ |
+| Narrowest-range / in-image-skip / bank-first rules | `.planning/notes/auto-annotation-from-ghidra-xrefs.md` | ✅ |
+
+**Unverified this session (declared, not asserted):** VICE's event-record flag names and
+their interaction with `-binarymonitor`; the actual cost of installing Ghidra + a JVM in
+GitHub Actions; whether stock's synchronous checkpoint is in fact frame-reproducible
+(finding 4 — this is P-A's first task, not a claim). Nothing in the build order depends on
+resolving these before P-A's measurement.
+
+---
+*Architecture research for: frame-exact capture + dxa/Ghidra pipeline integration into c64-re-tools*
+*Researched: 2026-09-02 · tree state HEAD `36f8c7c`*
