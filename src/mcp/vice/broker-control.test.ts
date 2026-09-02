@@ -36,6 +36,11 @@ import {
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
 } from "./broker-control.mts";
+// Phase 33, plan 33-06 (D-15): the profile shape is imported from its one
+// definition, exactly as the production modules import it -- a local shape
+// here would let these assertions pass against a boundary that accepts
+// something else.
+import type { LaunchProfile } from "./broker-launch.mts";
 import { readBrokerLiveness } from "./vice-broker-client.ts";
 import { build } from "./build.ts";
 
@@ -97,7 +102,10 @@ function makeClient(port: number, host = "127.0.0.1") {
 }
 
 interface StubDeps {
-  onAcquire?: (id: string) => Promise<AcquireOutcome>;
+  /** Phase 33, plan 33-06: widened with the same OPTIONAL second parameter
+   * StartControlListenerOptions.onAcquire took -- every pre-33-06 stub in
+   * this file is a one-argument function and keeps satisfying this. */
+  onAcquire?: (id: string, profile?: LaunchProfile) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
   onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
@@ -844,14 +852,18 @@ test("attemptAcquire: a queued entry whose socket is still connected behaves exa
 
 test("structural: the destroyed-socket pre-check appears before the launch callback call, and a second destroyed-socket check appears on the success path, inside attemptAcquire()", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
-  const startIdx = source.indexOf("function attemptAcquire(requestId: string): Promise<boolean> {");
+  const startIdx = source.indexOf("function attemptAcquire(requestId: string, profile?: LaunchProfile): Promise<boolean> {");
   assert.ok(startIdx !== -1, "attemptAcquire()'s own definition must be found in the source");
   const endIdx = source.indexOf("\n    }\n", startIdx);
   assert.ok(endIdx > startIdx, "could not isolate attemptAcquire()'s own closing brace");
   const body = source.slice(startIdx, endIdx);
 
   const preCheckIdx = body.indexOf("if (socket.destroyed) return Promise.resolve(true);");
-  const callbackCallIdx = body.indexOf(".onAcquire(requestId)");
+  // Phase 33, plan 33-06 widened this call to `.onAcquire(requestId,
+  // profile)` -- matched on the invocation PREFIX rather than the full
+  // argument list, so this ordering assertion survives a further widening of
+  // the callback rather than failing for a reason it does not police.
+  const callbackCallIdx = body.indexOf(".onAcquire(requestId");
   assert.ok(preCheckIdx !== -1, "the pre-check must be present, matched verbatim");
   assert.ok(callbackCallIdx !== -1, "the onAcquire() call must be present");
   assert.ok(preCheckIdx < callbackCallIdx, "the pre-check must run BEFORE onAcquire() is ever called");
@@ -866,7 +878,7 @@ test("structural: the destroyed-socket pre-check appears before the launch callb
 test("structural: attemptAcquire()'s own comment names which half bounds which failure, and does not claim the race is eliminated", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const startIdx = source.indexOf("Gap closure (plan 14, WR-03/T-01.6.2-87/-88)");
-  const endIdx = source.indexOf("function attemptAcquire(requestId: string): Promise<boolean> {");
+  const endIdx = source.indexOf("function attemptAcquire(requestId: string, profile?: LaunchProfile): Promise<boolean> {");
   assert.ok(startIdx !== -1 && endIdx !== -1 && startIdx < endIdx, "the gap-closure comment must precede attemptAcquire()'s own definition");
   const comment = source.slice(startIdx, endIdx);
   assert.match(comment, /always-reachable/i);
@@ -1289,5 +1301,214 @@ test("a bind failure whose cause is NOT address-in-use produces its own loud fai
     assert.match(stderr, /failed to start control listener/i);
   } finally {
     rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// Phase 33, plan 33-06 (REPRO-05, D-15, T-33-03): the launch profile on the
+// EXISTING acquire op. `ControlRequestKind` is unchanged at seven members --
+// this is a field, not an eighth op -- and `normaliseLaunchProfile()` is the
+// one narrowing site every case below drives, either directly or through a
+// real control-plane round trip.
+//
+// Task 1 contributes the round-trip tracer; task 2 contributes the boundary
+// refusals. They are grouped together here because they assert two halves of
+// one boundary and a reader needs both to see what it accepts.
+// ============================================================================
+
+/** Starts a listener whose onAcquire records the profile it was handed, and
+ * always grants, so a test can assert on what ARRIVED rather than on what a
+ * launch did with it. `received` collects one entry per onAcquire call --
+ * `undefined` is a real, distinguishable entry (profile-less), which is why
+ * this is an array of the optional type and not a single nullable value. */
+async function startProfileRecordingListener(): Promise<{
+  listener: StartControlListenerResult;
+  token: string;
+  received: Array<LaunchProfile | undefined>;
+}> {
+  const received: Array<LaunchProfile | undefined> = [];
+  const { listener, token } = await startTestListener({
+    onAcquire: async (id: string, profile?: LaunchProfile) => {
+      received.push(profile);
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } } as AcquireOutcome;
+    },
+  });
+  return { listener, token, received };
+}
+
+test("ControlRequestKind (33-06, D-15): still exactly seven members -- the launch profile is a FIELD on the existing acquire op, never an eighth op", () => {
+  // Read off the type's own declaration in the source rather than a
+  // hand-maintained list here: a second list would be the very drift this
+  // asserts against. The union is a single line by convention in this file.
+  const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
+  const match = /export type ControlRequestKind =([^;]*);/.exec(source);
+  assert.ok(match, "ControlRequestKind's declaration must be findable in broker-control.mts");
+  const members = match![1]
+    .split("|")
+    .map((s) => s.trim().replace(/^"|"$/g, ""))
+    .filter((s) => s !== "");
+  assert.deepEqual(
+    members,
+    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release"],
+    "the seven-op message set must be unchanged -- 33-06 adds a profile FIELD to `acquire`, not an eighth op",
+  );
+});
+
+test("acquire profile (33-06, D-15, tracer): {op:'acquire', profile:{warp:true}} arrives at onAcquire as {warp:true}, over a REAL control-plane round trip", async () => {
+  const { listener, token, received } = await startProfileRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-profile-1", token, profile: { warp: true } });
+    const grant = await client.next();
+    assert.equal(grant.kind, "grant", `expected a grant, got ${JSON.stringify(grant)}`);
+    assert.equal(received.length, 1, "onAcquire must have been called exactly once");
+    assert.deepEqual(received[0], { warp: true }, "the narrowed profile must arrive at onAcquire unchanged");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire profile (33-06, D-15): both knobs together arrive as {warp:true, headless:true}, and a both-false profile arrives as {warp:false, headless:false} -- never coerced away", async () => {
+  const { listener, token, received } = await startProfileRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-profile-both", token, profile: { warp: true, headless: true } });
+    assert.equal((await client.next()).kind, "grant");
+    assert.deepEqual(received[0], { warp: true, headless: true });
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+
+  const second = await startProfileRecordingListener();
+  const client2 = makeClient(second.listener.port);
+  try {
+    client2.send({ op: "acquire", id: "req-profile-false", token: second.token, profile: { warp: false, headless: false } });
+    assert.equal((await client2.next()).kind, "grant");
+    assert.deepEqual(second.received[0], { warp: false, headless: false }, "explicit false must survive narrowing as false -- the eligibility rule, not this boundary, is what makes false and absent equivalent");
+  } finally {
+    client2.close();
+    second.listener.server.close();
+  }
+});
+
+test("acquire profile (33-06, edge: empty): an acquire with NO profile key reaches onAcquire with `undefined`, and its wire line is byte-identical to the pre-33-06 line", async () => {
+  const { listener, token, received } = await startProfileRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-no-profile", token });
+    assert.equal((await client.next()).kind, "grant");
+    assert.equal(received.length, 1);
+    assert.equal(received[0], undefined, "an absent profile must arrive as undefined -- never as {} and never as a default");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire profile (33-06, T-33-03): `profile: null` is accepted as profile-less rather than refused", async () => {
+  const { listener, token, received } = await startProfileRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-null-profile", token, profile: null });
+    assert.equal((await client.next()).kind, "grant", "null must be tolerated as 'no profile', matching an absent key");
+    assert.equal(received[0], undefined);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Task 2, boundary refusals (T-33-03). Each malformed shape must be refused
+// with the EXISTING `bad_request` code, with the offending value (or key)
+// NAMED in the message, and -- separately asserted -- without the request
+// ever being enqueued or reaching onAcquire at all.
+// ---------------------------------------------------------------------------
+
+/** Every malformed `profile` shape the boundary must refuse, paired with a
+ * substring the refusal message has to contain. The substring is what makes
+ * "names the offending value" a real assertion rather than a check that some
+ * message exists. */
+const MALFORMED_PROFILES: Array<{ label: string; profile: unknown; names: string }> = [
+  { label: "a string", profile: "warp", names: '"warp"' },
+  { label: "a number", profile: 7, names: "7" },
+  { label: "a bare boolean", profile: true, names: "true" },
+  { label: "an array (typeof 'object', but not a plain object)", profile: [], names: "[]" },
+  { label: "a non-boolean warp value", profile: { warp: "yes" }, names: "profile.warp" },
+  { label: "a non-boolean headless value", profile: { headless: 1 }, names: "profile.headless" },
+  { label: "an unknown key alongside a valid one", profile: { warp: true, turbo: true }, names: "turbo" },
+];
+
+for (const { label, profile, names } of MALFORMED_PROFILES) {
+  test(`acquire profile (33-06, T-33-03): ${label} is refused bad_request naming the offending value, and onAcquire is never called`, async () => {
+    const { listener, token, received } = await startProfileRecordingListener();
+    const client = makeClient(listener.port);
+    try {
+      client.send({ op: "acquire", id: "req-malformed", token, profile } as Record<string, unknown>);
+      const resp = await client.next();
+      assert.equal(resp.kind, "error", `expected an error line, got ${JSON.stringify(resp)}`);
+      assert.equal(resp.code, "bad_request", "malformed profiles reuse the EXISTING bad_request code -- no new error code was added");
+      assert.ok(
+        typeof resp.message === "string" && resp.message.includes(names),
+        `the refusal must name the offending value (${names}); got ${JSON.stringify(resp.message)}`,
+      );
+      assert.equal(received.length, 0, "a refused profile must never reach onAcquire -- no port allocation, no spawn, no argv construction");
+    } finally {
+      client.close();
+      listener.server.close();
+    }
+  });
+}
+
+test("acquire profile (33-06, T-33-03): a bad_request refusal does not enqueue the request -- the pending-acquire queue length is unchanged", async () => {
+  const { listener, token, received } = await startProfileRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    const before = listener.pendingAcquires.length;
+    assert.equal(before, 0, "this test's own precondition: the queue starts empty");
+    client.send({ op: "acquire", id: "req-no-enqueue", token, profile: { turbo: true } } as Record<string, unknown>);
+    const resp = await client.next();
+    assert.equal(resp.code, "bad_request");
+    // The enqueue decision is made synchronously in the same tick the
+    // refusal is written, so one turn of the event loop is enough to observe
+    // its absence -- a queued entry would already be present here.
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(listener.pendingAcquires.length, before, "a refused acquire must not be queued for a later drain pass -- it is answered and dropped");
+    assert.equal(received.length, 0);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire profile (33-06): the profile survives being QUEUED behind an in-flight launch -- a retried acquire carries the profile it was made with, not a profile-less one", async () => {
+  // First attempt answers launch_in_flight (which queues rather than
+  // refuses); the second attempt, driven by drainPendingAcquires(), must
+  // present the SAME profile.
+  const received: Array<LaunchProfile | undefined> = [];
+  let attempts = 0;
+  const { listener, token } = await startTestListener({
+    onAcquire: async (_id: string, profile?: LaunchProfile) => {
+      attempts++;
+      received.push(profile);
+      if (attempts === 1) return { ok: false, reason: "launch_in_flight" } as AcquireOutcome;
+      return { ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6601" } } as AcquireOutcome;
+    },
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-queued-profile", token, profile: { warp: true } });
+    const queued = await waitFor(() => listener.pendingAcquires.length === 1, 2000);
+    assert.ok(queued, "the launch_in_flight outcome must have queued the request");
+    await drainPendingAcquires(listener.pendingAcquires);
+    const grant = await client.next();
+    assert.equal(grant.kind, "grant", `expected the retry to be granted, got ${JSON.stringify(grant)}`);
+    assert.equal(received.length, 2, "onAcquire must have been called twice -- the first attempt and the drained retry");
+    assert.deepEqual(received[1], { warp: true }, "the RETRY must carry the profile the request was made with -- a profile-less retry would silently serve an unwarped instance");
+  } finally {
+    client.close();
+    listener.server.close();
   }
 });

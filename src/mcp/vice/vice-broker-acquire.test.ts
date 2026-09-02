@@ -22,11 +22,17 @@ import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
+// `HERE` (below) is this directory, so the structural tests at the foot of
+// this file read vice-broker.mts's own source from it -- the same idiom
+// broker-control.test.ts uses for its own structural gates.
 import { tmpdir } from "node:os";
 import type { ChildProcess } from "node:child_process";
 
 import { build } from "./build.ts";
 import type { BrokerState, InstanceRecord } from "./broker-state.mts";
+// Phase 33, plan 33-06 (D-15): imported from its one definition, exactly as
+// the production modules import it -- never a second local shape.
+import type { LaunchProfile } from "./broker-launch.mts";
 import type { HandleAcquireDeps } from "./vice-broker.mts";
 import type { AcquireOutcome } from "./broker-control.mts";
 import type { KillStage } from "./broker-kill.mts";
@@ -871,5 +877,304 @@ test("handleAcquire: a cold-launched child that never receives a pid reports int
     state.instances.size,
     0,
     "state.instances must have NO entry at all for the port that was attempted -- the broken record must be deleted immediately, not left for crash supervision to find later",
+  );
+});
+
+// ===========================================================================
+// Phase 33, plan 33-06 (REPRO-05, D-16, T-33-23/T-33-24): warm-instance
+// PROFILE ELIGIBILITY.
+//
+// The rule under test, restated because two of its three failure modes are
+// invisible from the caller's side: a pre-warmed instance whose launch
+// profile does not match the request is INELIGIBLE. It is not adjusted (warp
+// is fixed at spawn -- there is no runtime `WarpMode` resource on stock at
+// all), it is not killed or relaunched to re-warp it (a named anti-pattern in
+// this project, and it would make an interactive session's emulator vanish),
+// and it is NOT quietly handed over anyway (that would make the knob a lie
+// the caller could never detect). The acquire falls through to the cold arm
+// and gets a dedicated instance.
+//
+// Every test below drives the real, built handleAcquire()/profileEligible()
+// through injected probe/kill/spawn seams. No emulator runs and no real
+// connection is opened, exactly as the rest of this file.
+// ===========================================================================
+
+/** The eligibility predicate, read off the SAME built artifact
+ * handleAcquire() is read off -- never a second local reimplementation of
+ * the rule, which would let this file agree with itself while disagreeing
+ * with production. */
+async function loadProfileEligible(): Promise<(record: InstanceRecord, requested?: LaunchProfile) => boolean> {
+  build();
+  const mod = (await import(BROKER_ARTIFACT_URL)) as unknown as {
+    profileEligible: (record: InstanceRecord, requested?: LaunchProfile) => boolean;
+  };
+  return mod.profileEligible;
+}
+
+/** Records every kill the acquire path invokes, so "no preemptive kill" can
+ * be asserted as an observation rather than assumed. */
+function recordingKill(calls: Array<{ pid: number | null; expectedIdentity: string }>): (opts: { pid: number | null; expectedIdentity: string }) => Promise<KillStage> {
+  return (opts) => {
+    calls.push(opts);
+    return Promise.resolve("sigterm" as KillStage);
+  };
+}
+
+test("handleAcquire (33-06, D-15/D-16, tracer): a {warp:true} acquire against a pool holding ONE profile-less warm ready instance cold-launches an instance whose viceArgs carry -warp, and leaves the warm instance ready and un-killed", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  // A profile-less warm instance: exactly what the warm floor maintains
+  // today, and exactly what a broker restarted mid-phase reads from a state
+  // directory written before InstanceRecord.profile existed.
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 5001, expectedIdentity: "x64sc" }));
+
+  const spawnCalls: number[] = [];
+  const killCalls: Array<{ pid: number | null; expectedIdentity: string }> = [];
+  const outcome = await handleAcquire("req-33-06-tracer", "/tmp/vice-broker-acquire-test", state, {
+    // Would happily answer for the warm candidate if it were ever offered --
+    // so a warm hit here would be a real failure of the eligibility filter,
+    // not an artefact of a stubbed-out probe.
+    probe: alwaysReadyProbe(),
+    kill: recordingKill(killCalls),
+    buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    profile: { warp: true },
+  });
+
+  assert.equal(outcome.ok, true, `expected a grant from a dedicated cold launch, got ${JSON.stringify(outcome)}`);
+  assert.equal(spawnCalls.length, 1, "the mismatched warm instance must NOT satisfy this acquire -- exactly one cold launch must follow");
+  assert.notEqual(outcome.ok && outcome.grant.port, 6600, "the grant must name the freshly launched instance, not the profile-less warm one");
+
+  if (outcome.ok) {
+    const fresh = state.instances.get(outcome.grant.port);
+    assert.ok(fresh, "the cold-launched record must be present in state");
+    assert.ok(fresh!.viceArgs.includes("-warp"), `the cold launch's argv must carry -warp; got ${JSON.stringify(fresh!.viceArgs)}`);
+    assert.deepEqual(fresh!.profile, { warp: true }, "the granted instance's record must carry the profile it was actually launched with -- this is what the eligibility rule reads on a LATER acquire");
+  }
+
+  // D-16's two prohibitions, asserted rather than assumed.
+  const warm = state.instances.get(6600);
+  assert.ok(warm, "the mismatched warm instance must still be in state.instances -- it is ineligible, not condemned");
+  assert.equal(warm!.state, "ready", "the mismatched warm instance must still be READY -- never marked, never granted, never torn down");
+  assert.equal(killCalls.length, 0, "NO kill may be invoked for a profile mismatch -- killing a warm instance to re-warp it is the named anti-pattern this rule exists to exclude");
+  assert.equal(state.grants.size, 1, "exactly ONE grant -- an eligibility miss must not open a second state.grants.set() call");
+});
+
+test("handleAcquire (33-06, edge: empty): a profile-less acquire against a profile-less warm ready instance is served from the warm floor exactly as it is today -- no launch, and no profile key written", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 5001, expectedIdentity: "x64sc" }));
+
+  const spawnCalls: number[] = [];
+  const outcome = await handleAcquire("req-33-06-empty", "/tmp/vice-broker-acquire-test", state, {
+    probe: alwaysReadyProbe(),
+    buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    // `profile` deliberately OMITTED -- this is the pre-33-06 call shape.
+  });
+
+  assert.equal(spawnCalls.length, 0, "an absent profile must behave exactly as it did before this plan -- the warm floor serves it");
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.ok && outcome.grant.port, 6600);
+  assert.equal(state.instances.get(6600)?.state, "granted");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(state.instances.get(6600)!, "profile"),
+    false,
+    "no `profile` key may be written onto a record for a profile-less acquire -- absent means profile-less, and inventing the key would make an old record and a new one differ for one intent",
+  );
+  assert.equal(state.grants.size, 1, "exactly one grant on the warm-hit arm too");
+});
+
+test("profileEligible (33-06, D-16, absent-equals-false): an absent profile, an explicit {} and {warp:false,headless:false} are all mutually eligible", async () => {
+  const profileEligible = await loadProfileEligible();
+  const profileLess = makeReadyInstance();
+  const empty = makeReadyInstance({ profile: {} });
+  const bothFalse = makeReadyInstance({ profile: { warp: false, headless: false } });
+
+  const requests: Array<LaunchProfile | undefined> = [undefined, {}, { warp: false, headless: false }];
+  for (const record of [profileLess, empty, bothFalse]) {
+    for (const requested of requests) {
+      assert.equal(
+        profileEligible(record, requested),
+        true,
+        `record ${JSON.stringify(record.profile)} must be eligible for request ${JSON.stringify(requested)} -- undefined and false are the SAME request`,
+      );
+    }
+  }
+});
+
+test("profileEligible (33-06, D-16): {warp:true} is ineligible against a profile-less, empty or both-false record and vice versa, and {warp:true} differs from {warp:true,headless:true}", async () => {
+  const profileEligible = await loadProfileEligible();
+  const warped = makeReadyInstance({ profile: { warp: true } });
+  const bothTrue = makeReadyInstance({ profile: { warp: true, headless: true } });
+
+  for (const record of [makeReadyInstance(), makeReadyInstance({ profile: {} }), makeReadyInstance({ profile: { warp: false, headless: false } })]) {
+    assert.equal(profileEligible(record, { warp: true }), false, `record ${JSON.stringify(record.profile)} must be INELIGIBLE for a {warp:true} request`);
+  }
+  for (const requested of [undefined, {}, { warp: false, headless: false }] as Array<LaunchProfile | undefined>) {
+    assert.equal(profileEligible(warped, requested), false, `a {warp:true} record must be INELIGIBLE for request ${JSON.stringify(requested)} -- serving it would silently warp a run that did not ask for it`);
+  }
+  assert.equal(profileEligible(warped, { warp: true }), true, "identical profiles must match");
+  assert.equal(profileEligible(warped, { warp: true, headless: true }), false, "{warp:true} and {warp:true,headless:true} are DIFFERENT profiles");
+  assert.equal(profileEligible(bothTrue, { warp: true }), false, "and the comparison is symmetric");
+  assert.equal(profileEligible(bothTrue, { warp: true, headless: true }), true);
+});
+
+test("handleAcquire (33-06, D-16): a warm instance recorded {warp:true} IS granted to a {warp:true} acquire, with no launch at all", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 5001, expectedIdentity: "x64sc", profile: { warp: true }, viceArgs: ["-default", "-warp", "-binarymonitor"] }));
+
+  const spawnCalls: number[] = [];
+  const killCalls: Array<{ pid: number | null; expectedIdentity: string }> = [];
+  const outcome = await handleAcquire("req-33-06-match", "/tmp/vice-broker-acquire-test", state, {
+    probe: alwaysReadyProbe(),
+    kill: recordingKill(killCalls),
+    buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    profile: { warp: true },
+  });
+
+  assert.equal(spawnCalls.length, 0, "a MATCHING warm instance must be served from the warm floor -- the eligibility rule must not refuse everything");
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.ok && outcome.grant.port, 6600, "the grant must name the pre-warmed, already-warped instance");
+  assert.equal(killCalls.length, 0);
+  assert.equal(state.grants.size, 1, "exactly one grant on the matching-warm-hit path");
+});
+
+test("handleAcquire (33-06, D-16): a profile-less acquire is INELIGIBLE for a {warp:true} warm instance -- the mismatch is refused in BOTH directions, and falls through to a cold launch", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 5001, expectedIdentity: "x64sc", profile: { warp: true } }));
+
+  const spawnCalls: number[] = [];
+  const killCalls: Array<{ pid: number | null; expectedIdentity: string }> = [];
+  const outcome = await handleAcquire("req-33-06-reverse", "/tmp/vice-broker-acquire-test", state, {
+    probe: alwaysReadyProbe(),
+    kill: recordingKill(killCalls),
+    buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    // No profile -- an ordinary interactive acquire must NOT be silently
+    // handed a warped machine, which would change what its own run measures.
+  });
+
+  assert.equal(spawnCalls.length, 1, "a warped warm instance must not serve a profile-less acquire");
+  assert.equal(outcome.ok, true);
+  if (outcome.ok) {
+    const fresh = state.instances.get(outcome.grant.port);
+    assert.ok(fresh);
+    assert.equal(fresh!.viceArgs.includes("-warp"), false, `the profile-less cold launch's argv must carry NO -warp; got ${JSON.stringify(fresh!.viceArgs)}`);
+    assert.equal(Object.prototype.hasOwnProperty.call(fresh!, "profile"), false, "and its record must carry no profile key");
+  }
+  assert.equal(state.instances.get(6600)?.state, "ready", "the warped warm instance stays ready");
+  assert.equal(killCalls.length, 0, "and is never killed");
+  assert.equal(state.grants.size, 1, "exactly one grant on the ineligible-miss-then-cold path");
+});
+
+test("handleAcquire (33-06, D-16, headless): a {headless:true} acquire against a profile-less warm instance cold-launches with -console at argv index 1, and never retro-fits the warm one", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 5001, expectedIdentity: "x64sc" }));
+
+  const spawnCalls: number[] = [];
+  const killCalls: Array<{ pid: number | null; expectedIdentity: string }> = [];
+  const outcome = await handleAcquire("req-33-06-headless", "/tmp/vice-broker-acquire-test", state, {
+    probe: alwaysReadyProbe(),
+    kill: recordingKill(killCalls),
+    buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    profile: { headless: true },
+  });
+
+  assert.equal(spawnCalls.length, 1);
+  assert.equal(outcome.ok, true);
+  if (outcome.ok) {
+    const fresh = state.instances.get(outcome.grant.port)!;
+    // -console's POSITION is load-bearing (33-05: measured -- a -console
+    // seen only by the late parser arrives after GTK has already failed, and
+    // the process dies). Asserted here as well as in broker-launch.test.ts
+    // because this is the first path that produces it from a wire request.
+    assert.equal(fresh.viceArgs[0], "-default", "-default must stay at index 0");
+    assert.equal(fresh.viceArgs[1], "-console", `-console must sit at index 1; got ${JSON.stringify(fresh.viceArgs)}`);
+    assert.deepEqual(fresh.profile, { headless: true });
+  }
+  assert.equal(state.instances.get(6600)?.state, "ready");
+  assert.equal(killCalls.length, 0);
+  assert.equal(state.grants.size, 1);
+});
+
+test("handleAcquire (33-06, D-16, capacity interaction): an ineligible miss AT CAPACITY is refused with the existing at_capacity outcome rather than granted the mismatched warm instance", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  // The ceiling's worth of records, one of them a probe-live READY instance
+  // whose profile does not match. `atCapacity()` gates only the COLD arm
+  // (WR-01), so an eligibility miss now reaches it -- and the honest answer
+  // is the existing refusal, never a silent downgrade to the mismatched
+  // instance.
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 5001, expectedIdentity: "x64sc" }));
+  for (let i = 1; i < DEFAULT_INSTANCE_CEILING; i++) {
+    const port = 6600 + i;
+    state.instances.set(port, makeReadyInstance({ port, state: "granted", pid: 6000 + i, expectedIdentity: "x64sc" }));
+  }
+  assert.equal(state.instances.size, DEFAULT_INSTANCE_CEILING, "this test's own seeding must match the ceiling it exercises");
+
+  const spawnCalls: number[] = [];
+  const killCalls: Array<{ pid: number | null; expectedIdentity: string }> = [];
+  const outcome = await handleAcquire("req-33-06-capacity", "/tmp/vice-broker-acquire-test", state, {
+    probe: alwaysReadyProbe(),
+    kill: recordingKill(killCalls),
+    buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    profile: { warp: true },
+  });
+
+  assert.equal(outcome.ok, false, `expected the existing at_capacity refusal, got ${JSON.stringify(outcome)}`);
+  if (!outcome.ok) {
+    assert.equal(outcome.reason, "at_capacity", "the refusal must reuse the EXISTING at_capacity reason -- no new outcome was invented for a profile miss");
+  }
+  assert.equal(spawnCalls.length, 0, "at_capacity refuses before ever touching the port allocator");
+  assert.equal(state.instances.get(6600)?.state, "ready", "and the mismatched warm instance is left exactly as it was");
+  assert.equal(killCalls.length, 0);
+  assert.equal(state.grants.size, 0, "a refusal records no grant at all");
+});
+
+test("structural (33-06, T-33-23): the profile-eligibility filter is a synchronous `continue` placed BEFORE the readiness-probe await inside selectWarmInstance() -- the single-owner launch guard gains no new await", () => {
+  const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
+  const startIdx = source.indexOf("\nasync function selectWarmInstance(");
+  assert.ok(startIdx !== -1, "selectWarmInstance()'s own definition must be found in the source");
+  const endIdx = source.indexOf("\n}\n", startIdx);
+  assert.ok(endIdx > startIdx, "could not isolate selectWarmInstance()'s own closing brace");
+  const body = source.slice(startIdx, endIdx);
+
+  const filterIdx = body.indexOf("if (!profileEligible(record, deps.requestedProfile)) continue;");
+  const probeIdx = body.indexOf("await deps.probe(record.port)");
+  assert.ok(filterIdx !== -1, "the eligibility filter must be present in selectWarmInstance(), matched verbatim as a synchronous `continue`");
+  assert.ok(probeIdx !== -1, "the readiness-probe await must be present");
+  assert.ok(
+    filterIdx < probeIdx,
+    "the eligibility filter must precede the readiness-probe `await` -- placing it after would add a fresh suspension point inside the region the single-owner inFlight launch guard protects, the guard that exists because of the 2026-08-01 triple-launch outage",
+  );
+
+  // And it must not have been implemented by killing or relaunching the
+  // mismatched candidate (D-16). The drop-and-kill machinery in this
+  // function belongs to the FAILED-PROBE path only, which is reached after
+  // the probe -- so nothing may appear between the filter and the probe.
+  const between = body.slice(filterIdx, probeIdx);
+  assert.doesNotMatch(between, /deps\.kill\(/, "no kill may sit between the eligibility filter and the probe");
+  assert.doesNotMatch(between, /markDeliberateDeath\(/, "no deliberate-death marker may sit between the eligibility filter and the probe");
+  assert.doesNotMatch(between, /\bawait\b/, "and no `await` at all may sit between them");
+});
+
+test("structural (33-06, T-33-24): the eligibility miss opens no second grant -- state.grants.set() still appears exactly once in vice-broker.mts's handleAcquire()", () => {
+  const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
+  const startIdx = source.indexOf("export async function handleAcquire(");
+  assert.ok(startIdx !== -1, "handleAcquire()'s own definition must be found");
+  const endIdx = source.indexOf("\n}\n", startIdx);
+  assert.ok(endIdx > startIdx, "could not isolate handleAcquire()'s own closing brace");
+  const body = source.slice(startIdx, endIdx);
+  const matches = body.match(/state\.grants\.set\(/g) ?? [];
+  assert.equal(
+    matches.length,
+    1,
+    `both arms must converge on exactly ONE state.grants.set() call; found ${matches.length}. An eligibility miss must fall through to the cold arm, not open a parallel grant path.`,
   );
 });

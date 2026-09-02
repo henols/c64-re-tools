@@ -309,6 +309,11 @@ function spawnAndRecordInstance(reason, port, deps) {
         mcpHost: deps.mcpHost,
         binmonHost: deps.binmonHost,
         remoteMonitorPort: deps.remoteMonitorPort,
+        // Phase 33, plan 33-06: the ONE place a launch's profile becomes argv.
+        // The record built below mirrors the SAME value, so an instance's
+        // recorded profile and its actual argv are written in one step and
+        // cannot disagree.
+        profile: deps.profile,
     });
     const log = deps.log ?? defaultLog;
     // I-1 rider (audit §4.4, 08.2-02-PLAN.md Task 2): production stock
@@ -372,6 +377,15 @@ function spawnAndRecordInstance(reason, port, deps) {
         viceArgs,
         dryRun: false,
         ...(deps.remoteMonitorPort === undefined ? {} : { remoteMonitorPort: deps.remoteMonitorPort }),
+        // Phase 33, plan 33-06: same key-omitted-when-undefined idiom as
+        // remoteMonitorPort directly above. An absent request must produce a
+        // record with NO `profile` key at all -- not `profile: undefined` --
+        // because "absent means profile-less" is the property a broker restarted
+        // mid-phase relies on when it reads records written before this field
+        // existed. A copy, not the caller's own object: the record outlives this
+        // call and a caller mutating its profile afterwards must not silently
+        // change what this instance claims it was launched with.
+        ...(deps.profile === undefined ? {} : { profile: { ...deps.profile } }),
     };
     deps.state.instances.set(port, record);
     return record;
@@ -491,6 +505,7 @@ export async function acquirePortAndLaunch(reason, deps) {
             backend: deps.backend,
             binmonHost: deps.binmonHost,
             remoteMonitorPort,
+            profile: deps.profile,
         });
         return { ok: true, record };
     }
@@ -1031,7 +1046,18 @@ async function handleExit(reason, port, deps) {
             // with a brand new record, for the same reason the three values above
             // are.
             const preKillRemoteMonitorPort = record.remoteMonitorPort;
-            const respawned = launchSupervised(reason, port, deps, preKillCrashTimes, preKillBackoffMs, preKillRemoteMonitorPort);
+            // Phase 33, plan 33-06 (D-16, T-33-24): the launch PROFILE is carried
+            // forward for exactly the reason CR-02 carries the remote-monitor port
+            // forward, and the failure it prevents is sharper. Without this, a
+            // recycled `{warp:true}` instance would come back UNWARPED while its
+            // fresh record still claimed `profile:{warp:true}` -- after which
+            // profileEligible() (vice-broker.mts) would happily hand that instance
+            // to the next warp request. That is precisely the undetectable lie
+            // D-16 exists to structurally exclude, reintroduced one respawn later.
+            // Captured BEFORE launchSupervised() overwrites this port's map entry
+            // with a brand new record, same as the four values above.
+            const preKillProfile = record.profile;
+            const respawned = launchSupervised(reason, port, deps, preKillCrashTimes, preKillBackoffMs, preKillRemoteMonitorPort, preKillProfile);
             if (respawned && preKillState === "granted") {
                 respawned.state = "granted";
             }
@@ -1080,7 +1106,10 @@ async function handleExit(reason, port, deps) {
     // silently strip `-remotemonitor` (and its InstanceRecord field) off the
     // replacement, which is what made D-13's "the instance record carries it"
     // stop being true the first time an instance was replaced.
-    const respawned = launchSupervised(reason, port, deps, crashTimes, nextBackoffMs, record.remoteMonitorPort);
+    // Phase 33, plan 33-06: same carry-forward as the recycle branch above --
+    // an unexplained crash must not silently strip `-warp`/`-console` off the
+    // replacement while leaving the record claiming them (D-16, T-33-24).
+    const respawned = launchSupervised(reason, port, deps, crashTimes, nextBackoffMs, record.remoteMonitorPort, record.profile);
     deps.onOutcome?.(respawned ? "respawned" : "given_up", port);
 }
 /** The single exit-listener installation point in the whole module tree.
@@ -1141,8 +1170,18 @@ export function withCrashSupervision(reason, port, baseSpawn, deps) {
  * meanwhile), exactly as it reuses the primary `port` argument; this function
  * stays fully synchronous and never allocates. `undefined` is the correct
  * value for a FIRST launch through superviseChild() and for every fork launch,
- * which is why the parameter is optional. */
-function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonitorPort) {
+ * which is why the parameter is optional.
+ *
+ * Phase 33, plan 33-06 (D-16): `profile` is threaded the SAME way and for a
+ * sharper version of the same reason -- it belongs to the instance, not to a
+ * single spawn of it, and warp is fixed at spawn (there is no runtime
+ * `WarpMode` resource on stock at all). A replacement that dropped it would
+ * come back unwarped while its record still claimed warp, which is exactly the
+ * mismatch-between-grant-and-request that D-16's eligibility rule exists to
+ * make impossible. `undefined` is correct for a FIRST launch through
+ * superviseChild() (a warm-floor spare is profile-less) and for every fork
+ * launch, which is why this parameter is optional too. */
+function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonitorPort, profile) {
     const supervisorDir = join(deps.stateDir, String(port));
     const epochFile = deps.epoch.epochPathFor(deps.stateDir, port);
     const logDir = deps.epoch.instanceLogDirFor(deps.stateDir, port);
@@ -1184,6 +1223,7 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
         backend: deps.backend,
         binmonHost: deps.binmonHost,
         remoteMonitorPort,
+        profile,
         log: deps.log,
     });
     if (!record)

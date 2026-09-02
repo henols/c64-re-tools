@@ -23,7 +23,20 @@ export function createBrokerState() {
  * trip. */
 export function _snapshotState(state) {
     return {
-        instances: Array.from(state.instances.values()).map((r) => ({ ...r, viceArgs: [...r.viceArgs] })),
+        // Phase 33, plan 33-06: `profile` is the SECOND nested object on an
+        // InstanceRecord (after `viceArgs`), so it needs its own copy for this
+        // function's documented "deep, plain-object copy" contract to stay true --
+        // a spread alone would hand a caller a reference into live broker state,
+        // and this file's own snapshot test asserts that mutating a nested value
+        // in the result leaves the broker's state unchanged. The key is
+        // reproduced only when present, so an absent profile stays absent in the
+        // snapshot (absent means profile-less, and a snapshot must not invent a
+        // `profile: undefined` key that the record itself does not carry).
+        instances: Array.from(state.instances.values()).map((r) => ({
+            ...r,
+            viceArgs: [...r.viceArgs],
+            ...(r.profile === undefined ? {} : { profile: { ...r.profile } }),
+        })),
         grants: Array.from(state.grants.values()).map((g) => ({ ...g })),
         blockedPorts: Array.from(state.blockedPorts).sort((a, b) => a - b),
     };

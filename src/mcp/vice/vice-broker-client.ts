@@ -31,6 +31,12 @@ import { join, resolve } from "node:path";
 import { connect, type Socket } from "node:net";
 
 import { supervisorDir } from "./repo-root.ts";
+// Phase 33, plan 33-06 (D-15): TYPE-ONLY, and IMPORTED rather than
+// redeclared. broker-launch.mts is the one definition of the profile shape and
+// the module that turns a profile into argv; a second local shape here is how
+// a client would start requesting a knob the host cannot honour. Type-only, so
+// the container-side bundle never resolves the host-bound module at runtime.
+import type { LaunchProfile } from "./broker-launch.mts";
 // The module tree's ONE definition of the container-visible host alias
 // (vice.ts:49), carrying its own VICE_MCP_HOST override -- consumed below by
 // resolveControlTarget() rather than a fourth `host.docker.internal` literal
@@ -327,13 +333,47 @@ export interface AcquireOverControlPlaneHandle {
  * client's generic timeout. */
 export const CONTROL_ACQUIRE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER_ACQUIRE_TIMEOUT_MS || 120000);
 
+/** Phase 33, plan 33-06 (REPRO-05, D-15): the request-side launch profile.
+ * Optional and absent by default at BOTH acquire write sites in this file.
+ *
+ * ONE RULE, and it is the whole reason this shape is named rather than
+ * inlined: the `profile` key must be OMITTED ENTIRELY when no profile was
+ * requested, not written as `profile: undefined`. `JSON.stringify` drops an
+ * `undefined` value, so both spellings happen to produce the same bytes today
+ * -- but an explicit `null` or `{}` would not, and the property this phase
+ * needs is that a profile-less acquire's wire line is BYTE-IDENTICAL to the
+ * one this client has always written. The spread idiom below is what makes
+ * that structural rather than incidental.
+ *
+ * The SECOND rule, which cost this plan its own dedicated must-have: the
+ * profile has to be written at BOTH sites. This file has two independent
+ * acquire writers -- acquireOverControlPlane()'s raw `socket.write` below and
+ * openBrokerControl()'s `sendAndAwaitLine` further down. A field added to only
+ * one of them silently never arrives for callers on the other path, which is
+ * the same defect class as a tool argument that is accepted and dropped. */
+export interface AcquireProfileOptions {
+  profile?: LaunchProfile;
+}
+
+/** Builds the `profile` fragment of an acquire request line -- the ONE place
+ * this client decides whether the key appears at all, so the two write sites
+ * cannot drift apart on that decision. Returns an empty object (no key) when
+ * no profile was requested. */
+function acquireProfileFragment(profile?: LaunchProfile): { profile?: LaunchProfile } {
+  return profile === undefined ? {} : { profile };
+}
+
 /** Reads broker.json ONCE for control_host/control_port/control_token,
  * opens ONE TCP connection, sends a single `acquire` request framed as one
  * JSON line, and awaits the grant line against
  * CONTROL_ACQUIRE_TIMEOUT_MS. Rejects (never throws synchronously) on any
  * failure: broker.json absent/unreadable/missing the control fields, a
- * connection error, an `error` response, or a timeout. */
-export function acquireOverControlPlane(dir: string = brokerRootDir()): Promise<AcquireOverControlPlaneHandle> {
+ * connection error, an `error` response, or a timeout.
+ *
+ * Phase 33, plan 33-06: takes an optional `profile` (see
+ * AcquireProfileOptions above). Omitting it writes the exact wire line this
+ * function has always written. */
+export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: AcquireProfileOptions = {}): Promise<AcquireOverControlPlaneHandle> {
   return new Promise((resolvePromise, reject) => {
     const broker = readJsonMaybe(brokerJsonPath(dir));
     if (broker === null) {
@@ -369,7 +409,11 @@ export function acquireOverControlPlane(dir: string = brokerRootDir()): Promise<
 
     socket.on("connect", () => {
       const requestId = newRequestId();
-      socket.write(`${JSON.stringify({ op: "acquire", id: requestId, token })}\n`);
+      // Phase 33, plan 33-06: write site ONE of two (see
+      // acquireProfileFragment()'s own comment) -- the key is absent entirely
+      // when no profile was requested, so this line stays byte-identical to
+      // what it always was for a profile-less acquire.
+      socket.write(`${JSON.stringify({ op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile) })}\n`);
     });
 
     socket.on("data", (chunk: Buffer) => {
@@ -654,7 +698,10 @@ export interface ControlDeadlineOptions {
  * exactly one request line and resolves against its own deadline; none of
  * them ever reject. */
 export interface BrokerControlSession {
-  acquire(opts?: ControlDeadlineOptions): Promise<ControlAcquireResult>;
+  /** Phase 33, plan 33-06 (REPRO-05, D-15): additionally takes an optional
+   * `profile` -- see AcquireProfileOptions. Omitting it is byte-identical to
+   * every pre-33-06 call. */
+  acquire(opts?: ControlDeadlineOptions & AcquireProfileOptions): Promise<ControlAcquireResult>;
   release(): Promise<ControlReleaseResult>;
   recycle(targetId: string, opts?: ControlDeadlineOptions): Promise<ControlRecycleResult>;
   status(opts?: ControlDeadlineOptions): Promise<ControlStatusResult>;
@@ -862,9 +909,16 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     });
   }
 
-  async function acquire(opts: ControlDeadlineOptions = {}): Promise<ControlAcquireResult> {
+  async function acquire(opts: ControlDeadlineOptions & AcquireProfileOptions = {}): Promise<ControlAcquireResult> {
     const requestId = newRequestId();
-    const raw = await sendAndAwaitLine({ op: "acquire", id: requestId, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    // Phase 33, plan 33-06: write site TWO of two (see
+    // acquireProfileFragment()'s own comment for why both matter) -- same
+    // key-omitted-when-absent discipline as acquireOverControlPlane()'s raw
+    // socket.write above.
+    const raw = await sendAndAwaitLine(
+      { op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile) },
+      opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS,
+    );
     if (!raw.ok) return raw;
     const line = raw.line;
     if (line.kind !== "grant") {

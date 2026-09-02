@@ -48,6 +48,77 @@ const MAX_LINE_BYTES = 65536;
  * and T-02-18's prohibition on wedge/hang vocabulary in this file's
  * monitor-op refusals. */
 const MONITOR_OWNERSHIP_DENIAL = "monitor_claim/monitor_release may only target the grant this connection itself holds";
+// ---------------------------------------------------------------------------
+// Phase 33, plan 33-06 (REPRO-05, D-15, T-33-03/T-33-04): the launch-profile
+// narrowing site.
+//
+// THIS IS THE ONE PLACE `profile` IS NARROWED. Do not re-derive this check
+// anywhere else -- not in vice-broker.mts, not in broker-launch.mts, not in
+// the container-side client. A second copy is how one of them ends up
+// accepting a shape the other refuses.
+//
+// WHY IT HAS TO EXIST AT ALL: `ControlRequest` above carries an index
+// signature, so *anything* a container writes on the wire parses into it. The
+// profile then feeds buildViceArgs(), i.e. an `execve(x64sc, argv)` on the
+// HOST. An unvalidated `profile` is therefore an argv-construction surface
+// across a trust boundary, not merely a typing inconvenience.
+//
+// WHY UNKNOWN KEYS ARE REFUSED BY NAME rather than dropped: a silently
+// accepted typo means a caller asked for warp, got an unwarped instance, and
+// received a confident success. That is the same undetectable-lie failure
+// D-16 exists to prevent one layer down, and it is why the message below
+// names the offending key -- the by-name unexpected-argument discipline the
+// tool handlers already use (RUN_UNTIL_KEYS' own convention).
+//
+// WHAT MUST NEVER BE ADDED HERE: a passthrough string, an `extraArgs`, or any
+// key whose VALUE reaches argv. `profile` maps to exactly two literal flag
+// tokens (`-console`, `-warp`) and to nothing else (T-33-04). `VICE_ARGS`
+// stays the single, deliberate operator-only whole-argv override.
+// ---------------------------------------------------------------------------
+/** The complete accepted key set -- the ONE binding list this narrowing
+ * checks against, so adding a knob to LaunchProfile without adding it here
+ * refuses the knob rather than silently widening the boundary. */
+const LAUNCH_PROFILE_KEYS = Object.freeze(["warp", "headless"]);
+const LAUNCH_PROFILE_SHAPE = `an object with optional boolean keys ${LAUNCH_PROFILE_KEYS.join("/")}, or absent`;
+/** Narrows an untrusted `profile` field off the wire. Never throws; answers a
+ * discriminated result so the caller writes the existing `bad_request` error
+ * shape rather than needing a try/catch at the protocol boundary.
+ *
+ * Rules, in the order they are applied:
+ * - `undefined` (key absent) and `null` -> `ok` with `undefined`. Both mean
+ *   profile-less, which is byte-identically today's behaviour.
+ * - a PLAIN object (arrays and every other non-plain value refused) whose
+ *   keys are a subset of LAUNCH_PROFILE_KEYS and whose PRESENT values are
+ *   booleans -> `ok` with that object.
+ * - anything else -> `ok: false`, with a message naming the offending value
+ *   (or key) and the accepted shape. Never coerced, never silently dropped:
+ *   `"yes"`, `1` and `"warp"` are refusals, not truthy warp requests. */
+export function normaliseLaunchProfile(raw) {
+    if (raw === undefined || raw === null)
+        return { ok: true, profile: undefined };
+    if (typeof raw !== "object" || Array.isArray(raw)) {
+        // Arrays are specifically excluded: `typeof [] === "object"` in JS, so
+        // without the Array.isArray() arm a JSON array would reach the key walk
+        // below and pass it vacuously (an empty array has no own keys).
+        return { ok: false, message: `profile must be ${LAUNCH_PROFILE_SHAPE}; got ${JSON.stringify(raw) ?? String(raw)}` };
+    }
+    const entries = Object.entries(raw);
+    const unknownKeys = entries.filter(([key]) => !LAUNCH_PROFILE_KEYS.includes(key)).map(([key]) => key);
+    if (unknownKeys.length > 0) {
+        return { ok: false, message: `profile has unknown key(s) ${unknownKeys.join(", ")}; accepted shape is ${LAUNCH_PROFILE_SHAPE}` };
+    }
+    const profile = {};
+    for (const [key, value] of entries) {
+        if (typeof value !== "boolean") {
+            return { ok: false, message: `profile.${key} must be a boolean; got ${JSON.stringify(value) ?? String(value)}` };
+        }
+        if (key === "warp")
+            profile.warp = value;
+        if (key === "headless")
+            profile.headless = value;
+    }
+    return { ok: true, profile };
+}
 export function resolveControlPort(override) {
     if (typeof override === "number")
         return override;
@@ -217,7 +288,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
          * callback with the same request id instead of silently dropping the
          * grant it produced.
          */
-        function attemptAcquire(requestId) {
+        function attemptAcquire(requestId, profile) {
             // Half one: a queued entry whose owning socket is already gone is
             // settled immediately, WITHOUT ever calling onAcquire() -- this is
             // what keeps a retried drain pass from performing a real, ownerless
@@ -225,7 +296,12 @@ function attachControlProtocol(server, opts, pendingAcquires) {
             if (socket.destroyed)
                 return Promise.resolve(true);
             return opts
-                .onAcquire(requestId)
+                // Phase 33, plan 33-06: the profile is threaded through THIS shared
+                // helper, which both the immediate first attempt and every later
+                // drainPendingAcquires() retry go through -- so a request that
+                // queued behind an in-flight launch is retried later with the
+                // profile it was MADE with, never with a profile-less one.
+                .onAcquire(requestId, profile)
                 .then((outcome) => {
                 if (outcome.ok) {
                     // Half two: the pre-check above ran before this call; a
@@ -291,9 +367,21 @@ function attachControlProtocol(server, opts, pendingAcquires) {
             }
             if (req.op === "acquire") {
                 const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
-                void attemptAcquire(requestId).then((settled) => {
+                // Phase 33, plan 33-06 (T-33-03): narrow BEFORE attemptAcquire, so a
+                // malformed profile never reaches onAcquire and therefore never
+                // reaches the port allocator, a spawn, or argv construction. A
+                // refusal also does NOT enqueue -- the request is answered and
+                // dropped, never retried on a later drain pass with the same bad
+                // shape.
+                const normalised = normaliseLaunchProfile(req.profile);
+                if (!normalised.ok) {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: normalised.message });
+                    return;
+                }
+                const profile = normalised.profile;
+                void attemptAcquire(requestId, profile).then((settled) => {
                     if (!settled) {
-                        enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId) });
+                        enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile) });
                     }
                 });
             }

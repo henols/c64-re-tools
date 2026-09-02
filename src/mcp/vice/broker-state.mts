@@ -13,6 +13,13 @@
 // test needs it.
 import type { ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
+// TYPE-ONLY import, deliberately -- the SAME discipline broker-launch.mts's
+// own `import type { BrokerState, ... } from "./broker-state.mjs"` uses in the
+// opposite direction, and for the same reason: `import type` is fully erased
+// under this project's verbatimModuleSyntax/isolatedModules settings, so the
+// ".mjs" specifier never becomes a real runtime resolution and the pair of
+// modules cannot form a load-time cycle. A VALUE import here would.
+import type { LaunchProfile } from "./broker-launch.mjs";
 
 export type InstanceState = "launching" | "ready" | "granted";
 
@@ -140,6 +147,43 @@ export interface InstanceRecord {
    * monitor binds -- see the banner above for the full ownership decision
    * this field's absence implies. */
   remoteMonitorPort?: number;
+  // ------------------------------------------------------------------
+  // Phase 33, plan 33-06 (REPRO-05, D-15/D-16): the launch profile this
+  // instance was actually SPAWNED with -- the two additive launch knobs
+  // (`warp`, `headless`) buildViceArgs() turned into `-warp` / `-console`.
+  // Optional, in exactly the register the Plan 03 block above uses, and for
+  // two distinct reasons that both have to hold:
+  //
+  //   1. A record created through a path that requests no profile remains a
+  //      valid InstanceRecord without this field -- every pre-33-06 caller,
+  //      every fork launch, and every warm-floor spare.
+  //   2. A broker restarted mid-phase reads state-directory records written
+  //      BEFORE this field existed (33-RESEARCH.md § Runtime State
+  //      Inventory). ABSENT MEANS PROFILE-LESS, which is precisely what the
+  //      warm floor already does today, so such a broker degrades to
+  //      today's semantics rather than to an error.
+  //
+  // DO NOT give this field a default value. An explicit `{}` and an absent
+  // field must behave IDENTICALLY -- vice-broker.mts's profileEligible()
+  // treats both as "no knobs requested" by comparing `=== true` on each
+  // side, so `undefined` and `false` are the same request. A default here
+  // would make `{}` and absence two different records for one intent, and
+  // an eligibility rule that distinguishes them would refuse warm instances
+  // for no reason a caller could see.
+  //
+  // WHY IT IS ON THE RECORD AT ALL (D-16): warp is fixed at spawn -- there
+  // is no runtime `WarpMode` resource on stock at all (vsync.c:220-241,
+  // deliberately; measured `err=0x01` OBJECT_MISSING over RESOURCE_GET on
+  // 3.9), so a pre-warmed interactive instance CANNOT be retro-warped. The
+  // eligibility rule therefore has to compare what an instance WAS launched
+  // with against what a request ASKS for, which means the launch profile has
+  // to outlive the launch call. A mismatch makes the instance INELIGIBLE (it
+  // is never adjusted, never killed and never relaunched to re-warp it) and
+  // the acquire falls through to a dedicated cold launch.
+  // ------------------------------------------------------------------
+  /** The launch profile this instance was spawned with -- see the banner
+   * above. Absent means profile-less; never defaulted. */
+  profile?: LaunchProfile;
 }
 
 /** Clears `monitorClient` as a side effect of release, recycle, or the
@@ -254,7 +298,20 @@ export interface StateSnapshot {
  * trip. */
 export function _snapshotState(state: BrokerState): StateSnapshot {
   return {
-    instances: Array.from(state.instances.values()).map((r) => ({ ...r, viceArgs: [...r.viceArgs] })),
+    // Phase 33, plan 33-06: `profile` is the SECOND nested object on an
+    // InstanceRecord (after `viceArgs`), so it needs its own copy for this
+    // function's documented "deep, plain-object copy" contract to stay true --
+    // a spread alone would hand a caller a reference into live broker state,
+    // and this file's own snapshot test asserts that mutating a nested value
+    // in the result leaves the broker's state unchanged. The key is
+    // reproduced only when present, so an absent profile stays absent in the
+    // snapshot (absent means profile-less, and a snapshot must not invent a
+    // `profile: undefined` key that the record itself does not carry).
+    instances: Array.from(state.instances.values()).map((r) => ({
+      ...r,
+      viceArgs: [...r.viceArgs],
+      ...(r.profile === undefined ? {} : { profile: { ...r.profile } }),
+    })),
     grants: Array.from(state.grants.values()).map((g) => ({ ...g })),
     blockedPorts: Array.from(state.blockedPorts).sort((a, b) => a - b),
   };

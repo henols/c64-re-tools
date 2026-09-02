@@ -45,6 +45,11 @@ import {
   runBrokerPass,
   withCrashSupervision,
   type SuperviseChildDeps,
+  // Phase 33, plan 33-06 (D-15): IMPORTED, never redeclared -- broker-launch.mts
+  // is the one definition of the profile shape, and it is the module that turns
+  // a profile into argv. A second local shape here would let the eligibility
+  // rule and the argv builder disagree about what a profile even is.
+  type LaunchProfile,
 } from "./broker-launch.mjs";
 // Plan 02-07: resolvedBackend() is now the ONE reader of VICE_BACKEND in
 // this tree -- ViceBackend's own definition moved to backend-detect.mts too,
@@ -411,7 +416,67 @@ export interface HandleAcquireDeps {
    * it -- acquirePortAndLaunch() gates the second allocation on
    * `deps.backend === "stock"` on its own. */
   allocateRemoteMonitorPort?: (state: BrokerState, exclude: ReadonlySet<number>) => Promise<PortAllocationResult>;
+  /** Phase 33, plan 33-06 (REPRO-05, D-15/D-16): the launch profile THIS
+   * acquire requested, already narrowed by broker-control.mts's
+   * normaliseLaunchProfile() (the one narrowing site -- nothing here
+   * re-validates it, and nothing here reads a raw wire value).
+   *
+   * Carried on this options bag rather than as a fifth positional parameter
+   * because the real broker wiring (run()'s onAcquire callback below) already
+   * constructs a fresh bag PER ACQUIRE, so per-request data threads through
+   * it naturally; `backend` sets the same precedent of a non-injected
+   * configuration value living here. Optional and absent by default, so every
+   * pre-33-06 call site and every existing test behaves identically.
+   *
+   * It feeds TWO places, and both matter: selectWarmInstance()'s synchronous
+   * eligibility filter (D-16 -- a mismatched warm instance is skipped) and
+   * the cold arm's acquirePortAndLaunch(), which turns it into argv and
+   * mirrors it onto the new InstanceRecord. */
+  profile?: LaunchProfile;
   log?: (line: string) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 33, plan 33-06 (REPRO-05, D-16, T-33-23/T-33-24): the warm-instance
+// PROFILE-ELIGIBILITY rule.
+//
+// THE DECISION, stated out loud because two of the three available answers
+// are wrong in ways the CALLER CANNOT DETECT:
+//   - Refuse the acquire outright when a mismatched warm instance exists ->
+//     warp becomes unusable whenever a warm floor exists (the default is 1,
+//     so: essentially always).
+//   - Serve the request with the mismatched instance -> the caller asked for
+//     warp, got an unwarped machine, and received a confident grant. The knob
+//     is a lie and nothing in the response says so.
+//   - D-16, what this implements: the mismatched instance is INELIGIBLE. The
+//     walk skips it and the acquire falls through to the cold arm, which
+//     launches a DEDICATED instance for that grant.
+//
+// WHAT MUST NEVER BE ADDED HERE: a retro-warp, and a kill-then-relaunch of a
+// mismatched warm instance. There is no runtime `WarpMode` resource on stock
+// at all (vsync.c:220-241, deliberately), so an existing instance cannot be
+// adjusted -- it can only be ineligible. And "killing or relaunching
+// preemptively to serve a newer request" is a NAMED anti-pattern in this
+// project (CLAUDE.md): it would make an interactive session's emulator vanish
+// because some capture run asked for warp. A test asserts the kill dependency
+// is not called and the instance stays `ready`.
+// ---------------------------------------------------------------------------
+
+/** True when `record` was launched with the SAME profile `requested` asks
+ * for. FULLY SYNCHRONOUS by requirement, not by convenience -- see the call
+ * site inside selectWarmInstance() below for why.
+ *
+ * Absent is `{}`: a record with no `profile` field (a pre-33-06 record, a
+ * fork launch, a warm-floor spare, or a record a broker restarted mid-phase
+ * read from a state directory written before the field existed) is compared
+ * as though it carried `{}`, and so is an absent request. Each knob is
+ * compared `=== true` on BOTH sides, so `undefined` and `false` are the same
+ * request -- which is what makes an absent profile, an explicit `{}` and
+ * `{warp:false, headless:false}` one single behaviour rather than three. */
+export function profileEligible(record: InstanceRecord, requested?: LaunchProfile): boolean {
+  const have = record.profile ?? {};
+  const want = requested ?? {};
+  return (have.warp === true) === (want.warp === true) && (have.headless === true) === (want.headless === true);
 }
 
 /** Walks `state.instances` for probe-live `ready` candidates, in iteration
@@ -476,10 +541,35 @@ async function selectWarmInstance(
     probe: (port: number) => Promise<boolean>;
     kill: (opts: { pid: number | null; expectedIdentity: string }) => Promise<KillStage>;
     log: (line: string) => void;
+    /** Phase 33, plan 33-06 (D-16): the profile THIS acquire asked for.
+     * `undefined` means profile-less, which is what every pre-33-06 caller
+     * passes and what the warm floor has always served. */
+    requestedProfile?: LaunchProfile;
   },
 ): Promise<InstanceRecord | null> {
   for (const record of Array.from(state.instances.values())) {
     if (record.state !== "ready") continue;
+    // Phase 33, plan 33-06 (D-16, T-33-23): a SYNCHRONOUS `continue`, sitting
+    // immediately beside the `record.state !== "ready"` filter directly
+    // above and BEFORE the readiness probe below. That placement is
+    // load-bearing twice over, and neither reason is stylistic:
+    //
+    //   1. It introduces NO new `await` into the region the single-owner
+    //      `inFlight` launch guard protects. That guard exists because of the
+    //      2026-08-01 triple-launch outage and must stay a synchronous
+    //      check-and-set with no `await` between (CLAUDE.md, regression-
+    //      tested). A filter placed after the probe would put a fresh
+    //      suspension point inside that region -- which is why this plan
+    //      verifies the placement by line-number comparison, not by comment.
+    //   2. An ineligible candidate costs no probe at all -- no socket, no
+    //      round trip, no wait.
+    //
+    // An ineligible miss falls through EXACTLY as a "no warm instance" miss
+    // does: to the caller's own cold arm, which records the one and only
+    // grant. It opens no second `state.grants.set()` call, and it never
+    // kills, recycles or re-warps the mismatched instance (see
+    // profileEligible()'s own banner for why those are excluded by design).
+    if (!profileEligible(record, deps.requestedProfile)) continue;
 
     const isReady = await deps.probe(record.port);
 
@@ -580,7 +670,7 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
   const kill = deps.kill ?? ((opts: { pid: number | null; expectedIdentity: string }) => verifiedKill(opts));
   const log = deps.log ?? ((line: string) => process.stderr.write(`${line}\n`));
 
-  const winner = await selectWarmInstance(state, { probe, kill, log });
+  const winner = await selectWarmInstance(state, { probe, kill, log, requestedProfile: deps.profile });
 
   let record: InstanceRecord;
   if (winner) {
@@ -608,6 +698,14 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
       // build a different backend's argv than the launch it replaces.
       backend,
       allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
+      // Phase 33, plan 33-06 (D-15/D-16): the profile the warm arm just
+      // refused to compromise on reaches buildViceArgs() here, and is
+      // mirrored onto the fresh InstanceRecord by spawnAndRecordInstance()
+      // in the SAME step -- so this instance's recorded profile and its real
+      // argv are written together and cannot disagree. This is the arm that
+      // makes "a dedicated instance for that grant" true rather than
+      // aspirational.
+      profile: deps.profile,
       spawnFactory:
         deps.buildColdSpawnFactory ??
         ((port: number) => {
@@ -1038,13 +1136,19 @@ async function run(args: ParsedArgs): Promise<void> {
       host: controlHost,
       port: controlPort,
       token,
-      onAcquire: (requestId) =>
+      onAcquire: (requestId, profile) =>
         handleAcquire(requestId, args.stateDir, state, {
           backend,
           // Plan 03-04 (DIRECT-06, D-13): threaded down to
           // acquirePortAndLaunch()'s own gate (backend === "stock"); this
           // callback does NOT re-read VICE_BACKEND itself.
           allocateRemoteMonitorPort: (s: BrokerState, exclude: ReadonlySet<number>) => nextFreePort(s, { exclude }),
+          // Phase 33, plan 33-06 (REPRO-05, D-15): the ALREADY-NARROWED
+          // profile broker-control.mts handed this callback. Nothing here
+          // re-validates it and nothing here reads a raw wire field --
+          // normaliseLaunchProfile() is the single narrowing site, and it ran
+          // before this callback was ever invoked.
+          profile,
         }),
       onRelease: (requestId) => handleRelease(requestId, state),
       onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
