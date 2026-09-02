@@ -68,7 +68,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       than argued. MEASURED: `(LIN, CYC)` is a position *modulo the frame* — the `danish` pair
       landed on `hit_count` 1 and 2 with identical raster position and 201 divergences, `saeger` on
       1 and 1 with one
-- [ ] **REPRO-04**: Every capture carries a record whose reproducibility key is
+- [x] **REPRO-04**: Every capture carries a record whose reproducibility key is
       **`(binary sha256, argv digest, seed)`** — not the seed alone. MEASURED: the same seed with a
       reordered argv yielded a 76-byte-different image
 - [ ] **REPRO-05**: Warp and headless are **additive** launch knobs a run can request, not a
@@ -397,7 +397,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REPRO-01 | Phase 33 | Pending |
 | REPRO-02 | Phase 33 | Pending |
 | REPRO-03 | Phase 33 | Pending |
-| REPRO-04 | Phase 33 | Pending |
+| REPRO-04 | Phase 33 | Complete |
 | REPRO-05 | Phase 33 | Pending |
 | CAP-01 | Phase 33 | Complete |
 | CAP-02 | Phase 33 | Pending |

@@ -5,11 +5,11 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-07-PLAN.md
-last_updated: "2026-09-02T21:03:31.294Z"
+stopped_at: Completed 33-08-PLAN.md
+last_updated: "2026-09-02T21:29:03.988Z"
 last_activity: 2026-09-02
 last_activity_desc: "33-07 executed: the enumerated equivalence predicate (cap of 64 checked first and throwing with no artifact, range-shaped notation refused by name, no bit-count tolerance at any address, $0000/$0001 normalised in code on a copy from the suffix fields) and the four-scalar stop-identity oracle that takes no image buffer; D-25 proven with a ONE-BIT plant red beside its clean control; CAP-03 barred by shape in both directions and on both import routes with four planted controls; SLICER: validated emitted at column 0 in evidence/33-slicer-validation.md, closing 33-04's ACCEPTED LIMIT. Wave 3 complete; gate at 2 failures in anno-register.test.ts alone"
-state_head: 80fedebd883464f90323ef79c14cf2c59c6ab592
+state_head: 4b9adc7444cc0fe2f8324d45560bfc22216e4841
 progress:
   total_phases: 6
   completed_phases: 0
@@ -178,11 +178,12 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 7 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07); next pointer at plan 8 of 12
+Plan: 8 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07, 33-08); next pointer at plan 9 of 12
 Status: **Wave 3 complete** — `33-07` landed and the wave gate was taken: `test:automated`
 reports 3088 tests / 3080 pass / **2 fail**, both in `anno-register.test.ts` (`:385`,
-`:479`), which is the pre-existing 2-in-1 threshold with no second file. Wave 4 (`33-08`,
-`33-09`) is next.
+`:479`), which is the pre-existing 2-in-1 threshold with no second file. Wave 4 is underway: **`33-08` has landed** (the transient allow-list is now a
+derivation method with a void-on-overflow cap, and the capture record carries the
+three-field reproducibility key). `33-09` is next in the same wave.
 `33-07` shipped the capture substrate's decision half and closed the phase's second gate
 input. `capture-predicate.ts` is a **replacement in kind** for `compare.mjs`'s rules and
 not an extension of them: its report vocabulary is kept, its four volatile RANGES (4866
@@ -461,6 +462,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 33 P05 | 22 min | 3 tasks | 5 files |
 | Phase 33 P06 | 33 min | 2 tasks | 14 files |
 | Phase 33 P07 | 22 min | 3 tasks | 6 files |
+| Phase 33 P08 | 38 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -880,6 +882,9 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-07: parseAllowList checks the cap FIRST and throws with no artifact returned, and refuses range-shaped notation BY NAME in both the start/end and two-element-span forms — D-22: exceeding the cap VOIDS the derivation rather than warning -- it means the stop is not frame-exact, which is a fact the gate must hear, so validating the individual entries of a list that cannot be used gains nothing and the count IS the finding. An allow-list is the one input that can turn a failing comparison into a passing one (T-33-26), so every widening route is a refusal: a span-shaped key, a two-element address, a duplicate, an out-of-range address, and the bare-array convenience route which goes through the same cap check.
 - [Phase 33]: 33-07: the CAP-03 import census collects module SPECIFIERS rather than matching import STATEMENTS, and its specifier-shape filter is narrow by measurement rather than by taste — Matching quoted specifiers and testing each against a path-anchored stem covers the multi-line static import, the dynamic import(), a bare side-effect import, require() and process.getBuiltinModule() with ONE rule instead of five -- which is why planted violation (a) is deliberately the multi-line shape a per-line matcher cannot see. The filter accepts a node: builtin or a whitespace-free path: an earlier draft accepting every letter-initial literal swept in every refusal message in both modules and made the non-vacuity assertion unwritable.
 - [Phase 33]: 33-07: argvDigest's NUL separator is a named constant written as the escape backslash-u0000, never a literal NUL byte in source, after a literal one was written and immediately caught — A literal NUL makes the whole file binary to grep, which skips it silently -- the exact census blind spot D-26 warns about and which anno-memmap-render.ts already caused one false decision through in this project. Detected within a minute (a grep for the constant name returned nothing while tail showed the line). Both new modules and both new test files are now asserted to carry no control characters other than newlines before each commit.
+- [Phase 33]: 33-08: the transient allow-list ships as a derivation METHOD, never an address set -- `derive-transients.mjs derive` computes the pairwise union over N >= 3 runs and refuses to re-derive over an existing artifact without `--force` — D-23: an allow-list inherited between releases cannot be distinguished afterwards from an honestly derived one, so a contaminated ledger has no cheap repair. What carries forward is the script; its output is per-release data.
+- [Phase 33]: 33-08: over the cap of 64 the derivation VOIDS -- non-zero exit, no artifact written (absence asserted by test), and `--cap` only ever narrows so the flag cannot launder an overflow — D-22: exceeding the cap means the stop is not frame-exact, which is a fact the gate must hear rather than a threshold to raise. Overflow is measured, not hypothetical: 66 addresses at a frame-anchored autostarted stop at jitter 4000 ms.
+- [Phase 33]: 33-08: the capture record's `$D000-$DFFF` volatility note is now CONDITIONAL on a new `capture route` Identity row, with both halves retained — The exclusion is a property of the memory-READ route, where `vice_memory_read` samples live I/O. A `.vsf` C64MEM array is RAM under I/O, so on the snapshot route a difference there is real. Copying the note across would hide 4096 addresses of real divergence.
 
 ### Pending Todos
 
@@ -1672,8 +1677,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T21:03:30.984Z
-Stopped at: Completed 33-07-PLAN.md
+Last session: 2026-09-02T21:29:03.695Z
+Stopped at: Completed 33-08-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
