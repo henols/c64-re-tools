@@ -71,6 +71,37 @@ let warnedBinmonBindWidened = false;
 // caller could widen one host override and not the other, though in
 // practice both resolve from the same `binmonHost` value below).
 let warnedRemoteMonitorBindWidened = false;
+/** Phase 33, plan 33-05 (`REPRO-01`): the random seed the stock determinism
+ * block pins, and the exact value the reproduction was measured with on this
+ * host -- exported so a capture record's reproducibility key can cite ONE
+ * definition rather than re-deriving a literal that could silently drift away
+ * from the launches it claims to describe. MEASURED 2026-09-02 against genuine
+ * stock 3.9 over `-binarymonitor` (33-RESEARCH.md M3): two cold boots WITHOUT
+ * the block differ at 59 of the 4080 addresses in the untouched `$C000-$CFEF`
+ * window; WITH it, at 0 of 4080. */
+export const STOCK_DETERMINISM_SEED = 4242;
+/** Phase 33, plan 33-05 (`REPRO-01`): the determinism block, in ONE fixed
+ * order, emitted UNCONDITIONALLY by the stock branch below (never gated on
+ * `profile` -- see buildViceArgs()'s own comment above `args`). Exported and
+ * frozen so tests and evidence scripts assert against this single definition
+ * instead of a second hand-copied array, and so no caller can mutate the
+ * shared value into a launch that no longer matches the recorded seed.
+ *
+ * The order is fixed and load-bearing beyond readability: `REPRO-04` keys
+ * captures on an argv digest, so a block whose element order varied between
+ * two launches on the same port would produce two digests for one launch
+ * intent. */
+export const STOCK_DETERMINISM_FLAGS = Object.freeze([
+    "-seed",
+    String(STOCK_DETERMINISM_SEED),
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+]);
 /** Resolves the emulator's own argument vector for the given `backend`. The
  * `VICE_ARGS` full-override short-circuit (matching
  * resources/vice-supervisor.sh's own VICE_ARGS convention exactly) is
@@ -114,8 +145,24 @@ let warnedRemoteMonitorBindWidened = false;
  * arbitrary monitor commands and is unauthenticated -- Phase 3 dials
  * nothing on this port; only the launch flag lands now (see D-13's own
  * rationale: adding the flag later would require relaunching a live
- * instance, destroying all emulation state). */
-export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv, remoteMonitorPort, }) {
+ * instance, destroying all emulation state).
+ *
+ * Phase 33, plan 33-05 (`D-15`, `REPRO-01`, `REPRO-05`): the stock branch now
+ * also emits STOCK_DETERMINISM_FLAGS unconditionally, and takes an optional
+ * `profile` for the two additive launch knobs. Deliberately in the same
+ * register as tryLaunchOne's own widened `spawn` field below, and for the same
+ * reason: `profile` is optional, so every pre-existing caller and every
+ * pre-existing test stub keeps compiling and behaving identically, and an
+ * ABSENT profile produces exactly the same argv as an empty one or one whose
+ * knobs are both `false`. What optionality could NOT save (33-RESEARCH.md P7,
+ * and the `D-15` amendment rider dated 2026-09-02): the determinism block is
+ * unconditional on stock, so all FIVE stock whole-argv assertions in
+ * broker-launch.test.ts move even with `profile` absent -- it is the block and
+ * not the profile that moves them. `D-15`'s byte-identity claim therefore
+ * survives in full only on the FORK branch, whose argv this plan leaves
+ * untouched (a Validated v0.2.0 requirement, not merely a test), and on stock
+ * only for the `profile` half: an absent profile adds no flag. */
+export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv, remoteMonitorPort, profile, }) {
     const rawViceArgs = viceArgsEnv ?? process.env.VICE_ARGS;
     if (typeof rawViceArgs === "string" && rawViceArgs.trim() !== "") {
         return rawViceArgs.trim().split(/\s+/);
@@ -153,7 +200,77 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
         // might default Drive8TrueEmulation to 0) is read and deliberately not
         // pre-emptively defended against here; plan 03's live test is what would
         // surface it if that assumption is ever wrong on a different build.
-        const args = ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`];
+        //
+        // Phase 33, plan 33-05, `-console` at index 1 (`REPRO-05`, `D-15`): the
+        // headless route is `-console`, and its POSITION is as load-bearing as
+        // `-default`'s. `-console` is handled in the SAME `main.c` pre-scan as
+        // `-default` -- that loop `break`s at the first option it does not
+        // recognise and then strips the prefix it handled from argv
+        // [CITED: vice-3.8/src/main.c:184-192, 232-238] -- and `console_mode`
+        // gates GTK initialisation at two call sites (`ui_init_with_args`,
+        // `ui_init`) that BOTH run before the late command-line parser
+        // `initcmdline_check_args()` [CITED: vice-3.8/src/main.c:296-345]. A
+        // `-console` seen only by the late parser therefore arrives after GTK has
+        // already tried and failed. MEASURED 2026-09-02 with `DISPLAY` and
+        // `WAYLAND_DISPLAY` both unset (33-RESEARCH.md P5):
+        //   [-default -console -binarymonitor]                    alive=yes bound=1
+        //   [-default -drive8type 1541 -console -binarymonitor]   alive=no  bound=0  Gtk-WARNING: cannot open display:
+        //   [-default -console -drive8type 1541 -binarymonitor]   alive=yes bound=1
+        // So `-console` goes immediately after `-default` and BEFORE
+        // `-drive8type`, and it is pinned by an ordering assertion rather than by
+        // this comment -- a bare flag push with no reason is exactly what let the
+        // `-default` ordering constraint be rediscovered by a red CI run last
+        // time.
+        //
+        // Phase 33, plan 33-05, the determinism block (`REPRO-01`): emitted
+        // UNCONDITIONALLY on stock, never gated on `profile`. Read over
+        // `RESOURCE_GET` (0x51) on this build under `-default -drive8type 1541`
+        // [VERIFIED: live probe 2026-09-02, 33-RESEARCH.md M2],
+        // `-raminitrandomchance 0` is the LOAD-BEARING one: the factory value is
+        // **10**, i.e. 0.1% of all RAM bits randomly flipped at power-up, and it is
+        // the dominant term in the divergence this milestone removes. The
+        // `-raminitstartrandom 0` / `-raminitrepeatrandom 0` pair already reads 0
+        // at factory and is DEFENSIVE against an operator `vicerc` -- belt and
+        // braces alongside the scratch `XDG_CONFIG_HOME` the I-1 rider threads in
+        // spawnAndRecordInstance() below.
+        //
+        // `+autostart-delay-random` is a FIFTH flag beyond `REPRO-01`'s text
+        // (which names only `-seed` plus the three `raminit*`), recorded here as a
+        // deliberate ADDITION rather than smuggled in. `AutostartDelayRandom`
+        // ships at **1** on this build [VERIFIED: same probe], it draws an
+        // additional random delay of up to 10 frames
+        // [CITED: vice-3.8/src/autostart.c:1432-1436], and -- the effect that is
+        // easy to miss -- it also SELECTS WHICH keyboard-buffer feed injects `RUN`
+        // (`kbdbuf_feed_runcmd` when set, `kbdbuf_feed` when clear)
+        // [CITED: vice-3.8/src/autostart.c:882-886]. Disabling it is therefore a
+        // behavioural change and not only a timing one. Pin it once; never toggle
+        // it between the two runs of a capture pair.
+        //
+        // Phase 33, plan 33-05, `-warp` (`D-15`): position-free (MEASURED
+        // 2026-09-02), placed here only so the argv reads in the order a human
+        // would describe it. Launch-time is the ONLY route on stock: there is no
+        // runtime `WarpMode` resource at all (`RESOURCE_GET` replies `err=0x01`
+        // OBJECT_MISSING on 3.9), so no runtime setter can exist here. Worth
+        // roughly **1.97x** on this host and this launch profile -- 5.23 emulated
+        // seconds against 2.65 over the same 5 s wall clock [MEASURED:
+        // evidence/33-wallclock-control.md, Control B instance 1] -- and NOT the
+        // order of magnitude a reader may assume; `AUTOSTART` additionally turns
+        // warp on by itself during the load whatever argv says, so both loads are
+        // warped either way. It is behaviour-neutral under a frame-anchored
+        // protocol (identical registers and one identical 64K sha256 across a
+        // warped and an unwarped run, same source), which is the precondition
+        // `33-06` needs before `profile.warp` ships; it is NOT neutral for a
+        // wall-clock bracket, which it invalidates by 1.76x.
+        const args = ["-default"];
+        if (profile?.headless) {
+            args.push("-console");
+        }
+        args.push("-drive8type", "1541");
+        args.push(...STOCK_DETERMINISM_FLAGS);
+        if (profile?.warp) {
+            args.push("-warp");
+        }
+        args.push("-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`);
         if (typeof remoteMonitorPort === "number") {
             if (host !== "127.0.0.1" && !warnedRemoteMonitorBindWidened) {
                 warnedRemoteMonitorBindWidened = true;

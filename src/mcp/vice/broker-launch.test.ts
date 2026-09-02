@@ -39,6 +39,8 @@ import {
   superviseChild,
   withCrashSupervision,
   buildViceArgs,
+  STOCK_DETERMINISM_SEED,
+  STOCK_DETERMINISM_FLAGS,
 } from "./broker-launch.mts";
 // Direct SOURCE import (".mts", not ".mjs") -- safe for a test file, which
 // always references the literal extension the file is actually saved
@@ -1772,7 +1774,47 @@ test("buildViceArgs: the VICE_ARGS override short-circuits before either backend
 
 test("buildViceArgs: stock backend defaults to a loopback binary-monitor bind", () => {
   const args = buildViceArgs(6510, { backend: "stock" });
-  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6510"]);
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+});
+
+// 33-05-PLAN.md, Task 1 (REPRO-01, REPRO-05, D-15): the two positions this
+// plan learned from a measured failure, asserted together so neither can
+// displace the other. -console at index >= 2 makes the process DIE headless
+// with `Gtk-WARNING: cannot open display:` (33-RESEARCH.md P5), and -warp is
+// position-free but is pinned immediately before -binarymonitor so the argv
+// digest REPRO-04 keys captures on is stable.
+test("buildViceArgs (33-05): a profile of {warp,headless} emits -console at index 1 and -warp immediately before -binarymonitor, with neither displacing the other", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { warp: true, headless: true } });
+  assert.equal(args.indexOf("-default"), 0, "-default must stay at index 0 however many profile flags are requested");
+  assert.equal(args.indexOf("-console"), 1, "-console must sit at index 1: it is handled in main.c's prefix scan, and at index >= 2 the process dies headless");
+  assert.equal(args[args.indexOf("-binarymonitor") - 1], "-warp", "-warp must sit immediately before -binarymonitor");
+  assert.deepEqual(args, [
+    "-default",
+    "-console",
+    "-drive8type",
+    "1541",
+    ...STOCK_DETERMINISM_FLAGS,
+    "-warp",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
 });
 
 // ===========================================================================
@@ -1790,6 +1832,15 @@ test("buildViceArgs (I-2): stock backend emits the exact fixed argv shape -- -de
     "-default",
     "-drive8type",
     "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
     "-binarymonitor",
     "-binarymonitoraddress",
     "ip4://127.0.0.1:6510",
@@ -1904,7 +1955,23 @@ test("buildViceArgs: widening the stock bind away from 127.0.0.1 emits exactly o
 
 test("buildViceArgs: stock backend honours an explicit binmonHost override", () => {
   const args = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
-  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://0.0.0.0:6510"]);
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://0.0.0.0:6510",
+  ]);
 });
 
 // ===========================================================================
@@ -1916,7 +1983,23 @@ test("buildViceArgs: stock backend honours an explicit binmonHost override", () 
 
 test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns exactly the current argv, byte-identical", () => {
   const args = buildViceArgs(6600, { backend: "stock" });
-  assert.deepEqual(args, ["-default", "-drive8type", "1541", "-binarymonitor", "-binarymonitoraddress", "ip4://127.0.0.1:6600"]);
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6600",
+  ]);
 });
 
 test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this plan", () => {
@@ -1930,6 +2013,15 @@ test("buildViceArgs (D-13): stock backend WITH a remoteMonitorPort appends -remo
     "-default",
     "-drive8type",
     "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
     "-binarymonitor",
     "-binarymonitoraddress",
     "ip4://127.0.0.1:6600",
