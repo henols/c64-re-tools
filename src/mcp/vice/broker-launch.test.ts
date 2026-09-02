@@ -1760,6 +1760,12 @@ test("superviseChild: the give-up path leaves no live child pid, asserted by a z
 // spawned in this section.
 // ===========================================================================
 
+// DO NOT update this expected value. The fork branch's argv byte-identity is a
+// Validated v0.2.0 requirement, not merely a test: the fork's advertised tool
+// list and launch shape are frozen from v0.1.x, and every skill written against
+// the full fork surface depends on it. If a change to buildViceArgs() makes this
+// assertion fail, the change is wrong -- this is not an ordinary
+// expected-value-update site (33-05, D-15).
 test("buildViceArgs: fork backend returns the exact byte-identical pre-Phase-2 argv", () => {
   const args = buildViceArgs(6510, { backend: "fork", mcpHost: "0.0.0.0" });
   assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6510"]);
@@ -1826,7 +1832,10 @@ test("buildViceArgs (33-05): a profile of {warp,headless} emits -console at inde
 // assertion here mentions XDG_CONFIG_HOME.
 // ===========================================================================
 
-test("buildViceArgs (I-2): stock backend emits the exact fixed argv shape -- -default -drive8type 1541 ahead of -binarymonitor", () => {
+// RENAMED by 33-05: the title used to claim "the exact fixed argv shape", which
+// stopped describing the body once REPRO-01's determinism block landed. A test
+// whose name asserts something the body no longer checks is worse than no test.
+test("buildViceArgs (I-2, extended by 33-05): stock backend emits -default -drive8type 1541 ahead of -binarymonitor, now followed by REPRO-01's determinism block", () => {
   const args = buildViceArgs(6510, { backend: "stock" });
   assert.deepEqual(args, [
     "-default",
@@ -1852,6 +1861,18 @@ test("buildViceArgs (I-2): ordering invariant survives future flag additions -- 
   assert.equal(args.indexOf("-default"), 0, "-default must be the very first element or it silently clobbers -drive8type");
   assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"), "-drive8type must be set before the monitor binds");
   assert.equal(args[args.indexOf("-drive8type") + 1], "1541", "the element immediately following -drive8type must be the string 1541");
+  // 33-05: the same three invariants, restated so they keep MEANING under the
+  // new argv length rather than merely tolerating it -- the determinism block
+  // sits between "1541" and -binarymonitor as one contiguous run, in one fixed
+  // order (REPRO-04 keys captures on an argv digest, so a block whose order
+  // varied would produce two digests for one launch intent).
+  const blockStart = args.indexOf("-drive8type") + 2;
+  assert.deepEqual(
+    args.slice(blockStart, blockStart + STOCK_DETERMINISM_FLAGS.length),
+    [...STOCK_DETERMINISM_FLAGS],
+    "REPRO-01's determinism block must be one contiguous, fixed-order run immediately after -drive8type 1541",
+  );
+  assert.equal(args[blockStart + STOCK_DETERMINISM_FLAGS.length], "-binarymonitor", "-binarymonitor must follow the determinism block immediately when no profile flag is requested");
 });
 
 test("buildViceArgs (I-2): the -default/-drive8type ordering invariant holds in the remoteMonitorPort variant too", () => {
@@ -1981,7 +2002,11 @@ test("buildViceArgs: stock backend honours an explicit binmonHost override", () 
 // wiring of the real allocator below.
 // ===========================================================================
 
-test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns exactly the current argv, byte-identical", () => {
+// RENAMED by 33-05: the title used to claim byte-identity with "the current
+// argv", which is exactly the claim REPRO-01's unconditional determinism block
+// retired on the stock branch (D-15's 2026-09-02 amendment rider). What the body
+// pins now is the absence of -remotemonitor, which is what D-13 ever cared about.
+test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort appends no -remotemonitor at all, and ends at the binmon address", () => {
   const args = buildViceArgs(6600, { backend: "stock" });
   assert.deepEqual(args, [
     "-default",
@@ -2002,6 +2027,11 @@ test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort returns ex
   ]);
 });
 
+// DO NOT update this expected value either -- same reason as the fork assertion
+// near the top of this section: fork argv byte-identity is a Validated v0.2.0
+// requirement, not merely a test (33-05, D-15). Phase 33 adds the determinism
+// block and the profile knobs to the STOCK branch only, and this assertion is
+// what proves the fork branch did not move with it.
 test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this plan", () => {
   const args = buildViceArgs(6600, { backend: "fork", mcpHost: "0.0.0.0" });
   assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6600"]);
@@ -2273,3 +2303,144 @@ test("deleteInstanceRecord: releases only a record's OWN second port, never an u
 // backend-detect.test.ts, covers the override precedence, cache lifecycle,
 // and classification logic that removal leaves this file with nothing
 // further to assert about VICE_BACKEND reading).
+
+// ===========================================================================
+// 33-05-PLAN.md, Task 2: REPRO-01 / REPRO-05 / D-15 -- the profile knobs, the
+// fourth ordering invariant, and the four edge cases the plan's must_haves
+// name (empty, ordering, idempotency, concurrency). Pure argv construction
+// only; no process is spawned in this section.
+//
+// ORDERING NOTE, same class as the widened-bind note-once test far above:
+// the idempotency test below is the FIRST and ONLY test in this file that
+// passes a non-loopback binmonHost together with a remoteMonitorPort, so it
+// is the one place the SECOND (-remotemonitor) one-time note is provably
+// observable as "exactly one". Do not add an earlier test that widens the
+// text-monitor bind, and do not move this block above the buildViceArgs
+// section -- both would consume that note.
+// ===========================================================================
+
+test("STOCK_DETERMINISM_FLAGS / STOCK_DETERMINISM_SEED (33-05, REPRO-01): the exported block is the exact nine fixed tokens, in one fixed order, and is frozen against mutation", () => {
+  assert.equal(STOCK_DETERMINISM_SEED, 4242, "the exported seed must stay the value REPRO-01's reproduction was measured with (33-RESEARCH.md M3)");
+  assert.deepEqual(
+    [...STOCK_DETERMINISM_FLAGS],
+    ["-seed", "4242", "-raminitstartrandom", "0", "-raminitrepeatrandom", "0", "-raminitrandomchance", "0", "+autostart-delay-random"],
+    "this is the one definition tests and evidence scripts assert against -- a second hand-copied array is exactly what the export exists to prevent",
+  );
+  assert.ok(Object.isFrozen(STOCK_DETERMINISM_FLAGS), "the exported block must be frozen: a caller mutating the shared value would produce a launch that no longer matches the recorded seed");
+});
+
+test("buildViceArgs (33-05, REPRO-05): the fourth ordering invariant -- with profile.headless, -console is at index 1 and -drive8type still precedes -binarymonitor", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { headless: true } });
+  assert.equal(args.indexOf("-default"), 0, "-default must stay at index 0");
+  assert.equal(args.indexOf("-console"), 1, "the MEASURED failure was precisely a -console that had drifted to index >= 2, where the process dies with Gtk-WARNING: cannot open display:");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"), "-drive8type must still be set before the monitor binds");
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541", "1541 must still follow -drive8type immediately");
+});
+
+test("buildViceArgs (33-05, D-15, edge: empty): an absent profile, an empty profile object and a both-false profile all produce the identical argv", () => {
+  const absent = buildViceArgs(6510, { backend: "stock" });
+  const empty = buildViceArgs(6510, { backend: "stock", profile: {} });
+  const bothFalse = buildViceArgs(6510, { backend: "stock", profile: { warp: false, headless: false } });
+  assert.deepEqual(empty, absent, "an empty profile object must not diverge from an absent one");
+  assert.deepEqual(bothFalse, absent, "a knob set to false must not diverge from an absent knob");
+  assert.ok(!absent.includes("-console"), "no -console may appear without profile.headless");
+  assert.ok(!absent.includes("-warp"), "no -warp may appear without profile.warp");
+});
+
+test("buildViceArgs (33-05, D-15): profile.warp alone places -warp immediately before -binarymonitor and adds nothing else", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { warp: true } });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    ...STOCK_DETERMINISM_FLAGS,
+    "-warp",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+  assert.ok(!args.includes("-console"), "profile.warp must not imply -console");
+});
+
+test("buildViceArgs (33-05, D-15): profile.headless alone places -console at index 1 and adds nothing else", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { headless: true } });
+  assert.deepEqual(args, [
+    "-default",
+    "-console",
+    "-drive8type",
+    "1541",
+    ...STOCK_DETERMINISM_FLAGS,
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+  assert.ok(!args.includes("-warp"), "profile.headless must not imply -warp");
+});
+
+test("buildViceArgs (33-05, edge: adjacency): with warp AND headless both requested, both flags are emitted and neither displaces the other", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { warp: true, headless: true } });
+  const warpOnly = buildViceArgs(6510, { backend: "stock", profile: { warp: true } });
+  const headlessOnly = buildViceArgs(6510, { backend: "stock", profile: { headless: true } });
+  assert.equal(args.indexOf("-console"), 1, "-console must stay at index 1 when -warp is also requested");
+  assert.equal(args[args.indexOf("-binarymonitor") - 1], "-warp", "-warp must stay immediately before -binarymonitor when -console is also requested");
+  assert.equal(args.length, warpOnly.length + 1, "the both-true argv must be exactly the warp-only argv plus -console");
+  assert.equal(args.length, headlessOnly.length + 1, "the both-true argv must be exactly the headless-only argv plus -warp");
+});
+
+test("buildViceArgs (33-05, edge: idempotency): three calls on the widened-bind branch return three deep-equal arrays, and the one-time text-monitor note is emitted exactly once -- module state never leaks into argv", () => {
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  const writes: string[] = [];
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  let first: string[];
+  let second: string[];
+  let third: string[];
+  try {
+    first = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
+    second = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
+    third = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.deepEqual(second, first, "two calls with identical inputs must return deep-equal arrays");
+  assert.deepEqual(third, first, "and a third must too -- the one-time note flips module state, and that must never reach argv");
+  const textNotes = writes.filter((l) => /text monitor/.test(l) && /unauthenticated/.test(l));
+  assert.equal(textNotes.length, 1, `expected exactly one widened text-monitor note across three calls, got ${textNotes.length}: ${JSON.stringify(writes)}`);
+  const binmonNotes = writes.filter((l) => /binary monitor is/.test(l) && /unauthenticated/.test(l));
+  assert.equal(binmonNotes.length, 0, "the binmon note is once-per-process and was already consumed by the note-once test above -- observing a second one here would mean the gate had been reset");
+});
+
+test("buildViceArgs (33-05, edge: concurrency): two stock instances on different ports differ in EXACTLY one argv element -- the ip4://host:port string", () => {
+  const a = buildViceArgs(6600, { backend: "stock" });
+  const b = buildViceArgs(6601, { backend: "stock" });
+  assert.equal(a.length, b.length, "two stock launches must produce argv of identical length");
+  const differing: number[] = [];
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) differing.push(i);
+  }
+  assert.deepEqual(
+    differing,
+    [a.indexOf("-binarymonitoraddress") + 1],
+    `exactly one index may differ, and it must be the binmon address -- a flag that accidentally derived from the port would red this. a=${JSON.stringify(a)} b=${JSON.stringify(b)}`,
+  );
+  assert.equal(a[differing[0]!], "ip4://127.0.0.1:6600");
+  assert.equal(b[differing[0]!], "ip4://127.0.0.1:6601");
+});
+
+// DO NOT update this expected value: fork argv byte-identity is a Validated
+// v0.2.0 requirement, not merely a test (33-05, D-15). This is the third fork
+// whole-argv site, added by 33-05 to prove `profile` has no path to it at all.
+test("buildViceArgs (33-05, D-15): the fork branch ignores profile entirely and stays byte-identical", () => {
+  const args = buildViceArgs(6510, { backend: "fork", mcpHost: "0.0.0.0", profile: { warp: true, headless: true } });
+  assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6510"]);
+});
+
+test("buildViceArgs (33-05, T-33-04): VICE_ARGS still short-circuits ahead of BOTH branches with a profile present -- profile must never become a second whole-argv override", () => {
+  const stockArgs = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "/bin/sleep 600", profile: { warp: true, headless: true } });
+  assert.deepEqual(stockArgs, ["/bin/sleep", "600"], "the deliberate operator-only override must win over the profile, not be merged with it");
+  const forkArgs = buildViceArgs(6510, { backend: "fork", viceArgsEnv: "/bin/sleep 600", profile: { warp: true, headless: true } });
+  assert.deepEqual(forkArgs, ["/bin/sleep", "600"]);
+  assert.ok(!stockArgs.includes("-console") && !stockArgs.includes("-warp"), "no profile flag may leak past the VICE_ARGS short-circuit");
+});
