@@ -49,6 +49,10 @@ import { parseAddress } from "./stock-address.ts";
 import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler } from "./stock-handler.ts";
 import { readProgramCounter } from "./stock-timing.ts";
 import { runStateFor } from "./stock-runstate.ts";
+// The reproducible-run protocol (REPRO-02). Imported for exactly one branch
+// below -- this module is the ONLY non-test caller of runReproducible() in the
+// tree, which is the single-seam property REPRO-02 requires.
+import { runReproducible, REPRODUCIBLE_RUN_REQUIRED_SIBLINGS } from "./stock-reproducible-run.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -73,6 +77,24 @@ export const RUN_UNTIL_DEFAULT_TIMEOUT_MS = 30000;
  * request itself is not malformed the way a non-finite or non-positive
  * value is. */
 export const RUN_UNTIL_MAX_TIMEOUT_MS = 600000;
+
+/** EVERY argument name `vice_run_until` accepts, and the ONLY definition of
+ * that set. Anything else is refused BY NAME (see handleRunUntil below).
+ *
+ * Hoisted to module scope and EXPORTED so `D-13`'s no-sub-flags rule is
+ * ASSERTED rather than merely stated: `stock-reproducible-run.test.ts` pins
+ * this array with a single `assert.deepEqual`, which is what makes a future
+ * `skip_reset`, `no_anchor` or `reset_only` a RED TEST rather than a review
+ * comment. Shipping a "protocol without the reset" option would ship exactly
+ * the second route `REPRO-02` exists to prevent a caller forgetting -- and the
+ * reset-removed CONTROL this phase records red is produced by an evidence
+ * script calling `runReproducible()`'s pieces directly, never by a published
+ * flag.
+ *
+ * `reproducible` and `frame_anchor` are STOCK-ONLY and both OPTIONAL: the fork
+ * manifest's tool list is frozen byte-identical from v0.1.x, and stock may add
+ * optional parameters but never removes, retypes, or newly-requires one. */
+export const RUN_UNTIL_KEYS: readonly string[] = ["address", "cycles", "timeout_ms", "reproducible", "frame_anchor"];
 
 /** Narrows an emitted `event` item to a CHECKPOINT_INFO event -- checked on
  * the parsed item's own `.type` discriminant, never on response type alone
@@ -152,7 +174,6 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
   // stock-timing.ts). Accepting them silently means a typo -- `timeoutMs` for
   // `timeout_ms`, `addr` for `address` -- runs with the DEFAULT bound and
   // reports a confident answer, and the caller has no way to tell.
-  const RUN_UNTIL_KEYS = ["address", "cycles", "timeout_ms"];
   const unexpectedKeys = Object.keys(args).filter((key) => !RUN_UNTIL_KEYS.includes(key));
   if (unexpectedKeys.length > 0) {
     return isErrorText(
@@ -221,6 +242,40 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     } else {
       timeoutMs = truncated;
     }
+  }
+
+  // `frame_anchor` goes through parseAddress with a `what:` label, exactly as
+  // `address` does, so a malformed anchor is refused with the same wording a
+  // malformed target gets rather than a second, divergent message.
+  let frameAnchor: number | undefined;
+  if (args.frame_anchor !== undefined) {
+    try {
+      frameAnchor = parseAddress(args.frame_anchor, { what: "vice_run_until frame_anchor" });
+    } catch (err) {
+      return isErrorText(`vice_run_until: ${describeError(err)}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // THE ONE CALL SITE of the reproducible-run protocol (`REPRO-02`).
+  //
+  // One procedure, one branch, no sub-flags. `reproducible` is a
+  // WHOLE-PROCEDURE switch: absent or false takes the pre-existing path below
+  // COMPLETELY unchanged and never reaches runReproducible(). There is no
+  // second tool and no partial mode, because a second route is a route a
+  // caller can forget it took.
+  //
+  // Do not restructure the path below to "share" steps with the procedure. The
+  // reproducible sequence's ordering IS its content -- arm both while halted,
+  // hard reset, exactly one resume -- and a shared helper is how a step gets
+  // lifted out of that ordering by a later edit that looks like a cleanup.
+  // ---------------------------------------------------------------------
+  if (args.reproducible === true) {
+    if (frameAnchor === undefined) {
+      return isErrorText(`vice_run_until: reproducible requires ${REPRODUCIBLE_RUN_REQUIRED_SIBLINGS.join(", ")}`);
+    }
+    const { result } = await runReproducible(session, { address, frameAnchor, timeoutMs, timeoutClamped });
+    return result;
   }
 
   // Arm a temporary, stopping exec checkpoint at `address`. This is this

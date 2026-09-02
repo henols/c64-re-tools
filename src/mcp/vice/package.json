@@ -51,6 +51,7 @@
     "stock-sprites.ts",
     "stock-timing.ts",
     "stock-run-until.ts",
+    "stock-reproducible-run.ts",
     "stock-diagnose.ts",
     "stock-recycle.ts",
     "anno-d64.ts",
