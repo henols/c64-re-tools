@@ -1,38 +1,45 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.7.0
-milestone_name: Own the Annotation Store
-status: Awaiting next milestone
-stopped_at: Phase 32 complete — all phases complete
-last_updated: "2026-09-01T16:17:56.657Z"
+milestone: v0.8.0
+milestone_name: Frame-Exact Capture and the Two Engines
+status: planning
+last_updated: "2026-09-02T10:07:17.171Z"
 last_activity: 2026-09-02
-last_activity_desc: "Quick task 260902-ech: stripped unverified chat-artifact citations from docs/undocumented-opcodes-ghidra.md"
-state_head: 83112c1d3b402a86b26276d6fd08998c8de56710
 progress:
-  total_phases: 6
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
-current_phase: 32
-current_phase_name: The Deletion and the Grep Gate
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-01 at the v0.7.0 close — full evolution review)
+See: .planning/PROJECT.md (updated 2026-09-02 at the v0.8.0 open)
 
-**Current focus:** Planning the next milestone. v0.7.0 shipped 2026-09-01; no
-milestone is open and `.planning/REQUIREMENTS.md` was removed at the close.
-Next action is `/gsd-new-milestone`, which writes a fresh one. Candidate scope,
-in the order PROJECT.md → Next Milestone Goals records it: the **unowned
-frame-exact emulator stop** (the single gate on Phase 23's `R1` branch and
-therefore on the held Phases 24 and 26), then **v0.8.0** — those held phases
-carrying `DXA-*`, `GHID-*`, `OPC-*`, `AUTO-*` and `PROOF-*` unchanged — then
-**v0.9.0**, the rebuild half (`DECOMP-*`, `BUILD-*`, `EQUIV-*`) on the substrate
-v0.7.0 just built. Phase numbering resumes at **33**.
+**Current focus:** Milestone **v0.8.0 Frame-Exact Capture and the Two Engines**,
+opened 2026-09-02. Defining requirements. Scope, decided at the open: the
+**frame-exact emulator stop** owned for the first time behind a pre-committed
+go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
+64K extraction that closes the other capture blocker, `PROOF-01`..`PROOF-03`
+turned from `could-not-run` into real measurements on real cracked code, and then
+v0.6.0's **held Phases 24 and 26** carrying `DXA-*`, `GHID-*`, `OPC-*` and
+`AUTO-*` byte-identical under **new** phase numbers. Phase numbering resumes at
+**33**; 24 and 26 stay retired. The text-monitor client and the accumulating
+runtime-evidence layer are **out of scope** by owner decision 2026-09-02 — only
+[`seeds/runtime-evidence-layer.md`](seeds/runtime-evidence-layer.md)'s
+reproducible-runs half (VICE event record/replay, as a candidate mechanism for
+the stop) is in. **v0.9.0** remains the rebuild half (`DECOMP-*`, `BUILD-*`,
+`EQUIV-*`).
+
+**Phase directories were deliberately NOT archived at the v0.7.0 close, and are
+not archived at this open either.** Archival was tried at that close and measured
+to redden 9 tests across 5 files, so the 28 directories under
+`.planning/phases/` were restored and stay. `phases.clear` was therefore skipped
+in this `/gsd-new-milestone` run — this is a measured project decision, not an
+omission. v0.8.0's phases (33+) land alongside them.
 
 **Shipped:** v0.7.0 Own the Annotation Store — 2026-09-01 (6 phases 27-32, 80
 plans, 214 tasks, 28/28 requirements, 690 commits, 7 days, `override_closeout`).
@@ -164,10 +171,10 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: Milestone v0.7.0 complete — archived 2026-09-01
-Plan: 80 of 80 executed across Phases 27-32
-Status: Awaiting next milestone. `.planning/REQUIREMENTS.md` removed at the close (fresh one written by `/gsd-new-milestone`); `ROADMAP.md` collapsed to milestone groupings with the held v0.6.0 Phase 24/26 detail and the load-bearing per-phase Progress table both preserved. Phase directories were **not** archived — archival was tried at this close and measured to redden 9 tests across 5 files, so they were restored.
-Last activity: 2026-09-02 — The phase-32 code-review backlog is CLOSED. It carried 34 open findings into the next milestone; none remain. 25 were moot (their file was deleted with the analyser subsystems quick task 260901-qzp retired), 3 had been closed by the phase-32 gap rounds, 3 more closed by re-measurement (CR-03 by plan 32-12's split-read contract, WR-13 and WR-11 by measurement against the current tree — 6 callers and 58 tests, against a finding that said zero of each), and 3 were fixed today: CR-07 (the Critical — sync-skills.mjs now rebuilds only on drift, so five gate spawns no longer delete a directory parallel tests read), WR-09 (its premise was wrong — the isFunctionStart arm is load-bearing, so it was TIGHTENED from 71 accepted declarations to 4, not removed) and WR-04 (containment is decided after symlinks; a symlink inside the repo pointing out of it was demonstrably accepted before). IN-01 closed by removing the never-called `allowExtra` bypass, with a named reversal trigger. One of my own triage entries was RETRACTED in the record: IN-01 was first marked closed off a grep COUNT that hit a comment. `npm run test:automated`: 2962 pass, 0 failures. `tsc --noEmit`: clean. All CI gates exit 0.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-09-02 — Milestone v0.8.0 started
 
 ## Performance Metrics
 

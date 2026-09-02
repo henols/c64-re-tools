@@ -196,15 +196,19 @@ rather than re-confirmed a fifth time.
 
 ### Active
 
-<!-- v0.7.0 closed 2026-09-01; its seven bullets moved to Validated above.
-     Nothing is scoped yet for the next milestone — `/gsd-new-milestone` opens
-     it and writes a fresh `.planning/REQUIREMENTS.md`. What stands as candidate
-     scope is under "Next Milestone Goals" below: the unowned frame-exact
-     emulator stop, then v0.6.0's held Phases 24 and 26 (`DXA-*`, `GHID-*`,
-     `OPC-*`, `AUTO-*`, `PROOF-*`), then the rebuild half (`DECOMP-*`,
-     `BUILD-*`, `EQUIV-*`) on the substrate v0.7.0 just built. -->
+<!-- v0.8.0 opened 2026-09-02. These are hypotheses until shipped and verified;
+     the checkable text lives in `.planning/REQUIREMENTS.md`. Phases 24 and 26
+     are HELD in `ROADMAP.md` with byte-identical requirement text — this
+     milestone carries that text forward under NEW phase numbers (33+), because
+     phase numbers are never reused. -->
 
-(Empty — next milestone not yet scoped.)
+- [ ] A frame-exact emulator stop exists, so two runs of the same release stop in the same frame and their captures compare as equivalent — behind a pre-committed go / degrade / no-go gate whose rules are committed to git before any measurement, per the Phase 23 pattern
+- [ ] A depacked flat 64K capture is produced without any hex transcription step, by slicing a VICE `.vsf` snapshot's `C64MEM` module body
+- [ ] `PROOF-01`..`PROOF-03` are real measurements on real cracked code rather than `could-not-run` — dxa's data-recovery rate and false-positive count on a named release, Ghidra's computed-index dispatch resolution, and the point where a single forward-carried `$01` value becomes wrong
+- [ ] A raw C64 image goes in and a machine-readable code/data map comes out, from a dxa this project vendors and builds at a pinned version — with the listing parser refusing by name rather than silently mis-parsing (`DXA-01`..`DXA-03`)
+- [ ] Ghidra headless recovers structure under this project's own committed harness, with the volatile-I/O carve proven by a control observed **red** and structural facts exported through `DecompInterface` rather than `DataTypeManager` (`GHID-01`..`GHID-05`)
+- [ ] All 105 opcode bytes stock `6502.slaspec` omits decode under a SLEIGH extension that does not collide with `65c02.slaspec`, with the electrically unstable and page-crossing-dependent ones as declared unknowns (`OPC-01`..`OPC-03`)
+- [ ] Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — narrowest-range-wins, in-image addresses skipped, bank state resolved before address, and a decline rather than a confident wrong comment wherever bank state is path-dependent (`AUTO-01`..`AUTO-07`)
 
 **Two capabilities are Validated but currently have NO ROUTE**, withdrawn by the
 v0.7.0 removal with no phase owning their return. They are named here as well as
@@ -957,26 +961,87 @@ contains none of `forwardToVice` / `ensureViceSession` / `rewriteArguments`.
 **Phase numbering starts at 27.** Phases 24-26 are held with their numbers
 reserved; 20-22 are cut. Numbers are never reused across milestones.
 
+## Current Milestone: v0.8.0 Frame-Exact Capture and the Two Engines
+
+**Goal:** A frame-exact emulator stop makes a real depacked capture reproducible,
+and dxa + Ghidra headless then turn a real cracked release — not a 279-byte
+synthetic fixture — into machine-readable facts that annotate themselves into the
+owned store.
+
+**Target features:**
+
+- **The frame-exact stop, owned, behind a pre-committed gate.** It is the single
+  gate on Phase 23's rule `R1` "secure a corpus first" branch and therefore on
+  held Phases 24 and 26, and nothing owned it before this milestone (verification
+  warning W4;
+  [`todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`](todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md)).
+  The Phase 23 pattern is reused deliberately: rules committed to git *before* any
+  measurement, no judgement step, and the authority to narrow every phase after
+  it. VICE event record/replay is carried in as a candidate mechanism, from
+  [`seeds/runtime-evidence-layer.md`](seeds/runtime-evidence-layer.md)'s item 2.
+- **The other capture blocker closed.** Extract the flat 64K from a `.vsf`
+  snapshot's `C64MEM` module body (4 bytes of port/PLA state, then 65536 bytes of
+  RAM) instead of re-emitting hex through an agent — already validated against
+  23-03's own transcript
+  ([`todos/pending/2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md`](todos/pending/2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md)).
+- **`PROOF-01`..`PROOF-03` measured rather than `could-not-run`**, on real cracked
+  code, stated beside the fixture re-measurement (`FIXTURE_FALSE_POSITIVES: 3`,
+  `FIXTURE_DATA_RECOVERY_PCT: 72.39`) rather than silently replacing it.
+- **Held Phase 24's content, byte-identical** — `DXA-01`..`DXA-03`,
+  `GHID-01`..`GHID-05`, `OPC-01`..`OPC-03`.
+- **Held Phase 26's content, byte-identical** — `AUTO-01`..`AUTO-07`.
+
+**Key context carried into this milestone:**
+
+- **Phase numbering starts at 33.** Numbers 24 and 26 stay retired with v0.6.0 —
+  their *requirement text* carries forward, their *numbers* do not. Numbers are
+  never reused across milestones.
+- **`AUTO-04`/`AUTO-05` are unvalidated, not narrowed.** `R1` fired under
+  first-match-wins, so `R7`'s pre-mapped narrowing was never evaluated. Nothing is
+  known about where a single forward-carried `$01` value stops being correct, in
+  either direction.
+- **Three of this milestone's failure modes are silent, and each was got wrong on
+  the first attempt during the pivot exploration:** Ghidra deleting hardware
+  writes as dead stores unless `$0000-$0001` / `$D000-$DFFF` are marked volatile;
+  the wide `memmap.json` entry winning over the narrow one; graphics bytes decoded
+  as code minting phantom labels that feed the join and emerge as confident wrong
+  comments. Every criterion touching them needs a control **observed red** —
+  asserting the fix is present proves nothing against a silent failure.
+- **Ghidra alone with zero hints produced 0 functions and 0 code bytes** on the
+  pivot fixture. dxa's map is what makes Ghidra work at all on a headerless 6502
+  image, not an optimisation.
+- **`analyzeHeadless` exits 0 even when a post-script throws**, and refuses a
+  project directory containing a dot-prefixed path element. Measured in Phase 23's
+  `evidence/tools/instrument-provenance.txt`; any harness must grep the run log
+  for `ERROR REPORT SCRIPT ERROR` or its assertions are worthless.
+- **The SLEIGH source already exists in full** — `docs/undocumented-opcodes-ghidra.md`,
+  766 lines, all 105 bytes, unstable instructions modelled as black-box userops,
+  the `@include` layering already written against the `65c02.slaspec` collision.
+  `OPC-01`..`OPC-03` integrate and verify it; they do not write it.
+- **Where Ghidra executes is an open question this milestone must settle.**
+  [`seeds/host-tool-executor.md`](seeds/host-tool-executor.md) establishes that
+  host binaries are reached over the container-out seam and never `spawnSync`'d
+  from a skill script, but it is framed around *stateless* tools (`c1541`,
+  `petcat`, `cartconv`, `acme`). Ghidra is a JVM with a persistent project
+  directory, multi-minute runs, and exports past the broker's 64 KiB line cap.
+  Whether that seam widens or Ghidra gets its own leased subsystem alongside the
+  VICE pool is undecided, and it is a precondition for any skill script reaching
+  for it.
+- **Deliberately excluded from this milestone:** the text-monitor client and the
+  accumulating runtime-evidence layer (`memmapshow` / `prof` / `chis` as a third
+  independent classifier) — only the seed's reproducible-runs half is in scope, by
+  owner decision 2026-09-02; the seed stays planted. Also excluded: the rebuild
+  half `DECOMP-*` / `BUILD-*` / `EQUIV-*` (v0.9.0), and the return of `ANNO-13` /
+  `ANNO-14` / `ANNO-15`, which no phase owns under the 2026-08-26 "no parity is
+  owed" decision.
+
 ## Next Milestone Goals
 
-**The frame-exact emulator stop, wherever it lands.** It is the single gate on
-Phase 23's `R1` "secure a corpus first" branch and therefore on held Phases 24
-and 26, and **nothing owns it** — raised as verification warning W4 and tracked
-in `.planning/todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`.
-It was kept out of v0.7.0 deliberately: it is research-shaped with an uncertain
-outcome (`vice_execution_step` advances nothing observable, there is no
-monotonic cycle register, and `LIN`/`CYC` are not monotonic, so a constructed
-frame counter is needed rather than a register read), and pairing that with a
-removal milestone risks the removal. It is one `/gsd-phase` insert away if it
-should come sooner.
-
-**v0.8.0 — the two engines and automatic annotation**, once a corpus exists:
-v0.6.0's held Phases 24 and 26, carrying `DXA-01..03`, `GHID-01..05`,
-`OPC-01..03`, `AUTO-01..07` and `PROOF-01..03` unchanged. The SLEIGH source
-already exists in full — `docs/undocumented-opcodes-ghidra.md`, 766 lines, all
-105 bytes, unstable instructions modelled as black-box userops and the
-`65c02.slaspec` collision already handled — so that work integrates and verifies
-rather than writes from scratch.
+**Both items that stood here are now scoped — v0.8.0 took them** (2026-09-02,
+see `## Current Milestone` above). The frame-exact emulator stop is owned for the
+first time, behind a pre-committed gate, and v0.6.0's held Phases 24 and 26 carry
+forward under new numbers behind it. What remains below is what comes *after*
+v0.8.0.
 
 **v0.9.0 — the rebuild half, on the owned substrate.** v0.5.0's three cut
 phases, rewritten: decomposition to closure, rebuildable source and the
@@ -988,6 +1053,7 @@ annotation-store scope". These were re-mapped from v0.7.0 to v0.9.0 on
 2026-08-26: each is written against a substrate v0.7.0 now builds, and
 `DECOMP-01` in particular is what `STORE-01`'s typing vocabulary is sized for,
 so scoping them before the store lands would still mean writing them twice.
+
 ---
 
 **v0.4.0 took four of the five candidates standing at the v0.3.0 close** — the
@@ -1432,7 +1498,7 @@ written).
 
 ---
 
-*Last updated: 2026-09-01 at the **close of milestone v0.7.0 — Own the Annotation Store** (full evolution review: What This Is, Core Value, all seven Active requirements moved to Validated, Out of Scope audited, Context and Current State rewritten, six Key Decisions rows added). Previously 2026-09-01 after Phase 32 (The Deletion and the Grep Gate) — the last phase of milestone v0.7.0. Previously 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
+*Last updated: 2026-09-02 at the **start of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (`## Current Milestone` added; Active rewritten from the empty placeholder to this milestone's seven hypotheses; `## Next Milestone Goals` narrowed to v0.9.0 now that both items standing there are scoped). Previously 2026-09-01 at the **close of milestone v0.7.0 — Own the Annotation Store** (full evolution review: What This Is, Core Value, all seven Active requirements moved to Validated, Out of Scope audited, Context and Current State rewritten, six Key Decisions rows added). Previously 2026-09-01 after Phase 32 (The Deletion and the Grep Gate) — the last phase of milestone v0.7.0. Previously 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
 Annotation Store**. Written after Phase 23's pre-committed gate returned
 `no-go` (rule `R1`). Changes at this open: v0.6.0 moved from "Current
 Milestone" to "Held", shipping Phase 23 alone, with Phases 24 and 26 **held**
