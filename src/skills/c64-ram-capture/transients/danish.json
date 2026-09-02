@@ -1,0 +1,610 @@
+{
+  "schema_version": "1.0",
+  "release": "danish",
+  "derived_from": [
+    "pair-j0.norm.bin",
+    "pair-j2500.norm.bin",
+    "pair-j4000.norm.bin"
+  ],
+  "pair_count": 3,
+  "cap": 64,
+  "method": "union of addresses differing across every pairwise comparison of N >= 3 runs of one release at one stop; re-derived per release, never inherited (CAP-02, D-23)",
+  "entries": [
+    {
+      "address": 164,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$10",
+        "$A5",
+        "$F2"
+      ],
+      "attribution": ""
+    },
+    {
+      "address": 174,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$0C",
+        "$21",
+        "$F6"
+      ],
+      "attribution": "KERNAL load/save end-address pointer (EAL/EAH, $AE-$AF) -- tracks the load in progress"
+    },
+    {
+      "address": 175,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$13",
+        "$14"
+      ],
+      "attribution": "KERNAL load/save end-address pointer (EAL/EAH, $AE-$AF) -- tracks the load in progress"
+    },
+    {
+      "address": 497,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$01",
+        "$85",
+        "$88"
+      ],
+      "attribution": "unused byte in the 6502 stack page ($0100-$01FF), above the live stack pointer"
+    },
+    {
+      "address": 498,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$10",
+        "$A5",
+        "$F2"
+      ],
+      "attribution": "unused byte in the 6502 stack page ($0100-$01FF), above the live stack pointer"
+    },
+    {
+      "address": 499,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$20",
+        "$A0"
+      ],
+      "attribution": "unused byte in the 6502 stack page ($0100-$01FF), above the live stack pointer"
+    },
+    {
+      "address": 5110,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$A5"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5111,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$29"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5112,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$0A"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5113,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$AA"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5114,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$BD",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5115,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$A8",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5116,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$4A",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5117,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$85",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5118,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$06"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5119,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$BD"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5120,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$A9"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5121,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$4A"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5122,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$85",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5123,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$07",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5124,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$A0",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5125,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$13",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5126,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$B1"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5127,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$06"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5128,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$99"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5129,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$53"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5130,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$01",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5131,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j2500.norm.bin",
+        "pair-j0.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$88",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5132,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$10",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5133,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$F8",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5134,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$A9"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5135,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$38"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5136,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$A6"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5137,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$29"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5138,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$E0",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5139,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$0A",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5140,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$90",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5141,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$0A",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5142,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$E0"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5143,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$12"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5144,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$F0"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5145,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$04"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5146,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$A9",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5147,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$3A",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5148,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$D0",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5149,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$02",
+        "$FF"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5150,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$A9"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5151,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$3C"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    },
+    {
+      "address": 5152,
+      "pairs": [
+        "pair-j0.norm.bin vs pair-j4000.norm.bin",
+        "pair-j2500.norm.bin vs pair-j4000.norm.bin"
+      ],
+      "values": [
+        "$00",
+        "$85"
+      ],
+      "attribution": "the disk load's current buffer position -- MEASURED in 33-autostart-sequencing.md: the contiguous run MOVES with the anchor hit target ($0880 at hit 75, $095D at 100, $0CFD at 200, $13F6 at 400)"
+    }
+  ]
+}
