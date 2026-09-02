@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 25
+open_count: 27
 waived_count: 14
 fixed_count: 9
-total_count: 48
-last_updated: 2026-09-02T21:30:13.836Z
+total_count: 50
+last_updated: 2026-09-02T22:49:03.247Z
 ---
 
 # Broken Windows Ledger
@@ -63,6 +63,8 @@ last_updated: 2026-09-02T21:30:13.836Z
 | 46 | 33 | deviation | src/mcp/vice/broker-launch.mts |  | The launch profile was not carried forward across crash-respawn or recycle (handleExit -> launchSupervised builds a brand new InstanceRecord). A recycled or crash-respawned {warp:true} instance would have come back UNWARPED with a record that no longer matched what the caller asked for -- reintroducing D-16/T-33-24's undetectable mismatch one respawn later, the same defect class CR-01 already caused once in this function. Fixed inside 33-06 Task 1's commit 11f897d via an optional seventh launchSupervised() parameter, mirroring CR-02's remoteMonitorPort carry-forward at both handleExit call sites. | fixed |  | 2026-09-02T20:35:14.413Z | 2026-09-02T20:35:28.860Z |
 | 47 | 33 | unmet-truth | src/mcp/vice/stop-oracle.ts |  | CAP-03's structural bar is not total: the bidirectional import census and the image-buffer signature census cannot see a caller that reads the capture itself and passes a DERIVED SCALAR (a digest, a differing-address count, an equivalence verdict) into compareStopIdentity() -- no signature check can distinguish that number from a legitimately-read register value. Forbidden in stop-oracle.ts's WHAT NOT TO DO in prose only. Recorded as an ACCEPTED LIMIT in evidence/33-slicer-validation.md and carried from 33-07-PLAN.md's own flagged_assumptions, where the deterministic edge probe classified CAP-03's single edge unclassified. | waived | Knowingly-accepted design limit, not a defect: the two structural assertions are the strongest instruments available for a NEGATIVE STRUCTURAL requirement, and the derived-scalar route is unreachable by any signature or import census by construction. Recorded as an ACCEPTED LIMIT in evidence/33-slicer-validation.md, which 33-12's findings document collects verbatim, so the limit travels with the verdict rather than sitting as an open defect. Falsifiable by exactly one thing: such a call site appearing. | 2026-09-02T21:04:22.740Z | 2026-09-02T21:05:21.142Z |
 | 48 | 33 | deviation | src/mcp/vice/package.json |  | check-npm-packages.mjs is RED from plan 33-06: broker-launch.mts is type-imported by the published vice-broker-client.ts but is not in files[]. No runtime impact (import type is erased) but the packaging gate is red for the rest of the phase. See phase 33 deferred-items.md D1. | open |  | 2026-09-02T21:30:13.836Z |  |
+| 49 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-memspace-refusal.md |  | 33-10: P10's first symptom NOT reproduced on stock 3.9 -- a memspace-less ADVANCE_INSTRUCTIONS still steps the MAIN CPU after one drive checkpoint hit, so MEMSPACE_ASSERTION: refuses rests on the @bank: symptom alone | open |  | 2026-09-02T22:48:55.400Z |  |
+| 50 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-capture-pair.md |  | 33-10: runReproducible() cannot serve an autostarted release (hard RESET inside the procedure; one resume per wait), so the autostart capture route has no published tool surface -- accepted limit, not a defect in this plan | open |  | 2026-09-02T22:49:03.247Z |  |
 
 ````json
 [
@@ -640,6 +642,30 @@ last_updated: 2026-09-02T21:30:13.836Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-02T21:30:13.836Z",
+    "resolved_at": null
+  },
+  {
+    "id": 49,
+    "kind": "deviation",
+    "phase": "33",
+    "file": ".planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-memspace-refusal.md",
+    "line": null,
+    "description": "33-10: P10's first symptom NOT reproduced on stock 3.9 -- a memspace-less ADVANCE_INSTRUCTIONS still steps the MAIN CPU after one drive checkpoint hit, so MEMSPACE_ASSERTION: refuses rests on the @bank: symptom alone",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T22:48:55.400Z",
+    "resolved_at": null
+  },
+  {
+    "id": 50,
+    "kind": "deviation",
+    "phase": "33",
+    "file": ".planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-capture-pair.md",
+    "line": null,
+    "description": "33-10: runReproducible() cannot serve an autostarted release (hard RESET inside the procedure; one resume per wait), so the autostart capture route has no published tool surface -- accepted limit, not a defect in this plan",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-02T22:49:03.247Z",
     "resolved_at": null
   }
 ]

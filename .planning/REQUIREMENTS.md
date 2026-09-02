@@ -88,7 +88,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       8 KB chunks byte-identical, one differing only at `$0000`/`$0001`, the fourth localising ten
       dropped characters to `$7871`. Closes
       `todos/pending/2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md`
-- [ ] **CAP-02**: Run equivalence is decided by a committed predicate with an **enumerated**
+- [x] **CAP-02**: Run equivalence is decided by a committed predicate with an **enumerated**
       transient allow-list under a committed **size cap**, never a range, and with the
       `$0000`/`$0001` 6510-port overlay normalised **in code** rather than in a reader's head. The
       allow-list is **re-derived per release** and the method is what carries forward, not any
@@ -100,7 +100,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 - [x] **CAP-03**: The captured 64K is **never a conjunct of the stop-identity oracle**. It is the
       dependent variable the oracle certifies, and a predicate that used it to certify its own stop
       would be circular. Asserted structurally, so the next edit cannot reintroduce it
-- [ ] **CAP-04**: A real cracked release is captured twice and the two captures satisfy `CAP-02` —
+- [x] **CAP-04**: A real cracked release is captured twice and the two captures satisfy `CAP-02` —
       the measurement Phase 23 recorded `could-not-run`, on an **autostarted** release with true
       drive emulation in the loop. This is the first thing in the milestone that is genuinely
       unverified: every probe behind `REPRO-*` ran at the `READY` prompt over the excluded text
@@ -400,9 +400,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REPRO-04 | Phase 33 | Complete |
 | REPRO-05 | Phase 33 | Pending |
 | CAP-01 | Phase 33 | Complete |
-| CAP-02 | Phase 33 | Pending |
+| CAP-02 | Phase 33 | Complete |
 | CAP-03 | Phase 33 | Complete |
-| CAP-04 | Phase 33 | Pending |
+| CAP-04 | Phase 33 | Complete |
 | GATE-01 | Phase 33 | Pending |
 | SEAM-01 | Phase 34 | Pending |
 | SEAM-02 | Phase 34 | Pending |

@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-09-PLAN.md
-last_updated: "2026-09-02T22:02:03.599Z"
+stopped_at: Completed 33-10-PLAN.md
+last_updated: "2026-09-02T22:48:05.215Z"
 last_activity: 2026-09-02
 last_activity_desc: "33-07 executed: the enumerated equivalence predicate (cap of 64 checked first and throwing with no artifact, range-shaped notation refused by name, no bit-count tolerance at any address, $0000/$0001 normalised in code on a copy from the suffix fields) and the four-scalar stop-identity oracle that takes no image buffer; D-25 proven with a ONE-BIT plant red beside its clean control; CAP-03 barred by shape in both directions and on both import routes with four planted controls; SLICER: validated emitted at column 0 in evidence/33-slicer-validation.md, closing 33-04's ACCEPTED LIMIT. Wave 3 complete; gate at 2 failures in anno-register.test.ts alone"
-state_head: 55af2a022b2b55744bd1eab5ab49051c461efb9e
+state_head: 1a42da2ffb396284470da463c6c40feaa8c73286
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -178,8 +178,44 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 9 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07, 33-08, 33-09); next pointer at plan 10 of 12
-Status: **Wave 4 complete** — `33-08` and `33-09` have both landed and the wave gate was
+Plan: 10 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07, 33-08, 33-09, 33-10); next pointer at plan 11 of 12
+Status: **Wave 5 complete** — `33-10` ran alone in its wave (stock's binary monitor serves
+exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
+`C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
+`CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
+311, `cycle` 11 against 9) named. `danish.d64` was captured **three** times through the
+shipped route — `acquireOverControlPlane` with `profile: { headless: true }`, `33-03`'s
+settled `S3` anchor-counted stop at `$EA31` hit 400 with no `RESET` anywhere, the snapshot,
+then the shipped `vsf-slice` CLI — at pre-protocol jitter 0 / 2500 / 4000, with
+`Drive8TrueEmulation=1` and `Drive8Type=1541` read back inside every run. The reported pair
+is runs 1 and 2, the first two usable runs in the order taken, fixed before run 3 existed.
+**`D-22`'s cap of 64 met a real frame-anchored stop for the first time and decided WRITE:**
+`TRANSIENT_COUNT: 49` (pairwise 28 / 48 / 26), so `DERIVATION: void` is absent and
+`src/skills/c64-ram-capture/transients/danish.json` is the phase's first committed
+per-release allow-list — 49 ascending entries, 48 attributions filled from a published
+memory-map fact or a measurement, `$00A4` deliberately blank. **Read the `pass` as the
+evidence file's own accepted limit reads it:** the allow-list was derived from three runs two
+of which ARE the pair, so equivalence follows from the union fitting under the cap and ALL
+discriminating power sits in the cap; a planted one-bit flip at `$C000` still fails, so the
+list is not vacuous. `MEMSPACE_ASSERTION: refuses` — the assertion passed clean and refused
+after exactly one drive-memspace checkpoint hit (wire byte `0x01`, 1541 DOS ROM range,
+`hit_count=1`, frame recorded verbatim) — but only the `@bank:`-condition sub-check
+discriminated (`err=0x00` → `0x8f`); a memspace-less `ADVANCE_INSTRUCTIONS` **still stepped
+the main CPU** after contamination, contradicting `P10`'s first symptom, and the file states
+that a stepping-only definition would have read `did-not-refuse`. Two plan instructions were
+declined with recorded reasons: `runReproducible()` cannot serve an autostarted release (its
+hard `RESET` undoes `AUTOSTART`; its one-resume wait cannot count 400 hits — `33-09`'s own
+header names the counting loop as an evidence script's job), and `snapshotPathFor()` targets
+a path inside the checkout. Three of this plan's own bugs were auto-fixed, two of them caught
+by machinery this phase built for the purpose — the stop oracle refusing a partial record by
+name, and the clean control catching an assertion that could never pass. The wave gate was
+taken with every broker and `x64sc` stopped: `test:automated` reports 3113 tests / 3105 pass
+/ **2 fail**, both in `anno-register.test.ts`, the unchanged 2-in-1 baseline; `typecheck` is
+clean and `check-npm-packages` exits 0. No `.d64`, `.vsf` or `.bin` byte entered the
+checkout. **Wave 6 (`33-11`) is next**, and it is unblocked — its three inputs are
+corpus-free.
+
+Earlier waves, retained. **Wave 4 complete** — `33-08` and `33-09` have both landed and the wave gate was
 taken: `test:automated` reports 3113 tests / 3105 pass / **2 fail**, both in
 `anno-register.test.ts` (`:389`, `:481`), which is the pre-existing 2-in-1 threshold with
 no second file (the count moved 3088 → 3113 purely from `33-09`'s new 25-test file).
@@ -491,6 +527,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 33 P07 | 22 min | 3 tasks | 6 files |
 | Phase 33 P08 | 38 min | 2 tasks | 6 files |
 | Phase 33 P09 | 42 min | 2 tasks | 6 files |
+| Phase 33 P10 | 33 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -916,6 +953,10 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-09: the reproducible-run protocol implements the READY-prompt sequence with the hard RESET inside runReproducible(), NOT 33-03's autostart S3 — 33-03 recorded both AUTOSTART_SEQUENCE: S3 and AUTOSTART_FRAME_EXACT: not-achieved. The plan objective's explicit conditional routes not-achieved to the READY-prompt sequence measured green (one identical 64K sha256 and one identical (PC=$ea31, hit_count=1, LIN=257, CYC=57) at jitter 0/1500/4000), which is also what Task 1's acceptance criteria and both verify blocks pin. The module header records S3 as the settled autostarted ordering AND records that it is unresolved for a post-load stop, because frame-exactness holds through anchor hit 50 and is lost from hit 75 (a power cycle resets the CPU/VIC-II/CIAs but not the absolute emulated clock, and the 1541's rotational phase is a function of that clock), with a pointer to evidence/33-autostart-sequencing.md. No autostart path was written and -initbreak reset was not reached for. The procedure therefore REPORTS the stop identity it achieved rather than asserting frame-exactness.
 - [Phase 33]: 33-09: the red check-npm-packages.mjs gate was closed by teaching the closure walk that a statement-level `import type` is not a runtime edge, NOT by adding broker-launch.mts to files[] — Phase 3's Rule 2 precedent (6801cf5, 897faf6) is add-the-module-to-files[]. It was tried FIRST and fails on measurement: broker-launch.mts imports its siblings by their COMPILED .mjs specifiers (./broker-state.mjs, ./broker-epoch.mjs, ./backend-detect.mjs), and those paths exist only under resources/, never at the package root, so listing it cascades into three entries no existing file can satisfy. container-guard.mts is listable only because it has no local imports at all. The erased-import distinction is the tree's own documented doctrine, not a new rule: stock-handler.ts's header already permits a type-only import of stock-dispatch.ts because it creates no runtime cycle. Inline `import { type Foo, Bar }` still emits an import under verbatimModuleSyntax and is still walked. Negative control run: removing stock-reproducible-run.ts from files[] still reds with the identical Rule 2 message.
 - [Phase 33]: 33-09: hit_count's body offset 13 is carried by one named exported constant plus an end-to-end raw-bytes proof, and is deliberately NOT re-read inside stock-reproducible-run.ts — T-33-32 requires the value be read through stock-protocol.ts's existing parse branch rather than a local offset, and parseResponse() already owns that read at stock-protocol.ts:1370. Duplicating readUInt32LE(13) in the new module to satisfy a plan verify grep would be a second parse of the same field, which is the drift the single-seam rule exists to prevent; satisfying the grep from a comment would manufacture a fake pass. Instead CHECKPOINT_INFO_HIT_COUNT_BODY_OFFSET = 13 is the one named definition, and the test builds a RAW 22-byte body whose u32LE at offset 13 is 1 and at offset 12 is 256, pushes it through the real parseResponse(), and asserts the procedure's reported frame term is 1 with an explicit notEqual 256. The 1-vs-256 discrimination is not contrived: offset 12 is the temporary flag, so a non-temporary checkpoint on its first hit gives 00 01 00 00 00. Recorded as a deviation with the substituted check named.
+- [Phase 33]: 33-10: C0_CAPTURE_PAIR: pass, and TRANSIENT_COUNT: 49 against D-22's cap of 64 -- the cap's first meeting with a real frame-anchored stop on a real cracked release decided WRITE, so DERIVATION: void is absent and transients/danish.json is committed with 49 ascending entries
+- [Phase 33]: 33-10: the pass is recorded with an accepted limit -- the allow-list was derived from three runs two of which ARE the reported pair, so equivalence follows from the union fitting under the cap and ALL discriminating power sits in the cap; CAPTURE_FRAME_EXACT: no is recorded beside it and a planted one-bit flip at $C000 proves the list is not vacuous
+- [Phase 33]: 33-10: runReproducible() is NOT usable for an autostarted release -- its hard RESET undoes AUTOSTART and its one-resume wait cannot count 400 anchor hits, so the capture route drives the module's pieces from an evidence script exactly as 33-09's own header prescribes; snapshotPathFor() was likewise declined because it targets a path inside the checkout
+- [Phase 33]: 33-10: MEMSPACE_ASSERTION: refuses rests on the @bank:-condition symptom alone -- MEASURED on stock 3.9, a memspace-less ADVANCE_INSTRUCTIONS still steps the MAIN CPU after one drive checkpoint hit, contradicting P10's first symptom; a stepping-only definition would have read did-not-refuse
 
 ### Pending Todos
 
@@ -1708,8 +1749,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T22:02:03.262Z
-Stopped at: Completed 33-09-PLAN.md
+Last session: 2026-09-02T22:47:11.059Z
+Stopped at: Completed 33-10-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
