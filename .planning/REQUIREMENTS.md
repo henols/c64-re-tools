@@ -394,12 +394,54 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (unmapped — roadmap not yet created) | — | — |
+| REPRO-01 | Phase 33 | Pending |
+| REPRO-02 | Phase 33 | Pending |
+| REPRO-03 | Phase 33 | Pending |
+| REPRO-04 | Phase 33 | Pending |
+| REPRO-05 | Phase 33 | Pending |
+| CAP-01 | Phase 33 | Pending |
+| CAP-02 | Phase 33 | Pending |
+| CAP-03 | Phase 33 | Pending |
+| CAP-04 | Phase 33 | Pending |
+| GATE-01 | Phase 33 | Pending |
+| SEAM-01 | Phase 34 | Pending |
+| SEAM-02 | Phase 34 | Pending |
+| SEAM-03 | Phase 34 | Pending |
+| SEAM-04 | Phase 34 | Pending |
+| SEAM-05 | Phase 34 | Pending |
+| SEAM-06 | Phase 34 | Pending |
+| SEAM-07 | Phase 34 | Pending |
+| DXA-01 | Phase 35 | Pending |
+| DXA-02 | Phase 35 | Pending |
+| DXA-03 | Phase 35 | Pending |
+| DXA-04 | Phase 35 | Pending |
+| GHID-01 | Phase 36 | Pending |
+| GHID-02 | Phase 36 | Pending |
+| GHID-03 | Phase 36 | Pending |
+| GHID-04 | Phase 36 | Pending |
+| GHID-05 | Phase 36 | Pending |
+| OPC-01 | Phase 36 | Pending |
+| OPC-02 | Phase 36 | Pending |
+| OPC-03 | Phase 36 | Pending |
+| OPC-04 | Phase 36 | Pending |
+| IMP-01 | Phase 37 | Pending |
+| IMP-02 | Phase 37 | Pending |
+| AUTO-01 | Phase 37 | Pending |
+| AUTO-02 | Phase 37 | Pending |
+| AUTO-03 | Phase 37 | Pending |
+| AUTO-04 | Phase 37 | Pending |
+| AUTO-05 | Phase 37 | Pending |
+| AUTO-06 | Phase 37 | Pending |
+| AUTO-07 | Phase 37 | Pending |
+| AUTO-08 | Phase 37 | Pending |
+| PROOF-01 | Phase 38 | Pending |
+| PROOF-02 | Phase 38 | Pending |
+| PROOF-03 | Phase 38 | Pending |
 
 **Coverage:**
 - v0.8.0 requirements: 43 total
-- Mapped to phases: 0
-- Unmapped: 43 ⚠️
+- Mapped to phases: 43
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-09-02*
