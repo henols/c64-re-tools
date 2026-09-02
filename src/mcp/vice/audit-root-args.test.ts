@@ -73,12 +73,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseRootArg } from "../../../scripts/lib/audit-root.mjs";
+import { parseRootArg, resolveContainedRoot } from "../../../scripts/lib/audit-root.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <root>/src/mcp/vice
 const ROOT = resolve(HERE, "..", "..", ".."); // <root>
@@ -359,6 +359,71 @@ test("parseRootArg: a token declared in BOTH lists is a CALLER error, not a reje
 // PROCESS -- the real writing script, spawned. These are the phase-32
 // verifier's own reproduced commands, inverted into acceptance criteria.
 // ===========================================================================
+
+// --- WR-04: containment is decided AFTER symlinks ------------------------
+
+test("resolveContainedRoot: a symlink inside the repository pointing OUTSIDE it is REFUSED", (t) => {
+  // WR-04 (phase 32 review, fixed 2026-09-02). This seam was deliberately
+  // lexical, with a real reason recorded at its own `WHAT NOT TO DO`: a bare
+  // `realpathSync` throws on a not-yet-created directory and several callers
+  // legitimately pass one. The consequence, MEASURED rather than argued: a
+  // symlink sitting inside the repository and pointing out of it was accepted
+  // as "contained", so `--root` could send a gate's reads AND writes outside
+  // the repository while the containment check reported success.
+  //
+  // The fix resolves symlinks for the longest EXISTING prefix only, so the
+  // not-yet-created case below still passes. Both halves are asserted here,
+  // because a fix that closed the symlink hole by breaking the synthetic-root
+  // case would be a regression dressed as a repair.
+  //
+  // Everything is created under `.audit-root-synth-*`, which `.gitignore`
+  // already covers, so a crashed run cannot dirty the working tree.
+  const holder = join(ROOT, ".audit-root-synth-wr04");
+  const outside = mkdtempSync(join(tmpdir(), "audit-root-wr04-"));
+  rmSync(holder, { recursive: true, force: true });
+  mkdirSync(holder, { recursive: true });
+  t.after(() => {
+    rmSync(holder, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  const escape = join(holder, "escape");
+  symlinkSync(outside, escape, "dir");
+
+  // Non-vacuity: the symlink must really point out of the repository, or the
+  // refusal below would prove nothing.
+  assert.notEqual(outside.startsWith(ROOT + "/"), true, "the temp target must be outside the repository");
+
+  assert.throws(
+    () => resolveContainedRoot(escape, { repoRoot: ROOT }),
+    /OUTSIDE the repository root/,
+    "a symlink pointing out of the repository must be refused -- containment is about where the path " +
+      "LEADS, not how it is spelled",
+  );
+
+  // The constraint the lexical design existed to protect: a directory that does
+  // not exist yet is still accepted, because only the existing prefix is resolved.
+  assert.equal(
+    resolveContainedRoot(join(holder, "not", "created", "yet"), { repoRoot: ROOT }),
+    join(holder, "not", "created", "yet"),
+    "a not-yet-created descendant must still be accepted, and returned LEXICALLY unchanged",
+  );
+
+  // And an ordinary real descendant is unaffected.
+  assert.equal(
+    resolveContainedRoot(join(ROOT, "src", "skills"), { repoRoot: ROOT }),
+    join(ROOT, "src", "skills"),
+    "an ordinary descendant must be accepted and returned lexically unchanged",
+  );
+
+  // The sibling-prefix case the seam's own note calls out, re-asserted here so
+  // the symlink work cannot have loosened it.
+  assert.throws(
+    () => resolveContainedRoot(`${ROOT}-evil`, { repoRoot: ROOT }),
+    /OUTSIDE the repository root/,
+    "a sibling whose name merely shares the root's prefix must still be refused",
+  );
+});
 
 test("the equals form refuses and leaves the REAL table byte-identical", () => {
   const before = tableBytes();

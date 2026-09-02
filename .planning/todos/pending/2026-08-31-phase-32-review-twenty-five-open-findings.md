@@ -178,22 +178,31 @@ editing the review, for the same anti-laundering reason this file already gives.
 | IN-05 | `audit-mutation-harness.mjs:235-248` — no `unhandledRejection` |
 | WR-15 | the `.gitignore:53` citation of `audit-mutation-harness.mjs:654`; that comment was rewritten by `260901-qzp` and no longer cites a line at all |
 
-### Closed by the phase-32 gap rounds, measured 2026-09-02 (4)
+### Closed by the phase-32 gap rounds, measured 2026-09-02 (3)
 
 | Finding | Evidence |
 |---|---|
 | CR-01 | Six scripts now import the shared strict `parseRootArg` from `scripts/lib/audit-root.mjs`; the only remaining local `parseArgs` is in the unrelated `scripts/version.mjs`. The equals form is now **refused**, not discarded — `audit-root-args.test.ts` asserts it "refuses and leaves the REAL table byte-identical". |
-| IN-01 | `allowExtra` now has a production caller: `scripts/audit-gate.mjs`. |
 | IN-06 | Follows CR-01 — the parser was extracted, not fixed six times. |
 | IN-07 | Follows CR-01 — the refusal preamble now lives in the shared seam. |
 
-### Still live — target survives and the defect stands (4)
+### Still live — target survives and the defect stands (5)
+
+> **CORRECTION, same day.** `IN-01` was first recorded in this section as *closed*, on the
+> strength of a `grep -c allowExtra` that returned a hit in `scripts/audit-gate.mjs`. Reading
+> the hit rather than counting it shows the line is a **comment** — `audit-gate.mjs:84`
+> explains why that script does *not* open an `allowExtra` wide enough for a temp directory.
+> Re-measured by separating code lines from comment lines: the only non-comment mentions of
+> `allowExtra` anywhere are its own parameter declaration and default
+> (`audit-root.mjs:69`, `:85`) and its type declaration (`audit-root.d.mts:8`). **It still has
+> no production caller.** A count is not a reading, and this file is the wrong place to be
+> sloppy about the difference.
 
 | Finding | Why it survives |
 |---|---|
 | **CR-03** | `CAPABILITY_REGISTRY`, `CURATED_ANNO_TOOLS`, `VERB_OPTIONS`, `DENY_LIST` are still static `import`s from `../src/mcp/vice/*.ts` in the surviving skill gates, so a synthetic `--root` still compares a synthetic corpus against the real registry. Unchanged by the deletions. A design question, not a patch. |
-| **WR-04** | `resolveContainedRoot()` is still lexical. `realpathSync` appears in `audit-root.mjs` **only in a comment explaining why it is deliberately absent** (`:31-34`), so the containment claim is still false under a symlink. |
 | **WR-09** | `docs-linerefs.test.ts` still carries the unreachable `isFunctionStart` arm (4 occurrences). |
+| **IN-01** | `allowExtra` has no production caller. Every non-comment mention is its own declaration, default or type. Unchanged by the deletions — and note it now interacts with **WR-04**: the one documented justification for the parameter is "a caller that must also accept a directory outside the repository", and no caller has ever needed it. |
 | **WR-13** | `audit-root.mjs`'s single-seam claim. Partly overtaken: the harness that was one of the unmigrated consumers is gone, so this needs re-measuring against the surviving six rather than re-asserting. |
 
 ### Needs an operator decision, not a fix (1)
@@ -205,5 +214,69 @@ editing the review, for the same anti-laundering reason this file already gives.
   because six scripts use it while the instrument that justified building it is gone. Left
   open by operator decision (2026-09-01) and still open.
 
-**Net: of 25, 17 are moot, 4 are closed, 3 are live (CR-03, WR-04, WR-09) plus WR-13 to
-re-measure and WR-11 awaiting a decision.**
+**Net: of 25, 17 are moot, 3 are closed (CR-01, IN-06, IN-07), 4 are live (CR-03, WR-04,
+WR-09, IN-01) plus WR-13 to re-measure and WR-11 awaiting a decision.**
+
+### WR-09 — FIXED, 2026-09-02, and the finding's premise was wrong
+
+The finding said the `isFunctionStart` arm in `docs-linerefs.test.ts` was "permanently
+unreachable". Measured: **two of the four live citations resolve through it and only through
+it** — `vice-proxy.ts:2985` (`async function forwardToVice`) and `:1505` (`async function
+gatherWedgeEvidence`) are declaration lines, not call lines, and CLAUDE.md's Architecture
+bullet cites them as exactly that. Deleting the arm would have reddened the guard on a
+correct tree.
+
+The finding's second half was right, though: the arm accepted **any** line matching
+`function <name>`, and `vice-proxy.ts` carries **71** top-level declarations of which only
+**4** contain a `rewriteArguments()` call. So the arm is TIGHTENED rather than removed — a
+cited declaration now resolves only if the function it declares actually contains such a
+call. Drift-accepting surface goes from 71 lines to 4, and both real citations still pass.
+
+One predicate, `citationResolves()`, drives the real scan and the plants. A new
+planted-violation test derives its target from the file rather than hard-coding a line, and
+asserts non-vacuity in both directions plus that the narrowing rejects more declarations
+than it accepts. `docs-linerefs.test.ts`: 13 pass / 0 fail.
+
+
+---
+
+## WR-04 — FIXED, 2026-09-02, and it was demonstrable rather than theoretical
+
+The review filed this as "Still stands (latent)". It is not latent. Measured directly against
+the pre-fix seam: a symlink created inside the repository and pointing at a `/tmp` directory
+was **ACCEPTED** as contained, and its realpath was outside the repository. `--root` decides
+which tree a gate reads *and writes*, so containment had to mean "inside after symlinks", not
+"inside by spelling".
+
+The finding's named victim — the mutation harness's `plant()` — is deleted, but the mechanism
+and its surviving consumers are not: six scripts resolve `--root` through this seam and
+`generate-tool-support-table.mjs` writes through it.
+
+**The documented tradeoff was kept, not traded away.** The seam was lexical for a real reason
+recorded at its own `WHAT NOT TO DO`: a bare `realpathSync` throws `ENOENT` on a
+not-yet-created directory and several callers legitimately pass one. So the fix resolves
+symlinks for the longest **EXISTING** prefix only and re-appends the missing tail lexically,
+and it still **returns** the lexical path, because callers join onto what they get back.
+
+### Evidence
+
+| Case | Result |
+|---|---|
+| Symlink inside the repo → outside | **REFUSED** (was ACCEPTED) |
+| Not-yet-created descendant | accepted, returned lexically unchanged |
+| Ordinary descendant, repo root itself, unflagged | accepted |
+| Sibling sharing the root's name prefix | refused |
+| Absolute path outside, parent traversal | refused |
+| The new regression test vs. the PRE-FIX seam | **RED** — "Missing expected exception" |
+| The same test vs. the fix | green |
+
+The regression test lives in `audit-root-args.test.ts`, imports `resolveContainedRoot`
+directly (nothing did before — the seam was only ever exercised through spawned scripts), and
+builds everything under `.audit-root-synth-*`, which `.gitignore` already covers, so a crashed
+run cannot dirty the tree.
+
+`tsc` clean; `test:automated` 2962 pass / 0 fail; all five CI gates, `audit-gate`,
+`generate-tool-support-table` (table byte-unchanged) and `package.sh` exit 0.
+
+**Net for this file now: 17 moot, 3 closed by the gap rounds, 2 fixed today (WR-09, WR-04),
+2 live (CR-03, IN-01), plus WR-13 to re-measure and WR-11 awaiting a decision.**

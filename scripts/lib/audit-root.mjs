@@ -28,10 +28,15 @@
 //    a caller that must also accept a directory outside the repository, e.g.
 //    a system temp dir it created itself -- and every entry is supplied by the
 //    CALLER in code, never by CLI argv, stdin or a file.
-//  - Do not resolve symlinks here. This returns a lexically-resolved absolute
-//    path, and callers use it as the base for their own joins; adding
-//    `realpathSync` would make the function throw on a not-yet-created
-//    directory, which several callers legitimately pass.
+//  - Do not make the RETURNED value a realpath. This still returns a
+//    lexically-resolved absolute path, because callers use it as the base for
+//    their own joins and a realpath would silently relocate those joins.
+//    Symlinks are resolved for the CONTAINMENT DECISION only -- see
+//    `realpathOfExistingPrefix` below (WR-04).
+//  - Do not reach for a bare `realpathSync` on the whole candidate. It throws
+//    on a not-yet-created directory, which several callers legitimately pass.
+//    That constraint is why the decision resolves only the longest EXISTING
+//    prefix and re-appends the missing tail lexically.
 
 // PARSING VERSUS RESOLUTION, and why both live here:
 // `resolveContainedRoot()` answers "is this value allowed to be the root?".
@@ -42,7 +47,8 @@
 // motivated `parseRootArg()` was six consumers each answering the second
 // question for themselves (IN-06).
 
-import { isAbsolute, resolve, sep } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 /**
  * True when `candidate` is `base` itself or a descendant of it, compared at a
@@ -50,6 +56,39 @@ import { isAbsolute, resolve, sep } from "node:path";
  */
 function isContainedBy(candidate, base) {
   return candidate === base || candidate.startsWith(base + sep);
+}
+
+/**
+ * WR-04 (phase 32 review, fixed 2026-09-02). Resolves symlinks for the longest
+ * EXISTING prefix of `p` and re-appends whatever tail does not exist yet,
+ * lexically.
+ *
+ * WHY NOT A PLAIN `realpathSync(p)`: it throws `ENOENT` on a path whose leaf
+ * has not been created, and several callers legitimately pass exactly that (a
+ * synthetic root they are about to build). That is the documented reason this
+ * seam was lexical in the first place, so the fix has to keep it true rather
+ * than trade it away.
+ *
+ * WHY IT IS NEEDED AT ALL -- measured, not assumed. With a purely lexical
+ * comparison, a symlink sitting INSIDE the repository and pointing outside it
+ * is accepted as contained: `resolveContainedRoot("escape-hatch", …)` returned
+ * `<repo>/escape-hatch` while its realpath was a directory in `/tmp`. The
+ * flag decides which tree an audit reads AND writes, so "inside the
+ * repository" has to mean inside it after symlinks, not inside its spelling.
+ */
+function realpathOfExistingPrefix(p) {
+  const missing = [];
+  let current = p;
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    // Reached the filesystem root without finding anything that exists: there
+    // is nothing to resolve, so the lexical form is already the answer.
+    if (parent === current) return p;
+    missing.unshift(basename(current));
+    current = parent;
+  }
+  const real = realpathSync(current);
+  return missing.length === 0 ? real : join(real, ...missing);
 }
 
 /**
@@ -85,8 +124,18 @@ export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}
   const extras = allowExtra.map((p) => resolve(p));
   const resolved = resolve(base, rootArg == null || rootArg === "" ? "." : String(rootArg));
 
-  if (isContainedBy(resolved, base)) return resolved;
-  for (const extra of extras) if (isContainedBy(resolved, extra)) return resolved;
+  // Decide on the symlink-resolved forms; RETURN the lexical one (see the
+  // "what not to do" note above -- callers join onto what they get back).
+  // Both sides are resolved, because the repository itself can legitimately
+  // sit under a symlinked parent and a one-sided resolution would then refuse
+  // every argument.
+  const realResolved = realpathOfExistingPrefix(resolved);
+  const realBase = realpathOfExistingPrefix(base);
+
+  if (isContainedBy(realResolved, realBase)) return resolved;
+  for (const extra of extras) {
+    if (isContainedBy(realResolved, realpathOfExistingPrefix(extra))) return resolved;
+  }
 
   const extraNote =
     extras.length > 0

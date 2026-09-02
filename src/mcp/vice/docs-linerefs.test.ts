@@ -241,6 +241,55 @@ test("every scanned document's rewriteArguments() bullet cites at least two vice
   }
 });
 
+/** WR-09 (phase 32 review, re-measured and RE-SCOPED 2026-09-02).
+ *
+ * WHAT THE FINDING GOT WRONG, recorded because the correction is the point:
+ * it called the `isFunctionStart` arm "permanently unreachable". Measured
+ * against this tree, it is neither unreachable nor optional -- TWO of the four
+ * live citations resolve through it and ONLY through it, because they name the
+ * ENCLOSING FUNCTION rather than the call line (`vice-proxy.ts:2985`
+ * `async function forwardToVice`, and `:1505` `async function
+ * gatherWedgeEvidence`). Deleting the arm would have reddened the guard on a
+ * correct tree. CLAUDE.md's own constraint text cites exactly those two
+ * function-start lines, so the arm is load-bearing by design, not by accident.
+ *
+ * WHAT THE FINDING GOT RIGHT: the arm was far too permissive. It accepted ANY
+ * line matching `function <name>`, and `vice-proxy.ts` has 71 top-level
+ * function declarations of which only 4 contain a `rewriteArguments()` call.
+ * A citation that drifted from `:2985` onto any of the other 67 passed
+ * silently -- the exact "weakens the assertion" half of the finding.
+ *
+ * So the arm is TIGHTENED rather than removed: a cited function-start line
+ * resolves only if the function it declares actually contains a
+ * `rewriteArguments()` call. That keeps both real citations passing and cuts
+ * the drift-accepting surface from 71 lines to 4.
+ *
+ * ONE PREDICATE, driven by the real scan AND by the planted violations below,
+ * per this file's own convention -- a plant proved against a re-implementation
+ * of the rule proves nothing about the rule the scan applies. */
+function citationResolves(lineNumber: number, lines: readonly string[]): { ok: boolean; why: string } {
+  const lineText = lines[lineNumber - 1];
+  if (lineText === undefined) return { ok: false, why: "no such line" };
+  if (lineText.includes("rewriteArguments(")) return { ok: true, why: "call site" };
+  if (!/^(async\s+)?function\s+\w+/.test(lineText)) {
+    return { ok: false, why: "neither a rewriteArguments() call nor a top-level function declaration" };
+  }
+  // Extent of a TOP-LEVEL declaration: from its own line to the next line that
+  // is exactly a closing brace at column 0. Brace matching is unnecessary
+  // here and would be less robust against strings and comments.
+  let end = lines.length;
+  for (let i = lineNumber; i < lines.length; i++) {
+    if (lines[i] === "}") {
+      end = i + 1;
+      break;
+    }
+  }
+  const body = lines.slice(lineNumber - 1, end).join("\n");
+  return body.includes("rewriteArguments(")
+    ? { ok: true, why: "enclosing function containing a rewriteArguments() call" }
+    : { ok: false, why: "a function declaration whose body contains no rewriteArguments() call" };
+}
+
 test("every vice-proxy.ts:<N> citation in a scanned document's rewriteArguments() bullet points at a real rewriteArguments() call or its enclosing function", async (t) => {
   const viceProxySrc = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
   const viceProxyLines = viceProxySrc.split("\n");
@@ -255,14 +304,12 @@ test("every vice-proxy.ts:<N> citation in a scanned document's rewriteArguments(
       assert.ok(citations.length >= 2, `${doc}: no citations extracted -- see the non-vacuity test above`);
 
       for (const lineNumber of citations) {
-        // Citations are 1-indexed in prose; array is 0-indexed.
-        const lineText = viceProxyLines[lineNumber - 1];
-        assert.ok(lineText !== undefined, `${doc} cites vice-proxy.ts:${lineNumber}, but the file has no such line`);
-        const isCallSite = lineText.includes("rewriteArguments(");
-        const isFunctionStart = /^\s*(async\s+)?function\s+\w+/.test(lineText);
+        // Citations are 1-indexed in prose; the predicate handles the offset.
+        const verdict = citationResolves(lineNumber, viceProxyLines);
         assert.ok(
-          isCallSite || isFunctionStart,
-          `vice-proxy.ts:${lineNumber} (cited in ${doc}) contains neither a rewriteArguments() call nor a function declaration -- drift. Line reads: ${JSON.stringify(lineText)}`,
+          verdict.ok,
+          `vice-proxy.ts:${lineNumber} (cited in ${doc}) does not resolve -- ${verdict.why} -- drift. ` +
+            `Line reads: ${JSON.stringify(viceProxyLines[lineNumber - 1])}`,
         );
       }
     });
@@ -277,10 +324,51 @@ test("planted-violation: a citation pointing at an unrelated line fails this tes
   // function declaration -- it is the shebang/header. A citation planted
   // there must be rejected by the same check the real test above uses.
   const plantedLineNumber = 1;
-  const lineText = viceProxyLines[plantedLineNumber - 1];
-  const isCallSite = lineText.includes("rewriteArguments(");
-  const isFunctionStart = /^\s*(async\s+)?function\s+\w+/.test(lineText);
-  assert.equal(isCallSite || isFunctionStart, false, "line 1 of vice-proxy.ts must not look like a rewriteArguments() call site or function start -- if it does, this planted-violation check itself is broken");
+  assert.equal(
+    citationResolves(plantedLineNumber, viceProxyLines).ok,
+    false,
+    "line 1 of vice-proxy.ts must not resolve as a rewriteArguments() call site or enclosing function -- if it does, this planted-violation check itself is broken",
+  );
+});
+
+test("planted-violation (WR-09): a citation pointing at an unrelated top-level function is REJECTED, and the two real function-start citations are ACCEPTED", () => {
+  const viceProxyLines = readFileSync(join(HERE, "vice-proxy.ts"), "utf8").split("\n");
+
+  // The whole point of tightening the function-start arm. Derived from the
+  // file rather than hard-coded, so this plant cannot drift onto a line that
+  // stopped being what it was: take the FIRST top-level function whose body
+  // carries no rewriteArguments() call.
+  const declarations: number[] = [];
+  viceProxyLines.forEach((text, i) => {
+    if (/^(async\s+)?function\s+\w+/.test(text)) declarations.push(i + 1);
+  });
+  assert.ok(declarations.length >= 10, `expected many top-level declarations, found ${declarations.length}`);
+
+  const unrelated = declarations.filter((n) => !citationResolves(n, viceProxyLines).ok);
+  const accepted = declarations.filter((n) => citationResolves(n, viceProxyLines).ok);
+
+  // Non-vacuity in BOTH directions: the plant needs a real rejected line to
+  // exist, and the arm must still accept the declarations it exists for.
+  assert.ok(unrelated.length > 0, "no top-level function lacks a rewriteArguments() call -- this plant would be vacuous");
+  assert.ok(accepted.length > 0, "no top-level function contains a rewriteArguments() call -- the arm would be dead");
+  assert.ok(
+    unrelated.length > accepted.length,
+    `the tightened arm must reject more declarations than it accepts, or it is not a narrowing: ` +
+      `${unrelated.length} rejected vs ${accepted.length} accepted`,
+  );
+
+  // And the two citations CLAUDE.md names as function starts must be among the
+  // accepted set -- the arm is not allowed to narrow onto nothing.
+  for (const lineNumber of [1505, 2985]) {
+    const verdict = citationResolves(lineNumber, viceProxyLines);
+    assert.ok(
+      verdict.ok && verdict.why.startsWith("enclosing function"),
+      `vice-proxy.ts:${lineNumber} must resolve VIA THE FUNCTION-START ARM -- it is a declaration line, not a ` +
+        `call line. CLAUDE.md's Architecture bullet cites both of these as function starts and instructs `+
+        `the reader to treat a mismatch as drift to re-verify, so an arm that stopped accepting them `+
+        `would make that instruction uncheckable. Got: ${verdict.why}`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
