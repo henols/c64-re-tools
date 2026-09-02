@@ -2,17 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
+current_phase: 33
+current_phase_name: The Reproducible-Run Protocol and the Capture Substrate
 status: planning
-last_updated: "2026-09-02T10:07:17.171Z"
+stopped_at: Phase 33 context gathered
+last_updated: "2026-09-02T13:44:46.928Z"
 last_activity: 2026-09-02
+last_activity_desc: "Phase 33 context captured: 29 decisions across gate rules, red controls, run-protocol surface and capture substrate"
+state_head: 71ba5f772387e25d28b9dd13c1a2c70bd4d99aea
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
-current_phase: 33
-current_phase_name: The Reproducible-Run Protocol and the Capture Substrate
 ---
 
 # Project State
@@ -1522,9 +1525,9 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-01
-Stopped at: Phase 32 complete, milestone v0.7.0 ready to close
-Resume file: None
+Last session: 2026-09-02T13:44:46.673Z
+Stopped at: Phase 33 context gathered
+Resume file: .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-CONTEXT.md
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
