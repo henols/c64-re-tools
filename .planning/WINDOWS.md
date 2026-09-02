@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 open_count: 24
-waived_count: 13
+waived_count: 14
 fixed_count: 9
-total_count: 46
-last_updated: 2026-09-02T20:35:29.422Z
+total_count: 47
+last_updated: 2026-09-02T21:05:21.142Z
 ---
 
 # Broken Windows Ledger
@@ -61,6 +61,7 @@ last_updated: 2026-09-02T20:35:29.422Z
 | 44 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-04-slicer-substrate.md |  | SLICER: gate input not emitted by 33-04 -- SCHEMA.md 2.4 requires capture-predicate.test.ts and capture-seam.test.ts transcripts too, and neither file exists yet; 33-07 owns 33-slicer-validation.md and must emit the line | open |  | 2026-09-02T19:32:03.207Z |  |
 | 45 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-06-PLAN.md |  | 33-06 Task 1's own <verify> demands broker-control.test.ts report fail 0, while Task 1's action text widens attemptAcquire()'s signature -- which two PRE-EXISTING structural tests pin as a literal string. Honouring the plan's Task-1/Task-2 split literally would have committed a knowingly-red suite. The two pinned signatures were updated inside Task 1's commit, and the boundary-refusal/eligibility cases the plan assigns to Task 2 landed there too (same file, same commit). Task 2 delivered its full remaining scope. Same shape as 33-05's own deviation 1. Recorded so a later re-run of the plan text does not read the placement as a regression. | waived | Provenance record, not a defect: the plan's own Task-1 <verify> gate and its Task-1/Task-2 split are mutually unsatisfiable for broker-control.test.ts, and the implementation is correct. Every acceptance criterion of both tasks is met; nothing to fix, kept as history. | 2026-09-02T20:35:13.880Z | 2026-09-02T20:35:29.422Z |
 | 46 | 33 | deviation | src/mcp/vice/broker-launch.mts |  | The launch profile was not carried forward across crash-respawn or recycle (handleExit -> launchSupervised builds a brand new InstanceRecord). A recycled or crash-respawned {warp:true} instance would have come back UNWARPED with a record that no longer matched what the caller asked for -- reintroducing D-16/T-33-24's undetectable mismatch one respawn later, the same defect class CR-01 already caused once in this function. Fixed inside 33-06 Task 1's commit 11f897d via an optional seventh launchSupervised() parameter, mirroring CR-02's remoteMonitorPort carry-forward at both handleExit call sites. | fixed |  | 2026-09-02T20:35:14.413Z | 2026-09-02T20:35:28.860Z |
+| 47 | 33 | unmet-truth | src/mcp/vice/stop-oracle.ts |  | CAP-03's structural bar is not total: the bidirectional import census and the image-buffer signature census cannot see a caller that reads the capture itself and passes a DERIVED SCALAR (a digest, a differing-address count, an equivalence verdict) into compareStopIdentity() -- no signature check can distinguish that number from a legitimately-read register value. Forbidden in stop-oracle.ts's WHAT NOT TO DO in prose only. Recorded as an ACCEPTED LIMIT in evidence/33-slicer-validation.md and carried from 33-07-PLAN.md's own flagged_assumptions, where the deterministic edge probe classified CAP-03's single edge unclassified. | waived | Knowingly-accepted design limit, not a defect: the two structural assertions are the strongest instruments available for a NEGATIVE STRUCTURAL requirement, and the derived-scalar route is unreachable by any signature or import census by construction. Recorded as an ACCEPTED LIMIT in evidence/33-slicer-validation.md, which 33-12's findings document collects verbatim, so the limit travels with the verdict rather than sitting as an open defect. Falsifiable by exactly one thing: such a call site appearing. | 2026-09-02T21:04:22.740Z | 2026-09-02T21:05:21.142Z |
 
 ````json
 [
@@ -615,6 +616,18 @@ last_updated: 2026-09-02T20:35:29.422Z
     "reason": "",
     "recorded_at": "2026-09-02T20:35:14.413Z",
     "resolved_at": "2026-09-02T20:35:28.860Z"
+  },
+  {
+    "id": 47,
+    "kind": "unmet-truth",
+    "phase": "33",
+    "file": "src/mcp/vice/stop-oracle.ts",
+    "line": null,
+    "description": "CAP-03's structural bar is not total: the bidirectional import census and the image-buffer signature census cannot see a caller that reads the capture itself and passes a DERIVED SCALAR (a digest, a differing-address count, an equivalence verdict) into compareStopIdentity() -- no signature check can distinguish that number from a legitimately-read register value. Forbidden in stop-oracle.ts's WHAT NOT TO DO in prose only. Recorded as an ACCEPTED LIMIT in evidence/33-slicer-validation.md and carried from 33-07-PLAN.md's own flagged_assumptions, where the deterministic edge probe classified CAP-03's single edge unclassified.",
+    "status": "waived",
+    "reason": "Knowingly-accepted design limit, not a defect: the two structural assertions are the strongest instruments available for a NEGATIVE STRUCTURAL requirement, and the derived-scalar route is unreachable by any signature or import census by construction. Recorded as an ACCEPTED LIMIT in evidence/33-slicer-validation.md, which 33-12's findings document collects verbatim, so the limit travels with the verdict rather than sitting as an open defect. Falsifiable by exactly one thing: such a call site appearing.",
+    "recorded_at": "2026-09-02T21:04:22.740Z",
+    "resolved_at": "2026-09-02T21:05:21.142Z"
   }
 ]
 ````

@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-06-PLAN.md
-last_updated: "2026-09-02T20:34:13.446Z"
+stopped_at: Completed 33-07-PLAN.md
+last_updated: "2026-09-02T21:03:31.294Z"
 last_activity: 2026-09-02
-last_activity_desc: "33-06 executed: the launch profile threads from both client acquire write sites, through normaliseLaunchProfile() as the ONE narrowing site (unknown keys refused by name, refusals never enqueue), onto InstanceRecord.profile, into D-16 eligibility as a SYNCHRONOUS pre-probe filter that leaves a mismatched warm instance ready and un-killed, and out to buildViceArgs(); carried forward across respawn/recycle as a Rule 2 deviation; D-18 stays in 33-11 by design"
-state_head: f89d3f88debc67e431d399c5a369225e2de18822
+last_activity_desc: "33-07 executed: the enumerated equivalence predicate (cap of 64 checked first and throwing with no artifact, range-shaped notation refused by name, no bit-count tolerance at any address, $0000/$0001 normalised in code on a copy from the suffix fields) and the four-scalar stop-identity oracle that takes no image buffer; D-25 proven with a ONE-BIT plant red beside its clean control; CAP-03 barred by shape in both directions and on both import routes with four planted controls; SLICER: validated emitted at column 0 in evidence/33-slicer-validation.md, closing 33-04's ACCEPTED LIMIT. Wave 3 complete; gate at 2 failures in anno-register.test.ts alone"
+state_head: 80fedebd883464f90323ef79c14cf2c59c6ab592
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -178,31 +178,34 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 6 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06); next pointer at plan 7 of 12
-Status: Wave 3 in progress — `33-06` landed; `33-07` (which owns the `SLICER:` gate
-line) is the remaining wave-3 plan, and the wave gate is taken once it lands.
-`33-06` threaded `D-15`'s launch profile from the container-side client, through the
-control plane, into the warm-floor eligibility rule, and out to `buildViceArgs()`. A run
-can now REQUEST warp and headless as an additive optional `profile` on the broker's
-**existing** seven-op `acquire` — not an eighth op, because `ControlRequest` already
-carries an index signature. `normaliseLaunchProfile()` is the ONE narrowing site: object
-or absent, `warp`/`headless` boolean or absent, unknown keys refused **by name** with the
-existing `bad_request` code, and a refusal that never enqueues and never reaches
-`onAcquire`. `D-16` is implemented as **ineligibility**, and both wrong answers are
-asserted absent — a mismatched warm instance is neither retro-warped (there is no runtime
-`WarpMode` resource on stock at all) nor killed to make room (a named anti-pattern); it
-stays `ready`, in the map, un-killed, and the acquire falls through to a dedicated cold
-launch. The eligibility filter's POSITION is the load-bearing part and is pinned by line
-number twice: it is a synchronous `continue` sitting before the readiness-probe `await`,
-so the single-owner `inFlight` guard — synchronous by requirement, because of the
-2026-08-01 triple-launch outage — gains no new suspension point. Two Rule 1 and one
-Rule 2 deviation, all strengthening: `_snapshotState()`'s documented deep-copy contract
-would have quietly become false (`profile` is the record's second nested object), and the
-profile was not carried forward across crash-respawn or recycle, which would have
-reintroduced exactly `D-16`'s undetectable lie one respawn later — a recycled warped
-instance returning unwarped while its record still claimed warp. `D-18` is deliberately
-NOT here: it is a live, broker-stopped measurement governed by `D-10`/`D-11` and lives in
-`33-11`, widened there to cover `-console` as well as `-warp`.
+Plan: 7 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07); next pointer at plan 8 of 12
+Status: **Wave 3 complete** — `33-07` landed and the wave gate was taken: `test:automated`
+reports 3088 tests / 3080 pass / **2 fail**, both in `anno-register.test.ts` (`:385`,
+`:479`), which is the pre-existing 2-in-1 threshold with no second file. Wave 4 (`33-08`,
+`33-09`) is next.
+`33-07` shipped the capture substrate's decision half and closed the phase's second gate
+input. `capture-predicate.ts` is a **replacement in kind** for `compare.mjs`'s rules and
+not an extension of them: its report vocabulary is kept, its four volatile RANGES (4866
+addresses) and its "one bit does not fail" rule are dropped outright, because a predicate
+inheriting either would PASS `D-25`'s one-bit plant and the fail-ability guard would read
+green having proven nothing. `TRANSIENT_ALLOW_LIST_CAP = 64` is checked first in
+`parseAllowList()` and **throws with no artifact returned** — the cap voids the
+derivation (`D-22`) rather than warning, and range-shaped notation is refused **by name**
+in both the `start`/`end` and two-element-span forms. `normalisePorts()` is the ONE
+`$0000`/`$0001` site (`D-24`): `$0000` takes `dirRead`, `$0001` takes `dataRead`, both
+from the slice record's SUFFIX fields, and it returns a copy built with
+`new Uint8Array` + `set` — never `image.slice()`, whose `Buffer` override is a view into
+the caller's snapshot, which is the aliasing bug `33-04` measured one module upstream.
+`stop-oracle.ts` takes no image buffer and imports nothing at all; `capture-seam.test.ts`
+bars the two modules from each other by SHAPE in both directions and on both the static
+and dynamic import routes, with four planted violations each paired with a clean control
+over the real tree, and with both censuses THROWING rather than reporting clean when
+asked to scan a set that omits their module. `SLICER: validated` is emitted at column 0
+in `evidence/33-slicer-validation.md` — the second of `GATE-01`'s five inputs, closing
+the `## ACCEPTED LIMIT` `33-04` recorded when it could produce only one of the two
+declared transcripts. One accepted limit is carried forward: neither structural assertion
+can see a caller that reads the capture and passes a **derived scalar** (a digest, a
+differing-address count) into `compareStopIdentity`, which is forbidden in prose only.
 `33-05` made the stock argv deterministic by construction: `buildViceArgs()`'s stock
 branch now emits `REPRO-01`'s determinism block **unconditionally** — `-seed 4242` plus
 the three `raminit*` zeros plus `+autostart-delay-random`, in one fixed order between
@@ -457,6 +460,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 33 P04 | 22 min | 3 tasks | 16 files |
 | Phase 33 P05 | 22 min | 3 tasks | 5 files |
 | Phase 33 P06 | 33 min | 2 tasks | 14 files |
+| Phase 33 P07 | 22 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -872,6 +876,10 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-06: the launch profile rides handleAcquire()'s existing per-acquire options bag, not a fifth positional parameter — The real broker wiring already builds a fresh HandleAcquireDeps object per acquire, so per-request data threads through it naturally, and `backend` already sets the precedent of a non-injected configuration value living there. A fifth positional argument after an optional fourth is legal but unreadable at every call site.
 - [Phase 33]: 33-06: the launch profile is carried FORWARD across crash-respawn and recycle, which the plan did not name (Rule 2) — launchSupervised() builds a brand new InstanceRecord on every replacement. Without carrying the profile, a recycled or crash-respawned {warp:true} instance comes back UNWARPED while its record no longer matches what the caller asked for -- reintroducing exactly the undetectable mismatch D-16 and T-33-24 exist to exclude, one respawn later. Same defect class CR-01 already caused once in this function (a stock instance respawning with the fork's argv). Threaded via an optional seventh parameter, mirroring CR-02's own remoteMonitorPort carry-forward.
 - [Phase 33]: 33-06: buildViceArgs() deliberately does NOT re-validate the profile shape — `profile?.warp` stays a truthiness test, so a boundary-refused string value still switches the fixed literal flag on. Re-deriving the check there would create the second narrowing site this plan exists to avoid, and the VALUE stays structurally unreachable either way -- asserted by a test that plants a string via an unsound cast and requires it to appear in no argv element and as no substring of one.
+- [Phase 33]: 33-07: capture-predicate.ts is a REPLACEMENT IN KIND for compare.mjs, keeping its report vocabulary (divergence/pass, the addr/a/b/bits row, hex4/hex2/bin8/popcount, copied not imported) and dropping BOTH its rules -- no address range is a volatile span and there is no bit-count tolerance at any address — compare.mjs excludes four RANGES over 4866 addresses and lets any single-bit difference pass anywhere. A predicate inheriting either rule PASSES D-25's one-bit plant, so the fail-ability control reads green having proven nothing -- a vacuous control is worse than none because it is believed. Also dropped: the $D000-$DFFF exclusion, which is a property of the memory-READ route; the .vsf C64MEM array is mem_ram[] (RAM under I/O), so carrying it over would hide 4096 addresses of real divergence.
+- [Phase 33]: 33-07: parseAllowList checks the cap FIRST and throws with no artifact returned, and refuses range-shaped notation BY NAME in both the start/end and two-element-span forms — D-22: exceeding the cap VOIDS the derivation rather than warning -- it means the stop is not frame-exact, which is a fact the gate must hear, so validating the individual entries of a list that cannot be used gains nothing and the count IS the finding. An allow-list is the one input that can turn a failing comparison into a passing one (T-33-26), so every widening route is a refusal: a span-shaped key, a two-element address, a duplicate, an out-of-range address, and the bare-array convenience route which goes through the same cap check.
+- [Phase 33]: 33-07: the CAP-03 import census collects module SPECIFIERS rather than matching import STATEMENTS, and its specifier-shape filter is narrow by measurement rather than by taste — Matching quoted specifiers and testing each against a path-anchored stem covers the multi-line static import, the dynamic import(), a bare side-effect import, require() and process.getBuiltinModule() with ONE rule instead of five -- which is why planted violation (a) is deliberately the multi-line shape a per-line matcher cannot see. The filter accepts a node: builtin or a whitespace-free path: an earlier draft accepting every letter-initial literal swept in every refusal message in both modules and made the non-vacuity assertion unwritable.
+- [Phase 33]: 33-07: argvDigest's NUL separator is a named constant written as the escape backslash-u0000, never a literal NUL byte in source, after a literal one was written and immediately caught — A literal NUL makes the whole file binary to grep, which skips it silently -- the exact census blind spot D-26 warns about and which anno-memmap-render.ts already caused one false decision through in this project. Detected within a minute (a grep for the constant name returned nothing while tail showed the line). Both new modules and both new test files are now asserted to carry no control characters other than newlines before each commit.
 
 ### Pending Todos
 
@@ -1664,8 +1672,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T20:33:26.637Z
-Stopped at: Completed 33-06-PLAN.md
+Last session: 2026-09-02T21:03:30.984Z
+Stopped at: Completed 33-07-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md

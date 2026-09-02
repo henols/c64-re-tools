@@ -97,7 +97,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       SP) and that is an **upper bound** taken under frame-divergent conditions, but a real release's
       transients are its own frame counters, RNG, sprite positions and music-player pointers. A rule
       tolerating a page would be over-wide by three orders of magnitude
-- [ ] **CAP-03**: The captured 64K is **never a conjunct of the stop-identity oracle**. It is the
+- [x] **CAP-03**: The captured 64K is **never a conjunct of the stop-identity oracle**. It is the
       dependent variable the oracle certifies, and a predicate that used it to certify its own stop
       would be circular. Asserted structurally, so the next edit cannot reintroduce it
 - [ ] **CAP-04**: A real cracked release is captured twice and the two captures satisfy `CAP-02` —
@@ -401,7 +401,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REPRO-05 | Phase 33 | Pending |
 | CAP-01 | Phase 33 | Complete |
 | CAP-02 | Phase 33 | Pending |
-| CAP-03 | Phase 33 | Pending |
+| CAP-03 | Phase 33 | Complete |
 | CAP-04 | Phase 33 | Pending |
 | GATE-01 | Phase 33 | Pending |
 | SEAM-01 | Phase 34 | Pending |
@@ -439,6 +439,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PROOF-03 | Phase 38 | Pending |
 
 **Coverage:**
+
 - v0.8.0 requirements: 43 total
 - Mapped to phases: 43
 - Unmapped: 0 ✓
