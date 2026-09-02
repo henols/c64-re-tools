@@ -26,7 +26,8 @@
 //       what installer/skills/ contains.
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync, rmSync, mkdirSync, readdirSync, cpSync } from "node:fs";
+import { existsSync, rmSync, mkdirSync, readdirSync, readFileSync, cpSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // installer/scripts
 const INSTALLER_ROOT = dirname(HERE); // installer
@@ -53,22 +54,111 @@ if (names.length === 0) {
 // directories. None of these belong in the published tarball -- see the
 // header comment for why this rule lives here rather than in package.json's
 // `files[]` or a .npmignore.
+//
+// THE RULE IS A PURE PREDICATE, and the counter is layered on top of it. It
+// used to be one function that incremented `excluded` as a side effect of
+// being asked, which is fine for a single `cpSync` filter pass and wrong the
+// moment anything else needs to ask the same question -- the drift check
+// below asks it for every candidate, and a counting predicate would have
+// reported a number several times too high.
+function isNonShipping(base) {
+  return (
+    base === "fixtures" ||
+    base.endsWith(".test.mjs") ||
+    base.endsWith(".test.js") ||
+    base === "test-corpus.mjs"
+  );
+}
+
 let excluded = 0;
+
+/** The filter `cpSync` drives. Pure predicate, no counting: `excluded` is
+ * already known by the time anything is copied. */
 function shouldCopy(src) {
-  const base = src.split("/").pop();
-  if (base === "fixtures") {
-    excluded++;
-    return false;
+  return !isNonShipping(src.split("/").pop());
+}
+
+// ---------------------------------------------------------------------------
+// REBUILD ONLY ON DRIFT  (CR-07, phase 32 review round 4)
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS. The rebuild below is `rmSync(DEST, { recursive: true })`
+// followed by a repopulate, so for the duration of a rebuild `installer/skills/`
+// is missing or partial. That is a shared directory: `anno-verb-coverage.test.ts`
+// and `audit-root-args.test.ts` read it, and `node --test <files>` runs test
+// FILES IN PARALLEL.
+//
+// 30-REVIEW's WR-11 drew the line at "a CI script may regenerate; a test may
+// not" and stopped `anno-verb-coverage.test.ts` regenerating. CR-07 is that
+// same defect arriving by a transitive route the line did not cover:
+// `audit-root-args.test.ts`'s adjacency loop SPAWNS
+// `scripts/check-skill-cli-invocations.mjs` five times -- a baseline run plus
+// four `--root` spellings that all RESOLVE to the repository root -- and that
+// gate regenerates at module scope. So the suite rebuilt the shipped tree five
+// times per run, from inside a parallel test phase, while other tests read it.
+//
+// The fix is here rather than in either caller because every caller wants the
+// same thing: the shipped tree CORRECT, not the shipped tree REWRITTEN. When it
+// already matches the source, this script now writes nothing at all, so the
+// five spawns become five no-ops and the window never opens. A genuinely stale
+// tree is still rebuilt -- correctness is not traded for quiet.
+//
+// Comparison is by relative path set AND content, because a same-name file with
+// different bytes is exactly the drift a path-only check would miss.
+
+/** Walks SRC applying the exclusion rule, counting each rejected entry once --
+ * a `fixtures` directory counts once and is not descended into, mirroring how
+ * `cpSync`'s filter prunes. Returns relative path -> sha256 of the bytes. */
+function plannedFiles() {
+  const planned = new Map();
+  for (const name of names) {
+    walk(join(SRC, name), name);
   }
-  if (base.endsWith(".test.mjs") || base.endsWith(".test.js")) {
-    excluded++;
-    return false;
+  return planned;
+
+  function walk(abs, rel) {
+    for (const entry of readdirSync(abs, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const childAbs = join(abs, entry.name);
+      const childRel = `${rel}/${entry.name}`;
+      if (isNonShipping(entry.name)) {
+        excluded++;
+        continue;
+      }
+      if (entry.isDirectory()) walk(childAbs, childRel);
+      else if (entry.isFile()) planned.set(childRel, createHash("sha256").update(readFileSync(childAbs)).digest("hex"));
+    }
   }
-  if (base === "test-corpus.mjs") {
-    excluded++;
-    return false;
+}
+
+/** Whatever is on disk under DEST now, in the same shape. */
+function presentFiles() {
+  const present = new Map();
+  if (!existsSync(DEST)) return present;
+  walk(DEST, "");
+  return present;
+
+  function walk(abs, rel) {
+    for (const entry of readdirSync(abs, { withFileTypes: true })) {
+      const childAbs = join(abs, entry.name);
+      const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(childAbs, childRel);
+      else if (entry.isFile()) present.set(childRel, createHash("sha256").update(readFileSync(childAbs)).digest("hex"));
+    }
   }
-  return true;
+}
+
+const planned = plannedFiles();
+const present = presentFiles();
+const inSync =
+  planned.size === present.size && [...planned].every(([rel, hash]) => present.get(rel) === hash);
+
+if (inSync) {
+  console.error(
+    `sync-skills: already in sync -- ${planned.size} file(s) across ${names.length} skill(s) ` +
+      `in ${DEST} match src/skills/ byte-for-byte; NOTHING WRITTEN (CR-07: a rebuild here ` +
+      `deletes a directory that tests running in parallel read).`,
+  );
+  process.exit(0);
 }
 
 // Rebuild DEST from scratch so a removed/renamed skill never lingers in the tarball.

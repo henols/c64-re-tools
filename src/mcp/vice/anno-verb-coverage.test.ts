@@ -382,6 +382,12 @@ test("a verb the CLI actually dispatches is never documented as withdrawn, in ei
   // makes test ordering matter. `scripts/check-skill-cli-invocations.mjs` is a
   // CI SCRIPT and may regenerate; a test may not.
   //
+  // That line turned out not to be enough (CR-07, fixed 2026-09-02):
+  // `audit-root-args.test.ts` SPAWNS that CI script five times, so the banned
+  // write came back transitively. `sync-skills.mjs` is now drift-conditional
+  // -- it writes nothing when the shipped tree already matches the source --
+  // so no caller, test or script, churns the tree just by asking.
+  //
   // The shipped tree is still guarded, by a different route: it is scanned AS
   // IT IS ON DISK, and the companion test below asserts it is byte-identical
   // to the source tree. A stale shipped copy is then reported as a named sync

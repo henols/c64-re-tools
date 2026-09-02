@@ -263,6 +263,20 @@ const need = (cond, msg) => {
 //
 // The notice goes to stderr and only on the skip path, so an unflagged run's
 // stdout report is byte-identical to its pre-flag self.
+//
+// CR-07 (phase 32 review round 4, fixed 2026-09-02): this call is at MODULE
+// SCOPE, and `audit-root-args.test.ts`'s adjacency loop spawns this gate five
+// times -- a baseline plus four `--root` spellings that all RESOLVE to the
+// repository root -- from inside a test phase that `node --test` runs in
+// parallel with tests that READ `installer/skills/`. The sync used to
+// `rmSync` and repopulate that directory unconditionally, so the suite deleted
+// a shared tree five times per run while other tests were reading it.
+//
+// The fix is in the sync itself, not here: `sync-skills.mjs` now compares the
+// shipped tree against the source by path AND content and writes NOTHING when
+// they already match, so these five spawns are five no-ops. This gate still
+// asks for the same guarantee it always asked for -- the shipped tree is
+// CORRECT before it is scanned -- and a genuinely stale tree is still rebuilt.
 if (P.root === DEFAULT_ROOT) {
   try {
     execFileSync(process.execPath, [P.syncScript], { cwd: P.root, stdio: "pipe" });

@@ -198,4 +198,38 @@ It is also a **repeat deferral** — see "The CR-07 record" above — which mean
 survived being deferred while the reason for deferring it (a large surrounding backlog) has
 mostly evaporated. It should be the next thing fixed from this phase.
 
-**Net: of 9, 8 are moot and 1 — the Critical, CR-07 — is live.**
+**Net: of 9, 8 are moot and 1 — the Critical, CR-07 — was live.**
+
+---
+
+## CR-07 — FIXED, 2026-09-02
+
+Fixed in `installer/scripts/sync-skills.mjs`, not in either caller, because every caller
+wants the shipped tree **correct**, not **rewritten**. The sync now compares the shipped
+tree against `src/skills/` by relative-path set AND content hash, and writes nothing at all
+when they already match. The gate's five module-scope spawns become five no-ops, so the
+window in which `installer/skills/` is missing or partial never opens during the parallel
+test phase. A genuinely stale tree is still rebuilt — correctness is not traded for quiet.
+
+Two supporting changes: the exclusion rule was split into a pure `isNonShipping()` predicate
+with the `excluded` counter layered on top (the old single function counted as a side effect
+of being asked, which the drift check would have inflated), and the two comments that
+understated the problem — `check-skill-cli-invocations.mjs`'s module-scope call site and
+`anno-verb-coverage.test.ts`'s "a CI script may regenerate; a test may not" note — now record
+that the ban was reachable transitively.
+
+### Evidence
+
+| Check | Result |
+|---|---|
+| Five consecutive gate runs | all exit 0; `installer/skills/` snapshot (path + size + mtime, hashed) **identical before, between and after** |
+| The OLD script, run once for contrast | snapshot **changed** — the churn was real, not theoretical |
+| Already in sync | `NOTHING WRITTEN`, exit 0 |
+| One shipped file deleted | rebuilds, `excluded 6` — unchanged from before the fix |
+| Same path, different bytes | rebuilds, byte-identical afterwards |
+| `installer/skills/` absent (fresh clone) | rebuilds |
+| Test-file / `fixtures/` / `test-corpus.mjs` leakage | none |
+| `tsc --noEmit`, `test:automated` | clean; 2960 pass / 0 fail |
+| All five CI gate scripts, `audit-gate`, `package.sh` | exit 0 |
+
+**Remaining in this file: nothing. All 9 round-4 findings are moot or fixed.**
