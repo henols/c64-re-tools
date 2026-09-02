@@ -168,6 +168,18 @@ one of them on its own reasoning rather than on trust.
   live-broker run reads a false baseline and every number in it is suspect.
   — **Reversibility:** one-way — a measurement taken against a contaminated
   baseline cannot be repaired afterwards; it has to be discarded and re-run.
+  — **SUPERSEDED BY MEASUREMENT 2026-09-02** (`33-RESEARCH.md` § Decisions This
+  Research Falsifies, second table; § Common Pitfalls P8): the parenthesised
+  "clean floor: **0** failures" above is wrong for the tree this phase opened on.
+  MEASURED 2026-09-02 with the broker stopped: `npm run test:automated` in
+  `src/mcp/vice` exits **1** with **5 failing tests in 3 files**
+  (`pass 3019 / fail 5`, `duration_ms 98065`), from two root causes this phase
+  did not create. The baseline every `D-11` transcript records is therefore
+  5-in-3 at phase open, and **2 failing tests in `anno-register.test.ts` alone**
+  after `33-02` Task 2 removes the two stale `STATE.md` Deferred Items rows. Do
+  **not** write "clean floor: 0" into an acceptance criterion. Everything else in
+  `D-11` stands unchanged: the broker is stopped for every live run, and
+  `npm test` is still not used.
 
 ### The run-protocol surface
 
@@ -209,6 +221,26 @@ one of them on its own reasoning rather than on trust.
   argv untouched (a Validated v0.2.0 requirement, not merely a test).
   — **Reversibility:** reversible — the field is additive and absent by
   default.
+  — **AMENDED 2026-09-02** (`33-RESEARCH.md` § Decisions This Research
+  Falsifies): this is a **narrowing of scope, not a falsification** — the
+  research's own second table classifies it that way, and `D-15` is mostly right.
+  What changes: there are **five stock whole-argv** `assert.deepEqual(args, …)`
+  assertions in `broker-launch.test.ts`, not three (lines 1775, 1789, 1907, 1919,
+  1929), and `REPRO-01`'s determinism block is *unconditional on stock*, so all
+  five change — and they change with `profile` **absent**, because it is the
+  determinism block and not the profile that moves them (`33-RESEARCH.md` P7).
+  What survives: byte-identity holds in full only on the **fork** branch, whose
+  argv this phase leaves untouched (a Validated v0.2.0 requirement, not merely a
+  test), and on the stock branch only the `profile` half survives — an absent
+  profile adds no flag. What `D-15` gets exactly right and this phase preserves:
+  `-default` stays at argv index 0 ahead of `-binarymonitor`, the three
+  *ordering* assertions (index 0, `-drive8type` before `-binarymonitor`, `1541`
+  immediately after `-drive8type`) do survive additions, and the field really is
+  additive and absent by default. Consequence of not writing this down: a reader
+  arriving at `D-15` alone would treat five changed whole-argv assertions in
+  `33-05` as an unplanned regression rather than as the measured cost of
+  `REPRO-01`. `33-05`'s objective carries the same narrowing on the
+  implementation side; `33-06` implements `D-15` and `D-16` together.
 
 - **D-16: A pre-warmed instance whose profile does not match the request is ineligible; the broker launches a dedicated instance for that grant and never retro-warps.** Not "refuse the acquire" (that would make warp unusable
   whenever a warm floor exists) and not "serve it unwarped" (that would make
@@ -265,6 +297,29 @@ one of them on its own reasoning rather than on trust.
   on.
   — **Reversibility:** costly — a capture corpus produced by an offset-based
   slicer would have to be entirely re-derived to be trusted.
+  — **AMENDED 2026-09-02** (`33-RESEARCH.md` § Decisions This Research
+  Falsifies): the exact-length assertion above is **falsified by measurement**.
+  `4 + 65536` is 65540, and the measured `C64MEM` body on this host is **65555**,
+  because VICE writes three more port bytes and two DWORD falloff clocks plus
+  four more state bytes after the RAM array — `4 + 65536 + 3 + 4 + 4 + 4 = 65555`
+  at snapshot minor 1, and `4 + 65536 + 3 = 65543` at minor 0, which the reader
+  also accepts (`33-RESEARCH.md` M5 and P3). So the assertion becomes
+  `body.length >= 65543`, refusing below it and recording which minor produced
+  which length (`MIN_C64MEM_BODY_LEN = 65543`, `V01_C64MEM_BODY_LEN = 65555`).
+  Cost of not fixing it: the slicer would refuse **every** real snapshot, and
+  `SLICER: failed` would fire `R1 → no-go` on an arithmetic error — the gate's
+  most easily-earned `go` input lost to arithmetic. Second half of the same
+  amendment: the prototype at
+  `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/vsf-ram-extract.mjs`
+  carries `first_module_offset = 37`, which is **stale** — the real value is
+  **58** on 3.9, because a second magic block (`"VICE Version\x1a"` 13 bytes + 4
+  version bytes + a 4-byte SVN dword) follows the 16-byte machine name. The
+  prototype survives the stale offset only through a byte-by-byte resync
+  fallback, and such a scan can lock onto a false module-name string inside 64 KB
+  of RAM data. The corrected rule is therefore a **strict walk** that refuses on
+  the first malformed module header: the resync path reintroduces this decision's
+  own stated worst failure mode — garbage rather than an error — by the recovery
+  route rather than by the offset.
 
 - **D-22: The transient allow-list is a per-release committed JSON artifact derived by a named script, under a committed size cap of 64 addresses.**
   Rationale for 64: the only measurement in hand is 3 transients out of 1024
@@ -296,6 +351,25 @@ one of them on its own reasoning rather than on trust.
   adding those two addresses to the allow-list — that would spend two of the
   cap's 64 slots to hide a divergence that might be real.
   — **Reversibility:** reversible.
+  — **AMENDED 2026-09-02** (`33-RESEARCH.md` § Decisions This Research
+  Falsifies): the prefix-over-RAM half of this decision is **falsified by
+  measurement**. The 4-byte prefix is `(pport.data, pport.dir, EXROM, GAME)` —
+  *data first*, address-swapped relative to the sentence above, where `$0000` is
+  direction and `$0001` is data. And the CPU-visible values are neither of those:
+  `zero_read()` returns `pport.dir_read` for `$0000` and `pport.data_read` for
+  `$0001`, and those two fields live in the **3-byte suffix immediately after the
+  RAM array**, not in the prefix. MEASURED on one snapshot, three readings
+  agreeing (`33-RESEARCH.md` M4 and P3): `prefix=[231,47,0,0]` against
+  `suffix3=[39,55,47]` (`data_out=39`, `data_read=55`, `dir_read=47`), with the
+  live register read on that same snapshot giving `$00=47 $01=55`. Consequence of
+  the superseded rule: a prefix-over-RAM copy writes **231** to `$0000` where the
+  CPU sees **47** — wrong by 176, silently, at exactly the two addresses the
+  normalisation exists to fix. Corrected rule, as byte offsets a reader can check
+  with `RAM_OFFSET = 4` and `RAM_SIZE = 65536`: `$0001` takes
+  `body[RAM_OFFSET + RAM_SIZE + 1]` (`data_read`) and `$0000` takes
+  `body[RAM_OFFSET + RAM_SIZE + 2]` (`dir_read`). The rest of `D-24` stands
+  unchanged: normalise in code, in one place, and explicitly **not** by spending
+  two allow-list slots.
 
 - **D-25: The planted-byte control is asserted red twice, at two different costs.** Corpus-free, in CI: an automated test plants a byte outside the
   allow-list in a **synthetic pair of fixture buffers** and asserts the
@@ -380,6 +454,52 @@ Note the two-directional guard: `docs-deferred-ledger.test.ts` fails in **both**
 directions, so resolving any of these three requires moving its `STATE.md` row
 in the same commit.
 
+### Research Reconciliation
+
+`33-RESEARCH.md` (2026-09-02, live probes against genuine stock VICE 3.9 on this
+host) measured four claims in this document wrong or over-broad. Each carries a
+dated rider beside its own superseded sentence — the sentences are **not**
+deleted, so a reader can still see what was believed and what replaced it. This
+index exists so the amendments are discoverable without reading every decision.
+
+**Three falsifications** (the claim is measured false):
+
+1. **`D-21` — body length.** `4 + 65536` (= 65540) is not the `C64MEM` body
+   length; the measured body is **65555** at snapshot minor 1 and **65543** at
+   minor 0, so the assertion becomes `body.length >= 65543`. The same rider
+   corrects the Phase 23 prototype's stale `first_module_offset = 37` to **58**
+   and replaces its resync fallback with a strict walk.
+2. **`D-24` — port normalisation.** The 4-byte prefix is
+   `(pport.data, pport.dir, EXROM, GAME)` and is *not* the CPU view. `$0000`
+   takes `dir_read` and `$0001` takes `data_read`, both from the **3-byte suffix
+   after the RAM array**. A prefix-over-RAM copy is wrong by 176 at `$0000`.
+3. **The `compare.mjs` claim in `## Existing Code Insights`.** Its volatile set
+   is four ranges over 4866 addresses and its drift rule passes any one-bit
+   difference — both forbidden by `CAP-02`, and together they make `D-25`'s
+   planted-byte control vacuous. Vocabulary and helpers are inheritable; the
+   ranges and the drift rule are not.
+
+**One scope narrowing** (the claim is mostly right, but narrower than written):
+
+4. **`D-15` — argv byte-identity.** There are **five stock whole-argv**
+   `assert.deepEqual` assertions, not three, and all five change because
+   `REPRO-01`'s determinism block is unconditional on stock — even with `profile`
+   absent. Byte-identity survives in full only on the **fork** branch and, on
+   stock, only for the `profile` half. `D-15`'s ordering claims all hold.
+
+**Two ROADMAP-note claims superseded by measurement:**
+
+- **"The three whole-argv `assert.deepEqual` assertions in `broker-launch.test.ts`
+  are avoidable."** Superseded — see Amendment 4 above, which carries the
+  measured counter-value; `D-15` echoes the same claim and is narrowed there.
+- **"The clean floor for `test:automated` is 0."** Superseded — MEASURED
+  2026-09-02 with the broker stopped: `EXIT=1`, **5 failing tests in 3 files**
+  (`pass 3019 / fail 5`), from two root causes this phase did not create. `33-02`
+  Task 2 closes three of the five; the expected baseline for the rest of the
+  phase is **2 failing tests in `anno-register.test.ts` alone**, with the
+  residual cause recorded as out-of-phase. `D-11` carries the same correction
+  beside its own "clean floor: 0" parenthesis.
+
 </decisions>
 
 <canonical_refs>
@@ -443,6 +563,25 @@ in the same commit.
   (exactly one resume per wait; poll on `hit_count`, never on paused state)
   that `D-12`'s procedure must preserve in its stock-native form
 
+  — **AMENDED 2026-09-02** (`33-RESEARCH.md` § Decisions This Research
+  Falsifies): the "keep its classification shape" half of this bullet is
+  **falsified by measurement**. `compare.mjs`'s volatile set is four **ranges**
+  covering 4866 addresses (`$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`,
+  `$D000-$DFFF`), and its drift rule lets *any* single-bit difference pass
+  anywhere. `CAP-02` forbids both: it requires an **enumerated** list, never a
+  range, and a planted byte outside it must fail. Concrete consequence for
+  `D-25`: a control that plants a one-bit difference against an inherited
+  predicate **PASSES**, so the fail-ability guard proves nothing
+  (`33-RESEARCH.md` P6). What IS inheritable: the reporting vocabulary, the
+  `digest` verb, the header-states-the-rules convention, the `hex4` / `hex2` /
+  `bin8` / `popcount` helpers, and the exact-size load refusal. What is not: the
+  four ranges and the drift-passes rule — the new predicate is a replacement in
+  kind, not an extension. Simplification the snapshot route buys: `$D000-$DFFF`
+  is volatile only on the **transcription** route, because `vice_memory_read`
+  samples live I/O while the `.vsf` `C64MEM` array is `mem_ram[]` — RAM under
+  I/O, not the register image — so on the snapshot route that 4096-address
+  exclusion disappears entirely, and the capture-record template's standing note
+  about it must be **re-grounded, not copied**.
 ### Capture substrate
 - `src/skills/c64-ram-capture/SKILL.md` — the existing capture procedure, the
   three-run minimum, the `$D000-$DFFF` volatility rule, and the void protocol
