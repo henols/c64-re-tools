@@ -5,7 +5,7 @@
 
 export declare function resolveContainedRoot(
   rootArg: string | undefined | null,
-  options: { repoRoot: string; allowExtra?: string[] },
+  options: { repoRoot: string },
 ): string;
 
 /** Strict argv reader for the `--root` flag and any flags the caller declares.

@@ -233,3 +233,10 @@ that the ban was reachable transitively.
 | All five CI gate scripts, `audit-gate`, `package.sh` | exit 0 |
 
 **Remaining in this file: nothing. All 9 round-4 findings are moot or fixed.**
+
+
+---
+
+## THIS FILE IS FULLY RESOLVED, 2026-09-02
+
+8 moot, 1 fixed (CR-07). Nothing is outstanding.

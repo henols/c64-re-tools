@@ -24,10 +24,26 @@
 //    prefixed by the base plus a path separator. `resolveContainedRoot`'s own
 //    test drives exactly that sibling case.
 //  - Do not add an "allow anything" escape (an env var, a `--unsafe-root`
-//    flag, a magic value). `allowExtra` exists for the one legitimate case --
-//    a caller that must also accept a directory outside the repository, e.g.
-//    a system temp dir it created itself -- and every entry is supplied by the
-//    CALLER in code, never by CLI argv, stdin or a file.
+//    flag, a magic value, or a re-introduced `allowExtra`-style list).
+//
+//    THERE USED TO BE ONE SANCTIONED ESCAPE, AND IT IS GONE (IN-01, removed
+//    2026-09-02). `allowExtra` was an optional list of additional containing
+//    roots, for "a caller that must also accept a directory outside the
+//    repository, e.g. a system temp dir it created itself". In the whole life
+//    of this seam NO CALLER EVER PASSED IT: every non-comment mention was its
+//    own parameter, default and type declaration. `audit-gate.mjs:84` looked
+//    at it and explicitly declined, on the grounds that an `allowExtra` wide
+//    enough for any temp directory is exactly the relaxation the bullet above
+//    forbids.
+//
+//    An untested bypass in a containment seam is worse than an absent one,
+//    and it reads as precedent for the next one. It was removed in the same
+//    week `resolveContainedRoot` started resolving symlinks (WR-04), because
+//    a dead widening path undercuts a check that finally has teeth.
+//
+//    REVERSAL TRIGGER, named rather than left to memory: a caller that
+//    genuinely needs a root outside the repository. Re-add it THEN, with that
+//    caller and a test in the same commit -- not speculatively.
 //  - Do not make the RETURNED value a realpath. This still returns a
 //    lexically-resolved absolute path, because callers use it as the base for
 //    their own joins and a realpath would silently relocate those joins.
@@ -96,16 +112,14 @@ function realpathOfExistingPrefix(p) {
  *
  * @param {string|undefined|null} rootArg  the raw CLI value; falsy means
  *        "use `repoRoot`", which is the normal, unflagged invocation.
- * @param {{ repoRoot: string, allowExtra?: string[] }} options
+ * @param {{ repoRoot: string }} options
  *        `repoRoot` is the containing root (required, must be absolute).
- *        `allowExtra` is an optional list of additional containing roots,
- *        supplied in code by the caller, never from untrusted input.
  * @returns {string} the resolved, contained absolute path.
  * @throws {Error} when `rootArg` resolves outside every permitted root. The
  *         message names BOTH the offending resolved path and the containing
  *         root, so a refusal is never confusable with a typo failure.
  */
-export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}) {
+export function resolveContainedRoot(rootArg, { repoRoot } = {}) {
   if (typeof repoRoot !== "string" || repoRoot.length === 0) {
     throw new Error(
       "resolveContainedRoot: `repoRoot` is required and must be a non-empty absolute path -- " +
@@ -121,7 +135,6 @@ export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}
   }
 
   const base = resolve(repoRoot);
-  const extras = allowExtra.map((p) => resolve(p));
   const resolved = resolve(base, rootArg == null || rootArg === "" ? "." : String(rootArg));
 
   // Decide on the symlink-resolved forms; RETURN the lexical one (see the
@@ -133,17 +146,10 @@ export function resolveContainedRoot(rootArg, { repoRoot, allowExtra = [] } = {}
   const realBase = realpathOfExistingPrefix(base);
 
   if (isContainedBy(realResolved, realBase)) return resolved;
-  for (const extra of extras) {
-    if (isContainedBy(realResolved, realpathOfExistingPrefix(extra))) return resolved;
-  }
 
-  const extraNote =
-    extras.length > 0
-      ? ` (nor inside any additionally-permitted root: ${extras.join(", ")})`
-      : "";
   throw new Error(
     `--root ${JSON.stringify(String(rootArg))} resolves to ${resolved}, which is OUTSIDE the ` +
-      `repository root ${base}${extraNote}. Refusing: this flag decides which tree the audit ` +
+      `repository root ${base}. Refusing: this flag decides which tree the audit ` +
       "reads and writes, so it is contained to the repository by construction rather than by " +
       "convention. Note that a sibling directory whose name merely shares the root's prefix " +
       "(e.g. a `-evil` suffix) is refused here too -- the comparison is segment-wise.",

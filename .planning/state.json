@@ -1,0 +1,188 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v0.7.0 — Own the Annotation Store",
+  "phases": [
+    {
+      "number": "1",
+      "name": "Corrected Ground Truth",
+      "status": "complete"
+    },
+    {
+      "number": "2",
+      "name": "Stock Backend Connection",
+      "status": "complete"
+    },
+    {
+      "number": "3",
+      "name": "Direct Tools",
+      "status": "complete"
+    },
+    {
+      "number": "4",
+      "name": "Client-Side Tool Seam and 6510 Disassembler",
+      "status": "complete"
+    },
+    {
+      "number": "5",
+      "name": "Skill-Critical Derived Tools",
+      "status": "complete"
+    },
+    {
+      "number": "6",
+      "name": "Stock-Only Gains",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "Cycle Timing and Wedge Triage",
+      "status": "complete"
+    },
+    {
+      "number": "8",
+      "name": "Capability Honesty and the Install Story",
+      "status": "complete"
+    },
+    {
+      "number": "8.1",
+      "name": "Close v0.2.0 audit items (INSERTED)",
+      "status": "complete"
+    },
+    {
+      "number": "8.2",
+      "name": "Close v0.2.0 blockers (INSERTED)",
+      "status": "complete"
+    },
+    {
+      "number": "9",
+      "name": "The Assumption Probe (Go/No-Go)",
+      "status": "complete"
+    },
+    {
+      "number": "10",
+      "name": "Adoption Boundaries, Automated Bootstrap, and the Removal",
+      "status": "complete"
+    },
+    {
+      "number": "11",
+      "name": "Annotation Store, Enums, and the Symbol Round Trip",
+      "status": "complete"
+    },
+    {
+      "number": "11.1",
+      "name": "Close v0.3.0 Audit Items (INSERTED)",
+      "status": "complete"
+    },
+    {
+      "number": "12",
+      "name": "Audit Integrity Instrument",
+      "status": "complete"
+    },
+    {
+      "number": "13",
+      "name": "External Verification",
+      "status": "complete"
+    },
+    {
+      "number": "14",
+      "name": "Backend Decision",
+      "status": "complete"
+    },
+    {
+      "number": "15",
+      "name": "Debt and Review Disposition",
+      "status": "complete"
+    },
+    {
+      "number": "16",
+      "name": "Packaging and Repo Shape",
+      "status": "complete"
+    },
+    {
+      "number": "17",
+      "name": "Project Identity and Ledger Close",
+      "status": "complete"
+    },
+    {
+      "number": "18",
+      "name": "Persistent Session and Tool Surface",
+      "status": "complete"
+    },
+    {
+      "number": "19",
+      "name": "Absorbed Procedures and the Coverage Instrument",
+      "status": "complete"
+    },
+    {
+      "number": "20",
+      "name": "Decomposition to Closure",
+      "status": "pending"
+    },
+    {
+      "number": "21",
+      "name": "Rebuildable Source and the Reassembly Gate",
+      "status": "pending"
+    },
+    {
+      "number": "22",
+      "name": "Equivalence and Modifiability",
+      "status": "pending"
+    },
+    {
+      "number": "23",
+      "name": "The Real-Release Gate (Go/Degrade/No-Go)",
+      "status": "complete"
+    },
+    {
+      "number": "24",
+      "name": "The Two Engines",
+      "status": "pending"
+    },
+    {
+      "number": "25",
+      "name": "The Annotation Store and the Cutover",
+      "status": "pending"
+    },
+    {
+      "number": "26",
+      "name": "Automatic Annotation",
+      "status": "pending"
+    },
+    {
+      "number": "27",
+      "name": "Shared Seams Extracted",
+      "status": "complete"
+    },
+    {
+      "number": "28",
+      "name": "The Store Core",
+      "status": "complete"
+    },
+    {
+      "number": "29",
+      "name": "The MCP Surface",
+      "status": "complete"
+    },
+    {
+      "number": "30",
+      "name": "ACME Export and the Real-ACME Oracle",
+      "status": "complete"
+    },
+    {
+      "number": "31",
+      "name": "Procedure Re-pointing",
+      "status": "complete"
+    },
+    {
+      "number": "32",
+      "name": "The Deletion and the Grep Gate",
+      "status": "complete"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
+  },
+  "updated_at": "2026-09-01T16:17:56.765Z"
+}

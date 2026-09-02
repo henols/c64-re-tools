@@ -280,3 +280,64 @@ run cannot dirty the tree.
 
 **Net for this file now: 17 moot, 3 closed by the gap rounds, 2 fixed today (WR-09, WR-04),
 2 live (CR-03, IN-01), plus WR-13 to re-measure and WR-11 awaiting a decision.**
+
+
+---
+
+## CR-03, WR-13, WR-11 — CLOSED BY RE-MEASUREMENT, 2026-09-02
+
+All three were carried into round 4 inside its grouped *"carried forward unchanged from round
+3"* sections, which restated the round-3 dispositions rather than re-measuring them. Measured
+against this tree, all three claims are stale.
+
+**CR-03 — "every path comes from ONE root is false in four of five gates".** Closed by plan
+32-12 (`2916b10`, *"four gates refuse a root their comparison data cannot follow"*). The
+mapping is now exact: the four gates that statically bind `../src/mcp/vice/*` —
+`check-skill-tool-coverage`, `check-skill-fork-honesty`, `check-skill-cli-invocations`,
+`generate-tool-support-table` — each carry a refusal, and the one that binds nothing,
+`check-skill-description-overlap`, is precisely the one that legitimately honours a synthetic
+root for both halves of its comparison. It is not left to convention either: three
+`split-read contract` tests in `audit-root-args.test.ts` assert it mechanically, including a
+planted violation and a planted fix. All 3 pass.
+
+**WR-13 — "the one pre-existing `--root` consumer was not migrated".** Closed. Every script
+that mentions `--root` now goes through `parseRootArg`: `audit-gate` (migrated by 32-16),
+plus the five skill/table gates. The other unmigrated consumer named at the time was the
+mutation harness, which is deleted. Measured: 6 scripts mention the flag, 6 use the seam,
+**0 unmigrated**. The single-seam claim is now true.
+
+**WR-11 — "the seam ships with zero callers and zero tests; all 35 plants are `kind:
+"worktree"`".** Stale in every clause. Measured: **6 production callers** and a dedicated
+`audit-root-args.test.ts` carrying **58 tests**, now including a unit-level regression test
+that imports `resolveContainedRoot` directly. The 35 plants and their registry are deleted,
+so the clause about them has no referent. This was the item left "open by operator decision"
+on 2026-09-01; the decision it was waiting for is moot, because the measurement it rested on
+no longer holds.
+
+## IN-01 — CLOSED BY REMOVAL, 2026-09-02
+
+`allowExtra` is gone from `audit-root.mjs` and `audit-root.d.mts`.
+
+It never had a caller. Every non-comment mention across the seam's whole life was its own
+parameter, default and type declaration, and `audit-gate.mjs:84` looked at it and explicitly
+declined — on the grounds that an `allowExtra` wide enough for any temp directory is exactly
+the relaxation the seam's own `WHAT NOT TO DO` forbids.
+
+An untested bypass in a containment seam is worse than an absent one, and it reads as
+precedent for the next one. Removing it in the same week `resolveContainedRoot` started
+resolving symlinks (WR-04) is deliberate: a dead widening path undercuts a check that finally
+has teeth. The `WHAT NOT TO DO` bullet now records the removal, why no caller ever wanted it,
+and a **named reversal trigger** — a caller that genuinely needs a root outside the
+repository re-adds it *then*, with that caller and a test in the same commit, not
+speculatively.
+
+`tsc` clean; `test:automated` 2962 pass / 0 fail; all five CI gates and `audit-gate` exit 0.
+
+---
+
+## THIS FILE IS FULLY RESOLVED, 2026-09-02
+
+Final tally of the 25: **17 moot** (their file was deleted with the analyser subsystems),
+**3 closed by the phase-32 gap rounds** (CR-01, IN-06, IN-07), **2 fixed today** (WR-09,
+WR-04), **3 closed by re-measurement today** (CR-03, WR-13, WR-11), **1 closed by removal
+today** (IN-01). Nothing is outstanding.
