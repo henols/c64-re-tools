@@ -291,3 +291,370 @@ test("compareStopIdentity refuses a stop record missing a term, naming the term 
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// 7. D-25's corpus-free half: the planted ONE-BIT control, with its clean
+//    control in the same test
+//
+// The plant is one bit and not one byte, deliberately. `compare.mjs` -- the
+// vocabulary ancestor this predicate replaces -- classifies a one-bit
+// difference as "drift" and lets it PASS anywhere. A control planting a whole
+// byte would go green against that inherited rule and prove nothing, which is
+// exactly the vacuity this file's header is about.
+// ---------------------------------------------------------------------------
+
+test("planted ONE-BIT difference outside the allow-list FAILS, and the same pair before the plant PASSES", () => {
+  const a = syntheticImage();
+
+  // The clean control, first and on the same buffers: byte-identical images
+  // compare equivalent. If this half ever reds, the plant below proves nothing.
+  const identical = new Uint8Array(a);
+  const clean = compareCaptures(a, identical, allowListOf([0x1000]));
+  assert.equal(clean.verdict, "equivalent");
+  assert.deepEqual(clean.differing, []);
+  assert.deepEqual(clean.allowed, []);
+
+  // Exactly ONE bit, at an address the allow-list does not name.
+  const planted = new Uint8Array(a);
+  planted[0x5000] = a[0x5000] ^ 0x01;
+  assert.equal(popcount(a[0x5000] ^ planted[0x5000]), 1, "the plant must be one bit, or this control is the weaker one");
+
+  const red = compareCaptures(a, planted, allowListOf([0x1000]));
+  assert.equal(red.verdict, "not-equivalent", "a one-bit difference outside the allow-list must FAIL -- there is no drift tolerance here");
+  assert.deepEqual(red.differing, [0x5000]);
+  assert.equal(red.divergence[0].bits, 1, "and it is reported as one bit, which no verdict reads");
+});
+
+test("the predicate does not distinguish bit counts: a full-byte difference at the same address fails identically", () => {
+  const a = syntheticImage();
+
+  const oneBit = new Uint8Array(a);
+  oneBit[0x5000] = a[0x5000] ^ 0x01;
+  const wholeByte = new Uint8Array(a);
+  wholeByte[0x5000] = a[0x5000] ^ 0xff;
+
+  const r1 = compareCaptures(a, oneBit, []);
+  const r8 = compareCaptures(a, wholeByte, []);
+  assert.equal(r1.verdict, "not-equivalent");
+  assert.equal(r8.verdict, "not-equivalent");
+  assert.deepEqual(r1.differing, r8.differing, "the verdict and the reported address are the same at one bit and at eight");
+  assert.equal(r1.divergence[0].bits, 1);
+  assert.equal(r8.divergence[0].bits, 8);
+});
+
+test("planted ONE-BIT difference AT an allow-listed address is allowed -- proving the earlier red was not a blanket refusal", () => {
+  const a = syntheticImage();
+  const planted = new Uint8Array(a);
+  planted[0x1000] = a[0x1000] ^ 0x01;
+
+  const r = compareCaptures(a, planted, allowListOf([0x1000]));
+  assert.equal(r.verdict, "equivalent", "the allow-list must actually do work, or the plant above reds for the wrong reason");
+  assert.deepEqual(r.allowed, [0x1000]);
+  assert.deepEqual(r.differing, []);
+
+  // And the same plant with the address NOT allow-listed reds -- the pairing is
+  // what attributes the green above to the allow-list rather than to the plant
+  // having failed to land.
+  const withoutList = compareCaptures(a, planted, []);
+  assert.equal(withoutList.verdict, "not-equivalent");
+  assert.deepEqual(withoutList.differing, [0x1000]);
+});
+
+// ---------------------------------------------------------------------------
+// 8. The cap boundary, as a boundary -- and it VOIDS rather than warns
+// ---------------------------------------------------------------------------
+
+test("parseAllowList accepts exactly 64 entries and refuses 65, naming both numbers and returning no artifact", () => {
+  const entriesOf = (n: number) =>
+    Array.from({ length: n }, (_unused, i) => ({ address: 0x1000 + i, pairs: ["run1-run2"] }));
+
+  // The clean control at the boundary itself: 64 is ACCEPTED. Without it, the
+  // refusal below could be a list-length bug at any threshold.
+  const atCap = parseAllowList({ release: "synthetic-release", entries: entriesOf(64) });
+  assert.equal(atCap.entries.length, 64);
+  assert.equal(atCap.addresses.length, 64);
+  assert.equal(atCap.addresses[0], 0x1000, "and the derived address list is ascending");
+
+  let artifact: unknown = "not-assigned";
+  assert.throws(
+    () => {
+      artifact = parseAllowList({ release: "synthetic-release", entries: entriesOf(65) });
+    },
+    (err: unknown) => {
+      assert.ok(err instanceof CaptureComparisonError);
+      assert.match(err.message, /65/);
+      assert.match(err.message, /64/);
+      assert.match(err.message, /VOIDS the derivation/);
+      return true;
+    },
+  );
+  assert.equal(artifact, "not-assigned", "the cap VOIDS the derivation -- it must not warn and hand back a usable list");
+});
+
+test("compareCaptures refuses a bare allow-list array over the cap too, so the array form is not a widening route", () => {
+  const a = syntheticImage();
+  // Clean control: 64 addresses is accepted on the same route.
+  const atCap = Array.from({ length: 64 }, (_unused, i) => 0x1000 + i);
+  assert.equal(compareCaptures(a, new Uint8Array(a), atCap).verdict, "equivalent");
+
+  assert.throws(() => compareCaptures(a, new Uint8Array(a), [...atCap, 0x2000]), /over the committed cap of 64/);
+});
+
+// ---------------------------------------------------------------------------
+// 9. Range-shaped notation, refused BY NAME
+// ---------------------------------------------------------------------------
+
+test("parseAllowList refuses range-shaped entries by name, and the same addresses written individually parse", () => {
+  // The clean control: the enumerated form of the very same addresses.
+  const enumerated = parseAllowList({
+    release: "synthetic-release",
+    entries: [
+      { address: 0x1000, pairs: ["run1-run2"] },
+      { address: 0x1001, pairs: ["run1-run2"] },
+      { address: 0x1002, pairs: ["run1-run2"] },
+    ],
+  });
+  assert.deepEqual(enumerated.addresses, [0x1000, 0x1001, 0x1002]);
+
+  // (a) a start/end span object
+  assert.throws(
+    () =>
+      parseAllowList({
+        release: "synthetic-release",
+        entries: [{ start: 0x1000, end: 0x1002, pairs: ["run1-run2"] }],
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof CaptureComparisonError);
+      assert.match(err.message, /range-shaped key "start"/);
+      assert.match(err.message, /ENUMERATED and is never a range/);
+      return true;
+    },
+  );
+
+  // (b) an address written as a two-element array used as a span
+  assert.throws(
+    () =>
+      parseAllowList({
+        release: "synthetic-release",
+        entries: [{ address: [0x1000, 0x1002], pairs: ["run1-run2"] }],
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof CaptureComparisonError);
+      assert.match(err.message, /two-element array/);
+      assert.match(err.message, /ENUMERATED and is never a range/);
+      return true;
+    },
+  );
+});
+
+test("parseAllowList refuses a duplicate address, an out-of-range address and a missing release", () => {
+  const base = { address: 0x1000, pairs: ["run1-run2"] };
+  // Clean control on the same shape.
+  assert.equal(parseAllowList({ release: "r", entries: [base] }).entries.length, 1);
+
+  assert.throws(() => parseAllowList({ release: "r", entries: [base, { ...base }] }), /repeats address \$1000/);
+  assert.throws(() => parseAllowList({ release: "r", entries: [{ address: 0x10000, pairs: [] }] }), /not an integer in 0\.\.65535/);
+  assert.throws(() => parseAllowList({ release: "r", entries: [{ address: 1.5, pairs: [] }] }), /not an integer in 0\.\.65535/);
+  assert.throws(() => parseAllowList({ release: "", entries: [] }), /must name the release/);
+  assert.throws(() => parseAllowList({ release: "r" }), /must carry an entries array/);
+  assert.throws(() => parseAllowList([base]), /must be a JSON object/);
+});
+
+// ---------------------------------------------------------------------------
+// 10. Adjacency: the allow-list is a SET of addresses, never a neighbourhood
+// ---------------------------------------------------------------------------
+
+test("adjacency: with only $1000 allow-listed, $1000 is allowed while $0FFF and $1001 each fail", () => {
+  const a = syntheticImage();
+  const list = allowListOf([0x1000]);
+
+  const on = new Uint8Array(a);
+  on[0x1000] = a[0x1000] ^ 0x01;
+  const onResult = compareCaptures(a, on, list);
+  assert.equal(onResult.verdict, "equivalent");
+  assert.deepEqual(onResult.allowed, [0x1000]);
+
+  const below = new Uint8Array(a);
+  below[0x0fff] = a[0x0fff] ^ 0x01;
+  const belowResult = compareCaptures(a, below, list);
+  assert.equal(belowResult.verdict, "not-equivalent", "one address below an allow-listed one is NOT allow-listed");
+  assert.deepEqual(belowResult.differing, [0x0fff]);
+
+  const above = new Uint8Array(a);
+  above[0x1001] = a[0x1001] ^ 0x01;
+  const aboveResult = compareCaptures(a, above, list);
+  assert.equal(aboveResult.verdict, "not-equivalent", "and neither is one address above it");
+  assert.deepEqual(aboveResult.differing, [0x1001]);
+});
+
+// ---------------------------------------------------------------------------
+// 11. Empty and degenerate cases
+// ---------------------------------------------------------------------------
+
+test("an EMPTY allow-list is legal, and two byte-identical images compare equivalent under it", () => {
+  const a = syntheticImage();
+  const empty = parseAllowList({ release: "synthetic-release", entries: [] });
+  assert.deepEqual(empty.addresses, []);
+
+  const r = compareCaptures(a, new Uint8Array(a), empty);
+  assert.equal(r.verdict, "equivalent");
+  assert.equal(r.allowListSize, 0);
+  assert.deepEqual(r.differing, []);
+  assert.deepEqual(r.allowed, []);
+
+  // And it is not a blanket pass: one planted bit under the empty list reds.
+  const planted = new Uint8Array(a);
+  planted[0x0400] = a[0x0400] ^ 0x01;
+  assert.equal(compareCaptures(a, planted, empty).verdict, "not-equivalent");
+});
+
+test("a single-address allow-list over a zero-difference pair reports empty differing AND empty allowed", () => {
+  const a = syntheticImage();
+  const r = compareCaptures(a, new Uint8Array(a), allowListOf([0x1000]));
+  assert.equal(r.verdict, "equivalent");
+  assert.deepEqual(r.differing, []);
+  assert.deepEqual(r.allowed, [], "an allow-listed address that did not differ is not reported as allowed");
+  assert.equal(r.allowListSize, 1);
+});
+
+// ---------------------------------------------------------------------------
+// 12. Ordering and symmetry
+// ---------------------------------------------------------------------------
+
+test("compareCaptures is symmetric in its two arguments, and differing is ascending by address", () => {
+  const a = syntheticImage();
+  // Planted out of address order, so an ascending result cannot come from the
+  // order the plants were applied in.
+  const b = withBytes(a, { 0x8000: 0x00, 0x0100: 0x00, 0xc000: 0x00 });
+
+  const ab = compareCaptures(a, b, []);
+  const ba = compareCaptures(b, a, []);
+  assert.equal(ab.verdict, ba.verdict);
+  assert.deepEqual(ab.differing, [0x0100, 0x8000, 0xc000]);
+  assert.deepEqual(ba.differing, ab.differing, "the reported list must not depend on which image was passed first");
+
+  // The per-row a/b values DO swap, which is the only asymmetry there should be.
+  assert.equal(ab.divergence[0].a, ba.divergence[0].b);
+});
+
+test("the allowed list is ascending too, whatever order the allow-list enumerated", () => {
+  const a = syntheticImage();
+  const b = withBytes(a, { 0x0100: 0x00, 0x8000: 0x00, 0xc000: 0x00 });
+  const list = allowListOf([0xc000, 0x0100, 0x8000]);
+  const r = compareCaptures(a, b, list);
+  assert.equal(r.verdict, "equivalent");
+  assert.deepEqual(r.allowed, [0x0100, 0x8000, 0xc000]);
+});
+
+// ---------------------------------------------------------------------------
+// 13. The port normalisation is load-bearing, proven by the pairing
+// ---------------------------------------------------------------------------
+
+test("a pair differing ONLY at $0000/$0001 is equivalent after normalisation and NOT equivalent without it", () => {
+  const a = syntheticImage();
+  // Two raster-position artefacts: the same machine state, two different phi1
+  // bus values left in mem_ram[0]/mem_ram[1].
+  const b = withBytes(a, { 0x0000: 0x11, 0x0001: 0x22 });
+  const aAlt = withBytes(a, { 0x0000: 0x99, 0x0001: 0xaa });
+
+  // WITHOUT normalisation: not equivalent, and both addresses are divergent.
+  // This is the half that proves the normalisation below is doing the work.
+  const raw = compareCaptures(aAlt, b, []);
+  assert.equal(raw.verdict, "not-equivalent");
+  assert.deepEqual(raw.differing, [0x0000, 0x0001]);
+
+  // WITH normalisation, both sides carrying the same CPU-visible port reads.
+  const ports = { dirRead: 47, dataRead: 55 };
+  const normalised = compareCaptures(normalisePorts(aAlt, ports), normalisePorts(b, ports), []);
+  assert.equal(normalised.verdict, "equivalent");
+  assert.deepEqual(normalised.differing, []);
+
+  // And the two addresses were NOT spent on the allow-list to get there.
+  assert.equal(normalised.allowListSize, 0);
+});
+
+test("normalisePorts refuses a wrong-length image and a non-byte port value, naming what it saw", () => {
+  const a = syntheticImage();
+  // Clean control.
+  assert.equal(normalisePorts(a, { dirRead: 0, dataRead: 255 }).length, IMAGE_BYTES);
+
+  assert.throws(() => normalisePorts(new Uint8Array(4096), { dirRead: 47, dataRead: 55 }), /is 4096 byte\(s\)/);
+  assert.throws(() => normalisePorts(a, { dirRead: 256, dataRead: 55 }), /byte values in 0\.\.255/);
+  assert.throws(() => normalisePorts(a, { dirRead: -1, dataRead: 55 }), /byte values in 0\.\.255/);
+});
+
+// ---------------------------------------------------------------------------
+// 14. The argv digest: NUL-joined, not space-joined
+// ---------------------------------------------------------------------------
+
+test("argvDigest is NUL-joined, so an argument containing a space is not the same as two arguments", () => {
+  const oneArg = argvDigest(["a b"]);
+  const twoArgs = argvDigest(["a", "b"]);
+  assert.notEqual(
+    oneArg,
+    twoArgs,
+    "a space join would collapse these two genuinely different argvs onto one digest",
+  );
+  assert.match(oneArg, /^[0-9a-f]{64}$/);
+  assert.match(twoArgs, /^[0-9a-f]{64}$/);
+  assert.equal(oneArg, oneArg.toLowerCase(), "lowercase hex");
+
+  assert.throws(() => argvDigest(["a", 1 as unknown as string]), /argv\[1\] is not a string/);
+});
+
+// ---------------------------------------------------------------------------
+// 15. Oracle edges
+// ---------------------------------------------------------------------------
+
+test("REPRO-03 adjacency: identical pc and hitCount but a frame position one frame apart is NOT identical", () => {
+  const stop: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
+  // Clean control on the same record.
+  assert.equal(compareStopIdentity(stop, { ...stop }).identical, true);
+
+  const oneFrame = compareStopIdentity(stop, { ...stop, line: stop.line + 1 });
+  assert.equal(oneFrame.identical, false, "the frame term is what makes a two-term oracle insufficient");
+  assert.deepEqual(oneFrame.differingTerms, ["line"]);
+
+  const oneCycle = compareStopIdentity(stop, { ...stop, cycle: stop.cycle + 1 });
+  assert.equal(oneCycle.identical, false);
+  assert.deepEqual(oneCycle.differingTerms, ["cycle"]);
+});
+
+test("compareStopIdentity is symmetric, and differingTerms is ordered as ORACLE_TERMS", () => {
+  const a: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
+  const b: StopIdentity = { pc: 0x0816, hitCount: 2, line: 100, cycle: 12 };
+
+  const ab = compareStopIdentity(a, b);
+  const ba = compareStopIdentity(b, a);
+  assert.equal(ab.identical, ba.identical);
+  assert.deepEqual(ab.differingTerms, ba.differingTerms, "the verdict must not depend on argument order");
+  assert.deepEqual(ab.differingTerms, [...ORACLE_TERMS], "all four differ, reported in the declared order");
+
+  // A subset, still in declared order rather than in the order they were found.
+  const subset = compareStopIdentity(a, { ...a, cycle: 99, pc: 0x1234 });
+  assert.deepEqual(subset.differingTerms, ["pc", "cycle"]);
+});
+
+test("compareStopIdentity refuses every absent or non-integer term, on either side, naming both", () => {
+  const whole: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
+  assert.equal(compareStopIdentity(whole, { ...whole }).identical, true);
+
+  for (const term of ORACLE_TERMS) {
+    const partial = { ...whole } as Record<string, number>;
+    delete partial[term];
+    assert.throws(
+      () => compareStopIdentity(partial as unknown as StopIdentity, whole),
+      (err: unknown) => {
+        assert.ok(err instanceof StopOracleError);
+        assert.equal(err.term, term);
+        assert.equal(err.side, "a");
+        return true;
+      },
+      `an absent ${term} must be refused rather than silently passed`,
+    );
+  }
+
+  assert.throws(() => compareStopIdentity(whole, { ...whole, cycle: 1.5 }), /not a finite integer on side b/);
+  assert.throws(() => compareStopIdentity(whole, { ...whole, line: Number.NaN }), /not a finite integer on side b/);
+  assert.throws(() => compareStopIdentity(null as unknown as StopIdentity, whole), /side a is not a stop record/);
+});
