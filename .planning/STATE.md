@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-04-PLAN.md
-last_updated: "2026-09-02T19:36:22.039Z"
+stopped_at: Completed 33-05-PLAN.md
+last_updated: "2026-09-02T19:57:17.062Z"
 last_activity: 2026-09-02
 last_activity_desc: "33-04 executed: vsf-slice.ts slices a flat 64K image out of the .vsf C64MEM body by a strict module-table walk from a derived offset of 58, with eight named refusals each proven by a committed synthetic fixture; the skill reaches it by CLI invocation rather than a second copy of the layout; SLICER: deliberately not emitted (ACCEPTED LIMIT — 33-07 owns it)"
-state_head: 4c23a5ae5dd120e50eb45340f117a3197725db13
+state_head: 6b6601ff4794e208cec3f07dc3daf6d8b186de3d
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -178,8 +178,32 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 4 of 12 executed (33-01, 33-02, 33-03, 33-04); next pointer at plan 5 of 12
-Status: Wave 2 in progress — `33-03` and `33-04` complete, `33-05` outstanding.
+Plan: 5 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05); next pointer at plan 6 of 12
+Status: Wave 2 complete — `33-03`, `33-04` and `33-05` all landed; wave 3 (`33-06`) is next.
+`33-05` made the stock argv deterministic by construction: `buildViceArgs()`'s stock
+branch now emits `REPRO-01`'s determinism block **unconditionally** — `-seed 4242` plus
+the three `raminit*` zeros plus `+autostart-delay-random`, in one fixed order between
+`-drive8type 1541` and `-binarymonitor`. `-raminitrandomchance 0` is the load-bearing
+one: the factory value on this build reads **10**, i.e. 0.1% of all RAM bits flipped at
+power-up, and `+autostart-delay-random` is a **fifth** flag beyond `REPRO-01`'s text,
+recorded as an explicit addition because it also selects *which* keyboard-buffer feed
+injects `RUN` and is therefore a behavioural change, not only a timing one. Warp and
+headless landed as **additive** knobs on a new optional `profile` (`D-15`'s
+argv-construction end, which `33-06` threads from the control plane): `-console` at argv
+index 1 — pinned by an assertion now, because at index ≥ 2 the process **dies** headless
+with `Gtk-WARNING: cannot open display:` — and `-warp` immediately before
+`-binarymonitor`. `-default` stays at index 0 and the fork argv is byte-identical, with
+both fork assertions annotated as Validated v0.2.0 requirements rather than ordinary
+expected-value sites. Two `Rule 3` deviations, both plan-structure rather than code: the
+four whole-argv assertions the plan assigned to `33-05` Task 2 had to move into Task 1's
+commit (Task 1's own `<verify>` demands `fail 0`, and the unconditional block moves all
+five the instant `buildViceArgs()` changes), and the idempotency test takes its "exactly
+one note" observation from the `-remotemonitor` note because `warnedBinmonBindWidened` is
+module state the pre-existing note-once test already consumes. `D-17` closed in the same
+commit as the table generated from it: `vice_machine_config_set`'s reason no longer
+states a falsehood about VICE, and now says both true things — no runtime `WarpMode`
+resource exists at all (measured `err=0x01` OBJECT_MISSING) and runtime toggling lives
+only on the text monitor this project does not dial.
 `33-04` built the capture substrate `CAP-01` names: `src/mcp/vice/vsf-slice.ts` is now
 the one place holding `.vsf` byte-layout knowledge, slicing a flat 65536-byte image out
 of the `C64MEM` body by a strict module-table walk from a derived offset of **58**, and
@@ -408,6 +432,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 33 P02 | 13 min | 2 tasks | 2 files |
 | Phase 33 P03 | 66 min | 2 tasks | 3 files |
 | Phase 33 P04 | 22 min | 3 tasks | 16 files |
+| Phase 33 P05 | 22 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -816,6 +841,10 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-03: -warp is behaviour-neutral under a frame-anchored protocol and invalidating for a wall-clock bracket, measured on this host — and AUTOSTART turns warp on by itself for the duration of the load regardless of the argv, with -warp worth only ~1.97x here. — Identical registers and one identical 64K sha256 across warped and unwarped frame-anchored stops, against a 1.76x region overshoot on an identical 10 s wall-clock bracket. 33-06 and 33-11 need both facts before profile.warp and profile.headless ship.
 - [Phase 33]: 33-04: the .vsf layout lives in exactly one module (vsf-slice.ts) and the skill reaches it by CLI invocation, NOT by a second copy on anno-d64.ts's two-independent-copies precedent — That precedent duplicates a stable published disk format; the .vsf layout is version-sensitive (a second magic block moved the first module offset; the C64MEM body length differs between two module minors both in the wild) and this project already carried one stale copy of those numbers. A resolution ladder that refuses by name cannot become a wrong image; a second copy silently can.
 - [Phase 33]: 33-04: SLICER: was not emitted, and the gap is an ACCEPTED LIMIT rather than a guessed value — SCHEMA.md 2.4 conditions the line on the capture-predicate/capture-seam transcript too, and neither file exists yet; its declared source file is 33-slicer-validation.md, owned by 33-07. validated would have been false and failed would have fired R1 no-go on a sibling plan's absence. No line name invented, no frozen file edited.
+- [Phase 33]: 33-05: the stock determinism block is emitted unconditionally, and the four inherited whole-argv assertions moved into Task 1 commit so no commit is red — REPRO-01 block is unconditional on stock, so all five stock whole-argv assertions move the instant buildViceArgs() changes (33-RESEARCH P7). Task 1 own verify demands fail 0, which the plan task split could not satisfy.
+- [Phase 33]: 33-05: STOCK_DETERMINISM_SEED and STOCK_DETERMINISM_FLAGS are exported and Object.freeze-d, so the seed has one definition — readonly is erased at runtime; a caller mutating the shared array would produce a launch whose argv no longer matches the seed a capture record cited.
+- [Phase 33]: 33-05: the idempotency test observes the -remotemonitor one-time note, not the binmon one — warnedBinmonBindWidened is module state the pre-existing note-once test already consumes, so exactly-one is unobservable on that note from any later test; the text-monitor note is genuinely unconsumed.
+- [Phase 33]: 33-05: the re-grounded warp sentence carries no speedup number; the measured ~1.97x lives in the code comment beside the -warp emission — 1.97x is a fact about this host. Publishing it in a generated public capability table would present it as a fact about the tool.
 
 ### Pending Todos
 
@@ -1608,8 +1637,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:36:21.868Z
-Stopped at: Completed 33-04-PLAN.md
+Last session: 2026-09-02T19:57:16.770Z
+Stopped at: Completed 33-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md

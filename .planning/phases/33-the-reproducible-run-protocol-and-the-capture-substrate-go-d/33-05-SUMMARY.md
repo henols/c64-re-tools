@@ -281,3 +281,7 @@ None — no external service configuration required.
 - All three task commits are reachable (`72beca6`, `b142530`, `8414c2b`).
 - `evidence/DECISION-RULE.md`, `evidence/SCHEMA.md` and `evidence/README.md` are unmodified (`git status --short` over `evidence/` reports nothing).
 - Every task `<verify>` command was re-run at the end of the plan; all results are in the Verification Results table above.
+
+## Requirements Bookkeeping
+
+`REPRO-01` and `REPRO-05` are **not** yet marked Complete in `.planning/REQUIREMENTS.md`, and that is correct rather than an omission. The shared-ID gate reports `0/2 requirement(s) ready`: `REPRO-01` is also declared by `33-11` and `REPRO-05` by both `33-06` and `33-11`, none of which has a SUMMARY yet. Either id will flip Complete automatically when the last plan declaring it finishes its own `update_requirements` step. This plan delivered its half of both — the argv construction — and says so here instead of flipping a checkbox its siblings have not earned.
