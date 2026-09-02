@@ -760,7 +760,7 @@ Plans:
 **Wave 1**
 
 - [x] 33-01-PLAN.md — GATE-01: the pre-committed go/degrade/no-go decision rules, schema and evidence conventions
-- [ ] 33-02-PLAN.md — reconcile the three falsified decisions; repair one root cause of the known-red suite baseline
+- [x] 33-02-PLAN.md — reconcile the three falsified decisions; repair one root cause of the known-red suite baseline
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
