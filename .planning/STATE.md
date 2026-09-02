@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-03-PLAN.md
-last_updated: "2026-09-02T19:02:26.769Z"
+stopped_at: Completed 33-04-PLAN.md
+last_updated: "2026-09-02T19:36:22.039Z"
 last_activity: 2026-09-02
-last_activity_desc: "33-02 executed: D-21/D-24/compare.mjs falsifications and D-15's scope narrowing amended in 33-CONTEXT.md; two stale Deferred Items rows removed, test:automated baseline 5-in-3 -> 2-in-1"
-state_head: 73e01901de402fe644211b795b67b2c9064f8393
+last_activity_desc: "33-04 executed: vsf-slice.ts slices a flat 64K image out of the .vsf C64MEM body by a strict module-table walk from a derived offset of 58, with eight named refusals each proven by a committed synthetic fixture; the skill reaches it by CLI invocation rather than a second copy of the layout; SLICER: deliberately not emitted (ACCEPTED LIMIT — 33-07 owns it)"
+state_head: 4c23a5ae5dd120e50eb45340f117a3197725db13
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -178,8 +178,22 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 3 of 12 executed (33-01, 33-02, 33-03); next pointer at plan 4 of 12
-Status: Wave 2 in progress — `33-03` complete, `33-04` and `33-05` outstanding.
+Plan: 4 of 12 executed (33-01, 33-02, 33-03, 33-04); next pointer at plan 5 of 12
+Status: Wave 2 in progress — `33-03` and `33-04` complete, `33-05` outstanding.
+`33-04` built the capture substrate `CAP-01` names: `src/mcp/vice/vsf-slice.ts` is now
+the one place holding `.vsf` byte-layout knowledge, slicing a flat 65536-byte image out
+of the `C64MEM` body by a strict module-table walk from a derived offset of **58**, and
+**refusing** — with eight named refusals, each observed against a committed fixture —
+rather than returning a plausible 65536 bytes of garbage. Both accepted body lengths are
+recognised (65543 at module minor 0, 65555 at minor 1), so `33-02`'s `D-21` rider is
+honoured rather than the superseded `4 + 65536`. One measured correction of its own: the
+RAM copy must be `new Uint8Array` + `set`, because `Buffer.prototype.slice` overrides the
+`TypedArray` method as an alias for `subarray` and so returned a **view into the
+snapshot** for the `Buffer` every real caller passes. `SLICER:` was **not** emitted:
+`SCHEMA.md` § 2.4 also requires the `capture-predicate`/`capture-seam` transcript and
+neither file exists yet, so the gap is recorded as an `## ACCEPTED LIMIT` in
+`evidence/33-04-slicer-substrate.md` — `33-07` owns `evidence/33-slicer-validation.md`
+and must emit the line there after appending both suites' transcripts.
 `33-03` was the phase's first live plan and it settled `33-RESEARCH.md` Q2 by
 measurement: the anchor-counted sequence for an AUTOSTARTed release is `S3` (arm the
 frame anchor while halted, then `AUTOSTART`, then count `CHECKPOINT_INFO` hits, with
@@ -393,6 +407,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 33 P01 | 20 min | 2 tasks | 3 files |
 | Phase 33 P02 | 13 min | 2 tasks | 2 files |
 | Phase 33 P03 | 66 min | 2 tasks | 3 files |
+| Phase 33 P04 | 22 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -799,6 +814,8 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-03: AUTOSTART_FRAME_EXACT is not-achieved (differing terms LIN and CYC). Frame-exact and byte-identical through anchor hit 50; lost from hit 75. 33-09 must report the stop identity it achieved rather than assert frame-exactness, and must not adopt -initbreak reset. — The power cycle resets the CPU, VIC-II and CIAs but not the absolute emulated clock, and the 1541's rotational phase is a function of that clock, so the pre-protocol interval leaks into the disk load's byte timing. -initbreak reset would pin the clock but never services a client that connects late.
 - [Phase 33]: 33-03: the claim that frame anchoring always fits inside D-22's cap of 64 is withdrawn — the clean sweep reaches 66 differing addresses at jitter 4000, over the cap, while the reported pair reaches 48. The cap stays at 64. — The earlier, D-11-voided pass peaked at 28 and supported the tidier claim. 33-10 must therefore record the jitters it uses for the capture pair and must not retry until the allow-list fits.
 - [Phase 33]: 33-03: -warp is behaviour-neutral under a frame-anchored protocol and invalidating for a wall-clock bracket, measured on this host — and AUTOSTART turns warp on by itself for the duration of the load regardless of the argv, with -warp worth only ~1.97x here. — Identical registers and one identical 64K sha256 across warped and unwarped frame-anchored stops, against a 1.76x region overshoot on an identical 10 s wall-clock bracket. 33-06 and 33-11 need both facts before profile.warp and profile.headless ship.
+- [Phase 33]: 33-04: the .vsf layout lives in exactly one module (vsf-slice.ts) and the skill reaches it by CLI invocation, NOT by a second copy on anno-d64.ts's two-independent-copies precedent — That precedent duplicates a stable published disk format; the .vsf layout is version-sensitive (a second magic block moved the first module offset; the C64MEM body length differs between two module minors both in the wild) and this project already carried one stale copy of those numbers. A resolution ladder that refuses by name cannot become a wrong image; a second copy silently can.
+- [Phase 33]: 33-04: SLICER: was not emitted, and the gap is an ACCEPTED LIMIT rather than a guessed value — SCHEMA.md 2.4 conditions the line on the capture-predicate/capture-seam transcript too, and neither file exists yet; its declared source file is 33-slicer-validation.md, owned by 33-07. validated would have been false and failed would have fired R1 no-go on a sibling plan's absence. No line name invented, no frozen file edited.
 
 ### Pending Todos
 
@@ -1591,8 +1608,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:02:26.508Z
-Stopped at: Completed 33-03-PLAN.md
+Last session: 2026-09-02T19:36:21.868Z
+Stopped at: Completed 33-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md

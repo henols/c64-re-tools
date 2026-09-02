@@ -82,7 +82,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### Capture Substrate
 
-- [ ] **CAP-01**: A depacked flat 64K image is produced by **slicing a VICE `.vsf` snapshot's
+- [x] **CAP-01**: A depacked flat 64K image is produced by **slicing a VICE `.vsf` snapshot's
       `C64MEM` module body** (4 bytes of port/PLA state, then 65536 bytes of RAM) with no
       transcription step anywhere. Already validated against 23-03's own hand-transcribed hex: two
       8 KB chunks byte-identical, one differing only at `$0000`/`$0001`, the fourth localising ten
@@ -399,7 +399,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REPRO-03 | Phase 33 | Pending |
 | REPRO-04 | Phase 33 | Pending |
 | REPRO-05 | Phase 33 | Pending |
-| CAP-01 | Phase 33 | Pending |
+| CAP-01 | Phase 33 | Complete |
 | CAP-02 | Phase 33 | Pending |
 | CAP-03 | Phase 33 | Pending |
 | CAP-04 | Phase 33 | Pending |
