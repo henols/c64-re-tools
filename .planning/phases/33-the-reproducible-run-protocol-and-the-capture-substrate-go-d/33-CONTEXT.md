@@ -51,8 +51,7 @@ one of them on its own reasoning rather than on trust.
 
 ### The gate (`GATE-01`)
 
-- **D-01: The decision rules are plan `33-01`, and that plan touches nothing
-  else.** Every measuring plan comes after it. **Git history is the proof** —
+- **D-01: The decision rules are plan `33-01`, and that plan touches nothing else.** Every measuring plan comes after it. **Git history is the proof** —
   the rules commit precedes the first measurement commit and is checkable with
   `git log`; no test guard. This is Phase 9's shape and Phase 23's `D-07`,
   reused because it worked twice: Phase 9's `R4` returned `degrade` and Phase
@@ -62,8 +61,7 @@ one of them on its own reasoning rather than on trust.
   rules can never again be shown to predate it. Ordering is the entire
   mechanism.
 
-- **D-02: The gate takes exactly five named, machine-readable inputs, four of
-  which are measurable before any corpus exists.**
+- **D-02: The gate takes exactly five named, machine-readable inputs, four of which are measurable before any corpus exists.**
 
   | Input | Domain | Source |
   |---|---|---|
@@ -81,16 +79,14 @@ one of them on its own reasoning rather than on trust.
   against; adding a sixth input after the rules are committed re-opens the
   pre-commitment question for the whole gate.
 
-- **D-03: `could-not-run` is not an emittable verdict of this gate, and that is
-  asserted structurally rather than stated in prose.** The verdict field's
+- **D-03: `could-not-run` is not an emittable verdict of this gate, and that is asserted structurally rather than stated in prose.** The verdict field's
   accepted values are exactly `go` / `degrade` / `no-go`; a rule evaluator that
   cannot resolve to one of the three is a bug in the rules, not an outcome.
   — **Reversibility:** one-way — a gate that abstained once has already failed
   to be a gate; the assertion is what makes the improvement over Phase 23 real
   rather than intended.
 
-- **D-04: `degrade` narrowing is pre-mapped for `C0_CAPTURE_PAIR` and
-  `ORACLE_NECESSITY` only.** Phase 23's `D-09` shape, retargeted at the two
+- **D-04: `degrade` narrowing is pre-mapped for `C0_CAPTURE_PAIR` and `ORACLE_NECESSITY` only.** Phase 23's `D-09` shape, retargeted at the two
   inputs where a mapping written *after* seeing the numbers would be most
   suspect — one depends on a corpus that may not arrive, the other is the
   criterion the ROADMAP explicitly says must be *observed* rather than argued.
@@ -111,8 +107,7 @@ one of them on its own reasoning rather than on trust.
   superseded at verdict time, but only by recording the override explicitly,
   which weakens the pre-commitment it exists to provide.
 
-- **D-05: The verdict is machine-readable frontmatter in
-  `docs/phase33-reproducible-run-gate-findings.md`** — `verdict: go|degrade|no-go`,
+- **D-05: The verdict is machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`** — `verdict: go|degrade|no-go`,
   `verdict_rule_applied: R<N>`, plus all five `D-02` inputs reproduced
   verbatim as frontmatter fields. The document reproduces the full rule and
   walks the actual outcome values through it, so a reader mechanically
@@ -120,8 +115,7 @@ one of them on its own reasoning rather than on trust.
   `docs/phase23-real-release-gate-findings.md`.
   — **Reversibility:** reversible.
 
-- **D-06: The verdict binds Phases 34-38 through ROADMAP `Depends on` + Notes +
-  a STATE.md pointer, with no test guard.** Phase 23's `D-08`, which closed
+- **D-06: The verdict binds Phases 34-38 through ROADMAP `Depends on` + Notes + a STATE.md pointer, with no test guard.** Phase 23's `D-08`, which closed
   Phase 9's criterion 5 the same way. A guard would encode roadmap policy in a
   suite belonging to a phase that ships almost no product code, and the
   likeliest outcome (`degrade` — proceed, narrowed) is exactly the case such a
@@ -132,9 +126,7 @@ one of them on its own reasoning rather than on trust.
 
 ### Evidence and the red controls
 
-- **D-07: Each "observed red" control is a committed evidence transcript in the
-  phase findings document, produced by a named repeatable script — not a
-  test-suite assertion.** Five controls are demanded by the success criteria
+- **D-07: Each "observed red" control is a committed evidence transcript in the phase findings document, produced by a named repeatable script — not a test-suite assertion.** Five controls are demanded by the success criteria
   (no-seed divergence; the reset removed from the protocol; `(LIN, CYC)` alone
   passing one frame apart; a byte planted outside the allow-list; the
   wall-clock-anchoring negative control at `LIN` 116 / 223 / 267, plus the
@@ -156,8 +148,7 @@ one of them on its own reasoning rather than on trust.
   ∪ `MANUAL_ONLY_TESTS` must equal the on-disk set exactly) means a file added
   to one side and not the other reds the suite immediately.
 
-- **D-09: Two things that *are* corpus-free and must not regress do become
-  automated tests**, and only these two: `CAP-03`'s structural bar (`D-22`) and
+- **D-09: Two things that are corpus-free and must not regress do become automated tests**, and only these two: `CAP-03`'s structural bar (`D-22`) and
   `CAP-02`'s fail-ability over a synthetic pair (`D-21`). Everything else in
   this phase's evidence is a transcript.
   — **Reversibility:** reversible.
@@ -180,8 +171,7 @@ one of them on its own reasoning rather than on trust.
 
 ### The run-protocol surface
 
-- **D-12: The protocol is an optional boolean `reproducible` argument on
-  `vice_run_until`, stock-only, defaulting to absent.** The procedure itself is
+- **D-12: The protocol is an optional boolean `reproducible` argument on `vice_run_until`, stock-only, defaulting to absent.** The procedure itself is
   `runReproducible()` in a new `src/mcp/vice/stock-reproducible-run.ts`, called
   from `stock-run-until.ts` — one named seam, one call site. The fork backend
   does **not** advertise it: the compatibility rule permits stock to add
@@ -191,8 +181,7 @@ one of them on its own reasoning rather than on trust.
   tool surface the skills are written against; renaming it later means editing
   the manifest, the conformance tests and every playbook that names it.
 
-- **D-13: The knob is a whole-procedure switch, never a set of composable
-  sub-flags.** No `skip_reset`, no `no_anchor`, no `reset_only`. The
+- **D-13: The knob is a whole-procedure switch, never a set of composable sub-flags.** No `skip_reset`, no `no_anchor`, no `reset_only`. The
   reset-removed control (`D-07`) is produced by an **evidence script that calls
   the protocol's pieces directly**, not by a shipped argument — shipping a
   "protocol without the reset" option would ship exactly the second route
@@ -200,8 +189,7 @@ one of them on its own reasoning rather than on trust.
   — **Reversibility:** one-way — once a sub-flag is published, a caller
   depends on it and the single-seam property is gone for good.
 
-- **D-14: `reproducible: true` requires a sibling `frame_anchor` address, and
-  refuses when it is absent.** The frame-anchor checkpoint is armed by the
+- **D-14 — `reproducible: true` requires a sibling `frame_anchor` address, and refuses when it is absent.** The frame-anchor checkpoint is armed by the
   procedure, not by the caller — but its once-per-frame site is
   release-specific (a cracked release almost always takes over the IRQ, so no
   KERNAL default such as `$EA31` is safe to guess). Refusing with an error that
@@ -213,8 +201,7 @@ one of them on its own reasoning rather than on trust.
   — **Reversibility:** costly — relaxing it later is easy; tightening it later
   is not, because by then captures certified under the two-term oracle exist.
 
-- **D-15: Warp and headless are an additive optional `profile` object on the
-  broker's existing `acquire` control op** — `{op:"acquire", id, token,
+- **D-15: Warp and headless are an additive optional `profile` object on the broker's existing `acquire` control op** — `{op:"acquire", id, token,
   profile:{warp?:true, headless?:true}}`. An absent `profile` produces argv
   **byte-identical to today's**, which keeps the three whole-argv
   `assert.deepEqual` assertions in `broker-launch.test.ts` green, keeps
@@ -223,9 +210,7 @@ one of them on its own reasoning rather than on trust.
   — **Reversibility:** reversible — the field is additive and absent by
   default.
 
-- **D-16: A pre-warmed instance whose profile does not match the request is
-  ineligible; the broker launches a dedicated instance for that grant and never
-  retro-warps.** Not "refuse the acquire" (that would make warp unusable
+- **D-16: A pre-warmed instance whose profile does not match the request is ineligible; the broker launches a dedicated instance for that grant and never retro-warps.** Not "refuse the acquire" (that would make warp unusable
   whenever a warm floor exists) and not "serve it unwarped" (that would make
   the knob a lie the caller cannot detect). The warm floor keeps serving
   profile-less acquires exactly as it does today. Warp is a **per-instance**
@@ -236,8 +221,7 @@ one of them on its own reasoning rather than on trust.
   re-reasoning about that guard, which exists because of a real triple-launch
   outage.
 
-- **D-17: The stale warp sentence is re-grounded to say both things, and
-  `docs/tool-support.md` is regenerated in the same commit.**
+- **D-17: The stale warp sentence is re-grounded to say both things, and `docs/tool-support.md` is regenerated in the same commit.**
   `capability-registry.ts` states, inside `vice_machine_config_set`'s reason,
   that warp on stock is launch-time and not runtime-togglable. That is
   **factually wrong about VICE** (runtime `warp` / `warp on` / `warp off` were
@@ -249,8 +233,7 @@ one of them on its own reasoning rather than on trust.
   splitting the edit across two commits reds it.
   — **Reversibility:** reversible.
 
-- **D-18: `probeReady`'s real-time timeouts are re-checked under warp in the
-  same plan that adds the profile.** `REPRO-05` names this, and a warp launch
+- **D-18: `probeReady`'s real-time timeouts are re-checked under warp in the same plan that adds the profile.** `REPRO-05` names this, and a warp launch
   that boots an order of magnitude faster is exactly where a wall-clock
   readiness probe misjudges — the same class of error as the
   wall-clock-anchoring negative control this phase is required to observe red.
@@ -275,8 +258,7 @@ one of them on its own reasoning rather than on trust.
   guards.
   — **Reversibility:** reversible — promoting it later is additive.
 
-- **D-21: The slicer locates `C64MEM` by walking the snapshot's module table,
-  never by a fixed byte offset**, and asserts the module body is exactly
+- **D-21: The slicer locates `C64MEM` by walking the snapshot's module table, never by a fixed byte offset**, and asserts the module body is exactly
   `4 + 65536` bytes, refusing otherwise. A fixed offset is fragile across VICE
   builds and would silently produce **garbage rather than an error** — the worst
   available failure mode for the substrate every downstream number is measured
@@ -284,8 +266,7 @@ one of them on its own reasoning rather than on trust.
   — **Reversibility:** costly — a capture corpus produced by an offset-based
   slicer would have to be entirely re-derived to be trusted.
 
-- **D-22: The transient allow-list is a per-release committed JSON artifact
-  derived by a named script, under a committed size cap of 64 addresses.**
+- **D-22: The transient allow-list is a per-release committed JSON artifact derived by a named script, under a committed size cap of 64 addresses.**
   Rationale for 64: the only measurement in hand is 3 transients out of 1024
   addresses at the `READY` prompt, and that is an upper bound taken under
   frame-divergent conditions. A real release adds its own frame counters, RNG,
@@ -299,8 +280,7 @@ one of them on its own reasoning rather than on trust.
   raising it after seeing a derivation overflow converts a measurement into an
   excuse.
 
-- **D-23: The derivation method, not any address set, is what carries
-  forward.** Committed method: N >= 3 runs of the same release under the same
+- **D-23: The derivation method, not any address set, is what carries forward.** Committed method: N >= 3 runs of the same release under the same
   protocol at the same stop; the allow-list is the **union of addresses
   differing across the pairwise comparisons**; each entry records the address,
   which run pairs it differed in, and a one-line attribution where known. It is
@@ -311,15 +291,13 @@ one of them on its own reasoning rather than on trust.
   be distinguished afterwards from one honestly derived, so a contaminated
   ledger has to be re-derived from fresh captures.
 
-- **D-24: The `$0000`/`$0001` 6510-port overlay is normalised inside the
-  predicate, in code**, by substituting the snapshot's own 4-byte port/PLA
+- **D-24: The `$0000`/`$0001` 6510-port overlay is normalised inside the predicate, in code**, by substituting the snapshot's own 4-byte port/PLA
   prefix over RAM `$0000`/`$0001` before comparison. Explicitly **not** by
   adding those two addresses to the allow-list — that would spend two of the
   cap's 64 slots to hide a divergence that might be real.
   — **Reversibility:** reversible.
 
-- **D-25: The planted-byte control is asserted red twice, at two different
-  costs.** Corpus-free, in CI: an automated test plants a byte outside the
+- **D-25: The planted-byte control is asserted red twice, at two different costs.** Corpus-free, in CI: an automated test plants a byte outside the
   allow-list in a **synthetic pair of fixture buffers** and asserts the
   predicate fails — so `CAP-02`'s fail-ability is guarded on every run, on any
   machine. Corpus-bound, as a transcript: the same plant on the real capture
@@ -337,8 +315,7 @@ one of them on its own reasoning rather than on trust.
   — **Reversibility:** one-way — a circularity that has already certified a
   capture cannot be laundered out of that capture's record.
 
-- **D-27: Corpus is one operator-supplied real cracked release, as a `.d64` or
-  `.prg`, identified by name **and sha256**, never committed.** Phase 23's
+- **D-27: Corpus is one operator-supplied real cracked release, as a `.d64` or `.prg`, identified by name **and sha256**, never committed.** Phase 23's
   `D-04`, carried unchanged. `CAP-04` asks for "a real cracked release ...
   captured twice" — singular — so a second release is a **stretch input**, not
   a requirement, and its absence is not a shortfall. The release is autostarted
@@ -347,8 +324,7 @@ one of them on its own reasoning rather than on trust.
   (`D-28`).
   — **Reversibility:** reversible.
 
-- **D-28: The main-CPU memspace assertion is proven able to refuse, by
-  observation.** A drive checkpoint hit sets `default_memspace`
+- **D-28: The main-CPU memspace assertion is proven able to refuse, by observation.** A drive checkpoint hit sets `default_memspace`
   (`monitor.c:3393-3396`) and no binary-monitor command resets it, after which
   `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the **drive** CPU and
   `@bank:` conditions fail outright. The evidence is a transcript of the
@@ -357,8 +333,7 @@ one of them on its own reasoning rather than on trust.
   trusting.
   — **Reversibility:** reversible.
 
-- **D-29: The capture record gains `REPRO-04`'s reproducibility key as three
-  new rows in its Identity table** — `binary sha256`, `argv digest`, `seed` —
+- **D-29: The capture record gains `REPRO-04`'s reproducibility key as three new rows in its Identity table** — `binary sha256`, `argv digest`, `seed` —
   where the argv digest is a sha256 over the exact spawn argv array joined by
   NUL. The template quotes the measured counterexample (same seed, reordered
   argv, **76-byte-different image**) inline, so a reader cannot reduce the key
@@ -374,13 +349,13 @@ All 29 decisions above are Claude's discretion, under the owner's "you suggest"
 delegation of the whole discussion. The three most consequential — and therefore
 the three most worth a second look before `33-01` is committed — are:
 
-- **D-04** (which two inputs get pre-mapped narrowing). Getting this wrong
+- `D-04` (which two inputs get pre-mapped narrowing). Getting this wrong
   means a `degrade` verdict whose narrowing was authored after the numbers were
   visible, which is the failure mode the gate exists to prevent.
-- **D-22** (the size cap of 64). The number is reasoned from a single
+- `D-22` (the size cap of 64). The number is reasoned from a single
   measurement taken under different conditions. It is a pre-commitment, so it
   cannot be revised upward later without cost.
-- **D-14** (refusing when `frame_anchor` is absent). This is the one decision
+- `D-14` (refusing when `frame_anchor` is absent). This is the one decision
   that makes the tool harder to call, deliberately.
 
 ### Folded Todos

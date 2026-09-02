@@ -754,7 +754,21 @@ reconsidered.
   4. **A depacked flat 64K image comes out of a snapshot slice with no transcription step anywhere, and the equivalence predicate is proven able to fail.** The image is the `C64MEM` module body (4 bytes of port/PLA state, then 65536 bytes of RAM). A byte planted **outside** the enumerated transient allow-list fails the comparison, observed red; the allow-list is enumerated rather than range-shaped, under a committed size cap, and re-derived per release with the *method* carried forward rather than any address set; and the `$0000`/`$0001` 6510-port overlay is normalised **in code**, never in a reader's head.
   5. **A machine-readable go / degrade / no-go verdict is recorded against rules committed to git before any measurement exists, with no judgement step** — and it **cannot** return `could-not-run` for want of a capture, because its `go` inputs include the protocol's jitter-immunity and the seed's effect, both measurable before a corpus exists. The phase's opening measurement is the binary-monitor re-instrumentation probe on an **autostarted** real release with true drive emulation in the loop, with the wall-clock-anchoring negative control **observed red** (MEASURED to reproduce the original failure: same instruction, `LIN` 116 / 223 / 267) and the warp-invalidated wall-clock bracket observed timing out spuriously. A real release is captured twice and the pair satisfies criterion 4's predicate; a shortfall is a named **gate input**, never a silent omission. Warp and headless are **additive** launch knobs a run can request, not a whole-argv override, with `-default` still at index 0 ahead of `-binarymonitor`.
 
-**Plans**: TBD
+**Plans**: 12 plans in 7 waves — `33-01` the pre-committed decision rules (nothing else, git order is the proof); `33-02` the research reconciliation and the suite-baseline repair; `33-03` the live autostart-sequencing probe with the wall-clock and warp-bracket controls; `33-04` the `.vsf` `C64MEM` slicer; `33-05` the determinism block, the launch-knob argv and the re-grounded warp sentence; `33-06` the control-plane launch profile and warm-instance eligibility; `33-07` the equivalence predicate, the stop-identity oracle and `CAP-03`'s structural bar; `33-08` the allow-list derivation method and the three-field reproducibility key; `33-09` `runReproducible()` and the two optional `vice_run_until` arguments; `33-10` the real release captured twice, the derivation on it, and the memspace refusal; `33-11` the three remaining observed-red controls and the `probeReady` re-check; `33-12` the verdict, its downstream binding and the folded-todo ledger. The two halves run concurrently: `33-04` / `33-07` / `33-08` (the emulator-free capture substrate) are independent of the stop, and `33-01` lands before every measuring plan by construction.
+
+Plans:
+- [ ] 33-01-PLAN.md — GATE-01: the pre-committed go/degrade/no-go decision rules, schema and evidence conventions
+- [ ] 33-02-PLAN.md — reconcile the three falsified decisions; repair one root cause of the known-red suite baseline
+- [ ] 33-03-PLAN.md — CAP-04's opening measurement: the autostarted anchor-counted sequence, plus the wall-clock and warp-bracket controls red
+- [ ] 33-04-PLAN.md — CAP-01: the strict `.vsf` module-table walk and `C64MEM` slice, with its refusal fixtures and skill route
+- [ ] 33-05-PLAN.md — REPRO-01/REPRO-05: the stock determinism block, `-console`/`-warp` argv, and the re-grounded warp sentence
+- [ ] 33-06-PLAN.md — REPRO-05: the additive acquire `profile` and the warm-instance eligibility rule
+- [ ] 33-07-PLAN.md — CAP-02/CAP-03/REPRO-03: the equivalence predicate, the stop-identity oracle, and the structural bar
+- [ ] 33-08-PLAN.md — REPRO-04/CAP-02: the N>=3 allow-list derivation under a voiding cap, and the three-field reproducibility key
+- [ ] 33-09-PLAN.md — REPRO-02/REPRO-03: `runReproducible()` behind one optional argument, refusing without a frame anchor
+- [ ] 33-10-PLAN.md — CAP-04: a real release captured twice, the derivation on it, and the memspace assertion observed refusing
+- [ ] 33-11-PLAN.md — the three remaining observed-red controls, and `probeReady` re-checked under warp and console
+- [ ] 33-12-PLAN.md — GATE-01: the recorded verdict, its binding on Phases 34-38, and the folded-todo ledger
 
 Notes:
 
