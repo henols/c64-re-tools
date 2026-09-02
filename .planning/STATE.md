@@ -1311,6 +1311,32 @@ counted among the exclusions until 2026-08-23 were **not** open: this milestone'
 closed all three (`PKG-02`/`PKG-03`/`PKG-04`), and `v0.4.0-MILESTONE-AUDIT.md`'s round-1
 tech-debt cluster 1 caught the stale rows at the milestone audit. Corrected, with the table,
 by `.planning/quick/260823-kf6`.
+**Measured 2026-09-02 (Phase 33 plan 33-02 Task 2), with the broker inactive:**
+`npm run test:automated` in `src/mcp/vice` exited **1** with **5 failing tests
+across 3 files** (`pass 3019 / fail 5`). Three of the five had a single root
+cause — two **completed** `audit`-category todos (the Phase 32 code-review
+residue filed 2026-08-31 with twenty-five open findings and 2026-09-01 as round 4
+with nine, both already moved to `.planning/todos/completed/`) were still listed
+`Pending` as rows in the table below. Those three are
+`docs-deferred-ledger.test.ts`'s `AUDIT-04 direction B`, its
+`planted violation: both predicates fire` control, and the
+`audit-integrity.test.ts` cascade at `no milestone audit declares a gated status
+while any docs guard is red` — and all three are closed by this edit, which
+removes exactly those two rows and nothing else. The **remaining two**
+failures — `anno-register.test.ts`'s `DIRECTION 5 (basis integrity)` and its
+`planted violation (the negative control)` — have a different and deliberately
+**out-of-phase** root cause: `STORE-01`, `STORE-04`, `STORE-06` and `MCP-04` are
+cited by the anno tool register but are no longer declared in
+`.planning/REQUIREMENTS.md`, which was rewritten for v0.8.0 and dropped the
+v0.7.0 ids. Reconciling those four ids is **not** in Phase 33's scope: they are
+v0.7.0 store ids and the correct repair may legitimately be a carried-ids
+section in `REQUIREMENTS.md` rather than a code change. No Deferred Items row is
+filed for it here on purpose — a row without a matching file under
+`.planning/todos/pending/` reds the very two-directional guard this edit
+repairs, in the other direction. The expected `test:automated` baseline for the
+remainder of Phase 33 is therefore **2 failing tests in `anno-register.test.ts`
+alone**; a third failure, or a failure in any other file, is a Phase 33
+regression and not this inheritance.
 
 | Category | Item | Priority | Status |
 |----------|------|----------|--------|
@@ -1323,8 +1349,6 @@ by `.planning/quick/260823-kf6`.
 | docs | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability | major | Pending |
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
-| audit | 2026-08-31-phase-32-review-twenty-five-open-findings | blocker | Pending |
-| audit | 2026-09-01-phase-32-review-round-4-nine-open-findings | blocker | Pending |
 | planning | 2026-09-01-ghidra-headless-one-command-6502-decompile-wrapper-proposal | minor | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
