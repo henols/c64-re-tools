@@ -200,7 +200,10 @@ rather than re-confirmed a fifth time.
      the checkable text lives in `.planning/REQUIREMENTS.md`. Phases 24 and 26
      are HELD in `ROADMAP.md` with byte-identical requirement text — this
      milestone carries that text forward under NEW phase numbers (33+), because
-     phase numbers are never reused. -->
+     phase numbers are never reused. ELEVEN of the 21 carried ids are AMENDED
+     rather than carried byte-identically, each with its evidence, per
+     `.planning/REQUIREMENTS.md`. Carried NUMBERING is preserved so every id
+     still traces to `git show 2421f68:.planning/REQUIREMENTS.md`. -->
 
 - [ ] A frame-exact emulator stop exists, so two runs of the same release stop in the same frame and their captures compare as equivalent — behind a pre-committed go / degrade / no-go gate whose rules are committed to git before any measurement, per the Phase 23 pattern
 - [ ] A depacked flat 64K capture is produced without any hex transcription step, by slicing a VICE `.vsf` snapshot's `C64MEM` module body
@@ -264,7 +267,7 @@ build step at runtime; Node ≥ 18 for the plain-`.mjs` installer. Runtime
 dependencies unchanged this milestone: `@mastra/mcp` for stdio JSON-RPC framing,
 and now `node:sqlite`, a **built-in** at this project's Node floor rather than a
 new package. Seven skills ship. The `vice` tool surface is 62 tools on the fork
-backend and 38 on stock, plus 18 `anno_*` tools that are backend-independent by
+backend and 38 on stock, plus 19 `anno_*` tools that are backend-independent by
 construction. External prerequisites: a VICE build (stock `x64sc` ≥ 3.9, or the
 fork), and ACME on `$PATH` for `acme-build` and for the test-only export oracle.
 The external analyser is **no longer a prerequisite** — it was removed this milestone.
@@ -987,9 +990,26 @@ owned store.
 - **`PROOF-01`..`PROOF-03` measured rather than `could-not-run`**, on real cracked
   code, stated beside the fixture re-measurement (`FIXTURE_FALSE_POSITIVES: 3`,
   `FIXTURE_DATA_RECOVERY_PCT: 72.39`) rather than silently replacing it.
-- **Held Phase 24's content, byte-identical** — `DXA-01`..`DXA-03`,
-  `GHID-01`..`GHID-05`, `OPC-01`..`OPC-03`.
-- **Held Phase 26's content, byte-identical** — `AUTO-01`..`AUTO-07`.
+- **Held Phase 24's content** — `DXA-01`..`DXA-03`, `GHID-01`..`GHID-05`,
+  `OPC-01`..`OPC-03`, plus the new `DXA-04` and `OPC-04`. **Not byte-identical:**
+  `DXA-01`, `DXA-02`, `GHID-01`, `GHID-03`, `GHID-04` and `OPC-01` are amended,
+  each with its evidence, in `.planning/REQUIREMENTS.md`. Carried numbering is
+  preserved so every id still traces to `git show 2421f68:.planning/REQUIREMENTS.md`.
+- **Held Phase 26's content** — `AUTO-01`..`AUTO-07`, plus the new `AUTO-08`.
+  **Not byte-identical:** `AUTO-04`, `AUTO-05` and `AUTO-07` are amended.
+  `AUTO-04`/`AUTO-05` stay *unvalidated rather than narrowed*, and `AUTO-04` now
+  requires a synthetic two-caller path-dependent `$01` fixture built as an early
+  task — measured: the existing `bank.a` fixture has no path-dependent site, so
+  "the join declines on the fixture" is not a usable control.
+- **`memmapshow` is stated ABSENT and three requirements are narrowed rather than
+  left naming an oracle this milestone will not have** (owner decision,
+  2026-09-02). It was the specified external check for `GHID-04`'s dispatch
+  denominator, the dxa ground-truth partition behind `PROOF-01`, and `AUTO-04`'s
+  bank-state validation. The cost is named rather than absorbed: **`PROOF-01` has
+  no independent external check**, which is the same weakness that let the pivot's
+  unreproducible `72.46%` / `0 FP` headline stand. Reversal condition: a
+  binary-monitor-reachable execution oracle, or a decision to open the text
+  channel.
 
 **Key context carried into this milestone:**
 
@@ -1014,10 +1034,25 @@ owned store.
   project directory containing a dot-prefixed path element. Measured in Phase 23's
   `evidence/tools/instrument-provenance.txt`; any harness must grep the run log
   for `ERROR REPORT SCRIPT ERROR` or its assertions are worthless.
-- **The SLEIGH source already exists in full** — `docs/undocumented-opcodes-ghidra.md`,
-  766 lines, all 105 bytes, unstable instructions modelled as black-box userops,
-  the `@include` layering already written against the `65c02.slaspec` collision.
-  `OPC-01`..`OPC-03` integrate and verify it; they do not write it.
+- **The SLEIGH source does NOT compile — this milestone's research falsified the
+  claim that stood here.** `docs/undocumented-opcodes-ghidra.md` is 766 lines
+  covering all 105 bytes with the `@include` layering already written against the
+  `65c02.slaspec` collision, and the layering is sound — but the p-code is not.
+  MEASURED twice independently on 2026-09-02 against real Ghidra 12.1.3's
+  `support/sleigh`: **8 failing constructors** and `ERROR No output produced`,
+  exit 2, against a clean control compile of stock `6502.slaspec` in the same
+  scratch directory. One root cause for all eight — an unsized value where SLEIGH
+  needs an explicit size — and the fix is verified. The failures are at exactly
+  `XAA $8b`, immediate `LAX`/`LXA $ab`, `AHX`/`TAS`/`SHX`/`SHY`, `SBC $eb` and
+  `NOP $0c`. **`OPC-01` is therefore fix → compile → integrate → verify, not
+  "integrates and verifies it; it does not write it".** The superseded forecast is
+  corrected here rather than deleted, per this project's convention. A second,
+  quieter hazard came with it: `6502.ldefs` declares only `6502:LE:16:default` and
+  `65C02:LE:16:default`, every artifact in this repo names the *stock* language,
+  and a failed `sleigh` leaves the pre-shipped `6502.sla` in place — so an
+  unchecked build yields a green run on a language decoding none of the 105 bytes
+  (`OPC-04`). Offsetting good news, also measured: a drop-in language extension
+  needs **no Gradle and no Ghidra rebuild**.
 - **Where Ghidra executes is an open question this milestone must settle.**
   [`seeds/host-tool-executor.md`](seeds/host-tool-executor.md) establishes that
   host binaries are reached over the container-out seam and never `spawnSync`'d
@@ -1026,11 +1061,66 @@ owned store.
   directory, multi-minute runs, and exports past the broker's 64 KiB line cap.
   Whether that seam widens or Ghidra gets its own leased subsystem alongside the
   VICE pool is undecided, and it is a precondition for any skill script reaching
-  for it.
+  for it. Measured inputs to that decision: JVM startup is 12.6–17.4 s before any
+  analysis, and four independent comparable projects converge on one resident JVM
+  behind a localhost socket — structurally the same design as this project's own
+  VICE broker.
+- **VICE event record/replay, the candidate mechanism this milestone was opened
+  on, does not exist.** MEASURED 2026-09-02: `event.c` registers exactly six event
+  options and none is `-record`/`-recordevents`; `x64sc -record` returns
+  `Unknown option`, exit 255; `event_record_start()` has no non-UI caller; and no
+  binary-monitor opcode addresses it. The trap that makes the belief plausible is
+  that the text monitor's `record`/`playback` are monitor-command **file
+  scripting**, not event history. **The scope decision stands and its named
+  mechanism is replaced, not lost:** stock VICE is cycle-deterministic from a
+  monitor-issued hard reset, so reproducibility comes from the reset protocol plus
+  pinned launch nondeterminism (`REPRO-01`..`REPRO-05`).
+- **The frame-exact stop is smaller than this milestone assumed, and the residual
+  divergence had a cause nobody here had looked at.** MEASURED: three runs with
+  deliberate pre-protocol jitter of 0 / 1500 / 4000 ms stopped byte-identically
+  under the reset protocol while their pre-reset state spanned 6.7M cycles; and
+  stock prints a `time()`-derived RAM-init seed that differs every launch, worth
+  ~1,000 false-divergence addresses per capture pair — 67 of 4080 bytes over an
+  untouched window, and 0 with `-seed 4242`. `buildViceArgs()` emits neither
+  `-seed` nor any `raminit*` flag today. The stop is a **protocol**, not a new
+  mechanism. Counterweight: every probe establishing this ran at the KERNAL
+  `READY` prompt over the now-excluded text channel, so the recipe is **partly
+  unverified** until re-instrumented over `-binarymonitor` on an autostarted real
+  release — which is `CAP-04`, and the first real measurement of the milestone.
+- **Two prerequisites are unowned, not one.** `ROADMAP.md` called the frame-exact
+  stop "the single gate". MEASURED host inventory 2026-09-02: **dxa is not
+  installed anywhere**, and Ghidra 12.1.3 exists only as an unpinned out-of-tree
+  probe unpack at `/home/henrik/dev/_ghidra-probe/` — not vendored, not on
+  `$PATH`. dxa's tarball also carries **no `LICENSE`/`COPYING` file**, GPL-2.0-or-later
+  only in C headers under two-party copyright, so `THIRD-PARTY-NOTICES.md` must
+  quote the headers and this project supplies the GPL-2.0 text (`DXA-01`).
+- **A stale capability claim is owed a correction, and its net position is
+  subtle** — recorded here so a phase can own it rather than "fixing" it wrongly.
+  `capability-registry.ts` and the generated `docs/tool-support.md` state that
+  warp on stock is launch-time-only. That is **factually wrong about VICE** —
+  runtime warp was refuted live on 2026-08-27 — but it is **operationally correct
+  for this milestone**, because runtime `warp on`/`off` is reachable only over the
+  excluded text channel. So the sentence should be re-grounded ("no runtime
+  `WarpMode` resource; runtime toggling exists only on the text monitor, which
+  this project does not dial") rather than simply deleted as refuted. `REPRO-05`
+  keeps warp launch-time for that reason, which puts it back inside the
+  warm-instance-eligibility problem: a pre-warmed interactive instance cannot be
+  retro-warped.
 - **Deliberately excluded from this milestone:** the text-monitor client and the
   accumulating runtime-evidence layer (`memmapshow` / `prof` / `chis` as a third
   independent classifier) — only the seed's reproducible-runs half is in scope, by
-  owner decision 2026-09-02; the seed stays planted. Also excluded: the rebuild
+  owner decision 2026-09-02; the seed stays planted.
+- **The text monitor's `stopwatch` is excluded by name** (owner decision,
+  2026-09-02: *"stopwatch is nothing i want"*). This settles a disagreement between
+  two of this milestone's researchers: `FEATURES.md` proposed `stopwatch` as the
+  monotonic frame counter and therefore as *the* mechanism for the frame-exact
+  stop, while `PITFALLS.md` measured binary-monitor checkpoint stops as already
+  cycle-exact under a monitor-issued reset protocol, needing no text channel. The
+  stop is the reset protocol. **Consequence to carry into the requirements:**
+  absolute cycle count is then readable only via `CPUHISTORY_GET`, which needs
+  VICE >= 3.10, and this host runs 3.9 — so on the 3.9 floor the run-equivalence
+  oracle is raster line plus raster cycle plus the 64K capture comparison, with
+  absolute cycle as a 3.10-only strengthening rather than a requirement. Also excluded: the rebuild
   half `DECOMP-*` / `BUILD-*` / `EQUIV-*` (v0.9.0), and the return of `ANNO-13` /
   `ANNO-14` / `ANNO-15`, which no phase owns under the 2026-08-26 "no parity is
   owed" decision.
