@@ -35,6 +35,7 @@ import {
   VsfSliceError,
   FIRST_MODULE_OFFSET,
   MODULE_HEADER_LEN,
+  MODULE_NAME_LEN,
   MIN_C64MEM_BODY_LEN,
   V01_C64MEM_BODY_LEN,
   RAM_OFFSET,
@@ -226,4 +227,258 @@ test("no exported function takes a filesystem path -- both take a byte array", (
     ["listSnapshotModules", "bytes: Uint8Array"],
     ["sliceC64Mem", "bytes: Uint8Array"],
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// The refusal cases. Each one is a first-class deliverable with its own
+// fixture or its own in-test construction, and each asserts the MESSAGE
+// content rather than merely that something threw -- a bare `assert.throws`
+// passes for a typo in the function name.
+//
+// The specific historical failure this whole section closes: a slicer that
+// returns a plausible 65536 bytes of garbage rather than refusing. That is
+// the transcription defect (one 32 KB write truncated mid-payload, one 8 KB
+// write dropping ten characters localised to `$7871`) reproduced with more
+// steps, and every number measured downstream would inherit it silently.
+// ---------------------------------------------------------------------------
+
+/** Rewrites a module header's 16-byte NUL-padded name IN A COPY, so a case
+ * built from a fixture cannot drift from that fixture and cannot mutate it.
+ * `new Uint8Array(bytes)` copies for both `Buffer` and `Uint8Array` input --
+ * unlike `bytes.slice()`, whose `Buffer` override is a view. */
+function withModuleNameAt(bytes: Uint8Array, offset: number, name: string): Uint8Array {
+  assert.ok(name.length <= MODULE_NAME_LEN, "test helper misuse: name wider than the name field");
+  const copy = new Uint8Array(bytes);
+  for (let i = 0; i < MODULE_NAME_LEN; i++) {
+    copy[offset + i] = i < name.length ? name.charCodeAt(i) : 0;
+  }
+  return copy;
+}
+
+/** The two module-header offsets the fixtures put MAINCPU and C64MEM at.
+ * Asserted against the walk in the Task-1 tests above, so these are read
+ * values rather than magic numbers. */
+const MAINCPU_HEADER_OFFSET = 58;
+const C64MEM_HEADER_OFFSET = 88;
+
+test("malformed module header: refuses at the offset, naming it, and says it did not rescan", () => {
+  assert.throws(
+    () => sliceC64Mem(fixture("malformed-header")),
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /offset 88/);
+      assert.match(err.message, /size=21/);
+      assert.match(err.message, /[Rr]efusing rather than rescanning/);
+      return true;
+    },
+  );
+});
+
+test("the refusal DISCRIMINATES: the well-formed fixture in the same test does not throw", () => {
+  // Without this half, a slicer that threw unconditionally would pass the
+  // test above. The positive control is what makes the refusal a refusal
+  // rather than a blanket failure.
+  assert.throws(() => sliceC64Mem(fixture("malformed-header")), VsfSliceError);
+  assert.doesNotThrow(() => sliceC64Mem(fixture("wellformed-minor1")));
+});
+
+test("malformed module header: an implementation that rescanned would reach C64MEM -- it must not", () => {
+  // The positive control stated as the property it protects. The malformed
+  // fixture's bad header IS a `C64MEM` header (name bytes and all); only its
+  // size field is impossible. An `off++` rescan fallback would step past it,
+  // find no further module, and either return garbage or fail elsewhere. So
+  // the observable requirement is that the failure names the HEADER, at its
+  // offset -- not the body length, and not a missing module.
+  const modules = listSnapshotModules(fixture("wellformed-minor1")).map((m) => m.name);
+  assert.deepEqual(modules, ["MAINCPU", "C64MEM", "GLUE"], "fixture drift: the walk shape changed");
+  assert.throws(() => listSnapshotModules(fixture("malformed-header")), /malformed module header/);
+});
+
+test("short C64MEM body: refuses naming both the observed 65542 and the minimum 65543", () => {
+  assert.throws(
+    () => sliceC64Mem(fixture("short-c64mem")),
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /65542/);
+      assert.match(err.message, /65543/);
+      assert.match(err.message, /[Rr]efusing a short read/);
+      return true;
+    },
+  );
+});
+
+test("the body-length BOUNDARY, as a boundary: 65543 is accepted and 65542 is refused", () => {
+  // Both calls in one test so the boundary is visible as a boundary rather
+  // than as two unrelated results in two places.
+  const accepted = sliceC64Mem(fixture("wellformed-minor0"));
+  assert.equal(accepted.bodyLength, MIN_C64MEM_BODY_LEN);
+  assert.equal(accepted.bodyLength, 65543);
+  assert.equal(accepted.ram.length, RAM_SIZE);
+  assert.throws(() => sliceC64Mem(fixture("short-c64mem")), /65542/);
+});
+
+test("snapshot minor 0: 65536 RAM bytes, snapshotMinor 0, bodyLength 65543, suffix bytes present", () => {
+  const slice = sliceC64Mem(fixture("wellformed-minor0"));
+  assert.equal(slice.ram.length, RAM_SIZE);
+  assert.deepEqual(Buffer.from(slice.ram), Buffer.from(ramPattern(11, 5)));
+  assert.equal(slice.snapshotMinor, 0);
+  assert.equal(slice.bodyLength, 65543);
+  // The three port read-back bytes EXIST at minor 0 -- only the four
+  // DWORD/state fields after them are absent -- so dataRead and dirRead are
+  // available on this branch too and are not defaulted to zero.
+  assert.equal(slice.dataOut, 39);
+  assert.equal(slice.dataRead, 55);
+  assert.equal(slice.dirRead, 47);
+});
+
+test("no C64MEM module: refuses listing the module names that WERE found", () => {
+  // Built by rewriting the fixture's own C64MEM name bytes, so this case
+  // cannot drift from the fixture it is derived from.
+  const renamed = withModuleNameAt(fixture("wellformed-minor1"), C64MEM_HEADER_OFFSET, "C64RAM");
+  assert.throws(
+    () => sliceC64Mem(renamed),
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /no module named "C64MEM" found/);
+      assert.match(err.message, /MAINCPU/);
+      assert.match(err.message, /C64RAM/);
+      assert.match(err.message, /GLUE/);
+      return true;
+    },
+  );
+});
+
+test("a name that merely CONTAINS C64MEM does not match -- C64MEMHACKS is a real adjacent module", () => {
+  const renamed = withModuleNameAt(
+    fixture("wellformed-minor1"),
+    C64MEM_HEADER_OFFSET,
+    "C64MEMHACKS",
+  );
+  assert.throws(() => sliceC64Mem(renamed), /no module named "C64MEM" found/);
+  // And the walk itself still reads that name back byte-exactly, so the
+  // failure above is a non-match rather than a decode error.
+  assert.equal(listSnapshotModules(renamed)[1].name, "C64MEMHACKS");
+});
+
+test("two C64MEM modules: refuses naming the count and both offsets, never first-wins", () => {
+  const duplicated = withModuleNameAt(
+    fixture("wellformed-minor1"),
+    MAINCPU_HEADER_OFFSET,
+    "C64MEM",
+  );
+  let result: unknown;
+  assert.throws(
+    () => {
+      result = sliceC64Mem(duplicated);
+    },
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /duplicated/);
+      assert.match(err.message, /2 modules/);
+      assert.match(err.message, /58/);
+      assert.match(err.message, /88/);
+      return true;
+    },
+  );
+  // The first-wins failure stated as an observation: the genuine 65555-byte
+  // C64MEM sits second, and an implementation taking `matches[0]` would have
+  // returned the 8-byte MAINCPU body's slice -- or a short read of it.
+  assert.equal(result, undefined, "a duplicated module name must never return either module's bytes");
+});
+
+test("a zero-byte input is refused by name, never as a short buffer", () => {
+  assert.throws(
+    () => sliceC64Mem(new Uint8Array(0)),
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /is 0 byte\(s\)/);
+      assert.match(err.message, /at least 80/);
+      return true;
+    },
+  );
+});
+
+test("an input one byte short of a file header plus one module header is refused by name", () => {
+  const short = new Uint8Array(FIRST_MODULE_OFFSET + MODULE_HEADER_LEN - 1);
+  assert.equal(short.length, 79);
+  assert.throws(
+    () => sliceC64Mem(short),
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /is 79 byte\(s\)/);
+      assert.match(err.message, /at least 80/);
+      return true;
+    },
+  );
+  // And exactly one more byte gets PAST the length gate, so the gate is on
+  // the boundary rather than somewhere near it. It then fails on the magic,
+  // which is the next check and a different message.
+  assert.throws(() => sliceC64Mem(new Uint8Array(80)), /snapshot magic/);
+});
+
+test("a file long enough but without the snapshot magic is refused by name", () => {
+  const bogus = new Uint8Array(200);
+  bogus.fill(0x41);
+  assert.throws(
+    () => sliceC64Mem(bogus),
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /does not begin with the 19-byte VICE snapshot magic/);
+      return true;
+    },
+  );
+});
+
+test("a walk that does not end exactly at the file length is refused, naming both numbers", () => {
+  // Append one trailing byte to a well-formed fixture: every module still
+  // parses cleanly, so this is the ONLY check that catches it -- which is
+  // exactly the shape a future VICE adding a third magic block would have.
+  const original = fixture("wellformed-minor1");
+  const padded = new Uint8Array(original.length + 1);
+  padded.set(original);
+  assert.throws(
+    () => listSnapshotModules(padded),
+    (err: Error) => {
+      assert.ok(err instanceof VsfSliceError, `expected a VsfSliceError, got ${err.name}`);
+      assert.match(err.message, /ended at offset 65690/);
+      assert.match(err.message, /65691 byte\(s\)/);
+      assert.match(err.message, /3 module\(s\) parsed cleanly/);
+      return true;
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The fixtures' own provenance. A synthetic fixture that does not say so is
+// worse than no fixture: every number measured on this substrate rests on
+// knowing which bytes were captured and which were constructed.
+// ---------------------------------------------------------------------------
+
+test("every .vsf fixture has a sidecar declaring itself synthetic and naming its generator", () => {
+  const names = ["wellformed-minor1", "wellformed-minor0", "malformed-header", "short-c64mem"];
+  for (const name of names) {
+    const sidecar = JSON.parse(
+      readFileSync(join(HERE, "fixtures", "vsf", `${name}.json`), "utf8"),
+    ) as Record<string, unknown>;
+    for (const key of ["capturedFrom", "viceVersion", "capturedAt", "command", "synthetic"]) {
+      assert.ok(key in sidecar, `${name}.json is missing the required provenance key ${key}`);
+    }
+    assert.equal(sidecar.synthetic, true, `${name}.json must declare itself synthetic`);
+    assert.match(String(sidecar.command), /make-fixtures\.mjs/);
+    assert.equal(sidecar.fileBytes, fixture(name).length, `${name}.json's fileBytes is stale`);
+  }
+});
+
+test("vsf-slice.ts is in package.json files[] and no fixtures entry is", () => {
+  // Two mechanical reasons the module must be listed, both stated in its own
+  // header: the skill-side route resolves it inside the published tarball,
+  // and `shippedTsModules()` -- which every structural guard scans -- is
+  // derived from `files[]`, so an unlisted module is outside the scanned set.
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
+  assert.ok(pkg.files.includes("vsf-slice.ts"), "vsf-slice.ts is missing from files[]");
+  assert.deepEqual(
+    pkg.files.filter((f) => /fixtures/.test(f)),
+    [],
+    "fixtures are test-support and must never ship: the package-contents validator fails a pack that leaks one",
+  );
 });

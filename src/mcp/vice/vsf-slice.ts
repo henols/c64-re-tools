@@ -95,13 +95,21 @@ export const SNAPSHOT_MACHINE_NAME_LEN = 16;
  * offset is 58 and not 37. */
 export const SNAPSHOT_VERSION_MAGIC = "VICE Version\x1a";
 
-/** `name(16) major(1) minor(1) size(u32LE)`. The size field covers the
- * module's OWN header as well as its body. */
-export const MODULE_HEADER_LEN = 22;
+/** Width of a module header's NUL-padded name field. Deliberately its OWN
+ * constant and not `SNAPSHOT_MACHINE_NAME_LEN`: both are 16 in VICE's source,
+ * but they are different fields in different structures, and sharing one
+ * constant would make a future divergence in either look like a bug in the
+ * other. */
+export const MODULE_NAME_LEN = 16;
 
-/** Byte offset of the size field within a module header: 16 name bytes plus
- * the major and minor bytes. */
-export const MODULE_SIZE_FIELD_OFFSET = 18;
+/** `name(16) major(1) minor(1) size(u32LE)`. Written as the arithmetic so the
+ * 22 is checkable. The size field covers the module's OWN header as well as
+ * its body. */
+export const MODULE_HEADER_LEN = MODULE_NAME_LEN + 1 + 1 + 4;
+
+/** Byte offset of the size field within a module header: the name field plus
+ * the major and minor bytes. Evaluates to 18. */
+export const MODULE_SIZE_FIELD_OFFSET = MODULE_NAME_LEN + 2;
 
 /** Where the module table starts. Written as the arithmetic so the derivation
  * is checkable at a glance and cannot drift from the constants it is made of:
@@ -205,7 +213,7 @@ function readU32LE(bytes: Uint8Array, at: number): number {
  * TRAILING-only -- an embedded NUL is kept, because a name with one is
  * malformed and must not be silently normalised into a name that matches. */
 function decodeModuleName(bytes: Uint8Array, at: number): string {
-  let end = at + SNAPSHOT_MACHINE_NAME_LEN;
+  let end = at + MODULE_NAME_LEN;
   while (end > at && bytes[end - 1] === 0) end--;
   let name = "";
   for (let i = at; i < end; i++) name += String.fromCharCode(bytes[i]);
@@ -257,8 +265,8 @@ export function listSnapshotModules(bytes: Uint8Array): SnapshotModule[] {
 
   while (offset + MODULE_HEADER_LEN <= bytes.length) {
     const name = decodeModuleName(bytes, offset);
-    const major = bytes[offset + SNAPSHOT_MACHINE_NAME_LEN];
-    const minor = bytes[offset + SNAPSHOT_MACHINE_NAME_LEN + 1];
+    const major = bytes[offset + MODULE_NAME_LEN];
+    const minor = bytes[offset + MODULE_NAME_LEN + 1];
     const size = readU32LE(bytes, offset + MODULE_SIZE_FIELD_OFFSET);
 
     if (size < MODULE_HEADER_LEN || offset + size > bytes.length) {

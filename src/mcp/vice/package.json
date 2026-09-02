@@ -66,6 +66,7 @@
     "anno-coverage.ts",
     "block-class.ts",
     "prg-image.ts",
+    "vsf-slice.ts",
     "anno-types.ts",
     "anno-index.ts",
     "anno-store.ts",

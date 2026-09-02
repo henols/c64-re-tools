@@ -1,0 +1,9 @@
+{
+  "capturedFrom": "synthetic:make-fixtures.mjs",
+  "viceVersion": "3.9.0.0 (layout modelled on the measured 3.9 snapshot, not captured from it)",
+  "capturedAt": "2026-09-02T19:17:11.265Z",
+  "command": "node src/mcp/vice/fixtures/vsf/make-fixtures.mjs",
+  "synthetic": true,
+  "fileBytes": 131,
+  "note": "A valid snapshot header and a valid MAINCPU module, then at offset 88 a module header whose u32LE size field reads 21 -- below the 22-byte module header it is supposed to cover, so the walk cannot advance by it. This is the POSITIVE CONTROL for the refusal: a slicer carrying an increment-by-one rescan fallback would step past this header and keep walking, so this fixture producing a successful slice means the fallback is present."
+}

@@ -1,0 +1,9 @@
+{
+  "capturedFrom": "synthetic:make-fixtures.mjs",
+  "viceVersion": "3.9.0.0 (layout modelled on the measured 3.9 snapshot, not captured from it)",
+  "capturedAt": "2026-09-02T19:17:11.265Z",
+  "command": "node src/mcp/vice/fixtures/vsf/make-fixtures.mjs",
+  "synthetic": true,
+  "fileBytes": 65677,
+  "note": "A well-formed module-table walk ending exactly at the file length, whose C64MEM body is 65542 bytes -- exactly one below the 65543 minimum. The walk succeeds and the BODY-LENGTH refusal is what has to fire, which is why the trailing GLUE module is present: this fixture must not be refused for the wrong reason."
+}

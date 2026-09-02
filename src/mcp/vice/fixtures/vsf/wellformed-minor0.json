@@ -1,0 +1,9 @@
+{
+  "capturedFrom": "synthetic:make-fixtures.mjs",
+  "viceVersion": "3.9.0.0 (layout modelled on the measured 3.9 snapshot, not captured from it)",
+  "capturedAt": "2026-09-02T19:17:11.265Z",
+  "command": "node src/mcp/vice/fixtures/vsf/make-fixtures.mjs",
+  "synthetic": true,
+  "fileBytes": 65678,
+  "note": "A well-formed snapshot whose C64MEM module is at module minor 0: body exactly 65543 bytes (4-byte port prefix + 65536 RAM + 3-byte suffix), with the four trailing minor-1 fields absent. The 3-byte suffix EXISTS at minor 0 -- only the DWORD/state fields after it do not -- which is what makes dataRead/dirRead available on this branch too. RAM byte i is (i * 11 + 5) & 0xff, a different pattern from the minor-1 fixture so a test cannot pass by reading the wrong file."
+}
