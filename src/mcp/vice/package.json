@@ -67,6 +67,8 @@
     "block-class.ts",
     "prg-image.ts",
     "vsf-slice.ts",
+    "capture-predicate.ts",
+    "stop-oracle.ts",
     "anno-types.ts",
     "anno-index.ts",
     "anno-store.ts",
