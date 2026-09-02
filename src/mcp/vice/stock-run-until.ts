@@ -244,6 +244,19 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     }
   }
 
+  // D-12: `reproducible` is a BOOLEAN. Any other type is refused naming the
+  // offending value -- never coerced. `reproducible: "false"` is truthy in
+  // JavaScript, so a coercing gate would run the whole protocol (including the
+  // hard reset) for a caller who wrote the string "false" meaning to disable
+  // it. Refusing is the only reading that cannot be wrong.
+  if (args.reproducible !== undefined && typeof args.reproducible !== "boolean") {
+    return isErrorText(
+      `vice_run_until: reproducible must be a boolean, got ${JSON.stringify(args.reproducible)} -- it is not coerced, because ` +
+        `the string "false" is truthy in JavaScript and coercing it would run the whole protocol (hard reset included) for a ` +
+        `caller who meant to disable it.`,
+    );
+  }
+
   // `frame_anchor` goes through parseAddress with a `what:` label, exactly as
   // `address` does, so a malformed anchor is refused with the same wording a
   // malformed target gets rather than a second, divergent message.
@@ -254,6 +267,21 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     } catch (err) {
       return isErrorText(`vice_run_until: ${describeError(err)}`);
     }
+  }
+
+  // An ACCEPTED-AND-IGNORED argument is the exact defect the by-name gate above
+  // exists to prevent, so `frame_anchor` without `reproducible` is refused
+  // rather than silently dropped. It is not merely inert: a caller who supplies
+  // an anchor has asked for the anchored protocol, and answering from the
+  // ordinary path would report a confident `reached: true` for a run that was
+  // never anchored to a frame at all.
+  if (args.frame_anchor !== undefined && args.reproducible !== true) {
+    return isErrorText(
+      `vice_run_until: "frame_anchor" has no meaning without "reproducible": true -- the frame anchor is armed by the ` +
+        `reproducible protocol and by nothing else, so on the ordinary path this argument would be accepted and IGNORED while ` +
+        `the answer still reported a stop. Refused rather than dropped. Pass reproducible: true to run the anchored protocol, ` +
+        `or remove "frame_anchor".`,
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -271,8 +299,24 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
   // lifted out of that ordering by a later edit that looks like a cleanup.
   // ---------------------------------------------------------------------
   if (args.reproducible === true) {
+    // D-14's refusal, in the `cycles`-refusal register: it refuses whenever the
+    // protocol is requested without its required sibling, and it explains WHY
+    // refusing beats degrading rather than just reporting that a field is
+    // missing.
+    //
+    // The required name is read from REPRODUCIBLE_RUN_REQUIRED_SIBLINGS, not
+    // repeated as a literal here -- a second copy is how the message and the
+    // gate drift apart after a rename.
     if (frameAnchor === undefined) {
-      return isErrorText(`vice_run_until: reproducible requires ${REPRODUCIBLE_RUN_REQUIRED_SIBLINGS.join(", ")}`);
+      return isErrorText(
+        `vice_run_until: reproducible: true requires ${REPRODUCIBLE_RUN_REQUIRED_SIBLINGS.join(", ")} -- an address executed ` +
+          `once per frame, whose hit count IS the frame term of the stop identity (PC, hit_count, (LIN, CYC)). No default is ` +
+          `supplied because the once-per-frame site is RELEASE-SPECIFIC: a cracked release almost always takes over the IRQ, ` +
+          `so no KERNAL site -- $EA31 included -- is safe to guess, and an anchor that never executes would bound out as a ` +
+          `timeout while looking like a wedge. Refusing beats silently degrading to a two-term stop identity: (LIN, CYC) is a ` +
+          `WITHIN-FRAME position, not a monotonic clock, so without the frame term two stops one whole frame apart certify as ` +
+          `the same stop. Pass frame_anchor, or drop reproducible to run the ordinary unanchored path.`,
+      );
     }
     const { result } = await runReproducible(session, { address, frameAnchor, timeoutMs, timeoutClamped });
     return result;

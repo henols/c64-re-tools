@@ -3440,7 +3440,7 @@
     },
     {
       "name": "vice_run_until",
-      "description": "Run until an address is reached. \"cycles\" is NOT implemented on stock and is refused whenever present, including alongside \"address\" (it used to be silently dropped while the answer still said reached:true); unexpected argument names are refused by name too. timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging. machineHalted is stamped on every answer (never omitted, so an absent field can never be read as false) and is DERIVED, not asserted: true on a hit and on a timeout whose cleanup CHECKPOINT_DELETE was answered over a live socket, false when that delete failed or the socket is gone and the run-state projection does not say stopped. machineHalted false means the state could not be established, NOT that the machine is running -- machineHaltedNote says which case applies and names vice_execution_run (halted) or vice_diagnose (unestablished) as the next call. A timed-out wait racing its own cleanup CHECKPOINT_DELETE against a fired-but-unreported checkpoint is resolved from a live program-counter read: raceResolved is pc_at_address (confirmed reached), pc_elsewhere (confirmed not reached), or unresolved (the PC read itself failed, in which case reached is omitted entirely and reachedUnknown is true rather than asserting a guessed value either way).",
+      "description": "Run until an address is reached. \"cycles\" is NOT implemented on stock and is refused whenever present, including alongside \"address\" (it used to be silently dropped while the answer still said reached:true); unexpected argument names are refused by name too. timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging. machineHalted is stamped on every answer (never omitted, so an absent field can never be read as false) and is DERIVED, not asserted: true on a hit and on a timeout whose cleanup CHECKPOINT_DELETE was answered over a live socket, false when that delete failed or the socket is gone and the run-state projection does not say stopped. machineHalted false means the state could not be established, NOT that the machine is running -- machineHaltedNote says which case applies and names vice_execution_run (halted) or vice_diagnose (unestablished) as the next call. A timed-out wait racing its own cleanup CHECKPOINT_DELETE against a fired-but-unreported checkpoint is resolved from a live program-counter read: raceResolved is pc_at_address (confirmed reached), pc_elsewhere (confirmed not reached), or unresolved (the PC read itself failed, in which case reached is omitted entirely and reachedUnknown is true rather than asserting a guessed value either way). reproducible (stock-only, absent by default) runs the whole reproducible-run protocol instead of the ordinary path -- arm the frame anchor and the target while halted, monitor-issued hard RESET, exactly one resume, then an event-driven wait on the target checkpoint's own id -- and answers with the four-term stop identity (pc, hitCount, line, cycle), where hitCount is the FRAME ANCHOR's count and targetHitCount is the target's own. It is a whole-procedure switch with no sub-flags (there is no skip_reset, no_anchor or reset_only, so a protocol-without-the-reset is not a callable option) and it REFUSES rather than degrades: reproducible: true without frame_anchor is refused naming why the frame term cannot otherwise be supplied, frame_anchor without reproducible is refused rather than accepted and ignored, and a build whose REGISTERS_AVAILABLE enumerates no PC/LIN/CYC is refused before anything is armed.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3455,6 +3455,14 @@
           "timeout_ms": {
             "type": "number",
             "description": "Stock-only. Milliseconds to wait for the address to be reached before giving up; default 30000, clamped to a ceiling of 600000."
+          },
+          "reproducible": {
+            "type": "boolean",
+            "description": "Stock-only. Absent by default. When true, runs the reproducible-run protocol (REPRO-02) rather than the ordinary run-until path: the frame anchor and the target are armed while the machine is halted, a monitor-issued hard RESET is issued, exactly ONE resume is sent, and the wait resolves on the target checkpoint's own CHECKPOINT_INFO. Requires frame_anchor. A whole-procedure switch, never composable sub-flags -- there is no skip_reset, no_anchor or reset_only, because a shipped protocol-without-the-reset would be exactly the second route a caller can forget it took. Must be a boolean; a string is refused rather than coerced, since the string \"false\" is truthy."
+          },
+          "frame_anchor": {
+            "type": "string",
+            "description": "Stock-only. Absent by default, and REQUIRED whenever reproducible is true -- an address (number, hex, or symbol) of a site executed once per frame, whose hit count IS the frame term of the stop identity (PC, hit_count, (LIN, CYC)). No default is supplied and none would be safe to guess: the once-per-frame site is release-specific, and a cracked release almost always takes over the IRQ, so a KERNAL site such as $EA31 may never execute at all. Omitting it with reproducible: true is REFUSED rather than degraded to a two-term identity -- (LIN, CYC) is a within-frame position, not a monotonic clock, so without the frame term two stops one whole frame apart certify as the same stop. Supplying it WITHOUT reproducible is also refused, rather than accepted and ignored. May equal address: the procedure still arms two distinct checkpoints (the anchor non-temporary, the target temporary) and waits on the target's own id."
           }
         }
       },
@@ -3526,6 +3534,72 @@
             "type": "string"
           },
           "raceNote": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "reproducibleStop": {
+            "type": "boolean"
+          },
+          "reproducibleStopNote": {
+            "type": "string"
+          },
+          "frameAnchor": {
+            "type": "number"
+          },
+          "targetCheckpointId": {
+            "type": "number"
+          },
+          "anchorCheckpointId": {
+            "type": "number"
+          },
+          "targetHitCount": {
+            "type": "number"
+          },
+          "anchorHitsObserved": {
+            "type": "number"
+          },
+          "anchorHitCountObserved": {
+            "type": "number"
+          },
+          "anchorStoppedFirst": {
+            "type": "boolean"
+          },
+          "anchorStoppedFirstNote": {
+            "type": "string"
+          },
+          "anchorCleanup": {
+            "type": "string"
+          },
+          "anchorCleanupError": {
+            "type": "string"
+          },
+          "cleanupNote": {
+            "type": "string"
+          },
+          "pc": {
+            "type": "number"
+          },
+          "line": {
+            "type": "number"
+          },
+          "cycle": {
+            "type": "number"
+          },
+          "hitCountNote": {
+            "type": "string"
+          },
+          "stopIdentityTerms": {
+            "type": "array"
+          },
+          "stopIdentityNote": {
+            "type": "string"
+          },
+          "resumes": {
+            "type": "number"
+          },
+          "resumesNote": {
             "type": "string"
           }
         },

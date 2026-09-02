@@ -20,6 +20,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFile } from "node:fs/promises";
 
 import { handleRunUntil, RUN_UNTIL_KEYS } from "./stock-run-until.ts";
 import {
@@ -704,6 +705,159 @@ test("reproducible: runReproducible is exported and takes a session plus a plain
 // ---------------------------------------------------------------------------
 // 9. D-13: the accepted key set, pinned
 // ---------------------------------------------------------------------------
+
+/** A client that would THROW on any send at all -- proves a refusal happened
+ * in the argument gate, before a single byte reached the monitor. */
+function noSendClient(): FakeClient {
+  return makeFakeClient(async (commandType: number) => {
+    throw new Error(`nothing may be sent on a refused call (got 0x${commandType.toString(16)})`);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 10. D-14: reproducible without frame_anchor refuses, naming WHY
+// ---------------------------------------------------------------------------
+
+test("D-14: reproducible: true with no frame_anchor is REFUSED, naming frame_anchor and why the frame term cannot be supplied", async () => {
+  const { client, calls } = noSendClient();
+  const result = await handleRunUntil({ address: "$c000", reproducible: true }, makeSession(client), FAKE_DEPS);
+  assertErr(result);
+  const text = errText(result);
+
+  // Names the required sibling -- read from the one definition, not a literal.
+  assert.match(text, /frame_anchor/);
+  assert.ok(text.includes(REPRODUCIBLE_RUN_REQUIRED_SIBLINGS[0]));
+  // States WHY the frame term cannot otherwise be supplied.
+  assert.match(text, /release-specific|RELEASE-SPECIFIC/);
+  assert.match(text, /takes over the IRQ/);
+  assert.match(text, /\$EA31|\$ea31/);
+  // States that refusing beats degrading to a two-term identity.
+  assert.match(text, /Refusing beats silently degrading/);
+  assert.match(text, /two-term stop identity/);
+  // And nothing was sent: refused in the gate, machine untouched.
+  assert.deepEqual(calls, []);
+});
+
+test("D-14: frame_anchor WITHOUT reproducible is refused rather than accepted and ignored", async () => {
+  for (const args of [
+    { address: "$c000", frame_anchor: "$ea31" },
+    { address: "$c000", frame_anchor: "$ea31", reproducible: false },
+  ]) {
+    const { client, calls } = noSendClient();
+    const result = await handleRunUntil(args, makeSession(client), FAKE_DEPS);
+    assertErr(result);
+    assert.match(errText(result), /has no meaning without "reproducible": true/);
+    assert.match(errText(result), /accepted and IGNORED/);
+    assert.match(errText(result), /Refused rather than dropped/);
+    assert.deepEqual(calls, []);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 11. Type validation and the by-name gate
+// ---------------------------------------------------------------------------
+
+test("reproducible: a non-boolean reproducible is refused NAMING the value, never coerced", async () => {
+  for (const value of ["true", "false", 1, 0, {}, []]) {
+    const { client, calls } = noSendClient();
+    const result = await handleRunUntil(
+      { address: "$c000", reproducible: value, frame_anchor: "$ea31" },
+      makeSession(client),
+      FAKE_DEPS,
+    );
+    assertErr(result);
+    assert.match(errText(result), /reproducible must be a boolean/);
+    assert.ok(errText(result).includes(JSON.stringify(value)), `message must name the offending value ${JSON.stringify(value)}`);
+    assert.deepEqual(calls, [], "nothing may be sent for a malformed argument");
+  }
+  // The specific trap the refusal exists for: "false" is truthy, so a coercing
+  // gate would run the whole protocol -- hard reset included -- for a caller
+  // who meant to disable it.
+  const { client } = noSendClient();
+  const result = await handleRunUntil(
+    { address: "$c000", reproducible: "false", frame_anchor: "$ea31" },
+    makeSession(client),
+    FAKE_DEPS,
+  );
+  assertErr(result);
+  assert.match(errText(result), /truthy/);
+});
+
+test("reproducible: a malformed frame_anchor is refused with parseAddress's own wording", async () => {
+  for (const value of ["$zzzz", -1, {}, "not-an-address"]) {
+    const { client, calls } = noSendClient();
+    const result = await handleRunUntil(
+      { address: "$c000", reproducible: true, frame_anchor: value },
+      makeSession(client),
+      FAKE_DEPS,
+    );
+    assertErr(result);
+    assert.match(errText(result), /^vice_run_until: /);
+    assert.match(errText(result), /frame_anchor/, `parseAddress's \`what:\` label must name frame_anchor for ${JSON.stringify(value)}`);
+    assert.deepEqual(calls, []);
+  }
+});
+
+test("reproducible: an unknown key alongside the two new ones is still refused BY NAME", async () => {
+  const { client, calls } = noSendClient();
+  const result = await handleRunUntil(
+    { reproducible: true, frame_anchor: "$ea31", turbo: true },
+    makeSession(client),
+    FAKE_DEPS,
+  );
+  assertErr(result);
+  assert.match(errText(result), /unexpected argument\(s\): turbo/);
+  // The message lists all five accepted names, so a caller sees the whole set.
+  for (const key of RUN_UNTIL_KEYS) assert.ok(errText(result).includes(key), `refusal must list "${key}"`);
+  assert.deepEqual(calls, []);
+});
+
+test("reproducible: a typo'd `reproducable` is refused by name, never silently running the ordinary path", async () => {
+  const { client, calls } = noSendClient();
+  const result = await handleRunUntil(
+    { address: "$c000", reproducable: true, frame_anchor: "$ea31" },
+    makeSession(client),
+    FAKE_DEPS,
+  );
+  assertErr(result);
+  assert.match(errText(result), /unexpected argument\(s\): reproducable/);
+  assert.deepEqual(calls, []);
+});
+
+// ---------------------------------------------------------------------------
+// 12. The stock manifest declares both keys as PURE widenings
+// ---------------------------------------------------------------------------
+
+test("D-12: tools-manifest.stock.json declares reproducible and frame_anchor as optional, with no required array introduced", async () => {
+  const manifest = JSON.parse(await readFile(new URL("./tools-manifest.stock.json", import.meta.url), "utf8"));
+  const tool = (manifest.tools ?? manifest).find((entry: { name: string }) => entry.name === "vice_run_until");
+  assert.ok(tool, "vice_run_until must be present in the stock manifest");
+
+  const props = tool.inputSchema.properties;
+  assert.equal(props.reproducible.type, "boolean");
+  assert.equal(props.frame_anchor.type, "string");
+
+  // A PURE widening: no `required` array exists, so neither key -- nor any
+  // pre-existing one -- became newly required. That is what keeps the addition
+  // inside the compatibility rule (stock may ADD optional parameters but never
+  // removes, retypes, or newly-requires one).
+  assert.equal(tool.inputSchema.required, undefined);
+  // The three pre-existing keys are untouched and still typed as they were.
+  assert.equal(props.address.type, "string");
+  assert.equal(props.cycles.type, "number");
+  assert.equal(props.timeout_ms.type, "number");
+
+  // Every accepted argument name is declared, and nothing is declared that the
+  // handler would refuse -- the manifest and the gate cannot drift apart.
+  assert.deepEqual(Object.keys(props).sort(), [...RUN_UNTIL_KEYS].sort());
+
+  // The descriptions carry the two facts a caller cannot discover by trying:
+  // that frame_anchor is required when reproducible is true, and why.
+  assert.match(props.frame_anchor.description, /REQUIRED whenever reproducible is true/);
+  assert.match(props.frame_anchor.description, /release-specific/);
+  assert.match(props.reproducible.description, /no skip_reset, no_anchor or reset_only/);
+  assert.match(tool.description, /reproducible/);
+});
 
 test("D-13: RUN_UNTIL_KEYS is EXACTLY the five names -- no sub-flag exists", () => {
   // THIS SINGLE EQUALITY is what makes a future `skip_reset`, `no_anchor` or
