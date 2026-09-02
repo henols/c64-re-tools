@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-02-PLAN.md
-last_updated: "2026-09-02T17:55:11.006Z"
+stopped_at: Completed 33-03-PLAN.md
+last_updated: "2026-09-02T19:02:26.769Z"
 last_activity: 2026-09-02
 last_activity_desc: "33-02 executed: D-21/D-24/compare.mjs falsifications and D-15's scope narrowing amended in 33-CONTEXT.md; two stale Deferred Items rows removed, test:automated baseline 5-in-3 -> 2-in-1"
-state_head: aa8d1f4e64a677cb03aea65baf84293a5bc58691
+state_head: 73e01901de402fe644211b795b67b2c9064f8393
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 12
-  completed_plans: 1
+  completed_plans: 3
   percent: 0
 ---
 
@@ -178,8 +178,21 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 2 of 12 executed (33-01, 33-02); next pointer at plan 3 of 12
-Status: Wave 1 in progress. `33-01` is complete: `GATE-01`'s go / degrade / no-go
+Plan: 3 of 12 executed (33-01, 33-02, 33-03); next pointer at plan 4 of 12
+Status: Wave 2 in progress — `33-03` complete, `33-04` and `33-05` outstanding.
+`33-03` was the phase's first live plan and it settled `33-RESEARCH.md` Q2 by
+measurement: the anchor-counted sequence for an AUTOSTARTed release is `S3` (arm the
+frame anchor while halted, then `AUTOSTART`, then count `CHECKPOINT_INFO` hits, with
+**no** `RESET` anywhere — research's separate `RESET 1` is what undid the autostart).
+A checkpoint armed before `AUTOSTART` **survives** its power cycle, settled by one
+observed `CHECKPOINT_LIST` reply. `AUTOSTART_FRAME_EXACT: not-achieved` naming `LIN`
+and `CYC`: frame-exact and byte-identical through anchor hit 50, lost from hit 75,
+because the power cycle resets the CPU/VIC-II/CIAs but not the absolute emulated
+clock and the 1541's rotational phase is a function of it. Both wall-clock controls
+are red (`WALLCLOCK_CONTROL`, `WARP_BRACKET_CONTROL`). The claim that frame anchoring
+always fits inside `D-22`'s cap of 64 is **withdrawn** — 66 differing addresses at
+jitter 4000, over the cap — so `33-10` must record its jitters and must not retry
+until the allow-list fits. Prior wave: `33-01` is complete: `GATE-01`'s go / degrade / no-go
 rules `R1`..`R9`, the outcome-line schema and the phase evidence conventions are
 committed at `2a8ef95` — the only commit reachable from itself that touches
 `.planning/phases/33-…/evidence/`, so the rules provably predate every measurement
@@ -379,6 +392,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 30 P06 | 62 min | 3 tasks | 16 files |
 | Phase 33 P01 | 20 min | 2 tasks | 3 files |
 | Phase 33 P02 | 13 min | 2 tasks | 2 files |
+| Phase 33 P03 | 66 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -781,6 +795,10 @@ Recent decisions affecting current work:
 - [Phase 33]: Task 1 blocking decision gate resolved by the human owner before dispatch with the selection proceed — no value adjusted — An autonomous executor that approves its own pre-commitment has produced no pre-commitment. harden-capture-pair was declined because making C0_CAPTURE_PAIR: fail a no-go would make a captured-and-failed pair fatal while never obtaining a pair stayed only degrade, and D-04 deliberately leaves fail unmapped so its narrowing is authored against the recorded cause.
 - [Phase 33]: 33-CONTEXT.md's D-21, D-24 and its compare.mjs code-insight claim carry dated AMENDED 2026-09-02 riders with the measured counter-values (body length >= 65543 / 65555 at minor 1; $0000 <- dir_read and $0001 <- data_read from the 3-byte suffix, not the 4-byte prefix; compare.mjs's four volatile ranges over 4866 addresses and its one-bit-drift-passes rule named incompatible with CAP-02 and with D-25's control), and D-15 carries a fourth rider narrowing its argv byte-identity claim to the fork branch and the profile field against five stock whole-argv assertions — Amend beside the superseded sentence, never over it (T-33-14): a reader who arrives at the decision text alone must not be able to act on the falsified number, and a silent rewrite would erase the fact that it was ever believed. D-21's 4 + 65536 assertion would have refused every real snapshot and fired R1 -> no-go on an arithmetic error.
 - [Phase 33]: The test:automated baseline for the remainder of Phase 33 is 2 failing tests in anno-register.test.ts alone (measured EXIT=1, tests 2968, pass 2960, fail 2, broker inactive), down from the recorded phase-open baseline of 5 failing tests in 3 files; the residual cause -- STORE-01, STORE-04, STORE-06 and MCP-04 cited by the anno tool register but no longer declared in REQUIREMENTS.md after the v0.8.0 rewrite -- is recorded as out-of-phase with no Deferred Items row filed for it — Filing a row without a matching file under .planning/todos/pending/ would red the same two-directional AUDIT-04 guard this plan repaired, in the other direction. Naming the residual root cause in STATE.md instead keeps a later reader from mistaking the two anno-register failures for a Phase 33 regression, and keeps the baseline a recorded measurement rather than a moving target.
+- [Phase 33]: 33-03: S3 is the anchor-counted sequence for an AUTOSTARTed release — arm the frame anchor while halted, then AUTOSTART, then count CHECKPOINT_INFO hits, with no RESET anywhere. A checkpoint armed before AUTOSTART survives its power cycle (observed CHECKPOINT_LIST total=1). — AUTOSTART is itself a power cycle, so research's separate RESET 1 undid the autostart — that, not the arming order, is why its one attempt produced no usable stop. Settled by one observed reply rather than inferred.
+- [Phase 33]: 33-03: AUTOSTART_FRAME_EXACT is not-achieved (differing terms LIN and CYC). Frame-exact and byte-identical through anchor hit 50; lost from hit 75. 33-09 must report the stop identity it achieved rather than assert frame-exactness, and must not adopt -initbreak reset. — The power cycle resets the CPU, VIC-II and CIAs but not the absolute emulated clock, and the 1541's rotational phase is a function of that clock, so the pre-protocol interval leaks into the disk load's byte timing. -initbreak reset would pin the clock but never services a client that connects late.
+- [Phase 33]: 33-03: the claim that frame anchoring always fits inside D-22's cap of 64 is withdrawn — the clean sweep reaches 66 differing addresses at jitter 4000, over the cap, while the reported pair reaches 48. The cap stays at 64. — The earlier, D-11-voided pass peaked at 28 and supported the tidier claim. 33-10 must therefore record the jitters it uses for the capture pair and must not retry until the allow-list fits.
+- [Phase 33]: 33-03: -warp is behaviour-neutral under a frame-anchored protocol and invalidating for a wall-clock bracket, measured on this host — and AUTOSTART turns warp on by itself for the duration of the load regardless of the argv, with -warp worth only ~1.97x here. — Identical registers and one identical 64K sha256 across warped and unwarped frame-anchored stops, against a 1.76x region overshoot on an identical 10 s wall-clock bracket. 33-06 and 33-11 need both facts before profile.warp and profile.headless ship.
 
 ### Pending Todos
 
@@ -1573,8 +1591,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T17:55:10.736Z
-Stopped at: Completed 33-02-PLAN.md
+Last session: 2026-09-02T19:02:26.508Z
+Stopped at: Completed 33-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
