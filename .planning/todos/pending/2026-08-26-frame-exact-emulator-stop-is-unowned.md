@@ -7,7 +7,7 @@ files:
 
   - src/mcp/vice/vice-sync.ts
 
-resolves_phase:
+resolves_phase: 33
 audit_acknowledged:
   milestone: v0.7.0
   at: 2026-09-01

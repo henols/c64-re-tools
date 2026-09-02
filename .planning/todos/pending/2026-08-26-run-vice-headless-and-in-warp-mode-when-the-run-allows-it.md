@@ -3,6 +3,7 @@ created: 2026-08-26T12:36:16.314Z
 title: Run VICE headless and in warp mode when the run allows it
 area: broker
 severity: minor
+resolves_phase: 33
 files:
 
   - src/mcp/vice/broker-launch.mts:153-218

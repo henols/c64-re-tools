@@ -7,7 +7,7 @@ files:
 
   - src/skills/c64-ram-capture/SKILL.md
 
-resolves_phase:
+resolves_phase: 33
 audit_acknowledged:
   milestone: v0.7.0
   at: 2026-09-01

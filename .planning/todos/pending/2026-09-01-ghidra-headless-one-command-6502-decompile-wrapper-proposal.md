@@ -3,6 +3,7 @@ created: 2026-09-01T21:18:36.919Z
 title: Ghidra headless one-command 6502 decompile wrapper — proposal, with the corrections it omits
 area: planning
 severity: minor
+resolves_phase: 36
 files:
   - .planning/ROADMAP.md (Phase 24, HELD — GHID-01..05, OPC-01..03)
   - .planning/seeds/host-tool-executor.md
@@ -147,3 +148,49 @@ TBD — this is capture, not a plan. When Phase 24 is unheld:
    post-script; it determines whether a fourth artifact can drift from the store.
 4. Decide the execution seam (widened host-tool executor vs. a leased Ghidra
    subsystem) before any skill script reaches for it.
+
+---
+
+## Correction, 2026-09-02 (at the v0.8.0 open)
+
+Two statements above were falsified by this milestone's research and are corrected
+here rather than edited away, so the record shows what was believed and when.
+
+1. **"`OPC-01..03` integrate and verify it; they do not write it" is FALSE.** The
+   SLEIGH source in `docs/undocumented-opcodes-ghidra.md` **does not compile**.
+   MEASURED twice independently against real Ghidra 12.1.3's `support/sleigh`:
+   **8 failing constructors** and `ERROR No output produced`, exit 2, against a
+   clean control compile of stock `6502.slaspec` in the same scratch directory.
+   One root cause for all eight — an unsized value where SLEIGH needs an explicit
+   size — and the fix is verified. The failures are at exactly `XAA $8b`,
+   immediate `LAX`/`LXA $ab`, `AHX`/`TAS`/`SHX`/`SHY`, `SBC $eb` and `NOP $0c`.
+   `OPC-01` is now **fix → compile → integrate → verify**.
+2. **"the single gate on `R1`'s branch is the unowned frame-exact emulator stop"
+   is no longer the operative blocker.** MEASURED: stock VICE is cycle-deterministic
+   from a monitor-issued hard reset, and the residual divergence was host-clock-seeded
+   RAM init (`-seed` plus three `raminit*` flags took three differing 64K images to
+   one identical sha256). The stop is a **protocol**, not a missing mechanism, and it
+   is owned by **Phase 33**. Note also that the prerequisite set was wrong in the other
+   direction: dxa is not installed and Ghidra is an unpinned out-of-tree unpack, so
+   there were **two** unowned prerequisites, not one.
+
+**Two of this todo's open questions are now answered, and the answers are decisions:**
+
+- *"whether `program.json` should be an intermediate at all, or whether the Ghidra
+  post-script should write directly into the store"* — **it must not write the store
+  directly**, and this is structural rather than a preference: `anno-seam.test.ts`
+  asserts `node:sqlite` is named by exactly one shipped module, so a Java writer would
+  sit outside every guard's scope — an invisible violation, not a caught one. The
+  transfer file is **transient evidence with a digest, consumed and deleted on import**
+  (`IMP-01`, `IMP-02`); `.annostore` is the model and `.asm` is a rendering of it.
+  A persisted `program.json` is recorded in `REQUIREMENTS.md` → Out of Scope.
+- *"where this wrapper executes"* — **Phase 34**, the host-tool execution seam, which
+  is sequenced **before** Phases 35 and 36 precisely because the grep gate banning
+  external-binary spawns can only be written once nothing violates it. Measured input
+  to the JVM-lifetime decision: startup is 12.6–17.4 s before any analysis.
+
+**Live scope is `ROADMAP.md` Phase 36** (`GHID-*`, `OPC-*`), not the retired Phase 24
+this todo's `files:` list still points at. The three operational constraints this todo
+records from `instrument-provenance.txt` are carried into `GHID-01` verbatim, including
+the exact literal `ERROR REPORT SCRIPT ERROR` — a naive `error`/`fail` grep false-fires
+on the flat-64K route's benign `ZERO_PAGE`/`STACK` INFO lines.
