@@ -94,12 +94,41 @@ class CensusScopeError extends Error {
  * keyword and specifier land on different lines, a dynamic `import()`, a bare
  * side-effect `import "..."`, a `require()` and `process.getBuiltinModule()`
  * all pass the target as a quoted specifier, and a per-statement regex has to
- * enumerate each shape correctly to see them. */
+ * enumerate each shape correctly to see them.
+ *
+ * BACKTICKS COUNT (33 review WR-05). A template literal is a legal module
+ * specifier for a dynamic import -- `await import(`./stop-oracle.ts`)` --
+ * and the scan recognised only the two quote characters, so that shape was
+ * invisible to the one guard standing between the predicate and the oracle in
+ * both directions. A bypass here produces exactly the silent pass this file's
+ * own header says a comment cannot notice. Interpolated specifiers are a
+ * separate matter: they cannot be READ from source at all, and are refused by
+ * name in interpolatedSpecifierImports() rather than scanned for a specifier
+ * they do not carry. */
 function moduleSpecifiers(src: string): string[] {
   const code = codeOnly(src, true);
-  return [...code.matchAll(/["']([^"'\n]*)["']/g)]
+  return [...code.matchAll(/["'`]([^"'`\n]*)["'`]/g)]
     .map((m) => m[1])
     .filter(isModuleSpecifierShaped);
+}
+
+/** Every dynamic `import()` / `require()` in `src` whose specifier is an
+ * INTERPOLATED template literal.
+ *
+ * Such a specifier is not present in the source at all -- `import(`./${name}.ts`)`
+ * names its target only at runtime -- so no static scan can decide what it
+ * resolves to. The honest answer is to refuse the shape rather than to scan it
+ * and report "no hit", which is indistinguishable from a clean module and is
+ * the silent pass this whole file exists to prevent (33 review WR-05).
+ *
+ * Matched on the OPENING of the call, so a specifier spanning lines or
+ * containing quotes inside its `${...}` cannot slip past a full-literal
+ * pattern. */
+function interpolatedSpecifierImports(src: string): string[] {
+  const code = codeOnly(src, true);
+  return [...code.matchAll(/\b(?:import|require)\s*\(\s*`([^`]*)/g)]
+    .filter((m) => m[1]!.includes("${"))
+    .map((m) => `interpolated specifier: ${m[0]!.replace(/\s+/g, " ")}`);
 }
 
 /** Whether a string literal is SHAPED like a module specifier at all.
@@ -113,7 +142,17 @@ function moduleSpecifiers(src: string): string[] {
  * are kept because a cross-module import could in principle be written as a
  * package subpath (`@scope/pkg/stop-oracle.ts`) rather than relatively. */
 function isModuleSpecifierShaped(s: string): boolean {
-  return /^node:/.test(s) || (s.includes("/") && !/\s/.test(s));
+  // The third arm is 33 review WR-05: requiring a `/` meant a quoted BARE
+  // specifier (`"stop-oracle.ts"`, no `./`) was skipped, so the narrowing
+  // compounded the backtick gap. A whitespace-free literal carrying a module
+  // extension is specifier-shaped whether or not it has a path separator, and
+  // the extension requirement is what keeps prose and refusal messages out --
+  // the property the measured narrowing was protecting.
+  return (
+    /^node:/.test(s) ||
+    (s.includes("/") && !/\s/.test(s)) ||
+    (/\.m?[tj]s$/.test(s) && !/\s/.test(s))
+  );
 }
 
 /** Whether a specifier resolves to the named module stem -- with or without a
@@ -142,8 +181,16 @@ function crossModuleReferences(dir: string = HERE): string[] {
         `crossModuleReferences: ${file} is not in the scanned shipped set of ${dir} -- a census that cannot see the module it is about would report no violations and pass`,
       );
     }
-    for (const specifier of moduleSpecifiers(readFileSync(join(dir, file), "utf8"))) {
+    const src = readFileSync(join(dir, file), "utf8");
+    for (const specifier of moduleSpecifiers(src)) {
       if (isSpecifierFor(specifier, otherStem)) hits.push(`${file} -> ${specifier}`);
+    }
+    // An unscannable specifier is reported as a violation of THIS census, not
+    // resolved: it could name the other module and no static read can say
+    // (33 review WR-05). Reported for either module regardless of which stem
+    // is being looked for, because the shape itself is what is refused.
+    for (const shape of interpolatedSpecifierImports(src)) {
+      hits.push(`${file} -> ${shape}`);
     }
   }
   return hits.sort();
@@ -344,6 +391,53 @@ test("planted violation (c): a DYNAMIC import() of one module from the other is 
       ["capture-predicate.ts -> ./stop-oracle.ts"],
       "a dynamic import reaches the module with no import statement to match -- the census must see it too",
     );
+  });
+
+  assert.deepEqual(crossModuleReferences(), []);
+});
+
+test("planted violation (c2): a dynamic import() with a TEMPLATE-LITERAL specifier is reported (33 review WR-05)", () => {
+  // A backtick specifier is a legal dynamic import and was invisible to a
+  // scan that recognised only " and '. This is the one guard between the
+  // predicate and the oracle in both directions, so a bypass in it is the
+  // silent pass this file's header says a comment cannot notice.
+  const planted = [
+    "export async function compareCaptures() {",
+    "  const { compareStopIdentity } = await import(`./stop-oracle.ts`);",
+    "  return compareStopIdentity;",
+    "}",
+    "",
+  ].join("\n");
+
+  withPlantedTree({ [PREDICATE]: planted, [ORACLE]: CLEAN_ORACLE }, (dir) => {
+    assert.deepEqual(
+      crossModuleReferences(dir),
+      ["capture-predicate.ts -> ./stop-oracle.ts"],
+      "a template-literal specifier must be scanned like a quoted one",
+    );
+  });
+
+  assert.deepEqual(crossModuleReferences(), []);
+});
+
+test("planted violation (c3): a dynamic import() with an INTERPOLATED specifier is REFUSED by shape, not scanned (33 review WR-05)", () => {
+  // `import(`./${x}.ts`)` names its target only at runtime, so no static read
+  // can decide what it resolves to. Reporting "no hit" would be
+  // indistinguishable from a clean module; the shape itself is the violation.
+  const planted = [
+    "const which = " + '"stop-oracle"' + ";",
+    "export async function compareCaptures() {",
+    "  const mod = await import(`./${which}.ts`);",
+    "  return mod;",
+    "}",
+    "",
+  ].join("\n");
+
+  withPlantedTree({ [PREDICATE]: planted, [ORACLE]: CLEAN_ORACLE }, (dir) => {
+    const hits = crossModuleReferences(dir);
+    assert.equal(hits.length, 1, `expected exactly one violation, got ${JSON.stringify(hits)}`);
+    assert.match(hits[0]!, /^capture-predicate\.ts -> interpolated specifier:/);
+    assert.match(hits[0]!, /\$\{/, "the reported hit shows the interpolation that made it unscannable");
   });
 
   assert.deepEqual(crossModuleReferences(), []);
