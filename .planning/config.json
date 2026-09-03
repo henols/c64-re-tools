@@ -87,16 +87,16 @@
   },
   "agent_skills": {
     "gsd-executor": [
-      "global:mastra"
+      ".agents/skills/mastra"
     ],
     "gsd-planner": [
-      "global:mastra"
+      ".agents/skills/mastra"
     ],
     "gsd-phase-researcher": [
-      "global:mastra"
+      ".agents/skills/mastra"
     ],
     "gsd-code-reviewer": [
-      "global:mastra"
+      ".agents/skills/mastra"
     ]
   },
   "features": {},

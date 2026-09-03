@@ -103,7 +103,15 @@ dist/
 /.claude/gsd-migration-journal/
 /.claude/.gsd-profile
 /.gsd/
-/.agents/
+# .agents/ is skills-manager scratch and stays ignored, EXCEPT the mastra skill:
+# gsd-planner/executor/researcher read it via agent_skills and run inside git
+# worktrees, which only contain TRACKED files. Keeping it in-repo also avoids a
+# ~/.claude/skills copy, which would leak into every other GSD project on this
+# machine (promolab pins a different mastra revision).
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/mastra/
 /.codex/
 
 # Graphify raw scratch output. Regenerable from `/gsd-graphify build`, so it is
