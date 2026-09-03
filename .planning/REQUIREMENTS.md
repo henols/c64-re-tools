@@ -136,7 +136,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       `analyzeHeadless` refuses a project directory containing a dot-prefixed path element, so
       `.planning/...` fails; and it does not create the project *location* directory. Per-run
       directories make the single-writer lock unreachable, which is a better answer than guarding it
-- [ ] **SEAM-05**: The two existing violations are migrated in this phase and a **whole-tree grep
+- [x] **SEAM-05**: The two existing violations are migrated in this phase and a **whole-tree grep
       gate** bans the reintroduction of an external-binary spawn from a skill script, observed biting
       on a planted violation — `src/skills/acme-build/scripts/acme.mjs` (`spawnSync("acme", …)` with
       a PATH ladder of five *container* paths) and
@@ -408,7 +408,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEAM-02 | Phase 34 | Complete |
 | SEAM-03 | Phase 34 | Complete |
 | SEAM-04 | Phase 34 | Complete |
-| SEAM-05 | Phase 34 | Pending |
+| SEAM-05 | Phase 34 | Complete |
 | SEAM-06 | Phase 34 | Complete |
 | SEAM-07 | Phase 34 | Complete |
 | DXA-01 | Phase 35 | Pending |

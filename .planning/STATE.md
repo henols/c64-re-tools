@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
 status: executing
-stopped_at: Completed 34-06-PLAN.md
-last_updated: "2026-09-03T15:40:28.802Z"
+stopped_at: Completed 34-05-PLAN.md
+last_updated: "2026-09-03T16:08:29.079Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 34 execution started
-state_head: 816ea0f3bbff9d71c46814c5b21693496bfd2ab8
+state_head: a06bc828ef36f1362ba3f6ff25cef89210c1ab8c
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
   percent: 17
 ---
 
@@ -571,6 +571,7 @@ Last activity: 2026-09-03 — Phase 34 execution started
 | Phase 34 P02 | 26min | 2 tasks | 3 files |
 | Phase 34 P03 | 31min | 3 tasks | 10 files |
 | Phase 34-the-host-tool-execution-seam P04 | 59min | 3 tasks | 14 files |
+| Phase 34-the-host-tool-execution-seam P05 | 55min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1012,6 +1013,7 @@ Recent decisions affecting current work:
 - [Phase 34-the-host-tool-execution-seam]: acme.mjs and packer-finding.mjs migrated onto the host-tool execution seam via an extracted mcp-module.mjs ladder — SEAM-05 requires the whole-tree grep gate (34-05) to find zero violations; both scripts previously spawned a host binary directly
 - [Phase 34]: SEAM-06: a second, independently pinned floor over the host-tool/ghidra/dxa prefix union brings the new family inside the closed-consumer discipline without widening EXPECTED_IMPORTERS — hostpath-consumers.test.ts's ANNO_MODULE_FLOOR is anchored on anno-, so the new family sat outside its scan entirely; a second hand-pinned floor closes the blind spot per 34-RESEARCH.md Pitfall 2
 - [Phase 34]: SEAM-07: JVM lifetime binding recorded as per-invocation, matching what plans 34-01/34-03 actually built, with a checkable reversal condition (N=20 binaries, P=30 percent of wall-clock in JVM startup) to resident-socket — docs/phase34-host-tool-seam-decisions.md consolidates the measurement (12407ms/11160ms observed, 12.6-17.4s cited range) and all fourteen planner assumptions A-01..A-14 since no /gsd-discuss-phase ran for Phase 34
+- [Phase 34-the-host-tool-execution-seam]: SEAM-05's BANNED_COMMAND_SHAPES includes both unp64 and UNP64 for the packer oracle's two documented names, plus dxa, analyzeHeadless, c1541, petcat, cartconv and x64sc — No second literal command name (distinct from the env-var name) exists anywhere in this codebase for the packer oracle; unp64/UNP64 is the most defensible reading of the plan's phrasing
 
 ### Pending Todos
 
@@ -1801,8 +1803,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T15:40:28.131Z
-Stopped at: Completed 34-06-PLAN.md
+Last session: 2026-09-03T16:07:01.324Z
+Stopped at: Completed 34-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
