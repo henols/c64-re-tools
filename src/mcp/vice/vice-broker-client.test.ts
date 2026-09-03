@@ -1341,6 +1341,22 @@ test("acquire profile (33-06, write site 1 of 2): acquireOverControlPlane() puts
       received.push(profile);
       return ALWAYS_GRANT();
     },
+    // Stock, because the profile maps to stock-only launch flags: on fork the
+    // control plane now REFUSES a warp/headless profile rather than accepting
+    // a knob the argv cannot carry (33 review WR-03). The property under test
+    // here is that the profile reaches the wire and the host from each of this
+    // client's two acquire writers, which is backend-independent -- but it
+    // needs a backend on which a profile-bearing acquire is granted at all.
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      warmFloor: 3,
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
   });
   try {
     const handle = await acquireOverControlPlane(dir, { profile: { warp: true } });
@@ -1386,6 +1402,17 @@ test("acquire profile (33-06, write site 2 of 2): openBrokerControl().acquire({p
       received.push(profile);
       return ALWAYS_GRANT();
     },
+    // Stock, for the same reason as write site 1 above (33 review WR-03).
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      warmFloor: 3,
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
   });
   try {
     const opened = await openBrokerControl(dir);
