@@ -1,51 +1,36 @@
 ---
-status: testing
+status: complete
 phase: 33-the-reproducible-run-protocol-and-the-capture-substrate-go-d
 source: [33-VERIFICATION.md]
 started: "2026-09-03T02:19:11Z"
-updated: "2026-09-03T12:45:00Z"
+updated: "2026-09-03T12:55:00Z"
 ---
 
 ## Current Test
 
-number: 1
-name: Decide the disposition of criterion 3's unclosable clause — accept as an override, or amend the ROADMAP criterion text
-expected: |
-  A recorded decision; NOT a gap-closure plan (the pre-commitment is frozen and
-  the separation is a hardware fact).
-
-  Background. Criterion 3 asks for a committed control showing `(LIN, CYC)`
-  ALONE PASSING on two stops **exactly one frame apart**. That pair is
-  unbuildable on the `$ea31` anchor: a 60 Hz KERNAL IRQ against a 50.125 Hz PAL
-  frame, measured as 240 anchor hits producing 240 distinct `(LIN, CYC)` with
-  zero consecutive repeats. The smallest reachable equal-raster separation on
-  this build is **2 frames**. Plan 33-11 built the variant control at a
-  raster-conditioned probe point (`$e5d4`, `(RL == $f0)`), where the two-term
-  projection DOES pass on two stops whose sliced images differ at 3 bytes and
-  the shipped four-term oracle separates them naming `hitCount` — but at an
-  integral, not a one, frame separation.
-
-  33-11 took the strict reading and recorded `ORACLE_NECESSITY: unproven`
-  explicitly because `proven` was the flattering value. 33-12 declined to
-  override. That is what fired `R6 → degrade`.
-
-  Three dispositions are available, and this is an owner scope call:
-    (a) ACCEPT the `degrade` verdict as it stands. R6's narrowing is already
-        pre-mapped by D-04 and bound into Phases 34-38. Nothing further to do.
-    (b) OVERRIDE to `proven` (→ `go`), reading criterion 3 as "an integral
-        number of frames apart". DECISION-RULE.md's own terms: the rule text
-        does not move, and the override is recorded in the findings document,
-        which weakens exactly the pre-commitment it exists to provide.
-    (c) AMEND the ROADMAP criterion text for FUTURE phases so it asks for the
-        reachable separation, leaving this phase's verdict untouched.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
 ### 1. Disposition criterion 3's unclosable clause
 expected: A recorded decision — accept the degrade verdict (a), override to proven with the price acknowledged (b), or amend the criterion text for future phases (c). Not a gap-closure plan.
 why_human: Requires an owner scope decision against a frozen pre-commitment
-result: [pending]
+result: pass
+decision: "(a) ACCEPT the degrade verdict as it stands"
+decided_by: owner (Henrik), 2026-09-03
+notes: |
+  Disposition (a). The `R6 -> degrade` verdict and `ORACLE_NECESSITY: unproven`
+  STAND as 33-11 recorded them. No override is written to the findings document,
+  DECISION-RULE.md's rule text does not move, and the ROADMAP criterion text is
+  left untouched. R6's narrowing is already pre-mapped by D-04 and bound into
+  Phases 34-38, so accepting it requires no further action and creates no
+  gap-closure plan.
+
+  The one-frame clause of criterion 3 remains unclosable on this build -- a
+  60 Hz KERNAL IRQ against a 50.125 Hz PAL frame gives a smallest reachable
+  equal-raster separation of 2 frames. That is a hardware fact, recorded rather
+  than argued away; a future phase wanting the strict pair needs a different
+  anchor, not a re-reading of this one.
 
 ### 2. Exercise `vice_run_until` with `reproducible: true` + `frame_anchor` against real stock VICE
 expected: |
@@ -97,9 +82,9 @@ result: passed — fixed in commit `9c8de68` (2026-09-03), after independently c
 ## Summary
 
 total: 3
-passed: 2
+passed: 3
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
