@@ -531,9 +531,56 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
 // whole duration, starving acquires, the warm floor, and monitor claims.
 // ---------------------------------------------------------------------------
 
-/** Default per-invocation timeout -- the same value packer-finding.mjs's own
- * ORACLE_TIMEOUT_MS convention already uses. */
+/** Fallback per-invocation timeout for a tool id absent from
+ * HOST_TOOL_TIMEOUT_MS below -- unreachable today, since every HOST_TOOL_IDS
+ * member has an explicit table entry, but this constant stays exported and
+ * consulted as the honest bottom of the resolver's fallback chain. It is
+ * also the value acme.build/oracle.probe/oracle.run's own table entries
+ * hold today (20s, the same value packer-finding.mjs's own
+ * ORACLE_TIMEOUT_MS convention already used) -- no longer the ceiling for
+ * EVERY invocation (34-09, CR-04): a single default governing every tool is
+ * exactly how CR-04 happened -- a number chosen for a stateless assembler
+ * silently governed a JVM. */
 export const DEFAULT_HOST_TOOL_TIMEOUT_MS = 20_000;
+
+/** 34-09 (CR-04): the per-tool SERVER-side budget table, built with the SAME
+ * `Object.freeze(Object.assign(Object.create(null), ...))` idiom
+ * HOST_TOOL_ARG_KEYS uses, with an entry for EVERY HOST_TOOL_IDS member --
+ * completeness enforced by host-tool.test.ts's own completeness case, never
+ * assumed silently. `acme.build`, `oracle.probe` and `oracle.run` keep the
+ * value DEFAULT_HOST_TOOL_TIMEOUT_MS already held (20_000ms) -- none of
+ * their measured costs approach the fixed ceiling. `ghidra.analyze` gets
+ * 600_000ms (10 minutes), justified from this project's own recorded
+ * numbers rather than a round guess: the documented JVM startup range is
+ * 12.6-17.4s (docs/phase34-host-tool-seam-decisions.md Part 1), this
+ * phase's own transcript measured 12407ms and 11160ms for a *refusal* alone,
+ * and the same decision record states a real analysis run takes multiple
+ * minutes -- 10 minutes clears startup plus a realistic analysis budget
+ * with headroom, while staying a finite, stated ceiling: raising a budget
+ * must never mean removing the kill-on-expiry bound
+ * (must_haves.prohibitions) -- spawnHostTool()'s timer below still kills and
+ * reports a refusal on expiry, unchanged. */
+export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object.freeze(
+  Object.assign(Object.create(null) as Record<HostToolId, number>, {
+    "acme.build": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    "ghidra.analyze": 600_000,
+    "oracle.probe": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    "oracle.run": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+  }),
+);
+
+/** The resolver every spawn site reads its budget from: an explicit
+ * override (`deps.timeoutMs` -- the in-process test seam) always wins;
+ * else the table entry above for `tool`; else DEFAULT_HOST_TOOL_TIMEOUT_MS
+ * as the fallback for a tool id with no table entry (unreachable today, but
+ * keeps this function total rather than partial). This is the ONE place a
+ * budget is decided -- runHostTool()'s acme.build/ghidra.analyze branch,
+ * runOracleProbe() and runOracleRun() all call it rather than reading
+ * DEFAULT_HOST_TOOL_TIMEOUT_MS or the table directly. */
+export function hostToolTimeoutMs(tool: HostToolId, override?: number): number {
+  if (override !== undefined) return override;
+  return HOST_TOOL_TIMEOUT_MS[tool] ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
+}
 
 /** stderrTail's byte cap -- diagnostics only, never a result. */
 const STDERR_TAIL_CAP_BYTES = 64 * 1024;
@@ -794,7 +841,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   }
   if (!built.ok) return { ok: false, message: built.message };
 
-  const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
+  const timeoutMs = hostToolTimeoutMs(request.tool, deps.timeoutMs);
   const startedAt = Date.now();
   // acme.build only: inject the probed ACME library directory as the child's
   // `ACME` env var, exactly as acme.mjs's own removed findAcmeLib() call
@@ -918,7 +965,7 @@ async function runOracleProbe(deps: HostToolDeps): Promise<HostToolResponse> {
   }
   const command = resolved.command;
 
-  const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
+  const timeoutMs = hostToolTimeoutMs("oracle.probe", deps.timeoutMs);
   const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs);
 
   if (spawnResult.spawnErrorMessage !== null) {
@@ -991,7 +1038,7 @@ async function runOracleRun(args: OracleRunArgs, deps: HostToolDeps): Promise<Ho
   const scratchOut = join(scratchDir, "unpacked.out");
 
   try {
-    const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
+    const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);
     const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs);
 
     if (spawnResult.spawnErrorMessage !== null) {

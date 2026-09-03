@@ -29,8 +29,8 @@ import { createHash } from "node:crypto";
 
 import { build } from "./build.ts";
 import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type RecycleOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
-import { hostToolOverControlPlane } from "./host-tool-client.ts";
-import { brokerJsonPath } from "./vice-broker-client.ts";
+import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
+import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -649,13 +649,31 @@ test(
  * `support/analyzeHeadless` file inside it (buildHostToolArgv() only checks
  * existsSync -- it never spawns), so the argv-construction case below runs
  * with no real Ghidra installation present. Restored/removed in `finally`
- * regardless of outcome. */
-async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T): Promise<T> {
+ * regardless of outcome.
+ *
+ * 34-09 (CR-04): `opts.sleepSeconds`, when given, makes the fake launcher
+ * sleep that many seconds before exiting zero -- the slow variant this
+ * plan's END-TO-END and kill-on-expiry cases both need. Omitted (the
+ * default), the launcher exits immediately exactly as before -- every
+ * pre-existing Ghidra case is unaffected. */
+async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T, opts: { sleepSeconds?: number } = {}): Promise<T> {
   const previous = process.env.GHIDRA_HOME;
   return withTempDir(async (dir) => {
     const supportDir = join(dir, "support");
     mkdirSync(supportDir, { recursive: true });
-    writeFileSync(join(supportDir, "analyzeHeadless"), "#!/bin/sh\nexit 0\n", "utf8");
+    // `exec sleep N` -- NOT `sleep N; exit 0` -- replaces the shell's own
+    // process image with `sleep` (execve, no fork) rather than forking a
+    // CHILD of the shell to run it. A forked grandchild would inherit the
+    // SAME stdout/stderr pipe file descriptors spawnHostTool() reads; on
+    // kill-on-expiry, SIGKILL only reaches the immediate child (the shell)
+    // -- the orphaned `sleep` grandchild would keep those pipe fds open
+    // until its own natural exit, delaying node's "close" event for the
+    // full sleep regardless of the kill. `exec` makes the killed process
+    // and the sleeping process the SAME pid, so SIGKILL actually terminates
+    // the sleep promptly (observed live while writing the kill-on-expiry
+    // case below -- the naive `sleep N; exit 0` form measured a ~6s "kill").
+    const launcherBody = opts.sleepSeconds ? `#!/bin/sh\nexec sleep ${opts.sleepSeconds}\n` : "#!/bin/sh\nexit 0\n";
+    writeFileSync(join(supportDir, "analyzeHeadless"), launcherBody, "utf8");
     chmodSync(join(supportDir, "analyzeHeadless"), 0o755);
     process.env.GHIDRA_HOME = dir;
     try {
@@ -725,6 +743,111 @@ test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv w
     assert.ok(built.argv.includes("-deleteProject"));
     assert.ok(built.toolPath.endsWith(join("support", "analyzeHeadless")));
   });
+});
+
+// ---------------------------------------------------------------------------
+// 34-09 (CR-04): the round trip that could not complete before this plan --
+// a ghidra.analyze invocation whose tool outlives the TCP-connect budget,
+// observed completing over the REAL control-plane route, plus the
+// kill-on-expiry backstop that proves raising the budget never removed the
+// bound.
+// ---------------------------------------------------------------------------
+
+test(
+  "END TO END (slow): a ghidra.analyze request whose fake launcher sleeps longer than the connect-timeout constant resolves ok:true over the real control-plane route, with all seven VICE callbacks provably uncalled",
+  async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      const { listener, token, spies } = await startListenerWithSpies(dir);
+      try {
+        await withFakeGhidraHome(
+          async () => {
+            const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
+            try {
+              writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
+              const startedAt = Date.now();
+              const response = await hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: "slow-e2e-run", importPath: "x.bin" });
+              const elapsedMs = Date.now() - startedAt;
+              assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
+              // The exact round trip that could not complete before this
+              // plan: the fake launcher sleeps 6s, comfortably longer than
+              // CONTROL_CONNECT_TIMEOUT_MS (5000ms) -- a measured elapsed
+              // time above that constant is proof the connect timer was
+              // cleared and replaced by the larger request-deadline timer,
+              // not merely reasoned about.
+              assert.ok(elapsedMs > CONTROL_CONNECT_TIMEOUT_MS, `expected elapsed (${elapsedMs}ms) to exceed the connect-timeout constant (${CONTROL_CONNECT_TIMEOUT_MS}ms)`);
+              assertAllSpiesEmpty(spies);
+            } finally {
+              rmSync(stateDir, { recursive: true, force: true });
+            }
+          },
+          { sleepSeconds: 6 },
+        );
+      } finally {
+        listener.server.close();
+      }
+    });
+  },
+);
+
+test("runHostTool: a slow ghidra.analyze launcher killed on expiry names the small budget it was given, and returns well under the launcher's own sleep", async () => {
+  await withFakeGhidraHome(
+    async (ghidraHome) => {
+      await withTempDir(async (dir) => {
+        writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+        const startedAt = Date.now();
+        const response = await runHostTool(
+          { tool: "ghidra.analyze", args: { runId: "kill-on-expiry-run", importPath: "x.bin" } },
+          { repoRoot: dir, timeoutMs: 500 },
+        );
+        const elapsedMs = Date.now() - startedAt;
+        assert.equal(response.ok, false);
+        if (!response.ok) assert.match(response.message, /500/, `expected the refusal to name the 500ms budget it was given; got: ${response.message}`);
+        assert.ok(elapsedMs < 3000, `expected a prompt kill well under the launcher's 6s sleep; took ${elapsedMs}ms (GHIDRA_HOME=${ghidraHome})`);
+      });
+    },
+    { sleepSeconds: 6 },
+  );
+});
+
+test("hostToolOverControlPlane rejects with a connect-phase message naming the connect-timeout constant when nothing accepts the connection within it", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "host-tool-connect-timeout-"));
+  // 10.255.255.1 is a private-range address with no route configured in
+  // this sandbox -- the TCP handshake never completes and never errors, so
+  // the connect TIMER (not the socket "error" handler) is what settles this
+  // promise. Empirically confirmed to hang (not fail fast) in this
+  // environment before this test was written.
+  const previousDialHost = process.env.VICE_BROKER_CONTROL_DIAL_HOST;
+  process.env.VICE_BROKER_CONTROL_DIAL_HOST = "10.255.255.1";
+  try {
+    writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "10.255.255.1", control_port: 65000, control_token: "unused" }));
+    const startedAt = Date.now();
+    await assert.rejects(hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true }), (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /connect phase/);
+      assert.match(err.message, new RegExp(String(CONTROL_CONNECT_TIMEOUT_MS)));
+      return true;
+    });
+    const elapsedMs = Date.now() - startedAt;
+    assert.ok(elapsedMs >= CONTROL_CONNECT_TIMEOUT_MS, `expected at least ${CONTROL_CONNECT_TIMEOUT_MS}ms, took ${elapsedMs}ms`);
+  } finally {
+    if (previousDialHost === undefined) delete process.env.VICE_BROKER_CONTROL_DIAL_HOST;
+    else process.env.VICE_BROKER_CONTROL_DIAL_HOST = previousDialHost;
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("host-tool-client.ts's connect-phase and request-deadline rejection messages are textually distinct, each naming its own budget", () => {
+  const source = readFileSync(new URL("./host-tool-client.ts", import.meta.url), "utf8");
+  assert.match(source, /no connection within \$\{CONTROL_CONNECT_TIMEOUT_MS\}ms \(connect phase\)/);
+  assert.match(source, /no response within \$\{requestTimeoutMs\}ms \(request deadline\)/);
+});
+
+test("hostToolRequestTimeoutMs: every tool id's client request deadline is a positive finite number", () => {
+  for (const tool of HOST_TOOL_IDS) {
+    const ms = hostToolRequestTimeoutMs(tool);
+    assert.ok(Number.isFinite(ms) && ms > 0, `${tool}: expected a positive finite request deadline, got ${ms}`);
+  }
 });
 
 // ---------------------------------------------------------------------------

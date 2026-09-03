@@ -83,6 +83,43 @@ export interface HostToolFileResult {
   byteLength: number;
 }
 
+/** 34-09 (CR-04): the per-tool CLIENT-side request-deadline table, declared
+ * in THIS file (never in vice-broker-client.ts, whose export list is pinned
+ * by exact set equality -- vice-broker-client.test.ts:1208 -- this file has
+ * no such census). Bounds the REQUEST phase only, the phase AFTER the
+ * connect timer below has already been cleared -- mirroring
+ * openBrokerControl()'s own connect-then-request split
+ * (vice-broker-client.ts). Every entry here MUST be strictly greater than
+ * host-tool.mts's own HOST_TOOL_TIMEOUT_MS entry for the SAME tool id: the
+ * side that owns the budget (the host-bound executor) must be the side that
+ * reports the verdict, or a caller sees an opaque transport timeout instead
+ * of the host's own diagnosable refusal. This ordering is asserted by
+ * host-tool.test.ts's own cross-seam ordering case, which imports BOTH
+ * sides and iterates every tool id -- the anti-drift mechanism for two
+ * numbers that deliberately live in two files (two processes, one
+ * container-side and one host-bound). `ghidra.analyze`'s entry (660_000ms)
+ * exceeds the server-side Ghidra budget (600_000ms, host-tool.mts) by 60
+ * seconds -- comfortably larger without being needlessly slack. */
+export const HOST_TOOL_REQUEST_TIMEOUT_MS: Readonly<Record<string, number>> = Object.freeze({
+  "ghidra.analyze": 660_000,
+});
+
+/** Fallback request-deadline for a tool id absent from the table above --
+ * strictly greater than host-tool.mts's own DEFAULT_HOST_TOOL_TIMEOUT_MS
+ * (20_000ms), the server-side fallback for the same tools. */
+export const DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS = 30_000;
+
+/** The resolver: an exact table entry wins, else the default above. Mirrors
+ * host-tool.mts's own hostToolTimeoutMs() shape on the OTHER side of the
+ * seam -- deliberately duplicated, never imported: the two sides run in
+ * different processes (this file is container-side, host-tool.mts is
+ * host-bound), so there is nothing to import across that boundary. The
+ * cross-seam ordering test is what keeps the two numbers from drifting
+ * apart, not a shared value. */
+export function hostToolRequestTimeoutMs(tool: string): number {
+  return HOST_TOOL_REQUEST_TIMEOUT_MS[tool] ?? DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS;
+}
+
 /** The wire shape host-tool.mts's runHostTool() produces, mirrored here
  * rather than imported as a value -- this file only ever receives this shape
  * as untrusted JSON off a socket or a child process's stdout, never as a
@@ -129,17 +166,45 @@ export function hostToolOverControlPlane(
     let buffer = "";
     let settled = false;
 
-    const timer = setTimeout(() => {
+    // 34-09 (CR-04): TWO timers, mirroring openBrokerControl()'s own
+    // connect-then-request split (vice-broker-client.ts). Before this plan a
+    // SINGLE timer bounded the CONNECT phase AND the tool's entire
+    // execution -- a ghidra.analyze run that legitimately outlives the
+    // TCP-connect budget could never complete over this route at all. The
+    // connect timer bounds ONLY the TCP handshake and is cleared the moment
+    // `connect` fires; the request-deadline timer then bounds the actual
+    // tool execution, sized per tool by hostToolRequestTimeoutMs() above.
+    let connectTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       if (settled) return;
       settled = true;
       socket.destroy();
-      reject(new Error(`hostToolOverControlPlane: no response within ${CONTROL_CONNECT_TIMEOUT_MS}ms`));
+      reject(new Error(`hostToolOverControlPlane: no connection within ${CONTROL_CONNECT_TIMEOUT_MS}ms (connect phase)`));
     }, CONTROL_CONNECT_TIMEOUT_MS);
-    if (typeof timer.unref === "function") timer.unref();
+    if (typeof connectTimer.unref === "function") connectTimer.unref();
+
+    let requestTimer: ReturnType<typeof setTimeout> | null = null;
 
     socket.on("connect", () => {
+      if (settled) return;
+      // Clear the connect timer THE MOMENT the request line is written --
+      // exactly where openBrokerControl()'s own onConnect() clears its
+      // connect timer before sendAndAwaitLine()'s separate per-request
+      // deadline takes over.
+      if (connectTimer !== null) {
+        clearTimeout(connectTimer);
+        connectTimer = null;
+      }
       const requestId = newRequestId();
       socket.write(`${JSON.stringify({ op: "host_tool", id: requestId, token, tool, args })}\n`);
+
+      const requestTimeoutMs = hostToolRequestTimeoutMs(tool);
+      requestTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        reject(new Error(`hostToolOverControlPlane: no response within ${requestTimeoutMs}ms (request deadline)`));
+      }, requestTimeoutMs);
+      if (typeof requestTimer.unref === "function") requestTimer.unref();
     });
 
     socket.on("data", (chunk: Buffer) => {
@@ -154,21 +219,21 @@ export function hostToolOverControlPlane(
         parsed = JSON.parse(line);
       } catch {
         settled = true;
-        clearTimeout(timer);
+        if (requestTimer !== null) clearTimeout(requestTimer);
         socket.destroy();
         reject(new Error("hostToolOverControlPlane: malformed response line"));
         return;
       }
       if (!isPlainObject(parsed)) {
         settled = true;
-        clearTimeout(timer);
+        if (requestTimer !== null) clearTimeout(requestTimer);
         socket.destroy();
         reject(new Error("hostToolOverControlPlane: response line is not a JSON object"));
         return;
       }
 
       settled = true;
-      clearTimeout(timer);
+      if (requestTimer !== null) clearTimeout(requestTimer);
       socket.destroy();
 
       // A control-plane-level error (unauthorized/bad_request/internal) is a
@@ -185,7 +250,8 @@ export function hostToolOverControlPlane(
     socket.on("error", (err) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (connectTimer !== null) clearTimeout(connectTimer);
+      if (requestTimer !== null) clearTimeout(requestTimer);
       reject(err);
     });
   });
