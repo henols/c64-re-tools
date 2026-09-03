@@ -177,7 +177,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
-Plan: 10 of 11 executed — the first gap-closure round (`34-07`..`34-09`) is complete, both prior gaps closed and independently reverified; the SECOND gap-closure round's fix plan (`34-10`) is now executed and closes CR-05 (`resolveWorkspacePath()` now walks both sides through an ancestor-realpath resolution; 83/83 `host-tool.test.ts` cases pass, no regressions), with `34-11` (the decision-record consolidation) planned and not yet executed
+Plan: 11 of 11 executed — the first gap-closure round (`34-07`..`34-09`) is complete, both prior gaps closed and independently reverified; the SECOND gap-closure round's fix plan (`34-10`) closed CR-05 (`resolveWorkspacePath()` now walks both sides through an ancestor-realpath resolution; 83/83 `host-tool.test.ts` cases pass, no regressions), and `34-11` (the decision-record consolidation) is now executed — `docs/phase34-host-tool-seam-decisions.md` gained the CR-05 correction and `A-15`/`A-16`, the CR-05 todo moved to `.planning/todos/completed/` with a Resolution, and this Deferred Items ledger's CR-05 row and figure were corrected in the same commit as the move
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -1023,6 +1023,7 @@ Recent decisions affecting current work:
 - [Phase 34]: 34-08 added HOST_TOOL_PATH_ARG_KEYS: a declared census of every path-bearing host-tool argument key (7 total across 4 tools), with a both-directions completeness case and a data-driven escaping/absolute refusal loop, so a future path-bearing key cannot ship unresolved without a red test.
 - [Phase 34-the-host-tool-execution-seam]: 34-09 (CR-04) closed the phase's headline DoS defect: ghidra.analyze's server-side budget is now 600_000ms (10 min, cleared against this project's own 12.6-17.4s documented JVM-startup range and its 12407ms/11160ms observations) with an 11-minute client-side deadline, and hostToolOverControlPlane()'s single connect-bound timer is split into a connect phase and a separately-sized request-deadline phase mirroring openBrokerControl(). SEAM-02 flipped to Complete only after the three-plan (34-07/34-08/34-09) closure gate ran and passed. — Every tool now has an explicit, finite server-side budget and a strictly-larger client-side deadline, asserted by a test that imports both sides and iterates every tool id -- the anti-drift mechanism for two numbers deliberately living in two processes. No wire-supplied timeout was introduced; budgets stay host-side configuration.
 - [Phase 34]: resolveWorkspacePath() now walks both the workspace root and the candidate through an ancestor-realpath walk (mirroring anno-types.ts's storePathWithinWorkspace()) and returns the real path, closing CR-05; the walk is duplicated locally in host-tool.mts (A-15) rather than imported, because host-tool.mts is host-bound and cannot reach a container-side .ts module, and pinned to its container-side twin by a cross-implementation equivalence test. — The returned path being real rather than lexical is load-bearing since it is exactly what reaches the spawn; the container-translation consequence on a symlinked workspace root is recorded as a limit (A-16) rather than widening hostpath.ts's closed consumer set.
+- [Phase 34]: 34-11 ran the full verification gate BEFORE editing any bookkeeping (module-family suites 158/158, ledger+confinement guards 55/55, typecheck/npm-packages/spawn-gate clean, test:automated 3270/3278 pass with the measured 2-in-1-file anno-register.test.ts floor, no regression), then in one commit moved the CR-05 todo to .planning/todos/completed/ with a Resolution and removed its Deferred Items row (9 -> 8 open), and appended docs/phase34-host-tool-seam-decisions.md's Part 4 CR-05 correction plus A-15/A-16. — WR-03's row and todo were deliberately left untouched (still Pending); SEAM-02's Complete marking in REQUIREMENTS.md was not re-scored, per the verifier's own written ruling.
 
 ### Pending Todos
 
@@ -1813,9 +1814,15 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T22:27:01.644Z
-Stopped at: Completed 34-10-PLAN.md
+Last session: 2026-09-04T00:45:41.000Z
+Stopped at: Completed 34-11-PLAN.md
 Resume file: None
+
+Earlier: Completed 34-10-PLAN.md
+  Plan 34-10 closed CR-05: resolveWorkspacePath() now walks both the workspace
+  root and the candidate through an ancestor-realpath walk before comparing,
+  returning the real path. 3 tasks, 3 task commits (`ae8d7e1` fix, `790c731`
+  test, `b3b4238` test) plus the SUMMARY commit, ~25 min.
 
 Earlier: Completed 28-21-PLAN.md
   Plan 28-21 is complete: 3 tasks, 4 task commits (`f67917a` test/RED,
