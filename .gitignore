@@ -105,3 +105,9 @@ dist/
 /.gsd/
 /.agents/
 /.codex/
+
+# Graphify raw scratch output. Regenerable from `/gsd-graphify build`, so it is
+# ignored. NOTE: `.planning/graphs/` is deliberately NOT ignored — gsd-planner
+# and gsd-phase-researcher read `.planning/graphs/graph.json`, and those agents
+# run inside git worktrees, which only contain tracked files.
+/graphify-out/
