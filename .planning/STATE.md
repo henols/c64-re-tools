@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
 status: executing
-stopped_at: Completed 34-09-PLAN.md
-last_updated: "2026-09-03T22:05:35.206Z"
+stopped_at: Completed 34-10-PLAN.md
+last_updated: "2026-09-03T22:27:02.298Z"
 last_activity: 2026-09-04
 last_activity_desc: 34-08 executed (CR-01 oracle command-argv closure + path-key census)
-state_head: a76fc8bc56258aea9925a56caef52912f04646ba
+state_head: b3b4238ff58caa37067d1bd98a750c4b3e1de08e
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
   percent: 17
 ---
 
@@ -177,7 +177,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
-Plan: 9 of 11 executed — the first gap-closure round (`34-07`..`34-09`) is complete, both prior gaps closed and independently reverified; a SECOND gap-closure round (`34-10`, `34-11`) is planned and not yet executed, for the one NEW gap the re-verification found (CR-05)
+Plan: 10 of 11 executed — the first gap-closure round (`34-07`..`34-09`) is complete, both prior gaps closed and independently reverified; the SECOND gap-closure round's fix plan (`34-10`) is now executed and closes CR-05 (`resolveWorkspacePath()` now walks both sides through an ancestor-realpath resolution; 83/83 `host-tool.test.ts` cases pass, no regressions), with `34-11` (the decision-record consolidation) planned and not yet executed
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -575,6 +575,7 @@ Last activity: 2026-09-04 — Phase 34 execution started
 | Phase 34 P07 | 26min | 2 tasks | 7 files |
 | Phase 34 P08 | 30min | 3 tasks | 7 files |
 | Phase 34-the-host-tool-execution-seam P09 | 27min | 3 tasks | 8 files |
+| Phase 34 P10 | 25min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1021,6 +1022,7 @@ Recent decisions affecting current work:
 - [Phase 34]: 34-08 closed CR-01: removed oracle.probe's caller-supplied `command` wire key entirely and added resolveOracleCommand(), the ONE host-side resolver consulted by both runOracleProbe() and runOracleRun(), reading the broker process's own UNP64/UNP64_PATH environment and checked by base name and existence.
 - [Phase 34]: 34-08 added HOST_TOOL_PATH_ARG_KEYS: a declared census of every path-bearing host-tool argument key (7 total across 4 tools), with a both-directions completeness case and a data-driven escaping/absolute refusal loop, so a future path-bearing key cannot ship unresolved without a red test.
 - [Phase 34-the-host-tool-execution-seam]: 34-09 (CR-04) closed the phase's headline DoS defect: ghidra.analyze's server-side budget is now 600_000ms (10 min, cleared against this project's own 12.6-17.4s documented JVM-startup range and its 12407ms/11160ms observations) with an 11-minute client-side deadline, and hostToolOverControlPlane()'s single connect-bound timer is split into a connect phase and a separately-sized request-deadline phase mirroring openBrokerControl(). SEAM-02 flipped to Complete only after the three-plan (34-07/34-08/34-09) closure gate ran and passed. — Every tool now has an explicit, finite server-side budget and a strictly-larger client-side deadline, asserted by a test that imports both sides and iterates every tool id -- the anti-drift mechanism for two numbers deliberately living in two processes. No wire-supplied timeout was introduced; budgets stay host-side configuration.
+- [Phase 34]: resolveWorkspacePath() now walks both the workspace root and the candidate through an ancestor-realpath walk (mirroring anno-types.ts's storePathWithinWorkspace()) and returns the real path, closing CR-05; the walk is duplicated locally in host-tool.mts (A-15) rather than imported, because host-tool.mts is host-bound and cannot reach a container-side .ts module, and pinned to its container-side twin by a cross-implementation equivalence test. — The returned path being real rather than lexical is load-bearing since it is exactly what reaches the spawn; the container-translation consequence on a symlinked workspace root is recorded as a limit (A-16) rather than widening hostpath.ts's closed consumer set.
 
 ### Pending Todos
 
@@ -1812,8 +1814,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T19:45:33.633Z
-Stopped at: Completed 34-09-PLAN.md
+Last session: 2026-09-03T22:27:01.644Z
+Stopped at: Completed 34-10-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
