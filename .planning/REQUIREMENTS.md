@@ -131,7 +131,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       line cap while Ghidra exports run to megabytes, so files are forced regardless — this makes
       that a contract rather than a workaround. (The >64 KiB inline disconnect is READ-IN-SOURCE,
       not yet observed; observing it is a cheap red control for this phase)
-- [ ] **SEAM-04**: Ghidra runs with **one project directory per run id** and `-deleteProject`, and
+- [x] **SEAM-04**: Ghidra runs with **one project directory per run id** and `-deleteProject`, and
       the **no-dot project-path refusal is enforced in code** rather than documented. MEASURED:
       `analyzeHeadless` refuses a project directory containing a dot-prefixed path element, so
       `.planning/...` fails; and it does not create the project *location* directory. Per-run
@@ -407,7 +407,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEAM-01 | Phase 34 | Complete |
 | SEAM-02 | Phase 34 | Complete |
 | SEAM-03 | Phase 34 | Complete |
-| SEAM-04 | Phase 34 | Pending |
+| SEAM-04 | Phase 34 | Complete |
 | SEAM-05 | Phase 34 | Pending |
 | SEAM-06 | Phase 34 | Pending |
 | SEAM-07 | Phase 34 | Pending |

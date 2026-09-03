@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
 status: executing
-stopped_at: Completed 34-02-PLAN.md
-last_updated: "2026-09-03T13:45:11.187Z"
+stopped_at: Completed 34-03-PLAN.md
+last_updated: "2026-09-03T14:20:16.228Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 34 execution started
-state_head: 4445e148d7e1c36933d01778b8cd0e9e1807dc9d
+state_head: dd5ca6f3a75159a90e32d2868c0fa7868cc291d8
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 18
-  completed_plans: 14
+  completed_plans: 15
   percent: 17
 ---
 
@@ -177,7 +177,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -569,6 +569,7 @@ Last activity: 2026-09-03 — Phase 34 execution started
 | Phase 33 P12 | 21 min | 3 tasks | 5 files |
 | Phase 34 P01 | 40min | 3 tasks | 16 files |
 | Phase 34 P02 | 26min | 2 tasks | 3 files |
+| Phase 34 P03 | 31min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -1005,6 +1006,8 @@ Recent decisions affecting current work:
 - [Phase 34]: Phase 34 plan 01 (A-01): host_tool is ONE new ControlRequestKind member carrying a typed tool/args payload, not one member per host tool -- mirrors D-15's precedent, so the two byte-exact ControlRequestKind tests are edited once ever rather than once per future tool. — A generic per-tool op family would widen ControlRequestKind (and its two byte-exact tests) on every new host tool added over the life of the project; one op with server-side per-tool typing in host-tool.mts's own allowlist keeps the wire protocol's own surface fixed.
 - [Phase 34]: Phase 34 plan 01 (A-03): host_tool requests carry only workspace-relative paths, resolved and boundary-checked server-side (resolveWorkspacePath); only RESULT paths cross through containerPath(), so the new host-tool module family never joins hostpath.ts's closed five-member consumer set. — Satisfies the path-traversal mitigation (T-34-03), avoids importing hostpath.ts anywhere in the new family, and keeps hostpath-consumers.test.ts's EXPECTED_IMPORTERS unchanged at five -- the ROADMAP's own stated preference, achieved by construction because containerpath.ts is already a declared consumer.
 - [Phase 34]: Multi-byte-UTF-8 over-cap test case does not assert hadError===false — Measured: identical byte count over the cap, ASCII content gives a clean hadError=false destroy, multi-byte UTF-8 content gives hadError=true (ECONNRESET) -- a content-sensitive race, not flakiness. The plan's own <behavior> only requires 'IS destroyed' for this case, so the test asserts exactly that plus zero response bytes.
+- [Phase 34]: 34-03: resolveGhidraProject() now creates (reserves) the run directory it resolves, not just checks it -- analyzeHeadless requires the directory to pre-exist on the success path, not only the refusal path — Live testing against real Ghidra 12.1.3 found the ghidra.analyze happy path was non-functional without this; fixed in the same session (commit 5694f27).
+- [Phase 34]: 34-03: .gitignore's tools/ghidra-runs/ line omits its leading slash — host-scripts.test.ts's deployed-artifact parity scan matches any /tools/-prefixed line and would demand a resourceEntries() counterpart for a runtime-scratch directory that is not a deployed resource.
 
 ### Pending Todos
 
@@ -1794,8 +1797,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T13:45:10.573Z
-Stopped at: Completed 34-02-PLAN.md
+Last session: 2026-09-03T14:20:15.457Z
+Stopped at: Completed 34-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
