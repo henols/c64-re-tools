@@ -648,6 +648,48 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           return;
         }
         const profile = normalised.profile;
+        // 33 review WR-03: the profile is STOCK-ONLY, so refuse it on fork
+        // rather than accept it and ignore it.
+        //
+        // `buildViceArgs()`'s entire profile handling lives inside its
+        // `backend === "stock"` branch -- on fork, neither `-warp` nor
+        // `-console` is ever emitted. Nothing on the path used to notice:
+        // normaliseLaunchProfile() has no backend gate, handleAcquire threads
+        // the profile through unchanged, and spawnAndRecordInstance() mirrors
+        // it onto the InstanceRecord regardless of backend. So a fork caller
+        // asking for {warp:true} got a confident grant and an UNWARPED
+        // machine, with no field in the response saying so; the record then
+        // claimed `profile: {warp:true}` while its own viceArgs carried no
+        // `-warp`, and profileEligible() would later hand that instance to
+        // another warp request as a match. That is exactly the "undetectable
+        // lie" profileEligible()'s own banner and D-16 exist to make
+        // impossible, reintroduced one backend over -- and fork is still the
+        // sole production backend across v0.1.x, so it is the branch most
+        // callers are on.
+        //
+        // Refused HERE because this is the one narrowing site and the wire
+        // boundary that already answers `bad_request`, so the caller LEARNS
+        // its request was dropped instead of having to infer it. Gating the
+        // record mirror instead would stop the record lying but would leave
+        // the caller with no way to find out. Only the two flag-bearing keys
+        // are refused: an empty `{}` and an explicit `{warp:false}` request
+        // nothing the fork argv cannot deliver, so they stay accepted rather
+        // than turning a no-op into an error.
+        const backend = opts.onHostState().backend;
+        if (backend !== "stock" && (profile?.warp === true || profile?.headless === true)) {
+          const asked = [profile?.warp === true ? "warp" : null, profile?.headless === true ? "headless" : null]
+            .filter((key): key is string => key !== null)
+            .join(", ");
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message:
+              `profile is stock-only: this broker's backend is "${backend}", whose argv has no -warp/-console route, so ` +
+              `profile.${asked} could only be accepted and IGNORED -- the grant would succeed, the machine would not have ` +
+              `the knob, and the instance record would still claim it. Refused rather than accepted and ignored (D-16).`,
+          });
+          return;
+        }
         void attemptAcquire(requestId, profile).then((settled) => {
           if (!settled) {
             enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile) });
