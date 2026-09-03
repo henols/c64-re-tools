@@ -96,10 +96,102 @@
 // a measurement. Installing the identifier and running it against a genuinely
 // packed fixture is the experiment that would settle it; until then the
 // oracle-route test SKIPS with a visible reason and never reads as a pass.
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
+
+import { resolveMcpModule, refusalMessage } from "../../c64-ram-capture/scripts/mcp-module.mjs";
+
+// ---------------------------------------------------------------------------
+// Phase 34, plan 34-04 (SEAM-05): the oracle's own child-process spawn.
+// ---------------------------------------------------------------------------
+// Both `probeUnp64()` and `runUnp64()` used to spawn `unp64` directly
+// (`spawnSync`, and a `mkdtempSync()`-created scratch directory for the
+// unpacked output). Both spawn sites are now behind the host-tool execution
+// seam (`src/mcp/vice/host-tool.mts`'s `oracle.probe`/`oracle.run` allowlist
+// entries) -- the project owner's rule of 2026-08-28 is that this script
+// runs container-side, the oracle binary lives host-side, and there is no
+// container PATH to find it on. Everything about the BINARY (locating it
+// from `ORACLE_ENV_VARS`, the version-banner probe, the scratch output
+// location, the argument array, the runtime bound, the standard-output cap)
+// now lives in host-tool.mts; this file keeps everything about the FINDING
+// (the name parser, the accepted character set, the caps below, the
+// packedness threshold, and both functions' never-throw contract).
+
+// SYNCHRONOUS ON PURPOSE: `execFileSync`, not the async `spawn` acme.mjs's
+// own migration uses. `probeUnp64()`/`runUnp64()` are called synchronously,
+// with no `await`, throughout this module's own colocated test file
+// (`packer-finding.test.mjs`, unmodified by this migration) -- including at
+// module scope (`const PROBED = probeUnp64();`). Converting them to
+// async/Promise-returning functions would silently break every one of those
+// call sites (a Promise is not the finding object the assertions expect),
+// so the OUTER call into the seam's CLI wrapper must itself be synchronous.
+// The asynchronous work (the actual child-process spawn of the oracle
+// binary) still happens -- inside the SPAWNED subprocess, in
+// host-tool.mts's own async `runHostTool()` -- `execFileSync` merely blocks
+// this function until that subprocess exits, exactly as `spawnSync` used to
+// block until `unp64` itself exited.
+const HOST_TOOL_CLIENT_FILE = "host-tool-client.ts";
+
+/**
+ * Synchronously invokes the host-tool execution seam for `tool`/`args`,
+ * optionally rooted at `repoRoot` for workspace-relative path resolution.
+ * NEVER throws: an unresolvable ladder, a spawn failure, a timeout, or
+ * unparseable output all return `{ ok: false, message }` -- the SAME shape
+ * a tool's own transport-level refusal uses, so callers translate a failure
+ * here identically to a `{ ok: false }` response from the seam itself.
+ */
+function invokeSeamSync(tool, args, repoRoot) {
+  const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
+  if (!resolved.ok) {
+    return { ok: false, message: refusalMessage(HOST_TOOL_CLIENT_FILE, resolved.rungs) };
+  }
+
+  const cliArgs = [resolved.path, "run", "--tool", tool, "--args", JSON.stringify(args)];
+  if (repoRoot) cliArgs.push("--repo-root", repoRoot);
+
+  let stdout;
+  try {
+    stdout = execFileSync(process.execPath, cliArgs, {
+      encoding: "utf8",
+      timeout: ORACLE_TIMEOUT_MS + 5_000,
+      shell: false,
+      windowsHide: true,
+    });
+  } catch (err) {
+    // execFileSync throws on a non-zero exit, a timeout, or a genuine spawn
+    // failure -- but a non-zero exit is the NORMAL signal for a tool-level
+    // `{ ok: false }` result (host-tool-client.ts's own CLI wrapper always
+    // prints its one JSON line before exiting non-zero), so recover it from
+    // the error object rather than treating every non-zero exit as a
+    // transport failure.
+    const recovered = typeof err.stdout === "string" ? err.stdout : err.stdout ? err.stdout.toString("utf8") : "";
+    if (recovered.trim() === "") {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+    stdout = recovered;
+  }
+
+  const lines = stdout.split("\n").filter((line) => line.trim() !== "");
+  const last = lines[lines.length - 1];
+  if (last === undefined) return { ok: false, message: "host-tool-client.ts produced no output" };
+  try {
+    return JSON.parse(last);
+  } catch {
+    return { ok: false, message: `host-tool-client.ts produced non-JSON output: ${last}` };
+  }
+}
+
+/** Splits an arbitrary (absolute or cwd-relative) file path into a workspace
+ * root + a plain relative name, so a single-file oracle.run request can
+ * satisfy the seam's workspace-relative path requirement (`resolveWorkspacePath()`
+ * in host-tool.mts refuses an absolute path outright) without needing the
+ * caller's actual project root at all -- the smallest possible root for a
+ * single file is its own containing directory. */
+function toWorkspaceRelative(anyPath) {
+  const abs = resolve(anyPath);
+  return { repoRoot: dirname(abs), source: basename(abs) };
+}
 
 // ---------------------------------------------------------------------------
 // Vocabulary. Exactly four verdicts, frozen. Rule 4.
@@ -240,6 +332,10 @@ export function probeUnp64(env = process.env) {
     }
   }
 
+  // A CONFIGURED path that does not exist on disk is checked HERE, locally,
+  // before the seam is ever reached -- no need to ask the host whether a
+  // value the caller already handed us resolves on THIS filesystem, and this
+  // is what keeps the configured value from ever being echoed back (T-19-18).
   if (configured !== null && !existsSync(configured)) {
     return {
       available: false,
@@ -251,37 +347,27 @@ export function probeUnp64(env = process.env) {
     };
   }
 
-  const command = configured ?? DEFAULT_ORACLE_COMMAND;
-  const probe = spawnSync(command, ["--version"], {
-    encoding: "utf8",
-    timeout: ORACLE_TIMEOUT_MS,
-    shell: false,
-    windowsHide: true,
-  });
-
-  if (probe.error) {
+  // Locating the DEFAULT command (searching the host's own PATH) and running
+  // the actual version-banner probe both happen host-side now -- a
+  // configured override is passed through as `command`; its absence lets
+  // the executor try its own default.
+  const response = invokeSeamSync("oracle.probe", configured !== null ? { command: configured } : {});
+  if (!response || response.ok !== true) {
     return {
       available: false,
       command: null,
       version: null,
-      reason:
-        configuredVar === null
-          ? `no "${DEFAULT_ORACLE_COMMAND}" packer identifier was found on the search path`
-          : `the packer identifier configured through ${configuredVar} could not be launched`,
+      reason: (response && response.message) || "the packer identifier oracle.probe seam call failed",
     };
   }
 
-  const banner = `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim();
-  if (banner === "") {
-    return {
-      available: false,
-      command: null,
-      version: null,
-      reason: "the packer identifier produced no version banner, so it was not accepted as an oracle",
-    };
-  }
-
-  return { available: true, command, version: banner.slice(0, 200), reason: null };
+  const available = response.available === true;
+  return {
+    available,
+    command: available ? response.command : null,
+    version: available ? response.version : null,
+    reason: available ? null : response.reason,
+  };
 }
 
 /**
@@ -307,35 +393,16 @@ export function runUnp64(probe, filePath) {
     return { ok: false, stdout: "", reason: "the input file does not exist" };
   }
 
-  let scratch = null;
-  try {
-    scratch = mkdtempSync(join(tmpdir(), "packer-finding-"));
-    const scratchOut = join(scratch, "unpacked.out");
-    const run = spawnSync(probe.command, [filePath, scratchOut], {
-      encoding: "utf8",
-      timeout: ORACLE_TIMEOUT_MS,
-      shell: false,
-      windowsHide: true,
-      maxBuffer: MAX_ORACLE_STDOUT_BYTES,
-    });
-    if (run.error) {
-      return { ok: false, stdout: "", reason: "the oracle could not be run against the input file" };
-    }
-    return { ok: true, stdout: `${run.stdout ?? ""}`, reason: null };
-  } catch {
-    // A scratch directory that could not be created is an absent oracle, not
-    // an error a recon pass should stop for.
-    return { ok: false, stdout: "", reason: "a scratch directory for the oracle's output could not be created" };
-  } finally {
-    if (scratch !== null) {
-      try {
-        rmSync(scratch, { recursive: true, force: true });
-      } catch {
-        // Best effort. A leftover empty scratch directory is not worth
-        // failing a read-only recon finding over.
-      }
-    }
+  // The scratch output location, the argument array, the runtime bound and
+  // the input file's absolute/relative form are all resolved host-side now;
+  // this file only ever hands the seam a workspace-relative `source`, rooted
+  // at the smallest root that can express it -- the file's own directory.
+  const { repoRoot, source } = toWorkspaceRelative(filePath);
+  const response = invokeSeamSync("oracle.run", { source }, repoRoot);
+  if (!response || typeof response.ok !== "boolean") {
+    return { ok: false, stdout: "", reason: (response && response.message) || "the oracle.run seam call failed" };
   }
+  return { ok: response.ok, stdout: typeof response.stdout === "string" ? response.stdout : "", reason: response.reason ?? null };
 }
 
 /**

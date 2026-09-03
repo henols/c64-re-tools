@@ -92,7 +92,14 @@ import { repoRoot } from "./repo-root.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
 const GATE_MODULE_PATH = join(HERE, "acme-gate.ts");
-const SKILL_DRIVER_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.mjs");
+// Phase 34, plan 34-04 (SEAM-05): the argv construction this section compares
+// against USED TO be `src/skills/acme-build/scripts/acme.mjs`'s own `args`
+// array literal -- it moved to `host-tool.mts`'s `buildHostToolArgv()` when
+// `acme.mjs` was migrated onto the host-tool execution seam (the skill
+// script no longer constructs argv or spawns `acme` at all; it sends a typed
+// request and the executor builds argv server-side). The comparison target
+// below follows the argv construction, not the file that used to hold it.
+const ACME_BUILD_ARGV_PATH = join(HERE, "host-tool.mts");
 
 /** Computed exactly ONCE, by the shared `acme-gate.ts` seam. Every
  * ACME-dependent test in this file passes this through node:test's own
@@ -879,14 +886,15 @@ test("an opcode ACME cannot express goes out as `!byte` with all its bytes, and 
 // ---------------------------------------------------------------------------
 // THE ARGV-AGREEMENT INVARIANT.
 //
-// `ACME_VERIFY_ARGV_FLAGS` and `src/skills/acme-build/scripts/acme.mjs`'s `args`
-// array are a DELIBERATE second implementation of the same ACME invocation:
-// `src/mcp/vice/**` and `src/skills/**` publish as separate npm packages and
-// cannot import each other, so a shared module is not reachable without
-// inventing a third package for one flag array. The accepted cost is that the
-// two lists can drift apart silently. This test is the only thing holding them
-// together, so it reads BOTH off disk rather than trusting either side's
-// in-memory value alone.
+// `ACME_VERIFY_ARGV_FLAGS` and `host-tool.mts`'s `buildHostToolArgv()` argv
+// literal are a DELIBERATE second implementation of the same ACME invocation:
+// `acme-verify.ts` is a test-only oracle that never ships, so it is not a
+// candidate for sharing code with the real executor even though both now
+// live in the same package -- a shared module here would let a bug in the
+// real executor's argv also corrupt the oracle that is supposed to catch it.
+// The accepted cost is that the two lists can drift apart silently. This
+// test is the only thing holding them together, so it reads BOTH off disk
+// rather than trusting either side's in-memory value alone.
 // ---------------------------------------------------------------------------
 
 /** A quote-aware comment stripper, the same shape `anno-cli-path-consumers.test.ts`
@@ -992,20 +1000,21 @@ function flagsOf(members: readonly string[]): string[] {
 }
 
 /**
- * The three divergences between the two constructions, each declared with its
- * own justification rather than absorbed into a widened comparison. A fourth
- * divergence goes RED instead of landing silently.
+ * The two remaining divergences between the two constructions, each declared
+ * with its own justification rather than absorbed into a widened comparison.
+ * A third divergence goes RED instead of landing silently.
+ *
+ * DISCHARGED (34-04, SEAM-05): a "the binary token" divergence used to live
+ * here -- the build driver spawned the LITERAL string "acme", the verify
+ * module spawned the overridable `ACME_BIN`. It is gone because BOTH sides
+ * are now overridable by the same convention: `host-tool.mts`'s
+ * `buildHostToolArgv()` resolves the binary from `process.env.ACME_BIN`
+ * exactly like `acme-gate.ts`'s own `ACME_BIN` does, and the assertion below
+ * checks that directly rather than leaving a stale divergence standing (the
+ * test's own prior wording anticipated exactly this: "should be removed
+ * rather than left standing").
  */
 const DECLARED_DIVERGENCES = Object.freeze([
-  Object.freeze({
-    name: "the binary token",
-    skillOnly: Object.freeze([] as readonly string[]),
-    verifyOnly: Object.freeze([] as readonly string[]),
-    justification:
-      "the build driver spawns the LITERAL string \"acme\"; the verify module spawns the imported ACME_BIN, because " +
-      "the mandatory-red harness requires the binary to be overridable and acme-gate.ts is the one home of that env-var " +
-      "name. This is not a flag, so it is asserted DIRECTLY on both sources below rather than subtracted from a flag set.",
-  }),
   Object.freeze({
     name: "verbosity",
     skillOnly: Object.freeze(["-v1"] as readonly string[]),
@@ -1038,11 +1047,11 @@ test("ACME_VERIFY_ARGV_FLAGS is really the list this test reads off disk (so the
   );
 });
 
-test("the two ACME argv constructions agree on every flag except the three declared divergences", () => {
+test("the two ACME argv constructions agree on every flag except the declared divergences", () => {
   const verifyFlags = new Set(
     flagsOf(doubleQuotedMembers(arrayLiteralAfter(stripComments(readFileSync(VERIFY_MODULE_PATH, "utf8")), "ACME_VERIFY_ARGV_FLAGS", "Object.freeze(")))
   );
-  // `-o` lives in the skill's array literal but is appended at spawn time on
+  // `-o` lives in the executor's array literal but is appended at spawn time on
   // the verify side, deliberately excluded from the frozen constant because its
   // VALUE is per-invocation. Both sides do pass it, so it is added back here to
   // make the two sets comparable subjects rather than declared as a divergence
@@ -1050,10 +1059,10 @@ test("the two ACME argv constructions agree on every flag except the three decla
   verifyFlags.add("-o");
 
   const skillFlags = new Set(
-    flagsOf(doubleQuotedMembers(arrayLiteralAfter(stripComments(readFileSync(SKILL_DRIVER_PATH, "utf8")), "const args =")))
+    flagsOf(doubleQuotedMembers(arrayLiteralAfter(stripComments(readFileSync(ACME_BUILD_ARGV_PATH, "utf8")), "const argv: string[] =")))
   );
 
-  assert.ok(skillFlags.size >= 6, `the skill driver's args array extraction went short: ${[...skillFlags].join(" ")}`);
+  assert.ok(skillFlags.size >= 6, `the executor's argv array extraction went short: ${[...skillFlags].join(" ")}`);
 
   for (const divergence of DECLARED_DIVERGENCES) {
     for (const flag of divergence.skillOnly) skillFlags.delete(flag);
@@ -1067,22 +1076,29 @@ test("the two ACME argv constructions agree on every flag except the three decla
     skillSorted,
     `the two ACME argv constructions have DRIFTED.\n` +
       `  acme-verify.ts (after declared divergences): ${verifySorted.join(" ")}\n` +
-      `  acme-build/scripts/acme.mjs                : ${skillSorted.join(" ")}\n` +
-      `These live in SEPARATE npm packages that cannot import each other, so this test is the only thing holding them ` +
-      `together. Either add the flag to both, or add a fourth entry to DECLARED_DIVERGENCES with its justification -- ` +
-      `widening the exception list must be a visible edit, never a quiet one.`
+      `  host-tool.mts's buildHostToolArgv()          : ${skillSorted.join(" ")}\n` +
+      `acme-verify.ts is a test-only oracle that never ships, so this test is the only thing holding it in agreement ` +
+      `with the real executor's argv. Either add the flag to both, or add a new entry to DECLARED_DIVERGENCES with its ` +
+      `justification -- widening the exception list must be a visible edit, never a quiet one.`
   );
 });
 
-test("the binary-token divergence is real on both sides (the one declared divergence that is not a flag)", () => {
-  const skillSrc = stripComments(readFileSync(SKILL_DRIVER_PATH, "utf8"));
+test("the binary-token divergence is DISCHARGED: both sides resolve the ACME binary from the SAME overridable convention", () => {
+  const skillSrc = stripComments(readFileSync(ACME_BUILD_ARGV_PATH, "utf8"));
   const verifySrc = stripComments(readFileSync(VERIFY_MODULE_PATH, "utf8"));
 
   assert.match(
     skillSrc,
-    /spawnSync\(\s*"acme"\s*,/,
-    "the build driver is expected to spawn the LITERAL string \"acme\"; if it now resolves a binary name, the first " +
-      "declared divergence has been discharged and should be removed rather than left standing"
+    /process\.env\.ACME_BIN/,
+    "host-tool.mts's buildHostToolArgv() is expected to resolve the ACME binary from process.env.ACME_BIN, the SAME " +
+      "convention acme-gate.ts's own ACME_BIN uses -- if it now spawns a hardcoded literal again, the divergence this " +
+      "test discharged (34-04, SEAM-05) has come back and belongs in DECLARED_DIVERGENCES again"
+  );
+  assert.doesNotMatch(
+    skillSrc,
+    /spawn\w*\(\s*"acme"\s*,/,
+    "the executor must never spawn the LITERAL string \"acme\" -- it resolves an overridable variable instead, exactly " +
+      "like acme-verify.ts's own ACME_BIN"
   );
   assert.match(
     verifySrc,
@@ -1092,8 +1108,8 @@ test("the binary-token divergence is real on both sides (the one declared diverg
   );
   assert.equal(
     DECLARED_DIVERGENCES.length,
-    3,
-    "exactly three divergences are declared. Growing this list must be a visible edit with its own justification"
+    2,
+    "exactly two divergences remain declared. Growing this list must be a visible edit with its own justification"
   );
 });
 

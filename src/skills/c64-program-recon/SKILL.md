@@ -106,7 +106,11 @@ investigation that established this, four independent ways, is written out in
 dated decision that fixes the acceptance bar and its re-open trigger is recorded under
 `19-DECISIONS.md` in that same directory (SURF-03). So there is no code path here that can write a packer name from entropy, from a
 decompression address, or from a byte pattern. If you want a name and the finding does not give
-you one, install an external identifier and point `UNP64` or `UNP64_PATH` at it — do not infer it.
+you one, install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it in
+the environment the host broker process sees — do not infer it. `packer-finding.mjs` never spawns
+that identifier itself (Phase 34, SEAM-05): it reaches it only through the host-tool execution
+seam (`src/mcp/vice/host-tool.mts`'s `oracle.probe`/`oracle.run` allowlist entries), because this
+script runs container-side and there is no container PATH to a host binary on.
 
 **The entropy gate answers packedness, not identity.** High entropy tells you the bytes are
 compressed (or encrypted, or genuinely random); it does not tell you by what. And the way a packed
