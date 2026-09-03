@@ -206,3 +206,60 @@ way the number this plan is answerable for is its OWN before/after delta, which 
 36 additional total tests recorded AFTER (3153 vs. 3127) are entirely
 `host-tool.test.ts`'s 25 new cases plus `broker-control.test.ts`'s widened case count from
 this plan's own task 2 commit; none of them are failing.
+
+## Phase close
+
+Recorded by plan 34-05, task 3 -- the last task of the last wave, and the only point at
+which every guard this phase touched can be observed green TOGETHER on the merged tree.
+This run had **no worktree isolation** (the phase was auto-degraded to `ISOLATION=none`
+per #683/#3659): all five preceding plans committed straight onto this working tree, so the
+tree this measurement runs against IS the merged tree, not a simulation of one.
+
+No VICE broker daemon was running for any measurement below (`pgrep -af 'vice-broker.mjs\|
+vice-broker.mts'` returned nothing beforehand) -- a live broker deterministically reds the
+`BACK-05` case, which would corrupt this closing measurement rather than reflect this
+phase's own work.
+
+```
+PHASE_CLOSE_BROKER_STATE: no VICE broker running (pgrep -af 'vice-broker.mjs\|vice-broker.mts' returned nothing)
+PHASE_CLOSE_TYPECHECK: clean (npm run typecheck -- 0 error TS lines)
+PHASE_CLOSE_TARBALL: ok (node scripts/check-npm-packages.mjs -- OK, 86 files / 38 files, 7 skills;
+  node scripts/check-no-skill-external-spawn.mjs -- OK, tracked-tree 16 files, packed-tarball 15 files)
+PHASE_CLOSE_TEST_AUTOMATED: 2 failing tests, 1 failing file (anno-register.test.ts)
+  -- 3222 tests, 3214 pass, 2 fail, 24 suites
+  -- DELTA against TEST_AUTOMATED_BASELINE_BEFORE (2 failing, 1 file, same file): 0
+  -- the two failures are the SAME two named above ("DIRECTION 5 (basis integrity)..." and
+     "planted violation (the negative control)..."), both pre-existing and out of this
+     phase's scope; this is a delta claim, not a zero-floor claim -- this project's own
+     recorded floor elsewhere is "5 failing tests in 3 files" (docs/phase33-reproducible-run-
+     gate-findings.md), and this measurement's smaller number does not change what this
+     phase is answerable for, which is its own before/after delta
+```
+
+Guard-by-guard, the eight named in this document plus the four suites this phase created,
+each run individually AND together in the same 13-file `node --test` invocation this plan's
+own `<verify>` block specifies (`spawn-seam.test.ts hostpath-consumers.test.ts
+host-scripts.test.ts docs-linerefs.test.ts shipped-modules.test.ts resources-sync.test.ts
+ci-suite-coverage.test.ts skill-external-spawn-gate.test.ts host-tool.test.ts
+host-tool-transport.test.ts ghidra-project.test.ts skill-acme-build-cli.test.ts
+docs-dangling-refs.test.ts` -- 183 tests, 183 pass, 0 fail; `broker-control.test.ts` run
+separately for guard 1, since it is not part of that thirteen-file list -- 64/64 pass):
+
+```
+PHASE_CLOSE_GUARD_broker-control-controlrequestkind: green
+PHASE_CLOSE_GUARD_spawn-seam-emulator-sites: green
+PHASE_CLOSE_GUARD_hostpath-consumers-expected-importers: green
+PHASE_CLOSE_GUARD_hostpath-consumers-anno-module-floor: green
+PHASE_CLOSE_GUARD_host-scripts-tracked-shell-scripts: green
+PHASE_CLOSE_GUARD_docs-linerefs-rewritearguments: green
+PHASE_CLOSE_GUARD_shipped-modules-throw-on-missing: green
+PHASE_CLOSE_GUARD_check-npm-packages-closure-walk: green
+PHASE_CLOSE_GUARD_host-tool: green
+PHASE_CLOSE_GUARD_host-tool-transport: green
+PHASE_CLOSE_GUARD_ghidra-project: green
+PHASE_CLOSE_GUARD_skill-external-spawn-gate: green
+```
+
+No row above is red. If a future re-run of this measurement finds one red, it is a finding
+for verification to act on -- the Standing Constraint on repaired guards means the correct
+response is never lowering a floor or editing a pinned literal to turn it back green.

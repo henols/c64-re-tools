@@ -196,6 +196,9 @@ jobs:
       - name: Validate npm package contents
         run: node scripts/check-npm-packages.mjs
 
+      - name: No skill script reaches a host binary directly (SEAM-05)
+        run: node scripts/check-no-skill-external-spawn.mjs
+
       # Blocking: a skill that documents a tool the active backend does not
       # advertise fails at runtime for the user with an unknown-tool error,
       # and the six skills are the product surface this milestone exists to
