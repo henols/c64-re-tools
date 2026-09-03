@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
 status: executing
-stopped_at: Completed 34-04-PLAN.md
-last_updated: "2026-09-03T15:20:36.061Z"
+stopped_at: Completed 34-06-PLAN.md
+last_updated: "2026-09-03T15:40:28.802Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 34 execution started
-state_head: e12f098488d4fe4eefd14dd3a3479eeb83eeae45
+state_head: 816ea0f3bbff9d71c46814c5b21693496bfd2ab8
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 17
 ---
 
@@ -177,7 +177,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -1010,6 +1010,8 @@ Recent decisions affecting current work:
 - [Phase 34]: 34-03: resolveGhidraProject() now creates (reserves) the run directory it resolves, not just checks it -- analyzeHeadless requires the directory to pre-exist on the success path, not only the refusal path — Live testing against real Ghidra 12.1.3 found the ghidra.analyze happy path was non-functional without this; fixed in the same session (commit 5694f27).
 - [Phase 34]: 34-03: .gitignore's tools/ghidra-runs/ line omits its leading slash — host-scripts.test.ts's deployed-artifact parity scan matches any /tools/-prefixed line and would demand a resourceEntries() counterpart for a runtime-scratch directory that is not a deployed resource.
 - [Phase 34-the-host-tool-execution-seam]: acme.mjs and packer-finding.mjs migrated onto the host-tool execution seam via an extracted mcp-module.mjs ladder — SEAM-05 requires the whole-tree grep gate (34-05) to find zero violations; both scripts previously spawned a host binary directly
+- [Phase 34]: SEAM-06: a second, independently pinned floor over the host-tool/ghidra/dxa prefix union brings the new family inside the closed-consumer discipline without widening EXPECTED_IMPORTERS — hostpath-consumers.test.ts's ANNO_MODULE_FLOOR is anchored on anno-, so the new family sat outside its scan entirely; a second hand-pinned floor closes the blind spot per 34-RESEARCH.md Pitfall 2
+- [Phase 34]: SEAM-07: JVM lifetime binding recorded as per-invocation, matching what plans 34-01/34-03 actually built, with a checkable reversal condition (N=20 binaries, P=30 percent of wall-clock in JVM startup) to resident-socket — docs/phase34-host-tool-seam-decisions.md consolidates the measurement (12407ms/11160ms observed, 12.6-17.4s cited range) and all fourteen planner assumptions A-01..A-14 since no /gsd-discuss-phase ran for Phase 34
 
 ### Pending Todos
 
@@ -1799,8 +1801,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T15:20:24.062Z
-Stopped at: Completed 34-04-PLAN.md
+Last session: 2026-09-03T15:40:28.131Z
+Stopped at: Completed 34-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md

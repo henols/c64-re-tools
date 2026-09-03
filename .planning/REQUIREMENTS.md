@@ -142,12 +142,12 @@ presented as measured as a defect class, so provenance is stated rather than imp
       a PATH ladder of five *container* paths) and
       `src/skills/c64-program-recon/scripts/packer-finding.mjs`. The gate can only be written once
       nothing violates it, which is why this precedes dxa and Ghidra rather than following them
-- [ ] **SEAM-06**: The new module family is inside the closed-consumer discipline rather than beside
+- [x] **SEAM-06**: The new module family is inside the closed-consumer discipline rather than beside
       it, with a non-vacuity floor proven by a real on-disk positive control. MEASURED structural
       blind spot: `hostpath-consumers.test.ts`'s floor is pinned over the `anno-*` prefix, so a
       `ghidra-*` / `dxa-*` family is **outside its scan entirely** — and adding the module to the
       declared list is precisely how the discipline decays
-- [ ] **SEAM-07**: The JVM lifetime binding is a **recorded decision with its measurement**, not an
+- [x] **SEAM-07**: The JVM lifetime binding is a **recorded decision with its measurement**, not an
       inherited default. MEASURED: JVM startup is 12.6–17.4 s before any analysis, which is what
       makes per-request `analyzeHeadless` untenable; four independent comparable projects converge
       on one resident JVM behind a localhost socket, structurally the same design as this project's
@@ -409,8 +409,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEAM-03 | Phase 34 | Complete |
 | SEAM-04 | Phase 34 | Complete |
 | SEAM-05 | Phase 34 | Pending |
-| SEAM-06 | Phase 34 | Pending |
-| SEAM-07 | Phase 34 | Pending |
+| SEAM-06 | Phase 34 | Complete |
+| SEAM-07 | Phase 34 | Complete |
 | DXA-01 | Phase 35 | Pending |
 | DXA-02 | Phase 35 | Pending |
 | DXA-03 | Phase 35 | Pending |
