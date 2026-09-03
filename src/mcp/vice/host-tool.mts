@@ -117,7 +117,12 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
   Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
     "acme.build": Object.freeze(["source", "outDir", "format", "setpc", "defines", "includes", "noReport"]),
     "ghidra.analyze": Object.freeze(["runId", "importPath", "preScript", "postScript"]),
-    "oracle.probe": Object.freeze(["command"]),
+    // 34-08 (CR-01): EMPTY -- the oracle's location is host-side
+    // configuration only (resolveOracleCommand(), below), never a wire
+    // value. No caller-supplied value may ever select what the host
+    // executes, even framed as merely reconfiguring an already-allowlisted
+    // tool.
+    "oracle.probe": Object.freeze([]),
     "oracle.run": Object.freeze(["source"]),
   }),
 );
@@ -139,13 +144,18 @@ export interface GhidraAnalyzeArgs {
   postScript?: string;
 }
 
-/** 34-04, SEAM-05: no raw argv, no raw command string -- `command` is an
- * OPTIONAL override naming a specific oracle binary path (mirrors
- * packer-finding.mjs's own `UNP64`/`UNP64_PATH` configured-path convention);
- * absent, the executor tries the default search-path command. */
-export interface OracleProbeArgs {
-  command?: string;
-}
+/** 34-08 (CR-01): the wire request carries NO configuration at all -- the
+ * oracle's binary location is host-side configuration ONLY, decided by
+ * `resolveOracleCommand()` from the broker process's own environment
+ * (`UNP64`/`UNP64_PATH`, packer-finding.mjs's own configured-path
+ * convention), exactly like the ACME library directory `findAcmeLib()`
+ * probes. There is no field here for the same reason there is no `command`
+ * key in `HOST_TOOL_ARG_KEYS["oracle.probe"]`: a container-side caller must
+ * never choose what the host executes, even framed as merely reconfiguring
+ * an already-allowlisted tool. (Previously an optional `command` override
+ * field -- removed this plan; see CR-01's trust-boundary-regression
+ * finding.) */
+export type OracleProbeArgs = Record<string, never>;
 
 /** `source` is workspace-relative, resolved through the SAME
  * resolveWorkspacePath() site every other tool's path argument uses. */
@@ -204,7 +214,8 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
   }
   const argsObj: Record<string, unknown> = argsRaw ?? {};
   const acceptedKeys = HOST_TOOL_ARG_KEYS[tool];
-  const acceptedShape = `an object with optional key(s) ${acceptedKeys.join("/")}`;
+  const acceptedShape =
+    acceptedKeys.length > 0 ? `an object with optional key(s) ${acceptedKeys.join("/")}` : "an object with no accepted keys -- this tool takes no arguments";
   const unknownKeys = Object.keys(argsObj).filter((key) => !acceptedKeys.includes(key));
   if (unknownKeys.length > 0) {
     return { ok: false, message: `host_tool "${tool}" args has unknown key(s) ${unknownKeys.join(", ")}; accepted shape is ${acceptedShape}` };
@@ -298,15 +309,11 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
   }
 
   if (tool === "oracle.probe") {
-    const args: OracleProbeArgs = {};
-    if ("command" in argsObj) {
-      const command = argsObj.command;
-      if (typeof command !== "string" || command === "") {
-        return { ok: false, message: `host_tool "oracle.probe" args.command must be a non-empty string; got ${describe(command)}` };
-      }
-      args.command = command;
-    }
-    return { ok: true, request: { tool, args } };
+    // 34-08 (CR-01): no key is accepted at all -- the unknown-key check
+    // above already refused the retired "command" key (and any other key)
+    // by name, since HOST_TOOL_ARG_KEYS["oracle.probe"] is now empty. No new
+    // refusal code is needed here.
+    return { ok: true, request: { tool, args: {} } };
   }
 
   if (tool === "oracle.run") {
@@ -685,7 +692,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   // oracle's unpacked-output text), not a produced-file digest. Handled as
   // their own branch, reusing spawnHostTool() (the one spawn call) rather
   // than adding a second.
-  if (request.tool === "oracle.probe") return runOracleProbe(request.args, deps);
+  if (request.tool === "oracle.probe") return runOracleProbe(deps);
   if (request.tool === "oracle.run") return runOracleRun(request.args, deps);
 
   const repoRootAbs = resolvePath(deps.repoRoot);
@@ -823,29 +830,66 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
 // functions can return the seam's response with no field renaming.
 // ---------------------------------------------------------------------------
 
-/** Default command name when no override is given -- the same default
- * packer-finding.mjs's own (removed) DEFAULT_ORACLE_COMMAND used. */
+/** Default command name when no host-side configuration is present -- the
+ * same default packer-finding.mjs's own (removed) DEFAULT_ORACLE_COMMAND
+ * used. */
 const DEFAULT_ORACLE_COMMAND = "unp64";
 
-async function runOracleProbe(args: OracleProbeArgs, deps: HostToolDeps): Promise<HostToolResponse> {
-  const overridden = typeof args.command === "string" && args.command !== "";
-  const command = overridden ? (args.command as string) : DEFAULT_ORACLE_COMMAND;
+/** The two environment variables the oracle's location is read from, in this
+ * order -- the SAME variable order and names packer-finding.mjs's own
+ * (client-side, container-facing) `ORACLE_ENV_VARS` declares, so a
+ * container-side hint naming one of these two variables always describes
+ * where this host-side resolver actually looked. */
+const ORACLE_ENV_VARS: readonly string[] = Object.freeze(["UNP64", "UNP64_PATH"]);
 
-  // A caller-supplied override that names a path not on disk is absent,
-  // WITHOUT echoing the configured value (T-19-18) -- mirrors
-  // packer-finding.mjs's own pre-seam check, now enforced here since this is
-  // where the spawn actually happens.
-  if (overridden && !existsSync(command)) {
-    deps.log?.(`host_tool tool=oracle.probe exit=absent_configured_path`);
-    return {
-      ok: true,
-      tool: "oracle.probe",
-      available: false,
-      command: null,
-      version: null,
-      reason: "the configured oracle path does not exist on disk -- treated as oracle-absent",
-    };
+export type ResolveOracleCommandResult = { ok: true; command: string } | { ok: false; reason: string };
+
+/** 34-08 (CR-01): THE ONE PLACE the oracle binary's location is decided,
+ * consulted by BOTH `runOracleProbe()` and `runOracleRun()` -- mirrors
+ * `findAcmeLib()` above, which `34-04` already moved host-side for exactly
+ * this reason: the container has no PATH to a host binary, so probing host
+ * locations belongs on the host side of the seam. Reads the BROKER
+ * PROCESS'S OWN environment -- never a wire value, because
+ * `HOST_TOOL_ARG_KEYS["oracle.probe"]` accepts no keys at all. When a
+ * variable is set, two checks apply in order: the configured path's base
+ * name must equal `DEFAULT_ORACLE_COMMAND` (the review's own suggested
+ * check, kept as a second layer over the wire-key removal), and the path
+ * must exist on disk. Each refusal reason names WHICH variable was set and
+ * NEVER interpolates the configured value (T-19-18, carried forward from
+ * `34-04`). With no variable set, answers the bare `DEFAULT_ORACLE_COMMAND`
+ * -- the existing search-path behaviour, unchanged. */
+function resolveOracleCommand(): ResolveOracleCommandResult {
+  for (const varName of ORACLE_ENV_VARS) {
+    const raw = process.env[varName];
+    if (typeof raw !== "string" || raw.trim() === "") continue;
+    const configured = raw.trim();
+    if (basename(configured) !== DEFAULT_ORACLE_COMMAND) {
+      return {
+        ok: false,
+        reason: `the oracle configured via ${varName} is not named "${DEFAULT_ORACLE_COMMAND}" -- treated as oracle-absent`,
+      };
+    }
+    if (!existsSync(configured)) {
+      return {
+        ok: false,
+        reason: `the oracle configured via ${varName} does not exist on disk -- treated as oracle-absent`,
+      };
+    }
+    return { ok: true, command: configured };
   }
+  return { ok: true, command: DEFAULT_ORACLE_COMMAND };
+}
+
+async function runOracleProbe(deps: HostToolDeps): Promise<HostToolResponse> {
+  const resolved = resolveOracleCommand();
+  if (!resolved.ok) {
+    // No child is spawned on this branch -- WITHOUT echoing the configured
+    // value anywhere (T-19-18); resolved.reason already names the variable,
+    // never the value.
+    deps.log?.(`host_tool tool=oracle.probe exit=absent_configured_path`);
+    return { ok: true, tool: "oracle.probe", available: false, command: null, version: null, reason: resolved.reason };
+  }
+  const command = resolved.command;
 
   const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
   const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs);
@@ -858,9 +902,7 @@ async function runOracleProbe(args: OracleProbeArgs, deps: HostToolDeps): Promis
       available: false,
       command: null,
       version: null,
-      reason: overridden
-        ? "the configured oracle path could not be launched"
-        : `no "${DEFAULT_ORACLE_COMMAND}" packer identifier was found on the search path`,
+      reason: `no "${DEFAULT_ORACLE_COMMAND}" packer identifier could be launched`,
     };
   }
   if (spawnResult.timedOut) {
@@ -900,6 +942,18 @@ async function runOracleRun(args: OracleRunArgs, deps: HostToolDeps): Promise<Ho
     return { ok: false, tool: "oracle.run", stdout: "", reason: "the input file does not exist" };
   }
 
+  // 34-08 (CR-01): the SAME resolver oracle.probe consults -- never a bare
+  // DEFAULT_ORACLE_COMMAND argument at the spawn site below. Before this
+  // change a host-side configured oracle was honoured by the probe and
+  // silently ignored by the run, so a working probe could be followed by a
+  // failing run; resolving here closes that gap as a real defect fix, not
+  // merely a mechanical follow-on from Task 1's wire-key removal.
+  const resolvedCommand = resolveOracleCommand();
+  if (!resolvedCommand.ok) {
+    deps.log?.(`host_tool tool=oracle.run exit=absent_configured_path`);
+    return { ok: false, tool: "oracle.run", stdout: "", reason: resolvedCommand.reason };
+  }
+
   // The oracle's unpacked output goes to a scratch location INSIDE the
   // workspace tree -- never the system temp directory, which cannot be
   // translated back across the container boundary -- removed after this
@@ -911,7 +965,7 @@ async function runOracleRun(args: OracleRunArgs, deps: HostToolDeps): Promise<Ho
 
   try {
     const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
-    const spawnResult = await spawnHostTool(DEFAULT_ORACLE_COMMAND, [sourceResolved.path, scratchOut], timeoutMs);
+    const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs);
 
     if (spawnResult.spawnErrorMessage !== null) {
       deps.log?.(`host_tool tool=oracle.run exit=spawn_error`);

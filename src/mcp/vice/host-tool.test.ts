@@ -66,6 +66,24 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
 };
 const { normaliseHostToolRequest, resolveWorkspacePath, buildHostToolArgv, runHostTool } = hostTool;
 
+/** 34-08 (CR-01): a SEPARATELY-typed alias to the SAME runtime function --
+ * oracle.probe/oracle.run's response shapes (`{ available, command, version,
+ * reason }` / `{ ok, stdout, reason }`, mirroring packer-finding.mjs's own
+ * pre-existing contracts) are deliberately NOT folded into `runHostTool`'s
+ * shared return type above: that type's generic `tool: string` envelope
+ * member would then satisfy every oracle-shaped narrowing check too (a wide
+ * `string` is never excluded by an equality/`in` narrow), silently
+ * un-narrowing every PRE-EXISTING acme.build/ghidra.analyze case that reads
+ * `response.message` after `if (!response.ok)`. */
+const runOracleHostTool = runHostTool as unknown as (
+  raw: unknown,
+  deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+) => Promise<
+  | { ok: true; tool: "oracle.probe"; available: boolean; command: string | null; version: string | null; reason: string | null }
+  | { ok: boolean; tool: "oracle.run"; stdout: string; reason: string | null }
+  | { ok: false; message: string }
+>;
+
 // --------------------------------------------------------------- test helpers
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T> | T): Promise<T> {
@@ -793,3 +811,198 @@ test("runHostTool: an accepted in-workspace ghidra.analyze preScript reaches the
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// oracle.probe / oracle.run -- CR-01 closure (34-08, Task 1). The wire key is
+// gone; the oracle's location is now decided HOST-SIDE by
+// resolveOracleCommand(), consulted by both branches. "unp64" below is the
+// module's own DEFAULT_ORACLE_COMMAND, not re-exported -- hardcoded here
+// exactly as the plan's own <read_first> names it.
+// ---------------------------------------------------------------------------
+
+const EXPECTED_ORACLE_BINARY_NAME = "unp64";
+
+/** Temporarily sets one oracle environment variable and restores it (or
+ * removes it, if it was previously unset) in `finally` -- the same
+ * set-and-restore idiom `withFakeAcme`/`withFakeGhidraHome` use for theirs. */
+async function withOracleEnv<T>(varName: string, value: string, fn: () => Promise<T> | T): Promise<T> {
+  const previous = process.env[varName];
+  process.env[varName] = value;
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) delete process.env[varName];
+    else process.env[varName] = previous;
+  }
+}
+
+/** Removes BOTH oracle environment variables for the duration of `fn`,
+ * restoring each in `finally` -- used by cases that must observe the
+ * no-configuration (bare search-path) behaviour regardless of what the
+ * ambient test environment happens to carry. */
+async function withNoOracleEnv<T>(fn: () => Promise<T> | T): Promise<T> {
+  const previousUnp64 = process.env.UNP64;
+  const previousUnp64Path = process.env.UNP64_PATH;
+  delete process.env.UNP64;
+  delete process.env.UNP64_PATH;
+  try {
+    return await fn();
+  } finally {
+    if (previousUnp64 === undefined) delete process.env.UNP64;
+    else process.env.UNP64 = previousUnp64;
+    if (previousUnp64Path === undefined) delete process.env.UNP64_PATH;
+    else process.env.UNP64_PATH = previousUnp64Path;
+  }
+}
+
+/** Writes a small, executable, controllable stand-in for the real oracle
+ * binary INSIDE `dir`, named EXACTLY `binaryName` -- the caller passes a
+ * fresh subdirectory per fake, so one temp root can hold both a
+ * correctly-named and a wrongly-named fake at once. `mode: "version"`
+ * answers `--version` with a banner (the oracle.probe shape); `mode:
+ * "stdout"` ignores its argv and writes `stdoutLine` to its own stdout (the
+ * oracle.run shape) -- proving WHICH binary actually ran. */
+function writeFakeOracle(dir: string, binaryName: string, mode: "version" | "stdout", stdoutLine = ""): string {
+  const scriptPath = join(dir, binaryName);
+  writeFileSync(
+    scriptPath,
+    [
+      "#!/usr/bin/env node",
+      `const mode = ${JSON.stringify(mode)};`,
+      `const stdoutLine = ${JSON.stringify(stdoutLine)};`,
+      'if (mode === "version") {',
+      '  process.stdout.write("fake-oracle version 1.0.0\\n");',
+      "  process.exit(0);",
+      "}",
+      'if (mode === "stdout") {',
+      "  process.stdout.write(stdoutLine + \"\\n\");",
+      "  process.exit(0);",
+      "}",
+      "process.exit(0);",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(scriptPath, 0o755);
+  return scriptPath;
+}
+
+test('normaliseHostToolRequest({ tool: "oracle.probe", args: { command: "/usr/local/bin/unp64" } }) is refused, naming the retired key and the accepted shape', () => {
+  const result = normaliseHostToolRequest({ tool: "oracle.probe", args: { command: "/usr/local/bin/unp64" } });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /command/);
+    assert.match(result.message, /accepted shape/);
+  }
+});
+
+test('normaliseHostToolRequest({ tool: "oracle.probe" }) is accepted -- the tool takes no arguments at all', () => {
+  const result = normaliseHostToolRequest({ tool: "oracle.probe" });
+  assert.equal(result.ok, true);
+});
+
+test('normaliseHostToolRequest({ tool: "oracle.probe", args: {} }) is accepted', () => {
+  const result = normaliseHostToolRequest({ tool: "oracle.probe", args: {} });
+  assert.equal(result.ok, true);
+});
+
+test("runHostTool: oracle.probe with no oracle environment variable set resolves the bare expected binary name and reports oracle-absent, never a rejection", async () => {
+  await withNoOracleEnv(async () => {
+    const response = await runOracleHostTool({ tool: "oracle.probe" }, { repoRoot: "/tmp" });
+    assert.equal(response.ok, true);
+    if (response.ok && response.tool === "oracle.probe") {
+      assert.equal(response.available, false);
+      assert.equal(response.command, null);
+      assert.match(response.reason ?? "", new RegExp(EXPECTED_ORACLE_BINARY_NAME));
+    }
+  });
+});
+
+test("runHostTool: oracle.probe with a host-side variable naming an existing file whose base name is NOT the expected binary reports oracle-absent, and the configured path appears nowhere in the response", async () => {
+  await withTempDir(async (dir) => {
+    const wrongPath = join(dir, "not-the-right-name");
+    writeFileSync(wrongPath, "#!/bin/sh\nexit 0\n", "utf8");
+    chmodSync(wrongPath, 0o755);
+    await withOracleEnv("UNP64", wrongPath, async () => {
+      const response = await runOracleHostTool({ tool: "oracle.probe" }, { repoRoot: dir });
+      assert.equal(response.ok, true);
+      if (response.ok && response.tool === "oracle.probe") {
+        assert.equal(response.available, false);
+        assert.ok(!JSON.stringify(response).includes(wrongPath), "a configured path must never be echoed back");
+      }
+    });
+  });
+});
+
+test("runHostTool: oracle.probe with a host-side variable naming a non-existent path (correctly named, but absent on disk) reports oracle-absent, the reason names the variable, and the path appears nowhere in the response", async () => {
+  await withTempDir(async (dir) => {
+    // Correctly named ("unp64") so this exercises the EXISTENCE check, not
+    // the basename check above.
+    const missingPath = join(dir, "does-not-exist-here", EXPECTED_ORACLE_BINARY_NAME);
+    await withOracleEnv("UNP64", missingPath, async () => {
+      const response = await runOracleHostTool({ tool: "oracle.probe" }, { repoRoot: dir });
+      assert.equal(response.ok, true);
+      if (response.ok && response.tool === "oracle.probe") {
+        assert.equal(response.available, false);
+        assert.match(response.reason ?? "", /UNP64/);
+        assert.ok(!JSON.stringify(response).includes(missingPath), "a configured path must never be echoed back");
+      }
+    });
+  });
+});
+
+test("runHostTool: oracle.probe with a host-side variable naming an existing, executable fake NAMED as the expected binary reports available with that resolved path as command", async () => {
+  await withTempDir(async (dir) => {
+    const fakeDir = join(dir, "fake-correctly-named");
+    mkdirSync(fakeDir, { recursive: true });
+    const fakePath = writeFakeOracle(fakeDir, EXPECTED_ORACLE_BINARY_NAME, "version");
+    await withOracleEnv("UNP64", fakePath, async () => {
+      const response = await runOracleHostTool({ tool: "oracle.probe" }, { repoRoot: dir });
+      assert.equal(response.ok, true);
+      if (response.ok && response.tool === "oracle.probe") {
+        assert.equal(response.available, true);
+        assert.equal(response.command, fakePath);
+      }
+    });
+  });
+});
+
+test("runHostTool: oracle.run spawns the SAME resolved command oracle.probe would -- a fake named as the expected binary writes a known stdout line, and oracle.run returns it", async () => {
+  await withTempDir(async (dir) => {
+    const fakeDir = join(dir, "fake-for-run");
+    mkdirSync(fakeDir, { recursive: true });
+    const knownLine = "FAKE-ORACLE-KNOWN-STDOUT-LINE";
+    const fakePath = writeFakeOracle(fakeDir, EXPECTED_ORACLE_BINARY_NAME, "stdout", knownLine);
+    writeFileSync(join(dir, "input.bin"), "tiny\n", "utf8");
+    await withOracleEnv("UNP64", fakePath, async () => {
+      const response = await runOracleHostTool({ tool: "oracle.run", args: { source: "input.bin" } }, { repoRoot: dir });
+      assert.equal(response.ok, true);
+      if (response.ok && response.tool === "oracle.run") {
+        assert.ok(response.stdout.includes(knownLine), "oracle.run must have spawned the SAME configured fake oracle.probe resolved, not a bare search-path name");
+      }
+    });
+  });
+});
+
+test(
+  'END TO END: an oracle.probe request carrying the retired "command" key is refused at the container-side caller with ok: false naming the key, over the real control-plane route, with all seven VICE callbacks provably uncalled',
+  async () => {
+    await withTempDir(async (dir) => {
+      const { listener, token, spies } = await startListenerWithSpies(dir);
+      try {
+        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
+        try {
+          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
+          const response = await hostToolOverControlPlane(stateDir, "oracle.probe", { command: "/usr/local/bin/unp64" });
+          assert.equal(response.ok, false);
+          if (!response.ok) assert.match(response.message, /command/);
+          assertAllSpiesEmpty(spies);
+        } finally {
+          rmSync(stateDir, { recursive: true, force: true });
+        }
+      } finally {
+        listener.server.close();
+      }
+    });
+  },
+);
