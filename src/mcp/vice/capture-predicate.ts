@@ -4,6 +4,25 @@
 // 6510-port normalisation, the byte-by-byte comparison that decides
 // equivalence, and the argv identity digest a reproducible run is keyed by.
 //
+// CONSUMER STATUS: SUBSTRATE, NOT YET WIRED (33 review WR-08). As of phase
+// 33 this module is imported by nothing outside its own tests and
+// `derive-transients.test.mjs`, and it exposes no CLI, so -- unlike
+// `vsf-slice.ts` -- there is no route to it from the skill side either. The
+// only RUNNABLE equivalence check in the phase is the deliberate second
+// implementation in `src/skills/c64-ram-capture/scripts/derive-transients.mjs`.
+// So read "the ONE authoritative place" above as A DESIGN CONSTRAINT ON FUTURE
+// CALLERS -- when the predicate is called, it is called here -- and NOT as a
+// claim that anything in production calls it today. In particular
+// `normalisePorts()`, the sole reason `sliceC64Mem()` returns the port bytes
+// at all, has never run against a real capture.
+//
+// This is deliberate and is not a defect to be closed by inventing a caller:
+// phase 33 built the capture substrate ahead of phases 34-38 consuming it. The
+// status is recorded HERE, in the header a later reader will actually reach,
+// because "authoritative" and "in use" are easy to conflate and the difference
+// decides whether an edit here is safe. When a production consumer lands, this
+// paragraph is what should be updated or removed.
+//
 // This module performs NO filesystem and NO network I/O: every function takes
 // bytes, an already-parsed JSON value, or a string array, and returns values.
 // Callers obtain and persist the bytes themselves. That is the same claim

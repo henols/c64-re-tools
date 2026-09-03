@@ -350,7 +350,21 @@ export const CONTROL_ACQUIRE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER
  * acquire writers -- acquireOverControlPlane()'s raw `socket.write` below and
  * openBrokerControl()'s `sendAndAwaitLine` further down. A field added to only
  * one of them silently never arrives for callers on the other path, which is
- * the same defect class as a tool argument that is accepted and dropped. */
+ * the same defect class as a tool argument that is accepted and dropped.
+ *
+ * CONSUMER STATUS: SUBSTRATE, NOT YET WIRED (33 review WR-08). The profile
+ * threads client -> wire -> narrowing -> eligibility -> argv -> record with
+ * tests at every hop, but as of phase 33 NO production call site passes one:
+ * `acquireOverControlPlane()` and `BrokerControlSession.acquire()` are only
+ * ever invoked without `opts.profile`, so `-warp` and `-console` are
+ * unreachable in production. That is deliberate -- phase 33 built the chain
+ * ahead of phases 34-38 using it -- and is recorded here rather than left for
+ * a reader to discover, because a fully-tested chain reads as a live one.
+ *
+ * Do NOT close this by inventing a call site. Note also that the profile is
+ * refused outright on the fork backend (33 review WR-03, broker-control.mts):
+ * it maps to stock-only launch flags, so the first real consumer has to be on
+ * stock. */
 export interface AcquireProfileOptions {
   profile?: LaunchProfile;
 }
