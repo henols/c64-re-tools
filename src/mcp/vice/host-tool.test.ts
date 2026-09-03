@@ -32,6 +32,12 @@ import { startControlListener, type StartControlListenerResult, type AcquireOutc
 import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
 import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+// 34-10 Task 2 (CR-05): a container-side import into a container-side test
+// file -- legal here, and anno-types.ts names no node:sqlite specifier, so
+// anno-seam.test.ts's TEST_FILES_NAMING_SQLITE list is untouched. Drives the
+// OTHER implementation of the same ancestor-realpath walk for the
+// equivalence table below.
+import { storePathWithinWorkspace, AnnoStorePathError } from "./anno-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -556,6 +562,191 @@ test("resolveWorkspacePath: an unreadable ancestor directory refuses by name rat
       chmodSync(locked, 0o755);
     }
     assert.doesNotThrow(() => readdirSync(locked), "the finally must have restored access");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR-05 (34-10 Task 2): the edge cases that make the control a control --
+// adjacency, empty/degenerate, not-yet-existing ancestors, dangling (three
+// ways), cycles (two positions), normalisation, and a cross-implementation
+// equivalence table against anno-types.ts's storePathWithinWorkspace(). No
+// production code here -- if a case cannot be made to pass, Task 1's walk is
+// wrong.
+// ---------------------------------------------------------------------------
+
+test("resolveWorkspacePath: adjacency -- \".\" resolves EXACTLY to the realpath'd workspace root, and a REAL sibling directory whose name merely begins with the root's own name is refused", async () => {
+  await withSymlinkFixture(async (ws) => {
+    const here = resolveWorkspacePath(ws, ".");
+    assert.equal(here.ok, true);
+    if (here.ok) assert.equal(here.path, ws);
+
+    const evilSibling = join(dirname(ws), `${basename(ws)}-evil`);
+    mkdirSync(evilSibling, { recursive: true });
+    try {
+      const refused = resolveWorkspacePath(ws, `../${basename(ws)}-evil`);
+      assert.equal(refused.ok, false);
+      if (!refused.ok) assert.match(refused.message, /escapes the workspace root/);
+    } finally {
+      rmSync(evilSibling, { recursive: true, force: true });
+    }
+  });
+});
+
+test("resolveWorkspacePath: empty and absolute inputs are refused with their existing wordings BEFORE any filesystem access, against a repoRoot that does not exist on disk", () => {
+  const nonExistentRoot = join(tmpdir(), "host-tool-does-not-exist-" + process.pid);
+  const empty = resolveWorkspacePath(nonExistentRoot, "");
+  assert.equal(empty.ok, false);
+  if (!empty.ok) assert.match(empty.message, /must be a non-empty relative string/);
+  const absolute = resolveWorkspacePath(nonExistentRoot, "/etc/passwd");
+  assert.equal(absolute.ok, false);
+  if (!absolute.ok) assert.match(absolute.message, /not absolute/);
+});
+
+test("resolveWorkspacePath: a candidate several levels below the deepest existing directory is ACCEPTED -- confinement never requires the target to exist", async () => {
+  await withSymlinkFixture(async (ws) => {
+    const deep = resolveWorkspacePath(ws, "build/out/deep/a.prg");
+    assert.equal(deep.ok, true);
+    if (deep.ok) assert.equal(deep.path, join(ws, "build", "out", "deep", "a.prg"));
+  });
+});
+
+test("runHostTool: an acme.build request whose outDir names an uncreated in-workspace directory is still accepted end to end", async () => {
+  await withSymlinkFixture(async (ws) => {
+    writeFileSync(join(ws, "a.a"), "; test source\n", "utf8");
+    const fakeAcme = writeFakeAcme(ws, "zerobyte");
+    await withFakeAcme(fakeAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", outDir: "not/yet/created" } }, { repoRoot: ws });
+      assert.equal(response.ok, true);
+    });
+  });
+});
+
+test("resolveWorkspacePath: a dangling LEAF link whose target is outside the workspace is refused (dangling, 1 of 3)", async () => {
+  await withSymlinkFixture(async (ws) => {
+    symlinkSync(join("..", "outside", "x.a"), join(ws, "dangling-leaf"));
+    const leafRefused = resolveWorkspacePath(ws, "dangling-leaf");
+    assert.equal(leafRefused.ok, false);
+    if (!leafRefused.ok) assert.match(leafRefused.message, /escapes the workspace root/);
+  });
+});
+
+test("resolveWorkspacePath: a dangling DIRECTORY link whose target (once existing, since removed) was outside the workspace is refused (dangling, 2 of 3)", async () => {
+  await withSymlinkFixture(async (ws) => {
+    const removedTarget = join(dirname(ws), "removed-outside");
+    mkdirSync(removedTarget, { recursive: true });
+    symlinkSync(removedTarget, join(ws, "dangling-dir"), "dir");
+    rmSync(removedTarget, { recursive: true, force: true });
+    const dirRefused = resolveWorkspacePath(ws, "dangling-dir/x.a");
+    assert.equal(dirRefused.ok, false);
+    if (!dirRefused.ok) assert.match(dirRefused.message, /escapes the workspace root/);
+  });
+});
+
+test("resolveWorkspacePath: a dangling link whose target is INSIDE the workspace and does not exist yet is ACCEPTED -- discriminates against the over-broad 'refuse whenever the stopping entry is a symlink' fix, which passes the two dangling-outside cases and fails this one (dangling, 3 of 3)", async () => {
+  await withSymlinkFixture(async (ws) => {
+    symlinkSync(join(ws, "not-yet-created"), join(ws, "dangling-inside"), "dir");
+    const insideAccepted = resolveWorkspacePath(ws, "dangling-inside/tail.a");
+    assert.equal(insideAccepted.ok, true, "a dangling link pointing INSIDE the workspace must be accepted, or the fix is over-broad");
+  });
+});
+
+test("resolveWorkspacePath: a symlink cycle in the LEAF position refuses, naming the hop bound (cycle, 1 of 2)", async () => {
+  await withSymlinkFixture(async (ws) => {
+    symlinkSync(join(ws, "b"), join(ws, "a"));
+    symlinkSync(join(ws, "a"), join(ws, "b"));
+    const leafCycle = resolveWorkspacePath(ws, "a");
+    assert.equal(leafCycle.ok, false);
+    if (!leafCycle.ok) {
+      assert.match(leafCycle.message, /40/);
+      assert.match(leafCycle.message, /hops/);
+    }
+  });
+});
+
+test("resolveWorkspacePath: a symlink cycle in an ANCESTOR position also refuses -- by the KERNEL's own ELOOP surfaced through the walk's refusal path, a different route through the same function than the manual hop counter (cycle, 2 of 2)", async () => {
+  await withSymlinkFixture(async (ws) => {
+    symlinkSync(join(ws, "b"), join(ws, "a"));
+    symlinkSync(join(ws, "a"), join(ws, "b"));
+    const ancestorCycle = resolveWorkspacePath(ws, "a/child/x.a");
+    assert.equal(ancestorCycle.ok, false, "an ancestor-position cycle must also refuse -- a different route through the same function");
+  });
+});
+
+test("resolveWorkspacePath: redundant separators, \".\" and \"..\" segments all resolve to the ONE accepted real path a canonical spelling would", async () => {
+  await withSymlinkFixture(async (ws) => {
+    mkdirSync(join(ws, "sub"), { recursive: true });
+    const canonical = resolveWorkspacePath(ws, "sub/x");
+    assert.equal(canonical.ok, true);
+    for (const spelling of ["sub/./x", "./sub/x", "other/../sub/x"]) {
+      const result = resolveWorkspacePath(ws, spelling);
+      assert.equal(result.ok, true, `spelling ${JSON.stringify(spelling)} must be accepted`);
+      if (result.ok && canonical.ok) assert.equal(result.path, canonical.path, `spelling ${JSON.stringify(spelling)} must resolve to the same real path as the canonical spelling`);
+    }
+    const trailingSlash = resolveWorkspacePath(ws, "sub/");
+    const noTrailingSlash = resolveWorkspacePath(ws, "sub");
+    assert.equal(trailingSlash.ok, true);
+    assert.equal(noTrailingSlash.ok, true);
+    if (trailingSlash.ok && noTrailingSlash.ok) assert.equal(trailingSlash.path, noTrailingSlash.path);
+    // Residual, not a covered case: the comparison is byte-wise and applies
+    // no Unicode normalisation, so two spellings differing only in
+    // normalisation form are two distinct paths here -- the same residual
+    // anno-confinement.test.ts records for the same comparison. Not
+    // assertable without a filesystem that normalises on its own.
+  });
+});
+
+test("resolveWorkspacePath and anno-types.ts's storePathWithinWorkspace() agree: refusal for refusal, acceptance for acceptance, and identical resolved paths where both accept (equivalence table, A-15)", async () => {
+  await withSymlinkFixture(async (ws) => {
+    mkdirSync(join(ws, "sub"), { recursive: true });
+    symlinkSync(join(ws, "sub"), join(ws, "inside-link"), "dir");
+    const outsideDir = join(dirname(ws), "equiv-outside");
+    mkdirSync(outsideDir, { recursive: true });
+    try {
+      symlinkSync(outsideDir, join(ws, "outside-link"), "dir");
+      symlinkSync(join("..", "equiv-outside", "missing"), join(ws, "dangling-outside-link"));
+      symlinkSync(join(ws, "missing-inside"), join(ws, "dangling-inside-link"), "dir");
+      symlinkSync(join(ws, "cycle-b"), join(ws, "cycle-a"));
+      symlinkSync(join(ws, "cycle-a"), join(ws, "cycle-b"));
+
+      // Scope of the claimed equivalence, stated precisely: this covers the
+      // CONFINEMENT VERDICT and the RESOLVED PATH for a relative-derived
+      // candidate, and deliberately NOT the input-validation layer --
+      // resolveWorkspacePath refuses "" and an absolute path where
+      // storePathWithinWorkspace has no such contract, so those two are not
+      // in this table.
+      const table: string[] = [
+        "sub/x.a",
+        "inside-link/x.a",
+        "outside-link/x.a",
+        "dangling-outside-link",
+        "dangling-inside-link/x.a",
+        "cycle-a",
+        ".",
+        "build/not/yet/created/x.a",
+      ];
+      assert.ok(table.length >= 8, "the table must have at least 8 rows");
+
+      let executedComparisons = 0;
+      for (const rel of table) {
+        const seamResult = resolveWorkspacePath(ws, rel);
+        let annoAccepted: string | null = null;
+        let annoThrew = false;
+        try {
+          annoAccepted = storePathWithinWorkspace(join(ws, rel), ws);
+        } catch (e) {
+          assert.ok(e instanceof AnnoStorePathError, `anno-types.ts's confinement must throw AnnoStorePathError for row ${JSON.stringify(rel)}, got ${(e as Error).constructor.name}`);
+          annoThrew = true;
+        }
+        executedComparisons += 1;
+        assert.equal(seamResult.ok, !annoThrew, `verdict must agree for row ${JSON.stringify(rel)}: resolveWorkspacePath ok=${seamResult.ok}, storePathWithinWorkspace threw=${annoThrew}`);
+        if (seamResult.ok && !annoThrew) {
+          assert.equal(seamResult.path, annoAccepted, `resolved path must agree for row ${JSON.stringify(rel)}`);
+        }
+      }
+      assert.equal(executedComparisons, table.length, "a short-circuited loop must not pass silently");
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });
 
