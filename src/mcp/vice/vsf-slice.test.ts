@@ -325,6 +325,23 @@ test("the CLI exits non-zero on a malformed snapshot and prints the module's OWN
   assert.equal(existsSync(out), false, "a refused slice must leave no output file behind");
 });
 
+test("the CLI refuses `--out --json` instead of writing a 64K file named --json (33 review IN-02)", () => {
+  // `argv[i + 1]` was taken unconditionally, so the flag became the path: a
+  // 65536-byte file literally NAMED `--json` was written and the JSON output
+  // the caller asked for was silently dropped. The sibling parser in
+  // derive-transients.mjs already refused exactly this.
+  const dir = mkdtempSync(join(tmpdir(), "vsf-slice-cli-"));
+  const r = spawnSync(
+    process.execPath,
+    [MODULE_PATH, "slice", join(HERE, "fixtures", "vsf", "wellformed-minor1.vsf"), "--out", "--json"],
+    { encoding: "utf8", timeout: 30000, cwd: dir },
+  );
+  assert.notEqual(r.status, 0, "a flag consumed as --out's value must not exit 0");
+  assert.match(r.stderr, /--out needs a path/);
+  assert.match(r.stderr, /--json/, "the refusal names the token it refused to treat as a path");
+  assert.equal(existsSync(join(dir, "--json")), false, "no file may be written under the flag's own name");
+});
+
 test("no exported function takes a filesystem path -- both take a byte array", () => {
   // Read from the source rather than asserted in prose: the signature is the
   // property that keeps path traversal out of this module's threat surface,

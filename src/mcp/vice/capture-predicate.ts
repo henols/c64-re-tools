@@ -521,8 +521,22 @@ const formatRow = (r: CaptureDifference): string =>
 
 /** Render a comparison for a transcript, in `compare.mjs`'s report vocabulary.
  * Returns a string rather than printing: this module writes nothing anywhere,
- * and a caller appending to an evidence file needs the text, not stdout. */
+ * and a caller appending to an evidence file needs the text, not stdout.
+ *
+ * `limit` caps the rows printed per section. `0` means UNLIMITED, which is the
+ * default. A NEGATIVE limit is refused rather than folded into that meaning
+ * (33 review IN-03): `limit > 0 ? … : rows` treated `-1` exactly like `0`, so
+ * a caller that computed a limit and got a negative number silently received
+ * up to 65 536 formatted rows in a transcript instead of the few it asked for.
+ * The parameter had no documented semantics at all beyond its default, which
+ * is why "negative means unlimited" was reachable by accident. */
 export function formatComparison(comparison: CaptureComparison, limit = 0): string {
+  if (!Number.isInteger(limit) || limit < 0) {
+    throw new CaptureComparisonError(
+      `formatComparison: limit must be a non-negative integer (0 means unlimited), got ${JSON.stringify(limit)}`,
+      limit,
+    );
+  }
   const lines: string[] = [];
   const list = (title: string, rows: CaptureDifference[]): void => {
     lines.push(`${title}: ${rows.length}`);

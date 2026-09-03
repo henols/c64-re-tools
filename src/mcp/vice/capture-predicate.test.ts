@@ -269,6 +269,29 @@ test("the report vocabulary is carried across in kind: hex4, hex2, bin8 and popc
   assert.match(text, /\$4000/);
 });
 
+test("formatComparison refuses a negative limit rather than silently meaning unlimited (33 review IN-03)", () => {
+  // `limit > 0 ? rows.slice(0, limit) : rows` treated -1 exactly like 0, so a
+  // caller that COMPUTED a limit and got a negative number received every row
+  // -- up to 65536 of them -- in a transcript instead of the few it asked for.
+  const a = syntheticImage();
+  const b = withBytes(a, { 0x4000: 0x00, 0x4001: 0x00, 0x4002: 0x00 });
+  const comparison = compareCaptures(a, b, []);
+
+  for (const bad of [-1, -65536, 1.5, Number.NaN]) {
+    assert.throws(
+      () => formatComparison(comparison, bad),
+      /limit must be a non-negative integer/,
+      `a limit of ${bad} must be refused`,
+    );
+  }
+
+  // 0 still means unlimited, and a positive limit still truncates -- the
+  // documented meanings are unchanged.
+  assert.equal(formatComparison(comparison, 0).match(/\$400[012]/g)?.length, 3);
+  const capped = formatComparison(comparison, 1);
+  assert.match(capped, /\.\.\. 2 more/);
+});
+
 // ---------------------------------------------------------------------------
 // 6. The oracle refuses a partial record
 // ---------------------------------------------------------------------------

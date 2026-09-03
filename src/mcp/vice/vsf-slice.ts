@@ -472,8 +472,17 @@ function parseCliArgs(argv: string[]): CliArgs {
     const arg = argv[i];
     if (arg === "--out") {
       const value = argv[i + 1];
-      if (value === undefined) {
-        throw new VsfSliceError("vsf-slice: --out needs a path");
+      // The `startsWith("--")` half is 33 review IN-02. `argv[i + 1]` was
+      // taken unconditionally, so `slice a.vsf --out --json` wrote a 64K file
+      // literally NAMED `--json` and silently dropped the JSON output the
+      // caller asked for. The sibling parser in derive-transients.mjs already
+      // refuses exactly this ("needs a value" when the next token starts with
+      // `--`); this mirrors it, so the two CLIs answer the same mistake the
+      // same way.
+      if (value === undefined || value.startsWith("--")) {
+        throw new VsfSliceError(
+          `vsf-slice: --out needs a path${value === undefined ? "" : `, but the next token is the flag ${value}`}`,
+        );
       }
       out = value;
       i++;
