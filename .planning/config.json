@@ -1,5 +1,5 @@
 {
-  "model_profile": "inherit",
+  "model_profile": "adaptive",
   "commit_docs": true,
   "parallelization": true,
   "search_gitignored": false,
@@ -28,8 +28,8 @@
     "_auto_chain_active": false,
     "node_repair": true,
     "node_repair_budget": 2,
-    "ui_phase": true,
-    "ui_safety_gate": true,
+    "ui_phase": false,
+    "ui_safety_gate": false,
     "text_mode": false,
     "research_before_questions": true,
     "discuss_mode": "discuss",
@@ -49,7 +49,7 @@
     "security_enforcement": true,
     "security_asvs_level": 1,
     "security_block_on": "high",
-    "ui_review": true,
+    "ui_review": false,
     "use_worktrees": true,
     "build_command": "cd src/mcp/vice && npm run typecheck",
     "test_command": "cd src/mcp/vice && npm run test:automated"
@@ -85,7 +85,20 @@
       }
     ]
   },
-  "agent_skills": {},
+  "agent_skills": {
+    "gsd-executor": [
+      "global:mastra"
+    ],
+    "gsd-planner": [
+      "global:mastra"
+    ],
+    "gsd-phase-researcher": [
+      "global:mastra"
+    ],
+    "gsd-code-reviewer": [
+      "global:mastra"
+    ]
+  },
   "features": {},
   "intel": {
     "enabled": false
@@ -94,5 +107,8 @@
     "enabled": false
   },
   "mode": "yolo",
-  "granularity": "standard"
+  "granularity": "standard",
+  "plan_review": {
+    "source_grounding": true
+  }
 }
