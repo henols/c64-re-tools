@@ -3,7 +3,7 @@ status: testing
 phase: 33-the-reproducible-run-protocol-and-the-capture-substrate-go-d
 source: [33-VERIFICATION.md]
 started: "2026-09-03T02:19:11Z"
-updated: "2026-09-03T02:19:11Z"
+updated: "2026-09-03T12:45:00Z"
 ---
 
 ## Current Test
@@ -66,7 +66,28 @@ expected: |
   Note: stock VICE 3.9 is at `/usr/bin/x64sc`; the fork shadows it at
   `/usr/local/bin/x64sc`. `-default` must precede `-binarymonitor`.
 why_human: Needs a live emulator; the seam has zero live coverage and changed after all measurement
-result: [pending]
+result: pass
+verified_by: evidence/reproducible-seam-probe.mjs (2026-09-03), against genuine stock VICE 3.9 at /usr/bin/x64sc
+evidence: evidence/33-uat-shipped-seam.md
+notes: |
+  PASS through the shipped seam -- `handleRunUntil` (stock-run-until.ts), the only
+  non-test caller of runReproducible(). Two independent invocations, three cold boots
+  each. At jitter 0/1500/4000 ms: ONE four-term stop identity
+  (PC=$ea31, hit_count=1, LIN=257, CYC=57 -- matching the module header's own claim
+  byte for byte) and ONE 64K sha256 (bf083cb3...5c7438), the same sha across BOTH
+  invocations. compareCaptures() with an EMPTY allow-list reports differing: 0 on all
+  three pairwise comparisons -- the 64-address transient budget was not needed.
+  resumes: 1 on every run (the "exactly one resume per wait" invariant, live);
+  anchorCleanup: deleted / cleanup: auto_deleted_by_vice / machineHalted: true.
+
+  One finding recorded, not a gap: the probe's FIRST run omitted
+  STOCK_DETERMINISM_FLAGS (it spawned x64sc directly rather than through the broker).
+  The stop identity still reproduced perfectly, but the 64K sha differed on all three
+  runs -- 1032 single-bit flips confined to RAM ($0100-$9FFF, $C000-$CFFF), the
+  signature of randomised power-on RAM init. The shipped broker emits the block
+  unconditionally so the shipped route is never in that state; recorded because the
+  stop identity CANNOT detect the condition, which is a measured argument for the
+  unconditional emission REPRO-01 asked for.
 
 ### 3. Correct the three factually wrong sentences in `capture-predicate.ts`'s CONSUMER STATUS header
 expected: The header stops claiming the module is imported by nothing outside its own tests, stops claiming `normalisePorts()` has never run against a real capture, and stops claiming the only runnable equivalence check is `derive-transients.mjs`. All three were false.
@@ -76,9 +97,9 @@ result: passed — fixed in commit `9c8de68` (2026-09-03), after independently c
 ## Summary
 
 total: 3
-passed: 1
+passed: 2
 issues: 0
-pending: 2
+pending: 1
 skipped: 0
 blocked: 0
 
