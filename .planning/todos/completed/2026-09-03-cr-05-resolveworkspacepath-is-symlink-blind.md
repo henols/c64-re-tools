@@ -8,9 +8,9 @@ finding_ids:
   - CR-05
 files:
 
-  - src/mcp/vice/host-tool.mts:370-386
-  - src/mcp/vice/host-tool.mts:780-843
-  - src/mcp/vice/host-tool.mts:1013-1017
+  - src/mcp/vice/host-tool.mts:563-586
+  - src/mcp/vice/host-tool.mts:979-1032
+  - src/mcp/vice/host-tool.mts:1213-1217
   - src/mcp/vice/host-tool.test.ts
   - src/mcp/vice/anno-types.ts:1082
   - src/mcp/vice/anno-types.ts:1195-1196
@@ -116,3 +116,77 @@ Constraints to respect:
 Suggested vehicle: `/gsd-quick` if scoped tightly to the seam plus its two
 tests; a planned phase slice if the SEAM-02 re-scoring question is taken up at
 the same time.
+
+## Resolution
+
+**Fixed.** Plan `34-10` (commits `ae8d7e1`, `790c731`, `b3b4238`), consolidated into the
+project's decision record by plan `34-11`. See `34-10-SUMMARY.md` for the full task-by-task
+account and `docs/phase34-host-tool-seam-decisions.md` Part 4 for the CR-05 correction, and
+Part 2's `A-15`/`A-16` rows for the two assumptions this fix rested on.
+
+**Route taken: NOT this todo's own preferred "export and reuse `realpathOfNearestExisting()`
+from `anno-types.ts`".** The walk was reimplemented LOCALLY in `host-tool.mts` instead
+(`A-15`), because that route is structurally blocked, not merely a stylistic preference:
+`host-tool.mts` is host-bound — it compiles via `build.ts` into `resources/host-tool.mjs`,
+which runs on a bare host Node with no type-stripping, and every `.mts` module in this family
+imports only `node:*` builtins and sibling compiled `.mjs` artifacts. `anno-types.ts` is
+container-side and transitively imports `./vice.ts` and `./disasm-opcodes.ts`, neither of
+which is host-bound, so it cannot be imported from `host-tool.mts` at all. The two
+implementations are pinned together instead by a cross-implementation equivalence test over
+one shared fixture table, comparing the two PUBLIC seams (`resolveWorkspacePath()` and
+`storePathWithinWorkspace()`) rather than sharing a private symbol.
+
+**How each of this todo's three Constraints was answered:**
+
+1. *"`host-tool.mts` is `.mts`, compiled by `build.ts`... any edit requires regenerating and
+   committing that artifact."* — `resources/host-tool.mjs` was regenerated via `build.ts` and
+   committed alongside the `.mts` source change in the same task (Task 1, `ae8d7e1`), and
+   `resources-sync.test.ts` (byte-identical-to-a-fresh-build) passes.
+2. *"`resolveWorkspacePath()`'s callers assume the returned path is what gets spawned...
+   verify the `buildHostToolArgv()` ordering and no-passthrough tests added by `34-07` and
+   `34-08` still hold."* — Task 3 (`b3b4238`) re-proved every one of those guarantees
+   unedited against a seam that now returns a real path instead of a lexical join: the
+   no-argv-passthrough tests, the seven-key path census, and cross-seam timeout ordering all
+   still pass, plus a new two-links-one-real-directory argv-ordering case.
+3. *"The `SEAM-02` requirement... re-scoring SEAM-02 is a judgement call for whoever picks
+   this up, not an automatic revert."* — Deliberately NOT re-scored. `34-VERIFICATION.md`
+   ruled in writing that SEAM-02's literal text ("typed per-tool allowlist with no argv
+   passthrough anywhere") is MET, independent of CR-05, and neither plan `34-10` nor `34-11`
+   touches `.planning/REQUIREMENTS.md`.
+
+**Residuals this fix does NOT close** (all recorded in `docs/phase34-host-tool-seam-decisions.md`
+Part 4, and in `34-10-SUMMARY.md`'s own Decisions Made section):
+
+- The check-then-open TOCTOU window between this confinement decision and the child process's
+  own filesystem open — no descriptor-based route is available since the child is a
+  third-party binary handed a path string.
+- The Unicode-normalisation divergence — the comparison is byte-wise, with no normalisation
+  applied to either side.
+- `WR-03` (`34-REVIEW.md`) — `runOracleRun()`'s unguarded `mkdirSync` and the CLI entry
+  point's missing `.catch()` — filed as a **separate**, still-open pending todo against the
+  same file (`2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes.md`), untouched
+  by this closure.
+
+**Frontmatter `files:` line citations above are RE-DERIVED against the post-fix source**, not
+carried forward from the original finding — `34-10` inserts roughly 190 lines above
+`resolveWorkspacePath()` (the new `MAX_SYMLINK_HOPS`/`pathEntryExists()`/
+`realpathOfNearestExisting()` helpers), shifting the seam from `:370-386` to `:563-586`, the
+acme.build/ghidra.analyze consumer block from `:780-843` to `:979-1032`, and oracle.run's
+`source` resolution from `:1013-1017` to `:1213-1217`. The two `anno-types.ts` citations are
+unchanged — that file was not touched by this fix.
+
+**Gate run before this Resolution was written** (per plan `34-11` Task 2, `2026-09-04`, VICE
+broker confirmed inactive):
+
+- `node build.ts && node --test host-tool.test.ts host-tool-transport.test.ts
+  ghidra-project.test.ts resources-sync.test.ts hostpath-consumers.test.ts
+  spawn-seam.test.ts` — `tests 158 / pass 158 / fail 0`.
+- `node --test docs-deferred-ledger.test.ts docs-review-disposition.test.ts
+  anno-confinement.test.ts anno-seam.test.ts` — `tests 55 / pass 55 / fail 0`.
+- `npm run typecheck`, `node scripts/check-npm-packages.mjs`,
+  `node scripts/check-no-skill-external-spawn.mjs` — all clean (`check-npm-packages: OK`,
+  `check-no-skill-external-spawn: OK`).
+- `npm run test:automated` (broker inactive) — `tests 3278 / suites 24 / pass 3270 / fail 2 /
+  skipped 1 / todo 5`, both failures in `anno-register.test.ts` (`:385` DIRECTION 5 basis
+  integrity, `:479` the planted-violation negative control) — exactly the measured
+  2-in-1-file floor recorded 2026-09-03, no regression.
