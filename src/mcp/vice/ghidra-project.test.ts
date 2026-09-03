@@ -6,13 +6,21 @@
 // Finding 2), the per-run project location, its idempotency refusal, and
 // the argv builder's independent re-check.
 //
+// Extended, Task 3 (live finding): resolveGhidraProject() CREATES the run
+// directory as the last step of a successful resolution -- real Ghidra
+// 12.1.3 refuses a clean, well-formed project location that does not yet
+// exist on disk (`Directory not found`, at `DefaultProjectManager.
+// createProject()`; see evidence/34-ghidra-dotpath.md). Reservation-by-
+// creation is what makes a second call under the SAME run id refused
+// immediately, with no window where two callers could both see it absent.
+//
 // Imports the UNBUILT `.mts` source directly (the module has no sibling
 // import -- only node:fs/node:path -- so the source resolves under native
 // Node type-stripping with no build step first). This is what lets every
 // case here run to completion with NO Ghidra installation present.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -135,6 +143,15 @@ test("resolveGhidraProject: accepts a clean repoRoot and a well-shaped runId, re
   });
 });
 
+test("resolveGhidraProject: CREATES the run directory as the last step of a successful resolution -- the reservation, not merely a computed path (live finding, Task 3: analyzeHeadless refuses a clean location that does not yet exist)", async () => {
+  await withTempDir((dir) => {
+    const result = resolveGhidraProject({ repoRoot: dir, runId: "created-run" });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(existsSync(result.projectLocation), true, "resolveGhidraProject must create the project location it returns");
+  });
+});
+
 test("resolveGhidraProject: refuses a repoRoot that itself contains a dot-prefixed segment, naming that segment -- rules out .vice-supervisor/ and .planning/ as ancestors", () => {
   const result = resolveGhidraProject({ repoRoot: "/home/u/.vice-supervisor/nested", runId: "r1" });
   assert.equal(result.ok, false);
@@ -165,16 +182,24 @@ test("resolveGhidraProject: refuses a run id not matched by RUN_ID_PATTERN (disa
   assert.equal(result.ok, false);
 });
 
-test("resolveGhidraProject: refuses reusing an existing run directory under the SAME run id (idempotency) -- reuse is what makes the single-writer lock reachable again", async () => {
+test("resolveGhidraProject: refuses reusing an existing run directory under the SAME run id (idempotency) -- the FIRST call's own directory creation is what the second call sees and refuses, with no separate simulated run needed", async () => {
   await withTempDir((dir) => {
     const first = resolveGhidraProject({ repoRoot: dir, runId: "same-run" });
     assert.equal(first.ok, true);
     if (!first.ok) return;
-    // Simulate the run having happened: the project location now exists.
-    mkdirSync(first.projectLocation, { recursive: true });
     const second = resolveGhidraProject({ repoRoot: dir, runId: "same-run" });
     assert.equal(second.ok, false);
     if (!second.ok) assert.match(second.message, /reused|reuse/i);
+  });
+});
+
+test("resolveGhidraProject: still refuses reuse even when a run's directory was created by an EARLIER, separate process (e.g. a completed prior run) rather than by this call's own reservation", async () => {
+  await withTempDir((dir) => {
+    const runsRoot = join(dir, "tools", "ghidra-runs");
+    mkdirSync(join(runsRoot, "pre-existing-run"), { recursive: true });
+    const result = resolveGhidraProject({ repoRoot: dir, runId: "pre-existing-run" });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.message, /reused|reuse/i);
   });
 });
 
