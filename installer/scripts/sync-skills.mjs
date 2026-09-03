@@ -25,7 +25,7 @@
 //       does not know about, instead of the one place that actually decides
 //       what installer/skills/ contains.
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 import { existsSync, rmSync, mkdirSync, readdirSync, readFileSync, cpSync } from "node:fs";
 import { createHash } from "node:crypto";
 
@@ -61,12 +61,30 @@ if (names.length === 0) {
 // moment anything else needs to ask the same question -- the drift check
 // below asks it for every candidate, and a counting predicate would have
 // reported a number several times too high.
-function isNonShipping(base) {
+//
+// PATH CONTEXT, NOT JUST A BASENAME (33 review CR-01). The rule started out
+// as a pure basename test, which cannot express the one exclusion that
+// matters most here: a *derived per-release transient allow-list*
+// (`<skill>/transients/<release>.json`). Those artifacts are this repository's
+// own measurement of its own captures -- 49 addresses derived from three
+// jitter runs of one release, on one host, at one argv digest. Shipping one
+// installs an INHERITED address set into every consumer project, reachable
+// through the command `transients/README.md` itself documents
+// (`check --allow-list transients/<id>.json`), and the same README states in
+// shipped prose that the installed directory carries "this README and nothing
+// else". CAP-02/D-23 are explicit that the derivation METHOD travels and the
+// address set never does: "no address set is ever inherited between
+// releases", because a borrowed list cannot afterwards be distinguished from
+// an honestly derived one. So the predicate takes the parent directory name
+// too. The artifacts stay in the repo (they are phase 33's committed
+// evidence); they just stop being published.
+function isNonShipping(base, parentBase) {
   return (
     base === "fixtures" ||
     base.endsWith(".test.mjs") ||
     base.endsWith(".test.js") ||
-    base === "test-corpus.mjs"
+    base === "test-corpus.mjs" ||
+    (parentBase === "transients" && base.endsWith(".json"))
   );
 }
 
@@ -75,7 +93,8 @@ let excluded = 0;
 /** The filter `cpSync` drives. Pure predicate, no counting: `excluded` is
  * already known by the time anything is copied. */
 function shouldCopy(src) {
-  return !isNonShipping(src.split("/").pop());
+  const parts = src.split(sep).filter((part) => part !== "");
+  return !isNonShipping(parts[parts.length - 1], parts[parts.length - 2]);
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +139,7 @@ function plannedFiles() {
     for (const entry of readdirSync(abs, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const childAbs = join(abs, entry.name);
       const childRel = `${rel}/${entry.name}`;
-      if (isNonShipping(entry.name)) {
+      if (isNonShipping(entry.name, basename(abs))) {
         excluded++;
         continue;
       }
@@ -171,4 +190,5 @@ for (const name of names) {
 }
 
 console.error(`sync-skills: copied ${names.length} skill(s) into ${DEST}: ${names.join(", ")}`);
-console.error(`sync-skills: excluded ${excluded} non-shipping entr${excluded === 1 ? "y" : "ies"} (test files, fixtures/, test-corpus.mjs)`);
+console.error(`sync-skills: excluded ${excluded} non-shipping entr${excluded === 1 ? "y" : "ies"} ` +
+    `(test files, fixtures/, test-corpus.mjs, transients/*.json derived allow-lists)`);

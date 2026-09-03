@@ -101,6 +101,27 @@ function assertLeanTarball(packed) {
     testCorpusHits.length === 0,
     `${name}: test-corpus.mjs (test-only helper) leaked into tarball -- ${testCorpusHits.join(", ")}`
   );
+  // 33 review CR-01. A derived per-release transient allow-list
+  // (`skills/<skill>/transients/<release>.json`) is this repository's own
+  // measurement of its own captures at one argv digest on one host. Publishing
+  // one installs an INHERITED address set into a consumer project, reachable
+  // through the very command `transients/README.md` documents, while that same
+  // shipped README promises the installed directory holds "this README and
+  // nothing else". CAP-02/D-23: the derivation METHOD travels, the address set
+  // never does -- a borrowed list cannot afterwards be told apart from an
+  // honestly derived one, so there is no cheap repair for a contaminated
+  // ledger. `installer/scripts/sync-skills.mjs` is what excludes them; this
+  // assertion exists so that producer being wrong is CAUGHT rather than
+  // trusted (the same independence rationale as every other check here).
+  // Deliberately shaped as "any .json under any skill's transients/", not
+  // "danish.json", so the next release's list is covered the day it is
+  // derived rather than the day someone remembers to widen the pattern.
+  const inheritedLists = files.filter((f) => /^skills\/[^/]+\/transients\/.+\.json$/.test(f));
+  need(
+    inheritedLists.length === 0,
+    `${name}: a derived per-release transient allow-list leaked into the tarball -- ` +
+      `${inheritedLists.join(", ")} (CAP-02/D-23: the derivation method ships, the address set never does)`
+  );
 }
 
 // EXPORTED (29-02): the removal gate (`scripts/check-no-<subject>.mjs`,
