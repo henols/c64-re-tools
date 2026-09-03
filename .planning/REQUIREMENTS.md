@@ -110,7 +110,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### The Gate
 
-- [ ] **GATE-01**: The milestone carries a recorded **go / degrade / no-go** verdict against named
+- [x] **GATE-01**: The milestone carries a recorded **go / degrade / no-go** verdict against named
       rules committed to git **before** any measurement exists, with no judgement step, and the
       authority to narrow or cancel every phase after it — the Phase 23 pattern, reused because it
       worked. Its `go` inputs include the protocol's jitter-immunity and the seed's effect, both
@@ -403,7 +403,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CAP-02 | Phase 33 | Complete |
 | CAP-03 | Phase 33 | Complete |
 | CAP-04 | Phase 33 | Complete |
-| GATE-01 | Phase 33 | Pending |
+| GATE-01 | Phase 33 | Complete |
 | SEAM-01 | Phase 34 | Pending |
 | SEAM-02 | Phase 34 | Pending |
 | SEAM-03 | Phase 34 | Pending |
