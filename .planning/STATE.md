@@ -170,8 +170,8 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **11 open** pending todos (it read 0 at the
-v0.4.0 close; all eleven were filed after it); the suppressed/acknowledged rows are
+The Deferred Items ledger below reads **9 open** pending todos (it read 0 at the
+v0.4.0 close; all nine were filed after it); the suppressed/acknowledged rows are
 recorded in their own sections.
 
 ## Current Position
@@ -1024,7 +1024,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-12 pending (12 files in `.planning/todos/pending/` + 0 UAT-gap rows = 12) — see
+9 pending (9 files in `.planning/todos/pending/` + 0 UAT-gap rows = 9) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -1596,6 +1596,8 @@ regression and not this inheritance.
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 | planning | 2026-09-01-ghidra-headless-one-command-6502-decompile-wrapper-proposal | minor | Pending |
+| host-tool | 2026-09-03-cr-05-resolveworkspacepath-is-symlink-blind | blocker | Pending |
+| host-tool | 2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes | minor | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
