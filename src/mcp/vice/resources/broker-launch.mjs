@@ -185,11 +185,31 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
         // first element: it is VICE's reset-to-compiled-in-defaults instruction,
         // not an inert "these are the baselines" no-op, so any flag emitted
         // before it (including -drive8type) is silently clobbered back to its
-        // compiled-in value. `-drive8type 1541` therefore has to come
-        // immediately after `-default`, and -- per CLAUDE.md's documented
-        // constraint -- `-default` also has to come before `-binarymonitor` or
-        // the monitor never binds and the subsequent connect hangs in the
-        // backlog looking exactly like a wedge. Confirmed sufficient live in
+        // compiled-in value. `-drive8type 1541` therefore has to come AFTER
+        // `-default` -- not necessarily IMMEDIATELY after -- and -- per
+        // CLAUDE.md's documented constraint -- `-default` also has to come before
+        // `-binarymonitor` or the monitor never binds and the subsequent connect
+        // hangs in the backlog looking exactly like a wedge.
+        //
+        // WORDING CORRECTED (33 review WR-09). This paragraph used to say
+        // "immediately after `-default`", which the `-console` block below now
+        // violates by construction whenever `profile.headless` is set -- leaving
+        // the next editor to find code contradicting the comment and having to
+        // re-derive which one is authoritative. What is load-bearing is the
+        // RELATIVE ORDER (`-default` precedes everything it resets), not
+        // adjacency.
+        //
+        // The `-console` block's own citation was `alive=yes bound=1`, which does
+        // NOT cover this paragraph's property: I-2's failure mode is Drive8Type
+        // silently reverting to 0 (NONE) WHILE THE MONITOR STILL BINDS FINE, so
+        // liveness and boundness cannot tell the good case from the failure being
+        // guarded against. Re-verified against the resource itself
+        // [VERIFIED: live probe 2026-09-03, genuine unpatched stock
+        // /usr/bin/x64sc (VICE 3.9), DISPLAY and WAYLAND_DISPLAY both unset]:
+        //   [-default -console -drive8type 1541 <determinism> -binarymonitor]
+        //     alive=yes bound=1  Drive8Type=1541  Drive8TrueEmulation=1
+        // read over `RESOURCE_GET` (0x51) with `-console` interposed. So the
+        // citation now covers the RESOURCE and not only liveness. Confirmed sufficient live in
         // Phase 8.1's standalone probe (08.1-WALKTHROUGH-EVIDENCE.md §4):
         // `resourceget "Drive8Type"` moved 0 -> 1541 and a `load` over the text
         // monitor succeeded immediately. Deliberately NOT setting
@@ -217,7 +237,11 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
         //   [-default -drive8type 1541 -console -binarymonitor]   alive=no  bound=0  Gtk-WARNING: cannot open display:
         //   [-default -console -drive8type 1541 -binarymonitor]   alive=yes bound=1
         // So `-console` goes immediately after `-default` and BEFORE
-        // `-drive8type`, and it is pinned by an ordering assertion rather than by
+        // `-drive8type` -- which is compatible with the I-2 paragraph above as
+        // corrected (33 review WR-09): that constraint is `-drive8type` AFTER
+        // `-default`, not adjacent to it, and the interposition was re-verified
+        // over `RESOURCE_GET` to leave Drive8Type=1541 rather than only to leave
+        // the monitor bound. It is pinned by an ordering assertion rather than by
         // this comment -- a bare flag push with no reason is exactly what let the
         // `-default` ordering constraint be rediscovered by a red CI run last
         // time.
