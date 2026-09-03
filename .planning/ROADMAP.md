@@ -819,7 +819,7 @@ other route written and observed biting.
   4. **The whole-tree grep gate banning an external-binary spawn from a skill script is observed biting on a planted violation**, and it exists at all only because the two existing violations are gone first: `src/skills/acme-build/scripts/acme.mjs` (`spawnSync("acme", …)` behind a PATH ladder of five *container* paths) and `src/skills/c64-program-recon/scripts/packer-finding.mjs` are migrated **in this phase**. The gate's scope reads what a user actually receives, not `git ls-files`.
   5. **The new module family is inside the closed-consumer discipline rather than beside it, with a second floor pinned over its own prefix and observed going red.** A **real** unclassified module is created on disk as a positive control and the new floor is observed naming it. And the JVM lifetime binding is a **recorded decision carrying its measurement and its reversal condition** — not an inherited default.
 
-**Plans**: 3/6 plans executed in 4 waves. `34-01` leads with a production-quality tracer — one tool (`acme.build`) wired end to end through the control op, the host-bound executor, a real `acme` child process and back as `{path, sha256, byteLength}` — because proving the architecture on one path catches a dead end after one commit instead of after ten. Wave 2 expands sideways from that proven slice: `34-02` the 64 KiB cap observed red at the exact boundary, `34-03` Ghidra's per-run project directory and the dot-segment refusal in code. Wave 3: `34-04` the two migrations (ordering is a requirement — the gate cannot be written while anything violates it), `34-06` the second prefix floor and the JVM decision record. Wave 4: `34-05` the gate itself, observed biting, plus the phase's closing sweep. No `/gsd-discuss-phase` ran, so fourteen planner assumptions (`A-01`..`A-14`) are recorded in the plans and consolidated into `docs/phase34-host-tool-seam-decisions.md`; `A-01` and `A-02` resolve `34-RESEARCH.md`'s Open Questions 1 and 2, `A-09` resolves its Open Question 3.
+**Plans**: 4/6 plans executed in 4 waves. `34-01` leads with a production-quality tracer — one tool (`acme.build`) wired end to end through the control op, the host-bound executor, a real `acme` child process and back as `{path, sha256, byteLength}` — because proving the architecture on one path catches a dead end after one commit instead of after ten. Wave 2 expands sideways from that proven slice: `34-02` the 64 KiB cap observed red at the exact boundary, `34-03` Ghidra's per-run project directory and the dot-segment refusal in code. Wave 3: `34-04` the two migrations (ordering is a requirement — the gate cannot be written while anything violates it), `34-06` the second prefix floor and the JVM decision record. Wave 4: `34-05` the gate itself, observed biting, plus the phase's closing sweep. No `/gsd-discuss-phase` ran, so fourteen planner assumptions (`A-01`..`A-14`) are recorded in the plans and consolidated into `docs/phase34-host-tool-seam-decisions.md`; `A-01` and `A-02` resolve `34-RESEARCH.md`'s Open Questions 1 and 2, `A-09` resolves its Open Question 3.
 
 Plans:
 **Wave 1**
@@ -833,7 +833,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 34-04-PLAN.md — The two migrations: one resolution ladder, `acme.mjs` and `packer-finding.mjs` onto the seam
+- [x] 34-04-PLAN.md — The two migrations: one resolution ladder, `acme.mjs` and `packer-finding.mjs` onto the seam
 - [ ] 34-06-PLAN.md — The second prefix floor with a real positive control, and the JVM lifetime decision record
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -1138,7 +1138,7 @@ in a milestone archive.
 | 31. Procedure Re-pointing | v0.7.0 | 4/4 | Complete | 2026-08-31 |
 | 32. The Deletion and the Grep Gate | v0.7.0 | 21/21 | Complete | 2026-09-01 |
 | 33. The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) | v0.8.0 | 12/12 | In Progress | - |
-| 34. The Host-Tool Execution Seam | v0.8.0 | 3/6 | In Progress | - |
+| 34. The Host-Tool Execution Seam | v0.8.0 | 4/6 | In Progress | - |
 | 35. dxa, Vendored and Parsed | v0.8.0 | 0/0 | Not started | - |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 0/0 | Not started | - |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 0/0 | Not started | - |

@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
 status: executing
-stopped_at: Completed 34-03-PLAN.md
-last_updated: "2026-09-03T14:20:16.228Z"
+stopped_at: Completed 34-04-PLAN.md
+last_updated: "2026-09-03T15:20:36.061Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 34 execution started
-state_head: dd5ca6f3a75159a90e32d2868c0fa7868cc291d8
+state_head: e12f098488d4fe4eefd14dd3a3479eeb83eeae45
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
   percent: 17
 ---
 
@@ -177,7 +177,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -570,6 +570,7 @@ Last activity: 2026-09-03 — Phase 34 execution started
 | Phase 34 P01 | 40min | 3 tasks | 16 files |
 | Phase 34 P02 | 26min | 2 tasks | 3 files |
 | Phase 34 P03 | 31min | 3 tasks | 10 files |
+| Phase 34-the-host-tool-execution-seam P04 | 59min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -1008,6 +1009,7 @@ Recent decisions affecting current work:
 - [Phase 34]: Multi-byte-UTF-8 over-cap test case does not assert hadError===false — Measured: identical byte count over the cap, ASCII content gives a clean hadError=false destroy, multi-byte UTF-8 content gives hadError=true (ECONNRESET) -- a content-sensitive race, not flakiness. The plan's own <behavior> only requires 'IS destroyed' for this case, so the test asserts exactly that plus zero response bytes.
 - [Phase 34]: 34-03: resolveGhidraProject() now creates (reserves) the run directory it resolves, not just checks it -- analyzeHeadless requires the directory to pre-exist on the success path, not only the refusal path — Live testing against real Ghidra 12.1.3 found the ghidra.analyze happy path was non-functional without this; fixed in the same session (commit 5694f27).
 - [Phase 34]: 34-03: .gitignore's tools/ghidra-runs/ line omits its leading slash — host-scripts.test.ts's deployed-artifact parity scan matches any /tools/-prefixed line and would demand a resourceEntries() counterpart for a runtime-scratch directory that is not a deployed resource.
+- [Phase 34-the-host-tool-execution-seam]: acme.mjs and packer-finding.mjs migrated onto the host-tool execution seam via an extracted mcp-module.mjs ladder — SEAM-05 requires the whole-tree grep gate (34-05) to find zero violations; both scripts previously spawned a host binary directly
 
 ### Pending Todos
 
@@ -1797,8 +1799,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T14:20:15.457Z
-Stopped at: Completed 34-03-PLAN.md
+Last session: 2026-09-03T15:20:24.062Z
+Stopped at: Completed 34-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
