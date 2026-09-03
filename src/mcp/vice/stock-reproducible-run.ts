@@ -130,6 +130,7 @@ import { stockAnswer, isErrorText, convertWireError, type StockToolResult } from
 import { runStateFor } from "./stock-runstate.ts";
 import { compareStopIdentity, ORACLE_TERMS, StopOracleError, type StopIdentity } from "./stop-oracle.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
+import { MachineRestartedError } from "./vice.ts";
 
 /** The argument name(s) `reproducible: true` cannot run without.
  *
@@ -248,7 +249,8 @@ type ReproducibleWaitOutcome =
  *
  * Any rejection from the resume send itself (a `MachineRestartedError`, or any
  * other error) propagates OUT of this function uncaught -- see the caller's own
- * comment on why no delete is attempted on that path.
+ * cleanup path 3 of 3 for which of those cases still has an armed anchor to
+ * delete and which does not.
  */
 async function waitForReproducibleStop(
   client: ViceMonitorClient,
@@ -512,21 +514,46 @@ export async function runReproducible(
 
   // --- Step 6: exactly one resume, then the event-driven wait ---------------
   //
-  // No try/catch around the wait itself: a MachineRestartedError (or any other
-  // failure) surfacing from the resume/wait step propagates straight out,
-  // uncaught. This is the THIRD cleanup path, and its correct action is to take
-  // NONE -- when the machine has restarted, the instance and every checkpoint
-  // on it are already gone, so there is nothing to clean up, and the standard
-  // restarted wording is produced by the ONE existing
-  // convertHandshakeError()/convertWireError() seam, not a second converter
-  // written here.
-  const wait = await waitForReproducibleStop(
-    session.client,
-    targetCheckpointId,
-    anchorCheckpointId,
-    timeoutMs,
-    frameAnchor === address,
-  );
+  // --- Cleanup path 3 of 3: a FAILING resume/wait --------------------------
+  //
+  // The error always propagates out uncaught -- the standard wording is
+  // produced by the ONE existing convertHandshakeError()/convertWireError()
+  // seam, never a second converter written here. What is CONDITIONAL is
+  // whether there is anything left to clean up.
+  //
+  // A MachineRestartedError has already taken the instance and every
+  // checkpoint on it, so there is nothing to own and nothing to delete -- that
+  // was the original justification for taking no action at all.
+  //
+  // WHY THAT WAS TOO BROAD (33 review WR-02). `client.send(Exit)` can reject
+  // for reasons that are NOT a restart: a StockProtocolError carrying a
+  // non-zero error code from the EXIT reply, or the client's own per-request
+  // timeout -- with the socket and the instance still very much alive. On that
+  // path the frame anchor was left ARMED: temporary:false, stop:true, sitting
+  // at a once-per-frame address. Every subsequent resume on that session then
+  // halts within one frame, which is indistinguishable from a wedge to
+  // vice-wedge-triage and poisons the instance for every later tool call.
+  //
+  // So delete the anchor when the instance is still there. `connected` is the
+  // operative test (it is the observable that says whether a delete could even
+  // be answered); the error-class test keeps the restarted path exactly as it
+  // was. deleteCheckpoint() reports dispositions and never throws, so it
+  // cannot mask the error being rethrown.
+  let wait: ReproducibleWaitOutcome;
+  try {
+    wait = await waitForReproducibleStop(
+      session.client,
+      targetCheckpointId,
+      anchorCheckpointId,
+      timeoutMs,
+      frameAnchor === address,
+    );
+  } catch (err) {
+    if (!(err instanceof MachineRestartedError) && session.client.connected) {
+      await deleteCheckpoint(session, anchorCheckpointId);
+    }
+    throw err;
+  }
 
   if (wait.status === "timeout") {
     // --- Cleanup path 2 of 3: TIMEOUT. The only path that deletes the -------

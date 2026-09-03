@@ -38,6 +38,7 @@ import {
   type ViceMonitorClient,
 } from "./stock-protocol.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
+import { MachineRestartedError } from "./vice.ts";
 import { ORACLE_TERMS } from "./stop-oracle.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
@@ -751,6 +752,79 @@ test("reproducible: at frame_anchor === address an anchor frame arriving FIRST d
   assert.equal(answer.targetCheckpointId, TARGET_ID, "still resolved on the TARGET's id (T-33-31)");
   assert.equal(answer.hitCount, 9, "and the frame term is still the anchor's own count");
   assert.equal(answer.anchorHitsObserved, 1, "the anchor's frame was counted, not resolved on");
+});
+
+// ---------------------------------------------------------------------------
+// 6b. Cleanup path 3 of 3 -- a FAILING resume, with the instance still alive
+// ---------------------------------------------------------------------------
+//
+// WHY (33 review WR-02). The no-cleanup-at-all rule was justified by "the
+// machine has restarted, so the instance and every checkpoint on it are
+// already gone". That premise covers only ONE of the causes: `send(Exit)` also
+// rejects on a StockProtocolError from the EXIT reply, or on the client's own
+// per-request timeout, with the socket and instance still alive. The frame
+// anchor is temporary:false and stop:true at a once-per-frame address, so
+// leaving it armed makes every later resume on that session halt within one
+// frame -- indistinguishable from a wedge to vice-wedge-triage.
+//
+// Both directions are asserted, because the value here is in the DISTINCTION:
+// a live instance gets its anchor deleted, a restarted one is untouched.
+
+test("reproducible: a NON-restart resume failure on a live socket deletes the armed anchor before rethrowing", async () => {
+  const deleted: number[] = [];
+  const { client } = makeFakeClient(async (commandType: number, body: Buffer) => {
+    if (commandType === CommandType.RegistersAvailable) return registersAvailableReply();
+    if (commandType === CommandType.CheckpointSet) {
+      return body[7] === 0x01
+        ? checkpointInfoResponse(fakeCheckpoint({ id: TARGET_ID, temporary: true }))
+        : checkpointInfoResponse(fakeCheckpoint({ id: ANCHOR_ID, temporary: false }));
+    }
+    if (commandType === CommandType.Reset) return { type: "unknown", requestId: 1, errorCode: 0 };
+    if (commandType === CommandType.CheckpointDelete) {
+      deleted.push(body.readUInt32LE(0));
+      return { type: "checkpoint_delete", requestId: 1, errorCode: 0 };
+    }
+    // Not a restart: the socket and the instance are still there.
+    if (commandType === CommandType.Exit) throw new Error("EXIT rejected with the instance still alive");
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  });
+
+  await assert.rejects(
+    () => handleRunUntil({ ...REPRODUCIBLE_ARGS, timeout_ms: 200 }, makeSession(client), FAKE_DEPS),
+    /EXIT rejected with the instance still alive/,
+    "the original error still propagates -- the ONE converter seam produces the wording, not a second one here",
+  );
+
+  assert.ok(
+    deleted.includes(ANCHOR_ID),
+    `the stop:true anchor must not be left armed on a live instance (deleted: ${JSON.stringify(deleted)})`,
+  );
+});
+
+test("reproducible: a MachineRestartedError resume failure attempts NO delete -- the instance took its checkpoints with it", async () => {
+  const deleted: number[] = [];
+  const { client } = makeFakeClient(async (commandType: number, body: Buffer) => {
+    if (commandType === CommandType.RegistersAvailable) return registersAvailableReply();
+    if (commandType === CommandType.CheckpointSet) {
+      return body[7] === 0x01
+        ? checkpointInfoResponse(fakeCheckpoint({ id: TARGET_ID, temporary: true }))
+        : checkpointInfoResponse(fakeCheckpoint({ id: ANCHOR_ID, temporary: false }));
+    }
+    if (commandType === CommandType.Reset) return { type: "unknown", requestId: 1, errorCode: 0 };
+    if (commandType === CommandType.CheckpointDelete) {
+      deleted.push(body.readUInt32LE(0));
+      return { type: "checkpoint_delete", requestId: 1, errorCode: 0 };
+    }
+    if (commandType === CommandType.Exit) throw new MachineRestartedError("the machine restarted under the wait");
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  });
+
+  await assert.rejects(
+    () => handleRunUntil({ ...REPRODUCIBLE_ARGS, timeout_ms: 200 }, makeSession(client), FAKE_DEPS),
+    MachineRestartedError,
+  );
+
+  assert.deepEqual(deleted, [], "nothing is deleted down a socket whose instance is gone");
 });
 
 test("reproducible: two identical checkpoint ids from the monitor are REFUSED -- the frames could not be told apart", async () => {
