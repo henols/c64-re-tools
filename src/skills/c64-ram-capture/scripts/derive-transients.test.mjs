@@ -38,6 +38,7 @@ const TARGET_PACKAGE = "@henols/vice-mcp";
 
 /** The same three rungs, in the same order, as `vsf-slice.mjs`'s `ladder()`:
  * `$VICE_MCP_DIR`, the in-repo relative path, then the published package. */
+// 34-04: the ONE production copy of this ladder is now mcp-module.mjs's resolveMcpModule() -- this local copy is deliberately NOT converted (test files ship in neither tarball).
 function predicateLadder() {
   const rungs = [];
   const override = process.env.VICE_MCP_DIR;

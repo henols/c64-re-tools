@@ -104,6 +104,11 @@ test("no rung resolves: exits non-zero naming EVERY path tried and telling the c
   try {
     const script = join(dir, "vsf-slice.mjs");
     copyFileSync(WRAPPER, script);
+    // 34-04: the wrapper now imports its ladder from a sibling mcp-module.mjs
+    // (extracted so acme.mjs/packer-finding.mjs share it too), so a bare copy
+    // of the wrapper alone would fail to resolve that import before ever
+    // reaching the ladder this test means to exercise. Copy the sibling too.
+    copyFileSync(join(HERE, "mcp-module.mjs"), join(dir, "mcp-module.mjs"));
     const empty = join(dir, "empty");
     mkdirSync(empty);
 

@@ -65,96 +65,43 @@
 //     address range and a fact about the memory-read route, not a snapshot
 //     layout constant.)
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+// Phase 34, plan 34-04 (SEAM-05): the resolution ladder used to live HERE,
+// as this file's own `ladder()`/`resolveTarget()` pair. It is now extracted
+// to `mcp-module.mjs` (`resolveMcpModule()`/`refusalMessage()`), because two
+// MORE skill scripts (`acme.mjs`, `packer-finding.mjs`) needed the identical
+// lookup to reach the host-tool execution seam's `host-tool-client.ts`, and
+// three copies of one ladder is exactly the divergence hazard this file's own
+// header (below) already warns about for the `.vsf` layout itself. Import
+// the ladder rather than re-adding a copy here.
+import { resolveMcpModule, refusalMessage, TARGET_PACKAGE } from "./mcp-module.mjs";
 
 /** The MCP-side module's file name, in one place. */
 const TARGET_FILE = "vsf-slice.ts";
-
-/** The package the MCP-side module ships in, for the npm-installer rung. */
-const TARGET_PACKAGE = "@henols/vice-mcp";
-
-/**
- * The resolution ladder, in order, as `{ rung, path }` records — returned in
- * full (not short-circuited) so the refusal message can name every path
- * tried, which is the whole point of refusing rather than guessing.
- *
- *   1. `$VICE_MCP_DIR` — an explicit override, checked first so a caller can
- *      always point this script at a known-good tree.
- *   2. The in-repo relative path. The plugin distribution keeps both trees in
- *      one checkout, so this is the rung that resolves during development and
- *      in CI.
- *   3. `require.resolve()` against the published package, for the
- *      npm-installer route where the two packages are installed separately.
- */
-function ladder() {
-  const rungs = [];
-
-  const override = process.env.VICE_MCP_DIR;
-  rungs.push({
-    rung: "VICE_MCP_DIR",
-    path: override ? join(resolve(override), TARGET_FILE) : null,
-    note: override ? null : "VICE_MCP_DIR is not set",
-  });
-
-  rungs.push({
-    rung: "in-repo relative path",
-    path: resolve(HERE, "..", "..", "..", "mcp", "vice", TARGET_FILE),
-    note: null,
-  });
-
-  let resolved = null;
-  let note = null;
-  try {
-    resolved = createRequire(import.meta.url).resolve(`${TARGET_PACKAGE}/${TARGET_FILE}`);
-  } catch (err) {
-    note = `${TARGET_PACKAGE} is not resolvable from here (${err.code ?? err.message})`;
-  }
-  rungs.push({ rung: `${TARGET_PACKAGE} package`, path: resolved, note });
-
-  return rungs;
-}
-
-/** The first rung whose path exists on disk, or `null`. */
-function resolveTarget(rungs) {
-  for (const entry of rungs) {
-    if (entry.path && existsSync(entry.path)) return entry;
-  }
-  return null;
-}
 
 /** Forwards argv to the MCP-side entry point with stdio inherited, so its
  * stdout and stderr reach the caller unmodified and its exit status is this
  * script's exit status. */
 function forward(argv) {
-  const rungs = ladder();
-  const target = resolveTarget(rungs);
+  const resolved = resolveMcpModule(TARGET_FILE);
 
-  if (!target) {
-    const tried = rungs
-      .map((r) => `  ${r.rung}: ${r.path ?? "(no path)"}${r.note ? ` -- ${r.note}` : ""}`)
-      .join("\n");
+  if (!resolved.ok) {
     console.error(
-      `vsf-slice.mjs: could not resolve ${TARGET_FILE}, which is where the .vsf layout lives.\n` +
-        `Tried, in order:\n${tried}\n` +
-        `Set VICE_MCP_DIR to the directory holding ${TARGET_FILE}. Refusing rather than slicing ` +
-        `the snapshot here: a second copy of a version-sensitive byte layout is how a wrong image ` +
-        `gets produced with no error.`,
+      `vsf-slice.mjs: ${refusalMessage(TARGET_FILE, resolved.rungs)}\n` +
+        `${TARGET_FILE} is where the .vsf layout lives. Refusing rather than slicing the snapshot ` +
+        `here: a second copy of a version-sensitive byte layout is how a wrong image gets produced ` +
+        `with no error.`,
     );
     return 1;
   }
 
-  const run = spawnSync(process.execPath, [target.path, ...argv], { stdio: "inherit" });
+  const run = spawnSync(process.execPath, [resolved.path, ...argv], { stdio: "inherit" });
   if (run.error) {
-    console.error(`vsf-slice.mjs: could not run ${target.path}: ${run.error.message}`);
+    console.error(`vsf-slice.mjs: could not run ${resolved.path}: ${run.error.message}`);
     return 1;
   }
   if (run.signal) {
-    console.error(`vsf-slice.mjs: ${target.path} was killed by ${run.signal}`);
+    console.error(`vsf-slice.mjs: ${resolved.path} was killed by ${run.signal}`);
     return 1;
   }
   return run.status ?? 1;
