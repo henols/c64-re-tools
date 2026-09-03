@@ -33,12 +33,34 @@
 //     interpreter, no interpolated command string (T-34-02).
 //   - No host-tool output written outside the bind-mounted workspace tree --
 //     resolveWorkspacePath() is the only place a wire-supplied path becomes a
-//     real path, and it refuses anything that resolves outside the caller's
-//     repo root (T-34-03). This covers EVERY path-bearing wire field on
-//     every tool, not only the ones present when this file was first
+//     real path. BOTH the workspace root and the candidate go through the
+//     same ancestor-realpath walk (realpathOfNearestExisting(), mirroring
+//     anno-types.ts's storePathWithinWorkspace() and its own incident
+//     history by name) before the prefix comparison, and the comparison is
+//     over the WALKED (real) paths, never the lexical join -- a purely
+//     lexical path.resolve() + startsWith() check is exactly what CR-05
+//     (34-VERIFICATION.md gap 3) found: a symlink planted inside the
+//     workspace defeated it live. This covers EVERY path-bearing wire field
+//     on every tool, not only the ones present when this file was first
 //     written: acme.build's source/outDir AND each entry of its includes
 //     array (34-07, CR-03), and ghidra.analyze's importPath AND its
 //     preScript/postScript (34-07, CR-02).
+//     Two residuals recorded beside the guarantee, not hidden past it: the
+//     check-then-open window between this decision and the child process's
+//     own open is NOT closed here -- the child is a third-party binary
+//     handed a path string, so there is no descriptor-based route to making
+//     the check and the open one operation (T-34-52, accepted). And the
+//     comparison is byte-wise over the resolved strings with no Unicode
+//     normalisation, so two spellings differing only in normalisation form
+//     are two distinct paths here (same residual anno-confinement.test.ts
+//     records for the same comparison). A third note, A-16
+//     (docs/phase34-host-tool-seam-decisions.md): because the return value
+//     is now the REAL path, on a host whose workspace root is itself reached
+//     through a symlink the response `path` need not match any member of
+//     hostRootCandidates(), and containerPath() throws rather than passing
+//     an untranslatable path through -- HOST_WORKSPACE_PATH naming the real
+//     root is the pre-existing mitigation; this is a recorded limit, not a
+//     widened hostpath.ts consumer set.
 //   - No inline byte payload on a host-tool response, at any result size --
 //     every result crosses as `{ path, sha256, byteLength }`, never bytes.
 //   - No second copy of a tool's argv construction -- buildHostToolArgv() is
@@ -65,7 +87,7 @@
 // this module reaches them through the one place that owns them.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment } from "./ghidra-project.mjs";
@@ -358,12 +380,183 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
 }
 
 // ---------------------------------------------------------------------------
-// Workspace-relative path resolution (A-03 / T-34-03). A `host_tool` request
-// never carries a host-absolute path -- every path argument is
-// workspace-relative and resolved HERE, against the broker's own
+// Workspace-relative path resolution (A-03 / T-34-03, CR-05 / 34-10). A
+// `host_tool` request never carries a host-absolute path -- every path
+// argument is workspace-relative and resolved HERE, against the broker's own
 // `--repo-root`, then re-checked to be inside it. This is the ONLY place a
 // wire-supplied path becomes a real path.
+//
+// BOTH the workspace root and the candidate go through the SAME
+// ancestor-realpath walk (realpathOfNearestExisting(), below) before the
+// separator-appended prefix comparison, and the returned `ok: true` value is
+// the WALKED (real) path, never the lexical join. That is load-bearing
+// rather than a symmetry preference, for the two reasons
+// anno-types.ts:1159-1176 already names for its own two consumers of this
+// walk: a workspace root that does not yet exist is a legitimate input (a
+// bare realpath would throw a raw ENOENT), and resolving only the candidate
+// side makes every in-workspace path look foreign whenever the root itself
+// is reached through a symlink. CR-05 (34-VERIFICATION.md gap 3) is what a
+// purely lexical path.resolve() + startsWith() check missed: a symlink
+// planted inside the workspace, pointing outside it, lexically satisfied the
+// prefix check while a real write through it landed outside the root.
+//
+// BEHAVIOURAL CONSEQUENCE, intended: because this returns the real path, a
+// link pointing INSIDE the workspace is FOLLOWED and the request is
+// accepted at the link's real location -- the alternative, refusing every
+// symlink, is the over-broad fix host-tool.test.ts's discriminating cases
+// (34-10 Task 2) exist to redden.
+//
+// Two residuals recorded here, beside the guarantee rather than past it: (1)
+// the check-then-open window between this decision and the child process's
+// own open is not closed at this layer -- the child is a third-party binary
+// handed a path string, so there is no descriptor-based route to making the
+// check and the open one operation (T-34-52, accepted); (2) the comparison
+// is byte-wise over the resolved strings with the platform separator
+// appended and applies no Unicode normalisation, so two spellings differing
+// only in normalisation form are two distinct paths here (the same residual
+// anno-confinement.test.ts records for the same comparison).
+//
+// A-16 (docs/phase34-host-tool-seam-decisions.md): because the return value
+// is now the REAL path, on a host whose workspace root is itself reached
+// through a symlink the response `path` need not match any member of
+// hostRootCandidates() (containerpath.ts), and containerPath() throws
+// rather than passing an untranslatable path through --
+// HOST_WORKSPACE_PATH naming the real root is the pre-existing mitigation.
+// This is a recorded limit, not a widened hostpath.ts consumer set.
 // ---------------------------------------------------------------------------
+
+/**
+ * The maximum number of DANGLING-symlink hops `realpathOfNearestExisting`
+ * will take before refusing. 40 is deliberately the same value
+ * anno-types.ts:971 uses -- Linux's own `MAXSYMLINKS`, so a chain this walk
+ * refuses is one the kernel would refuse too. Task 2's equivalence case
+ * (against anno-types.ts's storePathWithinWorkspace()) is what keeps the two
+ * copies from drifting apart. The bound exists because a cycle (`a -> b`,
+ * `b -> a`) is otherwise an infinite loop inside a function whose input
+ * arrives unvalidated from the transport.
+ */
+const MAX_SYMLINK_HOPS = 40;
+
+/**
+ * Does the path ENTRY `entry` exist -- does this NAME exist in its
+ * directory -- without following a symlink at the leaf, and without
+ * throwing. Mirrors anno-types.ts's own `pathEntryExists`, with one
+ * deliberate difference: this returns a refusal where that version throws,
+ * because `resolveWorkspacePath()`'s contract is a result object and this
+ * module's own never-throw discipline must not be widened by adding
+ * filesystem access.
+ *
+ * `throwIfNoEntry: false` suppresses `ENOENT` and NOTHING ELSE
+ * (anno-types.ts:985-1000's own REVERSED-2026-08-28 note) -- a permission
+ * error or any other stat failure on an ancestor becomes a named refusal
+ * here rather than escaping as a bare thrown error.
+ */
+function pathEntryExists(entry: string, forPath: string): { ok: true; exists: boolean } | { ok: false; message: string } {
+  try {
+    return { ok: true, exists: lstatSync(entry, { throwIfNoEntry: false }) !== undefined };
+  } catch (e) {
+    return {
+      ok: false,
+      message: `cannot stat ${JSON.stringify(entry)} while confining ${JSON.stringify(forPath)} (${(e as Error).message})`,
+    };
+  }
+}
+
+/**
+ * Returns the REAL absolute path of `p`, resolved through the deepest
+ * ancestor whose path ENTRY exists on disk, with the non-existent tail
+ * re-joined after it -- or a refusal naming the path when the walk cannot
+ * answer.
+ *
+ * Mirrors anno-types.ts:1082's `realpathOfNearestExisting()` exactly, with
+ * the same deliberate difference `pathEntryExists()` above states: this
+ * RETURNS a refusal where that version THROWS `AnnoStorePathError`. Walks up
+ * while the path ENTRY does not exist, unshifting each `basename` onto a
+ * `tail` array; when the walk reaches the filesystem root
+ * (`dirname(current) === current`) answers from `current` plus `tail`
+ * rather than from the pre-walk resolved string, because after a hop the
+ * pre-walk string describes a location the walk is no longer on; when the
+ * stopping entry is a symlink whose target does not exist, counts a hop,
+ * refuses past `MAX_SYMLINK_HOPS` naming the bound, and resolves the link's
+ * target against the LINK'S OWN DIRECTORY -- never the process cwd, since a
+ * relative target (`../outside/x`) is the common form. Otherwise
+ * `realpathSync(current)`, joined with `tail`. Every `lstatSync`,
+ * `readlinkSync` and `realpathSync` failure becomes a refusal naming the
+ * path, never a throw.
+ */
+function realpathOfNearestExisting(p: string): { ok: true; path: string } | { ok: false; message: string } {
+  const resolved = resolvePath(p);
+  const tail: string[] = [];
+  let current = resolved;
+  let hops = 0;
+
+  for (;;) {
+    let reachedFilesystemRoot = false;
+    for (;;) {
+      const entryCheck = pathEntryExists(current, resolved);
+      if (!entryCheck.ok) return { ok: false, message: entryCheck.message };
+      if (entryCheck.exists) break;
+      const parent = dirname(current);
+      if (parent === current) {
+        reachedFilesystemRoot = true;
+        break;
+      }
+      tail.unshift(basename(current));
+      current = parent;
+    }
+    if (reachedFilesystemRoot) {
+      return { ok: true, path: tail.length === 0 ? current : join(current, ...tail) };
+    }
+
+    // The stopping ENTRY exists. Is it a symlink whose target does not?
+    // That is the one class a resolve-following existence predicate cannot
+    // see, and the only one needing a hop.
+    let stoppedAtDanglingLink: boolean;
+    try {
+      stoppedAtDanglingLink = lstatSync(current).isSymbolicLink() && !existsSync(current);
+    } catch (e) {
+      return {
+        ok: false,
+        message: `cannot stat ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+      };
+    }
+
+    if (stoppedAtDanglingLink) {
+      hops += 1;
+      if (hops > MAX_SYMLINK_HOPS) {
+        return {
+          ok: false,
+          message:
+            `cannot resolve ${JSON.stringify(resolved)}: more than ${MAX_SYMLINK_HOPS} symbolic-link hops while resolving ` +
+            `${JSON.stringify(current)} -- a symlink cycle or an over-long chain, refused rather than followed`,
+        };
+      }
+      let link: string;
+      try {
+        link = readlinkSync(current);
+      } catch (e) {
+        return {
+          ok: false,
+          message: `cannot read the symbolic link ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+        };
+      }
+      // Against the LINK'S directory, never the process cwd.
+      current = resolvePath(dirname(current), link);
+      continue;
+    }
+
+    let real: string;
+    try {
+      real = realpathSync(current);
+    } catch (e) {
+      return {
+        ok: false,
+        message: `cannot resolve the real path of ${JSON.stringify(current)} while confining ${JSON.stringify(resolved)} (${(e as Error).message})`,
+      };
+    }
+    return { ok: true, path: tail.length === 0 ? real : join(real, ...tail) };
+  }
+}
 
 export type ResolveWorkspacePathResult = { ok: true; path: string } | { ok: false; message: string };
 
@@ -375,14 +568,21 @@ export function resolveWorkspacePath(repoRoot: string, relative: string): Resolv
     return { ok: false, message: `workspace path must be relative to the workspace root, not absolute: ${describe(relative)}` };
   }
   const rootAbs = resolvePath(repoRoot);
-  const resolved = resolvePath(rootAbs, relative);
-  if (resolved !== rootAbs && !resolved.startsWith(rootAbs + sep)) {
+  const walkedRoot = realpathOfNearestExisting(rootAbs);
+  if (!walkedRoot.ok) {
+    return { ok: false, message: `cannot resolve the workspace root ${JSON.stringify(rootAbs)}: ${walkedRoot.message}` };
+  }
+  const walkedCandidate = realpathOfNearestExisting(resolvePath(walkedRoot.path, relative));
+  if (!walkedCandidate.ok) {
+    return { ok: false, message: walkedCandidate.message };
+  }
+  if (walkedCandidate.path !== walkedRoot.path && !walkedCandidate.path.startsWith(walkedRoot.path + sep)) {
     return {
       ok: false,
-      message: `workspace path escapes the workspace root: ${describe(relative)} resolves to ${resolved}, outside ${rootAbs}`,
+      message: `workspace path escapes the workspace root: ${describe(relative)} resolves to ${walkedCandidate.path}, outside ${walkedRoot.path}`,
     };
   }
-  return { ok: true, path: resolved };
+  return { ok: true, path: walkedCandidate.path };
 }
 
 // ---------------------------------------------------------------------------

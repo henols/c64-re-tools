@@ -21,7 +21,7 @@
 // GHIDRA_HOME-unset refusal before any launch is attempted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync, symlinkSync, readdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,6 +112,36 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T> | T): Promise<T> {
     return await fn(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** 34-10 (CR-05): a fixture for the live planted-symlink cases. `symlinkSync`
+ * is called BARE by every case that uses this helper -- a filesystem without
+ * symlink support must make those cases FAIL, never skip, because a
+ * silently skipped confinement control is the state CR-05 was reported
+ * from.
+ *
+ * The mkdtempSync root is wrapped in realpathSync for the same reason
+ * anno-confinement.test.ts:101-105 gives: a fixture root reached through a
+ * link would make every assertion below it assert something other than
+ * what it means, now that resolveWorkspacePath() returns the walked
+ * (real) path. `ws` is the workspace root the case confines against;
+ * `outside` is a sibling directory outside it, the target every escaping
+ * link in this file points at.
+ *
+ * This host's /tmp is a tmpfs whose periodic cleanup is disabled, so a
+ * leaked fixture is leaked RAM until reboot -- the unconditional `finally
+ * rmSync` is load-bearing, not tidiness. */
+async function withSymlinkFixture<T>(fn: (ws: string, outside: string) => Promise<T> | T): Promise<T> {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "host-tool-symlink-test-")));
+  const ws = join(root, "ws");
+  const outside = join(root, "outside");
+  mkdirSync(ws, { recursive: true });
+  mkdirSync(outside, { recursive: true });
+  try {
+    return await fn(ws, outside);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 }
 
@@ -449,6 +479,83 @@ test("runHostTool: acme.build includes keep caller order in the spawned argv, an
       const includeFlagCount = dupeArgv.filter((a) => a === "-I").length;
       assert.equal(includeFlagCount, 2, "two equal-resolving includes must both appear -- no dedupe");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CR-05 (34-10, 34-VERIFICATION.md gap 3): resolveWorkspacePath() is
+// symlink-blind against a REAL, on-disk symlink. Four live cases: the
+// read-key refusal, the write-key refusal (the reproduced defect was a
+// file created OUTSIDE the workspace root, not merely an un-errored call),
+// the discriminating follow (an inside-pointing link is accepted and
+// resolved to its real location), and the never-throw case (an unreadable
+// ancestor refuses rather than throws). None is gated on SKIP_REASON --
+// each uses writeFakeAcme/withFakeAcme, so real ACME is never required.
+// ---------------------------------------------------------------------------
+
+test("runHostTool: a real symlink planted inside the workspace, pointing outside it, makes an acme.build request whose source is written through the link REFUSED -- read key, live link on disk", async () => {
+  await withSymlinkFixture(async (ws, outside) => {
+    writeFileSync(join(outside, "seed.a"), "; seeded outside file\n", "utf8");
+    symlinkSync(outside, join(ws, "escape"), "dir");
+    const logLines: string[] = [];
+    const response = await runHostTool(
+      { tool: "acme.build", args: { source: "escape/seed.a" } },
+      { repoRoot: ws, log: (line) => logLines.push(line) },
+    );
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /escapes the workspace root/);
+    assert.equal(logLines.length, 0, "no child was started");
+    assert.deepEqual(readdirSync(outside).sort(), ["seed.a"], "the outside directory's own contents are unchanged -- nothing new was created there");
+  });
+});
+
+test("runHostTool: the same planted link used as acme.build's outDir is REFUSED, and the outside directory is still empty afterwards -- write key, the reproduced defect was a file created OUTSIDE the workspace root", async () => {
+  await withSymlinkFixture(async (ws, outside) => {
+    writeFileSync(join(ws, "a.a"), "; test source\n", "utf8");
+    symlinkSync(outside, join(ws, "escape"), "dir");
+    const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", outDir: "escape" } }, { repoRoot: ws });
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /escapes the workspace root/);
+    assert.deepEqual(readdirSync(outside), [], "the assertion that carries the finding: outside must still be EMPTY, not merely errored");
+  });
+});
+
+test("runHostTool: a symlink pointing INSIDE the workspace is FOLLOWED -- the request is accepted and the spawned include is the link's REAL location, not the path as written through the link (discriminating case)", async () => {
+  await withSymlinkFixture(async (ws, outside) => {
+    void outside;
+    mkdirSync(join(ws, "real"), { recursive: true });
+    symlinkSync(join(ws, "real"), join(ws, "link"), "dir");
+    writeFileSync(join(ws, "a.a"), "; test source\n", "utf8");
+    const fakeAcme = writeFakeAcme(ws, "echoargv");
+    await withFakeAcme(fakeAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: ["link"], noReport: true } }, { repoRoot: ws });
+      assert.equal(response.ok, true, "the easy wrong fix -- refusing any path containing a link -- fails this case, which is what makes the two refusals above meaningful");
+      const echoedArgv = readEchoedArgv(ws);
+      const includeFlagIdx = echoedArgv.indexOf("-I");
+      assert.ok(includeFlagIdx !== -1);
+      assert.equal(echoedArgv[includeFlagIdx + 1], join(ws, "real"));
+    });
+  });
+});
+
+test("resolveWorkspacePath: an unreadable ancestor directory refuses by name rather than throwing (never-throw case)", async () => {
+  await withSymlinkFixture(async (ws) => {
+    const locked = join(ws, "locked");
+    mkdirSync(locked, { recursive: true });
+    chmodSync(locked, 0o000);
+    try {
+      // Non-vacuity pin, exactly as anno-confinement.test.ts:601 does: a run
+      // as a user who can read the "locked" directory anyway (e.g. root)
+      // must FAIL loudly here rather than pass silently below for the wrong
+      // reason.
+      assert.throws(() => statSync(join(locked, "x", "a.a")), /EACCES/, "this case measures nothing unless the locked directory is genuinely unreadable by the running user");
+      const result = resolveWorkspacePath(ws, "locked/x/a.a");
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.message, /locked/);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+    assert.doesNotThrow(() => readdirSync(locked), "the finally must have restored access");
   });
 });
 
