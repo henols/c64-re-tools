@@ -112,8 +112,16 @@ const runOracleHostTool = runHostTool as unknown as (
 
 // --------------------------------------------------------------- test helpers
 
+// 34-10 Task 3: wrapped in realpathSync, the same one-line addition
+// anno-confinement.test.ts's inTempDir carries for the same reason
+// (:55-59, :101-105) -- a mkdtempSync path can sit under a symlinked temp
+// directory on some hosts, and now that resolveWorkspacePath() returns a
+// real path (CR-05), a fixture root reached through a link would make every
+// argv path-equality assertion in this file compare a lexical path against a
+// real one. On THIS host /tmp is a real directory, so those assertions
+// passed by luck rather than by construction before this change.
 async function withTempDir<T>(fn: (dir: string) => Promise<T> | T): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "host-tool-test-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "host-tool-test-")));
   try {
     return await fn(dir);
   } finally {
@@ -484,6 +492,27 @@ test("runHostTool: acme.build includes keep caller order in the spawned argv, an
       const dupeArgv = readEchoedArgv(dir);
       const includeFlagCount = dupeArgv.filter((a) => a === "-I").length;
       assert.equal(includeFlagCount, 2, "two equal-resolving includes must both appear -- no dedupe");
+    });
+  });
+});
+
+test("runHostTool: two includes reaching the SAME real directory through two DIFFERENT symlinks both appear in the spawned argv, in caller order -- the realpath return collapses two spellings to one path, not to one list entry (34-10 Task 3)", async () => {
+  await withTempDir(async (dir) => {
+    mkdirSync(join(dir, "real"), { recursive: true });
+    symlinkSync(join(dir, "real"), join(dir, "link1"), "dir");
+    symlinkSync(join(dir, "real"), join(dir, "link2"), "dir");
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const fakeAcme = writeFakeAcme(dir, "echoargv");
+    await withFakeAcme(fakeAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: ["link1", "link2"], noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true);
+      const argv = readEchoedArgv(dir);
+      const includeFlagIndices = argv.reduce<number[]>((acc, v, i) => (v === "-I" ? [...acc, i] : acc), []);
+      assert.equal(includeFlagIndices.length, 2, "-I order is ACME's own include-search order; a silent dedupe would change it");
+      const realDir = join(dir, "real");
+      assert.equal(argv[includeFlagIndices[0] + 1], realDir);
+      assert.equal(argv[includeFlagIndices[1] + 1], realDir);
+      assert.ok(includeFlagIndices[0] < includeFlagIndices[1], "link1 then link2, in caller-given order");
     });
   });
 });
