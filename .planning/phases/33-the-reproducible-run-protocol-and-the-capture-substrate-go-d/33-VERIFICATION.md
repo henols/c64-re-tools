@@ -1,9 +1,9 @@
 ---
 phase: 33-the-reproducible-run-protocol-and-the-capture-substrate-go-d
 verified: 2026-09-03T02:12:35Z
-status: human_needed
-score: 3/5 must-haves verified
-behavior_unverified: 1
+status: passed
+score: 4/5 must-haves verified (criterion 2 closed live 2026-09-03; criterion 3 remains PARTLY MET, dispositioned)
+behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: null
@@ -101,7 +101,7 @@ verdict, against rules committed to git before any measurement exists, says whet
 as scoped, narrows, or is reconsidered.
 
 **Verified:** 2026-09-03T02:12:35Z (HEAD `06e034a`)
-**Status:** human_needed
+**Status:** passed (UAT closed 2026-09-03 — see § UAT Closure at the end of this report)
 **Re-verification:** No — initial verification
 
 ---
@@ -596,3 +596,71 @@ understates the validation of the code that produced the milestone's headline nu
 
 _Verified: 2026-09-03T02:12:35Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## UAT Closure — 2026-09-03
+
+`33-UAT.md` completed: **3 tests, 3 passed, 0 issues, 0 gaps.** Status moved
+`human_needed → passed`. The Gaps Summary above named exactly two things holding the
+phase back. Both are now resolved, and neither needed a gap-closure plan.
+
+### 1. "The shipped protocol seam has never met a real emulator" — CLOSED
+
+`evidence/reproducible-seam-probe.mjs` and `evidence/refusal-paths-probe.mjs` drive
+`handleRunUntil` (`stock-run-until.ts`) — the shipped entry point, and the only non-test
+caller of `runReproducible()` — against genuine stock VICE 3.9 at `/usr/bin/x64sc`.
+
+| The item asked for | Measured |
+|---|---|
+| `TRIPLE_DISTINCT_SHA256 1` through the shipped seam | **1** — `bf083cb3…5c7438`, identical across jitter 0/1500/4000 ms **and** across two independent invocations (6 cold boots) |
+| `TRIPLE_ANY_STOP_TERM_DIFFERS no` | **no** — one identity, `PC=$ea31 hit_count=1 LIN=257 CYC=57`, matching the module header's own claim byte for byte |
+| CR-02's zero-hit refusal, live | **fires**, with its own wording, against real KERNAL reset ordering (target `$fda3` reached before the `$ea31` anchor runs) |
+| WR-01's anchor-stopped-first gate, live | **fires** — `anchorStoppedFirst: true`, settled in 6370 ms of a 15000 ms deadline, **no oracle term emitted** |
+| WR-02's anchor cleanup on a live-socket resume failure | **NOT closed live.** Needs fault injection no real emulator produces on demand; stays unit-covered in `stock-reproducible-run.test.ts` and is recorded as such rather than claimed |
+
+`resumes: 1` on every run — `vice-sync.ts`'s "exactly one resume per wait" invariant,
+observed live rather than asserted. `compareCaptures()` with an **empty** allow-list
+reports `differing: 0` on all three pairwise comparisons; the 64-address transient budget
+was not needed.
+
+**One new finding, recorded rather than filed as a gap.** The probe's first run spawned
+`x64sc` directly and omitted `STOCK_DETERMINISM_FLAGS`. The four-term stop identity still
+reproduced *perfectly* while the 64K sha256 differed on all three runs — 1032 single-bit
+flips confined to RAM (`$0100-$9FFF`, `$C000-$CFFF`), the signature of randomised power-on
+RAM init. **The stop identity cannot detect this condition.** The shipped broker emits the
+block unconditionally, so the shipped route is never in that state — but this is a measured
+argument for that unconditionality, and it is the same drift `T-33-36` names, arrived at
+from the opposite direction. Full detail: `evidence/33-uat-shipped-seam.md`.
+
+### 2. "Criterion 3's central clause … needs an owner's disposition" — DISPOSITIONED
+
+Owner decision, 2026-09-03: **accept the `degrade` verdict as it stands.** No `overrides:`
+entry is written, `DECISION-RULE.md`'s rule text does not move, and the ROADMAP criterion
+text is left untouched. `ORACLE_NECESSITY: unproven` and `R6 → degrade` stand exactly as
+`33-11` recorded them, and R6's narrowing is already pre-mapped by D-04 and bound into
+Phases 34-38.
+
+`partly_met` is therefore **left in place**: criterion 3 is still partial, and this closure
+does not promote it. `overrides_applied` stays `0`, which is the truthful count — the
+disposition was to decline the override, not to apply one.
+
+### 3. W1 (the `capture-predicate.ts` CONSUMER STATUS header) — FIXED
+
+Fixed in commit `9c8de68`, before this session, after independently confirming all three
+sentences were false. The header now states what is genuinely not-yet-wired (no shipped MCP
+tool or production caller reaches the module) rather than claiming it is unimported and
+unvalidated.
+
+### What did NOT change
+
+- `behavior_unverified` moved `1 → 0`; `partly_met` is untouched; `gaps: []` and
+  `deferred: []` were already empty and stay empty.
+- `score` moved `3/5 → 4/5` **only** because criterion 2's behaviour is now verified live.
+  Criterion 3 is not counted as met.
+- Criterion 4's `coincidental_reliance` entry (the allow-list derived from runs that include
+  the reported pair) is **advisory and remains open as written**. Its stated hardening — a
+  held-out fourth run whose image never enters the derivation — was not performed here and
+  is not claimed.
+
+_UAT closed: 2026-09-03 · `/gsd-verify-work 33`_
