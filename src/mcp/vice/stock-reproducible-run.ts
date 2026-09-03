@@ -226,12 +226,22 @@ type ReproducibleWaitOutcome =
  * listener goes on BEFORE the resume is sent, so a checkpoint firing in the gap
  * between "sent" and "listening" cannot be missed.
  *
- * DISCRIMINATION IS THE POINT (`T-33-31`): the wait resolves on the TARGET's
- * own checkpoint id. An anchor `CHECKPOINT_INFO` arriving FIRST does not
- * resolve it -- it is counted (so the answer can say the anchor stopped the
- * machine) and the wait CONTINUES. Both frames arriving in one resumed run
- * resolve on the target's id regardless of which arrived first. A wait resolved
- * by the wrong frame would report a confident stop that never happened.
+ * DISCRIMINATION IS THE POINT (`T-33-31`): status "hit" is reported ONLY on the
+ * TARGET's own checkpoint id. An anchor `CHECKPOINT_INFO` never produces a
+ * "hit" -- it is counted, so the answer can say the anchor stopped the machine.
+ * A wait resolved by the wrong frame would report a confident stop that never
+ * happened.
+ *
+ * `anchorSharesTargetAddress` says whether the two checkpoints were armed at
+ * the SAME address, which decides what an anchor frame MEANS:
+ *   * different addresses -- the stop:true anchor has halted the machine and
+ *     only one resume is ever sent, so the target can never fire. The anchor
+ *     frame is TERMINAL, and settles the wait as a timeout at once rather than
+ *     burning a deadline whose outcome is already known (33 review WR-01).
+ *   * the same address -- one stop emits BOTH checkpoints' frames, so the
+ *     target's arrives from that same stop and the wait must CONTINUE
+ *     whichever order the monitor emitted them in.
+ * Either way, "hit" resolves on the target's id alone.
  *
  * Removes every listener and clears the timer in a `finally` on EVERY path, so
  * a long session never accumulates listeners.
@@ -245,6 +255,7 @@ async function waitForReproducibleStop(
   targetCheckpointId: number,
   anchorCheckpointId: number,
   timeoutMs: number,
+  anchorSharesTargetAddress: boolean,
 ): Promise<ReproducibleWaitOutcome> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onEvent: ((item: unknown) => void) | undefined;
@@ -257,10 +268,40 @@ async function waitForReproducibleStop(
       onEvent = (item: unknown) => {
         if (!isCheckpointInfoEvent(item)) return;
         if (item.checkpoint.id === anchorCheckpointId) {
-          // The anchor fired. Count it, record its own hit count, and KEEP
-          // WAITING -- this frame is not the stop being certified.
+          // The anchor fired. Count it and record its own hit count -- this
+          // frame is not the stop being certified.
           anchorHitsObserved += 1;
           anchorHitCountObserved = item.checkpoint.hitCount;
+          // TERMINAL, BUT ONLY WHEN THE TWO SIT AT DIFFERENT ADDRESSES
+          // (33 review WR-01).
+          //
+          // When they differ: the anchor is armed stop:true, so the machine is
+          // now HALTED, and this procedure sends exactly ONE resume per wait by
+          // design. No further instruction will execute, so the target's frame
+          // can never arrive. The outcome is already decided AND already
+          // observed -- so settle now instead of waiting out a deadline whose
+          // result is known. That deadline runs up to
+          // RUN_UNTIL_MAX_TIMEOUT_MS (600 000 ms) while .mcp.json caps a
+          // request at 150 000 ms, so burning it meant the carefully written
+          // anchorStoppedFirstNote explaining the refusal never reached the
+          // caller on any realistic timeout setting -- the request died first.
+          //
+          // When they are EQUAL this early settle would be WRONG, which is why
+          // it is gated. `frameAnchor === address` is a documented legitimate
+          // configuration (see step 4: the two differ in their temporary flag
+          // and in what they mean, and are deliberately armed as two). At one
+          // address BOTH checkpoints match the same instruction, so a single
+          // stop emits TWO CHECKPOINT_INFO frames -- the target's arrives from
+          // that same stop, needing no further execution, and the order the
+          // monitor emits them in is not ours to depend on. Settling on the
+          // anchor there would turn the adjacent configuration's successful
+          // stop into a spurious refusal.
+          //
+          // The discrimination invariant (T-33-31) is untouched either way:
+          // status "hit" is still only ever reported on the TARGET's id.
+          if (!anchorSharesTargetAddress) {
+            resolve({ status: "timeout", anchorHitsObserved, anchorHitCountObserved });
+          }
           return;
         }
         if (item.checkpoint.id !== targetCheckpointId) return;
@@ -479,7 +520,13 @@ export async function runReproducible(
   // restarted wording is produced by the ONE existing
   // convertHandshakeError()/convertWireError() seam, not a second converter
   // written here.
-  const wait = await waitForReproducibleStop(session.client, targetCheckpointId, anchorCheckpointId, timeoutMs);
+  const wait = await waitForReproducibleStop(
+    session.client,
+    targetCheckpointId,
+    anchorCheckpointId,
+    timeoutMs,
+    frameAnchor === address,
+  );
 
   if (wait.status === "timeout") {
     // --- Cleanup path 2 of 3: TIMEOUT. The only path that deletes the -------

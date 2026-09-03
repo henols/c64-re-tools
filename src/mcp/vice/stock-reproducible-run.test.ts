@@ -507,21 +507,43 @@ test("reproducible: an anchor hit count of 0 is REFUSED -- a frame term that cou
 });
 
 // ---------------------------------------------------------------------------
-// 4. Discrimination -- the anchor's frame must not resolve the wait
+// 4. Discrimination -- the anchor's frame never certifies a stop
 // ---------------------------------------------------------------------------
 
-test("reproducible: an anchor CHECKPOINT_INFO arriving FIRST does not resolve the wait -- it is counted and the wait continues", async () => {
+// The discrimination property, stated the way it is actually load-bearing: an
+// anchor CHECKPOINT_INFO NEVER produces a "hit". It is counted, and it never
+// certifies a stop.
+//
+// REVISED FOR WR-01 (33 review). This test used to drive a distinct-address
+// anchor frame first and then require a CONFIDENT STOP anyway -- a scenario
+// that is not physically realisable. The anchor is armed stop:true, so its hit
+// HALTS the machine, and this procedure sends exactly ONE resume by design;
+// the target at a different address therefore cannot execute afterwards. The
+// old expectation only held because the fake emitted both frames back to back
+// regardless of the machine state a real monitor would be in. What the anchor
+// frame means at a distinct address is "terminal", so the outcome asserted here
+// is the timeout-shaped REFUSAL -- which is a strictly stronger discrimination
+// claim than before: not merely "the anchor's frame did not resolve as the
+// target's", but "the anchor's frame produced no confident stop at all".
+//
+// The genuine keep-waiting case is adjacency (frame_anchor === address), where
+// one stop emits both frames; that is asserted in section 6.
+test("reproducible: an anchor CHECKPOINT_INFO at a distinct address never certifies a stop -- it is counted, and it is terminal", async () => {
   const { client } = makeFakeClient(greenSendImpl({ anchorHitCount: 3, emitAnchorFirst: true }));
   const result = await handleRunUntil({ ...REPRODUCIBLE_ARGS, timeout_ms: 200 }, makeSession(client), FAKE_DEPS);
   assertOk(result);
   const answer = okText(result);
 
-  // Resolved on the TARGET's id despite the anchor's frame arriving first.
-  assert.equal(answer.reproducibleStop, true);
+  // NOT a confident stop: the anchor's frame is never mistaken for the target's.
+  assert.equal(answer.reproducibleStop, false, "no stop is certified off the anchor's own frame");
+  assert.equal(answer.timedOut, true);
+  assert.equal(answer.anchorStoppedFirst, true);
+
+  // But it IS counted, and both ids are still reported so neither has to be inferred.
+  assert.equal(answer.anchorHitsObserved, 1, "the anchor's frame was counted, not discarded");
+  assert.equal(answer.anchorHitCountObserved, 3, "and its own hit count is reported");
   assert.equal(answer.targetCheckpointId, TARGET_ID);
   assert.equal(answer.anchorCheckpointId, ANCHOR_ID);
-  assert.equal(answer.targetHitCount, 1);
-  assert.equal(answer.anchorHitsObserved, 1, "the anchor's frame was counted, not discarded and not resolved on");
 });
 
 test("reproducible: an unrelated checkpoint's CHECKPOINT_INFO never resolves the wait", async () => {
@@ -623,6 +645,62 @@ test("reproducible (timeout path): an anchor hit before the deadline is reported
   assert.match(String(answer.anchorStoppedFirstNote), /refusal/);
 });
 
+// The test above passes timeout_ms: 40, which is the only reason it ever
+// finished: the refusal used to be reached by BOUNDING OUT. This one uses a
+// deadline no test would sit through, so it can only pass if the anchor frame
+// SETTLES the wait rather than being counted and waited past.
+//
+// WHY IT MATTERS (33 review WR-01). The anchor is armed stop:true and this
+// procedure sends exactly ONE resume, so at a DIFFERENT address from the target
+// the state after an anchor hit is deterministically terminal AND already
+// observed -- yet the wait ran to the deadline, up to the 600 000 ms
+// RUN_UNTIL_MAX_TIMEOUT_MS ceiling. .mcp.json caps a request at 150 000 ms, so
+// the caller's request died before the answer, and the anchorStoppedFirstNote
+// written to explain the refusal never reached anyone at any realistic
+// timeout. Asserted on ELAPSED TIME against the deadline, not on a magic
+// number: the claim is "it did not wait out the deadline".
+test("reproducible (timeout path): an anchor hit at a DIFFERENT address settles the wait at once, without burning the deadline", async () => {
+  const UNREACHABLE_DEADLINE_MS = 30_000;
+  const { client } = makeFakeClient(async (commandType: number, body: Buffer, emitter: EventEmitter) => {
+    if (commandType === CommandType.RegistersAvailable) return registersAvailableReply();
+    if (commandType === CommandType.CheckpointSet) {
+      return body[7] === 0x01
+        ? checkpointInfoResponse(fakeCheckpoint({ id: TARGET_ID, temporary: true }))
+        : checkpointInfoResponse(fakeCheckpoint({ id: ANCHOR_ID, temporary: false }));
+    }
+    if (commandType === CommandType.Exit) {
+      setImmediate(() => {
+        emitter.emit("event", parsedFromRaw({ id: ANCHOR_ID, hitCount: 7, temporary: false, start: ANCHOR_ADDR }));
+      });
+      return { type: "unknown", requestId: 1, errorCode: 0 };
+    }
+    if (commandType === CommandType.Reset) return { type: "unknown", requestId: 1, errorCode: 0 };
+    if (commandType === CommandType.CheckpointDelete) return { type: "checkpoint_delete", requestId: 1, errorCode: 0 };
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  });
+
+  const startedAt = Date.now();
+  const result = await handleRunUntil(
+    { ...REPRODUCIBLE_ARGS, timeout_ms: UNREACHABLE_DEADLINE_MS },
+    makeSession(client),
+    FAKE_DEPS,
+  );
+  const elapsedMs = Date.now() - startedAt;
+
+  assertOk(result);
+  const answer = okText(result);
+  assert.equal(answer.timedOut, true, "the outcome is still the timeout-shaped refusal");
+  assert.equal(answer.anchorStoppedFirst, true);
+  assert.equal(answer.anchorHitCountObserved, 7, "the anchor's own count survives the early settle");
+  assert.match(String(answer.anchorStoppedFirstNote), /exactly ONE resume/);
+
+  assert.ok(
+    elapsedMs < UNREACHABLE_DEADLINE_MS / 10,
+    `expected the anchor frame to settle the wait immediately, but it took ${elapsedMs}ms of a ` +
+      `${UNREACHABLE_DEADLINE_MS}ms deadline -- the terminal state was observed and then waited past`,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // 6. Adjacency -- frame_anchor === address
 // ---------------------------------------------------------------------------
@@ -647,6 +725,32 @@ test("reproducible: frame_anchor equal to address still arms two DISTINCT checkp
   assert.notEqual(answer.anchorCheckpointId, answer.targetCheckpointId);
   assert.equal(answer.targetCheckpointId, TARGET_ID, "the wait resolved on the TARGET's own id");
   assert.equal(answer.reproducibleStop, true);
+});
+
+// The gate on the early settle above, from the other side (33 review WR-01).
+//
+// At ONE address both checkpoints match the same instruction, so a single stop
+// emits TWO CHECKPOINT_INFO frames and the target's arrives from that same stop
+// -- no further execution needed, and the emission order is not ours to depend
+// on. So the terminal-anchor shortcut must NOT apply here: if it did, the
+// adjacent configuration's successful stop would become a spurious timeout
+// refusal whenever the monitor happened to emit the anchor's frame first.
+// Driven with emitAnchorFirst so the anchor frame genuinely arrives first.
+test("reproducible: at frame_anchor === address an anchor frame arriving FIRST does NOT settle the wait -- both frames come from one stop", async () => {
+  const { client } = makeFakeClient(greenSendImpl({ anchorHitCount: 9, emitAnchorFirst: true }));
+  const result = await handleRunUntil(
+    { address: "$ea31", reproducible: true, frame_anchor: "$ea31", timeout_ms: 200 },
+    makeSession(client),
+    FAKE_DEPS,
+  );
+
+  assertOk(result);
+  const answer = okText(result);
+  assert.equal(answer.timedOut, undefined, "adjacency must not be turned into a timeout refusal");
+  assert.equal(answer.reproducibleStop, true);
+  assert.equal(answer.targetCheckpointId, TARGET_ID, "still resolved on the TARGET's id (T-33-31)");
+  assert.equal(answer.hitCount, 9, "and the frame term is still the anchor's own count");
+  assert.equal(answer.anchorHitsObserved, 1, "the anchor's frame was counted, not resolved on");
 });
 
 test("reproducible: two identical checkpoint ids from the monitor are REFUSED -- the frames could not be told apart", async () => {
