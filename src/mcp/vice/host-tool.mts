@@ -34,7 +34,10 @@
 //   - No host-tool output written outside the bind-mounted workspace tree --
 //     resolveWorkspacePath() is the only place a wire-supplied path becomes a
 //     real path, and it refuses anything that resolves outside the caller's
-//     repo root (T-34-03).
+//     repo root (T-34-03). This covers EVERY path-bearing wire field on
+//     every tool, not only the ones present when this file was first
+//     written: acme.build's source/outDir AND each entry of its includes
+//     array (34-07, CR-03).
 //   - No inline byte payload on a host-tool response, at any result size --
 //     every result crosses as `{ path, sha256, byteLength }`, never bytes.
 //   - No second copy of a tool's argv construction -- buildHostToolArgv() is
@@ -232,7 +235,12 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
     }
     if ("includes" in argsObj) {
       const includes = argsObj.includes;
-      if (!Array.isArray(includes) || !includes.every((i) => typeof i === "string")) {
+      // Task 1 (CR-03): an empty-string entry is refused here rather than
+      // silently skipped or forwarded to resolveWorkspacePath() -- the same
+      // "must be an array of strings" message, tightened to reject the one
+      // string value that would otherwise slip through as "an array of
+      // strings" while carrying no real path.
+      if (!Array.isArray(includes) || !includes.every((i) => typeof i === "string" && i !== "")) {
         return { ok: false, message: `host_tool "acme.build" args.includes must be an array of strings; got ${describe(includes)}` };
       }
       args.includes = includes as string[];
@@ -341,6 +349,12 @@ export function resolveWorkspacePath(repoRoot: string, relative: string): Resolv
 export interface ResolvedAcmeBuildPaths {
   sourcePath: string;
   outDirPath: string;
+  /** Task 1 (CR-03): every `includes` entry, resolved through
+   * resolveWorkspacePath() by runHostTool() BEFORE buildHostToolArgv() ever
+   * sees this object. buildHostToolArgv() reads paths ONLY from this array --
+   * never from request.args.includes -- so an absent or empty `includes` on
+   * the wire becomes an empty array here, not an omitted field. */
+  includePaths: string[];
 }
 
 /** Phase 34, plan 34-03 (SEAM-04): the resolved fields ghidra.analyze's own
@@ -367,7 +381,7 @@ export type BuildHostToolArgvResult =
 export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHostToolPaths): BuildHostToolArgvResult {
   if (request.tool === "acme.build") {
     const { args } = request;
-    const { sourcePath, outDirPath } = resolved as ResolvedAcmeBuildPaths;
+    const { sourcePath, outDirPath, includePaths } = resolved as ResolvedAcmeBuildPaths;
     const stem = join(outDirPath, basename(sourcePath).replace(/\.(a|asm|s)$/i, ""));
     const prg = `${stem}.prg`;
     // Overridable local variable named for what it holds -- never `binPath`/
@@ -397,7 +411,12 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     ];
     if (!args.noReport) argv.push("-r", `${stem}.rep`);
     for (const define of args.defines ?? []) argv.push(`-D${define}`);
-    for (const include of args.includes ?? []) argv.push("-I", include);
+    // Task 1 (CR-03): reads ONLY from resolved.includePaths -- never from
+    // request.args.includes -- so argv never carries a raw wire string for
+    // this field. Defensively defaults to [] so a caller that omits
+    // includePaths entirely still yields a valid, empty-include argv rather
+    // than throwing on an undefined iterable.
+    for (const include of includePaths ?? []) argv.push("-I", include);
     if (args.setpc) argv.push("--setpc", args.setpc);
     argv.push(sourcePath);
 
@@ -665,7 +684,21 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       outDirPath = dirname(sourceResolved.path);
     }
 
-    built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath });
+    // Task 1 (CR-03): every `includes` entry resolved through the SAME
+    // resolveWorkspacePath() site source/outDir just used. The FIRST
+    // refusal returns unchanged -- the whole request fails, the offending
+    // entry is never dropped and the remaining entries are never resolved
+    // (no partial-success degradation, T-34-33). An absent or empty
+    // `includes` yields an empty array, which buildHostToolArgv() emits as
+    // no -I flags at all.
+    const includePaths: string[] = [];
+    for (const entry of request.args.includes ?? []) {
+      const includeResolved = resolveWorkspacePath(repoRootAbs, entry);
+      if (!includeResolved.ok) return { ok: false, message: includeResolved.message };
+      includePaths.push(includeResolved.path);
+    }
+
+    built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath, includePaths });
     acmeLib = findAcmeLib();
   } else {
     // request.tool === "ghidra.analyze" -- the only other HOST_TOOL_IDS

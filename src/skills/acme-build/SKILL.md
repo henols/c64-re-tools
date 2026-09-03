@@ -22,6 +22,13 @@ absent `run` verb is not an omission). It contacts nothing.
 Options: `-o FILE` `--out-dir DIR` `-f FORMAT` `--setpc ADDR` `-DSYM=VAL`
 `-I DIR` `--no-report` `--json`.
 
+`-I DIR` is resolved **workspace-relative** to the project root the host
+broker was launched with — the same resolution `source`/`--out-dir` already
+go through (Phase 34, SEAM-02/CR-03) — before it ever reaches the assembler.
+An absolute or escaping `-I` directory is refused by the seam rather than
+passed to ACME; this is a documented contract change from before Phase 34,
+when an absolute include reached the assembler unchecked.
+
 ## Build
 
 ```bash

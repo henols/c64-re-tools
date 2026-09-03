@@ -23,7 +23,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, basename, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
@@ -99,9 +99,20 @@ async function withFakeAcme<T>(acmeBinOverride: string, fn: () => Promise<T> | T
  * drive runHostTool()'s digest/exit-status handling without depending on
  * real ACME being installed or on constructing a source file that actually
  * triggers the scenario in question. */
-function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8"): string {
+/** `dir` also holds the "echoargv" mode's output file (`echoed-argv.json`) --
+ * `readEchoedArgv()` below reads it back. */
+function echoedArgvPath(dir: string): string {
+  return join(dir, "echoed-argv.json");
+}
+
+function readEchoedArgv(dir: string): string[] {
+  return JSON.parse(readFileSync(echoedArgvPath(dir), "utf8")) as string[];
+}
+
+function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "echoargv"): string {
   const scriptPath = join(dir, "fake-acme.mjs");
   const utf8Text = "héllo wörld 日本語\n";
+  const echoPath = echoedArgvPath(dir);
   writeFileSync(
     scriptPath,
     [
@@ -111,6 +122,7 @@ function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8"): stri
       'const oIdx = argv.indexOf("-o");',
       "const outPath = oIdx !== -1 ? argv[oIdx + 1] : null;",
       `const mode = ${JSON.stringify(mode)};`,
+      `const echoPath = ${JSON.stringify(echoPath)};`,
       'if (mode === "nonzero") {',
       '  process.stderr.write("fake acme: simulated compile error\\n");',
       "  process.exit(1);",
@@ -121,6 +133,15 @@ function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8"): stri
       "}",
       'if (mode === "utf8") {',
       `  if (outPath) writeFileSync(outPath, ${JSON.stringify(utf8Text)}, "utf8");`,
+      "  process.exit(0);",
+      "}",
+      // 34-07 (CR-03): echoes the FULL argv this invocation received to
+      // `echoPath`, so a test can assert on what an include flag's value
+      // actually was -- runHostTool()'s own response shape never surfaces
+      // argv, only the digested outputs.
+      'if (mode === "echoargv") {',
+      "  writeFileSync(echoPath, JSON.stringify(argv));",
+      "  if (outPath) writeFileSync(outPath, Buffer.alloc(0));",
       "  process.exit(0);",
       "}",
       "process.exit(0);",
@@ -254,7 +275,10 @@ test("buildHostToolArgv is deterministic: the same request and resolved paths yi
 
 test("buildHostToolArgv orders fixed flags first, then repeated defines/includes in caller-given order, then the source path last", () => {
   const request = { tool: "acme.build", args: { source: "a.a", format: "cbm", defines: ["FOO", "BAR"], includes: ["inc1", "inc2"] } };
-  const resolved = { sourcePath: "/repo/a.a", outDirPath: "/repo" };
+  // 34-07 (CR-03): includes now flow through resolved.includePaths only --
+  // never through request.args.includes -- so the resolved paths below,
+  // NOT the raw wire strings "inc1"/"inc2", are what the argv must carry.
+  const resolved = { sourcePath: "/repo/a.a", outDirPath: "/repo", includePaths: ["/repo/inc1", "/repo/inc2"] };
   const built = buildHostToolArgv(request, resolved);
   assert.equal(built.ok, true);
   if (!built.ok) return;
@@ -263,10 +287,155 @@ test("buildHostToolArgv orders fixed flags first, then repeated defines/includes
   const defineFooIdx = built.argv.indexOf("-DFOO");
   const defineBarIdx = built.argv.indexOf("-DBAR");
   assert.ok(defineFooIdx !== -1 && defineBarIdx !== -1 && defineFooIdx < defineBarIdx, "defines must appear in caller-given order");
-  const include1Idx = built.argv.indexOf("inc1");
-  const include2Idx = built.argv.indexOf("inc2");
-  assert.ok(include1Idx !== -1 && include2Idx !== -1 && include1Idx < include2Idx, "includes must appear in caller-given order");
+  const include1Idx = built.argv.indexOf("/repo/inc1");
+  const include2Idx = built.argv.indexOf("/repo/inc2");
+  assert.ok(include1Idx !== -1 && include2Idx !== -1 && include1Idx < include2Idx, "includes must appear in caller-given order, as the RESOLVED paths");
+  assert.ok(!built.argv.includes("inc1") && !built.argv.includes("inc2"), "argv must never carry the raw wire include strings");
 });
+
+// ---------------------------------------------------------------------------
+// acme.build `includes` -- resolved through resolveWorkspacePath() by
+// runHostTool(), read by buildHostToolArgv() ONLY from resolved.includePaths
+// (Task 1, CR-03).
+// ---------------------------------------------------------------------------
+
+test("buildHostToolArgv's acme.build branch reads includes from resolved.includePaths, never from request.args.includes -- proven by a case where they disagree", () => {
+  const request = { tool: "acme.build", args: { source: "a.a", includes: ["wire-inc-1", "wire-inc-2"] } };
+  const resolved = { sourcePath: "/repo/a.a", outDirPath: "/repo", includePaths: ["/repo/resolved-inc-1", "/repo/resolved-inc-2"] };
+  const built = buildHostToolArgv(request, resolved);
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  assert.ok(built.argv.includes("/repo/resolved-inc-1"));
+  assert.ok(built.argv.includes("/repo/resolved-inc-2"));
+  assert.ok(!built.argv.includes("wire-inc-1"));
+  assert.ok(!built.argv.includes("wire-inc-2"));
+});
+
+test("buildHostToolArgv: includePaths: [] and an absent includePaths key both produce deepEqual argv arrays, with no -I flag in either", () => {
+  const request = { tool: "acme.build", args: { source: "a.a" } };
+  const resolvedWithEmptyArray = { sourcePath: "/repo/a.a", outDirPath: "/repo", includePaths: [] as string[] };
+  const resolvedWithoutKey = { sourcePath: "/repo/a.a", outDirPath: "/repo" };
+  const builtEmptyArray = buildHostToolArgv(request, resolvedWithEmptyArray);
+  const builtAbsentKey = buildHostToolArgv(request, resolvedWithoutKey);
+  assert.deepEqual(builtEmptyArray, builtAbsentKey);
+  assert.equal(builtEmptyArray.ok, true);
+  if (builtEmptyArray.ok) assert.ok(!builtEmptyArray.argv.includes("-I"));
+});
+
+test("runHostTool: an acme.build request whose includes contains an escaping entry is refused with the workspace-escape message, and the log spy recorded zero lines", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const logLines: string[] = [];
+    const response = await runHostTool(
+      { tool: "acme.build", args: { source: "a.a", includes: ["../outside"] } },
+      { repoRoot: dir, log: (line) => logLines.push(line) },
+    );
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /escapes the workspace root/);
+    assert.equal(logLines.length, 0, "no child was spawned, so no log line should have been recorded");
+  });
+});
+
+test("runHostTool: an acme.build request whose includes contains an absolute entry is refused with the not-absolute message", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: ["/etc"] } }, { repoRoot: dir });
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /must be relative to the workspace root, not absolute/);
+  });
+});
+
+test('runHostTool: an acme.build request whose includes contains "" is refused with the array-of-strings message, never silently skipped', async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const result = normaliseHostToolRequest({ tool: "acme.build", args: { source: "a.a", includes: [""] } });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.message, /must be an array of strings/);
+    const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: [""] } }, { repoRoot: dir });
+    assert.equal(response.ok, false);
+  });
+});
+
+test("runHostTool: an acme.build include of \".\" (resolving EXACTLY to the workspace root) is accepted, and a sibling directory whose name merely begins with the workspace root's own name is REFUSED (adjacency)", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const fakeAcme = writeFakeAcme(dir, "zerobyte");
+    await withFakeAcme(fakeAcme, async () => {
+      const acceptedResponse = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: ["."], noReport: true } }, { repoRoot: dir });
+      assert.equal(acceptedResponse.ok, true);
+    });
+    const evilSibling = `../${basename(dir)}-evil`;
+    const refusedResponse = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: [evilSibling] } }, { repoRoot: dir });
+    assert.equal(refusedResponse.ok, false);
+    if (!refusedResponse.ok) assert.match(refusedResponse.message, /escapes the workspace root/);
+  });
+});
+
+test("runHostTool: an accepted in-workspace acme.build include reaches the spawned argv as an absolute resolved path, never the bare relative string", async () => {
+  await withTempDir(async (dir) => {
+    mkdirSync(join(dir, "inc"), { recursive: true });
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const fakeAcme = writeFakeAcme(dir, "echoargv");
+    await withFakeAcme(fakeAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: ["inc"], noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true);
+      const echoedArgv = readEchoedArgv(dir);
+      const includeFlagIdx = echoedArgv.indexOf("-I");
+      assert.ok(includeFlagIdx !== -1);
+      const includeValue = echoedArgv[includeFlagIdx + 1];
+      assert.ok(isAbsolute(includeValue));
+      assert.equal(includeValue, resolvePath(dir, "inc"));
+      assert.ok(!echoedArgv.includes("inc"), "argv must never carry the bare relative include string");
+    });
+  });
+});
+
+test("runHostTool: acme.build includes keep caller order in the spawned argv, and two entries resolving to the SAME directory both appear (no dedupe, no reordering)", async () => {
+  await withTempDir(async (dir) => {
+    mkdirSync(join(dir, "b"), { recursive: true });
+    mkdirSync(join(dir, "a"), { recursive: true });
+    mkdirSync(join(dir, "inc"), { recursive: true });
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const fakeAcme = writeFakeAcme(dir, "echoargv");
+    await withFakeAcme(fakeAcme, async () => {
+      const orderedResponse = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: ["b", "a"], noReport: true } }, { repoRoot: dir });
+      assert.equal(orderedResponse.ok, true);
+      const orderedArgv = readEchoedArgv(dir);
+      const bIdx = orderedArgv.indexOf(resolvePath(dir, "b"));
+      const aIdx = orderedArgv.indexOf(resolvePath(dir, "a"));
+      assert.ok(bIdx !== -1 && aIdx !== -1 && bIdx < aIdx, "resolved 'b' must precede resolved 'a', matching caller order");
+
+      const dupeResponse = await runHostTool({ tool: "acme.build", args: { source: "a.a", includes: ["inc", "inc"], noReport: true } }, { repoRoot: dir });
+      assert.equal(dupeResponse.ok, true);
+      const dupeArgv = readEchoedArgv(dir);
+      const includeFlagCount = dupeArgv.filter((a) => a === "-I").length;
+      assert.equal(includeFlagCount, 2, "two equal-resolving includes must both appear -- no dedupe");
+    });
+  });
+});
+
+test(
+  "END TO END: an acme.build request whose includes escapes the workspace root is refused at the container-side caller with ok: false, over the real control-plane route, with all seven VICE callbacks provably uncalled -- no skip option, since nothing is ever spawned",
+  async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "a.a"), "!cpu 6510\n* = $0801\nlda #$01\nsta $d020\nrts\n", "utf8");
+      const { listener, token, spies } = await startListenerWithSpies(dir);
+      try {
+        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
+        try {
+          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
+          const response = await hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", includes: ["../outside"] });
+          assert.equal(response.ok, false);
+          assertAllSpiesEmpty(spies);
+        } finally {
+          rmSync(stateDir, { recursive: true, force: true });
+        }
+      } finally {
+        listener.server.close();
+      }
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // runHostTool -- exit status, zero-byte digest, byte-vs-character length
