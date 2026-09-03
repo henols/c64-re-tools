@@ -169,3 +169,75 @@ TBD in detail; the shape that fits the existing seams:
   a checkpoint still fires correctly under warp.
 - Cover it in `broker-launch.test.ts` alongside the existing argv-shape assertions,
   keeping the `-default` index-0 / precedes-`-binarymonitor` invariants asserted.
+
+---
+
+## RESOLVED 2026-09-03 — discharged by the additive acquire `profile` and the warm-instance eligibility rule
+
+**What discharged it, and note that it is the shape this todo's own 2026-08-28 correction asked
+for** — additive flags, not a whole-argv override, with headless as the genuine launch-mode
+dimension.
+
+- **The additive knob.** `buildViceArgs()` in `src/mcp/vice/broker-launch.mts` grew an optional
+  `profile` (`LaunchProfile`), absent by default. `-console` lands at argv **index 1** — pinned by
+  an assertion, because at index ≥ 2 the process **dies** headless with
+  `Gtk-WARNING: cannot open display:` — and `-warp` immediately before `-binarymonitor`.
+  `-default` stays at index 0 ahead of `-binarymonitor`, the ordering invariant this todo's
+  constraints section demanded, and the fork branch's argv is byte-identical.
+- **The control-plane thread.** `normaliseLaunchProfile()` in
+  `src/mcp/vice/broker-control.mts` validates and normalises the profile arriving on the acquire
+  frame, so the mode is **per-run** rather than per-broker — the missing mode field this todo
+  identified on `{ op: "acquire", id, token }`. `InstanceRecord.profile` in `broker-state.mts`
+  records what each live instance was launched with.
+- **The eligibility rule, which is the part this todo said was structural.**
+  `profileEligible()` in `src/mcp/vice/vice-broker.mts` makes `selectWarmInstance()`
+  profile-aware: a warm candidate whose recorded profile does not match the request is
+  **skipped**, and a mode-sensitive acquire that finds no match falls through to the existing
+  cold-launch arm. So the one outcome this todo asked to rule out — "silently downgrading the
+  caller to whatever was already warm" — cannot happen. `handleRelease()`'s existing
+  kill-never-recycle supplies the shutdown half, as this todo predicted. The single-owner
+  `inFlight` launch guard was not perturbed.
+- **Warp, per this todo's own correction, is not the launch dimension it was filed as.** Phase 33
+  measured `-warp` **behaviour-neutral under a frame-anchored protocol** on a real autostarted
+  release — identical registers, one identical 64K sha256
+  (`c97a08b636cba7e824d854b9a3fe15c4d18fed7b527203ac6ca3699cfc9be9d3`), zero differing addresses
+  across warped-at-two-jitters and the unwarped run at the same target — and **invalidating for a
+  wall-clock-anchored bracket** (1.76× region overshoot on an identical 10 s bracket). `-warp` is
+  worth only ~**1.97×** on emulated throughput on this host, and `AUTOSTART` turns warp on by
+  itself during a load whatever argv says. `D-17` also re-grounded
+  `capability-registry.ts`'s stale warp sentence in the same commit as its generated table: there
+  is no runtime `WarpMode` resource at all on stock (measured `err=0x01` OBJECT_MISSING), and
+  runtime toggling lives only on the text monitor this project does not dial.
+
+**The outcome line that closes it, and it is the unflattering one.**
+**`PROBEREADY_BUDGET: short`** at column 0 of
+`.planning/phases/33-…/evidence/33-probeready-warp-console.md`, with
+`WARP_TIME_TO_BIND_MS_MAX: 3155` and `CONSOLE_TIME_TO_BIND_MS_MAX: 2385` beside it. This is
+precisely the re-check this todo's constraints section demanded before headless or warp is turned
+on anywhere, and it came back **short**: against `DEFAULT_PROBE_TIMEOUT_S = 1`
+(`BUDGET_RESOLVED_MS 1000`), the observed maxima are `(absent)` **3132 ms**, `{warp}` **3155 ms**,
+`{headless}` **2175 ms**, `{warp, headless}` **2385 ms** — every profile over by 1.2–2.2 s.
+
+**What `short` does and does not mean, so this closure is not read as worse than it is.**
+`DEFAULT_PROBE_TIMEOUT_S` is a **per-attempt** timeout and `probeReady()` has **no retry loop**
+by design: a still-booting instance fails *this* pass and is re-probed on the next, so a slow host
+is re-probed rather than starved. `short` therefore means the first probe pass after a cold launch
+always misses on this host — it does **not** mean a launch fails or an instance is lost, and the
+cost is promotion **latency**, not loss. Critically, **the shortfall is not caused by either new
+flag**: the absent profile — the argv a stock launch has always emitted — is already 2.1 s over,
+and `-console` *reduces* it.
+
+**The named follow-up, left open deliberately.** The budget was **not** changed by the measuring
+plan, for two recorded reasons: it lives in host-bound launcher code whose edit requires a
+regenerated `resources/broker-launch.mjs` in the same commit, and a timing change made in the same
+breath as the measurement that justifies it is not a measurement. Two candidate responses, neither
+taken: raise `DEFAULT_PROBE_TIMEOUT_S`, or leave it and treat the first-pass miss as intended. The
+decision **needs a milestone-level owner**, because it trades cold-acquire latency against a probe
+that blocks longer on a genuinely dead port — the trade `probeReady`'s own header records being
+made deliberately in the other direction. `SCHEMA.md` § 3 and `DECISION-RULE.md` § *Never a gate*
+both put this line outside `GATE-01`, so nothing about v0.8.0's verdict waits on it.
+
+Also settled by measurement rather than left as this todo's open question: research's single
+`-console` observation of "not bound at 3000 ms" did **not** reproduce —
+`CONSOLE_LAUNCHES_MEASURED 10`, `CONSOLE_LAUNCHES_AT_OR_OVER_3000_MS 0`, all ten between 1945 ms
+and 2385 ms. That earlier datum stands as what it was labelled: one observation, not a latency.

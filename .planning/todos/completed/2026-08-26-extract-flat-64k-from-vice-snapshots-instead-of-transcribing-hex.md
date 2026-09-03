@@ -67,3 +67,41 @@ dominant term.
 Phase 23 closed **no-go** on `C0_CORPUS: partial` under the pre-committed rule R1. Of the
 two blockers behind that verdict, this one is solved and the remaining one is a single,
 well-characterised problem. Whoever re-scopes v0.6.0 should not re-derive this.
+
+---
+
+## RESOLVED 2026-09-03 — discharged by `CAP-01`'s slicer and its skill-side route
+
+**What discharged it.** Phase 33 plan `33-04` shipped `src/mcp/vice/vsf-slice.ts` as the one
+place in this project holding `.vsf` byte-layout knowledge. It slices a flat 65536-byte image
+out of the `C64MEM` module body by a **strict module-table walk** from a derived offset — not
+from the fixed offset this todo's method section describes — and **refuses**, with eight named
+refusals each observed against a committed synthetic fixture, rather than returning a plausible
+65536 bytes of garbage. A fixed offset would have failed silently across VICE builds, which is
+the worst available failure mode for the substrate every downstream number is measured on. The
+skill-side route is the shipped `vsf-slice` CLI (verbs `slice`, `digest`), reached by
+`src/skills/c64-ram-capture/`.
+
+**The outcome line that closes it.** `SLICER: validated` at column 0 of
+`.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-slicer-validation.md`,
+derived under `SCHEMA.md` § 2.4 from both declared suites reporting `fail 0` with both
+transcripts appended: `vsf-slice.test.ts` at `tests 34 / pass 34 / fail 0`, and
+`capture-predicate.test.ts capture-seam.test.ts` at `tests 39 / pass 39 / fail 0`. That value is
+one of `GATE-01`'s five inputs, and it is what kept rule `R1 → no-go` from firing.
+
+**One correction to this todo's own method, measured.** The body length asserted above
+(`4 + 65536` = 65540) is **wrong on this host**: the measured `C64MEM` body is **65555** at
+snapshot minor 1 and **65543** at minor 0, because VICE writes three more port bytes plus two
+DWORD falloff clocks plus four more state bytes after the RAM array. The shipped reader accepts
+both (`MIN_C64MEM_BODY_LEN = 65543`, `V01_C64MEM_BODY_LEN = 65555`). Likewise the `$0000`/`$0001`
+claim: the CPU-visible values are `pport.dir_read` and `pport.data_read`, which live in the
+**3-byte suffix after** the RAM array, not in the 4-byte prefix before it — and the prefix is
+`(data, dir, EXROM, GAME)`, address-swapped relative to the sentence above. `33-CONTEXT.md`'s
+`D-21` and `D-24` carry dated `AMENDED 2026-09-02` riders recording both.
+
+**What this todo said it does NOT fix, and where that went.** The second cause — the stop not
+being frame-exact — was this todo's companion,
+`2026-08-26-frame-exact-emulator-stop-is-unowned.md`, and it is closed in the same commit with
+its own **partial** result stated rather than the part that worked. Read the two closures
+together: the transcription step is gone, and the frame-exactness half landed short of
+frame-exact on an autostarted release.

@@ -177,9 +177,47 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 11 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07, 33-08, 33-09, 33-10, 33-11); next pointer at plan 12 of 12
-Status: **Wave 5 complete** — `33-10` ran alone in its wave (stock's binary monitor serves
+Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — COMPLETE
+Plan: 12 of 12 executed (33-01 … 33-12); no next plan in this phase — Phase 34 is next
+
+**`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
+Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
+derived by walking the five recorded input values through rules committed at `2a8ef95`
+before any of them existed — still the only commit reachable from itself that touches the
+phase evidence directory (`git rev-list --count 2a8ef95 -- <evidence>` re-run after every
+measurement landed: **1**). `could-not-run` was **structurally unavailable** — `R9` carries no
+antecedent and the rule set is total over all 108 input tuples — which is the defect its
+Phase 23 predecessor carried and hit. The five inputs, each transcribed from the final
+column-0 outcome line of its declared evidence file: `SLICER: validated`,
+`SEED_EFFECT: pinned`, `JITTER_IMMUNITY: immune`, `C0_CAPTURE_PAIR: pass`,
+`ORACLE_NECESSITY: unproven`. `R1`..`R5` were evaluated and did not match; `R6` matched;
+**`R7`, `R8` and `R9` were NOT evaluated** — first-match-wins stopped the derivation, and an
+unevaluated rule is not a satisfied one. **The narrowing, pre-mapped by `D-04` and reproduced
+rather than re-authored:** the stop-identity oracle narrows to the two-term
+`(PC, hit_count)` form with the frame term `(LIN, CYC)` **recorded but not asserted**, and
+every downstream capture pair carries that weakening **in its own record**. `R5`'s
+fixture-only branch did NOT fire, so Phases 35-38 keep their real-image exercise and Phase 38
+keeps its denominator. Bound into Phases 34-38 through their own ROADMAP Notes; no test guard
+encodes it (`D-06`). **The one override available was declined:** `33-11` disclosed that
+`unproven` rests on the strict reading of `SCHEMA.md` § 2.3's "exactly one frame apart" and
+named `33-12` as the only plan that may revisit it. The recorded value stands — the frozen
+text states the strict reading, `proven` is the flattering value, the measurement points the
+same way `R6` does (on the variant pair the frame term contributed nothing and `hit_count`
+separated the stops), and even the generous reading gives an *integral* rather than a *one*
+frame separation.
+
+**Suite position (a recorded baseline, never a gate).** `test:automated` was **5 failing
+tests in 3 files** at the phase open (`anno-register.test.ts`,
+`docs-deferred-ledger.test.ts`, `audit-integrity.test.ts`, two root causes Phase 33 did not
+create); `33-02` repaired one, leaving **2 failing tests in `anno-register.test.ts`** (`:385`,
+`:479`; `tests 3113 / pass 3105 / fail 2`) for the rest of the phase. The residual root cause
+remains an **open out-of-phase concern**: the anno tool register cites `STORE-01`,
+`STORE-04`, `STORE-06` and `MCP-04`, which `.planning/REQUIREMENTS.md` no longer declares
+after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legitimately be a
+carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
+purpose: a row with no matching file under `.planning/todos/pending/` reds the
+two-directional ledger guard in the other direction.
+Status: **Phase complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
@@ -212,8 +250,7 @@ name, and the clean control catching an assertion that could never pass. The wav
 taken with every broker and `x64sc` stopped: `test:automated` reports 3113 tests / 3105 pass
 / **2 fail**, both in `anno-register.test.ts`, the unchanged 2-in-1 baseline; `typecheck` is
 clean and `check-npm-packages` exits 0. No `.d64`, `.vsf` or `.bin` byte entered the
-checkout. **Wave 6 (`33-11`) is next**, and it is unblocked — its three inputs are
-corpus-free.
+checkout. Wave 6 (`33-11`) followed and is now complete; see the Status line above.
 
 Earlier waves, retained. **Wave 4 complete** — `33-08` and `33-09` have both landed and the wave gate was
 taken: `test:automated` reports 3113 tests / 3105 pass / **2 fail**, both in
@@ -337,7 +374,7 @@ their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
 `anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase.
-Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and the suite baseline tightened to 2-in-1
+Last activity: 2026-09-03 — 33-12 executed: GATE-01 recorded `degrade` by `R6`, bound to Phases 34-38, three folded todos closed
 
 ## Performance Metrics
 
@@ -1531,10 +1568,7 @@ regression and not this inheritance.
 |----------|------|----------|--------|
 | broker | 2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path | minor | Pending |
 | planning | 2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md | major | Pending |
-| broker | 2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it | minor | Pending |
-| capture | 2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex | major | Pending |
 | testing | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host | minor | Pending |
-| capture | 2026-08-26-frame-exact-emulator-stop-is-unowned | major | Pending |
 | docs | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability | major | Pending |
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
