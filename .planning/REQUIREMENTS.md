@@ -119,12 +119,12 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### Host-Tool Execution Seam
 
-- [ ] **SEAM-01**: Host binaries are reached over a **typed namespaced control op** on the existing
+- [x] **SEAM-01**: Host binaries are reached over a **typed namespaced control op** on the existing
       broker socket, routed **before** any lease-bearing path, so a stateless tool invocation never
       consumes an emulator lease. Discharges the rule stated by the project owner on 2026-08-28 in
       `seeds/host-tool-executor.md`: a skill script runs container-side, the binaries live host-side,
       and there is no container PATH to find them on
-- [ ] **SEAM-02**: Each tool is invoked through a **typed per-tool allowlist** with no argv
+- [x] **SEAM-02**: Each tool is invoked through a **typed per-tool allowlist** with no argv
       passthrough anywhere, as a child process, with the invocation and its exit status recorded
 - [ ] **SEAM-03**: Results cross the boundary as **path plus digest plus length** through
       `containerpath.ts`, never as payload. MEASURED constraint: the control channel has a 64 KiB
@@ -404,8 +404,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | CAP-03 | Phase 33 | Complete |
 | CAP-04 | Phase 33 | Complete |
 | GATE-01 | Phase 33 | Complete |
-| SEAM-01 | Phase 34 | Pending |
-| SEAM-02 | Phase 34 | Pending |
+| SEAM-01 | Phase 34 | Complete |
+| SEAM-02 | Phase 34 | Complete |
 | SEAM-03 | Phase 34 | Pending |
 | SEAM-04 | Phase 34 | Pending |
 | SEAM-05 | Phase 34 | Pending |

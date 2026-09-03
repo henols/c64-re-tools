@@ -4,17 +4,17 @@ milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
-status: planning
-stopped_at: Phase 33 complete, ready to plan Phase 34
-last_updated: "2026-09-03T12:31:31.731Z"
+status: executing
+stopped_at: Completed 34-01-PLAN.md
+last_updated: "2026-09-03T13:18:54.534Z"
 last_activity: 2026-09-03
-last_activity_desc: "Phase 33 UAT closed 3/3, 0 issues, 0 gaps — verification human_needed -> passed. Test 2 closed the one live-coverage gap: evidence/reproducible-seam-probe.mjs + refusal-paths-probe.mjs drive the SHIPPED handleRunUntil against stock VICE 3.9, giving one stop identity (PC=$ea31,hit_count=1,LIN=257,CYC=57) and one 64K sha256 across jitter 0/1500/4000ms over two invocations, plus CR-02 and WR-01 firing live (WR-02 stays unit-covered, not claimed). Test 1: owner dispositioned criterion 3 as ACCEPT the degrade verdict — no override written, DECISION-RULE.md and the ROADMAP criterion unmoved, partly_met left in place. VALIDATION validated (PARTIAL, 0 gaps); SECURITY verified, 43 threats, threats_open 0. Transitioned to Phase 34."
-state_head: c3c78b1410b1f3e4b1543e4366903cb84b40683d
+last_activity_desc: Phase 34 execution started
+state_head: c46f99e64cf2ddec73e2699defb05f53cf211de1
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 18
-  completed_plans: 12
+  completed_plans: 13
   percent: 17
 ---
 
@@ -24,8 +24,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-02 at the v0.8.0 open)
 
-**Current focus:** Phase 33 — The Reproducible-Run Protocol and the Capture
-Substrate (Go/Degrade/No-Go) — executing, in milestone **v0.8.0 Frame-Exact
+**Current focus:** Phase 34 — The Host-Tool Execution Seam — executing, in milestone **v0.8.0 Frame-Exact
 Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
 **frame-exact emulator stop** owned for the first time behind a pre-committed
 go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
@@ -177,8 +176,8 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 34 of 38 (The Host-Tool Execution Seam) — READY TO EXECUTE
-Plan: Not started
+Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
+Plan: 2 of 6
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -373,8 +372,8 @@ undisturbed. `33-02` is also complete: `33-CONTEXT.md`'s `D-21`, `D-24` and its
 their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
-`anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase.
-Last activity: 2026-09-03 — Phase 33 complete, transitioned to Phase 34
+`anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase. **Phase 34 plan 34-01 update (2026-09-03):** the host-tool execution seam tracer is complete — the `host_tool` control op is wired end to end (broker-control.mts/vice-broker.mts/host-tool.mts/host-tool-client.ts), proven against real ACME with all seven VICE lease callbacks provably uncalled; see `.planning/phases/34-the-host-tool-execution-seam/34-01-SUMMARY.md`. Plan 34-02 is next.
+Last activity: 2026-09-03 — Phase 34 execution started
 
 ## Performance Metrics
 
@@ -568,6 +567,7 @@ Last activity: 2026-09-03 — Phase 33 complete, transitioned to Phase 34
 | Phase 33 P10 | 33 min | 3 tasks | 5 files |
 | Phase 33 P11 | 3h 37m | 3 tasks | 8 files |
 | Phase 33 P12 | 21 min | 3 tasks | 5 files |
+| Phase 34 P01 | 40min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -1001,6 +1001,8 @@ Recent decisions affecting current work:
 - [Phase 33]: The monitor-issued hard reset does not reset the VIC-II raster counter, so a checkpoint halt before the reset costs frame-exactness — MEASURED as a labelled PREHALT method control in 33-repro02: adding one halt-establishing checkpoint before the reset moved a nine-run immune measurement to not-immune, with the stop raster landing on one of two values 6 cycles apart as a function of the halt phase. A monitor halt reads LIN 0 and the reset then starts from a reproducible phase. This is the mechanism behind 33-10's CAPTURE_FRAME_EXACT: no on an autostarted release, which necessarily has the anchor armed and hit before capture. Method rule for later phases: never add a step before the reset.
 - [Phase 33]: probeReady's 1000 ms per-attempt budget is short on every launch profile, and 33-11 records it without changing it — Twenty launches, five per profile: absent 3132 ms max, -warp 3155 ms, -console 2175 ms, both 2385 ms, against a budget of 1000 ms read out of broker-launch.mts's own source. The shortfall is not caused by either new flag -- the argv a stock launch has always emitted is already 2.1 s over, -console reduces it and -warp leaves it unchanged. probeReady has no retry loop by design, so short means the first post-launch pass always misses, never that an instance is lost. The budget lives in host-bound launcher code needing a regenerated artifact, and T-33-38 forbids changing a timing budget inside the plan that measured it; SCHEMA.md 3 puts the line outside GATE-01. Research's single -console observation (unbound at 3000 ms) was NOT reproduced in ten launches.
 - [Phase 33]: GATE-01 returns `degrade`, fired by rule `R6` on `ORACLE_NECESSITY: unproven` — derived by walking five values transcribed from column-0 outcome lines through rules committed at `2a8ef95` before any of them existed; `R1`..`R5` did not match and `R7`/`R8`/`R9` were never evaluated. `could-not-run` was structurally unemittable (`R9` has no antecedent; the rule set is total over 108 tuples). Recorded in `docs/phase33-reproducible-run-gate-findings.md`. — The one override available was DECLINED: `33-11` disclosed that `unproven` rests on the strict reading of `SCHEMA.md` 2.3's "exactly one frame apart" and named `33-12` as the only plan that may revisit it. Kept, on four grounds — the frozen text states the strict reading; `proven` is the flattering value and the measuring plan took the unflattering one deliberately; the measurement points the same way `R6` does (the frame term contributed nothing on the variant pair, `hit_count` separated the stops); and the same file's second accepted limit records that the control gives no support to a reading in which the frame term is load-bearing, while `R6`'s narrowing drops that term. Even the generous reading gives an integral, not a one, frame separation.
+- [Phase 34]: Phase 34 plan 01 (A-01): host_tool is ONE new ControlRequestKind member carrying a typed tool/args payload, not one member per host tool -- mirrors D-15's precedent, so the two byte-exact ControlRequestKind tests are edited once ever rather than once per future tool. — A generic per-tool op family would widen ControlRequestKind (and its two byte-exact tests) on every new host tool added over the life of the project; one op with server-side per-tool typing in host-tool.mts's own allowlist keeps the wire protocol's own surface fixed.
+- [Phase 34]: Phase 34 plan 01 (A-03): host_tool requests carry only workspace-relative paths, resolved and boundary-checked server-side (resolveWorkspacePath); only RESULT paths cross through containerPath(), so the new host-tool module family never joins hostpath.ts's closed five-member consumer set. — Satisfies the path-traversal mitigation (T-34-03), avoids importing hostpath.ts anywhere in the new family, and keeps hostpath-consumers.test.ts's EXPECTED_IMPORTERS unchanged at five -- the ROADMAP's own stated preference, achieved by construction because containerpath.ts is already a declared consumer.
 
 ### Pending Todos
 
@@ -1790,8 +1792,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T00:39:40.552Z
-Stopped at: Phase 33 complete, ready to plan Phase 34
+Last session: 2026-09-03T13:18:54.012Z
+Stopped at: Completed 34-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
