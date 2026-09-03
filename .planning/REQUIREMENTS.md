@@ -48,7 +48,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### Reproducible Runs
 
-- [ ] **REPRO-01**: Launch nondeterminism is pinned on the stock branch — `-seed` plus the three
+- [x] **REPRO-01**: Launch nondeterminism is pinned on the stock branch — `-seed` plus the three
       `raminit*` flags (`-raminitstartrandom 0 -raminitrepeatrandom 0 -raminitrandomchance 0`) —
       emitted after `-default`, with the fork branch's argv left **byte-identical**. MEASURED: stock
       prints a `time()`-derived seed that differs every launch; over an untouched `$C000-$CFEF`
@@ -56,12 +56,12 @@ presented as measured as a defect class, so provenance is stated rather than imp
       `raminit*` flags took three differing 64K images to **one identical sha256**. Worth ~1,000
       false-divergence addresses per capture pair, which is the dominant term in the divergence this
       milestone exists to remove
-- [ ] **REPRO-02**: The reproducible-run protocol is one **named single-seam procedure** with the
+- [x] **REPRO-02**: The reproducible-run protocol is one **named single-seam procedure** with the
       monitor-issued hard reset inside it, reached through an optional argument on `vice_run_until`
       rather than as a second route a caller can forget. MEASURED: under *connect → set checkpoint
       while halted → `reset 1` → resume*, three runs with deliberate pre-protocol jitter of 0 / 1500
       / 4000 ms stopped byte-identically, while their pre-reset state spanned 6.7M cycles
-- [ ] **REPRO-03**: Two stops are certified identical by the triple **`(PC, hit_count, (LIN, CYC))`**
+- [x] **REPRO-03**: Two stops are certified identical by the triple **`(PC, hit_count, (LIN, CYC))`**
       and by nothing else, with a **frame-anchor checkpoint** on a once-per-frame site set alongside
       the target so `hit_count` supplies the frame term. A control asserts that `(LIN, CYC)` alone
       **passes** on two stops exactly one frame apart, so the anchor's necessity is observed rather
@@ -71,7 +71,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 - [x] **REPRO-04**: Every capture carries a record whose reproducibility key is
       **`(binary sha256, argv digest, seed)`** — not the seed alone. MEASURED: the same seed with a
       reordered argv yielded a 76-byte-different image
-- [ ] **REPRO-05**: Warp and headless are **additive** launch knobs a run can request, not a
+- [x] **REPRO-05**: Warp and headless are **additive** launch knobs a run can request, not a
       whole-argv override, with `-default` still at index 0 ahead of `-binarymonitor` and the
       real-time timeouts in `probeReady` re-checked under warp. Warp is launch-time on stock:
       MEASURED behaviour-neutral under the reset protocol (1st and 10th hits byte-identical
@@ -394,11 +394,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REPRO-01 | Phase 33 | Pending |
-| REPRO-02 | Phase 33 | Pending |
-| REPRO-03 | Phase 33 | Pending |
+| REPRO-01 | Phase 33 | Complete |
+| REPRO-02 | Phase 33 | Complete |
+| REPRO-03 | Phase 33 | Complete |
 | REPRO-04 | Phase 33 | Complete |
-| REPRO-05 | Phase 33 | Pending |
+| REPRO-05 | Phase 33 | Complete |
 | CAP-01 | Phase 33 | Complete |
 | CAP-02 | Phase 33 | Complete |
 | CAP-03 | Phase 33 | Complete |

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 27
+open_count: 29
 waived_count: 14
 fixed_count: 9
-total_count: 50
-last_updated: 2026-09-02T22:49:03.247Z
+total_count: 52
+last_updated: 2026-09-03T00:08:20.729Z
 ---
 
 # Broken Windows Ledger
@@ -65,6 +65,8 @@ last_updated: 2026-09-02T22:49:03.247Z
 | 48 | 33 | deviation | src/mcp/vice/package.json |  | check-npm-packages.mjs is RED from plan 33-06: broker-launch.mts is type-imported by the published vice-broker-client.ts but is not in files[]. No runtime impact (import type is erased) but the packaging gate is red for the rest of the phase. See phase 33 deferred-items.md D1. | open |  | 2026-09-02T21:30:13.836Z |  |
 | 49 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-memspace-refusal.md |  | 33-10: P10's first symptom NOT reproduced on stock 3.9 -- a memspace-less ADVANCE_INSTRUCTIONS still steps the MAIN CPU after one drive checkpoint hit, so MEMSPACE_ASSERTION: refuses rests on the @bank: symptom alone | open |  | 2026-09-02T22:48:55.400Z |  |
 | 50 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-capture-pair.md |  | 33-10: runReproducible() cannot serve an autostarted release (hard RESET inside the procedure; one resume per wait), so the autostart capture route has no published tool surface -- accepted limit, not a defect in this plan | open |  | 2026-09-02T22:49:03.247Z |  |
+| 51 | 33 | unmet-truth | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-repro03-frame-anchor.md |  | REPRO-03's truth as written requires a control on two stops EXACTLY one frame apart; MEASURED unavailable on the $ea31 anchor (60 Hz KERNAL IRQ vs 50.125 Hz PAL frame -- 240 hits, 240 distinct (LIN,CYC), 0 consecutive repeats). A labelled variant control at a raster-conditioned probe point shows the phenomenon at a 2-frame separation; ORACLE_NECESSITY: unproven, R6 -> degrade | open |  | 2026-09-03T00:08:20.196Z |  |
+| 52 | 33 | deviation | src/mcp/vice/broker-launch.mts |  | probeReady's per-attempt budget (DEFAULT_PROBE_TIMEOUT_S = 1, i.e. 1000 ms) is exceeded by every launch profile on this host by 1.2-2.2 s, so the first post-launch probe pass always misses. MEASURED maxima: absent 3132 ms, -warp 3155 ms, -console 2175 ms, both 2385 ms. PROBEREADY_BUDGET: short RECORDED and deliberately NOT changed by the measuring plan (T-33-38); never a gate (SCHEMA.md 3). Follow-up needs a milestone-level owner | open |  | 2026-09-03T00:08:20.729Z |  |
 
 ````json
 [
@@ -666,6 +668,30 @@ last_updated: 2026-09-02T22:49:03.247Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-02T22:49:03.247Z",
+    "resolved_at": null
+  },
+  {
+    "id": 51,
+    "kind": "unmet-truth",
+    "phase": "33",
+    "file": ".planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-repro03-frame-anchor.md",
+    "line": null,
+    "description": "REPRO-03's truth as written requires a control on two stops EXACTLY one frame apart; MEASURED unavailable on the $ea31 anchor (60 Hz KERNAL IRQ vs 50.125 Hz PAL frame -- 240 hits, 240 distinct (LIN,CYC), 0 consecutive repeats). A labelled variant control at a raster-conditioned probe point shows the phenomenon at a 2-frame separation; ORACLE_NECESSITY: unproven, R6 -> degrade",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-03T00:08:20.196Z",
+    "resolved_at": null
+  },
+  {
+    "id": 52,
+    "kind": "deviation",
+    "phase": "33",
+    "file": "src/mcp/vice/broker-launch.mts",
+    "line": null,
+    "description": "probeReady's per-attempt budget (DEFAULT_PROBE_TIMEOUT_S = 1, i.e. 1000 ms) is exceeded by every launch profile on this host by 1.2-2.2 s, so the first post-launch probe pass always misses. MEASURED maxima: absent 3132 ms, -warp 3155 ms, -console 2175 ms, both 2385 ms. PROBEREADY_BUDGET: short RECORDED and deliberately NOT changed by the measuring plan (T-33-38); never a gate (SCHEMA.md 3). Follow-up needs a milestone-level owner",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-03T00:08:20.729Z",
     "resolved_at": null
   }
 ]

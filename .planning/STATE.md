@@ -5,11 +5,11 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 33
 current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 33-10-PLAN.md
-last_updated: "2026-09-02T22:48:05.215Z"
+stopped_at: Completed 33-11-PLAN.md
+last_updated: "2026-09-03T00:03:48.272Z"
 last_activity: 2026-09-02
 last_activity_desc: "33-07 executed: the enumerated equivalence predicate (cap of 64 checked first and throwing with no artifact, range-shaped notation refused by name, no bit-count tolerance at any address, $0000/$0001 normalised in code on a copy from the suffix fields) and the four-scalar stop-identity oracle that takes no image buffer; D-25 proven with a ONE-BIT plant red beside its clean control; CAP-03 barred by shape in both directions and on both import routes with four planted controls; SLICER: validated emitted at column 0 in evidence/33-slicer-validation.md, closing 33-04's ACCEPTED LIMIT. Wave 3 complete; gate at 2 failures in anno-register.test.ts alone"
-state_head: 1a42da2ffb396284470da463c6c40feaa8c73286
+state_head: 01cfae9b123348f8cfe4631bc2efd387d6aa8af4
 progress:
   total_phases: 6
   completed_phases: 0
@@ -178,7 +178,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — EXECUTING
-Plan: 10 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07, 33-08, 33-09, 33-10); next pointer at plan 11 of 12
+Plan: 11 of 12 executed (33-01, 33-02, 33-03, 33-04, 33-05, 33-06, 33-07, 33-08, 33-09, 33-10, 33-11); next pointer at plan 12 of 12
 Status: **Wave 5 complete** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
@@ -528,6 +528,7 @@ Last activity: 2026-09-02 — 33-02 executed: research reconciliation landed and
 | Phase 33 P08 | 38 min | 2 tasks | 6 files |
 | Phase 33 P09 | 42 min | 2 tasks | 6 files |
 | Phase 33 P10 | 33 min | 3 tasks | 5 files |
+| Phase 33 P11 | 3h 37m | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -957,6 +958,9 @@ Recent decisions affecting current work:
 - [Phase 33]: 33-10: the pass is recorded with an accepted limit -- the allow-list was derived from three runs two of which ARE the reported pair, so equivalence follows from the union fitting under the cap and ALL discriminating power sits in the cap; CAPTURE_FRAME_EXACT: no is recorded beside it and a planted one-bit flip at $C000 proves the list is not vacuous
 - [Phase 33]: 33-10: runReproducible() is NOT usable for an autostarted release -- its hard RESET undoes AUTOSTART and its one-resume wait cannot count 400 anchor hits, so the capture route drives the module's pieces from an evidence script exactly as 33-09's own header prescribes; snapshotPathFor() was likewise declined because it targets a path inside the checkout
 - [Phase 33]: 33-10: MEMSPACE_ASSERTION: refuses rests on the @bank:-condition symptom alone -- MEASURED on stock 3.9, a memspace-less ADVANCE_INSTRUCTIONS still steps the MAIN CPU after one drive checkpoint hit, contradicting P10's first symptom; a stepping-only definition would have read did-not-refuse
+- [Phase 33]: 33-11 emits the three remaining GATE-01 inputs: SEED_EFFECT pinned, JITTER_IMMUNITY immune, ORACLE_NECESSITY unproven — All three derived by SCHEMA.md's declared rules as code, from six, fifteen and seven live runs on genuine stock VICE 3.9. SEED_EFFECT pinned from 57 of 4080 differing without the determinism block against 0 of 4080 with it. JITTER_IMMUNITY immune from nine runs sharing one sha256 (0999713e, research M4's own digest) and one four-term stop. ORACLE_NECESSITY unproven because the literal antecedent -- two stops EXACTLY one frame apart -- cannot be built on the $EA31 anchor: it is a 60 Hz KERNAL IRQ against a 50.125 Hz PAL frame, MEASURED as 240 anchor hits with 240 distinct (LIN, CYC) and zero consecutive repeats. R6 fires -> degrade, and its pre-mapped narrowing to (PC, hit_count) is exactly what this plan's own variant control supports.
+- [Phase 33]: The monitor-issued hard reset does not reset the VIC-II raster counter, so a checkpoint halt before the reset costs frame-exactness — MEASURED as a labelled PREHALT method control in 33-repro02: adding one halt-establishing checkpoint before the reset moved a nine-run immune measurement to not-immune, with the stop raster landing on one of two values 6 cycles apart as a function of the halt phase. A monitor halt reads LIN 0 and the reset then starts from a reproducible phase. This is the mechanism behind 33-10's CAPTURE_FRAME_EXACT: no on an autostarted release, which necessarily has the anchor armed and hit before capture. Method rule for later phases: never add a step before the reset.
+- [Phase 33]: probeReady's 1000 ms per-attempt budget is short on every launch profile, and 33-11 records it without changing it — Twenty launches, five per profile: absent 3132 ms max, -warp 3155 ms, -console 2175 ms, both 2385 ms, against a budget of 1000 ms read out of broker-launch.mts's own source. The shortfall is not caused by either new flag -- the argv a stock launch has always emitted is already 2.1 s over, -console reduces it and -warp leaves it unchanged. probeReady has no retry loop by design, so short means the first post-launch pass always misses, never that an instance is lost. The budget lives in host-bound launcher code needing a regenerated artifact, and T-33-38 forbids changing a timing budget inside the plan that measured it; SCHEMA.md 3 puts the line outside GATE-01. Research's single -console observation (unbound at 3000 ms) was NOT reproduced in ten launches.
 
 ### Pending Todos
 
@@ -1749,8 +1753,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-02T22:47:11.059Z
-Stopped at: Completed 33-10-PLAN.md
+Last session: 2026-09-03T00:03:47.862Z
+Stopped at: Completed 33-11-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
