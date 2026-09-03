@@ -110,7 +110,12 @@ you one, install an external identifier on the **host** and point `UNP64` or `UN
 the environment the host broker process sees — do not infer it. `packer-finding.mjs` never spawns
 that identifier itself (Phase 34, SEAM-05): it reaches it only through the host-tool execution
 seam (`src/mcp/vice/host-tool.mts`'s `oracle.probe`/`oracle.run` allowlist entries), because this
-script runs container-side and there is no container PATH to a host binary on.
+script runs container-side and there is no container PATH to a host binary on. **The container-side
+environment is not consulted at all** (Phase 34, plan 34-08, CR-01): setting `UNP64`/`UNP64_PATH` in
+this script's own (container-side) environment adds only a diagnostic hint to an absent result —
+it can never select what the host executes. The oracle's location is host-side configuration
+only, and the configured path's file name must be the oracle binary's own name (`unp64`) or the
+seam treats it as absent.
 
 **The entropy gate answers packedness, not identity.** High entropy tells you the bytes are
 compressed (or encrypted, or genuinely random); it does not tell you by what. And the way a packed

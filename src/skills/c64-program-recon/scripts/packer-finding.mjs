@@ -307,58 +307,69 @@ export function shannonEntropy(bytes) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Phase 34, plan 34-08 (CR-01): turns a container-side environment record
+ * into a DIAGNOSTIC HINT, never a configuration value. This script's own
+ * filesystem is not the filesystem the oracle runs on -- host-tool.mts's
+ * `resolveOracleCommand()` decides the oracle's location from the HOST
+ * BROKER PROCESS'S OWN environment now, so a variable set in THIS
+ * (container-side) environment can only ever explain a possibly-surprising
+ * absent result, never select what actually runs.
+ *
+ * Answers `null` when no oracle variable is set in `env`. Otherwise answers
+ * a non-empty string naming WHICH variable was set and stating that the
+ * seam consults the host broker process's own environment instead --
+ * NEVER interpolating the variable's value (T-19-18, unchanged by this
+ * migration).
+ */
+export function oracleConfigurationHint(env = process.env) {
+  const source = env ?? {};
+  for (const name of ORACLE_ENV_VARS) {
+    const value = source[name];
+    if (typeof value === "string" && value.trim() !== "") {
+      return (
+        `${name} is set in this container-side environment, but it is not consulted: the host-tool ` +
+        "execution seam reads the oracle's location from the HOST BROKER PROCESS'S OWN environment, " +
+        `not this script's -- point ${name} at the oracle in the environment the host broker process sees`
+      );
+    }
+  }
+  return null;
+}
+
+/** Appends `hint` to `reason` when both are present, returns whichever of the
+ * two is non-null when only one is, and returns `null` when neither is. Kept
+ * as its own function so the "when absent, append the hint" rule in
+ * `probeUnp64()` below is one small, testable operation rather than inlined
+ * string-concatenation logic repeated at every call site. */
+function appendHint(reason, hint) {
+  if (hint === null) return reason ?? null;
+  if (reason === null || reason === undefined) return hint;
+  return `${reason} ${hint}`;
+}
+
+/**
  * Locates and probes the external packer identifier, WITHOUT touching any
  * input file.
  *
- * Resolution order: the two environment variables, then the bare command name
- * on the search path. A CONFIGURED path that does not exist on disk is
- * reported as absent and is deliberately not echoed back in the reason
- * (T-19-18: an attacker-influenceable value is never placed into a command,
- * and not into a message a later step might paste into one either).
+ * Phase 34, plan 34-08 (CR-01): this function decides NOTHING about the
+ * binary any more -- it sends the seam call UNCONDITIONALLY, with an empty
+ * argument object, whether or not a container-side oracle variable is set.
+ * There is no filesystem existence check on an oracle path here (the removed
+ * check answered the wrong question: this script's own filesystem is not the
+ * filesystem the oracle runs on). A container-side variable can only ever
+ * add a diagnostic hint to an ABSENT result -- see `oracleConfigurationHint()`
+ * -- never select what the host executes.
  *
  * Never throws. A launch error, a non-zero status or a timeout are all
  * "absent", never a failure -- absence of the oracle is an expected state.
  */
 export function probeUnp64(env = process.env) {
-  const source = env ?? {};
-  let configuredVar = null;
-  let configured = null;
-  for (const name of ORACLE_ENV_VARS) {
-    const value = source[name];
-    if (typeof value === "string" && value.trim() !== "") {
-      configuredVar = name;
-      configured = value.trim();
-      break;
-    }
-  }
+  const hint = oracleConfigurationHint(env);
+  const response = invokeSeamSync("oracle.probe", {});
 
-  // A CONFIGURED path that does not exist on disk is checked HERE, locally,
-  // before the seam is ever reached -- no need to ask the host whether a
-  // value the caller already handed us resolves on THIS filesystem, and this
-  // is what keeps the configured value from ever being echoed back (T-19-18).
-  if (configured !== null && !existsSync(configured)) {
-    return {
-      available: false,
-      command: null,
-      version: null,
-      reason:
-        `the packer identifier configured through ${configuredVar} does not exist on disk -- ` +
-        "treated as oracle-absent, and the configured value was not placed into any command",
-    };
-  }
-
-  // Locating the DEFAULT command (searching the host's own PATH) and running
-  // the actual version-banner probe both happen host-side now -- a
-  // configured override is passed through as `command`; its absence lets
-  // the executor try its own default.
-  const response = invokeSeamSync("oracle.probe", configured !== null ? { command: configured } : {});
   if (!response || response.ok !== true) {
-    return {
-      available: false,
-      command: null,
-      version: null,
-      reason: (response && response.message) || "the packer identifier oracle.probe seam call failed",
-    };
+    const reason = (response && response.message) || "the packer identifier oracle.probe seam call failed";
+    return { available: false, command: null, version: null, reason: appendHint(reason, hint) };
   }
 
   const available = response.available === true;
@@ -366,7 +377,7 @@ export function probeUnp64(env = process.env) {
     available,
     command: available ? response.command : null,
     version: available ? response.version : null,
-    reason: available ? null : response.reason,
+    reason: available ? null : appendHint(response.reason, hint),
   };
 }
 

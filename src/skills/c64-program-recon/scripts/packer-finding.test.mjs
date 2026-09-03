@@ -32,6 +32,7 @@ import {
   PACKED_ENTROPY_THRESHOLD,
   PACKER_VERDICTS,
   REQUIRE_ORACLE_ENV_VAR,
+  oracleConfigurationHint,
   packerFinding,
   parseUnp64Stdout,
   probeUnp64,
@@ -189,15 +190,42 @@ test("the parser accepts only a narrow character set, so a hostile line cannot r
 // The probe (T-19-18)
 // ---------------------------------------------------------------------------
 
-test("a configured oracle path that does not exist is oracle-absent, and the configured value is not echoed back", () => {
+// Phase 34, plan 34-08 (CR-01): this script sends no oracle configuration
+// across the seam any more -- the three cases below replace the old
+// configured-path probe case, which exercised a client-side existence check
+// that no longer exists (host-tool.mts's resolveOracleCommand() decides the
+// oracle's location host-side now; see host-tool.test.ts).
+
+test("oracleConfigurationHint: null when no oracle variable is set, and a non-empty hint naming the variable and the host broker environment (never the value) when one is", () => {
+  assert.equal(oracleConfigurationHint({}), null);
+  const hint = oracleConfigurationHint({ UNP64: "/x/unp64" });
+  assert.equal(typeof hint, "string");
+  assert.ok(hint.length > 0);
+  assert.ok(/UNP64/.test(hint), "the hint must name WHICH variable was set");
+  assert.ok(/host broker/i.test(hint), "the hint must say the host broker process's own environment is what the seam consults");
+  assert.ok(!hint.includes("/x/unp64"), "the hint must never echo the variable's value");
+});
+
+test("probeUnp64: a bogus container-side oracle value never appears in the serialised result, on either availability branch", () => {
   const bogus = "/nonexistent/definitely-not-here/unp64-abcdef";
   const result = probeUnp64({ UNP64: bogus });
-  assert.equal(result.available, false);
-  assert.equal(result.command, null);
-  assert.equal(typeof result.reason, "string");
-  assert.ok(result.reason.length > 0);
-  assert.ok(!JSON.stringify(result).includes(bogus), "a configured path must not be interpolated anywhere, not even into a message");
-  assert.ok(/UNP64/.test(result.reason), "the reason must name WHICH variable was set");
+  assert.equal(typeof result.available, "boolean");
+  assert.ok(!JSON.stringify(result).includes(bogus), "a container-side value must never be interpolated anywhere, not even into a message -- on EITHER branch");
+});
+
+test("source level: no oracle-path existence check remains, and the probe's seam call forwards no oracle configuration", () => {
+  assert.ok(!/existsSync\(\s*configured\s*\)/.test(MODULE_SRC), "no client-side existence check on a configured oracle path");
+  const plantedExistenceCheck = `${MODULE_SRC}\nif (!existsSync(configured)) { /* planted violation */ }\n`;
+  assert.ok(/existsSync\(\s*configured\s*\)/.test(plantedExistenceCheck), "non-vacuity: the planted existence-check control must be caught by the same pattern");
+
+  const emptyArgsCalls = MODULE_SRC.match(/invokeSeamSync\("oracle\.probe",\s*\{\}\)/g) ?? [];
+  assert.equal(emptyArgsCalls.length, 1, "the probe's seam call must pass an empty argument object literal at exactly one site");
+
+  const nonEmptyArgsCalls = MODULE_SRC.match(/invokeSeamSync\("oracle\.probe",\s*\{[^}]+\}\)/g) ?? [];
+  assert.equal(nonEmptyArgsCalls.length, 0, "no seam call for oracle.probe may carry a non-empty (configured) argument object");
+  const plantedConfiguredCall = `${MODULE_SRC}\ninvokeSeamSync("oracle.probe", { command: configured });\n`;
+  const plantedNonEmptyArgsCalls = plantedConfiguredCall.match(/invokeSeamSync\("oracle\.probe",\s*\{[^}]+\}\)/g) ?? [];
+  assert.equal(plantedNonEmptyArgsCalls.length, 1, "non-vacuity: a planted call forwarding configuration must be caught by the same pattern");
 });
 
 // ---------------------------------------------------------------------------
