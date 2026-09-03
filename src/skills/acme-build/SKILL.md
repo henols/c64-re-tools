@@ -186,18 +186,25 @@ history together; it is not restated there.
 
 ## Setup
 
-`acme` on `$PATH` is the **only** requirement. The scaffold that `new` writes
-assembles against a bare install with no standard hardware-register library —
-that's deliberate: neither a plain `~/.local/bin/acme` build nor the Debian
-trixie `apt` candidate ships one, so a scaffold that depended on it would fail
-to assemble on a fresh install (Phase 8.1 FINDING-A1).
+`acme` on `$PATH` — **on the host**, never inside a container — is the **only**
+requirement. The scaffold that `new` writes assembles against a bare install
+with no standard hardware-register library — that's deliberate: neither a
+plain `~/.local/bin/acme` build nor the Debian trixie `apt` candidate ships
+one, so a scaffold that depended on it would fail to assemble on a fresh
+install (Phase 8.1 FINDING-A1).
 
-`$ACME` and the wrapper's auto-probe (`$ACME`, `/usr/local/share/acme`,
-`/usr/share/acme`, `/usr/lib/acme`, `~/.acme`) still exist and still matter —
-but only for **your own** sources that use angle-bracket includes (see
-"Writing source" above), not for the scaffold. If you have that library
-somewhere, point `$ACME` at its directory and angle-bracket includes work as
-before; if you don't, the scaffold doesn't need it.
+**Route (Phase 34, SEAM-05):** `scripts/acme.mjs` never spawns `acme` itself
+and never probes a container PATH for it — a container has no such PATH to
+probe (the project owner's rule of 2026-08-28). The script reaches the
+assembler only through the host-tool execution seam
+(`src/mcp/vice/host-tool.mts`'s `acme.build` allowlist entry), which runs on
+the HOST and probes the library there — the same handful of conventional
+install locations `acme.mts`'s own `findAcmeLib()` names, none of them
+documented a second time here. `$ACME` still matters for **your own** sources
+that use angle-bracket includes (see "Writing source" above), not for the
+scaffold — but set it in the environment the **host** broker process sees, not
+this script's own environment, since the probe now runs host-side inside the
+seam's executor. If you don't have that library, the scaffold doesn't need it.
 
 Re-checked against ACME release 0.97 "Zem" (31 Jan 2021). CI now assembles
 the shipped scaffold on every build with `$ACME` cleared (the "Assemble the

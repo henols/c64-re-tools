@@ -67,11 +67,16 @@
 // this module reaches them through the one place that owns them.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment } from "./ghidra-project.mjs";
-export const HOST_TOOL_IDS = Object.freeze(["acme.build", "ghidra.analyze"]);
+export const HOST_TOOL_IDS = Object.freeze([
+    "acme.build",
+    "ghidra.analyze",
+    "oracle.probe",
+    "oracle.run",
+]);
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
  * (the vsf-slice.mjs WR-04 idiom) so no prototype key can ever resolve to a
  * value here even if a future caller indexed it with an untrusted string
@@ -84,6 +89,8 @@ export const HOST_TOOL_IDS = Object.freeze(["acme.build", "ghidra.analyze"]);
 export const HOST_TOOL_ARG_KEYS = Object.freeze(Object.assign(Object.create(null), {
     "acme.build": Object.freeze(["source", "outDir", "format", "setpc", "defines", "includes", "noReport"]),
     "ghidra.analyze": Object.freeze(["runId", "importPath", "preScript", "postScript"]),
+    "oracle.probe": Object.freeze(["command"]),
+    "oracle.run": Object.freeze(["source"]),
 }));
 const HOST_TOOL_SHAPE = `an object with a "tool" field naming one of ${HOST_TOOL_IDS.map((t) => JSON.stringify(t)).join(", ")}, and an optional "args" object`;
 function isPlainObject(value) {
@@ -205,7 +212,25 @@ export function normaliseHostToolRequest(raw) {
         }
         return { ok: true, request: { tool, args } };
     }
-    // Unreachable while HOST_TOOL_IDS has exactly two members -- kept so a
+    if (tool === "oracle.probe") {
+        const args = {};
+        if ("command" in argsObj) {
+            const command = argsObj.command;
+            if (typeof command !== "string" || command === "") {
+                return { ok: false, message: `host_tool "oracle.probe" args.command must be a non-empty string; got ${describe(command)}` };
+            }
+            args.command = command;
+        }
+        return { ok: true, request: { tool, args } };
+    }
+    if (tool === "oracle.run") {
+        const source = argsObj.source;
+        if (typeof source !== "string" || source === "") {
+            return { ok: false, message: `host_tool "oracle.run" requires a non-empty string "source"; got ${describe(source)}` };
+        }
+        return { ok: true, request: { tool, args: { source } } };
+    }
+    // Unreachable while HOST_TOOL_IDS has exactly four members -- kept so a
     // future tool added to HOST_TOOL_IDS without a matching narrowing arm
     // fails loudly here rather than silently returning an under-typed request.
     return { ok: false, message: `normaliseHostToolRequest: no narrowing arm for tool "${tool}"` };
@@ -325,6 +350,12 @@ export function buildHostToolArgv(request, resolved) {
 export const DEFAULT_HOST_TOOL_TIMEOUT_MS = 20_000;
 /** stderrTail's byte cap -- diagnostics only, never a result. */
 const STDERR_TAIL_CAP_BYTES = 64 * 1024;
+/** oracle.run's stdout cap -- the SAME measured bound as
+ * packer-finding.mjs's own (unmoved, still exported there) MAX_ORACLE_STDOUT_BYTES.
+ * The executor enforces the bound on what it accumulates; the script keeps
+ * exporting the number for its own parser and its own tests -- not a
+ * duplicated maintenance burden, the same measured constant on both sides. */
+const ORACLE_STDOUT_CAP_BYTES = 64 * 1024;
 /** Digests one produced output file: byte size from a filesystem stat, sha256
  * over its real bytes. A zero-byte file yields `byteLength: 0` and the
  * sha256 of the empty byte string -- never an omitted or null entry. Returns
@@ -353,21 +384,30 @@ function tailBytes(text, capBytes) {
 /** Spawns `toolPath` with `argv` (an ARRAY, never a shell string; the command
  * interpreter is never enabled) and resolves -- NEVER rejects -- once the
  * child exits, errors, or is killed on timeout expiry. This is the ONE spawn
- * call in this module. */
-function spawnHostTool(toolPath, argv, timeoutMs) {
+ * call in this module -- oracle.probe/oracle.run (34-04, SEAM-05) reuse it
+ * rather than adding a second. `env` defaults to the broker process's own
+ * environment (`spawn()`'s own default) when omitted; acme.build overrides it
+ * to inject a probed `ACME` library directory (see `findAcmeLib()` below).
+ * `stdout` is captured (not just `stderr`) because oracle.run's contract is
+ * "the oracle's stdout", not a file digest -- acme.build/ghidra.analyze
+ * simply ignore the field, exactly as they ignored stdout before it was
+ * piped (ACME writes nothing to stdout; verified empirically this phase). */
+function spawnHostTool(toolPath, argv, timeoutMs, env) {
     return new Promise((resolvePromise) => {
         let settled = false;
         let timedOut = false;
+        let stdout = "";
         let stderr = "";
         let child;
         try {
-            child = spawn(toolPath, argv, { stdio: ["ignore", "ignore", "pipe"] });
+            child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
         }
         catch (e) {
             resolvePromise({
                 exitCode: null,
                 timedOut: false,
                 spawnErrorMessage: e instanceof Error ? e.message : String(e),
+                stdout: "",
                 stderr: "",
             });
             return;
@@ -378,6 +418,9 @@ function spawnHostTool(toolPath, argv, timeoutMs) {
         }, timeoutMs);
         if (typeof timer.unref === "function")
             timer.unref();
+        child.stdout?.on("data", (chunk) => {
+            stdout += chunk.toString("utf8");
+        });
         child.stderr?.on("data", (chunk) => {
             stderr += chunk.toString("utf8");
         });
@@ -386,16 +429,44 @@ function spawnHostTool(toolPath, argv, timeoutMs) {
                 return;
             settled = true;
             clearTimeout(timer);
-            resolvePromise({ exitCode: null, timedOut, spawnErrorMessage: err.message, stderr });
+            resolvePromise({ exitCode: null, timedOut, spawnErrorMessage: err.message, stdout, stderr });
         });
         child.on("close", (code) => {
             if (settled)
                 return;
             settled = true;
             clearTimeout(timer);
-            resolvePromise({ exitCode: code, timedOut, spawnErrorMessage: null, stderr });
+            resolvePromise({ exitCode: code, timedOut, spawnErrorMessage: null, stdout, stderr });
         });
     });
+}
+// ---------------------------------------------------------------------------
+// The ACME library probe (34-04, SEAM-05). Moved server-side from
+// acme.mjs's own findAcmeLib(): the project owner's rule of 2026-08-28 is
+// that a container has no PATH to a host binary, and these five candidates
+// are HOST paths -- so probing them belongs on the host side of the seam,
+// not in the container-side skill script. Behaviourally identical to the
+// removed client-side function: same candidate order, same marker file, same
+// "first candidate whose marker exists wins" rule.
+// ---------------------------------------------------------------------------
+/** The marker file used to validate a candidate ACME library directory --
+ * the layout fact `acme.mjs`'s own troubleshooting hint names. */
+const ACME_LIB_MARKER = join("cbm", "c64", "vic.a");
+function findAcmeLib() {
+    const tried = [];
+    const candidates = [
+        process.env.ACME,
+        "/usr/local/share/acme",
+        "/usr/share/acme",
+        "/usr/lib/acme",
+        process.env.HOME ? join(process.env.HOME, ".acme") : undefined,
+    ].filter((c) => typeof c === "string" && c !== "");
+    for (const c of candidates) {
+        tried.push(c);
+        if (existsSync(join(c, ACME_LIB_MARKER)))
+            return { path: c, tried };
+    }
+    return { path: null, tried };
 }
 /** Narrows, resolves, builds argv, then spawns the child ASYNCHRONOUSLY.
  * NOTHING throws out of this function -- every failure path (refusal, launch
@@ -412,8 +483,19 @@ export async function runHostTool(raw, deps) {
     if (!narrowed.ok)
         return { ok: false, message: narrowed.message };
     const { request } = narrowed;
+    // Phase 34, plan 34-04 (SEAM-05): oracle.probe/oracle.run do not fit the
+    // "spawn a tool that writes files, then digest them" shape below -- their
+    // contract is the SPAWNED PROCESS'S OWN stdout (a version banner, or the
+    // oracle's unpacked-output text), not a produced-file digest. Handled as
+    // their own branch, reusing spawnHostTool() (the one spawn call) rather
+    // than adding a second.
+    if (request.tool === "oracle.probe")
+        return runOracleProbe(request.args, deps);
+    if (request.tool === "oracle.run")
+        return runOracleRun(request.args, deps);
     const repoRootAbs = resolvePath(deps.repoRoot);
     let built;
+    let acmeLib = null;
     if (request.tool === "acme.build") {
         const sourceResolved = resolveWorkspacePath(repoRootAbs, request.args.source);
         if (!sourceResolved.ok)
@@ -429,6 +511,7 @@ export async function runHostTool(raw, deps) {
             outDirPath = dirname(sourceResolved.path);
         }
         built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath });
+        acmeLib = findAcmeLib();
     }
     else {
         // request.tool === "ghidra.analyze" -- the only other HOST_TOOL_IDS
@@ -452,7 +535,13 @@ export async function runHostTool(raw, deps) {
         return { ok: false, message: built.message };
     const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
     const startedAt = Date.now();
-    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs);
+    // acme.build only: inject the probed ACME library directory as the child's
+    // `ACME` env var, exactly as acme.mjs's own removed findAcmeLib() call
+    // used to (T-34's own "same behaviour, moved" requirement) -- undefined
+    // when no candidate matched, which spawnHostTool() treats identically to
+    // "no override" (inherits the broker's own environment unchanged).
+    const spawnEnv = acmeLib?.path ? { ...process.env, ACME: acmeLib.path } : undefined;
+    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv);
     const elapsedMs = Date.now() - startedAt;
     if (spawnResult.spawnErrorMessage !== null) {
         deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs}`);
@@ -469,13 +558,146 @@ export async function runHostTool(raw, deps) {
         if (digested)
             results.push(digested);
     }
+    // acme.build only: ACME's own "for <...> includes..." complaint names no
+    // directory it tried -- append a note line (in the plain, non-MSVC shape
+    // acme.mjs's own parseDiagnostics() already treats as a "note" entry)
+    // naming every candidate this probe tried, exactly as the removed
+    // client-side hint used to. A line appended here, rather than reported as
+    // a separate field, keeps acme.mjs's diagnostics parsing untouched -- it
+    // already scans the combined text for exactly this shape.
+    let stderrText = spawnResult.stderr;
+    if (acmeLib && /ACME.*environment variable/i.test(stderrText)) {
+        stderrText += `\nfor <...> includes, set $ACME to the directory holding ${ACME_LIB_MARKER} (looked in: ${acmeLib.tried.join(", ")})`;
+    }
     return {
         ok: true,
         tool: request.tool,
         exitStatus: spawnResult.exitCode,
         results,
-        stderrTail: tailBytes(spawnResult.stderr, STDERR_TAIL_CAP_BYTES),
+        stderrTail: tailBytes(stderrText, STDERR_TAIL_CAP_BYTES),
     };
+}
+// ---------------------------------------------------------------------------
+// oracle.probe / oracle.run (34-04, SEAM-05). Migrated from
+// packer-finding.mjs's own probeUnp64()/runUnp64(): everything about the
+// BINARY (locating it, the version-banner probe, the scratch output
+// location, the argument array, the runtime bound) lives here now; the
+// script keeps everything about the FINDING (the name parser, the accepted
+// character set, the caps, the packedness threshold, the never-throw return
+// shapes). Response shapes are NOT the generic `{ ok, tool, exitStatus,
+// results, stderrTail }` envelope above -- they mirror packer-finding.mjs's
+// OWN pre-existing `{ available, command, version, reason }` /
+// `{ ok, stdout, reason }` contracts directly, so the migrated client-side
+// functions can return the seam's response with no field renaming.
+// ---------------------------------------------------------------------------
+/** Default command name when no override is given -- the same default
+ * packer-finding.mjs's own (removed) DEFAULT_ORACLE_COMMAND used. */
+const DEFAULT_ORACLE_COMMAND = "unp64";
+async function runOracleProbe(args, deps) {
+    const overridden = typeof args.command === "string" && args.command !== "";
+    const command = overridden ? args.command : DEFAULT_ORACLE_COMMAND;
+    // A caller-supplied override that names a path not on disk is absent,
+    // WITHOUT echoing the configured value (T-19-18) -- mirrors
+    // packer-finding.mjs's own pre-seam check, now enforced here since this is
+    // where the spawn actually happens.
+    if (overridden && !existsSync(command)) {
+        deps.log?.(`host_tool tool=oracle.probe exit=absent_configured_path`);
+        return {
+            ok: true,
+            tool: "oracle.probe",
+            available: false,
+            command: null,
+            version: null,
+            reason: "the configured oracle path does not exist on disk -- treated as oracle-absent",
+        };
+    }
+    const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
+    const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs);
+    if (spawnResult.spawnErrorMessage !== null) {
+        deps.log?.(`host_tool tool=oracle.probe exit=spawn_error`);
+        return {
+            ok: true,
+            tool: "oracle.probe",
+            available: false,
+            command: null,
+            version: null,
+            reason: overridden
+                ? "the configured oracle path could not be launched"
+                : `no "${DEFAULT_ORACLE_COMMAND}" packer identifier was found on the search path`,
+        };
+    }
+    if (spawnResult.timedOut) {
+        deps.log?.(`host_tool tool=oracle.probe exit=timeout`);
+        return {
+            ok: true,
+            tool: "oracle.probe",
+            available: false,
+            command: null,
+            version: null,
+            reason: "the packer identifier timed out during the version probe",
+        };
+    }
+    deps.log?.(`host_tool tool=oracle.probe exit=${spawnResult.exitCode ?? "null"}`);
+    const banner = `${spawnResult.stdout}${spawnResult.stderr}`.trim();
+    if (banner === "") {
+        return {
+            ok: true,
+            tool: "oracle.probe",
+            available: false,
+            command: null,
+            version: null,
+            reason: "the packer identifier produced no version banner, so it was not accepted as an oracle",
+        };
+    }
+    return { ok: true, tool: "oracle.probe", available: true, command, version: banner.slice(0, 200), reason: null };
+}
+async function runOracleRun(args, deps) {
+    const repoRootAbs = resolvePath(deps.repoRoot);
+    const sourceResolved = resolveWorkspacePath(repoRootAbs, args.source);
+    if (!sourceResolved.ok) {
+        return { ok: false, tool: "oracle.run", stdout: "", reason: sourceResolved.message };
+    }
+    if (!existsSync(sourceResolved.path)) {
+        return { ok: false, tool: "oracle.run", stdout: "", reason: "the input file does not exist" };
+    }
+    // The oracle's unpacked output goes to a scratch location INSIDE the
+    // workspace tree -- never the system temp directory, which cannot be
+    // translated back across the container boundary -- removed after this
+    // function returns, mirroring packer-finding.mjs's own (removed)
+    // "removed before this function returns" property (T-19-24).
+    const scratchDir = join(repoRootAbs, "tools", "oracle-runs", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(scratchDir, { recursive: true });
+    const scratchOut = join(scratchDir, "unpacked.out");
+    try {
+        const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;
+        const spawnResult = await spawnHostTool(DEFAULT_ORACLE_COMMAND, [sourceResolved.path, scratchOut], timeoutMs);
+        if (spawnResult.spawnErrorMessage !== null) {
+            deps.log?.(`host_tool tool=oracle.run exit=spawn_error`);
+            return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle could not be run against the input file" };
+        }
+        if (spawnResult.timedOut) {
+            deps.log?.(`host_tool tool=oracle.run exit=timeout`);
+            return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle timed out" };
+        }
+        deps.log?.(`host_tool tool=oracle.run exit=${spawnResult.exitCode ?? "null"}`);
+        // Capped the same way packer-finding.mjs's own MAX_ORACLE_STDOUT_BYTES
+        // caps it client-side -- the executor enforces the bound on what it
+        // accumulates; the script still exports the number for its own parser
+        // and its own tests, so the value is not duplicated as a maintained pair,
+        // only as the same measured constant on both sides of the seam.
+        const stdout = spawnResult.stdout.length > ORACLE_STDOUT_CAP_BYTES ? spawnResult.stdout.slice(0, ORACLE_STDOUT_CAP_BYTES) : spawnResult.stdout;
+        return { ok: true, tool: "oracle.run", stdout, reason: null };
+    }
+    finally {
+        try {
+            rmSync(scratchDir, { recursive: true, force: true });
+        }
+        catch {
+            // Best effort -- a leftover empty scratch directory is not worth
+            // failing a read-only recon finding over (mirrors packer-finding.mjs's
+            // own removed comment to the same effect).
+        }
+    }
 }
 // ---------------------------------------------------------------------------
 // CLI entry point (guarded on being the process entry point, the

@@ -46,7 +46,7 @@
 import { readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { connect } from "node:net";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { brokerRootDir, brokerJsonPath, newRequestId, resolveControlTarget, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
@@ -273,8 +273,92 @@ export async function runHostToolFromContainer(
   args: Record<string, unknown>,
   opts: RunHostToolFromContainerOptions = {},
 ): Promise<HostToolClientResult> {
-  const raw = isInsideContainer()
-    ? await hostToolOverControlPlane(opts.dir ?? brokerRootDir(), tool, args)
-    : await hostToolOverHostRoute(opts.repoRoot ?? repoRoot({ from: HERE }), tool, args);
-  return translateHostToolResponse(raw);
+  if (isInsideContainer()) {
+    const raw = await hostToolOverControlPlane(opts.dir ?? brokerRootDir(), tool, args);
+    return translateHostToolResponse(raw);
+  }
+  // Host route (34-04, SEAM-05): host and container coordinates are the
+  // SAME filesystem here -- there is no container to translate across --
+  // so the raw host-absolute paths in the response are already correct for
+  // the calling process. Skip containerPath() entirely rather than call it
+  // unconditionally: containerPath() only resolves a path that falls under
+  // THIS project's own workspace root (hostRootCandidates()), which a
+  // legitimate host-route invocation need not be under at all -- e.g. a
+  // build rooted at a scratch directory outside the repo (this project's own
+  // skill-acme-build-cli.test.ts, and CI's RUNNER_TEMP-rooted scaffold
+  // check, both build entirely outside the repo tree).
+  return hostToolOverHostRoute(opts.repoRoot ?? repoRoot({ from: HERE }), tool, args);
+}
+
+// ---------------------------------------------------------------------------
+// CLI entry point (Phase 34, plan 34-04, SEAM-05).
+//
+// The migrated skill scripts (acme.mjs, packer-finding.mjs) live in a
+// DIFFERENT npm package than this file (@henols/c64-re-tools vs.
+// @henols/vice-mcp), so a static `import` of runHostToolFromContainer()
+// resolves on neither npm-installer distribution route -- exactly the
+// cross-package constraint vsf-slice.mjs's own header already records for a
+// different module. Those scripts instead LOCATE this file on disk (via
+// mcp-module.mjs's resolveMcpModule() ladder) and invoke it as a subprocess:
+// `process.execPath <resolved-path> run --tool <id> --args <json> [--repo-root <path>]`.
+// This is the interpreter already running the calling script, spawned on an
+// in-tree module -- not an external host binary, and not a second executor:
+// it is the SAME route selection (isInsideContainer()) and the SAME
+// runHostToolFromContainer() this file already exposes as a value import for
+// same-package (src/mcp/vice/**) callers.
+//
+// Prints exactly ONE line of JSON on stdout (the translated
+// HostToolClientResult) and exits 0 when it carries `ok: true`, 1 otherwise
+// -- including a transport-level failure (rejected promise), which is
+// reported in the SAME `{ ok: false, message }` shape a tool's own refusal
+// uses, so a caller never needs to distinguish "the seam refused" from "the
+// seam was unreachable" by inspecting anything but `ok`/`message`.
+function parseRunCliArgs(argv: string[]): { tool?: string; args?: string; repoRoot?: string } {
+  let tool: string | undefined;
+  let args: string | undefined;
+  let repoRoot: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--tool") {
+      tool = argv[++i];
+    } else if (argv[i] === "--args") {
+      args = argv[++i];
+    } else if (argv[i] === "--repo-root") {
+      repoRoot = argv[++i];
+    }
+  }
+  return { tool, args, repoRoot };
+}
+
+const IS_ENTRY_POINT = process.argv[1] !== undefined && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (IS_ENTRY_POINT) {
+  const USAGE = "usage: host-tool-client.ts run --tool <tool> --args <json> [--repo-root <path>]\n";
+  const [, , cliCommand, ...cliRest] = process.argv;
+  if (cliCommand !== "run") {
+    process.stderr.write(USAGE);
+    process.exitCode = 1;
+  } else {
+    const { tool, args, repoRoot: repoRootArg } = parseRunCliArgs(cliRest);
+    if (!tool || args === undefined) {
+      process.stderr.write(USAGE);
+      process.exitCode = 1;
+    } else {
+      let parsedArgs: unknown;
+      try {
+        parsedArgs = JSON.parse(args);
+      } catch {
+        parsedArgs = null;
+      }
+      const argsObj = isPlainObject(parsedArgs) ? parsedArgs : {};
+      runHostToolFromContainer(tool, argsObj, repoRootArg ? { repoRoot: repoRootArg } : {})
+        .then((response) => {
+          process.stdout.write(`${JSON.stringify(response)}\n`);
+          process.exitCode = response.ok ? 0 : 1;
+        })
+        .catch((err: unknown) => {
+          process.stdout.write(`${JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) })}\n`);
+          process.exitCode = 1;
+        });
+    }
+  }
 }
