@@ -26,6 +26,7 @@ node_modules/
 /tools/broker-launch.mjs
 /tools/broker-state.mjs
 /tools/container-guard.mjs
+/tools/host-tool.mjs
 /tools/vice-broker.mjs
 /tools/vice-launcher.sh
 /tools/.vice-deployed.json

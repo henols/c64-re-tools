@@ -36,12 +36,16 @@ import { timingSafeEqual, randomBytes } from "node:crypto";
 // builder would drift apart.
 import type { LaunchProfile } from "./broker-launch.mjs";
 
-// Phase 33, plan 33-06 (D-15): STILL SEVEN. The launch profile is an added
-// FIELD on the existing `acquire` op, not an eighth op -- ControlRequest
-// already carries an index signature, so an added field parses today with no
-// schema change at all. Adding an eighth kind here would have meant a second
-// acquire path to keep in sync with this one; there is deliberately only one.
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release";
+// Phase 34, plan 34-01 (A-01): STILL ONE OP PER SUBSYSTEM. `host_tool` is the
+// EIGHTH member -- and the whole host-tool subsystem, not one member per
+// tool. Its per-tool typing (which tool ids exist, which argument keys each
+// accepts) lives in host-tool.mts's own allowlist, never in this union, and
+// this union is never widened again per-tool: a second host tool (dxa,
+// Ghidra, c1541, petcat, cartconv, ...) is a new entry in host-tool.mts's
+// HOST_TOOL_IDS, not a ninth ControlRequestKind member. This mirrors D-15's
+// own reasoning one op-family over: adding a ninth kind per tool would mean
+// a new dispatch path to keep in sync with every other tool's, forever.
+export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool";
 export type ControlErrorCode = "unauthorized" | "bad_request" | "denied" | "no_free_port" | "at_capacity" | "internal" | "monitor_owned";
 
 export interface ControlRequest {
@@ -202,6 +206,21 @@ export interface StartControlListenerOptions {
    * NOT the current holder -- see MonitorReleaseOutcome's own header
    * comment for the already-cleared tolerance. */
   onMonitorRelease: (requestId: string, targetId: string) => MonitorReleaseOutcome;
+  /** Phase 34, plan 34-01 (SEAM-01): called on `host_tool`, AFTER the token
+   * check has already passed -- the SAME gate every other op runs. Handed
+   * its OWN function, declared alongside these seven and NEVER composed
+   * from any of them -- that is what gives the `host_tool` branch zero
+   * reachability into lease state: it cannot call onAcquire/onRelease/
+   * onRecycle/onStatus/onHostState/onMonitorClaim/onMonitorRelease because
+   * nothing hands it a reference to any of them. `raw` is the FULL,
+   * un-narrowed request object; host-tool.mts's own normaliseHostToolRequest()
+   * is the one place it is narrowed -- this listener never inspects its
+   * shape beyond the `op`/`token` fields every op already reads. Never
+   * rejects in production (host-tool.mts's runHostTool() resolves on every
+   * failure path), but the dispatch branch below treats a rejection as a
+   * genuine possibility anyway and answers `internal` rather than letting it
+   * escape uncaught. */
+  onHostTool: (raw: unknown) => Promise<unknown>;
 }
 
 export interface StartControlListenerResult {
@@ -370,6 +389,22 @@ function tokensMatch(candidate: string, expected: string): boolean {
 }
 
 function writeLine(socket: Socket, obj: ControlResponse): void {
+  if (socket.writable) {
+    socket.write(`${JSON.stringify(obj)}\n`);
+  }
+}
+
+/** Phase 34, plan 34-01: writes a `host_tool` SUCCESS response line -- the
+ * object host-tool.mts's runHostTool() produced, whatever shape that is
+ * (`{ ok: true, ... }` or its own `{ ok: false, message }` refusal). This is
+ * deliberately NOT `writeLine()`/`ControlResponse`: the host-tool response
+ * shape is host-tool.mts's own contract, not one more `ControlResponse`
+ * variant this module would otherwise have to keep in sync with a sibling
+ * module's allowlist. A REJECTED onHostTool() promise never reaches this
+ * function -- it is answered through the ordinary `writeLine()`/`error`
+ * path instead, so every protocol-level failure still goes through one
+ * shape. */
+function writeHostToolLine(socket: Socket, obj: unknown): void {
   if (socket.writable) {
     socket.write(`${JSON.stringify(obj)}\n`);
   }
@@ -634,7 +669,26 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         return;
       }
 
-      if (req.op === "acquire") {
+      // Phase 34, plan 34-01 (SEAM-01): dispatched FIRST in the chain, before
+      // "acquire" -- so the ordering reads as the requirement does. Dispatch
+      // here is on EXACT STRING EQUALITY, never fallthrough, so branch order
+      // does not itself change which requests reach attemptAcquire() -- what
+      // actually makes this branch unable to touch lease state is that
+      // opts.onHostTool is its OWN callback (see StartControlListenerOptions'
+      // own comment), never composed from onAcquire/onRelease/onRecycle/
+      // onStatus/onHostState/onMonitorClaim/onMonitorRelease.
+      if (req.op === "host_tool") {
+        opts
+          .onHostTool(req)
+          .then((result) => {
+            if (!socket.destroyed) writeHostToolLine(socket, result);
+          })
+          .catch(() => {
+            if (!socket.destroyed) {
+              writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "host_tool threw" });
+            }
+          });
+      } else if (req.op === "acquire") {
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
         // Phase 33, plan 33-06 (T-33-03): narrow BEFORE attemptAcquire, so a
         // malformed profile never reaches onAcquire and therefore never

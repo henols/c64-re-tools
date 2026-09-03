@@ -346,6 +346,10 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
       (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const })),
     onMonitorClaim: deps.onMonitorClaim ?? (() => ({ ok: false, code: "internal" })),
     onMonitorRelease: deps.onMonitorRelease ?? (() => ({ ok: false, code: "internal" })),
+    // Phase 34, plan 34-01: a required field on StartControlListenerOptions
+    // as of this plan -- this client-focused fixture never exercises
+    // host_tool itself, so this stub exists only to satisfy the type.
+    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
   });
 
   const rawLines: Record<string, unknown>[] = [];

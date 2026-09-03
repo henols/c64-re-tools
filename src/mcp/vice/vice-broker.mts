@@ -62,6 +62,13 @@ import {
 import { resolvedBackend, type ViceBackend } from "./backend-detect.mjs";
 import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances, type KillStage } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor, type EpochRecord } from "./broker-epoch.mjs";
+// Phase 34, plan 34-01 (SEAM-01): a VALUE import of the host-tool executor --
+// safe here for the SAME reason every other sibling value import above is:
+// this file is ALWAYS run from its own compiled resources/ form, and
+// "./host-tool.mjs" is compiled into that same directory by the same build.ts
+// pass (host-tool.mts is added to HOST_BOUND_ARTIFACTS/tsconfig.build.json's
+// include[] in this same commit).
+import { runHostTool } from "./host-tool.mjs";
 import {
   startControlListener,
   newControlToken,
@@ -1153,6 +1160,15 @@ async function run(args: ParsedArgs): Promise<void> {
       onRelease: (requestId) => handleRelease(requestId, state),
       onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
       onStatus: () => handleStatus(state),
+      // Phase 34, plan 34-01 (SEAM-01): its OWN callback, wired alongside
+      // (never derived from) the other six above -- handed only
+      // `args.repoRoot` and a stderr logger, never this broker's `state` map,
+      // so it structurally cannot reach lease state through this closure.
+      onHostTool: (raw: unknown) =>
+        runHostTool(raw, {
+          repoRoot: args.repoRoot,
+          log: (line: string) => process.stderr.write(`${line}\n`),
+        }),
       onMonitorClaim: (requestId, targetId) => handleMonitorClaim(requestId, targetId, state),
       onMonitorRelease: (requestId, targetId) => handleMonitorRelease(requestId, targetId, state),
       onHostState: (): HostStateFields => ({

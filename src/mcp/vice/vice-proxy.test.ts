@@ -2189,6 +2189,10 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
     // satisfy StartControlListenerOptions's now-required fields.
     onMonitorClaim: () => ({ ok: false, code: "internal" }),
     onMonitorRelease: () => ({ ok: false, code: "internal" }),
+    // Phase 34, plan 34-01: a required field on StartControlListenerOptions
+    // as of this plan -- this proxy-focused fixture never exercises
+    // host_tool itself, so this stub exists only to satisfy the type.
+    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
   });
   // Every accepted connection is captured as it arrives -- attached BEFORE
   // any caller has a chance to trigger one, so a later "which socket did

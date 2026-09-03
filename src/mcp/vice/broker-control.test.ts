@@ -112,6 +112,7 @@ interface StubDeps {
   onHostState?: () => HostStateFields;
   onMonitorClaim?: (requestId: string, targetId: string) => MonitorClaimOutcome;
   onMonitorRelease?: (requestId: string, targetId: string) => MonitorReleaseOutcome;
+  onHostTool?: (raw: unknown) => Promise<unknown>;
 }
 
 async function startTestListener(
@@ -149,6 +150,11 @@ async function startTestListener(
       monitorReleaseCalls.push(targetId);
       return deps.onMonitorRelease?.(requestId, targetId) ?? ({ ok: false, code: "internal" } as MonitorReleaseOutcome);
     },
+    // Phase 34, plan 34-01: a required field on StartControlListenerOptions
+    // as of this plan -- no existing test in this file exercises host_tool
+    // yet (task 2 adds that coverage), so this default is a no-op refusal,
+    // never called by any pre-existing case here.
+    onHostTool: deps.onHostTool ?? (async () => ({ ok: false, message: "no onHostTool stub configured" })),
   });
   return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls };
 }

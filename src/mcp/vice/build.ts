@@ -48,6 +48,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "broker-epoch.mjs",
   "broker-control.mjs",
   "backend-detect.mjs",
+  "host-tool.mjs",
 ];
 
 /** The generated-file banner (01.6-RESEARCH.md §F), a function of the

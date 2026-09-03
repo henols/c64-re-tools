@@ -13,6 +13,7 @@
     "vice-sync.ts",
     "vice-probe.ts",
     "vice-broker-client.ts",
+    "host-tool-client.ts",
     "version.ts",
     "stock-protocol.ts",
     "stock-connect.ts",

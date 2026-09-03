@@ -145,6 +145,21 @@ function writeLine(socket, obj) {
         socket.write(`${JSON.stringify(obj)}\n`);
     }
 }
+/** Phase 34, plan 34-01: writes a `host_tool` SUCCESS response line -- the
+ * object host-tool.mts's runHostTool() produced, whatever shape that is
+ * (`{ ok: true, ... }` or its own `{ ok: false, message }` refusal). This is
+ * deliberately NOT `writeLine()`/`ControlResponse`: the host-tool response
+ * shape is host-tool.mts's own contract, not one more `ControlResponse`
+ * variant this module would otherwise have to keep in sync with a sibling
+ * module's allowlist. A REJECTED onHostTool() promise never reaches this
+ * function -- it is answered through the ordinary `writeLine()`/`error`
+ * path instead, so every protocol-level failure still goes through one
+ * shape. */
+function writeHostToolLine(socket, obj) {
+    if (socket.writable) {
+        socket.write(`${JSON.stringify(obj)}\n`);
+    }
+}
 function defaultRequestId(prefix) {
     return `${prefix}-${process.pid}-${Date.now()}`;
 }
@@ -365,7 +380,28 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 socket.destroy();
                 return;
             }
-            if (req.op === "acquire") {
+            // Phase 34, plan 34-01 (SEAM-01): dispatched FIRST in the chain, before
+            // "acquire" -- so the ordering reads as the requirement does. Dispatch
+            // here is on EXACT STRING EQUALITY, never fallthrough, so branch order
+            // does not itself change which requests reach attemptAcquire() -- what
+            // actually makes this branch unable to touch lease state is that
+            // opts.onHostTool is its OWN callback (see StartControlListenerOptions'
+            // own comment), never composed from onAcquire/onRelease/onRecycle/
+            // onStatus/onHostState/onMonitorClaim/onMonitorRelease.
+            if (req.op === "host_tool") {
+                opts
+                    .onHostTool(req)
+                    .then((result) => {
+                    if (!socket.destroyed)
+                        writeHostToolLine(socket, result);
+                })
+                    .catch(() => {
+                    if (!socket.destroyed) {
+                        writeLine(socket, { kind: "error", code: "internal", message: "host_tool threw" });
+                    }
+                });
+            }
+            else if (req.op === "acquire") {
                 const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
                 // Phase 33, plan 33-06 (T-33-03): narrow BEFORE attemptAcquire, so a
                 // malformed profile never reaches onAcquire and therefore never
