@@ -326,7 +326,7 @@ Checked explicitly, because several fixes ran close to them:
 | Gate | Result |
 |---|---|
 | `cd src/mcp/vice && npm run typecheck` | exit 0 |
-| `cd src/mcp/vice && npm run test:automated` | at baseline — see below |
+| `cd src/mcp/vice && npm run test:automated` | 3127 tests, 3119 pass, **2 fail in 1 file** — exactly baseline |
 | `node scripts/check-npm-packages.mjs` | exit 0 |
 | `node installer/scripts/sync-skills.mjs` | run after every skill-file edit |
 
@@ -341,13 +341,23 @@ milestone open). Not fixed here, not this phase's.
 
 The pre-fix run additionally showed 2 failures caused by `33-REVIEW.md` itself
 existing without dispositions — `docs-review-disposition.test.ts:340` and its
-cascade `audit-integrity.test.ts:236` — i.e. 4 failures in 3 files before any
-fix. Both clear once this report and REVIEW.md's dispositions are committed,
-returning the suite to the stated 2-in-1 baseline.
+cascade `audit-integrity.test.ts:236` — i.e. **4 failures in 3 files** before
+any fix. Both cleared once this report and REVIEW.md's dispositions landed.
+
+Final measured run, post-fix, on the committed tree:
+
+```
+ℹ tests 3127   ℹ pass 3119   ℹ fail 2   ℹ suites 24   ℹ skipped 1   ℹ todo 5
+failing: src/mcp/vice/anno-register.test.ts:389, :481   (the baseline, 2 in 1 file)
+```
+
+Test count rose 3113 → 3127 and passes 3103 → 3119; the two remaining failures
+are the same two, in the same file, as before any fix.
 
 No new failure was introduced. Every test file touched by a fix was also run in
 isolation, and each new negative control was confirmed to go red against the
-unfixed source.
+unfixed source. `audit-root-args.test.ts` — the known intermittent — passed in
+both full runs and needed no re-run.
 
 ---
 
