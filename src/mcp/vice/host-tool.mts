@@ -37,7 +37,8 @@
 //     repo root (T-34-03). This covers EVERY path-bearing wire field on
 //     every tool, not only the ones present when this file was first
 //     written: acme.build's source/outDir AND each entry of its includes
-//     array (34-07, CR-03).
+//     array (34-07, CR-03), and ghidra.analyze's importPath AND its
+//     preScript/postScript (34-07, CR-02).
 //   - No inline byte payload on a host-tool response, at any result size --
 //     every result crosses as `{ path, sha256, byteLength }`, never bytes.
 //   - No second copy of a tool's argv construction -- buildHostToolArgv() is
@@ -96,11 +97,22 @@ export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
  * (the vsf-slice.mjs WR-04 idiom) so no prototype key can ever resolve to a
  * value here even if a future caller indexed it with an untrusted string
  * directly -- belt-and-suspenders alongside the array-membership check
- * above, which is what actually guards the lookup below. `ghidra.analyze`'s
- * accepted keys carry no raw argv array and no raw command string -- only
- * `runId`/`importPath`/`preScript`/`postScript`, each a plain string that
- * flows through resolveWorkspacePath()/resolveGhidraProject() before it ever
- * reaches argv. */
+ * above, which is what actually guards the lookup below.
+ *
+ * `ghidra.analyze`'s accepted keys carry no raw argv array and no raw
+ * command string. Per field (corrected 34-07, CR-02 -- the previous wording
+ * here claimed all four already flowed through a resolver, which was false
+ * for the two script fields until this plan): `runId` is a bare name, never
+ * a path, and flows through `resolveGhidraProject()`'s own per-run-directory
+ * resolution; `importPath`, `preScript` and `postScript` each flow through
+ * `resolveWorkspacePath()` -- the SAME workspace-boundary resolver
+ * `acme.build`'s `source`/`outDir`/`includes` use -- before any of the four
+ * ever reaches argv. `buildAnalyzeHeadlessArgv()` (ghidra-project.mts) also
+ * independently re-checks `preScript`/`postScript` for a parent-directory
+ * path segment, exactly as it already re-checks `projectLocation` for a
+ * dot-prefixed segment -- so both rules hold even for a caller that
+ * constructed these fields itself and skipped this module's own resolution
+ * sites entirely. */
 export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
     "acme.build": Object.freeze(["source", "outDir", "format", "setpc", "defines", "includes", "noReport"]),
@@ -367,6 +379,13 @@ export interface ResolvedGhidraAnalyzePaths {
   importPath: string;
   projectLocation: string;
   projectName: string;
+  /** Task 2 (CR-02): present only when the wire request carried the
+   * corresponding field, each resolved through resolveWorkspacePath() by
+   * runHostTool() BEFORE buildHostToolArgv() ever sees this object --
+   * buildHostToolArgv() reads these two fields ONLY from here, never from
+   * request.args. */
+  preScriptPath?: string;
+  postScriptPath?: string;
 }
 
 export type ResolvedHostToolPaths = ResolvedAcmeBuildPaths | ResolvedGhidraAnalyzePaths;
@@ -424,8 +443,7 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
   }
 
   if (request.tool === "ghidra.analyze") {
-    const { args } = request;
-    const { importPath, projectLocation, projectName } = resolved as ResolvedGhidraAnalyzePaths;
+    const { importPath, projectLocation, projectName, preScriptPath, postScriptPath } = resolved as ResolvedGhidraAnalyzePaths;
 
     // Named environment variable, never a guessed install location and
     // never this repository's own local probe directory (T-34-16).
@@ -450,13 +468,16 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     // Argv construction and the dot-segment re-check both live in
     // ghidra-project.mts's buildAnalyzeHeadlessArgv() -- never re-derived
     // here (A-06).
+    // Task 2 (CR-02): reads ONLY from resolved.preScriptPath/postScriptPath --
+    // never from request.args.preScript/postScript -- so argv never carries
+    // a raw, unresolved wire string for either field.
     const argvInput: { projectLocation: string; projectName: string; importPath: string; preScript?: string; postScript?: string } = {
       projectLocation,
       projectName,
       importPath,
     };
-    if (args.preScript !== undefined) argvInput.preScript = args.preScript;
-    if (args.postScript !== undefined) argvInput.postScript = args.postScript;
+    if (preScriptPath !== undefined) argvInput.preScript = preScriptPath;
+    if (postScriptPath !== undefined) argvInput.postScript = postScriptPath;
 
     const built = buildAnalyzeHeadlessArgv(argvInput);
     if (!built.ok) return { ok: false, message: built.message };
@@ -709,6 +730,23 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
     const importResolved = resolveWorkspacePath(repoRootAbs, request.args.importPath);
     if (!importResolved.ok) return { ok: false, message: importResolved.message };
 
+    // Task 2 (CR-02): preScript/postScript resolved through the SAME
+    // resolveWorkspacePath() site, BEFORE resolveGhidraProject()'s own
+    // directory RESERVATION below -- a refusal here must never leave a
+    // reserved-but-unused run directory behind.
+    let preScriptPath: string | undefined;
+    if (request.args.preScript !== undefined) {
+      const preScriptResolved = resolveWorkspacePath(repoRootAbs, request.args.preScript);
+      if (!preScriptResolved.ok) return { ok: false, message: preScriptResolved.message };
+      preScriptPath = preScriptResolved.path;
+    }
+    let postScriptPath: string | undefined;
+    if (request.args.postScript !== undefined) {
+      const postScriptResolved = resolveWorkspacePath(repoRootAbs, request.args.postScript);
+      if (!postScriptResolved.ok) return { ok: false, message: postScriptResolved.message };
+      postScriptPath = postScriptResolved.path;
+    }
+
     const projectResolved = resolveGhidraProject({ repoRoot: repoRootAbs, runId: request.args.runId });
     if (!projectResolved.ok) return { ok: false, message: projectResolved.message };
 
@@ -716,6 +754,8 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       importPath: importResolved.path,
       projectLocation: projectResolved.projectLocation,
       projectName: projectResolved.projectName,
+      preScriptPath,
+      postScriptPath,
     });
   }
   if (!built.ok) return { ok: false, message: built.message };

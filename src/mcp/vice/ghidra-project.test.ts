@@ -282,6 +282,60 @@ test("buildAnalyzeHeadlessArgv: refuses a non-string/empty required field, never
   assert.equal(result.ok, false);
 });
 
+// ---------------------------------------------------------------------------
+// 34-07 (CR-02): the independent second-layer refusal for a
+// preScript/postScript carrying a parent-directory path segment.
+// ---------------------------------------------------------------------------
+
+test("buildAnalyzeHeadlessArgv: refuses a preScript containing a parent-directory segment, naming the field, even when projectLocation is clean", () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    preScript: "../x.java",
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /preScript/);
+    assert.match(result.message, /parent-directory/);
+  }
+});
+
+test("buildAnalyzeHeadlessArgv: refuses a postScript containing a parent-directory segment, naming the field, even when projectLocation is clean", () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    postScript: "../y.java",
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /postScript/);
+    assert.match(result.message, /parent-directory/);
+  }
+});
+
+test("buildAnalyzeHeadlessArgv: a preScript containing merely TWO DOTS in the filename (not a parent-directory SEGMENT) is accepted -- a substring test would have misjudged this", () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    preScript: "..foo.java",
+  });
+  assert.equal(result.ok, true);
+});
+
+test("buildAnalyzeHeadlessArgv: a bare Ghidra script name for preScript/postScript (no path separator) is still accepted -- the parent-directory-segment check does not require absoluteness", () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    preScript: "Pre.java",
+    postScript: "Post.java",
+  });
+  assert.equal(result.ok, true);
+});
+
 test("buildAnalyzeHeadlessArgv: is deterministic -- the same input yields two deepEqual argv arrays", () => {
   const input = {
     projectLocation: "/repo/tools/ghidra-runs/r1",

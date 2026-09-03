@@ -703,3 +703,93 @@ test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv w
     assert.ok(built.toolPath.endsWith(join("support", "analyzeHeadless")));
   });
 });
+
+// ---------------------------------------------------------------------------
+// ghidra.analyze `preScript`/`postScript` -- resolved through
+// resolveWorkspacePath() by runHostTool(), read by buildHostToolArgv() ONLY
+// from resolved.preScriptPath/postScriptPath (Task 2, CR-02).
+// ---------------------------------------------------------------------------
+
+test("buildHostToolArgv: ghidra.analyze reads preScript/postScript from resolved.preScriptPath/postScriptPath, never from request.args -- proven by a case where they disagree", async () => {
+  await withFakeGhidraHome(async () => {
+    const request = {
+      tool: "ghidra.analyze",
+      args: { runId: "r1", importPath: "x.bin", preScript: "wire-pre.java", postScript: "wire-post.java" },
+    };
+    const resolved = {
+      importPath: "/repo/tools/ghidra-runs/r1/x.bin",
+      projectLocation: "/repo/tools/ghidra-runs/r1",
+      projectName: "r1",
+      preScriptPath: "/repo/some/resolved-pre.java",
+      postScriptPath: "/repo/some/resolved-post.java",
+    };
+    const built = buildHostToolArgv(request, resolved);
+    assert.equal(built.ok, true);
+    if (!built.ok) return;
+    assert.ok(built.argv.includes("/repo/some/resolved-pre.java"));
+    assert.ok(built.argv.includes("/repo/some/resolved-post.java"));
+    assert.ok(!built.argv.includes("wire-pre.java"));
+    assert.ok(!built.argv.includes("wire-post.java"));
+  });
+});
+
+test("runHostTool: a ghidra.analyze preScript that escapes the workspace root is refused with the workspace-escape message, and the log spy recorded zero lines", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+    const logLines: string[] = [];
+    const response = await runHostTool(
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", preScript: "../../etc/evil.java" } },
+      { repoRoot: dir, log: (line) => logLines.push(line) },
+    );
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /escapes the workspace root/);
+    assert.equal(logLines.length, 0, "no child was spawned, so no log line should have been recorded");
+  });
+});
+
+test("runHostTool: an absolute ghidra.analyze postScript is refused with the not-absolute message", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+    const response = await runHostTool(
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", postScript: "/etc/evil.java" } },
+      { repoRoot: dir },
+    );
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /must be relative to the workspace root, not absolute/);
+  });
+});
+
+test("runHostTool: an accepted in-workspace ghidra.analyze preScript reaches the spawned argv as an absolute resolved path, never the bare relative string", async () => {
+  await withTempDir(async (dir) => {
+    const previousGhidraHome = process.env.GHIDRA_HOME;
+    const supportDir = join(dir, "support");
+    mkdirSync(supportDir, { recursive: true });
+    const echoPath = join(dir, "echoed-argv.json");
+    // A real (Node-executed, not real Ghidra) analyzeHeadless stand-in that
+    // echoes the FULL argv it received -- runHostTool()'s own response
+    // shape never surfaces argv, only exitStatus/results/stderrTail.
+    writeFileSync(
+      join(supportDir, "analyzeHeadless"),
+      ["#!/usr/bin/env node", 'import { writeFileSync } from "node:fs";', `writeFileSync(${JSON.stringify(echoPath)}, JSON.stringify(process.argv.slice(2)));`, "process.exit(0);", ""].join("\n"),
+      "utf8",
+    );
+    chmodSync(join(supportDir, "analyzeHeadless"), 0o755);
+    process.env.GHIDRA_HOME = dir;
+    try {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      writeFileSync(join(dir, "pre.java"), "// pre\n", "utf8");
+      const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", preScript: "pre.java" } }, { repoRoot: dir });
+      assert.equal(response.ok, true);
+      const echoedArgv = JSON.parse(readFileSync(echoPath, "utf8")) as string[];
+      const preIdx = echoedArgv.indexOf("-preScript");
+      assert.ok(preIdx !== -1);
+      const preValue = echoedArgv[preIdx + 1];
+      assert.ok(isAbsolute(preValue));
+      assert.equal(preValue, resolvePath(dir, "pre.java"));
+      assert.ok(!echoedArgv.includes("pre.java"), "argv must never carry the bare relative preScript string");
+    } finally {
+      if (previousGhidraHome === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previousGhidraHome;
+    }
+  });
+});

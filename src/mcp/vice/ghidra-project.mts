@@ -24,7 +24,9 @@
 //     single-writer project lock UNREACHABLE rather than merely guarded;
 //   - analyzeHeadless argv construction (buildAnalyzeHeadlessArgv()), which
 //     re-runs the dot-segment check independently so the rule holds even
-//     for a caller that skipped the resolver entirely.
+//     for a caller that skipped the resolver entirely, AND (34-07, CR-02)
+//     independently refuses a preScript/postScript carrying a
+//     parent-directory path segment, for the same reason.
 //
 // WHAT NOT TO DO, each naming the prohibition it guards (34-03-PLAN.md's
 // own `must_haves.prohibitions`):
@@ -286,6 +288,32 @@ export function buildAnalyzeHeadlessArgv(input: unknown): BuildAnalyzeHeadlessAr
   }
   if (postScript !== undefined && (typeof postScript !== "string" || postScript === "")) {
     return { ok: false, message: `buildAnalyzeHeadlessArgv "postScript" must be a non-empty string or absent; got ${describe(postScript)}` };
+  }
+
+  // 34-07 (CR-02): an INDEPENDENT second-layer check -- refuse a preScript
+  // or postScript containing a parent-directory path segment, even for a
+  // caller that constructed these fields itself and bypassed host-tool.mts's
+  // own resolveWorkspacePath() entirely. Mirrors the dot-segment re-check
+  // just below: same per-SEGMENT splitting approach (never a substring
+  // test), so a name that merely CONTAINS two dots (e.g. "..foo.java") is
+  // not misjudged -- only an exact ".." segment is a parent-directory
+  // reference. Does NOT require absoluteness: a bare Ghidra script name
+  // ("Pre.java") is Ghidra's own documented form for these flags and must
+  // stay accepted (ghidra-project.test.ts's own pre-existing case).
+  for (const [key, value] of [
+    ["preScript", preScript],
+    ["postScript", postScript],
+  ] as const) {
+    if (typeof value !== "string") continue;
+    const hasParentSegment = value.split(sep).some((segment) => segment === "..");
+    if (hasParentSegment) {
+      return {
+        ok: false,
+        message:
+          `buildAnalyzeHeadlessArgv refuses a "${key}" containing a parent-directory path segment: a script ` +
+          `argument is either a bare Ghidra script name or a path already bounded inside the workspace; got ${describe(value)}`,
+      };
+    }
   }
 
   // Re-run the dot-segment check independently of resolveGhidraProject() --
