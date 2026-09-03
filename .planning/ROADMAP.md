@@ -452,7 +452,7 @@ because this project has a recorded history of a requirement owned by two phases
 or by none.
 
 - [x] **Phase 33: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)** - Launch nondeterminism pinned, a frame-exact stop that is a protocol rather than a mechanism, and a snapshot-sliced flat 64K — behind go / degrade / no-go rules committed to git before any measurement exists (completed 2026-09-03)
-- [ ] **Phase 34: The Host-Tool Execution Seam** - Host binaries reached over a typed namespaced control op on the existing broker socket, with the two existing skill-script violations migrated so the ban on them can be written at all
+- [x] **Phase 34: The Host-Tool Execution Seam** - Host binaries reached over a typed namespaced control op on the existing broker socket, with the two existing skill-script violations migrated so the ban on them can be written at all (completed 2026-09-04)
 - [ ] **Phase 35: dxa, Vendored and Parsed** - A raw C64 image in and a machine-readable code/data map out, from a dxa this project vendors and builds at a pinned version, behind a parser that refuses by name
 - [ ] **Phase 36: The SLEIGH Language and the Ghidra Harness** - All 105 undocumented opcode bytes decodable under their own Ghidra language, and structural facts recovered through `DecompInterface` with hardware writes surviving the decompiler
 - [ ] **Phase 37: The Importer and the Automatic Annotation Join** - Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — declining with a reason rather than guessing
@@ -1162,7 +1162,7 @@ in a milestone archive.
 | 31. Procedure Re-pointing | v0.7.0 | 4/4 | Complete | 2026-08-31 |
 | 32. The Deletion and the Grep Gate | v0.7.0 | 21/21 | Complete | 2026-09-01 |
 | 33. The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) | v0.8.0 | 12/12 | In Progress | - |
-| 34. The Host-Tool Execution Seam | v0.8.0 | 11/11 | In Progress | - |
+| 34. The Host-Tool Execution Seam | v0.8.0 | 11/11 | Complete | 2026-09-04 |
 | 35. dxa, Vendored and Parsed | v0.8.0 | 0/0 | Not started | - |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 0/0 | Not started | - |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 0/0 | Not started | - |

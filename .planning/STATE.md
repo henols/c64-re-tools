@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
-current_phase: 34
-current_phase_name: The Host-Tool Execution Seam
-status: executing
-stopped_at: Completed 34-10-PLAN.md
-last_updated: "2026-09-03T22:27:02.298Z"
+current_phase: 35
+current_phase_name: dxa, Vendored and Parsed
+status: planning
+stopped_at: Phase 34 complete, ready to plan Phase 35
+last_updated: "2026-09-03T23:11:02.528Z"
 last_activity: 2026-09-04
-last_activity_desc: 34-08 executed (CR-01 oracle command-argv closure + path-key census)
-state_head: b3b4238ff58caa37067d1bd98a750c4b3e1de08e
+last_activity_desc: Phase 34 complete, transitioned to Phase 35
+state_head: b10dd5eab0de558b7f49bed6b267434ebae51c2d
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 23
-  completed_plans: 22
-  percent: 17
+  completed_plans: 23
+  percent: 33
 ---
 
 # Project State
@@ -176,8 +176,8 @@ the suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
-Plan: 11 of 11 executed — the first gap-closure round (`34-07`..`34-09`) is complete, both prior gaps closed and independently reverified; the SECOND gap-closure round's fix plan (`34-10`) closed CR-05 (`resolveWorkspacePath()` now walks both sides through an ancestor-realpath resolution; 83/83 `host-tool.test.ts` cases pass, no regressions), and `34-11` (the decision-record consolidation) is now executed — `docs/phase34-host-tool-seam-decisions.md` gained the CR-05 correction and `A-15`/`A-16`, the CR-05 todo moved to `.planning/todos/completed/` with a Resolution, and this Deferred Items ledger's CR-05 row and figure were corrected in the same commit as the move
+Phase: 35 — dxa, Vendored and Parsed
+Plan: Not started
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -216,7 +216,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: Ready to plan Phase 34. **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Phase 34 complete (7/7 must-haves, third round); ready to plan Phase 35. **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
@@ -373,13 +373,13 @@ their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
 `anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase. **Phase 34 plan 34-01 update (2026-09-03):** the host-tool execution seam tracer is complete — the `host_tool` control op is wired end to end (broker-control.mts/vice-broker.mts/host-tool.mts/host-tool-client.ts), proven against real ACME with all seven VICE lease callbacks provably uncalled; see `.planning/phases/34-the-host-tool-execution-seam/34-01-SUMMARY.md`. Plan 34-02 is next.
-Last activity: 2026-09-04 — Phase 34 execution started
+Last activity: 2026-09-04 — Phase 34 complete, transitioned to Phase 35
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 285
+- Total plans completed: 296
 - Average duration: —
 - Total execution time: —
 
@@ -415,6 +415,7 @@ Last activity: 2026-09-04 — Phase 34 execution started
 | 31 | 4 | - | - |
 | 32 | 21 | - | - |
 | 33 | 12 | - | - |
+| 34 | 11 | - | - |
 
 **Recent Trend:**
 
@@ -1027,7 +1028,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-9 pending (9 files in `.planning/todos/pending/` + 0 UAT-gap rows = 9) — see
+8 pending (8 files in `.planning/todos/pending/` + 0 UAT-gap rows = 8) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -1815,7 +1816,7 @@ actually describe are separately tracked and were acknowledged above:
 ## Session Continuity
 
 Last session: 2026-09-04T00:45:41.000Z
-Stopped at: Completed 34-11-PLAN.md
+Stopped at: Phase 34 complete, ready to plan Phase 35
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md

@@ -1,85 +1,18 @@
 ---
 phase: 34-the-host-tool-execution-seam
-verified: 2026-09-03T20:12:31Z
-status: gaps_found
-score: 6/7 must-haves verified
+verified: 2026-09-03T23:09:04Z
+status: passed
+score: 7/7 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: 4/6
+  previous_score: 6/7
   gaps_closed:
-    - "Each tool goes through a typed per-tool allowlist with NO ARGV PASSTHROUGH ANYWHERE (SC1/SEAM-02) — CR-01 (oracle.probe's command), CR-02 (ghidra.analyze's preScript/postScript), CR-03 (acme.build's includes) all independently reverified CLOSED in code, not merely claimed closed"
-    - "ghidra.analyze completes over the shipped, default-configured host_tool control-plane route (CR-04) — client/server timeout budgets now split (660s client / 600s server for ghidra.analyze), and a live end-to-end test with a 3s-sleeping fake launcher over the real control-plane route resolves ok:true, reproduced by re-running host-tool.test.ts (67/67 pass, including the two-overlapping-slow-ghidra.analyze case)"
+    - "CR-05 / gap 3: resolveWorkspacePath() now walks BOTH the workspace root and the candidate path through a new ancestor-realpath function (realpathOfNearestExisting(), host-tool.mts:487-559) before the prefix comparison, and returns the WALKED real path — not the lexical join — as its ok:true result (host-tool.mts:561-586). Independently reproduced live (not accepted from SUMMARY/REVIEW claims): the exact escape round 2 demonstrated (a symlink planted inside a temp workspace, pointing at an external temp directory, `resolveWorkspacePath(root, \"link/pwned.txt\")`) now returns `{ ok: false, message: 'workspace path escapes the workspace root...' }`, and the external directory's listing stays empty. Also independently confirmed the discrimination property claimed (not just the refusal): a symlink planted INSIDE the workspace pointing at an in-workspace real directory is FOLLOWED and ACCEPTED, resolving to the real in-workspace location — proving this is a real confinement fix, not an over-broad \"refuse every symlink\" patch that would also break legitimate in-workspace links."
   gaps_remaining: []
   regressions: []
-gaps:
-  - truth: "resolveWorkspacePath() — the seam's own declared single enforcement point ('the ONLY place a wire-supplied path becomes a real path', host-tool.mts:34-37) — actually confines every one of the seven path-bearing host_tool argument keys to the workspace root, including against a symlink planted inside the workspace"
-    status: failed
-    reason: >
-      NEW finding (CR-05 in 34-REVIEW.md), not covered by either of the prior
-      round's two gaps and not touched by any of plans 34-07/34-08/34-09.
-      resolveWorkspacePath() enforces the workspace boundary with plain
-      lexical path.resolve() plus a startsWith(rootAbs + sep) string check —
-      it never calls node:fs realpath and never consults the filesystem
-      (grep -c realpath host-tool.mts is 0, confirmed independently). I
-      reproduced the escape live, outside the test suite, rather than
-      accepting the review's argument: a symlink planted inside a workspace
-      root (<root>/link -> an external directory) causes
-      resolveWorkspacePath(root, "link/x") to return { ok: true, path:
-      "<root>/link/x" } — a string that lexically satisfies the workspace
-      prefix check — and a subsequent real filesystem write to that
-      "accepted" path lands inside the external directory the symlink
-      targets, not inside the workspace. This is not hypothetical: I ran the
-      exact repro (mkdtemp workspace + mkdtemp outside dir + symlinkSync +
-      writeFileSync at the "ok:true" path) and confirmed the file lands
-      outside the workspace root. Two of the seven affected keys
-      (acme.build's outDir, oracle.run's source) are write/read destinations
-      reachable this way, not merely inert path values. This exact bug class
-      was already found and fixed once in this codebase, in
-      anno-types.ts's storePathWithinWorkspace(), which resolves both sides
-      through realpathOfNearestExisting() specifically because a bare
-      resolve()-based check "succeeded and the store file was created
-      outside the workspace root" under a planted symlink (per that file's
-      own incident history). No test in host-tool.test.ts,
-      host-tool-transport.test.ts, or ghidra-project.test.ts plants a
-      symlink; the word "symlink" appears in no file in this module family
-      (confirmed by grep, zero matches).
-
-      Judgment call on scope (asked for explicitly): SEAM-02's literal text
-      — "typed per-tool allowlist with no argv passthrough anywhere" — is
-      MET. The value that reaches argv for every affected key is the
-      *resolved* path from resolveWorkspacePath(), never the raw wire
-      string; that specific, narrowly-defined property is real, independently
-      re-verified in code and via 13 passing named tests (unknown-key
-      refusal, includes-escape refusal, preScript-escape refusal,
-      cross-seam ordering, etc.). CR-05 is a DIFFERENT defect: the
-      confinement check *underneath* that property is bypassable, so a
-      caller-controlled "resolved path" can still name a location outside
-      the workspace. I am not reverting SEAM-02's Complete status in
-      REQUIREMENTS.md on this basis — the requirement's own words are
-      satisfied. But this is scored as a phase-blocking gap regardless,
-      because it directly falsifies host-tool.mts's own declared design
-      invariant for the module this whole phase exists to deliver, it is a
-      demonstrated (not theoretical) host-side write/read escape, it
-      reintroduces a bug class this project already paid to fix once
-      elsewhere, and its only disposition today is a pending todo filed by
-      the review process itself — not an accepted override recorded in this
-      VERIFICATION.md's frontmatter by a human decision-maker. A todo is
-      tracking, not disposition; Step 3b's override mechanism requires an
-      explicit accepted_by/accepted_at entry, which does not exist for this
-      finding.
-    artifacts:
-      - path: "src/mcp/vice/host-tool.mts:370-386"
-        issue: "resolveWorkspacePath() uses resolvePath() (node:path resolve) and a startsWith prefix check only — no realpath/symlink resolution on either side of the comparison."
-      - path: "src/mcp/vice/host-tool.mts:780-843"
-        issue: "acme.build's source/outDir/includes and ghidra.analyze's importPath/preScript/postScript all consume resolveWorkspacePath()'s result directly as the confined path, inheriting the symlink-blind check."
-      - path: "src/mcp/vice/host-tool.mts:1013-1017"
-        issue: "oracle.run's source likewise inherits the symlink-blind check — an arbitrary host file's bytes can be read back through the oracle's stdout capture via a symlink."
-    missing:
-      - "Resolve both repoRoot and the candidate path through an ancestor-realpath walk before the prefix comparison (mirror anno-types.ts's realpathOfNearestExisting(), reused or reimplemented), returning the realpath — not the lexical join — as the ok:true result."
-      - "A live planted-symlink test in host-tool.test.ts (a real symlink on disk, mirroring anno-confinement.test.ts's own discipline, not a synthetic string) for at least one read key (acme.build's source) and one write key (acme.build's outDir)."
-      - "Verify buildHostToolArgv()'s no-argv-passthrough tests (34-07/34-08) still hold once resolveWorkspacePath() returns a realpath instead of a lexical join, since callers assume the returned path is exactly what gets spawned."
+gaps: []
 deferred: []
 human_verification: []
 ---
@@ -90,9 +23,9 @@ human_verification: []
 Ghidra — through one typed seam that consumes no emulator lease, returns paths rather than
 payloads, and is the only route there is, with the ban on every other route written and
 observed biting.
-**Verified:** 2026-09-03T20:12:31Z
-**Status:** gaps_found
-**Re-verification:** Yes — after gap-closure plans 34-07/34-08/34-09 closed the prior round's two gaps
+**Verified:** 2026-09-03T23:09:04Z
+**Status:** passed
+**Re-verification:** Yes — third round, closing gap 3 / CR-05 from round 2 (`34-10`/`34-11`)
 
 ## Goal Achievement
 
@@ -100,81 +33,89 @@ observed biting.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Container-side skill invokes a host binary over a typed control op, routed before any lease-bearing path, consuming no lease, through a typed per-tool allowlist with **no argv passthrough anywhere** (SC1, SEAM-01/02) | ✓ VERIFIED | Independently reconfirmed in code: `HOST_TOOL_ARG_KEYS["oracle.probe"]` is `Object.freeze([])`, `resolveOracleCommand()` reads only the broker's own environment with a basename gate (host-tool.mts:938-958); `ghidra.analyze`'s `preScript`/`postScript` and `acme.build`'s `includes` are resolved through `resolveWorkspacePath()` at host-tool.mts:792-832 **before** `buildHostToolArgv()` is called, which reads only the resolved fields (host-tool.mts:467-472, 480). Re-ran the specific closure tests (not the whole suite): 13/13 pass, including the retired-key refusal, both escape refusals, and the cross-seam ordering test |
-| 2 | `ghidra.analyze` completes over the shipped, default-configured host_tool control-plane route within its recorded per-invocation JVM binding (closes prior gap 2 / CR-04) | ✓ VERIFIED | `hostToolRequestTimeoutMs()` (host-tool-client.ts:103-121) gives `ghidra.analyze` 660,000ms client-side; `HOST_TOOL_TIMEOUT_MS["ghidra.analyze"]` (host-tool.mts:563-570) is 600,000ms server-side; `vice-broker.mts:1163-1180`'s real wiring deliberately supplies no override. Ran `host-tool.test.ts` in full (not filtered): 67/67 pass, including "two overlapping slow ghidra.analyze host_tool requests over the real control-plane route both resolve ok:true" — a live round trip that completes past the OLD 5000ms connect-timeout constant |
-| 3 | **NEW** `resolveWorkspacePath()` — the seam's own declared single confinement point — actually confines every path-bearing key to the workspace, including against a symlink planted inside the workspace tree | ✗ FAILED | Independently reproduced, not merely accepted from the review: `resolveWorkspacePath()` uses `path.resolve()` + `startsWith()` with zero `realpath` calls (`grep -c realpath host-tool.mts` = 0). A live repro (mkdtemp workspace, mkdtemp external dir, `symlinkSync` inside the workspace pointing at the external dir, `resolveWorkspacePath()` called on a path through the symlink) returns `{ok:true, path:"<workspace>/link/pwned.txt"}`, and a subsequent `writeFileSync` at that "accepted" path lands **inside the external directory**, confirmed via `existsSync` — a demonstrated workspace escape, not a theoretical one. Two of the seven affected keys (`acme.build`'s `outDir`, `oracle.run`'s `source`) are write/read destinations. No test in the module family plants a symlink (`grep -rn symlink` across `host-tool.test.ts`, `host-tool-transport.test.ts`, `ghidra-project.test.ts` returns nothing) |
-| 4 | The 64 KiB line cap is observed, not read about (SC2, SEAM-03) | ✓ VERIFIED (regression) | `host-tool-transport.test.ts` re-run: 8/8 pass (part of a 4-file, 80-test combined run, all passing); `evidence/34-transport-cap.md` unchanged since the prior round |
-| 5 | Ghidra runs with one project directory per run id, `-deleteProject`, and the no-dot project-path refusal enforced in code (SC3, SEAM-04) | ✓ VERIFIED (regression) | `ghidra-project.test.ts` re-run as part of the same combined run: all pass; `evidence/34-ghidra-dotpath.md` unchanged |
-| 6 | The whole-tree grep gate banning skill-script external-binary spawn bites on a planted violation, scoped to what a user actually receives (SC4, SEAM-05) | ✓ VERIFIED (regression) | `skill-external-spawn-gate.test.ts` re-run in the same combined run: all pass, including 3 planted-violation shapes |
-| 7 | The new module family is inside the closed-consumer discipline with a second floor pinned over its own prefix, and the JVM lifetime binding is recorded with measurement and reversal condition (SC5, SEAM-06/07) | ✓ VERIFIED (regression) | `hostpath-consumers.test.ts` re-run in the same combined run: all pass; `docs/phase34-host-tool-seam-decisions.md` unchanged |
+| 1 | Container-side skill invokes a host binary over a typed control op, routed before any lease-bearing path, consuming no lease, through a typed per-tool allowlist with **no argv passthrough anywhere** (SC1, SEAM-01/02) | ✓ VERIFIED (regression) | `HOST_TOOL_ARG_KEYS["oracle.probe"]` still `Object.freeze([])`; `preScript`/`postScript`/`includes` still resolved through `resolveWorkspacePath()` before `buildHostToolArgv()` reads them — now against the realpath-based implementation. Re-ran `host-tool.test.ts`: 83/83 pass (up from 67 at round 2, +16 new symlink/edge/equivalence cases from `34-10`). `34-REVIEW.md` round 3 independently re-confirms CR-01/CR-02/CR-03 CLOSED and unaffected by the `resolveWorkspacePath()` rewrite |
+| 2 | `ghidra.analyze` completes over the shipped, default-configured host_tool control-plane route within its recorded per-invocation JVM binding (CR-04) | ✓ VERIFIED (regression) | `HOST_TOOL_TIMEOUT_MS`/client timeout tables unchanged by this round (no plan in `34-10`/`34-11` touched them, confirmed via `git show --stat` on both commits' diffs); the live overlapping-slow-`ghidra.analyze` end-to-end test still passes as part of the 83/83 run |
+| 3 | `resolveWorkspacePath()` — the seam's own declared single confinement point — actually confines every path-bearing key to the workspace, including against a symlink planted inside the workspace tree (CR-05, gap 3) | ✓ VERIFIED | Independently reproduced live in this round: built a standalone repro script against the freshly-built `resources/host-tool.mjs` (not the test suite's own assertions), planted a real on-disk symlink inside a temp workspace pointing at an external temp directory, and called `resolveWorkspacePath()` on a path through it. Result: `{ ok: false, message: 'workspace path escapes the workspace root: "link/pwned.txt" resolves to /tmp/cr05-outside-.../pwned.txt, outside /tmp/cr05-ws-...' }` — the exact write-key escape round 2 demonstrated as succeeding is now refused, and the external directory's listing (`readdirSync`) stays `[]`. Also independently confirmed the "outDir"-shaped case (`resolveWorkspacePath(workspace, "link")`) is refused identically. Separately confirmed the discrimination claim: an in-workspace symlink (`insidelink` -> `realdir`, both inside the workspace) is FOLLOWED and ACCEPTED, resolving to the real in-workspace path — this is not an over-broad "refuse all symlinks" patch. `grep -c realpath host-tool.mts` is now 21 occurrences (was 0 at round 2); `realpathOfNearestExisting()`/`pathEntryExists()`/`MAX_SYMLINK_HOPS` are present, substantive (not stubs — full ancestor-walk logic with dangling-link and cycle handling, hop-bounded at 40, mirroring `anno-types.ts`'s already-reviewed twin), and wired (both `repoRoot` and the candidate route through the walk before the prefix check at `host-tool.mts:579`). `node build.ts` run fresh produces zero diff against the committed `resources/host-tool.mjs` (`git status --porcelain` empty) — the artifact the broker actually loads carries the fix, not just the source |
+| 4 | The 64 KiB line cap is observed, not read about (SC2, SEAM-03) | ✓ VERIFIED (regression) | `host-tool-transport.test.ts` re-run as part of the combined 244-test run: all pass; `evidence/34-transport-cap.md` unchanged |
+| 5 | Ghidra runs with one project directory per run id, `-deleteProject`, and the no-dot project-path refusal enforced in code (SC3, SEAM-04) | ✓ VERIFIED (regression) | `ghidra-project.test.ts` re-run in the same combined run: all pass; `evidence/34-ghidra-dotpath.md` unchanged |
+| 6 | The whole-tree grep gate banning skill-script external-binary spawn bites on a planted violation, scoped to what a user actually receives (SC4, SEAM-05) | ✓ VERIFIED (regression) | `skill-external-spawn-gate.test.ts` re-run in the same combined run: all pass, including 3 planted-violation shapes; `node scripts/check-no-skill-external-spawn.mjs` clean |
+| 7 | The new module family is inside the closed-consumer discipline with a second floor pinned over its own prefix, and the JVM lifetime binding is recorded with measurement and reversal condition (SC5, SEAM-06/07) | ✓ VERIFIED (regression) | `hostpath-consumers.test.ts` re-run in the same combined run: all pass; `docs/phase34-host-tool-seam-decisions.md` now carries an appended, dated Part 4 (CR-05 correction) plus new `A-15`/`A-16` rows, with the original text left legible above — confirmed by `git diff --numstat` showing zero deletions across both `34-11` commits |
 
-**Score:** 6/7 truths verified (0 present, behavior-unverified)
+**Score:** 7/7 truths verified (0 present, behavior-unverified)
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/mcp/vice/host-tool.mts` | Host-bound executor: typed allowlist, argv construction, async spawn | ⚠️ PARTIAL | Present, substantive, wired, tested (67/67 `host-tool.test.ts` pass) — the argv-passthrough invariant (CR-01/02/03) now holds; the confinement invariant one layer below it (CR-05) does not |
-| `src/mcp/vice/host-tool-client.ts` | Container-side client, `containerPath()` translation, per-tool request-deadline timers | ✓ VERIFIED | Present, wired; `HOST_TOOL_REQUEST_TIMEOUT_MS` table added this round, correctly ordered against the server-side table (cross-seam ordering test passes) |
-| `src/mcp/vice/ghidra-project.mts` | Per-run project resolution, dot-segment refusal, argv builder | ✓ VERIFIED (regression) | Present, substantive, wired, live-transcript proven |
-| `scripts/check-no-skill-external-spawn.mjs` | Whole-tree grep gate, npm-pack scope | ✓ VERIFIED (regression) | Present, wired into CI, exits 0, 18/18 gate tests pass |
-| `src/mcp/vice/resources/host-tool.mjs`, `resources/ghidra-project.mjs` | Compiled artifacts in sync with `.mts` sources | ✓ VERIFIED | `resources-sync.test.ts` re-run: 2/2 pass — byte-identical to a fresh build, no drift |
+| `src/mcp/vice/host-tool.mts` | Host-bound executor: typed allowlist, argv construction, async spawn, workspace confinement | ✓ VERIFIED | Present, substantive, wired, tested (83/83 `host-tool.test.ts` pass). The argv-passthrough invariant (CR-01/02/03) and the confinement invariant beneath it (CR-05) now both hold, independently re-verified |
+| `src/mcp/vice/host-tool-client.ts` | Container-side client, `containerPath()` translation, per-tool request-deadline timers | ✓ VERIFIED (regression) | Unchanged this round; still wired, cross-seam ordering test still passes |
+| `src/mcp/vice/ghidra-project.mts` | Per-run project resolution, dot-segment refusal, argv builder | ✓ VERIFIED (regression) | Unchanged this round; present, substantive, wired |
+| `scripts/check-no-skill-external-spawn.mjs` | Whole-tree grep gate, npm-pack scope | ✓ VERIFIED (regression) | Present, wired into CI, exits 0, gate tests pass |
+| `src/mcp/vice/resources/host-tool.mjs`, `resources/ghidra-project.mjs` | Compiled artifacts in sync with `.mts` sources | ✓ VERIFIED | `resources-sync.test.ts` passes; independently confirmed via a fresh `node build.ts` run producing zero diff |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
 | `broker-control.mts` `handleLine()` | `host-tool.mts` `runHostTool()` | `onHostTool` callback | ✓ WIRED (regression) | Unchanged; declared alongside, never composed from, the seven lease callbacks |
-| `host-tool.mts` argv builders | `resolveWorkspacePath()` | boundary check | ⚠️ HOLLOW | All seven path-bearing keys now route through this single function (CR-02/CR-03 closed the "raw string reaches argv" defect), but the function itself accepts a symlink-mediated escape — see gap 3 |
-| `host-tool-client.ts` `hostToolOverControlPlane()` | real broker `onHostTool` wiring | TCP control-plane round trip, per-tool deadline | ✓ WIRED | Now completes for `ghidra.analyze` — live test proves a round trip past the old connect-timeout constant resolves `ok:true` |
+| `host-tool.mts` argv builders | `resolveWorkspacePath()` | boundary check | ✓ WIRED | All seven path-bearing keys route through this single function, and the function itself now confines correctly against a planted symlink — the "HOLLOW" finding from round 2 is closed |
+| `host-tool-client.ts` `hostToolOverControlPlane()` | real broker `onHostTool` wiring | TCP control-plane round trip, per-tool deadline | ✓ WIRED (regression) | Unchanged this round; still completes for `ghidra.analyze` |
+
+### Data-Flow Trace (Level 4)
+
+Not applicable in the rendered-UI sense — this phase delivers a backend control-plane seam, not a rendered view. The relevant "does the value actually reach the real destination" trace is the argv-construction and confinement chain covered under Key Link Verification and Truth 3 above: every path-bearing argument flows from the wire request, through `resolveWorkspacePath()`'s real (walked) resolution, into `buildHostToolArgv()`'s argv array — never from a raw wire string, and never confined by a check that a symlink could defeat.
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| CR-01/02/03 closure (targeted) | `node --test --test-name-pattern="cross-seam ordering\|includes.*escap\|preScript.*escap\|command.*refus\|oracle.probe" host-tool.test.ts` | 13/13 pass | ✓ PASS |
-| Full `host-tool.test.ts` (single file, not the whole-glob suite) | `node --test host-tool.test.ts` | 67/67 pass, including live overlapping-slow-ghidra.analyze round trip | ✓ PASS |
-| SEAM-03/04/05/06 regression | `node --test ghidra-project.test.ts host-tool-transport.test.ts hostpath-consumers.test.ts skill-external-spawn-gate.test.ts` | 80/80 pass | ✓ PASS |
-| Compiled-artifact drift check | `node --test resources-sync.test.ts` | 2/2 pass | ✓ PASS |
-| Debt-marker scan on phase-touched files | `grep -n -E "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER" host-tool.mts host-tool-client.ts ghidra-project.mts vice-broker.mts host-tool.test.ts` | no matches | ✓ PASS |
-| **CR-05 live reproduction** | inline Node script: mkdtemp workspace + mkdtemp external dir + `symlinkSync` + `resolveWorkspacePath()` (inlined, pure function, identical logic) + `writeFileSync` at the accepted path | file lands inside the **external** directory, confirmed via `existsSync` | ✗ FAIL — confirms CR-05 live, not merely from source reading |
+| CR-05 live reproduction (independent of the test suite) | standalone Node script against the freshly-built `resources/host-tool.mjs`: mkdtemp workspace + mkdtemp external dir + `symlinkSync` + `resolveWorkspacePath()` + attempted write | refused with the workspace-escape message; external directory listing stays `[]` | ✓ PASS |
+| CR-05 discrimination check (independent of the test suite) | standalone Node script: in-workspace symlink to an in-workspace real directory, `resolveWorkspacePath()` called through it | accepted, resolves to the real in-workspace path | ✓ PASS |
+| Full `host-tool.test.ts` (single file) | `node --test host-tool.test.ts` | 83/83 pass | ✓ PASS |
+| Combined module-family + guard regression run | `node --test host-tool.test.ts host-tool-transport.test.ts ghidra-project.test.ts resources-sync.test.ts hostpath-consumers.test.ts spawn-seam.test.ts docs-linerefs.test.ts docs-deferred-ledger.test.ts docs-review-disposition.test.ts anno-confinement.test.ts anno-seam.test.ts skill-external-spawn-gate.test.ts` | 244/244 pass | ✓ PASS |
+| Compiled-artifact drift check | `node build.ts` then `git status --porcelain resources/` | empty diff | ✓ PASS |
+| Typecheck | `npm run typecheck` | clean | ✓ PASS |
+| Full automated suite (run once, not filtered per truth) | `npm run test:automated` | `tests 3278 / suites 24 / pass 3270 / fail 2 / skipped 1 / todo 5` | ✓ PASS (both failures are the documented pre-existing `anno-register.test.ts` floor — `STORE-01`/`STORE-04`/`STORE-06`/`MCP-04` residue from the v0.8.0 REQUIREMENTS rewrite, unrelated to any file this round touched) |
+| Debt-marker scan on phase-touched files | `grep -n -E "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER" host-tool.mts host-tool.test.ts host-tool-client.ts ghidra-project.mts vice-broker.mts` | no matches | ✓ PASS |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|--------------|--------|----------|
-| SEAM-01 | 34-01 | Typed control op before lease path | ✓ SATISFIED (regression) | Unchanged from prior round |
-| SEAM-02 | 34-01/34-07/34-08 | Typed per-tool allowlist, no argv passthrough | ✓ SATISFIED (literal text) | CR-01/CR-02/CR-03 independently reconfirmed closed. **Caveat, not a revert**: the requirement's own words ("no argv passthrough") are met; the confinement layer the resolved argv values depend on for meaning (CR-05) is not — see gap 3. This is scored as a phase-blocking gap under the phase's own design invariant, not as a reason to revert SEAM-02 in REQUIREMENTS.md |
+| SEAM-01 | 34-01 | Typed control op before lease path | ✓ SATISFIED (regression) | Unchanged from prior rounds |
+| SEAM-02 | 34-01/34-07/34-08/34-10 | Typed per-tool allowlist, no argv passthrough | ✓ SATISFIED | CR-01/CR-02/CR-03 unchanged and CR-05 now also closed — the confinement layer the resolved argv values depend on for meaning now holds against a planted symlink |
 | SEAM-03 | 34-01/34-02 | Path+digest+length via containerpath.ts | ✓ SATISFIED (regression) | `containerPath()` applied; 64KiB cap observed red |
 | SEAM-04 | 34-03 | Per-run Ghidra dir, `-deleteProject`, dot-refusal in code | ✓ SATISFIED (regression) | Live transcript, unchanged |
 | SEAM-05 | 34-04/34-05 | Migrations + whole-tree gate, npm-pack scope | ✓ SATISFIED (regression) | Gate wired into CI, biting |
-| SEAM-06 | 34-06 | Second floor, closed-consumer discipline | ✓ SATISFIED (regression) | 22/22 pass (part of combined 80/80 run) |
-| SEAM-07 | 34-06 | JVM binding, measurement, reversal condition | ✓ SATISFIED (regression) | Decision record unchanged; now practically usable since CR-04 closed |
+| SEAM-06 | 34-06 | Second floor, closed-consumer discipline | ✓ SATISFIED (regression) | `hostpath-consumers.test.ts` passes |
+| SEAM-07 | 34-06 | JVM binding, measurement, reversal condition | ✓ SATISFIED (regression) | Decision record now also carries the CR-05 correction and `A-15`/`A-16`; unchanged in substance |
 
-No orphaned requirements — all seven `SEAM-*` ids declared across the plans are present in `.planning/REQUIREMENTS.md`'s Phase 34 section, all currently marked Complete.
+No orphaned requirements — all seven `SEAM-*` ids declared across the plans are present in `.planning/REQUIREMENTS.md`'s Phase 34 section, all marked Complete (`.planning/REQUIREMENTS.md:407-413`).
 
 ### Anti-Patterns Found
 
-None (`TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` grep across `host-tool.mts`, `host-tool-client.ts`, `ghidra-project.mts`, `vice-broker.mts`, `host-tool.test.ts` returns nothing). CR-05 is a logic/security gap, not a debt marker — nothing in the tree flags it as unfinished, which is itself worth noting.
+None (`TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` grep across `host-tool.mts`, `host-tool.test.ts`, `host-tool-client.ts`, `ghidra-project.mts`, `vice-broker.mts` returns nothing).
 
-Two review warnings, both deliberately deferred by an in-execution plan decision (not new, not scored as gaps):
-- **WR-01** (carried, unchanged): `check-no-skill-external-spawn.mjs`'s detector is evadable by aliasing the spawn function.
-- **WR-02** (carried, unchanged): `host_tool` has no admission control / concurrent-JVM ceiling. CR-04's fix widens this window from 20s to 600s per `ghidra.analyze` call — noted, not scored, per the review's own framing.
+Three review warnings, all previously known, none newly introduced, none blocking a must-have:
+- **WR-01** (carried, unchanged): `check-no-skill-external-spawn.mjs`'s detector is evadable by aliasing the spawn function. Deferred by explicit decision.
+- **WR-02** (carried, unchanged): `host_tool` has no admission control / concurrent-JVM ceiling. Deferred by explicit decision.
+- **WR-03** (carried, unchanged, OPEN): `runOracleRun()`'s `mkdirSync` sits outside its own try/catch; the standalone CLI entry point has no `.catch()`. Filed as a pending todo (`.planning/todos/pending/2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes.md`), STATE.md ledger row intact, deliberately left out of this round's scope by `34-11`'s own decision record. This is a minor robustness gap on the standalone-CLI-only route (the real broker's own `.catch()` around `onHostTool` already absorbs the failure) — not a demonstrated exploit and not a phase must-have, so it does not block `passed` status, consistent with round 2's own scoring discipline for carried warnings.
 
-One new warning, filed as a todo, not scored as a gap (minor severity, no demonstrated exploit path, distinct from CR-05's demonstrated write/read escape):
-- **WR-03** (new): `runOracleRun()`'s `mkdirSync` sits outside its own try/catch, and the standalone CLI entry point has no `.catch()` — an environmental failure (disk full, permission denied) becomes an unhandled rejection rather than the module's own `{ ok: false, message }` contract, on the standalone-CLI route only (the real broker's `.catch()` around `onHostTool` already absorbs it).
+**Minor documentation drift noted, not scored as a gap:** `.planning/STATE.md:1030`'s `### Pending Todos` section still reads "9 pending (9 files in `.planning/todos/pending/`...)" — stale by one, since the CR-05 todo moved to `completed/` in this round, leaving 8 files on disk (confirmed: `ls .planning/todos/pending/ | wc -l` = 8). This line sits inside `## Accumulated Context`, a section `docs-deferred-ledger.test.ts` does not scan (it only scans `## Deferred Items`, where `34-11` correctly corrected the count to "8 open" at `STATE.md:173-174`). No test reds on this, and it is pure bookkeeping prose unrelated to any SEAM-* requirement or phase truth — surfaced here for completeness, in the spirit of the project's own documented history of stale-STATE.md-prose defects, but it does not affect the phase goal and is not a blocker.
 
 ### Gaps Summary
 
-This re-verification confirms both of the prior round's gaps are genuinely closed: (1) the three argv-passthrough defects (CR-01 `oracle.probe`'s `command`, CR-02 `ghidra.analyze`'s `preScript`/`postScript`, CR-03 `acme.build`'s `includes`) are fixed in code and covered by 13 passing, targeted tests I re-ran independently; (2) `ghidra.analyze` now completes over the real, shipped control-plane route — proven by a live end-to-end test with a fake launcher sleeping past the old, too-short connect-timeout constant, which I re-ran and confirmed passing (67/67 in `host-tool.test.ts`).
+None. This round closes the last outstanding gap from round 2 (CR-05 / gap 3) and re-confirms, via independent reproduction rather than trust in SUMMARY.md or REVIEW.md claims, that:
 
-However, the code review that ran after these closures landed found a new, unresolved Critical issue this reverification independently reproduced rather than took on faith: `resolveWorkspacePath()`, the single function this phase's own code calls "the ONLY place a wire-supplied path becomes a real path," enforces the workspace boundary with a purely lexical check that a symlink planted anywhere inside the workspace tree defeats. I constructed and ran a minimal, live repro proving a file write "accepted" by this check actually lands outside the workspace root. Two of the seven affected keys are write/read destinations, not inert values, so this is a demonstrated host-side confinement escape, not a theoretical one — and it reintroduces a bug class (`anno-types.ts`'s pre-`realpathOfNearestExisting()` history) this same codebase already paid to fix once.
+1. **The escape is genuinely closed.** The exact live repro round 2 used to demonstrate the defect (a symlink planted inside a workspace, pointing outside it, used as both a read key and a write key) now fails with the workspace-escape refusal message, and the outside directory is provably untouched.
+2. **The fix discriminates rather than over-blocking.** A symlink pointing to an in-workspace location is followed and accepted, resolving to its real in-workspace path — ruling out the "refuse every symlink" failure mode that would have broken legitimate use while looking like a fix.
+3. **The compiled artifact carries the fix.** A fresh `node build.ts` run produces zero diff against the committed `resources/host-tool.mjs`.
+4. **No regression.** All six previously-verified truths were re-checked and still hold: 244/244 tests pass across the full module-family + ledger/disposition/confinement guard set, typecheck is clean, and the one full `test:automated` run matches the documented pre-existing 2-failure floor in `anno-register.test.ts` (unrelated to any file this round touched — confirmed neither `anno-register.test.ts` nor the anno tool register nor `REQUIREMENTS.md` appear in this round's 11 changed files).
+5. **The record and the ledger agree with the code.** `docs/phase34-host-tool-seam-decisions.md` carries an appended (not rewritten) CR-05 correction and two new assumptions; the CR-05 todo moved to `completed/` with a Resolution section; `.planning/STATE.md`'s Deferred Items table (the section the ledger guard actually checks) is reconciled in the same commit as the todo move; WR-03's row and todo were correctly left untouched, since closing CR-05 does not close WR-03.
 
-My independent judgment on the scoping question this task specifically asked me to resolve: **SEAM-02's literal text — "no argv passthrough anywhere" — is met.** The value reaching argv for every affected key is always a resolved path from `resolveWorkspacePath()`, never a raw wire string; that specific property is real and re-verified. CR-05 is a distinct defect in the confinement check underneath that property, not an argv-passthrough violation, and I am not recommending SEAM-02 be reverted to Pending on this basis. **But this does not make the phase `passed`.** CR-05 is a demonstrated security escape in code this phase delivered, contradicts that same code's own stated design invariant, and its only disposition today is a pending todo — filed by the review process itself, with no human-accepted override recorded anywhere. A todo tracks a finding; it does not discharge it. Per this workflow's override mechanism, only an explicit `accepted_by`/`accepted_at` entry in this file's frontmatter constitutes acceptance, and none exists. This is scored as a new, phase-blocking gap.
-
-**This looks like it needs a closure plan, not a silent pass.** The fix is narrow and precedented: mirror `anno-types.ts`'s own `realpathOfNearestExisting()`-based fix in `resolveWorkspacePath()`, and add a live planted-symlink test for at least one read key and one write key — exactly what the filed todo (`.planning/todos/pending/2026-09-03-cr-05-resolveworkspacepath-is-symlink-blind.md`) already specifies.
+The three carried warnings (WR-01, WR-02, WR-03) remain open by explicit, recorded decision and do not block phase completion — this matches the same scoring discipline round 2 already applied to WR-01/WR-02, extended consistently to WR-03 now that it too has a documented disposition (a pending todo with a named owner-in-waiting, not a silent gap).
 
 ---
 
-_Verified: 2026-09-03T20:12:31Z_
+_Verified: 2026-09-03T23:09:04Z_
 _Verifier: Claude (gsd-verifier)_
