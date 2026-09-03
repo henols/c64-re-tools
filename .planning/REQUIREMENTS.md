@@ -126,7 +126,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       and there is no container PATH to find them on
 - [x] **SEAM-02**: Each tool is invoked through a **typed per-tool allowlist** with no argv
       passthrough anywhere, as a child process, with the invocation and its exit status recorded
-- [ ] **SEAM-03**: Results cross the boundary as **path plus digest plus length** through
+- [x] **SEAM-03**: Results cross the boundary as **path plus digest plus length** through
       `containerpath.ts`, never as payload. MEASURED constraint: the control channel has a 64 KiB
       line cap while Ghidra exports run to megabytes, so files are forced regardless — this makes
       that a contract rather than a workaround. (The >64 KiB inline disconnect is READ-IN-SOURCE,
@@ -406,7 +406,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | GATE-01 | Phase 33 | Complete |
 | SEAM-01 | Phase 34 | Complete |
 | SEAM-02 | Phase 34 | Complete |
-| SEAM-03 | Phase 34 | Pending |
+| SEAM-03 | Phase 34 | Complete |
 | SEAM-04 | Phase 34 | Pending |
 | SEAM-05 | Phase 34 | Pending |
 | SEAM-06 | Phase 34 | Pending |

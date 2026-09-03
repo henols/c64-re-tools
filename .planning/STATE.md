@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
 status: executing
-stopped_at: Completed 34-01-PLAN.md
-last_updated: "2026-09-03T13:18:54.534Z"
+stopped_at: Completed 34-02-PLAN.md
+last_updated: "2026-09-03T13:45:11.187Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 34 execution started
-state_head: c46f99e64cf2ddec73e2699defb05f53cf211de1
+state_head: 4445e148d7e1c36933d01778b8cd0e9e1807dc9d
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 18
-  completed_plans: 13
+  completed_plans: 14
   percent: 17
 ---
 
@@ -177,7 +177,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 34 (The Host-Tool Execution Seam) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -568,6 +568,7 @@ Last activity: 2026-09-03 — Phase 34 execution started
 | Phase 33 P11 | 3h 37m | 3 tasks | 8 files |
 | Phase 33 P12 | 21 min | 3 tasks | 5 files |
 | Phase 34 P01 | 40min | 3 tasks | 16 files |
+| Phase 34 P02 | 26min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1003,6 +1004,7 @@ Recent decisions affecting current work:
 - [Phase 33]: GATE-01 returns `degrade`, fired by rule `R6` on `ORACLE_NECESSITY: unproven` — derived by walking five values transcribed from column-0 outcome lines through rules committed at `2a8ef95` before any of them existed; `R1`..`R5` did not match and `R7`/`R8`/`R9` were never evaluated. `could-not-run` was structurally unemittable (`R9` has no antecedent; the rule set is total over 108 tuples). Recorded in `docs/phase33-reproducible-run-gate-findings.md`. — The one override available was DECLINED: `33-11` disclosed that `unproven` rests on the strict reading of `SCHEMA.md` 2.3's "exactly one frame apart" and named `33-12` as the only plan that may revisit it. Kept, on four grounds — the frozen text states the strict reading; `proven` is the flattering value and the measuring plan took the unflattering one deliberately; the measurement points the same way `R6` does (the frame term contributed nothing on the variant pair, `hit_count` separated the stops); and the same file's second accepted limit records that the control gives no support to a reading in which the frame term is load-bearing, while `R6`'s narrowing drops that term. Even the generous reading gives an integral, not a one, frame separation.
 - [Phase 34]: Phase 34 plan 01 (A-01): host_tool is ONE new ControlRequestKind member carrying a typed tool/args payload, not one member per host tool -- mirrors D-15's precedent, so the two byte-exact ControlRequestKind tests are edited once ever rather than once per future tool. — A generic per-tool op family would widen ControlRequestKind (and its two byte-exact tests) on every new host tool added over the life of the project; one op with server-side per-tool typing in host-tool.mts's own allowlist keeps the wire protocol's own surface fixed.
 - [Phase 34]: Phase 34 plan 01 (A-03): host_tool requests carry only workspace-relative paths, resolved and boundary-checked server-side (resolveWorkspacePath); only RESULT paths cross through containerPath(), so the new host-tool module family never joins hostpath.ts's closed five-member consumer set. — Satisfies the path-traversal mitigation (T-34-03), avoids importing hostpath.ts anywhere in the new family, and keeps hostpath-consumers.test.ts's EXPECTED_IMPORTERS unchanged at five -- the ROADMAP's own stated preference, achieved by construction because containerpath.ts is already a declared consumer.
+- [Phase 34]: Multi-byte-UTF-8 over-cap test case does not assert hadError===false — Measured: identical byte count over the cap, ASCII content gives a clean hadError=false destroy, multi-byte UTF-8 content gives hadError=true (ECONNRESET) -- a content-sensitive race, not flakiness. The plan's own <behavior> only requires 'IS destroyed' for this case, so the test asserts exactly that plus zero response bytes.
 
 ### Pending Todos
 
@@ -1792,8 +1794,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T13:18:54.012Z
-Stopped at: Completed 34-01-PLAN.md
+Last session: 2026-09-03T13:45:10.573Z
+Stopped at: Completed 34-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
