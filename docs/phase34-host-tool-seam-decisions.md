@@ -152,6 +152,8 @@ for the migrated packer module is its colocated `packer-finding.test.mjs`, not
 | A-12 | The external-spawn gate exempts a child-process call whose command resolves to the interpreter (`process.execPath`, directly or through a local declared from it) but does NOT exempt any bare command name. | `vsf-slice.mjs`'s own header already states the reasoning: the interpreter already running the script, invoked on a file inside this project's own two packages, reaches no external host binary and does not involve the seam at all. `vsf-slice.mjs` is the gate's real on-disk positive proof this exemption is not vacuous. | Costly — this is the single hardest distinction the gate's discovery predicate makes; loosening or tightening it risks either false negatives (a disguised host-binary spawn slips through) or false positives (a legitimate in-tree subprocess call is flagged). |
 | A-13 | The host-tool family prefix is a UNION of three anchored prefixes — `host-tool`, `ghidra`, `dxa` — matched as `/^(host-tool\|ghidra\|dxa)(-[A-Za-z0-9-]*)?\.(ts\|mts)$/`, one floor rather than three. | The three prefixes name ONE family — the seam itself plus the two engines that reach host binaries through it — and a floor per prefix would pin two of them at zero today, which is a floor that cannot fail. Anchored at `^` so `anno-host-tool.ts` matches neither glob (asserted as a disjointness case in `hostpath-consumers.test.ts`). | Costly — the union-of-three-prefixes shape is now baked into a hand-pinned regex and its test suite; splitting it into per-prefix floors later means re-deriving three separate hand-pinned numbers instead of one relation. |
 | A-14 | The host-tool family floor is `2 + 1 = 3`, expressed as that relation: the two modules plan `34-01` lands (`host-tool.mts`, `host-tool-client.ts`) plus the one plan `34-03` lands (`ghidra-project.mts`). | Test files are excluded by `topLevelProductionModules()` itself, so no `*.test.ts` inflates the count; the relation form keeps the arithmetic readable rather than presenting an unexplained bare number, following `ANNO_MODULE_FLOOR`'s own established convention. | Reversible — re-deriving the relation when the family legitimately grows is exactly the intended, expected maintenance path (raised, never lowered), not a design reversal. |
+| A-15 | *Added 2026-09-04, `34-10-PLAN.md`, closing CR-05.* The ancestor-realpath walk `resolveWorkspacePath()` now runs is implemented LOCALLY in `host-tool.mts`, not imported from `anno-types.ts`; the anti-drift mechanism is a cross-implementation equivalence test, not a shared symbol. | `host-tool.mts` is host-bound: it compiles into `resources/host-tool.mjs`, which runs on a bare host Node with no type-stripping, and every `.mts` module in this family imports only `node:*` builtins and sibling compiled `.mjs` artifacts. `anno-types.ts` is container-side and transitively imports `./vice.ts` and `./disasm-opcodes.ts`, neither host-bound — it is structurally unreachable from `host-tool.mts`. The equivalence test compares the two PUBLIC seams (`resolveWorkspacePath()` and `storePathWithinWorkspace()`) over one shared fixture table, not a private symbol, so `anno-types.ts`'s export surface is unchanged by this decision. | Costly — collapsing the duplication later means touching `build.ts`'s `HOST_BOUND_ARTIFACTS`, `tsconfig.build.json`'s `include[]`, both consumers, and the equivalence test, in one commit. |
+| A-16 | *Added 2026-09-04, `34-10-PLAN.md`, closing CR-05.* `resolveWorkspacePath()`'s `ok: true` result is now the REAL (walked) path, not the lexical join; the container-translation consequence this creates is recorded here as a limit, not closed by widening `hostpath.ts`'s consumer set. | The real path is the only honest return: it is exactly what gets spawned, so returning a lexical join while confining on a realpath would hand the caller a string the filesystem then reinterprets differently from what was checked. The consequence: `containerPath()` throws for a host path matching no member of `hostRootCandidates()`, so on a host whose workspace root is itself reached through a symlink, the response path becomes untranslatable on the container route. The pre-existing mitigation is unchanged — `HOST_WORKSPACE_PATH` naming the real root. The fix is deliberately NOT to realpath `hostRootCandidates()`: `hostpath-consumers.test.ts`'s own header makes widening its five-member consumer set a REVIEWED DECISION, not a mechanical repair, and this round does not make that review. | Costly — reversing this means either accepting the untranslatable-symlinked-root case some other way, or opening the reviewed five-member `hostpath.ts` consumer set, neither of which is a one-line edit. |
 
 ---
 
@@ -238,3 +240,85 @@ seam is still unmeasured, and the 600,000 ms budget was chosen to clear the docu
 multi-minute figure with headroom rather than a freshly measured one — the same honesty
 convention Part 1's own "What `34-RESEARCH.md` could NOT answer" section (Assumptions A2/A3)
 already set for this document.
+
+---
+
+## Part 4 — 2026-09-04 correction: `resolveWorkspacePath()` was symlink-blind (CR-05, plans `34-10`/`34-11`)
+
+This is a correction, not a rewrite. Everything recorded in Part 1, Part 2, and Part 3 stands
+exactly as written above; what follows describes a defect discovered in the seam itself, after
+the gap-closure round Part 3 describes had already landed, and the fix plan `34-10` applied.
+
+### What was wrong
+
+`resolveWorkspacePath()` — the function this module's own header calls "the ONLY place a
+wire-supplied path becomes a real path" — enforced the workspace boundary with `path.resolve()`
+plus a `startsWith(rootAbs + sep)` string check, and never consulted the filesystem. This left
+every one of the seven keys `HOST_TOOL_PATH_ARG_KEYS` declares symlink-blind: a symlink planted
+anywhere along a supplied relative path's ancestor chain caused the check to compare lexically
+satisfying strings while the filesystem resolved to a location entirely outside the workspace
+root. Two of the seven affected keys are write/read destinations, not inert path values —
+`acme.build`'s `outDir` (the host broker process's own write target) and `oracle.run`'s `source`
+(an arbitrary host file's bytes read back through the oracle's stdout capture) — and
+`ghidra.analyze`'s `preScript`/`postScript` select a script `analyzeHeadless` then executes
+inside the JVM's analysis session. `.planning/phases/34-the-host-tool-execution-seam/34-VERIFICATION.md`'s
+gap 3 and `.planning/phases/34-the-host-tool-execution-seam/34-REVIEW.md`'s CR-05 both name this
+defect; the verifier did not accept it from source reading alone but reproduced the escape LIVE
+— a `mkdtemp` workspace, a `mkdtemp` external directory, a real `symlinkSync`, and a
+`writeFileSync` at the `ok:true`-accepted path landing outside the workspace root. The
+aggravating fact both records name: this exact bug class had already been found and fixed once
+in this codebase, in `anno-types.ts`'s `storePathWithinWorkspace()`.
+
+### What changed
+
+Both the workspace root and the candidate path now go through one ancestor-realpath walk before
+the separator-appended prefix comparison, and the walked candidate — the REAL path, not the
+lexical join — is what the `ok: true` result returns. The walk: it climbs the ancestor chain
+looking for the nearest path ENTRY that actually exists on disk; if it reaches the filesystem
+root without finding one, it answers from that terminal position rather than looping forever; it
+hops a dangling symbolic link against the LINK'S OWN containing directory (not the link's
+non-existent target) under a bound equal to Linux's `MAXSYMLINKS` (`MAX_SYMLINK_HOPS = 40`); and
+otherwise it calls `realpathSync` on the existing entry and rejoins the non-existent tail.  Every
+filesystem failure along the walk becomes a `{ ok: false, message }` refusal rather than a
+thrown error, so the module's own never-throw contract (`runHostTool()`'s own doc comment: "NOTHING
+throws out of this function") was not widened by adding filesystem access. The evidence: live
+planted-symlink refusals for a read key (`acme.build`'s `source`) and a write key (`acme.build`'s
+`outDir`), each asserting the outside directory's own listing stayed unchanged rather than only
+that an error was returned; a set of discriminating cases (an inside-pointing link FOLLOWED and
+accepted, a dangling inside-pointing link accepted, a symlinked workspace root not making
+in-workspace paths look foreign) that would redden an over-broad "refuse every symlink" fix; and
+a cross-implementation equivalence table pinning this walk against `anno-types.ts`'s
+`storePathWithinWorkspace()` over one shared fixture table.
+
+### What did NOT change
+
+The typed per-tool allowlist and the seven declared path keys (`HOST_TOOL_PATH_ARG_KEYS`'s own
+census total) are unchanged. `buildHostToolArgv()`'s no-argv-passthrough property is unchanged
+and independently reproven against a seam that now returns a real path instead of a lexical
+join. `SEAM-02`'s `Complete` marking in `.planning/REQUIREMENTS.md` is unchanged in either
+direction — the verifier ruled in writing that the requirement's own literal text ("typed
+per-tool allowlist with no argv passthrough anywhere") is MET, and this round does not re-score
+it. The `JVM_BINDING: per-invocation` decision (Part 1), its measurements, and its `N=20`/`P=30%`
+reversal condition (Part 1, restated unchanged by Part 3) stand verbatim; nothing in this round
+touched a budget.
+
+### What is still NOT closed
+
+- **The check-then-open window.** There is no honest fix at this layer for the gap between this
+  confinement decision and the child process's own filesystem open: the child is a third-party
+  binary (`acme`, `analyzeHeadless`, the packer oracle) handed a path string, so there is no
+  descriptor-based route available that would make the check and the open one atomic operation.
+  No test added this round may be read as covering it.
+- **The Unicode-normalisation divergence.** The comparison is byte-wise and applies no Unicode
+  normalisation, so two spellings of the same visible path that differ only in normalisation form
+  are two distinct paths to this seam.
+- **The three carried warnings**, none touched by this round: `WR-01` (the spawn-gate detector in
+  `scripts/check-no-skill-external-spawn.mjs` is still evadable by aliasing the spawn function);
+  `WR-02` (`host_tool` still has no admission control / concurrent-JVM ceiling); and `WR-03`
+  (`runOracleRun()`'s unguarded `mkdirSync` and the CLI entry point's missing `.catch()`), filed as
+  a pending todo, severity minor, still open, and deliberately not folded into this round — its
+  ledger row and todo file are untouched by plan `34-11`.
+
+The two new assumptions this fix rested on, `A-15` and `A-16`, are recorded in Part 2's table
+above, each dated and pointing at `34-10-PLAN.md` rather than presented as contemporaneous with
+`A-01`..`A-14`.
