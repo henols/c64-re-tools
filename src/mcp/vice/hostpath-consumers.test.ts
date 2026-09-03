@@ -23,9 +23,10 @@
 // prevent.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 
 import { STOCK_DERIVED_TOOLS } from "./stock-derived.ts";
 
@@ -120,9 +121,15 @@ function stripCommentLines(src: string): string {
 /** The complete top-level module list this repo ships: every `*.ts`/`*.mts`
  * directly under `src/mcp/vice`, excluding `*.test.*` files. Does NOT
  * walk into `resources/` (compiled `.mjs` artifacts, not source) or
- * `node_modules/`. */
-function topLevelProductionModules(): string[] {
-  return readdirSync(HERE)
+ * `node_modules/`.
+ *
+ * `dir` is injectable (default `HERE`, the real directory) purely so a
+ * SECOND floor (SEAM-06, below) can drive this exact code path against
+ * synthetic directories for its emptiness, ordering and disjointness
+ * cases -- the `inEnumerationOnDisk(dir)` convention this repo already
+ * uses for that purpose (module-classification.test.ts's own helper). */
+function topLevelProductionModules(dir: string = HERE): string[] {
+  return readdirSync(dir)
     .filter((name) => /\.(ts|mts)$/.test(name))
     .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name));
 }
@@ -141,6 +148,15 @@ function hostpathImporters(): string[] {
   return importers.sort();
 }
 
+// SEAM-06: this phase's new host-tool-execution-seam family (`host-tool.mts`,
+// `host-tool-client.ts`, `ghidra-project.mts`, and the `ghidra-*`/`dxa-*`
+// members still to come) deliberately did NOT join this list. The family
+// reaches host-path logic through `containerpath.ts`, already one of the
+// five below, and every request-side path crosses as workspace-relative and
+// is resolved server-side (plan 34-01's A-03) -- there was nothing to
+// translate on the way in. See HOST_TOOL_FAMILY_FLOOR, further down, for the
+// second, independently pinned floor that keeps this family inside the
+// closed-consumer discipline without widening this five-member set.
 const EXPECTED_IMPORTERS = ["containerpath.ts", "install-resources.ts", "stock-paths.ts", "vice-proxy.ts", "vice-sync.ts"];
 
 test("hostpath.ts's production consumer set is exactly the five declared modules", () => {
@@ -382,6 +398,184 @@ test("planted violation, three import shapes (Phase 10 IN-02 proof): multi-line 
     false,
     "a hostpath.ts mention inside only a // comment and a string literal must NOT be reported -- proves the widening did not become a substring search",
   );
+});
+
+// A SECOND, INDEPENDENTLY PINNED FLOOR (SEAM-06). 34-RESEARCH.md's Pitfall 2
+// names the blind spot precisely: `annoProductionModules()`'s glob above is
+// anchored on `anno-`, so a `ghidra-*`/`dxa-*`/`host-tool-*` family sits
+// OUTSIDE its scan entirely -- a family member that wrongly imported
+// `hostpath.ts` would produce no red anywhere without a floor pinned over
+// ITS own prefix. This is why a second floor exists at all rather than
+// widening the first.
+
+/** Matches the union of the three anchored prefixes this family's members
+ * carry -- `host-tool`, `ghidra` and `dxa` -- one family across the seam
+ * itself and the two engines that reach host binaries through it (A-13,
+ * SEAM-06), never three separate floors (a floor per prefix would pin two
+ * of them at zero today, which is a floor that cannot fail). Anchored at
+ * `^` so `anno-host-tool.ts` matches neither this glob nor is silently
+ * absorbed into it -- asserted as a disjointness case below. */
+const HOST_TOOL_FAMILY_RE = /^(host-tool|ghidra|dxa)(-[A-Za-z0-9-]*)?\.(ts|mts)$/;
+
+/** The host-tool execution-seam module family, derived from disk via the
+ * SAME `topLevelProductionModules()` helper the five-member consumer scan
+ * and the `anno-` family both reuse -- never a second directory walk.
+ * Returns a SORTED list so every assertion over it is order-independent
+ * (asserted below by driving this over a reversed synthetic listing).
+ * `dir` is injectable for the same reason `topLevelProductionModules()`'s
+ * own `dir` parameter is: so the emptiness, ordering and disjointness
+ * cases can drive this exact code path against synthetic inputs. */
+function hostToolFamilyProductionModules(dir: string = HERE): string[] {
+  return topLevelProductionModules(dir)
+    .filter((name) => HOST_TOOL_FAMILY_RE.test(name))
+    .sort();
+}
+
+// THE VALUE IS A RELATION, not an unexplained measurement: `2 + 1` is the
+// two production modules plan 34-01 lands (`host-tool.mts`,
+// `host-tool-client.ts`) plus the one plan 34-03 lands (`ghidra-project.mts`).
+// Verified against disk at this commit -- see the pinned-equals-measured
+// companion test immediately below.
+//
+// MUST BE RAISED, NEVER LOWERED (D-13, read exactly the way
+// `ANNO_MODULE_FLOOR` above reads it), and MUST NEVER BE DERIVED FROM DISK:
+// `disk.length >= disk.length` is a guard re-pointed to a subject that
+// cannot fail, and it would silently discard the entire non-vacuity this
+// floor exists to provide. Keep it a hand-pinned integer literal. Cite
+// SEAM-06 and `34-RESEARCH.md`'s Pitfall 2 for why this floor exists at all
+// rather than widening `ANNO_MODULE_FLOOR`'s own `anno-` glob.
+const HOST_TOOL_FAMILY_FLOOR = 2 + 1;
+
+test("the host-tool execution-seam module family (SEAM-06) is derived from disk with a non-vacuity floor, not a hard-coded list", () => {
+  const modules = hostToolFamilyProductionModules();
+  assert.ok(
+    modules.length >= HOST_TOOL_FAMILY_FLOOR,
+    `expected >= ${HOST_TOOL_FAMILY_FLOOR} host-tool-family production modules on disk, found ${modules.length} -- ` +
+      "an empty or broken glob must fail loudly here rather than let the absence assertions below pass trivially",
+  );
+});
+
+// THE PINNED-EQUALS-MEASURED RELATION, mirroring MCP-05's own companion
+// above. This assertion catches the module set GROWING underneath the
+// floor -- something the floor above deliberately does not catch on its
+// own -- and its purpose is DIAGNOSIS RATHER THAN PROHIBITION.
+//
+// What it removes is a temporal coupling. Plan 34-04 runs in the same wave
+// as this plan and, measured at plan time, adds no module matching this
+// family glob (it creates `mcp-module.mjs` under `src/skills/`, outside
+// this directory entirely), so the count measured in this tree is the
+// count after the wave merges. If that ever stops being true, this fails
+// HERE, saying the module set moved -- rather than surfacing two waves
+// later as an intermittent off-by-one attributed to whichever plan
+// happened to run last.
+//
+// WHEN THIS FAILS, RE-DERIVE THE FLOOR DELIBERATELY. Do not nudge the
+// literal until the numbers agree.
+test("SEAM-06: the hand-pinned host-tool-family floor equals the measured count -- a same-wave change to the module set fails HERE with the right diagnosis", () => {
+  const modules = hostToolFamilyProductionModules();
+  assert.equal(
+    modules.length,
+    HOST_TOOL_FAMILY_FLOOR,
+    `HOST_TOOL_FAMILY_FLOOR is pinned at ${HOST_TOOL_FAMILY_FLOOR} but ${modules.length} host-tool-family ` +
+      `production modules are on disk (${modules.join(", ")}) -- the module set moved underneath the plan that ` +
+      "pinned this number. Re-derive the floor deliberately, naming the plan that added or removed the module; " +
+      "do NOT adjust the literal to fit, and never compute it from disk, which would make it unfailable.",
+  );
+});
+
+test("SEAM-06 positive control: the three real family modules plans 34-01 and 34-03 land are present in the derived set", () => {
+  // A control must name real, current files and never a module about to
+  // stop existing (anno-store.ts's own role, above, mirrored here).
+  const modules = hostToolFamilyProductionModules();
+  for (const name of ["host-tool.mts", "host-tool-client.ts", "ghidra-project.mts"]) {
+    assert.ok(modules.includes(name), `${name} (SEAM-06's positive control) must be present in the derived host-tool-family module set`);
+  }
+});
+
+test("every DERIVED host-tool-family module is absent from the hostpath.ts consumer set (SEAM-06)", () => {
+  const importers = hostpathImporters();
+  const familyModules = hostToolFamilyProductionModules();
+  // Non-vacuity is asserted separately above; this loop still guards
+  // against an empty array silently making every assertion below
+  // vacuously true, exactly as the `anno-` family's own absence case does.
+  assert.ok(familyModules.length > 0, "hostToolFamilyProductionModules() must not be empty");
+  for (const name of familyModules) {
+    assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
+  }
+});
+
+// NAMED ABSENCE BEFORE EXISTENCE: `ghidra-analyze.ts`/`ghidra-export.ts`
+// (Phase 36) and `dxa-listing.ts`/`dxa-run.ts` (Phase 35) do not exist yet.
+// The named-absence form is deliberate, mirroring the `anno-*` family's own
+// test above: the derived-set assertion alone goes red only AFTER a bad
+// import lands and says only "the set changed" -- this says WHICH module,
+// for modules no plan in this phase has written yet, so the constraint is
+// asserted before there is anything to violate it.
+test("future host-tool-family members are absent from the hostpath.ts consumer set, named before they exist (SEAM-06)", () => {
+  const importers = hostpathImporters();
+  for (const name of ["ghidra-analyze.ts", "ghidra-export.ts", "dxa-listing.ts", "dxa-run.ts"]) {
+    assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
+  }
+});
+
+test("SEAM-06 planted violation: a synthetic host-tool-family-shaped source that DOES import hostpath.ts is reported by the same importsHostpath predicate the real scan uses", () => {
+  const plantedViolation = `import { hostPath } from "./hostpath.ts";\nexport function ghidraAnalyze() {}\n`;
+  assert.equal(
+    importsHostpath(stripCommentLines(plantedViolation)),
+    true,
+    "the predicate must report a genuine hostpath.ts import from a family-shaped module -- if this fails, the " +
+      "absence assertions above are not actually capable of catching a real violation",
+  );
+});
+
+/** Builds a throwaway directory, writes each name in `names` into it as an
+ * empty synthetic source file, runs `fn(dir)`, and always cleans up --
+ * `shipped-modules.test.ts`'s own `withSyntheticPackage()` shape, reused
+ * here for a plain directory rather than a `package.json`-backed one. */
+function withSyntheticDirectory<T>(names: string[], fn: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), "hostpath-consumers-family-"));
+  try {
+    for (const name of names) writeFileSync(join(dir, name), "// synthetic\n", "utf8");
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("SEAM-06, edge: empty -- an empty family glob over a synthetic directory with no family module FAILS the floor loudly rather than passing trivially", () => {
+  withSyntheticDirectory(["unrelated.ts", "unrelated.test.ts"], (dir) => {
+    const modules = hostToolFamilyProductionModules(dir);
+    assert.deepEqual(modules, [], "a synthetic directory with no family-prefixed module must derive to an empty family list");
+    assert.throws(
+      () => assert.ok(modules.length >= HOST_TOOL_FAMILY_FLOOR),
+      "the floor comparison must FAIL over an empty derived list -- proving the floor is capable of failing rather than merely present",
+    );
+  });
+});
+
+test("SEAM-06, edge: ordering -- the family derivation returns the same sorted result regardless of on-disk listing order", () => {
+  // Written in REVERSE alphabetical order, to prove sorting is the
+  // derivation's own doing rather than an accident of readdirSync's order.
+  withSyntheticDirectory(["host-tool.mts", "ghidra-project.mts", "dxa-run.ts"], (dir) => {
+    const modules = hostToolFamilyProductionModules(dir);
+    assert.deepEqual(modules, ["dxa-run.ts", "ghidra-project.mts", "host-tool.mts"]);
+  });
+});
+
+test("SEAM-06, edge: adjacency -- the family glob and the anno- glob are disjoint over one synthetic listing, and a module named anno-host-tool.ts matches neither the family glob nor is absorbed into it", () => {
+  withSyntheticDirectory(["anno-host-tool.ts", "host-tool.mts", "anno-store.ts"], (dir) => {
+    const familyModules = hostToolFamilyProductionModules(dir);
+    // The SAME `anno-` derivation shape `annoProductionModules()` uses
+    // above, driven over the synthetic dir directly -- `annoProductionModules()`
+    // itself is not made dir-injectable, since it needs no synthetic case
+    // of its own; this reuses the one shared `topLevelProductionModules(dir)`
+    // walk rather than adding a second `readdirSync`.
+    const annoModules = topLevelProductionModules(dir).filter((name) => /^anno-.*\.ts$/.test(name));
+    assert.equal(familyModules.includes("anno-host-tool.ts"), false, "anno-host-tool.ts must not match the family glob");
+    assert.ok(annoModules.includes("anno-host-tool.ts"), "anno-host-tool.ts is a real anno--prefixed synthetic file and must match the anno- glob");
+    const intersection = familyModules.filter((name) => annoModules.includes(name));
+    assert.deepEqual(intersection, [], "the two derivations' results must have an empty intersection over the same synthetic listing");
+  });
 });
 
 // D-05-12: the derived-module guess this test used to make -- stripping the
