@@ -152,6 +152,27 @@ test("an unknown verb is answered by THIS script's usage, not by a subprocess's"
   assert.match(r.stderr, /usage: node vsf-slice\.mjs <command>/);
 });
 
+// The same claim for the verbs that used to slip through (33 review WR-04).
+// The dispatch table was a plain object literal, so it inherited
+// Object.prototype and `commands["constructor"]` was a truthy FUNCTION: the
+// known-verb test passed and the prototype member was then CALLED. The
+// documented usage was never printed, and the failure surfaced as
+// `The "code" argument must be of type number. Received an instance of Array`
+// from process.exit(). So the test above held only for verbs that are not
+// prototype members -- exactly the gap a named-verb list cannot notice.
+for (const verb of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+  test(`an unknown verb that is an Object.prototype member (${verb}) is ALSO answered by this script's usage`, () => {
+    const r = runWrapper([verb, "x.vsf"]);
+    assert.notEqual(r.status, 0, "a nonexistent verb must not exit 0");
+    assert.match(r.stderr, /usage: node vsf-slice\.mjs <command>/);
+    assert.doesNotMatch(
+      r.stderr,
+      /"code" argument must be of type number/,
+      "the prototype member must not be dispatched to and its return value fed to process.exit()",
+    );
+  });
+}
+
 test("no verb at all prints usage and exits 0", () => {
   const r = runWrapper([]);
   assert.equal(r.status, 0);

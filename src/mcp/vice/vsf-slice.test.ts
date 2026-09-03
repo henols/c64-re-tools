@@ -55,6 +55,11 @@ function fixture(name: string): Uint8Array {
   return readFileSync(join(HERE, "fixtures", "vsf", `${name}.vsf`));
 }
 
+/** The four committed fixture names, in the generator's own declaration order.
+ * Spelled once here so the generator-refusal test can assert the corpus is
+ * untouched without a second list to keep in step. */
+const FIXTURE_NAMES = ["wellformed-minor1", "wellformed-minor0", "malformed-header", "short-c64mem"] as const;
+
 /** The generator's closed-form RAM pattern, recomputed rather than stored.
  * `fixtures/vsf/make-fixtures.mjs` builds the minor-1 fixture with
  * `(7, 13)` and the minor-0 fixture with `(11, 5)`. */
@@ -587,4 +592,36 @@ test("vsf-slice.ts is in package.json files[] and no fixtures entry is", () => {
     [],
     "fixtures are test-support and must never ship: the package-contents validator fails a pack that leaks one",
   );
+});
+
+// ---------------------------------------------------------------------------
+// The generator's own name validation (33 review WR-04)
+// ---------------------------------------------------------------------------
+//
+// `make-fixtures.mjs` validated a requested fixture name with `in`, which
+// walks the prototype chain, so `"toString" in FIXTURES` was true. The name
+// passed validation, matched no entry in the Object.entries() loop, wrote
+// nothing, printed nothing and EXITED 0 -- a silent pass on a fixture name
+// that does not exist, in the generator whose whole job is checkable
+// provenance, and the source of every fixture this file asserts against.
+//
+// Only the REFUSAL path is exercised here, deliberately: a run with real names
+// would rewrite the committed fixtures with a fresh `capturedAt`, so the test
+// would mutate the very corpus it validates. Refusal writes nothing by
+// construction, and the fixture bytes are asserted unchanged to prove it.
+
+test("make-fixtures refuses a prototype-member fixture name instead of exiting 0 having written nothing", () => {
+  const generator = join(HERE, "fixtures", "vsf", "make-fixtures.mjs");
+  const before = FIXTURE_NAMES.map((name) => fixture(name));
+
+  for (const bogus of ["toString", "constructor", "valueOf", "hasOwnProperty"]) {
+    const run = spawnSync(process.execPath, [generator, bogus], { encoding: "utf8" });
+    assert.notEqual(run.status, 0, `\`make-fixtures ${bogus}\` must not exit 0 having written nothing`);
+    assert.match(run.stderr, /unknown fixture name\(s\)/, "the refusal names the rejected input");
+    assert.match(run.stderr, new RegExp(bogus), "and echoes which name was rejected");
+  }
+
+  FIXTURE_NAMES.forEach((name, i) => {
+    assert.deepEqual(fixture(name), before[i], `the refusal must not have touched ${name}.vsf`);
+  });
 });

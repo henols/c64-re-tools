@@ -163,7 +163,15 @@ function forward(argv) {
 // Both verbs forward identically. The table exists so an unknown verb is
 // answered here, with this script's usage, rather than by a subprocess whose
 // own usage names a file the caller did not run.
-const commands = { slice: forward, digest: forward };
+//
+// Prototype-less, via Object.create(null) (33 review WR-04). A plain object
+// literal inherits Object.prototype, so `commands["constructor"]` and
+// `commands["toString"]` are truthy FUNCTIONS: an unknown verb that happens to
+// be a prototype member passed the known-verb test and was then CALLED, so the
+// documented usage was never printed and the failure surfaced as a confusing
+// message from process.exit() about its argument type instead. Same idiom this
+// file already uses for its flag bag, applied one level up.
+const commands = Object.assign(Object.create(null), { slice: forward, digest: forward });
 
 const [cmd, ...rest] = process.argv.slice(2);
 if (!cmd || !commands[cmd]) {

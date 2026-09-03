@@ -195,7 +195,13 @@ const COMMAND = "node src/mcp/vice/fixtures/vsf/make-fixtures.mjs";
  * the other three sitting untracked in the working tree. */
 function main(names) {
   const wanted = names.length > 0 ? names : Object.keys(FIXTURES);
-  const unknown = wanted.filter((n) => !(n in FIXTURES));
+  // Object.hasOwn, NOT `in` (33 review WR-04). `in` walks the prototype
+  // chain, so `"toString" in FIXTURES` is true: `make-fixtures.mjs toString`
+  // passed this validation, matched no entry in the Object.entries() loop
+  // below, wrote nothing, printed nothing and EXITED 0 -- a silent pass on a
+  // fixture name that does not exist, in the generator whose whole job is
+  // checkable provenance.
+  const unknown = wanted.filter((n) => !Object.hasOwn(FIXTURES, n));
   if (unknown.length > 0) {
     console.error(
       `make-fixtures: unknown fixture name(s) ${unknown.join(", ")} -- this generator has exactly ` +
@@ -204,7 +210,19 @@ function main(names) {
     return 1;
   }
   const capturedAt = new Date().toISOString();
-  for (const [name, spec] of Object.entries(FIXTURES).filter(([n]) => wanted.includes(n))) {
+  const selected = Object.entries(FIXTURES).filter(([n]) => wanted.includes(n));
+  // Belt and braces on the same class of bug: even with own-key validation
+  // above, a selection that matches nothing must be an ERROR, not a silent
+  // exit 0. "Wrote nothing" and "wrote what you asked for" must never share
+  // an exit code in a provenance generator.
+  if (selected.length === 0) {
+    console.error(
+      `make-fixtures: the requested name(s) ${wanted.join(", ")} selected no fixture -- refusing rather than ` +
+        `exiting 0 having written nothing. This generator has exactly four: ${Object.keys(FIXTURES).join(", ")}`,
+    );
+    return 1;
+  }
+  for (const [name, spec] of selected) {
     const bytes = spec.build();
     writeFileSync(join(HERE, `${name}.vsf`), bytes);
     writeFileSync(

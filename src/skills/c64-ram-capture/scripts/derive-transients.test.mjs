@@ -481,6 +481,21 @@ test("an unknown verb is answered by this script's usage", () => {
   assert.match(r.stderr, /usage: node derive-transients\.mjs <command>/);
 });
 
+// The verbs the named-verb case above could not catch (33 review WR-04). The
+// dispatch table was a plain object literal, so it inherited
+// Object.prototype: `commands["toString"]` was a truthy FUNCTION, the
+// known-verb test passed, and the member was CALLED -- usage never printed,
+// and the failure surfaced as `The "code" argument must be of type number.
+// Received type string ('[object Object]')` out of process.exit().
+for (const verb of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
+  test(`an unknown verb that is an Object.prototype member (${verb}) is ALSO answered by this script's usage`, () => {
+    const r = run([verb, "a.bin", "b.bin"]);
+    assert.notEqual(r.status, 0, "a nonexistent verb must not exit 0");
+    assert.match(r.stderr, /usage: node derive-transients\.mjs <command>/);
+    assert.doesNotMatch(r.stderr, /"code" argument must be of type/);
+  });
+}
+
 test("no verb at all prints usage and exits 0", () => {
   const r = run([]);
   assert.equal(r.status, 0);
