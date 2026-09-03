@@ -127,6 +127,33 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
   }),
 );
 
+/** 34-08 (Task 3): the answer to ONE question -- which accepted argument
+ * keys, per tool, name a filesystem path and therefore MUST pass
+ * `resolveWorkspacePath()` before ever reaching argv. Built with the SAME
+ * `Object.freeze(Object.assign(Object.create(null), ...))` idiom
+ * `HOST_TOOL_ARG_KEYS` above uses. Consumed by `host-tool.test.ts`'s
+ * data-driven census, never by production code -- the census is what makes
+ * "no argv passthrough anywhere" a mechanism rather than three point fixes:
+ * a key added here without a matching resolution site is what the test
+ * proves, a key ADDED to `HOST_TOOL_ARG_KEYS` without being classified HERE
+ * (as path-bearing or not) is what the test's both-directions completeness
+ * check catches.
+ *
+ * Deliberately NOT included: `ghidra.analyze`'s `runId`. It is a validated
+ * opaque id bounded by its own anchored pattern (`RUN_ID_PATTERN`,
+ * ghidra-project.mts), turned into a path only by `resolveGhidraProject()`
+ * -- a DIFFERENT mechanism with its own guard, not `resolveWorkspacePath()`.
+ * `oracle.probe`'s entry is empty because that tool accepts no arguments at
+ * all (Task 1, CR-01). */
+export const HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>> = Object.freeze(
+  Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
+    "acme.build": Object.freeze(["source", "outDir", "includes"]),
+    "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript"]),
+    "oracle.probe": Object.freeze([]),
+    "oracle.run": Object.freeze(["source"]),
+  }),
+);
+
 export interface AcmeBuildArgs {
   source: string;
   outDir?: string;

@@ -46,6 +46,11 @@ test("ACME availability gate (mirrors skill-acme-build-cli.test.ts's own gate) -
 // so this suite never reaches a stale committed resources/host-tool.mjs.
 build();
 const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
+  // 34-08 (Task 3): the census tables themselves -- plain data, not a
+  // response shape, so no narrowing hazard from widening this cast.
+  HOST_TOOL_IDS: readonly string[];
+  HOST_TOOL_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
   normaliseHostToolRequest: (raw: unknown) => { ok: true; request: { tool: string; args: Record<string, unknown> } } | { ok: false; message: string };
   resolveWorkspacePath: (repoRoot: string, relative: string) => { ok: true; path: string } | { ok: false; message: string };
   buildHostToolArgv: (
@@ -64,7 +69,7 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     | { ok: false; message: string }
   >;
 };
-const { normaliseHostToolRequest, resolveWorkspacePath, buildHostToolArgv, runHostTool } = hostTool;
+const { normaliseHostToolRequest, resolveWorkspacePath, buildHostToolArgv, runHostTool, HOST_TOOL_IDS, HOST_TOOL_ARG_KEYS, HOST_TOOL_PATH_ARG_KEYS } = hostTool;
 
 /** 34-08 (CR-01): a SEPARATELY-typed alias to the SAME runtime function --
  * oracle.probe/oracle.run's response shapes (`{ available, command, version,
@@ -1006,3 +1011,129 @@ test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// HOST_TOOL_PATH_ARG_KEYS -- the census that makes "no argv passthrough
+// anywhere" a mechanism rather than three point fixes (34-08, Task 3).
+// ---------------------------------------------------------------------------
+
+/** Pinned per-tool remainder: `HOST_TOOL_ARG_KEYS[tool]` minus
+ * `HOST_TOOL_PATH_ARG_KEYS[tool]`. A newly added argument key lands
+ * unclassified in NEITHER list until a maintainer adds it here (or to the
+ * path-key table) -- the completeness case below reds until they do. */
+const HOST_TOOL_ARG_KEYS_REMAINDER: Readonly<Record<string, readonly string[]>> = {
+  "acme.build": Object.freeze(["format", "setpc", "defines", "noReport"]),
+  "ghidra.analyze": Object.freeze(["runId"]),
+  "oracle.probe": Object.freeze([]),
+  "oracle.run": Object.freeze([]),
+};
+
+/** A minimal, otherwise-valid `args` object per tool -- just enough for
+ * `runHostTool()` to reach EVERY declared path key's own resolution site
+ * without tripping on an unrelated missing-required-field refusal. No file
+ * needs to exist on disk for any of these: `resolveWorkspacePath()` never
+ * calls `existsSync()`, so a refusal for the deliberately-bad key under
+ * test is always what actually fires. */
+const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string, unknown>>> = {
+  "acme.build": () => ({ source: "a.a" }),
+  "ghidra.analyze": () => ({ runId: "census-run", importPath: "x.bin" }),
+  "oracle.probe": () => ({}),
+  "oracle.run": () => ({ source: "a.bin" }),
+};
+
+/** The include list needs a single-element ARRAY where every other declared
+ * path key needs a plain string -- this is the one place that distinction is
+ * made, so the loop below stays tool/key-agnostic otherwise. */
+function censusEscapingValue(key: string): unknown {
+  return key === "includes" ? ["../outside"] : "../outside";
+}
+function censusAbsoluteValue(key: string): unknown {
+  return key === "includes" ? ["/etc/passwd"] : "/etc/passwd";
+}
+
+/** Reads a refusal's human-readable text from whichever field that tool's
+ * OWN response shape uses -- `message` for acme.build/ghidra.analyze,
+ * `reason` for oracle.run (host-tool.mts's own two response shapes). */
+function censusRefusalText(response: { ok: boolean; message?: string; reason?: string | null }): string {
+  if (response.ok) return "";
+  if ("message" in response && typeof response.message === "string") return response.message;
+  if ("reason" in response && typeof response.reason === "string") return response.reason;
+  return "";
+}
+
+test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool's accepted-key list, and accepted-minus-path equals a pinned remainder, in BOTH directions", () => {
+  assert.deepEqual([...HOST_TOOL_IDS].sort(), Object.keys(HOST_TOOL_PATH_ARG_KEYS).sort(), "HOST_TOOL_PATH_ARG_KEYS must have an entry for every HOST_TOOL_IDS member");
+  let totalDeclared = 0;
+  for (const tool of HOST_TOOL_IDS) {
+    const accepted = HOST_TOOL_ARG_KEYS[tool];
+    const pathKeys = HOST_TOOL_PATH_ARG_KEYS[tool];
+    totalDeclared += pathKeys.length;
+    for (const key of pathKeys) {
+      assert.ok(accepted.includes(key), `declared path key "${key}" for "${tool}" must be a member of HOST_TOOL_ARG_KEYS["${tool}"]`);
+    }
+    const computedRemainder = [...accepted.filter((k) => !pathKeys.includes(k))].sort();
+    const pinnedRemainder = [...HOST_TOOL_ARG_KEYS_REMAINDER[tool]].sort();
+    // Both directions: every computed-remainder key must be in the pinned
+    // set, AND every pinned key must be in the computed remainder -- a
+    // newly added accepted key that is classified as NEITHER path-bearing
+    // NOR pinned shows up on the computed side only, reddening this.
+    assert.deepEqual(computedRemainder, pinnedRemainder, `accepted-minus-path for "${tool}" must equal its pinned remainder in both directions`);
+  }
+  assert.equal(totalDeclared, 7, "the declared path-key total across all tools must be 7 -- a different count means a key was added or dropped without updating this census");
+});
+
+test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
+  const previousGhidraHome = process.env.GHIDRA_HOME;
+  delete process.env.GHIDRA_HOME;
+  try {
+    await withTempDir(async (dir) => {
+      let executed = 0;
+      let totalDeclared = 0;
+      for (const tool of HOST_TOOL_IDS) {
+        const pathKeys = HOST_TOOL_PATH_ARG_KEYS[tool];
+        totalDeclared += pathKeys.length;
+        for (const key of pathKeys) {
+          const baseArgs = HOST_TOOL_MINIMAL_VALID_ARGS[tool]();
+
+          const escapingResponse = await runOracleHostTool({ tool, args: { ...baseArgs, [key]: censusEscapingValue(key) } }, { repoRoot: dir });
+          assert.equal(escapingResponse.ok, false, `${tool}.${key} escaping value must be refused`);
+          assert.match(censusRefusalText(escapingResponse), /escapes the workspace root/, `${tool}.${key} escaping refusal must carry the workspace-escape wording`);
+          executed++;
+
+          const absoluteResponse = await runOracleHostTool({ tool, args: { ...baseArgs, [key]: censusAbsoluteValue(key) } }, { repoRoot: dir });
+          assert.equal(absoluteResponse.ok, false, `${tool}.${key} absolute value must be refused`);
+          assert.match(censusRefusalText(absoluteResponse), /not absolute/, `${tool}.${key} absolute refusal must carry the not-absolute wording`);
+          executed++;
+        }
+      }
+      // Non-vacuity: the executed count is asserted against the declared
+      // total, so an empty or short-circuited table cannot pass silently --
+      // a loop body that never ran would leave `executed` at 0.
+      assert.equal(totalDeclared, 7, "sanity: the declared path-key total must still be 7");
+      assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
+    });
+  } finally {
+    if (previousGhidraHome === undefined) delete process.env.GHIDRA_HOME;
+    else process.env.GHIDRA_HOME = previousGhidraHome;
+  }
+});
+
+test("HOST_TOOL_PATH_ARG_KEYS: the ghidra.analyze path keys' refusals are observed with GHIDRA_HOME unset, proving the refusal precedes any launcher lookup", async () => {
+  const previousGhidraHome = process.env.GHIDRA_HOME;
+  delete process.env.GHIDRA_HOME;
+  try {
+    await withTempDir(async (dir) => {
+      for (const key of HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"]) {
+        const baseArgs = HOST_TOOL_MINIMAL_VALID_ARGS["ghidra.analyze"]();
+        const response = await runOracleHostTool({ tool: "ghidra.analyze", args: { ...baseArgs, [key]: censusEscapingValue(key) } }, { repoRoot: dir });
+        assert.equal(response.ok, false, `ghidra.analyze.${key} escaping value must be refused with GHIDRA_HOME unset`);
+        const text = censusRefusalText(response);
+        assert.match(text, /escapes the workspace root/, `ghidra.analyze.${key} must refuse for the workspace-escape reason`);
+        assert.doesNotMatch(text, /GHIDRA_HOME/, `the refusal for ghidra.analyze.${key} must precede any GHIDRA_HOME/launcher lookup, not be caused by one`);
+      }
+    });
+  } finally {
+    if (previousGhidraHome === undefined) delete process.env.GHIDRA_HOME;
+    else process.env.GHIDRA_HOME = previousGhidraHome;
+  }
+});
