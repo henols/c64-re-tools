@@ -409,8 +409,24 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 //   - Never let `main()` run on import. The guard at the bottom compares
 //     `process.argv[1]` against this module's own URL, with `resolve()` and
 //     NOT `realpathSync()`, so the check itself is pure path arithmetic and
-//     importing this module still performs no I/O. `capture-predicate.ts`
-//     imports it, and so does the structural census.
+//     importing this module still performs no I/O.
+//
+//     WHO ACTUALLY IMPORTS THIS (corrected, 33 review WR-07). This line used
+//     to say "`capture-predicate.ts` imports it, and so does the structural
+//     census". The first half was false: `capture-predicate.ts` imports only
+//     `node:crypto`, and names this module in comments alone. A repo-wide
+//     grep finds NO non-test module importing it. Today's only non-test
+//     consumers are this module's OWN CLI -- invoked as a subprocess by
+//     `src/skills/c64-ram-capture/scripts/vsf-slice.mjs`, which is a spawn
+//     and not an import -- and `shippedTsModules()`'s structural census,
+//     which reads the file rather than importing it either.
+//
+//     So the guard has to hold for the CENSUS ALONE, with no real importer
+//     exercising it. That is why the correction matters rather than being
+//     pedantry: in a codebase where these headers are normative and cited by
+//     other files' comments, "a real importer depends on this" is exactly the
+//     premise a future editor would use to conclude the guard is already
+//     covered and relax it. It is not covered; keep it.
 //   - Never rewrite, prefix or soften a refusal message at this boundary. The
 //     library's messages already name the offending value and the valid
 //     range; the CLI prints `err.message` verbatim, and the skill-side test
