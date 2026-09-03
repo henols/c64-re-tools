@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 34
 current_phase_name: The Host-Tool Execution Seam
 status: executing
-stopped_at: Completed 34-07-PLAN.md
-last_updated: "2026-09-03T18:45:42.063Z"
+stopped_at: Completed 34-08-PLAN.md
+last_updated: "2026-09-03T19:15:14.152Z"
 last_activity: 2026-09-03
-last_activity_desc: 34-07 executed (CR-02/CR-03 argv-passthrough closure)
-state_head: d98fb2289d8c2eb3045b54671c1d6391eb16102d
+last_activity_desc: 34-08 executed (CR-01 oracle command-argv closure + path-key census)
+state_head: 97832aafbaf546bc7b69b253bbd9b86386a245a3
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
   percent: 17
 ---
 
@@ -177,7 +177,7 @@ recorded in their own sections.
 ## Current Position
 
 Phase: 34 (The Host-Tool Execution Seam) — EXECUTING (gap closure)
-Plan: 7 of 9 executed — gap-closure plans (`34-07`..`34-09`) executing now
+Plan: 8 of 9 executed — gap-closure plans (`34-07`..`34-09`) executing now
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -573,6 +573,7 @@ Last activity: 2026-09-03 — Phase 34 execution started
 | Phase 34-the-host-tool-execution-seam P04 | 59min | 3 tasks | 14 files |
 | Phase 34-the-host-tool-execution-seam P05 | 55min | 3 tasks | 5 files |
 | Phase 34 P07 | 26min | 2 tasks | 7 files |
+| Phase 34 P08 | 30min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1016,6 +1017,8 @@ Recent decisions affecting current work:
 - [Phase 34]: SEAM-07: JVM lifetime binding recorded as per-invocation, matching what plans 34-01/34-03 actually built, with a checkable reversal condition (N=20 binaries, P=30 percent of wall-clock in JVM startup) to resident-socket — docs/phase34-host-tool-seam-decisions.md consolidates the measurement (12407ms/11160ms observed, 12.6-17.4s cited range) and all fourteen planner assumptions A-01..A-14 since no /gsd-discuss-phase ran for Phase 34
 - [Phase 34-the-host-tool-execution-seam]: SEAM-05's BANNED_COMMAND_SHAPES includes both unp64 and UNP64 for the packer oracle's two documented names, plus dxa, analyzeHeadless, c1541, petcat, cartconv and x64sc — No second literal command name (distinct from the env-var name) exists anywhere in this codebase for the packer oracle; unp64/UNP64 is the most defensible reading of the plan's phrasing
 - [Phase 34]: 34-07 closed CR-02/CR-03: acme.build's includes and ghidra.analyze's preScript/postScript now resolve through resolveWorkspacePath() before reaching argv, read by buildHostToolArgv() only from a resolved-paths parameter, never request.args. — Two of the three confirmed argv-passthrough violations from 34-REVIEW.md. SEAM-02 stays Pending -- shared with 34-08 (oracle.probe's command, CR-01), and the shared-ID gate correctly withheld it (0/1 ready).
+- [Phase 34]: 34-08 closed CR-01: removed oracle.probe's caller-supplied `command` wire key entirely and added resolveOracleCommand(), the ONE host-side resolver consulted by both runOracleProbe() and runOracleRun(), reading the broker process's own UNP64/UNP64_PATH environment and checked by base name and existence.
+- [Phase 34]: 34-08 added HOST_TOOL_PATH_ARG_KEYS: a declared census of every path-bearing host-tool argument key (7 total across 4 tools), with a both-directions completeness case and a data-driven escaping/absolute refusal loop, so a future path-bearing key cannot ship unresolved without a red test.
 
 ### Pending Todos
 
@@ -1805,8 +1808,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-03T18:45:41.392Z
-Stopped at: Completed 34-07-PLAN.md
+Last session: 2026-09-03T19:15:02.155Z
+Stopped at: Completed 34-08-PLAN.md
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md
