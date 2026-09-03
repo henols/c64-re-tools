@@ -363,6 +363,62 @@ test("a derived artifact round-trips through parseAllowList unmodified", { skip:
   }
 });
 
+// The two implementations were asserted to agree on VERDICTS but not on PARSE
+// STRICTNESS -- which is where a deliberate duplicate drifts first (33 review
+// IN-01). A hand-edited artifact with a non-string `attribution` passed the
+// skill-side `check` and was refused by the MCP-side predicate, so the two
+// disagreed about whether the ledger was even readable.
+// 33 review IN-04: the JSON.parse sat outside parseArtifact(), so a syntax
+// error surfaced through the outer catch as a bare `error: Unexpected token …`
+// naming no file -- unlike every other refusal in this script.
+test("check: a syntactically invalid allow-list names the FILE that failed to parse", { skip: SKIP_REASON }, () => {
+  const dir = scratchDir();
+  try {
+    const imgs = tripletDifferingAt(dir, [0x0300]);
+    const bad = join(dir, "not-json.json");
+    writeFileSync(bad, '{ "release": "oops", entries: [ }');
+
+    const r = run(["check", "--allow-list", bad, imgs[0], imgs[1]]);
+    assert.notEqual(r.status, 0);
+    assert.ok(r.stderr.includes(bad), `the refusal must name the path it was reading; got: ${r.stderr}`);
+    assert.match(r.stderr, /not valid JSON/);
+    assert.doesNotMatch(r.stdout, /CHECK_VERDICT/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a malformed artifact is refused by BOTH implementations, not just the predicate", { skip: SKIP_REASON }, () => {
+  const dir = scratchDir();
+  try {
+    const imgs = tripletDifferingAt(dir, [0x0300]);
+    const list = join(dir, "list.json");
+    assert.equal(run(["derive", "--release", "strictness", "--out", list, ...imgs]).status, 0);
+
+    // Hand-edit exactly the field the two parsers disagreed on.
+    const json = JSON.parse(readFileSync(list, "utf8"));
+    json.entries[0].attribution = 5;
+    const bad = join(dir, "bad.json");
+    writeFileSync(bad, JSON.stringify(json, null, 2));
+
+    // The MCP-side predicate refuses it.
+    assert.throws(
+      () => predicate.parseAllowList(JSON.parse(readFileSync(bad, "utf8"))),
+      /non-string attribution/,
+      "the predicate has always refused this",
+    );
+
+    // And so does the skill-side CLI -- naming the same defect, so an operator
+    // reading either transcript learns the same thing.
+    const r = run(["check", "--allow-list", bad, imgs[0], imgs[1]]);
+    assert.notEqual(r.status, 0, "the CLI must refuse the artifact the predicate refuses");
+    assert.match(r.stderr, /non-string attribution/);
+    assert.doesNotMatch(r.stdout, /CHECK_VERDICT/, "no verdict may be printed for an unreadable artifact");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("check: the verdict agrees with compareCaptures on a synthetic pair, both ways", { skip: SKIP_REASON }, () => {
   const dir = scratchDir();
   try {

@@ -431,6 +431,19 @@ function parseArtifact(json, path) {
           `array of strings`,
       );
     }
+    // 33 review IN-01: the MCP-side parseAllowList() refuses a non-string
+    // `attribution` and this parser did not check the field at all, so a
+    // hand-edited artifact with `"attribution": 5` passed `check` here and was
+    // refused there. The two implementations are a DELIBERATE duplicate
+    // asserted to agree on VERDICTS, and parse strictness is exactly where a
+    // deliberate duplicate drifts first -- an artifact one accepts and the
+    // other rejects is a disagreement about what the ledger even says.
+    if (entry.attribution !== undefined && typeof entry.attribution !== "string") {
+      throw new Error(
+        `${path}: entry ${i} (address ${hex4(addr)}) has a non-string attribution ` +
+          `(${JSON.stringify(entry.attribution)}) -- an attribution is a one-line human note or absent`,
+      );
+    }
     addresses.add(addr);
   }
 
@@ -481,7 +494,20 @@ function cmdCheck(argv) {
     throw new Error(`check: needs exactly two image paths, got ${positionals.length}`);
   }
 
-  const { release, addresses } = parseArtifact(JSON.parse(readFileSync(listPath, "utf8")), listPath);
+  // 33 review IN-04: the JSON.parse sat OUTSIDE parseArtifact(), so a syntax
+  // error surfaced through the outer catch as a bare `error: Unexpected token
+  // …` naming no file -- unlike every other refusal in this script, each of
+  // which names the path. On a route whose whole subject is which artifact
+  // says what, "which file failed to parse" is the first thing an operator
+  // needs.
+  let listJson;
+  const listRaw = readFileSync(listPath, "utf8");
+  try {
+    listJson = JSON.parse(listRaw);
+  } catch (e) {
+    throw new Error(`${listPath}: not valid JSON -- ${e.message}`);
+  }
+  const { release, addresses } = parseArtifact(listJson, listPath);
   const [pa, pb] = positionals;
   const a = loadImage(pa);
   const b = loadImage(pb);
