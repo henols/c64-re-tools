@@ -571,9 +571,12 @@ function findAcmeLib() {
  * handlers kill the whole VICE pool on an unhandled throw in this process.
  * Emits exactly one `log()` line per ATTEMPTED invocation (i.e. once argv
  * construction succeeded and a child was actually spawned) naming the tool
- * id, the exit status and the elapsed milliseconds (A-02). A request refused
- * before a child is ever spawned emits no log line -- there is no invocation
- * to record. */
+ * id, the exit status, the elapsed milliseconds and (34-09, CR-04) the
+ * budget that was actually applied (`timeout_ms=<n>`, from
+ * hostToolTimeoutMs()) -- so which budget governed a run is observable off
+ * the log line rather than inferred (A-02). A request refused before a
+ * child is ever spawned emits no log line -- there is no invocation to
+ * record. */
 export async function runHostTool(raw, deps) {
     const narrowed = normaliseHostToolRequest(raw);
     if (!narrowed.ok)
@@ -674,14 +677,14 @@ export async function runHostTool(raw, deps) {
     const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv);
     const elapsedMs = Date.now() - startedAt;
     if (spawnResult.spawnErrorMessage !== null) {
-        deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs}`);
+        deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs}`);
         return { ok: false, message: `runHostTool: failed to launch "${built.toolPath}": ${spawnResult.spawnErrorMessage}` };
     }
     if (spawnResult.timedOut) {
-        deps.log?.(`host_tool tool=${request.tool} exit=timeout elapsed_ms=${elapsedMs}`);
+        deps.log?.(`host_tool tool=${request.tool} exit=timeout elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs}`);
         return { ok: false, message: `runHostTool: "${request.tool}" timed out after ${timeoutMs}ms and was killed` };
     }
-    deps.log?.(`host_tool tool=${request.tool} exit=${spawnResult.exitCode ?? "null"} elapsed_ms=${elapsedMs}`);
+    deps.log?.(`host_tool tool=${request.tool} exit=${spawnResult.exitCode ?? "null"} elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs}`);
     const results = [];
     for (const outputPath of built.outputs) {
         const digested = digestOutputFile(outputPath);
@@ -779,7 +782,7 @@ async function runOracleProbe(deps) {
     const timeoutMs = hostToolTimeoutMs("oracle.probe", deps.timeoutMs);
     const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs);
     if (spawnResult.spawnErrorMessage !== null) {
-        deps.log?.(`host_tool tool=oracle.probe exit=spawn_error`);
+        deps.log?.(`host_tool tool=oracle.probe exit=spawn_error timeout_ms=${timeoutMs}`);
         return {
             ok: true,
             tool: "oracle.probe",
@@ -790,7 +793,7 @@ async function runOracleProbe(deps) {
         };
     }
     if (spawnResult.timedOut) {
-        deps.log?.(`host_tool tool=oracle.probe exit=timeout`);
+        deps.log?.(`host_tool tool=oracle.probe exit=timeout timeout_ms=${timeoutMs}`);
         return {
             ok: true,
             tool: "oracle.probe",
@@ -800,7 +803,7 @@ async function runOracleProbe(deps) {
             reason: "the packer identifier timed out during the version probe",
         };
     }
-    deps.log?.(`host_tool tool=oracle.probe exit=${spawnResult.exitCode ?? "null"}`);
+    deps.log?.(`host_tool tool=oracle.probe exit=${spawnResult.exitCode ?? "null"} timeout_ms=${timeoutMs}`);
     const banner = `${spawnResult.stdout}${spawnResult.stderr}`.trim();
     if (banner === "") {
         return {
@@ -846,14 +849,14 @@ async function runOracleRun(args, deps) {
         const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);
         const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs);
         if (spawnResult.spawnErrorMessage !== null) {
-            deps.log?.(`host_tool tool=oracle.run exit=spawn_error`);
+            deps.log?.(`host_tool tool=oracle.run exit=spawn_error timeout_ms=${timeoutMs}`);
             return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle could not be run against the input file" };
         }
         if (spawnResult.timedOut) {
-            deps.log?.(`host_tool tool=oracle.run exit=timeout`);
+            deps.log?.(`host_tool tool=oracle.run exit=timeout timeout_ms=${timeoutMs}`);
             return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle timed out" };
         }
-        deps.log?.(`host_tool tool=oracle.run exit=${spawnResult.exitCode ?? "null"}`);
+        deps.log?.(`host_tool tool=oracle.run exit=${spawnResult.exitCode ?? "null"} timeout_ms=${timeoutMs}`);
         // Capped the same way packer-finding.mjs's own MAX_ORACLE_STDOUT_BYTES
         // caps it client-side -- the executor enforces the bound on what it
         // accumulates; the script still exports the number for its own parser

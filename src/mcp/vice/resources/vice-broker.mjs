@@ -977,6 +977,15 @@ async function run(args) {
             // (never derived from) the other six above -- handed only
             // `args.repoRoot` and a stderr logger, never this broker's `state` map,
             // so it structurally cannot reach lease state through this closure.
+            // 34-09 (CR-04): deliberately supplies no timeout, and that is
+            // authoritative here, not an omission -- the per-tool budget table
+            // inside runHostTool()/hostToolTimeoutMs() (host-tool.mts) is the ONE
+            // place a budget is decided, and no wire field carries one across the
+            // seam at all (the `deps.timeoutMs` this callback could pass is an
+            // in-process test seam, not something a caller's request ever
+            // supplies). A reader arriving here from the artifact this plan's
+            // completeness case checks should find this comment as the answer,
+            // not an apparent gap.
             onHostTool: (raw) => runHostTool(raw, {
                 repoRoot: args.repoRoot,
                 log: (line) => process.stderr.write(`${line}\n`),

@@ -51,6 +51,10 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
   HOST_TOOL_IDS: readonly string[];
   HOST_TOOL_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
   HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  // 34-09 (CR-04): the server-side per-tool budget table and its resolver.
+  HOST_TOOL_TIMEOUT_MS: Readonly<Record<string, number>>;
+  hostToolTimeoutMs: (tool: string, override?: number) => number;
+  DEFAULT_HOST_TOOL_TIMEOUT_MS: number;
   normaliseHostToolRequest: (raw: unknown) => { ok: true; request: { tool: string; args: Record<string, unknown> } } | { ok: false; message: string };
   resolveWorkspacePath: (repoRoot: string, relative: string) => { ok: true; path: string } | { ok: false; message: string };
   buildHostToolArgv: (
@@ -69,7 +73,18 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     | { ok: false; message: string }
   >;
 };
-const { normaliseHostToolRequest, resolveWorkspacePath, buildHostToolArgv, runHostTool, HOST_TOOL_IDS, HOST_TOOL_ARG_KEYS, HOST_TOOL_PATH_ARG_KEYS } = hostTool;
+const {
+  normaliseHostToolRequest,
+  resolveWorkspacePath,
+  buildHostToolArgv,
+  runHostTool,
+  HOST_TOOL_IDS,
+  HOST_TOOL_ARG_KEYS,
+  HOST_TOOL_PATH_ARG_KEYS,
+  HOST_TOOL_TIMEOUT_MS,
+  hostToolTimeoutMs,
+  DEFAULT_HOST_TOOL_TIMEOUT_MS,
+} = hostTool;
 
 /** 34-08 (CR-01): a SEPARATELY-typed alias to the SAME runtime function --
  * oracle.probe/oracle.run's response shapes (`{ available, command, version,
@@ -1260,3 +1275,125 @@ test("HOST_TOOL_PATH_ARG_KEYS: the ghidra.analyze path keys' refusals are observ
     else process.env.GHIDRA_HOME = previousGhidraHome;
   }
 });
+
+// ---------------------------------------------------------------------------
+// 34-09 (CR-04, task 2): the applied budget is observable, every tool has an
+// explicit server-side entry, the two sides of the seam are ordered by an
+// iterating assertion (not a comment), and two overlapping slow
+// ghidra.analyze invocations both complete on their own deadlines.
+// ---------------------------------------------------------------------------
+
+test("runHostTool: a ghidra.analyze run with no override logs a line whose timeout_ms equals HOST_TOOL_TIMEOUT_MS[\"ghidra.analyze\"]", async () => {
+  await withFakeGhidraHome(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      const logLines: string[] = [];
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "log-budget-ghidra", importPath: "x.bin" } },
+        { repoRoot: dir, log: (line) => logLines.push(line) },
+      );
+      assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
+      assert.equal(logLines.length, 1, "exactly one log line per attempted invocation");
+      assert.match(logLines[0], new RegExp(`timeout_ms=${HOST_TOOL_TIMEOUT_MS["ghidra.analyze"]}(\\D|$)`));
+    });
+  });
+});
+
+test("runHostTool: an acme.build run with no override logs a line whose timeout_ms equals DEFAULT_HOST_TOOL_TIMEOUT_MS", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const fakeAcme = writeFakeAcme(dir, "zerobyte");
+    await withFakeAcme(fakeAcme, async () => {
+      const logLines: string[] = [];
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir, log: (line) => logLines.push(line) });
+      assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
+      assert.equal(logLines.length, 1);
+      assert.match(logLines[0], new RegExp(`timeout_ms=${DEFAULT_HOST_TOOL_TIMEOUT_MS}(\\D|$)`));
+    });
+  });
+});
+
+test("runHostTool: an explicit deps.timeoutMs is what gets logged, not the table entry -- the test seam and the table cannot be confused", async () => {
+  await withFakeGhidraHome(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      const logLines: string[] = [];
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "log-explicit-override", importPath: "x.bin" } },
+        { repoRoot: dir, log: (line) => logLines.push(line), timeoutMs: 12345 },
+      );
+      assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
+      assert.equal(logLines.length, 1);
+      assert.match(logLines[0], /timeout_ms=12345(\D|$)/);
+    });
+  });
+});
+
+const HOST_TOOL_BUDGET_CEILING_MS = 900_000;
+
+test("HOST_TOOL_TIMEOUT_MS: every HOST_TOOL_IDS member has a server-side table entry, and every entry is finite and at or below a stated ceiling", () => {
+  for (const tool of HOST_TOOL_IDS) {
+    const ms = HOST_TOOL_TIMEOUT_MS[tool];
+    assert.ok(Number.isFinite(ms), `${tool}: missing a server-side HOST_TOOL_TIMEOUT_MS entry`);
+    assert.ok(ms > 0 && ms <= HOST_TOOL_BUDGET_CEILING_MS, `${tool}: budget ${ms}ms must be positive and at or below the ${HOST_TOOL_BUDGET_CEILING_MS}ms ceiling`);
+  }
+});
+
+test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side request deadline (host-tool-client.ts) is strictly greater than the server-side budget (host-tool.mts)", () => {
+  for (const tool of HOST_TOOL_IDS) {
+    const serverBudget = HOST_TOOL_TIMEOUT_MS[tool];
+    const clientDeadline = hostToolRequestTimeoutMs(tool);
+    assert.ok(
+      clientDeadline > serverBudget,
+      `${tool}: client deadline (${clientDeadline}ms) must be strictly greater than the server budget (${serverBudget}ms) -- the side that owns the budget must be the side that reports the verdict`,
+    );
+  }
+});
+
+test(
+  "two overlapping slow ghidra.analyze host_tool requests over the real control-plane route both resolve ok:true, reserve distinct project locations, and the pair completes in appreciably less than the sum of the two sleeps",
+  async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      const { listener, token, spies } = await startListenerWithSpies(dir);
+      const sleepSeconds = 3;
+      try {
+        await withFakeGhidraHome(
+          async () => {
+            const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
+            try {
+              writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
+              const runIdA = "overlap-run-a";
+              const runIdB = "overlap-run-b";
+              const startedAt = Date.now();
+              const [responseA, responseB] = await Promise.all([
+                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdA, importPath: "x.bin" }),
+                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdB, importPath: "x.bin" }),
+              ]);
+              const elapsedMs = Date.now() - startedAt;
+              assert.equal(responseA.ok, true, responseA.ok ? "" : (responseA as { ok: false; message: string }).message);
+              assert.equal(responseB.ok, true, responseB.ok ? "" : (responseB as { ok: false; message: string }).message);
+              // resolveGhidraProject() reserves the run directory as the
+              // LAST step of a successful resolution (ghidra-project.mts) --
+              // its presence on disk is the observable proof the two runs
+              // used distinct project locations, since the response itself
+              // carries no project-location field for ghidra.analyze.
+              assert.ok(statSync(join(dir, "tools", "ghidra-runs", runIdA)).isDirectory());
+              assert.ok(statSync(join(dir, "tools", "ghidra-runs", runIdB)).isDirectory());
+              assert.ok(
+                elapsedMs < sleepSeconds * 2 * 1000,
+                `expected the overlapping pair to finish well under the summed sleeps (${sleepSeconds * 2}s); took ${elapsedMs}ms`,
+              );
+              assertAllSpiesEmpty(spies);
+            } finally {
+              rmSync(stateDir, { recursive: true, force: true });
+            }
+          },
+          { sleepSeconds },
+        );
+      } finally {
+        listener.server.close();
+      }
+    });
+  },
+);
