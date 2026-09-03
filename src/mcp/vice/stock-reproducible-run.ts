@@ -604,6 +604,44 @@ export async function runReproducible(
   }
   const anchorHitCount = anchorInfo.checkpoint.hitCount;
 
+  // --- Step 8a: a frame term that counted no frames is NOT a term -----------
+  //
+  // WHY THIS REFUSAL EXISTS (33 review CR-02). The target can stop before the
+  // frame anchor has executed even once -- entirely reachable, and not a
+  // pathological case: the anchor is a release-specific once-per-frame site
+  // (this module refuses to GUESS one precisely because a cracked release may
+  // relocate it or never reach it), while the target may be a loader address
+  // hit during boot, before the anchor's frame ever comes round. In that state
+  // `anchorHitCount === 0` and `wait.anchorHitsObserved === 0`.
+  //
+  // Zero is a legal, finite integer, so NOTHING DOWNSTREAM CATCHES IT. The
+  // four-term self-check below passes (`requireTerms()` only rejects absent or
+  // non-finite terms, and comparing a record against itself is satisfied by
+  // any value), and the answer would go out with `reproducibleStop: true` and
+  // a complete-looking identity whose frame term carries no frame
+  // information. compareStopIdentity() would then report
+  // `identical: true, frameTermAsserted: true` for any two such stops HOWEVER
+  // MANY FRAMES APART -- which is exactly the confusion this module's own
+  // header says the frame term exists to prevent ("two stops one whole frame
+  // apart can carry identical (LIN, CYC); PC and hit_count are what
+  // distinguish them"). A vacuous frame term is worse than an absent one,
+  // because it is indistinguishable from an asserted one.
+  //
+  // So refuse, in the register the rest of this module uses. The timeout path
+  // already sets this precedent: it emits NO oracle term rather than
+  // zero-filling one (asserted at stock-reproducible-run.test.ts's
+  // no-zero-filled-terms case). This is the hit path's equivalent.
+  if (anchorHitCount === 0) {
+    await deleteCheckpoint(session, anchorCheckpointId);
+    return refuse(
+      `vice_run_until: the target stopped at ${anchorHex(address)} before the frame anchor at ` +
+        `${anchorHex(frameAnchor)} had executed even once, so the frame term is 0 and carries no frame information -- ` +
+        `two stops any number of frames apart would both report hit_count 0 and would certify as the same stop. ` +
+        `Refusing rather than reporting a four-term stop identity whose frame term is vacuous. Pick a frame_anchor ` +
+        `this release reaches BEFORE the target address.`,
+    );
+  }
+
   const anchorCleanup = await deleteCheckpoint(session, anchorCheckpointId);
 
   // --- The stop identity, and the oracle's own completeness check ----------

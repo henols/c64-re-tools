@@ -465,6 +465,47 @@ test("reproducible: hitCount is the ANCHOR's count (the frame term); the target'
   assert.match(String(answer.hitCountNote), /\$ea31/);
 });
 
+// The negative control for the field above: 42 is a frame term, 0 is not one.
+//
+// WHY (33 review CR-02). The target can legitimately stop before the anchor's
+// frame has ever come round -- a loader address hit during boot, against a
+// once-per-frame anchor this release has not reached yet. Zero is a finite
+// integer, so it sails through requireTerms() and through the module's
+// four-term self-check (which compares the record against itself and is
+// therefore satisfied by ANY value), and the answer would go out with
+// `reproducibleStop: true` and hitCount 0. Two such stops any number of frames
+// apart then compare identical with frameTermAsserted true -- the exact
+// confusion the frame term exists to prevent.
+//
+// This test OBSERVES the refusal rather than asserting the guard exists: it
+// drives the whole procedure with a client whose CHECKPOINT_GET reports 0 and
+// requires an error result. Written with an explicit assertion that
+// `reproducibleStop` is absent from the payload, so a regression that restores
+// the confident answer fails here even if the message text is reworded.
+test("reproducible: an anchor hit count of 0 is REFUSED -- a frame term that counted no frames is not a term", async () => {
+  const { client, calls } = makeFakeClient(greenSendImpl({ anchorHitCount: 0 }));
+  const result = await handleRunUntil({ ...REPRODUCIBLE_ARGS, timeout_ms: 200 }, makeSession(client), FAKE_DEPS);
+
+  assertErr(result);
+  const text = errText(result);
+  assert.match(text, /before the frame anchor/, "the refusal names the cause");
+  assert.match(text, /frame term is 0/);
+  assert.match(text, /vacuous/, "and says why 0 is not a term rather than just rejecting it");
+  assert.match(text, /\$ea31/, "and names the anchor the caller must replace");
+
+  // NOT an answer: no confident four-term identity anywhere in the output.
+  assert.doesNotMatch(text, /"reproducibleStop":\s*true/);
+  assert.doesNotMatch(text, /"hitCount":\s*0/);
+
+  // The non-temporary anchor is still cleaned up on this refusal path -- a
+  // stop:true checkpoint left armed at a once-per-frame address would halt
+  // every later resume on the session within one frame.
+  assert.ok(
+    calls.some(([commandType]) => commandType === CommandType.CheckpointDelete),
+    "the refusal deletes the anchor rather than leaving it armed",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // 4. Discrimination -- the anchor's frame must not resolve the wait
 // ---------------------------------------------------------------------------
