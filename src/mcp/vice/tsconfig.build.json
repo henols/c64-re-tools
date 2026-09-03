@@ -15,6 +15,7 @@
     "broker-epoch.mts",
     "broker-control.mts",
     "backend-detect.mts",
-    "host-tool.mts"
+    "host-tool.mts",
+    "ghidra-project.mts"
   ]
 }

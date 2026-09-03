@@ -44,16 +44,27 @@
 //   - No unbounded host-tool child process -- every invocation is bounded by
 //     a timeout that kills the child and reports a refusal on expiry.
 //
-// This module imports ONLY node: builtins in this plan -- no sibling import
-// of any kind yet. It must never be added to package.json's `files[]`
-// (mirrors broker-control.mts's own precedent: shipped only as its compiled
+// This module must never be added to package.json's `files[]` (mirrors
+// broker-control.mts's own precedent: shipped only as its compiled
 // `resources/host-tool.mjs` artifact, added to build.ts's HOST_BOUND_ARTIFACTS
 // and tsconfig.build.json's include[] in the same commit as this file).
+//
+// Phase 34, plan 34-03 (A-06, SEAM-04): this module's first SIBLING import.
+// `ghidra-project.mjs` is a VALUE import (not type-only) because the rule
+// must be enforced where `analyzeHeadless` is actually spawned -- inside the
+// broker process -- which is why `ghidra-project.mts` ships as a compiled
+// `resources/*.mjs` artifact exactly like this file does. A `.mjs`-specifier
+// value import only resolves once both siblings are compiled into
+// resources/ (the same reason plan 34-01's A-04 already has
+// host-tool.test.ts reach THIS module as the committed artifact). The
+// dot-segment rule and the per-run project location are NEVER copied here --
+// this module reaches them through the one place that owns them.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment } from "./ghidra-project.mjs";
 
 // ---------------------------------------------------------------------------
 // The typed per-tool allowlist (SEAM-02). Mirrors broker-control.mts's own
@@ -61,23 +72,31 @@ import { fileURLToPath } from "node:url";
 // NAME, never coerce, never drop.
 // ---------------------------------------------------------------------------
 
-/** The complete accepted tool-id set -- ONE tool in this plan (the tracer).
+/** The complete accepted tool-id set -- plan 34-01's tracer (`acme.build`)
+ * plus plan 34-03's `ghidra.analyze` (SEAM-04). A second tool is ALWAYS a new
+ * entry here, never a ninth `ControlRequestKind` member -- see
+ * broker-control.mts's own D-15-derived comment on `host_tool`.
  * Matched by EXACT, case-sensitive ARRAY membership everywhere in this
  * module -- never an object-property lookup keyed by the untrusted wire
  * string -- so "__proto__"/"constructor"/"toString" refuse exactly like any
  * other unrecognised value, with no separate special-case needed (T-34-04). */
-export type HostToolId = "acme.build";
+export type HostToolId = "acme.build" | "ghidra.analyze";
 
-export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze(["acme.build"]);
+export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze(["acme.build", "ghidra.analyze"]);
 
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
  * (the vsf-slice.mjs WR-04 idiom) so no prototype key can ever resolve to a
  * value here even if a future caller indexed it with an untrusted string
  * directly -- belt-and-suspenders alongside the array-membership check
- * above, which is what actually guards the lookup below. */
+ * above, which is what actually guards the lookup below. `ghidra.analyze`'s
+ * accepted keys carry no raw argv array and no raw command string -- only
+ * `runId`/`importPath`/`preScript`/`postScript`, each a plain string that
+ * flows through resolveWorkspacePath()/resolveGhidraProject() before it ever
+ * reaches argv. */
 export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
     "acme.build": Object.freeze(["source", "outDir", "format", "setpc", "defines", "includes", "noReport"]),
+    "ghidra.analyze": Object.freeze(["runId", "importPath", "preScript", "postScript"]),
   }),
 );
 
@@ -91,10 +110,14 @@ export interface AcmeBuildArgs {
   noReport?: boolean;
 }
 
-export interface HostToolRequest {
-  tool: HostToolId;
-  args: AcmeBuildArgs;
+export interface GhidraAnalyzeArgs {
+  runId: string;
+  importPath: string;
+  preScript?: string;
+  postScript?: string;
 }
+
+export type HostToolRequest = { tool: "acme.build"; args: AcmeBuildArgs } | { tool: "ghidra.analyze"; args: GhidraAnalyzeArgs };
 
 export type NormaliseHostToolRequestResult = { ok: true; request: HostToolRequest } | { ok: false; message: string };
 
@@ -200,7 +223,36 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
     return { ok: true, request: { tool, args } };
   }
 
-  // Unreachable while HOST_TOOL_IDS has exactly one member -- kept so a
+  if (tool === "ghidra.analyze") {
+    const runIdRaw = argsObj.runId;
+    if (typeof runIdRaw !== "string" || runIdRaw === "") {
+      return { ok: false, message: `host_tool "ghidra.analyze" requires a non-empty string "runId"; got ${describe(runIdRaw)}` };
+    }
+    const importPathRaw = argsObj.importPath;
+    if (typeof importPathRaw !== "string" || importPathRaw === "") {
+      return { ok: false, message: `host_tool "ghidra.analyze" requires a non-empty string "importPath"; got ${describe(importPathRaw)}` };
+    }
+    const args: GhidraAnalyzeArgs = { runId: runIdRaw, importPath: importPathRaw };
+
+    if ("preScript" in argsObj) {
+      const preScript = argsObj.preScript;
+      if (typeof preScript !== "string" || preScript === "") {
+        return { ok: false, message: `host_tool "ghidra.analyze" args.preScript must be a non-empty string; got ${describe(preScript)}` };
+      }
+      args.preScript = preScript;
+    }
+    if ("postScript" in argsObj) {
+      const postScript = argsObj.postScript;
+      if (typeof postScript !== "string" || postScript === "") {
+        return { ok: false, message: `host_tool "ghidra.analyze" args.postScript must be a non-empty string; got ${describe(postScript)}` };
+      }
+      args.postScript = postScript;
+    }
+
+    return { ok: true, request: { tool, args } };
+  }
+
+  // Unreachable while HOST_TOOL_IDS has exactly two members -- kept so a
   // future tool added to HOST_TOOL_IDS without a matching narrowing arm
   // fails loudly here rather than silently returning an under-typed request.
   return { ok: false, message: `normaliseHostToolRequest: no narrowing arm for tool "${tool}"` };
@@ -241,10 +293,24 @@ export function resolveWorkspacePath(repoRoot: string, relative: string): Resolv
 // array or a raw wire string.
 // ---------------------------------------------------------------------------
 
-export interface ResolvedHostToolPaths {
+export interface ResolvedAcmeBuildPaths {
   sourcePath: string;
   outDirPath: string;
 }
+
+/** Phase 34, plan 34-03 (SEAM-04): the resolved fields ghidra.analyze's own
+ * buildHostToolArgv() branch needs. `projectLocation`/`projectName` come
+ * from ghidra-project.mts's resolveGhidraProject() -- NEVER computed here --
+ * and `importPath` is resolved through resolveWorkspacePath() exactly like
+ * acme.build's `source`, so the workspace-escape mitigation is the same one
+ * site for every tool. */
+export interface ResolvedGhidraAnalyzePaths {
+  importPath: string;
+  projectLocation: string;
+  projectName: string;
+}
+
+export type ResolvedHostToolPaths = ResolvedAcmeBuildPaths | ResolvedGhidraAnalyzePaths;
 
 export type BuildHostToolArgvResult =
   | { ok: true; toolPath: string; argv: string[]; outputs: string[] }
@@ -256,7 +322,8 @@ export type BuildHostToolArgvResult =
 export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHostToolPaths): BuildHostToolArgvResult {
   if (request.tool === "acme.build") {
     const { args } = request;
-    const stem = join(resolved.outDirPath, basename(resolved.sourcePath).replace(/\.(a|asm|s)$/i, ""));
+    const { sourcePath, outDirPath } = resolved as ResolvedAcmeBuildPaths;
+    const stem = join(outDirPath, basename(sourcePath).replace(/\.(a|asm|s)$/i, ""));
     const prg = `${stem}.prg`;
     // Overridable local variable named for what it holds -- never `binPath`/
     // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
@@ -287,11 +354,53 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     for (const define of args.defines ?? []) argv.push(`-D${define}`);
     for (const include of args.includes ?? []) argv.push("-I", include);
     if (args.setpc) argv.push("--setpc", args.setpc);
-    argv.push(resolved.sourcePath);
+    argv.push(sourcePath);
 
     return { ok: true, toolPath: acmePath, argv, outputs: [prg] };
   }
-  return { ok: false, message: `buildHostToolArgv: no argv builder for tool "${request.tool}"` };
+
+  if (request.tool === "ghidra.analyze") {
+    const { args } = request;
+    const { importPath, projectLocation, projectName } = resolved as ResolvedGhidraAnalyzePaths;
+
+    // Named environment variable, never a guessed install location and
+    // never this repository's own local probe directory (T-34-16).
+    const ghidraHome = process.env.GHIDRA_HOME;
+    if (ghidraHome === undefined || ghidraHome === "") {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.analyze" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+      };
+    }
+    // Overridable local variable named for what it holds -- never `binPath`/
+    // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
+    // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
+    const ghidraPath = join(ghidraHome, "support", "analyzeHeadless");
+    if (!existsSync(ghidraPath)) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.analyze" refuses: GHIDRA_HOME's resolved launcher does not exist on disk (${ghidraPath})`,
+      };
+    }
+
+    // Argv construction and the dot-segment re-check both live in
+    // ghidra-project.mts's buildAnalyzeHeadlessArgv() -- never re-derived
+    // here (A-06).
+    const argvInput: { projectLocation: string; projectName: string; importPath: string; preScript?: string; postScript?: string } = {
+      projectLocation,
+      projectName,
+      importPath,
+    };
+    if (args.preScript !== undefined) argvInput.preScript = args.preScript;
+    if (args.postScript !== undefined) argvInput.postScript = args.postScript;
+
+    const built = buildAnalyzeHeadlessArgv(argvInput);
+    if (!built.ok) return { ok: false, message: built.message };
+
+    return { ok: true, toolPath: ghidraPath, argv: built.argv, outputs: [] };
+  }
+
+  return { ok: false, message: `buildHostToolArgv: no argv builder for tool "${(request as { tool: string }).tool}"` };
 }
 
 // ---------------------------------------------------------------------------
@@ -423,19 +532,40 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   const { request } = narrowed;
 
   const repoRootAbs = resolvePath(deps.repoRoot);
-  const sourceResolved = resolveWorkspacePath(repoRootAbs, request.args.source);
-  if (!sourceResolved.ok) return { ok: false, message: sourceResolved.message };
 
-  let outDirPath: string;
-  if (request.args.outDir !== undefined) {
-    const outDirResolved = resolveWorkspacePath(repoRootAbs, request.args.outDir);
-    if (!outDirResolved.ok) return { ok: false, message: outDirResolved.message };
-    outDirPath = outDirResolved.path;
+  let built: BuildHostToolArgvResult;
+  if (request.tool === "acme.build") {
+    const sourceResolved = resolveWorkspacePath(repoRootAbs, request.args.source);
+    if (!sourceResolved.ok) return { ok: false, message: sourceResolved.message };
+
+    let outDirPath: string;
+    if (request.args.outDir !== undefined) {
+      const outDirResolved = resolveWorkspacePath(repoRootAbs, request.args.outDir);
+      if (!outDirResolved.ok) return { ok: false, message: outDirResolved.message };
+      outDirPath = outDirResolved.path;
+    } else {
+      outDirPath = dirname(sourceResolved.path);
+    }
+
+    built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath });
   } else {
-    outDirPath = dirname(sourceResolved.path);
-  }
+    // request.tool === "ghidra.analyze" -- the only other HOST_TOOL_IDS
+    // member. `importPath` is workspace-relative, resolved through the
+    // SAME resolveWorkspacePath() site acme.build's `source` uses; the
+    // project location itself comes from ghidra-project.mts's
+    // resolveGhidraProject() -- never computed here (A-06).
+    const importResolved = resolveWorkspacePath(repoRootAbs, request.args.importPath);
+    if (!importResolved.ok) return { ok: false, message: importResolved.message };
 
-  const built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath });
+    const projectResolved = resolveGhidraProject({ repoRoot: repoRootAbs, runId: request.args.runId });
+    if (!projectResolved.ok) return { ok: false, message: projectResolved.message };
+
+    built = buildHostToolArgv(request, {
+      importPath: importResolved.path,
+      projectLocation: projectResolved.projectLocation,
+      projectName: projectResolved.projectName,
+    });
+  }
   if (!built.ok) return { ok: false, message: built.message };
 
   const timeoutMs = deps.timeoutMs ?? DEFAULT_HOST_TOOL_TIMEOUT_MS;

@@ -8,13 +8,20 @@
 //
 // Reaches the executor as the BUILT artifact (A-04, this plan's own
 // decision), copying broker-state.test.ts's own `await import(new URL(...))`
-// shape verbatim rather than inventing a second one -- host-tool.mts will
-// (in plan 34-03) value-import a sibling host-bound module by its `.mjs`
-// specifier, which only resolves inside resources/, never against the
-// unbuilt source.
+// shape verbatim rather than inventing a second one -- host-tool.mts value-
+// imports a sibling host-bound module (ghidra-project.mjs, plan 34-03) by
+// its `.mjs` specifier, which only resolves inside resources/, never
+// against the unbuilt source.
+//
+// Phase 34, plan 34-03 (SEAM-04): extended (not a second executor suite)
+// with the `ghidra.analyze` tool-id cases below -- an unknown args key
+// refused by name, a runId escaping via a separator refused, a dot-prefixed
+// repoRoot refused with the offending segment named, a well-formed argv
+// carrying the project location/name first and `-deleteProject`, and a
+// GHIDRA_HOME-unset refusal before any launch is attempted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,7 +50,11 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
   resolveWorkspacePath: (repoRoot: string, relative: string) => { ok: true; path: string } | { ok: false; message: string };
   buildHostToolArgv: (
     request: { tool: string; args: Record<string, unknown> },
-    resolved: { sourcePath: string; outDirPath: string },
+    // Widened to a generic bag (plan 34-03): ghidra.analyze's resolved
+    // shape (importPath/projectLocation/projectName) differs from
+    // acme.build's own (sourcePath/outDirPath) -- this cast is test-file-
+    // local typing only, not the module's own exported type.
+    resolved: Record<string, unknown>,
   ) => { ok: true; toolPath: string; argv: string[]; outputs: string[] } | { ok: false; message: string };
   runHostTool: (
     raw: unknown,
@@ -435,3 +446,91 @@ test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// ghidra.analyze -- the second HOST_TOOL_IDS entry (SEAM-04, plan 34-03).
+// Reaches the dot-segment rule and the per-run project location through
+// ghidra-project.mjs, never a copy in host-tool.mts itself.
+// ---------------------------------------------------------------------------
+
+/** Temporarily overrides GHIDRA_HOME and creates a fake, non-executed
+ * `support/analyzeHeadless` file inside it (buildHostToolArgv() only checks
+ * existsSync -- it never spawns), so the argv-construction case below runs
+ * with no real Ghidra installation present. Restored/removed in `finally`
+ * regardless of outcome. */
+async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T): Promise<T> {
+  const previous = process.env.GHIDRA_HOME;
+  return withTempDir(async (dir) => {
+    const supportDir = join(dir, "support");
+    mkdirSync(supportDir, { recursive: true });
+    writeFileSync(join(supportDir, "analyzeHeadless"), "#!/bin/sh\nexit 0\n", "utf8");
+    chmodSync(join(supportDir, "analyzeHeadless"), 0o755);
+    process.env.GHIDRA_HOME = dir;
+    try {
+      return await fn(dir);
+    } finally {
+      if (previous === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previous;
+    }
+  });
+}
+
+test('normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", bogusKey: "x" } }) is refused BY NAME, never dropped', () => {
+  const result = normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", bogusKey: "x" } });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /bogusKey/);
+});
+
+test('normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } }) is accepted', () => {
+  const result = normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } });
+  assert.equal(result.ok, true);
+});
+
+test("runHostTool: a ghidra.analyze runId that escapes via a path separator is refused", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+    const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "a/b", importPath: "x.bin" } }, { repoRoot: dir });
+    assert.equal(response.ok, false);
+  });
+});
+
+test("runHostTool: a dot-prefixed repoRoot is refused for ghidra.analyze, naming the offending segment", async () => {
+  await withTempDir(async (dir) => {
+    const dottedRepoRoot = join(dir, ".vice-supervisor", "nested");
+    mkdirSync(dottedRepoRoot, { recursive: true });
+    writeFileSync(join(dottedRepoRoot, "x.bin"), "tiny\n", "utf8");
+    const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } }, { repoRoot: dottedRepoRoot });
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /\.vice-supervisor/);
+  });
+});
+
+test("runHostTool: ghidra.analyze with GHIDRA_HOME unset is refused by name, never attempting a launch", async () => {
+  const previous = process.env.GHIDRA_HOME;
+  delete process.env.GHIDRA_HOME;
+  try {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } }, { repoRoot: dir });
+      assert.equal(response.ok, false);
+      if (!response.ok) assert.match(response.message, /GHIDRA_HOME/);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.GHIDRA_HOME;
+    else process.env.GHIDRA_HOME = previous;
+  }
+});
+
+test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv whose first two elements are the project location and project name and which contains -deleteProject", async () => {
+  await withFakeGhidraHome(async () => {
+    const request = { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } };
+    const resolved = { importPath: "/repo/tools/ghidra-runs/r1/x.bin", projectLocation: "/repo/tools/ghidra-runs/r1", projectName: "r1" };
+    const built = buildHostToolArgv(request, resolved);
+    assert.equal(built.ok, true);
+    if (!built.ok) return;
+    assert.equal(built.argv[0], "/repo/tools/ghidra-runs/r1");
+    assert.equal(built.argv[1], "r1");
+    assert.ok(built.argv.includes("-deleteProject"));
+    assert.ok(built.toolPath.endsWith(join("support", "analyzeHeadless")));
+  });
+});
