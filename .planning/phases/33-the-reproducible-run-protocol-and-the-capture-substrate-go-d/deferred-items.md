@@ -44,3 +44,17 @@ was checked directly —
 `skills/c64-ram-capture/scripts/derive-transients.mjs` and
 `skills/c64-ram-capture/transients/README.md`, and ships **no** `*.test.mjs`
 file. Nothing this plan added leaks.
+
+**RESOLVED 2026-09-03 — closed by plan 33-09, commit `fc199e7`.** The gate is
+green (`node scripts/check-npm-packages.mjs` exit 0). The repair was **not** the
+obvious one: adding `broker-launch.mts` to `files[]` cascades, because the
+host-bound `.mts` broker family imports its siblings by their *compiled* `.mjs`
+specifiers, which exist only under `resources/` and never at the package root —
+so listing it demands three entries no file can satisfy. The actual defect was
+the closure walk treating a statement-level `import type` (fully erased under
+`verbatimModuleSyntax`) as a shipping edge; `fc199e7` stops walking those while
+still walking inline `import { type Foo, Bar }`, which does emit an import. A
+negative control confirmed the walk still catches a genuinely missing file.
+
+Recorded here rather than deleted: this entry is the provenance for why
+`check-npm-packages.mjs` has an `import type` carve-out at all.

@@ -4,24 +4,34 @@
 // 6510-port normalisation, the byte-by-byte comparison that decides
 // equivalence, and the argv identity digest a reproducible run is keyed by.
 //
-// CONSUMER STATUS: SUBSTRATE, NOT YET WIRED (33 review WR-08). As of phase
-// 33 this module is imported by nothing outside its own tests and
-// `derive-transients.test.mjs`, and it exposes no CLI, so -- unlike
-// `vsf-slice.ts` -- there is no route to it from the skill side either. The
-// only RUNNABLE equivalence check in the phase is the deliberate second
-// implementation in `src/skills/c64-ram-capture/scripts/derive-transients.mjs`.
-// So read "the ONE authoritative place" above as A DESIGN CONSTRAINT ON FUTURE
-// CALLERS -- when the predicate is called, it is called here -- and NOT as a
-// claim that anything in production calls it today. In particular
-// `normalisePorts()`, the sole reason `sliceC64Mem()` returns the port bytes
-// at all, has never run against a real capture.
+// CONSUMER STATUS: EXERCISED BY EVIDENCE, NOT YET WIRED INTO A SHIPPED TOOL.
+// Corrected 2026-09-03 after phase 33's verification caught the previous
+// version of this paragraph asserting, wrongly, that nothing outside the tests
+// imports this module and that `normalisePorts()` had never run against a real
+// capture. Both claims were false when written. What is actually true:
+//
+//   * FOUR committed phase-33 evidence probes import this module by path --
+//     `evidence/capture-pair.mjs:120`, `reset-removed-probe.mjs:103`,
+//     `frame-anchor-probe.mjs:86` and `determinism-probe.mjs:78`.
+//   * `normalisePorts()` HAS run against real captures -- three of them, at
+//     `evidence/capture-pair.mjs:680`.
+//   * `compareCaptures()` is called at `evidence/capture-pair.mjs:776`, and
+//     THAT CALL IS the `C0_CAPTURE_PAIR: pass` gate input. This module produced
+//     the milestone's headline equivalence result; it is not unvalidated code.
+//
+// What remains true, and is the only sense in which this is "not yet wired":
+// no SHIPPED MCP tool and no production caller reaches it -- the route today
+// is an evidence script importing it directly. So read "the ONE authoritative
+// place" above as A DESIGN CONSTRAINT ON FUTURE CALLERS -- when the predicate
+// is called, it is called here -- rather than as a claim about the production
+// surface.
 //
 // This is deliberate and is not a defect to be closed by inventing a caller:
 // phase 33 built the capture substrate ahead of phases 34-38 consuming it. The
 // status is recorded HERE, in the header a later reader will actually reach,
-// because "authoritative" and "in use" are easy to conflate and the difference
-// decides whether an edit here is safe. When a production consumer lands, this
-// paragraph is what should be updated or removed.
+// because "authoritative", "in use" and "validated" are easy to conflate and
+// the difference decides whether an edit here is safe. When a production
+// consumer lands, this paragraph is what should be updated or removed.
 //
 // This module performs NO filesystem and NO network I/O: every function takes
 // bytes, an already-parsed JSON value, or a string array, and returns values.
