@@ -1,6 +1,6 @@
 ---
 phase: 34-the-host-tool-execution-seam
-reviewed: 2026-09-03T00:00:00Z
+reviewed: 2026-09-04T00:00:00Z
 depth: standard
 files_reviewed: 35
 files_reviewed_list:
@@ -51,58 +51,50 @@ status: issues_found
 
 # Phase 34: Code Review Report
 
-**Reviewed:** 2026-09-03T00:00:00Z
+**Reviewed:** 2026-09-04T00:00:00Z
 **Depth:** standard
 **Files Reviewed:** 35
 **Status:** issues_found
 
 ## Summary
 
-This is a re-review of Phase 34 after gap-closure plans `34-07`, `34-08` and
-`34-09` landed specifically to close `CR-01` through `CR-04` from the prior
-`34-REVIEW.md`. All four are verified CLOSED in the code as written (not
-merely claimed closed in a SUMMARY): `oracle.probe`'s wire `command` field is
-gone entirely and the oracle's location is now resolved host-side only
-(`resolveOracleCommand()`, host-tool.mts); `ghidra.analyze`'s
-`preScript`/`postScript` and `acme.build`'s `includes` now flow through
-`resolveWorkspacePath()` before reaching argv, with a second independent
-parent-segment check in `ghidra-project.mts`'s `buildAnalyzeHeadlessArgv()`;
-and the client/server timeout budgets are now split into a connect-phase
-timer and a per-tool request-deadline timer, with `ghidra.analyze` given a
-600s/660s (server/client) budget instead of the old fixed 20s/5s ceiling that
-made it structurally unable to complete. All four closures are backed by
-real, non-vacuous tests, including two real end-to-end control-plane round
-trips that exercise a fake launcher sleeping past the old connect-timeout
-constant. The compiled `resources/host-tool.mjs`/`resources/ghidra-project.mjs`
-artifacts were spot-checked against their `.mts` sources and are in sync (no
-drift). `WR-01` and `WR-02` were deliberately deferred by decision in
-`34-07-PLAN.md`/`34-09-PLAN.md` and are recorded as such here, not as new
-failures — confirmed against the current code: `check-no-skill-external-spawn.mjs`'s
-call-site detector is still evadable by aliasing the spawn function (WR-01
-unchanged), and `broker-control.mts`'s `host_tool` dispatch still has no
-per-broker concurrency ceiling (WR-02 unchanged).
+This is the THIRD review pass over Phase 34, run after the second gap-closure round
+(`34-10`/`34-11`) landed specifically to close `CR-05` — the lexical, symlink-blind
+confinement check in `resolveWorkspacePath()` this review itself raised last round. `CR-05`
+is verified CLOSED in the code as it stands today, not merely claimed closed in a
+SUMMARY/decision doc: `resolveWorkspacePath()` (`host-tool.mts:563-586`) now walks BOTH the
+workspace root and the candidate path through a new local `realpathOfNearestExisting()`
+ancestor-realpath walk (`host-tool.mts:487-559`, a line-for-line-documented mirror of
+`anno-types.ts`'s already-reviewed `storePathWithinWorkspace()`/`realpathOfNearestExisting()`
+pair) before the prefix comparison, and returns the WALKED real path, not the lexical join. I
+independently re-read the full implementation (not just the diff) and traced the ancestor
+walk, the dangling-symlink hop counter (bounded at `MAX_SYMLINK_HOPS = 40`, matching Linux's
+own `MAXSYMLINKS`), and the cycle-refusal path by hand against several concrete scenarios
+(a symlinked directory pointing outside the workspace with an existing target, the same
+pointing at a not-yet-created target, a two-hop symlink cycle) and found the logic sound in
+every case traced. I additionally ran the full `host-tool.test.ts` suite live (`node --test
+host-tool.test.ts`): all 83 cases pass, including four live, on-disk planted-symlink cases (a
+read-key escape, a write-key escape that asserts the outside directory is left untouched, an
+inside-pointing link correctly followed, and a discriminating case that would redden an
+over-broad "refuse every symlink" fix), a dangling-link trio, a symlink-cycle pair, and a
+cross-implementation equivalence table pinned against `anno-types.ts`'s own confinement seam
+over one shared fixture table. I also rebuilt the host-bound artifacts (`node build.ts`) and
+confirmed `resources/host-tool.mjs` is byte-identical to what a fresh build produces (`git
+status` clean afterward) — no compiled-artifact drift. `CR-05` is therefore marked CLOSED
+below, not carried forward as open.
 
-However, this round found a NEW, unresolved Critical issue that none of the
-three gap-closure plans touched: `resolveWorkspacePath()` — the single seam
-this module's own header calls "the ONLY place a wire-supplied path becomes a
-real path" and the mechanism CR-02/CR-03's fixes were built on top of — uses
-plain lexical `path.resolve()` with no symlink resolution, which is the exact
-bug class (`28-REVIEW.md` CR-03/CR-04, fixed in `anno-types.ts`'s
-`storePathWithinWorkspace()` by walking to each side's realpath) this project
-has already found and fixed once, elsewhere in this same codebase. Every one
-of the seven path-bearing `host_tool` argument keys (`acme.build`'s
-`source`/`outDir`/`includes`, `ghidra.analyze`'s
-`importPath`/`preScript`/`postScript`, `oracle.run`'s `source`) inherits this
-gap, so the CR-02/CR-03 fixes correctly close the "raw wire string reaches
-argv" defect while leaving the underlying confinement check itself bypassable
-by a symlink planted anywhere inside the workspace tree. A second, narrower
-robustness gap (`WR-03`, new) was also found: `runOracleRun()`'s
-`mkdirSync(scratchDir, ...)` is not exception-guarded, and the standalone
-`host-tool.mjs` CLI entry point has no `.catch()` on `runHostTool()`'s
-returned promise, so an environmental failure on that one path (disk
-full/permission denied) becomes an unhandled rejection rather than the
-`{ ok: false, message }` JSON line every other failure path in this module
-promises.
+`CR-01` through `CR-04` remain CLOSED exactly as recorded in the prior review round — no plan
+in this round touched their code, and I did not find any regression in them while re-reading
+`host-tool.mts` end to end this round. `WR-01` and `WR-02` remain deferred-by-decision and
+unchanged. `WR-03` (the unguarded `mkdirSync` in `runOracleRun()` and the CLI entry point's
+missing `.catch()`) is still open and still unfixed in the code as of this round — its todo
+sits in `.planning/todos/pending/`, its `STATE.md` ledger row is untouched, and I confirmed by
+direct inspection that `host-tool.mts:1240`'s `mkdirSync(scratchDir, { recursive: true })` is
+still outside `runOracleRun()`'s own `try`/`finally`, and the CLI entry point at
+`host-tool.mts:1317-1320` still has no `.catch()` on `runHostTool(...)`. No new Critical or
+Warning issue was found in this round beyond what the two carried-forward findings already
+state. This review did not modify any source file; `node build.ts` was run to check for
+artifact drift and produced no working-tree change.
 
 ## Structural Findings (fallow)
 
@@ -113,74 +105,46 @@ None provided for this review.
 ### CR-01: `oracle.probe`'s `command` override let a container-side caller execute an arbitrary host file — **CLOSED**
 
 **File:** `src/mcp/vice/host-tool.mts:125, 910-958`
-**Disposition:** CLOSED, verified in code (plan `34-08`).
-**Evidence:** `HOST_TOOL_ARG_KEYS["oracle.probe"]` is now `Object.freeze([])` (line 125) — the wire `command` key is refused BY NAME as an "unknown key" by `normaliseHostToolRequest()`'s own generic unknown-key check, before any tool-specific narrowing runs. The oracle's location is now decided exclusively by `resolveOracleCommand()` (lines 938-958), which reads only the BROKER PROCESS'S OWN environment (`UNP64`/`UNP64_PATH`), and additionally requires `basename(configured) === DEFAULT_ORACLE_COMMAND` before accepting a host-configured override, closing the path even for a compromised broker environment naming an arbitrarily-located file whose basename isn't `unp64`. `host-tool.test.ts` proves the retired key is refused both locally (`normaliseHostToolRequest`) and end-to-end over the real control-plane route, and proves the configured path is never echoed back in any response field (T-19-18 carried forward). `resolveOracleCommand()` is also now the single site both `runOracleProbe()` and `runOracleRun()` consult (previously `runOracleRun()` had no such gate at all) — closing a second, previously-unstated defect in the same commit.
+**Disposition:** CLOSED, verified in code (plan `34-08`). Unchanged this round; re-confirmed by direct inspection that `HOST_TOOL_ARG_KEYS["oracle.probe"]` is still `Object.freeze([])` and `resolveOracleCommand()` is still the single site both `runOracleProbe()` and `runOracleRun()` consult.
+**Evidence:** `HOST_TOOL_ARG_KEYS["oracle.probe"]` is now `Object.freeze([])` (line 125) — the wire `command` key is refused BY NAME as an "unknown key" by `normaliseHostToolRequest()`'s own generic unknown-key check, before any tool-specific narrowing runs. The oracle's location is now decided exclusively by `resolveOracleCommand()` (lines 1138-1158), which reads only the BROKER PROCESS'S OWN environment (`UNP64`/`UNP64_PATH`), and additionally requires `basename(configured) === DEFAULT_ORACLE_COMMAND` before accepting a host-configured override, closing the path even for a compromised broker environment naming an arbitrarily-located file whose basename isn't `unp64`. `host-tool.test.ts` proves the retired key is refused both locally (`normaliseHostToolRequest`) and end-to-end over the real control-plane route, and proves the configured path is never echoed back in any response field (T-19-18 carried forward).
 
 ---
 
 ### CR-02: `ghidra.analyze`'s `preScript`/`postScript` reached `analyzeHeadless`'s argv unvalidated — **CLOSED**
 
-**File:** `src/mcp/vice/host-tool.mts:817-832, 505-514`; `src/mcp/vice/ghidra-project.mts:293-317`
-**Disposition:** CLOSED, verified in code (plan `34-07`).
-**Evidence:** `runHostTool()`'s `ghidra.analyze` branch now resolves both `preScript` and `postScript` through `resolveWorkspacePath()` (lines 817-832) BEFORE `buildHostToolArgv()` is ever called, threading only `preScriptPath`/`postScriptPath` (never `request.args.preScript`/`postScript`) into `buildAnalyzeHeadlessArgv()`'s input. `ghidra-project.mts`'s `buildAnalyzeHeadlessArgv()` independently re-checks both fields for a literal `".."` path SEGMENT (not a substring test — `ghidra-project.test.ts` proves `"..foo.java"` is accepted while `"../x.java"` is refused), so the rule holds even for a caller that bypassed `resolveWorkspacePath()` entirely. `host-tool.test.ts` proves the resolved-path-only read with a disagreement case (wire value `"wire-pre.java"` vs. resolved `"/repo/some/resolved-pre.java"` — only the latter appears in argv), and proves an escaping/absolute `preScript`/`postScript` is refused with the workspace-escape/not-absolute message and logs zero lines. The header comment at `host-tool.mts:96-100`, which the prior review quoted as false, now accurately states the resolved-path discipline.
+**File:** `src/mcp/vice/host-tool.mts:1017-1032, 679-720`; `src/mcp/vice/ghidra-project.mts`
+**Disposition:** CLOSED, verified in code (plan `34-07`). Unchanged this round.
+**Evidence:** `runHostTool()`'s `ghidra.analyze` branch resolves both `preScript` and `postScript` through `resolveWorkspacePath()` BEFORE `buildHostToolArgv()` is ever called, threading only `preScriptPath`/`postScriptPath` (never `request.args.preScript`/`postScript`) into `buildAnalyzeHeadlessArgv()`'s input. `ghidra-project.mts`'s `buildAnalyzeHeadlessArgv()` independently re-checks both fields for a literal `".."` path SEGMENT, so the rule holds even for a caller that bypassed `resolveWorkspacePath()` entirely. `host-tool.test.ts` proves the resolved-path-only read with a disagreement case and proves an escaping/absolute `preScript`/`postScript` is refused with the workspace-escape/not-absolute message and logs zero lines. Because `CR-05`'s fix changed `resolveWorkspacePath()`'s underlying confinement mechanism (now realpath-based rather than lexical), and `preScript`/`postScript` sit downstream of that same seam, I re-verified this round that the disagreement/escape/absolute test cases for these two fields still pass against the new implementation — they do (see the full 83/83 run cited under `CR-05`).
 
 ---
 
 ### CR-03: `acme.build`'s `includes` array reached `-I <dir>` unresolved — **CLOSED**
 
-**File:** `src/mcp/vice/host-tool.mts:792-804, 467-472`
-**Disposition:** CLOSED, verified in code (plan `34-07`).
-**Evidence:** `runHostTool()`'s `acme.build` branch now resolves every `includes` entry through `resolveWorkspacePath()` (lines 792-804), refusing the WHOLE request on the FIRST escaping entry (no partial resolution, no silent drop). `buildHostToolArgv()` reads ONLY `resolved.includePaths` (line 472), never `request.args.includes`. `host-tool.test.ts` proves this with a disagreement case (wire `["wire-inc-1", ...]` vs. resolved `["/repo/resolved-inc-1", ...]` — only the latter reaches argv), an escaping-entry refusal case, an absolute-entry refusal case, an empty-string-entry refusal case (never silently skipped), and an END-TO-END case over the real control-plane route proving all seven VICE lease callbacks stay uncalled on a refusal.
+**File:** `src/mcp/vice/host-tool.mts:992-1004, 634-677`
+**Disposition:** CLOSED, verified in code (plan `34-07`). Unchanged this round; re-verified against the new realpath-based `resolveWorkspacePath()` (see `CR-05`) that the disagreement/escape/absolute/empty-string cases for `includes` still pass.
+**Evidence:** `runHostTool()`'s `acme.build` branch resolves every `includes` entry through `resolveWorkspacePath()`, refusing the WHOLE request on the FIRST escaping entry. `buildHostToolArgv()` reads ONLY `resolved.includePaths`, never `request.args.includes`. `host-tool.test.ts` proves this with a disagreement case, an escaping-entry refusal case, an absolute-entry refusal case, an empty-string-entry refusal case, and an END-TO-END case over the real control-plane route proving all seven VICE lease callbacks stay uncalled on a refusal. A NEW case this round (`34-10` Task 3) additionally proves two `includes` entries reaching the SAME real directory through two DIFFERENT symlinks both still appear in the spawned argv, in caller order — i.e. `CR-05`'s realpath-return change collapses two spellings to one real path, but not to one list entry, so `CR-03`'s no-partial-resolution guarantee is intact under the new confinement mechanism.
 
 ---
 
 ### CR-04: `ghidra.analyze` could not complete over the shipped control-plane route (timeout budget shorter than JVM startup cost) — **CLOSED**
 
-**File:** `src/mcp/vice/host-tool-client.ts:86-121, 169-208`; `src/mcp/vice/host-tool.mts:544-583`; `src/mcp/vice/vice-broker.mts:1163-1180`
-**Disposition:** CLOSED, verified in code (plan `34-09`).
-**Evidence:** `hostToolOverControlPlane()` now runs TWO independent timers (lines 169-208): a connect-phase timer bounded by `CONTROL_CONNECT_TIMEOUT_MS` (5000ms), cleared the instant `connect` fires, and a SEPARATE per-tool request-deadline timer sized by `hostToolRequestTimeoutMs()` (lines 103-121), which reads a new `HOST_TOOL_REQUEST_TIMEOUT_MS` table giving `ghidra.analyze` 660,000ms. Server-side, `host-tool.mts`'s `HOST_TOOL_TIMEOUT_MS` table (lines 563-570) gives `ghidra.analyze` 600,000ms while every other tool keeps the pre-existing 20,000ms default; `vice-broker.mts`'s real wiring (lines 1163-1180) is documented as deliberately supplying no override, letting the per-tool table govern. `host-tool.test.ts` proves this is not merely configured but WORKS: a real end-to-end control-plane round trip with a fake launcher sleeping 6s (comfortably longer than the OLD 5s connect-timeout constant) resolves `ok: true`, with the measured elapsed time asserted to exceed `CONTROL_CONNECT_TIMEOUT_MS`; a cross-seam ordering test iterates every `HOST_TOOL_IDS` member asserting the client deadline is strictly greater than the server budget; and a kill-on-expiry case proves raising the budget never removed the bound (a 500ms override still kills the child and names the budget in the refusal). This is exactly the round trip CR-04 stated could not complete before this plan, now proven completing.
+**File:** `src/mcp/vice/host-tool-client.ts`; `src/mcp/vice/host-tool.mts:746-783`; `src/mcp/vice/vice-broker.mts`
+**Disposition:** CLOSED, verified in code (plan `34-09`). Unchanged this round; no plan in this round touched any timeout table or client/server timer.
+**Evidence:** `hostToolOverControlPlane()` runs two independent timers: a connect-phase timer bounded by `CONTROL_CONNECT_TIMEOUT_MS` (5000ms), cleared the instant `connect` fires, and a separate per-tool request-deadline timer sized by `hostToolRequestTimeoutMs()`, giving `ghidra.analyze` 660,000ms. Server-side, `host-tool.mts`'s `HOST_TOOL_TIMEOUT_MS` table gives `ghidra.analyze` 600,000ms while every other tool keeps the pre-existing 20,000ms default. `host-tool.test.ts` proves this works end to end: a real control-plane round trip with a fake launcher sleeping 6s (longer than the OLD 5s connect-timeout constant) resolves `ok: true`; a cross-seam ordering test asserts the client deadline strictly exceeds the server budget for every tool id; a kill-on-expiry case proves the bound is never removed. I re-ran this suite live this round (see `CR-05`'s evidence) and it still passes, including a new-this-round two-concurrent-slow-invocations case (`34-09`/`34-10` era) proving two overlapping slow `ghidra.analyze` requests both resolve `ok:true`, reserve distinct project locations, and complete in appreciably less than the sum of the two sleeps.
 
 ---
 
-### CR-05 (NEW): `resolveWorkspacePath()` uses lexical `path.resolve()` with no symlink resolution — a container-side caller can escape the workspace root through a planted symlink, for every one of the seven path-bearing `host_tool` argument keys, INCLUDING two that let the host WRITE outside the workspace
+### CR-05: `resolveWorkspacePath()` uses lexical `path.resolve()` with no symlink resolution — a container-side caller can escape the workspace root through a planted symlink — **CLOSED**
 
-**File:** `src/mcp/vice/host-tool.mts:370-386` (the seam), consumed at `host-tool.mts:780-843` (acme.build's `source`/`outDir`/`includes`, ghidra.analyze's `importPath`/`preScript`/`postScript`) and `host-tool.mts:1013-1017` (oracle.run's `source`)
-**Disposition:** NEW — not raised in the prior review, not touched by any of `34-07`/`34-08`/`34-09`.
-**Issue:**
+**File:** `src/mcp/vice/host-tool.mts:428-586` (the seam and its new ancestor-realpath walk), consumed at `host-tool.mts:975-1044` (acme.build's `source`/`outDir`/`includes`, ghidra.analyze's `importPath`/`preScript`/`postScript`) and `host-tool.mts:1212-1220` (oracle.run's `source`)
+**Disposition:** CLOSED, verified in code (plan `34-10`), decision record updated (plan `34-11`). This finding was raised NEW in the prior (`34-09`-era) review round and is closed in this round after direct re-verification against the code as it stands, not against the SUMMARY's claim.
+**Evidence:** `resolveWorkspacePath()` (`host-tool.mts:563-586`) now walks both `repoRoot` and the resolved candidate through a new local function, `realpathOfNearestExisting()` (`host-tool.mts:487-559`), before the `startsWith(rootAbs + sep)` prefix comparison, and returns the WALKED real path as the `ok: true` result — not the lexical join. The walk: climbs the ancestor chain via `lstatSync(..., { throwIfNoEntry: false })` to find the nearest existing path ENTRY (never following a symlink at the leaf while checking existence); when the stopping entry is a symlink whose target does not exist, it counts a hop (bounded at `MAX_SYMLINK_HOPS = 40`, refusing a chain or cycle past that bound) and re-resolves the link's target against the LINK'S OWN directory (never the process cwd); otherwise it calls `realpathSync` on the existing entry and rejoins any non-existent tail. Every filesystem failure along the walk becomes a named `{ ok: false, message }` refusal, preserving the module's own never-throw contract. This is a documented, line-for-line mirror of `anno-types.ts`'s already-reviewed `storePathWithinWorkspace()`/`realpathOfNearestExisting()` pair (duplicated locally per `A-15` because `host-tool.mts` is host-bound and cannot import a container-side `.ts` module), pinned against drift by a cross-implementation equivalence test (`host-tool.test.ts`, "resolveWorkspacePath and anno-types.ts's storePathWithinWorkspace() agree").
 
-```ts
-export function resolveWorkspacePath(repoRoot: string, relative: string): ResolveWorkspacePathResult {
-  ...
-  const rootAbs = resolvePath(repoRoot);
-  const resolved = resolvePath(rootAbs, relative);
-  if (resolved !== rootAbs && !resolved.startsWith(rootAbs + sep)) {
-    return { ok: false, message: `workspace path escapes the workspace root: ...` };
-  }
-  return { ok: true, path: resolved };
-}
-```
+I independently traced the walk by hand against three scenarios not identical to the test names (a symlinked directory whose target exists, the same with a not-yet-created target, and a two-hop symlink cycle) and found the logic correct in each: the symlinked-directory-with-existing-target case resolves to the real path outside the workspace and is refused; the not-yet-created-target case still resolves the real, outside-workspace location by rejoining the walked tail and is refused; the cycle case is refused by the hop-count bound before an infinite loop can occur. I then ran `host-tool.test.ts` live end to end: 83/83 pass, including four live on-disk planted-symlink cases (a read-key escape via `acme.build`'s `source`, a write-key escape via `acme.build`'s `outDir` that asserts the outside directory's listing is unchanged afterward — i.e. no file was actually created outside the workspace, closing the write-side blast radius this finding named as the more serious of the two demonstrated escapes — an inside-pointing link correctly FOLLOWED and accepted, and a dangling-inside-link accepted while a dangling-outside link is refused, discriminating against an over-broad "refuse every symlink" fix), a symlink-cycle pair (leaf position and ancestor position, the latter via the kernel's own `ELOOP` surfacing through the walk rather than the manual hop counter), and the cross-implementation equivalence table against `anno-types.ts`. I rebuilt the host-bound artifacts (`node build.ts`) and confirmed `resources/host-tool.mjs` is unchanged from its already-committed state (no drift between the `.mts` source and the shipped compiled artifact).
 
-`resolvePath` is Node's `path.resolve` — a purely lexical, string-level normalisation. It does not consult the filesystem and does not follow symbolic links. If the workspace tree contains a symlink anywhere along a supplied relative path's ancestor chain (e.g. `<repoRoot>/link -> /etc`), a caller-supplied `source: "link/hostname"` resolves LEXICALLY to `<repoRoot>/link/hostname`, which passes the `startsWith(rootAbs + sep)` check and is accepted as `ok: true` — but the actual file the OS subsequently opens, reads, or writes is `/etc/hostname`, entirely outside the workspace root this function's own name and every calling site's own comments claim it enforces.
+Two residuals from this fix are explicitly recorded (not silently dropped) rather than closed: (1) the check-then-open window between this confinement decision and the child process's own filesystem open is not closed at this layer — the child is a third-party binary handed a path string, so there is no descriptor-based route to making the check and the open one atomic operation (`T-34-52`, accepted, matching the identical residual `anno-confinement.test.ts` already records for the same class of check); (2) the comparison is byte-wise with no Unicode normalisation, so two spellings of a path differing only in normalisation form are treated as distinct (same residual as `anno-types.ts`'s comparison). Both are pre-existing, accepted, documented limits of this general confinement approach, not new gaps introduced by this fix, and I am not raising either as a new finding — they are the same accepted residuals this project already lives with for the identical mechanism in `anno-types.ts`.
 
-This is not a hypothetical: this exact class of bug was already found and fixed once in this codebase. `anno-types.ts`'s `storePathWithinWorkspace()` (the analogous confinement seam for the annotation store, `28-REVIEW.md` CR-03/CR-04) resolves BOTH the candidate path and the workspace root through `realpathOfNearestExisting()` — an ancestor walk that follows real symlinks and handles the dangling-link case — specifically because a bare `resolve()`-based check "SUCCEEDED and the store file was CREATED outside the workspace root" under a planted symlink (`anno-confinement.test.ts`'s own header, describing the exact prior incident). `host-tool.mts`'s `resolveWorkspacePath()`, introduced fresh in this phase as "the ONLY place a wire-supplied path becomes a real path" (this module's own header, lines 34-37), reintroduces the identical vulnerable shape with none of that project-established mitigation. No test in `host-tool.test.ts`, `host-tool-transport.test.ts` or `ghidra-project.test.ts` plants a symlink anywhere — the word "symlink" does not appear in any file in this module family.
-
-The blast radius is worse than a read-only escape: `HOST_TOOL_PATH_ARG_KEYS`'s own census (`host-tool.test.ts:1220`, "the declared path-key total across all tools must be 7") counts exactly the seven vulnerable keys, and two of them are WRITE destinations, not read sources. `acme.build`'s `outDir` (resolved at `host-tool.mts:783-790`) becomes the directory ACME is told to write `<stem>.prg`/`.sym`/`.vs`/`.rep` into via the `-o`/`-l`/`--vicelabels`/`-r` flags `buildHostToolArgv()` constructs (lines 449-465) — a caller who can plant one symlink inside the workspace (which they can, since they already control `source`'s own containing directory) can point `outDir` at that symlink and have the HOST broker process write assembler output to an arbitrary host-writable location, e.g. overwriting a file the broker process's own user can write. `oracle.run`'s `source` (resolved at `host-tool.mts:1013-1017`) lets a caller read an arbitrary host file's bytes back through the oracle's stdout capture, via a symlink pointing at it. `ghidra.analyze`'s `preScript`/`postScript` (now correctly workspace-bounded by CR-02, but still symlink-blind) let a caller select an arbitrary host script for `analyzeHeadless` to execute inside the JVM's analysis session via the same symlink technique.
-
-**Fix:** Mirror `anno-types.ts`'s existing, already-reviewed fix: resolve both `rootAbs` and `resolved` through an ancestor-realpath walk (either export and reuse `realpathOfNearestExisting()` from `anno-types.ts`, or implement the equivalent discipline locally) before the prefix comparison, and return the REALPATH (not the lexical join) as the `ok: true` result — the same shape `storePathWithinWorkspace()` already returns for exactly this reason:
-
-```ts
-export function resolveWorkspacePath(repoRoot: string, relative: string): ResolveWorkspacePathResult {
-  if (typeof relative !== "string" || relative === "") { ... }
-  if (isAbsolute(relative)) { ... }
-  const rootAbs = realpathOfNearestExisting(resolvePath(repoRoot));
-  const resolved = realpathOfNearestExisting(resolvePath(rootAbs, relative));
-  if (resolved !== rootAbs && !resolved.startsWith(rootAbs + sep)) {
-    return { ok: false, message: `workspace path escapes the workspace root: ...` };
-  }
-  return { ok: true, path: resolved };
-}
-```
-Add a planted-symlink test to `host-tool.test.ts` for at least one read key (`acme.build`'s `source`) and one write key (`acme.build`'s `outDir`), mirroring `anno-confinement.test.ts`'s own live-link discipline (a real symlink planted on disk, not a synthetic string), so this class of gap is provably closed rather than asserted closed.
+I did not find live planted-symlink coverage for `ghidra.analyze`'s `preScript`/`postScript` or `oracle.run`'s `source` specifically (only `acme.build`'s `source`/`outDir`/`includes` got a live on-disk symlink case) — but since all seven path-bearing keys route through the exact same `resolveWorkspacePath()` seam that IS symlink-tested, and that seam is additionally pinned against `anno-types.ts`'s own already-reviewed implementation by an equivalence table, I judge this a reasonable test-scope decision rather than a residual gap worth a separate finding.
 
 ---
 
@@ -189,31 +153,24 @@ Add a planted-symlink test to `host-tool.test.ts` for at least one read key (`ac
 ### WR-01 (from prior review): spawn-gate detector evadable by aliasing the spawn function — **DEFERRED BY DECISION, unchanged**
 
 **File:** `scripts/check-no-skill-external-spawn.mjs:270-304`
-**Disposition:** Deferred by explicit decision, not silently dropped. `34-07-PLAN.md` and `34-09-PLAN.md` both record this as a visible deferral naming this review by id, with no plan in this round editing the file. Confirmed still true against the current code: `findArgvCallSites()` still matches only the literal identifiers in `ARGV_SPAWN_NAMES` directly adjacent to `(`, so a bracket-notation call (`cp["spawn"](...)`) or a destructuring rename not yet covered by `resolvesToInterpreter()`'s own declaration-lookback would still evade detection. No new evidence changes this finding's substance; carried forward verbatim.
+**Disposition:** Deferred by explicit decision, not silently dropped. Re-confirmed unchanged this round — no plan in `34-10`/`34-11` touched this file, and direct inspection shows `findArgvCallSites()` still matches only the literal identifiers in `ARGV_SPAWN_NAMES` directly adjacent to `(`, so a bracket-notation call (`cp["spawn"](...)`) or an unresolved destructuring rename would still evade detection.
 **Fix:** Unchanged from the prior review — resolve a bare identifier call site back to its own declaration for the CALLED FUNCTION NAME (not just the first-argument token, which is already covered), or at minimum add a planted-violation test naming this gap as a documented limitation.
 
 ### WR-02 (from prior review): `host_tool` has no admission control / concurrent-JVM ceiling — **DEFERRED BY DECISION, unchanged**
 
-**File:** `src/mcp/vice/broker-control.mts:672-690`; `src/mcp/vice/host-tool.mts:637-737`
-**Disposition:** Deferred by explicit decision. `34-09-PLAN.md` records this as explicitly out of that round's scope, breadcrumbed to `/gsd-secure-phase`, and `34-VERIFICATION.md` recorded it as a warning rather than scoring it as a gap. Confirmed still true against the current code: `broker-control.mts`'s `host_tool` dispatch branch (line 680) still calls `opts.onHostTool(req)` unconditionally with no per-broker in-flight counter or ceiling, for any connection holding the shared control token. CR-04's fix makes this WORSE in one respect worth flagging for whoever eventually picks this up: `ghidra.analyze` invocations can now legitimately run for up to 600 seconds each (versus the old, effectively-unreachable 20s ceiling), so the window during which several concurrent JVM-spawning requests can pile up unbounded is now ten minutes long per invocation instead of twenty seconds — the underlying admission-control gap is unchanged, but the now-usable long-running tool makes it materially easier to hit in practice.
+**File:** `src/mcp/vice/broker-control.mts`; `src/mcp/vice/host-tool.mts`
+**Disposition:** Deferred by explicit decision. Re-confirmed unchanged this round — no plan in `34-10`/`34-11` touched `broker-control.mts`'s `host_tool` dispatch branch, which still calls `opts.onHostTool(req)` unconditionally with no per-broker in-flight counter or ceiling. `CR-04`'s (unchanged, already-closed) fix means `ghidra.analyze` invocations can still legitimately run for up to 600 seconds each, so the ten-minute-wide window during which several concurrent JVM-spawning requests can pile up unbounded is unchanged from the prior review.
 **Fix:** Unchanged from the prior review — track in-flight `host_tool` invocations per broker process and reject once a configurable ceiling is reached, mirroring the `at_capacity` vocabulary the `acquire` path already has.
 
-### WR-03 (NEW): `runOracleRun()`'s scratch-directory creation is unguarded, and the CLI entry point has no `.catch()` — an environmental failure becomes an unhandled rejection instead of the module's own `{ ok: false, message }` contract
+### WR-03 (from prior review): `runOracleRun()`'s scratch-directory creation is unguarded, and the CLI entry point has no `.catch()` — an environmental failure becomes an unhandled rejection instead of the module's own `{ ok: false, message }` contract — **OPEN, unchanged**
 
-**File:** `src/mcp/vice/host-tool.mts:1039-1040` (the unguarded `mkdirSync`), `src/mcp/vice/host-tool.mts:1117-1121` (the CLI entry point's missing `.catch()`)
-**Disposition:** NEW.
-**Issue:** `runHostTool()`'s own doc comment states "NOTHING throws out of this function -- every failure path (refusal, launch error, timeout, non-zero exit, unreadable output) resolves to a response object, because broker-kill.mts's uncaughtException/unhandledRejection handlers kill the whole VICE pool on an unhandled throw in this process" (lines 748-752). `runOracleRun()` does not honour this: its `mkdirSync(scratchDir, { recursive: true })` call (line 1040) sits OUTSIDE the function's own `try`/`finally` (the `try` starts on the next line, at the `spawnHostTool()` call), so a `mkdirSync` failure (e.g. a full disk, or a permission error on the `tools/oracle-runs/` parent) throws synchronously out of `runOracleRun()`, and therefore out of `runHostTool()`, contradicting the file's own stated invariant. Inside the real broker process this is caught by `broker-control.mts`'s own `.catch()` around `opts.onHostTool(req)` (line 686), so it does not reach `broker-kill.mts`'s process-wide handlers there — but the standalone CLI entry point at the bottom of `host-tool.mts` has no equivalent guard:
-```ts
-runHostTool(raw, { repoRoot }).then((response) => {
-  process.stdout.write(`${JSON.stringify(response)}\n`);
-  process.exitCode = response.ok ? 0 : 1;
-});
-```
-A rejected promise here is an unhandled rejection in the standalone `host-tool.mjs` process (used by the host-local route in CI and by `hostToolOverHostRoute()`), which — depending on Node's configured unhandled-rejection behaviour — prints an uncaught-exception trace and/or exits non-zero with NOTHING on stdout, breaking `hostToolOverHostRoute()`'s own contract ("host-tool.mjs produced no output on stdout") rather than surfacing a clean, diagnosable `{ ok: false, message }` line.
-**Fix:** Wrap the `mkdirSync` call in `runOracleRun()` in the same try/catch discipline the rest of the module uses (or move it inside the existing `try` block, before the `spawnHostTool()` call, converting a thrown error into `{ ok: false, tool: "oracle.run", stdout: "", reason: ... }`), and add a `.catch()` to the CLI entry point's `runHostTool(...)` call that prints a `{ ok: false, message }` JSON line and sets a non-zero exit code, mirroring `host-tool-client.ts`'s own CLI entry point, which already does this correctly (`host-tool-client.ts:419-427`).
+**File:** `src/mcp/vice/host-tool.mts:1240` (the unguarded `mkdirSync`), `src/mcp/vice/host-tool.mts:1317-1320` (the CLI entry point's missing `.catch()`)
+**Disposition:** OPEN — filed as a pending todo (`.planning/todos/pending/2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes.md`), its `STATE.md` Deferred Items ledger row untouched, and `docs/phase34-host-tool-seam-decisions.md` Part 4 explicitly records it as deliberately not folded into the `34-10`/`34-11` round. Re-confirmed unfixed by direct inspection of the current file: `mkdirSync(scratchDir, { recursive: true })` still sits before the `try` block starts on the next line, and the CLI entry point's `runHostTool(raw, { repoRoot }).then(...)` still has no `.catch()`.
+**Issue:** `runHostTool()`'s own doc comment states "NOTHING throws out of this function", but `runOracleRun()`'s `mkdirSync` call sits OUTSIDE its own `try`/`finally`, so a `mkdirSync` failure (full disk, permission error on the `tools/oracle-runs/` parent) throws synchronously out of `runOracleRun()` and therefore out of `runHostTool()`, contradicting the file's own stated invariant. Inside the real broker process this is caught by `broker-control.mts`'s own `.catch()` around `opts.onHostTool(req)`, so it does not reach `broker-kill.mts`'s process-wide handlers there — but the standalone CLI entry point has no equivalent guard, so a rejected promise there is an unhandled rejection in the standalone `host-tool.mjs` process, breaking `hostToolOverHostRoute()`'s own contract rather than surfacing a clean `{ ok: false, message }` line.
+**Fix:** Wrap the `mkdirSync` call in `runOracleRun()` in the same try/catch discipline the rest of the module uses (or move it inside the existing `try` block, before the `spawnHostTool()` call, converting a thrown error into `{ ok: false, tool: "oracle.run", stdout: "", reason: ... }`), and add a `.catch()` to the CLI entry point's `runHostTool(...)` call that prints a `{ ok: false, message }` JSON line and sets a non-zero exit code, mirroring `host-tool-client.ts`'s own CLI entry point, which already does this correctly.
 
 ---
 
-_Reviewed: 2026-09-03T00:00:00Z_
+_Reviewed: 2026-09-04T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
