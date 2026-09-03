@@ -3,9 +3,9 @@ phase: "33"
 slug: "the-reproducible-run-protocol-and-the-capture-substrate-go-d"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
+status: validated
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-09-02"
 ---
 
@@ -59,21 +59,21 @@ criterion in this phase compares against **that baseline**, never against zero.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| `33-05` T1+T2 | `33-05` | 2 | REPRO-01 | — | Stock argv carries the determinism block after `-default`; fork argv byte-identical; `-default` at index 0; `-console` at index 1 when headless | unit | `cd src/mcp/vice && node --test broker-launch.test.ts` | ✅ (5 stock whole-argv assertions to update, 3 ordering assertions to extend) | ⬜ pending |
-| `33-11` T1 | `33-11` | 6 | REPRO-01 | — | Divergence without the block; zero differing addresses with it | transcript (D-07) | — live emulator, corpus-free: `evidence/determinism-probe.mjs` → grep gates over `evidence/33-repro01-determinism.md` | ❌ W0 — evidence script under the phase dir | ⬜ pending |
-| `33-09` T1+T2 | `33-09` | 4 | REPRO-02 | — | `reproducible` / `frame_anchor` accepted; unknown names still refused; the procedure is reached from exactly one call site | unit | `cd src/mcp/vice && node --test stock-reproducible-run.test.ts` | ❌ W0 | ⬜ pending |
-| `33-11` T2 | `33-11` | 6 | REPRO-02 | — | Jitter 0 / 1500 / 4000 ms stop identically; reset-removed control observed red | transcript | — live emulator: `evidence/reset-removed-probe.mjs` → grep gates over `evidence/33-repro02-reset-removed.md` | ❌ W0 | ⬜ pending |
-| `33-07` T1 (compare) + `33-09` T2 (memspace refusal) | `33-07`, `33-09` | 3, 4 | REPRO-03 | — | Oracle compares exactly `(PC, hit_count, (LIN, CYC))`; refuses on a non-main memspace | unit | `cd src/mcp/vice && node --test capture-predicate.test.ts stock-reproducible-run.test.ts` | ❌ W0 — `stop-oracle.ts` is created by `33-07` T1 and consumed by `33-09` | ⬜ pending |
-| `33-11` T2 (frame anchor) + `33-10` T3 (drive hit) | `33-11`, `33-10` | 6, 5 | REPRO-03 | — | `(LIN, CYC)` alone **passes** one frame apart; memspace assertion refuses after a drive hit | transcript | — live emulator: `evidence/frame-anchor-probe.mjs` → `evidence/33-repro03-frame-anchor.md`; drive-hit refusal → `evidence/33-memspace-refusal.md` | ❌ W0 | ⬜ pending |
-| `33-08` T2 | `33-08` | 4 | REPRO-04 | — | Capture record carries the three Identity rows; argv digest is sha256 over NUL-joined argv | unit | `node --test 'src/skills/c64-ram-capture/scripts/*.test.mjs'` plus the template grep gate on `binary sha256` / `argv digest` | ❌ W0 | ⬜ pending |
-| `33-05` T2 (argv) + `33-06` T1+T2 (eligibility) | `33-05`, `33-06` | 2, 3 | REPRO-05 | — | `profile` absent → byte-identical argv; `profile.warp` appends `-warp`; `profile.headless` puts `-console` at index 1; warm eligibility rejects a mismatched instance | unit | `cd src/mcp/vice && node --test broker-launch.test.ts broker-control.test.ts broker-state.test.ts vice-broker-acquire.test.ts` | ✅ / ❌ W0 (new cases) | ⬜ pending |
-| `33-04` T1+T2 | `33-04` | 2 | CAP-01 | — | Module walk finds `C64MEM` from offset 58; refuses a malformed header rather than resyncing; refuses a body below 65543; walk ends at file length | unit | `cd src/mcp/vice && node --test vsf-slice.test.ts` | ❌ W0 (needs `fixtures/vsf/`) | ⬜ pending |
-| `33-07` T2 | `33-07` | 3 | CAP-02 | — | Predicate fails on a byte planted outside the allow-list, including a **one-bit** plant (D-25, corpus-free) | unit | `cd src/mcp/vice && node --test capture-predicate.test.ts` | ❌ W0 | ⬜ pending |
-| `33-07` T1 (normalisation) + `33-08` T1 (cap void) | `33-07`, `33-08` | 3, 4 | CAP-02 | — | An allow-list over the committed cap voids the derivation; port normalisation uses `dir_read` / `data_read` | unit | `cd src/mcp/vice && node --test capture-predicate.test.ts` and `node --test 'src/skills/c64-ram-capture/scripts/derive-transients.test.mjs'` (65 addresses void it) | ❌ W0 | ⬜ pending |
-| `33-07` T3 | `33-07` | 3 | CAP-03 | — | Predicate module never imports the oracle module; oracle's compare takes no image buffer (`grep -a`-safe census) | unit | `cd src/mcp/vice && node --test capture-seam.test.ts` | ❌ W0 | ⬜ pending |
-| `33-10` T1 (pair) + `33-03` T2 (wall-clock control) | `33-10`, `33-03` | 5, 2 | CAP-04 | — | Real release captured twice; pair satisfies CAP-02; wall-clock-anchoring control observed red | transcript (corpus-bound) | — live emulator + corpus: `evidence/capture-pair.mjs` → `evidence/33-capture-pair.md`; control → `evidence/33-wallclock-control.md` | ❌ W0 | ⬜ pending |
-| `33-01` T2 (rules + order proof) + `33-12` T1 (verdict) | `33-01`, `33-12` | 1, 7 | GATE-01 | — | Verdict frontmatter parses; `verdict` ∈ `{go, degrade, no-go}`; all five inputs present; rules committed before any measurement | manual-only / doc | `git rev-list --count` order proof that the rules commit precedes every measurement commit (D-01), plus a frontmatter parse of `docs/phase33-reproducible-run-gate-findings.md` | ❌ W0 | ⬜ pending |
-| `33-02` T1+T2 | `33-02` | 1 | CAP-01, CAP-02 | T-33-14, T-33-15, T-33-16 | Each falsified decision text carries a dated rider beside its measured counter-value and the superseded sentence stays greppable; the Deferred Items table matches the pending-todo tree in both directions | doc-guard + unit | `cd src/mcp/vice && node --test docs-deferred-ledger.test.ts audit-integrity.test.ts`, plus the `RECONCILED_OK` / `ORIGINALS_INTACT` grep gates over `33-CONTEXT.md` and the `LEDGER_ROWS_OK` + `git diff --numstat` gate over `STATE.md`; this is also the one plan that runs `npm run test:automated` at task scope, because the 5-in-3 → 2-in-1 move **is** its deliverable | ✅ | ⬜ pending |
+| `33-05` T1+T2 | `33-05` | 2 | REPRO-01 | — | Stock argv carries the determinism block after `-default`; fork argv byte-identical; `-default` at index 0; `-console` at index 1 when headless | unit | `cd src/mcp/vice && node --test broker-launch.test.ts` | ✅ stock whole-argv + ordering assertions updated | ✅ green |
+| `33-11` T1 | `33-11` | 6 | REPRO-01 | — | Divergence without the block; zero differing addresses with it | transcript (D-07) | — live emulator, corpus-free: `evidence/determinism-probe.mjs` → grep gates over `evidence/33-repro01-determinism.md` | ✅ committed under `evidence/` | ✅ green |
+| `33-09` T1+T2 | `33-09` | 4 | REPRO-02 | — | `reproducible` / `frame_anchor` accepted; unknown names still refused; the procedure is reached from exactly one call site | unit | `cd src/mcp/vice && node --test stock-reproducible-run.test.ts` | ✅ | ✅ green |
+| `33-11` T2 | `33-11` | 6 | REPRO-02 | — | Jitter 0 / 1500 / 4000 ms stop identically; reset-removed control observed red | transcript | — live emulator: `evidence/reset-removed-probe.mjs` → grep gates over `evidence/33-repro02-reset-removed.md` | ✅ | ✅ green |
+| `33-07` T1 (compare) + `33-09` T2 (memspace refusal) | `33-07`, `33-09` | 3, 4 | REPRO-03 | — | Oracle compares exactly `(PC, hit_count, (LIN, CYC))`; refuses on a non-main memspace | unit | `cd src/mcp/vice && node --test capture-predicate.test.ts stock-reproducible-run.test.ts` | ✅ `stop-oracle.ts` created and consumed | ✅ green |
+| `33-11` T2 (frame anchor) + `33-10` T3 (drive hit) | `33-11`, `33-10` | 6, 5 | REPRO-03 | — | `(LIN, CYC)` alone **passes** one frame apart; memspace assertion refuses after a drive hit | transcript | — live emulator: `evidence/frame-anchor-probe.mjs` → `evidence/33-repro03-frame-anchor.md`; drive-hit refusal → `evidence/33-memspace-refusal.md` | ✅ | ✅ green |
+| `33-08` T2 | `33-08` | 4 | REPRO-04 | — | Capture record carries the three Identity rows; argv digest is sha256 over NUL-joined argv | unit | `node --test 'src/skills/c64-ram-capture/scripts/*.test.mjs'` plus the template grep gate on `binary sha256` / `argv digest` | ✅ | ✅ green |
+| `33-05` T2 (argv) + `33-06` T1+T2 (eligibility) | `33-05`, `33-06` | 2, 3 | REPRO-05 | — | `profile` absent → byte-identical argv; `profile.warp` appends `-warp`; `profile.headless` puts `-console` at index 1; warm eligibility rejects a mismatched instance | unit | `cd src/mcp/vice && node --test broker-launch.test.ts broker-control.test.ts broker-state.test.ts vice-broker-acquire.test.ts` | ✅ new cases landed | ✅ green |
+| `33-04` T1+T2 | `33-04` | 2 | CAP-01 | — | Module walk finds `C64MEM` from offset 58; refuses a malformed header rather than resyncing; refuses a body below 65543; walk ends at file length | unit | `cd src/mcp/vice && node --test vsf-slice.test.ts` | ✅ `fixtures/vsf/` present (4 fixtures) | ✅ green |
+| `33-07` T2 | `33-07` | 3 | CAP-02 | — | Predicate fails on a byte planted outside the allow-list, including a **one-bit** plant (D-25, corpus-free) | unit | `cd src/mcp/vice && node --test capture-predicate.test.ts` | ✅ | ✅ green |
+| `33-07` T1 (normalisation) + `33-08` T1 (cap void) | `33-07`, `33-08` | 3, 4 | CAP-02 | — | An allow-list over the committed cap voids the derivation; port normalisation uses `dir_read` / `data_read` | unit | `cd src/mcp/vice && node --test capture-predicate.test.ts` and `node --test 'src/skills/c64-ram-capture/scripts/derive-transients.test.mjs'` (65 addresses void it) | ✅ | ✅ green |
+| `33-07` T3 | `33-07` | 3 | CAP-03 | — | Predicate module never imports the oracle module; oracle's compare takes no image buffer (`grep -a`-safe census) | unit | `cd src/mcp/vice && node --test capture-seam.test.ts` | ✅ | ✅ green |
+| `33-10` T1 (pair) + `33-03` T2 (wall-clock control) | `33-10`, `33-03` | 5, 2 | CAP-04 | — | Real release captured twice; pair satisfies CAP-02; wall-clock-anchoring control observed red | transcript (corpus-bound) | — live emulator + corpus: `evidence/capture-pair.mjs` → `evidence/33-capture-pair.md`; control → `evidence/33-wallclock-control.md` | ✅ | ✅ green |
+| `33-01` T2 (rules + order proof) + `33-12` T1 (verdict) | `33-01`, `33-12` | 1, 7 | GATE-01 | — | Verdict frontmatter parses; `verdict` ∈ `{go, degrade, no-go}`; all five inputs present; rules committed before any measurement | manual-only / doc | `git rev-list --count` order proof that the rules commit precedes every measurement commit (D-01), plus a frontmatter parse of `docs/phase33-reproducible-run-gate-findings.md` | ✅ | ✅ green |
+| `33-02` T1+T2 | `33-02` | 1 | CAP-01, CAP-02 | T-33-14, T-33-15, T-33-16 | Each falsified decision text carries a dated rider beside its measured counter-value and the superseded sentence stays greppable; the Deferred Items table matches the pending-todo tree in both directions | doc-guard + unit | `cd src/mcp/vice && node --test docs-deferred-ledger.test.ts audit-integrity.test.ts`, plus the `RECONCILED_OK` / `ORIGINALS_INTACT` grep gates over `33-CONTEXT.md` and the `LEDGER_ROWS_OK` + `git diff --numstat` gate over `STATE.md`; this is also the one plan that runs `npm run test:automated` at task scope, because the 5-in-3 → 2-in-1 move **is** its deliverable | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -81,14 +81,14 @@ criterion in this phase compares against **that baseline**, never against zero.
 
 ## Wave 0 Requirements
 
-- [ ] `src/mcp/vice/vsf-slice.test.ts` — stubs for CAP-01
-- [ ] `src/mcp/vice/fixtures/vsf/` — synthetic `.vsf` fixtures: one well-formed, one with a malformed module header, one with a short `C64MEM` body, one at snapshot minor 0 (body 65543)
-- [ ] `src/mcp/vice/capture-predicate.test.ts` — stubs for CAP-02 (D-25) and REPRO-04
-- [ ] `src/mcp/vice/capture-seam.test.ts` — stubs for CAP-03 (D-26)
-- [ ] `src/mcp/vice/stock-reproducible-run.test.ts` — stubs for the unit-testable parts of REPRO-02 / REPRO-03
-- [ ] New cases in `src/mcp/vice/broker-launch.test.ts` and `src/mcp/vice/broker-control.test.ts` — REPRO-01 / REPRO-05
-- [ ] Evidence scripts under `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/` for the five transcripts (D-07, D-10)
-- [ ] Framework install: **none needed** — Node's built-in runner is already the harness
+- [x] `src/mcp/vice/vsf-slice.test.ts` — stubs for CAP-01
+- [x] `src/mcp/vice/fixtures/vsf/` — synthetic `.vsf` fixtures: one well-formed, one with a malformed module header, one with a short `C64MEM` body, one at snapshot minor 0 (body 65543)
+- [x] `src/mcp/vice/capture-predicate.test.ts` — stubs for CAP-02 (D-25) and REPRO-04
+- [x] `src/mcp/vice/capture-seam.test.ts` — stubs for CAP-03 (D-26)
+- [x] `src/mcp/vice/stock-reproducible-run.test.ts` — stubs for the unit-testable parts of REPRO-02 / REPRO-03
+- [x] New cases in `src/mcp/vice/broker-launch.test.ts` and `src/mcp/vice/broker-control.test.ts` — REPRO-01 / REPRO-05
+- [x] Evidence scripts under `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/` for the five transcripts (D-07, D-10)
+- [x] Framework install: **none needed** — Node's built-in runner is already the harness
 
 **D-08 compliance.** Every file above is corpus-free and terminates, so
 `MANUAL_ONLY_TESTS` stays at exactly nine and the nine-file `assert.deepEqual`
@@ -114,13 +114,77 @@ without the corpus.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 90s
-- [ ] Every suite acceptance criterion states the baseline as **5 failures in 3 files**, never 0
-- [ ] `MANUAL_ONLY_TESTS` still exactly nine files, or a corpus-bound addition justified in the same commit
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references — every Wave 0 file and fixture is committed
+- [x] No watch-mode flags
+- [x] Feedback latency < 90s
+- [x] Every suite acceptance criterion states the baseline as **5 failures in 3 files**, never 0
+- [x] `MANUAL_ONLY_TESTS` still exactly nine files — verified 2026-09-03, unchanged
+- [ ] `nyquist_compliant: true` set in frontmatter — **deliberately NOT set.** See the audit below: five
+      requirement rows are verified by committed transcript rather than by an automated assertion, because
+      they need a live emulator, the gitignored corpus, or git-history order. `validated` +
+      `nyquist_compliant: false` is `audit-milestone` §5.5's PARTIAL state and is the honest value here;
+      setting it `true` would claim automated coverage that does not exist.
 
-**Approval:** pending
+**Approval:** validated (PARTIAL) — 2026-09-03
+
+---
+
+## Validation Audit 2026-09-03
+
+| Metric | Count |
+|--------|-------|
+| Requirement rows audited | 15 |
+| COVERED (automated, green) | 10 |
+| COVERED (committed transcript / doc — manual-only by necessity) | 5 |
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+**No auditor was spawned:** the gap analysis found nothing MISSING, so this audit
+short-circuits to the write-up rather than generating tests for gaps that do not exist.
+
+### What was actually measured, 2026-09-03
+
+| Gate | Result |
+|---|---|
+| `npm run test:automated` | **2 failures in 1 file** (`anno-register.test.ts`) — 3127 tests, 3119 pass |
+| `npm run typecheck` | clean, exit 0 |
+| `node build.ts` | 8 artifacts written, `resources/*.mjs` show **no drift** |
+| `node --test 'src/skills/c64-ram-capture/scripts/*.test.mjs'` | 95 tests, 88 pass, **0 fail** |
+| `MANUAL_ONLY_TESTS` | exactly **nine** files — D-08 holds, unchanged |
+| Wave 0 artifacts | all present, including `fixtures/vsf/` (4 fixtures) |
+| GATE-01 order proof (D-01) | rules commit `2a8ef95` is a strict ancestor of **all five** measurement commits |
+
+The suite figure is **at the recorded post-wave-1 baseline of 2-in-1, not a regression.**
+Both failures are `anno-register.test.ts`'s basis-integrity direction and its negative
+control, both caused by requirement id `STORE-06` being absent from
+`.planning/REQUIREMENTS.md` — the documented "ids dropped by the REQUIREMENTS rewrite"
+cause. Phase 33 never touched `anno-register.test.ts` (last modified in phase 29,
+commits `ab4af65` / `a403fdb`), so this is inherited, not introduced.
+
+### The one row that is green-but-qualified
+
+Row `33-11` T2 + `33-10` T3 (REPRO-03, transcript) records its measurement faithfully,
+and the measurement did **not** produce the flattering value. `(LIN, CYC)` alone was
+never shown passing at a **one-frame** separation, because that pair is unbuildable on
+the `$ea31` anchor — a 60 Hz KERNAL IRQ against a 50.125 Hz PAL frame, measured as 240
+anchor hits with zero consecutive `(LIN, CYC)` repeats. The smallest reachable
+equal-raster separation on this build is **2 frames**. `33-11` recorded
+`ORACLE_NECESSITY: unproven` rather than `proven`, which fired `R6 → degrade`.
+
+The row is marked green because the verification **ran and recorded its result**, which
+is what the row asserts; it is not marked as covering a claim the evidence does not
+support. The disposition was taken as UAT test 1 on 2026-09-03: **accept the `degrade`
+verdict as it stands**, no override written, rule text unmoved, ROADMAP criterion
+untouched. R6's narrowing is pre-mapped by D-04 and bound into Phases 34-38.
+
+### Coverage added since the phase closed
+
+`evidence/reproducible-seam-probe.mjs` + `evidence/33-uat-shipped-seam.md` (UAT test 2,
+2026-09-03) close the one live-coverage gap `33-VERIFICATION.md` named: no evidence probe
+reached `stock-reproducible-run.ts` through the shipped entry point, so the module shipped
+on scripted-client unit tests alone after three post-measurement code-review-fix commits.
+The probe drives `handleRunUntil` and passes — one stop identity and one 64K sha256 across
+the 0/1500/4000 ms jitter triple, stable across two independent invocations.
