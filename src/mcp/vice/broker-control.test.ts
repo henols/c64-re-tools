@@ -892,18 +892,20 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("no new control-plane message kind was added by 01.6.2.1-03's gap closure -- ControlRequestKind still has exactly its original five members plus plan 05's two monitor ops", () => {
+test("ControlRequestKind (34-01, A-01): now exactly eight members -- host_tool is the whole host-tool subsystem, reviewed and recorded, never widened again per-tool", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
-  // Plan 05 (BROK-02/PROTO-08) is the ONE deliberate addition since --
-  // exclusive monitor-client ownership genuinely needed a new op (see this
-  // plan's own SUMMARY); the original five members named by 01.6.2.1-03's
-  // gap closure are still unchanged and still the first five in the union.
-  assert.equal(
-    match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release"',
-    "the union must be exactly 01.6.2.1-03's original five members plus plan 05's monitor_claim/monitor_release",
+  // Plan 34-01 (A-01) is the ONE deliberate widening since -- a host-bound
+  // executor genuinely needed a new, typed, namespaced control op (see that
+  // plan's own reasoning). The eighth member, "host_tool", is the WHOLE
+  // host-tool subsystem: a second tool (dxa, Ghidra, c1541, petcat,
+  // cartconv, ...) is a new entry in host-tool.mts's own HOST_TOOL_IDS
+  // allowlist, never a ninth ControlRequestKind member -- this union is not
+  // widened again per-tool.
+  assert.equal(match![1].trim(),
+    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool"',
+    "the union must be exactly the prior seven members plus plan 34-01's host_tool (A-01)",
   );
 });
 
@@ -1363,7 +1365,7 @@ async function startProfileRecordingListener(
   return { listener, token, received };
 }
 
-test("ControlRequestKind (33-06, D-15): still exactly seven members -- the launch profile is a FIELD on the existing acquire op, never an eighth op", () => {
+test("ControlRequestKind (34-01, A-01): now exactly eight members -- host_tool is a NEW eighth op, reviewed and recorded, and this union is never widened again per-tool", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -1374,10 +1376,25 @@ test("ControlRequestKind (33-06, D-15): still exactly seven members -- the launc
     .split("|")
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
-  assert.deepEqual(
-    members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release"],
-    "the seven-op message set must be unchanged -- 33-06 adds a profile FIELD to `acquire`, not an eighth op",
+  assert.deepEqual(members,
+    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool"],
+    "the message set must be exactly the prior seven plus plan 34-01's host_tool (A-01) -- a genuinely reviewed " +
+      "widening, not a per-tool one: a second host tool is a new HOST_TOOL_IDS entry in host-tool.mts, never a " +
+      "ninth ControlRequestKind member",
+  );
+});
+
+test("structural (34-01, SEAM-01): StartControlListenerOptions declares onHostTool, and the host_tool dispatch branch in handleLine() appears BEFORE the acquire branch -- routed before any lease-bearing path", () => {
+  const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
+  assert.match(source, /onHostTool:\s*\(raw: unknown\) => Promise<unknown>/, "StartControlListenerOptions must declare onHostTool");
+  const hostToolDispatchIdx = source.indexOf('req.op === "host_tool"');
+  const acquireDispatchIdx = source.indexOf('req.op === "acquire"');
+  assert.ok(hostToolDispatchIdx !== -1, "the host_tool dispatch branch must exist in handleLine()");
+  assert.ok(acquireDispatchIdx !== -1, "the acquire dispatch branch must exist in handleLine()");
+  assert.ok(
+    hostToolDispatchIdx < acquireDispatchIdx,
+    "the host_tool dispatch branch must appear at a LOWER character index than the acquire comparison -- routed " +
+      "before any lease-bearing path",
   );
 });
 
