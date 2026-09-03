@@ -44,6 +44,12 @@ findings:
   info: 4
   total: 15
 status: issues_found
+dispositioned: 2026-09-03
+disposition_report: 33-REVIEW-FIX.md
+dispositions:
+  fixed: 14
+  accepted: 1
+  wont_fix: 0
 ---
 
 # Phase 33: Code Review Report
@@ -155,6 +161,8 @@ If the artifact is instead meant to ship as a worked example, then the README's
 pointed at by accident (`danish.example.json`), and `check` should refuse an
 allow-list carrying a `release` the caller did not name explicitly.
 
+**Disposition:** **fixed** — `e18e44d`. Took the do-not-ship arm: `danish.json` stays in the repo (33-10's committed evidence, cited by other artifacts) and is excluded from the tarball, which makes the README's existing "this README and nothing else" sentence true rather than editing the sentence to match a leak. `isNonShipping()` is now path-aware — a basename-only predicate cannot express `<skill>/transients/*.json` — and `assertLeanTarball()` asserts it, shaped as "any `.json` under any skill's `transients/`" so the next release's list is covered the day it is derived rather than the day someone widens the pattern. Verified both directions with `npm pack --dry-run --json`: with the rule the tarball carries `transients/README.md` and no `.json`; with it reverted the gate fails naming `danish.json`.
+
 ### CR-02: `runReproducible()` certifies a four-term stop identity whose frame term is 0 when the anchor never fired
 
 **File:** `src/mcp/vice/stock-reproducible-run.ts:605-635`
@@ -210,6 +218,8 @@ Add the positive control to `stock-reproducible-run.test.ts` beside the existing
 `anchorHitCount: 42` case: a `greenSendImpl({ anchorHitCount: 0 })` run must be
 an error result, not an answer with `reproducibleStop: true`.
 
+**Disposition:** **fixed** — `edb5d7f`. `anchorHitCount === 0` is now an explicit refusal naming the cause, why 0 is not a term, and the corrective action, following the timeout path's existing precedent of emitting no oracle term rather than zero-filling one. The anchor is deleted before refusing, so no `stop: true` checkpoint is left armed. The test observes the refusal end to end and additionally asserts that neither `"reproducibleStop": true` nor `"hitCount": 0` appears in the output, so a regression fails even if the message is reworded; confirmed red with the guard short-circuited.
+
 ## Warnings
 
 ### WR-01: The anchor-stopped-first refusal burns the entire deadline instead of returning immediately
@@ -253,6 +263,8 @@ if (item.checkpoint.id === anchorCheckpointId) {
 }
 ```
 
+**Disposition:** **fixed, with the fix adapted** — `f00446b`. The finding is real and the deadline burn is fixed. The suggested patch was NOT applied as written: resolving on every first anchor hit breaks `frameAnchor === address`, a documented legitimate configuration (step 4 deliberately arms two distinct checkpoints) where both match the same instruction, so one stop emits both frames and the target's arrives from that same stop needing no further execution. An ungated settle would turn that configuration's successful stop into a spurious refusal, so the settle is gated on non-adjacency. One pre-existing test drove a distinct-address anchor frame first and then required a confident stop anyway — not physically realisable with a `stop: true` anchor and one resume, and passing only because the fake emitted both frames back to back regardless of machine state. Restated as the stronger claim that an anchor frame never certifies a stop. T-33-31 untouched: `"hit"` still resolves on the target's id alone.
+
 ### WR-02: A resume/wait failure on a live socket leaves the non-temporary, stopping anchor armed
 
 **File:** `src/mcp/vice/stock-reproducible-run.ts:472-482`
@@ -291,6 +303,8 @@ try {
   throw err; // the ONE converter seam still produces the answer
 }
 ```
+
+**Disposition:** **fixed** — `d49a8ce`. Keyed on `client.connected`, the observable that says whether a delete could even be answered, with the error-class test preserving the restarted path exactly as it was. `deleteCheckpoint()` reports dispositions and never throws, so it cannot mask the error, which still propagates uncaught so the one existing converter seam produces the wording. `MachineRestartedError` is imported from `vice.ts` rather than redefined, matching `stock-connect.ts`'s normative "reused — never redefined here". Both directions tested; the live-socket case confirmed red with the condition short-circuited.
 
 ### WR-03: `profile` is accepted, recorded on the instance, and silently ignored on the fork backend
 
@@ -334,6 +348,8 @@ Alternatively gate the record mirror at `broker-launch.mts:515` on `backend ===
 "stock"` so a record can never claim a knob its argv does not carry — but the
 refusal is the better answer, because the caller currently has no way to learn
 its request was dropped.
+
+**Disposition:** **fixed** — `38b4bb1`, plus `0061337` for test fallout. Refused at the single narrowing site, which is also the wire boundary that already answers `bad_request`, so the caller learns its request was dropped instead of having to infer it; gating the record mirror instead would stop the record lying but leave the caller no way to find out. The refusal lands before `onAcquire`, so no port is allocated, nothing is spawned, and no record is written. Scoped to `=== true`, so an empty `{}` and an explicit `{warp:false}` — which ask for nothing fork cannot deliver — still grant. Follow-up the review did not predict: four pre-existing tests across `broker-control.test.ts` and `vice-broker-client.test.ts` drove profile-bearing acquires against shared fork-backed default `onHostState` stubs, and two of them did worse than fail — the refused acquire waited for a grant that would never come, blocking until the 120 s `CONTROL_ACQUIRE_TIMEOUT_MS`. All four moved to stock stubs; the properties they assert are backend-independent and unchanged.
 
 ### WR-04: Prototype-key confusion in three CLI dispatchers; one exits 0 having done nothing
 
@@ -384,6 +400,8 @@ const commands = Object.assign(Object.create(null), { slice: forward, digest: fo
 (`derive-transients.mjs` already uses `Object.create(null)` for its flag bag at
 :152 — the same idiom, applied one level up.)
 
+**Disposition:** **fixed** — `2a42989`. All three behaviours reproduced first, exactly as measured. `make-fixtures.mjs` now uses `Object.hasOwn`, plus a second guard refusing a selection that matched nothing — "wrote nothing" and "wrote what you asked for" must never share an exit code in a provenance generator. Both skill scripts dispatch off `Object.create(null)`, the idiom `derive-transients.mjs` already used for its flag bag one level down. The pre-existing unknown-verb tests held only for verbs that are not prototype members, so each is now paired with a loop over `constructor`/`toString`/`valueOf`/`hasOwnProperty`/`__proto__`. The generator gains a refusal test that also asserts the four fixtures are byte-unchanged; only the refusal path is driven, since a run with real names would rewrite the committed corpus with a fresh `capturedAt`.
+
 ### WR-05: The `CAP-03` import census is blind to a template-literal specifier
 
 **File:** `src/mcp/vice/capture-seam.test.ts:99-115`
@@ -422,6 +440,8 @@ them by name instead — an `import(` whose argument starts with a backtick in
 either module should fail the test outright rather than be scanned for a
 specifier it cannot have.
 
+**Disposition:** **fixed** — `9d2d4c6`. Backticks added to the literal scan; `isModuleSpecifierShaped()` no longer requires a `/`, which compounded the gap by skipping even a quoted bare specifier — a whitespace-free literal carrying a module extension now qualifies, and the extension requirement preserves the property the measured narrowing was protecting; and an interpolated specifier is refused by shape rather than scanned, since it names its target only at runtime and reporting "no hit" would be indistinguishable from a clean module. Two planted positive controls added beside the existing four, both confirmed red against the old scanner.
+
 ### WR-06: Three documented commands cannot run from the cwd the skill documents
 
 **File:** `src/skills/c64-ram-capture/SKILL.md:17,33,296,337-338`, `src/skills/c64-ram-capture/templates/capture-record.template.md:17`
@@ -444,6 +464,8 @@ specifier it cannot have.
 to the quick-reference block at `:17-21`, then use `node $V slice …` and
 `--out $TD/<id>.json` at all four sites, including the template row.
 
+**Disposition:** **fixed, with the template handled differently** — `4c72cd0`. `SKILL.md` gained `V=$S/vsf-slice.mjs` and `TD=src/skills/c64-ram-capture/transients` in the quick-reference block, used at all four sites, plus two new quick-reference lines so the slicer is discoverable where every other script is; `transients/README.md:37-45`'s wording is what was propagated. The template was NOT rewritten as suggested: all five of its `node scripts/…` citations share that shape, only one is phase 33's, and the template states no cwd at all, so `scripts/` there reads naturally as relative to the skill directory. Rewriting one row into a different style would have made it internally inconsistent. The cwd the shorthand is relative to is instead stated once, which resolves the ambiguity for all five and points repo-root callers at the `$S` variables.
+
 ### WR-07: `vsf-slice.ts`'s header names an importer that does not exist
 
 **File:** `src/mcp/vice/vsf-slice.ts:411-413`
@@ -464,6 +486,8 @@ editor may conclude the guard is exercised by a real importer and relax it.
 are its own CLI (invoked by `src/skills/c64-ram-capture/scripts/vsf-slice.mjs`)
 and `shippedTsModules()`'s structural census, and that the guard therefore has
 to hold for the census alone.
+
+**Disposition:** **fixed** — `4c5797c`. Confirmed independently: `capture-predicate.ts` imports only `node:crypto` and names this module in comments alone, and no non-test module imports `vsf-slice.ts` at all. The correction states what is true and why it matters — the entry-point guard was justified by that false premise, so the comment now records that the guard has to hold for `shippedTsModules()`'s census alone, with the CLI reached as a subprocess rather than an import.
 
 ### WR-08: The authoritative capture predicate and the whole launch-profile chain have no production consumer
 
@@ -497,6 +521,8 @@ can forward to it the way `vsf-slice.mjs` does, and add one profile-passing call
 site), or record the pending-consumer status in each module header so a later
 reader does not read "authoritative" as "in use".
 
+**Disposition:** **accepted** — `d7e6b8f`. An absent consumer is the expected state, not a defect: phase 33 deliberately built the capture substrate ahead of phases 34-38 consuming it, so neither inventing a call site to satisfy a census nor deleting working substrate is correct. This is the review's own recorded-status alternative. What WAS actionable is that neither module was MARKED as pending while `capture-predicate.ts`'s header calls it "the ONE authoritative place" and "the ONE normalisation site (D-24)", which reads as "in use" to anyone who has not grepped. Both headers now record the status: `capture-predicate.ts` restates "authoritative" as a design constraint on future callers and names `normalisePorts()` as never having run against a real capture; `vice-broker-client.ts` records that no production site passes a profile so `-warp`/`-console` are unreachable today, and that the first real consumer must be on stock since WR-03 now refuses the profile on fork. Both paragraphs say what should happen to them when a consumer lands.
+
 ### WR-09: Two normative comments in `buildViceArgs()` now contradict each other on `-drive8type` adjacency
 
 **File:** `src/mcp/vice/broker-launch.mts:253-258` vs `:273-291`, `:333-336`
@@ -525,6 +551,8 @@ must precede everything it resets, and `-drive8type` must come *after*
 over `RESOURCE_GET` with `-console` interposed, so the citation covers the
 resource and not only liveness.
 
+**Disposition:** **fixed** — `31d3643`. Reconciled to what is load-bearing: `-default` precedes everything it resets, and `-drive8type` comes after `-default`, not immediately after. Re-verified live rather than taken from the review, because the `-console` block's `alive=yes bound=1` citation cannot cover I-2's property — its failure mode is `Drive8Type` reverting to 0 (NONE) while the monitor still binds, so liveness cannot distinguish the good case from the failure being guarded against. Probed 2026-09-03 against genuine unpatched stock `/usr/bin/x64sc` (VICE 3.9) with `DISPLAY` and `WAYLAND_DISPLAY` unset: `-default -console -drive8type 1541 <determinism> -binarymonitor` gives `alive=yes bound=1`, `Drive8Type=1541`, `Drive8TrueEmulation=1` read over `RESOURCE_GET` (0x51). Comment defect only; spawned instances reaped, postflight `pgrep` clean.
+
 ## Info
 
 ### IN-01: The two allow-list parsers disagree on `attribution`
@@ -542,6 +570,8 @@ deliberate duplicate is most likely to drift. `parseArtifact()` also ignores
 **Fix:** Add the `attribution` type check to `parseArtifact()` and extend the
 round-trip test to a malformed-artifact case asserted to be refused by both.
 
+**Disposition:** **fixed** — `f016dc6`. `parseArtifact()` gained the `attribution` type check, and the round-trip test is extended with a malformed-artifact case asserted refused by BOTH implementations and printing no verdict. Parse strictness is where a deliberate duplicate drifts first, because an artifact one accepts and the other rejects is a disagreement about whether the ledger is readable at all.
+
 ### IN-02: `vsf-slice.ts`'s `--out` accepts a flag as its value
 
 **File:** `src/mcp/vice/vsf-slice.ts:457-465`
@@ -554,6 +584,8 @@ with `--`).
 
 **Fix:** Mirror the sibling's check: `if (value === undefined || value.startsWith("--")) throw new VsfSliceError("vsf-slice: --out needs a path");`
 
+**Disposition:** **fixed** — `9d52cdd`. Mirrors the sibling parser's check, so the two CLIs answer the same mistake the same way. The test asserts no file is written under the flag's own name, not merely that the exit code is non-zero.
+
 ### IN-03: A negative `limit` silently means "print everything"
 
 **File:** `src/mcp/vice/capture-predicate.ts:506-513`
@@ -564,6 +596,8 @@ into a caller's transcript.
 
 **Fix:** Refuse a negative limit, or document `<= 0` as unlimited in the doc
 comment (the parameter is currently documented only by its default).
+
+**Disposition:** **fixed** — `9d52cdd`. Refuses a negative or non-integer limit and documents `0` as unlimited — the parameter previously had no documented semantics beyond its default, which is why "negative means unlimited" was reachable by accident. The test pins both surviving meanings (0 unlimited, positive truncates with the `... N more` tail) alongside the refusals, so the fix cannot be mistaken for a behaviour change.
 
 ### IN-04: A malformed allow-list JSON is reported without the path
 
@@ -576,6 +610,8 @@ unlike every other refusal in the script, which names the path.
 
 **Fix:** Wrap the parse and name the file:
 `try { json = JSON.parse(...) } catch (e) { throw new Error(\`${listPath}: not valid JSON -- ${e.message}\`) }`
+
+**Disposition:** **fixed** — `f016dc6`. Parse wrapped and the file named. On a route whose whole subject is which artifact says what, which file failed to parse is the first thing an operator needs.
 
 ---
 
