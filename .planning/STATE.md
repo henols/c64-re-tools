@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
-current_phase: 33
-current_phase_name: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
-status: ready_for_verification
-stopped_at: Completed 33-12-PLAN.md
-last_updated: "2026-09-03T00:40:13.692Z"
+current_phase: 34
+current_phase_name: The Host-Tool Execution Seam
+status: planning
+stopped_at: Phase 33 complete, ready to plan Phase 34
+last_updated: "2026-09-03T11:00:54.375Z"
 last_activity: 2026-09-03
-last_activity_desc: "33-12 executed: GATE-01 returns degrade, fired by R6 on ORACLE_NECESSITY: unproven. Five inputs transcribed from column-0 outcome lines and walked through rules committed at 2a8ef95; R1..R5 did not match, R7/R8/R9 never evaluated; could-not-run structurally unemittable. Ordering proof re-run and still 1. The one available override DECLINED and recorded. R6 D-04 narrowing (two-term (PC, hit_count), frame term recorded not asserted) bound into Phases 34-38 Notes. Three folded todos closed, two on partial results. Phase 33 complete at 12/12; gate at the unchanged 2-in-1 baseline in anno-register.test.ts"
-state_head: a0ae5e8932a1e514f396a91a9be1d41b4062a04d
+last_activity_desc: "Phase 33 UAT closed 3/3, 0 issues, 0 gaps — verification human_needed -> passed. Test 2 closed the one live-coverage gap: evidence/reproducible-seam-probe.mjs + refusal-paths-probe.mjs drive the SHIPPED handleRunUntil against stock VICE 3.9, giving one stop identity (PC=$ea31,hit_count=1,LIN=257,CYC=57) and one 64K sha256 across jitter 0/1500/4000ms over two invocations, plus CR-02 and WR-01 firing live (WR-02 stays unit-covered, not claimed). Test 1: owner dispositioned criterion 3 as ACCEPT the degrade verdict — no override written, DECISION-RULE.md and the ROADMAP criterion unmoved, partly_met left in place. VALIDATION validated (PARTIAL, 0 gaps); SECURITY verified, 43 threats, threats_open 0. Transitioned to Phase 34."
+state_head: 79944470ac6464100881290c39e03c60a92b109e
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 12
   completed_plans: 12
-  percent: 0
+  percent: 17
 ---
 
 # Project State
@@ -177,8 +177,8 @@ recorded in their own sections.
 
 ## Current Position
 
-Phase: 33 of 38 — The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) — COMPLETE
-Plan: 12 of 12 executed (33-01 … 33-12); no next plan in this phase — Phase 34 is next
+Phase: 34 of 38 (The Host-Tool Execution Seam)
+Plan: Not started
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -217,7 +217,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: **Phase complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Ready to plan Phase 34. **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
@@ -374,13 +374,13 @@ their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
 `anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase.
-Last activity: 2026-09-03 — 33-12 executed: GATE-01 recorded `degrade` by `R6`, bound to Phases 34-38, three folded todos closed
+Last activity: 2026-09-03 — Phase 33 complete, transitioned to Phase 34
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 273
+- Total plans completed: 285
 - Average duration: —
 - Total execution time: —
 
@@ -415,6 +415,7 @@ Last activity: 2026-09-03 — 33-12 executed: GATE-01 recorded `degrade` by `R6`
 | 30 | 6 | - | - |
 | 31 | 4 | - | - |
 | 32 | 21 | - | - |
+| 33 | 12 | - | - |
 
 **Recent Trend:**
 
@@ -1790,7 +1791,7 @@ actually describe are separately tracked and were acknowledged above:
 ## Session Continuity
 
 Last session: 2026-09-03T00:39:40.552Z
-Stopped at: Completed 33-12-PLAN.md
+Stopped at: Phase 33 complete, ready to plan Phase 34
 Resume file: None
 
 Earlier: Completed 28-21-PLAN.md

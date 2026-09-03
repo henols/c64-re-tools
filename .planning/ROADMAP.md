@@ -451,7 +451,7 @@ mechanically against the per-phase `**Requirements**:` lines rather than by eye,
 because this project has a recorded history of a requirement owned by two phases
 or by none.
 
-- [ ] **Phase 33: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)** - Launch nondeterminism pinned, a frame-exact stop that is a protocol rather than a mechanism, and a snapshot-sliced flat 64K — behind go / degrade / no-go rules committed to git before any measurement exists
+- [x] **Phase 33: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)** - Launch nondeterminism pinned, a frame-exact stop that is a protocol rather than a mechanism, and a snapshot-sliced flat 64K — behind go / degrade / no-go rules committed to git before any measurement exists (completed 2026-09-03)
 - [ ] **Phase 34: The Host-Tool Execution Seam** - Host binaries reached over a typed namespaced control op on the existing broker socket, with the two existing skill-script violations migrated so the ban on them can be written at all
 - [ ] **Phase 35: dxa, Vendored and Parsed** - A raw C64 image in and a machine-readable code/data map out, from a dxa this project vendors and builds at a pinned version, behind a parser that refuses by name
 - [ ] **Phase 36: The SLEIGH Language and the Ghidra Harness** - All 105 undocumented opcode bytes decodable under their own Ghidra language, and structural facts recovered through `DecompInterface` with hardware writes surviving the decompiler
