@@ -822,12 +822,23 @@ other route written and observed biting.
 **Plans**: 6 plans in 4 waves. `34-01` leads with a production-quality tracer — one tool (`acme.build`) wired end to end through the control op, the host-bound executor, a real `acme` child process and back as `{path, sha256, byteLength}` — because proving the architecture on one path catches a dead end after one commit instead of after ten. Wave 2 expands sideways from that proven slice: `34-02` the 64 KiB cap observed red at the exact boundary, `34-03` Ghidra's per-run project directory and the dot-segment refusal in code. Wave 3: `34-04` the two migrations (ordering is a requirement — the gate cannot be written while anything violates it), `34-06` the second prefix floor and the JVM decision record. Wave 4: `34-05` the gate itself, observed biting, plus the phase's closing sweep. No `/gsd-discuss-phase` ran, so fourteen planner assumptions (`A-01`..`A-14`) are recorded in the plans and consolidated into `docs/phase34-host-tool-seam-decisions.md`; `A-01` and `A-02` resolve `34-RESEARCH.md`'s Open Questions 1 and 2, `A-09` resolves its Open Question 3.
 
 Plans:
+**Wave 1**
+
 - [ ] 34-01-PLAN.md — Tracer: one tool, one path, end to end (`host_tool` op, `host-tool.mts`, `host-tool-client.ts`, the allowlist, the guard dispositions)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 34-02-PLAN.md — The 64 KiB cap observed red at the boundary, plus result-by-reference asserted by key enumeration
 - [ ] 34-03-PLAN.md — Ghidra: per-run project directory, the dot-segment refusal in code, and the live transcript
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 34-04-PLAN.md — The two migrations: one resolution ladder, `acme.mjs` and `packer-finding.mjs` onto the seam
-- [ ] 34-05-PLAN.md — The whole-tree gate, observed biting on a planted violation, wired into CI, plus the closing sweep
 - [ ] 34-06-PLAN.md — The second prefix floor with a real positive control, and the JVM lifetime decision record
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 34-05-PLAN.md — The whole-tree gate, observed biting on a planted violation, wired into CI, plus the closing sweep
 
 Notes:
 
