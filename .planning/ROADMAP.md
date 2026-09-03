@@ -1138,7 +1138,7 @@ in a milestone archive.
 | 31. Procedure Re-pointing | v0.7.0 | 4/4 | Complete | 2026-08-31 |
 | 32. The Deletion and the Grep Gate | v0.7.0 | 21/21 | Complete | 2026-09-01 |
 | 33. The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) | v0.8.0 | 12/12 | In Progress | - |
-| 34. The Host-Tool Execution Seam | v0.8.0 | 5/6 | In Progress|  |
+| 34. The Host-Tool Execution Seam | v0.8.0 | 5/6 | In Progress | - |
 | 35. dxa, Vendored and Parsed | v0.8.0 | 0/0 | Not started | - |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 0/0 | Not started | - |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 0/0 | Not started | - |
