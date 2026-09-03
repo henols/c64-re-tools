@@ -22,9 +22,9 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-02 at the v0.8.0 open)
+See: .planning/PROJECT.md (updated 2026-09-04 after Phase 34)
 
-**Current focus:** Phase 34 — The Host-Tool Execution Seam — executing, in milestone **v0.8.0 Frame-Exact
+**Current focus:** Phase 35 — dxa, Vendored and Parsed — ready to plan, in milestone **v0.8.0 Frame-Exact
 Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
 **frame-exact emulator stop** owned for the first time behind a pre-committed
 go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
@@ -1228,6 +1228,27 @@ forbidden from modifying anything under `src/`.
 | 260902-tkg | Anchor `scripts/package.sh`'s leak guard — `tools/` to the archive root, `node_modules/` at any depth — unblocking the release build, RED on every push since 2026-08-29 on a false positive against nine phase-23 `evidence/tools/` files | 2026-09-02 | 5071e24 |  | [260902-tkg-anchor-tools-leak-guard-to-archive-root](./quick/260902-tkg-anchor-tools-leak-guard-to-archive-root/) |
 
 ### Blockers/Concerns
+
+- **Phase 34 carried items (2026-09-04), none blocking Phase 35.** The phase closed at
+  7/7 must-haves on its third verification round (11/11 plans across 9 waves; two
+  gap-closure rounds). Three residuals ride forward, all recorded rather than silently
+  inherited. (1) **`WR-03` stays OPEN** — `runOracleRun()`'s scratch-directory creation sits
+  outside its `try`, and the CLI entry point has no `.catch()`, so an environmental failure
+  becomes an unhandled rejection instead of the module's own `{ ok: false, message }`
+  contract. Tracked in
+  `.planning/todos/pending/2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes.md`
+  and named in `docs/phase34-host-tool-seam-decisions.md` Part 4 as deliberately not folded
+  into the `34-10`/`34-11` round. (2) **`WR-01` and `WR-02` are deferred by explicit
+  decision**, both re-confirmed unchanged in the round-3 review: the spawn-gate detector is
+  evadable by aliasing the spawn function (`cp["spawn"](...)` or an unresolved destructuring
+  rename), and `host_tool` has no admission control, so several concurrent JVM-spawning
+  requests can pile up unbounded inside `CR-04`'s ten-minute `ghidra.analyze` budget.
+  (3) **`CR-05`'s fix leaves two stated limits, not handled cases** — the check-then-open
+  window between the confinement decision and the child process's own open (the child is a
+  third-party binary handed a path string, with no descriptor-based route available), and
+  path equality being byte-wise with no Unicode normalisation, so a filesystem that
+  normalises on its own may accept a path this check computed differently. Both are recorded
+  as assumptions `A-15`/`A-16` and Part 4 residuals in the decision record.
 
 - **Phase 32 carried items (2026-09-01), none blocking the milestone close.** The phase
   closed at 17/17 must-haves with `behavior_unverified: 0` after three gap-closure rounds
