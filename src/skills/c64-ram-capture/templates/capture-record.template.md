@@ -4,6 +4,13 @@ One record per capture. Every field is recorded **in the same step as the
 capture**, before the machine is resumed — a value read later describes a
 different machine.
 
+Every `node scripts/…` command cited below is relative to **this skill's own
+directory** (`src/skills/c64-ram-capture/`), not to the repository root. From
+the repo root, use the `$S`-derived variables `SKILL.md`'s quick-reference
+block defines — `node $V slice …` rather than `node scripts/vsf-slice.mjs
+slice …`. Stated once here because the shorthand is used in five rows and
+`scripts/` resolves from neither cwd by accident.
+
 ## Identity
 
 | Field | Value | How obtained |

@@ -17,7 +17,8 @@ and name the offending address when it is wrong.
 S=src/skills/c64-ram-capture/scripts    # from the repo root
 P=$S/d64-parse.mjs   A=$S/dump-artifacts.mjs
 C=$S/compare.mjs     L=$S/releases.mjs
-T=$S/derive-transients.mjs
+T=$S/derive-transients.mjs               V=$S/vsf-slice.mjs
+TD=src/skills/c64-ram-capture/transients # the derived allow-lists live here
 
 node $P directory --image path/to/image.d64      # what's on the disk (--json flags faked entries)
 node $P bam       --image path/to/image.d64      # disk name, DOS type, occupied track ranges
@@ -30,8 +31,11 @@ node $C digest  dump.bin                         # sha256 + size, for the captur
 node $C compare a.bin b.bin                      # classify every difference, exit 1 on FAIL
 node $C floor   a.bin b.bin c.bin                # drift floor across a capture set
 
-node $T derive --release <id> --out transients/<id>.json a.bin b.bin c.bin
-node $T check  --allow-list transients/<id>.json a.bin b.bin
+node $T derive --release <id> --out $TD/<id>.json a.bin b.bin c.bin
+node $T check  --allow-list $TD/<id>.json a.bin b.bin
+
+node $V slice  run1.vsf --out run1.bin           # flat 64K image from a .vsf snapshot
+node $V digest run1.vsf                          # sha256 + size, writing no file
 ```
 
 Every module above reads only committed files and the JSON **you** wrote from
@@ -293,8 +297,8 @@ method is what carries forward between releases; no address set ever does.** Two
 verbs:
 
 ```bash
-node $T derive --release <id> --out transients/<id>.json run1.bin run2.bin run3.bin
-node $T check  --allow-list transients/<id>.json runA.bin runB.bin
+node $T derive --release <id> --out $TD/<id>.json run1.bin run2.bin run3.bin
+node $T check  --allow-list $TD/<id>.json runA.bin runB.bin
 ```
 
 `derive` takes **N ≥ 3** runs of the same release under the same protocol at the
@@ -334,8 +338,8 @@ holds the artifact shape, the committed method and the cap's reasoning.
 snapshot's memory module body. Two verbs:
 
 ```bash
-node scripts/vsf-slice.mjs slice run1.vsf --out run1.bin   # writes exactly 65536 bytes
-node scripts/vsf-slice.mjs digest run1.vsf                 # sha256 + size, writing no file
+node $V slice  run1.vsf --out run1.bin   # writes exactly 65536 bytes
+node $V digest run1.vsf                 # sha256 + size, writing no file
 ```
 
 Add `--json` to either for the same summary as one JSON object — it carries the
