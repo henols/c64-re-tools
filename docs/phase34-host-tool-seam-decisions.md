@@ -173,3 +173,68 @@ for the migrated packer module is its colocated `packer-finding.test.mjs`, not
   for a machine-greppable verdict beside measured inputs and a stated reversal condition.
 - `src/mcp/vice/broker-control.mts` — the in-repo convention of citing a `.planning/`-adjacent
   prose record from a source header for a decision recorded outside a test.
+
+---
+
+## Part 3 — 2026-09-03 correction: the CR-04 budget defect (plan `34-09`)
+
+This is a correction, not a rewrite. Part 1's recorded binding and its measurements stand
+exactly as written above; what follows describes a defect in the budget that governed that
+binding over the shipped route, and the fix plan `34-09` applied.
+
+### What was wrong
+
+The recorded `JVM_BINDING: per-invocation` (Part 1) describes what plans `34-01`/`34-03`
+actually built, and that description is still accurate. What was NOT true is that a
+`ghidra.analyze` invocation built on that binding could complete over the shipped,
+default-configured control-plane route at all: the client-side timer
+(`hostToolOverControlPlane()`, `host-tool-client.ts`) reused the 5000 ms TCP-connect constant
+(`CONTROL_CONNECT_TIMEOUT_MS`) to bound the ENTIRE round trip, including the tool's own
+execution, and the server-side ceiling (`DEFAULT_HOST_TOOL_TIMEOUT_MS`, `host-tool.mts`) was a
+single fixed 20 s value the real broker wiring (`vice-broker.mts`'s `onHostTool`) never
+overrode per tool. Both numbers are shorter than the startup cost this same document measures
+in Part 1 (`JVM_STARTUP_MS_RANGE: 12600-17400`, `JVM_STARTUP_MS_OBSERVED: 12407, 11160`) —
+`.planning/phases/34-the-host-tool-execution-seam/34-VERIFICATION.md`'s gap 2 and
+`.planning/phases/34-the-host-tool-execution-seam/34-REVIEW.md`'s CR-04 both name this as the
+phase's own headline defect: a working design (Part 1's binding) sitting behind a budget that
+could not exercise it even once.
+
+### What changed
+
+Per-tool budgets on BOTH sides of the seam, per this plan's own `assumption_delta_decision`
+(`34-09-PLAN.md`): `HOST_TOOL_TIMEOUT_MS` (server-side, `host-tool.mts`) gives `ghidra.analyze`
+a 600,000 ms (10 minute) budget — justified from this document's own Part 1 numbers, not a
+round guess — while every other tool keeps the pre-existing 20 s value.
+`HOST_TOOL_REQUEST_TIMEOUT_MS` (client-side, `host-tool-client.ts`) gives `ghidra.analyze` a
+660,000 ms deadline, strictly greater than the server-side value by design: the side that owns
+the budget (the host-bound executor) is the side that reports the verdict, never the client's
+own transport timeout. `CONTROL_CONNECT_TIMEOUT_MS` is demoted to bounding the TCP-connect
+phase only, mirroring what its own header comment always said it was. A cross-seam ordering
+test (`host-tool.test.ts`) imports both tables and asserts the ordering holds for every tool
+id, so the two numbers cannot drift apart unnoticed. Deliberately NOT introduced: a
+wire-supplied timeout — budgets stay host-side configuration, exactly like the ACME library
+directory and (after `34-08`) the oracle's location.
+
+### What did NOT change
+
+The binding itself is still **`per-invocation`**: `ghidra.analyze` still spawns a fresh
+`analyzeHeadless` child process per `host_tool` request, with no resident JVM behind a socket
+anywhere in this project's code. The `JVM_REVERSAL_CONDITION` recorded in Part 1 stands
+verbatim: reverses to resident-socket when a single corpus pass over `N=20` or more binaries
+spends more than `P=30` percent of its wall-clock time inside JVM startup. Raising the budget
+made the per-invocation binding usable over the shipped route; it did not touch the binding
+decision itself, and it did not remove the kill-on-expiry bound — `spawnHostTool()`'s timer
+still kills an invocation that outlives its budget and reports a refusal naming it.
+
+### What is still unmeasured
+
+This round took NO new JVM measurement. The end-to-end evidence this plan added
+(`host-tool.test.ts`) is a FAKE launcher that sleeps a caller-given number of seconds before
+exiting zero — it proves the round trip's two budgets are correctly split and ordered, not
+Ghidra's own real-world cost. The startup numbers remain the previously recorded `12407` and
+`11160` observations (Part 1) plus the cited `12600-17400` documented range; no real
+`analyzeHeadless` run was timed this round. A real analysis run's wall-clock cost through the
+seam is still unmeasured, and the 600,000 ms budget was chosen to clear the documented
+multi-minute figure with headroom rather than a freshly measured one — the same honesty
+convention Part 1's own "What `34-RESEARCH.md` could NOT answer" section (Assumptions A2/A3)
+already set for this document.
