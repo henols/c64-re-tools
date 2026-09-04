@@ -206,7 +206,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       `MemoryConflictException`. **AMENDED** — the control is observed red on **both** import routes,
       not one: MEASURED, the conflict path is route-dependent, so a pre-script tested on the `.prg`
       fixture and shipped for the flat-64K corpus meets a conflict the test never saw
-- [ ] **GHID-04**: Structural facts are exported through `DecompInterface` — array bounds, the
+- [x] **GHID-04**: Structural facts are exported through `DecompInterface` — array bounds, the
       split-pointer `CONCAT11` idiom, record strides, resolved computed jumps, self-modifying write
       targets — and **not** through `DataTypeManager`, which returns essentially nothing on 6502,
       with that control run on the **same image** as the acceptance run. **AMENDED** — adds
@@ -216,7 +216,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       criterion exists to catch. **NARROWED** — unresolved dispatch is reported as a **count and a
       list with no denominator**: the specified `C2_SITES_ENUMERATED` drew on `memmapshow`, stated
       absent (decision 2)
-- [ ] **GHID-05**: Typed cross-references are exported with their access kind preserved (`READ` /
+- [x] **GHID-05**: Typed cross-references are exported with their access kind preserved (`READ` /
       `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), since the annotation join consumes the kind and not
       only the address
 
@@ -240,7 +240,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       confident wrong semantic is worse than an admitted gap. Note the eight compile failures are at
       exactly these instructions plus `SBC $eb` and `NOP $0c`, so `OPC-01`'s fix and this criterion
       are the same work seen from two sides
-- [ ] **OPC-03**: The extension is verified against **real code containing illegal opcodes** — a
+- [x] **OPC-03**: The extension is verified against **real code containing illegal opcodes** — a
       cracked or packed release from this milestone's corpus — not only against a synthetic opcode
       sweep, with the before/after difference in decompiler output recorded. Sequenced **after**
       `OPC-01`'s compile gate and `OPC-04`'s language assertion, and **ahead of** `GHID-04`'s
@@ -422,11 +422,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | GHID-01 | Phase 36 | Complete |
 | GHID-02 | Phase 36 | Complete |
 | GHID-03 | Phase 36 | Complete |
-| GHID-04 | Phase 36 | Pending |
-| GHID-05 | Phase 36 | Pending |
+| GHID-04 | Phase 36 | Complete |
+| GHID-05 | Phase 36 | Complete |
 | OPC-01 | Phase 36 | Complete |
 | OPC-02 | Phase 36 | Complete |
-| OPC-03 | Phase 36 | Pending |
+| OPC-03 | Phase 36 | Complete |
 | OPC-04 | Phase 36 | Complete |
 | IMP-01 | Phase 37 | Pending |
 | IMP-02 | Phase 37 | Pending |

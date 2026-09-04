@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 36
 current_phase_name: The SLEIGH Language and the Ghidra Harness
 status: executing
-stopped_at: Completed 36-06-PLAN.md
-last_updated: "2026-09-04T19:30:45.710Z"
+stopped_at: Completed 36-07-PLAN.md
+last_updated: "2026-09-04T20:36:30.791Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 36 execution started
-state_head: 230b91b399482963c2d93bce2647fb73bd156d3a
+state_head: 497111b9d48f33d57fba265ca80c25cb31a00618
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 35
-  completed_plans: 34
+  completed_plans: 35
   percent: 50
 ---
 
@@ -589,6 +589,7 @@ Last activity: 2026-09-04 — Phase 36 execution started
 | Phase 36 P04 | 30min | 3 tasks | 5 files |
 | Phase 36 P05 | 48min | 3 tasks | 4 files |
 | Phase 36 P06 | 55min | 3 tasks | 3 files |
+| Phase 36 P07 | 62min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1054,6 +1055,7 @@ Recent decisions affecting current work:
 - [Phase 36]: GhidraStructExport.java's ## REFERENCES section never reflects the volatile flag (MEASURED, byte-identical with/without); added an additive ## DECOMPILED_TEXT section as the actual site of the effect
 - [Phase 36]: fixtures/ghidra/README.md corrected: the .prg route's real entry point is $0812 not $0810 -- BinaryLoader does not strip the .prg header, shifting addresses two bytes later
 - [Phase 36]: 36-06: a documented RTS terminator is required in every synthetic opcode-sweep slot -- without one DecompInterface fails every seeded function outright — MEASURED live against real Ghidra 12.1.3: NOP-only padding lets fall-through disassembly run each seeded function off the end of the image with no discovered exit
+- [Phase 36]: 36-07: COMPUTED_JUMP asserted absent (BRK-trick finding) on real corpus; DataTypeManager control invoked directly outside the seam — GHID-05's flagged assumption anticipated uncertainty; measured absence disclosed as a positive checked fact rather than forced or loosened
 
 ### Pending Todos
 
@@ -1865,8 +1867,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T19:30:45.426Z
-Stopped at: Completed 36-06-PLAN.md
+Last session: 2026-09-04T20:36:10.018Z
+Stopped at: Completed 36-07-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
