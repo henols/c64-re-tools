@@ -1,0 +1,77 @@
+INFO  Using log config file: jar:file:/home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/application.log (LoggingInitialization)  
+INFO  Loading user preferences: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (1389 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: NativePRNGNonBlocking (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+ERROR Language 6502:LE:16:nmos previously defined: /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Extensions/ClassifierTest/data/languages/6502_nmos.ldefs (SleighLanguageProvider)  
+ERROR Language 6502:LE:16:nmos previously defined: /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Extensions/EvidenceRun/data/languages/6502_nmos.ldefs (SleighLanguageProvider)  
+INFO  Headless startup complete (4293 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 211 extension points (114 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/PIC/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/8051/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/JVM/ghidra_scripts
+    /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/vendor/ghidra-scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Base/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/WildcardAssembler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/DecompilerDependent/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FileFormats/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SystemEmulation/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SwiftDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FunctionID/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BytePatterns/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/DATA/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/Atmel/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PDB/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/GnuDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BSim/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger-rmi-trace/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Decompiler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/MicrosoftCodeAnalyzer/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PyGhidra/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/VersionTracking/ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Creating temporary project: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/tools/ghidra-runs/script-error-final/script-error-final (HeadlessAnalyzer)  
+INFO  Creating project: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/tools/ghidra-runs/script-error-final/script-error-final (DefaultProject)  
+INFO  REPORT: Processing input files:  (HeadlessAnalyzer)  
+INFO       project: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/tools/ghidra-runs/script-error-final/script-error-final (HeadlessAnalyzer)  
+INFO  IMPORTING: file:///tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/bank.prg (HeadlessAnalyzer)  
+INFO  Successfully applied "-loader-baseAddr" to "Base Address" (old: "null", new: "0x801") (ProgramLoader)  
+INFO  Using Loader: Raw Binary (ProgramLoader)  
+INFO  Using Language/Compiler: 6502:LE:16:default:default (ProgramLoader)  
+INFO  Using Library Search Path: [., /bin, /lib, /lib64, /lib/x86_64-linux-gnu, /lib/aarch64-linux-gnu, /usr/bin, /usr/lib, /usr/X11R6/bin, /usr/X11R6/lib, /usr/java/packages/lib, /usr/lib/x86_64-linux-gnu/jni, /usr/lib/x86_64-linux-gnu, /usr/lib/jni] (ProgramLoader)  
+INFO  IMPORTING: Loaded 0 additional files (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/vendor/ghidra-scripts/GhidraStructExport.java '/tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/export.txt' '1'  (HeadlessAnalyzer)  
+INFO  SCRIPT: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/vendor/ghidra-scripts/GhidraStructExport.java (HeadlessAnalyzer)  
+INFO  GhidraStructExport.java> EXPORT_MODE: DECOMP (GhidraScript)  
+INFO  GhidraStructExport.java> CLASSIFICATION_EXPECTED_FROM_BLOCKS: 572 (GhidraScript)  
+INFO  GhidraStructExport.java> CLASSIFICATION_OBSERVED: 572 (GhidraScript)  
+INFO  GhidraStructExport.java> CLASSIFICATION_OVERRIDE_USED: yes (asserting against 1 instead of the block total 572) (GhidraScript)  
+ERROR REPORT SCRIPT ERROR:  (HeadlessAnalyzer) java.lang.IllegalStateException: GhidraStructExport: exported 572 classification lines but expected 1 (block-total expectation=572). Refusing a short export.
+	at GhidraStructExport.run(GhidraStructExport.java:228)
+	at ghidra.app.script.GhidraScript.executeNormal(GhidraScript.java:460)
+	at ghidra.app.script.GhidraScript.doExecute(GhidraScript.java:314)
+	at ghidra.app.script.GhidraScript.execute(GhidraScript.java:290)
+	at ghidra.app.util.headless.HeadlessAnalyzer.runScript(HeadlessAnalyzer.java:585)
+	at ghidra.app.util.headless.HeadlessAnalyzer.runScriptsList(HeadlessAnalyzer.java:929)
+	at ghidra.app.util.headless.HeadlessAnalyzer.analyzeProgram(HeadlessAnalyzer.java:1085)
+	at ghidra.app.util.headless.HeadlessAnalyzer.processFileWithImport(HeadlessAnalyzer.java:1583)
+	at ghidra.app.util.headless.HeadlessAnalyzer.processWithLoader(HeadlessAnalyzer.java:1743)
+	at ghidra.app.util.headless.HeadlessAnalyzer.processWithImport(HeadlessAnalyzer.java:1684)
+	at ghidra.app.util.headless.HeadlessAnalyzer.processWithImport(HeadlessAnalyzer.java:1768)
+	at ghidra.app.util.headless.HeadlessAnalyzer.processLocal(HeadlessAnalyzer.java:452)
+	at ghidra.app.util.headless.AnalyzeHeadless.launch(AnalyzeHeadless.java:199)
+	at ghidra.GhidraLauncher.launch(GhidraLauncher.java:81)
+	at ghidra.Ghidra.main(Ghidra.java:54)
+ 
+INFO  /bank.prg: file created (henrik) (LocalFileSystem)  
+INFO  REPORT: Save succeeded for: /bank.prg (script-error-final:/bank.prg) (HeadlessAnalyzer)  
+INFO  REPORT: Import succeeded (HeadlessAnalyzer)  
+openjdk version "21.0.12.1" 2026-08-18
+OpenJDK Runtime Environment (build 21.0.12.1+1-1-deb13u1-Debian)
+OpenJDK 64-Bit Server VM (build 21.0.12.1+1-1-deb13u1-Debian, mixed mode)

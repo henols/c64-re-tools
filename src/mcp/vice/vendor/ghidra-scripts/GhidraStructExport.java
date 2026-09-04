@@ -203,6 +203,12 @@ public class GhidraStructExport extends GhidraScript {
         }
         classificationSection.append("CLASSIFICATION_EXPECTED_FROM_BLOCKS ").append(blockTotalExpected).append("\n");
         classificationSection.append("CLASSIFICATION_OBSERVED ").append(classificationLines).append("\n");
+        // Printed to the script console (and so into the captured run log,
+        // not only the export file) -- this is what the harness's own
+        // run-log classifier reads for the classification-expectation
+        // question. Same labelled text either way.
+        println("CLASSIFICATION_EXPECTED_FROM_BLOCKS: " + blockTotalExpected);
+        println("CLASSIFICATION_OBSERVED: " + classificationLines);
 
         long assertAgainst = blockTotalExpected;
         if (overrideRaw != null) {
@@ -210,8 +216,11 @@ public class GhidraStructExport extends GhidraScript {
             classificationSection.append("CLASSIFICATION_OVERRIDE_USED yes (asserting against ")
                     .append(assertAgainst).append(" instead of the block total ")
                     .append(blockTotalExpected).append(")\n");
+            println("CLASSIFICATION_OVERRIDE_USED: yes (asserting against " + assertAgainst
+                    + " instead of the block total " + blockTotalExpected + ")");
         } else {
             classificationSection.append("CLASSIFICATION_OVERRIDE_USED no\n");
+            println("CLASSIFICATION_OVERRIDE_USED: no");
         }
         if (classificationLines != assertAgainst) {
             // Loud, not a warning: a short classification file looks exactly

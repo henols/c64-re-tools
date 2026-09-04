@@ -1,0 +1,74 @@
+INFO  Using log config file: jar:file:/home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/application.log (LoggingInitialization)  
+INFO  Loading user preferences: /home/henrik/.config/ghidra/ghidra_12.1.3_PUBLIC/preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (1057 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: NativePRNGNonBlocking (SecureRandomFactory)  
+INFO  Trust manager disabled, cacerts have not been set (DefaultTrustManagerFactory)  
+ERROR Language 6502:LE:16:nmos previously defined: /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Extensions/ClassifierTest/data/languages/6502_nmos.ldefs (SleighLanguageProvider)  
+ERROR Language 6502:LE:16:nmos previously defined: /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Extensions/EvidenceRun/data/languages/6502_nmos.ldefs (SleighLanguageProvider)  
+INFO  Headless startup complete (3694 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 211 extension points (114 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/PIC/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/8051/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/JVM/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Base/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/WildcardAssembler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/DecompilerDependent/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FileFormats/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SystemEmulation/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/SwiftDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/FunctionID/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BytePatterns/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/DATA/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Processors/Atmel/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PDB/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/GnuDemangler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/BSim/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger-rmi-trace/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Debug/Debugger/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/Decompiler/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/MicrosoftCodeAnalyzer/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/PyGhidra/ghidra_scripts
+    /home/henrik/dev/_ghidra-probe/ghidra_12.1.3_PUBLIC/Ghidra/Features/VersionTracking/ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Creating temporary project: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/tools/ghidra-runs/benign-base0/benign-base0 (HeadlessAnalyzer)  
+INFO  Creating project: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/tools/ghidra-runs/benign-base0/benign-base0 (DefaultProject)  
+INFO  REPORT: Processing input files:  (HeadlessAnalyzer)  
+INFO       project: /tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/tools/ghidra-runs/benign-base0/benign-base0 (HeadlessAnalyzer)  
+INFO  IMPORTING: file:///tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/base0.bin (HeadlessAnalyzer)  
+INFO  Successfully applied "-loader-baseAddr" to "Base Address" (old: "null", new: "0x0") (ProgramLoader)  
+INFO  Using Loader: Raw Binary (ProgramLoader)  
+INFO  Using Language/Compiler: 6502:LE:16:default:default (ProgramLoader)  
+INFO  Using Library Search Path: [., /bin, /lib, /lib64, /lib/x86_64-linux-gnu, /lib/aarch64-linux-gnu, /usr/bin, /usr/lib, /usr/X11R6/bin, /usr/X11R6/lib, /usr/java/packages/lib, /usr/lib/x86_64-linux-gnu/jni, /usr/lib/x86_64-linux-gnu, /usr/lib/jni] (ProgramLoader)  
+INFO  Additional info:
+Failed to add language defined memory block due to conflict: ZERO_PAGE: start_address=0x0000, uninitialized, length=0x100
+Failed to add language defined memory block due to conflict: STACK: start_address=0x0100, uninitialized, length=0x100
+ (ProgramLoader)  
+INFO  IMPORTING: Loaded 0 additional files (HeadlessAnalyzer)  
+INFO  ANALYZING all memory and code: file:///tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/base0.bin (HeadlessAnalyzer)  
+INFO  Packed database cache: /var/tmp/henrik-ghidra/packed-db-cache (PackedDatabaseCache)  
+INFO  Applied data type archive: generic_clib (ApplyDataArchiveAnalyzer)  
+INFO  -----------------------------------------------------
+    ASCII Strings                              0.363 secs
+    Apply Data Archives                        1.217 secs
+    Create Function                            0.000 secs
+    Demangler GNU                              0.001 secs
+    Disassemble Entry Points                   0.003 secs
+    Embedded Media                             0.013 secs
+    External Entry References                  0.001 secs
+    Function ID                                0.022 secs
+-----------------------------------------------------
+     Total Time   1 secs
+-----------------------------------------------------
+ (AutoAnalysisManager)  
+INFO  REPORT: Analysis succeeded for file: file:///tmp/claude-1000/-home-henrik-dev-henrik-git-c64-re-tools/1917b45a-b690-4513-a2d9-0f81fe24d1d9/scratchpad/ghidra-fixtures/base0.bin (HeadlessAnalyzer)  
+INFO  /base0.bin: file created (henrik) (LocalFileSystem)  
+INFO  REPORT: Save succeeded for: /base0.bin (benign-base0:/base0.bin) (HeadlessAnalyzer)  
+INFO  REPORT: Import succeeded (HeadlessAnalyzer)  
+openjdk version "21.0.12.1" 2026-08-18
+OpenJDK Runtime Environment (build 21.0.12.1+1-1-deb13u1-Debian)
+OpenJDK 64-Bit Server VM (build 21.0.12.1+1-1-deb13u1-Debian, mixed mode)

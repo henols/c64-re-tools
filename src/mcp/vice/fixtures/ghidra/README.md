@@ -82,8 +82,12 @@ $ node resources/host-tool.mjs run --repo-root <scratch> --request \
     '{"tool":"ghidra.analyze","args":{"runId":"benign-base0","importPath":"base0.bin","processor":"6502:LE:16:default","importRoute":"flat64k"}}'
 ```
 
-Image: 4096 bytes of `/dev/urandom` content, based at `$0000` (the default
-`flat64k`-route base address). Process exit status: **0**. Date: 2026-09-04.
+Image: 4096 bytes of cryptographically-random content (`node:crypto`'s
+`randomBytes(4096)`), based at `$0000` (the default `flat64k`-route base
+address). Process exit status: **0**. Date: 2026-09-04.
+
+**Committed fixture:** 74 lines, sha256
+`3e2cb7b1c262a0cf683d093e73c60950ad764522f32ef1ccfab836b24ade64f3`.
 
 Contains the two MEASURED benign lines verbatim:
 
@@ -106,14 +110,34 @@ expected classification line count (script argument 1), so the script's own
 internal equality assertion fails and throws for real, not as a simulated
 log line.
 
-**Command:**
+**Command** (the `postScript` field must be the FULL workspace-relative
+path, `vendor/ghidra-scripts/GhidraStructExport.java`, not the bare
+filename -- `ghidra.analyze`'s seam resolves `postScript` through the same
+`resolveWorkspacePath()` site it resolves `importPath` through, independent
+of `scriptPath`; a bare filename resolves against the workspace ROOT and
+Ghidra reports `Script not found`, MEASURED this session on the first
+attempt before this was corrected):
 
 ```
 $ node resources/host-tool.mjs run --repo-root <scratch> --request \
-    '{"tool":"ghidra.analyze","args":{"runId":"script-error","importPath":"bank.prg","processor":"6502:LE:16:default","importRoute":"prg","scriptPath":"vendor/ghidra-scripts","postScript":"GhidraStructExport.java","exportPath":"export.txt","expectedClassificationLines":1}}'
+    '{"tool":"ghidra.analyze","args":{"runId":"script-error","importPath":"bank.prg","processor":"6502:LE:16:default","importRoute":"prg","noanalysis":true,"scriptPath":"vendor/ghidra-scripts","postScript":"vendor/ghidra-scripts/GhidraStructExport.java","exportPath":"export.txt","expectedClassificationLines":1}}'
 ```
 
-Process exit status recorded for this run: **0** -- `analyzeHeadless` exits 0
-even though the post-script threw an exception. This is the entire reason a
-run-log CLASSIFIER, never the exit status, is the signal
-`ghidra-harness-gates.test.ts` exercises. Date: 2026-09-04.
+Image: `bank.prg` (the committed fixture above, 60 bytes, `.prg` route, base
+`$0801`). Process exit status recorded for this run: **0** --
+`analyzeHeadless` exits 0 even though the post-script threw an exception.
+This is the entire reason a run-log CLASSIFIER, never the exit status, is
+the signal `ghidra-harness-gates.test.ts` exercises. Date: 2026-09-04.
+
+**Committed fixture:** 77 lines, sha256
+`b3378dc4e4a8608ecf72bea05aa6135dec17f403a393ae3fd9c280a91707f2c0`. The run
+log's own printed lines show `GhidraStructExport.java` computed a block
+total of 572 (the `.prg` route's classified address space, not `bank.prg`'s
+60-byte file size), then threw because script argument 1 planted an
+override of `1`:
+
+```
+GhidraStructExport.java> CLASSIFICATION_EXPECTED_FROM_BLOCKS: 572 (GhidraScript)
+GhidraStructExport.java> CLASSIFICATION_OBSERVED: 572 (GhidraScript)
+ERROR REPORT SCRIPT ERROR:  (HeadlessAnalyzer) java.lang.IllegalStateException: GhidraStructExport: exported 572 classification lines but expected 1 (block-total expectation=572). Refusing a short export.
+```
