@@ -371,13 +371,13 @@ test("task3: no line of the rendered report asserts a data-recovery rate for dxa
 });
 
 test("task3 [CLI]: node dxa-partition.ts with no arguments exits non-zero with a usage message", () => {
-  const r = spawnSync("node", [DXA_PARTITION_TS], { encoding: "utf8", cwd: HERE });
+  const r = spawnSync(process.execPath, [DXA_PARTITION_TS], { encoding: "utf8", cwd: HERE });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /Usage:/);
 });
 
 test("task3 [CLI]: node dxa-partition.ts byte-derived <basic-stub.prg> prints both tier names, POSITIVE_CLASS, and no dxa-recovery-rate claim", () => {
-  const r = spawnSync("node", [DXA_PARTITION_TS, "byte-derived", join(FIXTURES, "basic-stub.prg")], {
+  const r = spawnSync(process.execPath, [DXA_PARTITION_TS, "byte-derived", join(FIXTURES, "basic-stub.prg")], {
     encoding: "utf8",
     cwd: HERE,
   });
@@ -391,7 +391,7 @@ test("task3 [CLI]: node dxa-partition.ts byte-derived <basic-stub.prg> prints bo
 
 test("task3 [CLI]: node dxa-partition.ts source-derived <fixture.rep> <fixture.prg> reproduces the 145/131/3 fixture-tier numbers via the CLI", () => {
   const r = spawnSync(
-    "node",
+    process.execPath,
     [DXA_PARTITION_TS, "source-derived", join(FIXTURES, "fixture.rep"), join(FIXTURES, "fixture.prg")],
     { encoding: "utf8", cwd: HERE },
   );
