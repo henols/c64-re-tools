@@ -34,8 +34,8 @@
 // resulting workspace-relative paths into the wire request; it adds no new
 // `HostToolId` argument key (plan 35-01 already landed all five path keys on
 // `dxa.disassemble`) and touches no allowlist table.
-import { readFileSync } from "node:fs";
-import { basename, dirname, join, resolve as resolvePath } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, join, sep, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runHostToolFromContainer, type HostToolClientResult, type RunHostToolFromContainerOptions } from "./host-tool-client.ts";
@@ -115,8 +115,86 @@ export interface DxaRunResult {
  * also sends on the wire) from the local filesystem, resolved against
  * `root`. Used only to compute the parser's window locally -- never sent
  * anywhere, never re-derived from the listing. */
+function isContained(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(root + sep);
+}
+
+/** Canonicalises `p`, or -- when `p` does not exist yet (the write path:
+ * a `-B`/`-l` file this module is about to create) -- the deepest ancestor
+ * of `p` that does exist, with the non-existent tail re-appended. Mirrors
+ * `anno-types.ts`'s own `realpathOfNearestExisting()`, which is not
+ * exported, and `host-tool.mts`'s, which is host-bound and must not be
+ * imported from this container-side module. */
+function realpathOfNearestExisting(p: string): string {
+  const resolved = resolvePath(p);
+  const tail: string[] = [];
+  let current = resolved;
+  for (;;) {
+    try {
+      return tail.length === 0 ? realpathSync(current) : join(realpathSync(current), ...tail);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return resolved;
+      tail.unshift(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Resolves a workspace-relative `relative` against `root` and refuses
+ * anything that escapes the workspace, directly (`../`, or an absolute
+ * path) or via a symlink. Returns the canonical, containment-checked
+ * absolute path.
+ *
+ * WHY THIS EXISTS, AND WHY IT IS LOCAL (`35-REVIEW.md` CR-01). This module
+ * sends workspace-relative strings on the wire and correctly leaves WIRE
+ * path resolution to `host-tool.mts`'s `resolveWorkspacePath()` -- but it
+ * ALSO performs its own local filesystem I/O that never crosses the seam:
+ * it reads the image to compute the parser's window, and writes the
+ * `-B`/`-l` files for `knownDataRows`. That local I/O had no confinement at
+ * all, so `image: "../sibling/secret.prg"` read outside the workspace and
+ * `outDir: "../sibling-dir"` wrote outside it -- both reproduced. The check
+ * is local because this file must never import `hostpath.ts` (see the
+ * header) and `resolveWorkspacePath()` is host-bound `.mts`; this is the
+ * same shape, and the same stated rules, as `stock-symbols.ts`'s own
+ * `resolveLabelFilePath()`, which is this repository's established pattern
+ * for exactly this situation rather than a second copy of a seam.
+ *
+ * WR-05: both sides are canonicalised before comparison -- comparing a
+ * canonical path against a possibly-symlinked `root` refuses every path in
+ * a workspace whose own path contains a symlinked component.
+ * WR-08: the returned path is the CHECKED path, never the pre-canonical
+ * spelling -- returning the latter makes the check advisory, because
+ * `readFileSync`/`writeFileSync` re-traverse symlinks independently.
+ */
+function confineToWorkspace(root: string, relative: string, what: string): string {
+  if (typeof relative !== "string" || relative.trim() === "") {
+    throw new Error(
+      `runDxaDisassemble: ${what} must be a non-empty workspace-relative string, got ${typeof relative === "string" ? "an empty/whitespace-only string" : typeof relative}`,
+    );
+  }
+
+  const resolved = resolvePath(root, relative.trim());
+  if (!isContained(resolved, root)) {
+    throw new Error(
+      `runDxaDisassemble: ${what} ${JSON.stringify(relative)} resolves to ${JSON.stringify(resolved)}, which is outside the workspace root (${root}) -- refusing`,
+    );
+  }
+
+  const real = realpathOfNearestExisting(resolved);
+  const realRoot = realpathOfNearestExisting(root);
+  if (!isContained(real, realRoot)) {
+    throw new Error(
+      `runDxaDisassemble: ${what} ${JSON.stringify(relative)} resolves (via symlink) to ${JSON.stringify(real)}, which is outside the workspace root (${realRoot === root ? realRoot : `${root}, canonically ${realRoot}`}) -- refusing`,
+    );
+  }
+
+  return real;
+}
+
 function readLocalImageBytes(root: string, relativePath: string): Uint8Array {
-  return readFileSync(join(root, relativePath));
+  return readFileSync(confineToWorkspace(root, relativePath, "image"));
 }
 
 /**
@@ -166,10 +244,17 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
     const blocksRelPath = `${outDirRelative}/${imageStem}.dxa-blocks.txt`;
     const labelsRelPath = `${outDirRelative}/${imageStem}.dxa-labels.lbl`;
 
-    const blocksResult = emitDataBlocks(args.knownDataRows, join(root, blocksRelPath));
+    // CR-01: confine the WRITE targets too -- `outDir` is caller-supplied,
+    // so `join(root, ...)` alone let `outDir: "../sibling-dir"` write
+    // outside the workspace. The confined absolute path is what is opened
+    // (WR-08); the wire argument stays the workspace-relative string.
+    const blocksAbs = confineToWorkspace(root, blocksRelPath, "outDir (data-blocks output)");
+    const labelsAbs = confineToWorkspace(root, labelsRelPath, "outDir (labels output)");
+
+    const blocksResult = emitDataBlocks(args.knownDataRows, blocksAbs);
     if (blocksResult.path !== undefined) datablocksPath = blocksRelPath;
 
-    const labelsResult = emitLabels(args.knownDataRows, join(root, labelsRelPath));
+    const labelsResult = emitLabels(args.knownDataRows, labelsAbs);
     if (labelsResult.path !== undefined) labelsPath = labelsRelPath;
   }
 

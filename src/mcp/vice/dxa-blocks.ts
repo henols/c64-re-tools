@@ -131,6 +131,21 @@ function selectDataBearingRows(rows: readonly KnownDataRow[]): KnownDataRow[] {
  * `functionName: what went wrong` shape as the rest of this project's error
  * messages (e.g. `dxa-partition.ts`). */
 function assertRowShape(row: KnownDataRow, context: string): void {
+  // WR-01 (`35-REVIEW.md`): integrality is checked FIRST, before the range
+  // and inversion comparisons below, because a non-integer address slips
+  // silently through every one of them -- `NaN < 0`, `NaN > 0xffff` and
+  // `NaN < NaN` are all false -- and reached the emitter, which wrote the
+  // corrupted line `0NaN-0NaN` with no refusal. That directly contradicts
+  // this module's own "refused BY NAME, never silently" discipline, and a
+  // `-B` file dxa cannot parse is the failure mode this whole module exists
+  // to make impossible. Every sibling numeric boundary check added in this
+  // phase (`dxa-partition.ts`, `dxa-listing.ts`) already calls
+  // `Number.isInteger()`; this one did not.
+  if (!Number.isInteger(row.start) || !Number.isInteger(row.endInclusive)) {
+    throw new Error(
+      `${context}: row (dataType ${row.dataType}) has a non-integer address -- start=${String(row.start)}, endInclusive=${String(row.endInclusive)}; both must be integers in $0000-$ffff`,
+    );
+  }
   if (row.start < 0x0000 || row.start > 0xffff || row.endInclusive < 0x0000 || row.endInclusive > 0xffff) {
     throw new Error(
       `${context}: row ${hexRange(row.start, row.endInclusive)} (dataType ${row.dataType}) falls outside the address space $0000-$ffff`,
