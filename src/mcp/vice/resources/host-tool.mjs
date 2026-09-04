@@ -93,7 +93,7 @@
 // this module reaches them through the one place that owns them.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment, installedLanguageIds, GHIDRA_STOCK_6502_LANGUAGE_FILES, GHIDRA_IMPORT_ROUTES, importRouteBaseAddr, LANGUAGE_ID_PATTERN, LOADER_BASE_ADDR_PATTERN, RUN_ID_PATTERN, } from "./ghidra-project.mjs";
@@ -1062,10 +1062,13 @@ const ORACLE_STDOUT_CAP_BYTES = 64 * 1024;
  * from a produced-but-empty file). */
 function digestOutputFile(path) {
     try {
-        const stat = statSync(path);
+        // WR-03: byteLength must describe the SAME bytes sha256 was computed
+        // over -- derived from the buffer actually read, never from a separate
+        // statSync() call, which could observe a different byte string if the
+        // file is written to between the two reads.
         const contents = readFileSync(path);
         const sha256 = createHash("sha256").update(contents).digest("hex");
-        return { path, sha256, byteLength: stat.size };
+        return { path, sha256, byteLength: contents.length };
     }
     catch {
         return null;
