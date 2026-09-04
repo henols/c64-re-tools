@@ -893,7 +893,25 @@ runs.
   3. Naming a known-data range excludes those bytes from discovery: known-data ranges are handed to dxa as `-b` data blocks with the store's existing 12-member vocabulary as the source and the `-B` / `-l` store-to-dxa emitters as the route, **exercised on a real image** rather than asserted.
   4. **Every rate this project quotes about dxa has a ground-truth partition derived by a committed script that ran before dxa did**, with its denominator and positive class stated. MEASURED reason this is a criterion and not a nicety: the pivot's 141/138 partition was not source-derivable and flattered dxa exactly where its `0 false positives` headline lived.
 
-**Plans**: TBD
+**Plans**: 5 plans in 4 waves. `35-01` leads with a production-quality tracer — one committed `.prg` wired end to end through a vendored, digest-verified, locally built dxa, the fifth `HostToolId` (`dxa.disassemble`), the container-side orchestration and this project's own listing parser, coming back as a byte-level code/data map — because proving that the native toolchain, the seam and the parser compose on one image catches a dead end after one commit instead of after four. The vendored tree's licence position is corrected in that same commit, since `THIRD-PARTY-NOTICES.md`'s opening claim is false the moment `vendor/dxa/` lands. Wave 2 expands sideways from that proven slice: `35-02` finishes `DXA-02`'s automatable half (all five measured `-a dump` line shapes, the named refusal, and the overlapping decode disposed as `unclassified` with a stated reason rather than a winner), `35-03` builds `DXA-04`'s two-tier ground-truth partition. Wave 3: `35-04` the store-to-dxa `-B`/`-l` emitter, with exclusion proven in dxa's own listing. Wave 4: `35-05` the two pieces of evidence a synthetic input structurally cannot produce — a refusal provoked by a real unknown listing form from a real run, and a build reproducing its pinned binary digest. No `/gsd-discuss-phase` ran, so thirteen planner assumptions (`A-01`..`A-13`) are recorded in the plans; `A-01`, `A-11` and `A-02` resolve `35-RESEARCH.md`'s Open Questions 1, 2 and 3. Two facts measured at plan time against the pinned binary shape the plans rather than being left for execution to discover: dxa emits its listing on **stdout** with no output-file option (a full 64K image yields 699,116 bytes in 21 ms, so the seam captures stdout to a file and digests it rather than inlining it), and its `-a dump` hex column **wraps at top of memory**, printing three bytes at `$ffff` where the directive emits one — a real, unplanned refusal cause that `DXA-02` criterion 2 needed and that a hand-written fixture would not have produced.
+
+Plans:
+**Wave 1**
+
+- [ ] 35-01-PLAN.md — Tracer: one image in, one code/data map out (vendored pinned dxa + `build.bash`, the fifth `HostToolId`, `dxa-listing.ts`, `dxa-run.ts`, and the corrected GPL notice)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 35-02-PLAN.md — `DXA-02` completed: the five measured line shapes, the named refusal, and the overlapping decode as `unclassified` with a stated reason
+- [ ] 35-03-PLAN.md — `DXA-04`: the two-tier ground-truth partition, reproducing Phase 23's 145/131/3 and abstaining wherever it cannot prove a byte
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 35-04-PLAN.md — `DXA-03`: the store-to-dxa `-B`/`-l` emitter, exclusion observed in dxa's own listing on the tracer image and on a real cracked release
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 35-05-PLAN.md — The evidence a unit test cannot supply: a refusal from a real run, and a build reproducing its pinned digest
 
 Notes:
 

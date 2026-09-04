@@ -1,0 +1,18 @@
+[
+  {
+    "id": "DXA-01",
+    "text": "dxa is vendored at a pinned version with its GPLv2+ notice in THIRD-PARTY-NOTICES.md and is built by this project rather than assumed present on $PATH. The vendored build is real work, not setup: dxa is not installed anywhere on this host, and the tarball contains no LICENSE/COPYING file (GPL-2.0-or-later appears only in C headers, two-party copyright, no upstream signature), so the notice is quoted from the source headers and this project supplies the GPL-2.0 text. Digest gate written before the fetch; sha256 re-verified against Phase 23 pin byte-for-byte and the build reproduces the same binary digest."
+  },
+  {
+    "id": "DXA-02",
+    "text": "dxa human-readable listing is parsed into a machine-readable code/data map, and the parser failure mode is a refusal rather than a silent mis-parse. dxa has no machine-readable output, so this parser is this project to own and maintain, over the five measured line shapes of -a dump. The refusal must be this project parser refusing by name, not dxa exit status: -d strict exited 0 on an inconsistent fixture. It must be provoked by a real unknown listing form from an actual run and not only by a hand-planted malformed line; and overlapping decodes (jsr into a mid-instruction target) yield unclassified with a stated reason, never a winner, because a byte-per-address map structurally cannot represent them."
+  },
+  {
+    "id": "DXA-03",
+    "text": "Known-data ranges are handed to dxa as -b data blocks, so a caller can exclude graphics regions from discovery, with the annotation store existing 12-member data-type vocabulary as the source and the -B / -l store-to-dxa emitters as the route, exercised on a real image rather than asserted."
+  },
+  {
+    "id": "DXA-04",
+    "text": "The ground-truth partition every dxa rate is measured against is derived by a committed script, before the tool runs. Stated without an external oracle: it is derived from the image bytes, not from execution, memmapshow being stated absent. The pivot 141/138 partition was not source-derivable and flattered dxa exactly where its 0 false positives headline lived. Every rate quoted must state its denominator and positive class."
+  }
+]
