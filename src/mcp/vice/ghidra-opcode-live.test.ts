@@ -27,12 +27,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze } from "./ghidra-run.ts";
 import { installedLanguageIds } from "./ghidra-project.mts";
+import { repoRoot } from "./repo-root.ts";
+import { listEntries, extractEntry } from "./anno-d64.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
@@ -751,6 +754,234 @@ test(
         const body = extractFunctionBody(decompiledText, layout.addressByByte.get(b)!) ?? "";
         assert.match(body, /=\s*0;/, `byte 0x${b.toString(16)} (STZ under 65C02) must decompile to a literal store-of-zero statement`);
       }
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 36-07 (OPC-03): the real-corpus before/after difference. Sequenced,
+// evidenced, AFTER the compile gate (36-01, evidence/36-01-sleigh-gate-red.md)
+// and the language assertion (36-01, evidence/36-01-language-used.md), and
+// AHEAD of the acceptance run (this plan's own Task 2/3 in
+// ghidra-live.test.ts). D-36-18: this reuses `dxa-live.test.ts`'s own
+// established corpus route -- read the release image's directory, take its
+// first entry, extract that entry's program bytes -- rather than inventing a
+// second extraction path. D-36-20: a SECOND, narrower opt-in on top of the
+// file-level one, mirroring that same precedent.
+//
+// The release image is `danish.d64` from Phase 23's corpus (canonical per
+// `docs/phase33-reproducible-run-gate-findings.md`'s own frontmatter),
+// gitignored and never committed -- absent on any machine that has not
+// separately obtained it, which is why the corpus case carries its own
+// skip reason naming the expected path rather than failing.
+// ---------------------------------------------------------------------------
+
+const CORPUS_PATH = join(
+  repoRoot({ from: HERE }),
+  ".planning",
+  "phases",
+  "23-the-real-release-gate-go-degrade-no-go",
+  "evidence",
+  "corpus",
+  "danish.d64",
+);
+
+/** Gated behind BOTH `VICE_LIVE_GHIDRA=1` (this file's own opt-in, above) AND
+ * its OWN `VICE_LIVE_GHIDRA_CORPUS=1` -- the corpus image is gitignored
+ * (D-04, `.planning/phases/23-.../evidence/README.md` convention 10) and
+ * absent on every machine but the one that separately fetched it. */
+const CORPUS_SKIP_REASON: string | false =
+  SKIP_REASON !== false
+    ? SKIP_REASON
+    : process.env.VICE_LIVE_GHIDRA_CORPUS !== "1"
+      ? "ghidra-opcode-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_GHIDRA_CORPUS=1 (in addition to VICE_LIVE_GHIDRA=1) to run it."
+      : !existsSync(CORPUS_PATH)
+        ? `VICE_LIVE_GHIDRA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
+          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+        : false;
+
+/** The `.prg` route's own fixed default base address (`importRouteBaseAddr("prg")`,
+ * `ghidra-project.mts`) -- `BinaryLoader` maps file byte 0 (the `.prg`
+ * format's own 2-byte load-address header) to this address, so a Ghidra
+ * address maps back to a body (post-header) file offset via
+ * `address - PRG_ROUTE_BASE_ADDR - PRG_HEADER_SIZE`. Same rule
+ * `ghidra-live.test.ts`'s own `PRG_ROUTE_ENTRYPOINT` documents (MEASURED
+ * there against `bank.prg`; re-confirmed here against the real corpus
+ * release). */
+const PRG_ROUTE_BASE_ADDR = 0x0801;
+const PRG_HEADER_SIZE = 2;
+
+/** MEASURED this plan, real Ghidra 12.1.3 against the real corpus release
+ * (`danish.d64`'s first entry, "BRUCE LEE (DC)"): three entry points make the
+ * depacker's own real code -- including a real undocumented-opcode byte --
+ * reachable from a static disassembly pass over the raw `.prg` image.
+ *
+ *   - `$081b`: the BASIC stub's own "SYS 2073" call (2073 decimal = `$0819`),
+ *     shifted +2 for the `.prg` route's own `BinaryLoader` header-inclusion
+ *     (the same +2 rule `ghidra-live.test.ts`'s own `PRG_ROUTE_ENTRYPOINT`
+ *     documents against `bank.prg`; this release's own header also encodes
+ *     `$0801`, so the same shift applies).
+ *   - `$b70a`: reached from `$081b`'s own direct `JMP` (an `UNCONDITIONAL_CALL`
+ *     reference once decoded); seeded explicitly too so it disassembles even
+ *     under a language where the `$081b` stub itself fails to decode.
+ *   - `$b74c`, `$b7e7`: the depacker's own two self-relocating copy-loop
+ *     SOURCE addresses (read directly off `$b70a`'s own decompiled text:
+ *     `(&DAT_0110)[bVar1] = (&DAT_b74c)[bVar1]`, and a second loop copying
+ *     `(&DAT_b7b3)[bVar1]` to `(&DAT_0300)[bVar1]` starting at `bVar1=0x34`,
+ *     i.e. source `$b7b3+0x34=$b7e7`). These addresses hold the REAL code
+ *     bytes that get relocated and executed at runtime; disassembling them
+ *     at their own FILE location (rather than their relocated target, which
+ *     is uninitialised at static-analysis time) decodes the SAME bytes,
+ *     since opcode identity does not depend on load address.
+ *   - `$b790`: MEASURED, the depacker's own SECOND real routine, reached at
+ *     runtime via the relocated code (a direct `JMP` at `$b745` in
+ *     `$b70a`'s own body targets `$0152`, which is `$0110+0x42` -- the SAME
+ *     +0x42 offset into the FIRST copy's own SOURCE, `$b74c+0x42=$b78e`;
+ *     `$b78e`-`$b78f` is a `PLA`/`RTS` return stub immediately preceding
+ *     this routine's own real entry at `$b790`).
+ *
+ * `$b7e7`'s own first byte is the exact MEASURED divergence point: `0x34`
+ * ("NOP zp,X" under this project's own extension -- `6502_undocumented.sinc`,
+ * the `:NOP imm8,X` constructor) has NO constructor at all under stock
+ * `6502.slaspec`, so the stock language's disassembly never decodes this
+ * byte, nor anything downstream of it (including a real `JMP $a7ae` at
+ * `$b810` and the KERNAL-calling function it targets) -- while this
+ * project's own extension decodes it and continues. */
+const CORPUS_ENTRY_MAIN = "$081b";
+const CORPUS_ENTRY_RELOCATE_TARGET = "$b70a";
+const CORPUS_ENTRY_RELOCATE_SOURCE_1 = "$b74c";
+const CORPUS_ENTRY_RELOCATE_SOURCE_2 = "$b7e7";
+const CORPUS_ENTRY_SECOND_ROUTINE = "$b790";
+const CORPUS_ENTRY_POINTS: readonly string[] = [
+  CORPUS_ENTRY_MAIN,
+  CORPUS_ENTRY_RELOCATE_TARGET,
+  CORPUS_ENTRY_RELOCATE_SOURCE_1,
+  CORPUS_ENTRY_RELOCATE_SOURCE_2,
+  CORPUS_ENTRY_SECOND_ROUTINE,
+];
+
+/** Converts a Ghidra address (within the imported `.prg`'s own loaded range)
+ * back to its own byte offset within `body` (the extracted program with its
+ * 2-byte `.prg` header already stripped) -- `undefined` when the address
+ * falls outside the imported image entirely (e.g. a language-defined
+ * zero-page/stack block, or a KERNAL-area reference the image never
+ * covers). */
+function corpusBodyOffsetForAddress(address: number, bodyLength: number): number | undefined {
+  const offset = address - (PRG_ROUTE_BASE_ADDR + PRG_HEADER_SIZE);
+  return offset >= 0 && offset < bodyLength ? offset : undefined;
+}
+
+test(
+  "ghidra-opcode-live CORPUS: the real-corpus before/after difference, attributed to the illegal bytes' own offsets",
+  { skip: CORPUS_SKIP_REASON },
+  async () => {
+    const corpusImageBytes = readFileSync(CORPUS_PATH);
+    const corpusImageSha256 = createHash("sha256").update(corpusImageBytes).digest("hex");
+    const entries = listEntries(new Uint8Array(corpusImageBytes));
+    const entry = entries[0];
+    if (entry === undefined) {
+      throw new Error("ghidra-opcode-live CORPUS: the corpus image has no directory entries");
+    }
+    const extracted = extractEntry(new Uint8Array(corpusImageBytes), entry.name);
+    const body = extracted.subarray(PRG_HEADER_SIZE);
+
+    // Establish presence/absence of the illegal bytes FIRST, before any run
+    // -- a raw scan over the extracted program's own body, recording which
+    // of the 105 bytes are present and a bounded sample of their offsets.
+    // Per this plan's own action text: if none were present, this would be
+    // a recorded, disclosed fact about the corpus, and the case would stop
+    // here rather than substitute a synthetic input or report a pass.
+    const presentByteOffsets = new Map<number, number[]>();
+    for (let i = 0; i < body.length; i++) {
+      const b = body[i]!;
+      if (UNDOCUMENTED_BYTE_SET.includes(b)) {
+        const list = presentByteOffsets.get(b) ?? [];
+        if (list.length < 5) list.push(i);
+        presentByteOffsets.set(b, list);
+      }
+    }
+    assert.notEqual(
+      presentByteOffsets.size,
+      0,
+      "OPC-03's before/after difference is not exercisable on this release: none of the derived 105-byte set was found anywhere in the extracted program's own body",
+    );
+
+    const ws = makeScratchWorkspace();
+    try {
+      writeFileSync(join(ws.root, "release.prg"), extracted);
+      writeFileSync(join(ws.root, "release.entrypoints"), CORPUS_ENTRY_POINTS.join("\n") + "\n");
+
+      async function runCorpus(processor: string, runId: string): Promise<Map<number, ClassificationKind>> {
+        const exportRel = `${runId}-export.txt`;
+        const result = await runGhidraAnalyze(
+          {
+            runId,
+            importPath: "release.prg",
+            processor,
+            importRoute: "prg",
+            noanalysis: true,
+            scriptPath: "vendor/ghidra-scripts",
+            preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+            entrypointsPath: "release.entrypoints",
+            postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+            exportPath: exportRel,
+          },
+          { repoRoot: ws.root },
+        );
+        assert.equal(result.exitStatus, 0, `${runId}: analyzeHeadless's own exit status must be 0`);
+        const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+        return parseClassificationByAddress(exportText);
+      }
+
+      // Run twice, everything else identical: the SAME extracted program,
+      // the SAME route, the SAME entry points -- only the language differs.
+      const defaultClassification = await runCorpus(DEFAULT_LANGUAGE_ID, "corpus-default");
+      const nmosClassification = await runCorpus(NMOS_LANGUAGE_ID, "corpus-nmos");
+
+      const allAddresses = new Set<number>([...defaultClassification.keys(), ...nmosClassification.keys()]);
+      const changed: number[] = [];
+      for (const addr of allAddresses) {
+        if (defaultClassification.get(addr) !== nmosClassification.get(addr)) changed.push(addr);
+      }
+      changed.sort((a, b) => a - b);
+
+      // Assert RELATIVELY, never against a pinned byte count of content
+      // this repository does not ship -- the actual numbers are recorded in
+      // the evidence file, not asserted here.
+      assert.notEqual(changed.length, 0, "at least one address must change classification between the two languages over the real corpus program");
+
+      const attributed = changed.filter((addr) => {
+        const off = corpusBodyOffsetForAddress(addr, body.length);
+        return off !== undefined && UNDOCUMENTED_BYTE_SET.includes(body[off]!);
+      });
+      assert.notEqual(
+        attributed.length,
+        0,
+        "at least one changed address's own raw byte (within the imported program) must be a member of the derived 105-byte set -- the difference must be attributable to the illegal bytes' own offsets, not merely coincide with them",
+      );
+
+      const sample = changed
+        .filter((a) => defaultClassification.get(a) !== "code" && nmosClassification.get(a) === "code")
+        .slice(0, 5);
+      assert.ok(
+        sample.length >= 3,
+        `expected at least 3 sample addresses undefined-under-stock/code-under-nmos, got ${sample.length}`,
+      );
+
+      // Record everything this task's evidence file needs, printed so a
+      // human re-running this exact case can transcribe it -- the evidence
+      // file itself is authored by hand from a real run's own output, per
+      // this project's established convention (it is not generated).
+      console.log("CORPUS_RELEASE_SHA256:", corpusImageSha256);
+      console.log("CORPUS_ENTRY_NAME:", entry.name);
+      console.log("CORPUS_ENTRY_LENGTH:", extracted.length);
+      console.log("CORPUS_ENTRY_POINTS:", CORPUS_ENTRY_POINTS.join(","));
+      console.log("CORPUS_CHANGED_COUNT:", changed.length);
+      console.log("CORPUS_ATTRIBUTED_COUNT:", attributed.length);
+      console.log("CORPUS_SAMPLE:", sample.map((a) => a.toString(16)).join(","));
+      console.log("CORPUS_PRESENT_BYTE_COUNT:", presentByteOffsets.size);
     } finally {
       removeScratchWorkspace(ws);
     }
