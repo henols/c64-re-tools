@@ -1223,6 +1223,14 @@ export async function runHostTool(raw, deps) {
     const repoRootAbs = resolvePath(deps.repoRoot);
     let built;
     let acmeLib = null;
+    // WR-01: resolveGhidraProject() (below, in the ghidra.analyze branch)
+    // RESERVES the run directory (creates it on disk) before buildHostToolArgv()'s
+    // own GHIDRA_HOME/launcher/language preflight checks ever run -- those checks
+    // can still fail for a completely ordinary, fixable reason (unset
+    // GHIDRA_HOME, processor not yet installed). Recorded here so the shared
+    // `!built.ok` check below can clean up the orphaned reservation rather than
+    // burning the runId permanently.
+    let ghidraReservedProjectLocation;
     if (request.tool === "acme.build") {
         const sourceResolved = resolveWorkspacePath(repoRootAbs, request.args.source);
         if (!sourceResolved.ok)
@@ -1315,6 +1323,7 @@ export async function runHostTool(raw, deps) {
         const projectResolved = resolveGhidraProject({ repoRoot: repoRootAbs, runId: request.args.runId });
         if (!projectResolved.ok)
             return { ok: false, message: projectResolved.message };
+        ghidraReservedProjectLocation = projectResolved.projectLocation;
         built = buildHostToolArgv(request, {
             importPath: importResolved.path,
             projectLocation: projectResolved.projectLocation,
@@ -1426,8 +1435,25 @@ export async function runHostTool(raw, deps) {
         }
         built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName });
     }
-    if (!built.ok)
+    if (!built.ok) {
+        // WR-01: buildHostToolArgv()'s own GHIDRA_HOME/launcher/language preflight
+        // checks can still fail here even though resolveGhidraProject() already
+        // reserved (created) the run directory above -- clean it up, best-effort,
+        // so a caller who retries the same runId after fixing the underlying
+        // problem (setting GHIDRA_HOME, running ghidra.installExtension) gets a
+        // fresh reservation instead of resolveGhidraProject()'s unrelated
+        // "refuses to reuse an existing run directory" refusal.
+        if (ghidraReservedProjectLocation !== undefined) {
+            try {
+                rmSync(ghidraReservedProjectLocation, { recursive: true, force: true });
+            }
+            catch {
+                // Best-effort only -- the original buildHostToolArgv() refusal below
+                // is always returned regardless of whether cleanup itself succeeded.
+            }
+        }
         return { ok: false, message: built.message };
+    }
     const timeoutMs = hostToolTimeoutMs(request.tool, deps.timeoutMs);
     const startedAt = Date.now();
     // acme.build only: inject the probed ACME library directory as the child's
