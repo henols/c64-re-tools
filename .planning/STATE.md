@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 35
 current_phase_name: dxa, Vendored and Parsed
 status: executing
-stopped_at: Completed 35-01-PLAN.md
-last_updated: "2026-09-04T10:08:04.784Z"
+stopped_at: Completed 35-02-PLAN.md
+last_updated: "2026-09-04T10:49:38.378Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 35 execution started
-state_head: 6c2a2a20d82d566668d862081cfc5afae47fde0c
+state_head: 8d05ecff9ab27216b0407480f441c10114cec1ea
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 28
-  completed_plans: 24
+  completed_plans: 25
   percent: 33
 ---
 
@@ -177,7 +177,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 35 (dxa, Vendored and Parsed) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -578,6 +578,7 @@ Last activity: 2026-09-04 — Phase 35 execution started
 | Phase 34-the-host-tool-execution-seam P09 | 27min | 3 tasks | 8 files |
 | Phase 34 P10 | 25min | 3 tasks | 3 files |
 | Phase 35 P01 | 55min | 3 tasks | 37 files |
+| Phase 35 P02 | 40min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1027,6 +1028,8 @@ Recent decisions affecting current work:
 - [Phase 34]: resolveWorkspacePath() now walks both the workspace root and the candidate through an ancestor-realpath walk (mirroring anno-types.ts's storePathWithinWorkspace()) and returns the real path, closing CR-05; the walk is duplicated locally in host-tool.mts (A-15) rather than imported, because host-tool.mts is host-bound and cannot reach a container-side .ts module, and pinned to its container-side twin by a cross-implementation equivalence test. — The returned path being real rather than lexical is load-bearing since it is exactly what reaches the spawn; the container-translation consequence on a symlinked workspace root is recorded as a limit (A-16) rather than widening hostpath.ts's closed consumer set.
 - [Phase 34]: 34-11 ran the full verification gate BEFORE editing any bookkeeping (module-family suites 158/158, ledger+confinement guards 55/55, typecheck/npm-packages/spawn-gate clean, test:automated 3270/3278 pass with the measured 2-in-1-file anno-register.test.ts floor, no regression), then in one commit moved the CR-05 todo to .planning/todos/completed/ with a Resolution and removed its Deferred Items row (9 -> 8 open), and appended docs/phase34-host-tool-seam-decisions.md's Part 4 CR-05 correction plus A-15/A-16. — WR-03's row and todo were deliberately left untouched (still Pending); SEAM-02's Complete marking in REQUIREMENTS.md was not re-scored, per the verifier's own written ruling.
 - [Phase 35]: Corrected the dxa.disassemble census total (7->12, not the plan's stated 7->11) and the vendored-binary path resolution (a two-candidate probe, since resources/host-tool.mjs and vendor/dxa/dxa are siblings, not nested) -- both required for the plan's own acceptance criteria to pass. — Verified against source: DXA-01's declared path-key enumeration (5 keys) plus the pre-existing 7 sums to 12.
+- [Phase 35]: 35-02: exported a new DumpRange type (beyond the plan's own enumerated artifact list) because both tasks' action text and acceptance criteria require a named, typed rendered range list
+- [Phase 35]: 35-02: overlapping-decode resolution uses a claims-collect-then-resolve pass so an address with more than one claim always becomes unclassified, agreeing or not, with no tie-break rule anywhere in the module
 
 ### Pending Todos
 
@@ -1838,8 +1841,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T10:08:04.406Z
-Stopped at: Completed 35-01-PLAN.md
+Last session: 2026-09-04T10:49:37.958Z
+Stopped at: Completed 35-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
