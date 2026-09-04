@@ -435,11 +435,11 @@ function hostToolFamilyProductionModules(dir: string = HERE): string[] {
 // two production modules plan 34-01 lands (`host-tool.mts`,
 // `host-tool-client.ts`) plus the one plan 34-03 lands (`ghidra-project.mts`);
 // `+ 2` is plan 35-01 (Phase 35), which lands `dxa-listing.ts` and
-// `dxa-run.ts`; `+ 1` is plan 35-03, which lands `dxa-partition.ts` (the
-// `dxa-` prefix matches `HOST_TOOL_FAMILY_RE` the moment it lands, so the
-// pinned-equals-measured companion test below is an equality, not a floor).
-// Verified against disk at this commit -- see the pinned-equals-measured
-// companion test immediately below.
+// `dxa-run.ts`; the second `+ 2` is plan 35-03's `dxa-partition.ts` plus plan
+// 35-04's `dxa-blocks.ts` (the `dxa-` prefix matches `HOST_TOOL_FAMILY_RE`
+// the moment each lands, so the pinned-equals-measured companion test below
+// is an equality, not a floor). Verified against disk at this commit -- see
+// the pinned-equals-measured companion test immediately below.
 //
 // MUST BE RAISED, NEVER LOWERED (D-13, read exactly the way
 // `ANNO_MODULE_FLOOR` above reads it), and MUST NEVER BE DERIVED FROM DISK:
@@ -448,7 +448,7 @@ function hostToolFamilyProductionModules(dir: string = HERE): string[] {
 // floor exists to provide. Keep it a hand-pinned integer literal. Cite
 // SEAM-06 and `34-RESEARCH.md`'s Pitfall 2 for why this floor exists at all
 // rather than widening `ANNO_MODULE_FLOOR`'s own `anno-` glob.
-const HOST_TOOL_FAMILY_FLOOR = 2 + 1 + 2 + 1;
+const HOST_TOOL_FAMILY_FLOOR = 2 + 1 + 2 + 2;
 
 test("the host-tool execution-seam module family (SEAM-06) is derived from disk with a non-vacuity floor, not a hard-coded list", () => {
   const modules = hostToolFamilyProductionModules();
