@@ -163,7 +163,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       from the source headers and this project supplies the GPL-2.0 text. Digest gate written
       **before** the fetch; `sha256` re-verified against Phase 23's pin byte-for-byte and the build
       reproduces the same binary digest
-- [ ] **DXA-02**: dxa's human-readable listing is parsed into a machine-readable code/data map, and
+- [x] **DXA-02**: dxa's human-readable listing is parsed into a machine-readable code/data map, and
       the parser's failure mode is a **refusal rather than a silent mis-parse** — dxa has no
       machine-readable output, so this parser is this project's to own and maintain, over the five
       measured line shapes of `-a dump`. **AMENDED** — the loud failure must come from **this project's parser,
@@ -416,7 +416,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEAM-06 | Phase 34 | Complete |
 | SEAM-07 | Phase 34 | Complete |
 | DXA-01 | Phase 35 | Complete |
-| DXA-02 | Phase 35 | Gaps Found |
+| DXA-02 | Phase 35 | Complete |
 | DXA-03 | Phase 35 | Complete |
 | DXA-04 | Phase 35 | Complete |
 | GHID-01 | Phase 36 | Pending |

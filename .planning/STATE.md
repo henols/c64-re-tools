@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
-current_phase: 35
-current_phase_name: dxa, Vendored and Parsed
-status: executing
-stopped_at: Completed 35-05-PLAN.md
-last_updated: "2026-09-04T12:02:47.307Z"
+current_phase: 36
+current_phase_name: The SLEIGH Language and the Ghidra Harness
+status: planning
+stopped_at: Phase 35 complete, ready to plan Phase 36
+last_updated: "2026-09-04T13:04:47.514Z"
 last_activity: 2026-09-04
-last_activity_desc: Phase 35 execution started
-state_head: 7feaa7f79177f35b1b0f215d8229114468fe20d2
+last_activity_desc: Phase 35 complete, transitioned to Phase 36
+state_head: 32b481b37265c92124e9a1e0a81681bfb4f180fb
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 28
   completed_plans: 28
-  percent: 33
+  percent: 50
 ---
 
 # Project State
@@ -176,8 +176,8 @@ the suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 35 (dxa, Vendored and Parsed) — EXECUTING
-Plan: 5 of 5
+Phase: 36 — The SLEIGH Language and the Ghidra Harness
+Plan: Not started
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -216,7 +216,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: Phase 35 EXECUTING — 5 plans in 4 waves, plan-checker passed; execution started 2026-09-04. Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Phase 35 COMPLETE — 5/5 plans across 4 waves, verified 5/5 must-haves. Verification ran twice: the first pass scored 4/5 and contested `DXA-02`'s "parser refusing by name" clause, since `A-04` had deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read rather than refuse, and both real anomalies found land inside the declared window so a refusal was unreachable by construction; the owner amended the criterion to "loud, never silent" (`cffc8056`) and re-verification passed 5/5, having independently reproduced both anomalies and established that `parseDumpListing()` has no silent disposition path at all. The code-review gate found and fixed a real BLOCKER (`CR-01`: unconfined local read/write I/O in `dxa-run.ts` that never crossed the host-tool seam) and a WARNING (`WR-01`: no integer check, so `NaN` emitted a corrupted `-B` line silently). Ready to plan Phase 36. Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
@@ -373,13 +373,13 @@ their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
 `anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase. **Phase 34 plan 34-01 update (2026-09-03):** the host-tool execution seam tracer is complete — the `host_tool` control op is wired end to end (broker-control.mts/vice-broker.mts/host-tool.mts/host-tool-client.ts), proven against real ACME with all seven VICE lease callbacks provably uncalled; see `.planning/phases/34-the-host-tool-execution-seam/34-01-SUMMARY.md`. Plan 34-02 is next.
-Last activity: 2026-09-04 — Phase 35 execution started
+Last activity: 2026-09-04 — Phase 35 complete, transitioned to Phase 36
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 296
+- Total plans completed: 301
 - Average duration: —
 - Total execution time: —
 
@@ -416,6 +416,7 @@ Last activity: 2026-09-04 — Phase 35 execution started
 | 32 | 21 | - | - |
 | 33 | 12 | - | - |
 | 34 | 11 | - | - |
+| 35 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -1849,7 +1850,7 @@ actually describe are separately tracked and were acknowledged above:
 ## Session Continuity
 
 Last session: 2026-09-04T12:02:47.076Z
-Stopped at: Completed 35-05-PLAN.md
+Stopped at: Phase 35 complete, ready to plan Phase 36
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md

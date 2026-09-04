@@ -453,7 +453,7 @@ or by none.
 
 - [x] **Phase 33: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)** - Launch nondeterminism pinned, a frame-exact stop that is a protocol rather than a mechanism, and a snapshot-sliced flat 64K — behind go / degrade / no-go rules committed to git before any measurement exists (completed 2026-09-03)
 - [x] **Phase 34: The Host-Tool Execution Seam** - Host binaries reached over a typed namespaced control op on the existing broker socket, with the two existing skill-script violations migrated so the ban on them can be written at all (completed 2026-09-04)
-- [ ] **Phase 35: dxa, Vendored and Parsed** - A raw C64 image in and a machine-readable code/data map out, from a dxa this project vendors and builds at a pinned version, behind a parser that is loud by name
+- [x] **Phase 35: dxa, Vendored and Parsed** - A raw C64 image in and a machine-readable code/data map out, from a dxa this project vendors and builds at a pinned version, behind a parser that is loud by name (completed 2026-09-04)
 - [ ] **Phase 36: The SLEIGH Language and the Ghidra Harness** - All 105 undocumented opcode bytes decodable under their own Ghidra language, and structural facts recovered through `DecompInterface` with hardware writes surviving the decompiler
 - [ ] **Phase 37: The Importer and the Automatic Annotation Join** - Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — declining with a reason rather than guessing
 - [ ] **Phase 38: PROOF-01..03 on Real Cracked Code** - The three measurements Phase 23 recorded `could-not-run`, taken on real cracked releases and stated beside the fixture figures rather than replacing them
@@ -1181,7 +1181,7 @@ in a milestone archive.
 | 32. The Deletion and the Grep Gate | v0.7.0 | 21/21 | Complete | 2026-09-01 |
 | 33. The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) | v0.8.0 | 12/12 | In Progress | - |
 | 34. The Host-Tool Execution Seam | v0.8.0 | 11/11 | Complete | 2026-09-04 |
-| 35. dxa, Vendored and Parsed | v0.8.0 | 5/5 | In Progress | - |
+| 35. dxa, Vendored and Parsed | v0.8.0 | 5/5 | Complete | 2026-09-04 |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 0/0 | Not started | - |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 0/0 | Not started | - |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 0/0 | Not started | - |
