@@ -893,26 +893,56 @@ test(
       const flatRelPath = generateFlat64kVariant(ws);
       const scriptDir = makeEditedVolatileCarveScriptDir(ws, "forced-conflict", FORCE_CONFLICT_EDIT);
       const exportRel = "forced-conflict-export.txt";
-      const result = await runGhidraAnalyze(
-        {
-          runId: "vol-forced-conflict",
-          importPath: flatRelPath,
-          processor: NMOS_LANGUAGE_ID,
-          importRoute: "flat64k",
-          noanalysis: true,
-          scriptPath: scriptDir,
-          preScript: join(scriptDir, "VolatileCarve.java"),
-          postScript: join(scriptDir, "GhidraStructExport.java"),
-          exportPath: exportRel,
+      const runId = "vol-forced-conflict";
+
+      // CR-01 fix: runGhidraAnalyze() now checks verdict.scriptThrew itself
+      // and rejects before ever returning a GhidraRunResult -- mirroring the
+      // GATE 1 fix above (this same file, "GATE 1" case). A thrown call
+      // yields no result, so the run log is reconstructed below from
+      // runId/GHIDRA_RUNS_DIR_NAME (the same technique GATE 1 uses) and the
+      // export path is reconstructed from exportRel, which was always
+      // workspace-relative and never depended on the return value. The
+      // exit-status assertion is preserved by reading it out of the
+      // rejection's own message, which embeds `response.exitStatus`
+      // (ghidra-run.ts:242) -- the only place that value is reachable once
+      // the call throws instead of returning a GhidraRunResult.
+      await assert.rejects(
+        () =>
+          runGhidraAnalyze(
+            {
+              runId,
+              importPath: flatRelPath,
+              processor: NMOS_LANGUAGE_ID,
+              importRoute: "flat64k",
+              noanalysis: true,
+              scriptPath: scriptDir,
+              preScript: join(scriptDir, "VolatileCarve.java"),
+              postScript: join(scriptDir, "GhidraStructExport.java"),
+              exportPath: exportRel,
+            },
+            { repoRoot: ws.root },
+          ),
+        (thrown: unknown) => {
+          const message = thrown instanceof Error ? thrown.message : String(thrown);
+          assert.match(
+            message,
+            /scriptThrew|a script threw during this run/i,
+            "runGhidraAnalyze must reject when the pre-script threw, never return a normal result",
+          );
+          // The exit status is recorded as evidence that it is UNINFORMATIVE,
+          // never a pass signal -- exactly like GATE 1 (plan 36-04).
+          assert.match(
+            message,
+            /exit status \(0\)/,
+            "analyzeHeadless's own exit status must be recorded as 0 even though the pre-script threw",
+          );
+          return true;
         },
-        { repoRoot: ws.root },
+        "runGhidraAnalyze must reject when the pre-script threw a genuine MemoryConflictException",
       );
 
-      // The exit status is recorded as evidence that it is UNINFORMATIVE,
-      // never a pass signal -- exactly like GATE 1 (plan 36-04).
-      assert.equal(result.exitStatus, 0, "analyzeHeadless's own exit status must be recorded as 0 even though the pre-script threw");
-
-      const logText = readFileSync(result.runLogPath, "utf8");
+      const runLogPath = join(ws.root, "tools", GHIDRA_RUNS_DIR_NAME, `${runId}.ghidra-run.log`);
+      const logText = readFileSync(runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
       assert.match(logText, /MemoryConflictException/, "the thrown exception must be the genuine memory-conflict type, not some other failure");
 
