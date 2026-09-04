@@ -222,7 +222,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### Opcode Coverage
 
-- [ ] **OPC-01**: All 105 opcode bytes stock Ghidra's `6502.slaspec` omits are decodable under a
+- [x] **OPC-01**: All 105 opcode bytes stock Ghidra's `6502.slaspec` omits are decodable under a
       SLEIGH extension. **AMENDED from "integrate and verify" to "FIX, COMPILE, integrate and
       verify"** — the carried claim that the source "already exists in full … this phase integrates
       and verifies it; it does not write it" is **FALSIFIED**. MEASURED twice independently against
@@ -233,7 +233,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       an explicit size. Fix verified (explicitly sized locals). A `sleigh` **compile gate** — exit 0
       **and** a produced `.sla` **and** an mtime newer than every input — is the earliest task in
       the phase
-- [ ] **OPC-02**: The electrically unstable opcodes (`XAA` `$8b`, immediate `LAX`/`LXA` `$ab`) and
+- [x] **OPC-02**: The electrically unstable opcodes (`XAA` `$8b`, immediate `LAX`/`LXA` `$ab`) and
       the page-crossing-dependent ones (`AHX`, `TAS`, `SHX`, `SHY`) are modelled as **declared
       unknowns** — opaque userops — rather than given plausible p-code, and loading `65c02.slaspec`
       in the same installation still yields **its** documented meanings for the bytes both claim. A
@@ -245,7 +245,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       sweep, with the before/after difference in decompiler output recorded. Sequenced **after**
       `OPC-01`'s compile gate and `OPC-04`'s language assertion, and **ahead of** `GHID-04`'s
       acceptance run, because crack and packer code is exactly where the 105-byte gap bites
-- [ ] **OPC-04**: *(new this milestone)* The extension is installed as its **own Ghidra language**
+- [x] **OPC-04**: *(new this milestone)* The extension is installed as its **own Ghidra language**
       with a new `.ldefs` `id`, the `-processor` change made in the **same commit**, and the phase's
       **first** criterion asserting the language **the run log says it used**. MEASURED silent failure
       this prevents: `6502.ldefs` declares only `6502:LE:16:default` and `65C02:LE:16:default`, every
@@ -424,10 +424,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | GHID-03 | Phase 36 | Complete |
 | GHID-04 | Phase 36 | Pending |
 | GHID-05 | Phase 36 | Pending |
-| OPC-01 | Phase 36 | Pending |
-| OPC-02 | Phase 36 | Pending |
+| OPC-01 | Phase 36 | Complete |
+| OPC-02 | Phase 36 | Complete |
 | OPC-03 | Phase 36 | Pending |
-| OPC-04 | Phase 36 | Pending |
+| OPC-04 | Phase 36 | Complete |
 | IMP-01 | Phase 37 | Pending |
 | IMP-02 | Phase 37 | Pending |
 | AUTO-01 | Phase 37 | Pending |

@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 36
 current_phase_name: The SLEIGH Language and the Ghidra Harness
 status: executing
-stopped_at: Completed 36-05-PLAN.md
-last_updated: "2026-09-04T18:47:38.975Z"
+stopped_at: Completed 36-06-PLAN.md
+last_updated: "2026-09-04T19:30:45.710Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 36 execution started
-state_head: ba9d873ad60d5c4c61f5e6022e7a7f48c34b6bf9
+state_head: 230b91b399482963c2d93bce2647fb73bd156d3a
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 35
-  completed_plans: 33
+  completed_plans: 34
   percent: 50
 ---
 
@@ -177,7 +177,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 36 (The SLEIGH Language and the Ghidra Harness) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -588,6 +588,7 @@ Last activity: 2026-09-04 — Phase 36 execution started
 | Phase 36 P03 | 31min | 3 tasks | 9 files |
 | Phase 36 P04 | 30min | 3 tasks | 5 files |
 | Phase 36 P05 | 48min | 3 tasks | 4 files |
+| Phase 36 P06 | 55min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1052,6 +1053,7 @@ Recent decisions affecting current work:
 - [Phase 36]: GHID-01's three gates (thrown-script exact literal with uninformative exit status; block-total classification count on both import routes; reproducibility plus a version-declared Ghidra prerequisite) were each observed firing on a real analyzeHeadless run against Ghidra 12.1.3 — Live proof was required before any later plan reads these gates as trustworthy instruments; recorded in evidence/36-04-three-gates.md
 - [Phase 36]: GhidraStructExport.java's ## REFERENCES section never reflects the volatile flag (MEASURED, byte-identical with/without); added an additive ## DECOMPILED_TEXT section as the actual site of the effect
 - [Phase 36]: fixtures/ghidra/README.md corrected: the .prg route's real entry point is $0812 not $0810 -- BinaryLoader does not strip the .prg header, shifting addresses two bytes later
+- [Phase 36]: 36-06: a documented RTS terminator is required in every synthetic opcode-sweep slot -- without one DecompInterface fails every seeded function outright — MEASURED live against real Ghidra 12.1.3: NOP-only padding lets fall-through disassembly run each seeded function off the end of the image with no discovered exit
 
 ### Pending Todos
 
@@ -1863,8 +1865,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T18:47:38.694Z
-Stopped at: Completed 36-05-PLAN.md
+Last session: 2026-09-04T19:30:45.426Z
+Stopped at: Completed 36-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
