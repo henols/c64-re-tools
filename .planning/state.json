@@ -191,7 +191,7 @@
     {
       "number": "35",
       "name": "dxa, Vendored and Parsed",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "36",
@@ -211,8 +211,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 35 of 6 · 33% · executing"
+    "label": "Advance to the next step (plan phase 36)",
+    "reason": "Phase 36 of 6 — needs a plan"
   },
-  "updated_at": "2026-09-04T09:13:38.256Z"
+  "updated_at": "2026-09-04T13:04:47.563Z"
 }
