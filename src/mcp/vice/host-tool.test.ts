@@ -1332,6 +1332,294 @@ test("runHostTool: an accepted in-workspace ghidra.analyze preScript reaches the
 });
 
 // ---------------------------------------------------------------------------
+// Phase 36, plan 36-02 (Task 3): the seven new fields' own refusal cases,
+// each asserting the refusal MESSAGE names the offending field -- not
+// merely `ok: false` (must_haves.truths).
+// ---------------------------------------------------------------------------
+
+const GHIDRA_ANALYZE_FIELD_REFUSAL_CASES: ReadonlyArray<{ name: string; args: Record<string, unknown>; messagePattern: RegExp }> = [
+  {
+    name: "importRoute absent",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default" },
+    messagePattern: /importRoute/,
+  },
+  {
+    name: 'importRoute a member outside the enum ("flat32k")',
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat32k" },
+    messagePattern: /importRoute/,
+  },
+  {
+    name: 'a "flat64k" route with a conflicting loaderBaseAddr ("0x801")',
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", loaderBaseAddr: "0x801" },
+    messagePattern: /loaderBaseAddr/,
+  },
+  {
+    name: "loaderBaseAddr carrying a shell-metacharacter payload",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", loaderBaseAddr: "0x0; rm -rf /" },
+    messagePattern: /loaderBaseAddr/,
+  },
+  {
+    name: "loaderBaseAddr carrying a command-substitution payload",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", loaderBaseAddr: "$(id)" },
+    messagePattern: /loaderBaseAddr/,
+  },
+  {
+    name: "loaderBaseAddr with an uppercase 0X prefix",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", loaderBaseAddr: "0X0" },
+    messagePattern: /loaderBaseAddr/,
+  },
+  {
+    name: 'noanalysis as a string ("true")',
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", noanalysis: "true" },
+    messagePattern: /noanalysis/,
+  },
+  {
+    name: "noanalysis as a number (1)",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", noanalysis: 1 },
+    messagePattern: /noanalysis/,
+  },
+  {
+    name: "expectedClassificationLines fractional (4887.5)",
+    args: {
+      runId: "r1",
+      importPath: "x.bin",
+      processor: "6502:LE:16:default",
+      importRoute: "flat64k",
+      postScript: "Post.java",
+      exportPath: "o.txt",
+      expectedClassificationLines: 4887.5,
+    },
+    messagePattern: /expectedClassificationLines/,
+  },
+  {
+    name: "expectedClassificationLines negative (-1)",
+    args: {
+      runId: "r1",
+      importPath: "x.bin",
+      processor: "6502:LE:16:default",
+      importRoute: "flat64k",
+      postScript: "Post.java",
+      exportPath: "o.txt",
+      expectedClassificationLines: -1,
+    },
+    messagePattern: /expectedClassificationLines/,
+  },
+  {
+    name: 'expectedClassificationLines as a string ("4887")',
+    args: {
+      runId: "r1",
+      importPath: "x.bin",
+      processor: "6502:LE:16:default",
+      importRoute: "flat64k",
+      postScript: "Post.java",
+      exportPath: "o.txt",
+      expectedClassificationLines: "4887",
+    },
+    messagePattern: /expectedClassificationLines/,
+  },
+  {
+    name: "entrypointsPath with no preScript",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", entrypointsPath: "e.txt" },
+    messagePattern: /entrypointsPath/,
+  },
+  {
+    name: "exportPath with no postScript",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", exportPath: "o.txt" },
+    messagePattern: /exportPath/,
+  },
+  {
+    name: "expectedClassificationLines with no exportPath",
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", postScript: "Post.java", expectedClassificationLines: 3 },
+    messagePattern: /expectedClassificationLines/,
+  },
+  {
+    name: "processor an empty string",
+    args: { runId: "r1", importPath: "x.bin", processor: "", importRoute: "flat64k" },
+    messagePattern: /processor/,
+  },
+  {
+    name: "processor a non-string (42)",
+    args: { runId: "r1", importPath: "x.bin", processor: 42, importRoute: "flat64k" },
+    messagePattern: /processor/,
+  },
+];
+
+test("normaliseHostToolRequest: every new ghidra.analyze field refusal names the offending field in its message", () => {
+  for (const { name, args, messagePattern } of GHIDRA_ANALYZE_FIELD_REFUSAL_CASES) {
+    const result = normaliseHostToolRequest({ tool: "ghidra.analyze", args });
+    assert.equal(result.ok, false, `case "${name}": expected a refusal`);
+    if (!result.ok) assert.match(result.message, messagePattern, `case "${name}": message must name the offending field`);
+  }
+});
+
+test("runHostTool: ghidra.analyze refuses a processor whose case differs from the installed declaration -- the preflight comparison is byte-exact and case-sensitive", async () => {
+  await withFakeGhidraHome(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID.toUpperCase(), importRoute: "flat64k" } },
+        { repoRoot: dir },
+      );
+      assert.equal(response.ok, false);
+      if (!response.ok) assert.match(response.message, /not declared by any installed Ghidra language/);
+    });
+  });
+});
+
+test("HOST_TOOL_ARG_KEYS/HOST_TOOL_PATH_ARG_KEYS: ghidra.analyze and ghidra.installExtension's own allowlist arrays contain exactly their documented members", () => {
+  assert.deepEqual(
+    [...HOST_TOOL_ARG_KEYS["ghidra.analyze"]].sort(),
+    [
+      "entrypointsPath",
+      "exportPath",
+      "expectedClassificationLines",
+      "importPath",
+      "importRoute",
+      "loaderBaseAddr",
+      "noanalysis",
+      "postScript",
+      "preScript",
+      "processor",
+      "runId",
+      "scriptPath",
+    ].sort(),
+  );
+  assert.deepEqual(
+    [...HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"]].sort(),
+    ["entrypointsPath", "exportPath", "importPath", "postScript", "preScript", "scriptPath"].sort(),
+  );
+  assert.deepEqual([...HOST_TOOL_ARG_KEYS["ghidra.installExtension"]].sort(), ["moduleName", "sourceDir"].sort());
+  assert.deepEqual([...HOST_TOOL_PATH_ARG_KEYS["ghidra.installExtension"]].sort(), ["sourceDir"]);
+});
+
+test("runHostTool: a scriptPath/entrypointsPath/exportPath reaching outside the workspace root through a symlink is refused, naming the resolved path and the root", async () => {
+  await withSymlinkFixture(async (ws, outside) => {
+    symlinkSync(outside, join(ws, "escape"), "dir");
+    writeFileSync(join(ws, "x.bin"), "tiny\n", "utf8");
+    const baseArgs = {
+      runId: "r1",
+      importPath: "x.bin",
+      processor: "6502:LE:16:default",
+      importRoute: "flat64k" as const,
+      preScript: "Pre.java",
+      postScript: "Post.java",
+    };
+    const escapedResolvedPath = join(outside, "x");
+    for (const key of ["scriptPath", "entrypointsPath", "exportPath"] as const) {
+      const response = await runHostTool({ tool: "ghidra.analyze", args: { ...baseArgs, [key]: "escape/x" } }, { repoRoot: ws });
+      assert.equal(response.ok, false, `${key}: expected a refusal`);
+      if (!response.ok) {
+        assert.match(response.message, /escapes the workspace root/, `${key}: must carry the workspace-escape wording`);
+        assert.ok(response.message.includes(escapedResolvedPath), `${key}: message must name the resolved (outside) path`);
+        assert.ok(response.message.includes(ws), `${key}: message must name the workspace root`);
+      }
+    }
+  });
+});
+
+test("runHostTool: a full ghidra.analyze invocation reports results[0] naming a file containing the stand-in's stdout line followed by its stderr line, with a byteLength equal to the file's size on disk; with exportPath supplied, results has a second entry digesting the export file", async () => {
+  await withTempDir(async (dir) => {
+    const previousGhidraHome = process.env.GHIDRA_HOME;
+    const supportDir = join(dir, "support");
+    mkdirSync(supportDir, { recursive: true });
+    const languagesDir = join(dir, "Ghidra", "Processors", "fake6502", "data", "languages");
+    mkdirSync(languagesDir, { recursive: true });
+    writeFileSync(
+      join(languagesDir, "fake6502.ldefs"),
+      `<?xml version="1.0" encoding="UTF-8"?>\n<language_definitions>\n  <language processor="fake" endian="little" size="16" variant="default" version="1.0" slafile="fake6502.sla" processorspec="fake6502.pspec" id="${FAKE_GHIDRA_HOME_LANGUAGE_ID}">\n    <description>fake</description>\n    <compiler name="default" spec="fake6502.cspec" id="default"/>\n  </language>\n</language_definitions>\n`,
+      "utf8",
+    );
+    writeFileSync(join(languagesDir, "fake6502.sla"), "", "utf8");
+
+    const knownStdoutLine = "KNOWN_STDOUT_LINE";
+    const knownStderrLine = "KNOWN_STDERR_LINE";
+    writeFileSync(
+      join(supportDir, "analyzeHeadless"),
+      [
+        "#!/usr/bin/env node",
+        'import { writeFileSync } from "node:fs";',
+        `process.stdout.write(${JSON.stringify(knownStdoutLine + "\n")});`,
+        `process.stderr.write(${JSON.stringify(knownStderrLine + "\n")});`,
+        "const argv = process.argv.slice(2);",
+        'const postIdx = argv.indexOf("-postScript");',
+        'if (postIdx !== -1) writeFileSync(argv[postIdx + 2], "export-file-contents");',
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(join(supportDir, "analyzeHeadless"), 0o755);
+    process.env.GHIDRA_HOME = dir;
+    try {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      writeFileSync(join(dir, "post.java"), "// post\n", "utf8");
+      const response = await runHostTool(
+        {
+          tool: "ghidra.analyze",
+          args: {
+            runId: "r-runlog",
+            importPath: "x.bin",
+            processor: FAKE_GHIDRA_HOME_LANGUAGE_ID,
+            importRoute: "flat64k",
+            postScript: "post.java",
+            exportPath: "exp.out",
+          },
+        },
+        { repoRoot: dir },
+      );
+      assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
+      if (!response.ok) return;
+      assert.equal(response.results.length, 2, "outputs[0] is the run log, outputs[1] is the export file when exportPath is supplied");
+      const runLogResult = response.results[0]!;
+      const runLogContents = readFileSync(runLogResult.path, "utf8");
+      const stdoutIdx = runLogContents.indexOf(knownStdoutLine);
+      const stderrIdx = runLogContents.indexOf(knownStderrLine);
+      assert.ok(stdoutIdx !== -1 && stderrIdx !== -1, "both lines must be present in the run log");
+      assert.ok(stdoutIdx < stderrIdx, "stdout must appear BEFORE stderr in the run log");
+      assert.equal(runLogResult.byteLength, statSync(runLogResult.path).size);
+      const exportResult = response.results[1]!;
+      assert.equal(readFileSync(exportResult.path, "utf8"), "export-file-contents");
+      assert.equal(exportResult.byteLength, statSync(exportResult.path).size);
+    } finally {
+      if (previousGhidraHome === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previousGhidraHome;
+    }
+  });
+});
+
+test("runHostTool: ghidra.analyze running twice with the SAME runId refuses the second time; two different run ids on the same image succeed both times and produce two distinct run-log paths", async () => {
+  await withFakeGhidraHome(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+      const first = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "idem-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+        { repoRoot: dir },
+      );
+      assert.equal(first.ok, true, first.ok ? "" : (first as { ok: false; message: string }).message);
+      const second = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "idem-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+        { repoRoot: dir },
+      );
+      assert.equal(second.ok, false, "the SAME run id must be refused the second time");
+
+      const thirdA = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "idem-run-a", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+        { repoRoot: dir },
+      );
+      const thirdB = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "idem-run-b", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+        { repoRoot: dir },
+      );
+      assert.equal(thirdA.ok, true);
+      assert.equal(thirdB.ok, true);
+      if (thirdA.ok && thirdB.ok && "results" in thirdA && "results" in thirdB) {
+        assert.notEqual(thirdA.results[0]?.path, thirdB.results[0]?.path, "two different run ids must produce two distinct run-log paths");
+      }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // oracle.probe / oracle.run -- CR-01 closure (34-08, Task 1). The wire key is
 // gone; the oracle's location is now decided HOST-SIDE by
 // resolveOracleCommand(), consulted by both branches. "unp64" below is the

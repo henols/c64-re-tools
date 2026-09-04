@@ -406,3 +406,220 @@ test("buildAnalyzeHeadlessArgv: is deterministic -- the same input yields two de
   const second = buildAnalyzeHeadlessArgv(input);
   assert.deepEqual(first, second);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 36, plan 36-02 (Task 3): the seven new fields' own second-layer
+// refusals in buildAnalyzeHeadlessArgv() itself -- independent of
+// host-tool.mts's own normaliseHostToolRequest() checks, exactly as the
+// processor/dot-segment/parent-segment re-checks already are -- plus the
+// full pinned argv for both import routes.
+// ---------------------------------------------------------------------------
+
+test('buildAnalyzeHeadlessArgv: refuses a "noanalysis" that is not a boolean, independently of host-tool.mts\'s own check', () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x0",
+    noanalysis: "true",
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /noanalysis/);
+});
+
+test('buildAnalyzeHeadlessArgv: refuses an "expectedClassificationLines" that is not a non-negative integer, independently of host-tool.mts\'s own check', () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x0",
+    postScript: "Post.java",
+    exportPath: "/repo/out.txt",
+    expectedClassificationLines: -1,
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /expectedClassificationLines/);
+});
+
+test('buildAnalyzeHeadlessArgv: refuses "entrypointsPath" without "preScript", independently of host-tool.mts\'s own check', () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x0",
+    entrypointsPath: "/repo/entry.txt",
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /entrypointsPath/);
+    assert.match(result.message, /preScript/);
+  }
+});
+
+test('buildAnalyzeHeadlessArgv: refuses "exportPath" without "postScript", independently of host-tool.mts\'s own check', () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x0",
+    exportPath: "/repo/out.txt",
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.match(result.message, /exportPath/);
+    assert.match(result.message, /postScript/);
+  }
+});
+
+test('buildAnalyzeHeadlessArgv: refuses "expectedClassificationLines" without "exportPath" -- it is the export script\'s own SECOND argument', () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x0",
+    postScript: "Post.java",
+    expectedClassificationLines: 3,
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /expectedClassificationLines/);
+});
+
+test('buildAnalyzeHeadlessArgv: refuses a "scriptPath"/"entrypointsPath"/"exportPath" containing a parent-directory segment, naming the field', () => {
+  for (const key of ["scriptPath", "entrypointsPath", "exportPath"] as const) {
+    const input: Record<string, unknown> = {
+      projectLocation: "/repo/tools/ghidra-runs/r1",
+      projectName: "r1",
+      importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+      processor: "6502:LE:16:nmos",
+      loaderBaseAddr: "0x0",
+    };
+    if (key === "entrypointsPath") input.preScript = "Pre.java";
+    if (key === "exportPath") input.postScript = "Post.java";
+    input[key] = "../escape";
+    const result = buildAnalyzeHeadlessArgv(input);
+    assert.equal(result.ok, false, `${key}: expected a refusal`);
+    if (!result.ok) {
+      assert.match(result.message, new RegExp(key), `${key}: message must name the field`);
+      assert.match(result.message, /parent-directory/, `${key}: message must name the parent-directory rule`);
+    }
+  }
+});
+
+test("buildAnalyzeHeadlessArgv: the full prg-route argv is pinned by deep equality against the expected literal array, and no entry contains a space", () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.prg",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x801",
+    noanalysis: true,
+    scriptPath: "/repo/scripts",
+    preScript: "VolatileCarve.java",
+    entrypointsPath: "/repo/entry.txt",
+    postScript: "GhidraStructExport.java",
+    exportPath: "/repo/out.txt",
+    expectedClassificationLines: 42,
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.argv, [
+    "/repo/tools/ghidra-runs/r1",
+    "r1",
+    "-import",
+    "/repo/tools/ghidra-runs/r1/input.prg",
+    "-processor",
+    "6502:LE:16:nmos",
+    "-loader",
+    "BinaryLoader",
+    "-loader-baseAddr",
+    "0x801",
+    "-noanalysis",
+    "-scriptPath",
+    "/repo/scripts",
+    "-preScript",
+    "VolatileCarve.java",
+    "/repo/entry.txt",
+    "-postScript",
+    "GhidraStructExport.java",
+    "/repo/out.txt",
+    "42",
+    "-deleteProject",
+  ]);
+  assert.ok(
+    result.argv.every((entry) => !entry.includes(" ")),
+    "no argv entry may contain a space character",
+  );
+  assert.equal(result.argv[result.argv.length - 1], "-deleteProject");
+});
+
+test("buildAnalyzeHeadlessArgv: the full flat64k-route argv is pinned by deep equality against the expected literal array, and no entry contains a space", () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r2",
+    projectName: "r2",
+    importPath: "/repo/tools/ghidra-runs/r2/input.bin",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x0",
+    noanalysis: true,
+    scriptPath: "/repo/scripts",
+    preScript: "VolatileCarve.java",
+    entrypointsPath: "/repo/entry.txt",
+    postScript: "GhidraStructExport.java",
+    exportPath: "/repo/out.txt",
+    expectedClassificationLines: 7,
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.argv, [
+    "/repo/tools/ghidra-runs/r2",
+    "r2",
+    "-import",
+    "/repo/tools/ghidra-runs/r2/input.bin",
+    "-processor",
+    "6502:LE:16:nmos",
+    "-loader",
+    "BinaryLoader",
+    "-loader-baseAddr",
+    "0x0",
+    "-noanalysis",
+    "-scriptPath",
+    "/repo/scripts",
+    "-preScript",
+    "VolatileCarve.java",
+    "/repo/entry.txt",
+    "-postScript",
+    "GhidraStructExport.java",
+    "/repo/out.txt",
+    "7",
+    "-deleteProject",
+  ]);
+  assert.ok(
+    result.argv.every((entry) => !entry.includes(" ")),
+    "no argv entry may contain a space character",
+  );
+  assert.equal(result.argv[result.argv.length - 1], "-deleteProject");
+});
+
+test("buildAnalyzeHeadlessArgv: is deterministic with every new field populated -- two calls with identical input return deeply equal argv arrays", () => {
+  const input = {
+    projectLocation: "/repo/tools/ghidra-runs/r3",
+    projectName: "r3",
+    importPath: "/repo/tools/ghidra-runs/r3/input.bin",
+    processor: "6502:LE:16:nmos",
+    loaderBaseAddr: "0x0",
+    noanalysis: true,
+    scriptPath: "/repo/scripts",
+    preScript: "Pre.java",
+    entrypointsPath: "/repo/entry.txt",
+    postScript: "Post.java",
+    exportPath: "/repo/out.txt",
+    expectedClassificationLines: 3,
+  };
+  const first = buildAnalyzeHeadlessArgv(input);
+  const second = buildAnalyzeHeadlessArgv(input);
+  assert.deepEqual(first, second);
+});
