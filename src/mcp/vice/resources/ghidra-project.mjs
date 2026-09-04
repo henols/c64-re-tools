@@ -129,15 +129,6 @@ export const GHIDRA_IMPORT_ROUTES = Object.freeze(["prg", "flat64k"]);
 export function importRouteBaseAddr(route) {
     return route === "flat64k" ? "0x0" : "0x801";
 }
-/** The canonical module name this project's own tooling and live tests
- * install the vendored SLEIGH extension under, via `ghidra.installExtension`
- * (`<GHIDRA_HOME>/Ghidra/Extensions/<this name>/`). Exported so no future
- * caller re-types the literal -- a wire request MAY name a different
- * `moduleName` (it is caller-supplied, validated against `RUN_ID_PATTERN`),
- * but this project's own tests and live-run scripts use this one value so
- * `installedLanguageIds()` (plan 36-02) finds a stable, predictable install
- * location across runs. */
-export const GHIDRA_EXTENSION_MODULE_NAME = "C64Undocumented6502";
 /** The three stock 6502-processor language files `6502_nmos.slaspec` and
  * `6502_nmos.ldefs` depend on (`@include "6502.slaspec"`, and `.ldefs`
  * `processorspec="6502.pspec"` / `compiler spec="6502.cspec"`) -- per
