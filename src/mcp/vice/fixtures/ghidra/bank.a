@@ -1,0 +1,29 @@
+; Banking fixture: the SAME address means different things under different $01.
+        * = $0801
+        !byte $0b,$08,$0a,$00,$9e,$32,$30,$36,$34,$00,$00,$00
+        * = $0810
+start:
+        lda #$37                ; default: BASIC in, KERNAL in, I/O in
+        sta $01
+        lda #$05
+        sta $d020               ; (A) I/O banked in  -> REAL border colour
+
+        sei
+        lda #$34                ; %00110100 : LORAM=0 HIRAM=0 CHAREN=0 -> ALL RAM
+        sta $01
+        lda #$aa
+        sta $d020               ; (B) I/O banked OUT -> plain RAM write, NOT border
+        lda $d020               ; (C) reads RAM, not the VIC register
+
+        lda #$33                ; %00110011 : CHAREN=0 -> Character ROM at $D000
+        sta $01
+        ldx #$00
+cpchar: lda $d000,x             ; (D) Character ROM, NOT sprite-0-X
+        sta $3000,x
+        inx
+        bne cpchar
+
+        lda #$37                ; restore
+        sta $01
+        cli
+        rts
