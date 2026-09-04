@@ -941,7 +941,7 @@ decompiler, and structural facts exported through `DecompInterface`.
   4. **The volatile-I/O carve is proven by disappearance, on both import routes.** Removing the flag from `$0000-$0001` / `$D000-$DFFF` makes hardware writes **vanish** from the reference dump — observed red on the `.prg` route **and** on the flat-64K route, because the conflict path is MEASURED route-dependent. A loader-owned block at the same address has the flag set on the **existing** block and is proven not to fall back to non-volatile through a swallowed `MemoryConflictException`.
   5. Structural facts no listing-level query can produce are exported through **`DecompInterface`** from a real binary — an array bound, the split-pointer `CONCAT11` idiom, a record stride, at least one resolved computed jump, at least one self-modifying write target — with cross-references carrying their **access kind** (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), per-function **attempted / decompiled / timedOut** accounting satisfying `attempted == decompiled + timedOut` under a committed timeout ceiling, and unresolved dispatch reported as a **count and a list with no denominator**. A committed control observes the same export routed through `DataTypeManager` returning essentially nothing, **on the same image** as the acceptance run.
 
-**Plans**: 2/7 plans executed
+**Plans**: 3/7 plans executed
 
 Plans:
 **Wave 1**
@@ -951,7 +951,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 36-02-PLAN.md — The full `ghidra.analyze` argv surface (`importRoute`, `loaderBaseAddr`, `noanalysis`, `scriptPath`, `entrypointsPath`, `exportPath`, `expectedClassificationLines`) plus the checked, non-materialising language preflight, with the hermetic seam census, path-confinement and idempotency cases
-- [ ] 36-03-PLAN.md — `VolatileCarve.java` and `GhidraStructExport.java` promoted and renamed for their function, the classification expectation fixed to the script's own block total, the `DecompInterface` walk with attempted/decompiled/timedOut accounting, and the hermetic exact-literal gate with the naive grep proven to false-fire
+- [x] 36-03-PLAN.md — `VolatileCarve.java` and `GhidraStructExport.java` promoted and renamed for their function, the classification expectation fixed to the script's own block total, the `DecompInterface` walk with attempted/decompiled/timedOut accounting, and the hermetic exact-literal gate with the naive grep proven to false-fire
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -1205,7 +1205,7 @@ in a milestone archive.
 | 33. The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) | v0.8.0 | 12/12 | In Progress | - |
 | 34. The Host-Tool Execution Seam | v0.8.0 | 11/11 | Complete | 2026-09-04 |
 | 35. dxa, Vendored and Parsed | v0.8.0 | 5/5 | Complete | 2026-09-04 |
-| 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 2/7 | In Progress | - |
+| 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 3/7 | In Progress | - |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 0/0 | Not started | - |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 0/0 | Not started | - |
 

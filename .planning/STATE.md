@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 36
 current_phase_name: The SLEIGH Language and the Ghidra Harness
 status: executing
-stopped_at: Completed 36-02-PLAN.md
-last_updated: "2026-09-04T17:00:46.545Z"
+stopped_at: Completed 36-03-PLAN.md
+last_updated: "2026-09-04T17:23:53.614Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 36 execution started
-state_head: afe852ba15c0f7008595c03adf88ad425dc50838
+state_head: d4e7cef0fdef2ee9e32ae5fe2a204a9022dc5f90
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 35
-  completed_plans: 30
+  completed_plans: 31
   percent: 50
 ---
 
@@ -177,7 +177,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 36 (The SLEIGH Language and the Ghidra Harness) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -585,6 +585,7 @@ Last activity: 2026-09-04 — Phase 36 execution started
 | Phase 35 P05 | 17 min | 3 tasks | 4 files |
 | Phase 36 P01 | 41min | 3 tasks | 14 files |
 | Phase 36 P02 | 35 min | 3 tasks | 6 files |
+| Phase 36 P03 | 31min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1045,6 +1046,7 @@ Recent decisions affecting current work:
 - [Phase 36]: classifyGhidraRunLog()'s classification-count question is provisional (generic labelled-number extraction) since the export script that will print those numbers does not exist until plan 36-03; that plan's own instructions anticipate recording a finding rather than editing ghidra-run.ts.
 - [Phase 36]: loaderBaseAddr is REQUIRED inside buildAnalyzeHeadlessArgv(), mirroring processor's own required/re-validated treatment; host-tool.mts always supplies a value (caller's own, or the route's own default).
 - [Phase 36]: expectedClassificationLines without exportPath is refused too, beyond the plan's literal wording -- without exportPath it would silently occupy the export script's argument-0 position instead of argument-1.
+- [Phase 36]: 36-03: GhidraStructExport.java's classification expectation is computed from mem.getBlocks() internally; script argument 1 only OVERRIDES that assertion, never replaces its normal source. — Lets the hermetic gate plant a deliberately wrong expectation and observe a real throw, while the normal path never trusts a caller-supplied number.
 
 ### Pending Todos
 
@@ -1856,8 +1858,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T17:00:46.272Z
-Stopped at: Completed 36-02-PLAN.md
+Last session: 2026-09-04T17:23:53.355Z
+Stopped at: Completed 36-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
