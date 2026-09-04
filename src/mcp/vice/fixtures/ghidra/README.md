@@ -176,3 +176,41 @@ GhidraStructExport.java> CLASSIFICATION_EXPECTED_FROM_BLOCKS: 572 (GhidraScript)
 GhidraStructExport.java> CLASSIFICATION_OBSERVED: 572 (GhidraScript)
 ERROR REPORT SCRIPT ERROR:  (HeadlessAnalyzer) java.lang.IllegalStateException: GhidraStructExport: exported 572 classification lines but expected 1 (block-total expectation=572). Refusing a short export.
 ```
+
+## Opcode sweep layout (36-06, `ghidra-opcode-live.test.ts`'s `generateOpcodeSweep()`)
+
+Not a committed fixture -- generated fresh into the caller's own scratch
+workspace on every call, never committed (D-36-17). Recorded here so the
+layout is readable without re-running the generator.
+
+**Rule:** on the flat-64K route, one byte of the tested set occupies its own
+fixed-size 4-byte slot at a computable address:
+
+```
+slot(i) address = baseAddr + i * 4          (i = 0, 1, 2, ... in the caller's own byte-array order)
+slot(i) byte 0   = the opcode under test
+slot(i) byte 1-2 = 0xEA (documented NOP filler)
+slot(i) byte 3   = 0x60 (documented RTS terminator)
+```
+
+`baseAddr` differs per task (`0x2000` for the full 105-byte sweep, `0x3000`
+for the six unstable/page-crossing representatives, `0x4000` for the
+15-byte 65C02 overlap set) so the three sweeps never collide inside the same
+64K image, though each is generated into its own separate image regardless.
+
+**Why a terminator, not just NOP filler.** MEASURED this plan: a slot with no
+terminator lets `analyzeAll()`'s own fall-through disassembly run each
+seeded "function" off the end of the image with no discovered exit --
+`DecompInterface` reports every one of them `DECOMPILE_FAILED` (0 decompiled
+of N attempted), so `## DECOMPILED_TEXT` carries nothing to check at all. A
+documented RTS ($60) at the LAST byte of each 4-byte slot bounds every
+slot's own function without ever overlapping the instruction itself: the
+longest undocumented instruction is 3 bytes (opcode + a 2-byte
+absolute/absolute-indexed operand -- every `UOP` addressing mode in the
+committed `.sinc` tops out there), so the terminator always lands on the one
+byte no instruction can reach. With the terminator present, every slot in
+every sweep this plan ran decompiled cleanly (0 failed, 0 timed out).
+
+Every slot also gets its own explicit entry point, written one hex address
+per line into the run's `entrypointsPath` file, so no slot's decode depends
+on fall-through from the slot before it.

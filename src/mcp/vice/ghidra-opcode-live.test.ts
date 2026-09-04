@@ -26,7 +26,7 @@
 // file with OPC-01/OPC-02/OPC-03's own live cases.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,6 +119,362 @@ test(
         // caught by the second assertion even if the first somehow was not.
         assert.notEqual(defaultResult.language.id, nmosResult.language.id, "the two runs must name two DIFFERENT languages");
         assert.equal((defaultResult.language.id as string) === (nmosResult.language.id as string), false);
+      }
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 36-06 (OPC-01, OPC-02, OPC-04): the opcode sweep. All 105 undocumented
+// bytes decode as code under `6502:LE:16:nmos`, the SAME assertion is
+// observed FAILING under `6502:LE:16:default` (criterion 1's second half --
+// this plan's own must_haves.key_links names plan 36-01's evidence file as
+// criterion 1's FIRST half), the six electrically-unstable/page-crossing
+// bytes decode to a form naming their own opaque operation rather than
+// plausible arithmetic (OPC-02), and the 15 bytes the stock 65C02 language
+// also claims keep ITS OWN meaning in the same installation (OPC-01's
+// adjacency question).
+//
+// D-36-15: the 105-byte set is DERIVED from the committed
+// `6502_undocumented.sinc` at test time -- never a hand-typed list -- via
+// the SAME `op=0x[0-9a-fA-F]{2}` extraction this plan's own shell `<verify>`
+// re-derives independently. D-36-17: the sweep image is GENERATED into the
+// caller's own scratch workspace on every call, never committed -- one byte
+// per fixed-size slot at a computable address (see
+// `fixtures/ghidra/README.md`'s own "Opcode sweep layout" section for the
+// same layout rule recorded for a reader with no reason to re-run this
+// file).
+//
+// A TERMINATOR MATTERS. MEASURED this plan: a sweep slot with NO terminator
+// byte lets `analyzeAll()`'s own fall-through disassembly run each "function"
+// off the end of the image with no discovered exit -- `DecompInterface`
+// reports every one of them DECOMPILE_FAILED (not timed out, FAILED), so
+// `## DECOMPILED_TEXT` carries nothing to check at all. A documented RTS
+// ($60, decodes identically under every language this file touches) at the
+// LAST byte of each 4-byte slot bounds every slot's own function without
+// ever overlapping the instruction itself -- the longest undocumented
+// instruction is 3 bytes (opcode + a 2-byte absolute/absolute-indexed
+// operand; every `UOP` addressing mode in the committed `.sinc` tops out
+// there), so the terminator always lands on the one byte no instruction can
+// reach.
+const UNDOCUMENTED_SINC_PATH = join(HERE, "vendor", "ghidra-ext", "data", "languages", "6502_undocumented.sinc");
+const UNDOCUMENTED_SINC_TEXT: string = readFileSync(UNDOCUMENTED_SINC_PATH, "utf8");
+
+/** Extracts every distinct `op=0x[0-9a-fA-F]{2}` byte value from `text`,
+ * lowercased and de-duplicated, sorted ascending -- the SAME derivation this
+ * plan's own shell `<verify>` re-runs independently as
+ * `grep -ao 'op=0x[0-9a-fA-F][0-9a-fA-F]' <file> | tr 'A-F' 'a-f' | sort -u`. */
+function opcodeBytesInText(text: string): number[] {
+  const bytes = new Set<number>();
+  for (const m of text.matchAll(/op=0x([0-9a-fA-F]{2})/g)) {
+    bytes.add(parseInt(m[1]!.toLowerCase(), 16));
+  }
+  return [...bytes].sort((a, b) => a - b);
+}
+
+/** The derived 105-byte set -- MEASURED at plan time (D-36-15) to be exactly
+ * 105 distinct bytes over the committed source; asserted as its own
+ * non-vacuity floor immediately below. */
+const UNDOCUMENTED_BYTE_SET: readonly number[] = opcodeBytesInText(UNDOCUMENTED_SINC_TEXT);
+
+interface ConstructorBlock {
+  mnemonic: string;
+  body: string;
+}
+
+/** Splits a SLEIGH source file into per-constructor blocks, keyed by the
+ * mnemonic named on the block's own header line. A block's body is every
+ * line up to (not including) the next header line or end of file -- this is
+ * what lets a MULTI-LINE `is op=0xNN | op=0xMM | ...` alternation (this
+ * project's own `.sinc` convention, e.g. the implied-NOP constructor) still
+ * associate every one of its op values with the block's own mnemonic, which
+ * a single-line-only scan would miss. Two header shapes are recognised via
+ * `headerPattern`: this project's own `:MNEMONIC ...` (a bare leading
+ * colon) and the stock 65C02 source's own `NN::MNEMONIC ...` (a table-row
+ * number then a double colon). */
+function splitConstructorBlocks(sourceText: string, headerPattern: RegExp): ConstructorBlock[] {
+  const blocks: ConstructorBlock[] = [];
+  let current: { mnemonic: string; lines: string[] } | undefined;
+  for (const line of sourceText.split("\n")) {
+    const m = headerPattern.exec(line);
+    if (m) {
+      if (current) blocks.push({ mnemonic: current.mnemonic, body: current.lines.join("\n") });
+      current = { mnemonic: m[1]!, lines: [line] };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  if (current) blocks.push({ mnemonic: current.mnemonic, body: current.lines.join("\n") });
+  return blocks;
+}
+
+const SINC_BLOCK_HEADER_PATTERN = /^:(\S+)/;
+const SINC_BLOCKS: readonly ConstructorBlock[] = splitConstructorBlocks(UNDOCUMENTED_SINC_TEXT, SINC_BLOCK_HEADER_PATTERN);
+
+test("the derived 105-byte set has exactly 105 distinct bytes, all in the 0x00-0xff range", () => {
+  assert.equal(
+    UNDOCUMENTED_BYTE_SET.length,
+    105,
+    `expected exactly 105 distinct opcode bytes derived from ${UNDOCUMENTED_SINC_PATH}, got ${UNDOCUMENTED_BYTE_SET.length}: ` +
+      UNDOCUMENTED_BYTE_SET.map((b) => "0x" + b.toString(16)).join(", "),
+  );
+  for (const b of UNDOCUMENTED_BYTE_SET) {
+    assert.ok(b >= 0 && b <= 0xff, `derived byte 0x${b.toString(16)} is out of the 0x00-0xff range`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The synthetic sweep generator (D-36-17) -- THE ONE PLACE this plan's sweep
+// images are built. Reused, unmodified, by all three tasks below: only the
+// byte list and the base address differ per call.
+// ---------------------------------------------------------------------------
+
+/** Bytes per slot: opcode + up to a 2-byte operand (the longest undocumented
+ * instruction) + a 1-byte RTS terminator, with zero bytes to spare -- see
+ * this section's own header comment for why a terminator is not optional. */
+const SWEEP_SLOT_SIZE = 4;
+/** Documented NOP ($EA) -- decodes identically, as a harmless 1-byte no-op,
+ * under every 6502-family language this file touches (stock 6502, 65C02,
+ * and this project's own nmos extension). Fills every slot byte the opcode
+ * and the terminator do not occupy. */
+const SWEEP_PADDING_BYTE = 0xea;
+/** Documented RTS ($60) -- bounds each slot's own "function" so
+ * `DecompInterface` has a real exit and never merges adjacent slots into one
+ * runaway, undecompilable function. See this section's own header comment
+ * for the MEASURED failure mode this fixes. */
+const SWEEP_TERMINATOR_BYTE = 0x60;
+
+interface SweepLayout {
+  /** The generated flat-64K image's own workspace-relative path. */
+  imagePath: string;
+  /** byte value -> its own slot's entry-point address, in the SAME order as
+   * the input `bytes` array (which every caller below builds already
+   * sorted, so insertion order here is ascending byte value). */
+  addressByByte: ReadonlyMap<number, number>;
+}
+
+/** Generates a flat-64K sweep image into `ws`'s own scratch root -- one byte
+ * per fixed-size `SWEEP_SLOT_SIZE`-byte slot, starting at `baseAddr`, never
+ * committed. See `fixtures/ghidra/README.md`'s own "Opcode sweep layout"
+ * section for the same rule recorded for a reader with no reason to re-run
+ * this generator. */
+function generateOpcodeSweep(ws: ScratchWorkspace, bytes: readonly number[], baseAddr: number, relImageName: string): SweepLayout {
+  const image = new Uint8Array(65536).fill(SWEEP_PADDING_BYTE);
+  const addressByByte = new Map<number, number>();
+  bytes.forEach((b, i) => {
+    const addr = baseAddr + i * SWEEP_SLOT_SIZE;
+    if (addr + SWEEP_SLOT_SIZE > 0x10000) {
+      throw new Error(`generateOpcodeSweep: a sweep of ${bytes.length} bytes at base 0x${baseAddr.toString(16)} runs past the end of the 64K address space`);
+    }
+    image[addr] = b;
+    image[addr + SWEEP_SLOT_SIZE - 1] = SWEEP_TERMINATOR_BYTE;
+    addressByByte.set(b, addr);
+  });
+  writeFileSync(join(ws.root, relImageName), image);
+  return { imagePath: relImageName, addressByByte };
+}
+
+/** Writes one hex address per line, workspace-relative -- matching
+ * `VolatileCarve.java`'s own `readEntryPoints()` format (an optional leading
+ * `$`, stripped before parsing). Addresses are written in `addressByByte`'s
+ * own insertion order (ascending byte value, since every caller below
+ * builds it from a sorted array), so each slot gets its own explicit entry
+ * point and no slot's decode depends on fall-through from the slot before
+ * it. */
+function writeSweepEntrypoints(ws: ScratchWorkspace, addressByByte: ReadonlyMap<number, number>, relName: string): string {
+  const lines = [...addressByByte.values()].map((a) => "$" + a.toString(16));
+  writeFileSync(join(ws.root, relName), lines.join("\n") + "\n");
+  return relName;
+}
+
+/** Extracts a named `## SECTION` block's own text (from its own header line
+ * up to, but not including, the NEXT `## ` header, or end of string) --
+ * generic over the export file's own fixed section order. Duplicated from
+ * `ghidra-live.test.ts`'s own identically-shaped helper (that file's own
+ * header states the "why a duplicate" rationale this file shares). */
+function extractSection(exportText: string, header: string): string {
+  const startIdx = exportText.indexOf(header);
+  assert.notEqual(startIdx, -1, `extractSection: ${JSON.stringify(header)} not found in export text`);
+  const afterHeader = exportText.slice(startIdx + header.length);
+  const nextHeaderIdx = afterHeader.indexOf("\n## ");
+  return nextHeaderIdx === -1 ? afterHeader : afterHeader.slice(0, nextHeaderIdx);
+}
+
+type ClassificationKind = "code" | "data" | "undef";
+
+/** Parses `## CLASSIFICATION`'s own `<address> code|data|undef` lines into
+ * an address-keyed map. The section's own trailing summary lines
+ * (`## CLASSIFICATION_LINES ...`, `CLASSIFICATION_EXPECTED_FROM_BLOCKS ...`)
+ * never match this pattern, so they are skipped without special-casing. */
+function parseClassificationByAddress(exportText: string): Map<number, ClassificationKind> {
+  const section = extractSection(exportText, "## CLASSIFICATION");
+  const map = new Map<number, ClassificationKind>();
+  for (const m of section.matchAll(/^([0-9a-fA-F]+)\s+(code|data|undef)\s*$/gm)) {
+    map.set(parseInt(m[1]!, 16), m[2] as ClassificationKind);
+  }
+  return map;
+}
+
+/** Extracts one `FUNCTION <address> <name>` block's own body (up to the next
+ * `FUNCTION ` line or end of the `## DECOMPILED_TEXT` section text passed
+ * in) -- `undefined` when no function was recorded at that address at all
+ * (e.g. DECOMPILE_FAILED). */
+function extractFunctionBody(decompiledText: string, address: number): string | undefined {
+  const marker = `FUNCTION ${address.toString(16)} `;
+  const idx = decompiledText.indexOf(marker);
+  if (idx === -1) return undefined;
+  const after = decompiledText.slice(idx);
+  const nextIdx = after.indexOf("\nFUNCTION ", 1);
+  return nextIdx === -1 ? after : after.slice(0, nextIdx);
+}
+
+/** THE ONE assertion helper for "did every byte in `requiredBytes` decode to
+ * code, per `observed`". Refuses (throws, never a vacuous silent pass) on
+ * either of two degenerate inputs -- T-36-31's own two mitigations:
+ *   - a zero-length `observed` map (nothing was even swept);
+ *   - an `observed` map that carries NONE of `requiredBytes` at all (the
+ *     sweep was scoped to the wrong bytes entirely).
+ * A check that only asked "did every byte the caller happened to pass
+ * decode" would accept either of these trivially -- this project's own
+ * must_haves.prohibitions names exactly that failure shape. */
+function assertSweepFullyDecodes(requiredBytes: ReadonlySet<number>, observed: ReadonlyMap<number, ClassificationKind>): void {
+  if (observed.size === 0) {
+    throw new Error("assertSweepFullyDecodes: refuses a zero-length sweep -- a vacuous pass would prove nothing");
+  }
+  const inScope = [...observed.keys()].filter((b) => requiredBytes.has(b));
+  if (inScope.length === 0) {
+    throw new Error("assertSweepFullyDecodes: refuses a sweep containing none of the required byte set -- nothing in scope to assert");
+  }
+  const failed = inScope.filter((b) => observed.get(b) !== "code");
+  if (failed.length > 0) {
+    throw new Error(
+      `assertSweepFullyDecodes: ${failed.length} of ${inScope.length} in-scope byte(s) did not decode to code: ` +
+        failed.map((b) => `0x${b.toString(16)}(${observed.get(b)})`).join(", "),
+    );
+  }
+}
+
+test("assertSweepFullyDecodes refuses a zero-length sweep rather than trivially passing", () => {
+  assert.throws(() => assertSweepFullyDecodes(new Set([0x02]), new Map()), /zero-length sweep/);
+});
+
+test("assertSweepFullyDecodes refuses a sweep containing none of the required bytes rather than trivially passing", () => {
+  const sweep = new Map<number, ClassificationKind>([[0xea, "code"]]); // documented NOP, not a member of the 105-byte set
+  assert.throws(() => assertSweepFullyDecodes(new Set([0x02, 0x8b]), sweep), /none of the required byte set/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 1: derive the 105-byte set, sweep it, and observe the stock language
+// failing (OPC-04 criterion 1's second half).
+// ---------------------------------------------------------------------------
+
+const TASK1_SWEEP_BASE_ADDR = 0x2000;
+
+/** Set by the nmos-language sweep case below, read by the stock-language
+ * case immediately after it (registration order, node:test's own default
+ * serial execution within one file) -- mirrors `ghidra-live.test.ts`'s own
+ * `gate2PrgObserved` pattern. */
+let opcodeSweepNmosObserved: Map<number, ClassificationKind> | undefined;
+
+test(
+  "ghidra-opcode-live SWEEP (nmos): all 105 undocumented opcode bytes decode as code under 6502:LE:16:nmos",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const layout = generateOpcodeSweep(ws, UNDOCUMENTED_BYTE_SET, TASK1_SWEEP_BASE_ADDR, "sweep105.bin");
+      const entrypointsRel = writeSweepEntrypoints(ws, layout.addressByByte, "sweep105-entrypoints.txt");
+      const exportRel = "sweep105-nmos-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "sweep105-nmos",
+          importPath: layout.imagePath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: entrypointsRel,
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const classification = parseClassificationByAddress(exportText);
+      const observed = new Map<number, ClassificationKind>();
+      for (const b of UNDOCUMENTED_BYTE_SET) {
+        observed.set(b, classification.get(layout.addressByByte.get(b)!) ?? "undef");
+      }
+
+      // This is the case that must SUCCEED -- the failure direction belongs
+      // to the stock-language case immediately below.
+      assertSweepFullyDecodes(new Set(UNDOCUMENTED_BYTE_SET), observed);
+
+      opcodeSweepNmosObserved = observed;
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-opcode-live SWEEP (stock 6502:LE:16:default): the SAME 105-byte assertion is observed FAILING -- criterion 1's second half",
+  { skip: SKIP_REASON },
+  async () => {
+    assert.notEqual(opcodeSweepNmosObserved, undefined, "the nmos-language sweep case must have run first and recorded its own observed map");
+    const ws = makeScratchWorkspace();
+    try {
+      const layout = generateOpcodeSweep(ws, UNDOCUMENTED_BYTE_SET, TASK1_SWEEP_BASE_ADDR, "sweep105.bin");
+      const entrypointsRel = writeSweepEntrypoints(ws, layout.addressByByte, "sweep105-entrypoints.txt");
+      const exportRel = "sweep105-default-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "sweep105-default",
+          importPath: layout.imagePath,
+          processor: DEFAULT_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: entrypointsRel,
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const classification = parseClassificationByAddress(exportText);
+      const observed = new Map<number, ClassificationKind>();
+      for (const b of UNDOCUMENTED_BYTE_SET) {
+        observed.set(b, classification.get(layout.addressByByte.get(b)!) ?? "undef");
+      }
+
+      // The case PASSES BECAUSE the stock language falls short: this call
+      // MUST throw. A stock language that decoded all 105 bytes would make
+      // this assert.throws() itself fail the whole case -- the shortfall is
+      // what the case asserts, never something it merely tolerates.
+      assert.throws(
+        () => assertSweepFullyDecodes(new Set(UNDOCUMENTED_BYTE_SET), observed),
+        /did not decode to code/,
+        "the 105-byte assertion must be observed FAILING under the stock language",
+      );
+
+      const undecodedBytes = UNDOCUMENTED_BYTE_SET.filter((b) => observed.get(b) !== "code");
+      assert.notEqual(undecodedBytes.length, 0, "at least one byte must fail to decode under the stock language");
+
+      for (const b of undecodedBytes) {
+        assert.equal(
+          opcodeSweepNmosObserved!.get(b),
+          "code",
+          `byte 0x${b.toString(16)} failed to decode under the stock language but must have decoded under nmos -- the two languages' verdicts must differ on it`,
+        );
       }
     } finally {
       removeScratchWorkspace(ws);
