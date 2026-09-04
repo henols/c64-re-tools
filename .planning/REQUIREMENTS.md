@@ -187,7 +187,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### Semantic Engine
 
-- [ ] **GHID-01**: Ghidra runs headless under this project's harness against a `.prg` or flat 64K
+- [x] **GHID-01**: Ghidra runs headless under this project's harness against a `.prg` or flat 64K
       image, given dxa's map as hints, reproducible from a committed script rather than a documented
       click-path. **AMENDED** — Ghidra becomes a **declared host prerequisite by version**: MEASURED,
       12.1.3 exists here only as an unpinned out-of-tree probe unpack at `/home/henrik/dev/_ghidra-probe/`,
@@ -419,7 +419,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DXA-02 | Phase 35 | Complete |
 | DXA-03 | Phase 35 | Complete |
 | DXA-04 | Phase 35 | Complete |
-| GHID-01 | Phase 36 | Pending |
+| GHID-01 | Phase 36 | Complete |
 | GHID-02 | Phase 36 | Pending |
 | GHID-03 | Phase 36 | Pending |
 | GHID-04 | Phase 36 | Pending |
