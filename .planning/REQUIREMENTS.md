@@ -155,7 +155,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### Discovery Engine
 
-- [ ] **DXA-01**: dxa is vendored at a pinned version with its GPLv2+ notice in
+- [x] **DXA-01**: dxa is vendored at a pinned version with its GPLv2+ notice in
       `THIRD-PARTY-NOTICES.md` and is built by this project rather than assumed present on `$PATH`.
       **AMENDED** — the vendored build is real work, not setup: MEASURED, dxa is **not installed
       anywhere on this host**, and the tarball contains **no `LICENSE`/`COPYING` file** (GPL-2.0-or-later
@@ -163,7 +163,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       from the source headers and this project supplies the GPL-2.0 text. Digest gate written
       **before** the fetch; `sha256` re-verified against Phase 23's pin byte-for-byte and the build
       reproduces the same binary digest
-- [ ] **DXA-02**: dxa's human-readable listing is parsed into a machine-readable code/data map, and
+- [x] **DXA-02**: dxa's human-readable listing is parsed into a machine-readable code/data map, and
       the parser's failure mode is a **refusal rather than a silent mis-parse** — dxa has no
       machine-readable output, so this parser is this project's to own and maintain, over the five
       measured line shapes of `-a dump`. **AMENDED** — the refusal must be **this project's parser
@@ -411,8 +411,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEAM-05 | Phase 34 | Complete |
 | SEAM-06 | Phase 34 | Complete |
 | SEAM-07 | Phase 34 | Complete |
-| DXA-01 | Phase 35 | Pending |
-| DXA-02 | Phase 35 | Pending |
+| DXA-01 | Phase 35 | Complete |
+| DXA-02 | Phase 35 | Complete |
 | DXA-03 | Phase 35 | Complete |
 | DXA-04 | Phase 35 | Complete |
 | GHID-01 | Phase 36 | Pending |
