@@ -1491,6 +1491,10 @@ const HOST_TOOL_ARG_KEYS_REMAINDER: Readonly<Record<string, readonly string[]>> 
   "ghidra.analyze": Object.freeze(["runId"]),
   "oracle.probe": Object.freeze([]),
   "oracle.run": Object.freeze([]),
+  // Phase 35, plan 35-01: `imageKind` is the one accepted key that is an
+  // enum, not a path -- the one key HOST_TOOL_PATH_ARG_KEYS["dxa.disassemble"]
+  // deliberately excludes.
+  "dxa.disassemble": Object.freeze(["imageKind"]),
 };
 
 /** A minimal, otherwise-valid `args` object per tool -- just enough for
@@ -1504,6 +1508,7 @@ const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string,
   "ghidra.analyze": () => ({ runId: "census-run", importPath: "x.bin" }),
   "oracle.probe": () => ({}),
   "oracle.run": () => ({ source: "a.bin" }),
+  "dxa.disassemble": () => ({ image: "x.prg", imageKind: "prg" }),
 };
 
 /** The include list needs a single-element ARRAY where every other declared
@@ -1544,7 +1549,10 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
     // NOR pinned shows up on the computed side only, reddening this.
     assert.deepEqual(computedRemainder, pinnedRemainder, `accepted-minus-path for "${tool}" must equal its pinned remainder in both directions`);
   }
-  assert.equal(totalDeclared, 7, "the declared path-key total across all tools must be 7 -- a different count means a key was added or dropped without updating this census");
+  // Phase 35, plan 35-01 raised this from 7 to 12: dxa.disassemble adds five
+  // declared path keys (image, entrypointsPath, datablocksPath, labelsPath,
+  // outDir).
+  assert.equal(totalDeclared, 12, "the declared path-key total across all tools must be 12 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -1573,8 +1581,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       }
       // Non-vacuity: the executed count is asserted against the declared
       // total, so an empty or short-circuited table cannot pass silently --
-      // a loop body that never ran would leave `executed` at 0.
-      assert.equal(totalDeclared, 7, "sanity: the declared path-key total must still be 7");
+      // a loop body that never ran would leave `executed` at 0. Phase 35,
+      // plan 35-01 raised this from 7 to 12 (dxa.disassemble's five path keys).
+      assert.equal(totalDeclared, 12, "sanity: the declared path-key total must still be 12");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {

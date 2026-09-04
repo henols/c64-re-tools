@@ -433,9 +433,10 @@ function hostToolFamilyProductionModules(dir: string = HERE): string[] {
 
 // THE VALUE IS A RELATION, not an unexplained measurement: `2 + 1` is the
 // two production modules plan 34-01 lands (`host-tool.mts`,
-// `host-tool-client.ts`) plus the one plan 34-03 lands (`ghidra-project.mts`).
-// Verified against disk at this commit -- see the pinned-equals-measured
-// companion test immediately below.
+// `host-tool-client.ts`) plus the one plan 34-03 lands (`ghidra-project.mts`);
+// `+ 2` is plan 35-01 (Phase 35), which lands `dxa-listing.ts` and
+// `dxa-run.ts`. Verified against disk at this commit -- see the
+// pinned-equals-measured companion test immediately below.
 //
 // MUST BE RAISED, NEVER LOWERED (D-13, read exactly the way
 // `ANNO_MODULE_FLOOR` above reads it), and MUST NEVER BE DERIVED FROM DISK:
@@ -444,7 +445,7 @@ function hostToolFamilyProductionModules(dir: string = HERE): string[] {
 // floor exists to provide. Keep it a hand-pinned integer literal. Cite
 // SEAM-06 and `34-RESEARCH.md`'s Pitfall 2 for why this floor exists at all
 // rather than widening `ANNO_MODULE_FLOOR`'s own `anno-` glob.
-const HOST_TOOL_FAMILY_FLOOR = 2 + 1;
+const HOST_TOOL_FAMILY_FLOOR = 2 + 1 + 2;
 
 test("the host-tool execution-seam module family (SEAM-06) is derived from disk with a non-vacuity floor, not a hard-coded list", () => {
   const modules = hostToolFamilyProductionModules();
@@ -483,11 +484,11 @@ test("SEAM-06: the hand-pinned host-tool-family floor equals the measured count 
   );
 });
 
-test("SEAM-06 positive control: the three real family modules plans 34-01 and 34-03 land are present in the derived set", () => {
+test("SEAM-06 positive control: the five real family modules plans 34-01, 34-03 and 35-01 land are present in the derived set", () => {
   // A control must name real, current files and never a module about to
   // stop existing (anno-store.ts's own role, above, mirrored here).
   const modules = hostToolFamilyProductionModules();
-  for (const name of ["host-tool.mts", "host-tool-client.ts", "ghidra-project.mts"]) {
+  for (const name of ["host-tool.mts", "host-tool-client.ts", "ghidra-project.mts", "dxa-listing.ts", "dxa-run.ts"]) {
     assert.ok(modules.includes(name), `${name} (SEAM-06's positive control) must be present in the derived host-tool-family module set`);
   }
 });
@@ -505,7 +506,9 @@ test("every DERIVED host-tool-family module is absent from the hostpath.ts consu
 });
 
 // NAMED ABSENCE BEFORE EXISTENCE: `ghidra-analyze.ts`/`ghidra-export.ts`
-// (Phase 36) and `dxa-listing.ts`/`dxa-run.ts` (Phase 35) do not exist yet.
+// (Phase 36) do not exist yet. `dxa-listing.ts`/`dxa-run.ts` (Phase 35,
+// plan 35-01) DO exist now -- moved to the positive control above, since a
+// module that has landed belongs there, not in a "before it exists" list.
 // The named-absence form is deliberate, mirroring the `anno-*` family's own
 // test above: the derived-set assertion alone goes red only AFTER a bad
 // import lands and says only "the set changed" -- this says WHICH module,
@@ -513,7 +516,7 @@ test("every DERIVED host-tool-family module is absent from the hostpath.ts consu
 // asserted before there is anything to violate it.
 test("future host-tool-family members are absent from the hostpath.ts consumer set, named before they exist (SEAM-06)", () => {
   const importers = hostpathImporters();
-  for (const name of ["ghidra-analyze.ts", "ghidra-export.ts", "dxa-listing.ts", "dxa-run.ts"]) {
+  for (const name of ["ghidra-analyze.ts", "ghidra-export.ts"]) {
     assert.equal(importers.includes(name), false, `${name} must not import hostpath.ts, whether or not it exists yet`);
   }
 });

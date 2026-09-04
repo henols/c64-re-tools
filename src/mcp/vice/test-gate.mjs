@@ -72,6 +72,16 @@
 // run unattended in CI. Like every sibling above it is default-SKIP
 // everywhere (opt in via VICE_LIVE_A4_FLOOD_BIN) and never hangs CI.
 //
+// This section's TENTH entry (Phase 35, plan 35-01, DXA-01/DXA-02) covers
+// dxa-live.test.ts: it drives dxa-run.ts's end-to-end path against a real,
+// locally-built dxa binary (vendor/dxa/dxa) -- a live test needs a built
+// dxa binary, which no CI runner has, so the manual-only set grew from nine
+// to ten rather than staying at nine. Like every sibling above it is
+// default-SKIP everywhere (opt in via VICE_LIVE_DXA=1) and never hangs CI;
+// unlike the emulator-spawning siblings above it, it spawns dxa (a
+// disassembler, not VICE) and asserts a MEASURED byte-level code/data map
+// rather than emulator state.
+//
 // STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
 // shape a manual-only live suite depends on MUST have a mirror assertion in
 // the automated set. A manual-only file is invisible to this gate by
@@ -89,8 +99,8 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact nine test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a tenth file needs the same
+/** The exact ten test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if an eleventh file needs the same
  * treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
@@ -102,6 +112,7 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "stock-broker-live.test.ts",
   "fork-live.test.ts",
   "stock-a4-checkpoint-flood.test.ts",
+  "dxa-live.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS

@@ -93,15 +93,23 @@
 // this module reaches them through the one place that owns them.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment } from "./ghidra-project.mjs";
+// Phase 35, plan 35-01 (A-01): this module's own directory, used ONLY to
+// compute the vendored dxa binary's fixed path. Never an environment-variable
+// override: dxa is vendored AND built by this project (unlike
+// ACME_BIN/GHIDRA_HOME, which name a HOST PREREQUISITE a user installs
+// anywhere), so an override could only ever select a binary this project did
+// not build and did not pin -- precisely what DXA-01 forbids.
+const HERE = dirname(fileURLToPath(import.meta.url));
 export const HOST_TOOL_IDS = Object.freeze([
     "acme.build",
     "ghidra.analyze",
     "oracle.probe",
     "oracle.run",
+    "dxa.disassemble",
 ]);
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
  * (the vsf-slice.mjs WR-04 idiom) so no prototype key can ever resolve to a
@@ -133,6 +141,10 @@ export const HOST_TOOL_ARG_KEYS = Object.freeze(Object.assign(Object.create(null
     // tool.
     "oracle.probe": Object.freeze([]),
     "oracle.run": Object.freeze(["source"]),
+    // Phase 35, plan 35-01: frozen exactly as the plan's own Task 1 item 5
+    // states -- five path-bearing keys plus the one enum key (`imageKind`),
+    // never re-derived from ResolvedDxaDisassemblePaths below.
+    "dxa.disassemble": Object.freeze(["image", "imageKind", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
 }));
 /** 34-08 (Task 3): the answer to ONE question -- which accepted argument
  * keys, per tool, name a filesystem path and therefore MUST pass
@@ -157,6 +169,10 @@ export const HOST_TOOL_PATH_ARG_KEYS = Object.freeze(Object.assign(Object.create
     "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript"]),
     "oracle.probe": Object.freeze([]),
     "oracle.run": Object.freeze(["source"]),
+    // `imageKind` is deliberately absent -- it is a two-member enum, not a
+    // path, and is the one key HOST_TOOL_ARG_KEYS_REMAINDER (host-tool.test.ts)
+    // classifies for this tool.
+    "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
 }));
 const HOST_TOOL_SHAPE = `an object with a "tool" field naming one of ${HOST_TOOL_IDS.map((t) => JSON.stringify(t)).join(", ")}, and an optional "args" object`;
 function isPlainObject(value) {
@@ -297,7 +313,49 @@ export function normaliseHostToolRequest(raw) {
         }
         return { ok: true, request: { tool, args: { source } } };
     }
-    // Unreachable while HOST_TOOL_IDS has exactly four members -- kept so a
+    if (tool === "dxa.disassemble") {
+        const image = argsObj.image;
+        if (typeof image !== "string" || image === "") {
+            return { ok: false, message: `host_tool "dxa.disassemble" requires a non-empty string "image"; got ${describe(image)}` };
+        }
+        const imageKindRaw = argsObj.imageKind;
+        // The enum is exact and case-sensitive -- "PRG" and "prg" never merge
+        // (must_haves.truths, 35-01-PLAN.md).
+        if (imageKindRaw !== "prg" && imageKindRaw !== "flat64k") {
+            return { ok: false, message: `host_tool "dxa.disassemble" args.imageKind must be "prg" or "flat64k"; got ${describe(imageKindRaw)}` };
+        }
+        const args = { image, imageKind: imageKindRaw };
+        if ("entrypointsPath" in argsObj) {
+            const entrypointsPath = argsObj.entrypointsPath;
+            if (typeof entrypointsPath !== "string" || entrypointsPath === "") {
+                return { ok: false, message: `host_tool "dxa.disassemble" args.entrypointsPath must be a non-empty string; got ${describe(entrypointsPath)}` };
+            }
+            args.entrypointsPath = entrypointsPath;
+        }
+        if ("datablocksPath" in argsObj) {
+            const datablocksPath = argsObj.datablocksPath;
+            if (typeof datablocksPath !== "string" || datablocksPath === "") {
+                return { ok: false, message: `host_tool "dxa.disassemble" args.datablocksPath must be a non-empty string; got ${describe(datablocksPath)}` };
+            }
+            args.datablocksPath = datablocksPath;
+        }
+        if ("labelsPath" in argsObj) {
+            const labelsPath = argsObj.labelsPath;
+            if (typeof labelsPath !== "string" || labelsPath === "") {
+                return { ok: false, message: `host_tool "dxa.disassemble" args.labelsPath must be a non-empty string; got ${describe(labelsPath)}` };
+            }
+            args.labelsPath = labelsPath;
+        }
+        if ("outDir" in argsObj) {
+            const outDir = argsObj.outDir;
+            if (typeof outDir !== "string" || outDir === "") {
+                return { ok: false, message: `host_tool "dxa.disassemble" args.outDir must be a non-empty string; got ${describe(outDir)}` };
+            }
+            args.outDir = outDir;
+        }
+        return { ok: true, request: { tool, args } };
+    }
+    // Unreachable while HOST_TOOL_IDS has exactly five members -- kept so a
     // future tool added to HOST_TOOL_IDS without a matching narrowing arm
     // fails loudly here rather than silently returning an under-typed request.
     return { ok: false, message: `normaliseHostToolRequest: no narrowing arm for tool "${tool}"` };
@@ -592,6 +650,47 @@ export function buildHostToolArgv(request, resolved) {
             return { ok: false, message: built.message };
         return { ok: true, toolPath: ghidraPath, argv: built.argv, outputs: [] };
     }
+    if (request.tool === "dxa.disassemble") {
+        const { args } = request;
+        const { imagePath, outDirPath, entrypointsPath, datablocksPath, labelsPath } = resolved;
+        // A-01: fixed, computed path -- never an env-var override (see the HERE
+        // and findDxaBinary() comments above). Refuses BY NAME when the vendored
+        // binary does not exist at EITHER candidate location, naming build.bash
+        // as the remedy, per PLAN.md item 6.
+        const dxaFound = findDxaBinary(HERE);
+        if (dxaFound.path === null) {
+            return {
+                ok: false,
+                message: `host_tool "dxa.disassemble" refuses: the vendored dxa binary does not exist (tried: ${dxaFound.tried.join(", ")}) -- run "bash vendor/dxa/build.bash build" to produce it`,
+            };
+        }
+        const dxaPath = dxaFound.path;
+        // Fixed flags first, in a fixed order (A-02): -g 0000 ONLY for a flat
+        // 64K capture, never for a .prg, whose own 2-byte load address dxa reads
+        // unassisted. Then -R/-B/-l for whichever optional resolved paths are
+        // present, in that order, then -a dump, then the resolved image path
+        // LAST. Deterministic: the same typed request and resolved paths yield a
+        // byte-identical argv array on two successive calls.
+        const argv = ["-p", "all-nmos6502", "-d", "skip-scanning", "-t", "detect-internal"];
+        if (args.imageKind === "flat64k")
+            argv.push("-g", "0000");
+        if (entrypointsPath !== undefined)
+            argv.push("-R", entrypointsPath);
+        if (datablocksPath !== undefined)
+            argv.push("-B", datablocksPath);
+        if (labelsPath !== undefined)
+            argv.push("-l", labelsPath);
+        argv.push("-a", "dump");
+        argv.push(imagePath);
+        // A-03: dxa has NO output-file option -- every listing line is
+        // fprintf(stdout, ...) (vendor/dxa/dump.c). The seam captures stdout and
+        // writes it to this single outputs[] path, then digests the FILE --
+        // never the dxa process's own exit status, which is not the pass/fail
+        // signal for a listing (must_haves.prohibitions).
+        const imageStem = basename(imagePath).replace(/\.[^./]+$/, "");
+        const listingPath = join(outDirPath, `${imageStem}.dxa-dump.lst`);
+        return { ok: true, toolPath: dxaPath, argv, outputs: [listingPath] };
+    }
     return { ok: false, message: `buildHostToolArgv: no argv builder for tool "${request.tool}"` };
 }
 // ---------------------------------------------------------------------------
@@ -635,6 +734,14 @@ export const HOST_TOOL_TIMEOUT_MS = Object.freeze(Object.assign(Object.create(nu
     "ghidra.analyze": 600_000,
     "oracle.probe": DEFAULT_HOST_TOOL_TIMEOUT_MS,
     "oracle.run": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    // Phase 35, plan 35-01 (A-05): DEFAULT_HOST_TOOL_TIMEOUT_MS, justified
+    // from a measurement rather than a round guess -- the pinned dxa
+    // disassembles a full 65,536-byte image in 21ms wall-clock (MEASURED),
+    // a 950x headroom against this 20s ceiling. host-tool-client.ts's
+    // request-deadline table gains NO entry for this tool, because
+    // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
+    // value -- the cross-seam ordering test stays satisfied by construction.
+    "dxa.disassemble": DEFAULT_HOST_TOOL_TIMEOUT_MS,
 }));
 /** The resolver every spawn site reads its budget from: an explicit
  * override (`deps.timeoutMs` -- the in-process test seam) always wins;
@@ -753,6 +860,29 @@ function spawnHostTool(toolPath, argv, timeoutMs, env) {
 /** The marker file used to validate a candidate ACME library directory --
  * the layout fact `acme.mjs`'s own troubleshooting hint names. */
 const ACME_LIB_MARKER = join("cbm", "c64", "vic.a");
+// ---------------------------------------------------------------------------
+// The vendored dxa binary probe (Phase 35, plan 35-01, A-01). This module
+// ships two ways: as unbuilt source (src/mcp/vice/host-tool.mts, HERE ==
+// src/mcp/vice/) and as the compiled artifact this project actually runs
+// (src/mcp/vice/resources/host-tool.mjs, HERE == src/mcp/vice/resources/).
+// ghidra-project.mjs's own sibling-ness to host-tool.mjs survives that move
+// because BOTH are compiled into resources/ together (build.ts's
+// HOST_BOUND_ARTIFACTS). vendor/dxa/dxa does NOT survive it -- it is a real
+// binary, never copied anywhere by build.ts, always at
+// src/mcp/vice/vendor/dxa/dxa. So "vendor/dxa/dxa relative to import.meta.url"
+// means two DIFFERENT candidate locations depending on which form of this
+// module is executing: same-directory for the unbuilt source, one level up
+// for the compiled artifact. Mirrors findAcmeLib()'s own "candidate list,
+// first existing wins" idiom, immediately below.
+// ---------------------------------------------------------------------------
+function findDxaBinary(here) {
+    const tried = [join(here, "vendor", "dxa", "dxa"), join(here, "..", "vendor", "dxa", "dxa")];
+    for (const candidate of tried) {
+        if (existsSync(candidate))
+            return { path: candidate, tried };
+    }
+    return { path: null, tried };
+}
 function findAcmeLib() {
     const tried = [];
     const candidates = [
@@ -831,12 +961,17 @@ export async function runHostTool(raw, deps) {
         built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath, includePaths });
         acmeLib = findAcmeLib();
     }
-    else {
-        // request.tool === "ghidra.analyze" -- the only other HOST_TOOL_IDS
-        // member. `importPath` is workspace-relative, resolved through the
-        // SAME resolveWorkspacePath() site acme.build's `source` uses; the
-        // project location itself comes from ghidra-project.mts's
-        // resolveGhidraProject() -- never computed here (A-06).
+    else if (request.tool === "ghidra.analyze") {
+        // Phase 35, plan 35-01: converted from the previous `if (acme.build) …
+        // else (ghidra.analyze)` shape into an explicit per-tool branch -- the
+        // `else`'s own comment claiming ghidra.analyze was the only remaining
+        // member stopped being true the moment dxa.disassemble (below) was
+        // added; leaving the implicit shape would have routed a
+        // dxa.disassemble request into Ghidra's own resolver. `importPath` is
+        // workspace-relative, resolved through the SAME resolveWorkspacePath()
+        // site acme.build's `source` uses; the project location itself comes
+        // from ghidra-project.mts's resolveGhidraProject() -- never computed
+        // here (A-06).
         const importResolved = resolveWorkspacePath(repoRootAbs, request.args.importPath);
         if (!importResolved.ok)
             return { ok: false, message: importResolved.message };
@@ -869,6 +1004,55 @@ export async function runHostTool(raw, deps) {
             postScriptPath,
         });
     }
+    else {
+        // request.tool === "dxa.disassemble" (35-01, item 7). `image` and each
+        // present optional path resolved through the SAME resolveWorkspacePath()
+        // site acme.build's `source` uses; `outDir` defaults to
+        // dirname(imagePath) exactly as acme.build's own default does. The
+        // FIRST refusal returns unchanged -- no partial-success degradation, no
+        // dropped key.
+        const imageResolved = resolveWorkspacePath(repoRootAbs, request.args.image);
+        if (!imageResolved.ok)
+            return { ok: false, message: imageResolved.message };
+        let outDirPath;
+        if (request.args.outDir !== undefined) {
+            const outDirResolved = resolveWorkspacePath(repoRootAbs, request.args.outDir);
+            if (!outDirResolved.ok)
+                return { ok: false, message: outDirResolved.message };
+            outDirPath = outDirResolved.path;
+        }
+        else {
+            outDirPath = dirname(imageResolved.path);
+        }
+        let entrypointsPath;
+        if (request.args.entrypointsPath !== undefined) {
+            const entrypointsResolved = resolveWorkspacePath(repoRootAbs, request.args.entrypointsPath);
+            if (!entrypointsResolved.ok)
+                return { ok: false, message: entrypointsResolved.message };
+            entrypointsPath = entrypointsResolved.path;
+        }
+        let datablocksPath;
+        if (request.args.datablocksPath !== undefined) {
+            const datablocksResolved = resolveWorkspacePath(repoRootAbs, request.args.datablocksPath);
+            if (!datablocksResolved.ok)
+                return { ok: false, message: datablocksResolved.message };
+            datablocksPath = datablocksResolved.path;
+        }
+        let labelsPath;
+        if (request.args.labelsPath !== undefined) {
+            const labelsResolved = resolveWorkspacePath(repoRootAbs, request.args.labelsPath);
+            if (!labelsResolved.ok)
+                return { ok: false, message: labelsResolved.message };
+            labelsPath = labelsResolved.path;
+        }
+        built = buildHostToolArgv(request, {
+            imagePath: imageResolved.path,
+            outDirPath,
+            entrypointsPath,
+            datablocksPath,
+            labelsPath,
+        });
+    }
     if (!built.ok)
         return { ok: false, message: built.message };
     const timeoutMs = hostToolTimeoutMs(request.tool, deps.timeoutMs);
@@ -890,6 +1074,23 @@ export async function runHostTool(raw, deps) {
         return { ok: false, message: `runHostTool: "${request.tool}" timed out after ${timeoutMs}ms and was killed` };
     }
     deps.log?.(`host_tool tool=${request.tool} exit=${spawnResult.exitCode ?? "null"} elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs}`);
+    // dxa.disassemble only (A-03): dxa has NO output-file option -- every
+    // listing line is fprintf(stdout, ...) (vendor/dxa/dump.c). Every other
+    // tool's outputs[] entries are already real files the child process wrote
+    // itself; this is the one tool whose "output" IS the captured stdout, so
+    // this is the one place that stdout is turned into a file before the
+    // digest loop below ever runs. No second spawn call is added.
+    if (request.tool === "dxa.disassemble" && built.outputs.length > 0) {
+        try {
+            writeFileSync(built.outputs[0], spawnResult.stdout, "utf8");
+        }
+        catch {
+            // Falls through to the digest loop below, whose digestOutputFile()
+            // returns null for a file that does not exist -- an empty results[]
+            // rather than a thrown error, consistent with this module's
+            // never-throw discipline.
+        }
+    }
     const results = [];
     for (const outputPath of built.outputs) {
         const digested = digestOutputFile(outputPath);
