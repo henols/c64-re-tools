@@ -1396,6 +1396,23 @@ export async function runHostTool(raw, deps) {
         const sourceDirResolved = resolveWorkspacePath(repoRootAbs, request.args.sourceDir);
         if (!sourceDirResolved.ok)
             return { ok: false, message: sourceDirResolved.message };
+        // WR-02: `sourceDir` is otherwise accepted as ANY workspace-relative
+        // directory and copied wholesale (via cpSync below) into
+        // `<GHIDRA_HOME>/Ghidra/Extensions/<moduleName>/` -- a shared, host-wide
+        // location outside this project's own workspace. Refuse by name unless
+        // it resolves to exactly this project's own vendored extension tree,
+        // mirroring the "checked, non-materialising preflight" discipline
+        // ghidra.analyze's own language check already applies (never a
+        // materialising fix, only a refusal).
+        const vendoredGhidraExtResolved = resolveWorkspacePath(repoRootAbs, join("src", "mcp", "vice", "vendor", "ghidra-ext"));
+        if (!vendoredGhidraExtResolved.ok || sourceDirResolved.path !== vendoredGhidraExtResolved.path) {
+            return {
+                ok: false,
+                message: `host_tool "ghidra.installExtension" refuses: "sourceDir" must resolve to this project's own vendored ` +
+                    `extension tree (src/mcp/vice/vendor/ghidra-ext), which is copied wholesale into a shared, host-wide Ghidra ` +
+                    `installation; got ${JSON.stringify(request.args.sourceDir)}, which resolves to ${sourceDirResolved.path}`,
+            };
+        }
         const ghidraHome = process.env.GHIDRA_HOME;
         if (ghidraHome === undefined || ghidraHome === "") {
             return {
