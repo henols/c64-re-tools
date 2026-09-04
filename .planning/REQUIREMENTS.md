@@ -172,7 +172,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       hand-planted malformed line; and overlapping decodes (`jsr` into a mid-instruction target) yield
       **unclassified with a stated reason**, never a winner, because a byte-per-address map
       structurally cannot represent them
-- [ ] **DXA-03**: Known-data ranges are handed to dxa as `-b` data blocks, so a caller can exclude
+- [x] **DXA-03**: Known-data ranges are handed to dxa as `-b` data blocks, so a caller can exclude
       graphics regions from discovery — with the store's existing 12-member vocabulary as the source
       and the `-B` / `-l` store-to-dxa emitters as the route
 - [x] **DXA-04**: *(new this milestone)* The ground-truth partition every dxa rate is measured against
@@ -413,7 +413,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEAM-07 | Phase 34 | Complete |
 | DXA-01 | Phase 35 | Pending |
 | DXA-02 | Phase 35 | Pending |
-| DXA-03 | Phase 35 | Pending |
+| DXA-03 | Phase 35 | Complete |
 | DXA-04 | Phase 35 | Complete |
 | GHID-01 | Phase 36 | Pending |
 | GHID-02 | Phase 36 | Pending |

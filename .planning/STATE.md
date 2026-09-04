@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 35
 current_phase_name: dxa, Vendored and Parsed
 status: executing
-stopped_at: Completed 35-03-PLAN.md
-last_updated: "2026-09-04T11:18:12.999Z"
+stopped_at: Completed 35-04-PLAN.md
+last_updated: "2026-09-04T11:43:30.943Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 35 execution started
-state_head: 13265d802cd8c97855eb2a21e50cfe295cafb275
+state_head: 294c07024f94cf4e15ab03d04d8074291c805636
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 28
-  completed_plans: 26
+  completed_plans: 27
   percent: 33
 ---
 
@@ -177,7 +177,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 35 (dxa, Vendored and Parsed) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -580,6 +580,7 @@ Last activity: 2026-09-04 — Phase 35 execution started
 | Phase 35 P01 | 55min | 3 tasks | 37 files |
 | Phase 35 P02 | 40min | 2 tasks | 2 files |
 | Phase 35 P03 | 55min | 3 tasks | 8 files |
+| Phase 35 P04 | 45min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1033,6 +1034,7 @@ Recent decisions affecting current work:
 - [Phase 35]: 35-02: overlapping-decode resolution uses a claims-collect-then-resolve pass so an address with more than one claim always becomes unclassified, agreeing or not, with no tie-break rule anywhere in the module
 - [Phase 35]: dxa-partition.ts's BASIC-stub link check validates against the terminator scan's actual next-line address, not merely forward-and-in-bounds, catching an off-by-one link as non-line-start — stricter than the plan's minimum text; prevents a corrupted stub from silently succeeding with a wrong certain-data span
 - [Phase 35]: Both ground-truth tiers print a self-referential composition rate (data as a fraction of what the tier itself can prove) rather than any comparison to dxa's own output — neither tier module imports dxa-listing.ts (T-35-13); a data-recovery-rate against dxa belongs to Phase 38
+- [Phase 35]: dxa-blocks.ts defines its own KnownDataRow type rather than importing anno-types.ts's RangeRow; DxaRunArgs.knownDataRows is mutually exclusive with datablocksPath/labelsPath — RangeRow carries no sym field; a caller merges range and label info before calling. Mutual exclusion mirrors host-tool.mts's own first-refusal-wins discipline.
 
 ### Pending Todos
 
@@ -1844,8 +1846,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T11:18:12.776Z
-Stopped at: Completed 35-03-PLAN.md
+Last session: 2026-09-04T11:43:30.700Z
+Stopped at: Completed 35-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
