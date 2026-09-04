@@ -60,7 +60,7 @@ coverage:
     requirement: "DXA-04"
     verification:
       - kind: unit
-        ref: "dxa-partition.test.ts (60 tests across all three tasks, all hermetic -- no ACME, no dxa, no VICE)"
+        ref: "dxa-partition.test.ts (34 tests across all three tasks, all hermetic -- no ACME, no dxa, no VICE)"
         status: pass
       - kind: unit
         ref: "hostpath-consumers.test.ts (SEAM-06 family-floor and absence checks at HOST_TOOL_FAMILY_FLOOR = 2+1+2+1)"
@@ -127,7 +127,7 @@ status: complete
 - A CLI (`node dxa-partition.ts <source-derived|byte-derived> <inputs...>`) makes the script runnable standalone, exiting non-zero with a usage message on a missing argument.
 - Committed four hermetic fixtures: `fixture.a` (copied unchanged from the Phase 23 evidence dir), `fixture.rep`/`fixture.prg` (generated once via a real, verified ACME 0.97 run -- `fixture.prg`'s sha256 is byte-identical to Phase 23's own), and `basic-stub.prg` (18 bytes, hand-built via `printf`, never retyped).
 - Raised `HOST_TOOL_FAMILY_FLOOR` to `2 + 1 + 2 + 1` in the same commit that landed `dxa-partition.ts`, and updated the SEAM-06 positive control to name it.
-- 60 new tests in `dxa-partition.test.ts`, all green, all hermetic (no ACME, no dxa, no VICE broker) -- the three task-3 CLI cases are the only ones that spawn a subprocess, and they spawn `dxa-partition.ts` itself via `process.execPath`.
+- 34 new tests in `dxa-partition.test.ts`, all green, all hermetic (no ACME, no dxa, no VICE broker) -- the three task-3 CLI cases are the only ones that spawn a subprocess, and they spawn `dxa-partition.ts` itself via `process.execPath`.
 
 ## Task Commits
 
@@ -143,7 +143,7 @@ Each task was committed atomically. The full module was implemented once, verifi
 ## Files Created/Modified
 
 - `src/mcp/vice/dxa-partition.ts` -- the two-tier ground-truth partition producer, `renderPartitionReport()`, and CLI entry point.
-- `src/mcp/vice/dxa-partition.test.ts` -- 60 tests across all three tasks.
+- `src/mcp/vice/dxa-partition.test.ts` -- 34 tests across all three tasks.
 - `src/mcp/vice/fixtures/dxa/fixture.a`, `fixture.rep`, `fixture.prg` -- the source-derived tier's committed, hermetic fixture.
 - `src/mcp/vice/fixtures/dxa/basic-stub.prg` -- the byte-derived tier's committed fixture (18 bytes: header + clean stub + non-BASIC tail).
 - `src/mcp/vice/fixtures/dxa/README.md` -- provenance for both new fixture groups (exact ACME command, version, date, per-file sha256; the hand-built stub's byte layout).
