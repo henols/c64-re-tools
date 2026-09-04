@@ -1,0 +1,140 @@
+
+; ******** Source: fixture.a
+     1                          ; Synthetic C64 fixture exercising exactly the constructs the workflow doc
+     2                          ; claims as its payoff. Every one is a known-hard static-analysis case.
+     3                                  * = $0801
+     4                          ; BASIC stub: 2064 SYS
+     5  0801 0b080a009e323036...        !byte $0b,$08,$0a,$00,$9e,$32,$30,$36,$34,$00,$00,$00
+     6                          
+     7                                  * = $0810
+     8                          start:
+     9  0810 a900                       lda #$00
+    10  0812 8d20d0                     sta $d020               ; hardware write
+    11  0815 a200                       ldx #$00
+    12                          loop_arr:
+    13  0817 bdbf08                     lda arr_src,x           ; indexed array, X bounded by cpx #$20
+    14  081a 9ddf08                     sta arr_dst,x
+    15  081d e8                         inx
+    16  081e e020                       cpx #$20
+    17  0820 d0f5                       bne loop_arr
+    18                          
+    19                          ; --- dispatch via JMP (ptr) built from a split table ---
+    20  0822 a202                       ldx #$02
+    21  0824 bdab08                     lda disp_lo,x
+    22  0827 85fb                       sta $fb
+    23  0829 bdae08                     lda disp_hi,x
+    24  082c 85fc                       sta $fc
+    25  082e 6cfb00                     jmp ($fb)
+    26                          
+    27                          ; --- RTS-trick dispatch (off-by-one targets) ---
+    28                          rts_dispatch:
+    29  0831 a201                       ldx #$01
+    30  0833 bdb408                     lda rts_hi,x
+    31  0836 48                         pha
+    32  0837 bdb108                     lda rts_lo,x
+    33  083a 48                         pha
+    34  083b 60                         rts
+    35                          
+    36                          ; --- record array, stride 5 ---
+    37                          obj_update:
+    38  083c a200                       ldx #$00
+    39                          obj_loop:
+    40  083e bdff08                     lda objs+0,x
+    41  0841 f013                       beq obj_next
+    42  0843 bd0009                     lda objs+1,x
+    43  0846 18                         clc
+    44  0847 7d0209                     adc objs+3,x
+    45  084a 9d0009                     sta objs+1,x
+    46  084d bd0109                     lda objs+2,x
+    47  0850 7d0309                     adc objs+4,x
+    48  0853 9d0109                     sta objs+2,x
+    49                          obj_next:
+    50  0856 8a                         txa
+    51  0857 18                         clc
+    52  0858 6905                       adc #$05
+    53  085a aa                         tax
+    54  085b e019                       cpx #$19
+    55  085d d0df                       bne obj_loop
+    56  085f 60                         rts
+    57                          
+    58                          ; --- inline parameters after JSR (the classic da65 PARAMSIZE case) ---
+    59  0860 207108                     jsr print
+    60  0863 48454c4c4f                 !text "HELLO"
+    61  0868 00                         !byte $00
+    62  0869 207108                     jsr print
+    63  086c 425945                     !text "BYE"
+    64  086f 00                         !byte $00
+    65  0870 60                         rts
+    66                          
+    67                          print:
+    68  0871 68                         pla
+    69  0872 85fd                       sta $fd
+    70  0874 68                         pla
+    71  0875 85fe                       sta $fe
+    72  0877 a001                       ldy #$01
+    73                          pr_loop:
+    74  0879 b1fd                       lda ($fd),y
+    75  087b f006                       beq pr_done
+    76  087d 20d2ff                     jsr $ffd2
+    77  0880 c8                         iny
+    78  0881 d0f6                       bne pr_loop
+    79                          pr_done:
+    80  0883 98                         tya
+    81  0884 18                         clc
+    82  0885 65fd                       adc $fd
+    83  0887 85fd                       sta $fd
+    84  0889 a5fe                       lda $fe
+    85  088b 6900                       adc #$00
+    86  088d 48                         pha
+    87  088e a5fd                       lda $fd
+    88  0890 48                         pha
+    89  0891 60                         rts
+    90                          
+    91                          ; --- three dispatch targets ---
+    92                          handler0:
+    93  0892 ee21d0                     inc $d021
+    94  0895 60                         rts
+    95                          handler1:
+    96  0896 ce21d0                     dec $d021
+    97  0899 60                         rts
+    98                          handler2:
+    99  089a a907                       lda #$07
+   100  089c 8d21d0                     sta $d021
+   101  089f 60                         rts
+   102                          
+   103                          ; --- self-modifying code: patch an operand at runtime ---
+   104                          smc_setup:
+   105  08a0 a9aa                       lda #$aa
+   106  08a2 8da608                     sta smc_target+1        ; writes INTO a Code block
+   107                          smc_target:
+   108  08a5 a900                       lda #$00
+   109  08a7 8d0004                     sta $0400
+   110  08aa 60                         rts
+   111                          
+   112                          ; ============ DATA ============
+   113                          disp_lo:
+   114  08ab 92969a                     !byte <handler0, <handler1, <handler2
+   115                          disp_hi:
+   116  08ae 080808                     !byte >handler0, >handler1, >handler2
+   117                          
+   118                          rts_lo:
+   119  08b1 919599                     !byte <(handler0-1), <(handler1-1), <(handler2-1)
+   120                          rts_hi:
+   121  08b4 080808                     !byte >(handler0-1), >(handler1-1), >(handler2-1)
+   122                          
+   123                          ; full address table (little-endian words)
+   124                          addrtab:
+   125  08b7 920896089a087108           !word handler0, handler1, handler2, print
+   126                          
+   127                          arr_src:
+   128  08bf 0001020304050607...        !byte 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+   129  08cf 1011121314151617...        !byte 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+   130                          arr_dst:
+   131  08df 0000000000000000...        !fill $20, $00
+   132                          
+   133                          objs:
+   134  08ff 0110000100                 !byte $01,$10,$00,$01,$00
+   135  0904 012000ffff                 !byte $01,$20,$00,$ff,$ff
+   136  0909 0130000200                 !byte $01,$30,$00,$02,$00
+   137  090e 0000000000                 !byte $00,$00,$00,$00,$00
+   138  0913 0000000000                 !byte $00,$00,$00,$00,$00
