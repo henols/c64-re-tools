@@ -1,10 +1,19 @@
 ---
 phase: 36-the-sleigh-language-and-the-ghidra-harness
 verified: 2026-09-04T22:00:43Z
-status: human_needed
-score: 3/5 roadmap success criteria fully verified with no reservations; 2/5 criteria have their core mechanism confirmed, each gated on a human scope decision
+status: passed
+score: 5/5 roadmap success criteria satisfied — 3/5 fully verified with no reservations; 2/5 core mechanism verified and closed by accepted owner overrides (see `overrides` below)
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 2
+overrides:
+  - must_have: "GHID-03: the swallowed-MemoryConflictException control is observed red on both import routes"
+    reason: "bank.prg is too small to reach the I/O page at the .prg route's default load address; flat64k is the only route on which a loader-owned-block conflict is naturally reachable with this fixture"
+    accepted_by: "Henrik Olsson"
+    accepted_at: "2026-09-05T00:00:00Z"
+  - must_have: "ROADMAP SC5: at least one resolved computed jump is exported from a real binary"
+    reason: "The only real corpus available (danish.d64, cross-verified against saeger.d64) contains no resolved computed jump at the entry points this phase's harness reaches; every computed transfer is the BRK trick through the unresolvable hardware IRQ vector, correctly reported as unresolved dispatch instead"
+    accepted_by: "Henrik Olsson"
+    accepted_at: "2026-09-05T00:00:00Z"
 re_verification:
   previous_status: gaps_found
   previous_score: "4/5 roadmap success criteria fully verified; 1 criterion partially verified with a live-reproducible regression"
@@ -191,7 +200,24 @@ to Phase 36, and all 9 appear in at least one plan's declared `requirements` fie
 None. No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers in any file this phase
 created or modified, including the gap-closure diff itself. No stub return patterns.
 
-## Human Verification Required
+## Human Verification Required — RESOLVED: both accepted as overrides
+
+**Owner decision, 2026-09-05 (Henrik Olsson): both items below were reviewed and accepted as
+overrides.** The `overrides:` block in this file's frontmatter carries the accepted wording
+verbatim, and `overrides_applied: 2`. Neither item was a code defect; both are measured,
+cross-verified limitations of the available fixture and corpus, disclosed by the executors
+in their own SUMMARYs rather than discovered afterwards.
+
+What each override commits the project to stating, plainly:
+
+- **Item 1** — `GHID-03`'s swallowed-`MemoryConflictException` control is proven on the
+  `flat64k` route only, not on `.prg`.
+- **Item 2** — Criterion 5 ships with four of its five structural facts recovered from real
+  code; the fifth (a resolved computed jump), together with `ARRAY_BOUND` and
+  `RECORD_STRIDE`, is recorded as **absent from the corpus reached**, not as exported.
+
+The two items' original analysis is retained below, unedited, as the record of what was
+decided and on what evidence.
 
 Both items below are **carried forward unchanged** from the previous pass — the gap closure
 did not touch either, and my judgement on each is unchanged.
