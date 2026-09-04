@@ -191,4 +191,115 @@ language actually used -- is plan 36-01's own `evidence/36-01-language-used.md`.
 This Part is the second half: the SAME 105-byte assertion, run against the
 identical sweep, observed FAILING under the stock language.
 
+## Part 2 -- the six unstable/page-crossing bytes decode to a declared unknown, never plausible arithmetic
+
+Sweep base `$3000`, one representative byte per declared pcodeop (source
+order: `unstableXAA`, `unstableLAXImmediate`, `unstableAHXStore`,
+`unstableTASStore`, `unstableSHXStore`, `unstableSHYStore`), each derived
+from the committed `.sinc` by `findRepresentativeBytes()` -- the FIRST
+constructor (source order) whose body calls the pcodeop. `unstableAHXStore`
+is referenced by two constructors (`$93`, `(zp),Y`, and `$9f`, `abs,Y`);
+`$93` is the one picked, since it appears first in the source.
+
+| pcodeop | byte | mnemonic | address |
+|---|---|---|---|
+| unstableXAA | $8b | XAA | $3000 |
+| unstableLAXImmediate | $ab | LAX | $3004 |
+| unstableAHXStore | $93 | AHX | $3008 |
+| unstableTASStore | $9b | TAS | $300c |
+| unstableSHXStore | $9e | SHX | $3010 |
+| unstableSHYStore | $9c | SHY | $3014 |
+
+Run under `6502:LE:16:nmos` only (this task is about proving OUR extension's
+own opaque-operation contract; the stock language has no constructor for any
+of these six bytes at all). All six decompiled cleanly (0 failed, 0 timed
+out) -- MEASURED only after the RTS terminator was added to the sweep
+generator (see Part 1's own note and `fixtures/ghidra/README.md`); without
+one, `DECOMPILE_FAILED` was 6 of 6 (see below).
+
+**All six decoded forms, verbatim, from `## DECOMPILED_TEXT`:**
+
+```c
+FUNCTION 3000 FUN_3000
+undefined1 FUN_3000(undefined1 param_1,undefined1 param_2)
+{
+  undefined1 uVar1;
+  uVar1 = unstableXAA(param_1,param_2,0xea);
+  return uVar1;
+}
+
+FUNCTION 3004 FUN_3004
+undefined1 FUN_3004(undefined1 param_1)
+{
+  undefined1 uVar1;
+  uVar1 = unstableLAXImmediate(param_1,0xea);
+  return uVar1;
+}
+
+FUNCTION 3008 FUN_3008
+void FUN_3008(undefined1 param_1,undefined1 param_2,byte param_3)
+{
+  undefined1 uVar1;
+  uVar1 = unstableAHXStore(param_1,param_2,CONCAT11(DAT_00eb,DAT_00ea),param_3);
+  *(undefined1 *)(CONCAT11(DAT_00eb,DAT_00ea) + (ushort)param_3) = uVar1;
+  return;
+}
+
+FUNCTION 300c FUN_300c
+void FUN_300c(byte param_1,byte param_2,byte param_3)
+{
+  undefined1 uVar1;
+  uVar1 = unstableTASStore(param_1 & param_2,0xeaea,param_3);
+  (&LAB_eaea)[param_3] = uVar1;
+  return;
+}
+
+FUNCTION 3010 FUN_3010
+void FUN_3010(undefined1 param_1,byte param_2)
+{
+  undefined1 uVar1;
+  uVar1 = unstableSHXStore(param_1,0xeaea,param_2);
+  (&LAB_eaea)[param_2] = uVar1;
+  return;
+}
+
+FUNCTION 3014 FUN_3014
+void FUN_3014(byte param_1,undefined1 param_2)
+{
+  undefined1 uVar1;
+  uVar1 = unstableSHYStore(param_2,0xeaea,param_1);
+  (&LAB_eaea)[param_1] = uVar1;
+  return;
+}
+```
+
+Every one of the six calls its own source-declared pcodeop by name, and in
+every case the call's own return value (`uVar1`) is what flows DIRECTLY to
+the destination -- a bare `return uVar1;` for the two register-producing
+operations (XAA, immediate LAX), a bare `... = uVar1;` pointer/array store
+for the four store-producing operations (AHX, TAS, SHX, SHY). No arithmetic
+operator ever appears between the call and its own destination.
+
+**What a plausible-p-code outcome would have looked like, and why it would
+be worse.** If these six constructors had instead implemented deterministic
+arithmetic (as the OTHER 99 undocumented instructions correctly do), the
+decompiled output would show ordinary expressions -- e.g. `A = (A & X) &
+param_1;` for XAA, or `*(addr) = A & X;` for AHX -- indistinguishable in
+shape from any of this file's genuinely deterministic instructions (SLO,
+RLA, DCP, SAX, ...). A reader (or an automated annotation pass) would have
+no signal that the real hardware's behaviour on these six bytes is
+UNDEFINED and chip/revision-dependent; the confident-looking arithmetic
+would be silently WRONG on real hardware some fraction of the time. The
+opaque userop call is what admits the gap instead of hiding it -- exactly
+what `OPC-02` requires: "a confident wrong semantic is worse than an
+admitted gap."
+
+**On the flagged assumption.** This plan's own `flagged_assumptions`
+worried the decoded form might not surface the operation's name in any
+output the harness already produces. MEASURED: it does -- `##
+DECOMPILED_TEXT` (added in plan 36-05, additively, for an unrelated reason)
+names every one of the six pcodeops verbatim, by their own source-declared
+name, in every one of the six decompiled bodies above. No further export
+change was needed.
+
 <!-- gsd:write-continue -->

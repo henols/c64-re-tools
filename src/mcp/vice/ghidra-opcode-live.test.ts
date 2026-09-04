@@ -481,3 +481,118 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Task 2 (OPC-02): the six electrically-unstable/page-crossing-dependent
+// bytes read as DECLARED UNKNOWNS, never plausible arithmetic. The
+// distinction this task defends: OPC-02 is not satisfied by the byte
+// decoding -- it is satisfied by the byte decoding to a form that ADMITS it
+// does not know, rather than to arithmetic and flag updates a reader would
+// believe.
+// ---------------------------------------------------------------------------
+
+/** Pcodeop names declared by the committed `.sinc`, in source order -- the
+ * six opaque black-box operations for XAA, immediate LAX/LXA, AHX, TAS, SHX
+ * and SHY. */
+const UNSTABLE_PCODEOP_NAMES: readonly string[] = [...UNDOCUMENTED_SINC_TEXT.matchAll(/define pcodeop (\w+);/g)].map((m) => m[1]!);
+
+interface UnstableRepresentative {
+  pcodeopName: string;
+  byte: number;
+  mnemonic: string;
+}
+
+/** For each declared pcodeop, the FIRST constructor block (source order)
+ * whose body calls it -- deterministic, since `unstableAHXStore` is
+ * referenced by TWO constructors (`$93`, the `(zp),Y` form, and `$9f`, the
+ * `abs,Y` form): this project picks the first one found (`$93`) rather than
+ * typing a choice. Derived from the committed source, never hardcoded, so a
+ * rename in the source cannot leave this case asserting a stale byte or
+ * name. */
+function findRepresentativeBytes(blocks: readonly ConstructorBlock[], pcodeopNames: readonly string[]): UnstableRepresentative[] {
+  return pcodeopNames.map((name) => {
+    const block = blocks.find((b) => b.body.includes(name + "("));
+    assert.ok(block, `findRepresentativeBytes: no constructor in the committed .sinc calls ${name}(...)`);
+    const byteMatch = /op=0x([0-9a-fA-F]{2})/.exec(block!.body);
+    assert.ok(byteMatch, `findRepresentativeBytes: the constructor calling ${name}(...) carries no op=0xNN constraint`);
+    return { pcodeopName: name, byte: parseInt(byteMatch![1]!, 16), mnemonic: block!.mnemonic };
+  });
+}
+
+const UNSTABLE_REPRESENTATIVES: readonly UnstableRepresentative[] = findRepresentativeBytes(SINC_BLOCKS, UNSTABLE_PCODEOP_NAMES);
+
+test("at least six opaque user-defined operations are declared, one per unstable/page-crossing instruction, each traced to a real constructor and byte", () => {
+  assert.ok(UNSTABLE_PCODEOP_NAMES.length >= 6, `expected at least 6 declared pcodeops, got ${UNSTABLE_PCODEOP_NAMES.length}`);
+  assert.equal(UNSTABLE_REPRESENTATIVES.length, UNSTABLE_PCODEOP_NAMES.length);
+  for (const r of UNSTABLE_REPRESENTATIVES) {
+    assert.ok(r.byte >= 0 && r.byte <= 0xff, `derived byte 0x${r.byte.toString(16)} for ${r.pcodeopName} is out of range`);
+  }
+});
+
+/** Asserts that `pcodeopName`'s own result -- never a computed expression
+ * built on top of it -- is what reaches the destination: either a bare
+ * `return VAR;` or a bare `... = VAR;`, where VAR is the SAME variable the
+ * call itself was assigned to. MEASURED, this plan, real Ghidra 12.1.3: this
+ * is exactly the shape all six representatives decompile to (recorded
+ * verbatim in this plan's own evidence file, Part 2). A confident-looking
+ * arithmetic expression wrapped around the call (e.g. `A = unstableXAA(...)
+ * & 0xff;`) would fail the "bare" requirement below and correctly fail this
+ * assertion. */
+function assertUseropResultFlowsDirectly(functionBody: string, pcodeopName: string, byte: number): void {
+  const callMatch = new RegExp(`(\\w+)\\s*=\\s*${pcodeopName}\\(`).exec(functionBody);
+  assert.ok(callMatch, `byte 0x${byte.toString(16)}: decompiled body must call ${pcodeopName}(...) -- body:\n${functionBody}`);
+  const varName = callMatch![1]!;
+  const flowsDirectly = new RegExp(`(?:return\\s+${varName};|=\\s*${varName};)`).test(functionBody);
+  assert.ok(
+    flowsDirectly,
+    `byte 0x${byte.toString(16)}: ${pcodeopName}'s own result ("${varName}") must flow directly to the destination register or store, never through a computed expression -- body:\n${functionBody}`,
+  );
+}
+
+const TASK2_SWEEP_BASE_ADDR = 0x3000;
+
+test(
+  "ghidra-opcode-live UNSTABLE: the six electrically-unstable/page-crossing bytes decode to a form naming their own opaque operation, never plausible arithmetic",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const bytes = UNSTABLE_REPRESENTATIVES.map((r) => r.byte);
+      const layout = generateOpcodeSweep(ws, bytes, TASK2_SWEEP_BASE_ADDR, "sweep-unstable.bin");
+      const entrypointsRel = writeSweepEntrypoints(ws, layout.addressByByte, "sweep-unstable-entrypoints.txt");
+      const exportRel = "sweep-unstable-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "sweep-unstable",
+          importPath: layout.imagePath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: entrypointsRel,
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
+
+      for (const r of UNSTABLE_REPRESENTATIVES) {
+        const addr = layout.addressByByte.get(r.byte)!;
+        const body = extractFunctionBody(decompiledText, addr);
+        assert.ok(body, `byte 0x${r.byte.toString(16)} (${r.mnemonic}): no FUNCTION block found at address 0x${addr.toString(16)} in the decompiled text`);
+        assert.ok(
+          body!.includes(r.pcodeopName + "("),
+          `byte 0x${r.byte.toString(16)} (${r.mnemonic}): decompiled body must name ${r.pcodeopName} -- body:\n${body}`,
+        );
+        assertUseropResultFlowsDirectly(body!, r.pcodeopName, r.byte);
+      }
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
