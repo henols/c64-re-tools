@@ -998,11 +998,34 @@ test(
  * plan's END-TO-END and kill-on-expiry cases both need. Omitted (the
  * default), the launcher exits immediately exactly as before -- every
  * pre-existing Ghidra case is unaffected. */
+/** Phase 36, plan 36-02 (Task 2): the language every `withFakeGhidraHome()`
+ * fixture declares by default -- the SAME id ("6502:LE:16:default") every
+ * pre-existing ghidra.analyze test fixture in this file already names as
+ * its own `processor`, so the checked preflight (installedLanguageIds())
+ * finds it declared, with an existing (empty, non-functional) `.sla`
+ * sidecar, and lets these pre-existing cases reach their own intended
+ * refusal/success rather than tripping on the preflight's own "not
+ * declared" refusal. */
+const FAKE_GHIDRA_HOME_LANGUAGE_ID = "6502:LE:16:default";
+
 async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T, opts: { sleepSeconds?: number } = {}): Promise<T> {
   const previous = process.env.GHIDRA_HOME;
   return withTempDir(async (dir) => {
     const supportDir = join(dir, "support");
     mkdirSync(supportDir, { recursive: true });
+    // Phase 36, plan 36-02 (Task 2): a synthetic language declaration under
+    // Ghidra/Processors/ -- installedLanguageIds() walks this root exactly
+    // like a real stock processor module, so the checked preflight finds
+    // FAKE_GHIDRA_HOME_LANGUAGE_ID declared, with its own (empty) `.sla`
+    // sidecar existing on disk beside the `.ldefs`.
+    const languagesDir = join(dir, "Ghidra", "Processors", "fake6502", "data", "languages");
+    mkdirSync(languagesDir, { recursive: true });
+    writeFileSync(
+      join(languagesDir, "fake6502.ldefs"),
+      `<?xml version="1.0" encoding="UTF-8"?>\n<language_definitions>\n  <language processor="fake" endian="little" size="16" variant="default" version="1.0" slafile="fake6502.sla" processorspec="fake6502.pspec" id="${FAKE_GHIDRA_HOME_LANGUAGE_ID}">\n    <description>fake</description>\n    <compiler name="default" spec="fake6502.cspec" id="default"/>\n  </language>\n</language_definitions>\n`,
+      "utf8",
+    );
+    writeFileSync(join(languagesDir, "fake6502.sla"), "", "utf8");
     // `exec sleep N` -- NOT `sleep N; exit 0` -- replaces the shell's own
     // process image with `sleep` (execve, no fork) rather than forking a
     // CHILD of the shell to run it. A forked grandchild would inherit the
@@ -1264,6 +1287,17 @@ test("runHostTool: an accepted in-workspace ghidra.analyze preScript reaches the
     const previousGhidraHome = process.env.GHIDRA_HOME;
     const supportDir = join(dir, "support");
     mkdirSync(supportDir, { recursive: true });
+    // Phase 36, plan 36-02 (Task 2): the checked preflight requires the
+    // requested processor to be declared -- plant the same synthetic
+    // language declaration withFakeGhidraHome() uses.
+    const languagesDir = join(dir, "Ghidra", "Processors", "fake6502", "data", "languages");
+    mkdirSync(languagesDir, { recursive: true });
+    writeFileSync(
+      join(languagesDir, "fake6502.ldefs"),
+      `<?xml version="1.0" encoding="UTF-8"?>\n<language_definitions>\n  <language processor="fake" endian="little" size="16" variant="default" version="1.0" slafile="fake6502.sla" processorspec="fake6502.pspec" id="${FAKE_GHIDRA_HOME_LANGUAGE_ID}">\n    <description>fake</description>\n    <compiler name="default" spec="fake6502.cspec" id="default"/>\n  </language>\n</language_definitions>\n`,
+      "utf8",
+    );
+    writeFileSync(join(languagesDir, "fake6502.sla"), "", "utf8");
     const echoPath = join(dir, "echoed-argv.json");
     // A real (Node-executed, not real Ghidra) analyzeHeadless stand-in that
     // echoes the FULL argv it received -- runHostTool()'s own response

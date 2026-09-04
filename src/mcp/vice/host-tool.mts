@@ -94,6 +94,7 @@ import {
   resolveGhidraProject,
   buildAnalyzeHeadlessArgv,
   hasDotPrefixedSegment,
+  installedLanguageIds,
   GHIDRA_STOCK_6502_LANGUAGE_FILES,
   GHIDRA_IMPORT_ROUTES,
   importRouteBaseAddr,
@@ -1058,6 +1059,38 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
       return {
         ok: false,
         message: `host_tool "ghidra.analyze" refuses: GHIDRA_HOME's resolved launcher does not exist on disk (${ghidraPath})`,
+      };
+    }
+
+    // Phase 36, plan 36-02 (D-36-01, Task 2): the checked, NON-MATERIALISING
+    // language preflight -- refuses by name, before any child process is
+    // spawned, when the requested processor is not declared by any .ldefs
+    // Ghidra would load, or is declared but its slafile does not exist on
+    // disk. This is what makes a language that cannot load a named refusal
+    // instead of a green run on whatever .sla happens to be in place
+    // (OPC-04 criterion 1). The preflight CHECKS and NEVER FIXES: it must
+    // never create a directory, copy a file, invoke support/sleigh, or
+    // fall back to another language -- doing so would mask exactly the
+    // failure criterion 1 exists to catch.
+    const installedLanguages = installedLanguageIds(ghidraHome);
+    const requestedProcessor = request.args.processor;
+    const matchedLanguage = installedLanguages.find((lang) => lang.id === requestedProcessor);
+    if (!matchedLanguage) {
+      const declaredIds = installedLanguages.map((lang) => lang.id);
+      return {
+        ok: false,
+        message:
+          `host_tool "ghidra.analyze" refuses: the requested processor ${JSON.stringify(requestedProcessor)} is not declared by any ` +
+          `installed Ghidra language; declared id(s): ${declaredIds.length > 0 ? declaredIds.join(", ") : "(none)"}`,
+      };
+    }
+    if (!matchedLanguage.slafileExists) {
+      const missingSlaPath = join(dirname(matchedLanguage.ldefsPath), matchedLanguage.slafile);
+      return {
+        ok: false,
+        message:
+          `host_tool "ghidra.analyze" refuses: processor ${JSON.stringify(requestedProcessor)} is declared by ${matchedLanguage.ldefsPath} ` +
+          `but its slafile ${missingSlaPath} does not exist on disk -- run ghidra.installExtension to build it`,
       };
     }
 
