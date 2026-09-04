@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
-current_phase: 36
-current_phase_name: The SLEIGH Language and the Ghidra Harness
-status: executing
-stopped_at: Completed 36-07-PLAN.md
-last_updated: "2026-09-04T20:36:30.791Z"
-last_activity: 2026-09-04
-last_activity_desc: Phase 36 execution started
-state_head: 497111b9d48f33d57fba265ca80c25cb31a00618
+current_phase: 37
+current_phase_name: The Importer and the Automatic Annotation Join
+status: planning
+stopped_at: Phase 36 complete, ready to plan Phase 37
+last_updated: "2026-09-04T22:56:52.927Z"
+last_activity: 2026-09-05
+last_activity_desc: Phase 36 complete, transitioned to Phase 37
+state_head: 53b056e312dc2415283db03f77ecb18cec8e59a3
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 35
   completed_plans: 35
-  percent: 50
+  percent: 67
 ---
 
 # Project State
@@ -176,8 +176,8 @@ the suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 36 (The SLEIGH Language and the Ghidra Harness) — EXECUTING
-Plan: 7 of 7
+Phase: 37 — The Importer and the Automatic Annotation Join
+Plan: Not started
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -216,7 +216,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: Phase 36 EXECUTING — plan `36-01` complete (tracer: vendored SLEIGH extension, `ghidra.installExtension`, `ghidra.analyze`'s required `processor` field, the compile gate observed red and green, `ghidra-run.ts`'s byte-exact language check); 6 plans remain across the phase's remaining waves. Phase 36 PLANNED — 7 plans in 5 waves, 21 tasks, all 9 requirements (`OPC-01`..`OPC-04`, `GHID-01`..`GHID-05`) assigned; `36-01` leads with a `type="tracer"` slice and waves 2 and 4 run two plans each on disjoint files. No `/gsd-discuss-phase` ran, so the planner assumptions and the two `36-RESEARCH.md` open questions are resolved as recorded decisions inside the plans. Phase 35 COMPLETE — 5/5 plans across 4 waves, verified 5/5 must-haves. Verification ran twice: the first pass scored 4/5 and contested `DXA-02`'s "parser refusing by name" clause, since `A-04` had deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read rather than refuse, and both real anomalies found land inside the declared window so a refusal was unreachable by construction; the owner amended the criterion to "loud, never silent" (`cffc8056`) and re-verification passed 5/5, having independently reproduced both anomalies and established that `parseDumpListing()` has no silent disposition path at all. The code-review gate found and fixed a real BLOCKER (`CR-01`: unconfined local read/write I/O in `dxa-run.ts` that never crossed the host-tool seam) and a WARNING (`WR-01`: no integer check, so `NaN` emitted a corrupted `-B` line silently). Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Phase 36 COMPLETE — 7/7 plans across 5 waves, verified. Worktree isolation auto-degraded to sequential-on-main for the whole run (#683: local `main` 223 commits ahead of `origin/main`, so isolated worktrees would fork from a stale `origin/HEAD`). Verification ran twice. The first pass scored 4/5 and found a real regression the phase's own artifacts never disclosed: the code-review gate's `CR-01` fix (`f8ed2bab`) made `runGhidraAnalyze()` reject on a thrown-script signal and updated the sibling GATE 1 case, but missed plan 36-05's forced-conflict case, which then died on an unhandled rejection before any of its assertions ran — invisible to `test:automated` because `ghidra-live.test.ts` is `MANUAL_ONLY`. Closed by `59f72d02` (wrap in `assert.rejects`, reconstruct the run-log path from `runId`), re-verified live at 14/16 + 2 skipped, 0 fail. Re-verification returned `human_needed` on two disclosed literal-wording shortfalls, both **accepted as owner overrides on 2026-09-05** and recorded in `36-VERIFICATION.md`'s `overrides:` block: (1) `GHID-03`'s swallowed-`MemoryConflictException` control is proven on the `flat64k` route only — `bank.prg` cannot reach the I/O page at the `.prg` route's default base; (2) ROADMAP criterion 5 ships four of its five structural facts from real code, the fifth (a resolved computed jump), with `ARRAY_BOUND` and `RECORD_STRIDE`, recorded as absent from the corpus reached — every computed transfer in `danish.d64` is the BRK trick through the unresolvable IRQ vector, cross-verified against `saeger.d64`. All 9 requirements (`OPC-01`..`OPC-04`, `GHID-01`..`GHID-05`) complete. Code review found 7 issues (1 Critical, 3 Warning, 3 Info), all fixed with dispositions recorded. Suite at its documented floor: 3409 tests, 3396 pass, 2 fail (pre-existing `anno-register.test.ts` bookkeeping, out of scope). Phase 35 COMPLETE — 5/5 plans across 4 waves, verified 5/5 must-haves. Verification ran twice: the first pass scored 4/5 and contested `DXA-02`'s "parser refusing by name" clause, since `A-04` had deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read rather than refuse, and both real anomalies found land inside the declared window so a refusal was unreachable by construction; the owner amended the criterion to "loud, never silent" (`cffc8056`) and re-verification passed 5/5, having independently reproduced both anomalies and established that `parseDumpListing()` has no silent disposition path at all. The code-review gate found and fixed a real BLOCKER (`CR-01`: unconfined local read/write I/O in `dxa-run.ts` that never crossed the host-tool seam) and a WARNING (`WR-01`: no integer check, so `NaN` emitted a corrupted `-B` line silently). Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
@@ -373,13 +373,13 @@ their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
 `anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase. **Phase 34 plan 34-01 update (2026-09-03):** the host-tool execution seam tracer is complete — the `host_tool` control op is wired end to end (broker-control.mts/vice-broker.mts/host-tool.mts/host-tool-client.ts), proven against real ACME with all seven VICE lease callbacks provably uncalled; see `.planning/phases/34-the-host-tool-execution-seam/34-01-SUMMARY.md`. Plan 34-02 is next.
-Last activity: 2026-09-04 — Phase 36 execution started
+Last activity: 2026-09-05 — Phase 36 complete, transitioned to Phase 37
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 301
+- Total plans completed: 308
 - Average duration: —
 - Total execution time: —
 
@@ -417,6 +417,7 @@ Last activity: 2026-09-04 — Phase 36 execution started
 | 33 | 12 | - | - |
 | 34 | 11 | - | - |
 | 35 | 5 | - | - |
+| 36 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -1868,7 +1869,7 @@ actually describe are separately tracked and were acknowledged above:
 ## Session Continuity
 
 Last session: 2026-09-04T20:36:10.018Z
-Stopped at: Completed 36-07-PLAN.md
+Stopped at: Phase 36 complete, ready to plan Phase 37
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
