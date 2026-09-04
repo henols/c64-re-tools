@@ -29,15 +29,23 @@
 // the same reason (path resolution and path-boundary hazards stay entirely
 // out of this module's threat surface).
 //
-// Full refusal semantics beyond the one window predicate, the five distinct
-// line shapes dxa's `-a dump` output can take, and the overlapping-decode
-// disposition are plan 35-02's own scope (DXA-03) -- this module lands the
-// honest happy path plus the one refusal, and nothing more.
+// Plan 35-02 (DXA-02) hardening, landed on top of the above: this module now
+// owns all FIVE measured `-a dump` line shapes (two of which -- the
+// label-only line and the mid-instruction `= * + n` continuation line --
+// correctly emit no bytes because they never match `DUMP_LINE_RE` below),
+// strips a trailing CRLF carriage return so line-ending choice never changes
+// a result, and renders a sorted, per-source-line range list alongside the
+// address sets. The overlapping-decode disposition (two lines claiming the
+// same byte resolve to `unclassified` with a stated reason, never a winner)
+// is this same plan's own scope too -- see `UnclassifiedByte` below.
 
 /** The ONE line-matching regular expression in this module, ported unchanged
  * from the Phase 23 evidence script: a whitespace class (NOT a literal tab)
  * before the trailing directive/mnemonic text, because `.word` lines are
- * space-separated where instruction lines are tab-separated. */
+ * space-separated where instruction lines are tab-separated. Its
+ * correctness DEPENDS on the label-only and mid-instruction-continuation
+ * shapes NOT matching -- widening it to "handle" them would turn a correct
+ * skip into a wrong classification. */
 const DUMP_LINE_RE = /^([0-9a-f]{4}) ((?:[0-9a-f]{2} )+)\s+(.*)$/;
 
 /** One matched `dxa -a dump` listing line, classified. Exported so a future
@@ -55,6 +63,20 @@ export interface DumpLineShape {
   isData: boolean;
   /** The line, verbatim, exactly as matched. */
   raw: string;
+}
+
+/** One contiguous, sorted range in the rendered range list. `end` is
+ * INCLUSIVE. Two ranges are never merged across a source-line boundary even
+ * when their addresses touch or their class matches -- only bytes emitted by
+ * the SAME matched line ever coalesce into one entry (`dxa-listing.test.ts`'s
+ * adjacency cases assert this directly). This is what makes "two spans that
+ * merely touch stay two entries" true regardless of class agreement. */
+export interface DumpRange {
+  class: "code" | "data";
+  /** Inclusive lower bound. */
+  start: number;
+  /** Inclusive upper bound. */
+  end: number;
 }
 
 export interface DumpListingMap {
@@ -85,6 +107,9 @@ export interface DumpListingMap {
   firstAddress: number | null;
   /** The highest in-window address any line touched, or `null` if none did. */
   lastAddress: number | null;
+  /** Sorted ascending by `start`. See `DumpRange`'s own doc for the
+   * never-merge-across-lines rule. */
+  ranges: DumpRange[];
 }
 
 export interface ParseDumpListingWindow {
@@ -123,10 +148,23 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
   const lines: DumpLineShape[] = [];
   let firstAddress: number | null = null;
   let lastAddress: number | null = null;
+  // Tracks which matched line (by index into `lines`) produced each
+  // in-window address -- used ONLY to decide range-merge boundaries below
+  // (two different lines never coalesce even when touching); never exposed
+  // on the returned structure itself.
+  const owner = new Map<number, number>();
 
-  for (const line of text.split("\n")) {
+  for (const rawLine of text.split("\n")) {
+    // Strip a single trailing carriage return so CRLF and LF listings parse
+    // identically. `DUMP_LINE_RE`'s trailing `(.*)$` matches `\r` (only `\n`
+    // is excluded by `.`), so an un-stripped `\r` would ride along inside
+    // the captured trailing text and inside `raw` below, breaking
+    // byte-identical comparisons between the two line-ending variants.
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
     const m = DUMP_LINE_RE.exec(line);
     if (m === null) continue;
+
+    const lineIndex = lines.length;
     matchedLines += 1;
 
     const address = parseInt(m[1]!, 16);
@@ -148,6 +186,7 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
       }
       target.add(a);
       covered.add(a);
+      owner.set(a, lineIndex);
       if (isData) dataBytes += 1;
       else codeBytes += 1;
       if (firstAddress === null || a < firstAddress) firstAddress = a;
@@ -164,5 +203,24 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
     );
   }
 
-  return { code, data, covered, codeBytes, dataBytes, matchedLines, outOfWindow, lines, firstAddress, lastAddress };
+  // Ordering and adjacency: sort covered addresses ascending and coalesce
+  // ONLY consecutive addresses that share both class AND originating line --
+  // two different lines never merge even when their spans touch exactly or
+  // agree on class (dxa-listing.test.ts's adjacency cases assert this).
+  const ranges: DumpRange[] = [];
+  const rangeOwner: number[] = [];
+  for (const a of [...covered].sort((x, y) => x - y)) {
+    const cls: "code" | "data" = code.has(a) ? "code" : "data";
+    const lineOwner = owner.get(a)!;
+    const lastIdx = ranges.length - 1;
+    const last = lastIdx >= 0 ? ranges[lastIdx]! : undefined;
+    if (last !== undefined && last.class === cls && last.end + 1 === a && rangeOwner[lastIdx] === lineOwner) {
+      last.end = a;
+    } else {
+      ranges.push({ class: cls, start: a, end: a });
+      rangeOwner.push(lineOwner);
+    }
+  }
+
+  return { code, data, covered, codeBytes, dataBytes, matchedLines, outOfWindow, lines, firstAddress, lastAddress, ranges };
 }
