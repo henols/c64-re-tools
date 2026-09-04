@@ -180,6 +180,53 @@ test(
   },
 );
 
+// Phase 35, plan 35-05 (DXA-02), Task 1: the top-of-memory boundary case. A
+// REAL 65,536-byte flat image, run through the REAL vendored dxa binary,
+// produces a final `$ffff` line whose hex column carries THREE bytes (the
+// image's own first two bytes, re-printed by dxa's own dump-column
+// wraparound) while its directive emits only ONE -- MEASURED this session
+// (evidence/35-dxa02-real-refusal.md records the full transcript, the OLD
+// Phase 23 evidence parser's refusal on this SAME listing, and the
+// real-cracked-code run this task also performed). Under A-04's window
+// contract the two wrapped bytes land at REAL addresses 0x10000/0x10001, not
+// a double-claim on addresses 0/1 -- they are simply outside the declared
+// [0, 65536) window, so the production parser does NOT refuse; it reports
+// the artefact in `outOfWindow[]` instead. A case that only asserted "it did
+// not throw" would pass on a parser that had silently DROPPED the artefact
+// rather than reporting it -- both halves are asserted below.
+test(
+  "dxa-live BOUNDARY: a real 65536-byte flat image's top-of-memory over-read is REPORTED in outOfWindow[], never silently dropped, and never refused",
+  { skip: SKIP_REASON },
+  async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "dxa-live-boundary-"));
+    try {
+      // Byte content matches evidence/35-dxa02-real-refusal.md's own
+      // transcript exactly (a filler pattern plus three explicit overrides)
+      // so the two records describe the SAME reproduction, not two
+      // different ones that happen to agree on shape.
+      const image = new Uint8Array(65536);
+      for (let i = 0; i < 65536; i++) image[i] = i & 0xff;
+      image[0] = 0x48;
+      image[1] = 0x7d;
+      image[65535] = 0xeb;
+      writeFileSync(join(scratch, "boundary.bin"), image);
+
+      const result = await runDxaDisassemble({ image: "boundary.bin", imageKind: "flat64k" }, { repoRoot: scratch });
+
+      assert.equal(result.map.covered.size, 65536, "the full [0, 65536) window is accounted for despite the over-read");
+      assert.ok(result.outOfWindow.length > 0, "the top-of-memory over-read line must be REPORTED, never silently dropped");
+      assert.ok(
+        result.outOfWindow.some((l) => l.startsWith("ffff ")),
+        "the reported out-of-window line must be the $ffff wraparound line itself",
+      );
+    } finally {
+      // The image is written only into a per-test mkdtemp OUTSIDE this
+      // repository -- nothing here for `git status --porcelain` to ever see.
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  },
+);
+
 // Phase 35, plan 35-04 (DXA-03), Task 3: the real-image exercise. Uses the
 // committed `anno-d64.ts` reader to pull one real `.prg` out of the Phase 23
 // corpus release -- no VICE, no broker, no capture pipeline in the loop.
