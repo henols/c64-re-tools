@@ -169,3 +169,14 @@ sha256: `01b9dc6965426b4940262db29f489105d23e58933695a4e451eb5f1a30ebbde8`.
 end-of-program marker's two bytes (`$080b-$080c`) are certain-data while the
 very next address (`$080d`) is `unknown` and the two never merge into one
 range.
+
+## The DXA-03 real-image exercise (35-04, Task 3)
+
+`dxa-live.test.ts`'s `dxa-live CORPUS` case exercises the same `-B`/`-l`
+route against a REAL cracked release (Phase 23's corpus, never committed
+here, gitignored per D-04) rather than a fixture -- the release is extracted
+at test time into a `mkdtemp` scratch directory outside this repository, so
+nothing from it ever lands under `fixtures/`. See
+`.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa03-real-image.md`
+for the release identity, the extracted entry, the chosen range's basis, and
+both commands' measured classifications.

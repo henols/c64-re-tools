@@ -28,13 +28,25 @@
 // this run happens to produce -- a real regression in dxa-run.ts's window
 // computation or dxa-listing.ts's classifier must fail this loudly rather
 // than silently re-baseline against its own output.
+//
+// Phase 35, plan 35-04 (DXA-03): the CORPUS case (below) is the one
+// exception to "MEASURED literals" above -- it drives a real cracked
+// release this repository never commits (D-04, evidence/README.md
+// convention 10), so its assertions are RELATIVE (a named range carries
+// code classification before and none after), never a pinned byte count of
+// content this repository does not ship. It is gated behind its OWN
+// opt-in, VICE_LIVE_DXA_CORPUS=1, in addition to VICE_LIVE_DXA=1 -- see
+// CORPUS_SKIP_REASON.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runDxaDisassemble, type DxaRunFn } from "./dxa-run.ts";
+import { listEntries, extractEntry } from "./anno-d64.ts";
+import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DXA_BIN_PATH = join(HERE, "vendor", "dxa", "dxa");
@@ -165,5 +177,92 @@ test(
     assert.ok(capturedArgs !== undefined, "the injected run() must have been called");
     assert.equal("datablocksPath" in (capturedArgs as Record<string, unknown>), false, "zero ranges omits datablocksPath entirely");
     assert.equal("labelsPath" in (capturedArgs as Record<string, unknown>), false, "zero labels omits labelsPath entirely");
+  },
+);
+
+// Phase 35, plan 35-04 (DXA-03), Task 3: the real-image exercise. Uses the
+// committed `anno-d64.ts` reader to pull one real `.prg` out of the Phase 23
+// corpus release -- no VICE, no broker, no capture pipeline in the loop.
+// `evidence/35-dxa03-real-image.md` records the release identity, the
+// extracted entry and the chosen range's provenance in full; this file only
+// asserts the exclusion, relatively, from dxa's own classification.
+const CORPUS_PATH = join(
+  repoRoot({ from: HERE }),
+  ".planning",
+  "phases",
+  "23-the-real-release-gate-go-degrade-no-go",
+  "evidence",
+  "corpus",
+  "danish.d64",
+);
+
+/** Gated behind BOTH VICE_LIVE_DXA=1 (this file's own opt-in, above) AND its
+ * OWN VICE_LIVE_DXA_CORPUS=1 -- the corpus image is gitignored (D-04) and
+ * absent on every machine but the one that fetched it, so requiring a
+ * second, explicit opt-in keeps a plain VICE_LIVE_DXA=1 run from ever
+ * needing it. */
+const CORPUS_SKIP_REASON: string | false =
+  SKIP_REASON !== false
+    ? SKIP_REASON
+    : process.env.VICE_LIVE_DXA_CORPUS !== "1"
+      ? "dxa-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_DXA_CORPUS=1 (in addition to VICE_LIVE_DXA=1) to run it."
+      : !existsSync(CORPUS_PATH)
+        ? `VICE_LIVE_DXA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
+          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+        : false;
+
+test(
+  "dxa-live CORPUS: a hand-annotated known-data range excludes those bytes from dxa's own code classification on a real cracked release",
+  { skip: CORPUS_SKIP_REASON },
+  async () => {
+    const corpusBytes = readFileSync(CORPUS_PATH);
+    const entries = listEntries(new Uint8Array(corpusBytes));
+    const entry = entries[0];
+    if (entry === undefined) {
+      throw new Error("dxa-live CORPUS: the corpus image has no directory entries");
+    }
+    const extracted = extractEntry(new Uint8Array(corpusBytes), entry.name);
+
+    // $0819 is a hand-read fact, not derived by this test: the extracted
+    // .prg's own BASIC header line is `10 SYS2073` (offsets $0801-$0818),
+    // and 2073 decimal is $0819. dxa itself, given ONLY that one routine
+    // under this seam's fixed -d skip-scanning policy, discovers a
+    // multi-instruction code region starting there -- evidence/
+    // 35-dxa03-real-image.md records the exact basis and both listings.
+    const scratch = mkdtempSync(join(tmpdir(), "dxa-live-corpus-"));
+    try {
+      writeFileSync(join(scratch, "release.prg"), extracted);
+      writeFileSync(join(scratch, "release.entrypoints"), "0819\n");
+
+      const RANGE_START = 0x0819;
+      const RANGE_END = 0x081f;
+
+      const withoutRange = await runDxaDisassemble(
+        { image: "release.prg", imageKind: "prg", entrypointsPath: "release.entrypoints" },
+        { repoRoot: scratch },
+      );
+      for (let addr = RANGE_START; addr <= RANGE_END; addr++) {
+        assert.ok(withoutRange.map.code.has(addr), `without a known-data range, dxa classifies 0x${addr.toString(16)} as code`);
+      }
+
+      const withRange = await runDxaDisassemble(
+        {
+          image: "release.prg",
+          imageKind: "prg",
+          entrypointsPath: "release.entrypoints",
+          knownDataRows: [{ start: RANGE_START, endInclusive: RANGE_END, dataType: "byte" }],
+        },
+        { repoRoot: scratch },
+      );
+      for (let addr = RANGE_START; addr <= RANGE_END; addr++) {
+        assert.ok(!withRange.map.code.has(addr), `with the known-data range, 0x${addr.toString(16)} no longer classifies as code`);
+        assert.ok(withRange.map.data.has(addr), `with the known-data range, 0x${addr.toString(16)} classifies as data`);
+      }
+    } finally {
+      // A per-test mkdtemp OUTSIDE this repository -- the extracted release
+      // bytes never touch the working tree, so there is nothing here for
+      // `git status --porcelain` to ever see.
+      rmSync(scratch, { recursive: true, force: true });
+    }
   },
 );
