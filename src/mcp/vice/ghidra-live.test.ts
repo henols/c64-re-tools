@@ -755,3 +755,115 @@ test(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Task 2: remove the flag and observe the writes vanish -- on both routes.
+// ---------------------------------------------------------------------------
+
+test(
+  "ghidra-live VOLATILE (prg route, without flag): the decompiled hardware writes VANISH, and the run otherwise completes normally",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const scriptDir = makeEditedVolatileCarveScriptDir(ws, "noflag-prg", NEUTRALISE_VOLATILE_FLAG);
+      const entrypointsRel = writeEntrypointsFile(ws, PRG_ROUTE_ENTRYPOINT, "entrypoints.txt");
+      const exportRel = "noflag-prg-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "vol-noflag-prg",
+          importPath: "bank.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: scriptDir,
+          preScript: join(scriptDir, "VolatileCarve.java"),
+          entrypointsPath: entrypointsRel,
+          postScript: join(scriptDir, "GhidraStructExport.java"),
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "removing the flag must not itself throw -- the carve still completes, just without volatility");
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      assert.ok(exportText.includes("## UNRESOLVED_DISPATCH"), "the without-flag export must still carry its completed-assertion section");
+      const referenceCountMatch = /## REFERENCE_COUNT (\d+)/.exec(exportText);
+      assert.ok(referenceCountMatch && Number(referenceCountMatch[1]) > 0, "the without-flag export must carry a non-trivial reference count");
+
+      // MEASURED (this plan): `## REFERENCES` is UNCHANGED by the volatile
+      // flag -- every reference line Task 1 asserted present is STILL
+      // present here. The disappearance is real, but it is not visible in
+      // this section; asserting so here is itself part of the record.
+      const referencesText = extractSection(exportText, "## REFERENCES");
+      for (const line of WITH_FLAG_REFERENCE_LINES_PRG) {
+        assert.ok(referencesText.includes(line), `MEASURED finding: reference line ${JSON.stringify(line)} must STILL be present without the flag -- ## REFERENCES never reflects volatility`);
+      }
+
+      // The actual disappearance: per statement, not merely a lower count.
+      const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
+      for (const stmt of WITHOUT_FLAG_VANISHED_STATEMENTS) {
+        assert.equal(decompiledText.includes(stmt), false, `expected decompiled statement ${JSON.stringify(stmt)} to be ABSENT without the volatile flag (prg route)`);
+      }
+      for (const stmt of WITHOUT_FLAG_SURVIVING_STATEMENTS) {
+        assert.ok(decompiledText.includes(stmt), `expected decompiled statement ${JSON.stringify(stmt)} to SURVIVE even without the volatile flag (prg route) -- it is the last write to its own target`);
+      }
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live VOLATILE (flat64k route, without flag): the decompiled hardware writes VANISH, and the run otherwise completes normally",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generateFlat64kVariant(ws);
+      const scriptDir = makeEditedVolatileCarveScriptDir(ws, "noflag-flat64k", NEUTRALISE_VOLATILE_FLAG);
+      const entrypointsRel = writeEntrypointsFile(ws, FLAT64K_ROUTE_ENTRYPOINT, "entrypoints.txt");
+      const exportRel = "noflag-flat64k-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "vol-noflag-flat64k",
+          importPath: flatRelPath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: scriptDir,
+          preScript: join(scriptDir, "VolatileCarve.java"),
+          entrypointsPath: entrypointsRel,
+          postScript: join(scriptDir, "GhidraStructExport.java"),
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "removing the flag must not itself throw -- the carve still completes, just without volatility");
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      assert.ok(exportText.includes("## UNRESOLVED_DISPATCH"), "the without-flag export must still carry its completed-assertion section");
+      const referenceCountMatch = /## REFERENCE_COUNT (\d+)/.exec(exportText);
+      assert.ok(referenceCountMatch && Number(referenceCountMatch[1]) > 0, "the without-flag export must carry a non-trivial reference count");
+
+      const referencesText = extractSection(exportText, "## REFERENCES");
+      for (const line of WITH_FLAG_REFERENCE_LINES_FLAT64K) {
+        assert.ok(referencesText.includes(line), `MEASURED finding: reference line ${JSON.stringify(line)} must STILL be present without the flag -- ## REFERENCES never reflects volatility`);
+      }
+
+      const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
+      for (const stmt of WITHOUT_FLAG_VANISHED_STATEMENTS) {
+        assert.equal(decompiledText.includes(stmt), false, `expected decompiled statement ${JSON.stringify(stmt)} to be ABSENT without the volatile flag (flat64k route)`);
+      }
+      for (const stmt of WITHOUT_FLAG_SURVIVING_STATEMENTS) {
+        assert.ok(decompiledText.includes(stmt), `expected decompiled statement ${JSON.stringify(stmt)} to SURVIVE even without the volatile flag (flat64k route) -- it is the last write to its own target`);
+      }
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+

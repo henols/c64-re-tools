@@ -268,3 +268,164 @@ same source, the same seven accesses, two different routes.
 without-flag counterparts (Part 2) and found byte-identical** — recorded
 there, not here, since that comparison is Part 2's own finding.
 
+## Part 2 — remove the flag and observe the writes vanish, on both routes
+
+D-36-13: each without-flag case reads the COMMITTED `VolatileCarve.java`,
+neutralises BOTH flag-setting calls (the existing-block branch's
+`blk.setVolatile(true)` and the create branch's `nb.setVolatile(true)`, each
+forced to `false`), and writes the result into its own scratch script
+directory. The committed script was never written; `git status --porcelain
+src/mcp/vice/vendor/ghidra-scripts/` was empty after every run in this part.
+
+**The exact edit made (identical text substituted in both places, quoted):**
+
+```java
+// BEFORE (committed):
+            blk.setVolatile(true);
+// AFTER (scratch copy only):
+            blk.setVolatile(false); // NEUTRALISED for the disappearance proof (scratch copy only, never committed)
+
+// BEFORE (committed):
+        nb.setVolatile(true);
+// AFTER (scratch copy only):
+        nb.setVolatile(false); // NEUTRALISED for the disappearance proof (scratch copy only, never committed)
+```
+
+### `.prg` route, without the flag
+
+**Wire request** (identical to Part 1's `.prg` case except `scriptPath`,
+`preScript` and `postScript` now point at the scratch copy's own directory,
+and `runId`/`exportPath` are distinct so the two runs cannot collide):
+
+```json
+{
+  "runId": "vol-noflag-prg",
+  "importPath": "bank.prg",
+  "processor": "6502:LE:16:nmos",
+  "importRoute": "prg",
+  "noanalysis": true,
+  "scriptPath": "vendor-scratch/noflag-prg/ghidra-scripts",
+  "preScript": "vendor-scratch/noflag-prg/ghidra-scripts/VolatileCarve.java",
+  "entrypointsPath": "entrypoints.txt",
+  "postScript": "vendor-scratch/noflag-prg/ghidra-scripts/GhidraStructExport.java",
+  "exportPath": "noflag-prg-export.txt"
+}
+```
+
+**`## REFERENCES` — byte-identical to Part 1's with-flag `.prg` export.** All
+seven lines Part 1 recorded present are STILL present here, verbatim:
+
+```
+0814 -> 0001 WRITE
+0818 -> d020 WRITE
+081e -> 0001 WRITE
+0822 -> d020 WRITE
+0825 -> d020 READ
+082a -> 0001 WRITE
+0839 -> 0001 WRITE
+```
+
+This is the finding recorded above: `## REFERENCES` never reflects
+volatility. The disappearance is real, but it is not visible here.
+
+**`## DECOMPILED_TEXT` — the disappearance, per statement:**
+
+```c
+void FUN_0812(void)
+
+{
+  byte bVar1;
+
+  DAT_d020 = 0xaa;
+  bVar1 = 0;
+  do {
+    *(undefined1 *)(bVar1 + 0x3000) = (&DAT_d000)[bVar1];
+    bVar1 = bVar1 + 1;
+  } while (bVar1 != 0);
+  DAT_0001 = 0x37;
+  return;
+}
+```
+
+**Vanished (present in Part 1's with-flag text, absent here):**
+
+- `DAT_0001 = 0x34;`
+- `DAT_0001 = 0x33;`
+- `DAT_d020 = 5;`
+- `= DAT_d020;` (the read — `uVar1 = DAT_d020;` in Part 1's text)
+
+**Survived (present in both):**
+
+- `DAT_d020 = 0xaa;` — the last write to `$d020`, no read after it
+- `DAT_0001 = 0x37;` — the last write to `$01`, no read after it
+
+**The without-flag run otherwise completed normally, reporting success:**
+`analyzeHeadless` exit status `0`; the run log carries no thrown-script
+signal; the export carries its own completed-assertion section
+(`## UNRESOLVED_DISPATCH`, `UNRESOLVED_DISPATCH_COUNT 0`) and a non-trivial
+reference count (`## REFERENCE_COUNT 10`).
+
+**What an observer reading only the exit status, or only the export's own
+count lines (classification count, reference count, the completed-assertion
+section's presence), would have seen: nothing wrong at all.** Every one of
+those signals is identical to the with-flag run. Three of `$01`'s four
+writes and one of `$d020`'s two writes — plus the read — are gone from the
+decompiled function with no warning anywhere in the export or the run log.
+This is the exact failure shape the Standing Constraint names: applied to a
+raster loop, this would delete the entire visible effect of the program
+while every signal an unwary harness might check kept reporting success.
+
+### Flat-64K route, without the flag
+
+**Wire request:**
+
+```json
+{
+  "runId": "vol-noflag-flat64k",
+  "importPath": "bank-flat64k.bin",
+  "processor": "6502:LE:16:nmos",
+  "importRoute": "flat64k",
+  "noanalysis": true,
+  "scriptPath": "vendor-scratch/noflag-flat64k/ghidra-scripts",
+  "preScript": "vendor-scratch/noflag-flat64k/ghidra-scripts/VolatileCarve.java",
+  "entrypointsPath": "entrypoints.txt",
+  "postScript": "vendor-scratch/noflag-flat64k/ghidra-scripts/GhidraStructExport.java",
+  "exportPath": "noflag-flat64k-export.txt"
+}
+```
+
+**`## REFERENCES` — byte-identical to Part 1's with-flag flat64k export**, all
+seven lines still present verbatim (0812/0816/081c/0820/0823/0828/0837).
+
+**`## DECOMPILED_TEXT` — the same disappearance pattern:**
+
+```c
+void FUN_0810(void)
+
+{
+  byte bVar1;
+
+  DAT_d020 = 0xaa;
+  bVar1 = 0;
+  do {
+    *(undefined1 *)(bVar1 + 0x3000) = (&DAT_d000)[bVar1];
+    bVar1 = bVar1 + 1;
+  } while (bVar1 != 0);
+  DAT_0001 = 0x37;
+  return;
+}
+```
+
+Same vanished set (`DAT_0001 = 0x34;`, `DAT_0001 = 0x33;`, `DAT_d020 = 5;`,
+the read), same surviving set (`DAT_d020 = 0xaa;`, `DAT_0001 = 0x37;`). The
+without-flag run again completed normally: exit status `0`, no thrown-script
+signal, `## UNRESOLVED_DISPATCH` present, `## REFERENCE_COUNT 12` (non-trivial;
+this route's own reference count includes two additional lines the `.prg`
+route's smaller loaded image does not reach — unrelated to the volatile
+carve, both routes' counts confirmed non-trivial and unaffected by the flag).
+
+**The committed `VolatileCarve.java` was confirmed byte-identical
+(`diff`) to its own state before this part's runs**, both before and after —
+the removal lived only in the two scratch copies, each torn down in a
+`finally` after its own case.
+
