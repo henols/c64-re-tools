@@ -54,7 +54,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
-import { installedLanguageIds } from "./ghidra-project.mts";
+import { installedLanguageIds, GHIDRA_RUNS_DIR_NAME } from "./ghidra-project.mts";
 import { repoRoot } from "./repo-root.ts";
 import { listEntries, extractEntry } from "./anno-d64.ts";
 
@@ -193,33 +193,43 @@ test(
 // ---------------------------------------------------------------------------
 
 test(
-  "ghidra-live GATE 1: a wrong expectedClassificationLines makes the export script throw, with analyzeHeadless's own exit status recorded as 0",
+  "ghidra-live GATE 1: a wrong expectedClassificationLines makes the export script throw, and runGhidraAnalyze() surfaces it as a rejection rather than a normal result (CR-01)",
   { skip: SKIP_REASON },
   async () => {
     const ws = makeScratchWorkspace();
     try {
       const exportRel = "gate1-wrong-export.txt";
-      const result = await runGhidraAnalyze(
-        {
-          runId: "gate1-wrong",
-          importPath: "bank.prg",
-          processor: NMOS_LANGUAGE_ID,
-          importRoute: "prg",
-          noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
-          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
-          exportPath: exportRel,
-          expectedClassificationLines: 1,
-        },
-        { repoRoot: ws.root },
+      const runId = "gate1-wrong";
+
+      // CR-01 fix: runGhidraAnalyze() now checks verdict.scriptThrew itself
+      // and throws before ever returning -- this is the DIRECT assertion the
+      // review demanded, replacing the prior manual re-parse of a normally
+      // -returned result. The run log and export file are still inspected
+      // below (reconstructed from runId/GHIDRA_RUNS_DIR_NAME, since a thrown
+      // call yields no GhidraRunResult to read a runLogPath off of) to keep
+      // this gate's original file-content assertions intact.
+      await assert.rejects(
+        () =>
+          runGhidraAnalyze(
+            {
+              runId,
+              importPath: "bank.prg",
+              processor: NMOS_LANGUAGE_ID,
+              importRoute: "prg",
+              noanalysis: true,
+              scriptPath: "vendor/ghidra-scripts",
+              postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+              exportPath: exportRel,
+              expectedClassificationLines: 1,
+            },
+            { repoRoot: ws.root },
+          ),
+        /scriptThrew|a script threw during this run/i,
+        "runGhidraAnalyze must reject when the post-script threw, never return a normal result",
       );
 
-      // The exit status is recorded as evidence that it is UNINFORMATIVE,
-      // never as a pass signal -- asserted explicitly rather than ignored,
-      // per this plan's own must_haves.prohibitions.
-      assert.equal(result.exitStatus, 0, "analyzeHeadless's own exit status must be recorded as 0 even though the post-script threw");
-
-      const logText = readFileSync(result.runLogPath, "utf8");
+      const runLogPath = join(ws.root, "tools", GHIDRA_RUNS_DIR_NAME, `${runId}.ghidra-run.log`);
+      const logText = readFileSync(runLogPath, "utf8");
       const verdict = classifyGhidraRunLog(logText);
       assert.equal(verdict.scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
 

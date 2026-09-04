@@ -236,6 +236,13 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
   const text = opts.runLogText ?? readFileSync(resolvePath(runLogResult.path), "utf8");
   const verdict = classifyGhidraRunLog(text);
 
+  if (verdict.scriptThrew) {
+    throw new Error(
+      `runGhidraAnalyze: a script threw during this run (run log at ${runLogResult.path} carries ` +
+        `"ERROR REPORT SCRIPT ERROR:") -- analyzeHeadless's own exit status (${response.exitStatus}) ` +
+        `carries no information about this and must never be read as success`,
+    );
+  }
   if (!verdict.language.present) {
     throw new Error(
       `runGhidraAnalyze: the run log at ${runLogResult.path} carries no "Using Language/Compiler:" line -- cannot verify the requested processor "${args.processor}" was actually used`,
