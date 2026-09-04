@@ -90,7 +90,17 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment, GHIDRA_STOCK_6502_LANGUAGE_FILES, LANGUAGE_ID_PATTERN, RUN_ID_PATTERN } from "./ghidra-project.mjs";
+import {
+  resolveGhidraProject,
+  buildAnalyzeHeadlessArgv,
+  hasDotPrefixedSegment,
+  GHIDRA_STOCK_6502_LANGUAGE_FILES,
+  GHIDRA_IMPORT_ROUTES,
+  importRouteBaseAddr,
+  LANGUAGE_ID_PATTERN,
+  LOADER_BASE_ADDR_PATTERN,
+  RUN_ID_PATTERN,
+} from "./ghidra-project.mjs";
 
 // Phase 35, plan 35-01 (A-01): this module's own directory, used ONLY to
 // compute the vendored dxa binary's fixed path. Never an environment-variable
@@ -168,7 +178,24 @@ export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
 export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
     "acme.build": Object.freeze(["source", "outDir", "format", "setpc", "defines", "includes", "noReport"]),
-    "ghidra.analyze": Object.freeze(["runId", "importPath", "preScript", "postScript", "processor"]),
+    // Phase 36, plan 36-02 (GHID-01): seven new fields close the seam-argv
+    // surface gap 36-RESEARCH.md measured -- importRoute (required),
+    // loaderBaseAddr, noanalysis, scriptPath, entrypointsPath, exportPath,
+    // expectedClassificationLines.
+    "ghidra.analyze": Object.freeze([
+      "runId",
+      "importPath",
+      "processor",
+      "importRoute",
+      "loaderBaseAddr",
+      "noanalysis",
+      "scriptPath",
+      "preScript",
+      "postScript",
+      "entrypointsPath",
+      "exportPath",
+      "expectedClassificationLines",
+    ]),
     // 34-08 (CR-01): EMPTY -- the oracle's location is host-side
     // configuration only (resolveOracleCommand(), below), never a wire
     // value. No caller-supplied value may ever select what the host
@@ -217,7 +244,11 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
 export const HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
     "acme.build": Object.freeze(["source", "outDir", "includes"]),
-    "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript"]),
+    // Phase 36, plan 36-02: scriptPath/entrypointsPath/exportPath join the
+    // pre-existing three -- each resolved through resolveWorkspacePath() in
+    // runHostTool()'s ghidra branch, exactly like importPath/preScript/
+    // postScript already are.
+    "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript", "scriptPath", "entrypointsPath", "exportPath"]),
     "oracle.probe": Object.freeze([]),
     "oracle.run": Object.freeze(["source"]),
     // `imageKind` is deliberately absent -- it is a two-member enum, not a
@@ -247,8 +278,22 @@ export interface GhidraAnalyzeArgs {
   runId: string;
   importPath: string;
   processor: string;
+  /** Phase 36, plan 36-02 (D-36-07): REQUIRED, non-defaulted -- every
+   * request must name a route; the loader itself ("BinaryLoader") is a
+   * fixed literal and never a wire field. */
+  importRoute: "prg" | "flat64k";
+  /** Phase 36, plan 36-02 (D-36-07): ALWAYS present after normalisation --
+   * either the caller's own validated value or the route's own default
+   * (`importRouteBaseAddr()`, ghidra-project.mts). Never optional at this
+   * layer, even though the WIRE field is optional. */
+  loaderBaseAddr: string;
+  noanalysis?: boolean;
+  scriptPath?: string;
   preScript?: string;
+  entrypointsPath?: string;
   postScript?: string;
+  exportPath?: string;
+  expectedClassificationLines?: number;
 }
 
 /** Phase 36, plan 36-01 (D-36-01): `sourceDir` is workspace-relative,
@@ -436,7 +481,79 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
         message: `host_tool "ghidra.analyze" requires a non-empty "processor" string matching ${LANGUAGE_ID_PATTERN.source} (a colon-separated Ghidra language id, alphanumeric-and-underscore segments, no path separator, no dot, length-capped); got ${describe(processorRaw)}`,
       };
     }
-    const args: GhidraAnalyzeArgs = { runId: runIdRaw, importPath: importPathRaw, processor: processorRaw };
+    // Phase 36, plan 36-02 (D-36-07): REQUIRED, non-defaulted -- exact
+    // membership of a frozen two-member array, never a string passed
+    // through to argv. The loader itself ("BinaryLoader") is a fixed
+    // literal and never a wire field at all.
+    const importRouteRaw = argsObj.importRoute;
+    if (typeof importRouteRaw !== "string" || !(GHIDRA_IMPORT_ROUTES as readonly string[]).includes(importRouteRaw)) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.analyze" requires an "importRoute" matching one of ${GHIDRA_IMPORT_ROUTES.map((r) => JSON.stringify(r)).join(", ")}; got ${describe(importRouteRaw)}`,
+      };
+    }
+    const importRoute = importRouteRaw as "prg" | "flat64k";
+
+    // Phase 36, plan 36-02 (D-36-07, T-36-09): loaderBaseAddr is a raw argv
+    // token, never a path -- validated against the anchored
+    // LOADER_BASE_ADDR_PATTERN rather than routed through
+    // resolveWorkspacePath(). On the "flat64k" route the base is the
+    // route's OWN; a differing supplied value is refused BY NAME rather
+    // than silently honoured. On "prg" an absent value defaults to the
+    // route's own base, since a .prg's load address is a property of the
+    // image, not of the route.
+    let loaderBaseAddr: string;
+    if ("loaderBaseAddr" in argsObj) {
+      const loaderBaseAddrRaw = argsObj.loaderBaseAddr;
+      if (typeof loaderBaseAddrRaw !== "string" || !LOADER_BASE_ADDR_PATTERN.test(loaderBaseAddrRaw)) {
+        return {
+          ok: false,
+          message: `host_tool "ghidra.analyze" args.loaderBaseAddr must match ${LOADER_BASE_ADDR_PATTERN.source} (a "0x" prefix followed by one to four lowercase hex digits); got ${describe(loaderBaseAddrRaw)}`,
+        };
+      }
+      if (importRoute === "flat64k" && loaderBaseAddrRaw !== importRouteBaseAddr("flat64k")) {
+        return {
+          ok: false,
+          message: `host_tool "ghidra.analyze" args.loaderBaseAddr (${loaderBaseAddrRaw}) conflicts with the "flat64k" route's own base address (${importRouteBaseAddr("flat64k")}) -- the route defines the base on this route; omit loaderBaseAddr or supply the matching value`,
+        };
+      }
+      loaderBaseAddr = loaderBaseAddrRaw;
+    } else {
+      loaderBaseAddr = importRouteBaseAddr(importRoute);
+    }
+
+    // Phase 36, plan 36-02: a typeof boolean check, never a truthiness
+    // coercion. Load-bearing rather than cosmetic: VolatileCarve.java's own
+    // run() calls analyzeAll(currentProgram) itself, so omitting
+    // -noanalysis would race Ghidra's own automatic post-preScript
+    // analysis against the manual call.
+    let noanalysis: boolean | undefined;
+    if ("noanalysis" in argsObj) {
+      const noanalysisRaw = argsObj.noanalysis;
+      if (typeof noanalysisRaw !== "boolean") {
+        return { ok: false, message: `host_tool "ghidra.analyze" args.noanalysis must be a boolean; got ${describe(noanalysisRaw)}` };
+      }
+      noanalysis = noanalysisRaw;
+    }
+
+    // Phase 36, plan 36-02: a non-negative integer, refusing fractional,
+    // negative, NaN and string values by name -- this field exists so
+    // GHID-01's gate 1 can plant a deliberately wrong expectation.
+    let expectedClassificationLines: number | undefined;
+    if ("expectedClassificationLines" in argsObj) {
+      const linesRaw = argsObj.expectedClassificationLines;
+      if (typeof linesRaw !== "number" || !Number.isInteger(linesRaw) || linesRaw < 0) {
+        return {
+          ok: false,
+          message: `host_tool "ghidra.analyze" args.expectedClassificationLines must be a non-negative integer; got ${describe(linesRaw)}`,
+        };
+      }
+      expectedClassificationLines = linesRaw;
+    }
+
+    const args: GhidraAnalyzeArgs = { runId: runIdRaw, importPath: importPathRaw, processor: processorRaw, importRoute, loaderBaseAddr };
+    if (noanalysis !== undefined) args.noanalysis = noanalysis;
+    if (expectedClassificationLines !== undefined) args.expectedClassificationLines = expectedClassificationLines;
 
     if ("preScript" in argsObj) {
       const preScript = argsObj.preScript;
@@ -451,6 +568,52 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
         return { ok: false, message: `host_tool "ghidra.analyze" args.postScript must be a non-empty string; got ${describe(postScript)}` };
       }
       args.postScript = postScript;
+    }
+    // Phase 36, plan 36-02: path-bearing -- resolved through
+    // resolveWorkspacePath() by runHostTool(), only validated here as a
+    // non-empty string, mirroring preScript/postScript above.
+    if ("scriptPath" in argsObj) {
+      const scriptPath = argsObj.scriptPath;
+      if (typeof scriptPath !== "string" || scriptPath === "") {
+        return { ok: false, message: `host_tool "ghidra.analyze" args.scriptPath must be a non-empty string; got ${describe(scriptPath)}` };
+      }
+      args.scriptPath = scriptPath;
+    }
+    if ("entrypointsPath" in argsObj) {
+      const entrypointsPath = argsObj.entrypointsPath;
+      if (typeof entrypointsPath !== "string" || entrypointsPath === "") {
+        return { ok: false, message: `host_tool "ghidra.analyze" args.entrypointsPath must be a non-empty string; got ${describe(entrypointsPath)}` };
+      }
+      args.entrypointsPath = entrypointsPath;
+    }
+    if ("exportPath" in argsObj) {
+      const exportPath = argsObj.exportPath;
+      if (typeof exportPath !== "string" || exportPath === "") {
+        return { ok: false, message: `host_tool "ghidra.analyze" args.exportPath must be a non-empty string; got ${describe(exportPath)}` };
+      }
+      args.exportPath = exportPath;
+    }
+
+    // Phase 36, plan 36-02: "a script argument with no script" is refused
+    // BY NAME rather than silently dropped -- a dropped argument is how a
+    // run reports success having asserted nothing (must_haves.prohibitions).
+    if (args.entrypointsPath !== undefined && args.preScript === undefined) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.analyze" args.entrypointsPath requires args.preScript to be present; got entrypointsPath with no preScript`,
+      };
+    }
+    if (args.postScript === undefined && (args.exportPath !== undefined || args.expectedClassificationLines !== undefined)) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.analyze" args.exportPath/args.expectedClassificationLines require args.postScript to be present; got one of them with no postScript`,
+      };
+    }
+    if (args.expectedClassificationLines !== undefined && args.exportPath === undefined) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.analyze" args.expectedClassificationLines requires args.exportPath to be present; got expectedClassificationLines with no exportPath`,
+      };
     }
 
     return { ok: true, request: { tool, args } };
@@ -779,6 +942,14 @@ export interface ResolvedGhidraAnalyzePaths {
    * request.args. */
   preScriptPath?: string;
   postScriptPath?: string;
+  /** Phase 36, plan 36-02: present only when the wire request carried the
+   * corresponding field, each resolved through resolveWorkspacePath() by
+   * runHostTool() BEFORE buildHostToolArgv() ever sees this object --
+   * buildHostToolArgv() reads these ONLY from here, never from
+   * request.args. */
+  scriptPathResolved?: string;
+  entrypointsPathResolved?: string;
+  exportPathResolved?: string;
 }
 
 /** Phase 35, plan 35-01 (A-01, A-02): the resolved fields dxa.disassemble's
@@ -867,7 +1038,8 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
   }
 
   if (request.tool === "ghidra.analyze") {
-    const { importPath, projectLocation, projectName, preScriptPath, postScriptPath } = resolved as ResolvedGhidraAnalyzePaths;
+    const { importPath, projectLocation, projectName, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved } =
+      resolved as ResolvedGhidraAnalyzePaths;
 
     // Named environment variable, never a guessed install location and
     // never this repository's own local probe directory (T-34-16).
@@ -892,28 +1064,44 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     // Argv construction and the dot-segment re-check both live in
     // ghidra-project.mts's buildAnalyzeHeadlessArgv() -- never re-derived
     // here (A-06).
-    // Task 2 (CR-02): reads ONLY from resolved.preScriptPath/postScriptPath --
-    // never from request.args.preScript/postScript -- so argv never carries
-    // a raw, unresolved wire string for either field.
-    // Phase 36, plan 36-01 (D-36-01): `processor` comes straight from
-    // request.args -- it is a validated language-id STRING, never a path,
-    // so it never flows through resolveWorkspacePath() and never appears
-    // in `resolved` (ResolvedGhidraAnalyzePaths carries paths only).
+    // Task 2 (CR-02) / 36-02: reads ONLY from resolved.preScriptPath/
+    // postScriptPath/scriptPathResolved/entrypointsPathResolved/
+    // exportPathResolved -- never from request.args's own path-shaped
+    // fields -- so argv never carries a raw, unresolved wire string for any
+    // of them.
+    // Phase 36, plan 36-01/36-02: `processor`/`loaderBaseAddr`/`noanalysis`/
+    // `expectedClassificationLines` come straight from request.args -- each
+    // is a validated non-path value (language id, hex string, boolean,
+    // integer), never a path, so none flows through resolveWorkspacePath()
+    // and none appears in `resolved` (ResolvedGhidraAnalyzePaths carries
+    // paths only).
     const argvInput: {
       projectLocation: string;
       projectName: string;
       importPath: string;
       processor: string;
+      loaderBaseAddr: string;
+      noanalysis?: boolean;
+      scriptPath?: string;
       preScript?: string;
+      entrypointsPath?: string;
       postScript?: string;
+      exportPath?: string;
+      expectedClassificationLines?: number;
     } = {
       projectLocation,
       projectName,
       importPath,
       processor: request.args.processor,
+      loaderBaseAddr: request.args.loaderBaseAddr,
     };
+    if (request.args.noanalysis !== undefined) argvInput.noanalysis = request.args.noanalysis;
+    if (scriptPathResolved !== undefined) argvInput.scriptPath = scriptPathResolved;
     if (preScriptPath !== undefined) argvInput.preScript = preScriptPath;
+    if (entrypointsPathResolved !== undefined) argvInput.entrypointsPath = entrypointsPathResolved;
     if (postScriptPath !== undefined) argvInput.postScript = postScriptPath;
+    if (exportPathResolved !== undefined) argvInput.exportPath = exportPathResolved;
+    if (request.args.expectedClassificationLines !== undefined) argvInput.expectedClassificationLines = request.args.expectedClassificationLines;
 
     const built = buildAnalyzeHeadlessArgv(argvInput);
     if (!built.ok) return { ok: false, message: built.message };
@@ -926,8 +1114,12 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     // loop runs (MEASURED: analyzeHeadless's "Using Language/Compiler:"
     // line arrives on stdout).
     const runLogPath = join(dirname(projectLocation), `${projectName}.ghidra-run.log`);
+    // Phase 36, plan 36-02: when exportPath is present, it is a SECOND
+    // outputs[] entry -- digested by the existing digestOutputFile() loop
+    // with no new digest code. outputs[0] stays the run log unconditionally.
+    const outputs = exportPathResolved !== undefined ? [runLogPath, exportPathResolved] : [runLogPath];
 
-    return { ok: true, toolPath: ghidraPath, argv: built.argv, outputs: [runLogPath] };
+    return { ok: true, toolPath: ghidraPath, argv: built.argv, outputs };
   }
 
   if (request.tool === "dxa.disassemble") {
@@ -1370,6 +1562,29 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       if (!postScriptResolved.ok) return { ok: false, message: postScriptResolved.message };
       postScriptPath = postScriptResolved.path;
     }
+    // Phase 36, plan 36-02 (Task 1): scriptPath/entrypointsPath/exportPath
+    // resolved through the SAME resolveWorkspacePath() site, BEFORE
+    // resolveGhidraProject()'s own directory RESERVATION below -- a
+    // refusal here must never leave a reserved-but-unused run directory
+    // behind, exactly as preScript/postScript already are.
+    let scriptPathResolved: string | undefined;
+    if (request.args.scriptPath !== undefined) {
+      const scriptPathResult = resolveWorkspacePath(repoRootAbs, request.args.scriptPath);
+      if (!scriptPathResult.ok) return { ok: false, message: scriptPathResult.message };
+      scriptPathResolved = scriptPathResult.path;
+    }
+    let entrypointsPathResolved: string | undefined;
+    if (request.args.entrypointsPath !== undefined) {
+      const entrypointsPathResult = resolveWorkspacePath(repoRootAbs, request.args.entrypointsPath);
+      if (!entrypointsPathResult.ok) return { ok: false, message: entrypointsPathResult.message };
+      entrypointsPathResolved = entrypointsPathResult.path;
+    }
+    let exportPathResolved: string | undefined;
+    if (request.args.exportPath !== undefined) {
+      const exportPathResult = resolveWorkspacePath(repoRootAbs, request.args.exportPath);
+      if (!exportPathResult.ok) return { ok: false, message: exportPathResult.message };
+      exportPathResolved = exportPathResult.path;
+    }
 
     const projectResolved = resolveGhidraProject({ repoRoot: repoRootAbs, runId: request.args.runId });
     if (!projectResolved.ok) return { ok: false, message: projectResolved.message };
@@ -1380,6 +1595,9 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       projectName: projectResolved.projectName,
       preScriptPath,
       postScriptPath,
+      scriptPathResolved,
+      entrypointsPathResolved,
+      exportPathResolved,
     });
   } else if (request.tool === "dxa.disassemble") {
     // (35-01, item 7). `image` and each present optional path resolved

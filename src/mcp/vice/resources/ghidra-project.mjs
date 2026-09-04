@@ -66,8 +66,8 @@
 // exists and a second call under the same run id is refused, with no
 // window where two callers could observe an absent directory and both
 // proceed. See `evidence/34-ghidra-dotpath.md` for the full transcript.
-import { existsSync, mkdirSync } from "node:fs";
-import { join, sep } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
 /** The refusal-message fragment naming Ghidra's own literal error text, in
  * ONE place, so every refusal in this module (and any caller reading a
  * refusal message) can quote the same words Ghidra itself would have used
@@ -105,6 +105,30 @@ export const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
  * alphabet in a case-insensitive sense; the RegExp itself carries no `i`
  * flag, so a caller cannot silently loosen the comparison by construction. */
 export const LANGUAGE_ID_PATTERN = /^[A-Za-z0-9_]{1,64}(:[A-Za-z0-9_]{1,64}){1,7}$/;
+// ---------------------------------------------------------------------------
+// Phase 36, plan 36-02 (GHID-01, D-36-07). The loader-base-address shape and
+// the import-route enum, in the SAME "one authoritative place" discipline
+// this module's header states.
+// ---------------------------------------------------------------------------
+/** Anchored loader-base-address shape: a `0x` prefix followed by one to four
+ * LOWERCASE hex digits, anchored at both ends -- `"0X0"` (uppercase X) and
+ * `"0x0; rm -rf /"` both fail this pattern by construction, since the
+ * comparison is over the WHOLE string, not a prefix match. It is a raw argv
+ * token (never a path), so it is validated here rather than routed through
+ * `resolveWorkspacePath()` (T-36-09). */
+export const LOADER_BASE_ADDR_PATTERN = /^0x[0-9a-f]{1,4}$/;
+export const GHIDRA_IMPORT_ROUTES = Object.freeze(["prg", "flat64k"]);
+/** The route's own fixed loader base address, as a lowercase-hex string
+ * matching `LOADER_BASE_ADDR_PATTERN`. The flat-64K route bases at zero --
+ * the whole 64K address space IS the image; the `.prg` route bases at
+ * `0x801`, the C64 BASIC program start address (MEASURED, carried from
+ * `36-RESEARCH.md`'s own recorded `analyzeHeadless` invocations) -- a
+ * `.prg`'s load address is a property of the IMAGE, not of the route, which
+ * is why `loaderBaseAddr` stays a separately overridable field on the `prg`
+ * route (D-36-07) rather than being folded into this function entirely. */
+export function importRouteBaseAddr(route) {
+    return route === "flat64k" ? "0x0" : "0x801";
+}
 /** The canonical module name this project's own tooling and live tests
  * install the vendored SLEIGH extension under, via `ghidra.installExtension`
  * (`<GHIDRA_HOME>/Ghidra/Extensions/<this name>/`). Exported so no future
@@ -125,6 +149,90 @@ export const GHIDRA_EXTENSION_MODULE_NAME = "C64Undocumented6502";
  * exactly this list from `<GHIDRA_HOME>/Ghidra/Processors/6502/data/languages/`
  * -- one shared list, never re-typed at either call site. */
 export const GHIDRA_STOCK_6502_LANGUAGE_FILES = Object.freeze(["6502.slaspec", "6502.pspec", "6502.cspec"]);
+/** Matches one `<language ...>` opening tag at a time. Attributes may span
+ * multiple lines (MEASURED against the real stock `6502.ldefs`), so this
+ * deliberately does not anchor to a single line -- it stops at the first
+ * unescaped `>`, which is always the tag's own close, since no attribute
+ * value in a `.ldefs` file contains a literal `>`. */
+const LANGUAGE_ELEMENT_PATTERN = /<language\b[^>]*>/g;
+const ID_ATTR_PATTERN = /\bid\s*=\s*"([^"]*)"/;
+const SLAFILE_ATTR_PATTERN = /\bslafile\s*=\s*"([^"]*)"/;
+/**
+ * Walks every module directory under `<ghidraHome>/Ghidra/Extensions/` and
+ * `<ghidraHome>/Ghidra/Processors/`, reading each one's own
+ * `data/languages/` directory for `.ldefs` files, and returns
+ * every declared `<language>` element's own `id`/`slafile` pair, plus
+ * whether that `slafile` exists on disk beside its own `.ldefs` -- a SORTED
+ * list (by `id`) so any assertion over the result is order-independent.
+ *
+ * `ghidraHome` is an explicit parameter, never read from
+ * `process.env.GHIDRA_HOME` internally, so the whole function is drivable
+ * against a synthetic directory tree with no real Ghidra installation
+ * present.
+ *
+ * A missing root (no `Extensions/` directory at all, the ordinary state of
+ * a fresh Ghidra install before any extension is ever installed) is
+ * treated as "no entries there" -- neither a refusal nor a throw. Any other
+ * filesystem error on a candidate module/language-file is likewise skipped
+ * rather than thrown: this function's contract is a plain data return, not
+ * a discriminated result.
+ *
+ * Read via a narrow anchored attribute match, never a general XML parse --
+ * this module has no parser dependency today and must not gain one for a
+ * single filesystem-read helper.
+ *
+ * This function performs no child-process call and touches nothing outside
+ * the directory it is given -- it never creates, copies, or compiles
+ * anything, preserving this module's own header invariant.
+ */
+export function installedLanguageIds(ghidraHome) {
+    const results = [];
+    const moduleRoots = [join(ghidraHome, "Ghidra", "Extensions"), join(ghidraHome, "Ghidra", "Processors")];
+    for (const moduleRoot of moduleRoots) {
+        let moduleNames;
+        try {
+            moduleNames = readdirSync(moduleRoot, { withFileTypes: true })
+                .filter((entry) => entry.isDirectory())
+                .map((entry) => entry.name);
+        }
+        catch {
+            continue;
+        }
+        for (const moduleName of moduleNames) {
+            const languagesDir = join(moduleRoot, moduleName, "data", "languages");
+            let fileNames;
+            try {
+                fileNames = readdirSync(languagesDir).filter((name) => name.endsWith(".ldefs"));
+            }
+            catch {
+                continue;
+            }
+            for (const fileName of fileNames) {
+                const ldefsPath = join(languagesDir, fileName);
+                let text;
+                try {
+                    text = readFileSync(ldefsPath, "utf8");
+                }
+                catch {
+                    continue;
+                }
+                for (const tagMatch of text.matchAll(LANGUAGE_ELEMENT_PATTERN)) {
+                    const tagText = tagMatch[0];
+                    const idMatch = ID_ATTR_PATTERN.exec(tagText);
+                    const slafileMatch = SLAFILE_ATTR_PATTERN.exec(tagText);
+                    if (!idMatch || !slafileMatch)
+                        continue;
+                    const id = idMatch[1];
+                    const slafile = slafileMatch[1];
+                    const slafileExists = existsSync(join(languagesDir, slafile));
+                    results.push({ id, ldefsPath, slafile, slafileExists });
+                }
+            }
+        }
+    }
+    results.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    return results;
+}
 /** Splits `absolutePath` on the platform separator and reports the FIRST
  * segment beginning with `.` -- checking EVERY segment, not just the leaf,
  * per Finding 2's own discovery. Returning the offending SEGMENT (never a
@@ -262,12 +370,19 @@ const BUILD_ANALYZE_HEADLESS_ARGV_KEYS = Object.freeze([
     "projectName",
     "importPath",
     "processor",
+    "loaderBaseAddr",
+    "noanalysis",
+    "scriptPath",
     "preScript",
+    "entrypointsPath",
     "postScript",
+    "exportPath",
+    "expectedClassificationLines",
 ]);
 const BUILD_ANALYZE_HEADLESS_ARGV_SHAPE = `an object with keys ${BUILD_ANALYZE_HEADLESS_ARGV_KEYS.join("/")} ` +
-    `("projectLocation"/"projectName"/"importPath"/"processor" required non-empty strings, ` +
-    `"preScript"/"postScript" optional non-empty strings)`;
+    `("projectLocation"/"projectName"/"importPath"/"processor"/"loaderBaseAddr" required non-empty strings, ` +
+    `"noanalysis" an optional boolean, "scriptPath"/"preScript"/"entrypointsPath"/"postScript"/"exportPath" optional ` +
+    `non-empty strings, "expectedClassificationLines" an optional non-negative integer)`;
 /** Emits `[projectLocation, projectName, "-import", importPath, "-processor",
  * processor, "-deleteProject", ...optional pre/post script flags]`.
  *
@@ -291,12 +406,13 @@ export function buildAnalyzeHeadlessArgv(input) {
             message: `buildAnalyzeHeadlessArgv input has unknown key(s) ${unknownKeys.join(", ")}; accepted shape is ${BUILD_ANALYZE_HEADLESS_ARGV_SHAPE}`,
         };
     }
-    const { projectLocation, projectName, importPath, processor, preScript, postScript } = input;
+    const { projectLocation, projectName, importPath, processor, loaderBaseAddr, noanalysis, scriptPath, preScript, entrypointsPath, postScript, exportPath, expectedClassificationLines } = input;
     for (const [key, value] of [
         ["projectLocation", projectLocation],
         ["projectName", projectName],
         ["importPath", importPath],
         ["processor", processor],
+        ["loaderBaseAddr", loaderBaseAddr],
     ]) {
         if (typeof value !== "string" || value === "") {
             return { ok: false, message: `buildAnalyzeHeadlessArgv requires a non-empty string "${key}"; got ${describe(value)}` };
@@ -314,25 +430,53 @@ export function buildAnalyzeHeadlessArgv(input) {
             message: `buildAnalyzeHeadlessArgv "processor" must match ${LANGUAGE_ID_PATTERN.source}; got ${describe(processor)}`,
         };
     }
-    if (preScript !== undefined && (typeof preScript !== "string" || preScript === "")) {
-        return { ok: false, message: `buildAnalyzeHeadlessArgv "preScript" must be a non-empty string or absent; got ${describe(preScript)}` };
+    // Phase 36, plan 36-02 (D-36-07, T-36-09): the SAME independent
+    // second-layer discipline, fourth field -- so the rule holds even for a
+    // caller that constructed `loaderBaseAddr` itself and bypassed
+    // host-tool.mts's own route-conflict check entirely.
+    if (!LOADER_BASE_ADDR_PATTERN.test(loaderBaseAddr)) {
+        return {
+            ok: false,
+            message: `buildAnalyzeHeadlessArgv "loaderBaseAddr" must match ${LOADER_BASE_ADDR_PATTERN.source}; got ${describe(loaderBaseAddr)}`,
+        };
     }
-    if (postScript !== undefined && (typeof postScript !== "string" || postScript === "")) {
-        return { ok: false, message: `buildAnalyzeHeadlessArgv "postScript" must be a non-empty string or absent; got ${describe(postScript)}` };
+    if (noanalysis !== undefined && typeof noanalysis !== "boolean") {
+        return { ok: false, message: `buildAnalyzeHeadlessArgv "noanalysis" must be a boolean or absent; got ${describe(noanalysis)}` };
     }
-    // 34-07 (CR-02): an INDEPENDENT second-layer check -- refuse a preScript
-    // or postScript containing a parent-directory path segment, even for a
-    // caller that constructed these fields itself and bypassed host-tool.mts's
-    // own resolveWorkspacePath() entirely. Mirrors the dot-segment re-check
-    // just below: same per-SEGMENT splitting approach (never a substring
-    // test), so a name that merely CONTAINS two dots (e.g. "..foo.java") is
-    // not misjudged -- only an exact ".." segment is a parent-directory
+    if (expectedClassificationLines !== undefined && (typeof expectedClassificationLines !== "number" || !Number.isInteger(expectedClassificationLines) || expectedClassificationLines < 0)) {
+        return {
+            ok: false,
+            message: `buildAnalyzeHeadlessArgv "expectedClassificationLines" must be a non-negative integer or absent; got ${describe(expectedClassificationLines)}`,
+        };
+    }
+    for (const [key, value] of [
+        ["scriptPath", scriptPath],
+        ["preScript", preScript],
+        ["entrypointsPath", entrypointsPath],
+        ["postScript", postScript],
+        ["exportPath", exportPath],
+    ]) {
+        if (value !== undefined && (typeof value !== "string" || value === "")) {
+            return { ok: false, message: `buildAnalyzeHeadlessArgv "${key}" must be a non-empty string or absent; got ${describe(value)}` };
+        }
+    }
+    // 34-07 (CR-02) / 36-02: an INDEPENDENT second-layer check -- refuse a
+    // preScript/postScript/scriptPath/entrypointsPath/exportPath containing a
+    // parent-directory path segment, even for a caller that constructed
+    // these fields itself and bypassed host-tool.mts's own
+    // resolveWorkspacePath() entirely. Mirrors the dot-segment re-check just
+    // below: same per-SEGMENT splitting approach (never a substring test), so
+    // a name that merely CONTAINS two dots (e.g. "..foo.java") is not
+    // misjudged -- only an exact ".." segment is a parent-directory
     // reference. Does NOT require absoluteness: a bare Ghidra script name
     // ("Pre.java") is Ghidra's own documented form for these flags and must
     // stay accepted (ghidra-project.test.ts's own pre-existing case).
     for (const [key, value] of [
         ["preScript", preScript],
         ["postScript", postScript],
+        ["scriptPath", scriptPath],
+        ["entrypointsPath", entrypointsPath],
+        ["exportPath", exportPath],
     ]) {
         if (typeof value !== "string")
             continue;
@@ -345,6 +489,28 @@ export function buildAnalyzeHeadlessArgv(input) {
             };
         }
     }
+    // Phase 36, plan 36-02: "a script argument with no script" is refused BY
+    // NAME rather than silently dropped -- a dropped argument is how a run
+    // reports success having asserted nothing (must_haves.prohibitions).
+    // Independent second-layer check, mirroring every other rule above.
+    if (typeof entrypointsPath === "string" && typeof preScript !== "string") {
+        return {
+            ok: false,
+            message: `buildAnalyzeHeadlessArgv refuses "entrypointsPath" without "preScript": a script argument with no script to receive it`,
+        };
+    }
+    if (typeof postScript !== "string" && (typeof exportPath === "string" || expectedClassificationLines !== undefined)) {
+        return {
+            ok: false,
+            message: `buildAnalyzeHeadlessArgv refuses "exportPath"/"expectedClassificationLines" without "postScript": a script argument with no script to receive it`,
+        };
+    }
+    if (expectedClassificationLines !== undefined && typeof exportPath !== "string") {
+        return {
+            ok: false,
+            message: `buildAnalyzeHeadlessArgv refuses "expectedClassificationLines" without "exportPath": it is the export script's own second argument, positioned after the export path`,
+        };
+    }
     // Re-run the dot-segment check independently of resolveGhidraProject() --
     // so the rule holds even for a caller that constructed `projectLocation`
     // itself and skipped the resolver entirely (T-34-14).
@@ -355,10 +521,11 @@ export function buildAnalyzeHeadlessArgv(input) {
             message: `buildAnalyzeHeadlessArgv refuses a dot-prefixed project location ("${dotted.segment}"): ${DOT_SEGMENT_REFUSAL}; got ${describe(projectLocation)}`,
         };
     }
-    // Phase 36, plan 36-01 (OPC-04): "-processor" and its value are two
-    // SEPARATE argv entries, never a space-joined flag-and-value pair --
-    // pushed right after "-import <importPath>", mirroring where the
-    // research transcript's own analyzeHeadless invocation places it.
+    // Phase 36, plan 36-01/36-02 (OPC-04, D-36-07): fixed-order argv, each
+    // flag and its value as SEPARATE array entries, never string-concatenated.
+    // "-loader BinaryLoader" is a fixed literal (never a wire field, D-36-07);
+    // "-loader-baseAddr" is ALWAYS emitted, since host-tool.mts always
+    // supplies a value (either the caller's own or the route's own default).
     const argv = [
         projectLocation,
         projectName,
@@ -366,11 +533,28 @@ export function buildAnalyzeHeadlessArgv(input) {
         importPath,
         "-processor",
         processor,
-        "-deleteProject",
+        "-loader",
+        "BinaryLoader",
+        "-loader-baseAddr",
+        loaderBaseAddr,
     ];
-    if (typeof preScript === "string")
+    if (noanalysis === true)
+        argv.push("-noanalysis");
+    if (typeof scriptPath === "string")
+        argv.push("-scriptPath", scriptPath);
+    if (typeof preScript === "string") {
         argv.push("-preScript", preScript);
-    if (typeof postScript === "string")
+        if (typeof entrypointsPath === "string")
+            argv.push(entrypointsPath);
+    }
+    if (typeof postScript === "string") {
         argv.push("-postScript", postScript);
+        if (typeof exportPath === "string") {
+            argv.push(exportPath);
+            if (typeof expectedClassificationLines === "number")
+                argv.push(String(expectedClassificationLines));
+        }
+    }
+    argv.push("-deleteProject");
     return { ok: true, argv };
 }
