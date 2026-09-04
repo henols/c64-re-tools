@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 36
 current_phase_name: The SLEIGH Language and the Ghidra Harness
 status: executing
-stopped_at: Completed 36-04-PLAN.md
-last_updated: "2026-09-04T17:54:36.645Z"
+stopped_at: Completed 36-05-PLAN.md
+last_updated: "2026-09-04T18:47:38.975Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 36 execution started
-state_head: e3aa896ce66998a46872e702729e8fb79e34e1fa
+state_head: ba9d873ad60d5c4c61f5e6022e7a7f48c34b6bf9
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 35
-  completed_plans: 32
+  completed_plans: 33
   percent: 50
 ---
 
@@ -177,7 +177,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 36 (The SLEIGH Language and the Ghidra Harness) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -587,6 +587,7 @@ Last activity: 2026-09-04 — Phase 36 execution started
 | Phase 36 P02 | 35 min | 3 tasks | 6 files |
 | Phase 36 P03 | 31min | 3 tasks | 9 files |
 | Phase 36 P04 | 30min | 3 tasks | 5 files |
+| Phase 36 P05 | 48min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1049,6 +1050,8 @@ Recent decisions affecting current work:
 - [Phase 36]: expectedClassificationLines without exportPath is refused too, beyond the plan's literal wording -- without exportPath it would silently occupy the export script's argument-0 position instead of argument-1.
 - [Phase 36]: 36-03: GhidraStructExport.java's classification expectation is computed from mem.getBlocks() internally; script argument 1 only OVERRIDES that assertion, never replaces its normal source. — Lets the hermetic gate plant a deliberately wrong expectation and observe a real throw, while the normal path never trusts a caller-supplied number.
 - [Phase 36]: GHID-01's three gates (thrown-script exact literal with uninformative exit status; block-total classification count on both import routes; reproducibility plus a version-declared Ghidra prerequisite) were each observed firing on a real analyzeHeadless run against Ghidra 12.1.3 — Live proof was required before any later plan reads these gates as trustworthy instruments; recorded in evidence/36-04-three-gates.md
+- [Phase 36]: GhidraStructExport.java's ## REFERENCES section never reflects the volatile flag (MEASURED, byte-identical with/without); added an additive ## DECOMPILED_TEXT section as the actual site of the effect
+- [Phase 36]: fixtures/ghidra/README.md corrected: the .prg route's real entry point is $0812 not $0810 -- BinaryLoader does not strip the .prg header, shifting addresses two bytes later
 
 ### Pending Todos
 
@@ -1860,8 +1863,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T17:54:36.390Z
-Stopped at: Completed 36-04-PLAN.md
+Last session: 2026-09-04T18:47:38.694Z
+Stopped at: Completed 36-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md

@@ -196,12 +196,12 @@ presented as measured as a defect class, so provenance is stated rather than imp
       harness greps for the **exact literal** `ERROR REPORT SCRIPT ERROR` (a naive `error`/`fail`
       grep false-fires on the flat-64K route's benign `ZERO_PAGE`/`STACK` INFO lines), and asserts
       the classification count as the **block total, not the image size**, on **both** import routes
-- [ ] **GHID-02**: `$0000-$0001` and `$D000-$DFFF` are marked volatile before `analyzeAll()`, proven
+- [x] **GHID-02**: `$0000-$0001` and `$D000-$DFFF` are marked volatile before `analyzeAll()`, proven
       by a planted-violation test — remove the flag and hardware writes must **disappear** from the
       output. MEASURED on the committed `bank.a` fixture: three of four `$01` writes and a `$d020`
       write eliminated under defaults, silently, with no warning. Applied to a raster loop this
       deletes the entire visible effect of the program and reports success
-- [ ] **GHID-03**: A loader-owned block at the same address is handled by setting the flag on the
+- [x] **GHID-03**: A loader-owned block at the same address is handled by setting the flag on the
       **existing** block, so a run cannot fall back to non-volatile through a swallowed
       `MemoryConflictException`. **AMENDED** — the control is observed red on **both** import routes,
       not one: MEASURED, the conflict path is route-dependent, so a pre-script tested on the `.prg`
@@ -420,8 +420,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DXA-03 | Phase 35 | Complete |
 | DXA-04 | Phase 35 | Complete |
 | GHID-01 | Phase 36 | Complete |
-| GHID-02 | Phase 36 | Pending |
-| GHID-03 | Phase 36 | Pending |
+| GHID-02 | Phase 36 | Complete |
+| GHID-03 | Phase 36 | Complete |
 | GHID-04 | Phase 36 | Pending |
 | GHID-05 | Phase 36 | Pending |
 | OPC-01 | Phase 36 | Pending |
