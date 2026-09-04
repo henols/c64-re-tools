@@ -26,14 +26,23 @@
 // length of `fileSize - 2`; for `imageKind: "flat64k"` it uses origin `0`
 // and the file's own size (`flatImageOrigin()` from prg-image.ts refuses
 // anything that is not exactly 65536 bytes).
+//
+// Phase 35, plan 35-04 (DXA-03): `DxaRunArgs.knownDataRows` is an
+// ALTERNATIVE to a caller-supplied `datablocksPath`/`labelsPath` -- see that
+// field's own doc comment below. This module calls `dxa-blocks.ts`'s
+// `emitDataBlocks()`/`emitLabels()` to write the files and wires the
+// resulting workspace-relative paths into the wire request; it adds no new
+// `HostToolId` argument key (plan 35-01 already landed all five path keys on
+// `dxa.disassemble`) and touches no allowlist table.
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runHostToolFromContainer, type HostToolClientResult, type RunHostToolFromContainerOptions } from "./host-tool-client.ts";
 import { repoRoot } from "./repo-root.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
 import { parseDumpListing, type DumpListingMap } from "./dxa-listing.ts";
+import { emitDataBlocks, emitLabels, type KnownDataRow } from "./dxa-blocks.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +58,18 @@ export interface DxaRunArgs {
   datablocksPath?: string;
   labelsPath?: string;
   outDir?: string;
+  /** Phase 35, plan 35-04 (DXA-03). AN ALTERNATIVE to supplying
+   * `datablocksPath`/`labelsPath` directly: this module emits `knownDataRows`
+   * to per-invocation `-B`/`-l` files (`dxa-blocks.ts`'s `emitDataBlocks()`/
+   * `emitLabels()`) under the same directory `outDir` resolves to, and wires
+   * the resulting paths into the wire request in their place. Mutually
+   * exclusive with `datablocksPath`/`labelsPath` -- supplying both throws,
+   * naming which pair collided, rather than silently preferring one. When
+   * the emitters select zero ranges/labels, the corresponding wire argument
+   * is OMITTED entirely (never a path to a file that was never written) --
+   * `dxa-blocks.ts`'s own zero-rows contract, propagated rather than
+   * re-decided here. */
+  knownDataRows?: readonly KnownDataRow[];
 }
 
 /** The function shape `runHostToolFromContainer()` itself has -- named here
@@ -121,11 +142,42 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
     imageSize = imageBytes.length;
   }
 
+  // Phase 35, plan 35-04 (DXA-03): knownDataRows is mutually exclusive with a
+  // caller-supplied datablocksPath/labelsPath -- refuse BY NAME rather than
+  // silently letting one win, exactly like host-tool.mts's own "first
+  // refusal wins" discipline for its resolved paths.
+  let datablocksPath = args.datablocksPath;
+  let labelsPath = args.labelsPath;
+  if (args.knownDataRows !== undefined) {
+    if (datablocksPath !== undefined || labelsPath !== undefined) {
+      throw new Error(
+        "runDxaDisassemble: knownDataRows is mutually exclusive with datablocksPath/labelsPath -- supply the rows OR pre-written paths, never both",
+      );
+    }
+    // Per-invocation paths under the SAME directory dxa.disassemble's own
+    // server-side default resolves outDir to (dirname(imagePath)) when the
+    // caller omits outDir -- mirrored here so the emitted files land where
+    // the resolved image and listing already do. Workspace-relative
+    // strings throughout: emitDataBlocks()/emitLabels() are handed the
+    // absolute path (root-joined) to WRITE to; the wire argument stays the
+    // workspace-relative string, exactly like every other path field here.
+    const outDirRelative = args.outDir ?? dirname(args.image);
+    const imageStem = basename(args.image).replace(/\.[^./]+$/, "");
+    const blocksRelPath = `${outDirRelative}/${imageStem}.dxa-blocks.txt`;
+    const labelsRelPath = `${outDirRelative}/${imageStem}.dxa-labels.lbl`;
+
+    const blocksResult = emitDataBlocks(args.knownDataRows, join(root, blocksRelPath));
+    if (blocksResult.path !== undefined) datablocksPath = blocksRelPath;
+
+    const labelsResult = emitLabels(args.knownDataRows, join(root, labelsRelPath));
+    if (labelsResult.path !== undefined) labelsPath = labelsRelPath;
+  }
+
   const run = opts.run ?? runHostToolFromContainer;
   const wireArgs: Record<string, unknown> = { image: args.image, imageKind: args.imageKind };
   if (args.entrypointsPath !== undefined) wireArgs.entrypointsPath = args.entrypointsPath;
-  if (args.datablocksPath !== undefined) wireArgs.datablocksPath = args.datablocksPath;
-  if (args.labelsPath !== undefined) wireArgs.labelsPath = args.labelsPath;
+  if (datablocksPath !== undefined) wireArgs.datablocksPath = datablocksPath;
+  if (labelsPath !== undefined) wireArgs.labelsPath = labelsPath;
   if (args.outDir !== undefined) wireArgs.outDir = args.outDir;
 
   const runOpts: RunHostToolFromContainerOptions = {};

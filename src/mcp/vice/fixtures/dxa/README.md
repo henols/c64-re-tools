@@ -60,6 +60,44 @@ point — the fixture's own `RTS`-terminated three-instruction routine at
 `$0810`, matching `main.c`'s `case 'R'` handling (a file of hex addresses,
 one per line, no `$` prefix).
 
+## The DXA-03 exclusion pair (35-04)
+
+Plan 35-04's `dxa-blocks.ts` writes a `-B` datablocks file naming a
+known-data range; this is the pair proving that naming the range excludes
+those bytes from dxa's OWN code classification, MEASURED this session
+against the same pinned vendored binary (sha256
+`0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`). Both
+runs use the identical `-R` entry point; the ONLY difference is the added
+`-B` file.
+
+**Without a known-data range** (the existing tracer command, above):
+
+```
+vendor/dxa/dxa -p all-nmos6502 -d skip-scanning -t detect-internal \
+  -R fixtures/dxa/tracer.entrypoints -a dump fixtures/dxa/tracer.prg
+```
+
+Measured split over the window `$0801-$0815`: **6 code bytes** (`$0810-$0815`,
+the entry point's own `lda #$00` / `sta $d020` / `rts`), **15 data bytes**
+(`$0801-$080f`), 8 byte-emitting matched lines.
+
+**With a known-data range covering exactly those six bytes** (a one-line `-B`
+file, `0810-0815`):
+
+```
+vendor/dxa/dxa -p all-nmos6502 -d skip-scanning -t detect-internal \
+  -R fixtures/dxa/tracer.entrypoints -B <blocks-file> -a dump fixtures/dxa/tracer.prg
+```
+
+Measured split over the SAME window: **0 code bytes**, **21 data bytes**
+(`$0801-$0815`), 7 byte-emitting matched lines (`$0810-$0812`/`$0813-$0815`
+now decode as two 3-byte `.byt` chunks rather than three separate
+instructions). The second run's 21 data bytes are the first run's 15 data
+bytes PLUS its 6 code bytes — the named range's six bytes are exactly the
+six bytes that disappear from code and reappear as data; this difference is
+`dxa-live.test.ts`'s `dxa-live EXCLUSION` case, asserted from dxa's own
+listing, never from the emitted `-B` file's contents.
+
 ## `fixture.a`, `fixture.rep`, `fixture.prg` (35-03, DXA-04)
 
 Phase 35, plan 35-03's source-derived ground-truth tier (`partitionSourceDerived()`

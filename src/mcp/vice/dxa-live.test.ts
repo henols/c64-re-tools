@@ -34,7 +34,7 @@ import { existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runDxaDisassemble } from "./dxa-run.ts";
+import { runDxaDisassemble, type DxaRunFn } from "./dxa-run.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DXA_BIN_PATH = join(HERE, "vendor", "dxa", "dxa");
@@ -85,5 +85,85 @@ test(
       // up so a live-test run never leaves an untracked file behind.
       rmSync(listingPath, { force: true });
     }
+  },
+);
+
+// Phase 35, plan 35-04 (DXA-03): the exclusion case. This pair was run
+// against the pinned vendored binary this session (fixtures/dxa/README.md
+// records the exact commands and both measured splits) -- the numbers below
+// are MEASURED literals, not predictions.
+test(
+  "dxa-live EXCLUSION: a known-data range for $0810-$0815 removes those bytes from dxa's own code classification",
+  { skip: SKIP_REASON },
+  async () => {
+    const root = HERE;
+    const listingPath = join(root, "fixtures", "dxa", "tracer.dxa-dump.lst");
+    const blocksPath = join(root, "fixtures", "dxa", "tracer.dxa-blocks.txt");
+    try {
+      // Half one: the SAME tracer run as the end-to-end case above, no
+      // known-data range -- dxa's default heuristics classify $0810-$0815
+      // (the entry point's own three-instruction body) as code.
+      const withoutRange = await runDxaDisassemble(
+        { image: "fixtures/dxa/tracer.prg", imageKind: "prg", entrypointsPath: "fixtures/dxa/tracer.entrypoints" },
+        { repoRoot: root },
+      );
+      assert.equal(withoutRange.map.codeBytes, 6, "without a known-data range, dxa classifies $0810-$0815 as code");
+      assert.equal(withoutRange.map.dataBytes, 15, "without a known-data range, data bytes are $0801-$080f");
+
+      // Half two: the IDENTICAL run, with ONE known-data range covering the
+      // SAME six bytes -- the assertion reads dxa's own classification of
+      // those bytes in its listing, never the emitted -B file's contents.
+      const withRange = await runDxaDisassemble(
+        {
+          image: "fixtures/dxa/tracer.prg",
+          imageKind: "prg",
+          entrypointsPath: "fixtures/dxa/tracer.entrypoints",
+          knownDataRows: [{ start: 0x0810, endInclusive: 0x0815, dataType: "byte" }],
+        },
+        { repoRoot: root },
+      );
+      assert.equal(withRange.map.codeBytes, 0, "the named range's six bytes no longer classify as code");
+      assert.equal(withRange.map.dataBytes, 21, "all 21 accounted bytes now classify as data");
+    } finally {
+      rmSync(listingPath, { force: true });
+      rmSync(blocksPath, { force: true });
+    }
+  },
+);
+
+// Phase 35, plan 35-04 (DXA-03): the zero-range omission case. Fully
+// hermetic (an injected `run` capturing the constructed wire request, never
+// a real dxa process) but kept in THIS file per plan 35-04's own file scope
+// -- still gated behind SKIP_REASON, following this file's own header rule
+// that EVERY test here passes through node:test's `{ skip }` option.
+test(
+  "dxa-live OMISSION: a zero-range knownDataRows omits datablocksPath/labelsPath from the constructed request entirely",
+  { skip: SKIP_REASON },
+  async () => {
+    let capturedArgs: Record<string, unknown> | undefined;
+    const run: DxaRunFn = async (_tool, args) => {
+      capturedArgs = args;
+      return {
+        ok: true,
+        tool: "dxa.disassemble",
+        exitStatus: 0,
+        results: [{ path: join(HERE, "fixtures", "dxa", "tracer.dxa-dump.lst"), sha256: "0".repeat(64), byteLength: 1 }],
+        stderrTail: "",
+      };
+    };
+
+    await runDxaDisassemble(
+      { image: "fixtures/dxa/tracer.prg", imageKind: "prg", knownDataRows: [] },
+      // A synthetic 3-byte "image" (load address + one body byte, the
+      // smallest parsePrg() accepts) paired with a hand-built one-line
+      // listing satisfying that exact one-byte window -- this case is about
+      // the CONSTRUCTED REQUEST, never about the parsed map, so no real
+      // fixture bytes are needed here.
+      { repoRoot: HERE, run, imageBytes: new Uint8Array([0x01, 0x08, 0x00]), listingText: "0801 00 \t.byt $00\n" },
+    );
+
+    assert.ok(capturedArgs !== undefined, "the injected run() must have been called");
+    assert.equal("datablocksPath" in (capturedArgs as Record<string, unknown>), false, "zero ranges omits datablocksPath entirely");
+    assert.equal("labelsPath" in (capturedArgs as Record<string, unknown>), false, "zero labels omits labelsPath entirely");
   },
 );
