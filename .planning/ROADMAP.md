@@ -944,12 +944,26 @@ decompiler, and structural facts exported through `DecompInterface`.
 **Plans**: 7 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 36-01-PLAN.md — Tracer: the SLEIGH extension source with its eight sized-local fixes, the `sleigh` compile gate and its red observation, the new `6502:LE:16:nmos` language id landed in the same commit as the `-processor` field, the `ghidra.installExtension` op, the run-log capture slot, and `ghidra-run.ts` — proven end to end by a real run log naming the language
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 36-02-PLAN.md — The full `ghidra.analyze` argv surface (`importRoute`, `loaderBaseAddr`, `noanalysis`, `scriptPath`, `entrypointsPath`, `exportPath`, `expectedClassificationLines`) plus the checked, non-materialising language preflight, with the hermetic seam census, path-confinement and idempotency cases
 - [ ] 36-03-PLAN.md — `VolatileCarve.java` and `GhidraStructExport.java` promoted and renamed for their function, the classification expectation fixed to the script's own block total, the `DecompInterface` walk with attempted/decompiled/timedOut accounting, and the hermetic exact-literal gate with the naive grep proven to false-fire
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 36-04-PLAN.md — Both live suites registered manual-only in one commit (the eleventh and twelfth entries with the enumerating assertion updated), and each of `GHID-01`'s three gates observed firing on a real run, gate 2 on both import routes
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 36-05-PLAN.md — The volatile-I/O carve proven by disappearance on the `.prg` route and the flat-64K route, the loader-owned block handled on the existing block, and a forced memory conflict observed loud rather than a silent fall-back
 - [ ] 36-06-PLAN.md — All 105 opcode bytes decoding under the new language with the same assertion observed FAILING under `6502:LE:16:default`, the six unstable instructions read as declared unknowns, and the 15 bytes the stock 65C02 language also claims keeping its meanings
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 36-07-PLAN.md — The real-corpus before/after difference, the `DecompInterface` acceptance run with typed cross-references and denominator-free dispatch reporting, the `DataTypeManager` control on the same image, and the phase findings document
 
 Notes:

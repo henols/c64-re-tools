@@ -4,16 +4,16 @@ milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 36
 current_phase_name: The SLEIGH Language and the Ghidra Harness
-status: planning
+status: executing
 stopped_at: Phase 35 complete, ready to plan Phase 36
-last_updated: "2026-09-04T13:04:47.514Z"
+last_updated: "2026-09-04T14:46:05.771Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 35 complete, transitioned to Phase 36
-state_head: 32b481b37265c92124e9a1e0a81681bfb4f180fb
+state_head: b3939b07aa62a47956b491d40fd557ad80a3edbd
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 28
+  total_plans: 35
   completed_plans: 28
   percent: 50
 ---
@@ -176,7 +176,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 36 — The SLEIGH Language and the Ghidra Harness
+Phase: 36 (The SLEIGH Language and the Ghidra Harness) — READY TO EXECUTE
 Plan: Not started
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
@@ -216,7 +216,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: Phase 35 COMPLETE — 5/5 plans across 4 waves, verified 5/5 must-haves. Verification ran twice: the first pass scored 4/5 and contested `DXA-02`'s "parser refusing by name" clause, since `A-04` had deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read rather than refuse, and both real anomalies found land inside the declared window so a refusal was unreachable by construction; the owner amended the criterion to "loud, never silent" (`cffc8056`) and re-verification passed 5/5, having independently reproduced both anomalies and established that `parseDumpListing()` has no silent disposition path at all. The code-review gate found and fixed a real BLOCKER (`CR-01`: unconfined local read/write I/O in `dxa-run.ts` that never crossed the host-tool seam) and a WARNING (`WR-01`: no integer check, so `NaN` emitted a corrupted `-B` line silently). Ready to plan Phase 36. Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Phase 36 PLANNED — 7 plans in 5 waves, 21 tasks, all 9 requirements (`OPC-01`..`OPC-04`, `GHID-01`..`GHID-05`) assigned; `36-01` leads with a `type="tracer"` slice and waves 2 and 4 run two plans each on disjoint files. No `/gsd-discuss-phase` ran, so the planner assumptions and the two `36-RESEARCH.md` open questions are resolved as recorded decisions inside the plans. Phase 35 COMPLETE — 5/5 plans across 4 waves, verified 5/5 must-haves. Verification ran twice: the first pass scored 4/5 and contested `DXA-02`'s "parser refusing by name" clause, since `A-04` had deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read rather than refuse, and both real anomalies found land inside the declared window so a refusal was unreachable by construction; the owner amended the criterion to "loud, never silent" (`cffc8056`) and re-verification passed 5/5, having independently reproduced both anomalies and established that `parseDumpListing()` has no silent disposition path at all. The code-review gate found and fixed a real BLOCKER (`CR-01`: unconfined local read/write I/O in `dxa-run.ts` that never crossed the host-tool seam) and a WARNING (`WR-01`: no integer check, so `NaN` emitted a corrupted `-B` line silently). Phase 36 is now planned, as recorded above. Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
