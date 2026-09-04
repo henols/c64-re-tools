@@ -23,7 +23,15 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { directiveLength, partitionSourceDerived, renderSourceDerivedReport, rangesAreDisjointAndSorted, formatPercent } from "./dxa-partition.ts";
+import {
+  directiveLength,
+  partitionSourceDerived,
+  renderSourceDerivedReport,
+  partitionByteDerived,
+  renderByteDerivedReport,
+  formatPercent,
+  rangesAreDisjointAndSorted,
+} from "./dxa-partition.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "fixtures", "dxa");
@@ -137,4 +145,158 @@ test("task1: formatPercent rounds a ratio landing exactly on a half at the secon
 
 test("task1: formatPercent refuses a zero denominator by name rather than rendering 0.00, NaN or 100.00", () => {
   assert.throws(() => formatPercent(0, 0), /refusing a zero denominator/);
+});
+
+// ============================================================================
+// Task 2: the byte-derived tier
+// ============================================================================
+
+/** The canonical `10 SYS 2064` stub body (12 bytes) plus a 4-byte
+ * non-BASIC tail, byte-identical to fixtures/dxa/basic-stub.prg's own body
+ * (its header stripped). Building negative cases from this array with ONE
+ * field mutated keeps each negative case differing from the working
+ * positive case by exactly the thing it claims to test. */
+function stubBody(): number[] {
+  return [0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x34, 0x00, 0x00, 0x00, 0xaa, 0xbb, 0xcc, 0xdd];
+}
+
+test("task2: a clean 10 SYS 2064 stub classifies exactly 12 bytes certain-data; everything after is unknown", () => {
+  const body = new Uint8Array(stubBody());
+  const partition = partitionByteDerived({ bytes: body, isPrg: false, origin: 0x0801 });
+  assert.equal(partition.certainData.size, 12);
+  assert.equal(partition.unknown.size, body.length - 12);
+  assert.equal(partition.stubAttempted, true);
+});
+
+test("task2: the .prg header bytes appear in no class and in no denominator", () => {
+  const prgBytes = readFileSync(join(FIXTURES, "basic-stub.prg"));
+  assert.equal(prgBytes.length, 18);
+  const partition = partitionByteDerived({ bytes: new Uint8Array(prgBytes), isPrg: true });
+  assert.equal(partition.headerBytes, 2);
+  assert.equal(partition.certainData.size, 12);
+  assert.equal(partition.unknown.size, 4, "18 - 2 header - 12 certain-data = 4 unknown");
+  const denominator = partition.certainCode.size + partition.certainData.size;
+  assert.equal(denominator, 12, "the denominator is certain-code + certain-data, excluding the 2 header bytes entirely");
+  // Neither header byte (the .prg's own load-address bytes 0x01, 0x08) ever
+  // becomes an in-image ADDRESS at all -- the smallest classified address is
+  // the stub's own origin, never anything below it.
+  assert.equal(Math.min(...partition.certainData, ...partition.unknown), 0x0801);
+});
+
+test("task2 [unknown]: a link address pointing backwards (or to itself) makes the WHOLE stub unknown", () => {
+  const body = stubBody();
+  body[0] = 0x01;
+  body[1] = 0x08; // link = $0801, equal to the line's own start address
+  const partition = partitionByteDerived({ bytes: new Uint8Array(body), isPrg: false, origin: 0x0801 });
+  assert.equal(partition.certainData.size, 0, "backwards link: whole stub must be unknown, not partially classified");
+  assert.equal(partition.unknown.size, body.length);
+  assert.match(partition.stubOutcome, /backwards or to itself/);
+  assert.match(partition.stubOutcome, /\$0801/, "the reason must name the offending link value");
+});
+
+test("task2 [unknown]: a link address pointing outside the image makes the WHOLE stub unknown", () => {
+  const body = stubBody();
+  body[0] = 0xff;
+  body[1] = 0xff; // link = $ffff, far outside the 16-byte body's window
+  const partition = partitionByteDerived({ bytes: new Uint8Array(body), isPrg: false, origin: 0x0801 });
+  assert.equal(partition.certainData.size, 0, "out-of-range link: whole stub must be unknown");
+  assert.equal(partition.unknown.size, body.length);
+  assert.match(partition.stubOutcome, /points outside the image/);
+  assert.match(partition.stubOutcome, /\$ffff/, "the reason must name the offending link value");
+});
+
+test("task2 [unknown]: a link address pointing to a non-existent line (not the terminator's true next-line address) makes the WHOLE stub unknown", () => {
+  const body = stubBody();
+  body[0] = 0x0c;
+  body[1] = 0x08; // link = $080c: forward and in-bounds, but NOT where the terminator scan actually lands ($080b)
+  const partition = partitionByteDerived({ bytes: new Uint8Array(body), isPrg: false, origin: 0x0801 });
+  assert.equal(partition.certainData.size, 0, "non-line-start link: whole stub must be unknown");
+  assert.equal(partition.unknown.size, body.length);
+  assert.match(partition.stubOutcome, /does not point to the next line's actual start/);
+  assert.match(partition.stubOutcome, /\$080c/, "the reason must name the offending link value");
+});
+
+test("task2 [unknown]: a missing line terminator makes the WHOLE stub unknown", () => {
+  // Mutates the terminator field ($00 at offset 9) AND the two EOP-marker
+  // bytes that would otherwise supply the next accidental zero (offsets
+  // 10-11) -- together these ARE the terminator field this case tests: with
+  // any one of them left as $00, the scan would simply find the NEXT zero
+  // byte and report a (wrong) non-line-start mismatch instead of a missing
+  // terminator, so all three must move together to genuinely remove every
+  // zero from the remaining body. The link field itself (offset 0-1) is
+  // untouched.
+  const body = stubBody();
+  body[9] = 0xff;
+  body[10] = 0xff;
+  body[11] = 0xff;
+  const partition = partitionByteDerived({ bytes: new Uint8Array(body), isPrg: false, origin: 0x0801 });
+  assert.equal(partition.certainData.size, 0, "missing terminator: whole stub must be unknown");
+  assert.equal(partition.unknown.size, body.length);
+  assert.match(partition.stubOutcome, /no \$00 line terminator/);
+});
+
+test("task2: a stub truncated before its end-of-program marker makes the WHOLE stub unknown", () => {
+  const body = stubBody().slice(0, 11); // terminator present at offset 9, but only 1 byte follows it (need 2)
+  const partition = partitionByteDerived({ bytes: new Uint8Array(body), isPrg: false, origin: 0x0801 });
+  assert.equal(partition.certainData.size, 0);
+  assert.equal(partition.unknown.size, body.length);
+  assert.match(partition.stubOutcome, /truncated before its end-of-program marker/);
+});
+
+test("task2: the end-of-program marker is inside certain-data; the next address is unknown; the two never merge (two range entries)", () => {
+  const prgBytes = readFileSync(join(FIXTURES, "basic-stub.prg"));
+  const partition = partitionByteDerived({ bytes: new Uint8Array(prgBytes), isPrg: true });
+  assert.equal(partition.certainData.has(0x080b), true, "the first EOP-marker byte is certain-data");
+  assert.equal(partition.certainData.has(0x080c), true, "the second EOP-marker byte is certain-data");
+  assert.equal(partition.unknown.has(0x080d), true, "the byte immediately after the marker is unknown");
+  assert.equal(partition.ranges.length, 2, "certain-data and unknown must render as two separate entries, never merged");
+  assert.equal(partition.ranges[0]!.class, "certain-data");
+  assert.equal(partition.ranges[0]!.end, 0x080c);
+  assert.equal(partition.ranges[1]!.class, "unknown");
+  assert.equal(partition.ranges[1]!.start, 0x080d);
+});
+
+test("task2: a .prg whose load address is not $0801 gets no stub attempt; everything is unknown, with a stated reason", () => {
+  const body = new Uint8Array([0x02, 0x08, ...stubBody()]); // header says load address $0802
+  const partition = partitionByteDerived({ bytes: body, isPrg: true });
+  assert.equal(partition.stubAttempted, false);
+  assert.equal(partition.certainData.size, 0);
+  assert.equal(partition.unknown.size, 16);
+  assert.match(partition.stubOutcome, /is not \$0801/);
+});
+
+test("task2: a flat 64K-shaped image with no declared $0801 origin gets no stub attempt; everything is unknown", () => {
+  const body = new Uint8Array(stubBody());
+  const partition = partitionByteDerived({ bytes: body, isPrg: false, origin: 0 });
+  assert.equal(partition.stubAttempted, false);
+  assert.equal(partition.certainData.size, 0);
+  assert.equal(partition.unknown.size, body.length);
+});
+
+test("task2: a zero-byte image is refused by name", () => {
+  assert.throws(() => partitionByteDerived({ bytes: new Uint8Array(0), isPrg: true }), /refusing a 0-byte image/);
+});
+
+test("task2: a one-byte image is refused by name", () => {
+  assert.throws(() => partitionByteDerived({ bytes: new Uint8Array([0x01]), isPrg: true }), /refusing a 1-byte image/);
+});
+
+test("task2: a two-byte .prg (header only) yields 0 classifiable bytes, zero counts, and no rate line at all", () => {
+  const partition = partitionByteDerived({ bytes: new Uint8Array([0x01, 0x08]), isPrg: true });
+  assert.equal(partition.bodyLength, 0);
+  assert.equal(partition.certainCode.size, 0);
+  assert.equal(partition.certainData.size, 0);
+  assert.equal(partition.unknown.size, 0);
+  const rendered = renderByteDerivedReport(partition);
+  assert.doesNotMatch(rendered, /BYTE_DERIVED_DATA_FRACTION: \d/, "a zero-denominator run must never print a numeric rate line");
+  assert.match(rendered, /BYTE_DERIVED_DATA_FRACTION: refused/);
+});
+
+test("task2: no convention-based screen/charset address ($0400/$1000) is ever asserted in this module's source", () => {
+  const source = readFileSync(join(HERE, "dxa-partition.ts"), "utf8");
+  const hits = source
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+    .filter((line) => /0x0400|0x1000|\$0400|\$1000/.test(line));
+  assert.deepEqual(hits, [], "$0400/$1000 must never appear outside a comment in dxa-partition.ts");
 });
