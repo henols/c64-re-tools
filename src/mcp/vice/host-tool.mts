@@ -87,10 +87,10 @@
 // this module reaches them through the one place that owns them.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment } from "./ghidra-project.mjs";
+import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment, GHIDRA_STOCK_6502_LANGUAGE_FILES, LANGUAGE_ID_PATTERN, RUN_ID_PATTERN } from "./ghidra-project.mjs";
 
 // Phase 35, plan 35-01 (A-01): this module's own directory, used ONLY to
 // compute the vendored dxa binary's fixed path. Never an environment-variable
@@ -120,7 +120,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // ONE of the seven synchronized edits this plan's own PLAN.md names produces
 // an inconsistent allowlist that host-tool.test.ts's both-directions census
 // is designed to catch.
-export type HostToolId = "acme.build" | "ghidra.analyze" | "oracle.probe" | "oracle.run" | "dxa.disassemble";
+// Phase 36, plan 36-01 (D-36-01, OPC-01): "ghidra.installExtension" is the
+// sixth member -- materialises the vendored SLEIGH extension source (plus
+// the three copied stock 6502 language files) into
+// <GHIDRA_HOME>/Ghidra/Extensions/<moduleName>/ and compiles its .sla with
+// support/sleigh. The SAME seven synchronized edit sites named above apply.
+export type HostToolId = "acme.build" | "ghidra.analyze" | "oracle.probe" | "oracle.run" | "dxa.disassemble" | "ghidra.installExtension";
 
 export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
   "acme.build",
@@ -128,6 +133,7 @@ export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
   "oracle.probe",
   "oracle.run",
   "dxa.disassemble",
+  "ghidra.installExtension",
 ]);
 
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
@@ -149,11 +155,20 @@ export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
  * path segment, exactly as it already re-checks `projectLocation` for a
  * dot-prefixed segment -- so both rules hold even for a caller that
  * constructed these fields itself and skipped this module's own resolution
- * sites entirely. */
+ * sites entirely.
+ *
+ * Phase 36, plan 36-01: `ghidra.analyze` gains `processor` (D-36-01's
+ * promote decision) -- a REQUIRED, non-path, language-id string. It is
+ * deliberately absent from `HOST_TOOL_PATH_ARG_KEYS` below and never flows
+ * through `resolveWorkspacePath()`; it is validated against
+ * `LANGUAGE_ID_PATTERN` instead (ghidra-project.mts). `ghidra.installExtension`'s
+ * two keys: `sourceDir` (workspace-relative, path-bearing) and `moduleName`
+ * (a non-path name validated against `RUN_ID_PATTERN`'s anchored shape,
+ * exactly like `ghidra.analyze`'s own `runId`). */
 export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
     "acme.build": Object.freeze(["source", "outDir", "format", "setpc", "defines", "includes", "noReport"]),
-    "ghidra.analyze": Object.freeze(["runId", "importPath", "preScript", "postScript"]),
+    "ghidra.analyze": Object.freeze(["runId", "importPath", "preScript", "postScript", "processor"]),
     // 34-08 (CR-01): EMPTY -- the oracle's location is host-side
     // configuration only (resolveOracleCommand(), below), never a wire
     // value. No caller-supplied value may ever select what the host
@@ -165,6 +180,10 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
     // states -- five path-bearing keys plus the one enum key (`imageKind`),
     // never re-derived from ResolvedDxaDisassemblePaths below.
     "dxa.disassemble": Object.freeze(["image", "imageKind", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
+    // Phase 36, plan 36-01 (D-36-01): `sourceDir` is the vendored extension
+    // tree; `moduleName` names the install target directory under
+    // <GHIDRA_HOME>/Ghidra/Extensions/.
+    "ghidra.installExtension": Object.freeze(["sourceDir", "moduleName"]),
   }),
 );
 
@@ -185,7 +204,16 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
  * ghidra-project.mts), turned into a path only by `resolveGhidraProject()`
  * -- a DIFFERENT mechanism with its own guard, not `resolveWorkspacePath()`.
  * `oracle.probe`'s entry is empty because that tool accepts no arguments at
- * all (Task 1, CR-01). */
+ * all (Task 1, CR-01).
+ *
+ * Phase 36, plan 36-01: `ghidra.analyze`'s `processor` is deliberately NOT
+ * listed here -- it is a language-id string, not a path, and is validated
+ * against `LANGUAGE_ID_PATTERN` instead (T-36-02). `ghidra.installExtension`'s
+ * `sourceDir` IS path-bearing; `moduleName` is deliberately absent for the
+ * same reason `ghidra.analyze`'s `runId` is: a validated opaque name
+ * (`RUN_ID_PATTERN`) turned into a path segment only inside
+ * `runHostTool()`'s own resolution branch below, never through
+ * `resolveWorkspacePath()`. */
 export const HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<HostToolId, readonly string[]>, {
     "acme.build": Object.freeze(["source", "outDir", "includes"]),
@@ -196,6 +224,7 @@ export const HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<HostToolId, readonly strin
     // path, and is the one key HOST_TOOL_ARG_KEYS_REMAINDER (host-tool.test.ts)
     // classifies for this tool.
     "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
+    "ghidra.installExtension": Object.freeze(["sourceDir"]),
   }),
 );
 
@@ -209,11 +238,27 @@ export interface AcmeBuildArgs {
   noReport?: boolean;
 }
 
+/** Phase 36, plan 36-01 (D-36-01, T-36-02): `processor` is a REQUIRED
+ * language id (never optional, never defaulted -- the assumption-delta
+ * decision in 36-01-PLAN.md), validated against `LANGUAGE_ID_PATTERN`
+ * (ghidra-project.mts) both here and independently inside
+ * `buildAnalyzeHeadlessArgv()`. */
 export interface GhidraAnalyzeArgs {
   runId: string;
   importPath: string;
+  processor: string;
   preScript?: string;
   postScript?: string;
+}
+
+/** Phase 36, plan 36-01 (D-36-01): `sourceDir` is workspace-relative,
+ * resolved through the SAME `resolveWorkspacePath()` site every other
+ * tool's path argument uses. `moduleName` is a non-path name validated
+ * against `RUN_ID_PATTERN`'s anchored shape before it is ever joined into
+ * `<GHIDRA_HOME>/Ghidra/Extensions/<moduleName>/` (T-36-03). */
+export interface GhidraInstallExtensionArgs {
+  sourceDir: string;
+  moduleName: string;
 }
 
 /** 34-08 (CR-01): the wire request carries NO configuration at all -- the
@@ -255,7 +300,8 @@ export type HostToolRequest =
   | { tool: "ghidra.analyze"; args: GhidraAnalyzeArgs }
   | { tool: "oracle.probe"; args: OracleProbeArgs }
   | { tool: "oracle.run"; args: OracleRunArgs }
-  | { tool: "dxa.disassemble"; args: DxaDisassembleArgs };
+  | { tool: "dxa.disassemble"; args: DxaDisassembleArgs }
+  | { tool: "ghidra.installExtension"; args: GhidraInstallExtensionArgs };
 
 export type NormaliseHostToolRequestResult = { ok: true; request: HostToolRequest } | { ok: false; message: string };
 
@@ -376,7 +422,21 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
     if (typeof importPathRaw !== "string" || importPathRaw === "") {
       return { ok: false, message: `host_tool "ghidra.analyze" requires a non-empty string "importPath"; got ${describe(importPathRaw)}` };
     }
-    const args: GhidraAnalyzeArgs = { runId: runIdRaw, importPath: importPathRaw };
+    // Phase 36, plan 36-01 (D-36-01, T-36-02): REQUIRED, non-defaulted --
+    // the assumption-delta decision above. Refused absent, empty,
+    // non-string, and non-matching, each naming the field and the accepted
+    // shape; re-validated independently inside buildAnalyzeHeadlessArgv()
+    // (ghidra-project.mts) so the rule holds for a caller that bypassed
+    // this narrowing entirely. Byte-exact, case-sensitive comparison --
+    // never case-folded (must_haves.truths, 36-01-PLAN.md).
+    const processorRaw = argsObj.processor;
+    if (typeof processorRaw !== "string" || processorRaw === "" || !LANGUAGE_ID_PATTERN.test(processorRaw)) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.analyze" requires a non-empty "processor" string matching ${LANGUAGE_ID_PATTERN.source} (a colon-separated Ghidra language id, alphanumeric-and-underscore segments, no path separator, no dot, length-capped); got ${describe(processorRaw)}`,
+      };
+    }
+    const args: GhidraAnalyzeArgs = { runId: runIdRaw, importPath: importPathRaw, processor: processorRaw };
 
     if ("preScript" in argsObj) {
       const preScript = argsObj.preScript;
@@ -457,7 +517,22 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
     return { ok: true, request: { tool, args } };
   }
 
-  // Unreachable while HOST_TOOL_IDS has exactly five members -- kept so a
+  if (tool === "ghidra.installExtension") {
+    const sourceDir = argsObj.sourceDir;
+    if (typeof sourceDir !== "string" || sourceDir === "") {
+      return { ok: false, message: `host_tool "ghidra.installExtension" requires a non-empty string "sourceDir"; got ${describe(sourceDir)}` };
+    }
+    const moduleName = argsObj.moduleName;
+    if (typeof moduleName !== "string" || moduleName === "" || !RUN_ID_PATTERN.test(moduleName)) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.installExtension" requires a non-empty "moduleName" string matching ${RUN_ID_PATTERN.source} (alphanumeric-first, alphanumeric/dash/underscore only, no separator, no dot, length-capped); got ${describe(moduleName)}`,
+      };
+    }
+    return { ok: true, request: { tool, args: { sourceDir, moduleName } } };
+  }
+
+  // Unreachable while HOST_TOOL_IDS has exactly six members -- kept so a
   // future tool added to HOST_TOOL_IDS without a matching narrowing arm
   // fails loudly here rather than silently returning an under-typed request.
   return { ok: false, message: `normaliseHostToolRequest: no narrowing arm for tool "${tool}"` };
@@ -722,7 +797,22 @@ export interface ResolvedDxaDisassemblePaths {
   labelsPath?: string;
 }
 
-export type ResolvedHostToolPaths = ResolvedAcmeBuildPaths | ResolvedGhidraAnalyzePaths | ResolvedDxaDisassemblePaths;
+/** Phase 36, plan 36-01 (D-36-01): the resolved fields
+ * ghidra.installExtension's own buildHostToolArgv() branch needs.
+ * `sourceDirPath` is resolved through resolveWorkspacePath() -- the SAME
+ * site acme.build's `source` uses; `moduleName` is carried through
+ * unresolved (it is a validated opaque name, not a path -- mirrors
+ * ghidra.analyze's own `runId`/`projectName` split). */
+export interface ResolvedGhidraInstallExtensionPaths {
+  sourceDirPath: string;
+  moduleName: string;
+}
+
+export type ResolvedHostToolPaths =
+  | ResolvedAcmeBuildPaths
+  | ResolvedGhidraAnalyzePaths
+  | ResolvedDxaDisassemblePaths
+  | ResolvedGhidraInstallExtensionPaths;
 
 export type BuildHostToolArgvResult =
   | { ok: true; toolPath: string; argv: string[]; outputs: string[] }
@@ -805,10 +895,22 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     // Task 2 (CR-02): reads ONLY from resolved.preScriptPath/postScriptPath --
     // never from request.args.preScript/postScript -- so argv never carries
     // a raw, unresolved wire string for either field.
-    const argvInput: { projectLocation: string; projectName: string; importPath: string; preScript?: string; postScript?: string } = {
+    // Phase 36, plan 36-01 (D-36-01): `processor` comes straight from
+    // request.args -- it is a validated language-id STRING, never a path,
+    // so it never flows through resolveWorkspacePath() and never appears
+    // in `resolved` (ResolvedGhidraAnalyzePaths carries paths only).
+    const argvInput: {
+      projectLocation: string;
+      projectName: string;
+      importPath: string;
+      processor: string;
+      preScript?: string;
+      postScript?: string;
+    } = {
       projectLocation,
       projectName,
       importPath,
+      processor: request.args.processor,
     };
     if (preScriptPath !== undefined) argvInput.preScript = preScriptPath;
     if (postScriptPath !== undefined) argvInput.postScript = postScriptPath;
@@ -816,7 +918,16 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     const built = buildAnalyzeHeadlessArgv(argvInput);
     if (!built.ok) return { ok: false, message: built.message };
 
-    return { ok: true, toolPath: ghidraPath, argv: built.argv, outputs: [] };
+    // Phase 36, plan 36-01 (D-36-05): outputs[0] is ALWAYS the run log for
+    // ghidra.analyze -- a SIBLING of the reserved project directory
+    // (never a child of it), because -deleteProject operates INSIDE
+    // projectLocation. runHostTool()'s ghidra.analyze branch below writes
+    // the child's stdout followed by its stderr here, before the digest
+    // loop runs (MEASURED: analyzeHeadless's "Using Language/Compiler:"
+    // line arrives on stdout).
+    const runLogPath = join(dirname(projectLocation), `${projectName}.ghidra-run.log`);
+
+    return { ok: true, toolPath: ghidraPath, argv: built.argv, outputs: [runLogPath] };
   }
 
   if (request.tool === "dxa.disassemble") {
@@ -859,6 +970,41 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     const listingPath = join(outDirPath, `${imageStem}.dxa-dump.lst`);
 
     return { ok: true, toolPath: dxaPath, argv, outputs: [listingPath] };
+  }
+
+  if (request.tool === "ghidra.installExtension") {
+    const { moduleName } = resolved as ResolvedGhidraInstallExtensionPaths;
+
+    // Independently re-derived rather than threaded through `resolved` --
+    // mirrors ghidra.analyze's own branch above, which reads GHIDRA_HOME
+    // itself instead of accepting it as a resolved field. Both existence
+    // checks were already performed (and, for the copy, already acted on)
+    // by runHostTool()'s own resolution branch before this function was
+    // ever called; re-checking here is defense in depth, the same posture
+    // buildAnalyzeHeadlessArgv()'s own independent dot-segment re-check
+    // takes for a caller that bypassed the resolution branch entirely.
+    const ghidraHome = process.env.GHIDRA_HOME;
+    if (ghidraHome === undefined || ghidraHome === "") {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.installExtension" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+      };
+    }
+    const sleighPath = join(ghidraHome, "support", "sleigh");
+    if (!existsSync(sleighPath)) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.installExtension" refuses: GHIDRA_HOME's resolved "support/sleigh" does not exist on disk (${sleighPath})`,
+      };
+    }
+
+    const installLanguagesDir = join(ghidraHome, "Ghidra", "Extensions", moduleName, "data", "languages");
+    const slaspecPath = join(installLanguagesDir, "6502_nmos.slaspec");
+    const slaPath = join(installLanguagesDir, "6502_nmos.sla");
+
+    // Argv stays an ARRAY of individually-validated entries -- never a
+    // string-concatenated single argument (must_haves.prohibitions).
+    return { ok: true, toolPath: sleighPath, argv: [slaspecPath, slaPath], outputs: [slaPath] };
   }
 
   return { ok: false, message: `buildHostToolArgv: no argv builder for tool "${(request as { tool: string }).tool}"` };
@@ -916,6 +1062,15 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
     // value -- the cross-seam ordering test stays satisfied by construction.
     "dxa.disassemble": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    // Phase 36, plan 36-01: DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a
+    // measurement rather than a round guess -- `support/sleigh` compiled
+    // this extension's whole vendored tree in 1763ms wall-clock (MEASURED,
+    // this plan's own scratch run), an ~11x headroom against this 20s
+    // ceiling. host-tool-client.ts's request-deadline table gains NO entry
+    // for this tool, for the same reason dxa.disassemble's own comment
+    // above states: DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already
+    // exceeds this value.
+    "ghidra.installExtension": DEFAULT_HOST_TOOL_TIMEOUT_MS,
   }),
 );
 
@@ -955,7 +1110,13 @@ export interface HostToolFileResult {
  * ghidra.analyze use) -- the migrated client-side functions return the
  * seam's response with no field renaming. */
 export type HostToolResponse =
-  | { ok: true; tool: "acme.build" | "ghidra.analyze" | "dxa.disassemble"; exitStatus: number | null; results: HostToolFileResult[]; stderrTail: string }
+  | {
+      ok: true;
+      tool: "acme.build" | "ghidra.analyze" | "dxa.disassemble" | "ghidra.installExtension";
+      exitStatus: number | null;
+      results: HostToolFileResult[];
+      stderrTail: string;
+    }
   | { ok: false; message: string }
   | { ok: true; tool: "oracle.probe"; available: boolean; command: string | null; version: string | null; reason: string | null }
   | { ok: boolean; tool: "oracle.run"; stdout: string; reason: string | null };
@@ -1220,13 +1381,12 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       preScriptPath,
       postScriptPath,
     });
-  } else {
-    // request.tool === "dxa.disassemble" (35-01, item 7). `image` and each
-    // present optional path resolved through the SAME resolveWorkspacePath()
-    // site acme.build's `source` uses; `outDir` defaults to
-    // dirname(imagePath) exactly as acme.build's own default does. The
-    // FIRST refusal returns unchanged -- no partial-success degradation, no
-    // dropped key.
+  } else if (request.tool === "dxa.disassemble") {
+    // (35-01, item 7). `image` and each present optional path resolved
+    // through the SAME resolveWorkspacePath() site acme.build's `source`
+    // uses; `outDir` defaults to dirname(imagePath) exactly as acme.build's
+    // own default does. The FIRST refusal returns unchanged -- no
+    // partial-success degradation, no dropped key.
     const imageResolved = resolveWorkspacePath(repoRootAbs, request.args.image);
     if (!imageResolved.ok) return { ok: false, message: imageResolved.message };
 
@@ -1265,6 +1425,58 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       datablocksPath,
       labelsPath,
     });
+  } else {
+    // request.tool === "ghidra.installExtension" (36-01, D-36-01). `sourceDir`
+    // resolved through the SAME resolveWorkspacePath() site every other
+    // tool's path argument uses. The materialisation side effects (create
+    // the install directory, copy the vendored tree, copy the three stock
+    // 6502 language files) happen HERE, in the resolution branch -- mirroring
+    // resolveGhidraProject()'s own "reservation" side effect above -- so
+    // buildHostToolArgv() stays the one place argv/outputs are DERIVED from
+    // already-materialised, typed fields (never the place a filesystem
+    // mutation happens).
+    const sourceDirResolved = resolveWorkspacePath(repoRootAbs, request.args.sourceDir);
+    if (!sourceDirResolved.ok) return { ok: false, message: sourceDirResolved.message };
+
+    const ghidraHome = process.env.GHIDRA_HOME;
+    if (ghidraHome === undefined || ghidraHome === "") {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.installExtension" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+      };
+    }
+    const sleighPath = join(ghidraHome, "support", "sleigh");
+    if (!existsSync(sleighPath)) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.installExtension" refuses: GHIDRA_HOME's resolved "support/sleigh" does not exist on disk (${sleighPath})`,
+      };
+    }
+    const stockLanguagesDir = join(ghidraHome, "Ghidra", "Processors", "6502", "data", "languages");
+    const missingStockFiles = GHIDRA_STOCK_6502_LANGUAGE_FILES.filter((name) => !existsSync(join(stockLanguagesDir, name)));
+    if (missingStockFiles.length > 0) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.installExtension" refuses: the stock 6502 language file(s) ${missingStockFiles.join(", ")} do not exist at ${stockLanguagesDir} -- this Ghidra installation is missing its own 6502 processor module`,
+      };
+    }
+
+    const installDir = join(ghidraHome, "Ghidra", "Extensions", request.args.moduleName);
+    const installLanguagesDir = join(installDir, "data", "languages");
+    try {
+      mkdirSync(installLanguagesDir, { recursive: true });
+      cpSync(sourceDirResolved.path, installDir, { recursive: true });
+      for (const name of GHIDRA_STOCK_6502_LANGUAGE_FILES) {
+        cpSync(join(stockLanguagesDir, name), join(installLanguagesDir, name));
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        message: `host_tool "ghidra.installExtension" failed to materialise the extension at ${installDir}: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName });
   }
   if (!built.ok) return { ok: false, message: built.message };
 
@@ -1299,6 +1511,23 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   if (request.tool === "dxa.disassemble" && built.outputs.length > 0) {
     try {
       writeFileSync(built.outputs[0]!, spawnResult.stdout, "utf8");
+    } catch {
+      // Falls through to the digest loop below, whose digestOutputFile()
+      // returns null for a file that does not exist -- an empty results[]
+      // rather than a thrown error, consistent with this module's
+      // never-throw discipline.
+    }
+  }
+
+  // Phase 36, plan 36-01 (D-36-05): ghidra.analyze's outputs[0] is ALWAYS
+  // the run log. `HostToolClientResult` carries no stdout field at all, so
+  // this is the ONE place the run log becomes reachable from the container
+  // side. MEASURED against real Ghidra 12.1.3: analyzeHeadless's own
+  // "Using Language/Compiler:" line arrives on STDOUT; stderr is appended
+  // after it so no line can be lost.
+  if (request.tool === "ghidra.analyze" && built.outputs.length > 0) {
+    try {
+      writeFileSync(built.outputs[0]!, `${spawnResult.stdout}${spawnResult.stderr}`, "utf8");
     } catch {
       // Falls through to the digest loop below, whose digestOutputFile()
       // returns null for a file that does not exist -- an empty results[]

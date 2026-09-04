@@ -141,3 +141,17 @@ dist/
 # itself would publish an artifact no digest gate could then re-verify.
 /src/mcp/vice/vendor/dxa/dxa
 /src/mcp/vice/vendor/dxa/*.o
+
+# Phase 36 (OPC-01): the built SLEIGH language file. `ghidra.installExtension`
+# / the sleigh-compile-gate.test.ts COMPILE half reproduce it from the
+# committed extension source on demand -- mirrors vendor/dxa/dxa above.
+/src/mcp/vice/vendor/ghidra-ext/data/languages/6502_nmos.sla
+
+# Phase 36 (OPC-04): a SECOND tools/ghidra-runs/ entry, anchored under
+# src/mcp/vice/ specifically. resolveGhidraProject() computes
+# <repoRoot>/tools/ghidra-runs/<runId>, and a test (or the compile gate)
+# that passes src/mcp/vice as its own repo root would otherwise leave
+# untracked run directories there -- the existing tools/ghidra-runs/ entry
+# above carries a slash in the middle, so per git's own anchoring rule it
+# only matches at the repository root, not at this nested location.
+/src/mcp/vice/tools/ghidra-runs/

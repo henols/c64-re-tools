@@ -1033,15 +1033,21 @@ test('normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", im
   if (!result.ok) assert.match(result.message, /bogusKey/);
 });
 
-test('normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } }) is accepted', () => {
-  const result = normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } });
+test('normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default" } }) is accepted', () => {
+  const result = normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default" } });
   assert.equal(result.ok, true);
+});
+
+test('normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } }) (processor absent) is refused, naming "processor"', () => {
+  const result = normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /processor/);
 });
 
 test("runHostTool: a ghidra.analyze runId that escapes via a path separator is refused", async () => {
   await withTempDir(async (dir) => {
     writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-    const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "a/b", importPath: "x.bin" } }, { repoRoot: dir });
+    const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "a/b", importPath: "x.bin", processor: "6502:LE:16:default" } }, { repoRoot: dir });
     assert.equal(response.ok, false);
   });
 });
@@ -1051,7 +1057,10 @@ test("runHostTool: a dot-prefixed repoRoot is refused for ghidra.analyze, naming
     const dottedRepoRoot = join(dir, ".vice-supervisor", "nested");
     mkdirSync(dottedRepoRoot, { recursive: true });
     writeFileSync(join(dottedRepoRoot, "x.bin"), "tiny\n", "utf8");
-    const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } }, { repoRoot: dottedRepoRoot });
+    const response = await runHostTool(
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default" } },
+      { repoRoot: dottedRepoRoot },
+    );
     assert.equal(response.ok, false);
     if (!response.ok) assert.match(response.message, /\.vice-supervisor/);
   });
@@ -1063,7 +1072,10 @@ test("runHostTool: ghidra.analyze with GHIDRA_HOME unset is refused by name, nev
   try {
     await withTempDir(async (dir) => {
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-      const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } }, { repoRoot: dir });
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default" } },
+        { repoRoot: dir },
+      );
       assert.equal(response.ok, false);
       if (!response.ok) assert.match(response.message, /GHIDRA_HOME/);
     });
@@ -1075,7 +1087,7 @@ test("runHostTool: ghidra.analyze with GHIDRA_HOME unset is refused by name, nev
 
 test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv whose first two elements are the project location and project name and which contains -deleteProject", async () => {
   await withFakeGhidraHome(async () => {
-    const request = { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin" } };
+    const request = { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default" } };
     const resolved = { importPath: "/repo/tools/ghidra-runs/r1/x.bin", projectLocation: "/repo/tools/ghidra-runs/r1", projectName: "r1" };
     const built = buildHostToolArgv(request, resolved);
     assert.equal(built.ok, true);
@@ -1108,7 +1120,7 @@ test(
             try {
               writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
               const startedAt = Date.now();
-              const response = await hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: "slow-e2e-run", importPath: "x.bin" });
+              const response = await hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: "slow-e2e-run", importPath: "x.bin", processor: "6502:LE:16:default" });
               const elapsedMs = Date.now() - startedAt;
               assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
               // The exact round trip that could not complete before this
@@ -1139,7 +1151,7 @@ test("runHostTool: a slow ghidra.analyze launcher killed on expiry names the sma
         writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
         const startedAt = Date.now();
         const response = await runHostTool(
-          { tool: "ghidra.analyze", args: { runId: "kill-on-expiry-run", importPath: "x.bin" } },
+          { tool: "ghidra.analyze", args: { runId: "kill-on-expiry-run", importPath: "x.bin", processor: "6502:LE:16:default" } },
           { repoRoot: dir, timeoutMs: 500 },
         );
         const elapsedMs = Date.now() - startedAt;
@@ -1202,7 +1214,7 @@ test("buildHostToolArgv: ghidra.analyze reads preScript/postScript from resolved
   await withFakeGhidraHome(async () => {
     const request = {
       tool: "ghidra.analyze",
-      args: { runId: "r1", importPath: "x.bin", preScript: "wire-pre.java", postScript: "wire-post.java" },
+      args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", preScript: "wire-pre.java", postScript: "wire-post.java" },
     };
     const resolved = {
       importPath: "/repo/tools/ghidra-runs/r1/x.bin",
@@ -1226,7 +1238,7 @@ test("runHostTool: a ghidra.analyze preScript that escapes the workspace root is
     writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
     const logLines: string[] = [];
     const response = await runHostTool(
-      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", preScript: "../../etc/evil.java" } },
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", preScript: "../../etc/evil.java" } },
       { repoRoot: dir, log: (line) => logLines.push(line) },
     );
     assert.equal(response.ok, false);
@@ -1239,7 +1251,7 @@ test("runHostTool: an absolute ghidra.analyze postScript is refused with the not
   await withTempDir(async (dir) => {
     writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
     const response = await runHostTool(
-      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", postScript: "/etc/evil.java" } },
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", postScript: "/etc/evil.java" } },
       { repoRoot: dir },
     );
     assert.equal(response.ok, false);
@@ -1266,7 +1278,10 @@ test("runHostTool: an accepted in-workspace ghidra.analyze preScript reaches the
     try {
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
       writeFileSync(join(dir, "pre.java"), "// pre\n", "utf8");
-      const response = await runHostTool({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", preScript: "pre.java" } }, { repoRoot: dir });
+      const response = await runHostTool(
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", preScript: "pre.java" } },
+      { repoRoot: dir },
+    );
       assert.equal(response.ok, true);
       const echoedArgv = JSON.parse(readFileSync(echoPath, "utf8")) as string[];
       const preIdx = echoedArgv.indexOf("-preScript");
@@ -1488,13 +1503,16 @@ test(
  * path-key table) -- the completeness case below reds until they do. */
 const HOST_TOOL_ARG_KEYS_REMAINDER: Readonly<Record<string, readonly string[]>> = {
   "acme.build": Object.freeze(["format", "setpc", "defines", "noReport"]),
-  "ghidra.analyze": Object.freeze(["runId"]),
+  "ghidra.analyze": Object.freeze(["runId", "processor"]),
   "oracle.probe": Object.freeze([]),
   "oracle.run": Object.freeze([]),
   // Phase 35, plan 35-01: `imageKind` is the one accepted key that is an
   // enum, not a path -- the one key HOST_TOOL_PATH_ARG_KEYS["dxa.disassemble"]
   // deliberately excludes.
   "dxa.disassemble": Object.freeze(["imageKind"]),
+  // Phase 36, plan 36-01: `moduleName` is a validated opaque name
+  // (RUN_ID_PATTERN), not a path -- mirrors ghidra.analyze's own `runId`.
+  "ghidra.installExtension": Object.freeze(["moduleName"]),
 };
 
 /** A minimal, otherwise-valid `args` object per tool -- just enough for
@@ -1505,10 +1523,11 @@ const HOST_TOOL_ARG_KEYS_REMAINDER: Readonly<Record<string, readonly string[]>> 
  * test is always what actually fires. */
 const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string, unknown>>> = {
   "acme.build": () => ({ source: "a.a" }),
-  "ghidra.analyze": () => ({ runId: "census-run", importPath: "x.bin" }),
+  "ghidra.analyze": () => ({ runId: "census-run", importPath: "x.bin", processor: "6502:LE:16:default" }),
   "oracle.probe": () => ({}),
   "oracle.run": () => ({ source: "a.bin" }),
   "dxa.disassemble": () => ({ image: "x.prg", imageKind: "prg" }),
+  "ghidra.installExtension": () => ({ sourceDir: "ghidra-ext", moduleName: "census-module" }),
 };
 
 /** The include list needs a single-element ARRAY where every other declared
@@ -1552,7 +1571,7 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
   // Phase 35, plan 35-01 raised this from 7 to 12: dxa.disassemble adds five
   // declared path keys (image, entrypointsPath, datablocksPath, labelsPath,
   // outDir).
-  assert.equal(totalDeclared, 12, "the declared path-key total across all tools must be 12 -- a different count means a key was added or dropped without updating this census");
+  assert.equal(totalDeclared, 13, "the declared path-key total across all tools must be 13 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -1583,7 +1602,7 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       // total, so an empty or short-circuited table cannot pass silently --
       // a loop body that never ran would leave `executed` at 0. Phase 35,
       // plan 35-01 raised this from 7 to 12 (dxa.disassemble's five path keys).
-      assert.equal(totalDeclared, 12, "sanity: the declared path-key total must still be 12");
+      assert.equal(totalDeclared, 13, "sanity: the declared path-key total must still be 13");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {
@@ -1625,7 +1644,7 @@ test("runHostTool: a ghidra.analyze run with no override logs a line whose timeo
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
       const logLines: string[] = [];
       const response = await runHostTool(
-        { tool: "ghidra.analyze", args: { runId: "log-budget-ghidra", importPath: "x.bin" } },
+        { tool: "ghidra.analyze", args: { runId: "log-budget-ghidra", importPath: "x.bin", processor: "6502:LE:16:default" } },
         { repoRoot: dir, log: (line) => logLines.push(line) },
       );
       assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
@@ -1655,7 +1674,7 @@ test("runHostTool: an explicit deps.timeoutMs is what gets logged, not the table
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
       const logLines: string[] = [];
       const response = await runHostTool(
-        { tool: "ghidra.analyze", args: { runId: "log-explicit-override", importPath: "x.bin" } },
+        { tool: "ghidra.analyze", args: { runId: "log-explicit-override", importPath: "x.bin", processor: "6502:LE:16:default" } },
         { repoRoot: dir, log: (line) => logLines.push(line), timeoutMs: 12345 },
       );
       assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
@@ -1703,8 +1722,8 @@ test(
               const runIdB = "overlap-run-b";
               const startedAt = Date.now();
               const [responseA, responseB] = await Promise.all([
-                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdA, importPath: "x.bin" }),
-                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdB, importPath: "x.bin" }),
+                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdA, importPath: "x.bin", processor: "6502:LE:16:default" }),
+                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdB, importPath: "x.bin", processor: "6502:LE:16:default" }),
               ]);
               const elapsedMs = Date.now() - startedAt;
               assert.equal(responseA.ok, true, responseA.ok ? "" : (responseA as { ok: false; message: string }).message);

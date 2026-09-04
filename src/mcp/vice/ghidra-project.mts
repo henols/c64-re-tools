@@ -86,6 +86,47 @@ export const GHIDRA_RUNS_DIR_NAME = "ghidra-runs";
  * stated length cap so a run id can never grow into something implausible. */
 export const RUN_ID_PATTERN: RegExp = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
+// ---------------------------------------------------------------------------
+// Phase 36, plan 36-01 (OPC-01, OPC-04, T-36-02, T-36-03). The SLEIGH
+// language-id shape and the extension-module file set, in the SAME
+// "one authoritative place" discipline this module's own header states for
+// the dot-segment rule and the per-run project location.
+// ---------------------------------------------------------------------------
+
+/** Anchored Ghidra language-id shape, in `RUN_ID_PATTERN`'s own spirit: a
+ * colon-separated sequence of alphanumeric-and-underscore segments (e.g.
+ * `6502:LE:16:nmos`), no path separator, no dot ANYWHERE, and a stated
+ * length cap so a caller-supplied `processor` string can never grow into
+ * something implausible. Deliberately NOT routed through
+ * `resolveWorkspacePath()` -- it is a language id, not a path (T-36-02).
+ * Compared byte-exactly and case-sensitively wherever it is used --
+ * `6502:le:16:nmos` does not match this pattern's own literal segment
+ * alphabet in a case-insensitive sense; the RegExp itself carries no `i`
+ * flag, so a caller cannot silently loosen the comparison by construction. */
+export const LANGUAGE_ID_PATTERN: RegExp = /^[A-Za-z0-9_]{1,64}(:[A-Za-z0-9_]{1,64}){1,7}$/;
+
+/** The canonical module name this project's own tooling and live tests
+ * install the vendored SLEIGH extension under, via `ghidra.installExtension`
+ * (`<GHIDRA_HOME>/Ghidra/Extensions/<this name>/`). Exported so no future
+ * caller re-types the literal -- a wire request MAY name a different
+ * `moduleName` (it is caller-supplied, validated against `RUN_ID_PATTERN`),
+ * but this project's own tests and live-run scripts use this one value so
+ * `installedLanguageIds()` (plan 36-02) finds a stable, predictable install
+ * location across runs. */
+export const GHIDRA_EXTENSION_MODULE_NAME = "C64Undocumented6502";
+
+/** The three stock 6502-processor language files `6502_nmos.slaspec` and
+ * `6502_nmos.ldefs` depend on (`@include "6502.slaspec"`, and `.ldefs`
+ * `processorspec="6502.pspec"` / `compiler spec="6502.cspec"`) -- per
+ * D-36-02, copied at INSTALL time from the host's own Ghidra installation,
+ * never committed into this repository (committing them would silently pin
+ * a Ghidra version inside this repo, the same objection already recorded
+ * against committing the compiled `.sla`). `ghidra.installExtension`
+ * (host-tool.mts) and `sleigh-compile-gate.test.ts`'s COMPILE half both copy
+ * exactly this list from `<GHIDRA_HOME>/Ghidra/Processors/6502/data/languages/`
+ * -- one shared list, never re-typed at either call site. */
+export const GHIDRA_STOCK_6502_LANGUAGE_FILES: readonly string[] = Object.freeze(["6502.slaspec", "6502.pspec", "6502.cspec"]);
+
 export type HasDotPrefixedSegmentResult = { dotted: true; segment: string } | { dotted: false };
 
 /** Splits `absolutePath` on the platform separator and reports the FIRST
@@ -238,18 +279,19 @@ const BUILD_ANALYZE_HEADLESS_ARGV_KEYS: readonly string[] = Object.freeze([
   "projectLocation",
   "projectName",
   "importPath",
+  "processor",
   "preScript",
   "postScript",
 ]);
 const BUILD_ANALYZE_HEADLESS_ARGV_SHAPE =
   `an object with keys ${BUILD_ANALYZE_HEADLESS_ARGV_KEYS.join("/")} ` +
-  `("projectLocation"/"projectName"/"importPath" required non-empty strings, ` +
+  `("projectLocation"/"projectName"/"importPath"/"processor" required non-empty strings, ` +
   `"preScript"/"postScript" optional non-empty strings)`;
 
 export type BuildAnalyzeHeadlessArgvResult = { ok: true; argv: string[] } | { ok: false; message: string };
 
-/** Emits `[projectLocation, projectName, "-import", importPath,
- * "-deleteProject", ...optional pre/post script flags]`.
+/** Emits `[projectLocation, projectName, "-import", importPath, "-processor",
+ * processor, "-deleteProject", ...optional pre/post script flags]`.
  *
  * `-deleteProject` only applies on the `-import` path (never on `-process`)
  * -- the local `analyzeHeadlessREADME.md` (Ghidra 12.1.3) states: "the
@@ -272,16 +314,29 @@ export function buildAnalyzeHeadlessArgv(input: unknown): BuildAnalyzeHeadlessAr
     };
   }
 
-  const { projectLocation, projectName, importPath, preScript, postScript } = input;
+  const { projectLocation, projectName, importPath, processor, preScript, postScript } = input;
 
   for (const [key, value] of [
     ["projectLocation", projectLocation],
     ["projectName", projectName],
     ["importPath", importPath],
+    ["processor", processor],
   ] as const) {
     if (typeof value !== "string" || value === "") {
       return { ok: false, message: `buildAnalyzeHeadlessArgv requires a non-empty string "${key}"; got ${describe(value)}` };
     }
+  }
+  // Phase 36, plan 36-01 (T-36-02): an INDEPENDENT second-layer check --
+  // re-validated against LANGUAGE_ID_PATTERN here, so the rule holds even
+  // for a caller that constructed this field itself and bypassed
+  // host-tool.mts's own normaliseHostToolRequest() entirely. Mirrors the
+  // dot-segment re-check below and the parent-segment re-check just after
+  // it -- same second-layer discipline, third field.
+  if (!LANGUAGE_ID_PATTERN.test(processor as string)) {
+    return {
+      ok: false,
+      message: `buildAnalyzeHeadlessArgv "processor" must match ${LANGUAGE_ID_PATTERN.source}; got ${describe(processor)}`,
+    };
   }
   if (preScript !== undefined && (typeof preScript !== "string" || preScript === "")) {
     return { ok: false, message: `buildAnalyzeHeadlessArgv "preScript" must be a non-empty string or absent; got ${describe(preScript)}` };
@@ -327,7 +382,19 @@ export function buildAnalyzeHeadlessArgv(input: unknown): BuildAnalyzeHeadlessAr
     };
   }
 
-  const argv: string[] = [projectLocation as string, projectName as string, "-import", importPath as string, "-deleteProject"];
+  // Phase 36, plan 36-01 (OPC-04): "-processor" and its value are two
+  // SEPARATE argv entries, never a space-joined flag-and-value pair --
+  // pushed right after "-import <importPath>", mirroring where the
+  // research transcript's own analyzeHeadless invocation places it.
+  const argv: string[] = [
+    projectLocation as string,
+    projectName as string,
+    "-import",
+    importPath as string,
+    "-processor",
+    processor as string,
+    "-deleteProject",
+  ];
   if (typeof preScript === "string") argv.push("-preScript", preScript);
   if (typeof postScript === "string") argv.push("-postScript", postScript);
 

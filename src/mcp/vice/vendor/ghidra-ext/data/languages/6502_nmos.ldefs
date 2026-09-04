@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<language_definitions>
+
+  <language processor="6502"
+            endian="little"
+            size="16"
+            variant="nmos"
+            version="1.0"
+            slafile="6502_nmos.sla"
+            processorspec="6502.pspec"
+            id="6502:LE:16:nmos">
+    <description>NMOS 6502/6510 with undocumented opcodes</description>
+    <compiler name="default" spec="6502.cspec" id="default"/>
+  </language>
+
+</language_definitions>

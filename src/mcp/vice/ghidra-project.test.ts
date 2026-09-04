@@ -223,11 +223,12 @@ test("resolveGhidraProject: two DIFFERENT run ids produce disjoint project locat
 // dot-segment re-check
 // ---------------------------------------------------------------------------
 
-test("buildAnalyzeHeadlessArgv: places projectLocation and projectName first, includes -import <importPath> and -deleteProject", () => {
+test("buildAnalyzeHeadlessArgv: places projectLocation and projectName first, includes -import <importPath>, -processor <processor> and -deleteProject", () => {
   const result = buildAnalyzeHeadlessArgv({
     projectLocation: "/repo/tools/ghidra-runs/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
   });
   assert.equal(result.ok, true);
   if (!result.ok) return;
@@ -236,7 +237,31 @@ test("buildAnalyzeHeadlessArgv: places projectLocation and projectName first, in
   const importIdx = result.argv.indexOf("-import");
   assert.ok(importIdx !== -1);
   assert.equal(result.argv[importIdx + 1], "/repo/tools/ghidra-runs/r1/input.bin");
+  const processorIdx = result.argv.indexOf("-processor");
+  assert.ok(processorIdx !== -1);
+  assert.equal(result.argv[processorIdx + 1], "6502:LE:16:nmos");
   assert.ok(result.argv.includes("-deleteProject"));
+});
+
+test('buildAnalyzeHeadlessArgv: refuses a missing "processor", naming the field and the accepted shape', () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /processor/);
+});
+
+test('buildAnalyzeHeadlessArgv: refuses a "processor" that does not match LANGUAGE_ID_PATTERN', () => {
+  const result = buildAnalyzeHeadlessArgv({
+    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectName: "r1",
+    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "not a language id",
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /processor/);
 });
 
 test("buildAnalyzeHeadlessArgv: appends -preScript/-postScript in a fixed documented order when given", () => {
@@ -244,6 +269,7 @@ test("buildAnalyzeHeadlessArgv: appends -preScript/-postScript in a fixed docume
     projectLocation: "/repo/tools/ghidra-runs/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
     preScript: "Pre.java",
     postScript: "Post.java",
   });
@@ -261,6 +287,7 @@ test("buildAnalyzeHeadlessArgv: refuses outright when projectLocation is dot-pre
     projectLocation: "/repo/.hidden/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
   });
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.message, /\.hidden/);
@@ -292,6 +319,7 @@ test("buildAnalyzeHeadlessArgv: refuses a preScript containing a parent-director
     projectLocation: "/repo/tools/ghidra-runs/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
     preScript: "../x.java",
   });
   assert.equal(result.ok, false);
@@ -306,6 +334,7 @@ test("buildAnalyzeHeadlessArgv: refuses a postScript containing a parent-directo
     projectLocation: "/repo/tools/ghidra-runs/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
     postScript: "../y.java",
   });
   assert.equal(result.ok, false);
@@ -320,6 +349,7 @@ test("buildAnalyzeHeadlessArgv: a preScript containing merely TWO DOTS in the fi
     projectLocation: "/repo/tools/ghidra-runs/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
     preScript: "..foo.java",
   });
   assert.equal(result.ok, true);
@@ -330,6 +360,7 @@ test("buildAnalyzeHeadlessArgv: a bare Ghidra script name for preScript/postScri
     projectLocation: "/repo/tools/ghidra-runs/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
     preScript: "Pre.java",
     postScript: "Post.java",
   });
@@ -341,6 +372,7 @@ test("buildAnalyzeHeadlessArgv: is deterministic -- the same input yields two de
     projectLocation: "/repo/tools/ghidra-runs/r1",
     projectName: "r1",
     importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    processor: "6502:LE:16:nmos",
   };
   const first = buildAnalyzeHeadlessArgv(input);
   const second = buildAnalyzeHeadlessArgv(input);
