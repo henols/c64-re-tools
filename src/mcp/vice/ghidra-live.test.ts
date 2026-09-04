@@ -182,3 +182,99 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Task 2 (GHID-01, gate 1): a wrong expectedClassificationLines makes the
+// export script throw for real, and the paired negative case succeeds when
+// the override is omitted. See evidence/36-04-three-gates.md, Part: Gate 1.
+// ---------------------------------------------------------------------------
+
+test(
+  "ghidra-live GATE 1: a wrong expectedClassificationLines makes the export script throw, with analyzeHeadless's own exit status recorded as 0",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const exportRel = "gate1-wrong-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "gate1-wrong",
+          importPath: "bank.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+          expectedClassificationLines: 1,
+        },
+        { repoRoot: ws.root },
+      );
+
+      // The exit status is recorded as evidence that it is UNINFORMATIVE,
+      // never as a pass signal -- asserted explicitly rather than ignored,
+      // per this plan's own must_haves.prohibitions.
+      assert.equal(result.exitStatus, 0, "analyzeHeadless's own exit status must be recorded as 0 even though the post-script threw");
+
+      const logText = readFileSync(result.runLogPath, "utf8");
+      const verdict = classifyGhidraRunLog(logText);
+      assert.equal(verdict.scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
+
+      const exportPath = join(ws.root, exportRel);
+      if (existsSync(exportPath)) {
+        const exportText = readFileSync(exportPath, "utf8");
+        assert.equal(
+          exportText.includes("## UNRESOLVED_DISPATCH"),
+          false,
+          "the export must not carry its final, completed-assertion section when the script threw before ever opening the file",
+        );
+      }
+      // Absence entirely is the MEASURED behaviour (the throw fires before
+      // GhidraStructExport.java ever opens a FileWriter for args[0]) -- both
+      // branches of "does not exist or does not carry the completed line"
+      // are handled, per this plan's own acceptance criterion.
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live GATE 1 (paired): omitting expectedClassificationLines lets the script succeed against its own computed block total",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const exportRel = "gate1-omitted-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "gate1-omitted",
+          importPath: "bank.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+
+      const logText = readFileSync(result.runLogPath, "utf8");
+      const verdict = classifyGhidraRunLog(logText);
+      assert.equal(verdict.scriptThrew, false, "no thrown-script signal may appear when the internal assertion succeeds");
+
+      const exportPath = join(ws.root, exportRel);
+      assert.ok(existsSync(exportPath), "the export file must exist when the script completes");
+      const exportText = readFileSync(exportPath, "utf8");
+      assert.equal(exportText.includes("## UNRESOLVED_DISPATCH"), true, "the export must carry its final, completed-assertion section");
+
+      const { expected, observed } = parseExportClassificationCounts(exportText);
+      assert.ok(expected !== null && observed !== null, "the export must carry both labelled classification-count lines");
+      assert.equal(observed, expected, "the observed count must equal the script's own computed block total (no override supplied)");
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
