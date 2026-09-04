@@ -67,7 +67,7 @@
 // window where two callers could observe an absent directory and both
 // proceed. See `evidence/34-ghidra-dotpath.md` for the full transcript.
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, sep } from "node:path";
+import { join, sep } from "node:path";
 /** The refusal-message fragment naming Ghidra's own literal error text, in
  * ONE place, so every refusal in this module (and any caller reading a
  * refusal message) can quote the same words Ghidra itself would have used
