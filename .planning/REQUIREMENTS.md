@@ -166,8 +166,12 @@ presented as measured as a defect class, so provenance is stated rather than imp
 - [ ] **DXA-02**: dxa's human-readable listing is parsed into a machine-readable code/data map, and
       the parser's failure mode is a **refusal rather than a silent mis-parse** — dxa has no
       machine-readable output, so this parser is this project's to own and maintain, over the five
-      measured line shapes of `-a dump`. **AMENDED** — the refusal must be **this project's parser
-      refusing by name**, not dxa's exit status: MEASURED, `-d strict` exited **0** on an inconsistent
+      measured line shapes of `-a dump`. **AMENDED** — the loud failure must come from **this project's parser,
+      by name** — refusing, or explicitly reporting the unknown form so it is never silently
+      absorbed (AMENDED again 2026-09-04 after Phase 35 verification: `A-04` made
+      `dxa-listing.ts` report a real out-of-window over-read rather than refuse, and both real
+      anomalies found land inside the declared window, so a refusal was unreachable by
+      construction; a silent mis-parse is what this forbids) — not dxa's exit status: MEASURED, `-d strict` exited **0** on an inconsistent
       fixture. It must be provoked by a real unknown listing form from an actual run and not only by a
       hand-planted malformed line; and overlapping decodes (`jsr` into a mid-instruction target) yield
       **unclassified with a stated reason**, never a winner, because a byte-per-address map
