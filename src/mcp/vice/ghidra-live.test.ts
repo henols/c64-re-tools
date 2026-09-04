@@ -48,12 +48,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
 import { installedLanguageIds } from "./ghidra-project.mts";
+import { repoRoot } from "./repo-root.ts";
+import { listEntries, extractEntry } from "./anno-d64.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
@@ -958,6 +961,499 @@ test(
         /VOLATILE-WARN/,
         "the wider-than-requested warning must be ABSENT -- its presence would mean the flag landed on the whole image, which looks like success and is the trap",
       );
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 36-07 (GHID-04, GHID-05): the acceptance run -- structural facts no
+// listing-level query can produce, typed cross-references, per-function
+// accounting under a committed ceiling, denominator-free unresolved-dispatch
+// reporting, and byte-reproducibility -- on the SAME real corpus program
+// Task 1 (`ghidra-opcode-live.test.ts`'s own CORPUS case) exercised.
+// D-36-18/D-36-20: same corpus route, same second opt-in, duplicated here
+// (not imported) per this file's own "two short duplicates" convention.
+//
+// Then (GHID-04's control): the SAME script, image, route and language,
+// differing only in the mode argument that selects `DataTypeManager` instead
+// of `DecompInterface` -- invoked DIRECTLY against `analyzeHeadless`, outside
+// `ghidra.analyze`'s typed seam, per plan 36-03's own key-decision: that
+// seam supplies only the export path and the expected-line override as
+// positional script arguments, and the mode selector
+// (`GhidraStructExport.java`'s `getScriptArgs()[2]`) is not yet reachable
+// through it.
+// ---------------------------------------------------------------------------
+
+const CORPUS_PATH = join(
+  repoRoot({ from: HERE }),
+  ".planning",
+  "phases",
+  "23-the-real-release-gate-go-degrade-no-go",
+  "evidence",
+  "corpus",
+  "danish.d64",
+);
+
+/** Gated behind BOTH `VICE_LIVE_GHIDRA=1` (this file's own opt-in, above) AND
+ * its OWN `VICE_LIVE_GHIDRA_CORPUS=1` -- mirrors
+ * `ghidra-opcode-live.test.ts`'s own identically-shaped corpus gate. */
+const CORPUS_SKIP_REASON: string | false =
+  SKIP_REASON !== false
+    ? SKIP_REASON
+    : process.env.VICE_LIVE_GHIDRA_CORPUS !== "1"
+      ? "ghidra-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_GHIDRA_CORPUS=1 (in addition to VICE_LIVE_GHIDRA=1) to run it."
+      : !existsSync(CORPUS_PATH)
+        ? `VICE_LIVE_GHIDRA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
+          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+        : false;
+
+/** The SAME five entry points `ghidra-opcode-live.test.ts`'s own CORPUS case
+ * derives and documents in full (MEASURED this plan, real Ghidra 12.1.3,
+ * against `danish.d64`'s own first entry) -- duplicated here, not imported,
+ * per this file's own established convention. See that file's own comment
+ * for the full derivation of each. */
+const CORPUS_ENTRY_POINTS: readonly string[] = ["$081b", "$b70a", "$b74c", "$b7e7", "$b790"];
+
+/** Reads the corpus release, extracts its first directory entry -- the SAME
+ * directory-and-entry route `anno-d64.ts` already provides and
+ * `dxa-live.test.ts`'s own corpus case established (D-36-18). */
+function extractCorpusProgram(): Uint8Array {
+  const corpusImageBytes = readFileSync(CORPUS_PATH);
+  const entries = listEntries(new Uint8Array(corpusImageBytes));
+  const entry = entries[0];
+  if (entry === undefined) {
+    throw new Error("ghidra-live acceptance: the corpus image has no directory entries");
+  }
+  return extractEntry(new Uint8Array(corpusImageBytes), entry.name);
+}
+
+interface StructuralFactLine {
+  kind: string;
+  found: boolean;
+}
+
+/** Parses `## STRUCTURAL_FACTS`'s own `STRUCTURAL_FACT <KIND> found|not-found ...`
+ * lines. Multiple `found` lines for the same kind are each their own entry
+ * (this project's own export prints one line per occurrence). */
+function parseStructuralFacts(exportText: string): StructuralFactLine[] {
+  const section = extractSection(exportText, "## STRUCTURAL_FACTS");
+  const lines: StructuralFactLine[] = [];
+  for (const raw of section.split("\n")) {
+    const m = /^STRUCTURAL_FACT (\S+) (found|not-found)/.exec(raw);
+    if (m) lines.push({ kind: m[1]!, found: m[2] === "found" });
+  }
+  return lines;
+}
+
+interface DecompileAccounting {
+  attempted: number;
+  decompiled: number;
+  timedOut: number;
+  failed: number;
+  ceiling: number;
+  zeroFunctions: boolean;
+}
+
+/** Parses `## DECOMPILE_ACCOUNTING`'s own labelled count lines, READING the
+ * committed ceiling from the export rather than restating it in this file
+ * (this plan's own acceptance criterion). */
+function parseAccounting(exportText: string): DecompileAccounting {
+  const section = extractSection(exportText, "## DECOMPILE_ACCOUNTING");
+  const num = (label: string): number => {
+    const m = new RegExp(`${label} (\\d+)`).exec(section);
+    assert.ok(m, `parseAccounting: ${JSON.stringify(label)} line missing from the DECOMPILE_ACCOUNTING section`);
+    return Number(m![1]);
+  };
+  return {
+    attempted: num("DECOMPILE_ATTEMPTED"),
+    decompiled: num("DECOMPILE_DECOMPILED"),
+    timedOut: num("DECOMPILE_TIMED_OUT"),
+    failed: num("DECOMPILE_FAILED"),
+    ceiling: num("DECOMPILE_TIMED_OUT_CEILING"),
+    zeroFunctions: section.includes("DECOMPILE_ZERO_FUNCTIONS true"),
+  };
+}
+
+interface ReferenceLine {
+  from: string;
+  to: string;
+  kind: string;
+  line: string;
+}
+
+/** Parses `## REFERENCES`'s own `<from> -> <to> <KIND>` lines, asserting on
+ * the KIND token -- never the address alone (this plan's own acceptance
+ * criterion for GHID-05). */
+function parseReferences(exportText: string): ReferenceLine[] {
+  const section = extractSection(exportText, "## REFERENCES");
+  const lines: ReferenceLine[] = [];
+  for (const raw of section.split("\n")) {
+    const m = /^(\S+) -> (\S+) (\S+)$/.exec(raw);
+    if (m) lines.push({ from: m[1]!, to: m[2]!, kind: m[3]!, line: raw });
+  }
+  return lines;
+}
+
+/** Parses `## UNRESOLVED_DISPATCH`'s own count-and-site-list shape, and
+ * separately asserts (over the SECTION's own text, never the whole export)
+ * that no ratio, percentage or total-sites figure appears in it. */
+function parseUnresolvedDispatch(exportText: string): { count: number; sites: string[]; sectionText: string } {
+  const section = extractSection(exportText, "## UNRESOLVED_DISPATCH");
+  const countMatch = /UNRESOLVED_DISPATCH_COUNT (\d+)/.exec(section);
+  assert.ok(countMatch, "parseUnresolvedDispatch: UNRESOLVED_DISPATCH_COUNT line missing");
+  const sites = section
+    .split("\n")
+    .filter((l) => l.trim() !== "" && !l.startsWith("UNRESOLVED_DISPATCH_COUNT"));
+  return { count: Number(countMatch![1]), sites, sectionText: section };
+}
+
+/** Counts of `## STRUCTURAL_FACTS`'s own `COMPOSITE_TYPES`/`DEFINED_DATA`
+ * lines (the `MODE_DATATYPEMANAGER` control's OWN version of "structural
+ * facts") -- parsed the same way regardless of which mode produced them,
+ * since the control never prints the acceptance route's five-kind lines. */
+function parseDataTypeManagerCounts(exportText: string): { compositeCount: number; definedDataCount: number } {
+  const section = extractSection(exportText, "## STRUCTURAL_FACTS");
+  const compositeMatch = /STRUCTURAL_FACT COMPOSITE_TYPES count=(\d+)/.exec(section);
+  const definedDataMatch = /STRUCTURAL_FACT DEFINED_DATA count=(\d+)/.exec(section);
+  assert.ok(compositeMatch && definedDataMatch, "parseDataTypeManagerCounts: expected both COMPOSITE_TYPES and DEFINED_DATA count lines");
+  return { compositeCount: Number(compositeMatch![1]), definedDataCount: Number(definedDataMatch![1]) };
+}
+
+/** Counts the acceptance export's own `## DECOMPILED_TEXT` section's
+ * non-blank lines (excluding the section's own header and trailing count
+ * line) -- the concrete, countable unit of structural information the
+ * decompiler route recovers, used as THIS plan's own stated metric for
+ * "the acceptance export's structural-fact count" in the Task 3 comparison
+ * against the control's `COMPOSITE_TYPES`+`DEFINED_DATA` total. Named
+ * explicitly here (and in the evidence file) rather than left ambiguous. */
+function countDecompiledTextLines(exportText: string): number {
+  const section = extractSection(exportText, "## DECOMPILED_TEXT");
+  return section
+    .split("\n")
+    .filter((l) => l.trim() !== "" && !l.startsWith("## DECOMPILED_TEXT_COUNT"))
+    .length;
+}
+
+test(
+  "ghidra-live acceptance run: the five structural fact kinds, typed cross-references and the accounting identity on the real corpus",
+  { skip: CORPUS_SKIP_REASON },
+  async () => {
+    const extracted = extractCorpusProgram();
+    const ws = makeScratchWorkspace();
+    try {
+      writeFileSync(join(ws.root, "release.prg"), extracted);
+      writeFileSync(join(ws.root, "release.entrypoints"), CORPUS_ENTRY_POINTS.join("\n") + "\n");
+      const exportRel = "acceptance-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "acceptance",
+          importPath: "release.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: "release.entrypoints",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+
+      // The five fact kinds -- each must carry at least one line (found or
+      // not-found); which were found on THIS image is recorded below.
+      const facts = parseStructuralFacts(exportText);
+      const REQUIRED_KINDS = ["ARRAY_BOUND", "SPLIT_POINTER", "RECORD_STRIDE", "COMPUTED_JUMP_RESOLVED", "SELF_MODIFYING_WRITE"];
+      for (const kind of REQUIRED_KINDS) {
+        assert.ok(facts.some((f) => f.kind === kind), `expected at least one STRUCTURAL_FACT line (found or not-found) naming ${kind}`);
+      }
+      const foundKinds = new Set(facts.filter((f) => f.found).map((f) => f.kind));
+      // MEASURED on this image: SPLIT_POINTER (FUN_a660's own CONCAT11
+      // pointer construction) and SELF_MODIFYING_WRITE (a WRITE reference
+      // targeting an address already disassembled as an instruction) are
+      // found; ARRAY_BOUND and RECORD_STRIDE are not (no `for(...)` loop or
+      // multiply-stride pattern appears in what this image's own entry
+      // points reach) -- a fact about this image, recorded rather than
+      // treated as a defect.
+      assert.ok(foundKinds.has("SPLIT_POINTER"), "SPLIT_POINTER must be found on this image");
+      assert.ok(foundKinds.has("SELF_MODIFYING_WRITE"), "SELF_MODIFYING_WRITE must be found on this image");
+      assert.equal(foundKinds.has("ARRAY_BOUND"), false, "MEASURED: ARRAY_BOUND is not found on this image -- recorded, not treated as a defect");
+      assert.equal(foundKinds.has("RECORD_STRIDE"), false, "MEASURED: RECORD_STRIDE is not found on this image -- recorded, not treated as a defect");
+
+      // Split-pointer detection route: this project's own export detects
+      // the idiom via the printed CONCAT11( text first, falling back to a
+      // PcodeOp.PIECE walk only when that text is absent. MEASURED, this
+      // image: the printed text carries CONCAT11( (FUN_a660's own body), so
+      // the text route is what fired.
+      const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
+      assert.ok(decompiledText.includes("CONCAT11("), "the split-pointer idiom's own detection route on this image is the printed CONCAT11( text");
+
+      // The accounting identity.
+      const accounting = parseAccounting(exportText);
+      assert.equal(
+        accounting.attempted,
+        accounting.decompiled + accounting.timedOut + accounting.failed,
+        "attempted must equal decompiled + timedOut + failed",
+      );
+      assert.ok(accounting.attempted > 0, "attempted must be greater than zero on this image -- the identity must not hold vacuously");
+      assert.ok(
+        accounting.timedOut <= accounting.ceiling,
+        `timedOut (${accounting.timedOut}) must be at or below the script's own named ceiling (${accounting.ceiling}), read from the export`,
+      );
+
+      // Typed cross-references: at least one of each of READ, WRITE and
+      // READ_WRITE, asserted on the kind token.
+      const references = parseReferences(exportText);
+      const kindsPresent = new Set(references.map((r) => r.kind));
+      for (const kind of ["READ", "WRITE", "READ_WRITE"]) {
+        assert.ok(kindsPresent.has(kind), `expected at least one reference of kind ${kind}`);
+      }
+      // MEASURED finding (GHID-05's own flagged assumption anticipated this
+      // uncertainty): every computed control transfer this image's own
+      // entry points reach is the "BRK trick" (a BRK instruction whose own
+      // flow is a computed jump through the hardware IRQ vector, which this
+      // synthetic flat import cannot resolve since the vector's own target
+      // lives outside the loaded image) -- captured correctly below as
+      // UNRESOLVED dispatch, never as a resolved COMPUTED_JUMP reference.
+      // Independently re-confirmed on a second, unrelated crack of the SAME
+      // game (`saeger.d64`) during this plan's own investigation. Asserted
+      // here as a POSITIVE fact (not a silent omission): a future corpus or
+      // entry-point change that introduces a resolved COMPUTED_JUMP would
+      // need this assertion updated deliberately. See this plan's own
+      // SUMMARY Deviations and evidence/36-07-acceptance-run.md.
+      assert.equal(
+        kindsPresent.has("COMPUTED_JUMP"),
+        false,
+        "MEASURED: this image's own computed control transfers are all BRK-trick (unresolved), never a resolved COMPUTED_JUMP reference",
+      );
+
+      // Unresolved dispatch, no denominator.
+      const dispatch = parseUnresolvedDispatch(exportText);
+      assert.equal(dispatch.sites.length, dispatch.count, "the dispatch section's own site-list length must equal its own printed count");
+      assert.doesNotMatch(
+        dispatch.sectionText,
+        /%|\bratio\b|\bpercent(age)?\b|total[- ]sites/i,
+        "the UNRESOLVED_DISPATCH section's own text must carry no ratio, percentage or total-sites figure",
+      );
+
+      // Reproducibility: run the acceptance export a second time under a
+      // different run id, over the SAME extracted program and entry
+      // points, and assert byte-identical export files.
+      const exportRel2 = "acceptance-export-2.txt";
+      const result2 = await runGhidraAnalyze(
+        {
+          runId: "acceptance-2",
+          importPath: "release.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: "release.entrypoints",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel2,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result2.exitStatus, 0);
+      const exportText2 = readFileSync(join(ws.root, exportRel2), "utf8");
+      const digest1 = createHash("sha256").update(exportText).digest("hex");
+      const digest2 = createHash("sha256").update(exportText2).digest("hex");
+      assert.equal(digest1, digest2, "two acceptance runs under different run ids must produce byte-identical export files");
+
+      console.log("ACCEPTANCE_EXPORT_DIGEST_1:", digest1);
+      console.log("ACCEPTANCE_EXPORT_DIGEST_2:", digest2);
+      console.log("ACCEPTANCE_EXPORT_BYTE_LENGTH:", exportText.length);
+      console.log("ACCEPTANCE_ACCOUNTING:", JSON.stringify(accounting));
+      console.log("ACCEPTANCE_REFERENCE_KINDS:", [...kindsPresent].sort().join(","));
+      console.log("ACCEPTANCE_UNRESOLVED_DISPATCH:", JSON.stringify(dispatch.sites));
+      console.log("ACCEPTANCE_FOUND_KINDS:", [...foundKinds].sort().join(","));
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live acceptance zero-function: a program with no functions carries the explicit zero-function line",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      // A function-less program: an all-zero (BRK-filled) flat-64K image,
+      // with no entry points and no preScript at all -- nothing here is
+      // ever seeded as an entry, so DecompInterface has zero functions to
+      // attempt.
+      writeFileSync(join(ws.root, "empty.bin"), new Uint8Array(65536));
+      const exportRel = "zerofunc-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "acceptance-zerofunc",
+          importPath: "empty.bin",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const accounting = parseAccounting(exportText);
+      assert.equal(accounting.attempted, 0, "a function-less program must report zero attempted functions");
+      assert.ok(accounting.zeroFunctions, "a function-less program must carry the explicit DECOMPILE_ZERO_FUNCTIONS true line");
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 36-07 (GHID-04): the `DataTypeManager` control, on the SAME image,
+// route and language as the acceptance run above, one script argument
+// apart -- invoked directly against `analyzeHeadless` (see this section's
+// own header comment for why the typed seam cannot yet reach it).
+// ---------------------------------------------------------------------------
+
+/** Named threshold for "essentially nothing" (this plan's own acceptance
+ * criterion: a stated threshold, not an assumed exact zero). MEASURED on
+ * this image: `COMPOSITE_TYPES` is 0 and `DEFINED_DATA` is 14 -- both well
+ * under this threshold, which is itself far smaller than the classified
+ * address total (49682) or the acceptance route's own decompiled-text line
+ * count. */
+const CONTROL_NEAR_ZERO_THRESHOLD = 100;
+
+/** Named "stated multiple" for the acceptance-vs-control structural-fact
+ * comparison (this plan's own acceptance criterion): the acceptance export's
+ * `## DECOMPILED_TEXT` line count must exceed the control's own
+ * `COMPOSITE_TYPES`+`DEFINED_DATA` total by at least this factor. MEASURED
+ * on this image: 183 decompiled-text lines vs. 14 control lines (~13x) --
+ * this threshold is set well below that observed ratio. */
+const STRUCTURAL_FACT_STATED_MULTIPLE = 5;
+
+/** Directly invokes `analyzeHeadless`, OUTSIDE `ghidra.analyze`'s typed seam
+ * -- plan 36-03's own key-decision records that the `DataTypeManager`
+ * control mode's third script argument (`getScriptArgs()[2]`) is not yet
+ * reachable through that seam (only the export path and the expected-line
+ * override are wired as positional script arguments). Builds the SAME
+ * fixed-order argv `buildAnalyzeHeadlessArgv()` (`ghidra-project.mts`) would,
+ * with one extra positional slot (the mode selector) after an
+ * always-empty expected-classification-lines override -- so the export
+ * path and the mode land in `GhidraStructExport.java`'s own
+ * `getScriptArgs()[0]`/`getScriptArgs()[2]`, exactly as its own header
+ * documents. */
+function runGhidraAnalyzeDirectControl(
+  ws: ScratchWorkspace,
+  opts: { runId: string; importPath: string; processor: string; entrypointsPath: string; exportPath: string; mode: string },
+): { exitStatus: number | null; runLogText: string; exportText: string } {
+  const ghidraHome = process.env.GHIDRA_HOME!;
+  const analyzeHeadlessPath = join(ghidraHome, "support", "analyzeHeadless");
+  const projectLocation = join(ws.root, "tools", "ghidra-runs", opts.runId);
+  mkdirSync(projectLocation, { recursive: true });
+  const argv = [
+    projectLocation,
+    opts.runId,
+    "-import",
+    join(ws.root, opts.importPath),
+    "-processor",
+    opts.processor,
+    "-loader",
+    "BinaryLoader",
+    "-loader-baseAddr",
+    "0x801",
+    "-noanalysis",
+    "-scriptPath",
+    join(ws.root, "vendor", "ghidra-scripts"),
+    "-preScript",
+    join(ws.root, "vendor", "ghidra-scripts", "VolatileCarve.java"),
+    join(ws.root, opts.entrypointsPath),
+    "-postScript",
+    join(ws.root, "vendor", "ghidra-scripts", "GhidraStructExport.java"),
+    join(ws.root, opts.exportPath),
+    "",
+    opts.mode,
+    "-deleteProject",
+  ];
+  const result = spawnSync(analyzeHeadlessPath, argv, { encoding: "utf8" });
+  const runLogText = (result.stdout ?? "") + (result.stderr ?? "");
+  const exportPathAbs = join(ws.root, opts.exportPath);
+  const exportText = existsSync(exportPathAbs) ? readFileSync(exportPathAbs, "utf8") : "";
+  return { exitStatus: result.status, runLogText, exportText };
+}
+
+test(
+  "ghidra-live acceptance control (DataTypeManager): the SAME image, route and language as the acceptance run, one script argument apart, returns essentially nothing",
+  { skip: CORPUS_SKIP_REASON },
+  async () => {
+    const extracted = extractCorpusProgram();
+    const ws = makeScratchWorkspace();
+    try {
+      writeFileSync(join(ws.root, "release.prg"), extracted);
+      writeFileSync(join(ws.root, "release.entrypoints"), CORPUS_ENTRY_POINTS.join("\n") + "\n");
+
+      // The acceptance run, once more, in THIS case -- so both count sets
+      // are read from runs made in the same test, over the identical bytes
+      // this case itself wrote.
+      const acceptanceExportRel = "control-acceptance-export.txt";
+      const acceptanceResult = await runGhidraAnalyze(
+        {
+          runId: "control-acceptance",
+          importPath: "release.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: "release.entrypoints",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: acceptanceExportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(acceptanceResult.exitStatus, 0);
+      const acceptanceExportText = readFileSync(join(ws.root, acceptanceExportRel), "utf8");
+      const acceptanceDecompiledLines = countDecompiledTextLines(acceptanceExportText);
+
+      // The control: the SAME image, route and language, one argument apart.
+      const control = runGhidraAnalyzeDirectControl(ws, {
+        runId: "control-datatype",
+        importPath: "release.prg",
+        processor: NMOS_LANGUAGE_ID,
+        entrypointsPath: "release.entrypoints",
+        exportPath: "control-datatype-export.txt",
+        mode: "DATATYPE",
+      });
+      assert.equal(control.exitStatus, 0, `control run's own exit status must be 0 -- run log tail: ${control.runLogText.slice(-500)}`);
+      assert.match(control.runLogText, /EXPORT_MODE: DATATYPE/, "the control's own printed mode line must name the DATATYPE mode");
+      assert.match(
+        control.exportText,
+        /DECOMPILE_ACCOUNTING_MODE_NOTE decompiler not invoked in DATATYPE mode/,
+        "the control must state, in its own export, that the decompiler was never invoked",
+      );
+
+      const { compositeCount, definedDataCount } = parseDataTypeManagerCounts(control.exportText);
+      const controlTotal = compositeCount + definedDataCount;
+      assert.ok(
+        controlTotal <= CONTROL_NEAR_ZERO_THRESHOLD,
+        `the control's own COMPOSITE_TYPES(${compositeCount})+DEFINED_DATA(${definedDataCount})=${controlTotal} must be at or below the stated near-zero threshold (${CONTROL_NEAR_ZERO_THRESHOLD})`,
+      );
+
+      assert.ok(
+        acceptanceDecompiledLines > controlTotal * STRUCTURAL_FACT_STATED_MULTIPLE,
+        `the acceptance export's own DECOMPILED_TEXT line count (${acceptanceDecompiledLines}) must exceed the control's own COMPOSITE_TYPES+DEFINED_DATA total (${controlTotal}) by at least the stated multiple (${STRUCTURAL_FACT_STATED_MULTIPLE}x)`,
+      );
+
+      console.log("CONTROL_COMPOSITE_COUNT:", compositeCount);
+      console.log("CONTROL_DEFINED_DATA_COUNT:", definedDataCount);
+      console.log("CONTROL_TOTAL:", controlTotal);
+      console.log("ACCEPTANCE_DECOMPILED_TEXT_LINES:", acceptanceDecompiledLines);
+      console.log("CONTROL_RUN_LOG_TAIL:", control.runLogText.slice(-1200));
     } finally {
       removeScratchWorkspace(ws);
     }
