@@ -941,7 +941,16 @@ decompiler, and structural facts exported through `DecompInterface`.
   4. **The volatile-I/O carve is proven by disappearance, on both import routes.** Removing the flag from `$0000-$0001` / `$D000-$DFFF` makes hardware writes **vanish** from the reference dump — observed red on the `.prg` route **and** on the flat-64K route, because the conflict path is MEASURED route-dependent. A loader-owned block at the same address has the flag set on the **existing** block and is proven not to fall back to non-volatile through a swallowed `MemoryConflictException`.
   5. Structural facts no listing-level query can produce are exported through **`DecompInterface`** from a real binary — an array bound, the split-pointer `CONCAT11` idiom, a record stride, at least one resolved computed jump, at least one self-modifying write target — with cross-references carrying their **access kind** (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), per-function **attempted / decompiled / timedOut** accounting satisfying `attempted == decompiled + timedOut` under a committed timeout ceiling, and unresolved dispatch reported as a **count and a list with no denominator**. A committed control observes the same export routed through `DataTypeManager` returning essentially nothing, **on the same image** as the acceptance run.
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+- [ ] 36-01-PLAN.md — Tracer: the SLEIGH extension source with its eight sized-local fixes, the `sleigh` compile gate and its red observation, the new `6502:LE:16:nmos` language id landed in the same commit as the `-processor` field, the `ghidra.installExtension` op, the run-log capture slot, and `ghidra-run.ts` — proven end to end by a real run log naming the language
+- [ ] 36-02-PLAN.md — The full `ghidra.analyze` argv surface (`importRoute`, `loaderBaseAddr`, `noanalysis`, `scriptPath`, `entrypointsPath`, `exportPath`, `expectedClassificationLines`) plus the checked, non-materialising language preflight, with the hermetic seam census, path-confinement and idempotency cases
+- [ ] 36-03-PLAN.md — `VolatileCarve.java` and `GhidraStructExport.java` promoted and renamed for their function, the classification expectation fixed to the script's own block total, the `DecompInterface` walk with attempted/decompiled/timedOut accounting, and the hermetic exact-literal gate with the naive grep proven to false-fire
+- [ ] 36-04-PLAN.md — Both live suites registered manual-only in one commit (the eleventh and twelfth entries with the enumerating assertion updated), and each of `GHID-01`'s three gates observed firing on a real run, gate 2 on both import routes
+- [ ] 36-05-PLAN.md — The volatile-I/O carve proven by disappearance on the `.prg` route and the flat-64K route, the loader-owned block handled on the existing block, and a forced memory conflict observed loud rather than a silent fall-back
+- [ ] 36-06-PLAN.md — All 105 opcode bytes decoding under the new language with the same assertion observed FAILING under `6502:LE:16:default`, the six unstable instructions read as declared unknowns, and the 15 bytes the stock 65C02 language also claims keeping its meanings
+- [ ] 36-07-PLAN.md — The real-corpus before/after difference, the `DecompInterface` acceptance run with typed cross-references and denominator-free dispatch reporting, the `DataTypeManager` control on the same image, and the phase findings document
 
 Notes:
 
