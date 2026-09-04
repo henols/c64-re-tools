@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 35
 current_phase_name: dxa, Vendored and Parsed
 status: executing
-stopped_at: Phase 35 planned (5 plans, 4 waves); ready to execute
-last_updated: "2026-09-04T09:13:38.214Z"
+stopped_at: Completed 35-01-PLAN.md
+last_updated: "2026-09-04T10:08:04.784Z"
 last_activity: 2026-09-04
-last_activity_desc: Phase 34 complete, transitioned to Phase 35
-state_head: 57d0a0b84c178c1a6dd913832dc2740e81959bca
+last_activity_desc: Phase 35 execution started
+state_head: 6c2a2a20d82d566668d862081cfc5afae47fde0c
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 28
-  completed_plans: 23
+  completed_plans: 24
   percent: 33
 ---
 
@@ -24,7 +24,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-04 after Phase 34)
 
-**Current focus:** Phase 35 — dxa, Vendored and Parsed — ready to plan, in milestone **v0.8.0 Frame-Exact
+**Current focus:** Phase 35 — dxa, Vendored and Parsed — executing, in milestone **v0.8.0 Frame-Exact
 Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
 **frame-exact emulator stop** owned for the first time behind a pre-committed
 go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
@@ -176,8 +176,8 @@ the suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 35 (dxa, Vendored and Parsed) — READY TO EXECUTE
-Plan: Not started
+Phase: 35 (dxa, Vendored and Parsed) — EXECUTING
+Plan: 2 of 5
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -216,7 +216,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: Phase 35 PLANNED — 5 plans in 4 waves, plan-checker passed; ready to execute. Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Phase 35 EXECUTING — 5 plans in 4 waves, plan-checker passed; execution started 2026-09-04. Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
@@ -373,7 +373,7 @@ their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
 `anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase. **Phase 34 plan 34-01 update (2026-09-03):** the host-tool execution seam tracer is complete — the `host_tool` control op is wired end to end (broker-control.mts/vice-broker.mts/host-tool.mts/host-tool-client.ts), proven against real ACME with all seven VICE lease callbacks provably uncalled; see `.planning/phases/34-the-host-tool-execution-seam/34-01-SUMMARY.md`. Plan 34-02 is next.
-Last activity: 2026-09-04 — Phase 34 complete, transitioned to Phase 35
+Last activity: 2026-09-04 — Phase 35 execution started
 
 ## Performance Metrics
 
@@ -577,6 +577,7 @@ Last activity: 2026-09-04 — Phase 34 complete, transitioned to Phase 35
 | Phase 34 P08 | 30min | 3 tasks | 7 files |
 | Phase 34-the-host-tool-execution-seam P09 | 27min | 3 tasks | 8 files |
 | Phase 34 P10 | 25min | 3 tasks | 3 files |
+| Phase 35 P01 | 55min | 3 tasks | 37 files |
 
 ## Accumulated Context
 
@@ -1025,6 +1026,7 @@ Recent decisions affecting current work:
 - [Phase 34-the-host-tool-execution-seam]: 34-09 (CR-04) closed the phase's headline DoS defect: ghidra.analyze's server-side budget is now 600_000ms (10 min, cleared against this project's own 12.6-17.4s documented JVM-startup range and its 12407ms/11160ms observations) with an 11-minute client-side deadline, and hostToolOverControlPlane()'s single connect-bound timer is split into a connect phase and a separately-sized request-deadline phase mirroring openBrokerControl(). SEAM-02 flipped to Complete only after the three-plan (34-07/34-08/34-09) closure gate ran and passed. — Every tool now has an explicit, finite server-side budget and a strictly-larger client-side deadline, asserted by a test that imports both sides and iterates every tool id -- the anti-drift mechanism for two numbers deliberately living in two processes. No wire-supplied timeout was introduced; budgets stay host-side configuration.
 - [Phase 34]: resolveWorkspacePath() now walks both the workspace root and the candidate through an ancestor-realpath walk (mirroring anno-types.ts's storePathWithinWorkspace()) and returns the real path, closing CR-05; the walk is duplicated locally in host-tool.mts (A-15) rather than imported, because host-tool.mts is host-bound and cannot reach a container-side .ts module, and pinned to its container-side twin by a cross-implementation equivalence test. — The returned path being real rather than lexical is load-bearing since it is exactly what reaches the spawn; the container-translation consequence on a symlinked workspace root is recorded as a limit (A-16) rather than widening hostpath.ts's closed consumer set.
 - [Phase 34]: 34-11 ran the full verification gate BEFORE editing any bookkeeping (module-family suites 158/158, ledger+confinement guards 55/55, typecheck/npm-packages/spawn-gate clean, test:automated 3270/3278 pass with the measured 2-in-1-file anno-register.test.ts floor, no regression), then in one commit moved the CR-05 todo to .planning/todos/completed/ with a Resolution and removed its Deferred Items row (9 -> 8 open), and appended docs/phase34-host-tool-seam-decisions.md's Part 4 CR-05 correction plus A-15/A-16. — WR-03's row and todo were deliberately left untouched (still Pending); SEAM-02's Complete marking in REQUIREMENTS.md was not re-scored, per the verifier's own written ruling.
+- [Phase 35]: Corrected the dxa.disassemble census total (7->12, not the plan's stated 7->11) and the vendored-binary path resolution (a two-candidate probe, since resources/host-tool.mjs and vendor/dxa/dxa are siblings, not nested) -- both required for the plan's own acceptance criteria to pass. — Verified against source: DXA-01's declared path-key enumeration (5 keys) plus the pre-existing 7 sums to 12.
 
 ### Pending Todos
 
@@ -1836,8 +1838,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T00:45:41.000Z
-Stopped at: Phase 34 complete, ready to plan Phase 35
+Last session: 2026-09-04T10:08:04.406Z
+Stopped at: Completed 35-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
