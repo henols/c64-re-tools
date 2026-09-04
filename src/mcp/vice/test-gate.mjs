@@ -82,6 +82,22 @@
 // disassembler, not VICE) and asserts a MEASURED byte-level code/data map
 // rather than emulator state.
 //
+// This section's ELEVENTH and TWELFTH entries (Phase 36, plan 36-04,
+// GHID-01/OPC-04) cover ghidra-live.test.ts and ghidra-opcode-live.test.ts:
+// both drive a real `analyzeHeadless` against a real installed Ghidra
+// language extension (the vendored `6502:LE:16:nmos` SLEIGH extension,
+// plans 36-01/36-02), and no CI runner has a Ghidra installation -- the
+// manual-only set grew from ten to twelve rather than staying at ten,
+// exactly like dxa-live.test.ts's own tenth-entry precedent above. Like
+// every sibling above them, both are default-SKIP everywhere (opt in via
+// VICE_LIVE_GHIDRA=1, requiring GHIDRA_HOME) and never hang CI. Per this
+// file's own STANDING RULE below: the payload shapes these two live files
+// depend on -- the run-log classifier's exact-literal/language-line/
+// classification-count shapes, and the export file's own labelled lines --
+// have their mirror assertion in ghidra-harness-gates.test.ts (hermetic,
+// against two REAL captured run logs); the `ghidra.analyze` wire-request
+// shape's own mirror assertion lives in host-tool.test.ts.
+//
 // STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
 // shape a manual-only live suite depends on MUST have a mirror assertion in
 // the automated set. A manual-only file is invisible to this gate by
@@ -99,9 +115,9 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact ten test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if an eleventh file needs the same
- * treatment. */
+/** The exact twelve test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if a thirteenth file needs the
+ * same treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
   "vice-proxy.test.ts",
@@ -113,6 +129,8 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "fork-live.test.ts",
   "stock-a4-checkpoint-flood.test.ts",
   "dxa-live.test.ts",
+  "ghidra-live.test.ts",
+  "ghidra-opcode-live.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS
