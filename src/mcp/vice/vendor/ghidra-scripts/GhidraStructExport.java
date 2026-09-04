@@ -8,10 +8,35 @@
 // each kind not found), then `## DECOMPILE_ACCOUNTING` (attempted / decompiled
 // / timedOut / failed counts under a committed identity and ceiling), then
 // `## UNRESOLVED_DISPATCH` (a count and a list, with no denominator figure of
-// any kind). Section order is fixed and each section's own lines are in
-// ascending address order, so two runs over the same program produce
-// byte-identical output -- the file is opened for OVERWRITE (the default
-// `FileWriter(path)` constructor), never append.
+// any kind), then `## DECOMPILED_TEXT` (one function per entry: its entry
+// point, its name, and its full decompiled C body verbatim, in
+// `MODE_DECOMPINTERFACE` only -- see the note below on why this section
+// exists and REFERENCES does not answer the same question). Section order is
+// fixed and each section's own lines are in ascending address order, so two
+// runs over the same program produce byte-identical output -- the file is
+// opened for OVERWRITE (the default `FileWriter(path)` constructor), never
+// append.
+//
+// WHY `## DECOMPILED_TEXT` EXISTS, AND WHY `## REFERENCES` CANNOT ANSWER THE
+// SAME QUESTION. `## REFERENCES` is populated from the reference manager --
+// one entry per operand reference established at DISASSEMBLY time, over the
+// raw instruction listing. A memory write instruction's own reference to its
+// target address survives in this list REGARDLESS of whether the target
+// range is volatile: dead-store elimination is a DECOMPILER-layer, per-
+// function, p-code-level transformation, and it does not remove or alter the
+// listing's own reference database. MEASURED (real Ghidra 12.1.3, this
+// project's own `bank.a` fixture): a non-volatile carve and a volatile carve
+// of the identical program produce BYTE-IDENTICAL `## REFERENCES` sections --
+// the write instructions are still there, still referenced, in both cases.
+// The elimination is visible ONLY in the decompiled C text this section now
+// carries: with the I/O ranges volatile, all four `$01` writes and both
+// `$d020` writes (plus the read) appear as literal assignment/read
+// statements; without volatile, three of the four `$01` writes and one of
+// the two `$d020` writes are gone from the decompiled text entirely, with no
+// warning anywhere else in the export. A harness that only checks
+// `## REFERENCES` for this project's own volatile-carve criterion would
+// observe no difference at all and wrongly conclude the carve made no
+// difference.
 //
 // WHICH ARGUMENTS IT TAKES. `getScriptArgs()[0]` is the output path,
 // required -- an empty or absent value throws a named refusal before
@@ -251,6 +276,12 @@ public class GhidraStructExport extends GhidraScript {
         // ---- ## STRUCTURAL_FACTS and ## DECOMPILE_ACCOUNTING : mode-dependent
         StringBuilder structuralSection = new StringBuilder("## STRUCTURAL_FACTS\n");
         StringBuilder accountingSection = new StringBuilder("## DECOMPILE_ACCOUNTING\n");
+        // ---- ## DECOMPILED_TEXT : one function per entry, full C body
+        // verbatim. See this file's own header for why this section exists
+        // and REFERENCES does not answer the same question. Populated only
+        // in MODE_DECOMPINTERFACE -- MODE_DATATYPEMANAGER never decompiles.
+        StringBuilder decompiledTextSection = new StringBuilder("## DECOMPILED_TEXT\n");
+        long decompiledTextCount = 0L;
 
         if (mode.equals(MODE_DATATYPEMANAGER)) {
             // Control route: DataTypeManager only. DecompInterface is never
@@ -273,6 +304,9 @@ public class GhidraStructExport extends GhidraScript {
             structuralSection.append("STRUCTURAL_FACT_MODE_NOTE DataTypeManager route -- expected near-empty on 6502\n");
             accountingSection.append("DECOMPILE_ACCOUNTING_MODE_NOTE decompiler not invoked in ")
                     .append(MODE_DATATYPEMANAGER).append(" mode\n");
+            decompiledTextSection.append("DECOMPILED_TEXT_MODE_NOTE decompiler not invoked in ")
+                    .append(MODE_DATATYPEMANAGER).append(" mode\n");
+            decompiledTextSection.append("## DECOMPILED_TEXT_COUNT 0\n");
         } else {
             DecompInterface di = new DecompInterface();
             try {
@@ -303,6 +337,14 @@ public class GhidraStructExport extends GhidraScript {
 
                     String cText = r.getDecompiledFunction() != null
                             ? r.getDecompiledFunction().getC() : "";
+
+                    decompiledTextSection.append("FUNCTION ").append(f.getEntryPoint()).append(" ")
+                            .append(f.getName()).append("\n");
+                    decompiledTextSection.append(cText);
+                    if (cText.isEmpty() || cText.charAt(cText.length() - 1) != '\n') {
+                        decompiledTextSection.append("\n");
+                    }
+                    decompiledTextCount += 1;
 
                     Matcher arrayM = ARRAY_BOUND_PATTERN.matcher(cText);
                     if (arrayM.find()) {
@@ -414,6 +456,8 @@ public class GhidraStructExport extends GhidraScript {
             if (!selfModifyingFound) {
                 structuralSection.append("STRUCTURAL_FACT SELF_MODIFYING_WRITE not-found\n");
             }
+
+            decompiledTextSection.append("## DECOMPILED_TEXT_COUNT ").append(decompiledTextCount).append("\n");
         }
 
         // ---- ## UNRESOLVED_DISPATCH : a count and a list, NO DENOMINATOR
@@ -445,6 +489,7 @@ public class GhidraStructExport extends GhidraScript {
             out.print(structuralSection);
             out.print(accountingSection);
             out.print(dispatchSection);
+            out.print(decompiledTextSection);
         } finally {
             out.close();
         }
@@ -452,5 +497,6 @@ public class GhidraStructExport extends GhidraScript {
         println("EXPORT_FILE: " + args[0]);
         println("EXPORT_CLASSIFICATION_LINES: " + classificationLines);
         println("EXPORT_REFERENCE_COUNT: " + referenceCount);
+        println("EXPORT_DECOMPILED_TEXT_COUNT: " + decompiledTextCount);
     }
 }

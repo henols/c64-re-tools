@@ -40,10 +40,30 @@ source's own `* = $0810` directive skips ahead without emitting them
 explicitly); the fixture's actual code begins at `$0810` (the `start:`
 label).
 
+**CORRECTED 2026-09-04 (plan 36-05).** The table below was originally
+hand-traced assuming a real C64 loader's convention -- that the `.prg`
+file's own two-byte load-address header is STRIPPED before the remaining
+bytes are loaded at the header's own address. MEASURED this session, real
+Ghidra 12.1.3, against `ghidra.analyze`'s actual `"prg"` route: it is not.
+`BinaryLoader` (the loader `ghidra.analyze` always uses, a fixed literal on
+both routes) has no concept of the `.prg` format at all -- it loads the
+ENTIRE 60-byte file, header included, as raw content starting at
+`loaderBaseAddr` ($0801 by default). The header's own two bytes therefore
+occupy $0801-$0802 as ordinary memory content, and every address after them
+is shifted TWO BYTES LATER than `bank.a`'s own source labels. The fixture's
+actual first instruction (`lda #$37`, `start:` in the source) is therefore
+loaded at **$0812**, not $0810 -- an entry point of `$0810` on this route
+disassembles a padding zero byte (`BRK`) and stops immediately, MEASURED
+this session as the original symptom that surfaced this correction. The
+flat-64K route does not have this problem: `generateFlat64kVariant()`
+(`ghidra-live.test.ts`) strips the two header bytes itself before embedding
+the body, so `$0810` is the correct entry point THERE, and the table below's
+values were already correct for that route.
+
 **MEASURED reference-dump lines this fixture yields under a correct volatile
-carve** (`VolatileCarve.java`'s `SPLIT_AT`/`VOLATILE_RANGES` applied, then
-`GhidraStructExport.java`'s `## REFERENCES` section, `.prg` route,
-`-loader-baseAddr 0x801`) -- the four `sta $01`/`lda $01`-equivalent writes at
+carve, flat-64K route** (`VolatileCarve.java`'s `SPLIT_AT`/`VOLATILE_RANGES`
+applied, then `GhidraStructExport.java`'s `## REFERENCES` section, entry
+point `$0810`) -- the four `sta $01`/`lda $01`-equivalent writes at
 `$0812`/`$081c`/`$0828`/`$0837`, the two `sta $d020` writes at
 `$0816`/`$0820`, and the one `lda $d020` read at `$0823`:
 
@@ -55,6 +75,21 @@ carve** (`VolatileCarve.java`'s `SPLIT_AT`/`VOLATILE_RANGES` applied, then
 0823 -> d020 READ
 0828 -> 0001 WRITE
 0837 -> 0001 WRITE
+```
+
+**MEASURED reference-dump lines this fixture yields under a correct volatile
+carve, `.prg` route** (same script pair, `-loader-baseAddr 0x801`, entry
+point `$0812` -- every address TWO BYTES LATER than the flat-64K route's own,
+for the reason explained above):
+
+```
+0814 -> 0001 WRITE
+0818 -> d020 WRITE
+081e -> 0001 WRITE
+0822 -> d020 WRITE
+0825 -> d020 READ
+082a -> 0001 WRITE
+0839 -> 0001 WRITE
 ```
 
 **A note on a different, similarly-shaped set of lines.** `36-RESEARCH.md`
