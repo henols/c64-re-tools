@@ -48,6 +48,13 @@
  * skip into a wrong classification. */
 const DUMP_LINE_RE = /^([0-9a-f]{4}) ((?:[0-9a-f]{2} )+)\s+(.*)$/;
 
+/** Renders an address as a 4-hex-digit column, e.g. `0x0812` -- used only in
+ * `UnclassifiedByte` reasons and refusal messages, never in the ONE
+ * line-matching regular expression above. */
+function hex4(address: number): string {
+  return `0x${address.toString(16).padStart(4, "0")}`;
+}
+
 /** One matched `dxa -a dump` listing line, classified. Exported so a future
  * consumer (plan 35-02's partitioner, DXA-03) can work from the same typed
  * per-line shape this parser already computed, rather than re-deriving it
@@ -66,17 +73,41 @@ export interface DumpLineShape {
 }
 
 /** One contiguous, sorted range in the rendered range list. `end` is
- * INCLUSIVE. Two ranges are never merged across a source-line boundary even
- * when their addresses touch or their class matches -- only bytes emitted by
- * the SAME matched line ever coalesce into one entry (`dxa-listing.test.ts`'s
- * adjacency cases assert this directly). This is what makes "two spans that
- * merely touch stay two entries" true regardless of class agreement. */
+ * INCLUSIVE. Two `code`/`data` ranges are never merged across a source-line
+ * boundary even when their addresses touch or their class matches -- only
+ * bytes emitted by the SAME matched line ever coalesce into one `code`/`data`
+ * entry (`dxa-listing.test.ts`'s adjacency cases assert this directly). This
+ * is what makes "two spans that merely touch stay two entries" true
+ * regardless of class agreement. `unclassified` addresses (an overlapping
+ * decode; see `UnclassifiedByte`) coalesce among themselves by address
+ * alone -- they have no single owning line to key on -- but never merge into
+ * an adjacent `code` or `data` run, since a class change always breaks a
+ * range. */
 export interface DumpRange {
-  class: "code" | "data";
+  class: "code" | "data" | "unclassified";
   /** Inclusive lower bound. */
   start: number;
   /** Inclusive upper bound. */
   end: number;
+}
+
+/** One address two (or more) matched lines both claim. A byte-per-address
+ * map structurally cannot represent two decodes of the same byte, so this
+ * project declines to decide and says why -- there is no tie-break, no
+ * first-wins, no last-wins, no longest-span-wins and no code-beats-data
+ * rule anywhere in this module, including when the claims AGREE on class:
+ * agreement is not resolution, since a rule that resolved the agreeing case
+ * would be the same tie-break rule, merely unobservable on that input. */
+export interface UnclassifiedByte {
+  /** The contested address. */
+  address: number;
+  /** Every line that claimed this address, verbatim, with its claimed
+   * class. */
+  claims: { raw: string; class: "code" | "data" }[];
+  /** Human-readable reason naming every claiming line verbatim and every
+   * claimed class -- always derived from `claims`, never a separate,
+   * driftable statement. */
+  reason: string;
 }
 
 export interface DumpListingMap {
@@ -84,8 +115,17 @@ export interface DumpListingMap {
   code: Set<number>;
   /** Distinct in-window addresses dxa classified as data. */
   data: Set<number>;
-  /** Distinct in-window addresses covered by EITHER set -- the quantity the
-   * one refusal predicate compares against `imageSize`. */
+  /** Every in-window address TWO OR MORE matched lines claimed -- an
+   * overlapping decode. Never a member of `code` or `data` (an address is
+   * removed from whichever class set already held it the moment a second
+   * claim arrives, and never re-entered by a third). Keyed by address for
+   * direct reason lookup. */
+  unclassified: Map<number, UnclassifiedByte>;
+  /** Distinct in-window addresses covered by `code`, `data` OR
+   * `unclassified` -- the quantity the one refusal predicate compares
+   * against `imageSize`. An `unclassified` address counts toward this total
+   * exactly once, so an overlapping listing whose distinct coverage equals
+   * `imageSize` does not spuriously refuse. */
   covered: Set<number>;
   /** Count of in-window byte EMISSIONS classified as code (may exceed
    * `code.size` under an overlapping decode -- a raw count, not a distinct
@@ -140,6 +180,7 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
 
   const code = new Set<number>();
   const data = new Set<number>();
+  const unclassified = new Map<number, UnclassifiedByte>();
   const covered = new Set<number>();
   let codeBytes = 0;
   let dataBytes = 0;
@@ -148,11 +189,11 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
   const lines: DumpLineShape[] = [];
   let firstAddress: number | null = null;
   let lastAddress: number | null = null;
-  // Tracks which matched line (by index into `lines`) produced each
-  // in-window address -- used ONLY to decide range-merge boundaries below
-  // (two different lines never coalesce even when touching); never exposed
-  // on the returned structure itself.
-  const owner = new Map<number, number>();
+  // Every in-window byte EMISSION, keyed by address, collected BEFORE any
+  // classification decision is made -- an address with more than one claim
+  // is an overlapping decode and is resolved below, never awarded to
+  // whichever claim happened to be seen first.
+  const claims = new Map<number, { lineIndex: number; cls: "code" | "data" }[]>();
 
   for (const rawLine of text.split("\n")) {
     // Strip a single trailing carriage return so CRLF and LF listings parse
@@ -173,21 +214,28 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
     // Data iff the emitted text begins `.byt` or `.word`; anything else is
     // an instruction dxa chose to emit, i.e. code.
     const isData = rest.startsWith(".byt") || rest.startsWith(".word");
+    const cls: "code" | "data" = isData ? "data" : "code";
     lines.push({ address, bytes, isData, raw: line });
-    const target = isData ? data : code;
 
     let lineHasOutOfWindow = false;
     for (let i = 0; i < bytes.length; i += 1) {
       const a = address + i;
       if (a < origin || a >= windowEnd) {
-        // Never added to any set -- recorded once per LINE below instead.
+        // Never claimed -- recorded once per LINE below instead.
         lineHasOutOfWindow = true;
         continue;
       }
-      target.add(a);
-      covered.add(a);
-      owner.set(a, lineIndex);
-      if (isData) dataBytes += 1;
+      let list = claims.get(a);
+      if (list === undefined) {
+        list = [];
+        claims.set(a, list);
+      }
+      list.push({ lineIndex, cls });
+      // codeBytes/dataBytes are raw EMISSION counts, not distinct-address
+      // counts (see the field's own doc) -- incremented here, once per
+      // claim, so an overlapping decode's byte total may exceed
+      // code.size/data.size exactly as documented.
+      if (cls === "data") dataBytes += 1;
       else codeBytes += 1;
       if (firstAddress === null || a < firstAddress) firstAddress = a;
       if (lastAddress === null || a > lastAddress) lastAddress = a;
@@ -195,26 +243,60 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
     if (lineHasOutOfWindow) outOfWindow.push(line);
   }
 
+  // Resolve every claimed address. A SINGLE claim classifies normally; TWO
+  // OR MORE claims -- whether they agree or disagree on class -- resolve to
+  // `unclassified` with a stated reason naming every claiming line and
+  // class. Agreement is not resolution: a rule that resolved the agreeing
+  // case would be the same tie-break rule, merely unobservable on that
+  // input (dxa-listing.test.ts's agreeing-overlap case asserts this).
+  // Tracks which matched line (by index into `lines`) produced each
+  // `code`/`data` address -- used ONLY to decide range-merge boundaries
+  // below (two different lines never coalesce even when touching);
+  // `unclassified` addresses have no single owner and are never looked up
+  // here.
+  const owner = new Map<number, number>();
+  for (const [a, claimList] of claims) {
+    covered.add(a);
+    if (claimList.length === 1) {
+      const claim = claimList[0]!;
+      owner.set(a, claim.lineIndex);
+      if (claim.cls === "code") code.add(a);
+      else data.add(a);
+    } else {
+      const claimDescs = claimList.map((c) => ({ raw: lines[c.lineIndex]!.raw, class: c.cls }));
+      const reason =
+        `address ${hex4(a)} claimed by ${claimList.length} lines -- ` +
+        claimDescs.map((c) => `"${c.raw}" (${c.class})`).join(" and ") +
+        `; a byte-per-address map cannot represent two decodes of the same byte, so this parser declines to award it to either class.`;
+      unclassified.set(a, { address: a, claims: claimDescs, reason });
+    }
+  }
+
   if (covered.size !== imageSize) {
     throw new Error(
       `parseDumpListing: covered byte total ${covered.size} does not equal expected image size ${imageSize}. ` +
         `Refusing to report an under- or over-counted classification. covered=${covered.size} expected=${imageSize} ` +
-        `(matched ${matchedLines} byte-emitting lines; first out-of-window line: ${outOfWindow[0] ?? "<none>"}).`,
+        `unclassified=${unclassified.size} (matched ${matchedLines} byte-emitting lines; first out-of-window line: ${outOfWindow[0] ?? "<none>"}).`,
     );
   }
 
   // Ordering and adjacency: sort covered addresses ascending and coalesce
-  // ONLY consecutive addresses that share both class AND originating line --
-  // two different lines never merge even when their spans touch exactly or
-  // agree on class (dxa-listing.test.ts's adjacency cases assert this).
+  // ONLY consecutive addresses that share both class AND originating line
+  // for `code`/`data` -- two different lines never merge even when their
+  // spans touch exactly or agree on class (dxa-listing.test.ts's adjacency
+  // cases assert this). `unclassified` addresses coalesce by address alone
+  // (they have no single owning line), but a class change ALWAYS breaks a
+  // range, so `unclassified` never merges into an adjacent `code`/`data`
+  // run.
   const ranges: DumpRange[] = [];
-  const rangeOwner: number[] = [];
+  const rangeOwner: (number | undefined)[] = [];
   for (const a of [...covered].sort((x, y) => x - y)) {
-    const cls: "code" | "data" = code.has(a) ? "code" : "data";
-    const lineOwner = owner.get(a)!;
+    const cls: "code" | "data" | "unclassified" = code.has(a) ? "code" : data.has(a) ? "data" : "unclassified";
+    const lineOwner = cls === "unclassified" ? undefined : owner.get(a)!;
     const lastIdx = ranges.length - 1;
     const last = lastIdx >= 0 ? ranges[lastIdx]! : undefined;
-    if (last !== undefined && last.class === cls && last.end + 1 === a && rangeOwner[lastIdx] === lineOwner) {
+    const sameOwner = cls === "unclassified" || rangeOwner[lastIdx] === lineOwner;
+    if (last !== undefined && last.class === cls && last.end + 1 === a && sameOwner) {
       last.end = a;
     } else {
       ranges.push({ class: cls, start: a, end: a });
@@ -222,5 +304,5 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
     }
   }
 
-  return { code, data, covered, codeBytes, dataBytes, matchedLines, outOfWindow, lines, firstAddress, lastAddress, ranges };
+  return { code, data, unclassified, covered, codeBytes, dataBytes, matchedLines, outOfWindow, lines, firstAddress, lastAddress, ranges };
 }

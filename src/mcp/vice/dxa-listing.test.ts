@@ -245,3 +245,128 @@ test("the module's source never uses a child process's exit status as the refusa
   assert.equal(/child_process/.test(source), false, "must never import or reference node:child_process");
   assert.equal(/exitStatus|exitCode/.test(source), false, "the refusal has one source -- the byte total -- never a spawned process's exit code");
 });
+
+// ============================================================================
+// Task 2: the overlapping decode -- `unclassified` with a stated reason,
+// never a winner
+// ============================================================================
+
+/** Two lines that DISAGREE on class, fully overlapping at one address
+ * (0x3000): a 2-byte instruction (code, 0x3000-0x3001) and a 1-byte `.byt`
+ * (data, 0x3000 only). 0x3001 stays code, non-overlapping. */
+const OVERLAP_DISAGREE_CODE = "3000 a9 00    \tlda #$00";
+const OVERLAP_DISAGREE_DATA = "3000 00       \t.byt $00";
+
+/** Two lines that AGREE on class (both data), fully overlapping at one
+ * address (0x4000). Different byte VALUES, same claimed class -- proves
+ * agreement is not resolution. */
+const OVERLAP_AGREE_A = "4000 11       \t.byt $11";
+const OVERLAP_AGREE_B = "4000 22       \t.byt $22";
+
+/** The `jsr`-into-a-mid-instruction-target case, built as two REAL `-a dump`
+ * shaped lines with genuinely overlapping spans (not an abstract pair of
+ * address ranges), so the test exercises the same regex and hex-column
+ * length reading the production path uses. `jmpA` (3 bytes, code,
+ * 0x5000-0x5002) and `jsrB` (3 bytes, code, one byte into jmpA,
+ * 0x5001-0x5003): 0x5001 and 0x5002 overlap (unclassified), 0x5000 (jmpA
+ * only) and 0x5003 (jsrB only) keep their own code classification. */
+const JSR_MID_INSTRUCTION_JMP = "5000 4c 00 20 \tjmp $2000";
+const JSR_MID_INSTRUCTION_JSR = "5001 20 71 08 \tjsr $0871";
+
+test("two byte-emitting lines claiming the same address with DIFFERENT classes: neither class set gets it, unclassified gets it exactly once", () => {
+  const listing = `${OVERLAP_DISAGREE_CODE}\n${OVERLAP_DISAGREE_DATA}`;
+  const map = parseDumpListing(listing, { origin: 0x3000, imageSize: 2 });
+  assert.equal(map.code.has(0x3000), false);
+  assert.equal(map.data.has(0x3000), false);
+  assert.equal(map.unclassified.size, 1);
+  assert.ok(map.unclassified.has(0x3000));
+  // The non-overlapping byte keeps its own classification.
+  assert.ok(map.code.has(0x3001));
+});
+
+test("an unclassified entry's reason names both source lines verbatim and both claimed classes", () => {
+  const listing = `${OVERLAP_DISAGREE_CODE}\n${OVERLAP_DISAGREE_DATA}`;
+  const map = parseDumpListing(listing, { origin: 0x3000, imageSize: 2 });
+  const entry = map.unclassified.get(0x3000)!;
+  assert.ok(entry.reason.includes(OVERLAP_DISAGREE_CODE), entry.reason);
+  assert.ok(entry.reason.includes(OVERLAP_DISAGREE_DATA), entry.reason);
+  assert.ok(entry.reason.includes("code"), entry.reason);
+  assert.ok(entry.reason.includes("data"), entry.reason);
+  assert.equal(entry.claims.length, 2);
+});
+
+test("two byte-emitting lines claiming the same address with the SAME class are STILL unclassified -- agreement is not resolution", () => {
+  const listing = `${OVERLAP_AGREE_A}\n${OVERLAP_AGREE_B}`;
+  const map = parseDumpListing(listing, { origin: 0x4000, imageSize: 1 });
+  assert.equal(map.data.has(0x4000), false);
+  assert.equal(map.code.has(0x4000), false);
+  assert.ok(map.unclassified.has(0x4000));
+  const entry = map.unclassified.get(0x4000)!;
+  assert.ok(entry.reason.includes(OVERLAP_AGREE_A), entry.reason);
+  assert.ok(entry.reason.includes(OVERLAP_AGREE_B), entry.reason);
+});
+
+test("an overlapping listing whose distinct in-window coverage equals the declared image size does NOT throw -- unclassified counts toward coverage exactly once", () => {
+  const listing = `${OVERLAP_DISAGREE_CODE}\n${OVERLAP_DISAGREE_DATA}`;
+  // Distinct addresses: 0x3000 (unclassified) + 0x3001 (code) = 2, matching
+  // imageSize exactly, even though codeBytes+dataBytes (raw emissions) sum
+  // to 3 (2 from the instruction, 1 from the .byt).
+  const map = parseDumpListing(listing, { origin: 0x3000, imageSize: 2 });
+  assert.equal(map.covered.size, 2);
+  assert.equal(map.codeBytes + map.dataBytes, 3, "raw emission counts may exceed distinct coverage under an overlap");
+});
+
+test("a short overlapping listing still throws, reporting the unclassified count alongside the accounted total", () => {
+  const listing = `${OVERLAP_DISAGREE_CODE}\n${OVERLAP_DISAGREE_DATA}`;
+  assertThrowsContaining(() => parseDumpListing(listing, { origin: 0x3000, imageSize: 5 }), [
+    "covered=2",
+    "expected=5",
+    "unclassified=1",
+  ]);
+});
+
+test("the unclassified class participates in the rendered range list as its own class, sorted with the others and never merged into an adjacent code or data run", () => {
+  const listing = `${OVERLAP_DISAGREE_CODE}\n${OVERLAP_DISAGREE_DATA}`;
+  const map = parseDumpListing(listing, { origin: 0x3000, imageSize: 2 });
+  assert.equal(map.ranges.length, 2, JSON.stringify(map.ranges));
+  assert.deepEqual(map.ranges[0], { class: "unclassified", start: 0x3000, end: 0x3000 });
+  assert.deepEqual(map.ranges[1], { class: "code", start: 0x3001, end: 0x3001 });
+});
+
+test("jsr landing one byte into a three-byte instruction: the overlapping bytes are unclassified and each line's non-overlapping bytes keep their own classification", () => {
+  const listing = `${JSR_MID_INSTRUCTION_JMP}\n${JSR_MID_INSTRUCTION_JSR}`;
+  const map = parseDumpListing(listing, { origin: 0x5000, imageSize: 4 });
+  // jmpA: 0x5000-0x5002. jsrB: 0x5001-0x5003. Overlap: 0x5001, 0x5002.
+  assert.equal(map.unclassified.size, 2, JSON.stringify([...map.unclassified.keys()]));
+  assert.ok(map.unclassified.has(0x5001));
+  assert.ok(map.unclassified.has(0x5002));
+  // Non-overlapping bytes of each line keep their own code classification --
+  // a disposition that swallowed the whole line would fail this.
+  assert.ok(map.code.has(0x5000), "jmpA's own non-overlapping byte must stay code");
+  assert.ok(map.code.has(0x5003), "jsrB's own non-overlapping byte must stay code");
+  assert.equal(map.code.size, 2);
+  assert.equal(map.covered.size, 4);
+});
+
+test("source contains no sorting, comparison or precedence rule between the code and data classes -- no tie-break of any kind", () => {
+  // Comment lines are excluded -- this module's own DOCS name the absence
+  // of a tie-break rule explicitly (the word "tie-break" legitimately
+  // appears in prose saying there isn't one). The check is about actual
+  // CODE: an executable comparison, priority table or first/last-wins rule
+  // between the two classes, which would appear outside a `//`/`*` line.
+  const source = readFileSync(join(HERE, "dxa-listing.ts"), "utf8");
+  const codeOnly = source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n")
+    .toLowerCase();
+  for (const forbidden of ["codebeatsdata", "firstwins", "lastwins", "longestspanwins", "tie-break", "tiebreak", "priority"]) {
+    assert.equal(codeOnly.includes(forbidden), false, `must not contain a tie-break signal in executable code: ${forbidden}`);
+  }
+});
+
+test("the unclassified disposition reaches the returned structure and the range renderer, not only an internal variable", () => {
+  const source = readFileSync(join(HERE, "dxa-listing.ts"), "utf8");
+  assert.ok(/return \{[^}]*unclassified/s.test(source), "unclassified must appear in the return statement");
+  assert.ok(/unclassified["']/.test(source), "unclassified must appear as a range class literal");
+});
