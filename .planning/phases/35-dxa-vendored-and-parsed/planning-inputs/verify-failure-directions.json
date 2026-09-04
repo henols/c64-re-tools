@@ -1,0 +1,443 @@
+{
+  "status": "ok",
+  "commands": [
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && bash vendor/dxa/build.bash verify && bash vendor/dxa/build.bash build",
+      "statement": "non-zero exit, or the two printed digest lines for either the tarball or the built binary are not equal to each other, or the built-binary digest printed is not `0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 1: End-to-end \"one image in, one code/data map out\" — one path only"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node build.ts && node --test resources-sync.test.ts",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block (a non-zero fail count here means `resources/host-tool.mjs` drifted from `host-tool.mts`)",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 1: End-to-end \"one image in, one code/data map out\" — one path only"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && VICE_LIVE_DXA=1 node --test dxa-live.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent, or \"# skipped 0\" absent from the summary block — a skipped run means the opt-in never took effect and the end-to-end path was never exercised",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 1: End-to-end \"one image in, one code/data map out\" — one path only"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test host-tool.test.ts hostpath-consumers.test.ts test-gate.test.ts host-scripts.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 1: End-to-end \"one image in, one code/data map out\" — one path only"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck",
+      "statement": "non-zero exit, or any line matching \"error TS\" in the output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 1: End-to-end \"one image in, one code/data map out\" — one path only"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools && git ls-files -- '*.sh' | wc -l",
+      "statement": "the printed count is not exactly 5 — a sixth tracked `.sh` file means the build script was named `build.sh`",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 1: End-to-end \"one image in, one code/data map out\" — one path only"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools && git status --porcelain src/mcp/vice/vendor/dxa/ | grep -a -E '(dxa$|\\.o$)' | wc -l",
+      "statement": "the printed count is not 0 — a non-zero count means the built binary or an object file is untracked-and-unignored, or worse, staged",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 1: End-to-end \"one image in, one code/data map out\" — one path only"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-build-gate.test.ts dxa-seam.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block, or \"# pass 0\" present (a zero-pass run means the files registered no tests)",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 2: The hermetic gates — digest honesty and seam honesty, with no network and no binary"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test ci-suite-coverage.test.ts test-gate.test.ts 2>&1 | tail -10",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block — a failure here means a new test file landed in an unregistered directory or escaped the automated/manual gate",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 2: The hermetic gates — digest honesty and seam honesty, with no network and no binary"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck",
+      "statement": "non-zero exit, or any line matching \"error TS\" in the output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 2: The hermetic gates — digest honesty and seam honesty, with no network and no binary"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run test:automated 2>&1 | tail -20",
+      "statement": "the run produces no \"# fail\" line at all (the suite did not complete), or the failing-file set differs from the set named in evidence/35-baseline.md — the count itself is recorded, never asserted",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 3: The packaging decision and the phase's opening baseline reading"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools && node scripts/check-npm-packages.mjs",
+      "statement": "non-zero exit, or any line containing \"leaked into tarball\"",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 3: The packaging decision and the phase's opening baseline reading"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/COVERAGE.md && grep -aq 'No external API integration:' \"$F\" && echo OK",
+      "statement": "\"OK\" absent from the output, or non-zero exit — the reasoned declaration the seal-time gate accepts is missing or misworded",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-01-PLAN.md",
+      "task": "Task 3: The packaging decision and the phase's opening baseline reading"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-listing.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block, or \"# pass 0\" present",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-02-PLAN.md",
+      "task": "Task 1: The five shapes, the named refusal, and the CRLF/ordering/adjacency contracts"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && grep -av '^\\s*[/*]' dxa-listing.ts | grep -ac '= /'",
+      "statement": "the printed count is not exactly 1 — a second regular expression literal outside a comment means the one-regex contract was broken",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-02-PLAN.md",
+      "task": "Task 1: The five shapes, the named refusal, and the CRLF/ordering/adjacency contracts"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck",
+      "statement": "non-zero exit, or any line matching \"error TS\" in the output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-02-PLAN.md",
+      "task": "Task 1: The five shapes, the named refusal, and the CRLF/ordering/adjacency contracts"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-listing.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-02-PLAN.md",
+      "task": "Task 2: The overlapping decode — `unclassified` with a stated reason, never a winner"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-listing.test.ts --test-name-pattern=\"overlap\" 2>&1 | tail -12",
+      "statement": "non-zero exit, or \"# pass 0\" present — a zero-pass filtered run means no case is actually named for the overlapping-decode disposition",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-02-PLAN.md",
+      "task": "Task 2: The overlapping decode — `unclassified` with a stated reason, never a winner"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck && node --test dxa-seam.test.ts hostpath-consumers.test.ts 2>&1 | tail -10",
+      "statement": "non-zero exit, any line matching \"error TS\", or \"# fail 0\" absent from the summary block",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-02-PLAN.md",
+      "task": "Task 2: The overlapping decode — `unclassified` with a stated reason, never a winner"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-partition.test.ts hostpath-consumers.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block, or \"# pass 0\" present",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 1: The source-derived tier — reproduce Phase 23's 145/131/3 exactly"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && grep -a -c 'GT_CODE_BYTES\\|145' dxa-partition.test.ts",
+      "statement": "the printed count is 0 — the fixture-tier target numbers are not asserted as literals anywhere in the test file",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 1: The source-derived tier — reproduce Phase 23's 145/131/3 exactly"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && wc -c fixtures/dxa/fixture.prg",
+      "statement": "the printed byte count is not 281 — the 279-byte image plus its two-byte `.prg` load-address header",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 1: The source-derived tier — reproduce Phase 23's 145/131/3 exactly"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck",
+      "statement": "non-zero exit, or any line matching \"error TS\" in the output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 1: The source-derived tier — reproduce Phase 23's 145/131/3 exactly"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-partition.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 2: The byte-derived tier — two certainties, everything else `unknown`"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-partition.test.ts --test-name-pattern=\"unknown\" 2>&1 | tail -12",
+      "statement": "non-zero exit, or \"# pass 0\" present — a zero-pass filtered run means no case is named for the abstaining disposition this tier exists to provide",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 2: The byte-derived tier — two certainties, everything else `unknown`"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck",
+      "statement": "non-zero exit, or any line matching \"error TS\" in the output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 2: The byte-derived tier — two certainties, everything else `unknown`"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-partition.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 3: The report — both tiers named, every rate carrying its denominator"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node dxa-partition.ts byte-derived fixtures/dxa/basic-stub.prg | grep -aEc 'PARTITION_SOURCE_DERIVED|PARTITION_BYTE_DERIVED|POSITIVE_CLASS'",
+      "statement": "the printed count is less than 3 — one or both tier names, or the positive-class declaration, is missing from a real run's output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 3: The report — both tiers named, every rate carrying its denominator"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node dxa-partition.ts byte-derived fixtures/dxa/basic-stub.prg | grep -aiE 'PROOF-01|data.recovery.rate' | wc -l",
+      "statement": "the printed count is not 0 — the report is claiming a rate about dxa on real code, which belongs to Phase 38 and not here",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 3: The report — both tiers named, every rate carrying its denominator"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck && node --test hostpath-consumers.test.ts ci-suite-coverage.test.ts test-gate.test.ts 2>&1 | tail -10",
+      "statement": "non-zero exit, any line matching \"error TS\", or \"# fail 0\" absent from the summary block",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-03-PLAN.md",
+      "task": "Task 3: The report — both tiers named, every rate carrying its denominator"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-blocks.test.ts hostpath-consumers.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block, or \"# pass 0\" present",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 1: The emitter — 12-member vocabulary in, `-B` and `-l` files out"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-seam.test.ts 2>&1 | tail -10",
+      "statement": "non-zero exit, or \"# fail 0\" absent — a failure here means a second module now names `node:sqlite`",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 1: The emitter — 12-member vocabulary in, `-B` and `-l` files out"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && grep -av '^\\s*[/*]' dxa-blocks.ts | grep -acE 'petscii|screencode|lo_hi_address'",
+      "statement": "the printed count is not 0 — a non-zero count means the ten selected data types were hand-listed instead of derived from the frozen DATA_TYPES array",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 1: The emitter — 12-member vocabulary in, `-B` and `-l` files out"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck",
+      "statement": "non-zero exit, or any line matching \"error TS\" in the output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 1: The emitter — 12-member vocabulary in, `-B` and `-l` files out"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && VICE_LIVE_DXA=1 node --test dxa-live.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent, or \"# skipped 0\" absent from the summary block — a skipped run means the opt-in never took effect and the exclusion was never observed",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 2: Wire the emitted files into the run, and prove exclusion on the tracer image"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && VICE_LIVE_DXA=1 node --test dxa-live.test.ts --test-name-pattern=\"exclu\" 2>&1 | tail -12",
+      "statement": "non-zero exit, or \"# pass 0\" present — a zero-pass filtered run means no case is named for the exclusion this task exists to prove",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 2: Wire the emitted files into the run, and prove exclusion on the tracer image"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test dxa-seam.test.ts host-tool.test.ts 2>&1 | tail -10",
+      "statement": "non-zero exit, or \"# fail 0\" absent — a failure in the declared-path-key census means this task added an allowlist key it should not have",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 2: Wire the emitted files into the run, and prove exclusion on the tracer image"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck",
+      "statement": "non-zero exit, or any line matching \"error TS\" in the output",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 2: Wire the emitted files into the run, and prove exclusion on the tracer image"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && VICE_LIVE_DXA=1 VICE_LIVE_DXA_CORPUS=1 node --test dxa-live.test.ts 2>&1 | tail -20",
+      "statement": "non-zero exit, or \"# fail 0\" absent from the summary block, or \"# skipped\" reporting the corpus case as skipped while both opt-in variables are set",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 3: The real-image exercise — a range from the store, on a corpus release"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa03-real-image.md && grep -aq '1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5' \"$F\" && grep -aq 'PC, hit_count' \"$F\" && echo OK",
+      "statement": "\"OK\" absent from the output — the evidence file is missing the corpus release's identifying digest or the D-04 oracle-narrowing record line",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 3: The real-image exercise — a range from the store, on a corpus release"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa03-real-image.md && grep -aiEc 'PROOF-01|false.positive.rate|data.recovery.pct' \"$F\"",
+      "statement": "the printed count is not 0 — the evidence file is making a rate claim that belongs to Phase 38",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 3: The real-image exercise — a range from the store, on a corpus release"
+    },
+    {
+      "command": "git status --porcelain | grep -aE '\\.d64$' | wc -l",
+      "statement": "the printed count is not 0 — a corpus disk image has entered the working tree as an untracked-and-unignored or staged file, violating this project's standing rule that the corpus image is never committed",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-04-PLAN.md",
+      "task": "Task 3: The real-image exercise — a range from the store, on a corpus release"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && VICE_LIVE_DXA=1 node --test dxa-live.test.ts --test-name-pattern=\"boundary|over-read|outOfWindow\" 2>&1 | tail -12",
+      "statement": "non-zero exit, or \"# pass 0\" present — a zero-pass filtered run means no case is named for the top-of-memory over-read this task exists to record",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 1: Capture the real refusal, on real bytes, and record it verbatim"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa02-real-refusal.md && grep -aq 'ffff eb 48 7d' \"$F\" && grep -aq '65538' \"$F\" && grep -aq 'hand-truncated' \"$F\" && echo OK",
+      "statement": "\"OK\" absent from the output — the evidence is missing the verbatim offending line, the observed over-count, or the explicit distinction from Phase 23's planted refusal",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 1: Capture the real refusal, on real bytes, and record it verbatim"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa02-real-refusal.md && grep -aic 'exited 0' \"$F\"",
+      "statement": "the printed count is 0 — the evidence does not record that dxa exited successfully on the input it mis-emitted, which is the fact that disqualifies the exit status as a refusal signal",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 1: Capture the real refusal, on real bytes, and record it verbatim"
+    },
+    {
+      "command": "git status --porcelain | grep -aE '\\.d64$' | wc -l",
+      "statement": "the printed count is not 0 — a corpus disk image has entered the working tree",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 1: Capture the real refusal, on real bytes, and record it verbatim"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && bash vendor/dxa/build.bash verify && bash vendor/dxa/build.bash build",
+      "statement": "non-zero exit, or either printed digest pair is unequal, or the printed built-binary digest is not `0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 2: Record the reproducible build as four digests, not as an exit code"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa01-reproducible-build.md && grep -aoE '[0-9a-f]{64}' \"$F\" | sort -u | wc -l",
+      "statement": "the printed count is less than 2 — fewer than two distinct 64-character digests recorded means the tarball and binary comparisons were not both written out",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 2: Record the reproducible build as four digests, not as an exit code"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa01-reproducible-build.md && grep -aq '8e40ed77816581f9ad95acac2ed69a2fb2ac7850e433d19cd684193a45826799' \"$F\" && grep -aq '0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523' \"$F\" && grep -aiq 'COPYING' \"$F\" && echo OK",
+      "statement": "\"OK\" absent from the output — a pinned digest or the observed absence of a licence file is missing from the record",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 2: Record the reproducible build as four digests, not as an exit code"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run test:automated 2>&1 | tail -20",
+      "statement": "the run produces no \"# fail\" line at all (the suite did not complete), or the failing-file set is larger than the set recorded in the opening reading of evidence/35-baseline.md — the count itself is recorded, never asserted",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 3: The closing baseline, the D-04 record line, and the phase's own honesty pass"
+    },
+    {
+      "command": "F=.planning/phases/35-dxa-vendored-and-parsed/evidence/35-baseline.md && grep -aiq 'closing' \"$F\" && grep -aq 'BACK-05' \"$F\" && grep -aq 'PC, hit_count' \"$F\" && echo OK",
+      "statement": "\"OK\" absent from the output — the closing reading, the broker environment effect, or the D-04 oracle-narrowing record line is missing",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 3: The closing baseline, the D-04 record line, and the phase's own honesty pass"
+    },
+    {
+      "command": "grep -aiEl 'PROOF-01|data.recovery.(pct|rate)' .planning/phases/35-dxa-vendored-and-parsed/evidence/*.md 2>/dev/null | wc -l",
+      "statement": "the printed count is not 0 — an evidence file in this phase names the milestone proof requirement or a recovery-rate outcome line, both of which belong to Phase 38. SUMMARY.md files are deliberately outside this scope: a summary may legitimately describe what the phase did not claim",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 3: The closing baseline, the D-04 record line, and the phase's own honesty pass"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && npm run typecheck && node --test test-gate.test.ts ci-suite-coverage.test.ts hostpath-consumers.test.ts host-scripts.test.ts resources-sync.test.ts 2>&1 | tail -12",
+      "statement": "non-zero exit, any line matching \"error TS\", or \"# fail 0\" absent from the summary block",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 3: The closing baseline, the D-04 record line, and the phase's own honesty pass"
+    },
+    {
+      "command": "cd /home/henrik/dev/henrik/git/c64-re-tools && node scripts/check-npm-packages.mjs",
+      "statement": "non-zero exit, or any line containing \"leaked into tarball\"",
+      "status": "ok",
+      "severity": "none",
+      "plan": "35-05-PLAN.md",
+      "task": "Task 3: The closing baseline, the D-04 record line, and the phase's own honesty pass"
+    }
+  ],
+  "counts": {
+    "blocker": 0,
+    "warning": 0,
+    "total": 54
+  },
+  "readError": null
+}

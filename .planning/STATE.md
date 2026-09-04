@@ -4,16 +4,16 @@ milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 35
 current_phase_name: dxa, Vendored and Parsed
-status: planning
-stopped_at: Phase 34 complete, ready to plan Phase 35
-last_updated: "2026-09-03T23:11:02.528Z"
+status: executing
+stopped_at: Phase 35 planned (5 plans, 4 waves); ready to execute
+last_updated: "2026-09-04T09:13:38.214Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 34 complete, transitioned to Phase 35
-state_head: b10dd5eab0de558b7f49bed6b267434ebae51c2d
+state_head: 57d0a0b84c178c1a6dd913832dc2740e81959bca
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 23
+  total_plans: 28
   completed_plans: 23
   percent: 33
 ---
@@ -176,7 +176,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 35 — dxa, Vendored and Parsed
+Phase: 35 (dxa, Vendored and Parsed) — READY TO EXECUTE
 Plan: Not started
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
@@ -216,7 +216,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: Phase 34 complete (7/7 must-haves, third round); ready to plan Phase 35. **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Phase 35 PLANNED — 5 plans in 4 waves, plan-checker passed; ready to execute. Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
