@@ -278,3 +278,168 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Task 3 (GHID-01, gate 2): the classification count on BOTH import routes,
+// asserted as the block total and never the image's byte length -- the two
+// routes' own numbers must differ. See evidence/36-04-three-gates.md,
+// Part: Gate 2.
+// ---------------------------------------------------------------------------
+
+/** Set by the prg-route case below, read by the flat64k-route case
+ * immediately after it (registration order, node:test's own default serial
+ * execution) -- so the "the two routes differ" assertion sits beside the
+ * flat64k case's own numbers rather than depending on a third, separately
+ * ordered test. */
+let gate2PrgObserved: number | undefined;
+
+test(
+  "ghidra-live GATE 2 (prg route): the observed classification count equals the script's own computed block total, and differs from the image's own byte length",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const exportRel = "gate2-prg-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "gate2-prg",
+          importPath: "bank.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const { expected, observed } = parseExportClassificationCounts(exportText);
+      assert.ok(Number.isInteger(expected) && Number.isInteger(observed), "both classification counts must be exact integers");
+      assert.equal(observed, expected, "on the prg route, the observed count must equal the script's own computed block total");
+
+      const bankPrgByteLength = readFileSync(join(FIXTURES_DIR, "bank.prg")).length;
+      assert.notEqual(
+        observed,
+        bankPrgByteLength,
+        "the observed block total must NOT equal the image's own byte length on the .prg route -- an implementation that reverted to the image size would pass an equality check and fail this one",
+      );
+
+      gate2PrgObserved = observed!;
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live GATE 2 (flat64k route): the observed classification count equals the script's own computed block total, coincides with the image size on this route, and differs from the prg route's own number",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generateFlat64kVariant(ws);
+      const exportRel = "gate2-flat64k-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "gate2-flat64k",
+          importPath: flatRelPath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const { expected, observed } = parseExportClassificationCounts(exportText);
+      assert.ok(Number.isInteger(expected) && Number.isInteger(observed), "both classification counts must be exact integers");
+      assert.equal(observed, expected, "on the flat64k route, the observed count must equal the script's own computed block total");
+      assert.equal(
+        observed,
+        65536,
+        "on the flat64k route, the block total coincides with the full 65,536-byte image -- recorded as a coincidence of THIS route, not assumed for the prg route",
+      );
+
+      assert.notEqual(gate2PrgObserved, undefined, "the prg-route case must have run first and recorded its own observed count");
+      assert.notEqual(observed, gate2PrgObserved, "the two routes' own observed classification counts must differ -- one route cannot stand in for the other");
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Task 3 (GHID-01, gate 3): reproducibility from the committed script set,
+// anchored to the fixture's own recorded sha256, plus Ghidra's own installed
+// version read from the installation. See evidence/36-04-three-gates.md,
+// Part: Gate 3.
+// ---------------------------------------------------------------------------
+
+test(
+  "ghidra-live GATE 3: two runs under different run ids over the same fixture produce byte-identical export files, anchored to the fixture's own recorded sha256",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const bankPrgBytes = readFileSync(join(FIXTURES_DIR, "bank.prg"));
+      const actualSha256 = createHash("sha256").update(bankPrgBytes).digest("hex");
+      const readmeText = readFileSync(join(FIXTURES_DIR, "README.md"), "utf8");
+      const readmeMatch = /`bank\.prg`\s*\|\s*\d+\s*\|\s*`([0-9a-f]{64})`/.exec(readmeText);
+      assert.ok(readmeMatch, "fixtures/ghidra/README.md must record bank.prg's own sha256 in its provenance table");
+      assert.equal(actualSha256, readmeMatch![1], "the committed fixture's own sha256 must match its README's recorded value -- the reproducibility claim is anchored to a known input");
+
+      async function runOnce(runId: string, exportRel: string): Promise<Buffer> {
+        const result = await runGhidraAnalyze(
+          {
+            runId,
+            importPath: "bank.prg",
+            processor: NMOS_LANGUAGE_ID,
+            importRoute: "prg",
+            noanalysis: true,
+            scriptPath: "vendor/ghidra-scripts",
+            postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+            exportPath: exportRel,
+          },
+          { repoRoot: ws.root },
+        );
+        assert.equal(result.exitStatus, 0);
+        return readFileSync(join(ws.root, exportRel));
+      }
+
+      const exportA = await runOnce("gate3-repro-a", "gate3-repro-a-export.txt");
+      const exportB = await runOnce("gate3-repro-b", "gate3-repro-b-export.txt");
+
+      assert.equal(exportA.length, exportB.length, "the two runs' export files must be the same byte length");
+      const digestA = createHash("sha256").update(exportA).digest("hex");
+      const digestB = createHash("sha256").update(exportB).digest("hex");
+      assert.equal(digestA, digestB, "the two runs' export files must be BYTE-IDENTICAL -- reproducible from the committed script set with no click-path");
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live GATE 3: the installed Ghidra's own version is read from the installation and asserted against the version this phase was developed against",
+  { skip: SKIP_REASON },
+  () => {
+    const ghidraHome = process.env.GHIDRA_HOME!;
+    const propsPath = join(ghidraHome, "Ghidra", "application.properties");
+    const propsText = readFileSync(propsPath, "utf8");
+    const versionMatch = /^application\.version=(.+)$/m.exec(propsText);
+    assert.ok(versionMatch, `${propsPath} must declare application.version -- Ghidra must be a declared host prerequisite BY VERSION, never an unpinned unpack`);
+    const installedVersion = versionMatch![1]!.trim();
+    assert.equal(
+      installedVersion,
+      EXPECTED_GHIDRA_VERSION,
+      `installed Ghidra version "${installedVersion}" does not match the version this phase was developed against ("${EXPECTED_GHIDRA_VERSION}") -- a mismatch must surface as a NAMED failure, never a silent pass and never a hard block on a newer install`,
+    );
+  },
+);
