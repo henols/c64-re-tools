@@ -596,3 +596,163 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Task 3 (OPC-01, OPC-02, OPC-04): the 15 bytes both the extension and the
+// stock 65C02 language claim keep the 65C02's OWN meaning, in the same
+// installation -- proving the overlap is real, proving its size, and
+// proving the non-collision is structural (a separate `.ldefs` id, a
+// separate compiled language file) rather than incidental.
+// ---------------------------------------------------------------------------
+
+/** Reads the host's own installed stock `65c02.slaspec` -- `GHIDRA_HOME` is
+ * an explicit runtime dependency of this test file already (`SKIP_REASON`'s
+ * own second condition); never hardcoded to this one machine's probe path. */
+function readStock65c02Text(): string {
+  const ghidraHome = process.env.GHIDRA_HOME!;
+  return readFileSync(join(ghidraHome, "Ghidra", "Processors", "6502", "data", "languages", "65c02.slaspec"), "utf8");
+}
+
+/** Extracts each `<language ...>` element's own `id` attribute, matching
+ * only that opening tag -- NEVER a nested `<compiler ... id="..."/>` child
+ * element, which also carries an `id` attribute (its OWN compiler-spec id,
+ * a different thing entirely; a bare whole-file `id="..."` regex would
+ * double-count it). Mirrors `ghidra-project.mts`'s own
+ * `LANGUAGE_ELEMENT_PATTERN`/`ID_ATTR_PATTERN` two-step (tag first, then
+ * attribute within it), not re-derived here as a single combined pattern. */
+function extractLanguageElementIds(ldefsText: string): string[] {
+  const ids: string[] = [];
+  for (const tagMatch of ldefsText.matchAll(/<language\b[^>]*>/g)) {
+    const idMatch = /\bid\s*=\s*"([^"]+)"/.exec(tagMatch[0]);
+    if (idMatch) ids.push(idMatch[1]!);
+  }
+  return ids;
+}
+
+/** MEASURED at plan time (D-36-16): the stock `6502.ldefs` declares exactly
+ * these two ids -- the base 6502 language and the 65C02 language it also
+ * defines (both point at DIFFERENT compiled `.sla` files; `id` is what a
+ * caller-supplied `processor` string is compared against). */
+const STOCK_6502_LDEFS_IDS_EXPECTED: readonly string[] = ["6502:LE:16:default", "65C02:LE:16:default"];
+
+/** The 15 shared bytes MEASURED at plan time (D-36-16) -- asserted below,
+ * never assumed, against BOTH real sources. */
+const EXPECTED_OVERLAP_BYTES: readonly number[] = [0x1a, 0x34, 0x3a, 0x3c, 0x5a, 0x64, 0x74, 0x7a, 0x7c, 0x80, 0x89, 0x9c, 0x9e, 0xda, 0xfa];
+
+/** Set by the overlap-derivation case below, read by the live SHARED case
+ * immediately after it (registration order, node:test's own default serial
+ * execution within one file). */
+let task3OverlapBytes: number[] | undefined;
+
+test(
+  "ghidra-opcode-live OVERLAP: the extension and the stock 65C02 source share exactly 15 opcode bytes, asserted from both real sources",
+  { skip: SKIP_REASON },
+  () => {
+    const stockBytes = new Set(opcodeBytesInText(readStock65c02Text()));
+    const overlap = UNDOCUMENTED_BYTE_SET.filter((b) => stockBytes.has(b));
+
+    assert.notEqual(
+      overlap.length,
+      0,
+      "the overlap must be non-empty -- an empty overlap would make the non-collision check below entirely vacuous, and that must fail loudly rather than pass",
+    );
+    assert.equal(
+      overlap.length,
+      15,
+      `expected exactly 15 shared bytes, derived ${overlap.length}: ${overlap.map((b) => "0x" + b.toString(16)).join(", ")}`,
+    );
+    assert.deepEqual(overlap, EXPECTED_OVERLAP_BYTES, "the derived overlap set must match the MEASURED 15 bytes byte-for-byte, in ascending order");
+
+    task3OverlapBytes = overlap;
+  },
+);
+
+test(
+  "ghidra-opcode-live LDEFS: the extension's language lives in a separate file under a separate id, and the stock 6502.ldefs still declares only its own two original ids",
+  { skip: SKIP_REASON },
+  () => {
+    const ghidraHome = process.env.GHIDRA_HOME!;
+    const stockLdefsPath = join(ghidraHome, "Ghidra", "Processors", "6502", "data", "languages", "6502.ldefs");
+    const stockLdefsText = readFileSync(stockLdefsPath, "utf8");
+    const stockIds = extractLanguageElementIds(stockLdefsText);
+    assert.deepEqual(
+      [...stockIds].sort(),
+      [...STOCK_6502_LDEFS_IDS_EXPECTED].sort(),
+      "the stock 6502.ldefs must still declare only its own two original ids",
+    );
+
+    const extLdefsPath = join(HERE, "vendor", "ghidra-ext", "data", "languages", "6502_nmos.ldefs");
+    assert.notEqual(extLdefsPath, stockLdefsPath, "the extension's .ldefs must be a physically separate file from the stock one");
+    const extLdefsText = readFileSync(extLdefsPath, "utf8");
+    const extIds = extractLanguageElementIds(extLdefsText);
+    assert.deepEqual(extIds, [NMOS_LANGUAGE_ID], "the extension's .ldefs must declare exactly its own new id");
+    assert.equal(stockIds.includes(NMOS_LANGUAGE_ID), false, "the extension's id must not collide with anything the stock .ldefs already declares");
+
+    const stock65c02Text = readStock65c02Text();
+    assert.match(stock65c02Text.trimStart(), /^@include\s+"6502\.slaspec"/, "65c02.slaspec's own first line must include the base 6502 source");
+    assert.equal(stock65c02Text.includes("6502_undocumented"), false, "65c02.slaspec must never include this project's own extension source");
+  },
+);
+
+const TASK3_SWEEP_BASE_ADDR = 0x4000;
+/** The two shared bytes MEASURED (D-36-16) to also be in the eight-
+ * constructor compile-failure set -- called out explicitly below. */
+const TASK3_COMPILE_FAILURE_BYTES: ReadonlySet<number> = new Set([0x9c, 0x9e]);
+
+test(
+  "ghidra-opcode-live SHARED: all 15 shared bytes keep the 65C02's own meaning under 65C02:LE:16:default in the same installation, with no trace of the extension's opaque operations",
+  { skip: SKIP_REASON },
+  async () => {
+    assert.notEqual(task3OverlapBytes, undefined, "the overlap-derivation case must have run first and recorded the shared byte set");
+    const ws = makeScratchWorkspace();
+    try {
+      const layout = generateOpcodeSweep(ws, task3OverlapBytes!, TASK3_SWEEP_BASE_ADDR, "sweep-overlap.bin");
+      const entrypointsRel = writeSweepEntrypoints(ws, layout.addressByByte, "sweep-overlap-entrypoints.txt");
+      const exportRel = "sweep-overlap-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "sweep-overlap",
+          importPath: layout.imagePath,
+          processor: "65C02:LE:16:default",
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: entrypointsRel,
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const classification = parseClassificationByAddress(exportText);
+      const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
+
+      for (const b of task3OverlapBytes!) {
+        const addr = layout.addressByByte.get(b)!;
+        assert.equal(classification.get(addr), "code", `byte 0x${b.toString(16)} must decode as code under 65C02:LE:16:default`);
+        const body = extractFunctionBody(decompiledText, addr) ?? "";
+        for (const pcodeopName of UNSTABLE_PCODEOP_NAMES) {
+          assert.equal(
+            body.includes(pcodeopName),
+            false,
+            `byte 0x${b.toString(16)}: decompiled under 65C02:LE:16:default must never name this extension's own ${pcodeopName} -- collision`,
+          );
+        }
+      }
+
+      // The two shared bytes also in the compile-failure set decode to a
+      // real store-of-zero (STZ) statement under 65C02 -- MEASURED this
+      // plan -- never this extension's own SHY ($9c) / SHX ($9e) userop.
+      for (const b of TASK3_COMPILE_FAILURE_BYTES) {
+        assert.ok(task3OverlapBytes!.includes(b), `byte 0x${b.toString(16)} must be a member of the derived 15-byte overlap set`);
+        const body = extractFunctionBody(decompiledText, layout.addressByByte.get(b)!) ?? "";
+        assert.match(body, /=\s*0;/, `byte 0x${b.toString(16)} (STZ under 65C02) must decompile to a literal store-of-zero statement`);
+      }
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);

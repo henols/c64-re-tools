@@ -302,4 +302,87 @@ names every one of the six pcodeops verbatim, by their own source-declared
 name, in every one of the six decompiled bodies above. No further export
 change was needed.
 
-<!-- gsd:write-continue -->
+## Part 3 -- the 15 shared bytes keep their 65C02 meaning, and the non-collision is structural
+
+**The derived overlap set and its size.** `opcodeBytesInText()` (Part 1's own
+derivation helper) run over the host's installed
+`$GHIDRA_HOME/Ghidra/Processors/6502/data/languages/65c02.slaspec`, then
+intersected with the 105-byte set. MEASURED: **exactly 15** shared bytes --
+independently confirmed at the shell:
+
+```
+$ A=$(mktemp) && B=$(mktemp)
+$ grep -ao 'op=0x[0-9a-fA-F][0-9a-fA-F]' vendor/ghidra-ext/data/languages/6502_undocumented.sinc | tr 'A-F' 'a-f' | sort -u > "$A"
+$ grep -ao 'op=0x[0-9a-fA-F][0-9a-fA-F]' $GHIDRA_HOME/Ghidra/Processors/6502/data/languages/65c02.slaspec | tr 'A-F' 'a-f' | sort -u > "$B"
+$ comm -12 "$A" "$B" | wc -l
+15
+```
+
+`$1a, $34, $3a, $3c, $5a, $64, $74, $7a, $7c, $80, $89, $9c, $9e, $da, $fa` --
+asserted both as a set (`deepEqual`) and as a size, with a separate
+non-empty-overlap assertion carrying its own message (an empty overlap would
+make the non-collision check below entirely vacuous).
+
+**The two shared bytes also in the eight-constructor compile-failure set:**
+`$9c` (SHY in this extension) and `$9e` (SHX in this extension) -- called
+out explicitly below.
+
+**Per-byte 65C02 table.** Sweep base `$4000`, one slot per shared byte in
+ascending order (same generator, same slot layout as Parts 1-2). Run under
+`65C02:LE:16:default` in the SAME installation that has the extension
+installed. All 15 classify as `code`; `## DECOMPILE_ACCOUNTING` reports
+`DECOMPILE_ATTEMPTED 15 / DECOMPILE_DECOMPILED 15 / DECOMPILE_FAILED 0`.
+
+| byte | extension mnemonic (this project) | 65C02 decompiled body (verbatim) | compile-failure set |
+|---|---|---|---|
+| $1a | NOP (implied) | `return param_1 + '\x01';` (INC A) | |
+| $34 | NOP zp,X | `return;` (BIT zp,X -- flags only, no visible side effect) | |
+| $3a | NOP (implied) | `return param_1 + -1;` (DEC A) | |
+| $3c | NOP abs,X | `return;` (BIT abs,X -- flags only) | |
+| $5a | NOP (implied) | `return;` (PHY -- stack effect only, no visible body) | |
+| $64 | NOP zp | `DAT_00ea = 0;\nreturn;` (STZ zp) | |
+| $74 | NOP zp,X | `*(undefined1 *)(ushort)(byte)(param_1 - 0x16) = 0;\nreturn;` (STZ zp,X) | |
+| $7a | NOP (implied) | `return;` (PLY -- stack effect only) | |
+| $7c | NOP abs,X | `return param_1 + '\x01';` (JMP (abs,X) -- decompiler renders the indirect-jump target computation; the run log records `UNRESOLVED_DISPATCH_COUNT 1` / `4020 JMP`, since this dispatch target is genuinely computed) | |
+| $80 | NOP #imm | `return;` (BRA rel -- unconditional branch, no visible body) | |
+| $89 | NOP #imm | `return;` (BIT #imm -- flags only) | |
+| $9c | SHY imm16,X | `LAB_eaea = 0;\nreturn;` (STZ abs) | **yes** |
+| $9e | SHX imm16,Y | `(&LAB_eaea)[param_1] = 0;\nreturn;` (STZ abs,X) | **yes** |
+| $da | NOP (implied) | `return;` (PHX -- stack effect only) | |
+| $fa | NOP (implied) | `return;` (PLX -- stack effect only) | |
+
+**Non-collision, checked, not merely described.** For every one of the 15
+bytes, the decompiled body was checked against all six of this extension's
+own pcodeop names (`unstableXAA`, `unstableLAXImmediate`,
+`unstableAHXStore`, `unstableTASStore`, `unstableSHXStore`,
+`unstableSHYStore`) -- NONE appear in any of the 15 bodies. For the two
+compile-failure bytes specifically, `$9c` and `$9e` each decompile to a
+literal store-of-zero statement (`= 0;`) -- the real, distinctive signature
+of 65C02's own `STZ` instruction, and the opposite of this extension's own
+`SHY`/`SHX` semantics (which compute an opaque, page-crossing-dependent
+stored value via `unstableSHYStore`/`unstableSHXStore`, never a literal
+zero).
+
+**The structural reason.** `65c02.slaspec`'s own first line is
+`@include "6502.slaspec"` -- it includes only the STOCK base source, never
+this project's own extension. The stock `6502.ldefs` declares exactly its
+own two original ids (`6502:LE:16:default`, `65C02:LE:16:default`) --
+MEASURED unchanged, read directly from the `<language>` elements' own `id`
+attributes (a naive whole-file `id="..."` scan would have double-counted
+each language's own NESTED `<compiler ... id="default"/>` child element,
+which is a different `id` entirely -- caught and corrected before this
+assertion was written). The extension's own `6502_nmos.ldefs` is a
+physically SEPARATE file declaring exactly one id, `6502:LE:16:nmos`, which
+does not collide with either of the stock file's two ids. This is what makes
+the non-collision STRUCTURAL rather than incidental: the 65C02 language
+loads its own compiled `65c02.sla`, built from its own include of the base
+source; the extension's bytes live in a different compiled file
+(`6502_nmos.sla`) behind a different id. There is no code path by which the
+65C02 language could inherit the extension's semantics even if this test
+never ran.
+
+**What remains unproven.** The sweep in all three Parts above is synthetic
+-- a generated image with one isolated instruction per slot, never a real
+program. The real-code check -- whether this language decodes an ACTUAL
+cracked release's bytes usefully -- is plan 36-07's, named here so a future
+reader does not mistake this plan's synthetic proof for that one.
