@@ -175,7 +175,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 - [ ] **DXA-03**: Known-data ranges are handed to dxa as `-b` data blocks, so a caller can exclude
       graphics regions from discovery — with the store's existing 12-member vocabulary as the source
       and the `-B` / `-l` store-to-dxa emitters as the route
-- [ ] **DXA-04**: *(new this milestone)* The ground-truth partition every dxa rate is measured against
+- [x] **DXA-04**: *(new this milestone)* The ground-truth partition every dxa rate is measured against
       is derived by a **committed script, before the tool runs**. **Stated without an external
       oracle** — it is derived from the image bytes, not from execution, `memmapshow` being stated
       absent (decision 2, above). MEASURED reason this matters: the pivot's 141/138 partition was not
@@ -414,7 +414,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DXA-01 | Phase 35 | Pending |
 | DXA-02 | Phase 35 | Pending |
 | DXA-03 | Phase 35 | Pending |
-| DXA-04 | Phase 35 | Pending |
+| DXA-04 | Phase 35 | Complete |
 | GHID-01 | Phase 36 | Pending |
 | GHID-02 | Phase 36 | Pending |
 | GHID-03 | Phase 36 | Pending |

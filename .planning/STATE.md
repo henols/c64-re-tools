@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 35
 current_phase_name: dxa, Vendored and Parsed
 status: executing
-stopped_at: Completed 35-02-PLAN.md
-last_updated: "2026-09-04T10:49:38.378Z"
+stopped_at: Completed 35-03-PLAN.md
+last_updated: "2026-09-04T11:18:12.999Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 35 execution started
-state_head: 8d05ecff9ab27216b0407480f441c10114cec1ea
+state_head: 13265d802cd8c97855eb2a21e50cfe295cafb275
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 28
-  completed_plans: 25
+  completed_plans: 26
   percent: 33
 ---
 
@@ -177,7 +177,7 @@ the suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 35 (dxa, Vendored and Parsed) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -579,6 +579,7 @@ Last activity: 2026-09-04 — Phase 35 execution started
 | Phase 34 P10 | 25min | 3 tasks | 3 files |
 | Phase 35 P01 | 55min | 3 tasks | 37 files |
 | Phase 35 P02 | 40min | 2 tasks | 2 files |
+| Phase 35 P03 | 55min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1030,6 +1031,8 @@ Recent decisions affecting current work:
 - [Phase 35]: Corrected the dxa.disassemble census total (7->12, not the plan's stated 7->11) and the vendored-binary path resolution (a two-candidate probe, since resources/host-tool.mjs and vendor/dxa/dxa are siblings, not nested) -- both required for the plan's own acceptance criteria to pass. — Verified against source: DXA-01's declared path-key enumeration (5 keys) plus the pre-existing 7 sums to 12.
 - [Phase 35]: 35-02: exported a new DumpRange type (beyond the plan's own enumerated artifact list) because both tasks' action text and acceptance criteria require a named, typed rendered range list
 - [Phase 35]: 35-02: overlapping-decode resolution uses a claims-collect-then-resolve pass so an address with more than one claim always becomes unclassified, agreeing or not, with no tie-break rule anywhere in the module
+- [Phase 35]: dxa-partition.ts's BASIC-stub link check validates against the terminator scan's actual next-line address, not merely forward-and-in-bounds, catching an off-by-one link as non-line-start — stricter than the plan's minimum text; prevents a corrupted stub from silently succeeding with a wrong certain-data span
+- [Phase 35]: Both ground-truth tiers print a self-referential composition rate (data as a fraction of what the tier itself can prove) rather than any comparison to dxa's own output — neither tier module imports dxa-listing.ts (T-35-13); a data-recovery-rate against dxa belongs to Phase 38
 
 ### Pending Todos
 
@@ -1841,8 +1844,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T10:49:37.958Z
-Stopped at: Completed 35-02-PLAN.md
+Last session: 2026-09-04T11:18:12.776Z
+Stopped at: Completed 35-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
