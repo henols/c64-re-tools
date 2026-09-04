@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 35
 current_phase_name: dxa, Vendored and Parsed
 status: executing
-stopped_at: Completed 35-04-PLAN.md
-last_updated: "2026-09-04T11:43:30.943Z"
+stopped_at: Completed 35-05-PLAN.md
+last_updated: "2026-09-04T12:02:47.307Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 35 execution started
-state_head: 294c07024f94cf4e15ab03d04d8074291c805636
+state_head: 7feaa7f79177f35b1b0f215d8229114468fe20d2
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 28
-  completed_plans: 27
+  completed_plans: 28
   percent: 33
 ---
 
@@ -581,6 +581,7 @@ Last activity: 2026-09-04 — Phase 35 execution started
 | Phase 35 P02 | 40min | 2 tasks | 2 files |
 | Phase 35 P03 | 55min | 3 tasks | 8 files |
 | Phase 35 P04 | 45min | 3 tasks | 7 files |
+| Phase 35 P05 | 17 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1035,6 +1036,7 @@ Recent decisions affecting current work:
 - [Phase 35]: dxa-partition.ts's BASIC-stub link check validates against the terminator scan's actual next-line address, not merely forward-and-in-bounds, catching an off-by-one link as non-line-start — stricter than the plan's minimum text; prevents a corrupted stub from silently succeeding with a wrong certain-data span
 - [Phase 35]: Both ground-truth tiers print a self-referential composition rate (data as a fraction of what the tier itself can prove) rather than any comparison to dxa's own output — neither tier module imports dxa-listing.ts (T-35-13); a data-recovery-rate against dxa belongs to Phase 38
 - [Phase 35]: dxa-blocks.ts defines its own KnownDataRow type rather than importing anno-types.ts's RangeRow; DxaRunArgs.knownDataRows is mutually exclusive with datablocksPath/labelsPath — RangeRow carries no sym field; a caller merges range and label info before calling. Mutual exclusion mirrors host-tool.mts's own first-refusal-wins discipline.
+- [Phase 35]: Phase 35 closed: DXA-02's real-refusal evidence comes from feeding a real, unmodified dxa listing to the project's pre-existing Phase 23 evidence parser, not the current dxa-listing.ts (deliberately redesigned by A-04 to NOT refuse on this exact artefact); both parsers' behavior on the same real artefact is recorded side by side. — The plan's own text states this is exactly what DXA-02 criterion 2 asks for; both parsers are this project's own code, never dxa's exit status, and recording both prevents conflating the historical defect with the current module's correct non-reproduction of it.
 
 ### Pending Todos
 
@@ -1846,8 +1848,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-04T11:43:30.700Z
-Stopped at: Completed 35-04-PLAN.md
+Last session: 2026-09-04T12:02:47.076Z
+Stopped at: Completed 35-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
