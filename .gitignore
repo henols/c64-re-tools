@@ -133,3 +133,11 @@ dist/
 # and gsd-phase-researcher read `.planning/graphs/graph.json`, and those agents
 # run inside git worktrees, which only contain tracked files.
 /graphify-out/
+
+# Phase 35 (DXA-01): the built dxa binary and its intermediate object files.
+# vendor/dxa/build.bash's `build` verb reproduces the binary from the
+# committed, pinned source on demand -- it is host-architecture-specific and
+# a digest gate already defends the committed pin, so committing the binary
+# itself would publish an artifact no digest gate could then re-verify.
+/src/mcp/vice/vendor/dxa/dxa
+/src/mcp/vice/vendor/dxa/*.o
