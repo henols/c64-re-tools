@@ -37,7 +37,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIN_FILE="${HERE}/dxa-0.1.5.tar.gz.sha256"
 TARBALL_URL="https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz"
-CACHE_DIR="${HOME}/.cache/c64-re-tools/phase23"
+# DXA_BUILD_CACHE_DIR is a test-only seam (dxa-build-gate.test.ts, Phase 35
+# plan 35-01 Task 2): overriding it points this script at a scratch cache the
+# test fully controls, so the hermetic gate suite never touches the real
+# network or this developer's own global cache. Unset in every normal
+# (non-test) invocation, where the default below is unchanged.
+CACHE_DIR="${DXA_BUILD_CACHE_DIR:-${HOME}/.cache/c64-re-tools/phase23}"
 CACHED_TARBALL="${CACHE_DIR}/dxa-0.1.5.tar.gz"
 BUILT_BINARY_SHA256="0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523"
 
