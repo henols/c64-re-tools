@@ -62,6 +62,10 @@
 // prints describe ONLY this partition's own composition -- what fraction of
 // the bytes it can prove are data -- never a comparison to any external
 // tool's classification.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { resolve as resolvePath } from "node:path";
+
 import { parsePrg } from "./prg-image.ts";
 
 /** Renders an address as a 4-hex-digit `$xxxx` column, matching Phase 23's
@@ -571,3 +575,114 @@ export function renderByteDerivedReport(partition: ByteDerivedPartition): string
   return lines.join("\n");
 }
 
+// ============================================================================
+// The report: both tiers named, every run (Task 3)
+// ============================================================================
+
+export type TierResult<T> = { available: true; data: T } | { available: false; reason: string };
+
+/**
+ * Renders the full report. Both `PARTITION_SOURCE_DERIVED` and
+ * `PARTITION_BYTE_DERIVED` are ALWAYS named as section headers regardless
+ * of which tier actually ran this invocation -- the inapplicable tier
+ * prints its `reason` rather than being omitted, because a tier that can
+ * vanish from the output is a tier that can be chosen silently after seeing
+ * which one flatters the result (A-07). Ends with an explicit statement of
+ * what the run could not decide -- byte-identical across two calls with the
+ * same inputs.
+ */
+export function renderPartitionReport(opts: {
+  sourceDerived: TierResult<{ partition: SourceDerivedPartition; publishedCodeBytes?: number; publishedDataBytes?: number }>;
+  byteDerived: TierResult<{ partition: ByteDerivedPartition }>;
+}): string {
+  const lines: string[] = [];
+  lines.push("POSITIVE_CLASS: data");
+  lines.push("");
+  lines.push("=== PARTITION_SOURCE_DERIVED ===");
+  if (opts.sourceDerived.available) {
+    lines.push(renderSourceDerivedReport(opts.sourceDerived.data.partition, opts.sourceDerived.data));
+  } else {
+    lines.push(`PARTITION_SOURCE_DERIVED: not run this invocation -- ${opts.sourceDerived.reason}`);
+  }
+  lines.push("");
+  lines.push("=== PARTITION_BYTE_DERIVED ===");
+  if (opts.byteDerived.available) {
+    lines.push(renderByteDerivedReport(opts.byteDerived.data.partition));
+  } else {
+    lines.push(`PARTITION_BYTE_DERIVED: not run this invocation -- ${opts.byteDerived.reason}`);
+  }
+  lines.push("");
+  lines.push("=== ABSTENTION ===");
+  const abstentionLines: string[] = [];
+  if (opts.byteDerived.available) {
+    abstentionLines.push(
+      "Under the byte-derived tier, this run decided exactly the .prg header exclusion and, where a BASIC " +
+        "stub parsed cleanly at $0801, that stub's own bytes. Every other byte in the image is reported " +
+        "unknown -- this partition states what it cannot decide rather than padding the gap with an " +
+        "address convention it cannot prove.",
+    );
+  }
+  if (opts.sourceDerived.available) {
+    abstentionLines.push(
+      "Under the source-derived tier, this partition is only as good as the assembler report it read -- it " +
+        "carries no independent proof beyond that report's own emission records.",
+    );
+  }
+  if (abstentionLines.length === 0) {
+    abstentionLines.push("Neither tier ran this invocation; nothing was decided.");
+  }
+  lines.push(...abstentionLines);
+  return lines.join("\n");
+}
+
+// ============================================================================
+// CLI entry point
+// ============================================================================
+
+function usageAndExit(): never {
+  process.stderr.write(
+    "Usage:\n" +
+      "  node dxa-partition.ts source-derived <report.rep> <image.prg>\n" +
+      "  node dxa-partition.ts byte-derived <image.prg | image.flat64k> [--flat <originHex>]\n",
+  );
+  process.exit(1);
+}
+
+function main(argv: string[]): void {
+  const [tier, ...rest] = argv;
+  if (tier === "source-derived") {
+    const [reportPath, imagePath] = rest;
+    if (!reportPath || !imagePath) usageAndExit();
+    const reportText = readFileSync(resolvePath(reportPath), "utf8");
+    const imageBytes = readFileSync(resolvePath(imagePath));
+    const { origin: loadAddr, body } = parsePrg(new Uint8Array(imageBytes));
+    const partition = partitionSourceDerived(reportText, loadAddr, body.length);
+    process.stdout.write(
+      renderPartitionReport({
+        sourceDerived: { available: true, data: { partition } },
+        byteDerived: { available: false, reason: "this invocation ran the source-derived tier only" },
+      }) + "\n",
+    );
+  } else if (tier === "byte-derived") {
+    const [imagePath, flatFlag, originHex] = rest;
+    if (!imagePath) usageAndExit();
+    const imageBytes = new Uint8Array(readFileSync(resolvePath(imagePath)));
+    const isFlat = flatFlag === "--flat";
+    if (isFlat && originHex === undefined) usageAndExit();
+    const partition = isFlat
+      ? partitionByteDerived({ bytes: imageBytes, isPrg: false, origin: parseInt(originHex!, 16) })
+      : partitionByteDerived({ bytes: imageBytes, isPrg: true });
+    process.stdout.write(
+      renderPartitionReport({
+        sourceDerived: { available: false, reason: "this invocation ran the byte-derived tier only" },
+        byteDerived: { available: true, data: { partition } },
+      }) + "\n",
+    );
+  } else {
+    usageAndExit();
+  }
+}
+
+if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2));
+}

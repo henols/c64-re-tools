@@ -16,10 +16,13 @@
 //     dxa's own recovery rate on real code anywhere in the rendered output.
 //
 // HERMETIC. No ACME, no dxa, no `node:child_process` INSIDE the module under
-// test (dxa-partition.ts never imports either).
+// test (dxa-partition.ts never imports either) -- the only `spawnSync` calls
+// in this FILE drive the CLI as a subprocess for the task-3 CLI cases, which
+// is a property of the test, not of the module.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,12 +32,14 @@ import {
   renderSourceDerivedReport,
   partitionByteDerived,
   renderByteDerivedReport,
+  renderPartitionReport,
   formatPercent,
   rangesAreDisjointAndSorted,
 } from "./dxa-partition.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "fixtures", "dxa");
+const DXA_PARTITION_TS = join(HERE, "dxa-partition.ts");
 
 // ============================================================================
 // Task 1: the source-derived tier
@@ -133,18 +138,6 @@ test("task1: a report whose accounted total does not tile the declared image siz
   // declared window.
   const reportText = "     1  0801 0000                     !byte $00,$00";
   assert.throws(() => partitionSourceDerived(reportText, 0x0801, 1), /accounted 2 bytes, expected 1/);
-});
-
-test("task1: formatPercent renders 97/134 as 72.39, matching Phase 23's own shape", () => {
-  assert.equal(formatPercent(97, 134), "72.39 (97/134)");
-});
-
-test("task1: formatPercent rounds a ratio landing exactly on a half at the second decimal UP (1/32 = 3.125% -> 3.13)", () => {
-  assert.equal(formatPercent(1, 32), "3.13 (1/32)");
-});
-
-test("task1: formatPercent refuses a zero denominator by name rather than rendering 0.00, NaN or 100.00", () => {
-  assert.throws(() => formatPercent(0, 0), /refusing a zero denominator/);
 });
 
 // ============================================================================
@@ -292,11 +285,118 @@ test("task2: a two-byte .prg (header only) yields 0 classifiable bytes, zero cou
   assert.match(rendered, /BYTE_DERIVED_DATA_FRACTION: refused/);
 });
 
+test("task2: formatPercent renders 97/134 as 72.39, matching Phase 23's own shape", () => {
+  assert.equal(formatPercent(97, 134), "72.39 (97/134)");
+});
+
+test("task2: formatPercent rounds a ratio landing exactly on a half at the second decimal UP (1/32 = 3.125% -> 3.13)", () => {
+  assert.equal(formatPercent(1, 32), "3.13 (1/32)");
+});
+
+test("task2: formatPercent refuses a zero denominator by name rather than rendering 0.00, NaN or 100.00", () => {
+  assert.throws(() => formatPercent(0, 0), /refusing a zero denominator/);
+});
+
 test("task2: no convention-based screen/charset address ($0400/$1000) is ever asserted in this module's source", () => {
-  const source = readFileSync(join(HERE, "dxa-partition.ts"), "utf8");
+  const source = readFileSync(DXA_PARTITION_TS, "utf8");
   const hits = source
     .split("\n")
     .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
     .filter((line) => /0x0400|0x1000|\$0400|\$1000/.test(line));
   assert.deepEqual(hits, [], "$0400/$1000 must never appear outside a comment in dxa-partition.ts");
+});
+
+// ============================================================================
+// Task 3: the report -- both tiers named, no dxa-recovery claim
+// ============================================================================
+
+test("task3: renderPartitionReport always names both PARTITION_SOURCE_DERIVED and PARTITION_BYTE_DERIVED, and states POSITIVE_CLASS", () => {
+  const byteDerivedPartition = partitionByteDerived({ bytes: new Uint8Array(stubBody()), isPrg: false, origin: 0x0801 });
+  const rendered = renderPartitionReport({
+    sourceDerived: { available: false, reason: "no ACME source for this input" },
+    byteDerived: { available: true, data: { partition: byteDerivedPartition } },
+  });
+  assert.match(rendered, /PARTITION_SOURCE_DERIVED/);
+  assert.match(rendered, /PARTITION_BYTE_DERIVED/);
+  assert.match(rendered, /POSITIVE_CLASS: data/);
+});
+
+test("task3: the inapplicable tier carries a stated reason rather than being omitted", () => {
+  const byteDerivedPartition = partitionByteDerived({ bytes: new Uint8Array(stubBody()), isPrg: false, origin: 0x0801 });
+  const rendered = renderPartitionReport({
+    sourceDerived: { available: false, reason: "no ACME source for this input" },
+    byteDerived: { available: true, data: { partition: byteDerivedPartition } },
+  });
+  assert.match(rendered, /PARTITION_SOURCE_DERIVED: not run this invocation -- no ACME source for this input/);
+});
+
+test("task3: the abstention section is non-empty for both a byte-derived-only run and a source-derived-only run", () => {
+  const byteDerivedPartition = partitionByteDerived({ bytes: new Uint8Array(stubBody()), isPrg: false, origin: 0x0801 });
+  const byteOnly = renderPartitionReport({
+    sourceDerived: { available: false, reason: "not attempted" },
+    byteDerived: { available: true, data: { partition: byteDerivedPartition } },
+  });
+  const abstentionByte = byteOnly.slice(byteOnly.indexOf("=== ABSTENTION ==="));
+  assert.ok(abstentionByte.trim().length > "=== ABSTENTION ===".length, "byte-derived abstention must be non-empty");
+
+  const reportText = readFileSync(join(FIXTURES, "fixture.rep"), "utf8");
+  const sourcePartition = partitionSourceDerived(reportText, 0x0801, 279);
+  const sourceOnly = renderPartitionReport({
+    sourceDerived: { available: true, data: { partition: sourcePartition } },
+    byteDerived: { available: false, reason: "not attempted" },
+  });
+  const abstentionSource = sourceOnly.slice(sourceOnly.indexOf("=== ABSTENTION ==="));
+  assert.ok(abstentionSource.trim().length > "=== ABSTENTION ===".length, "source-derived abstention must be non-empty");
+});
+
+test("task3: renderPartitionReport is byte-identical across two calls with the same inputs (idempotency)", () => {
+  const byteDerivedPartition = partitionByteDerived({ bytes: new Uint8Array(stubBody()), isPrg: false, origin: 0x0801 });
+  const opts = {
+    sourceDerived: { available: false as const, reason: "not attempted" },
+    byteDerived: { available: true as const, data: { partition: byteDerivedPartition } },
+  };
+  assert.equal(renderPartitionReport(opts), renderPartitionReport(opts));
+});
+
+test("task3: no line of the rendered report asserts a data-recovery rate for dxa on real cracked code", () => {
+  const reportText = readFileSync(join(FIXTURES, "fixture.rep"), "utf8");
+  const sourcePartition = partitionSourceDerived(reportText, 0x0801, 279);
+  const byteDerivedPartition = partitionByteDerived({ bytes: new Uint8Array(stubBody()), isPrg: false, origin: 0x0801 });
+  const rendered = renderPartitionReport({
+    sourceDerived: { available: true, data: { partition: sourcePartition } },
+    byteDerived: { available: true, data: { partition: byteDerivedPartition } },
+  });
+  assert.doesNotMatch(rendered, /PROOF-01/i);
+  assert.doesNotMatch(rendered, /data.recovery.rate/i);
+});
+
+test("task3 [CLI]: node dxa-partition.ts with no arguments exits non-zero with a usage message", () => {
+  const r = spawnSync("node", [DXA_PARTITION_TS], { encoding: "utf8", cwd: HERE });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /Usage:/);
+});
+
+test("task3 [CLI]: node dxa-partition.ts byte-derived <basic-stub.prg> prints both tier names, POSITIVE_CLASS, and no dxa-recovery-rate claim", () => {
+  const r = spawnSync("node", [DXA_PARTITION_TS, "byte-derived", join(FIXTURES, "basic-stub.prg")], {
+    encoding: "utf8",
+    cwd: HERE,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /PARTITION_SOURCE_DERIVED/);
+  assert.match(r.stdout, /PARTITION_BYTE_DERIVED/);
+  assert.match(r.stdout, /POSITIVE_CLASS: data/);
+  assert.doesNotMatch(r.stdout, /PROOF-01/i);
+  assert.doesNotMatch(r.stdout, /data.recovery.rate/i);
+});
+
+test("task3 [CLI]: node dxa-partition.ts source-derived <fixture.rep> <fixture.prg> reproduces the 145/131/3 fixture-tier numbers via the CLI", () => {
+  const r = spawnSync(
+    "node",
+    [DXA_PARTITION_TS, "source-derived", join(FIXTURES, "fixture.rep"), join(FIXTURES, "fixture.prg")],
+    { encoding: "utf8", cwd: HERE },
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /GT_CODE_BYTES: 145/);
+  assert.match(r.stdout, /GT_DATA_BYTES: 131/);
+  assert.match(r.stdout, /GT_PAD_BYTES: 3/);
 });
