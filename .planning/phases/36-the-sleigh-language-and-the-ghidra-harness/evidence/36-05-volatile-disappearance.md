@@ -429,3 +429,174 @@ carve, both routes' counts confirmed non-trivial and unaffected by the flag).
 the removal lived only in the two scratch copies, each torn down in a
 `finally` after its own case.
 
+## Part 3 — a memory conflict is loud, not a silent fall-back
+
+**The forced-conflict edit is larger than "remove the pre-carve split"
+alone — recorded here as a MEASURED finding, not a shortcut.** Removing only
+the split call is not sufficient to force a genuine thrown conflict on the
+route where a loader-owned block already covers the target range (the
+flat-64K route, per D-36-14): on that route `mem.getBlock()` never returns
+null in the first place — a single block spans the whole image — so the
+existing-block branch is always taken regardless of whether the split ran,
+and the split was already a no-op there. Forcing the create branch to be
+entered — and therefore forcing the conflict — requires bypassing the
+existing-block check entirely, collapsing `makeVolatile()` to always attempt
+`createUninitializedBlock()`. This was confirmed by direct measurement before
+being written into the test: removing only the split, on the flat-64K route,
+produces the SAME harmless `VOLATILE-WARN` outcome the committed script's own
+header already documents as a trap, not a conflict.
+
+**The exact edit made (quoted):**
+
+```java
+// BEFORE (committed):
+        carve(mem, sp);
+// AFTER (scratch copy only):
+        // carve(mem, sp); -- REMOVED for the forced-conflict proof (scratch copy only, never committed)
+```
+
+```java
+// BEFORE (committed, the whole existing-block-or-create body):
+        MemoryBlock blk = mem.getBlock(addr);
+        if (blk != null) {
+            blk.setVolatile(true);
+            println("VOLATILE-SET: " + blk.getName() + " " + blk.getStart() + "-" + blk.getEnd());
+            if (!blk.getStart().equals(addr)) {
+                println("VOLATILE-WARN: block " + blk.getName() + " starts at " + blk.getStart()
+                        + ", not at the requested " + addr
+                        + " -- volatility is wider than intended, the carve did not take");
+            }
+            return;
+        }
+        MemoryBlock nb = mem.createUninitializedBlock(
+                "VOL_" + Long.toHexString(start), addr, len, false);
+        nb.setVolatile(true);
+        nb.setRead(true);
+        nb.setWrite(true);
+        println("VOLATILE-NEW: " + nb.getName() + " " + nb.getStart() + "-" + nb.getEnd()
+                + " (.prg route -- no existing block covered this address)");
+// AFTER (scratch copy only -- always create, never check first):
+        // getBlock-first check REMOVED for the forced-conflict proof (scratch copy only, never committed):
+        // always attempt to create, so a loader-owned block already covering part of this range
+        // throws MemoryConflictException for real, instead of being silently found and flagged.
+        MemoryBlock nb = mem.createUninitializedBlock(
+                "VOL_" + Long.toHexString(start), addr, len, false);
+        nb.setVolatile(true);
+        nb.setRead(true);
+        nb.setWrite(true);
+        println("VOLATILE-NEW: " + nb.getName() + " " + nb.getStart() + "-" + nb.getEnd());
+```
+
+**Wire request, flat-64K route (the route where the loader owns the block):**
+
+```json
+{
+  "runId": "vol-forced-conflict",
+  "importPath": "bank-flat64k.bin",
+  "processor": "6502:LE:16:nmos",
+  "importRoute": "flat64k",
+  "noanalysis": true,
+  "scriptPath": "vendor-scratch/forced-conflict/ghidra-scripts",
+  "preScript": "vendor-scratch/forced-conflict/ghidra-scripts/VolatileCarve.java",
+  "postScript": "vendor-scratch/forced-conflict/ghidra-scripts/GhidraStructExport.java",
+  "exportPath": "forced-conflict-export.txt"
+}
+```
+
+**The thrown-script line, quoted verbatim:**
+
+```
+ERROR REPORT SCRIPT ERROR:  (HeadlessAnalyzer) ghidra.program.model.mem.MemoryConflictException: Part of range (0000, 0001) already exists in memory.
+```
+
+This is precisely the scenario `.planning/research/PITFALLS.md` Pitfall 13
+names: "a naive `createUninitializedBlock` for the processor port WILL
+conflict" on the route where the flat image already owns the whole address
+space.
+
+**Recorded exit status of this run: `0`** — once more, as evidence that the
+status is uninformative, never a pass signal.
+
+**MEASURED, and disclosed rather than hidden: `analyzeHeadless` still ran the
+post-script for this same program after the pre-script threw**, and that
+post-script's own export completed NORMALLY. The pre-script's own `run()`
+method aborted at the very first `makeVolatile()` call — before it ever
+reached `readEntryPoints()`, `analyzeAll()`, or any of its own printed block
+dumps past `NAIVE-BLOCK-AT-D000` — so zero entry points were ever seeded and
+zero functions were ever created. `GhidraStructExport.java`'s own
+`DecompInterface` walk therefore found nothing to decompile:
+
+```
+## DECOMPILE_ACCOUNTING
+DECOMPILE_ZERO_FUNCTIONS true (no functions were found to decompile)
+DECOMPILE_ATTEMPTED 0
+DECOMPILE_DECOMPILED 0
+DECOMPILE_TIMED_OUT 0
+DECOMPILE_FAILED 0
+...
+## UNRESOLVED_DISPATCH
+UNRESOLVED_DISPATCH_COUNT 0
+```
+
+**This is a stronger, MEASURED version of this plan's own stated
+prohibition.** The plan's own text said a run that completes with the flag
+unset must never be readable as success; what was actually measured is that
+the export *does* complete, with its own completed-assertion section
+present, on a run whose carve never took effect at all — the export's own
+completion proves nothing about whether the carve succeeded. The *only*
+reliable signal, on this exact run, is the exact literal thrown-script
+signal in the run log — exactly the signal `classifyGhidraRunLog()` checks,
+and exactly why this project's own harness never trusts an export's own
+"it completed" line as a pass signal.
+
+**Companion, same route, the COMMITTED (unedited) script:**
+
+```json
+{
+  "runId": "vol-forced-conflict-companion",
+  "importPath": "bank-flat64k.bin",
+  "processor": "6502:LE:16:nmos",
+  "importRoute": "flat64k",
+  "noanalysis": true,
+  "scriptPath": "vendor/ghidra-scripts",
+  "preScript": "vendor/ghidra-scripts/VolatileCarve.java"
+}
+```
+
+**Block dump — the flag lands on the EXISTING (post-split) block, no
+wider-than-requested warning anywhere in the log:**
+
+```
+SPLIT-OK at d000
+VOLATILE-SET: RAM.split.split d000-dfff
+```
+
+`VOLATILE-WARN` does not appear anywhere in this run's log — its presence
+would have meant the flag landed on the whole image, which looks like
+success and is the trap this script's own header names. Its absence here,
+on the SAME route the forced-conflict case just proved can throw, is the
+paired positive control: the committed script takes the correct branch when
+run unedited, and only the deliberately edited copy conflicts.
+
+## Closing note
+
+**What is now known, per route.** `.prg` route: nothing covers the I/O page
+by construction, so the carve always creates a fresh volatile block there —
+proven observed, both with and without a forced conflict scenario tested
+(none applies naturally on this route with this fixture, since the loaded
+image is far too small to overlap the I/O page under the route's own default
+base address). Flat-64K route: the loader always owns a block spanning the
+whole image, so the carve always splits and flags the EXISTING block — proven
+observed twice (Part 1's with-flag case and this part's companion) — and a
+conflict is reachable only by an edit that bypasses the existing-block check
+entirely, never by ordinary use of the committed script.
+
+**What remains unknown.** Whether any THIRD import shape exists on which
+neither the "nothing covers it, create" branch nor the "something already
+covers it, split and flag existing" branch applies cleanly — for example, an
+image whose own loaded block partially, but not fully, overlaps one of the
+two volatile ranges from a non-zero base address other than the ones this
+plan exercised. This plan's own two routes and one forced edit do not probe
+that shape, and no claim is made here that they do.
+
+Date: 2026-09-04.

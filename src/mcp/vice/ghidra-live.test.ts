@@ -867,3 +867,99 @@ test(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Task 3: a memory conflict is loud, not a silent fall-back.
+// ---------------------------------------------------------------------------
+
+test(
+  "ghidra-live VOLATILE forced conflict (flat64k route): a genuine MemoryConflictException is thrown, on a run whose exit status is 0",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generateFlat64kVariant(ws);
+      const scriptDir = makeEditedVolatileCarveScriptDir(ws, "forced-conflict", FORCE_CONFLICT_EDIT);
+      const exportRel = "forced-conflict-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "vol-forced-conflict",
+          importPath: flatRelPath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: scriptDir,
+          preScript: join(scriptDir, "VolatileCarve.java"),
+          postScript: join(scriptDir, "GhidraStructExport.java"),
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+
+      // The exit status is recorded as evidence that it is UNINFORMATIVE,
+      // never a pass signal -- exactly like GATE 1 (plan 36-04).
+      assert.equal(result.exitStatus, 0, "analyzeHeadless's own exit status must be recorded as 0 even though the pre-script threw");
+
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
+      assert.match(logText, /MemoryConflictException/, "the thrown exception must be the genuine memory-conflict type, not some other failure");
+
+      // MEASURED, and disclosed rather than hidden: analyzeHeadless still
+      // runs the post-script for this SAME program after the pre-script
+      // threw, and that post-script's own export completes NORMALLY -- with
+      // zero functions found, since the pre-script's own analyzeAll() call
+      // never ran (the throw aborted its run() method before reaching it).
+      // The export's own completion is proof of NOTHING about whether the
+      // carve succeeded; the thrown-script literal in the RUN LOG is the
+      // only reliable signal. This is a stronger, MEASURED version of this
+      // plan's original prohibition ("a run that completes with the flag
+      // unset is the failure this plan exists to make impossible") -- the
+      // failure mode is not merely possible, it is what a naive "did the
+      // export complete" check would actually observe on this exact run.
+      const exportPath = join(ws.root, exportRel);
+      assert.ok(existsSync(exportPath), "MEASURED finding: the export file DOES exist even though the pre-script threw");
+      const exportText = readFileSync(exportPath, "utf8");
+      assert.ok(
+        exportText.includes("## UNRESOLVED_DISPATCH"),
+        "MEASURED finding: the export DOES carry its completed-assertion section even though the carve never took effect -- export completion proves nothing about the carve",
+      );
+      assert.ok(exportText.includes("DECOMPILE_ZERO_FUNCTIONS true"), "no entry points were ever seeded (the pre-script aborted before readEntryPoints()), so zero functions were decompiled");
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live VOLATILE forced conflict, companion (flat64k route): the committed script sets the flag on the EXISTING block after the split, with no wider-than-requested warning",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generateFlat64kVariant(ws);
+      const result = await runGhidraAnalyze(
+        {
+          runId: "vol-forced-conflict-companion",
+          importPath: flatRelPath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the committed, unedited script must not throw on this route");
+      assert.match(logText, /SPLIT-OK at d000\b/, "the committed script must actually split at the I/O page boundary on this route");
+      assert.match(logText, /VOLATILE-SET: \S+ d000-dfff/, "the flag must be set on the EXISTING (post-split) block");
+      assert.doesNotMatch(
+        logText,
+        /VOLATILE-WARN/,
+        "the wider-than-requested warning must be ABSENT -- its presence would mean the flag landed on the whole image, which looks like success and is the trap",
+      );
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
