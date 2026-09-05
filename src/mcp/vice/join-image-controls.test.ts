@@ -65,6 +65,11 @@ const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.ts");
 // shimmed here the same way, by absolute path, so this file's own scratch
 // copy (built before that plan landed) keeps resolving.
 const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.ts");
+// Plan 37-08 (AUTO-07) added a fourth sibling import to anno-join.ts
+// (`./anno-graphics.ts`, the graphics write-back's own derivation module) --
+// shimmed here the same way, by absolute path, mirroring the anno-bank.ts
+// precedent immediately above.
+const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.ts");
 const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -127,6 +132,7 @@ function buildScratchAnnoJoinModule(): { tmpDir: string; modulePath: string } {
     "utf8",
   );
   fs.writeFileSync(path.join(tmpDir, "anno-bank.ts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
+  fs.writeFileSync(path.join(tmpDir, "anno-graphics.ts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
 
   return { tmpDir, modulePath: path.join(tmpDir, "anno-join.ts") };
 }

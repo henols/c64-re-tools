@@ -24,6 +24,11 @@ const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.ts");
 const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.ts");
 const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.ts");
 const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.ts");
+// Plan 37-08 (AUTO-07) added a fourth sibling import to anno-join.ts
+// (`./anno-graphics.ts`, the graphics write-back's own derivation module) --
+// shimmed here the same way, by absolute path, mirroring this file's own
+// anno-store.ts/memmap-lookup.ts shims below.
+const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.ts");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROVENANCE_TOKEN_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}[0-9a-f]{64}$`);
@@ -441,6 +446,7 @@ function buildScratchTreeWithBypassedDecode(): { tmpDir: string; modulePath: str
   writeFileSync(join(tmpDir, "anno-join.ts"), readFileSync(REAL_ANNO_JOIN_PATH, "utf8"), "utf8");
   writeFileSync(join(tmpDir, "anno-store.ts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
   writeFileSync(join(tmpDir, "memmap-lookup.ts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-graphics.ts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
 
   return { tmpDir, modulePath: join(tmpDir, "anno-join.ts") };
 }
@@ -563,6 +569,7 @@ function buildScratchTreeWithForwardCarriedDecline(): { tmpDir: string; modulePa
   writeFileSync(join(tmpDir, "anno-bank.ts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
   writeFileSync(join(tmpDir, "anno-store.ts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
   writeFileSync(join(tmpDir, "memmap-lookup.ts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-graphics.ts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
 
   return { tmpDir, modulePath: join(tmpDir, "anno-join.ts") };
 }

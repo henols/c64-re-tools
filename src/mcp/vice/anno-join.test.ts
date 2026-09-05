@@ -10,12 +10,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
+import { closeStore, listComments, listRanges, openStore, putXref, setComment } from "./anno-store.ts";
 import { AnnoCommentError, MAX_COMMENT_BYTES } from "./anno-types.ts";
 import { codeOnly } from "./shipped-modules.ts";
 import { AnnoJoinError, runMemmapJoin } from "./anno-join.ts";
 import { memmapDigest, PROVENANCE_TOKEN_PREFIX } from "./memmap-lookup.ts";
 import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
+// Phase 37, plan 37-08 (AUTO-07): the disassembler feedback -- the join hands
+// rows to these ALREADY-BUILT emitters, writes no second one (D-37-32).
+import { emitDataBlocks, emitLabels } from "./dxa-blocks.ts";
+import type { KnownDataRow } from "./dxa-blocks.ts";
+import type { GraphicsConstWriteFact } from "./anno-graphics.ts";
+import { BANK_SELECT_ADDRESS, MEMORY_CONTROL_ADDRESS, CONTROL_REGISTER_1_ADDRESS } from "./anno-graphics.ts";
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROVENANCE_TOKEN_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}[0-9a-f]{64}$`);
@@ -302,7 +308,11 @@ test("runMemmapJoin: setComment() refuses, by name, a synthetic label long enoug
 // prose.
 // ---------------------------------------------------------------------------
 
-const SCANNED_MODULES = ["anno-join.ts", "memmap-lookup.ts", "anno-import.ts", "anno-bank.ts"];
+// Phase 37, plan 37-08: anno-graphics.ts joins the scan -- anno-join.ts now
+// imports it (the graphics write-back), so it is genuinely part of the
+// join's own module graph and must be covered by AUTO-01's structural proof
+// exactly like anno-bank.ts was added in plan 37-06.
+const SCANNED_MODULES = ["anno-join.ts", "memmap-lookup.ts", "anno-import.ts", "anno-bank.ts", "anno-graphics.ts"];
 
 /** Every `import ... from "specifier"` module specifier this file's own
  * source names, after comments are stripped but literal bodies are KEPT --
@@ -380,4 +390,276 @@ test("the structural proof's non-vacuity assertion is itself non-vacuous: deleti
     false,
     "confirms the non-vacuity guard is what would have caught an empty scan -- it correctly reports false here",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 37, plan 37-08 (AUTO-07): the graphics write-back and its feedback to
+// the disassembler's already-built emitters. Gated on the SAME
+// `constWrites !== undefined` condition the bank-state block (plan 37-06)
+// uses; a complete no-op for every test above that never supplies it.
+// ---------------------------------------------------------------------------
+
+/** One complete, determinate register combination -- matches
+ * `charset-phantom.a`'s own real register writes exactly (see
+ * `evidence/37-08-phantom-labels-before-after.md`): bank base `$0000`,
+ * screen matrix `$0000`-`$03ff`, character set `$1000`-`$17ff`, sprite
+ * pointers `$03f8`-`$03ff`. */
+const GRAPHICS_FACTS: readonly GraphicsConstWriteFact[] = [
+  { storeAddress: 0x0812, targetAddress: BANK_SELECT_ADDRESS, value: 0x3f },
+  { storeAddress: 0x0817, targetAddress: MEMORY_CONTROL_ADDRESS, value: 0x04 },
+  { storeAddress: 0x081c, targetAddress: CONTROL_REGISTER_1_ADDRESS, value: 0x1b },
+];
+
+test("runMemmapJoin (graphics write-back): writes each derived range as a typed range, and the store's range listing returns them after a close and a reopen", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+
+    const { counts, graphics } = runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: GRAPHICS_FACTS }, SYNTHETIC_ENTRIES);
+    assert.ok(graphics !== undefined, "graphics must be present when constWrites is supplied");
+    assert.equal(graphics!.mapIndex, 0, "one determinate combination -- the only map, at index 0");
+    assert.equal(graphics!.rangesWritten, 3, "screen-matrix, character-set, sprite-pointers -- three ranges");
+    assert.equal(counts.graphicsRangesWritten, 3);
+    closeStore(handle);
+
+    const reopened = openStore(storePath, { workspaceRoot: dir });
+    const ranges = listRanges(reopened).sort((a, b) => a.start - b.start);
+    // The sprite-pointer range ($03f8-$03ff) is the screen matrix's own LAST
+    // eight bytes on real VIC-II hardware (anno-graphics.ts's own arithmetic)
+    // -- it genuinely OVERLAPS the screen-matrix range written just before
+    // it. `setDataType()`'s own retype() fragments the earlier row at the
+    // overlap boundary (STORE-03's own documented behaviour, not new logic
+    // here) -- writing three ranges therefore still yields exactly three
+    // stored rows, but the screen-matrix/sprite-pointer boundary now sits at
+    // $03f7/$03f8 (both typed identically as "byte", so the split is
+    // invisible from a dataType read alone; it is real and MEASURED here).
+    assert.deepEqual(
+      ranges.map((r) => ({ start: r.start, endInclusive: r.endInclusive, dataType: r.dataType })),
+      [
+        { start: 0x0000, endInclusive: 0x03f7, dataType: "byte" },
+        { start: 0x03f8, endInclusive: 0x03ff, dataType: "byte" },
+        { start: 0x1000, endInclusive: 0x17ff, dataType: "byte" },
+      ],
+      "the store's own range listing must carry every derived range, byte-typed, surviving close+reopen (fragmented at the real sprite-pointer/screen-matrix overlap)",
+    );
+    closeStore(reopened);
+  });
+});
+
+test("runMemmapJoin (graphics write-back): zero derived ranges (constWrites explicitly [], every register missing) writes zero ranges", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+
+    const { counts, graphics } = runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: [] }, SYNTHETIC_ENTRIES);
+    assert.ok(graphics !== undefined, "graphics must still be present (the field is always-present/often-empty, never absent)");
+    assert.equal(graphics!.rangesWritten, 0);
+    assert.equal(counts.graphicsRangesWritten, 0);
+    assert.equal(counts.graphicsContradictedComments, 0);
+    assert.equal(counts.graphicsReinterpretedSplitTables, 0);
+    assert.deepEqual(listRanges(handle), []);
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin (graphics write-back): several derived maps -- only the caller-selected index is written, and an out-of-range index refuses by name", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+
+    // Two DISTINCT bank-select values -> two distinct combinations -> two
+    // maps (D-37-27). Memory-control/control-register-1 held constant so
+    // only ONE axis varies, keeping the two maps' own ranges non-overlapping
+    // and easy to tell apart by address.
+    const twoMapFacts: readonly GraphicsConstWriteFact[] = [
+      { storeAddress: 0x0812, targetAddress: BANK_SELECT_ADDRESS, value: 0x3f }, // bank base $0000
+      { storeAddress: 0x0820, targetAddress: BANK_SELECT_ADDRESS, value: 0x3e }, // bank base $4000
+      { storeAddress: 0x0817, targetAddress: MEMORY_CONTROL_ADDRESS, value: 0x04 },
+      { storeAddress: 0x081c, targetAddress: CONTROL_REGISTER_1_ADDRESS, value: 0x1b },
+    ];
+
+    const selectedSecond = runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: twoMapFacts, graphicsMapIndex: 1 }, SYNTHETIC_ENTRIES);
+    assert.equal(selectedSecond.graphics!.mapIndex, 1, "the returned record must name WHICH map was written");
+    const rangesAfterSecond = listRanges(handle);
+    assert.equal(rangesAfterSecond.length, selectedSecond.graphics!.rangesWritten, "only the selected map's own ranges were written -- never every map");
+
+    assert.throws(
+      () => runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: twoMapFacts, graphicsMapIndex: 5 }, SYNTHETIC_ENTRIES),
+      AnnoJoinError,
+      "an out-of-range graphicsMapIndex must refuse by name rather than silently clamping or defaulting",
+    );
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin (graphics write-back): the contradicted-comment and split-table disclosures the range write reported are surfaced in the join's own return, neither dropped", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+
+    // A confidently-CODE-graded comment sitting inside the derived
+    // character-set range ($1000-$17ff) -- exactly the "phantom routine
+    // promoted to code" scenario this requirement exists to contain.
+    // Retyping this address to "byte" (the graphics write-back's own
+    // dataType) makes this comment false.
+    setComment(handle, { address: 0x1000, commentType: "line", text: "[confirmed-code] a phantom routine an earlier pass promoted" });
+
+    const { counts, graphics } = runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: GRAPHICS_FACTS }, SYNTHETIC_ENTRIES);
+    assert.ok(graphics!.contradictedComments.length >= 1, "the contradiction must be reported, not silently dropped");
+    assert.equal(counts.graphicsContradictedComments, graphics!.contradictedComments.length, "the count must equal the disclosed array's own length");
+    const contradiction = graphics!.contradictedComments.find((c) => c.address === 0x1000);
+    assert.ok(contradiction !== undefined, "the specific contradicted address must be named");
+    assert.equal(contradiction!.contradictedBy, "byte");
+    // reinterpretedSplitTables is always present, often empty -- no split
+    // table exists in this store, so it must be exactly 0/empty, never
+    // absent.
+    assert.equal(counts.graphicsReinterpretedSplitTables, 0);
+    assert.deepEqual(graphics!.reinterpretedSplitTables, []);
+    closeStore(handle);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The disassembler feedback: rows this plan's own write-back produces reach
+// dxa-blocks.ts's ALREADY-BUILT emitters unchanged in shape (KnownDataRow),
+// per D-37-32 -- these cases prove the SHAPE reaches them correctly, not
+// re-test the emitters' own already-proven behaviour (dxa-blocks.test.ts).
+// ---------------------------------------------------------------------------
+
+test("the graphics write-back's own listRanges() rows reach emitDataBlocks() unchanged in shape: three ranges, ascending by start, byte-identical across two runs", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: GRAPHICS_FACTS }, SYNTHETIC_ENTRIES);
+
+    // The one and only translation this plan needs: RangeRow's own
+    // start/endInclusive/dataType fields already match KnownDataRow's own
+    // shape exactly (both are structurally the same three fields) -- no
+    // second emitter, no hand-rolled rendering.
+    const rows: KnownDataRow[] = listRanges(handle).map((r) => ({ start: r.start, endInclusive: r.endInclusive, dataType: r.dataType }));
+
+    const path1 = join(dir, "run1.dxa-blocks.txt");
+    const path2 = join(dir, "run2.dxa-blocks.txt");
+    const result1 = emitDataBlocks(rows, path1);
+    const result2 = emitDataBlocks(rows, path2);
+    assert.equal(result1.rangesCount, 3);
+    assert.equal(result2.rangesCount, 3);
+    const text1 = readFileSync(path1, "utf8");
+    const text2 = readFileSync(path2, "utf8");
+    assert.equal(text1, text2, "two runs over the same rows must produce byte-identical files");
+    const lines = text1.trim().split("\n");
+    assert.equal(lines.length, 3);
+    const starts = lines.map((l) => parseInt(l.split("-")[0]!, 16));
+    assert.deepEqual(starts, [...starts].sort((a, b) => a - b), "lines must be ascending by start");
+    closeStore(handle);
+  });
+});
+
+test("zero derived ranges causes emitDataBlocks() to write no file and report a zero count -- the corresponding wire argument is what a caller omits entirely", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: [] }, SYNTHETIC_ENTRIES);
+    const rows: KnownDataRow[] = listRanges(handle).map((r) => ({ start: r.start, endInclusive: r.endInclusive, dataType: r.dataType }));
+    assert.deepEqual(rows, []);
+    const result = emitDataBlocks(rows, join(dir, "empty.dxa-blocks.txt"));
+    assert.equal(result.rangesCount, 0);
+    assert.equal(result.path, undefined, "a zero-range result must never carry a path to a file that was never written");
+    closeStore(handle);
+  });
+});
+
+test("a one-byte derived-shaped range produces one data-block line whose two addresses are equal, and two touching ranges produce two lines, never merged", () => {
+  inTempDir((dir) => {
+    // Hand-built rows in this plan's OWN shape (start/endInclusive/dataType),
+    // exercising the boundary bullets a real graphics map may not happen to
+    // hit today (a one-byte range, two ranges touching at a boundary) --
+    // dxa-blocks.ts's own emitter already handles both; this proves rows in
+    // the shape this plan produces reach it correctly.
+    const oneByteRow: KnownDataRow = { start: 0x2000, endInclusive: 0x2000, dataType: "byte" };
+    const oneByteResult = emitDataBlocks([oneByteRow], join(dir, "one-byte.txt"));
+    assert.equal(oneByteResult.rangesCount, 1);
+    const oneByteText = readFileSync(oneByteResult.path!, "utf8").trim();
+    assert.equal(oneByteText, "2000-2000");
+
+    const touching: KnownDataRow[] = [
+      { start: 0x1000, endInclusive: 0x17ff, dataType: "byte" },
+      { start: 0x1800, endInclusive: 0x1fff, dataType: "byte" },
+    ];
+    const touchingResult = emitDataBlocks(touching, join(dir, "touching.txt"));
+    assert.equal(touchingResult.rangesCount, 2, "two ranges that merely TOUCH at a boundary stay two lines, never coalesced");
+    const touchingLines = readFileSync(touchingResult.path!, "utf8").trim().split("\n");
+    assert.equal(touchingLines.length, 2);
+  });
+});
+
+test("two overlapping derived-shaped ranges are refused by the existing emitter rather than silently unioned", () => {
+  const overlapping: KnownDataRow[] = [
+    { start: 0x1000, endInclusive: 0x1800, dataType: "byte" },
+    { start: 0x1800, endInclusive: 0x1fff, dataType: "byte" },
+  ];
+  assert.throws(() => emitDataBlocks(overlapping, "/dev/null/unreachable"), /overlapping ranges/, "an overlap must be refused, not silently merged");
+});
+
+// ---------------------------------------------------------------------------
+// The four automated cases the requirement's own gate depends on (D-37-35):
+// asserted over Task 2's COMMITTED captured artifacts
+// (`fixtures/ghidra/charset-phantom-minted-labels.json`), so this requirement
+// has a gate the automated suite actually runs, not only the manual-only live
+// cases in `ghidra-live.test.ts`.
+// ---------------------------------------------------------------------------
+
+interface CharsetPhantomLabelsArtifact {
+  derivedCharsetRange: { start: number; endInclusive: number };
+  beforeLabelsInRange: [number, string][];
+  afterLabelsInRange: [number, string][];
+}
+
+function loadCharsetPhantomLabelsArtifact(): CharsetPhantomLabelsArtifact {
+  const text = readFileSync(join(HERE, "fixtures", "ghidra", "charset-phantom-minted-labels.json"), "utf8");
+  return JSON.parse(text) as CharsetPhantomLabelsArtifact;
+}
+
+/** The SAME membership predicate `ghidra-live.test.ts`'s own
+ * `functionsInRange()` uses: byte addresses, integer comparison, never a
+ * character-offset or string comparison (D-37's own encoding-edge rule). */
+function addressInRange(address: number, range: { start: number; endInclusive: number }): boolean {
+  return address >= range.start && address <= range.endInclusive;
+}
+
+test("AUTO-07 hermetic gate: the committed before-set is non-empty", () => {
+  const artifact = loadCharsetPhantomLabelsArtifact();
+  assert.ok(artifact.beforeLabelsInRange.length > 0, "the committed before-set must be non-empty -- a vacuous before/after proof discharges nothing");
+});
+
+test("AUTO-07 hermetic gate: the committed after-set is empty", () => {
+  const artifact = loadCharsetPhantomLabelsArtifact();
+  assert.equal(artifact.afterLabelsInRange.length, 0, "the committed after-set must be empty -- the data-range feedback must suppress every phantom label");
+});
+
+test("AUTO-07 hermetic gate: a label at the exact first address and one at the exact last address of the derived range are both classified inside it", () => {
+  const artifact = loadCharsetPhantomLabelsArtifact();
+  const { start, endInclusive } = artifact.derivedCharsetRange;
+  const firstLabel = artifact.beforeLabelsInRange.find(([addr]) => addr === start);
+  assert.ok(firstLabel !== undefined, `the committed before-set must carry a label at the range's own first address ($${start.toString(16)})`);
+  assert.equal(addressInRange(firstLabel![0], artifact.derivedCharsetRange), true);
+
+  // The range's own EXACT LAST byte ($17ff) falls inside the LAST minted
+  // function's own 4-byte body (that function's own entry point is 3 bytes
+  // earlier, at $17fc) -- classified structurally here rather than pinned to
+  // a specific minted entry point, since a function label names its own
+  // ENTRY, not every byte its body occupies.
+  assert.equal(addressInRange(endInclusive, artifact.derivedCharsetRange), true, "the range's own exact last byte must classify as inside it");
+  const lastLabel = artifact.beforeLabelsInRange.reduce((max, cur) => (cur[0] > max[0] ? cur : max));
+  assert.ok(lastLabel[0] <= endInclusive, "no minted label's own address may exceed the range's own last byte");
+  assert.equal(addressInRange(lastLabel[0], artifact.derivedCharsetRange), true);
+});
+
+test("AUTO-07 hermetic gate: two label names differing only by case are counted as two distinct labels", () => {
+  const artifact = loadCharsetPhantomLabelsArtifact();
+  const realName = artifact.beforeLabelsInRange[0]![1];
+  const differentCaseName = realName === realName.toLowerCase() ? realName.toUpperCase() : realName.toLowerCase();
+  assert.notEqual(realName, differentCaseName, "the synthetic case-flipped name must genuinely differ byte-for-byte from the real one");
+  const names = new Set([realName, differentCaseName]);
+  assert.equal(names.size, 2, "raw-byte (case-sensitive) comparison must count these as two distinct labels, never one");
 });

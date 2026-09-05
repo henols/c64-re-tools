@@ -53,7 +53,7 @@
 // "nothing reaches this point" into a stated absence rather than a silent
 // default.
 
-import { listXrefs, setComment } from "./anno-store.ts";
+import { listXrefs, setComment, setDataType } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 import {
   decodeBankState,
@@ -63,9 +63,17 @@ import {
 } from "./anno-bank.ts";
 import type { BankedRegion } from "./anno-bank.ts";
 import type { ConstWriteFact } from "./anno-import.ts";
-import type { XrefRow } from "./anno-types.ts";
+import type { ContradictedComment, SplitTableReinterpretation, XrefRow } from "./anno-types.ts";
 import { loadMemmap, memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.ts";
 import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
+// Phase 37, plan 37-08 (AUTO-07): the graphics write-back. deriveGraphicsRanges()
+// is structurally typed against ConstWriteFact -- GraphicsConstWriteFact's own
+// shape is identical ({storeAddress, targetAddress, value}) -- so THIS module's
+// own constWrites argument, already threaded for D-37-24's bank-state block, is
+// handed straight through with no translation layer (37-07-SUMMARY.md's own
+// "Next Phase Readiness" note names this directly).
+import { deriveGraphicsRanges } from "./anno-graphics.ts";
+import type { GraphicsMap } from "./anno-graphics.ts";
 
 /** D-37-25: the axis-qualified provenance marker an annotated bank-conditional
  * comment carries, ALWAYS before `PROVENANCE_TOKEN_PREFIX`'s own digest
@@ -148,7 +156,12 @@ export class AnnoJoinError extends Error {
 }
 
 /** What one `runMemmapJoin()` call reports. `addressesConsidered` is always
- * the sum of the next four fields. */
+ * the sum of the next four fields. The three `graphics*` fields (plan 37-08,
+ * AUTO-07) are always present and `0` when `constWrites` is omitted or when
+ * the selected map derives zero ranges -- never absent, so a caller reads
+ * them unconditionally instead of guarding on them, mirroring
+ * `SetDataTypeResult`'s own "always present, often empty" convention for
+ * `contradictedComments`/`reinterpretedSplitTables`. */
 export interface JoinCounts {
   addressesConsidered: number;
   annotated: number;
@@ -156,6 +169,28 @@ export interface JoinCounts {
   skippedNoMapEntry: number;
   declined: number;
   commentsChanged: number;
+  graphicsRangesWritten: number;
+  graphicsContradictedComments: number;
+  graphicsReinterpretedSplitTables: number;
+}
+
+/**
+ * What the graphics write-back (plan 37-08, AUTO-07) reports, in full --
+ * `JoinCounts`'s own `graphics*` fields are the COUNTS of these same
+ * `contradictedComments`/`reinterpretedSplitTables` arrays; this record
+ * carries the disclosures themselves so neither is dropped (must_haves.truths:
+ * "the join's returned counts include the contradicted-comment and
+ * fragmented-split-table disclosures the range write reported; neither is
+ * dropped"). `mapIndex` records WHICH of `deriveGraphicsRanges()`'s several
+ * maps was written -- D-37-27's own rule (several valid combinations are
+ * several maps, never one merged map) means writing more than one would
+ * write mutually-contradicting ranges into the SAME store, so exactly one is
+ * ever written and this field is the record of which. */
+export interface GraphicsWriteBack {
+  mapIndex: number;
+  rangesWritten: number;
+  contradictedComments: readonly ContradictedComment[];
+  reinterpretedSplitTables: readonly SplitTableReinterpretation[];
 }
 
 /** One address's own outcome. A skip or a decline always carries a non-empty
@@ -179,6 +214,15 @@ export interface RunMemmapJoinArgs {
    * An explicit array (even `[]`) activates it for addresses inside
    * `BANK_CONDITIONAL_RANGES`. */
   constWrites?: readonly ConstWriteFact[];
+  /** Plan 37-08 (AUTO-07, D-37-27): which of `deriveGraphicsRanges()`'s
+   * several maps to write back, when `constWrites` derives more than one
+   * distinct register-value combination. Defaults to `0`. Consulted ONLY
+   * when `constWrites` is supplied AT ALL (the SAME gate that activates the
+   * bank-state block above) -- omitting `constWrites` entirely skips the
+   * graphics write-back completely, exactly like the bank-state block. Out
+   * of range for the derived map count refuses BY NAME (`AnnoJoinError`)
+   * rather than silently clamping or picking a default. */
+  graphicsMapIndex?: number;
 }
 
 /**
@@ -210,7 +254,7 @@ export function runMemmapJoin(
   args: RunMemmapJoinArgs,
   entries: readonly MemmapEntry[] = loadMemmap(),
   selectEntry: (address: number, entries: readonly MemmapEntry[]) => MemmapSelection | undefined = selectMemmapEntry,
-): { counts: JoinCounts; decisions: JoinDecision[] } {
+): { counts: JoinCounts; decisions: JoinDecision[]; graphics?: GraphicsWriteBack } {
   if (args.imageByteLength === 0) {
     throw new AnnoJoinError(
       "runMemmapJoin refused: the image's own body length is 0 -- an image with no bytes has no range, and treating " +
@@ -380,6 +424,47 @@ export function runMemmapJoin(
     decisions.push({ address, outcome: "annotated", label: selection.entry.label });
   }
 
+  // THE GRAPHICS WRITE-BACK (D-37-32/D-37-33, AUTO-07). Runs AFTER the main
+  // per-address loop above, as its own step -- graphics ranges are derived
+  // from register VALUES, never from the cross-reference targets the loop
+  // above walks, so there is no reason to interleave the two. Gated on the
+  // SAME `constWrites !== undefined` condition the bank-state block uses:
+  // omitting `constWrites` entirely is a complete no-op here too, exactly
+  // like the bank-state block above.
+  let graphics: GraphicsWriteBack | undefined;
+  if (args.constWrites !== undefined) {
+    const maps = deriveGraphicsRanges(args.constWrites);
+    const mapIndex = args.graphicsMapIndex ?? 0;
+    const selectedMap: GraphicsMap | undefined = maps[mapIndex];
+    if (selectedMap === undefined) {
+      throw new AnnoJoinError(
+        `runMemmapJoin refused: graphicsMapIndex ${mapIndex} is out of range -- deriveGraphicsRanges() produced ` +
+          `${maps.length} map(s) for this run's own constWrites`,
+      );
+    }
+
+    // D-37-27: write ONLY the selected map's own ranges -- never every map
+    // deriveGraphicsRanges() returned. Several distinct register-value
+    // combinations describe MUTUALLY CONTRADICTING layouts (D-37-27's own
+    // reason several maps exist at all); writing more than one into the
+    // same store would write ranges that disagree with each other by
+    // construction.
+    let rangesWritten = 0;
+    const contradictedComments: ContradictedComment[] = [];
+    const reinterpretedSplitTables: SplitTableReinterpretation[] = [];
+    for (const range of selectedMap.ranges) {
+      const write = setDataType(handle, { start: range.start, endInclusive: range.endInclusive, dataType: range.dataType });
+      rangesWritten += 1;
+      // Disclosures a successful range write can carry -- surfaced, never
+      // dropped (must_haves.truths): a comment whose recorded confidence now
+      // contradicts the type this write just assigned, or a split table this
+      // write fragmented.
+      contradictedComments.push(...write.contradictedComments);
+      reinterpretedSplitTables.push(...write.reinterpretedSplitTables);
+    }
+    graphics = { mapIndex, rangesWritten, contradictedComments, reinterpretedSplitTables };
+  }
+
   const counts: JoinCounts = {
     addressesConsidered: targets.length,
     annotated,
@@ -387,6 +472,9 @@ export function runMemmapJoin(
     skippedNoMapEntry,
     declined,
     commentsChanged,
+    graphicsRangesWritten: graphics?.rangesWritten ?? 0,
+    graphicsContradictedComments: graphics?.contradictedComments.length ?? 0,
+    graphicsReinterpretedSplitTables: graphics?.reinterpretedSplitTables.length ?? 0,
   };
-  return { counts, decisions };
+  return graphics === undefined ? { counts, decisions } : { counts, decisions, graphics };
 }
