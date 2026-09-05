@@ -455,7 +455,7 @@ or by none.
 - [x] **Phase 34: The Host-Tool Execution Seam** - Host binaries reached over a typed namespaced control op on the existing broker socket, with the two existing skill-script violations migrated so the ban on them can be written at all (completed 2026-09-04)
 - [x] **Phase 35: dxa, Vendored and Parsed** - A raw C64 image in and a machine-readable code/data map out, from a dxa this project vendors and builds at a pinned version, behind a parser that is loud by name (completed 2026-09-04)
 - [x] **Phase 36: The SLEIGH Language and the Ghidra Harness** - All 105 undocumented opcode bytes decodable under their own Ghidra language, and structural facts recovered through `DecompInterface` with hardware writes surviving the decompiler (completed 2026-09-05)
-- [ ] **Phase 37: The Importer and the Automatic Annotation Join** - Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — declining with a reason rather than guessing
+- [x] **Phase 37: The Importer and the Automatic Annotation Join** - Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — declining with a reason rather than guessing (completed 2026-09-05)
 - [ ] **Phase 38: PROOF-01..03 on Real Cracked Code** - The three measurements Phase 23 recorded `could-not-run`, taken on real cracked releases and stated beside the fixture figures rather than replacing them
 
 **Phase details, the dependency edges, the per-phase guard-breakage inventory
