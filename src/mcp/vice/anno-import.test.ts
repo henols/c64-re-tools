@@ -22,7 +22,6 @@ import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
 import { AnnoImportError, GHIDRA_REFTYPE_TO_ACCESS_KIND, importGhidraExport, parseGhidraExport } from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
-import { BANK_CONDITIONAL_RANGES, loadMemmap, memmapDigest, MEMMAP_PATH, selectMemmapEntry } from "./memmap-lookup.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -326,54 +325,10 @@ test("runMemmapJoin: run twice over an unchanged store reports commentsChanged 0
   });
 });
 
-// ---------------------------------------------------------------------------
-// memmap-lookup.ts's own unit cases (landed here per this task's own file
-// list -- `memmap-lookup.test.ts` as a dedicated file arrives with plan 37
-// task 3).
-// ---------------------------------------------------------------------------
-
-test("memmapDigest(): equals the _generated.memmapSha256 value committed in anno-regbits.json -- asserted as a RELATION, never a hard-coded literal", () => {
-  const regbits = JSON.parse(readFileSync(join(HERE, "anno-regbits.json"), "utf8")) as { _generated: { memmapSha256: string } };
-  assert.equal(memmapDigest(), regbits._generated.memmapSha256);
-});
-
-test("selectMemmapEntry(0xd020): resolves to the 1-byte border-colour entry, not the 4096-byte containing entry, over 8 real contenders", () => {
-  const selection = selectMemmapEntry(0xd020);
-  assert.ok(selection);
-  assert.equal(selection!.entry.start, 0xd020);
-  assert.equal(selection!.entry.end, 0xd020, "the narrowest entry is the inclusive 1-byte $d020-$d020 range");
-  assert.equal(selection!.contenderCount, 8);
-});
-
-test("selectMemmapEntry(): an address with no containing entry returns undefined", () => {
-  // MEASURED at plan time: memmap.json's own entries start at 0; an address
-  // below every entry's start cannot exist on this 16-bit space, so instead
-  // this proves the negative over a real gap -- an address inside no entry's
-  // span at all is not expected to occur across the full 959-entry set for
-  // any address in range, so this asserts the function's own contract
-  // directly with a synthetic entries list instead of hunting for a gap.
-  const selection = selectMemmapEntry(0x1234, []);
-  assert.equal(selection, undefined);
-});
-
-test("loadMemmap(): returns the same frozen array object on a second call (cached, not re-read)", () => {
-  const first = loadMemmap();
-  const second = loadMemmap();
-  assert.equal(first, second);
-  assert.ok(Object.isFrozen(first));
-});
-
-test("MEMMAP_PATH resolves to a real, existing file", () => {
-  assert.equal(existsSync(MEMMAP_PATH), true);
-});
-
-test("BANK_CONDITIONAL_RANGES: the three hand-maintained ranges are present and non-empty", () => {
-  assert.equal(BANK_CONDITIONAL_RANGES.length, 3);
-  for (const range of BANK_CONDITIONAL_RANGES) {
-    assert.ok(range.end > range.start || range.end === range.start);
-    assert.ok(range.why.length > 0);
-  }
-});
+// `memmap-lookup.ts`'s own unit cases (memmapDigest, selectMemmapEntry,
+// loadMemmap, MEMMAP_PATH, BANK_CONDITIONAL_RANGES) moved to the dedicated
+// `memmap-lookup.test.ts` (plan 37 task 3) -- this file keeps only the
+// importer's own tracer and parser cases plus the registration surface below.
 
 // ---------------------------------------------------------------------------
 // Registration surface: the two new tool names exist, and both are

@@ -311,6 +311,29 @@ note asserted in the PRESENT TENSE that this verb still read a project file; it 
 when it shipped, and it is DELETED here rather than amended, so a reader comparing two dated claims
 can tell which one to believe.
 
+**Importing a Ghidra export, and the mechanical join that follows it.** When a Ghidra harness run
+(a separate, host-side capability) has produced a transfer file, two calls land its findings in the
+store — in this order, and each is one mechanical call, not an agent turn:
+
+1. **`anno_import_ghidra_export`** reads the transfer file, writes one cross-reference row per
+   surviving reference, and DELETES the transfer file once every write has durably committed. It reports
+   `referencesSeen`, `xrefsWritten`, `xrefsAlreadyPresent` (a duplicate reference is deduplicated, not
+   double-counted) and `kindsSeenNotImported` — reference kinds outside this store's four-member
+   vocabulary, dropped and counted rather than guessed or refused. A malformed, truncated or
+   digest-mismatched export is refused by name, naming the section and the offending line, and writes
+   nothing.
+2. **`anno_join_memmap`** then reads every cross-reference target the store already holds, skips
+   addresses inside the program's own loaded image (those are code/data addresses, not hardware
+   features), and annotates everything else with the narrowest `c64-memory-mapping/memmap.json` entry
+   containing it. It reports `addressesConsidered`, `annotated`, `skippedInImage`,
+   `skippedNoMapEntry`, `declined` and `commentsChanged`, plus a per-address decision naming the
+   outcome and, for every skip, why.
+
+Both calls are **mechanical**: there is no agent invocation, no queue walk and no skill invocation
+anywhere inside either one, checked structurally over the two modules' own source rather than
+asserted in prose. Run the import call once per Ghidra export, then the join call once per updated
+image; neither call takes an agent turn to complete.
+
 ## Static disassembly
 
 **Dated withdrawal 2026-08-29, dated return 2026-08-31 — whole-program ACME export was WITHDRAWN
