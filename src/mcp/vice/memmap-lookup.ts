@@ -117,6 +117,29 @@ export function memmapDigest(): string {
   return createHash("sha256").update(readFileSync(MEMMAP_PATH)).digest("hex");
 }
 
+/**
+ * D-37-13: the fixed, machine-parseable prefix `anno-join.ts` appends
+ * `memmapDigest()`'s full 64-character lowercase hex digest to, on every
+ * derived comment (`AUTO-08`). Chosen to be unlikely to collide with
+ * ordinary comment prose and to sit LAST in the comment text (no closing
+ * delimiter follows it), so a regex can find it without knowing the
+ * preceding label's own shape: `new RegExp(PROVENANCE_TOKEN_PREFIX_ESCAPED +
+ * "[0-9a-f]{64}$")`. Exported from here, not `anno-join.ts`, because the
+ * digest and the prefix that names it belong to the same module as
+ * `memmapDigest()` itself.
+ */
+export const PROVENANCE_TOKEN_PREFIX = "[memmap-sha256:";
+
+/** WHICH of the three steps decided a selection, or `unique` when only one
+ * entry contained the address at all. `AUTO-02` names two steps
+ * (narrowest-range-wins, then the `sym` tie-break); D-37-10 adds a third,
+ * because the phase's own headline `$D020` example is NOT resolved by the
+ * first two -- MEASURED at plan time, its two 1-byte contenders both lack a
+ * `sym`. Reported rather than left for a caller to infer, so a test (and
+ * plan 37-04's controls) can assert WHICH rule decided, not merely what it
+ * decided. */
+export type MemmapTieBreak = "unique" | "width" | "symbol" | "order";
+
 /** What `selectMemmapEntry()` returns for a unique or a resolved-tie hit.
  * `contenderCount` is the number of containing entries the scan considered,
  * so a caller can tell a unique hit from a resolved tie without re-running
@@ -125,34 +148,105 @@ export interface MemmapSelection {
   entry: MemmapEntry;
   width: number;
   contenderCount: number;
+  tieBrokenBy: MemmapTieBreak;
+}
+
+/** Inclusive width of one entry: `end - start`. Named once so every step
+ * below computes it identically. */
+function inclusiveWidth(entry: MemmapEntry): number {
+  return entry.end - entry.start;
 }
 
 /**
- * The NARROWEST-CONTAINING-RANGE selection rule (this plan's own slice of it
- * -- `AUTO-02`'s `sym` tie-break lands in a later plan). Collects every entry
- * whose inclusive `[start, end]` contains `address`; returns `undefined` if
- * none does; otherwise returns the one with the smallest `end - start`. Where
- * several contenders share the smallest width, THIS task returns the FIRST
- * one in `entries` order -- a later plan replaces that residual tie-break
- * with the `sym`-present rule and states the order explicitly.
+ * STEP ONE, WIDTH -- the whole of narrowest-range-wins. Prefers the smallest
+ * `end - start`; returns every entry tied at that minimum, since a single
+ * winner here is `unique`ly correct only when nothing else shares its width.
+ * Kept as its own named function (not folded into a single comparator) so
+ * plan 37-04's control -- "switch selection to first-match" -- is a single,
+ * small, textual replacement of exactly this step, per this plan's own
+ * `<read_first>` instruction.
+ */
+function narrowestWidthSurvivors(containing: readonly MemmapEntry[]): MemmapEntry[] {
+  let minWidth = Infinity;
+  for (const entry of containing) {
+    const width = inclusiveWidth(entry);
+    if (width < minWidth) minWidth = width;
+  }
+  return containing.filter((entry) => inclusiveWidth(entry) === minWidth);
+}
+
+/**
+ * STEP TWO, SYMBOL -- `AUTO-02`'s own tie-break. Among step one's survivors,
+ * prefers an entry carrying a non-empty `sym` over one that does not.
+ * D-37-11's `$0000` fixture (three equal-width contenders, exactly one
+ * carrying `sym: "D6510"`) is this step's own fixture. Returns every
+ * `sym`-carrying survivor when at least one exists, else returns every
+ * survivor unchanged (this step decided nothing -- step three must run).
+ */
+function symbolSurvivors(survivors: readonly MemmapEntry[]): MemmapEntry[] {
+  const withSym = survivors.filter((entry) => typeof entry.sym === "string" && entry.sym.length > 0);
+  return withSym.length > 0 ? withSym : survivors.slice();
+}
+
+/**
+ * STEP THREE, ORDER -- D-37-10. Among step two's survivors, the entry
+ * appearing FIRST in `memmap.json`'s own `entries` array wins. Stated
+ * explicitly, rather than left to whatever order a scan happened to
+ * produce, because the phase's own headline `$D020` example needs it: two
+ * 1-byte contenders there are tied on width AND neither carries a `sym`, so
+ * without this named third rule the selection would be an unstated,
+ * scan-order accident that a later refactor could change silently. No
+ * `sort()` is used here -- a single linear scan over `entries` (the same
+ * order the caller supplied) finds the first survivor, which is cheaper and
+ * keeps this step's own mutation (plan 37-05's "reverse the tie-break")
+ * a one-line replacement rather than a sort-comparator edit.
+ */
+function orderWinner(survivors: readonly MemmapEntry[], entries: readonly MemmapEntry[]): MemmapEntry {
+  for (const entry of entries) {
+    if (survivors.includes(entry)) return entry;
+  }
+  // Unreachable: `survivors` is always drawn from `entries` by reference, so
+  // the scan above always finds one before falling through.
+  return survivors[0]!;
+}
+
+/**
+ * The THREE-DEEP selection order (D-37-10): narrowest-containing-range,
+ * then the `sym` tie-break (`AUTO-02`), then -- because those two do not
+ * resolve every real tie in the committed `memmap.json` -- the stated
+ * residual rule of "first in `entries` order". Collects every entry whose
+ * inclusive `[start, end]` contains `address`; returns `undefined` if none
+ * does. `tieBrokenBy` names WHICH step decided, so a caller (and plan
+ * 37-04's controls) can tell width-decided from symbol-decided from
+ * order-decided, not merely infer it from the winning entry's own shape.
  */
 export function selectMemmapEntry(address: number, entries: readonly MemmapEntry[] = loadMemmap()): MemmapSelection | undefined {
-  let best: MemmapEntry | undefined;
-  let bestWidth = Infinity;
-  let contenderCount = 0;
-
+  const containing: MemmapEntry[] = [];
   for (const entry of entries) {
     if (address < entry.start || address > entry.end) continue;
-    contenderCount += 1;
-    const width = entry.end - entry.start;
-    if (width < bestWidth) {
-      best = entry;
-      bestWidth = width;
-    }
+    containing.push(entry);
+  }
+  const contenderCount = containing.length;
+  if (contenderCount === 0) return undefined;
+  if (contenderCount === 1) {
+    const entry = containing[0]!;
+    return { entry, width: inclusiveWidth(entry), contenderCount, tieBrokenBy: "unique" };
   }
 
-  if (best === undefined) return undefined;
-  return { entry: best, width: bestWidth, contenderCount };
+  const widthSurvivors = narrowestWidthSurvivors(containing);
+  if (widthSurvivors.length === 1) {
+    const entry = widthSurvivors[0]!;
+    return { entry, width: inclusiveWidth(entry), contenderCount, tieBrokenBy: "width" };
+  }
+
+  const symSurvivors = symbolSurvivors(widthSurvivors);
+  if (symSurvivors.length === 1) {
+    const entry = symSurvivors[0]!;
+    return { entry, width: inclusiveWidth(entry), contenderCount, tieBrokenBy: "symbol" };
+  }
+
+  const entry = orderWinner(symSurvivors, entries);
+  return { entry, width: inclusiveWidth(entry), contenderCount, tieBrokenBy: "order" };
 }
 
 /** One hand-maintained bank-conditional range: its meaning depends on the
