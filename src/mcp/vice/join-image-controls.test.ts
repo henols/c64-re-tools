@@ -51,15 +51,19 @@ import * as path from "node:path";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, openStore, putXref } from "./anno-store.ts";
+import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
 import { runMemmapJoin } from "./anno-join.ts";
-import { selectMemmapEntry } from "./memmap-lookup.ts";
+import { memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.ts";
 import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.ts");
 const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.ts");
 const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.ts");
+const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+
+const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PROVENANCE_TOKEN_CAPTURE_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}([0-9a-f]{64})$`);
 
 function makeTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -245,6 +249,102 @@ test(
       } finally {
         fs.rmSync(mutatedDir, { recursive: true, force: true });
       }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Task 2 (AUTO-08, EXTRA -- not one of the phase's six required controls):
+// mirror the repository shape three levels deep, copy the REAL memmap.json
+// into the mirrored location, append ONE byte to THAT COPY only, copy the
+// REAL memmap-lookup.ts beside it so its own HERE-relative MEMMAP_PATH
+// formula resolves against the mutated copy, dynamically import with a
+// cache-busting query, and compare digests. Pattern copied verbatim in
+// shape from `anno-regbits.test.ts`'s own drift control (D-37-19).
+// ---------------------------------------------------------------------------
+
+/** Builds a scratch tree mirroring the repo shape three levels deep
+ * (`src/skills/c64-memory-mapping` next to `src/mcp/vice`, both under one
+ * `mkdtempSync` root), with a COPY of the real `memmap.json` mutated by one
+ * appended byte, and the real `memmap-lookup.ts` source copied unmutated
+ * beside it at the depth its own `MEMMAP_PATH` formula expects. Asserts the
+ * copy is byte-identical to the committed map BEFORE the append (a failed
+ * copy must never be mistaken for a successful mutation). Returns the
+ * scratch root (remove in the caller's own `finally`) and the mutated
+ * module's path. */
+function buildMutatedMemmapTree(): { tmpDir: string; mutatedModulePath: string } {
+  const tmpDir = makeTempDir("join-image-controls-provenance-");
+  const skillsDir = path.join(tmpDir, "src", "skills", "c64-memory-mapping");
+  fs.mkdirSync(skillsDir, { recursive: true });
+  const mcpDir = path.join(tmpDir, "src", "mcp", "vice");
+  fs.mkdirSync(mcpDir, { recursive: true });
+
+  const realBytes = fs.readFileSync(REAL_MEMMAP_PATH);
+  const mutatedMapPath = path.join(skillsDir, "memmap.json");
+  fs.writeFileSync(mutatedMapPath, realBytes);
+  // NON-VACUITY: the copy must be byte-identical to the committed map BEFORE
+  // the append, so a failed copy cannot be mistaken for a successful
+  // mutation that would read as success for the wrong reason.
+  assert.ok(
+    fs.readFileSync(mutatedMapPath).equals(realBytes),
+    "expected the copied memmap.json to be byte-identical to the committed one BEFORE the append",
+  );
+  fs.appendFileSync(mutatedMapPath, "\n// planted for AUTO-08 provenance-drift non-vacuity (plan 37-05)\n");
+
+  const memmapLookupSource = fs.readFileSync(REAL_MEMMAP_LOOKUP_PATH, "utf8");
+  const mutatedModulePath = path.join(mcpDir, "memmap-lookup.ts");
+  fs.writeFileSync(mutatedModulePath, memmapLookupSource, "utf8");
+
+  return { tmpDir, mutatedModulePath };
+}
+
+test(
+  "PROVENANCE (EXTRA -- not one of the phase's six required controls): a one-byte change to a COPY of memmap.json produces a memmapDigest() differing from the digest a previously-written comment carries",
+  async () => {
+    // ---- THE SETUP: a join against the committed map, read back through the store ----
+    const storeDir = makeTempDir("join-image-controls-provenance-store-");
+    let committedTokenFromComment: string;
+    try {
+      const storePath = path.join(storeDir, "proj.annostore");
+      const handle = openStore(storePath, { workspaceRoot: storeDir });
+      putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+      runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 });
+      closeStore(handle);
+
+      // Read back through the store AFTER a close and a reopen -- never
+      // from the join's own return value, because the requirement is about
+      // what a LATER READER finds in the store, not what the call returned.
+      const reopened = openStore(storePath, { workspaceRoot: storeDir });
+      const comments = listComments(reopened);
+      assert.equal(comments.length, 1, "expected exactly one comment written by the setup join");
+      const tokenMatch = comments[0]!.text.match(PROVENANCE_TOKEN_CAPTURE_RE);
+      assert.ok(tokenMatch, `expected the comment to carry a provenance token: ${comments[0]!.text}`);
+      committedTokenFromComment = tokenMatch![1]!;
+      closeStore(reopened);
+    } finally {
+      fs.rmSync(storeDir, { recursive: true, force: true });
+    }
+
+    const committedDigest = memmapDigest();
+    assert.match(committedDigest, /^[0-9a-f]{64}$/, "expected the committed map's digest to be 64 lowercase hex characters");
+    assert.equal(committedTokenFromComment, committedDigest, "expected the comment's token to equal the committed map's own digest");
+
+    // ---- THE MUTATION: a copy of memmap.json, one byte appended ----
+    const { tmpDir, mutatedModulePath } = buildMutatedMemmapTree();
+    try {
+      const mutated = (await import(`${mutatedModulePath}?t=${Date.now()}-${Math.random()}`)) as {
+        memmapDigest: typeof memmapDigest;
+      };
+      const mutatedDigest = mutated.memmapDigest();
+      assert.match(mutatedDigest, /^[0-9a-f]{64}$/, "expected the mutated map's digest to also be 64 lowercase hex characters");
+
+      // THE THREE-WAY RELATIONSHIP, asserted explicitly rather than merely
+      // "two strings differ":
+      assert.equal(committedTokenFromComment, committedDigest, "old digest equals the committed map's digest");
+      assert.notEqual(mutatedDigest, committedDigest, "the mutated digest differs from the committed digest");
+      assert.notEqual(committedTokenFromComment, mutatedDigest, "the comment's token is therefore NOT the mutated one -- the token distinguishes the two map versions");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
