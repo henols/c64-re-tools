@@ -111,8 +111,24 @@ public class DataRangeSeed extends GhidraScript {
             println("DATARANGE-SEED-REASON: file not found: " + f.getPath());
             return out;
         }
+        // IN-01 fix: an I/O-level failure reading the range file itself (e.g.
+        // `Files.readAllLines()` throwing after the `f.isFile()` existence
+        // check above races with a concurrent delete) is reported as a
+        // named, contained failure -- exactly like every other refusal in
+        // this file -- rather than propagating out of `run()` (this
+        // function's only caller, with no surrounding try/catch) and
+        // aborting the WHOLE script. A malformed LINE was already handled
+        // this way; this closes the same gap for the file read itself.
+        List<String> lines;
+        try {
+            lines = Files.readAllLines(f.toPath());
+        } catch (java.io.IOException e) {
+            println("DATARANGE-SEED: none");
+            println("DATARANGE-SEED-REASON: I/O error reading " + f.getPath() + ": " + e.getMessage());
+            return out;
+        }
         int refusedCount = 0;
-        for (String raw : Files.readAllLines(f.toPath())) {
+        for (String raw : lines) {
             String line = raw.trim();
             if (line.isEmpty() || line.startsWith("#")) continue;
 
