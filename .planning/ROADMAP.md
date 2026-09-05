@@ -995,7 +995,17 @@ emitting a confident wrong comment wherever it cannot be sure.
   4. **Bank state is resolved before the address, proven by a flip and by a decline, on a fixture built for the purpose.** A **synthetic two-caller path-dependent `$01` fixture** is built as an early task, because MEASURED the existing `bank.a` fixture has no path-dependent site and "the join declines on the fixture" is therefore not a usable control. The same address then annotates differently under two `$01` states — a `$d020` write under `$34` is not labelled the border colour, a `$d000` read under `$33` is not labelled sprite-0-X — with the `$01` bits 0-2 decode bypass **observed reddening** the flip. Where bank state is path-dependent the join emits **no annotation and says why**, and replacing that decline with a forward-carried value reddens its own control.
   5. **Graphics ranges come from the VIC pointers rather than from cross-references, and the feedback is exercised rather than built.** Screen matrix, charset-or-bitmap and sprite-pointer ranges are derived from `$DD00` bits 0-1 inverted, `$D018`, `$D011` bit 5 and screen + `$3F8` — for a charset **referenced by no instruction anywhere in the program**, the case cross-references structurally cannot find because the VIC fetches by DMA. Those ranges are fed back to dxa as `-b` data blocks and to Ghidra as data, with the phantom labels a graphics region mints when decoded as code shown **present before** the feedback and **absent after**. Every derived row carries `memmapSha256` provenance.
 
-**Plans**: TBD
+**Plans**: 8 plans
+
+Plans:
+- [ ] 37-01-PLAN.md — Tracer: a host-written export file becomes an annotation read back out of the store (IMP-01, IMP-02, AUTO-01)
+- [ ] 37-02-PLAN.md — The bank-state data source: the synthetic two-caller `$01` fixture and the additive addressed-constant export section (AUTO-04)
+- [ ] 37-03-PLAN.md — The three selection rules and the `memmapSha256` provenance token (AUTO-02, AUTO-03, AUTO-08)
+- [ ] 37-04-PLAN.md — Controls: first-match, longest-description and reversed-tie-break each observed red (AUTO-02)
+- [ ] 37-05-PLAN.md — Controls: the removed image-range check, and the provenance digest under map drift (AUTO-03, AUTO-08)
+- [ ] 37-06-PLAN.md — Bank before address, the path-dependent decline, and their two observed-red controls (AUTO-04, AUTO-05)
+- [ ] 37-07-PLAN.md — Graphics ranges derived from the VIC pointers rather than from cross-references (AUTO-06)
+- [ ] 37-08-PLAN.md — The dxa and Ghidra feedback, and the phantom labels present before and absent after (AUTO-07)
 
 Notes:
 
