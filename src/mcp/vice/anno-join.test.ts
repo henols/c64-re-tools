@@ -11,9 +11,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
+import { AnnoCommentError, MAX_COMMENT_BYTES } from "./anno-types.ts";
 import { codeOnly } from "./shipped-modules.ts";
 import { AnnoJoinError, runMemmapJoin } from "./anno-join.ts";
+import { memmapDigest, PROVENANCE_TOKEN_PREFIX } from "./memmap-lookup.ts";
 import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
+
+const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PROVENANCE_TOKEN_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}[0-9a-f]{64}$`);
+const PROVENANCE_TOKEN_CAPTURE_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}([0-9a-f]{64})$`);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -200,6 +206,91 @@ test("runMemmapJoin: decisions are sorted ascending by address and identical acr
 
     const second = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES);
     assert.deepEqual(second.decisions, first.decisions);
+    closeStore(handle);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 37 plan 37-03, Task 3: the memmapSha256 provenance token (D-37-13,
+// AUTO-08) on every derived comment. The digest is asserted against an
+// INDEPENDENTLY computed memmapDigest() here; its own relation to the
+// committed anno-regbits.json banner is already asserted in
+// memmap-lookup.test.ts (37-01), so it is not re-pinned here.
+// ---------------------------------------------------------------------------
+
+test("runMemmapJoin: every derived comment ends in the provenance prefix followed by exactly 64 lowercase hex characters, equal to memmapDigest() computed independently -- two annotated addresses in one run carry byte-identical tokens", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    const entries: MemmapEntry[] = [
+      { start: 0xd020, end: 0xd020, label: "Border color", section: "VIC-II", desc: "", src: "test" },
+      { start: 0x9000, end: 0x9000, label: "Scratch byte", section: "test", desc: "", src: "test" },
+    ];
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x9000, accessKind: "WRITE" });
+
+    runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, entries);
+    const comments = listComments(handle);
+    assert.equal(comments.length, 2);
+
+    const digest = memmapDigest();
+    const tokens = new Set<string>();
+    for (const comment of comments) {
+      assert.match(comment.text, PROVENANCE_TOKEN_RE, `comment text does not end in a provenance token: ${comment.text}`);
+      const match = comment.text.match(PROVENANCE_TOKEN_CAPTURE_RE);
+      assert.ok(match, `comment text has no capturable digest: ${comment.text}`);
+      assert.equal(match![1], digest, "the token's digest must equal memmapDigest() computed independently");
+      tokens.add(match![1]!);
+    }
+    assert.equal(tokens.size, 1, "both comments must carry byte-identical tokens -- the digest is computed once per run and reused");
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: the token survives a close and a reopen -- listComments() after reopening still carries it", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+    runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES);
+    closeStore(handle);
+
+    const reopened = openStore(storePath, { workspaceRoot: dir });
+    const comments = listComments(reopened);
+    assert.equal(comments.length, 1);
+    assert.match(comments[0]!.text, PROVENANCE_TOKEN_RE);
+    closeStore(reopened);
+  });
+});
+
+test("runMemmapJoin: a join whose every address is skipped writes zero comments -- listComments() is empty, and therefore no tokens exist", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x0810, accessKind: "WRITE" }); // in-image
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x9999, accessKind: "WRITE" }); // no entry under SYNTHETIC_ENTRIES
+    runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES);
+    assert.equal(listComments(handle).length, 0);
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: setComment() refuses, by name, a synthetic label long enough that label+token exceeds MAX_COMMENT_BYTES -- the join surfaces the refusal rather than pre-truncating", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    // MAX_COMMENT_BYTES on its own, plus a space plus the token, is well over
+    // the bound -- this is the synthetic over-long label the plan's own
+    // acceptance criterion asks for.
+    const hugeLabel = "x".repeat(MAX_COMMENT_BYTES);
+    const entries: MemmapEntry[] = [{ start: 0xd020, end: 0xd020, label: hugeLabel, section: "test", desc: "", src: "test" }];
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+    assert.throws(
+      () => runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, entries),
+      (err: unknown) => err instanceof AnnoCommentError,
+      "the join must surface setComment()'s own refusal, never pre-truncate the label to fit",
+    );
+    assert.equal(listComments(handle).length, 0, "the refused write must not have partially landed");
     closeStore(handle);
   });
 });

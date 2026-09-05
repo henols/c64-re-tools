@@ -34,7 +34,7 @@
 
 import { listXrefs, setComment } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
-import { loadMemmap, selectMemmapEntry } from "./memmap-lookup.ts";
+import { loadMemmap, memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.ts";
 import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
 
 /** Raised when `runMemmapJoin()`'s own inputs cannot support a join at all --
@@ -112,6 +112,13 @@ export function runMemmapJoin(
     );
   }
 
+  // D-37-13: computed ONCE per join run and reused for every annotated row,
+  // never recomputed per row -- two comments written in the same run are
+  // therefore GUARANTEED to carry byte-identical tokens, not merely likely
+  // to (the file cannot change mid-run, but a per-row recompute would still
+  // be wasted work re-reading and re-hashing the same bytes for nothing).
+  const digest = memmapDigest();
+
   const xrefs = listXrefs(handle);
   const targets = [...new Set(xrefs.map((xref) => xref.toAddress))].sort((a, b) => a - b);
 
@@ -157,7 +164,15 @@ export function runMemmapJoin(
       continue;
     }
 
-    const write = setComment(handle, { address, commentType: "line", text: selection.entry.label });
+    // The full comment text: the selected entry's label, one space, the
+    // provenance prefix, then the full 64-character digest -- always LAST,
+    // never truncated (D-37-13). setComment() -> assertCommentText() refuses
+    // (never truncates) a text that overflows MAX_COMMENT_BYTES; that
+    // refusal is left to propagate here rather than being pre-checked and
+    // silently worked around, because a truncated provenance token would be
+    // a wrong answer that reports success.
+    const commentText = `${selection.entry.label} ${PROVENANCE_TOKEN_PREFIX}${digest}`;
+    const write = setComment(handle, { address, commentType: "line", text: commentText });
     annotated += 1;
     if (write.changed) commentsChanged += 1;
     decisions.push({ address, outcome: "annotated", label: selection.entry.label });
