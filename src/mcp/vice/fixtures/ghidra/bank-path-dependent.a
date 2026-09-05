@@ -1,0 +1,42 @@
+; Banking fixture: a SINGLE shared program point reached under TWO DIFFERENT $01 values.
+; `bank.a` (the sibling fixture this one exists because of) is straight-line code: three
+; separate $D020 program points, none of them reached from two callers or two bank
+; contexts. This fixture instead calls ONE subroutine ("probe") TWICE -- once right
+; after $01=$34, once right after $01=$33 -- so `probe`'s own border-colour store and
+; `lda $d000,x` instructions each occupy exactly ONE address, reached from TWO callers,
+; under two determinate and DIFFERENT bank states.
+;
+; The two decodes, recorded as facts, not folklore:
+;   $34 = %00110100 : bits 1-0 (LORAM/HIRAM) clear -> $D000-$DFFF reads as RAM,
+;     REGARDLESS of bit 2 (CHAREN). `bank.a`'s own inline comment mislabels $34 as
+;     having bit 2 clear -- it does not; bit 2 (0b100) is SET in $34. The RAM outcome
+;     it states is nevertheless right, because the RAM case depends only on bits 1-0.
+;   $33 = %00110011 : bits 1-0 set, bit 2 clear -> $D000-$DFFF is Character ROM.
+        * = $0801
+        !byte $0b,$08,$0a,$00,$9e,$32,$30,$36,$34,$00,$00,$00
+        * = $0810
+start:
+        sei
+        lda #$34                ; %00110100 : bits 1-0 clear -> $D000-$DFFF reads as RAM
+        sta $01
+        jsr probe                ; call 1 -- probe's writes/reads run under $01=$34
+
+        lda #$33                ; %00110011 : bits 1-0 set, bit 2 clear -> Character ROM
+        sta $01
+        jsr probe                ; call 2 -- SAME address, SAME instructions, $01=$33 now
+
+        lda #$37                ; restore: BASIC in, KERNAL in, I/O in
+        sta $01
+        cli
+        rts
+
+; probe: the SHARED program point this fixture exists to create. One border-colour
+; store and one `lda $d000,x` -- each is ONE instruction at ONE address, reached from
+; the two callers above, under two different $01 values.
+probe:
+        lda #$aa
+        sta $d020               ; the shared write -- reached twice: $01=$34, then $01=$33
+        ldx #$00
+        lda $d000,x             ; the shared read -- reached twice: $01=$34, then $01=$33
+        sta $3000,x
+        rts

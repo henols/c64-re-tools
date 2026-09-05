@@ -214,3 +214,77 @@ every sweep this plan ran decompiled cleanly (0 failed, 0 timed out).
 Every slot also gets its own explicit entry point, written one hex address
 per line into the run's `entrypointsPath` file, so no slot's decode depends
 on fall-through from the slot before it.
+
+## `bank-path-dependent.a` / `bank-path-dependent.prg` (37-02, the two-caller path-dependent `$01` fixture)
+
+`bank.a` above is MEASURED (`37-RESEARCH.md` § D) to be straight-line code:
+three separate `$D020` program points, none of them reached from two callers
+or two bank contexts, so it cannot exercise `AUTO-04`/`AUTO-05`'s
+path-dependent-bank-state criteria -- a flip/decline control run against it
+would be vacuous. `bank-path-dependent.a` exists to fix exactly that: it
+calls one subroutine, `probe`, TWICE -- once right after `$01=$34`, once
+right after `$01=$33` -- so `probe`'s own `sta $d020` and `lda $d000,x`
+instructions each occupy exactly ONE address, reached from TWO callers,
+under two determinate and DIFFERENT bank states.
+
+The two decodes, recorded as facts:
+- `$34` = `%00110100` -- bits 1-0 (LORAM/HIRAM) clear, so `$D000-$DFFF` reads
+  as RAM regardless of bit 2 (CHAREN). `bank.a`'s own inline comment
+  mislabels `$34` as having bit 2 clear -- it does not, bit 2 (`0b100`) is
+  SET in `$34` -- but the RAM outcome it states is nevertheless right,
+  because the RAM case depends only on bits 1-0.
+- `$33` = `%00110011` -- bits 1-0 set, bit 2 clear, so `$D000-$DFFF` is
+  Character ROM.
+
+**Exact ACME command, version, date:**
+
+```
+$ acme --version
+This is ACME, release 0.97 ("Zem"), 31 Jan 2021
+  Platform independent version.
+
+$ acme -f cbm -o fixtures/ghidra/bank-path-dependent.prg fixtures/ghidra/bank-path-dependent.a
+[exit 0]
+```
+
+Run 2026-09-05 at `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/`.
+
+**Resulting artifacts:**
+
+| File | Bytes | sha256 |
+|---|---|---|
+| `bank-path-dependent.a` | 2135 | `9f118e7a442b39766b43d3b1772156e14463f6c61c06199ef26536adff0c3e95` |
+| `bank-path-dependent.prg` | 52 | `5340d40d2b4ef3e166c80ee78f3e4960122ed3c1a99c0767ee771500012a0078` |
+
+`bank-path-dependent.prg`'s first two bytes are `$01 $08` -- a `.prg` load-address
+header for origin `$0801`, identical in shape to `bank.a`/`bank.prg` above.
+
+**The `.prg`-route two-byte offset applies here exactly as it does to
+`bank.a`/`bank.prg` above** (see the "CORRECTED 2026-09-04" paragraph in that
+section): `BinaryLoader` loads the entire file, header included, as raw
+content starting at `loaderBaseAddr` ($0801 by default), so every address on
+the `.prg` route is TWO BYTES LATER than this source's own labels. The
+flat-64K route strips the two header bytes before embedding the body (per
+`generateFlat64kVariant()`), so its addresses match the source's own labels
+unshifted.
+
+**Address trace, read off a real ACME report (`acme -r`), never hand-traced:**
+
+| Instruction | Flat-64K route | `.prg` route |
+|---|---|---|
+| `start:` (`sei`) | `$0810` | `$0812` |
+| `sta $01` (call 1, `$01=$34`) | `$0813` | `$0815` |
+| `jsr probe` (call 1) | `$0815` | `$0817` |
+| `sta $01` (call 2, `$01=$33`) | `$081a` | `$081c` |
+| `jsr probe` (call 2) | `$081c` | `$081e` |
+| `probe:` (`lda #$aa`) | `$0825` | `$0827` |
+| `sta $d020` (the shared write) | `$0827` | `$0829` |
+| `lda $d000,x` (the shared read) | `$082c` | `$082e` |
+
+The `.prg`-route column is the source-label column shifted +2, confirmed by
+running `acme -f cbm -o /tmp/check.prg -r /tmp/report.txt
+fixtures/ghidra/bank-path-dependent.a` and reading the flat-64K-equivalent
+(source-label) addresses directly off the report's own byte-offset column,
+then applying the +2 correction measured on `bank.a`/`bank.prg` -- both
+routes are also confirmed against a real `analyzeHeadless` run in Task 3 of
+plan 37-02 (see `export-bank-path-dependent.txt`'s own README entry below).
