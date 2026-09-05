@@ -80,6 +80,49 @@ export interface GhidraExportDocument {
 }
 
 /**
+ * Parses ONE Ghidra-rendered address token -- e.g. `"0815"`, `"d020"`,
+ * `"0001"` -- exactly as `Address.toString()` renders one inside a real
+ * export: bare hex digits, NO `"$"` or `"0x"` prefix, ALWAYS hex, never
+ * decimal. MEASURED this plan, against a REAL captured export: this is a
+ * distinct format from `parseStoreAddress()`'s (`anno-types.ts`) own
+ * agent-facing contract, which REFUSES an unprefixed numeric string on
+ * purpose, because an AGENT-supplied address is genuinely ambiguous between
+ * hex and decimal. A Ghidra-rendered token carries NO such ambiguity (it
+ * always comes from `Address.toString()`, never from anything an agent
+ * typed), so this module parses it with its OWN narrow rule instead of
+ * `parseStoreAddress()`'s. Still accepts the `"$"`/`"0x"`-prefixed forms
+ * (delegating to `parseStoreAddress()` for those, unchanged), so a
+ * hand-written test fixture using either convention keeps working.
+ *
+ * Discovered as a LIVE, previously-untested defect in the REFERENCES import
+ * path (plan 37-01): every prior test used a hand-written, `$`-prefixed
+ * transfer file, never a token shaped exactly as Ghidra itself renders one
+ * -- `importGhidraExport()` would refuse EVERY real captured export outright.
+ * Fixed here, in the SAME function `## CONST_WRITES`'s own tokens (which are
+ * ALSO bare hex, D-37-06) need the identical treatment for.
+ */
+function parseGhidraAddressToken(token: string, what: string): number {
+  if (token.startsWith("$") || /^0[xX]/.test(token)) {
+    return parseStoreAddress(token, { what });
+  }
+  if (/^[0-9a-fA-F]+$/.test(token)) {
+    const value = parseInt(token, 16);
+    if (value < 0 || value > 0xffff) {
+      throw new AnnoImportError(
+        `anno_import_ghidra_export refused: ${what} ${JSON.stringify(token)} is out of range -- expected $0000-$ffff.`,
+        { section: what },
+      );
+    }
+    return value;
+  }
+  throw new AnnoImportError(
+    `anno_import_ghidra_export refused: ${what} ${JSON.stringify(token)} is not a resolvable address -- expected bare ` +
+      `hex digits (Ghidra's own rendering) or a "$"/"0x"-prefixed form.`,
+    { section: what },
+  );
+}
+
+/**
  * A single forward pass over `text`. Refuses BY NAME, embedding the section
  * name and the 1-based line number in the message, BEFORE any store write is
  * attempted anywhere downstream -- this function never writes and is called
@@ -160,6 +203,29 @@ export function parseGhidraExport(text: string): GhidraExportDocument {
       }
     }
 
+    // MEASURED bug, found this plan against a REAL captured export (no prior
+    // test ever ran a real `## CLASSIFICATION` section through this parser):
+    // `GhidraStructExport.java`'s classification section appends three
+    // informational lines AFTER its own `## CLASSIFICATION_LINES <n>`
+    // trailer -- `CLASSIFICATION_EXPECTED_FROM_BLOCKS`, `CLASSIFICATION_
+    // OBSERVED`, `CLASSIFICATION_OVERRIDE_USED` -- with NO `## ` prefix
+    // (verbatim `StringBuilder.append()` calls, never a header/trailer
+    // line). Because `currentSection` stays "CLASSIFICATION" across the
+    // preceding `## CLASSIFICATION_LINES` TRAILER line (a trailer never
+    // changes `currentSection`), these three bare lines would otherwise be
+    // swept into `sections.get("CLASSIFICATION")` as ordinary body content,
+    // inflating the parsed count by exactly 3 relative to the script's own
+    // declared trailer -- silently reddening `checkTrailerCount` below on
+    // every real capture. Skipped here BY NAME (never a generic "looks like
+    // a trailer" heuristic, which risks dropping a genuine classification
+    // line that happens to start similarly).
+    if (
+      currentSection === "CLASSIFICATION" &&
+      /^(CLASSIFICATION_EXPECTED_FROM_BLOCKS|CLASSIFICATION_OBSERVED|CLASSIFICATION_OVERRIDE_USED)\b/.test(line)
+    ) {
+      continue;
+    }
+
     sections.get(currentSection!)!.push(line);
   }
 
@@ -179,6 +245,18 @@ export function parseGhidraExport(text: string): GhidraExportDocument {
   };
   checkTrailerCount("REFERENCES", "REFERENCE_COUNT");
   checkTrailerCount("CLASSIFICATION", "CLASSIFICATION_LINES");
+  // Plan 37-02: the SAME generic trailer-count check, extended to
+  // `## CONST_WRITES` / `## CONST_WRITES_COUNT`. Note what this generic
+  // grammar already does with the exporter's own `## CONST_WRITES_NONE`
+  // marker line: because every `## `-prefixed line with no following space
+  // OPENS A NEW SECTION (never a body line), that marker line itself closes
+  // out `CONST_WRITES` at zero body lines and opens an unrelated, always-
+  // empty `CONST_WRITES_NONE` section -- so a "found nothing" export and a
+  // "found nothing, no marker" export are indistinguishable to THIS check,
+  // both correctly reporting zero body lines against a `CONST_WRITES_COUNT 0`
+  // trailer. `parseConstWrites()` below never needs to special-case the
+  // marker itself for exactly this reason.
+  checkTrailerCount("CONST_WRITES", "CONST_WRITES_COUNT");
 
   return { sections, trailers };
 }
@@ -198,6 +276,71 @@ export const GHIDRA_REFTYPE_TO_ACCESS_KIND: Readonly<Record<string, XrefAccessKi
   COMPUTED_JUMP: "COMPUTED_JUMP",
   COMPUTED_CALL: "COMPUTED_JUMP",
 });
+
+/** D-37-06's watched-address set, mirroring the Java constant
+ * `CONST_WRITE_WATCHED_ADDRESSES` in `GhidraStructExport.java` byte-for-byte
+ * -- the two MUST be kept in step. `parseConstWrites()` below does NOT
+ * filter its own output against this list: a `## CONST_WRITES` line for an
+ * address outside this set is still parsed and returned, because the
+ * EXPORTER owns the watched set, and a parser that silently dropped a
+ * widened set would hide the widening from every caller rather than
+ * surfacing it. */
+export const CONST_WRITE_WATCHED_ADDRESSES: readonly number[] = Object.freeze([0x0001, 0xd011, 0xd018, 0xdd00]);
+
+/** One resolved immediate store to a watched address, per `## CONST_WRITES`
+ * line: the instruction's own address, the memory address it wrote to, and
+ * the compile-time constant it wrote. All three are plain numbers -- callers
+ * needing `$`-formatted text format them themselves. */
+export interface ConstWriteFact {
+  storeAddress: number;
+  targetAddress: number;
+  value: number;
+}
+
+/**
+ * Turns the `## CONST_WRITES` section `parseGhidraExport()` already parsed
+ * into `(storeAddress, targetAddress, value)` facts (Phase 37 plan 37-02,
+ * `AUTO-04`/`AUTO-05`). `parseGhidraExport()` has ALREADY refused, before
+ * this function is ever called, if a declared `## CONST_WRITES_COUNT`
+ * trailer disagrees with the section's own parsed body-line count -- the
+ * SAME generic check `## REFERENCE_COUNT`/`## CLASSIFICATION_LINES` already
+ * use. This function refuses on its own only for a body line whose token
+ * count is not exactly three (the importer's own named error, section and
+ * 1-BASED-WITHIN-THE-SECTION line number), or whose address/value token is
+ * not a resolvable constant (`parseGhidraAddressToken()`'s own refusal,
+ * reused rather than duplicated -- never a hand-rolled second numeric
+ * parser).
+ *
+ * A section carrying only the exporter's own `## CONST_WRITES_NONE` marker
+ * line yields an empty array, not an error: per `parseGhidraExport()`'s
+ * generic `## `-header grammar, that marker line itself OPENS A NEW,
+ * unrelated section (every `## `-prefixed line with no following space does)
+ * rather than being a `CONST_WRITES` body line, so `CONST_WRITES` is left
+ * with zero parsed body lines either way -- there is nothing here to
+ * special-case. A document that never mentions `CONST_WRITES` at all (no
+ * section key, no count trailer) yields the same empty array.
+ */
+export function parseConstWrites(document: GhidraExportDocument): ConstWriteFact[] {
+  const lines = document.sections.get("CONST_WRITES") ?? [];
+  const facts: ConstWriteFact[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const lineNo = i + 1;
+    const tokens = line.trim().split(/\s+/);
+    if (tokens.length !== 3) {
+      throw new AnnoImportError(
+        `anno_import_ghidra_export refused: CONST_WRITES line ${lineNo} does not match "<store-address> ` +
+          `<target-address> <value>": ${JSON.stringify(line)}`,
+        { section: "CONST_WRITES", line: lineNo },
+      );
+    }
+    const storeAddress = parseGhidraAddressToken(tokens[0]!, `CONST_WRITES line ${lineNo} storeAddress`);
+    const targetAddress = parseGhidraAddressToken(tokens[1]!, `CONST_WRITES line ${lineNo} targetAddress`);
+    const value = parseGhidraAddressToken(tokens[2]!, `CONST_WRITES line ${lineNo} value`);
+    facts.push({ storeAddress, targetAddress, value });
+  }
+  return facts;
+}
 
 /** What one `importGhidraExport()` call reports. */
 export interface ImportCounts {
@@ -289,8 +432,8 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
       kindsSeenNotImported[kindToken] = (kindsSeenNotImported[kindToken] ?? 0) + 1;
       continue;
     }
-    const fromAddress = parseStoreAddress(fromToken, { what: "REFERENCES fromAddress" });
-    const toAddress = parseStoreAddress(toToken, { what: "REFERENCES toAddress" });
+    const fromAddress = parseGhidraAddressToken(fromToken, "REFERENCES fromAddress");
+    const toAddress = parseGhidraAddressToken(toToken, "REFERENCES toAddress");
     writes.push({ fromAddress, toAddress, accessKind: mappedKind });
   }
 

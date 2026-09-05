@@ -20,7 +20,14 @@ import { fileURLToPath } from "node:url";
 import { closeStore, currentRevision, listComments, listXrefs, openStore } from "./anno-store.ts";
 import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
-import { AnnoImportError, GHIDRA_REFTYPE_TO_ACCESS_KIND, importGhidraExport, parseGhidraExport } from "./anno-import.ts";
+import {
+  AnnoImportError,
+  CONST_WRITE_WATCHED_ADDRESSES,
+  GHIDRA_REFTYPE_TO_ACCESS_KIND,
+  importGhidraExport,
+  parseConstWrites,
+  parseGhidraExport,
+} from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -357,4 +364,107 @@ test("annoRegisterEntryFor(): both new tools have a register entry citing a real
       assert.ok(requirementsText.includes(reqId), `${verb} cites requirement ${reqId}, not found in REQUIREMENTS.md`);
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Plan 37-02 (AUTO-04, AUTO-05): `parseConstWrites()` over hand-built
+// documents, plus the committed real-capture non-vacuity/reproducibility
+// cases. See `fixtures/ghidra/README.md` for the capture's own provenance
+// (a real `.prg`-route `analyzeHeadless` run, chosen over the flat-64K
+// route to match every other committed export/run-log fixture's size --
+// that README also records the `.prg` route's own internal-`jsr` defect
+// this fixture's live tests (`ghidra-live.test.ts`) work around).
+// ---------------------------------------------------------------------------
+
+const CONST_WRITES_CAPTURE_PATH = join(HERE, "fixtures", "ghidra", "export-bank-path-dependent.txt");
+
+/** Non-vacuity floor (Task 3's own instruction): a truncated or emptied
+ * committed capture must fail HERE, not pass every case below trivially. */
+const CONST_WRITES_CAPTURE_MIN_LINES = 4000;
+const CONST_WRITES_CAPTURE_MIN_FACTS = 3;
+
+test("CONST_WRITE_WATCHED_ADDRESSES: holds the same four addresses as the Java constant, in the TypeScript module", () => {
+  assert.deepEqual([...CONST_WRITE_WATCHED_ADDRESSES].sort((a, b) => a - b), [0x0001, 0xd011, 0xd018, 0xdd00]);
+});
+
+test("parseConstWrites: one fact per body line, all three fields numbers", () => {
+  const text = ["## CONST_WRITES", "$0815 $0001 $34", "$081c $0001 $33", "## CONST_WRITES_COUNT 2", ""].join("\n");
+  const doc = parseGhidraExport(text);
+  const facts = parseConstWrites(doc);
+  assert.deepEqual(facts, [
+    { storeAddress: 0x0815, targetAddress: 0x0001, value: 0x34 },
+    { storeAddress: 0x081c, targetAddress: 0x0001, value: 0x33 },
+  ]);
+  for (const fact of facts) {
+    assert.equal(typeof fact.storeAddress, "number");
+    assert.equal(typeof fact.targetAddress, "number");
+    assert.equal(typeof fact.value, "number");
+  }
+});
+
+test("parseConstWrites: a section carrying only ## CONST_WRITES_NONE yields an empty array, not an error", () => {
+  const text = ["## CONST_WRITES", "## CONST_WRITES_NONE", "## CONST_WRITES_COUNT 0", ""].join("\n");
+  const doc = parseGhidraExport(text);
+  assert.deepEqual(parseConstWrites(doc), []);
+});
+
+test("parseConstWrites: a document that never mentions CONST_WRITES at all yields an empty array, not an error", () => {
+  const doc = parseGhidraExport(["## REFERENCES", "## REFERENCE_COUNT 0", ""].join("\n"));
+  assert.deepEqual(parseConstWrites(doc), []);
+});
+
+test("parseConstWrites: a body line whose token count is not three throws the importer's named error, naming the section and the 1-based line number", () => {
+  const text = ["## CONST_WRITES", "$0815 $0001 $34", "$081c $0001", "## CONST_WRITES_COUNT 2", ""].join("\n");
+  const doc = parseGhidraExport(text);
+  assert.throws(
+    () => parseConstWrites(doc),
+    (err: unknown) => err instanceof AnnoImportError && /CONST_WRITES/.test(err.message) && /\b2\b/.test(err.message),
+  );
+});
+
+test("parseConstWrites: a value token that is not a resolvable constant refuses by name, never substituting a default", () => {
+  const text = ["## CONST_WRITES", "$0815 $0001 not-a-number", "## CONST_WRITES_COUNT 1", ""].join("\n");
+  const doc = parseGhidraExport(text);
+  assert.throws(() => parseConstWrites(doc));
+});
+
+test("parseGhidraExport: a CONST_WRITES_COUNT trailer disagreeing with the parsed body count refuses at parse time, naming both numbers", () => {
+  const text = [
+    "## CONST_WRITES",
+    "$0815 $0001 $34",
+    "$081c $0001 $33",
+    "$0823 $0001 $37",
+    "## CONST_WRITES_COUNT 5",
+    "",
+  ].join("\n");
+  assert.throws(
+    () => parseGhidraExport(text),
+    (err: unknown) => err instanceof AnnoImportError && /5/.test(err.message) && /3/.test(err.message),
+  );
+});
+
+test("parseConstWrites: over the committed real capture, non-vacuity floor, at least two differing processor-port values, and element-wise-equal on a second parse", () => {
+  const captureText = readFileSync(CONST_WRITES_CAPTURE_PATH, "utf8");
+  const lineCount = captureText.split("\n").length;
+  assert.ok(
+    lineCount >= CONST_WRITES_CAPTURE_MIN_LINES,
+    `export-bank-path-dependent.txt must carry at least ${CONST_WRITES_CAPTURE_MIN_LINES} lines; got ${lineCount} -- a truncated fixture must fail here, not pass every case below trivially`,
+  );
+
+  const doc = parseGhidraExport(captureText);
+  const facts = parseConstWrites(doc);
+  assert.ok(
+    facts.length >= CONST_WRITES_CAPTURE_MIN_FACTS,
+    `expected at least ${CONST_WRITES_CAPTURE_MIN_FACTS} CONST_WRITES facts in the committed capture; got ${facts.length}`,
+  );
+
+  const portFacts = facts.filter((f) => f.targetAddress === 0x0001);
+  const distinctValues = new Set(portFacts.map((f) => f.value));
+  assert.ok(
+    portFacts.length >= 2 && distinctValues.size >= 2,
+    `expected at least two processor-port facts with at least two distinct values; got ${JSON.stringify(portFacts)}`,
+  );
+
+  const facts2 = parseConstWrites(parseGhidraExport(captureText));
+  assert.deepEqual(facts, facts2, "parsing the same committed capture twice must return element-wise-equal arrays");
 });

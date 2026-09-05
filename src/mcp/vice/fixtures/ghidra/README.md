@@ -288,3 +288,88 @@ fixtures/ghidra/bank-path-dependent.a` and reading the flat-64K-equivalent
 then applying the +2 correction measured on `bank.a`/`bank.prg` -- both
 routes are also confirmed against a real `analyzeHeadless` run in Task 3 of
 plan 37-02 (see `export-bank-path-dependent.txt`'s own README entry below).
+
+**A NEW finding this fixture exposes, `.prg` route ONLY: an internal `jsr`'s
+own operand target is NOT corrected for the two-byte shift, so `probe` is
+NOT reached correctly on this route.** `bank.a` has no internal control-flow
+instruction at all (no `jsr`/`jmp` to a label inside the same image), so this
+was never observable there -- MEASURED this plan, real Ghidra 12.1.3, first
+observation on this fixture. ACME assembles `jsr probe`'s two-byte absolute
+operand using the SOURCE's own address space (`probe:` at source label
+`$0825`), which assumes a real C64 loader strips the file's own two-byte
+header before loading -- exactly what `generateFlat64kVariant()` does, and
+exactly what `BinaryLoader` on the `.prg` route does NOT do (per the
+"CORRECTED 2026-09-04" paragraph above). The result: on the `.prg` route,
+both `jsr probe` instructions (now themselves at `$0817`/`$081e`, correctly
+shifted) still carry the UNSHIFTED operand value `$0825` baked in by ACME,
+which is TWO BYTES BEFORE `probe`'s real, shifted load address (`$0827`) --
+so the call lands on `$0825`, which under the `.prg` route's own byte
+layout is the tail end of the CALLER's own code (`cli` / `rts`, MEASURED:
+`FUN_0825` decompiles to an empty `{ return; }` body), never `probe` at all.
+Consequence, MEASURED: on the `.prg` route only, `probe`'s real body (the
+border-colour write, the character-ROM read) is never executed and never
+appears in `## REFERENCES` at all; the two `sta $01` writes at the CALLER
+level are UNAFFECTED (their own addresses and constant values are correct on
+both routes, since they involve no internal address reference) and are what
+`## CONST_WRITES` reads. The flat-64K route has no such defect -- its own
+call target (`$0825`) and `probe`'s own real load address (`$0825`) agree,
+because `generateFlat64kVariant()` strips the header exactly as a real C64
+loader would. Plan 37-02's own live tests therefore assert the
+"shared-program-point, reached from two distinct call sites" claim ONLY on
+the flat-64K route (where it is measurably true) and assert only the
+$01-differs claim on the `.prg` route (which remains true there). This is a
+general limitation of `ghidra.analyze`'s own `.prg` import route for ANY
+fixture with an internal absolute code reference, not specific to this
+fixture's own construction -- recorded here as the first fixture to expose
+it.
+
+## `export-bank-path-dependent.txt` (37-02, Task 3 -- the real `## CONST_WRITES` capture)
+
+A REAL, unedited `analyzeHeadless` export over `bank-path-dependent.prg`, the
+`.prg` route (chosen over the flat-64K route to match the size and format of
+every other committed export/run-log fixture in this directory -- a
+committed flat-64K capture would carry one `## CLASSIFICATION` line per byte
+of a 65,536-byte image, ~700KB, which no other fixture here does; see
+D-36-17's own "generated fresh, never committed" convention for flat-64K
+material). Per the finding immediately above, the `.prg` route's own
+internal-`jsr` defect means this specific capture's `## REFERENCES` section
+carries no border-colour or Character-ROM access at all -- `## CONST_WRITES`
+is unaffected (its facts come from the caller-level `sta $01` writes only)
+and is exactly what this capture exists to prove.
+
+**Command, version, date:**
+
+```
+$ acme --version
+This is ACME, release 0.97 ("Zem"), 31 Jan 2021
+  Platform independent version.
+```
+
+`ghidra.analyze` arguments: `importPath: "bank-path-dependent.prg"`,
+`processor: "6502:LE:16:nmos"`, `importRoute: "prg"`, `noanalysis: true`,
+`preScript: "vendor/ghidra-scripts/VolatileCarve.java"`,
+`entrypointsPath` containing `$0812` (this fixture's own `.prg`-route entry
+point, per the address trace above), `postScript:
+"vendor/ghidra-scripts/GhidraStructExport.java"`. Ghidra version: 12.1.3
+(read from the installation, per `EXPECTED_GHIDRA_VERSION` in
+`ghidra-live.test.ts`). Run 2026-09-05. Process exit status: **0**.
+
+**Committed fixture:** 4719 lines, 52417 bytes, sha256
+`d02a7a2705f171e07f21ea98fd608df2e175d507faed324e96e2512ae1497882`.
+
+**The `## CONST_WRITES` section this capture carries, verbatim:**
+
+```
+## CONST_WRITES
+0815 0001 0x34
+081c 0001 0x33
+0823 0001 0x37
+## CONST_WRITES_COUNT 3
+```
+
+Three facts: the two flip values (`0x34` at `$0815`, `0x33` at `$081c`) plus
+the trailing restore write (`0x37` at `$0823`) -- two distinct values already
+satisfies this plan's own non-vacuity requirement, and the third is recorded
+rather than filtered, since the exporter's own contract is "every resolved
+constant store to a watched address", not "only the ones a later reader
+finds interesting".

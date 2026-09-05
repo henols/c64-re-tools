@@ -119,6 +119,10 @@ function makeScratchWorkspace(): ScratchWorkspace {
   const root = mkdtempSync(join(tmpdir(), "ghidra-live-"));
   cpSync(SCRIPTS_DIR, join(root, "vendor", "ghidra-scripts"), { recursive: true });
   cpSync(join(FIXTURES_DIR, "bank.prg"), join(root, "bank.prg"));
+  // Plan 37-02: the new two-caller path-dependent $01 fixture, copied
+  // alongside `bank.prg` so every case (not only this plan's own) can reach
+  // it without a second scratch-workspace builder.
+  cpSync(join(FIXTURES_DIR, "bank-path-dependent.prg"), join(root, "bank-path-dependent.prg"));
   return { root };
 }
 
@@ -1494,6 +1498,193 @@ test(
       console.log("CONTROL_TOTAL:", controlTotal);
       console.log("ACCEPTANCE_DECOMPILED_TEXT_LINES:", acceptanceDecompiledLines);
       console.log("CONTROL_RUN_LOG_TAIL:", control.runLogText.slice(-1200));
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 37-02 (AUTO-04, AUTO-05): the real producing run over the new
+// two-caller path-dependent $01 fixture (`bank-path-dependent.a`/`.prg`, see
+// `fixtures/ghidra/README.md`), on both import routes. Drives the SAME
+// VolatileCarve.java / GhidraStructExport.java script pair the bank.prg
+// cases above drive -- GHID-02's volatile carve is a stated prerequisite:
+// without it, the fixture's own `sta $01` writes are eliminated as dead
+// stores before `## CONST_WRITES`'s p-code walk ever sees them (see that
+// section's own header comment in GhidraStructExport.java). The committed
+// capture fixture (`export-bank-path-dependent.txt`, the `.prg` route) is
+// verified byte-for-byte reproducible here; `anno-import.test.ts` carries the
+// hermetic, JVM-free half over that same committed capture.
+// ---------------------------------------------------------------------------
+
+/** This fixture's own entry point (`start:`), per route -- see
+ * `fixtures/ghidra/README.md`'s address trace. Same +2 `.prg`-route offset
+ * as `bank.prg` above, for the same reason (the loader never strips the
+ * file's own two-byte load-address header on that route). */
+const PATH_DEPENDENT_FLAT64K_ENTRYPOINT = "$0810";
+const PATH_DEPENDENT_PRG_ENTRYPOINT = "$0812";
+
+/** Generates the flat-64K variant of the NEW two-caller path-dependent
+ * fixture -- mirrors `generateFlat64kVariant()` above in shape, kept as a
+ * separate function since that one is already relied on elsewhere with its
+ * own fixed fixture name (`bank.prg`). */
+function generatePathDependentFlat64kVariant(ws: ScratchWorkspace): string {
+  const prg = readFileSync(join(FIXTURES_DIR, "bank-path-dependent.prg"));
+  const loadAddr = prg[0]! | (prg[1]! << 8);
+  const body = prg.subarray(2);
+  const flat = new Uint8Array(65536);
+  flat.set(body, loadAddr);
+  const relPath = "bank-path-dependent-flat64k.bin";
+  writeFileSync(join(ws.root, relPath), flat);
+  return relPath;
+}
+
+interface ConstWriteLine {
+  storeAddress: string;
+  targetAddress: string;
+  value: string;
+  line: string;
+}
+
+/** Parses `## CONST_WRITES`'s own `<store-address> <target-address>
+ * <constant-value>` body lines -- returns an empty array for a section
+ * carrying only `## CONST_WRITES_NONE`, never throwing on that shape (a
+ * hand-built document exercising the SAME parse lives in
+ * `anno-import.test.ts`, over `parseConstWrites()` itself; this is a
+ * test-local, minimal reader over the raw export text). */
+function parseConstWritesSection(exportText: string): ConstWriteLine[] {
+  const section = extractSection(exportText, "## CONST_WRITES");
+  const lines: ConstWriteLine[] = [];
+  for (const raw of section.split("\n")) {
+    const m = /^(\S+) (\S+) (\S+)$/.exec(raw);
+    if (m) lines.push({ storeAddress: m[1]!, targetAddress: m[2]!, value: m[3]!, line: raw });
+  }
+  return lines;
+}
+
+function runConstWritesRoute(
+  ws: ScratchWorkspace,
+  route: "prg" | "flat64k",
+  importPath: string,
+  entrypoint: string,
+  exportRel: string,
+) {
+  const entrypointsRel = writeEntrypointsFile(ws, entrypoint, `bpd-${route}-entrypoints.txt`);
+  return runGhidraAnalyze(
+    {
+      runId: `bpd-const-writes-${route}`,
+      importPath,
+      processor: NMOS_LANGUAGE_ID,
+      importRoute: route,
+      noanalysis: true,
+      scriptPath: "vendor/ghidra-scripts",
+      preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+      entrypointsPath: entrypointsRel,
+      postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+      exportPath: exportRel,
+    },
+    { repoRoot: ws.root },
+  );
+}
+
+/** Common assertions both route cases below share: the section is present,
+ * carries at least two lines targeting the processor port with at least two
+ * DISTINCT values among them, and the fixture's own two call-site addresses
+ * (where the flip happens) are distinct from the shared subroutine's own
+ * single border-colour store address (where the flip is OBSERVED) -- proving
+ * this fixture actually creates the path-dependent site it was built for. */
+function assertConstWritesPortValuesDiffer(exportText: string): ConstWriteLine[] {
+  const constWrites = parseConstWritesSection(exportText);
+  const portWrites = constWrites.filter((c) => /^0*1$/.test(c.targetAddress));
+  assert.ok(
+    portWrites.length >= 2,
+    `expected at least two CONST_WRITES lines targeting the processor port ($0001); got ${JSON.stringify(constWrites)}`,
+  );
+  const distinctValues = new Set(portWrites.map((c) => c.value));
+  assert.ok(
+    distinctValues.size >= 2,
+    `expected at least two DISTINCT processor-port values among the CONST_WRITES lines; got ${JSON.stringify([...distinctValues])}`,
+  );
+  return portWrites;
+}
+
+/** The shared program point's own store address (the single `sta $d020`
+ * inside `probe`) must differ from every processor-port store address --
+ * otherwise this would not be a path-dependent site at all. Asserted ONLY on
+ * the flat-64K route: MEASURED this plan (see `fixtures/ghidra/README.md`'s
+ * own "NEW finding" paragraph), the `.prg` route's own internal-`jsr` target
+ * is NOT corrected for the two-byte header shift, so `probe` is never
+ * actually reached on THAT route -- `## REFERENCES` carries no border-colour
+ * access there at all, which would make this exact assertion fail for a
+ * reason unrelated to what it exists to prove. */
+function assertSharedSubroutineReachedFromDistinctCallers(exportText: string, portWrites: ConstWriteLine[]): void {
+  const references = parseReferences(exportText);
+  const borderWrites = references.filter((r) => /^0*d020$/.test(r.to) && r.kind === "WRITE");
+  assert.equal(borderWrites.length, 1, "the fixture's own shared border-colour write must appear exactly once in ## REFERENCES");
+  const borderStoreAddress = borderWrites[0]!.from;
+  for (const portWrite of portWrites) {
+    assert.notEqual(
+      portWrite.storeAddress,
+      borderStoreAddress,
+      "a processor-port store address must never coincide with the shared subroutine's own border-colour store address",
+    );
+  }
+}
+
+test(
+  "ghidra-live CONST_WRITES (flat64k route): the two-caller fixture's own $01 writes resolve to differing values, and the shared subroutine is reached from both distinct call sites",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generatePathDependentFlat64kVariant(ws);
+      const exportRel = "bpd-flat64k-export.txt";
+      const result = await runConstWritesRoute(ws, "flat64k", flatRelPath, PATH_DEPENDENT_FLAT64K_ENTRYPOINT, exportRel);
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the flat64k-route CONST_WRITES case must not throw");
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const portWrites = assertConstWritesPortValuesDiffer(exportText);
+      assertSharedSubroutineReachedFromDistinctCallers(exportText, portWrites);
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live CONST_WRITES (prg route): the two-caller fixture's own $01 writes resolve to differing values at distinct addresses, and this run's own export matches the committed capture fixture byte-for-byte",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const exportRel = "bpd-prg-export.txt";
+      const result = await runConstWritesRoute(ws, "prg", "bank-path-dependent.prg", PATH_DEPENDENT_PRG_ENTRYPOINT, exportRel);
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the prg-route CONST_WRITES case must not throw");
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      assertConstWritesPortValuesDiffer(exportText);
+      // The shared-subroutine-reached-from-two-callers assertion is
+      // deliberately NOT run on this route -- see this function's own
+      // sibling above and `fixtures/ghidra/README.md`'s "NEW finding"
+      // paragraph: the `.prg` route's own internal-`jsr` defect means
+      // `probe` is never actually reached here, which is exactly why the
+      // COMMITTED capture uses this route (matching every other committed
+      // export/run-log fixture's size) while the flat-64K route above
+      // carries the structural proof.
+
+      // This is the SAME route, fixture, entry point and script pair used to
+      // produce the committed capture fixture -- a fresh run here must
+      // reproduce it BYTE-FOR-BYTE, mirroring GATE 3's own reproducibility
+      // proof (this file, above) rather than merely asserting the shape.
+      const committedCapture = readFileSync(join(FIXTURES_DIR, "export-bank-path-dependent.txt"), "utf8");
+      assert.equal(
+        exportText,
+        committedCapture,
+        "a fresh prg-route run over the committed fixture must reproduce the committed capture byte-for-byte",
+      );
     } finally {
       removeScratchWorkspace(ws);
     }
