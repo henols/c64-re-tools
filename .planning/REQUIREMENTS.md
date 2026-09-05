@@ -284,7 +284,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       first-match or longest-description makes that control go **red**. This rule was got wrong on
       the first attempt during the pivot and produced plausible, confident, wrong comments rather than
       an error — a criterion that only asserted the fix would be worthless
-- [ ] **AUTO-03**: An address inside the loaded image is treated as a program address and never looked
+- [x] **AUTO-03**: An address inside the loaded image is treated as a program address and never looked
       up in `memmap.json`, with a control that goes red if the image-range check is removed — the first
       attempt annotated two ordinary loop-back branches as machine features
 - [ ] **AUTO-04**: Bank state is resolved **before** the address — `$01` bits 0-2 (LORAM / HIRAM /
@@ -316,7 +316,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       bytes decoded as instructions mint phantom labels indistinguishable in form from genuine ones, a
       phantom routine inside a charset gets promoted to a function, yields phantom xrefs, feeds the
       join, and emerges as a confident wrong comment the next pass treats as established
-- [ ] **AUTO-08**: Every derived row carries `memmapSha256` provenance, so a later reader can tell
+- [x] **AUTO-08**: Every derived row carries `memmapSha256` provenance, so a later reader can tell
       which map version produced an annotation
 
 ### The Proofs
@@ -432,12 +432,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | IMP-02 | Phase 37 | Complete |
 | AUTO-01 | Phase 37 | Complete |
 | AUTO-02 | Phase 37 | Complete |
-| AUTO-03 | Phase 37 | Pending |
+| AUTO-03 | Phase 37 | Complete |
 | AUTO-04 | Phase 37 | Pending |
 | AUTO-05 | Phase 37 | Pending |
 | AUTO-06 | Phase 37 | Pending |
 | AUTO-07 | Phase 37 | Pending |
-| AUTO-08 | Phase 37 | Pending |
+| AUTO-08 | Phase 37 | Complete |
 | PROOF-01 | Phase 38 | Pending |
 | PROOF-02 | Phase 38 | Pending |
 | PROOF-03 | Phase 38 | Pending |
