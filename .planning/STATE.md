@@ -22,9 +22,9 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-04 after Phase 34)
+See: .planning/PROJECT.md (updated 2026-09-05 after Phase 37)
 
-**Current focus:** Phase 37 — The Importer and the Automatic Annotation Join — executing, in
+**Current focus:** Phase 38 — PROOF-01..03 on Real Cracked Code — ready to plan, in
 milestone **v0.8.0 Frame-Exact Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
 **frame-exact emulator stop** owned for the first time behind a pre-committed
 go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
@@ -688,6 +688,22 @@ Last activity: 2026-09-05 — Phase 37 complete, transitioned to Phase 38
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- Phase 37 (`CR-01`): the recovered const-write facts round-trip through the TWO-CALL
+  tool surface — `anno_import_ghidra_export` returns them, `anno_join_memmap` accepts
+  them back as `const_writes` — rather than being persisted in the store. `STORE-05`
+  reserves the `bank` column with nothing interpreting it, so widening it inside a
+  review fix would have been a design change in disguise. Logged in PROJECT.md.
+
+- Phase 37: the six required observed-red controls are each their OWN task with its own
+  commit, never batched — `.planning/research/PITFALLS.md` § Pitfall 23 names batching
+  them into "the controls are in place" as the exact failure mode. Plans 37-04, 37-05
+  and 37-06 each carry the reds for rules landed in an EARLIER plan, on purpose.
+
+- Phase 37 (37-02): `bank.a` was MEASURED to be straight-line code with no
+  path-dependent `$01` site, so a decline control against it would have passed for the
+  wrong reason. A synthetic two-caller fixture was built as an early task instead of
+  reusing the existing one.
+
 - Roadmap: BACK-02 (fork backend unchanged) is a success criterion in Phase 2
   only, plus a standing per-phase regression gate — not a criterion repeated per
   phase. See ROADMAP.md "Standing Constraints".
@@ -1283,6 +1299,27 @@ forbidden from modifying anything under `src/`.
 | 260902-tkg | Anchor `scripts/package.sh`'s leak guard — `tools/` to the archive root, `node_modules/` at any depth — unblocking the release build, RED on every push since 2026-08-29 on a false positive against nine phase-23 `evidence/tools/` files | 2026-09-02 | 5071e24 |  | [260902-tkg-anchor-tools-leak-guard-to-archive-root](./quick/260902-tkg-anchor-tools-leak-guard-to-archive-root/) |
 
 ### Blockers/Concerns
+
+- **Phase 37 carried items (2026-09-05), none blocking Phase 38.** The phase closed at
+  5/5 must-haves on the first verification round (8/8 plans across 4 waves). Two residuals
+  ride forward, both disclosed rather than silently inherited. (1) **The const-write facts
+  survive only across ONE call pair** — a caller that runs `anno_join_memmap` without
+  re-passing the `const_writes` array `anno_import_ghidra_export` returned silently gets the
+  unconstrained behaviour, which is the same shape of gap code review `CR-01` caught. It is
+  now visible in the tool schema rather than hidden in a no-op, and the decision (not to
+  widen `STORE-05`'s reserved `bank` column inside a review fix) is logged in PROJECT.md.
+  (2) **`c64-program-recon/SKILL.md` does not describe the `const_writes` round-trip** —
+  the verifier recorded this as a non-blocking documentation gap, since the tool's own
+  `inputSchema` descriptions do document it, so a caller is not misled.
+
+- **Two test-suite facts, both characterised rather than chased (2026-09-05).** The
+  documented floor is 2 failing tests in `anno-register.test.ts` (`STORE-01`/`STORE-06`
+  requirement-id bookkeeping, out of every recent phase's scope). Separately, an
+  intermittent INTER-FILE race was observed three times across this phase's gates:
+  `audit-root-args.test.ts`'s `check-skill-tool-coverage` / `check-skill-fork-honesty`
+  cases fail with `ENOENT` on a `zz-scratch-*.md` file another test file created and
+  removed mid-run. `node --test audit-root-args.test.ts` in isolation is 58/58 every
+  time. Treat a 3- or 4-fail run as this race until proven otherwise; the floor is 2.
 
 - **Phase 34 carried items (2026-09-04), none blocking Phase 35.** The phase closed at
   7/7 must-haves on its third verification round (11/11 plans across 9 waves; two
@@ -1890,7 +1927,7 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T09:30:05.011Z
+Last session: 2026-09-05T10:24:06.000Z
 Stopped at: Phase 37 complete, ready to plan Phase 38
 Resume file: None
 
