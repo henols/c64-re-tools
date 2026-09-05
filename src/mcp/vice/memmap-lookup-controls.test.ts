@@ -37,6 +37,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_MODULE_PATH = join(HERE, "memmap-lookup.ts");
 const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
 
+/** `memmap-lookup.ts`'s own `inclusiveWidth()` is unexported (private to the
+ * module) -- this test-local copy computes the SAME `end - start` value from
+ * a plain entry, for measuring expected winners against the real,
+ * unmutated `memmap.json` before comparing to a scratch module's answer. */
+function inclusiveWidthOf(entry: { start: number; end: number }): number {
+  return entry.end - entry.start;
+}
+
 // ---------------------------------------------------------------------------
 // The committed forms of the two mutable steps `selectMemmapEntry()` calls,
 // held verbatim so a drifted source fails the case by name rather than making
@@ -166,6 +174,76 @@ test(
       assert.ok(mutatedSelection.width > 0, "expected the first-match mutation to select an entry wider than one byte");
       assert.equal(mutatedSelection.width, 46, "expected the first-match winner's inclusive width to be 46 (the measured video-interface-chip entry)");
       assert.equal(mutatedEntries.indexOf(mutatedSelection.entry), 438, "expected the first-match winner to be entries[438]");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Task 2: longest-description selection reddens narrowest-range-wins at the
+// SAME address, $D020 -- a SECOND, order-independent wrong rule. Not
+// redundant with Task 1's control: an implementation that happened to
+// enumerate `$D020`'s 8 containing entries narrowest-first would return the
+// correct one-byte entry under a first-match rule (surviving Task 1's
+// control by accident) while STILL failing this one, because
+// longest-description selection does not depend on enumeration order at
+// all -- it scans every contender's own `desc` length regardless of where it
+// sits in `entries`. Both controls are required because each catches a
+// DIFFERENT way "compare widths" could have been silently dropped.
+// ---------------------------------------------------------------------------
+
+test(
+  'PLANTED VIOLATION: switching selectMemmapEntry\'s WIDTH step to longest-description selection makes "$D020 resolves to the 1-byte border-colour entry" go RED',
+  async () => {
+    const committedSource = fs.readFileSync(REAL_MODULE_PATH, "utf8");
+    assert.ok(
+      committedSource.includes(COMMITTED_WIDTH_STEP),
+      "expected the committed memmap-lookup.ts to still carry the WIDTH step's committed form -- has the source drifted?",
+    );
+
+    // The committed, unmutated selection for $D020: still the one-byte entry
+    // (both directions of this control live in the same file).
+    const committedSelection = selectMemmapEntry(0xd020);
+    assert.ok(committedSelection, "expected the committed selection for $D020 to resolve to something");
+    assert.equal(committedSelection.width, 0, "expected the committed selection to be the one-byte border-colour entry");
+    assert.equal(committedSelection.entry.label, "Border color (only bits #0-#3)");
+
+    // MEASURED at execution time, over the real, committed memmap.json: of
+    // $D020's 8 containing entries, the one with the longest `desc` string
+    // is entries[441] (295 characters, the "I/O Area ... depends on the
+    // value of bits #0-#2 ..." entry) -- computed here rather than assumed,
+    // so a later map edit that changes which entry is longest fails this
+    // assertion loudly instead of silently asserting the wrong winner.
+    const realEntries = loadMemmap();
+    const containingD020 = realEntries.filter((entry) => 0xd020 >= entry.start && 0xd020 <= entry.end);
+    assert.equal(containingD020.length, 8, "expected 8 containing entries at $D020 in the real, committed memmap.json -- has the map drifted?");
+    let expectedLongestDescWinner = containingD020[0]!;
+    for (const entry of containingD020) {
+      if (entry.desc.length > expectedLongestDescWinner.desc.length) expectedLongestDescWinner = entry;
+    }
+    const expectedWinnerIndex = realEntries.indexOf(expectedLongestDescWinner);
+    assert.ok(expectedWinnerIndex >= 0, "expected the measured longest-desc winner to be findable in the real entries array");
+    assert.ok(inclusiveWidthOf(expectedLongestDescWinner) > 0, "expected the measured longest-desc winner to be wider than one byte (a vacuous control would prove nothing)");
+
+    const { tmpDir, modulePath } = buildScratchMemmapModule((source) => {
+      assert.ok(source.includes(COMMITTED_WIDTH_STEP), "planted-violation mutation target vanished before it could be applied");
+      return source.replace(COMMITTED_WIDTH_STEP, MUTATED_WIDTH_STEP_LONGEST_DESC);
+    });
+    try {
+      const mutated = await importScratchModule(modulePath);
+      const mutatedEntries = mutated.loadMemmap();
+      const mutatedSelection = mutated.selectMemmapEntry(0xd020, mutatedEntries);
+
+      assert.ok(mutatedSelection, "expected the mutated (longest-description) selection for $D020 to resolve to something");
+      assert.equal(
+        mutatedEntries.indexOf(mutatedSelection.entry),
+        expectedWinnerIndex,
+        "expected the longest-description mutation to select the measured longest-desc entry, by index",
+      );
+      assert.equal(mutatedSelection.entry.label, expectedLongestDescWinner.label, "expected the longest-description winner's label to match the measured one");
+      assert.ok(mutatedSelection.width > 0, "expected the longest-description mutation to select an entry wider than one byte");
+      assert.equal(mutatedSelection.width, inclusiveWidthOf(expectedLongestDescWinner), "expected the mutated selection's width to equal the measured winner's own inclusive width");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
