@@ -12,8 +12,8 @@ import { fileURLToPath } from "node:url";
 
 import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
 import { codeOnly } from "./shipped-modules.ts";
-import { runMemmapJoin } from "./anno-join.ts";
-import type { MemmapEntry } from "./memmap-lookup.ts";
+import { AnnoJoinError, runMemmapJoin } from "./anno-join.ts";
+import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -84,6 +84,123 @@ test("runMemmapJoin: a second run over the unchanged store reports commentsChang
     const reopened = openStore(storePath, { workspaceRoot: dir });
     assert.equal(listComments(reopened).length, first.counts.annotated);
     closeStore(reopened);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 37 plan 37-03, Task 2: the in-image skip, placed BEFORE the map
+// lookup (D-37-12). The four boundary addresses (origin, last, one before,
+// one after) are the probe's own `adjacency` edge; the counting spy is what
+// makes "never looked up" checkable at all, rather than merely asserted.
+// ---------------------------------------------------------------------------
+
+test("runMemmapJoin: the origin and the last byte of the image are in-image; the byte immediately before and immediately after are not", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    const origin = 0x0801;
+    const byteLength = 60;
+    const last = origin + byteLength - 1; // $083c, per the plan's own worked example
+    assert.equal(last, 0x083c);
+
+    putXref(handle, { fromAddress: 0x0000, toAddress: origin, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: last, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: origin - 1, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: last + 1, accessKind: "WRITE" });
+
+    const { decisions } = runMemmapJoin(handle, { imageOrigin: origin, imageByteLength: byteLength }, SYNTHETIC_ENTRIES);
+    const byAddress = new Map(decisions.map((d) => [d.address, d]));
+    assert.equal(byAddress.get(origin)?.outcome, "skipped-in-image", "the origin itself is in-image");
+    assert.equal(byAddress.get(last)?.outcome, "skipped-in-image", "the last byte is in-image");
+    assert.equal(byAddress.get(origin - 1)?.outcome, "skipped-no-entry", "one byte before the origin is NOT in-image");
+    assert.equal(byAddress.get(last + 1)?.outcome, "skipped-no-entry", "one byte after the last byte is NOT in-image");
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: an in-image decision's reason names both the specific address and the image's own range -- exactly one decision, no comment row", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x0810, accessKind: "WRITE" });
+
+    const { decisions } = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES);
+    assert.equal(decisions.length, 1);
+    const [decision] = decisions;
+    assert.equal(decision!.outcome, "skipped-in-image");
+    assert.ok(decision!.reason && decision!.reason.length > 0);
+    assert.ok(decision!.reason!.includes("810"), `reason does not name the address: ${decision!.reason}`);
+    assert.ok(decision!.reason!.includes("801"), `reason does not name the range start: ${decision!.reason}`);
+    assert.ok(decision!.reason!.includes("83c"), `reason does not name the range end: ${decision!.reason}`);
+    assert.equal(listComments(handle).length, 0, "an in-image address never produces a comment row");
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: an injected counting spy in place of the selection function records zero calls for an all-in-image store, and exactly one once an out-of-image target is added", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x0810, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x0820, accessKind: "WRITE" });
+
+    let calls = 0;
+    const countingSpy = (_address: number, _entries: readonly MemmapEntry[]): MemmapSelection | undefined => {
+      calls += 1;
+      return undefined;
+    };
+
+    runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES, countingSpy);
+    assert.equal(calls, 0, "an all-in-image store must never reach the selection function -- the guard runs first");
+
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+    calls = 0;
+    runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES, countingSpy);
+    assert.equal(calls, 1, "the single out-of-image target must reach the selection function exactly once");
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: a store with zero cross-reference rows returns addressesConsidered 0, an empty decisions array, and does not throw", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    const { counts, decisions } = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES);
+    assert.equal(counts.addressesConsidered, 0);
+    assert.deepEqual(decisions, []);
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: an image whose body length is zero refuses by name rather than treating the origin as in-image", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+    assert.throws(
+      () => runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0 }, SYNTHETIC_ENTRIES),
+      (err: unknown) => err instanceof AnnoJoinError && /body length is 0/.test((err as Error).message),
+    );
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: decisions are sorted ascending by address and identical across two consecutive runs", () => {
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x0810, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0x9000, accessKind: "WRITE" });
+
+    const first = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES);
+    const addresses = first.decisions.map((d) => d.address);
+    const sorted = [...addresses].sort((a, b) => a - b);
+    assert.deepEqual(addresses, sorted);
+
+    const second = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, SYNTHETIC_ENTRIES);
+    assert.deepEqual(second.decisions, first.decisions);
+    closeStore(handle);
   });
 });
 
