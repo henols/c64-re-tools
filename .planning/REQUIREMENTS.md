@@ -278,7 +278,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       invocation** anywhere in the loop, reporting how many addresses were annotated and how many
       skipped — and the annotations are read back **out of the store**, not out of the pipeline's own
       stdout
-- [ ] **AUTO-02**: The join selects the **narrowest containing range**, breaking ties toward the
+- [x] **AUTO-02**: The join selects the **narrowest containing range**, breaking ties toward the
       entry carrying a `sym`. A committed control asserts `$D020` annotates as the 1-byte
       border-colour entry and **not** as the 4096-byte I/O-area entry, and that switching selection to
       first-match or longest-description makes that control go **red**. This rule was got wrong on
@@ -431,7 +431,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | IMP-01 | Phase 37 | Complete |
 | IMP-02 | Phase 37 | Complete |
 | AUTO-01 | Phase 37 | Complete |
-| AUTO-02 | Phase 37 | Pending |
+| AUTO-02 | Phase 37 | Complete |
 | AUTO-03 | Phase 37 | Pending |
 | AUTO-04 | Phase 37 | Pending |
 | AUTO-05 | Phase 37 | Pending |

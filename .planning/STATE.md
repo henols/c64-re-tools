@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 37
 current_phase_name: The Importer and the Automatic Annotation Join
 status: executing
-stopped_at: Completed 37-03-PLAN.md
-last_updated: "2026-09-05T07:06:41.359Z"
+stopped_at: Completed 37-04-PLAN.md
+last_updated: "2026-09-05T07:21:13.568Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 37 execution started
-state_head: 0d130445cf612cff1d9eb800636a229ecb072f0a
+state_head: 8636df200ab56f54813b1e1fc0ef872e7dfe30ff
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 43
-  completed_plans: 38
+  completed_plans: 39
   percent: 67
 ---
 
@@ -178,7 +178,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 37 (The Importer and the Automatic Annotation Join) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -595,6 +595,7 @@ Last activity: 2026-09-05 — Phase 37 execution started
 | Phase 37 P01 | 60min | 3 tasks | 12 files |
 | Phase 37 P02 | 75min | 3 tasks | 8 files |
 | Phase 37 P03 | 45min | 3 tasks | 4 files |
+| Phase 37 P04 | 35min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1065,6 +1066,7 @@ Recent decisions affecting current work:
 - [Phase 37]: 37-02: CONST_WRITES CALLOTHER dispatch on Ghidra's documented BUILTIN_VOLATILE_WRITE constant (userop.cc), not a language-registered name
 - [Phase 37]: 37-02: fixed two live-only importer bugs (CLASSIFICATION miscount, bare-hex address refusal) found by running against a real Ghidra capture for the first time
 - [Phase 37]: Plan 37-03: selectMemmapEntry() implements the complete three-deep selection order (width, sym tie-break, stated residual entries-order rule), with tieBrokenBy reporting which step decided; runMemmapJoin()'s in-image skip is proven unreachable via an injectable counting-spy seam; every derived comment now carries the full memmapSha256 provenance token, computed once per run.
+- [Phase 37]: The "processor-port address" plan 37-04's Task 3 names is $0000 (the data-direction register), not $0001; verified against 37-03-SUMMARY's own re-measured fixture (3 contenders, index 1 carries sym D6510). — 37-03-SUMMARY.md states this verbatim; $0001 (the processor port register proper) is a different, unrelated three-entry set with a different symbol (R6510) and would have produced a wrong control.
 
 ### Pending Todos
 
@@ -1875,8 +1877,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T07:06:41.006Z
-Stopped at: Completed 37-03-PLAN.md
+Last session: 2026-09-05T07:21:13.262Z
+Stopped at: Completed 37-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
