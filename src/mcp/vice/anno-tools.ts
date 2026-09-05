@@ -158,6 +158,7 @@ import {
   AnnoRevisionArgumentError,
   AnnoStoreError,
   AnnoStorePathError,
+  AnnoStoreStaleRevisionError,
   assertCommentText,
   assertCommentType,
   assertDataType,
@@ -173,6 +174,8 @@ import { crossReferencesTo, searchAnnotations } from "./anno-derive.ts";
 import { composeAddressDetails } from "./anno-details.ts";
 import { decode } from "./disasm-decoder.ts";
 import { render } from "./disasm-renderer.ts";
+import { importGhidraExport } from "./anno-import.ts";
+import { runMemmapJoin } from "./anno-join.ts";
 import { flatImageOrigin, parsePrg } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
 
@@ -936,6 +939,60 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       required: ["store", "calls"],
     },
   },
+  {
+    name: "anno_import_ghidra_export",
+    description:
+      "Imports a host-written Ghidra export transfer file (GhidraStructExport.java's `## `-delimited format) into " +
+      "the store, writing one anno_xref row per surviving `## REFERENCES` line and DELETING the transfer file once " +
+      "every write has durably committed. Costs one store open and one close. REFUSES, writes nothing and deletes " +
+      "nothing: on a malformed, truncated or digest-mismatched export (naming the section and the offending line), " +
+      "on an export_path that resolves outside the workspace root, or on an absent transfer file. Reports " +
+      "referencesSeen, xrefsWritten, xrefsAlreadyPresent (duplicate references are deduped, never double-counted), " +
+      "and kindsSeenNotImported -- reference types this store's four-member vocabulary does not carry, dropped and " +
+      "counted rather than refused, because a real corpus binary carries ordinary jump and call references " +
+      "constantly. Every written row's bank column is null: this verb does not resolve bank state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        export_path: {
+          type: "string",
+          description:
+            "Absolute or workspace-relative path to the host-written transfer file. CONSUMED AND DELETED by a " +
+            "successful call -- refused if it resolves outside the workspace root, including via a symlink.",
+        },
+        sha256: {
+          type: "string",
+          description:
+            "Optional sha256 digest the producer reported for the transfer file's bytes. When supplied, a mismatch " +
+            "against the file's own computed digest refuses the whole call before anything is read further -- a " +
+            "corruption/drift detector, never a security boundary.",
+        },
+        ...BASE_REVISION_PROPERTY,
+      },
+      required: ["store", "export_path"],
+    },
+  },
+  {
+    name: "anno_join_memmap",
+    description:
+      "The mechanical join: reads every distinct cross-reference target the store already holds, skips addresses " +
+      "inside the supplied image's own loaded range (those are program addresses, never looked up), and annotates " +
+      "every remaining address with the narrowest c64-memory-mapping/memmap.json entry containing it. No agent " +
+      "call, no queue walk and no skill invocation anywhere in this call. Reports addressesConsidered, annotated, " +
+      "skippedInImage, skippedNoMapEntry, declined and commentsChanged, plus a per-address decisions array naming " +
+      "the outcome and, for every skip, WHY. Running this twice over an unchanged store reports commentsChanged: 0 " +
+      "on the second run -- re-running a join pass is not an error.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        ...IMAGE_PROPERTY,
+        ...BASE_REVISION_PROPERTY,
+      },
+      required: ["store", "image"],
+    },
+  },
 ];
 
 /** The allow-list, DERIVED from the definitions above rather than hand-typed
@@ -1095,6 +1152,24 @@ function assertApplyEnumUsageArgs(args: unknown, batchIndex?: number): void {
 
 function assertSaveProjectArgs(args: unknown, batchIndex?: number): void {
   assertStoreArg("anno_save_project", args, batchIndex);
+}
+
+function assertImportGhidraExportArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_import_ghidra_export", args, batchIndex);
+  const bag = argBag(args);
+  if (typeof bag.export_path !== "string" || bag.export_path.trim() === "") {
+    refuseArg("anno_import_ghidra_export", "export_path", '"export_path" is required and must be a non-empty string.', batchIndex);
+  }
+  if (bag.sha256 !== undefined && (typeof bag.sha256 !== "string" || bag.sha256.trim() === "")) {
+    refuseArg("anno_import_ghidra_export", "sha256", '"sha256" must be a non-empty string when supplied.', batchIndex);
+  }
+  assertBaseRevisionArg("anno_import_ghidra_export", args, batchIndex);
+}
+
+function assertJoinMemmapArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_join_memmap", args, batchIndex);
+  assertImageArg("anno_join_memmap", args, batchIndex);
+  assertBaseRevisionArg("anno_join_memmap", args, batchIndex);
 }
 
 
@@ -1405,6 +1480,8 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
   if (name === "anno_update_project_enum") return assertUpdateEnumArgs(args, batchIndex);
   if (name === "anno_apply_enum_usage") return assertApplyEnumUsageArgs(args, batchIndex);
   if (name === "anno_save_project") return assertSaveProjectArgs(args, batchIndex);
+  if (name === "anno_import_ghidra_export") return assertImportGhidraExportArgs(args, batchIndex);
+  if (name === "anno_join_memmap") return assertJoinMemmapArgs(args, batchIndex);
   if (name === "anno_disassemble") return assertDisassembleArgs(args, batchIndex);
   if (name === "anno_read_region") return assertReadRegionArgs(args, batchIndex);
   if (name === "anno_get_binary_info") return assertBinaryInfoArgs(args, batchIndex);
@@ -1737,6 +1814,41 @@ function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
   };
 }
 
+/** Enforces `base_revision` as a whole-call precondition rather than
+ * threading it through each of the many writes `importGhidraExport()` and
+ * `runMemmapJoin()` may issue: both verbs commit several writes per call, and
+ * a single up-front comparison against the revision the caller computed its
+ * batch against is the coherent point to apply an optimistic-concurrency
+ * guard for a multi-write verb -- checked BEFORE anything is written, exactly
+ * like every other refusal on this surface. */
+function assertNotStale(name: string, handle: AnnoStoreHandle, baseRevision: number | undefined): void {
+  if (baseRevision === undefined) return;
+  const rev = currentRevision(handle);
+  if (baseRevision !== rev) {
+    throw new AnnoStoreStaleRevisionError(
+      `${name} refused: base revision ${baseRevision} is not the current on-disk revision ${rev}. Nothing was written.`,
+      { baseRevision, currentRevision: rev },
+    );
+  }
+}
+
+function dispatchImportGhidraExport(handle: AnnoStoreHandle, args: unknown): unknown {
+  const bag = argBag(args);
+  const baseRevision = assertBaseRevisionArg("anno_import_ghidra_export", args);
+  assertNotStale("anno_import_ghidra_export", handle, baseRevision);
+  const exportPath = resolveWorkspacePath(bag.export_path as string);
+  return importGhidraExport(handle, {
+    exportPath,
+    expectedSha256: bag.sha256 as string | undefined,
+  });
+}
+
+function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown): unknown {
+  const baseRevision = assertBaseRevisionArg("anno_join_memmap", args);
+  assertNotStale("anno_join_memmap", handle, baseRevision);
+  const image = loadImage("anno_join_memmap", args);
+  return runMemmapJoin(handle, { imageOrigin: image.origin, imageByteLength: image.body.length });
+}
 
 // ---------------------------------------------------------------------------
 // The image loader (D-07). The store holds annotations and never bytes, so
@@ -2049,6 +2161,8 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_update_project_enum") return dispatchUpdateProjectEnum(handle, args);
   if (name === "anno_apply_enum_usage") return dispatchApplyEnumUsage(handle, args);
   if (name === "anno_save_project") return dispatchSaveProject(handle);
+  if (name === "anno_import_ghidra_export") return dispatchImportGhidraExport(handle, args);
+  if (name === "anno_join_memmap") return dispatchJoinMemmap(handle, args);
   if (name === "anno_disassemble") return dispatchDisassemble(args);
   if (name === "anno_read_region") return dispatchReadRegion(args);
   if (name === "anno_get_binary_info") return dispatchBinaryInfo(args);

@@ -207,6 +207,39 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
       "instead is what lets MCP-01's zero-caller clause hold without losing a capability.",
   },
 
+  {
+    verb: "anno_import_ghidra_export",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/anno-import.ts", symbol: "importGhidraExport" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_import_ghidra_export" },
+    ],
+    requirements: ["IMP-01", "IMP-02"],
+    rationale:
+      "The manifest's five absorbed upstream procedures predate this store having any Ghidra-derived import path " +
+      "at all, so the derivation is silent about a verb that did not exist when the manifest was written. IMP-01 " +
+      "requires a container-side importer reading a host-written transfer file through the store's single seam, " +
+      "and IMP-02 requires that transfer file to be transient evidence -- digested, consumed and deleted in the " +
+      "same call, never a second on-disk model. This verb is the only route either requirement has: without it, " +
+      "a Ghidra export sits on disk as a file no curated verb ever reads.",
+  },
+  {
+    verb: "anno_join_memmap",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/anno-join.ts", symbol: "runMemmapJoin" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_join_memmap" },
+    ],
+    requirements: ["AUTO-01"],
+    rationale:
+      "AUTO-01 requires machine addresses to annotate themselves into the store mechanically -- no agent call, no " +
+      "queue walk and no skill invocation anywhere in the loop -- by joining stored cross-references against " +
+      "c64-memory-mapping's memmap.json. The manifest's five procedures never describe this join at all, because " +
+      "it answers a question this project's own store creates (what does a stored cross-reference's target " +
+      "address MEAN against the published memory map), not one upstream's absorbed procedures ever asked. Without " +
+      "this verb the annotation the join produces has no route onto the surface at all.",
+  },
+
   // --- manifest-deviation: classified, routed, and answering differently ---
   {
     verb: "anno_save_project",
