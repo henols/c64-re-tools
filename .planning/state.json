@@ -201,7 +201,7 @@
     {
       "number": "37",
       "name": "The Importer and the Automatic Annotation Join",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "38",
@@ -211,8 +211,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 37 of 6 · 67% · executing"
+    "label": "Advance to the next step (plan phase 38)",
+    "reason": "Phase 38 of 6 — needs a plan"
   },
-  "updated_at": "2026-09-05T08:39:22.633Z"
+  "updated_at": "2026-09-05T10:19:58.872Z"
 }
