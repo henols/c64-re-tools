@@ -196,7 +196,7 @@
     {
       "number": "36",
       "name": "The SLEIGH Language and the Ghidra Harness",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "37",
@@ -211,8 +211,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 37)",
-    "reason": "Phase 37 of 6 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 37 of 6 · 67% · executing"
   },
-  "updated_at": "2026-09-04T22:56:52.981Z"
+  "updated_at": "2026-09-05T00:23:48.255Z"
 }
