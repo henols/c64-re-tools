@@ -201,7 +201,7 @@
     {
       "number": "37",
       "name": "The Importer and the Automatic Annotation Join",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "38",
@@ -214,5 +214,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 37 of 6 · 67% · executing"
   },
-  "updated_at": "2026-09-05T06:12:09.038Z"
+  "updated_at": "2026-09-05T06:52:22.769Z"
 }

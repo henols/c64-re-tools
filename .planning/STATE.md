@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 37
 current_phase_name: The Importer and the Automatic Annotation Join
 status: executing
-stopped_at: Completed 37-01-PLAN.md
-last_updated: "2026-09-05T06:12:45.402Z"
+stopped_at: Completed 37-02-PLAN.md
+last_updated: "2026-09-05T06:52:45.567Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 37 execution started
-state_head: 7cda46df9534a51aa5d882ab5fdaf7be6813af54
+state_head: 8fd80c6967692b85c4e7f2502b48c98d3adc57a3
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 43
-  completed_plans: 36
+  completed_plans: 37
   percent: 67
 ---
 
@@ -178,7 +178,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 37 (The Importer and the Automatic Annotation Join) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -593,6 +593,7 @@ Last activity: 2026-09-05 — Phase 37 execution started
 | Phase 36 P06 | 55min | 3 tasks | 3 files |
 | Phase 36 P07 | 62min | 3 tasks | 5 files |
 | Phase 37 P01 | 60min | 3 tasks | 12 files |
+| Phase 37 P02 | 75min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1060,6 +1061,8 @@ Recent decisions affecting current work:
 - [Phase 36]: 36-06: a documented RTS terminator is required in every synthetic opcode-sweep slot -- without one DecompInterface fails every seeded function outright — MEASURED live against real Ghidra 12.1.3: NOP-only padding lets fall-through disassembly run each seeded function off the end of the image with no discovered exit
 - [Phase 36]: 36-07: COMPUTED_JUMP asserted absent (BRK-trick finding) on real corpus; DataTypeManager control invoked directly outside the seam — GHID-05's flagged assumption anticipated uncertainty; measured absence disclosed as a positive checked fact rather than forced or loosened
 - [Phase 37]: Two new anno_* tools (anno_import_ghidra_export, anno_join_memmap) added to the existing ANNO_TOOL_DEFINITIONS array -- no new tool family, no new CLI verb, no new store column (D-37-01). — stock-dispatch.test.ts's BACKEND_SEAM_BYPASS_KEYS is a pinned 2-entry order-sensitive array; a second tool family would collide with it. Array length does not create a registration key.
+- [Phase 37]: 37-02: CONST_WRITES CALLOTHER dispatch on Ghidra's documented BUILTIN_VOLATILE_WRITE constant (userop.cc), not a language-registered name
+- [Phase 37]: 37-02: fixed two live-only importer bugs (CLASSIFICATION miscount, bare-hex address refusal) found by running against a real Ghidra capture for the first time
 
 ### Pending Todos
 
@@ -1870,8 +1873,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T06:12:45.034Z
-Stopped at: Completed 37-01-PLAN.md
+Last session: 2026-09-05T06:52:45.239Z
+Stopped at: Completed 37-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
