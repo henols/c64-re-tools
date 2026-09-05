@@ -430,7 +430,7 @@ Run 2026-09-05 at `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/`.
 
 | File | Bytes | sha256 |
 |---|---|---|
-| `charset-phantom.a` | 2284 | `ce0feabc0aee8307d623487801449aed8567e1c24785adc9c80d60ae9491bad4` |
+| `charset-phantom.a` | 2899 | `998037fbdd2b04711a881c55efbb186138698064108c0f23763fb462e479e115` |
 | `charset-phantom.prg` | 4097 | `accff20636b1b763a9bcc92b1ff29889a5dcc69fa08536f6f4f7de7f833bc203` |
 
 `charset-phantom.prg`'s first two bytes are `$01 $08` -- a `.prg` load-address

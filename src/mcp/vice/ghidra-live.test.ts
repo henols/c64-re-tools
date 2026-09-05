@@ -57,6 +57,11 @@ import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
 import { installedLanguageIds, GHIDRA_RUNS_DIR_NAME } from "./ghidra-project.mts";
 import { repoRoot } from "./repo-root.ts";
 import { listEntries, extractEntry } from "./anno-d64.ts";
+// Phase 37, plan 37-08 (AUTO-07): the derived character-set range is computed
+// from the fixture's own real CONST_WRITES facts, never hard-coded -- the
+// SAME two production modules the join itself will use.
+import { parseConstWrites, parseGhidraExport } from "./anno-import.ts";
+import { deriveGraphicsRanges } from "./anno-graphics.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
@@ -123,6 +128,10 @@ function makeScratchWorkspace(): ScratchWorkspace {
   // alongside `bank.prg` so every case (not only this plan's own) can reach
   // it without a second scratch-workspace builder.
   cpSync(join(FIXTURES_DIR, "bank-path-dependent.prg"), join(root, "bank-path-dependent.prg"));
+  // Plan 37-08: the graphics-feedback before/after fixture, copied alongside
+  // the others so this plan's own cases can reach it without a second
+  // scratch-workspace builder.
+  cpSync(join(FIXTURES_DIR, "charset-phantom.prg"), join(root, "charset-phantom.prg"));
   return { root };
 }
 
@@ -1685,6 +1694,226 @@ test(
         committedCapture,
         "a fresh prg-route run over the committed fixture must reproduce the committed capture byte-for-byte",
       );
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 37-08 (AUTO-07): the phantom-label before/after proof over the new
+// graphics-feedback fixture (`charset-phantom.a`/`.prg`). Flat-64K route
+// ONLY -- see `fixtures/ghidra/README.md`'s own paragraph on why the `.prg`
+// route's two-byte shift misaligns the register-derived range against where
+// this fixture's charset bytes actually land.
+// ---------------------------------------------------------------------------
+
+/** This fixture's own entry point (`start:`), flat-64K route (source labels,
+ * unshifted). See `fixtures/ghidra/README.md`'s address trace. */
+const CHARSET_PHANTOM_FLAT64K_ENTRYPOINT = "$0810";
+
+/** Generates the flat-64K variant of the new graphics-feedback fixture --
+ * mirrors `generateFlat64kVariant()`/`generatePathDependentFlat64kVariant()`
+ * above in shape, kept as a separate function for the same reason those two
+ * are separate from each other: each is already relied on elsewhere with its
+ * own fixed fixture name. */
+function generateCharsetPhantomFlat64kVariant(ws: ScratchWorkspace): string {
+  const prg = readFileSync(join(FIXTURES_DIR, "charset-phantom.prg"));
+  const loadAddr = prg[0]! | (prg[1]! << 8);
+  const body = prg.subarray(2);
+  const flat = new Uint8Array(65536);
+  flat.set(body, loadAddr);
+  const relPath = "charset-phantom-flat64k.bin";
+  writeFileSync(join(ws.root, relPath), flat);
+  return relPath;
+}
+
+/** Writes `DataRangeSeed.java`'s own range-file grammar (`dxa-blocks.ts`'s
+ * `-B` two-address form, one inclusive `xxxx-yyyy` lower-case-hex line per
+ * range) -- workspace-relative, so it can be handed straight to
+ * `dataRangesPath`. */
+function writeDataRangesFile(ws: ScratchWorkspace, ranges: ReadonlyArray<{ start: number; endInclusive: number }>, relName: string): string {
+  const text = ranges.map((r) => `${r.start.toString(16).padStart(4, "0")}-${r.endInclusive.toString(16).padStart(4, "0")}\n`).join("");
+  writeFileSync(join(ws.root, relName), text);
+  return relName;
+}
+
+/** Parses `## DECOMPILED_TEXT`'s own `FUNCTION <address> <name>` lines --
+ * the ONLY place a minted symbol name is visible in the committed export
+ * format (`## CLASSIFICATION`/`## REFERENCES` carry addresses and access
+ * kinds, never names). One line is emitted per function that decompiled
+ * successfully (`GhidraStructExport.java`'s own `decompileCompleted()`
+ * gate) -- this is exactly "every label the analyser minted", not a subset. */
+function parseFunctionLines(exportText: string): { address: number; name: string }[] {
+  const section = extractSection(exportText, "## DECOMPILED_TEXT");
+  const out: { address: number; name: string }[] = [];
+  const pattern = /^FUNCTION ([0-9a-fA-F]+) (\S+)$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(section)) !== null) {
+    out.push({ address: parseInt(m[1]!, 16), name: m[2]! });
+  }
+  return out;
+}
+
+/** Every entry in `functions` whose address falls inside the inclusive
+ * `range` -- the ONE membership predicate both the before-run and the
+ * after-run assertions below share, so "inside the derived range" means
+ * exactly one thing throughout this file. Byte addresses, never character
+ * offsets (D-37's own encoding-edge rule) -- both ends of `range` and every
+ * function address are plain integers. */
+function functionsInRange(functions: readonly { address: number; name: string }[], range: { start: number; endInclusive: number }): { address: number; name: string }[] {
+  return functions.filter((f) => f.address >= range.start && f.address <= range.endInclusive);
+}
+
+/** Set by the BEFORE case below, read by the AFTER case immediately after it
+ * (registration order, node:test's own default serial execution) -- mirrors
+ * `gate2PrgObserved`'s own precedent above: the derived range is computed
+ * ONCE, from a real run's own CONST_WRITES facts, and reused rather than
+ * re-derived a second time (which would still be legitimate, but would cost
+ * a second full analyzeHeadless invocation for no new information). */
+let charsetPhantomDerivedRange: { start: number; endInclusive: number } | undefined;
+
+test(
+  "ghidra-live AUTO-07 (before): a real run over charset-phantom.prg with NO graphics feedback mints a non-empty set of function labels inside the derived character-set range",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generateCharsetPhantomFlat64kVariant(ws);
+      const entrypointsRel = writeEntrypointsFile(ws, CHARSET_PHANTOM_FLAT64K_ENTRYPOINT, "charset-phantom-entrypoints.txt");
+      const exportRel = "charset-phantom-before-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "charset-phantom-before",
+          importPath: flatRelPath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: entrypointsRel,
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the before-run must not throw");
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+
+      // The derived range is computed from THIS run's own real CONST_WRITES
+      // facts -- never hard-coded, per this plan's own must_haves.truths.
+      const constWrites = parseConstWrites(parseGhidraExport(exportText));
+      const maps = deriveGraphicsRanges(constWrites);
+      assert.equal(maps.length, 1, "this fixture writes one determinate combination -- exactly one derived map");
+      const charsetRange = maps[0]!.ranges.find((r) => r.kind === "character-set");
+      assert.ok(charsetRange !== undefined, "a character-set range must derive from this fixture's own register writes");
+      charsetPhantomDerivedRange = { start: charsetRange!.start, endInclusive: charsetRange!.endInclusive };
+
+      const functions = parseFunctionLines(exportText);
+      const before = functionsInRange(functions, charsetPhantomDerivedRange);
+      assert.ok(
+        before.length > 0,
+        `the before-set must be NON-EMPTY -- if this fires, the fixture's own charset bytes did not decode into anything the analyser promoted; go back to Task 1's fixture bytes rather than weakening this assertion (got ${before.length})`,
+      );
+
+      console.log(`AUTO-07 BEFORE: derived range $${charsetPhantomDerivedRange.start.toString(16)}-$${charsetPhantomDerivedRange.endInclusive.toString(16)}, ${before.length} minted labels inside it`);
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live AUTO-07 (after): the SAME fixture, with dataRangesPath applied, mints ZERO function labels inside the SAME derived character-set range",
+  { skip: SKIP_REASON },
+  async () => {
+    assert.ok(charsetPhantomDerivedRange !== undefined, "the before-run above must have populated the derived range first (registration-order dependency)");
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generateCharsetPhantomFlat64kVariant(ws);
+      const entrypointsRel = writeEntrypointsFile(ws, CHARSET_PHANTOM_FLAT64K_ENTRYPOINT, "charset-phantom-entrypoints.txt");
+      const dataRangesRel = writeDataRangesFile(ws, [charsetPhantomDerivedRange!], "charset-phantom-dataranges.txt");
+      const exportRel = "charset-phantom-after-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "charset-phantom-after",
+          importPath: flatRelPath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: entrypointsRel,
+          dataRangesPath: dataRangesRel,
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the after-run must not throw");
+      assert.match(logText, /DataRangeSeed\.java> DATARANGE-OK:/, "DataRangeSeed.java must report a seeded range in the run log");
+      assert.match(logText, /DataRangeSeed\.java> DATARANGE-SEED-COUNT: 1/, "DataRangeSeed.java must report exactly one range seeded");
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const functions = parseFunctionLines(exportText);
+      const after = functionsInRange(functions, charsetPhantomDerivedRange!);
+      assert.equal(after.length, 0, `the after-set must be EMPTY -- the derived range's own data-range feedback must suppress every phantom label (got ${JSON.stringify(after)})`);
+
+      console.log(`AUTO-07 AFTER: derived range $${charsetPhantomDerivedRange!.start.toString(16)}-$${charsetPhantomDerivedRange!.endInclusive.toString(16)}, ${after.length} minted labels inside it`);
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live AUTO-07 (prg route, CONST_WRITES only): the fixture's own register writes resolve on the .prg route too, exercising the same derivation the flat64k route's phantom-label proof depends on",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      // .prg-route entry point: +2 over the flat64k route's own, per the
+      // fixtures README's documented per-route offset.
+      const entrypointsRel = writeEntrypointsFile(ws, "$0812", "charset-phantom-prg-entrypoints.txt");
+      const exportRel = "charset-phantom-prg-export.txt";
+      const result = await runGhidraAnalyze(
+        {
+          runId: "charset-phantom-prg",
+          importPath: "charset-phantom.prg",
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "prg",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          preScript: "vendor/ghidra-scripts/VolatileCarve.java",
+          entrypointsPath: entrypointsRel,
+          postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
+          exportPath: exportRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the prg-route case must not throw");
+
+      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const constWrites = parseConstWrites(parseGhidraExport(exportText));
+      assert.equal(constWrites.length, 3, "all three VIC register writes must resolve on the prg route too");
+      const maps = deriveGraphicsRanges(constWrites);
+      assert.equal(maps.length, 1);
+      const charsetRange = maps[0]!.ranges.find((r) => r.kind === "character-set");
+      assert.ok(charsetRange !== undefined, "a character-set range must derive on the prg route too, from the same register values");
+      // Deliberately NOT asserting a phantom-label count here -- see
+      // fixtures/ghidra/README.md's own paragraph: this route's own
+      // two-byte shift means the charset bytes actually load two bytes
+      // later than the derived range's own hardware-address boundaries,
+      // so a before/after label-count proof on this route would compare
+      // the wrong window. This case exists to prove the CONST_WRITES/
+      // derivation half still works here, not the phantom-label half.
     } finally {
       removeScratchWorkspace(ws);
     }
