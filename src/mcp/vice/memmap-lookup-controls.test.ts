@@ -96,6 +96,20 @@ const MUTATED_SYMBOL_STEP_REVERSED =
   "  return withoutSym.length > 0 ? withoutSym : survivors.slice();\n" +
   "}";
 
+/** STEP THREE, ORDER -- the committed form (`memmap-lookup.ts:204-211`), held
+ * here ONLY to assert Task 3's mutation leaves it (and the WIDTH step)
+ * byte-identical in the scratch copy -- the reversed-symbol control must be
+ * attributable to the SYMBOL step alone. */
+const COMMITTED_ORDER_STEP =
+  "function orderWinner(survivors: readonly MemmapEntry[], entries: readonly MemmapEntry[]): MemmapEntry {\n" +
+  "  for (const entry of entries) {\n" +
+  "    if (survivors.includes(entry)) return entry;\n" +
+  "  }\n" +
+  "  // Unreachable: `survivors` is always drawn from `entries` by reference, so\n" +
+  "  // the scan above always finds one before falling through.\n" +
+  "  return survivors[0]!;\n" +
+  "}";
+
 // ---------------------------------------------------------------------------
 // Shared scratch-tree helper (D-37-15: three tasks, three transcripts, one
 // shared test-file convenience). Mirrors `anno-regbits.test.ts`'s own
@@ -244,6 +258,98 @@ test(
       assert.equal(mutatedSelection.entry.label, expectedLongestDescWinner.label, "expected the longest-description winner's label to match the measured one");
       assert.ok(mutatedSelection.width > 0, "expected the longest-description mutation to select an entry wider than one byte");
       assert.equal(mutatedSelection.width, inclusiveWidthOf(expectedLongestDescWinner), "expected the mutated selection's width to equal the measured winner's own inclusive width");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Task 3: reversing the SYMBOL tie-break reddens the equal-width case at
+// $0000 (the processor port's data-direction register -- the requirement's
+// own equal-width, sym-decided fixture; plan 37-03 re-measured 3 contenders
+// there, exactly one carrying a `sym`, correcting the research document's
+// figure of two -- see the note below).
+// ---------------------------------------------------------------------------
+
+test(
+  'PLANTED VIOLATION: reversing selectMemmapEntry\'s SYMBOL step makes "$0000 resolves to the sym-bearing entry" go RED',
+  async () => {
+    const committedSource = fs.readFileSync(REAL_MODULE_PATH, "utf8");
+    assert.ok(
+      committedSource.includes(COMMITTED_SYMBOL_STEP),
+      "expected the committed memmap-lookup.ts to still carry the SYMBOL step's committed form -- has the source drifted?",
+    );
+
+    // MEASURED at execution time, over the real, committed memmap.json:
+    // $0000 has 3 containing entries, all exactly one byte wide (equal
+    // width), of which exactly one (entries[1], "6510 On-chip Data Direction
+    // Register") carries a non-empty `sym` ("D6510"). This corrects
+    // 37-RESEARCH.md's own figure of two contenders -- plan 37-03's
+    // re-measurement (37-03-SUMMARY.md's key-decisions) already found the
+    // real count is 3, and this transcript uses that re-measured number.
+    const realEntries = loadMemmap();
+    const containing0000 = realEntries.filter((entry) => 0 >= entry.start && 0 <= entry.end);
+    assert.equal(containing0000.length, 3, "expected 3 containing entries at $0000 in the real, committed memmap.json (37-03's re-measured count, correcting the research document's figure of 2) -- has the map drifted?");
+    const symBearing = containing0000.filter((entry) => typeof entry.sym === "string" && entry.sym.length > 0);
+    assert.equal(symBearing.length, 1, "expected exactly one of the 3 equal-width contenders at $0000 to carry a sym");
+    assert.equal(symBearing[0]!.sym, "D6510");
+
+    // The committed, unmutated selection for $0000: the sym-bearing entry,
+    // AND its tieBrokenBy names the SYMBOL rule -- an answer reached by
+    // width or by order alone would mean the tie-break was never exercised
+    // and this control proved nothing.
+    const committedSelection = selectMemmapEntry(0x0000);
+    assert.ok(committedSelection, "expected the committed selection for $0000 to resolve to something");
+    assert.equal(committedSelection.width, 0, "expected the committed selection to be one of the equal-width (1-byte) contenders");
+    assert.equal(committedSelection.entry.sym, "D6510", "expected the committed selection to be the sym-bearing entry");
+    assert.equal(committedSelection.tieBrokenBy, "symbol", "expected the committed selection's tieBrokenBy to name the SYMBOL step -- otherwise the tie-break was never exercised");
+
+    // The two contenders WITHOUT a sym, and which of them the unchanged
+    // residual ORDER step resolves to (first in `entries` order) -- computed
+    // here, not assumed, so the mutation's expected winner is measured
+    // rather than guessed.
+    const withoutSym = containing0000.filter((entry) => !(typeof entry.sym === "string" && entry.sym.length > 0));
+    assert.equal(withoutSym.length, 2, "expected exactly 2 of the 3 equal-width contenders at $0000 to lack a sym");
+    let expectedReversedWinner: (typeof withoutSym)[number] | undefined;
+    for (const entry of realEntries) {
+      if (withoutSym.includes(entry)) {
+        expectedReversedWinner = entry;
+        break;
+      }
+    }
+    assert.ok(expectedReversedWinner, "expected the residual ORDER step to resolve a determinate winner among the sym-less contenders");
+    const expectedReversedWinnerIndex = realEntries.indexOf(expectedReversedWinner!);
+
+    const { tmpDir, modulePath } = buildScratchMemmapModule((source) => {
+      assert.ok(source.includes(COMMITTED_SYMBOL_STEP), "planted-violation mutation target vanished before it could be applied");
+      // The WIDTH step and the residual ORDER step must be BYTE-IDENTICAL in
+      // the scratch copy, so the observed difference is attributable to the
+      // SYMBOL step alone.
+      assert.ok(source.includes(COMMITTED_WIDTH_STEP), "expected the WIDTH step to still be present, untouched, before this mutation");
+      assert.ok(source.includes(COMMITTED_ORDER_STEP), "expected the residual ORDER step to still be present, untouched, before this mutation");
+      const mutated = source.replace(COMMITTED_SYMBOL_STEP, MUTATED_SYMBOL_STEP_REVERSED);
+      // Re-assert byte-identity of the other two steps AFTER the replace, so
+      // a `.replace()` that accidentally touched more than its own target
+      // would be caught here rather than silently shipping.
+      assert.ok(mutated.includes(COMMITTED_WIDTH_STEP), "expected the WIDTH step to remain byte-identical after the SYMBOL-step replace");
+      assert.ok(mutated.includes(COMMITTED_ORDER_STEP), "expected the residual ORDER step to remain byte-identical after the SYMBOL-step replace");
+      return mutated;
+    });
+    try {
+      const mutated = await importScratchModule(modulePath);
+      const mutatedEntries = mutated.loadMemmap();
+      const mutatedSelection = mutated.selectMemmapEntry(0x0000, mutatedEntries);
+
+      assert.ok(mutatedSelection, "expected the mutated (reversed-symbol) selection for $0000 to resolve to something");
+      assert.notEqual(mutatedSelection.entry.sym, "D6510", "expected the reversed-symbol mutation to select a contender WITHOUT the sym-bearing entry's own sym");
+      assert.equal(mutatedSelection.entry.sym, undefined, "expected the reversed-symbol mutation to select a contender carrying no sym at all");
+      assert.equal(
+        mutatedEntries.indexOf(mutatedSelection.entry),
+        expectedReversedWinnerIndex,
+        "expected the reversed-symbol mutation to select the measured sym-less winner, by index",
+      );
+      assert.equal(mutatedSelection.entry.label, expectedReversedWinner!.label, "expected the reversed-symbol winner's label to match the measured one");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
