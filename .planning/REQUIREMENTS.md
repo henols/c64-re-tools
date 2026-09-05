@@ -287,7 +287,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 - [x] **AUTO-03**: An address inside the loaded image is treated as a program address and never looked
       up in `memmap.json`, with a control that goes red if the image-range check is removed — the first
       attempt annotated two ordinary loop-back branches as machine features
-- [ ] **AUTO-04**: Bank state is resolved **before** the address — `$01` bits 0-2 (LORAM / HIRAM /
+- [x] **AUTO-04**: Bank state is resolved **before** the address — `$01` bits 0-2 (LORAM / HIRAM /
       CHAREN) decoded and carried per program point — so a `$d020` write under `$34` is not labelled
       the border colour and a `$d000` read under `$33` is not labelled sprite-0-X, with a control that
       goes red when the decode is bypassed. **AMENDED** — recorded as **unvalidated, not narrowed**
@@ -297,7 +297,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       not a usable control. **NARROWED** — the `memmapshow` external check is stated absent (decision 2),
       so this rests on the synthetic fixture alone. Hard dependency: no volatile carve → no recovered
       `$01` literals → no bank state, so `GHID-02` gates this
-- [ ] **AUTO-05**: Where bank state is path-dependent — computed, or set inside a routine reached from
+- [x] **AUTO-05**: Where bank state is path-dependent — computed, or set inside a routine reached from
       several banking contexts — the join emits **no annotation and says why**, rather than carrying one
       value forward and being confidently wrong. Also **unvalidated, not narrowed**. Note there is no
       prior art to copy or validate against: MEASURED survey — SVD-Loader, radare2's SVD import and
@@ -433,8 +433,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AUTO-01 | Phase 37 | Complete |
 | AUTO-02 | Phase 37 | Complete |
 | AUTO-03 | Phase 37 | Complete |
-| AUTO-04 | Phase 37 | Pending |
-| AUTO-05 | Phase 37 | Pending |
+| AUTO-04 | Phase 37 | Complete |
+| AUTO-05 | Phase 37 | Complete |
 | AUTO-06 | Phase 37 | Pending |
 | AUTO-07 | Phase 37 | Pending |
 | AUTO-08 | Phase 37 | Complete |

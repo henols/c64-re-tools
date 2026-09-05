@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 37
 current_phase_name: The Importer and the Automatic Annotation Join
 status: executing
-stopped_at: Completed 37-05-PLAN.md
-last_updated: "2026-09-05T07:44:47.265Z"
+stopped_at: Completed 37-06-PLAN.md
+last_updated: "2026-09-05T08:18:35.853Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 37 execution started
-state_head: c6f8e6bf1933eaed98ab1407024577c4353d5b0d
+state_head: 04a95a465b78d8948a1350d3efdd6c1318c5e977
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 43
-  completed_plans: 40
+  completed_plans: 41
   percent: 67
 ---
 
@@ -178,7 +178,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 37 (The Importer and the Automatic Annotation Join) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -597,6 +597,7 @@ Last activity: 2026-09-05 — Phase 37 execution started
 | Phase 37 P03 | 45min | 3 tasks | 4 files |
 | Phase 37 P04 | 35min | 3 tasks | 4 files |
 | Phase 37 P05 | 24min | 2 tasks | 3 files |
+| Phase 37 P06 | 30min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1070,6 +1071,8 @@ Recent decisions affecting current work:
 - [Phase 37]: The "processor-port address" plan 37-04's Task 3 names is $0000 (the data-direction register), not $0001; verified against 37-03-SUMMARY's own re-measured fixture (3 contenders, index 1 carries sym D6510). — 37-03-SUMMARY.md states this verbatim; $0001 (the processor port register proper) is a different, unrelated three-entry set with a different symbol (R6510) and would have produced a wrong control.
 - [Phase 37]: Plan 37-05: in-image control subject is $0800 (BASIC area, real map entry Unused), not a hardware register, since AUTO-03's failure story is about ordinary program addresses — Hardware addresses like $D020/$0000 would prove nothing about the specific requirement failure mode
 - [Phase 37]: Plan 37-05: re-export shims (forward by absolute path) satisfy anno-join.ts's sibling imports in a scratch tree, instead of mirroring anno-store.ts's own deep dependency chain — Only anno-join.ts needed mutating; its siblings only needed to resolve, and the shim reuses the same cached real module the test file imports statically
+- [Phase 37]: Plan 37-06: the bank-state candidate constraint narrows selectMemmapEntry()'s own entries array before selection runs, rather than adding a new parameter to that function -- memmap-lookup.ts stays untouched. — Keeps the constraint genuinely 'before the address, not a post-filter' while satisfying the plan's own instruction without touching a sibling module.
+- [Phase 37]: Plan 37-06: runMemmapJoin()'s new constWrites argument activates the bank-state machinery only when explicitly supplied (even an empty array) -- undefined (every pre-37-06 call site) is a complete no-op. — Guarantees the candidate-constraint argument never changes any unconstrained selection's answer, by construction.
 
 ### Pending Todos
 
@@ -1880,8 +1883,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T07:44:46.938Z
-Stopped at: Completed 37-05-PLAN.md
+Last session: 2026-09-05T08:18:35.522Z
+Stopped at: Completed 37-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
