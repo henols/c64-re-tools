@@ -206,13 +206,13 @@
     {
       "number": "38",
       "name": "PROOF-01..03 on Real Cracked Code",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 38 of 6 · 83% · executing"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-05T17:58:51.283Z"
+  "updated_at": "2026-09-05T19:32:20.136Z"
 }
