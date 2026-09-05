@@ -259,21 +259,21 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### The Importer
 
-- [ ] **IMP-01**: Recovered facts land in the store through a **container-side importer** reading a
+- [x] **IMP-01**: Recovered facts land in the store through a **container-side importer** reading a
       host-written transfer file, with access kinds preserved and the store's single seam respected.
       The alternative — a Ghidra post-script writing `.annostore` directly — is **structurally
       unavailable**, not merely discouraged: `anno-seam.test.ts` asserts `node:sqlite` is named by
       exactly one shipped module, so a Java writer would sit outside every guard's scope, an
       invisible violation rather than a caught one, and `openStore()`'s confinement, the paint index
       and the revert journal would all need re-implementing in Java against a container-side store
-- [ ] **IMP-02**: The transfer file is **transient evidence, not a model** — carrying a digest,
+- [x] **IMP-02**: The transfer file is **transient evidence, not a model** — carrying a digest,
       consumed and deleted in the same command that imports it — so no fourth artifact can drift from
       the store. `.annostore` is the model; `.asm` is a rendering of it through the shipped
       `anno export-asm`. Prior art is unanimous on this split
 
 ### Automatic Annotation
 
-- [ ] **AUTO-01**: Machine addresses are annotated mechanically by joining recovered typed
+- [x] **AUTO-01**: Machine addresses are annotated mechanically by joining recovered typed
       cross-references against `memmap.json`, with **no agent call, no queue walk and no skill
       invocation** anywhere in the loop, reporting how many addresses were annotated and how many
       skipped — and the annotations are read back **out of the store**, not out of the pipeline's own
@@ -428,9 +428,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | OPC-02 | Phase 36 | Complete |
 | OPC-03 | Phase 36 | Complete |
 | OPC-04 | Phase 36 | Complete |
-| IMP-01 | Phase 37 | Pending |
-| IMP-02 | Phase 37 | Pending |
-| AUTO-01 | Phase 37 | Pending |
+| IMP-01 | Phase 37 | Complete |
+| IMP-02 | Phase 37 | Complete |
+| AUTO-01 | Phase 37 | Complete |
 | AUTO-02 | Phase 37 | Pending |
 | AUTO-03 | Phase 37 | Pending |
 | AUTO-04 | Phase 37 | Pending |
