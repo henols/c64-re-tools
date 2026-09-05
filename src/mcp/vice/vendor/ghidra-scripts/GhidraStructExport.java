@@ -11,11 +11,37 @@
 // any kind), then `## DECOMPILED_TEXT` (one function per entry: its entry
 // point, its name, and its full decompiled C body verbatim, in
 // `MODE_DECOMPINTERFACE` only -- see the note below on why this section
-// exists and REFERENCES does not answer the same question). Section order is
-// fixed and each section's own lines are in ascending address order, so two
-// runs over the same program produce byte-identical output -- the file is
-// opened for OVERWRITE (the default `FileWriter(path)` constructor), never
-// append.
+// exists and REFERENCES does not answer the same question), then, SEVENTH
+// and ADDITIVE (Phase 37 plan 37-02, `AUTO-04`/`AUTO-06`), `## CONST_WRITES`
+// (one line per resolved immediate store to a watched address -- the
+// processor port and three VIC/CIA registers -- in the form
+// `<store-address> <target-address> <constant-value>`, with an explicit
+// `## CONST_WRITES_NONE` line when none are found). Section order is fixed
+// and each section's own lines are in ascending address order, so two runs
+// over the same program produce byte-identical output -- the file is opened
+// for OVERWRITE (the default `FileWriter(path)` constructor), never append.
+//
+// WHY `## CONST_WRITES` EXISTS, AND WHY IT IS DERIVED FROM P-CODE, NEVER FROM
+// DECOMPILED C TEXT. `## DECOMPILED_TEXT` carries the recovered constant
+// (e.g. `DAT_0001 = 0x37;`) but with NO per-statement address -- decompiler
+// restructuring can reorder statements relative to their real addresses, so
+// treating source order as address order is a silent correctness bug. This
+// section instead walks each function's own high p-code operations (from the
+// SAME `DecompInterface` results `## STRUCTURAL_FACTS` already walks -- no
+// second interface, no second decompile). MEASURED this plan, real Ghidra
+// 12.1.3: a write to ANY of this section's watched addresses is represented
+// as the decompiler's own built-in "write_volatile" `CALLOTHER` pseudo-op,
+// never a plain `COPY` -- this is a direct, necessary consequence of GHID-02's
+// volatile carve (a stated prerequisite): without it the write is eliminated
+// as a dead store before this walk ever sees it (see `## DECOMPILED_TEXT`'s
+// own header above), and WITH it, the decompiler routes every volatile write
+// through this synthetic call rather than an ordinary assignment. A plain
+// `COPY` (for a watched address outside any volatile range) and a `STORE`
+// (indirect addressing) are also recognised, for generality. Emits a line
+// ONLY when the value being stored is ITSELF a compile-time constant -- a
+// store whose value is computed emits NOTHING, and that silence is
+// `AUTO-05`'s decline signal, a fact rather than a gap; a later editor must
+// never "fill in" a guessed value.
 //
 // WHY `## DECOMPILED_TEXT` EXISTS, AND WHY `## REFERENCES` CANNOT ANSWER THE
 // SAME QUESTION. `## REFERENCES` is populated from the reference manager --
@@ -137,6 +163,7 @@ import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressRange;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Data;
@@ -147,6 +174,7 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.PcodeOpAST;
+import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.symbol.FlowType;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
@@ -179,6 +207,31 @@ public class GhidraStructExport extends GhidraScript {
     private static final Pattern RECORD_STRIDE_PATTERN =
             Pattern.compile("\\+\\s*\\*?\\w*\\s*\\*\\s*(0x[0-9a-fA-F]+|[0-9]+)\\)");
 
+    // D-37-06: the watched-address set for `## CONST_WRITES`. A widened set
+    // later is a one-line edit here; the section's own line shape (three
+    // whitespace-separated tokens) never encodes which addresses are watched,
+    // so a consumer never has to know this set to parse a line.
+    private static final long[] CONST_WRITE_WATCHED_ADDRESSES = {
+        0x0001L, // the 6510 processor port -- its bank state resolves AUTO-04/AUTO-05
+        0xD011L, // VIC-II control register 1 -- the display-mode bit, AUTO-06
+        0xD018L, // VIC-II memory control register -- screen/char-base nibbles, AUTO-06
+        0xDD00L, // CIA #2 data port A -- the VIC bank bits (inverted), AUTO-06
+    };
+
+    // MEASURED this plan, real Ghidra 12.1.3, against this project's own
+    // volatile-carved fixtures: a write to a memory location the volatile
+    // carve (`VolatileCarve.java`, GHID-02) has marked volatile is represented
+    // in high p-code as this synthetic CALLOTHER, NEVER as a plain COPY --
+    // this is the ENTIRE reason a recovered store to any of this section's
+    // watched addresses is observable at all (every one of them falls inside
+    // a volatile-marked range in this project's own harness; without the
+    // carve, `## DECOMPILED_TEXT`'s own header documents that the write is
+    // eliminated as a dead store before it ever reaches this walk). The
+    // numeric value itself is a documented Ghidra decompiler-internal
+    // constant (`UserPcodeOp::BUILTIN_VOLATILE_WRITE`, decompiler C++ source
+    // `userop.cc`), not a registration-order-dependent id -- safe to hardcode.
+    private static final long CALLOTHER_BUILTIN_VOLATILE_WRITE = 0x10000002L;
+
     @Override
     public void run() throws Exception {
         String[] args = getScriptArgs();
@@ -197,6 +250,14 @@ public class GhidraStructExport extends GhidraScript {
         println("EXPORT_MODE: " + mode);
 
         Listing lst = currentProgram.getListing();
+
+        // The program's own default (memory) address space -- used by
+        // `## CONST_WRITES`'s p-code walk below to distinguish a REAL memory
+        // write (this space) from a write to a register or a temporary
+        // "unique" p-code varnode (a different space each), which must never
+        // be mistaken for a watched-address write just because its numeric
+        // offset happens to coincide with one.
+        AddressSpace defaultSpace = currentProgram.getAddressFactory().getDefaultAddressSpace();
 
         // ---- ## CLASSIFICATION : one line per address, `<address> code|data|undef`
         StringBuilder classificationSection = new StringBuilder();
@@ -282,6 +343,15 @@ public class GhidraStructExport extends GhidraScript {
         StringBuilder decompiledTextSection = new StringBuilder("## DECOMPILED_TEXT\n");
         long decompiledTextCount = 0L;
 
+        // ---- ## CONST_WRITES : populated ONLY in MODE_DECOMPINTERFACE, below
+        // (the same per-function p-code walk STRUCTURAL_FACTS's SPLIT_POINTER
+        // detection already performs -- no second interface, no second
+        // decompile). Stays empty under MODE_DATATYPEMANAGER, which never
+        // constructs a decompiler interface at all; the section still emits
+        // its explicit not-found line and a zero count in that mode, per this
+        // file's own explicit-not-found discipline.
+        List<String> constWriteFacts = new ArrayList<>();
+
         if (mode.equals(MODE_DATATYPEMANAGER)) {
             // Control route: DataTypeManager only. DecompInterface is never
             // constructed in this branch.
@@ -352,17 +422,22 @@ public class GhidraStructExport extends GhidraScript {
                     }
 
                     boolean splitFound = CONCAT11_PATTERN.matcher(cText).find();
-                    if (!splitFound) {
-                        HighFunction hf = r.getHighFunction();
-                        if (hf != null) {
-                            Iterator<PcodeOpAST> pcodeIter = hf.getPcodeOps();
-                            while (pcodeIter.hasNext()) {
-                                PcodeOp op = pcodeIter.next();
-                                if (op.getOpcode() == PcodeOp.PIECE) {
-                                    splitFound = true;
-                                    break;
-                                }
+                    // ALWAYS walk this function's own high p-code (not only
+                    // when splitFound is still false) -- `## CONST_WRITES`
+                    // needs every function's STORE/COPY operations regardless
+                    // of whether the CONCAT11 text pattern already answered
+                    // the SPLIT_POINTER question. This never changes the
+                    // SPLIT_POINTER verdict itself: the loop below only ever
+                    // sets splitFound from false to true, never the reverse.
+                    HighFunction hf = r.getHighFunction();
+                    if (hf != null) {
+                        Iterator<PcodeOpAST> pcodeIter = hf.getPcodeOps();
+                        while (pcodeIter.hasNext()) {
+                            PcodeOp op = pcodeIter.next();
+                            if (!splitFound && op.getOpcode() == PcodeOp.PIECE) {
+                                splitFound = true;
                             }
+                            collectConstWrite(op, defaultSpace, constWriteFacts);
                         }
                     }
                     if (splitFound) {
@@ -480,6 +555,25 @@ public class GhidraStructExport extends GhidraScript {
             dispatchSection.append(site).append("\n");
         }
 
+        // ---- ## CONST_WRITES : SEVENTH, ADDITIVE (Phase 37 plan 37-02). See
+        // this file's own header for why this section exists and is derived
+        // from p-code, never from decompiled C text. `constWriteFacts` was
+        // populated above, inside the MODE_DECOMPINTERFACE per-function loop
+        // (staying empty under MODE_DATATYPEMANAGER, which never constructs a
+        // decompiler interface) -- this is the SAME explicit-not-found
+        // discipline `## STRUCTURAL_FACTS` already applies to each of its
+        // five fact kinds: an absent section and a section that found
+        // nothing are different facts and must read differently.
+        StringBuilder constWritesSection = new StringBuilder("## CONST_WRITES\n");
+        if (constWriteFacts.isEmpty()) {
+            constWritesSection.append("## CONST_WRITES_NONE\n");
+        } else {
+            for (String fact : constWriteFacts) {
+                constWritesSection.append(fact).append("\n");
+            }
+        }
+        constWritesSection.append("## CONST_WRITES_COUNT ").append(constWriteFacts.size()).append("\n");
+
         // ---- Write every section, in the fixed order, opened for OVERWRITE.
         PrintWriter out = new PrintWriter(new FileWriter(args[0]));
         try {
@@ -489,6 +583,7 @@ public class GhidraStructExport extends GhidraScript {
             out.print(accountingSection);
             out.print(dispatchSection);
             out.print(decompiledTextSection);
+            out.print(constWritesSection);
         } finally {
             out.close();
         }
@@ -497,5 +592,87 @@ public class GhidraStructExport extends GhidraScript {
         println("EXPORT_CLASSIFICATION_LINES: " + classificationLines);
         println("EXPORT_REFERENCE_COUNT: " + referenceCount);
         println("EXPORT_DECOMPILED_TEXT_COUNT: " + decompiledTextCount);
+        println("EXPORT_CONST_WRITES_COUNT: " + constWriteFacts.size());
+    }
+
+    /**
+     * `## CONST_WRITES`'s own p-code fact-extraction, called once per p-code
+     * operation from the per-function walk above (the SAME `DecompInterface`
+     * results `## STRUCTURAL_FACTS` already walks -- no second interface, no
+     * second decompile). Recognises three idioms a resolved store to a fixed
+     * memory address can take in Ghidra's high p-code, checked in the order a
+     * volatile-marked watched address actually needs them:
+     *
+     *   - The decompiler's own built-in "write_volatile" `CALLOTHER` --
+     *     MEASURED this plan (real Ghidra 12.1.3) as the ONLY shape a write
+     *     to any of this section's watched addresses takes in THIS harness,
+     *     because GHID-02's volatile carve (a stated prerequisite) is what
+     *     keeps the write from being eliminated as a dead store in the first
+     *     place, and the decompiler represents a volatile write this way,
+     *     never as a plain `COPY`. input(1) is the destination address
+     *     varnode (its own address IS the target); input(2) is the value.
+     *   - `COPY`, the direct-addressing form for a fixed address OUTSIDE any
+     *     volatile-marked range (kept for a future watched-address widening
+     *     that falls outside GHID-02's own two carved ranges) -- the
+     *     OPERATION'S OWN OUTPUT varnode's address IS the destination.
+     *   - `STORE`, the indirect-addressing form -- input(0) is a CONSTANT
+     *     varnode encoding the destination address SPACE's own numeric id
+     *     (the standard Ghidra STORE/LOAD convention), input(1) is the
+     *     destination OFFSET within that space, input(2) is the value.
+     *
+     * Appends a line to `out` ONLY when: the resolved destination varnode's
+     * own address space is the program's default (memory) space -- NEVER a
+     * register or a temporary "unique" p-code varnode, whose numeric offsets
+     * can coincide with a watched address purely by chance; the destination
+     * address is one of `CONST_WRITE_WATCHED_ADDRESSES`; and the value
+     * varnode is ITSELF a compile-time constant. A computed value (anything
+     * else) emits NOTHING -- D-37-07, `AUTO-05`'s decline signal.
+     */
+    private void collectConstWrite(PcodeOp op, AddressSpace defaultSpace, List<String> out) {
+        Varnode destVn;
+        Varnode valueVn;
+        if (op.getOpcode() == PcodeOp.CALLOTHER
+                && op.getInput(0) != null
+                && op.getInput(0).isConstant()
+                && op.getInput(0).getOffset() == CALLOTHER_BUILTIN_VOLATILE_WRITE) {
+            destVn = op.getInput(1);
+            valueVn = op.getInput(2);
+        } else if (op.getOpcode() == PcodeOp.COPY) {
+            destVn = op.getOutput();
+            valueVn = op.getInput(0);
+        } else if (op.getOpcode() == PcodeOp.STORE) {
+            Varnode spaceIdVn = op.getInput(0);
+            Varnode offsetVn = op.getInput(1);
+            valueVn = op.getInput(2);
+            if (spaceIdVn == null || offsetVn == null || !offsetVn.isConstant() || valueVn == null) {
+                return;
+            }
+            AddressSpace storeSpace = currentProgram.getAddressFactory().getAddressSpace((int) spaceIdVn.getOffset());
+            if (storeSpace == null || !storeSpace.equals(defaultSpace)) {
+                return;
+            }
+            destVn = new Varnode(defaultSpace.getAddress(offsetVn.getOffset()), 1);
+        } else {
+            return;
+        }
+        if (destVn == null || valueVn == null) {
+            return;
+        }
+        Address destAddr = destVn.getAddress();
+        if (destAddr == null || !destAddr.getAddressSpace().equals(defaultSpace)) {
+            return;
+        }
+        boolean watched = false;
+        for (long w : CONST_WRITE_WATCHED_ADDRESSES) {
+            if (destAddr.getOffset() == w) {
+                watched = true;
+                break;
+            }
+        }
+        if (!watched || !valueVn.isConstant()) {
+            return;
+        }
+        Address storeAddr = op.getSeqnum().getTarget();
+        out.add(storeAddr + " " + destAddr + " 0x" + Long.toHexString(valueVn.getOffset()));
     }
 }
