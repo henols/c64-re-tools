@@ -286,7 +286,13 @@ function annoProductionModules(): string[] {
 // bit decode and the banked-region resolution). Again a RELATION -- the
 // value plan 37-01 measured, plus the one module this plan adds -- and again
 // read literally: 20 is strictly greater than the 19 it replaces.
-const ANNO_MODULE_FLOOR = 17 + 2 + 1;
+//
+// RAISED FROM 20 TO 21 BY PLAN 37-07 (AUTO-06), which lands exactly one new
+// `anno-*.ts` production module: `anno-graphics.ts` (the VIC-pointer-derived
+// graphics-range arithmetic). Again a RELATION -- the value plan 37-06
+// measured, plus the one module this plan adds -- and again read literally:
+// 21 is strictly greater than the 20 it replaces.
+const ANNO_MODULE_FLOOR = 17 + 2 + 1 + 1;
 
 test("the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();

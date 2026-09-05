@@ -81,6 +81,7 @@
     "anno-import.ts",
     "anno-join.ts",
     "anno-bank.ts",
+    "anno-graphics.ts",
     "memmap-lookup.ts",
     "resources",
     "tools-manifest.json",
