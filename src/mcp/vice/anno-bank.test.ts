@@ -5,19 +5,24 @@
 // own TDD instruction.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { decodeBankState, isBankConditionalAddress, regionAdmitsEntry, resolveBankedRegion } from "./anno-bank.ts";
 import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
 import { parseConstWrites, parseGhidraExport } from "./anno-import.ts";
+import type { ConstWriteFact } from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
 import { loadMemmap, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.ts";
 import type { MemmapEntry } from "./memmap-lookup.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_CAPTURE_PATH = join(HERE, "fixtures", "ghidra", "export-bank-path-dependent.txt");
+const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.ts");
+const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.ts");
+const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.ts");
+const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.ts");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROVENANCE_TOKEN_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}[0-9a-f]{64}$`);
@@ -373,3 +378,128 @@ test("regionAdmitsEntry(): matches io_area/character_rom/basic_rom/kernal_rom vi
   assert.equal(regionAdmitsEntry(unrelated, "io_area"), false, "D-37-22: an entry matching no region member must be excluded, not admitted");
   assert.equal(regionAdmitsEntry(unrelated, "ram"), false);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 37, plan 37-06, Task 2 -- Control: bypassing the processor-port
+// decode reddens the two-value flip (37-VALIDATION.md Observed-Red Controls
+// row 5). The mutation lives in a SCRATCH COPY of `anno-bank.ts` ONLY; the
+// committed module is never opened for writing by this file
+// (`.planning/research/PITFALLS.md` Pitfall 23 -- a red observation is its
+// own committed deliverable, never batched with the fix that makes it
+// green).
+// ---------------------------------------------------------------------------
+
+/** `decodeBankState()`'s committed form, held verbatim so the mutation below
+ * is a single, exact, whole-function textual replacement -- copied
+ * character-for-character from `anno-bank.ts` at plan time. */
+const FIXED_DECODE_BANK_STATE = `export function decodeBankState(value: number): BankState {
+  const raw = value;
+  const b = value & 0x07; // bits #2-#0: CHAREN(2) HIRAM(1) LORAM(0)
+  const bits10 = b & 0x03;
+  const bit2Set = (b & 0x04) !== 0;
+
+  const ioRange: BankedRegion = bits10 === 0 ? "ram" : bit2Set ? "io_area" : "character_rom";
+  const basicRange: BankedRegion = bits10 === 0x03 ? "basic_rom" : "ram";
+  const kernalRange: BankedRegion = (b & 0x02) !== 0 ? "kernal_rom" : "ram";
+
+  return { raw, ioRange, basicRange, kernalRange };
+}`;
+
+/** The bypassed form: ignores the processor port value entirely and always
+ * reports the SAME region at every range, exactly as an implementation that
+ * forgot to decode `$01` at all would. */
+const BYPASSED_DECODE_BANK_STATE = `export function decodeBankState(value: number): BankState {
+  const raw = value;
+  // BYPASS (planted violation, plan 37-06 Task 2): ignores the processor
+  // port entirely and always reports the same region.
+  return { raw, ioRange: "io_area", basicRange: "basic_rom", kernalRange: "kernal_rom" };
+}`;
+
+/** Builds a scratch tree holding a MUTATED copy of `anno-bank.ts` (the bit
+ * decode bypassed, nothing else touched), an UNMUTATED copy of
+ * `anno-join.ts` (so the full pipeline -- not just the decode function in
+ * isolation -- is what is actually observed going wrong), and re-export
+ * shims for `anno-join.ts`'s other two sibling imports (`anno-store.ts`,
+ * `memmap-lookup.ts`), so the scratch join calls the exact same real store
+ * and memmap-lookup functions this test file itself uses statically.
+ * Asserts the committed `anno-bank.ts` still carries the exact decode text
+ * before mutating, so source drift fails loudly rather than making the
+ * replacement a silent no-op. */
+function buildScratchTreeWithBypassedDecode(): { tmpDir: string; modulePath: string } {
+  const tmpDir = mkdtempSync(join(tmpdir(), "anno-bank-bypass-"));
+
+  const committedBankSource = readFileSync(REAL_ANNO_BANK_PATH, "utf8");
+  assert.ok(
+    committedBankSource.includes(FIXED_DECODE_BANK_STATE),
+    "expected the committed anno-bank.ts to still carry decodeBankState()'s committed form -- has the source drifted?",
+  );
+  const mutatedBankSource = committedBankSource.replace(FIXED_DECODE_BANK_STATE, BYPASSED_DECODE_BANK_STATE);
+  assert.ok(!mutatedBankSource.includes(FIXED_DECODE_BANK_STATE), "expected the committed decode text to be gone from the mutated source");
+  writeFileSync(join(tmpDir, "anno-bank.ts"), mutatedBankSource, "utf8");
+
+  writeFileSync(join(tmpDir, "anno-join.ts"), readFileSync(REAL_ANNO_JOIN_PATH, "utf8"), "utf8");
+  writeFileSync(join(tmpDir, "anno-store.ts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "memmap-lookup.ts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
+
+  return { tmpDir, modulePath: join(tmpDir, "anno-join.ts") };
+}
+
+async function importScratchAnnoJoinWithBypassedBank(modulePath: string): Promise<{ runMemmapJoin: typeof runMemmapJoin }> {
+  return (await import(`${modulePath}?t=${Date.now()}-${Math.random()}`)) as { runMemmapJoin: typeof runMemmapJoin };
+}
+
+/** Runs one single-reaching-value join over the real captured export's
+ * const-write facts, wiring exactly ONE store address to `$D020` via
+ * `putXref()`, and returns the resulting comment's label. Shared by both the
+ * committed and the mutated observations below so neither duplicates the
+ * store setup. */
+function labelForSingleValueRun(runJoin: typeof runMemmapJoin, storeAddress: number, facts: readonly ConstWriteFact[]): string | undefined {
+  let label: string | undefined;
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    putXref(handle, { fromAddress: storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
+    const { decisions } = runJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
+    label = decisions.find((d) => d.address === 0xd020)?.label;
+    closeStore(handle);
+  });
+  return label;
+}
+
+test(
+  "PLANTED VIOLATION: bypassing decodeBankState() makes the $34/$33 flip stop changing the annotation, and the border-colour write is now labelled the border colour",
+  async () => {
+    const facts = realConstWrites();
+    const flip34 = facts.find((f) => f.value === 0x34)!;
+    const flip33 = facts.find((f) => f.value === 0x33)!;
+
+    // ---- THE COMMITTED MODULE (statically imported, unmutated) ----
+    const committedRamLabel = labelForSingleValueRun(runMemmapJoin, flip34.storeAddress, facts);
+    const committedCharRomLabel = labelForSingleValueRun(runMemmapJoin, flip33.storeAddress, facts);
+    assert.notEqual(
+      committedRamLabel,
+      committedCharRomLabel,
+      "expected the COMMITTED module to still produce DIFFERENT annotations at $D020 under the two values",
+    );
+
+    // ---- THE MUTATED MODULE (dynamically imported scratch copy, decode bypassed) ----
+    const { tmpDir, modulePath } = buildScratchTreeWithBypassedDecode();
+    try {
+      const mutated = await importScratchAnnoJoinWithBypassedBank(modulePath);
+      const bypassedRamLabel = labelForSingleValueRun(mutated.runMemmapJoin, flip34.storeAddress, facts);
+      const bypassedCharRomLabel = labelForSingleValueRun(mutated.runMemmapJoin, flip33.storeAddress, facts);
+
+      assert.equal(
+        bypassedRamLabel,
+        "Border color (only bits #0-#3)",
+        "expected the bypass to make $D020 read as the border colour regardless of the recovered value",
+      );
+      assert.equal(
+        bypassedRamLabel,
+        bypassedCharRomLabel,
+        "expected the bypass to make the two values produce the SAME annotation -- the flip has stopped",
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  },
+);
