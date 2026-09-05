@@ -1919,3 +1919,48 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// CR-02 fix: `DataRangeSeed.java`'s per-byte seed loop used to throw
+// `AddressOutOfBoundsException` on the LAST iteration of a range ending at
+// $FFFF (the address space's own maximum offset -- there is no address to
+// advance to), reporting a fully-successful seed as `DATARANGE-FAILED` and
+// undercounting `DATARANGE-SEED-COUNT` by one. `$fff8-$ffff` is not a
+// hypothetical boundary: it is exactly the sprite-pointer range
+// `anno-graphics.ts`'s own `deriveGraphicsRanges()` can legitimately derive
+// (bank base $0000 with $D018's high nibble $F -- see the finding's own
+// worked example). The flat-64K route is used so every address up to
+// $FFFF is backed by real memory (a .prg's own small loaded range is not).
+// ---------------------------------------------------------------------------
+
+test(
+  "ghidra-live CR-02: DataRangeSeed.java seeds a range ending at $ffff and reports DATARANGE-OK, never DATARANGE-FAILED",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    try {
+      const flatRelPath = generateCharsetPhantomFlat64kVariant(ws);
+      const dataRangesRel = writeDataRangesFile(ws, [{ start: 0xfff8, endInclusive: 0xffff }], "cr02-dataranges.txt");
+      const result = await runGhidraAnalyze(
+        {
+          runId: "cr02-ffff-boundary",
+          importPath: flatRelPath,
+          processor: NMOS_LANGUAGE_ID,
+          importRoute: "flat64k",
+          noanalysis: true,
+          scriptPath: "vendor/ghidra-scripts",
+          dataRangesPath: dataRangesRel,
+        },
+        { repoRoot: ws.root },
+      );
+      assert.equal(result.exitStatus, 0);
+      const logText = readFileSync(result.runLogPath, "utf8");
+      assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "seeding a range ending at $ffff must not throw a script error");
+      assert.match(logText, /DataRangeSeed\.java> DATARANGE-OK: fff8-ffff/, "the $fff8-ffff range must report OK, not FAILED (CR-02's own regression)");
+      assert.doesNotMatch(logText, /DataRangeSeed\.java> DATARANGE-FAILED/, "no range in this run should ever fail -- CR-02's own bug reported a FULLY seeded range as FAILED");
+      assert.match(logText, /DataRangeSeed\.java> DATARANGE-SEED-COUNT: 1/, "the one range given must be counted as seeded, not dropped by the boundary bug");
+    } finally {
+      removeScratchWorkspace(ws);
+    }
+  },
+);
