@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, listComments, listLabels, openStore, setLabel } from "./anno-store.ts";
+import { closeStore, currentRevision, listComments, listLabels, listXrefs, openStore, putXref, setLabel } from "./anno-store.ts";
 import {
   ANNO_READ_REGION_MAX_BYTES,
   ANNO_READ_REGION_MAX_BYTES_ENV,
@@ -1489,6 +1489,207 @@ test("a batch of derived reads inherits the image too, and the whole batch share
       assert.deepEqual((batchBody.results[1]!.result as { callers: number[] }).callers, [0xc000, 0xc003]);
       assert.equal((batchBody.results[2]!.result as { origin: number }).origin, 0xc000);
       assert.equal(existsSync(`${store}-journal`), false, "the whole batch shares one open/close pair and leaves nothing behind");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// WR-01 fix: `anno_import_ghidra_export` and `anno_join_memmap` had zero
+// dispatch-layer coverage in this file -- everything below reaches them
+// through `runAnnoTool()`, the same never-throw boundary `vice-proxy.ts`
+// registers, mirroring the pattern every other verb above already uses.
+// ---------------------------------------------------------------------------
+
+/** A minimal, hand-written Ghidra transfer file: one REFERENCES line and one
+ * CONST_WRITES line (a processor-port store), matching the exact grammar
+ * `parseGhidraExport()` requires (mirrors `anno-import.test.ts`'s own
+ * `writeTransfer()`/`SINGLE_WRITE_EXPORT` fixtures). */
+function writeGhidraTransfer(ws: string, fileName = "export.txt"): string {
+  const text = ["## REFERENCES", "$0812 -> $d020 WRITE", "## REFERENCE_COUNT 1", "## CONST_WRITES", "0815 0001 34", "## CONST_WRITES_COUNT 1", ""].join(
+    "\n",
+  );
+  const path = join(ws, fileName);
+  writeFileSync(path, text, "utf8");
+  return path;
+}
+
+test("WR-01: anno_import_ghidra_export succeeds through runAnnoTool(), reporting the full ImportCounts shape including constWrites (CR-01)", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const transfer = writeGhidraTransfer(ws);
+      const result = await runAnnoTool("anno_import_ghidra_export", { store, export_path: transfer });
+      assert.equal(result.isError, false, result.content[0]?.text);
+      const importBody = (await body(result)) as {
+        referencesSeen: number;
+        xrefsWritten: number;
+        xrefsAlreadyPresent: number;
+        kindsSeenNotImported: Record<string, number>;
+        transferDeleted: boolean;
+        constWrites: { storeAddress: number; targetAddress: number; value: number }[];
+      };
+      assert.equal(importBody.referencesSeen, 1);
+      assert.equal(importBody.xrefsWritten, 1);
+      assert.equal(importBody.xrefsAlreadyPresent, 0);
+      assert.deepEqual(importBody.kindsSeenNotImported, {});
+      assert.equal(importBody.transferDeleted, true);
+      assert.equal(existsSync(transfer), false, "a successful call through the dispatch layer must still delete the transfer file (IMP-02)");
+      assert.deepEqual(importBody.constWrites, [{ storeAddress: 0x0815, targetAddress: 0x0001, value: 0x34 }]);
+    },
+  );
+});
+
+test("WR-01: anno_import_ghidra_export refuses a stale base_revision through runAnnoTool(), and writes nothing", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const transfer = writeGhidraTransfer(ws);
+      const staleRevision = 999999;
+      const result = await runAnnoTool("anno_import_ghidra_export", { store, export_path: transfer, base_revision: staleRevision });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /\[AnnoStoreStaleRevisionError\]/);
+      assert.equal(existsSync(transfer), true, "a refused call must not delete the transfer file");
+
+      const handle = openStore(store, { workspaceRoot: ws });
+      try {
+        assert.equal(listXrefs(handle).length, 0, "a refused call must write nothing");
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+/** `dispatchJoinMemmap()`'s own return shape (`runMemmapJoin()`'s: `{ counts,
+ * decisions, graphics? }`), serialized through `runAnnoTool()`'s generic
+ * `JSON.stringify(await dispatch(...))` -- unlike several list-returning
+ * verbs above, this body is NOT flattened. */
+interface JoinMemmapBody {
+  counts: {
+    addressesConsidered: number;
+    annotated: number;
+    skippedInImage: number;
+    skippedNoMapEntry: number;
+    declined: number;
+    commentsChanged: number;
+    graphicsRangesWritten: number;
+    graphicsContradictedComments: number;
+    graphicsReinterpretedSplitTables: number;
+  };
+  decisions: { address: number; outcome: string; reason?: string; label?: string }[];
+}
+
+test("WR-01: anno_join_memmap succeeds through runAnnoTool(), reporting the full JoinCounts/decisions shape, and omitting const_writes is a no-op (CR-01)", async () => {
+  await withStore(
+    (handle) => {
+      putXref(handle, { fromAddress: 0x0815, toAddress: 0xd020, accessKind: "WRITE" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+
+      const unconstrained = await runAnnoTool("anno_join_memmap", { store, image });
+      assert.equal(unconstrained.isError, false, unconstrained.content[0]?.text);
+      const unconstrainedBody = (await body(unconstrained)) as unknown as JoinMemmapBody;
+      assert.equal(unconstrainedBody.counts.addressesConsidered, 1);
+      assert.equal(
+        unconstrainedBody.counts.annotated,
+        1,
+        "omitting const_writes must resolve exactly as before this argument existed -- unconstrained annotation",
+      );
+      assert.equal(unconstrainedBody.counts.declined, 0);
+      assert.equal(unconstrainedBody.counts.graphicsRangesWritten, 0);
+      assert.equal(unconstrainedBody.decisions.length, 1);
+      assert.equal(unconstrainedBody.decisions[0]!.address, 0xd020);
+      assert.equal(unconstrainedBody.decisions[0]!.outcome, "annotated");
+      assert.equal(unconstrainedBody.decisions[0]!.label, "Border color (only bits #0-#3)");
+    },
+  );
+});
+
+test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() through the dispatch layer -- an all-RAM processor-port value ($34) changes $d020's own label away from border colour (CR-01)", async () => {
+  await withStore(
+    (handle) => {
+      putXref(handle, { fromAddress: 0x0815, toAddress: 0xd020, accessKind: "WRITE" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const constrained = await runAnnoTool("anno_join_memmap", {
+        store,
+        image,
+        const_writes: [{ store_address: 0x0815, target_address: 0x0001, value: 0x34 }],
+      });
+      assert.equal(constrained.isError, false, constrained.content[0]?.text);
+      const constrainedBody = (await body(constrained)) as unknown as JoinMemmapBody;
+      const decision = constrainedBody.decisions.find((d) => d.address === 0xd020);
+      assert.ok(decision, "expected a decision for $d020");
+      // $34 decodes to all-RAM at the I/O range (anno-bank.test.ts's own
+      // real-capture case): $d020 is annotated, but NEVER as the border
+      // colour -- proving const_writes reached runMemmapJoin(), not merely
+      // validated and dropped, since the PREVIOUS test (same store shape,
+      // const_writes omitted) reports the border-colour label for the same
+      // address.
+      assert.equal(decision!.outcome, "annotated");
+      assert.notEqual(
+        decision!.label,
+        "Border color (only bits #0-#3)",
+        "supplying const_writes must change $d020's own label away from the unconstrained border-colour annotation",
+      );
+    },
+  );
+});
+
+test("WR-01: anno_join_memmap refuses a malformed const_writes element by name, through runAnnoTool()", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const result = await runAnnoTool("anno_join_memmap", {
+        store,
+        image,
+        const_writes: [{ store_address: "not-a-number", target_address: 1, value: 1 }],
+      });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /const_writes\[0\]\.store_address/);
+    },
+  );
+});
+
+test("WR-01: anno_join_memmap refuses a stale base_revision through runAnnoTool(), and writes nothing", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const handle = openStore(store, { workspaceRoot: ws });
+      const rev = currentRevision(handle);
+      closeStore(handle);
+
+      const result = await runAnnoTool("anno_join_memmap", { store, image, base_revision: rev + 1 });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /\[AnnoStoreStaleRevisionError\]/);
+
+      const reopened = openStore(store, { workspaceRoot: ws });
+      try {
+        assert.equal(listComments(reopened).length, 0, "a refused join must write no comment");
+      } finally {
+        closeStore(reopened);
+      }
+    },
+  );
+});
+
+test("WR-01: anno_join_memmap's loadImage() error paths -- a missing image and a non-image file -- are reached and named through runAnnoTool()", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const missing = await runAnnoTool("anno_join_memmap", { store, image: join(ws, "not-here.prg") });
+      assert.equal(missing.isError, true);
+      assert.match(missing.content[0]!.text, /\[AnnoStorePathError\]/);
+      assert.match(missing.content[0]!.text, /not-here\.prg/);
+
+      const notAnImage = writeImage(ws, "tiny.prg", Uint8Array.from([0x00, 0xc0]));
+      const wrongShape = await runAnnoTool("anno_join_memmap", { store, image: notAnImage });
+      assert.equal(wrongShape.isError, true);
+      assert.match(wrongShape.content[0]!.text, /\[AnnoToolArgumentError\]/);
     },
   );
 });
