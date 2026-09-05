@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 38
 current_phase_name: PROOF-01..03 on Real Cracked Code
 status: executing
-stopped_at: Phase 37 complete, ready to plan Phase 38
-last_updated: "2026-09-05T17:26:13.698Z"
+stopped_at: Completed 38-01-PLAN.md
+last_updated: "2026-09-05T17:59:22.198Z"
 last_activity: 2026-09-05
-last_activity_desc: Phase 37 complete, transitioned to Phase 38
-state_head: 75e87c003052c8f88210c2791b7b2284bf2436e4
+last_activity_desc: Phase 38 execution started
+state_head: 3d368f23d6abe24ba2025db2d08ed3fe950055f9
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 47
-  completed_plans: 43
+  completed_plans: 44
   percent: 83
 ---
 
@@ -24,7 +24,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-05 after Phase 37)
 
-**Current focus:** Phase 38 — PROOF-01..03 on Real Cracked Code — ready to plan, in
+**Current focus:** Phase 38 — PROOF-01..03 on Real Cracked Code — executing, in
 milestone **v0.8.0 Frame-Exact Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
 **frame-exact emulator stop** owned for the first time behind a pre-committed
 go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
@@ -177,8 +177,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 38 (PROOF-01..03 on Real Cracked Code) — READY TO EXECUTE
-Plan: Not started
+Phase: 38 (PROOF-01..03 on Real Cracked Code) — EXECUTING
+Plan: 2 of 4
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -217,7 +217,7 @@ after the v0.8.0 rewrite dropped the v0.7.0 ids, and the correct repair may legi
 carried-ids section rather than a code change. **No Deferred Items row is filed for it**, on
 purpose: a row with no matching file under `.planning/todos/pending/` reds the
 two-directional ledger guard in the other direction.
-Status: Phase 38 PLANNED — 4 plans across 3 waves (38-01 the tracer measurement; 38-02 and 38-03 in parallel; 38-04 the depacked capture), ready to execute. Phase 37 COMPLETE — 8/8 plans across 4 waves, verified 5/5 must-haves on the first pass. Worktree isolation auto-degraded to sequential-on-main for the whole run (#683: local `main` 276 commits ahead of `origin/main`), so all 8 plans serialised. All 10 requirements (`IMP-01`, `IMP-02`, `AUTO-01`..`AUTO-08`) complete. The code-review gate earned its keep: `CR-01` found the phase’s most dangerous defect — `AUTO-04`..`AUTO-07`’s bank-state and graphics machinery was built, unit-tested and marked Complete, but **unreachable from the shipped tool surface**: `parseConstWrites()` had no production call site and `dispatchJoinMemmap()` never supplied `runMemmapJoin()`’s `constWrites`, so both gated blocks were unconditional no-ops for every real call. Confirmed independently before dispatch, fixed by threading the facts end to end across the two-call surface (`990b0b5e`, `5c27580b`) — import returns them, join accepts them back; durable store persistence stays out of scope per `STORE-05`, which reserves the `bank` column with nothing interpreting it. `CR-02` (a `$FFFF`-boundary throw in `DataRangeSeed.java` turning an applied seed into a false `DATARANGE-FAILED`), `WR-01`, `WR-02` and `IN-01` all fixed with dispositions recorded; the verifier re-traced every one from source rather than trusting the fix report, and re-ran `anno-tools.test.ts` (61/61) and the full suite itself. All six required observed-red controls landed as committed transcripts under `evidence/` (three in 37-04, one in 37-05, two in 37-06), plus 37-08’s before/after label sets measured live against real Ghidra 12.1.3: **512 phantom labels before the feedback, 0 after**. Suite at its documented floor: 3519 tests, 3506 pass, 2 fail (pre-existing `anno-register.test.ts` bookkeeping, out of scope). A second, intermittent failure mode was seen twice and characterised rather than chased: `audit-root-args.test.ts`’s `check-skill-tool-coverage` / `check-skill-fork-honesty` cases fail with `ENOENT` on a `zz-scratch-*.md` file another test file created and removed — 58/58 in isolation, an inter-file race, not a regression. Phase 36 COMPLETE — 7/7 plans across 5 waves, verified. Worktree isolation auto-degraded to sequential-on-main for the whole run (#683: local `main` 223 commits ahead of `origin/main`, so isolated worktrees would fork from a stale `origin/HEAD`). Verification ran twice. The first pass scored 4/5 and found a real regression the phase's own artifacts never disclosed: the code-review gate's `CR-01` fix (`f8ed2bab`) made `runGhidraAnalyze()` reject on a thrown-script signal and updated the sibling GATE 1 case, but missed plan 36-05's forced-conflict case, which then died on an unhandled rejection before any of its assertions ran — invisible to `test:automated` because `ghidra-live.test.ts` is `MANUAL_ONLY`. Closed by `59f72d02` (wrap in `assert.rejects`, reconstruct the run-log path from `runId`), re-verified live at 14/16 + 2 skipped, 0 fail. Re-verification returned `human_needed` on two disclosed literal-wording shortfalls, both **accepted as owner overrides on 2026-09-05** and recorded in `36-VERIFICATION.md`'s `overrides:` block: (1) `GHID-03`'s swallowed-`MemoryConflictException` control is proven on the `flat64k` route only — `bank.prg` cannot reach the I/O page at the `.prg` route's default base; (2) ROADMAP criterion 5 ships four of its five structural facts from real code, the fifth (a resolved computed jump), with `ARRAY_BOUND` and `RECORD_STRIDE`, recorded as absent from the corpus reached — every computed transfer in `danish.d64` is the BRK trick through the unresolvable IRQ vector, cross-verified against `saeger.d64`. All 9 requirements (`OPC-01`..`OPC-04`, `GHID-01`..`GHID-05`) complete. Code review found 7 issues (1 Critical, 3 Warning, 3 Info), all fixed with dispositions recorded. Suite at its documented floor: 3409 tests, 3396 pass, 2 fail (pre-existing `anno-register.test.ts` bookkeeping, out of scope). Phase 35 COMPLETE — 5/5 plans across 4 waves, verified 5/5 must-haves. Verification ran twice: the first pass scored 4/5 and contested `DXA-02`'s "parser refusing by name" clause, since `A-04` had deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read rather than refuse, and both real anomalies found land inside the declared window so a refusal was unreachable by construction; the owner amended the criterion to "loud, never silent" (`cffc8056`) and re-verification passed 5/5, having independently reproduced both anomalies and established that `parseDumpListing()` has no silent disposition path at all. The code-review gate found and fixed a real BLOCKER (`CR-01`: unconfined local read/write I/O in `dxa-run.ts` that never crossed the host-tool seam) and a WARNING (`WR-01`: no integer check, so `NaN` emitted a corrupted `-B` line silently). Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
+Status: Phase 38 EXECUTING — 4 plans across 3 waves (38-01 the tracer measurement; 38-02 and 38-03 in parallel; 38-04 the depacked capture). Worktree isolation auto-degraded to sequential-on-main for this run (#683: local `main` 328 commits ahead of `origin/main`), so all 4 plans serialise. Phase 37 COMPLETE — 8/8 plans across 4 waves, verified 5/5 must-haves on the first pass. Worktree isolation auto-degraded to sequential-on-main for the whole run (#683: local `main` 276 commits ahead of `origin/main`), so all 8 plans serialised. All 10 requirements (`IMP-01`, `IMP-02`, `AUTO-01`..`AUTO-08`) complete. The code-review gate earned its keep: `CR-01` found the phase’s most dangerous defect — `AUTO-04`..`AUTO-07`’s bank-state and graphics machinery was built, unit-tested and marked Complete, but **unreachable from the shipped tool surface**: `parseConstWrites()` had no production call site and `dispatchJoinMemmap()` never supplied `runMemmapJoin()`’s `constWrites`, so both gated blocks were unconditional no-ops for every real call. Confirmed independently before dispatch, fixed by threading the facts end to end across the two-call surface (`990b0b5e`, `5c27580b`) — import returns them, join accepts them back; durable store persistence stays out of scope per `STORE-05`, which reserves the `bank` column with nothing interpreting it. `CR-02` (a `$FFFF`-boundary throw in `DataRangeSeed.java` turning an applied seed into a false `DATARANGE-FAILED`), `WR-01`, `WR-02` and `IN-01` all fixed with dispositions recorded; the verifier re-traced every one from source rather than trusting the fix report, and re-ran `anno-tools.test.ts` (61/61) and the full suite itself. All six required observed-red controls landed as committed transcripts under `evidence/` (three in 37-04, one in 37-05, two in 37-06), plus 37-08’s before/after label sets measured live against real Ghidra 12.1.3: **512 phantom labels before the feedback, 0 after**. Suite at its documented floor: 3519 tests, 3506 pass, 2 fail (pre-existing `anno-register.test.ts` bookkeeping, out of scope). A second, intermittent failure mode was seen twice and characterised rather than chased: `audit-root-args.test.ts`’s `check-skill-tool-coverage` / `check-skill-fork-honesty` cases fail with `ENOENT` on a `zz-scratch-*.md` file another test file created and removed — 58/58 in isolation, an inter-file race, not a regression. Phase 36 COMPLETE — 7/7 plans across 5 waves, verified. Worktree isolation auto-degraded to sequential-on-main for the whole run (#683: local `main` 223 commits ahead of `origin/main`, so isolated worktrees would fork from a stale `origin/HEAD`). Verification ran twice. The first pass scored 4/5 and found a real regression the phase's own artifacts never disclosed: the code-review gate's `CR-01` fix (`f8ed2bab`) made `runGhidraAnalyze()` reject on a thrown-script signal and updated the sibling GATE 1 case, but missed plan 36-05's forced-conflict case, which then died on an unhandled rejection before any of its assertions ran — invisible to `test:automated` because `ghidra-live.test.ts` is `MANUAL_ONLY`. Closed by `59f72d02` (wrap in `assert.rejects`, reconstruct the run-log path from `runId`), re-verified live at 14/16 + 2 skipped, 0 fail. Re-verification returned `human_needed` on two disclosed literal-wording shortfalls, both **accepted as owner overrides on 2026-09-05** and recorded in `36-VERIFICATION.md`'s `overrides:` block: (1) `GHID-03`'s swallowed-`MemoryConflictException` control is proven on the `flat64k` route only — `bank.prg` cannot reach the I/O page at the `.prg` route's default base; (2) ROADMAP criterion 5 ships four of its five structural facts from real code, the fifth (a resolved computed jump), with `ARRAY_BOUND` and `RECORD_STRIDE`, recorded as absent from the corpus reached — every computed transfer in `danish.d64` is the BRK trick through the unresolvable IRQ vector, cross-verified against `saeger.d64`. All 9 requirements (`OPC-01`..`OPC-04`, `GHID-01`..`GHID-05`) complete. Code review found 7 issues (1 Critical, 3 Warning, 3 Info), all fixed with dispositions recorded. Suite at its documented floor: 3409 tests, 3396 pass, 2 fail (pre-existing `anno-register.test.ts` bookkeeping, out of scope). Phase 35 COMPLETE — 5/5 plans across 4 waves, verified 5/5 must-haves. Verification ran twice: the first pass scored 4/5 and contested `DXA-02`'s "parser refusing by name" clause, since `A-04` had deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read rather than refuse, and both real anomalies found land inside the declared window so a refusal was unreachable by construction; the owner amended the criterion to "loud, never silent" (`cffc8056`) and re-verification passed 5/5, having independently reproduced both anomalies and established that `parseDumpListing()` has no silent disposition path at all. The code-review gate found and fixed a real BLOCKER (`CR-01`: unconfined local read/write I/O in `dxa-run.ts` that never crossed the host-tool seam) and a WARNING (`WR-01`: no integer check, so `NaN` emitted a corrupted `-B` line silently). Phase 34 complete (7/7 must-haves, third round). **Phase 33 complete — all 7 waves landed.** `33-12` derived and recorded the verdict above, bound it to Phases 34-38, and closed the three folded todos (`extract-flat-64k-…`, `frame-exact-emulator-stop-is-unowned`, `run-vice-headless-and-in-warp-mode-…`) with honest closing notes — the frame-exact one on a **partial** result, since `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no`, so a frame-exact post-load stop on an autostarted release is still unowned work. Earlier in the phase: **Wave 6** — `33-11` produced the three remaining observed-red controls (`SEED_EFFECT: pinned` from 57-of-4080 to 0-of-4080; `RESET_REMOVED_CONTROL: red`; the `(LIN, CYC)`-alone-PASSES variant at `$e5d4`) and re-checked `probeReady`, which came back `PROBEREADY_BUDGET: short` — every launch profile over a 1000 ms per-attempt budget by 1.2-2.2 s, the absent profile included, so neither new flag caused it; the follow-up is named and left to a milestone owner. **Wave 5** — `33-10` ran alone in its wave (stock's binary monitor serves
 exactly one client) and produced **`GATE-01`'s one corpus-dependent input as a value**:
 `C0_CAPTURE_PAIR: pass` at column 0 of `evidence/33-capture-pair.md`, with
 `CAPTURE_FRAME_EXACT: no` recorded beside it and the differing terms (`line` 154 against
@@ -374,7 +374,7 @@ their measured counter-values, `D-15` carries a fourth rider narrowing its argv
 byte-identity claim, and the two stale Deferred Items rows are gone — taking the
 `test:automated` baseline from 5 failing tests in 3 files to **2 in
 `anno-register.test.ts` alone**, with the residual cause recorded as out-of-phase. **Phase 34 plan 34-01 update (2026-09-03):** the host-tool execution seam tracer is complete — the `host_tool` control op is wired end to end (broker-control.mts/vice-broker.mts/host-tool.mts/host-tool-client.ts), proven against real ACME with all seven VICE lease callbacks provably uncalled; see `.planning/phases/34-the-host-tool-execution-seam/34-01-SUMMARY.md`. Plan 34-02 is next.
-Last activity: 2026-09-05 — Phase 37 complete, transitioned to Phase 38
+Last activity: 2026-09-05 — Phase 38 execution started
 
 ## Performance Metrics
 
@@ -601,6 +601,7 @@ Last activity: 2026-09-05 — Phase 37 complete, transitioned to Phase 38
 | Phase 37 P06 | 30min | 3 tasks | 9 files |
 | Phase 37 P07 | 18min | 2 tasks | 4 files |
 | Phase 37 P08 | 48min | 3 tasks | 17 files |
+| Phase 38 P01 | 27min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1096,6 +1097,8 @@ Recent decisions affecting current work:
 - [Phase 37]: 37-07: The committed capture (export-bank-path-dependent.txt) carries zero writes to DD00/D018/D011 -- every graphics register test case is a hand-built fact list; plan 37-08's fixture is the future real-capture case
 - [Phase 37]: AUTO-07: dataRangesPath is the ONE new wire field; DataRangeSeed.java's own -preScript pair is always emitted first in argv, before any caller-supplied preScript. — VolatileCarve.java's own analyzeAll() call must never run before the data ranges are marked as data.
 - [Phase 37]: AUTO-07's phantom-label proof is flat-64K-route only; the .prg route's own two-byte load shift misaligns the register-derived range against where the fixture's charset bytes actually land there. — Measured live against real Ghidra 12.1.3.
+- [Phase 38]: Phase 38 plan 38-01: PROOF01_FALSE_POSITIVES is unconditionally the structurally-uncomputable refusal string, never a bare integer, because certainCode is always empty on the byte-derived tier (D-03).
+- [Phase 38]: Phase 38 plan 38-01: TEST_AUTOMATED_BASELINE measured at tests 3519 / pass 3506 / fail 2 (broker confirmed inactive), differing from 38-VALIDATION.md's stated pass 3517 figure -- recorded as observed per this phase's own never-re-derived convention, not reconciled.
 
 ### Pending Todos
 
@@ -1927,8 +1930,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T10:24:06.000Z
-Stopped at: Phase 37 complete, ready to plan Phase 38
+Last session: 2026-09-05T17:59:21.776Z
+Stopped at: Completed 38-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md

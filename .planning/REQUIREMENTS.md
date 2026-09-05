@@ -321,7 +321,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
 
 ### The Proofs
 
-- [ ] **PROOF-01**: dxa's data-recovery rate and false-positive count are measured on real cracked
+- [x] **PROOF-01**: dxa's data-recovery rate and false-positive count are measured on real cracked
       releases, reported as numbers against a **named binary** — and stated **beside** the fixture
       figures rather than silently replacing them. **AMENDED** — every rate carries its **denominator
       and positive class**, and the pivot's published `72.46%` / `0 FP` may appear only beside the
@@ -438,7 +438,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AUTO-06 | Phase 37 | Complete |
 | AUTO-07 | Phase 37 | Complete |
 | AUTO-08 | Phase 37 | Complete |
-| PROOF-01 | Phase 38 | Pending |
+| PROOF-01 | Phase 38 | Complete |
 | PROOF-02 | Phase 38 | Pending |
 | PROOF-03 | Phase 38 | Pending |
 
