@@ -119,6 +119,22 @@ test("parseGhidraExport: a first non-blank line that is not a '## ' header is re
   assert.throws(() => parseGhidraExport("$0816 -> $d020 WRITE\n"), AnnoImportError);
 });
 
+test("parseGhidraExport: a REFERENCES line with no '->' separator is refused, naming REFERENCES and the line number", () => {
+  const text = ["## REFERENCES", "$0816 $d020 WRITE", "## REFERENCE_COUNT 1", ""].join("\n");
+  assert.throws(
+    () => parseGhidraExport(text),
+    (err: unknown) => err instanceof AnnoImportError && /REFERENCES/.test(err.message) && /\b2\b/.test(err.message),
+  );
+});
+
+test("parseGhidraExport: a REFERENCES line with four whitespace-separated tokens but the arrow out of position is refused", () => {
+  const text = ["## REFERENCES", "$0816 $d020 -> WRITE", "## REFERENCE_COUNT 1", ""].join("\n");
+  assert.throws(
+    () => parseGhidraExport(text),
+    (err: unknown) => err instanceof AnnoImportError && /REFERENCES/.test(err.message),
+  );
+});
+
 test("parseGhidraExport: a REFERENCE_COUNT trailer disagreeing with the parsed body count refuses, naming both numbers", () => {
   const text = ["## REFERENCES", "$0812 -> $d020 WRITE", "$0813 -> $d021 WRITE", "## REFERENCE_COUNT 3", ""].join("\n");
   assert.throws(
@@ -203,6 +219,32 @@ test("importGhidraExport: an expectedSha256 mismatch refuses, naming both digest
     assert.equal(currentRevision(handle), before);
     assert.equal(existsSync(transferPath), true);
     closeStore(handle);
+  });
+});
+
+test("importGhidraExport: when the delete step itself throws, the call still returns successfully with transferDeleted false and a non-empty reason, and every write is readable after a reopen", () => {
+  // Injection route (per this task's own action text): making a directory
+  // read-only does not reliably block a delete when the test process runs
+  // as root (CI containers commonly do), so the delete step is a
+  // caller-supplied function here rather than a chmod-based fixture.
+  inTempDir((dir) => {
+    const storePath = join(dir, "proj.annostore");
+    const transferPath = writeTransfer(dir, SINGLE_WRITE_EXPORT);
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    const counts = importGhidraExport(handle, {
+      exportPath: transferPath,
+      deleteFile: () => {
+        throw new Error("synthetic unlink failure for the deterministic injection test");
+      },
+    });
+    assert.equal(counts.transferDeleted, false);
+    assert.ok(counts.transferDeleteError && counts.transferDeleteError.length > 0);
+    assert.equal(existsSync(transferPath), true, "the injected failure must leave the transfer file in place");
+    closeStore(handle);
+
+    const reopened = openStore(storePath, { workspaceRoot: dir });
+    assert.equal(listXrefs(reopened).length, 1, "the write committed before the delete step ran, and must still be readable");
+    closeStore(reopened);
   });
 });
 

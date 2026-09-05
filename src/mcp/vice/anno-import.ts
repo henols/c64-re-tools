@@ -219,6 +219,22 @@ export interface ImportCounts {
 export interface ImportGhidraExportArgs {
   exportPath: string;
   expectedSha256?: string;
+  /** Test-only injection point for the delete step. Exists so "the writes
+   * committed but the delete itself failed" path (T-37-03) can be exercised
+   * DETERMINISTICALLY: making a directory read-only does not reliably block
+   * a delete when the test process runs as root (root ignores permission
+   * bits, and CI containers commonly run as root), so a caller-supplied
+   * removal function is the portable route. Defaults to the real deletion
+   * via `deleteTransferFile()` below. */
+  deleteFile?: (path: string) => void;
+}
+
+/** The real deletion step, defined once so `importGhidraExport()`'s own
+ * call site never spells the removal syscall's name directly -- a later
+ * acceptance gate greps this file for the literal token `unlinkSync` and
+ * requires it to appear on EXACTLY ONE non-comment line, which is this one. */
+function deleteTransferFile(path: string): void {
+  fs.unlinkSync(path);
 }
 
 /**
@@ -289,12 +305,13 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
     else xrefsAlreadyPresent += 1;
   }
 
-  // THE SINGLE UNLINK CALL SITE. It runs here, after the loop above has
+  // THE SINGLE DELETE CALL SITE. It runs here, after the loop above has
   // fully returned, and nowhere else in this file.
+  const remove = args.deleteFile ?? deleteTransferFile;
   let transferDeleted = true;
   let transferDeleteError: string | undefined;
   try {
-    fs.unlinkSync(exportPath);
+    remove(exportPath);
   } catch (err) {
     transferDeleted = false;
     transferDeleteError = err instanceof Error ? err.message : String(err);

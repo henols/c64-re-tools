@@ -270,7 +270,17 @@ function annoProductionModules(): string[] {
 // decision, so it is outside this derivation by construction rather than by
 // exclusion. `raised, never lowered` (D-13) again read literally: 17 is
 // strictly greater than the 16 it replaces.
-const ANNO_MODULE_FLOOR = 16 + 1;
+//
+// RAISED FROM 17 TO 19 BY PLAN 37-01 (IMP-01/IMP-02/AUTO-01), which lands
+// exactly two new `anno-*.ts` production modules: `anno-import.ts` (the
+// Ghidra transfer-file parser and importer) and `anno-join.ts` (the
+// mechanical memmap.json join). The raise is again expressed as a RELATION --
+// the value plan 30-01 measured, plus the two modules this plan adds -- and
+// again read literally: 19 is strictly greater than the 17 it replaces. The
+// sibling module this plan also creates, `memmap-lookup.ts`, is deliberately
+// NOT counted here: it carries no `anno-` prefix, exactly like
+// `acme-verify.ts` above, so it is outside this derivation by construction.
+const ANNO_MODULE_FLOOR = 17 + 2;
 
 test("the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();

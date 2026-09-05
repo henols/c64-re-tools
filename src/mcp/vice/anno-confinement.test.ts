@@ -96,6 +96,7 @@ import { join, sep } from "node:path";
 
 import { closeStore, openStore } from "./anno-store.ts";
 import { AnnoStorePathError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.ts";
+import { runAnnoTool } from "./anno-tools.ts";
 import { ViceError } from "./vice.ts";
 
 /** `anno-store.test.ts`'s `inTempDir` shape -- `mkdtempSync` under `tmpdir()`
@@ -841,4 +842,74 @@ test("19. workspaceRelativePath: a symlinked workspace ROOT does not make an in-
     // spelling, so the two agree rather than disagreeing by one hop.
     assert.equal(workspaceRelativePath(join(linkWs, "game.annostore"), realWs), "game.annostore");
   });
+});
+
+// ---------------------------------------------------------------------------
+// 20-21. `anno_import_ghidra_export`'s `export_path` argument (T-37-01,
+// Phase 37 plan 37-01/37-02). Goes through the SAME `resolveWorkspacePath()`
+// the `store` and `image` arguments already use. Unlike tests 1-19, which
+// call `openStore()` directly with an explicit `workspaceRoot`, these two
+// cases go through `runAnnoTool()` -- the only public entry point -- because
+// `resolveWorkspacePath()` resolves against `repoRoot()`, not a caller-passed
+// option. `anno-tools.test.ts`'s own header names this exactly: "THE
+// WORKSPACE ROOT IS MOVED, NOT MOCKED" -- `repoRoot()`'s branch 0 reads
+// `CLAUDE_PROJECT_DIR` from `process.env` on every call, so pointing that
+// variable at a temp directory exercises the REAL confinement code against a
+// REAL temporary workspace. A removal of the resolve call in `anno-tools.ts`'s
+// dispatch arm reddens THIS file rather than only a unit test that could
+// drift out of sync with the real dispatch.
+// ---------------------------------------------------------------------------
+
+test("20. anno_import_ghidra_export: an export_path resolving outside the workspace root is refused before the file is read, naming the argument", async () => {
+  const root = mkdtempSync(join(tmpdir(), "anno-confine-"));
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  try {
+    const ws = join(root, "ws");
+    mkdirSync(ws);
+    const storePath = join(ws, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: ws });
+    closeStore(handle);
+
+    // An ABSOLUTE outside path, mirroring `anno-tools.test.ts`'s own store-path
+    // confinement case -- this sidesteps any question of what a RELATIVE
+    // argument resolves against (this seam resolves it against `process.cwd()`,
+    // not the workspace root, exactly as `store`/`image` already do).
+    const outsideFile = join(root, "outside-export.txt");
+    writeFileSync(outsideFile, "## REFERENCES\n## REFERENCE_COUNT 0\n", "utf8");
+
+    process.env.CLAUDE_PROJECT_DIR = ws;
+    const result = await runAnnoTool("anno_import_ghidra_export", { store: storePath, export_path: outsideFile });
+    assert.equal(result.isError, true, "an export_path outside the workspace root must be refused, never read");
+    assert.match(result.content[0]!.text, /export_path/);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("21. anno_import_ghidra_export: a symlink inside the workspace whose target is outside it is refused by the same code path", async () => {
+  const root = mkdtempSync(join(tmpdir(), "anno-confine-"));
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  try {
+    const ws = join(root, "ws");
+    const outside = join(root, "outside");
+    mkdirSync(ws);
+    mkdirSync(outside);
+    writeFileSync(join(outside, "export.txt"), "## REFERENCES\n## REFERENCE_COUNT 0\n", "utf8");
+    symlinkSync(join(outside, "export.txt"), join(ws, "escape.txt"));
+
+    const storePath = join(ws, "proj.annostore");
+    const handle = openStore(storePath, { workspaceRoot: ws });
+    closeStore(handle);
+
+    process.env.CLAUDE_PROJECT_DIR = ws;
+    const result = await runAnnoTool("anno_import_ghidra_export", { store: storePath, export_path: join(ws, "escape.txt") });
+    assert.equal(result.isError, true, "a symlinked export_path resolving outside the workspace must be refused");
+    assert.match(result.content[0]!.text, /export_path|AnnoStorePathError/);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

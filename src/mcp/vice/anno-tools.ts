@@ -1836,11 +1836,31 @@ function dispatchImportGhidraExport(handle: AnnoStoreHandle, args: unknown): unk
   const bag = argBag(args);
   const baseRevision = assertBaseRevisionArg("anno_import_ghidra_export", args);
   assertNotStale("anno_import_ghidra_export", handle, baseRevision);
-  const exportPath = resolveWorkspacePath(bag.export_path as string);
+  const exportPath = resolveExportPathArg(bag.export_path as string);
   return importGhidraExport(handle, {
     exportPath,
     expectedSha256: bag.sha256 as string | undefined,
   });
+}
+
+/** `resolveWorkspacePath()` itself, never a second hand-rolled resolve-and-
+ * prefix-test (T-37-01) -- but its underlying `AnnoStorePathError` message
+ * says "store path ... is outside the workspace root", unaware of which
+ * higher-level argument it was protecting, because `store` and `image` both
+ * reuse the same generic wording. Wrapped here so a refusal on `export_path`
+ * NAMES the argument rather than reading identically to a `store` refusal. */
+function resolveExportPathArg(raw: string): string {
+  try {
+    return resolveWorkspacePath(raw);
+  } catch (err) {
+    if (err instanceof AnnoStorePathError) {
+      throw new AnnoStorePathError(`anno_import_ghidra_export refused: export_path ${err.message}`, {
+        path: err.path,
+        workspaceRoot: err.workspaceRoot,
+      });
+    }
+    throw err;
+  }
 }
 
 function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown): unknown {
