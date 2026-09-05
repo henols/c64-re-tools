@@ -334,7 +334,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       with the result recorded whichever way it comes out. Note the distinction Phase 23 was emphatic
       about: this was `could-not-run`, **not** `not-exercised` — no corpus was ever searched for a
       computed dispatch, so nothing is known about whether the construct is even present
-- [ ] **PROOF-03**: The `memmap.json` join is run against code that banks ROM in and out, and the point
+- [x] **PROOF-03**: The `memmap.json` join is run against code that banks ROM in and out, and the point
       where a single forward-carried `$01` value becomes wrong is **established rather than assumed**.
       **AMENDED** — stated as **unmeasured in BOTH directions**, with the fixture that will measure it
       named. Nothing is known about where forward-carrying stops being correct, in either direction;
@@ -440,7 +440,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AUTO-08 | Phase 37 | Complete |
 | PROOF-01 | Phase 38 | Complete |
 | PROOF-02 | Phase 38 | Pending |
-| PROOF-03 | Phase 38 | Pending |
+| PROOF-03 | Phase 38 | Complete |
 
 **Coverage:**
 

@@ -1048,7 +1048,7 @@ fixture figures rather than replacing them.
   2. A **computed**-index indirect dispatch taken from real code — the case the pivot fixture never exercised, which used an immediate `ldx #$02` — is either resolved by Ghidra with the resolved target shown, or recorded as unresolved with its transcript. A corpus **searched** and found to contain no computed dispatch is reported as `not-exercised` with the search recorded, and never as a pass; it is no longer reportable as `could-not-run`, because the corpus now exists.
   3. The point where a single forward-carried `$01` value stops being correct is **established rather than assumed, in both directions**, against code that banks ROM in and out: at least one address shown annotating differently under two bank states, or the absence of such an address in the corpus recorded as a fact **about the corpus** rather than about the model. The result is recorded whichever way it comes out.
 
-**Plans**: 1/4 plans executed
+**Plans**: 2/4 plans executed
 
 Plans:
 **Wave 1**
@@ -1057,7 +1057,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 38-02-PLAN.md — PROOF-03: the `$01` boundary established in both directions (wave 2)
+- [x] 38-02-PLAN.md — PROOF-03: the `$01` boundary established in both directions (wave 2)
 - [ ] 38-03-PLAN.md — PROOF-02 part 1: independent site enumeration and the loader-stage record (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -1242,7 +1242,7 @@ in a milestone archive.
 | 35. dxa, Vendored and Parsed | v0.8.0 | 5/5 | Complete | 2026-09-04 |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 7/7 | Complete | 2026-09-05 |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
-| 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 1/4 | In Progress | - |
+| 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 2/4 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
