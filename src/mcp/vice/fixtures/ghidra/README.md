@@ -373,3 +373,108 @@ satisfies this plan's own non-vacuity requirement, and the third is recorded
 rather than filtered, since the exporter's own contract is "every resolved
 constant store to a watched address", not "only the ones a later reader
 finds interesting".
+
+## `charset-phantom.a` / `charset-phantom.prg` (37-08, the graphics-feedback before/after fixture)
+
+`AUTO-07`'s own criterion needs a fixture that (a) writes a complete,
+recovered `$DD00`/`$D018`/`$D011` combination, so `anno-graphics.ts`'s
+`deriveGraphicsRanges()` has real input to derive a character-set range from,
+and (b) places, inside that exact derived range, a byte pattern that decodes
+as plausible-looking 6502 code when nothing marks it as data -- so the
+before/after label-set comparison is non-vacuous. Neither `bank.a` nor
+`bank-path-dependent.a` writes any of the three VIC registers at all
+(MEASURED: neither source contains `$dd00`/`$d018`/`$d011` anywhere), so a
+new fixture was required.
+
+**The three register values, decoded (matching `anno-graphics.ts`'s own
+arithmetic, cross-checked by hand against the source's own header comment):**
+- `$DD00 = $3f` -- bits #0-#1 = `%11` -- VIC bank select inverts to 0 -- bank
+  base `$0000`.
+- `$D018 = $04` -- high nibble `0` -- screen matrix at `$0000` (1024 bytes);
+  low nibble `$4` (`%0100`), bits #1-#3 = `%010` = 2 -- character-or-bitmap
+  base = bank base + 2*2048 = **`$1000`**.
+- `$D011 = $1b` -- bit #5 clear -- character-set mode (not bitmap), size
+  2048 bytes.
+
+Derived character-set range: **`$1000`-`$17ff`** (2048 bytes, matching
+`CHARACTER_SET_SIZE`).
+
+**The charset block's own bytes, and why they were chosen.** 511 four-byte
+blocks of `jsr <next-block>` / `rts`, each `jsr` targeting the block
+immediately following it (via ACME's own `!for i, 0, 510 { jsr * + 4 ; rts }`
+loop, MEASURED to assemble to exactly the intended chained-call byte pattern
+this session), plus a final four-byte `rts`/`rts`/`rts`/`rts` block that
+terminates the chain safely inside the range (511\*4 + 4 = 2048 bytes
+exactly -- the whole derived range, no more, no less). `start`'s own single
+`jsr charset_start` is the ONE real reference into this region, standing in
+for whatever caused a real analyser to look here in the first place (the
+requirement's own "phantom routine inside a character set is promoted to a
+function" story) -- from there, ordinary call-reference-driven code discovery
+follows the chain, decoding one 4-byte "function" after another for the
+whole 2048-byte range when nothing marks it as data first.
+
+**Exact ACME command, version, date:**
+
+```
+$ acme --version
+This is ACME, release 0.97 ("Zem"), 31 Jan 2021
+  Platform independent version.
+
+$ acme -f cbm -o fixtures/ghidra/charset-phantom.prg fixtures/ghidra/charset-phantom.a
+[exit 0]
+```
+
+Run 2026-09-05 at `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/`.
+
+**Resulting artifacts:**
+
+| File | Bytes | sha256 |
+|---|---|---|
+| `charset-phantom.a` | 2284 | `ce0feabc0aee8307d623487801449aed8567e1c24785adc9c80d60ae9491bad4` |
+| `charset-phantom.prg` | 4097 | `accff20636b1b763a9bcc92b1ff29889a5dcc69fa08536f6f4f7de7f833bc203` |
+
+`charset-phantom.prg`'s first two bytes are `$01 $08` -- a `.prg` load-address
+header for origin `$0801`, identical in shape to every prior fixture in this
+directory. The 12-byte canonical `10 SYS 2064` BASIC stub occupies
+`$0801-$080c`; three implicit zero-padding bytes fill `$080d-$080f`; the
+fixture's real code begins at `$0810` (`start:`); a `* = $1000` directive
+after `start`'s own `rts` pads the gap (`$0823-$0fff`) with zero bytes before
+the charset block begins.
+
+**Address trace, read off a real ACME report (`acme -r`), never hand-traced,**
+flat-64K route (source labels, unshifted -- `generateFlat64kVariant()` strips
+the two header bytes before embedding the body, exactly as every prior
+fixture's own trace states):
+
+| Instruction | Flat-64K route | `.prg` route |
+|---|---|---|
+| `start:` (`lda #$3f`) | `$0810` | `$0812` |
+| `sta $dd00` | `$0812` | `$0814` |
+| `sta $d018` | `$0817` | `$0819` |
+| `sta $d011` | `$081c` | `$081e` |
+| `jsr charset_start` | `$081f` | `$0821` |
+| `rts` (end of `start`) | `$0822` | `$0824` |
+| `charset_start:` | `$1000` | `$1002` |
+
+**The `.prg` route's own two-byte shift makes it UNUSABLE for this specific
+proof, and the phantom-label before/after comparison is therefore asserted
+on the flat-64K route ONLY.** This is a NEW consequence of the
+already-documented per-route offset (the "CORRECTED 2026-09-04" paragraph
+under `bank.a` above), not a new defect: `anno-graphics.ts`'s derived range
+(`$1000-$17ff`) is computed PURELY from the register VALUES this fixture
+writes -- a fact about the C64's own real hardware address space, entirely
+independent of where `ghidra.analyze` happens to import the image bytes.
+On the flat-64K route those two coordinate systems coincide (`charset_start`
+loads at `$1000`, matching the derived range exactly). On the `.prg` route
+`BinaryLoader`'s own header-inclusive load shifts EVERY address two bytes
+later, so `charset_start` loads at `$1002` -- the charset bytes and the
+register-derived range would disagree by two bytes, misclassifying the first
+two bytes of the real chain as outside the range and the last two bytes of
+whatever precedes it as inside. Asserting the before/after proof there would
+compare the wrong two-byte window rather than the fixture's own real charset
+block. `.prg`-route CONST_WRITES facts (the three register values themselves)
+are UNAFFECTED by this -- they carry no internal address reference, exactly
+like `bank-path-dependent.a`'s own caller-level `sta $01` writes -- so the
+`.prg` route's own gated case in `ghidra-live.test.ts` still exercises the
+CONST_WRITES parse and the graphics derivation's own arithmetic; only the
+live phantom-label capture is flat-64K-only, and its case says so.

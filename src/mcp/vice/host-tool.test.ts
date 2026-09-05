@@ -1470,6 +1470,7 @@ test("HOST_TOOL_ARG_KEYS/HOST_TOOL_PATH_ARG_KEYS: ghidra.analyze and ghidra.inst
   assert.deepEqual(
     [...HOST_TOOL_ARG_KEYS["ghidra.analyze"]].sort(),
     [
+      "dataRangesPath",
       "entrypointsPath",
       "exportPath",
       "expectedClassificationLines",
@@ -1486,7 +1487,7 @@ test("HOST_TOOL_ARG_KEYS/HOST_TOOL_PATH_ARG_KEYS: ghidra.analyze and ghidra.inst
   );
   assert.deepEqual(
     [...HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"]].sort(),
-    ["entrypointsPath", "exportPath", "importPath", "postScript", "preScript", "scriptPath"].sort(),
+    ["dataRangesPath", "entrypointsPath", "exportPath", "importPath", "postScript", "preScript", "scriptPath"].sort(),
   );
   assert.deepEqual([...HOST_TOOL_ARG_KEYS["ghidra.installExtension"]].sort(), ["moduleName", "sourceDir"].sort());
   assert.deepEqual([...HOST_TOOL_PATH_ARG_KEYS["ghidra.installExtension"]].sort(), ["sourceDir"]);
@@ -1909,8 +1910,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
   // declared path keys (image, entrypointsPath, datablocksPath, labelsPath,
   // outDir). Phase 36, plan 36-02 raised it from 13 to 16: ghidra.analyze
   // gains three more declared path keys (scriptPath, entrypointsPath,
-  // exportPath).
-  assert.equal(totalDeclared, 16, "the declared path-key total across all tools must be 16 -- a different count means a key was added or dropped without updating this census");
+  // exportPath). Phase 37, plan 37-08 raised it from 16 to 17:
+  // ghidra.analyze gains one more declared path key (dataRangesPath).
+  assert.equal(totalDeclared, 17, "the declared path-key total across all tools must be 17 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -1942,8 +1944,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       // a loop body that never ran would leave `executed` at 0. Phase 35,
       // plan 35-01 raised this from 7 to 12 (dxa.disassemble's five path
       // keys); Phase 36, plan 36-02 raised it from 13 to 16 (ghidra.analyze's
-      // three new path keys).
-      assert.equal(totalDeclared, 16, "sanity: the declared path-key total must still be 16");
+      // three new path keys); Phase 37, plan 37-08 raised it from 16 to 17
+      // (ghidra.analyze's one new path key, dataRangesPath).
+      assert.equal(totalDeclared, 17, "sanity: the declared path-key total must still be 17");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {

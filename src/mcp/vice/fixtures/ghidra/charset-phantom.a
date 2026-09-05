@@ -1,0 +1,46 @@
+; Graphics-region fixture: writes a complete VIC bank/screen/charset combination via
+; $DD00/$D018/$D011, then calls into the derived character-set range with a byte
+; pattern chosen to decode as plausible-looking 6502 code (a long chain of
+; JSR-then-RTS blocks, each JSR targeting the very next block) rather than an
+; immediate halt -- so an analyser with nothing marking this range as data mints a
+; function label at every block, and an analyser with the range pre-marked as data
+; (this project's own DataRangeSeed.java pre-script) mints none.
+;
+; The three register values, decoded (matching anno-graphics.ts's own arithmetic):
+;   $DD00 = $3f : bits #0-#1 = %11 -> VIC bank select inverts to 0 -> bank base $0000
+;   $D018 = $04 : high nibble 0 -> screen matrix at $0000 (1024 bytes);
+;                 low nibble $4 (%0100), bits #1-#3 = %010 = 2 -> character-or-bitmap
+;                 base = bank base + 2*2048 = $1000
+;   $D011 = $1b : bit #5 clear -> character-set mode (not bitmap), size 2048 bytes
+; Derived character-set range: $1000-$17ff (2048 bytes), matching CHARACTER_SET_SIZE.
+;
+; The charset block itself: 511 four-byte blocks of `jsr <next-block>` / `rts`,
+; each JSR targeting the block immediately following it, plus a final four-byte
+; `rts`/`rts`/`rts`/`rts` block that terminates the chain safely inside the range
+; (511*4 + 4 = 2048 bytes exactly -- the whole derived range, no more, no less).
+; `start`'s own `jsr charset_start` is the one real reference into this region --
+; standing in for whatever caused a real analyser to look here in the first place
+; (the AUTO-07 requirement's own "phantom routine inside a character set" story).
+        * = $0801
+        !byte $0b,$08,$0a,$00,$9e,$32,$30,$36,$34,$00,$00,$00
+        * = $0810
+start:
+        lda #$3f
+        sta $dd00               ; VIC bank select -> bank base $0000
+        lda #$04
+        sta $d018                ; screen matrix at $0000; character set at $1000
+        lda #$1b
+        sta $d011                ; bit 5 clear -> character-set mode, not bitmap
+        jsr charset_start        ; the one real reference into the charset region
+        rts
+
+        * = $1000
+charset_start:
+!for i, 0, 510 {
+        jsr * + 4
+        rts
+}
+        rts
+        rts
+        rts
+        rts

@@ -183,6 +183,12 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
     // surface gap 36-RESEARCH.md measured -- importRoute (required),
     // loaderBaseAddr, noanalysis, scriptPath, entrypointsPath, exportPath,
     // expectedClassificationLines.
+    // Phase 37, plan 37-08 (AUTO-07, D-37-33): "dataRangesPath" is the ONE
+    // new field this plan adds -- an OPTIONAL path-bearing field naming a
+    // range file for the new DataRangeSeed.java pre-script. A run omitting
+    // it is accepted exactly as before this plan (D-37-33's own stated
+    // requirement: a first pass without graphics feedback must keep
+    // working unchanged).
     "ghidra.analyze": Object.freeze([
       "runId",
       "importPath",
@@ -196,6 +202,7 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
       "entrypointsPath",
       "exportPath",
       "expectedClassificationLines",
+      "dataRangesPath",
     ]),
     // 34-08 (CR-01): EMPTY -- the oracle's location is host-side
     // configuration only (resolveOracleCommand(), below), never a wire
@@ -249,7 +256,10 @@ export const HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<HostToolId, readonly strin
     // pre-existing three -- each resolved through resolveWorkspacePath() in
     // runHostTool()'s ghidra branch, exactly like importPath/preScript/
     // postScript already are.
-    "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript", "scriptPath", "entrypointsPath", "exportPath"]),
+    // Phase 37, plan 37-08: "dataRangesPath" joins the pre-existing six --
+    // resolved through resolveWorkspacePath() in runHostTool()'s ghidra
+    // branch, exactly like every other script-adjacent path field.
+    "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript", "scriptPath", "entrypointsPath", "exportPath", "dataRangesPath"]),
     "oracle.probe": Object.freeze([]),
     "oracle.run": Object.freeze(["source"]),
     // `imageKind` is deliberately absent -- it is a two-member enum, not a
@@ -295,6 +305,11 @@ export interface GhidraAnalyzeArgs {
   postScript?: string;
   exportPath?: string;
   expectedClassificationLines?: number;
+  /** Phase 37, plan 37-08 (AUTO-07, D-37-33): OPTIONAL -- a range file for
+   * the new DataRangeSeed.java pre-script, naming addresses to mark as data
+   * before analysis runs. Absent on every request that carries no graphics
+   * feedback, which must keep resolving exactly as before this plan. */
+  dataRangesPath?: string;
 }
 
 /** Phase 36, plan 36-01 (D-36-01): `sourceDir` is workspace-relative,
@@ -593,6 +608,19 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
         return { ok: false, message: `host_tool "ghidra.analyze" args.exportPath must be a non-empty string; got ${describe(exportPath)}` };
       }
       args.exportPath = exportPath;
+    }
+    // Phase 37, plan 37-08 (AUTO-07): path-bearing -- resolved through
+    // resolveWorkspacePath() by runHostTool(), only validated here as a
+    // non-empty string, mirroring scriptPath/entrypointsPath/exportPath
+    // above. No cross-field requirement: unlike entrypointsPath (which is
+    // VolatileCarve.java's own positional argument and needs preScript to
+    // be present), dataRangesPath needs no OTHER script field to be useful.
+    if ("dataRangesPath" in argsObj) {
+      const dataRangesPath = argsObj.dataRangesPath;
+      if (typeof dataRangesPath !== "string" || dataRangesPath === "") {
+        return { ok: false, message: `host_tool "ghidra.analyze" args.dataRangesPath must be a non-empty string; got ${describe(dataRangesPath)}` };
+      }
+      args.dataRangesPath = dataRangesPath;
     }
 
     // Phase 36, plan 36-02: "a script argument with no script" is refused
@@ -951,6 +979,12 @@ export interface ResolvedGhidraAnalyzePaths {
   scriptPathResolved?: string;
   entrypointsPathResolved?: string;
   exportPathResolved?: string;
+  /** Phase 37, plan 37-08 (AUTO-07): present only when the wire request
+   * carried `dataRangesPath`, resolved through resolveWorkspacePath() by
+   * runHostTool() BEFORE buildHostToolArgv() ever sees this object --
+   * buildHostToolArgv() reads this ONLY from here, never from
+   * request.args. */
+  dataRangesPathResolved?: string;
 }
 
 /** Phase 35, plan 35-01 (A-01, A-02): the resolved fields dxa.disassemble's
@@ -1039,8 +1073,17 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
   }
 
   if (request.tool === "ghidra.analyze") {
-    const { importPath, projectLocation, projectName, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved } =
-      resolved as ResolvedGhidraAnalyzePaths;
+    const {
+      importPath,
+      projectLocation,
+      projectName,
+      preScriptPath,
+      postScriptPath,
+      scriptPathResolved,
+      entrypointsPathResolved,
+      exportPathResolved,
+      dataRangesPathResolved,
+    } = resolved as ResolvedGhidraAnalyzePaths;
 
     // Named environment variable, never a guessed install location and
     // never this repository's own local probe directory (T-34-16).
@@ -1121,6 +1164,7 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
       postScript?: string;
       exportPath?: string;
       expectedClassificationLines?: number;
+      dataRangesPath?: string;
     } = {
       projectLocation,
       projectName,
@@ -1135,6 +1179,10 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     if (postScriptPath !== undefined) argvInput.postScript = postScriptPath;
     if (exportPathResolved !== undefined) argvInput.exportPath = exportPathResolved;
     if (request.args.expectedClassificationLines !== undefined) argvInput.expectedClassificationLines = request.args.expectedClassificationLines;
+    // Phase 37, plan 37-08 (AUTO-07): reads ONLY from
+    // resolved.dataRangesPathResolved -- never from request.args.dataRangesPath
+    // -- so argv never carries a raw, unresolved wire string for this field.
+    if (dataRangesPathResolved !== undefined) argvInput.dataRangesPath = dataRangesPathResolved;
 
     const built = buildAnalyzeHeadlessArgv(argvInput);
     if (!built.ok) return { ok: false, message: built.message };
@@ -1629,6 +1677,16 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       if (!exportPathResult.ok) return { ok: false, message: exportPathResult.message };
       exportPathResolved = exportPathResult.path;
     }
+    // Phase 37, plan 37-08 (AUTO-07): resolved through the SAME site, BEFORE
+    // resolveGhidraProject()'s own directory RESERVATION below -- a refusal
+    // here must never leave a reserved-but-unused run directory behind,
+    // exactly as every other script-adjacent path field above.
+    let dataRangesPathResolved: string | undefined;
+    if (request.args.dataRangesPath !== undefined) {
+      const dataRangesPathResult = resolveWorkspacePath(repoRootAbs, request.args.dataRangesPath);
+      if (!dataRangesPathResult.ok) return { ok: false, message: dataRangesPathResult.message };
+      dataRangesPathResolved = dataRangesPathResult.path;
+    }
 
     const projectResolved = resolveGhidraProject({ repoRoot: repoRootAbs, runId: request.args.runId });
     if (!projectResolved.ok) return { ok: false, message: projectResolved.message };
@@ -1643,6 +1701,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       scriptPathResolved,
       entrypointsPathResolved,
       exportPathResolved,
+      dataRangesPathResolved,
     });
   } else if (request.tool === "dxa.disassemble") {
     // (35-01, item 7). `image` and each present optional path resolved

@@ -118,6 +118,22 @@ export const LANGUAGE_ID_PATTERN = /^[A-Za-z0-9_]{1,64}(:[A-Za-z0-9_]{1,64}){1,7
  * `resolveWorkspacePath()` (T-36-09). */
 export const LOADER_BASE_ADDR_PATTERN = /^0x[0-9a-f]{1,4}$/;
 export const GHIDRA_IMPORT_ROUTES = Object.freeze(["prg", "flat64k"]);
+// ---------------------------------------------------------------------------
+// Phase 37, plan 37-08 (AUTO-07): the data-range pre-script's own fixed
+// script name. `dataRangesPath` (below) is a wire field naming a RANGE FILE
+// only -- never a script name -- because the script that reads it always
+// lives beside `VolatileCarve.java`/`GhidraStructExport.java` in the SAME
+// `scriptPath` directory every caller already supplies (see
+// `ghidra-live.test.ts`'s own `scriptPath: "vendor/ghidra-scripts"`
+// convention), exactly like `GHIDRA_STOCK_6502_LANGUAGE_FILES` above names a
+// fixed file set rather than accepting one on the wire. This keeps
+// `dataRangesPath` the ONLY new field this plan adds (D-37-33), with no
+// second "which script" field to keep in sync.
+// ---------------------------------------------------------------------------
+/** The fixed name of plan 37-08's new pre-script, `DataRangeSeed.java` --
+ * resolved by Ghidra against the SAME `-scriptPath` directory every other
+ * script name here already resolves against. Never a wire field. */
+export const DATA_RANGE_SEED_SCRIPT_NAME = "DataRangeSeed.java";
 /** The route's own fixed loader base address, as a lowercase-hex string
  * matching `LOADER_BASE_ADDR_PATTERN`. The flat-64K route bases at zero --
  * the whole 64K address space IS the image; the `.prg` route bases at
@@ -369,11 +385,13 @@ const BUILD_ANALYZE_HEADLESS_ARGV_KEYS = Object.freeze([
     "postScript",
     "exportPath",
     "expectedClassificationLines",
+    // Phase 37, plan 37-08 (AUTO-07, D-37-33): the ONE new key this plan adds.
+    "dataRangesPath",
 ]);
 const BUILD_ANALYZE_HEADLESS_ARGV_SHAPE = `an object with keys ${BUILD_ANALYZE_HEADLESS_ARGV_KEYS.join("/")} ` +
     `("projectLocation"/"projectName"/"importPath"/"processor"/"loaderBaseAddr" required non-empty strings, ` +
-    `"noanalysis" an optional boolean, "scriptPath"/"preScript"/"entrypointsPath"/"postScript"/"exportPath" optional ` +
-    `non-empty strings, "expectedClassificationLines" an optional non-negative integer)`;
+    `"noanalysis" an optional boolean, "scriptPath"/"preScript"/"entrypointsPath"/"postScript"/"exportPath"/` +
+    `"dataRangesPath" optional non-empty strings, "expectedClassificationLines" an optional non-negative integer)`;
 /** Emits `[projectLocation, projectName, "-import", importPath, "-processor",
  * processor, "-deleteProject", ...optional pre/post script flags]`.
  *
@@ -397,7 +415,7 @@ export function buildAnalyzeHeadlessArgv(input) {
             message: `buildAnalyzeHeadlessArgv input has unknown key(s) ${unknownKeys.join(", ")}; accepted shape is ${BUILD_ANALYZE_HEADLESS_ARGV_SHAPE}`,
         };
     }
-    const { projectLocation, projectName, importPath, processor, loaderBaseAddr, noanalysis, scriptPath, preScript, entrypointsPath, postScript, exportPath, expectedClassificationLines } = input;
+    const { projectLocation, projectName, importPath, processor, loaderBaseAddr, noanalysis, scriptPath, preScript, entrypointsPath, postScript, exportPath, expectedClassificationLines, dataRangesPath } = input;
     for (const [key, value] of [
         ["projectLocation", projectLocation],
         ["projectName", projectName],
@@ -446,6 +464,9 @@ export function buildAnalyzeHeadlessArgv(input) {
         ["entrypointsPath", entrypointsPath],
         ["postScript", postScript],
         ["exportPath", exportPath],
+        // Phase 37, plan 37-08 (AUTO-07): the SAME "optional non-empty string"
+        // validation every other script-adjacent path field already gets.
+        ["dataRangesPath", dataRangesPath],
     ]) {
         if (value !== undefined && (typeof value !== "string" || value === "")) {
             return { ok: false, message: `buildAnalyzeHeadlessArgv "${key}" must be a non-empty string or absent; got ${describe(value)}` };
@@ -468,6 +489,9 @@ export function buildAnalyzeHeadlessArgv(input) {
         ["scriptPath", scriptPath],
         ["entrypointsPath", entrypointsPath],
         ["exportPath", exportPath],
+        // Phase 37, plan 37-08 (AUTO-07): the SAME independent parent-segment
+        // re-check every other script-adjacent path field already gets.
+        ["dataRangesPath", dataRangesPath],
     ]) {
         if (typeof value !== "string")
             continue;
@@ -533,6 +557,19 @@ export function buildAnalyzeHeadlessArgv(input) {
         argv.push("-noanalysis");
     if (typeof scriptPath === "string")
         argv.push("-scriptPath", scriptPath);
+    // Phase 37, plan 37-08 (AUTO-07, D-37-33): DataRangeSeed.java's own
+    // `-preScript` pair is emitted FIRST, before the caller's own `preScript`
+    // (VolatileCarve.java) -- `analyzeHeadless` runs `-preScript` entries in
+    // argv order (analyzeHeadlessREADME.md: "Using Multiple Scripts"), and
+    // VolatileCarve.java's own `run()` calls `analyzeAll()` itself at the end
+    // of ITS run -- so the data ranges must already be marked as data before
+    // that call happens, or the code-discovery analysis this whole feedback
+    // exists to suppress would already have run over them. Independent of
+    // whether a `preScript` is present at all: `dataRangesPath` needs no
+    // OTHER script to be useful (unlike `entrypointsPath`, which is
+    // VolatileCarve.java's own positional argument).
+    if (typeof dataRangesPath === "string")
+        argv.push("-preScript", DATA_RANGE_SEED_SCRIPT_NAME, dataRangesPath);
     if (typeof preScript === "string") {
         argv.push("-preScript", preScript);
         if (typeof entrypointsPath === "string")

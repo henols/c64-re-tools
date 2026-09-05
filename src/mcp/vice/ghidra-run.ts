@@ -92,6 +92,10 @@ export interface GhidraRunArgs {
   entrypointsPath?: string;
   exportPath?: string;
   expectedClassificationLines?: number;
+  /** Phase 37, plan 37-08 (AUTO-07): optional, path-bearing -- a range file
+   * for the new DataRangeSeed.java pre-script. Included in the wire request
+   * ONLY when the caller supplies it, mirroring every other field below. */
+  dataRangesPath?: string;
 }
 
 /** The function shape `runHostToolFromContainer()` itself has -- named here
@@ -215,6 +219,7 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
   if (args.entrypointsPath !== undefined) wireArgs.entrypointsPath = args.entrypointsPath;
   if (args.exportPath !== undefined) wireArgs.exportPath = args.exportPath;
   if (args.expectedClassificationLines !== undefined) wireArgs.expectedClassificationLines = args.expectedClassificationLines;
+  if (args.dataRangesPath !== undefined) wireArgs.dataRangesPath = args.dataRangesPath;
 
   const runOpts: RunHostToolFromContainerOptions = {};
   if (opts.dir !== undefined) runOpts.dir = opts.dir;
