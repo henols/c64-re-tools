@@ -80,6 +80,7 @@
     "anno-register.ts",
     "anno-import.ts",
     "anno-join.ts",
+    "anno-bank.ts",
     "memmap-lookup.ts",
     "resources",
     "tools-manifest.json",

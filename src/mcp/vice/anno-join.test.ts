@@ -302,7 +302,7 @@ test("runMemmapJoin: setComment() refuses, by name, a synthetic label long enoug
 // prose.
 // ---------------------------------------------------------------------------
 
-const SCANNED_MODULES = ["anno-join.ts", "memmap-lookup.ts", "anno-import.ts"];
+const SCANNED_MODULES = ["anno-join.ts", "memmap-lookup.ts", "anno-import.ts", "anno-bank.ts"];
 
 /** Every `import ... from "specifier"` module specifier this file's own
  * source names, after comments are stripped but literal bodies are KEPT --

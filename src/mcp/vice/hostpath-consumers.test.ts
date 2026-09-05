@@ -280,7 +280,13 @@ function annoProductionModules(): string[] {
 // sibling module this plan also creates, `memmap-lookup.ts`, is deliberately
 // NOT counted here: it carries no `anno-` prefix, exactly like
 // `acme-verify.ts` above, so it is outside this derivation by construction.
-const ANNO_MODULE_FLOOR = 17 + 2;
+//
+// RAISED FROM 19 TO 20 BY PLAN 37-06 (AUTO-04/AUTO-05), which lands exactly
+// one new `anno-*.ts` production module: `anno-bank.ts` (the processor-port
+// bit decode and the banked-region resolution). Again a RELATION -- the
+// value plan 37-01 measured, plus the one module this plan adds -- and again
+// read literally: 20 is strictly greater than the 19 it replaces.
+const ANNO_MODULE_FLOOR = 17 + 2 + 1;
 
 test("the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();
