@@ -357,6 +357,19 @@ export interface ImportCounts {
    * still reported as a success with this reason attached, never as a
    * failure after a durable write. */
   transferDeleteError?: string;
+  /** CR-01 fix: the `## CONST_WRITES` section's own facts, parsed by
+   * `parseConstWrites()` BEFORE the transfer file is deleted below -- the
+   * ONE artifact carrying them. `importGhidraExport()` never persists these
+   * facts in the store (the reserved `bank` column stays null, IMP-01/D-37-25);
+   * they ride on THIS return value instead, so a caller can hand the SAME
+   * array straight to `anno_join_memmap`'s own `const_writes` argument in a
+   * following call, closing the loop `anno-tools.ts`'s `dispatchJoinMemmap()`
+   * previously left open (every call resolved through the unconstrained path
+   * because nothing ever supplied `runMemmapJoin()`'s `constWrites`).
+   * Always present, even when empty -- mirrors this interface's own
+   * "always present, often empty" siblings rather than being conditionally
+   * omitted. */
+  constWrites: ConstWriteFact[];
 }
 
 export interface ImportGhidraExportArgs {
@@ -416,6 +429,13 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
 
   const doc = parseGhidraExport(contents.toString("utf8"));
   const referenceLines = doc.sections.get("REFERENCES") ?? [];
+  // CR-01/WR-02 fix: parsed here, from the SAME document, before the
+  // transfer file is deleted below -- `parseConstWrites()` was previously
+  // exercised only by test code (`anno-join.test.ts`/`ghidra-live.test.ts`),
+  // never by this, the only production entry point that reads a transfer
+  // file. See `ImportCounts.constWrites`'s own doc comment for how the
+  // facts reach `anno_join_memmap`.
+  const constWrites = parseConstWrites(doc);
 
   const kindsSeenNotImported: Record<string, number> = {};
   const writes: { fromAddress: number; toAddress: number; accessKind: XrefAccessKind }[] = [];
@@ -469,6 +489,7 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
     transferSha256,
     transferByteLength,
     transferDeleted,
+    constWrites,
     ...(transferDeleteError !== undefined ? { transferDeleteError } : {}),
   };
 }

@@ -175,6 +175,7 @@ import { composeAddressDetails } from "./anno-details.ts";
 import { decode } from "./disasm-decoder.ts";
 import { render } from "./disasm-renderer.ts";
 import { importGhidraExport } from "./anno-import.ts";
+import type { ConstWriteFact } from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
 import { flatImageOrigin, parsePrg } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
@@ -950,7 +951,12 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "referencesSeen, xrefsWritten, xrefsAlreadyPresent (duplicate references are deduped, never double-counted), " +
       "and kindsSeenNotImported -- reference types this store's four-member vocabulary does not carry, dropped and " +
       "counted rather than refused, because a real corpus binary carries ordinary jump and call references " +
-      "constantly. Every written row's bank column is null: this verb does not resolve bank state.",
+      "constantly. Every written row's bank column is null: this verb does not resolve bank state itself. Also " +
+      "reports constWrites -- the export's `## CONST_WRITES` facts (recovered $01/$D011/$D018/$DD00 stores), always " +
+      "present (possibly empty). The transfer file naming them is DELETED by this same call (IMP-02), so this " +
+      "return value is the only place they survive: pass the SAME constWrites array, unchanged, to a following " +
+      "anno_join_memmap call's own const_writes argument to activate bank-state resolution (AUTO-04/AUTO-05) and " +
+      "VIC-register graphics-range derivation (AUTO-06/AUTO-07) for this image.",
     inputSchema: {
       type: "object",
       properties: {
@@ -982,13 +988,44 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "call, no queue walk and no skill invocation anywhere in this call. Reports addressesConsidered, annotated, " +
       "skippedInImage, skippedNoMapEntry, declined and commentsChanged, plus a per-address decisions array naming " +
       "the outcome and, for every skip, WHY. Running this twice over an unchanged store reports commentsChanged: 0 " +
-      "on the second run -- re-running a join pass is not an error.",
+      "on the second run -- re-running a join pass is not an error. Passing const_writes (typically the SAME " +
+      "constWrites array anno_import_ghidra_export just returned for this image, unchanged) additionally activates " +
+      "bank-state resolution: a $01-conditional address (AUTO-04) declines with a named reason rather than " +
+      "guessing when the reaching processor-port value is absent or disagreeing (AUTO-05), and VIC-register " +
+      "graphics ranges are derived and written back (AUTO-06/AUTO-07, graphics_map_index selects which of several " +
+      "derived combinations when more than one exists, default 0). Omitting const_writes entirely is a complete " +
+      "no-op for both of these -- every address resolves exactly as if this argument did not exist.",
     inputSchema: {
       type: "object",
       properties: {
         ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         ...BASE_REVISION_PROPERTY,
+        const_writes: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              store_address: { type: "integer", description: "The instruction's own address that performed the store." },
+              target_address: { type: "integer", description: "The watched hardware address ($0001/$D011/$D018/$DD00) written to." },
+              value: { type: "integer", description: "The compile-time constant value written." },
+            },
+            required: ["store_address", "target_address", "value"],
+          },
+          description:
+            "Optional recovered const-write facts (AUTO-04/AUTO-05/AUTO-06/AUTO-07) -- pass back the constWrites " +
+            "array anno_import_ghidra_export returned for the SAME image, unchanged. Supplying it (even []) " +
+            "activates bank-state resolution and graphics-range derivation/write-back; omitting it entirely is a " +
+            "complete no-op for both.",
+        },
+        graphics_map_index: {
+          type: "integer",
+          description:
+            "Which of several derived VIC-register-value combinations to write back as graphics ranges, when " +
+            "const_writes yields more than one distinct combination (D-37-27: several valid maps are never merged " +
+            "into one). Defaults to 0. Consulted ONLY when const_writes is supplied at all. Out of range for the " +
+            "derived map count REFUSES the whole call rather than silently clamping or picking a default.",
+        },
       },
       required: ["store", "image"],
     },
@@ -1166,10 +1203,76 @@ function assertImportGhidraExportArgs(args: unknown, batchIndex?: number): void 
   assertBaseRevisionArg("anno_import_ghidra_export", args, batchIndex);
 }
 
+/** Validates one `const_writes[i]` element against the wire shape declared on
+ * `anno_join_memmap`'s own schema, and narrows it to a `ConstWriteFact`
+ * (CR-01 fix). Each of the three fields is required and must be a
+ * non-negative integer -- these are ALREADY-RESOLVED facts a caller is
+ * round-tripping from a prior anno_import_ghidra_export call, never an
+ * agent-typed address, so there is no `$`/`0x` ambiguity to route through
+ * `parseStoreAddress()` here. */
+function assertConstWriteFactArg(name: string, raw: unknown, index: number, batchIndex?: number): ConstWriteFact {
+  if (!isPlainObject(raw)) {
+    refuseArg(
+      name,
+      "const_writes",
+      `"const_writes[${index}]" must be an object with store_address/target_address/value fields, got ${JSON.stringify(raw)}.`,
+      batchIndex,
+    );
+  }
+  const bag = raw as Record<string, unknown>;
+  for (const key of ["store_address", "target_address", "value"] as const) {
+    const value = bag[key];
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+      refuseArg(
+        name,
+        "const_writes",
+        `"const_writes[${index}].${key}" must be a non-negative integer, got ${JSON.stringify(value)}.`,
+        batchIndex,
+      );
+    }
+  }
+  return {
+    storeAddress: bag.store_address as number,
+    targetAddress: bag.target_address as number,
+    value: bag.value as number,
+  };
+}
+
+/** Validates the optional `const_writes` array, returning `undefined` when
+ * omitted -- OMISSION, not emptiness, is what `runMemmapJoin()` treats as
+ * "skip the bank-state/graphics machinery entirely" (D-37-24's own
+ * documented activation switch), so this must not default an absent
+ * argument to `[]`. */
+function assertConstWritesArg(name: string, args: unknown, batchIndex?: number): ConstWriteFact[] | undefined {
+  const raw = argBag(args).const_writes;
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    refuseArg(name, "const_writes", `"const_writes" must be an array when supplied, got ${JSON.stringify(raw)}.`, batchIndex);
+  }
+  return raw.map((entry, i) => assertConstWriteFactArg(name, entry, i, batchIndex));
+}
+
+/** Validates the optional `graphics_map_index` argument. */
+function assertGraphicsMapIndexArg(name: string, args: unknown, batchIndex?: number): number | undefined {
+  const raw = argBag(args).graphics_map_index;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+    refuseArg(
+      name,
+      "graphics_map_index",
+      `"graphics_map_index" must be a non-negative integer when supplied, got ${JSON.stringify(raw)}.`,
+      batchIndex,
+    );
+  }
+  return raw;
+}
+
 function assertJoinMemmapArgs(args: unknown, batchIndex?: number): void {
   assertStoreArg("anno_join_memmap", args, batchIndex);
   assertImageArg("anno_join_memmap", args, batchIndex);
   assertBaseRevisionArg("anno_join_memmap", args, batchIndex);
+  assertConstWritesArg("anno_join_memmap", args, batchIndex);
+  assertGraphicsMapIndexArg("anno_join_memmap", args, batchIndex);
 }
 
 
@@ -1867,7 +1970,19 @@ function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown): unknown {
   const baseRevision = assertBaseRevisionArg("anno_join_memmap", args);
   assertNotStale("anno_join_memmap", handle, baseRevision);
   const image = loadImage("anno_join_memmap", args);
-  return runMemmapJoin(handle, { imageOrigin: image.origin, imageByteLength: image.body.length });
+  // CR-01 fix: `const_writes`/`graphics_map_index` are threaded into
+  // `runMemmapJoin()` exactly as its own `RunMemmapJoinArgs` documents --
+  // OMISSION (not `[]`) is what keeps every pre-existing call (no
+  // const_writes at all) a byte-identical no-op for the bank-state and
+  // graphics machinery.
+  const constWrites = assertConstWritesArg("anno_join_memmap", args);
+  const graphicsMapIndex = assertGraphicsMapIndexArg("anno_join_memmap", args);
+  return runMemmapJoin(handle, {
+    imageOrigin: image.origin,
+    imageByteLength: image.body.length,
+    ...(constWrites !== undefined ? { constWrites } : {}),
+    ...(graphicsMapIndex !== undefined ? { graphicsMapIndex } : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------
