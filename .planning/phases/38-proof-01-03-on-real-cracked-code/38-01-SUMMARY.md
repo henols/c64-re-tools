@@ -169,6 +169,11 @@ None - no external service configuration required.
 - `TEST_AUTOMATED_BASELINE: tests 3525 / pass 3512 / fail 2` (post-38-01) is the floor later plans compare against, per `README.md`'s convention 4 — never re-derived, never a gate.
 - No blockers for `38-02` (PROOF-03, wave 2) or `38-03` (PROOF-02 loader stage, wave 2), both of which depend only on `38-01`.
 
+## Self-Check: PASSED
+
+All 7 created/modified files confirmed present on disk; all 3 commits
+(`bf1a0a17`, `7e990fce`, `a35f71d8`) confirmed in `git log --oneline --all`.
+
 ---
 *Phase: 38-proof-01-03-on-real-cracked-code*
 *Completed: 2026-09-05*
