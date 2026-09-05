@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 37
 current_phase_name: The Importer and the Automatic Annotation Join
 status: executing
-stopped_at: Completed 37-06-PLAN.md
-last_updated: "2026-09-05T08:18:35.853Z"
+stopped_at: Completed 37-07-PLAN.md
+last_updated: "2026-09-05T08:39:42.450Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 37 execution started
-state_head: 04a95a465b78d8948a1350d3efdd6c1318c5e977
+state_head: b03ee67e9ab09222846fae7a8c0a35b861652631
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 43
-  completed_plans: 41
+  completed_plans: 42
   percent: 67
 ---
 
@@ -178,7 +178,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 37 (The Importer and the Automatic Annotation Join) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -598,6 +598,7 @@ Last activity: 2026-09-05 — Phase 37 execution started
 | Phase 37 P04 | 35min | 3 tasks | 4 files |
 | Phase 37 P05 | 24min | 2 tasks | 3 files |
 | Phase 37 P06 | 30min | 3 tasks | 9 files |
+| Phase 37 P07 | 18min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1073,6 +1074,8 @@ Recent decisions affecting current work:
 - [Phase 37]: Plan 37-05: re-export shims (forward by absolute path) satisfy anno-join.ts's sibling imports in a scratch tree, instead of mirroring anno-store.ts's own deep dependency chain — Only anno-join.ts needed mutating; its siblings only needed to resolve, and the shim reuses the same cached real module the test file imports statically
 - [Phase 37]: Plan 37-06: the bank-state candidate constraint narrows selectMemmapEntry()'s own entries array before selection runs, rather than adding a new parameter to that function -- memmap-lookup.ts stays untouched. — Keeps the constraint genuinely 'before the address, not a post-filter' while satisfying the plan's own instruction without touching a sibling module.
 - [Phase 37]: Plan 37-06: runMemmapJoin()'s new constWrites argument activates the bank-state machinery only when explicitly supplied (even an empty array) -- undefined (every pre-37-06 call site) is a complete no-op. — Guarantees the candidate-constraint argument never changes any unconstrained selection's answer, by construction.
+- [Phase 37]: 37-07: Graphics-range derivation (AUTO-06) uses a cross product of each VIC register's own distinct recovered values, not a reaching-value graph walk, since it is forbidden from reading the cross-reference graph at all
+- [Phase 37]: 37-07: The committed capture (export-bank-path-dependent.txt) carries zero writes to DD00/D018/D011 -- every graphics register test case is a hand-built fact list; plan 37-08's fixture is the future real-capture case
 
 ### Pending Todos
 
@@ -1883,8 +1886,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T08:18:35.522Z
-Stopped at: Completed 37-06-PLAN.md
+Last session: 2026-09-05T08:39:42.090Z
+Stopped at: Completed 37-07-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md

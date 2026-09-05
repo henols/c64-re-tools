@@ -304,7 +304,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       IDA's device definitions all annotate **unconditionally** from a flat device description, because
       their domain has no path-dependent address meaning. That is the strongest available argument for
       the control-observed-red discipline here
-- [ ] **AUTO-06**: Graphics areas are derived from the VIC pointers rather than from cross-references
+- [x] **AUTO-06**: Graphics areas are derived from the VIC pointers rather than from cross-references
       (`$DD00` bits 0-1 inverted for the VIC bank, `$D018` for screen and charset-or-bitmap, `$D011`
       bit 5 for the mode, screen + `$3F8` for sprite pointers), because the VIC fetches by DMA and a
       charset may be referenced by **no instruction anywhere in the program** — the case
@@ -435,7 +435,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AUTO-03 | Phase 37 | Complete |
 | AUTO-04 | Phase 37 | Complete |
 | AUTO-05 | Phase 37 | Complete |
-| AUTO-06 | Phase 37 | Pending |
+| AUTO-06 | Phase 37 | Complete |
 | AUTO-07 | Phase 37 | Pending |
 | AUTO-08 | Phase 37 | Complete |
 | PROOF-01 | Phase 38 | Pending |
