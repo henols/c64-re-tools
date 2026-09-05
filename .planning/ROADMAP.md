@@ -1051,9 +1051,17 @@ fixture figures rather than replacing them.
 **Plans**: 4 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 38-01-PLAN.md — Evidence vocabulary and the PROOF-01 tracer measurement (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 38-02-PLAN.md — PROOF-03: the `$01` boundary established in both directions (wave 2)
 - [ ] 38-03-PLAN.md — PROOF-02 part 1: independent site enumeration and the loader-stage record (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 38-04-PLAN.md — PROOF-02 part 2: the depacked flat-64K capture and the search over real game code (wave 3)
 
 Notes:
