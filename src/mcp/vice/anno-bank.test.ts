@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { decodeBankState, isBankConditionalAddress, regionAdmitsEntry, resolveBankedRegion } from "./anno-bank.ts";
+import type { BankedRegion } from "./anno-bank.ts";
 import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
 import { parseConstWrites, parseGhidraExport } from "./anno-import.ts";
 import type { ConstWriteFact } from "./anno-import.ts";
@@ -498,6 +499,127 @@ test(
         bypassedCharRomLabel,
         "expected the bypass to make the two values produce the SAME annotation -- the flip has stopped",
       );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Phase 37, plan 37-06, Task 3 -- Control: replacing the decline with a
+// forward-carried value reddens the path-dependent case (37-VALIDATION.md
+// Observed-Red Controls row 6; AUTO-05, the phase's sixth and last required
+// control). The mutation lives in a SCRATCH COPY of `anno-join.ts` ONLY.
+// ---------------------------------------------------------------------------
+
+/** The decline branch's committed text (the "several values resolving to
+ * different regions" case) -- the single, small, textually-replaceable
+ * region of source Task 1 built exactly for this control. Copied
+ * character-for-character from `anno-join.ts` at plan time. */
+const FIXED_DECLINE_BLOCK_LINES = [
+  "      if (uniqueRegions.size > 1) {",
+  "        declined += 1;",
+  '        const named = uniqueValues.map((value, i) => `$${value.toString(16)}(${regionsByValue[i]})`).join(", ");',
+  "        decisions.push({",
+  "          address,",
+  '          outcome: "declined",',
+  '          reason: `$${address.toString(16)} is reached under disagreeing processor-port values: ${named}`,',
+  "        });",
+  "        continue;",
+  "      }",
+];
+const FIXED_DECLINE_BLOCK = FIXED_DECLINE_BLOCK_LINES.join("\n");
+
+/** The forward-carry replacement: takes the FIRST (ascending) reaching value
+ * and annotates with its own region, exactly as an implementation that
+ * carried a single bank value forward past a disagreement would. */
+const FORWARD_CARRIED_DECLINE_BLOCK_LINES = [
+  "      if (uniqueRegions.size > 1) {",
+  '        const region = regionsByValue[0]! as Exclude<BankedRegion, "not_applicable">;',
+  '        annotateUnderRegion(region, `$${uniqueValues[0]!.toString(16)}`);',
+  "        continue;",
+  "      }",
+];
+const FORWARD_CARRIED_DECLINE_BLOCK = FORWARD_CARRIED_DECLINE_BLOCK_LINES.join("\n");
+
+/** Builds a scratch tree holding a MUTATED copy of `anno-join.ts` (the
+ * decline branch replaced, nothing else touched) and re-export shims for ALL
+ * THREE of its sibling imports (`anno-bank.ts`, `anno-store.ts`,
+ * `memmap-lookup.ts`), forwarding by absolute path to the real, unmutated
+ * files -- neither `anno-bank.ts` nor its own siblings need mutating for
+ * this control, only resolving. */
+function buildScratchTreeWithForwardCarriedDecline(): { tmpDir: string; modulePath: string } {
+  const tmpDir = mkdtempSync(join(tmpdir(), "anno-join-forward-carry-"));
+
+  const committedJoinSource = readFileSync(REAL_ANNO_JOIN_PATH, "utf8");
+  assert.ok(
+    committedJoinSource.includes(FIXED_DECLINE_BLOCK),
+    "expected the committed anno-join.ts to still carry the decline branch's committed text -- has the source drifted?",
+  );
+  const mutatedJoinSource = committedJoinSource.replace(FIXED_DECLINE_BLOCK, FORWARD_CARRIED_DECLINE_BLOCK);
+  assert.ok(!mutatedJoinSource.includes(FIXED_DECLINE_BLOCK), "expected the committed decline text to be gone from the mutated source");
+  writeFileSync(join(tmpDir, "anno-join.ts"), mutatedJoinSource, "utf8");
+
+  writeFileSync(join(tmpDir, "anno-bank.ts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-store.ts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "memmap-lookup.ts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
+
+  return { tmpDir, modulePath: join(tmpDir, "anno-join.ts") };
+}
+
+async function importScratchAnnoJoinWithForwardCarry(modulePath: string): Promise<{ runMemmapJoin: typeof runMemmapJoin }> {
+  return (await import(`${modulePath}?t=${Date.now()}-${Math.random()}`)) as { runMemmapJoin: typeof runMemmapJoin };
+}
+
+test(
+  "PLANTED VIOLATION: replacing the decline branch with a forward-carried value produces an annotation where the committed code correctly stays silent",
+  async () => {
+    const facts = realConstWrites();
+    const flip34 = facts.find((f) => f.value === 0x34)!;
+    const flip33 = facts.find((f) => f.value === 0x33)!;
+
+    // ---- THE COMMITTED MODULE: both values reach $D020, disagreeing regions -> decline ----
+    let committedDecision: { outcome: string; reason?: string; label?: string } | undefined;
+    let committedDeclinedCount = 0;
+    inTempDir((dir) => {
+      const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+      putXref(handle, { fromAddress: flip34.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
+      putXref(handle, { fromAddress: flip33.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
+      const { counts, decisions } = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
+      committedDecision = decisions.find((d) => d.address === 0xd020);
+      committedDeclinedCount = counts.declined;
+      closeStore(handle);
+    });
+    assert.equal(committedDecision?.outcome, "declined");
+    assert.ok(
+      committedDecision?.reason && /33/.test(committedDecision.reason) && /34/.test(committedDecision.reason),
+      committedDecision?.reason,
+    );
+    assert.equal(committedDeclinedCount, 1);
+
+    // ---- THE MUTATED MODULE: forward-carries the FIRST (ascending) value instead ----
+    const { tmpDir, modulePath } = buildScratchTreeWithForwardCarriedDecline();
+    try {
+      const mutated = await importScratchAnnoJoinWithForwardCarry(modulePath);
+      let mutatedDecision: { outcome: string; reason?: string; label?: string } | undefined;
+      let mutatedCommentCount = 0;
+      inTempDir((dir) => {
+        const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+        putXref(handle, { fromAddress: flip34.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
+        putXref(handle, { fromAddress: flip33.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
+        const { decisions } = mutated.runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
+        mutatedDecision = decisions.find((d) => d.address === 0xd020);
+        mutatedCommentCount = listComments(handle).length;
+        closeStore(handle);
+      });
+      assert.equal(mutatedDecision?.outcome, "annotated", "expected the forward-carry mutation to ANNOTATE where the committed code declines");
+      assert.equal(mutatedCommentCount, 1, "expected exactly one comment written under the mutation");
+
+      // uniqueValues sorts ascending, so $33 (0x33 < 0x34) is the forward-carried value.
+      const expectedRegion = resolveBankedRegion(0xd020, decodeBankState(0x33)) as Exclude<BankedRegion, "not_applicable">;
+      const expectedSelection = selectMemmapEntry(0xd020, loadMemmap().filter((e) => regionAdmitsEntry(e, expectedRegion)));
+      assert.ok(expectedSelection, "expected the character-ROM-constrained candidate set at $D020 to have SOMETHING to say");
+      assert.equal(mutatedDecision?.label, expectedSelection.entry.label, "the case names the label the forward-carried value produces");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

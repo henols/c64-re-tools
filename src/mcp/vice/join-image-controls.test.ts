@@ -60,6 +60,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.ts");
 const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.ts");
 const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.ts");
+// Plan 37-06 (AUTO-04/AUTO-05) added a third sibling import to anno-join.ts
+// (`./anno-bank.ts`, the processor-port decode/region-resolution module) --
+// shimmed here the same way, by absolute path, so this file's own scratch
+// copy (built before that plan landed) keeps resolving.
+const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.ts");
 const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -121,6 +126,7 @@ function buildScratchAnnoJoinModule(): { tmpDir: string; modulePath: string } {
     `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`,
     "utf8",
   );
+  fs.writeFileSync(path.join(tmpDir, "anno-bank.ts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
 
   return { tmpDir, modulePath: path.join(tmpDir, "anno-join.ts") };
 }
