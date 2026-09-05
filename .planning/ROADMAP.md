@@ -998,13 +998,24 @@ emitting a confident wrong comment wherever it cannot be sure.
 **Plans**: 8 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 37-01-PLAN.md — Tracer: a host-written export file becomes an annotation read back out of the store (IMP-01, IMP-02, AUTO-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 37-02-PLAN.md — The bank-state data source: the synthetic two-caller `$01` fixture and the additive addressed-constant export section (AUTO-04)
 - [ ] 37-03-PLAN.md — The three selection rules and the `memmapSha256` provenance token (AUTO-02, AUTO-03, AUTO-08)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 37-04-PLAN.md — Controls: first-match, longest-description and reversed-tie-break each observed red (AUTO-02)
 - [ ] 37-05-PLAN.md — Controls: the removed image-range check, and the provenance digest under map drift (AUTO-03, AUTO-08)
 - [ ] 37-06-PLAN.md — Bank before address, the path-dependent decline, and their two observed-red controls (AUTO-04, AUTO-05)
 - [ ] 37-07-PLAN.md — Graphics ranges derived from the VIC pointers rather than from cross-references (AUTO-06)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 37-08-PLAN.md — The dxa and Ghidra feedback, and the phantom labels present before and absent after (AUTO-07)
 
 Notes:
