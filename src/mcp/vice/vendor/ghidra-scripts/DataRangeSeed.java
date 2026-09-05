@@ -171,9 +171,19 @@ public class DataRangeSeed extends GhidraScript {
                 // exactly what "undefined data across the whole range" means
                 // -- every byte in it is marked data, none left as an
                 // implicit code candidate.
+                // CR-02 fix: `cur.add(1)` throws AddressOutOfBoundsException
+                // when `cur` is already the address space's maximum offset
+                // ($FFFF here) -- there is no address to advance to. The
+                // loop below checks for the LAST iteration (cur == endAddr)
+                // and breaks BEFORE calling add(1) again, mirroring
+                // GhidraStructExport.java's own classification loop
+                // (checks `a.equals(r.getMaxAddress())` and breaks before
+                // `a.next()`), rather than advancing unconditionally after
+                // every createData() call.
                 Address cur = startAddr;
-                while (cur.compareTo(endAddr) <= 0) {
+                while (true) {
                     listing.createData(cur, Undefined1DataType.dataType);
+                    if (cur.equals(endAddr)) break;
                     cur = cur.add(1);
                 }
 
