@@ -995,7 +995,7 @@ emitting a confident wrong comment wherever it cannot be sure.
   4. **Bank state is resolved before the address, proven by a flip and by a decline, on a fixture built for the purpose.** A **synthetic two-caller path-dependent `$01` fixture** is built as an early task, because MEASURED the existing `bank.a` fixture has no path-dependent site and "the join declines on the fixture" is therefore not a usable control. The same address then annotates differently under two `$01` states — a `$d020` write under `$34` is not labelled the border colour, a `$d000` read under `$33` is not labelled sprite-0-X — with the `$01` bits 0-2 decode bypass **observed reddening** the flip. Where bank state is path-dependent the join emits **no annotation and says why**, and replacing that decline with a forward-carried value reddens its own control.
   5. **Graphics ranges come from the VIC pointers rather than from cross-references, and the feedback is exercised rather than built.** Screen matrix, charset-or-bitmap and sprite-pointer ranges are derived from `$DD00` bits 0-1 inverted, `$D018`, `$D011` bit 5 and screen + `$3F8` — for a charset **referenced by no instruction anywhere in the program**, the case cross-references structurally cannot find because the VIC fetches by DMA. Those ranges are fed back to dxa as `-b` data blocks and to Ghidra as data, with the phantom labels a graphics region mints when decoded as code shown **present before** the feedback and **absent after**. Every derived row carries `memmapSha256` provenance.
 
-**Plans**: 7/8 plans executed
+**Plans**: 8/8 plans executed
 
 Plans:
 **Wave 1**
@@ -1016,7 +1016,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 37-08-PLAN.md — The dxa and Ghidra feedback, and the phantom labels present before and absent after (AUTO-07)
+- [x] 37-08-PLAN.md — The dxa and Ghidra feedback, and the phantom labels present before and absent after (AUTO-07)
 
 Notes:
 
@@ -1227,7 +1227,7 @@ in a milestone archive.
 | 34. The Host-Tool Execution Seam | v0.8.0 | 11/11 | Complete | 2026-09-04 |
 | 35. dxa, Vendored and Parsed | v0.8.0 | 5/5 | Complete | 2026-09-04 |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 7/7 | Complete | 2026-09-05 |
-| 37. The Importer and the Automatic Annotation Join | v0.8.0 | 7/8 | In Progress | - |
+| 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 0/0 | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,

@@ -309,7 +309,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       bit 5 for the mode, screen + `$3F8` for sprite pointers), because the VIC fetches by DMA and a
       charset may be referenced by **no instruction anywhere in the program** — the case
       cross-references structurally cannot find
-- [ ] **AUTO-07**: Derived graphics ranges are fed back to dxa as `-b` data blocks and to Ghidra as
+- [x] **AUTO-07**: Derived graphics ranges are fed back to dxa as `-b` data blocks and to Ghidra as
       data. **AMENDED** — the before/after ordering is explicit and **exercised**, not merely built:
       phantom labels shown **present before** the feedback and **absent after**. This is the
       containment for the pipeline's most dangerous failure, and it is not a review step: graphics
@@ -436,7 +436,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AUTO-04 | Phase 37 | Complete |
 | AUTO-05 | Phase 37 | Complete |
 | AUTO-06 | Phase 37 | Complete |
-| AUTO-07 | Phase 37 | Pending |
+| AUTO-07 | Phase 37 | Complete |
 | AUTO-08 | Phase 37 | Complete |
 | PROOF-01 | Phase 38 | Pending |
 | PROOF-02 | Phase 38 | Pending |

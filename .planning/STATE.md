@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 37
 current_phase_name: The Importer and the Automatic Annotation Join
 status: executing
-stopped_at: Completed 37-07-PLAN.md
-last_updated: "2026-09-05T08:39:42.450Z"
+stopped_at: Completed 37-08-PLAN.md
+last_updated: "2026-09-05T09:30:05.378Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 37 execution started
-state_head: b03ee67e9ab09222846fae7a8c0a35b861652631
+state_head: 7040ba017be2a6464cf856b37e40a52fb7ded7c1
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 43
-  completed_plans: 42
+  completed_plans: 43
   percent: 67
 ---
 
@@ -599,6 +599,7 @@ Last activity: 2026-09-05 — Phase 37 execution started
 | Phase 37 P05 | 24min | 2 tasks | 3 files |
 | Phase 37 P06 | 30min | 3 tasks | 9 files |
 | Phase 37 P07 | 18min | 2 tasks | 4 files |
+| Phase 37 P08 | 48min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -1076,6 +1077,8 @@ Recent decisions affecting current work:
 - [Phase 37]: Plan 37-06: runMemmapJoin()'s new constWrites argument activates the bank-state machinery only when explicitly supplied (even an empty array) -- undefined (every pre-37-06 call site) is a complete no-op. — Guarantees the candidate-constraint argument never changes any unconstrained selection's answer, by construction.
 - [Phase 37]: 37-07: Graphics-range derivation (AUTO-06) uses a cross product of each VIC register's own distinct recovered values, not a reaching-value graph walk, since it is forbidden from reading the cross-reference graph at all
 - [Phase 37]: 37-07: The committed capture (export-bank-path-dependent.txt) carries zero writes to DD00/D018/D011 -- every graphics register test case is a hand-built fact list; plan 37-08's fixture is the future real-capture case
+- [Phase 37]: AUTO-07: dataRangesPath is the ONE new wire field; DataRangeSeed.java's own -preScript pair is always emitted first in argv, before any caller-supplied preScript. — VolatileCarve.java's own analyzeAll() call must never run before the data ranges are marked as data.
+- [Phase 37]: AUTO-07's phantom-label proof is flat-64K-route only; the .prg route's own two-byte load shift misaligns the register-derived range against where the fixture's charset bytes actually land there. — Measured live against real Ghidra 12.1.3.
 
 ### Pending Todos
 
@@ -1886,8 +1889,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T08:39:42.090Z
-Stopped at: Completed 37-07-PLAN.md
+Last session: 2026-09-05T09:30:05.011Z
+Stopped at: Completed 37-08-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
