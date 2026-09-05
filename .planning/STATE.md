@@ -5,16 +5,16 @@ milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 38
 current_phase_name: PROOF-01..03 on Real Cracked Code
 status: executing
-stopped_at: Completed 38-02-PLAN.md
-last_updated: "2026-09-05T18:34:05.114Z"
+stopped_at: Completed 38-03-PLAN.md
+last_updated: "2026-09-05T18:59:56.668Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 38 execution started
-state_head: 7004e2aa216fd28c570e5b118673e85236991405
+state_head: e2229f2d9a83a9131cda30eb7f5f348fc0ddd231
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 47
-  completed_plans: 45
+  completed_plans: 46
   percent: 83
 ---
 
@@ -178,7 +178,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 38 (PROOF-01..03 on Real Cracked Code) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -603,6 +603,7 @@ Last activity: 2026-09-05 — Phase 38 execution started
 | Phase 37 P08 | 48min | 3 tasks | 17 files |
 | Phase 38 P01 | 27min | 2 tasks | 7 files |
 | Phase 38 P02 | 50min | 2 tasks | 3 files |
+| Phase 38 P03 | 24min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1101,6 +1102,8 @@ Recent decisions affecting current work:
 - [Phase 38]: Phase 38 plan 38-01: PROOF01_FALSE_POSITIVES is unconditionally the structurally-uncomputable refusal string, never a bare integer, because certainCode is always empty on the byte-derived tier (D-03).
 - [Phase 38]: Phase 38 plan 38-01: TEST_AUTOMATED_BASELINE measured at tests 3519 / pass 3506 / fail 2 (broker confirmed inactive), differing from 38-VALIDATION.md's stated pass 3517 figure -- recorded as observed per this phase's own never-re-derived convention, not reconciled.
 - [Phase 38]: PROOF-03 measured in both directions against the real bank-path-dependent fixture: the $D020 write annotates differently under $34 vs $33 (differ), and a scratch-mutated forward-carry annotates confidently and wrongly exactly where the committed code declines.
+- [Phase 38]: 38-03: Ghidra scratch workspace must avoid dot-prefixed path segments (resolveGhidraProject refuses .cache); use a sibling non-dot scratch root for Ghidra runs specifically.
+- [Phase 38]: 38-03: PROOF02_LOADER_COMPUTED_DISPATCH recorded not-exercised -- zero computed-index sites enumerated at the loader/depacker depth, not a claim about the whole release.
 
 ### Pending Todos
 
@@ -1932,8 +1935,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T18:34:04.514Z
-Stopped at: Completed 38-02-PLAN.md
+Last session: 2026-09-05T18:59:56.296Z
+Stopped at: Completed 38-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
