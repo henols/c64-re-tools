@@ -456,7 +456,7 @@ or by none.
 - [x] **Phase 35: dxa, Vendored and Parsed** - A raw C64 image in and a machine-readable code/data map out, from a dxa this project vendors and builds at a pinned version, behind a parser that is loud by name (completed 2026-09-04)
 - [x] **Phase 36: The SLEIGH Language and the Ghidra Harness** - All 105 undocumented opcode bytes decodable under their own Ghidra language, and structural facts recovered through `DecompInterface` with hardware writes surviving the decompiler (completed 2026-09-05)
 - [x] **Phase 37: The Importer and the Automatic Annotation Join** - Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — declining with a reason rather than guessing (completed 2026-09-05)
-- [ ] **Phase 38: PROOF-01..03 on Real Cracked Code** - The three measurements Phase 23 recorded `could-not-run`, taken on real cracked releases and stated beside the fixture figures rather than replacing them
+- [x] **Phase 38: PROOF-01..03 on Real Cracked Code** - The three measurements Phase 23 recorded `could-not-run`, taken on real cracked releases and stated beside the fixture figures rather than replacing them (completed 2026-09-05)
 
 **Phase details, the dependency edges, the per-phase guard-breakage inventory
 and the sequencing rationale** are in the two v0.8.0 sections below, placed
@@ -1048,7 +1048,7 @@ fixture figures rather than replacing them.
   2. A **computed**-index indirect dispatch taken from real code — the case the pivot fixture never exercised, which used an immediate `ldx #$02` — is either resolved by Ghidra with the resolved target shown, or recorded as unresolved with its transcript. A corpus **searched** and found to contain no computed dispatch is reported as `not-exercised` with the search recorded, and never as a pass; it is no longer reportable as `could-not-run`, because the corpus now exists.
   3. The point where a single forward-carried `$01` value stops being correct is **established rather than assumed, in both directions**, against code that banks ROM in and out: at least one address shown annotating differently under two bank states, or the absence of such an address in the corpus recorded as a fact **about the corpus** rather than about the model. The result is recorded whichever way it comes out.
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans executed
 
 Plans:
 **Wave 1**
@@ -1062,7 +1062,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 38-04-PLAN.md — PROOF-02 part 2: the depacked flat-64K capture and the search over real game code (wave 3)
+- [x] 38-04-PLAN.md — PROOF-02 part 2: the depacked flat-64K capture and the search over real game code (wave 3)
 
 Notes:
 
@@ -1242,7 +1242,7 @@ in a milestone archive.
 | 35. dxa, Vendored and Parsed | v0.8.0 | 5/5 | Complete | 2026-09-04 |
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 7/7 | Complete | 2026-09-05 |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
-| 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 3/4 | In Progress | - |
+| 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

@@ -329,7 +329,7 @@ presented as measured as a defect class, so provenance is stated rather than imp
       `FIXTURE_REPRODUCED: no`, with the non-reproduction cause attached as a hypothesis. **NARROWED** —
       there is **no independent external check** available, `memmapshow` being stated absent (decision
       2); this is a named weakness of the measurement, recorded rather than absorbed
-- [ ] **PROOF-02**: Ghidra's indirect-dispatch resolution is tested where the dispatch index is
+- [x] **PROOF-02**: Ghidra's indirect-dispatch resolution is tested where the dispatch index is
       **computed** rather than an immediate `ldx #$02` — the case the pivot fixture never exercised —
       with the result recorded whichever way it comes out. Note the distinction Phase 23 was emphatic
       about: this was `could-not-run`, **not** `not-exercised` — no corpus was ever searched for a
@@ -439,7 +439,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | AUTO-07 | Phase 37 | Complete |
 | AUTO-08 | Phase 37 | Complete |
 | PROOF-01 | Phase 38 | Complete |
-| PROOF-02 | Phase 38 | Pending |
+| PROOF-02 | Phase 38 | Complete |
 | PROOF-03 | Phase 38 | Complete |
 
 **Coverage:**

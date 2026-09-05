@@ -4,17 +4,17 @@ milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 38
 current_phase_name: PROOF-01..03 on Real Cracked Code
-status: executing
-stopped_at: Completed 38-03-PLAN.md
-last_updated: "2026-09-05T18:59:56.668Z"
+status: ready_for_verification
+stopped_at: Completed 38-04-PLAN.md
+last_updated: "2026-09-05T19:18:44.398Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 38 execution started
-state_head: e2229f2d9a83a9131cda30eb7f5f348fc0ddd231
+state_head: 682fa4471a1edba8999e1409d2b117e357588a7d
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 47
-  completed_plans: 46
+  completed_plans: 47
   percent: 83
 ---
 
@@ -177,8 +177,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 38 (PROOF-01..03 on Real Cracked Code) — EXECUTING
-Plan: 4 of 4
+Phase: 38 (PROOF-01..03 on Real Cracked Code) — PHASE COMPLETE, ready for verification
+Plan: 4 of 4 (all complete)
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -604,6 +604,7 @@ Last activity: 2026-09-05 — Phase 38 execution started
 | Phase 38 P01 | 27min | 2 tasks | 7 files |
 | Phase 38 P02 | 50min | 2 tasks | 3 files |
 | Phase 38 P03 | 24min | 2 tasks | 2 files |
+| Phase 38 P04 | 34min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1104,6 +1105,7 @@ Recent decisions affecting current work:
 - [Phase 38]: PROOF-03 measured in both directions against the real bank-path-dependent fixture: the $D020 write annotates differently under $34 vs $33 (differ), and a scratch-mutated forward-carry annotates confidently and wrongly exactly where the committed code declines.
 - [Phase 38]: 38-03: Ghidra scratch workspace must avoid dot-prefixed path segments (resolveGhidraProject refuses .cache); use a sibling non-dot scratch root for Ghidra runs specifically.
 - [Phase 38]: 38-03: PROOF02_LOADER_COMPUTED_DISPATCH recorded not-exercised -- zero computed-index sites enumerated at the loader/depacker depth, not a claim about the whole release.
+- [Phase 38]: [Phase 38 P04] PROOF02_COMPUTED_DISPATCH: not-exercised (roll-up across both loader and depacked depths) -- zero computed-index sites enumerated at either depth; not a claim that no computed dispatch construct exists anywhere in the release. The reported depacked capture pair (jitter 0 both sides) was byte-identical and frame-term-exact, a stricter result than Phase 33's own reported pair, and no entry points were supplied to the flat64k-route Ghidra run since the capture was taken mid-load.
 
 ### Pending Todos
 
@@ -1935,8 +1937,8 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T18:59:56.296Z
-Stopped at: Completed 38-03-PLAN.md
+Last session: 2026-09-05T19:17:51.515Z
+Stopped at: Completed 38-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 34-10-PLAN.md
