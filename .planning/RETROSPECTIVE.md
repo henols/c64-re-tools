@@ -2,6 +2,164 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v0.8.0 — Frame-Exact Capture and the Two Engines
+
+**Shipped:** 2026-09-06 (`override_closeout`)
+**Phases:** 6 (33-38) | **Plans:** 47 | **Tasks:** 118 | **Requirements:** 43/43
+
+### What Was Built
+
+A reproducible-run protocol and the capture substrate under it: five launch
+nondeterminism sources pinned in `buildViceArgs()`'s stock branch, a monitor-issued
+reset that makes two runs of a real cracked release stop in the same frame and
+capture byte-identically, and a flat 64K sliced out of a VICE `.vsf` snapshot's
+`C64MEM` body by a strict module-table walk — eight named refusals, each proven by
+its own fixture. Behind `GATE-01`, whose rules were committed at `2a8ef95` before
+any measurement existed and which returned **`degrade`** by rule `R6`.
+
+On top of it, a host-tool execution seam — one typed `host_tool` control op on the
+existing broker socket carrying six tools, with every other route banned by
+`check-no-skill-external-spawn.mjs` in CI — and two disassembly engines reached
+only through it: a vendored, digest-verified dxa 0.1.5 behind a listing parser that
+refuses by name rather than by exit status, and Ghidra 12.1.3 under a vendored NMOS
+6502 SLEIGH language that decodes all **105** opcode bytes stock `6502.slaspec`
+omits. Their output imports into `.annostore` as typed `anno_xref` rows and joins
+against `memmap.json`'s 959 entries into comments — narrowest-range-wins, in-image
+addresses skipped, `$01` bank state resolved *before* address, and a decline with a
+named reason wherever the reaching bank values disagree. Finally `PROOF-01`..`03`,
+the three measurements Phase 23 recorded `could-not-run`, taken on real cracked
+code and stated beside the fixture figures rather than replacing them.
+
+### What Worked
+
+**Committing the verdict rules before the measurements, for the second time.**
+Phase 33 reused Phase 23's pattern and fixed its one structural defect: `R9`
+carried no antecedent in Phase 23, so `could-not-run` could fire. Phase 33 walked
+all **108** input tuples for totality, leaving `could-not-run` structurally
+unemittable, and `git rev-list --count 2a8ef95 -- <evidence>` was re-run after every
+measurement landed to prove the rules commit still preceded them. The gate then
+returned `degrade` and the one available override was **explicitly declined** with
+the reasoning written down. A gate is only worth building if the unflattering value
+is reachable and reached.
+
+**Spending whole plans making the failure happen.** Three of this milestone's
+silent failure modes were known in advance to be silent, and each got a plan whose
+deliverable was a *red* observation, not a green one: three scratch-copy mutations
+of `memmap-lookup.ts` each producing a specific named wrong answer against the real
+`memmap.json` (37-04); the in-image guard deleted so `$0800` annotates as
+`"Unused"`, with an injected counting spy proving the lookup is genuinely reached
+under the mutation and genuinely unreached without it (37-05); and the graphics
+feedback measured at **512 phantom labels before, 0 after** on a live Ghidra run
+(37-08). The committed modules were never touched. Asserting a fix is present
+proves nothing against a failure that is silent by construction.
+
+**Proving a carve by disappearance rather than by presence.** Phase 36 set out to
+prove the volatile-I/O carve through the existing `## REFERENCES` export section
+and live measurement showed that section *never reflects the flag at all* — so the
+plan added `## DECOMPILED_TEXT` and proved the carve by what vanishes from it. The
+measurement corrected the plan rather than the plan surviving the measurement.
+
+**Live-running the thing before trusting the unit test.** Plan 37-02 ran plan
+37-01's importer against a *real* captured Ghidra export and found two defects no
+test had ever reached — a mis-parsed `## CLASSIFICATION` accounting tail, and a
+total refusal of Ghidra's own bare-hex address rendering. The importer had passing
+tests. It had never seen real output.
+
+**Refusing to award a winner.** `dxa-listing.ts` disposes any overlapping decode as
+`unclassified` with a stated reason **even when the two claims agree**. Agreement
+between two decoders is not evidence; it is two decoders agreeing.
+
+### What Was Inefficient
+
+**Two phases carried half the milestone again.** Phases 33 and 34 hold 23 of 47
+plans (49%) — the same shape v0.7.0 recorded, where two phases carried 53%. Phase
+33 spent plans voiding its own first measurement pass under `D-11` (correct, but
+paid for twice), and Phase 34 spent three plans (34-07/08/09) closing code-review
+findings `CR-01` and `CR-04` after the phase's gap-closure round had already run.
+
+**A forecast was carried into the milestone as fact and cost re-planning.** The
+milestone was *opened* on VICE event record/replay as the reproducibility
+mechanism. It does not exist — `event.c` registers six options, none of them
+`-record`; `x64sc -record` exits 255. Measured on 2026-09-02, at the open, not
+during Phase 33. Similarly `docs/undocumented-opcodes-ghidra.md` was carried as
+766 working lines and did not compile (8 failing constructors, one root cause), so
+`OPC-01` became fix → compile → integrate → verify. Both were caught by
+milestone-open research rather than mid-phase, which is the cheap place to catch
+them — but both had stood in `PROJECT.md` as settled claims for a milestone or more.
+
+**Eleven of 21 carried requirement ids were amended against an explicit forecast
+that they would carry byte-identically.** The forecast was written into
+`ROADMAP.md` at the v0.8.0 open and corrected there eleven ids later.
+
+**Scratch fixtures written inside walked trees, twice, still unowned.** Two tests
+write scratch files into directories another test's directory-walk observes
+(`src/skills/acme-build/`, `resources/vendor/dxa/`). Node runs test files
+concurrently, so `audit-root-args.test.ts` fails scheduling-dependently. The
+culprit is named, the fix is one idiom (`mkdtemp`) already used by
+`dxa-live.test.ts` — and no pass owns it, so it shipped.
+
+### Patterns Established
+
+- **A verdict rule set must be total over its input space, and the totality walk is
+  an artifact.** 108 tuples enumerated, not argued about.
+- **Vendor the engine, declare the platform.** dxa (small, buildable) is vendored
+  with its GPL headers quoted; Ghidra (543 MiB) is declared by version with a
+  digest and installed out of tree. Size decides, not principle.
+- **One typed control op per host binary, with the ban written as a CI gate before
+  the second consumer exists.** `HOST_TOOL_PATH_ARG_KEYS` made "no argv
+  passthrough" a census-driven refusal loop rather than three point fixes.
+- **A real-corpus absence is a reportable result.** `not-exercised` is a
+  first-class PROOF verdict, distinct from both `pass` and `could-not-run`, and it
+  is scoped to the corpus and the depths searched rather than generalised.
+- **State the real-release figure beside the fixture figure, never in place of it.**
+  `100.00 (24/24)` sits next to `72.39 (97/134)` and the pivot's unreproduced
+  `72.46 (100/138)`, with the non-reproduction labelled a hypothesis.
+- **Enumerate independently, before the tool runs, and assert the document
+  ordering.** Phase 38's `$6C` dispatch enumerator ran before each `analyzeHeadless`
+  invocation so the count could not be a rationalisation of Ghidra's answer.
+
+### Key Lessons
+
+1. **A gate earns its keep on the run where it returns the unflattering value.**
+   `GATE-01` returned `degrade`, `R7`/`R8`/`R9` went unevaluated because first-match
+   wins, and an unevaluated rule was recorded as unevaluated rather than satisfied.
+   Phase 23 was the first gate honoured; this is the second, and the pattern is now
+   the project's default for any measurement-gated milestone.
+2. **A passing test suite is not evidence the code has met its real input.** Two
+   live-only importer defects existed under green tests until a real Ghidra export
+   was fed through. Prefer one live run over ten more fixtures.
+3. **Prove the carve by absence, and let the measurement rewrite the plan.** Phase
+   36's export section could not have shown the carve; discovering that *was* the
+   plan's work product.
+4. **The audit skip has now cost what the last retrospective predicted it would.**
+   v0.7.0's lesson 5 said: *"A second milestone carrying the same row would be
+   evidence the audit should not have been skipped twice."* `STORE-03`'s row/prose
+   contradiction has now shipped through a second close. That prediction resolved
+   against the project. This is the **fourth** consecutive close without an audit.
+5. **A known-red test with a named cause is not a resolved test.** The
+   `anno-register.test.ts` 2-fail floor has a fully understood root cause — the
+   register cites v0.7.0 ids no v0.8.0 requirements document declares — and it has
+   been understood since Phase 33 opened. Understanding it did not fix it, and it
+   shipped. Deliberately no Deferred Items row is filed, because a row with no
+   matching pending todo reds the ledger guard in the other direction; that is a
+   real constraint, but it also means the item has nowhere to live.
+6. **Two consecutive closes have now paid the same un-acknowledgeable-items tax.**
+   The 8 Phase 23 evidence-table rows are structurally unclosable and will be
+   re-derived at every future close until the scanner changes. Re-disclose; do not
+   re-investigate.
+
+### Cost Observations
+
+Not instrumented — no per-model or per-session accounting was collected, so no mix
+is reported rather than an estimated one. What is measured: 365 commits over 5 days
+across 6 phases and 47 plans; 1,014 files changed (+290,305 / −27,971) tree-wide,
+of which 238 files and +48,264 / −9,066 are source. The planning tree accounts for
+**82%** of the insertions — 237,629 of 290,305 — which is the clearest available
+signal of where this project's effort actually goes, and is worth watching rather
+than acting on immediately. **Zero new npm runtime dependencies**, holding a streak
+now four milestones long, while adding two external engines as declared host
+prerequisites instead.
+
 ## Milestone: v0.7.0 — Own the Annotation Store
 
 **Shipped:** 2026-09-01 (`override_closeout`)
@@ -617,6 +775,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.5.0 | 2 executed, 3 cut | 27 | Closed `override_closeout` with 13/27 requirements. Introduced derived-from-bytes measurement the measured artifact cannot move, and a pairwise trigger-collision gate across skill descriptions |
 | v0.6.0 | 1 of 4 | 6 of 11 | **Closed incomplete by its own gate** (`no-go`, rule `R1`). First time a pre-committed verdict cancelled the milestone that wrote it — honoured rather than overridden |
 | v0.7.0 | 6 | 80 | First large deletion. Introduced the classification registry as *deletion driver* (never a prefix glob), a checked `ModuleFate`, and non-vacuity thresholds derived from the artifact rather than pinned |
+| v0.8.0 | 6 | 47 | First milestone measured on **real cracked code** rather than a synthetic fixture. Second pre-committed gate honoured (`degrade`, `R6`), this one proven **total** over its 108-tuple input space. Introduced the typed host-tool control op with its ban written as a CI gate, `not-exercised` as a first-class verdict, and proving a carve **by disappearance** |
 
 ### Cumulative Quality
 
@@ -626,6 +785,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.3.0 | ~2066 | 3 carried + anno live gates (real `the external analyser 0.9.20` + genuine stock `x64sc`) | `.regen2000proj` synthesiser, `.d64` reader, NDJSON JSON-RPC client, ACME-ident seam — 0 new npm deps |
 | v0.4.0 | **2351** (0 fail, 39 skipped, 5 todo, 24 suites) | 4 carried + `fork-live.test.ts` (the fork's `-mcpserver` HTTP transport exercised live for the first time, 6/6) | `audit-gate.mjs`, `hop-chain-comments` + `comment-phase-pointers` guards, `skill-corpus.mjs`, 18 `wireMcp()` cases — 0 new npm deps |
 | v0.7.0 | 0 failures on `test:automated` (the project's floor; the whole-glob `npm test` still does not terminate unaided — `vice-proxy.test.ts` leaks two LISTEN sockets) | real ACME 0.97 as a byte-diff oracle, hard-failed in CI with `VICE_REQUIRE_ACME=1` | the annotation store on `node:sqlite` — a **built-in** at this project's Node floor; `better-sqlite3` rejected on 11.4 MB/consumer and 8 prebuild targets — 0 new npm deps |
+| v0.8.0 | **2 failures in 1 file** on `test:automated` (`anno-register.test.ts` `:385`/`:479` — the register cites v0.7.0 ids no v0.8.0 requirements document declares; root cause named, unfixed). ~3113 tests. The whole-glob `npm test` still does not terminate unaided | real dxa 0.1.5 and real Ghidra 12.1.3 as live oracles — `ghidra-live.test.ts` and `ghidra-opcode-live.test.ts` are the 11th and 12th manual-only files | a vendored, digest-verified dxa 0.1.5 build and a vendored NMOS 6502 SLEIGH language, both reached over the host-tool seam — Ghidra declared by version rather than vendored (543 MiB) — **0 new npm deps** |
 
 | Milestone | Audit verdict | Rounds | Open gaps at close | Deferred at close |
 |-----------|---------------|--------|--------------------|-------------------|
@@ -635,6 +795,16 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.5.0 | not run | — | — | 5 newly acknowledged, 16 carried |
 | v0.6.0 | not run (gate's findings doc is the audit of record) | — | intent NOT delivered under 3 accepted overrides | — |
 | v0.7.0 | **not run** | — | 0 against its own 28 requirements | 15 newly acknowledged, 21 carried, **8 disclosed as un-acknowledgeable** |
+| v0.8.0 | **not run** | — | 0 against its own 43 requirements; `GATE-01` returned `degrade` (`R6`) | 4 newly acknowledged, 31 carried, **the same 8 disclosed as un-acknowledgeable for the second close running** |
+
+**Four consecutive closes without a milestone audit** *(updated at the v0.8.0
+close, 2026-09-06; the paragraph below is kept as written and extended, not
+rewritten)*. The prediction it ends on has now **resolved against the project**:
+v0.7.0's retrospective said a second milestone carrying `STORE-03`'s row/prose
+contradiction would be evidence the audit should not have been skipped twice, and
+v0.8.0 shipped carrying it. v0.8.0's own close skipped the audit again, on the
+same reasoning — all phases `verification_status: passed` — which is exactly the
+reasoning the trend was flagged to interrogate.
 
 **Three consecutive closes without a milestone audit.** v0.5.0, v0.6.0 and
 v0.7.0 all shipped on per-phase `VERIFICATION.md` evidence alone. For v0.6.0 that
