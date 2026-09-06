@@ -12,6 +12,7 @@ boundary (only auto-fix what the current task's changes caused).
 ```
 $ node scripts/check-npm-packages.mjs   # exit 1
 check-npm-packages: FAIL
+
   - vice-mcp: broker-launch.mts is imported by vice-broker-client.ts but is not
     in the published tarball -- Rule 2 (see 6801cf5, 897faf6)
 ```
@@ -58,3 +59,4 @@ negative control confirmed the walk still catches a genuinely missing file.
 
 Recorded here rather than deleted: this entry is the provenance for why
 `check-npm-packages.mjs` has an `import type` carve-out at all.
+  status: acknowledged

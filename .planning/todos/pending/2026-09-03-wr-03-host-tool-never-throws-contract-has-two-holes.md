@@ -5,13 +5,19 @@ area: host-tool-seam
 severity: minor
 source_review: .planning/phases/34-the-host-tool-execution-seam/34-REVIEW.md
 finding_ids:
+
   - WR-03
+
 files:
 
   - src/mcp/vice/host-tool.mts:1039-1040
   - src/mcp/vice/host-tool.mts:1117-1121
   - src/mcp/vice/host-tool.mts:748-752
   - src/mcp/vice/host-tool-client.ts:419-427
+
+audit_acknowledged:
+  milestone: v0.8.0
+  at: 2026-09-06
 ---
 
 ## Why this is a todo and not a Phase 34 gap-closure plan

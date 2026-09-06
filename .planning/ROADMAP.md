@@ -12,7 +12,7 @@
   **Phase 25 was TAKEN FORWARD** as the whole of v0.7.0
 
 - ✅ **v0.7.0 Own the Annotation Store** — Phases 27-32 (shipped 2026-09-01)
-- 🚧 **v0.8.0 Frame-Exact Capture and the Two Engines** — Phases 33-38 (opened 2026-09-02)
+- ✅ **v0.8.0 Frame-Exact Capture and the Two Engines** — Phases 33-38 (opened 2026-09-02, shipped 2026-09-06; `GATE-01` returned `degrade` by rule `R6`)
 
 *v0.8.0 continues phase numbering from Phase 32 — it starts at Phase **33**.
 Phase numbers are continuous across milestones and are **never** reused,
@@ -437,39 +437,74 @@ resolved research disagreements and the sequencing rationale:**
 
 </details>
 
-### 🚧 v0.8.0 Frame-Exact Capture and the Two Engines (Phases 33-38)
+<details>
+<summary>✅ v0.8.0 Frame-Exact Capture and the Two Engines (Phases 33-38) — SHIPPED 2026-09-06</summary>
 
-**Goal:** A frame-exact emulator stop makes a real depacked capture
-reproducible, and dxa + Ghidra headless then turn a real cracked release — not a
-279-byte synthetic fixture — into machine-readable facts that annotate
-themselves into the owned store.
+**Delivered:** this project stopped measuring a 279-byte synthetic fixture. Two
+runs of the same real cracked release stop in the same frame and their 64K
+captures compare byte-identically, with the capture sliced out of a VICE `.vsf`
+snapshot's `C64MEM` body rather than retyped as hex. On that substrate, two
+engines this project vendors and drives itself — dxa 0.1.5 and Ghidra 12.1.3
+under an NMOS 6502 SLEIGH language decoding all **105** opcode bytes stock omits
+— turn a real release into structural facts that annotate themselves into the
+owned store, declining with a reason rather than guessing. Every host binary in
+that chain is reached over one typed `host_tool` control op, with every other
+route banned by a CI gate observed biting on planted violations.
 
-**43 requirements, all mapped, each to exactly one phase** — `REPRO-01..05`,
-`CAP-01..04`, `GATE-01`, `SEAM-01..07`, `DXA-01..04`, `GHID-01..05`,
-`OPC-01..04`, `IMP-01..02`, `AUTO-01..08`, `PROOF-01..03`. Cross-checked
-mechanically against the per-phase `**Requirements**:` lines rather than by eye,
-because this project has a recorded history of a requirement owned by two phases
-or by none.
+**`GATE-01` fired and returned `degrade`, by rule `R6`** — derived from five
+column-0 outcome lines walked through rules committed at `2a8ef95` before any
+measurement, with `could-not-run` structurally unemittable and the one available
+override explicitly declined. The frame-exact stop is exact through anchor hit 50
+and **lost from hit 75**, because AUTOSTART's power cycle does not reset the
+absolute emulated clock. That limit is recorded beside the capability, not behind
+it.
 
-- [x] **Phase 33: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)** - Launch nondeterminism pinned, a frame-exact stop that is a protocol rather than a mechanism, and a snapshot-sliced flat 64K — behind go / degrade / no-go rules committed to git before any measurement exists (completed 2026-09-03)
-- [x] **Phase 34: The Host-Tool Execution Seam** - Host binaries reached over a typed namespaced control op on the existing broker socket, with the two existing skill-script violations migrated so the ban on them can be written at all (completed 2026-09-04)
-- [x] **Phase 35: dxa, Vendored and Parsed** - A raw C64 image in and a machine-readable code/data map out, from a dxa this project vendors and builds at a pinned version, behind a parser that is loud by name (completed 2026-09-04)
-- [x] **Phase 36: The SLEIGH Language and the Ghidra Harness** - All 105 undocumented opcode bytes decodable under their own Ghidra language, and structural facts recovered through `DecompInterface` with hardware writes surviving the decompiler (completed 2026-09-05)
-- [x] **Phase 37: The Importer and the Automatic Annotation Join** - Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — declining with a reason rather than guessing (completed 2026-09-05)
-- [x] **Phase 38: PROOF-01..03 on Real Cracked Code** - The three measurements Phase 23 recorded `could-not-run`, taken on real cracked releases and stated beside the fixture figures rather than replacing them (completed 2026-09-05)
+- [x] Phase 33: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go) (12/12 plans) — completed 2026-09-03
+- [x] Phase 34: The Host-Tool Execution Seam (11/11 plans) — completed 2026-09-04
+- [x] Phase 35: dxa, Vendored and Parsed (5/5 plans) — completed 2026-09-04
+- [x] Phase 36: The SLEIGH Language and the Ghidra Harness (7/7 plans) — completed 2026-09-05
+- [x] Phase 37: The Importer and the Automatic Annotation Join (8/8 plans) — completed 2026-09-05
+- [x] Phase 38: PROOF-01..03 on Real Cracked Code (4/4 plans) — completed 2026-09-05
 
-**Phase details, the dependency edges, the per-phase guard-breakage inventory
-and the sequencing rationale** are in the two v0.8.0 sections below, placed
-after v0.6.0's for the window-slicing reason recorded there.
+**Shipped and archived 2026-09-06:** 6 phases, 47 plans, 118 tasks, 43/43
+requirements, 5 days, `override_closeout`. No milestone audit was run — all six
+phases carry `verification_status: passed` and the per-phase `VERIFICATION.md`
+files are the evidence of record.
+
+**Three forecasts this milestone carried in were falsified by its own
+measurements**, each corrected in place rather than deleted: VICE event
+record/replay **does not exist**; `docs/undocumented-opcodes-ghidra.md`'s p-code
+**did not compile** (8 failing constructors, one root cause), so `OPC-01` became
+fix → compile → integrate → verify; and **eleven of the 21** requirement ids
+carried forward from held Phases 24 and 26 were **amended, not byte-identical**.
+
+**Full phase details, the dependency edges, the per-phase guard-breakage
+inventory and the sequencing rationale:**
+[`milestones/v0.8.0-ROADMAP.md`](milestones/v0.8.0-ROADMAP.md)
+**Requirements as shipped:** [`milestones/v0.8.0-REQUIREMENTS.md`](milestones/v0.8.0-REQUIREMENTS.md)
+
+</details>
 
 ## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)
 
 *v0.6.0's phase details, kept in place rather than archived. Phase 23 is
 complete; Phases 24 and 26 are **HELD** with their requirement text live for
-v0.8.0, which carries them forward unchanged; Phase 25 was **taken forward** and
+v0.8.0, which carried them forward under NEW phase numbers (35, 36, 37);
+Phase 25 was **taken forward** and
 its live scope is v0.7.0's Phases 27-32, above — not the Phase 25 block below,
 which is retained as the historical record of how that work was scoped inside
 v0.6.0.*
+
+*Rider added at the v0.8.0 close, 2026-09-06. The forecast above — that the held
+text would carry forward **unchanged** — is false for **eleven of the 21 carried
+ids** (`DXA-01`, `DXA-02`, `GHID-01`, `GHID-03`, `GHID-04`, `OPC-01`,
+`AUTO-04`, `AUTO-05`, `AUTO-07`, `PROOF-01`, `PROOF-03`), each amendment
+stating what changed and on what evidence in
+[`milestones/v0.8.0-REQUIREMENTS.md`](milestones/v0.8.0-REQUIREMENTS.md). The ids
+keep their original numbering, so each still traces to
+`git show 2421f68:.planning/REQUIREMENTS.md`; the phase numbers 24 and 26 stay
+retired. **All 21 shipped** with v0.8.0 on 2026-09-06. The superseded forecast is
+dated and corrected here, not deleted.*
 
 *This section sits **after** v0.7.0's, deliberately.
 `extractCurrentMilestoneScoped()` slices the active milestone's window from its
@@ -727,468 +762,6 @@ cross-references and the store's write surface, and it is the only phase whose
 core rules are already known to fail *silently*. Running it last means its three
 red-observed controls run against the real pipeline rather than against a stub.
 
-## v0.8.0 Frame-Exact Capture and the Two Engines (Phase Details)
-
-*v0.8.0's phase details, placed **after** v0.6.0's for the same measured reason
-recorded above: `extractCurrentMilestoneScoped()` slices a milestone's window
-from its summary heading to the next version-bearing heading, skipping
-`Phase`-shaped headings on the way, and it locates a milestone's detail block by
-a `(Phase Details)` heading at or after that window's end. A v0.8.0 detail block
-placed between v0.6.0's summary and its `(Phase Details)` heading would fall
-inside v0.6.0's window instead. Do not reorder these sections.*
-
-### Phase 33: The Reproducible-Run Protocol and the Capture Substrate (Go/Degrade/No-Go)
-
-**Goal**: Two runs of the same real cracked release stop in the same frame and
-their 64K captures compare as equivalent, produced without a transcription step
-anywhere — and a recorded verdict, against rules committed to git before any
-measurement exists, says whether v0.8.0 proceeds as scoped, narrows, or is
-reconsidered.
-**Depends on**: Nothing (first phase of v0.8.0; runs against the stock backend and needs no v0.7.0 artifact). Its own two halves are parallel — the snapshot slicer touches no emulator and is independent of the stop
-**Requirements**: REPRO-01, REPRO-02, REPRO-03, REPRO-04, REPRO-05, CAP-01, CAP-02, CAP-03, CAP-04, GATE-01
-**Success Criteria** (what must be TRUE):
-
-  1. **Launch nondeterminism is proven pinned by divergence, not by a flag's presence.** Two cold boots of the same release without `-seed` and without the three `raminit*` flags differ over an untouched window — that observation recorded as a committed transcript, red — and with them, **zero** addresses differ. The block is emitted after `-default` on the **stock branch only**, with the fork branch's argv left byte-identical. Every capture carries a record whose reproducibility key is `(binary sha256, argv digest, seed)` and **not** the seed alone, because the same seed with a reordered argv was MEASURED to yield a 76-byte-different image. **OUTCOME 2026-09-02 — MET.** `SEED_EFFECT: pinned` at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-repro01-determinism.md`: the untouched `$C000-$CFEF` window (4080 addresses) differs at **57** addresses without the determinism block and at **0** with it, so both halves of the declared derivation are satisfied and the with-block zero means something. `NOSEED_DIFF_TOTAL_64K 1028` / `BLOCK_DIFF_TOTAL_64K 0` are recorded beside them as the audit trail and never gate. The block is emitted on the stock branch only and the fork argv is byte-identical. Carried limit: the block is **unconditional** on stock, so all **five** whole-argv assertions moved with `profile` absent — see the guards note's superseded rider below.
-  2. **The reset step inside the protocol is proven load-bearing.** The reproducible-run protocol is one **named single-seam procedure** reached through an optional argument on `vice_run_until` rather than as a second route a caller can forget; two runs with deliberate pre-protocol jitter stop identically under it; and a committed control that removes the monitor-issued hard reset from that same procedure produces **differing stop phases, observed red**. The MEASURED baseline it must reproduce: jitter of 0 / 1500 / 4000 ms stopped byte-identically while the pre-reset state spanned 6.7M cycles. **OUTCOME 2026-09-02 — MET.** `JITTER_IMMUNITY: immune` and `RESET_REMOVED_CONTROL: red`, both at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-repro02-reset-removed.md`: one distinct 64K sha256 and `TRIPLE_PAIRWISE_DIFF_TOTAL 0` across the 0 / 1500 / 4000 ms triple with all four stop-identity terms identical, against **three** distinct sha256 values and differing `line`/`cycle` on every pair once the reset is removed. Carried limit, recorded rather than glossed: the triple was taken at the KERNAL `READY` prompt with **no corpus**, because `runReproducible()` provably cannot serve an autostarted release (its hard `RESET` undoes `AUTOSTART`) and `JITTER_IMMUNITY` is declared corpus-free. A method control caught a **false `no-go`** here: a checkpoint halt placed before the reset leaves the VIC-II mid-frame and turned `immune` into `not-immune`.
-  3. **The frame term of the stop-identity oracle is proven necessary rather than argued.** Two stops are certified identical by the triple `(PC, hit_count, (LIN, CYC))` and by nothing else, with a frame-anchor checkpoint on a once-per-frame site supplying the frame term — and a committed control shows `(LIN, CYC)` **alone PASSING** on two stops exactly one frame apart, so the anchor's necessity is *observed*, not asserted. The main-CPU memspace assertion is proven able to refuse: a drive checkpoint hit contaminates `default_memspace` and the assertion is observed refusing after one. The captured 64K is **structurally barred** from being a conjunct of this oracle, asserted so the next edit cannot reintroduce the circularity. **OUTCOME 2026-09-02 — PARTLY MET, and this is the criterion that fired the gate.** `ORACLE_NECESSITY: unproven` at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-repro03-frame-anchor.md`: on the `$ea31` anchor a pair **exactly one frame apart** is unbuildable — a 60 Hz KERNAL IRQ against a 50.125 Hz PAL frame, measured as 240 anchor hits producing 240 distinct `(LIN, CYC)` with 0 consecutive repeats — and the smallest reachable equal-raster separation on this build is 2 frames. A variant control at a raster-conditioned probe point (`$e5d4`, `(RL == $f0)`) **does** show `(LIN, CYC)` alone PASSING on two stops whose sliced images differ at 3 bytes, with the shipped four-term oracle separating them naming `hitCount` — but at an *integral*, not a *one*, frame separation, so the declared derivation yields `unproven`. This fires `R6 → degrade`. The memspace half IS met — `MEMSPACE_ASSERTION: refuses` at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-memspace-refusal.md` — but on the `@bank:`-condition symptom **alone**: a memspace-less `ADVANCE_INSTRUCTIONS` still stepped the main CPU after contamination, contradicting `P10`'s first symptom. The `CAP-03` structural bar is met by two assertions (import and parameter type); a caller passing a **derived scalar** into `compareStopIdentity()` is forbidden in prose only.
-  4. **A depacked flat 64K image comes out of a snapshot slice with no transcription step anywhere, and the equivalence predicate is proven able to fail.** The image is the `C64MEM` module body (4 bytes of port/PLA state, then 65536 bytes of RAM). A byte planted **outside** the enumerated transient allow-list fails the comparison, observed red; the allow-list is enumerated rather than range-shaped, under a committed size cap, and re-derived per release with the *method* carried forward rather than any address set; and the `$0000`/`$0001` 6510-port overlay is normalised **in code**, never in a reader's head. **OUTCOME 2026-09-02 — MET.** `SLICER: validated` at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-slicer-validation.md`, with both declared transcripts appended (`vsf-slice.test.ts` 34/34 `fail 0`; `capture-predicate.test.ts capture-seam.test.ts` 39/39 `fail 0`). The allow-list is enumerated and under its cap — `TRANSIENT_COUNT: 49` against 64 at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-transient-derivation.md`, so `DERIVATION: void` is absent — and a one-bit flip planted at `$C000`, outside the 49 addresses, fails the same comparison, so the list is not vacuous. Carried limit: the union straddles the cap — 48 of the 49 come from one pairing and `33-03` measured **66**, over the cap, for the nominally corresponding comparison on a directly launched instance, so the earlier claim that frame anchoring always fits the cap is **withdrawn**. Two decisions were falsified by measurement here (`D-21`'s `4 + 65536` body length, measured 65555 at snapshot minor 1; `D-24`'s prefix-over-RAM overlay, the values living in the 3-byte suffix) and both carry dated riders in `33-CONTEXT.md`.
-  5. **A machine-readable go / degrade / no-go verdict is recorded against rules committed to git before any measurement exists, with no judgement step** — and it **cannot** return `could-not-run` for want of a capture, because its `go` inputs include the protocol's jitter-immunity and the seed's effect, both measurable before a corpus exists. The phase's opening measurement is the binary-monitor re-instrumentation probe on an **autostarted** real release with true drive emulation in the loop, with the wall-clock-anchoring negative control **observed red** (MEASURED to reproduce the original failure: same instruction, `LIN` 116 / 223 / 267) and the warp-invalidated wall-clock bracket observed timing out spuriously. A real release is captured twice and the pair satisfies criterion 4's predicate; a shortfall is a named **gate input**, never a silent omission. Warp and headless are **additive** launch knobs a run can request, not a whole-argv override, with `-default` still at index 0 ahead of `-binarymonitor`. **OUTCOME 2026-09-02 — MET, with one named shortfall in this criterion's own wording.** The verdict is `degrade`, fired by `R6`, recorded as machine-readable frontmatter in [`docs/phase33-reproducible-run-gate-findings.md`](../../docs/phase33-reproducible-run-gate-findings.md) against rules committed at `2a8ef95` — still the only commit reachable from itself that touches the phase evidence directory, re-asserted after every measurement landed. `could-not-run` was **structurally unavailable**: `R9` carries no antecedent and the rule set is total over all 108 tuples. The opening measurement ran on an autostarted real release with true drive emulation in the loop (`AUTOSTART_SEQUENCE: S3` at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-autostart-sequencing.md`) and the release was captured twice with the pair satisfying criterion 4's predicate (`C0_CAPTURE_PAIR: pass` at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-capture-pair.md`). Both wall-clock controls are red (`WALLCLOCK_CONTROL: red`, `WARP_BRACKET_CONTROL: red` at column 0 of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-wallclock-control.md`). **The shortfall:** `WARP_BRACKET_CONTROL` is red by a **stop outside the intended region** (1.76× overshoot on an identical 10 s bracket), NOT by the *spurious timeout* this criterion names — the timeout instance came out `not-red` and was reported rather than discarded, because `AUTOSTART` owns warp during the load whatever argv says and `-warp` is worth only ~1.97× on this host. Also recorded honestly: `AUTOSTART_FRAME_EXACT: not-achieved` (frame-exact through anchor hit 50, lost from 75, the 1541's rotational phase riding the un-reset absolute clock) and `CAPTURE_FRAME_EXACT: no` beside the `pass`. Read that `pass` for what it supports: the allow-list was derived from three runs two of which ARE the pair, so all discriminating power sits in the cap.
-
-**Plans**: 12 plans in 7 waves, all twelve executed and none deliberately withheld — `33-01` the pre-committed decision rules (nothing else, git order is the proof); `33-02` the research reconciliation and the suite-baseline repair; `33-03` the live autostart-sequencing probe with the wall-clock and warp-bracket controls; `33-04` the `.vsf` `C64MEM` slicer; `33-05` the determinism block, the launch-knob argv and the re-grounded warp sentence; `33-06` the control-plane launch profile and warm-instance eligibility; `33-07` the equivalence predicate, the stop-identity oracle and `CAP-03`'s structural bar; `33-08` the allow-list derivation method and the three-field reproducibility key; `33-09` `runReproducible()` and the two optional `vice_run_until` arguments; `33-10` the real release captured twice, the derivation on it, and the memspace refusal; `33-11` the three remaining observed-red controls and the `probeReady` re-check; `33-12` the verdict, its downstream binding and the folded-todo ledger. The two halves run concurrently: `33-04` / `33-07` / `33-08` (the emulator-free capture substrate) are independent of the stop, and `33-01` lands before every measuring plan by construction.
-
-Plans:
-**Wave 1**
-
-- [x] 33-01-PLAN.md — GATE-01: the pre-committed go/degrade/no-go decision rules, schema and evidence conventions
-- [x] 33-02-PLAN.md — reconcile the three falsified decisions; repair one root cause of the known-red suite baseline
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 33-03-PLAN.md — CAP-04's opening measurement: the autostarted anchor-counted sequence, plus the wall-clock and warp-bracket controls red
-- [x] 33-04-PLAN.md — CAP-01: the strict `.vsf` module-table walk and `C64MEM` slice, with its refusal fixtures and skill route
-- [x] 33-05-PLAN.md — REPRO-01/REPRO-05: the stock determinism block, `-console`/`-warp` argv, and the re-grounded warp sentence
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 33-06-PLAN.md — REPRO-05: the additive acquire `profile` and the warm-instance eligibility rule
-- [x] 33-07-PLAN.md — CAP-02/CAP-03/REPRO-03: the equivalence predicate, the stop-identity oracle, and the structural bar
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 33-08-PLAN.md — REPRO-04/CAP-02: the N>=3 allow-list derivation under a voiding cap, and the three-field reproducibility key
-- [x] 33-09-PLAN.md — REPRO-02/REPRO-03: `runReproducible()` behind one optional argument, refusing without a frame anchor
-
-**Wave 5** *(blocked on Wave 4 completion)*
-
-- [x] 33-10-PLAN.md — CAP-04: a real release captured twice, the derivation on it, and the memspace assertion observed refusing
-
-**Wave 6** *(blocked on Wave 5 completion)*
-
-- [x] 33-11-PLAN.md — the three remaining observed-red controls, and `probeReady` re-checked under warp and console
-
-**Wave 7** *(blocked on Wave 6 completion)*
-
-- [x] 33-12-PLAN.md — GATE-01: the recorded verdict, its binding on Phases 34-38, and the folded-todo ledger
-
-Notes:
-
-- **The gate is a phase and not a criterion inside one, for the third time in this project — and this time its input domain is different.** Phase 9's `R4` fired and returned `degrade`; Phase 23's `R1` fired and returned `no-go` five plans before the measurement it gates existed. Both were correct. But Phase 23 *could* return `could-not-run` because every one of its inputs needed a corpus. `GATE-01`'s `go` inputs are measurable **before** any corpus exists, so this gate must not be written in a way that lets it abstain: record `CAP-04`'s outcome as a gate **input**, never as a precondition for producing a verdict. Write the rules while the answers are still unknown — a rule written after the measurement makes every future gate advisory.
-- **The opening task is a measurement, not an implementation.** Every probe behind `REPRO-*` ran at the KERNAL `READY` prompt over the **now-excluded** text channel, so the recipe is **PARTLY UNVERIFIED** until re-instrumented over `-binarymonitor` on an autostarted real release. That is `CAP-04`, and it is the first real measurement of the milestone. Two untested preconditions ride with it and are *probes inside this phase* rather than a research pass: autostart determinism with true drive emulation in the loop, and whether the transient allow-list method holds on a real release.
-- **The two halves of this phase are parallel.** The `.vsf` `C64MEM` slicer touches no emulator and is independent of the stop; run it as a concurrent plan rather than behind one. It is already validated against 23-03's own hand-transcribed hex — two 8 KB chunks byte-identical, one differing only at `$0000`/`$0001`, the fourth localising ten dropped characters to `$7871`.
-- **The stop is a protocol, not a new mechanism — and the mechanism this milestone was opened on does not exist.** MEASURED 2026-09-02: `event.c` registers exactly six event options and none is `-record` / `-recordevents`; `x64sc -record` returns `Unknown option`, exit 255; `event_record_start()` has no non-UI caller; and no binary-monitor opcode addresses it. The trap that makes the belief plausible is that the text monitor's `record` / `playback` are monitor-command **file scripting**, not event history. The scope decision stands and its named mechanism is replaced rather than lost: stock is cycle-deterministic from a monitor-issued hard reset, so reproducibility is that reset protocol plus pinned launch nondeterminism.
-- **Absolute cycle count is deliberately not a requirement.** `stopwatch` is excluded by name (owner decision 2026-09-02) and `CPUHISTORY_GET` (0x86) needs VICE >= 3.10 while this host runs 3.9, so at the 3.9 floor the run-equivalence oracle is raster line plus raster cycle plus the 64K capture comparison, with absolute cycle a 3.10-only strengthening. Phase 0's Route B reconstructed clock is deliberately **not** revived — an incidental measurement put it at 19,657 cycles/frame against phase 0's documented 19,656, a 1-cycle-per-frame accumulating error.
-- **`default_memspace` contamination has no remedy over the binary monitor**, which is why the main-CPU assertion is a criterion rather than a comment. A drive checkpoint hit sets it (`monitor.c:3393-3396`) and no command resets it, after which `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the **drive** CPU and `@bank:` conditions fail outright. With true drive emulation in the loop for an autostarted release, this is reachable here and not a theoretical hazard.
-- **The transient allow-list is a method, not an address set.** MEASURED at the `READY` prompt the transient set is 3 of 1024 addresses (`$00A2` jiffy-clock low byte, `$00CD` cursor-blink countdown, `$01F2` dead stack byte above SP), and that is an **upper bound taken under frame-divergent conditions**. A real release's transients are its own frame counters, RNG, sprite positions and music-player pointers. A rule tolerating a page would be over-wide by three orders of magnitude.
-- **Warp is launch-time here for a reason that is not the obvious one, and the stale claim needs re-grounding rather than deleting.** `capability-registry.ts` states inside `vice_machine_config_set`'s reason that warp on stock is a launch-time flag and not a runtime-togglable resource, and `docs/tool-support.md` reproduces the sentence **verbatim because it is generated** from the registry under a byte-identity drift guard. That sentence is **factually wrong about VICE** — runtime `warp` / `warp on` / `warp off` were refuted live on 2026-08-27 — and **operationally correct for this milestone**, because runtime toggling lives only on the excluded text channel. Re-ground it to say both things ("no runtime `WarpMode` resource; runtime toggling exists only on the text monitor, which this project does not dial") and **regenerate the table in the same commit**, or the drift guard reds. Consequence to carry: warp is a **per-instance** property, which puts it inside the warm-instance-eligibility problem — a pre-warmed interactive instance cannot be retro-warped.
-- **Guards this phase breaks.** The three whole-argv `assert.deepEqual` assertions in `broker-launch.test.ts` are **avoidable**: an optional field defaulting to absent keeps all three green, and the ordering assertions were written to survive additions. The **fork argv byte-identity promise is a Validated v0.2.0 requirement, not merely a test**, so the determinism block is stock-branch-only. `-default` stays at index 0 ahead of `-binarymonitor`, the ordering invariant regression-pinned since Phase 8.2. `MANUAL_ONLY_TESTS` in `test-gate.test.ts` is **exactly nine files** and is one of this milestone's **five reviewed decisions** — a live frame-exact suite not added to it silently runs inside `test:automated` and fails on any machine without the corpus. `docs-deferred-ledger.test.ts` fails in **both** directions, so resolving the frame-exact, the headless-and-warp or the snapshot-extraction todo requires moving its `STATE.md` row in the same commit. And if any new host-bound `.mts` launcher appears, `build.ts`'s `HOST_BOUND_ARTIFACTS` **throws** while `resources-sync.test.ts` fails in both directions — a differing committed file *and* a missing one a fresh build produces. **SUPERSEDED IN PART 2026-09-02 (33-05, measured).** The original sentence above is left readable; two of its clauses are false. There are **five** stock whole-argv `assert.deepEqual(args, …)` assertions in `broker-launch.test.ts` (lines 1775, 1789, 1907, 1919, 1929), not three — and `REPRO-01`'s determinism block is **unconditional** on stock, so **all five changed, with `profile` absent**: it is the determinism block and not the profile that moves them, which makes them **not avoidable** by an optional-field default. What survives from the note unchanged: the three *ordering* assertions did survive additions exactly as it says, `-default` stayed at index 0 ahead of `-binarymonitor`, and the fork branch's argv is byte-identical — a Validated v0.2.0 requirement, not merely a test.
-- **Two known-red baselines to establish before trusting any run in this phase.** **Stop the broker first** — a live broker reddens the `BACK-05` assertion deterministically, and a phase measuring against a live-broker run reads a false baseline. And use `npm run test:automated`, not `npm test`: the whole-glob run does not terminate unaided. The clean floor for `test:automated` is **0** failures. **SUPERSEDED 2026-09-02 (measured).** The original sentence above is left readable, and it is wrong: measured at the phase open with the broker stopped, `test:automated` exits `1` with **5 failing tests in 3 files** — `anno-register.test.ts`, `docs-deferred-ledger.test.ts`, `audit-integrity.test.ts` — from two root causes Phase 33 did not create. `33-02` repaired one of them, leaving **2 failing tests in `anno-register.test.ts`** (`:385`, `:479`; `tests 3113 / pass 3105 / fail 2`) as the baseline for the rest of the phase. The residual root cause is named and **out of phase**: the anno tool register cites `STORE-01`, `STORE-04`, `STORE-06` and `MCP-04`, which `.planning/REQUIREMENTS.md` no longer declares after the v0.8.0 rewrite dropped the v0.7.0 ids. So the floor is **not 0**, and no plan in this phase adopted "`test:automated` green" as an acceptance criterion — the count is a recorded baseline, never a gate (`evidence/DECISION-RULE.md` § *Never a gate*).
-
-### Phase 34: The Host-Tool Execution Seam
-
-**Goal**: A container-side skill script invokes a host binary — `acme`, `dxa`,
-Ghidra — through one typed seam that consumes no emulator lease, returns paths
-rather than payloads, and is the only route there is, with the ban on every
-other route written and observed biting.
-**Depends on**: Phase 33 — for gate authority only, not for any artifact: `GATE-01`'s verdict holds the authority to narrow or cancel every phase after it, and a `degrade` could narrow this one. Nothing here reads a Phase 33 deliverable. **Must precede Phases 35 and 36, never follow them**
-**Requirements**: SEAM-01, SEAM-02, SEAM-03, SEAM-04, SEAM-05, SEAM-06, SEAM-07
-**Success Criteria** (what must be TRUE):
-
-  1. A container-side skill script invokes a named host binary over a **typed namespaced control op on the existing broker socket, routed before any lease-bearing path** — proven by an invocation that completes while consuming **no** emulator lease. Each tool goes through a **typed per-tool allowlist with no argv passthrough anywhere**, as a child process, with the invocation and its exit status recorded.
-  2. **The 64 KiB line cap is observed, not read about.** An inline return larger than the cap produces a bare disconnect with **no error frame** — recorded as a transcript, red — which is what makes "results cross as path plus digest plus length through `containerpath.ts`, never as payload" a contract rather than a workaround. Ghidra exports run to megabytes, so the file route is forced regardless.
-  3. Ghidra runs with **one project directory per run id** and `-deleteProject`, and the **no-dot project-path refusal is enforced in this project's code** — proven by a dot-prefixed path being refused before `analyzeHeadless` is ever reached, rather than by a comment saying not to pass one. Per-run directories make the single-writer lock unreachable, which is a better answer than guarding it.
-  4. **The whole-tree grep gate banning an external-binary spawn from a skill script is observed biting on a planted violation**, and it exists at all only because the two existing violations are gone first: `src/skills/acme-build/scripts/acme.mjs` (`spawnSync("acme", …)` behind a PATH ladder of five *container* paths) and `src/skills/c64-program-recon/scripts/packer-finding.mjs` are migrated **in this phase**. The gate's scope reads what a user actually receives, not `git ls-files`.
-  5. **The new module family is inside the closed-consumer discipline rather than beside it, with a second floor pinned over its own prefix and observed going red.** A **real** unclassified module is created on disk as a positive control and the new floor is observed naming it. And the JVM lifetime binding is a **recorded decision carrying its measurement and its reversal condition** — not an inherited default.
-
-**Plans**: 11 plans — 11/11 executed (6/6 in 4 waves, plus 3 gap-closure plans `34-07`..`34-09` in 3 further waves after `34-VERIFICATION.md` scored 4/6 must-haves, then `34-10` in Wave 8 and `34-11` in Wave 9 after the re-verification scored 6/7 and found one NEW gap, CR-05 — `34-10` closes it in code, `34-11` in the record). `34-01` leads with a production-quality tracer — one tool (`acme.build`) wired end to end through the control op, the host-bound executor, a real `acme` child process and back as `{path, sha256, byteLength}` — because proving the architecture on one path catches a dead end after one commit instead of after ten. Wave 2 expands sideways from that proven slice: `34-02` the 64 KiB cap observed red at the exact boundary, `34-03` Ghidra's per-run project directory and the dot-segment refusal in code. Wave 3: `34-04` the two migrations (ordering is a requirement — the gate cannot be written while anything violates it), `34-06` the second prefix floor and the JVM decision record. Wave 4: `34-05` the gate itself, observed biting, plus the phase's closing sweep. No `/gsd-discuss-phase` ran, so fourteen planner assumptions (`A-01`..`A-14`) are recorded in the plans and consolidated into `docs/phase34-host-tool-seam-decisions.md`; `A-01` and `A-02` resolve `34-RESEARCH.md`'s Open Questions 1 and 2, `A-09` resolves its Open Question 3.
-
-Plans:
-**Wave 1**
-
-- [x] 34-01-PLAN.md — Tracer: one tool, one path, end to end (`host_tool` op, `host-tool.mts`, `host-tool-client.ts`, the allowlist, the guard dispositions)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 34-02-PLAN.md — The 64 KiB cap observed red at the boundary, plus result-by-reference asserted by key enumeration
-- [x] 34-03-PLAN.md — Ghidra: per-run project directory, the dot-segment refusal in code, and the live transcript
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 34-04-PLAN.md — The two migrations: one resolution ladder, `acme.mjs` and `packer-finding.mjs` onto the seam
-- [x] 34-06-PLAN.md — The second prefix floor with a real positive control, and the JVM lifetime decision record
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 34-05-PLAN.md — The whole-tree gate, observed biting on a planted violation, wired into CI, plus the closing sweep
-
-**Wave 5** *(gap closure — `34-VERIFICATION.md` gaps 1 and 2; run with `/gsd-execute-phase 34 --gaps-only`)*
-
-- [x] 34-07-PLAN.md — Gap 1a: `acme.build`'s `includes` and `ghidra.analyze`'s `preScript`/`postScript` routed through `resolveWorkspacePath()`, the false header comment corrected, the rule enforced in a second layer (CR-02, CR-03)
-
-**Wave 6** *(blocked on Wave 5 — same files)*
-
-- [x] 34-08-PLAN.md — Gap 1b: `oracle.probe`'s `command` wire key removed, the oracle located from the host broker's own environment with a basename check, and a declared path-argument census that catches the next unresolved key (CR-01)
-
-**Wave 7** *(blocked on Wave 6 — same files)*
-
-- [x] 34-09-PLAN.md — Gap 2: the control-plane round trip's connect timer split from a per-tool request deadline, per-tool server-side budgets clearing the measured JVM-startup cost, a slow tool observed completing over the real route, then the SEAM-02 ledger repair (CR-04)
-
-**Wave 8** *(second gap-closure round — `34-VERIFICATION.md` gap 3; run with `/gsd-execute-phase 34 --gaps-only`)*
-
-- [x] 34-10-PLAN.md — Gap 3: `resolveWorkspacePath()`'s symlink-blind lexical check replaced by an ancestor-realpath walk on BOTH sides returning the real path, live planted-symlink refusals for a read key and a write key, the discriminating follow/dangling/cycle cases, and an equivalence table against `anno-types.ts`'s own walk (CR-05)
-
-**Wave 9** *(blocked on Wave 8 — the record follows the gate, never precedes it; runs with `USE_WORKTREES_FOR_PLAN=false` because it delivers `.planning/STATE.md` content and its diff contains a deletion)*
-
-- [x] 34-11-PLAN.md — Gap 3's record: the dated CR-05 correction plus assumptions `A-15`/`A-16` appended to the decision document, the todo closed with a Resolution and re-derived citations, and the Deferred Items row removed in the same commit as the file move (CR-05)
-
-Notes:
-
-- **SECOND gap-closure round, 2026-09-03.** The re-verification after `34-07`..`34-09` confirmed both prior gaps genuinely closed and scored **6/7**, but the code review that ran after those closures landed raised one NEW Critical the verifier then **independently reproduced live** rather than accepting from source: `CR-05` / gap 3. `resolveWorkspacePath()` — the function `host-tool.mts`'s own header calls "the ONLY place a wire-supplied path becomes a real path" — enforced the workspace boundary with `path.resolve()` plus a `startsWith(rootAbs + sep)` string check and never touched the filesystem (`grep -c realpath host-tool.mts` was **0**). A real symlink planted inside the workspace made an accepted path's write land **outside** the root; all seven keys in `HOST_TOOL_PATH_ARG_KEYS` inherited it, and two (`acme.build`'s `outDir`, `oracle.run`'s `source`) are write/read destinations. `34-10` closes it by mirroring `anno-types.ts`'s already-reviewed fix — both sides through an ancestor-realpath walk, the real path returned — with live planted-symlink cases for a read key and a write key. **`SEAM-02` is NOT re-scored in either direction**: the verifier ruled in writing that its literal text ("no argv passthrough anywhere") is met and that CR-05 is a distinct defect in the confinement check underneath it. Two NEW planner assumptions are recorded — `A-15` (the walk is duplicated deliberately: `host-tool.mts` is host-bound and cannot import a container-side `.ts`, so the price is an equivalence test) and `A-16` (the seam returns the real path, and `containerPath()`'s consequence on a symlinked host workspace root is a recorded limit, not a widened `hostpath.ts` consumer set). `WR-01`, `WR-02` and the NEW `WR-03` (`runOracleRun()`'s unguarded `mkdirSync` and the CLI entry point's missing `.catch()`, filed as a pending todo, severity minor) were **not scored as gaps** and are carried as explicit, visible deferrals in `34-10-PLAN.md` rather than folded in — `WR-03` most pointedly, since it touches the same file and would ride the same rebuild.
-
-- **Gap-closure round, 2026-09-03.** `34-VERIFICATION.md` scored **4/6** must-haves and recorded two gaps, both load-bearing rather than cosmetic. Gap 1: Success Criterion 1's own second half — "a typed per-tool allowlist with **no argv passthrough anywhere**" — is false in three independently confirmed places (`oracle.probe`'s `command`, `ghidra.analyze`'s `preScript`/`postScript`, `acme.build`'s `includes`), each letting a container-side wire string reach a host spawn's executable path or argv with no workspace-boundary check, and `host-tool.mts:96-100` **falsely claims** the opposite for two of them. Gap 2: `ghidra.analyze` cannot complete over the shipped, default-configured control-plane route at all, because the client-side timer reuses a 5000 ms TCP-connect constant for the whole round trip and the server-side ceiling is a fixed, non-overridable 20 s — both shorter than this project's own measured 12.6-17.4 s JVM startup. `SEAM-02` is reverted to Pending in `REQUIREMENTS.md` (commit `0253884`) and is flipped back only as `34-09`'s LAST task, after its own gate has run. The code review's `WR-01` (the spawn-gate detector is evadable by aliasing the spawn function) and `WR-02` (`host_tool` has no admission control / concurrent-JVM ceiling) were **not scored as gaps** and are carried as explicit, visible deferrals in `34-07-PLAN.md` and `34-09-PLAN.md` rather than folded in. `SEAM-07`'s per-invocation JVM binding, its measurement and its `N=20`/`P=30%` reversal condition are **not** under review — only the budget that made the binding unusable over the shipped route.
-
-- **`GATE-01`'s verdict, and what it narrows here.** Phase 33 recorded **`degrade`**, fired by rule **`R6`** (`ORACLE_NECESSITY: unproven`), against rules committed at `2a8ef95` before any measurement existed. The verdict, its derivation and the collected accepted limits are in [`docs/phase33-reproducible-run-gate-findings.md`](../../docs/phase33-reproducible-run-gate-findings.md). `R6` carries a **pre-mapped narrowing (`D-04`)**, reproduced rather than re-authored: the stop-identity oracle narrows to the two-term **`(PC, hit_count)`** form with the frame term `(LIN, CYC)` **recorded but not asserted**, and every downstream capture pair carries that weakening **in its own record**, not in a footnote to the findings document. **What that narrowing does to this phase: nothing.** `R6` is a fact about the oracle's frame term and this phase reads no Phase 33 deliverable — its dependency is gate authority only. The `REPRO-*` / `CAP-01` / `CAP-02` substrate is untouched by this branch and stands on its own corpus-free evidence (`SLICER: validated`, `SEED_EFFECT: pinned`, `JITTER_IMMUNITY: immune`). `SEAM-01`..`SEAM-07` proceed as scoped. Two Phase 33 measurements are worth carrying anyway because they are facts about the launcher this phase extends: `PROBEREADY_BUDGET: short` (`WARP_TIME_TO_BIND_MS_MAX: 3155`, `CONSOLE_TIME_TO_BIND_MS_MAX: 2385` against a 1000 ms per-attempt budget — the shortfall predates both new flags and costs a first probe pass, never a launch), and `-warp` measured worth only ~1.97× on this host with `AUTOSTART` owning warp during a load regardless of argv. Per `D-06` no test guard encodes this binding; it lives here, in the findings document, and in the `STATE.md` pointer.
-- **This is a precondition, not a plan inside another phase**, and three independent research lines say so for three different reasons: it gates the Ghidra post-script's output format; it gates any skill script reaching a host binary at all; and the whole-tree grep gate **can only be written once nothing violates it**, while two skill scripts violate it today. Inlining `spawnSync("dxa", …)` "just for the measurement phase" means writing the violation twice and deleting it twice, and the second deletion is the one that gets skipped.
-- **The rule this discharges is the project owner's, stated 2026-08-28** in [`seeds/host-tool-executor.md`](seeds/host-tool-executor.md): a skill script runs container-side, the binaries live host-side, and there is no container PATH to find them on. The seed is framed around **stateless** tools (`c1541`, `petcat`, `cartconv`, `acme`). Ghidra is not one — a JVM with a persistent project directory, multi-minute runs, and exports past the control channel's 64 KiB line cap — which is why `SEAM-07` makes the lifetime binding a recorded decision rather than an assumption inherited from the stateless case.
-- **Measured inputs to the JVM decision, so it is decided on evidence.** JVM startup is **12.6-17.4 s** before any analysis, which is what makes per-request `analyzeHeadless` untenable at corpus scale; and four independent comparable projects converge on **one resident JVM behind a localhost socket** — structurally the same design as this project's own VICE broker. Whichever way it is decided, record the reversal condition.
-- **The trap that will otherwise be discovered in a red CI run.** `spawn-seam.test.ts`'s discovery predicate matches `\bbinPath\b`, so a host-tool executor writing `spawnSync(binPath, […])` for **Ghidra** is counted as an *emulator* spawn site and reds the `EXPECTED_EMULATOR_SPAWN_SITES === 1` assertion. Avoid it by naming the local `toolPath` / `ghidraPath`, or widen the set as a **recorded decision** — never by editing the number to make a red test green.
-- **The second trap, and it is the quieter one.** `hostpath-consumers.test.ts`'s non-vacuity floor is `ANNO_MODULE_FLOOR = 16 + 1`, pinned over the `anno-*` prefix, so a `ghidra-*` / `dxa-*` family sits **outside its scan entirely** — see Standing Constraints. Its "exactly five declared modules" assertion *will* fire when the new family imports `hostpath.ts`, which is the guard working; but the natural repair, adding the module to the declared list, converts a closed set into an open one, one entry per milestone. Prefer **one** declared-consumer module the rest of the family reaches through, and add the second prefix floor with a real on-disk positive control observed red.
-- **Guards this phase breaks, with three of the milestone's five reviewed decisions among them.** `ControlRequestKind`'s byte-exact declaration in `broker-control.test.ts` trips on **any** new control-plane op (`ghidra.*`, `dxa.*`, `tool.*`) and is therefore unavoidable in every execution-seam design — it is not a discriminator between them. `EXPECTED_IMPORTERS`, the five-member host-path consumer set, carries its own header: *"Widening the five-member list below is a REVIEWED DECISION, not a mechanical fix for a failing test"*. `EXPECTED_EMULATOR_SPAWN_SITES` is the third, above. Mechanical but easy to miss: `EXPECTED_TRACKED_SHELL_SCRIPTS` is a repo-wide `git ls-files -- *.sh` at 5 entries, so an `analyzeHeadless` wrapper script trips it; `check-skill-cli-invocations.mjs` and `check-skill-tool-coverage.mjs` (allowlists designed to *"SHRINK BY FAILING"*) both read the migrated skill scripts; `shippedTsModules()` throws on a `files[]` entry missing from disk; and `docs-linerefs.test.ts` is verified correct at HEAD (`:3050` / `:2985` / `:1529` / `:1505`) but **any** new interception near `forwardToVice()` shifts all four — these citations have been stale twice before, so treat a mismatch as drift to re-verify rather than as evidence the constraint changed.
-- **`installer/skills/` is gitignored yet shipped**, so the migration's gate must read the `npm pack` file list through `scripts/check-npm-packages.mjs` and never `git ls-files` — see Standing Constraints. The failure runs in the worst direction: the tracked copy is correct, the gate is green, and the shipped copy is wrong.
-- **Reuse rather than rebuild.** The existing `resources/` recursive-walk delivery channel already ships committed non-`.ts` payloads to the host side, and `verifiedKill()` already kills by identity. Neither needs re-deriving.
-- **Research flag: this is the one section of the milestone's research resting on survey rather than measurement** (MEDIUM confidence). Two live questions, **nothing probed**: whether batch framing with `-process` actually amortises the measured 12-17 s JVM startup across a corpus item, and the cost of installing Ghidra plus a JDK in GitHub Actions. `/gsd-plan-phase --research-phase 34` is warranted.
-
-### Phase 35: dxa, Vendored and Parsed
-
-**Goal**: A raw C64 image goes in and a machine-readable code/data map comes out,
-from a dxa this project vendors and builds at a pinned version — with the
-listing parser loud by name rather than silently mis-parsing, and every rate
-it will ever be measured against derived from a committed script before the tool
-runs.
-**Depends on**: Phase 34 (dxa is reached through the host-tool execution seam; inlining a spawn here writes the ban's violation twice) and Phase 33 (the corpus for any real-image exercise, plus `GATE-01`'s authority to narrow this phase)
-**Requirements**: DXA-01, DXA-02, DXA-03, DXA-04
-**Success Criteria** (what must be TRUE):
-
-  1. A caller hands a `.prg` or flat 64K image to a command this project ships and gets a machine-readable code/data map back, from a dxa **this project vendors and builds at a pinned version** — never one assumed present on `$PATH`. The digest gate is written **before** the fetch, `sha256` is re-verified against Phase 23's pin byte-for-byte, and the build reproduces the same binary digest. The GPL-2.0-or-later notice in `THIRD-PARTY-NOTICES.md` is **quoted from the source headers** with this project supplying the licence text, because the tarball carries no `LICENSE` or `COPYING` file.
-  2. **The parser's loud handling of a real unknown listing form from an actual run is observed** — not only by a hand-planted malformed line, and not by dxa's exit status, which was MEASURED to exit **0** on an inconsistent fixture under `-d strict`. It is **this project's parser being loud by name** — either refusing, or explicitly reporting the unknown form (e.g. in `outOfWindow[]`) so it is never silently absorbed. **AMENDED 2026-09-04, after Phase 35 verification (4/5):** this clause originally read "refusing by name", which named a MECHANISM rather than the goal. Decision `A-04`, taken during Phase 35 planning, deliberately made `dxa-listing.ts` REPORT a real out-of-window over-read instead of refusing outright — strictly more useful, since the caller learns about the anomaly AND still receives the map. Both real anomalies the phase found (the `$ffff` top-of-memory dump-column wraparound, and an end-of-image lookahead at `$b80f` on a real cracked release) land INSIDE the declared window and so cannot, by construction, trip a `covered.size !== imageSize` refusal — no amount of further searching would have produced one. **The stronger, structural basis** (established by the re-verification, and not merely "we searched and found nothing"): `parseDumpListing()` places every byte in exactly one of four LOUD buckets — a single-claim code/data classification, a multi-claim `unclassified` with its stated reason, an out-of-window line reported verbatim in `outOfWindow[]`, or a within-window coverage mismatch that still throws. There is no fifth, silent path, so "never silently absorbed" is a property of the parser's disposition logic rather than an observation about the two inputs that happened to be tried. What criterion 2 always meant to forbid is a SILENT mis-parse, and the shipped parser demonstrably does not commit one on either real form. Overlapping decodes — a `jsr` into a mid-instruction target — yield **unclassified with a stated reason**, never a winner, because a byte-per-address map structurally cannot represent them.
-  3. Naming a known-data range excludes those bytes from discovery: known-data ranges are handed to dxa as `-b` data blocks with the store's existing 12-member vocabulary as the source and the `-B` / `-l` store-to-dxa emitters as the route, **exercised on a real image** rather than asserted.
-  4. **Every rate this project quotes about dxa has a ground-truth partition derived by a committed script that ran before dxa did**, with its denominator and positive class stated. MEASURED reason this is a criterion and not a nicety: the pivot's 141/138 partition was not source-derivable and flattered dxa exactly where its `0 false positives` headline lived.
-
-**Plans**: 5/5 plans executed in 4 waves. `35-01` leads with a production-quality tracer — one committed `.prg` wired end to end through a vendored, digest-verified, locally built dxa, the fifth `HostToolId` (`dxa.disassemble`), the container-side orchestration and this project's own listing parser, coming back as a byte-level code/data map — because proving that the native toolchain, the seam and the parser compose on one image catches a dead end after one commit instead of after four. The vendored tree's licence position is corrected in that same commit, since `THIRD-PARTY-NOTICES.md`'s opening claim is false the moment `vendor/dxa/` lands. Wave 2 expands sideways from that proven slice: `35-02` finishes `DXA-02`'s automatable half (all five measured `-a dump` line shapes, the named refusal, and the overlapping decode disposed as `unclassified` with a stated reason rather than a winner), `35-03` builds `DXA-04`'s two-tier ground-truth partition. Wave 3: `35-04` the store-to-dxa `-B`/`-l` emitter, with exclusion proven in dxa's own listing. Wave 4: `35-05` the two pieces of evidence a synthetic input structurally cannot produce — a refusal provoked by a real unknown listing form from a real run, and a build reproducing its pinned binary digest. No `/gsd-discuss-phase` ran, so thirteen planner assumptions (`A-01`..`A-13`) are recorded in the plans; `A-01`, `A-11` and `A-02` resolve `35-RESEARCH.md`'s Open Questions 1, 2 and 3. Two facts measured at plan time against the pinned binary shape the plans rather than being left for execution to discover: dxa emits its listing on **stdout** with no output-file option (a full 64K image yields 699,116 bytes in 21 ms, so the seam captures stdout to a file and digests it rather than inlining it), and its `-a dump` hex column **wraps at top of memory**, printing three bytes at `$ffff` where the directive emits one — a real, unplanned refusal cause that `DXA-02` criterion 2 needed and that a hand-written fixture would not have produced.
-
-Plans:
-**Wave 1**
-
-- [x] 35-01-PLAN.md — Tracer: one image in, one code/data map out (vendored pinned dxa + `build.bash`, the fifth `HostToolId`, `dxa-listing.ts`, `dxa-run.ts`, and the corrected GPL notice)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 35-02-PLAN.md — `DXA-02` completed: the five measured line shapes, the named refusal, and the overlapping decode as `unclassified` with a stated reason
-- [x] 35-03-PLAN.md — `DXA-04`: the two-tier ground-truth partition, reproducing Phase 23's 145/131/3 and abstaining wherever it cannot prove a byte
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 35-04-PLAN.md — `DXA-03`: the store-to-dxa `-B`/`-l` emitter, exclusion observed in dxa's own listing on the tracer image and on a real cracked release
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 35-05-PLAN.md — The evidence a unit test cannot supply: a refusal from a real run, and a build reproducing its pinned digest
-
-Notes:
-
-- **`GATE-01`'s verdict, and what it narrows here.** Phase 33 recorded **`degrade`**, fired by rule **`R6`** (`ORACLE_NECESSITY: unproven`), against rules committed at `2a8ef95` before any measurement existed. The verdict, its derivation and the collected accepted limits are in [`docs/phase33-reproducible-run-gate-findings.md`](../../docs/phase33-reproducible-run-gate-findings.md). `R6` carries a **pre-mapped narrowing (`D-04`)**, reproduced rather than re-authored: the stop-identity oracle narrows to the two-term **`(PC, hit_count)`** form with the frame term `(LIN, CYC)` **recorded but not asserted**, and every downstream capture pair carries that weakening **in its own record**, not in a footnote to the findings document. **What that narrowing does to this phase: nothing to its scope, one line to its records.** `R5`'s fixture-only branch does **not** apply — the corpus input came out `C0_CAPTURE_PAIR: pass` on a real autostarted `danish.d64` with true drive emulation in the loop, so the real-image exercise `DXA-03` and `DXA-04` need is available and this phase is not narrowed to fixtures. `DXA-01`..`DXA-04` proceed as scoped. What the narrowing costs: any capture pair this phase produces or consumes states in its own record that it was compared under a two-term oracle with the frame term recorded but not asserted. Read the `pass` for what it supports — `CAPTURE_FRAME_EXACT: no` sits beside it and the allow-list was derived from three runs two of which are the pair, so all discriminating power sits in the cap of 64 (`TRANSIENT_COUNT: 49`, and `33-03` measured **66** — over the cap — for the nominally corresponding comparison on a directly launched instance). No test guard encodes this binding (`D-06`).
-- **dxa's map is what makes Ghidra work at all, not an optimisation.** Ghidra alone with zero hints produced **0 functions and 0 code bytes** on the pivot fixture. That is the strongest edge in this milestone's dependency graph and the reason this phase precedes the semantic engine rather than running beside it.
-- **dxa is not installed anywhere on this host** (MEASURED 2026-09-02), so the vendored build is real work rather than setup. 3,417 lines of C, GPLv2+, builds clean with plain `make`, dormant since a 2022-03 tarball, and shipped in no Debian package (`dpkg -L xa65` has no `dxa`).
-- **The licence position is a packaging gap, not a formality.** MEASURED tarball contents: **no `LICENSE` / `COPYING` file**, GPL-2.0-or-later appearing only in C headers under two-party copyright with no upstream signature. `THIRD-PARTY-NOTICES.md` therefore quotes the headers and this project supplies the GPL-2.0 text.
-- **dxa is the discovery engine and nothing more** — see Standing Constraints. `grep -in bank` over all 3,417 lines returns zero, and its entire C64-specific knowledge is eight lines testing whether the load address looks like a BASIC start. Never ask it about banking, the VIC, sprites, charsets or bitmaps. It also has **no machine-readable output**, so the listing parser — including its refusal behaviour — is this project's to own and maintain, over the five measured line shapes of `-a dump`.
-- **Do not accept a published benchmark, including this project's own.** The fixture re-measurement reads `FIXTURE_FALSE_POSITIVES: 3`, `FIXTURE_DATA_RECOVERY_PCT: 72.39 (97/134)`, `FIXTURE_REPRODUCED: no` against a pinned dxa. The real-release numbers belong to Phase 38, not here; **do not let a plan in this phase quietly claim `PROOF-01`**. What this phase owes Phase 38 is `DXA-04`'s partition script and the discipline that every rate carries its denominator.
-- **The error direction is what makes the graphics feedback load-bearing rather than cosmetic.** dxa's errors run the dangerous way — data called code — and graphics regions are the largest single source of them, which is the coupling to `AUTO-07`.
-- **Guards this phase breaks.** `EXPECTED_TRACKED_SHELL_SCRIPTS` (repo-wide `git ls-files -- *.sh`, 5 entries) trips on a dxa `build.sh`. `check-npm-packages.mjs`'s leak checks catch `node_modules/`, `*.test.*` and `fixtures/` but **not** vendored C under `vendor/`, so `files[]` membership for the vendored tree is a deliberate decision rather than something the gate will notice for you. `ci-suite-coverage.test.ts` reds on a committed test file in a directory with no matching `ci.yml` step, so a `vendor/dxa/` test directory needs its CI step **in the same commit**. And a live dxa suite belongs in `MANUAL_ONLY_TESTS` (exactly nine files today, a reviewed decision) or it runs inside `test:automated` on machines with no dxa build.
-- **Skip `--research-phase`.** The flag set, the five `-a dump` output line shapes, the build, the licence position and the false-positive direction are all measured. This is implementation.
-
-### Phase 36: The SLEIGH Language and the Ghidra Harness
-
-**Goal**: Ghidra headless recovers structure from a real C64 image under this
-project's own committed harness — all 105 undocumented opcode bytes decodable
-under an extension installed as its own language, hardware writes surviving the
-decompiler, and structural facts exported through `DecompInterface`.
-**Depends on**: Phase 35 — **the strongest edge in the graph**: Ghidra alone with zero hints produced 0 functions and 0 code bytes, so dxa's map is what makes it work at all. Also Phase 34 (the host-tool seam, the project-directory-per-run rule, the no-dot refusal and the path-plus-digest return) and Phase 33 (the real cracked corpus `OPC-03` and criterion 5 are verified against, plus `GATE-01`'s authority to narrow)
-**Requirements**: OPC-01, OPC-02, OPC-03, OPC-04, GHID-01, GHID-02, GHID-03, GHID-04, GHID-05
-**Success Criteria** (what must be TRUE):
-
-  1. **The run log says which language it used, and the acceptance run under `6502:LE:16:default` is observed FAILING the 105-byte assertion.** The extension is installed as its **own** Ghidra language with a new `.ldefs` `id`, the `-processor` change made in the **same commit**, and this is deliberately the phase's *first* criterion: a failed `sleigh` leaves the pre-shipped `6502.sla` in place, so an unchecked build yields a green run on a language that decodes none of the 105 bytes. That is the difference between the phase delivering and the phase reporting delivery.
-  2. **The `sleigh` compile gate is observed red before the fix and green after** — reverting one sized-local fix reddens it. The gate asserts exit 0 **and** a produced `.sla` **and** an mtime newer than every input, and it is the **earliest task in the phase**. All 105 opcode bytes stock `6502.slaspec` omits then decode; loading `65c02.slaspec` in the same installation still yields **its** documented meanings for the bytes both claim; and `XAA` (`$8b`), immediate `LAX` / `LXA` (`$ab`) and the page-crossing-dependent `AHX` / `TAS` / `SHX` / `SHY` read as **declared unknowns** — opaque userops — never as plausible p-code. The extension is exercised against **real code containing illegal opcodes** from this milestone's corpus, with the before/after difference in decompiler output recorded, sequenced **ahead of** criterion 5's acceptance run.
-  3. **Each of the harness's three gates is observed firing.** A wrong expected count fires the **exact literal** `ERROR REPORT SCRIPT ERROR` while `analyzeHeadless`'s own exit status is still 0; the classification count is asserted as the **block total, not the image size**, on **both** import routes; and the run is reproducible from a committed script against a `.prg` or flat 64K image given dxa's map as hints, with Ghidra a **declared host prerequisite by version** rather than an unpinned unpack.
-  4. **The volatile-I/O carve is proven by disappearance, on both import routes.** Removing the flag from `$0000-$0001` / `$D000-$DFFF` makes hardware writes **vanish** from the reference dump — observed red on the `.prg` route **and** on the flat-64K route, because the conflict path is MEASURED route-dependent. A loader-owned block at the same address has the flag set on the **existing** block and is proven not to fall back to non-volatile through a swallowed `MemoryConflictException`.
-  5. Structural facts no listing-level query can produce are exported through **`DecompInterface`** from a real binary — an array bound, the split-pointer `CONCAT11` idiom, a record stride, at least one resolved computed jump, at least one self-modifying write target — with cross-references carrying their **access kind** (`READ` / `WRITE` / `READ_WRITE` / `COMPUTED_JUMP`), per-function **attempted / decompiled / timedOut** accounting satisfying `attempted == decompiled + timedOut` under a committed timeout ceiling, and unresolved dispatch reported as a **count and a list with no denominator**. A committed control observes the same export routed through `DataTypeManager` returning essentially nothing, **on the same image** as the acceptance run.
-
-**Plans**: 7/7 plans executed
-
-Plans:
-**Wave 1**
-
-- [x] 36-01-PLAN.md — Tracer: the SLEIGH extension source with its eight sized-local fixes, the `sleigh` compile gate and its red observation, the new `6502:LE:16:nmos` language id landed in the same commit as the `-processor` field, the `ghidra.installExtension` op, the run-log capture slot, and `ghidra-run.ts` — proven end to end by a real run log naming the language
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 36-02-PLAN.md — The full `ghidra.analyze` argv surface (`importRoute`, `loaderBaseAddr`, `noanalysis`, `scriptPath`, `entrypointsPath`, `exportPath`, `expectedClassificationLines`) plus the checked, non-materialising language preflight, with the hermetic seam census, path-confinement and idempotency cases
-- [x] 36-03-PLAN.md — `VolatileCarve.java` and `GhidraStructExport.java` promoted and renamed for their function, the classification expectation fixed to the script's own block total, the `DecompInterface` walk with attempted/decompiled/timedOut accounting, and the hermetic exact-literal gate with the naive grep proven to false-fire
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 36-04-PLAN.md — Both live suites registered manual-only in one commit (the eleventh and twelfth entries with the enumerating assertion updated), and each of `GHID-01`'s three gates observed firing on a real run, gate 2 on both import routes
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 36-05-PLAN.md — The volatile-I/O carve proven by disappearance on the `.prg` route and the flat-64K route, the loader-owned block handled on the existing block, and a forced memory conflict observed loud rather than a silent fall-back
-- [x] 36-06-PLAN.md — All 105 opcode bytes decoding under the new language with the same assertion observed FAILING under `6502:LE:16:default`, the six unstable instructions read as declared unknowns, and the 15 bytes the stock 65C02 language also claims keeping its meanings
-
-**Wave 5** *(blocked on Wave 4 completion)*
-
-- [x] 36-07-PLAN.md — The real-corpus before/after difference, the `DecompInterface` acceptance run with typed cross-references and denominator-free dispatch reporting, the `DataTypeManager` control on the same image, and the phase findings document
-
-Notes:
-
-- **`GATE-01`'s verdict, and what it narrows here.** Phase 33 recorded **`degrade`**, fired by rule **`R6`** (`ORACLE_NECESSITY: unproven`), against rules committed at `2a8ef95` before any measurement existed. The verdict, its derivation and the collected accepted limits are in [`docs/phase33-reproducible-run-gate-findings.md`](../../docs/phase33-reproducible-run-gate-findings.md). `R6` carries a **pre-mapped narrowing (`D-04`)**, reproduced rather than re-authored: the stop-identity oracle narrows to the two-term **`(PC, hit_count)`** form with the frame term `(LIN, CYC)` **recorded but not asserted**, and every downstream capture pair carries that weakening **in its own record**, not in a footnote to the findings document. **What that narrowing does to this phase: nothing to its scope.** `OPC-03` and criterion 5 are verified against the real cracked corpus, which exists — `C0_CAPTURE_PAIR: pass`, so `R5`'s fixture-only branch does **not** apply and this phase keeps its real-image exercise. `OPC-01`..`OPC-04` and `GHID-01`..`GHID-05` proceed as scoped. What the narrowing costs: the flat-64K images this phase imports were captured at a stop certified by a two-term oracle, so each carries that statement in its own capture record. The substrate producing them is untouched by `R6` and stands on its own evidence (`SLICER: validated` with both declared suites at `fail 0`). Also carried, because it bounds what a Phase 36 comparison may claim about two runs of one image: `AUTOSTART_FRAME_EXACT: not-achieved` and `CAPTURE_FRAME_EXACT: no` — frame-exactness holds through anchor hit 50 and is lost from 75, because `AUTOSTART`'s power cycle does not reset the absolute emulated clock. No test guard encodes this binding (`D-06`).
-- **The carried claim that this phase only integrates the SLEIGH source is FALSIFIED, and the correction is recorded rather than substituted.** v0.6.0's Phase 24 block reads *"already exists in full … this phase integrates and verifies it; it does not write it"*. MEASURED twice independently on 2026-09-02 against real Ghidra 12.1.3's `support/sleigh`: `docs/undocumented-opcodes-ghidra.md`'s 766 lines produce **8 failing constructors** and `ERROR No output produced`, exit 2, against a clean control compile of stock `6502.slaspec` in the same scratch directory. The `@include` layering is sound; the p-code is not. **One root cause for all eight** — an unsized value where SLEIGH needs an explicit size — and the fix (explicitly sized locals) is verified. The failures sit at exactly `XAA $8b`, immediate `LAX` / `LXA $ab`, `AHX` / `TAS` / `SHX` / `SHY`, `SBC $eb` and `NOP $0c`, so `OPC-01`'s fix and `OPC-02`'s declared-unknowns are the same work seen from two sides. This is the **seventh** instance of this project's oldest lesson, and it was found by *running* the thing rather than reading about it.
-- **Offsetting measured good news, which is what makes criterion 1 cheap:** a drop-in language extension needs **no Gradle and no Ghidra rebuild** — `-processor 6502:LE:16:nmos` ran headless to exit 0.
-- **Ghidra is a declared host prerequisite by version, not a vendored dependency** — 543 MiB. MEASURED: 12.1.3 exists on this host only as an unpinned out-of-tree probe unpack at `/home/henrik/dev/_ghidra-probe/`, neither vendored nor on `$PATH`; the JDK floor is 21 with no ceiling.
-- **The single most expensive mistake available in this design** is writing the structural-fact export against `DataTypeManager` — see Standing Constraints. Criterion 5's control exists so it cannot be re-made silently, and it runs on the **same image** as the acceptance run so the comparison is real. The accounting half is the same failure one level down: a **timed-out** function yields no facts and no error, failing short in exactly the shape the `DataTypeManager` failure does, which is why `attempted == decompiled + timedOut` is asserted under a committed ceiling.
-- **The volatile carve's control must be observed red on BOTH import routes**, because MEASURED the `MemoryConflictException` path is route-dependent: a pre-script tested on the `.prg` fixture and shipped for the flat-64K corpus meets a conflict the test never saw. Call `mem.getBlock(addr)` first and `setVolatile(true)` on the **existing** block rather than creating a conflicting one.
-- **Unresolved dispatch is reported as a count and a list with NO denominator.** The specified `C2_SITES_ENUMERATED` drew on `memmapshow`, **stated ABSENT** by owner decision 2026-09-02 — excluded twice over, since the runtime-evidence layer is out of scope and it lives on the excluded text channel. Naming a denominator this milestone cannot source would reproduce exactly the defect the unreproducible `72.46%` headline was.
-- **`OPC-*` stays with `GHID-*` rather than becoming its own phase**, for the reason v0.6.0's Phase 24 gave and this milestone's research re-confirmed: `OPC-03` can only be checked by running the harness `GHID-01` delivers, and `GHID-04`'s acceptance — structural facts recovered from *real cracked code* — is not honestly claimable while 105 opcode bytes are undecodable, because crack and packer code is exactly where the gap bites. The phase still groups two ways in planning (language, then harness), with the extension sequenced **ahead of** the acceptance run and never after.
-- **Guards this phase breaks.** `docs-dangling-refs.test.ts`'s shipped-string-literal state machine fails if any shipped string names a phase number, so **rename `ExportAnalysis23.java` and `FlatVolatile.java` on promotion out of `.planning/phases/`**. Moving the pre/post scripts into `src/` makes them **shipped code** that must be reachable from `-scriptPath` **after** package installation and **after** path translation, which puts them inside `check-npm-packages.mjs`'s file-list assertions and inside the gitignored-but-shipped `installer/skills/` blind spot. Recommendation, recorded so it is a decision rather than a habit: **build the `.sla`, do not commit it**. `ci-suite-coverage.test.ts` needs its `ci.yml` step in the same commit as any new test directory; a live Ghidra suite belongs in `MANUAL_ONLY_TESTS` or it runs inside `test:automated` and fails on any machine without Ghidra; and an `analyzeHeadless` wrapper `.sh` trips `EXPECTED_TRACKED_SHELL_SCRIPTS`.
-- **Skip `--research-phase`.** The compile failure, its root cause, the verified fix, the `.ldefs` shape, the drop-in extension route and Phase 23's whole recorded harness are measured. This is implementation against a green control.
-
-### Phase 37: The Importer and the Automatic Annotation Join
-
-**Goal**: Machine addresses annotate themselves into the owned store — the join
-runs mechanically with no agent, no queue walk and no skill in the loop,
-resolves bank state before address, and declines with a reason rather than
-emitting a confident wrong comment wherever it cannot be sure.
-**Depends on**: Phase 36 — nothing to import until the export exists, and one hard dependency inside that edge: **`GHID-02`'s volatile carve gates `AUTO-04`**, because no volatile carve means no recovered `$01` literals, which means no bank state. Also Phase 35 (`AUTO-07` feeds derived graphics ranges back to dxa as `-b` data blocks) and Phase 33 (the real analysed binary the join runs over, plus `GATE-01`'s authority to narrow)
-**Requirements**: IMP-01, IMP-02, AUTO-01, AUTO-02, AUTO-03, AUTO-04, AUTO-05, AUTO-06, AUTO-07, AUTO-08
-**Success Criteria** (what must be TRUE):
-
-  1. One command over an analysed real binary writes machine-address annotations into the store with **no agent call, no queue walk and no skill invocation** anywhere in the loop, reporting how many addresses were annotated and how many skipped — and the annotations are read back **out of the store**, not out of the pipeline's own stdout. The facts arrive through a **container-side importer** reading a host-written transfer file with access kinds preserved and the store's single seam respected; that transfer file carries a digest and is **consumed and deleted in the same command that imports it**, so no fourth artifact can drift from the store.
-  2. **Narrowest-range-wins and its tie-break are each observed red.** `$D020` annotates as the 1-byte border-colour entry and **not** as the 4096-byte I/O-area entry, and switching selection to first-match or longest-description makes that control go **red**; equal-width contenders resolve toward the entry carrying a `sym`, and reversing that tie-break reddens it too. A criterion that only asserted the fix would be worthless here — this rule was got wrong on the first attempt during the pivot exploration and produced plausible, confident, wrong comments rather than an error.
-  3. **The in-image skip is observed red.** An address inside the loaded image is treated as a program address and never looked up in `memmap.json`, and removing the image-range check makes ordinary loop-back branches annotate as machine features again — which is what the first attempt actually did, twice.
-  4. **Bank state is resolved before the address, proven by a flip and by a decline, on a fixture built for the purpose.** A **synthetic two-caller path-dependent `$01` fixture** is built as an early task, because MEASURED the existing `bank.a` fixture has no path-dependent site and "the join declines on the fixture" is therefore not a usable control. The same address then annotates differently under two `$01` states — a `$d020` write under `$34` is not labelled the border colour, a `$d000` read under `$33` is not labelled sprite-0-X — with the `$01` bits 0-2 decode bypass **observed reddening** the flip. Where bank state is path-dependent the join emits **no annotation and says why**, and replacing that decline with a forward-carried value reddens its own control.
-  5. **Graphics ranges come from the VIC pointers rather than from cross-references, and the feedback is exercised rather than built.** Screen matrix, charset-or-bitmap and sprite-pointer ranges are derived from `$DD00` bits 0-1 inverted, `$D018`, `$D011` bit 5 and screen + `$3F8` — for a charset **referenced by no instruction anywhere in the program**, the case cross-references structurally cannot find because the VIC fetches by DMA. Those ranges are fed back to dxa as `-b` data blocks and to Ghidra as data, with the phantom labels a graphics region mints when decoded as code shown **present before** the feedback and **absent after**. Every derived row carries `memmapSha256` provenance.
-
-**Plans**: 8/8 plans executed
-
-Plans:
-**Wave 1**
-
-- [x] 37-01-PLAN.md — Tracer: a host-written export file becomes an annotation read back out of the store (IMP-01, IMP-02, AUTO-01)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 37-02-PLAN.md — The bank-state data source: the synthetic two-caller `$01` fixture and the additive addressed-constant export section (AUTO-04)
-- [x] 37-03-PLAN.md — The three selection rules and the `memmapSha256` provenance token (AUTO-02, AUTO-03, AUTO-08)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 37-04-PLAN.md — Controls: first-match, longest-description and reversed-tie-break each observed red (AUTO-02)
-- [x] 37-05-PLAN.md — Controls: the removed image-range check, and the provenance digest under map drift (AUTO-03, AUTO-08)
-- [x] 37-06-PLAN.md — Bank before address, the path-dependent decline, and their two observed-red controls (AUTO-04, AUTO-05)
-- [x] 37-07-PLAN.md — Graphics ranges derived from the VIC pointers rather than from cross-references (AUTO-06)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [x] 37-08-PLAN.md — The dxa and Ghidra feedback, and the phantom labels present before and absent after (AUTO-07)
-
-Notes:
-
-- **`GATE-01`'s verdict, and what it narrows here.** Phase 33 recorded **`degrade`**, fired by rule **`R6`** (`ORACLE_NECESSITY: unproven`), against rules committed at `2a8ef95` before any measurement existed. The verdict, its derivation and the collected accepted limits are in [`docs/phase33-reproducible-run-gate-findings.md`](../../docs/phase33-reproducible-run-gate-findings.md). `R6` carries a **pre-mapped narrowing (`D-04`)**, reproduced rather than re-authored: the stop-identity oracle narrows to the two-term **`(PC, hit_count)`** form with the frame term `(LIN, CYC)` **recorded but not asserted**, and every downstream capture pair carries that weakening **in its own record**, not in a footnote to the findings document. **What that narrowing does to this phase: nothing to its scope, and one adjacent Phase 33 measurement it must not misread.** The real analysed binary this join runs over exists (`C0_CAPTURE_PAIR: pass`), so `R5`'s fixture-only branch does **not** apply. `IMP-01`, `IMP-02` and `AUTO-01`..`AUTO-08` proceed as scoped. What the narrowing costs: any capture pair reached from here states in its own record that equivalence was asserted over `(PC, hit_count)` with the frame term recorded only. **The adjacent measurement:** Phase 33 recorded `MEMSPACE_ASSERTION: refuses`, but on the `@bank:`-condition symptom **alone** — a memspace-less `ADVANCE_INSTRUCTIONS` still stepped the main CPU after one drive-checkpoint hit, contradicting `P10`'s first symptom, and the evidence file states that a stepping-only definition would have read `did-not-refuse`. Any `AUTO-04` bank-state work that assumes the stepping symptom is present is assuming something this project measured **absent** on stock 3.9. No test guard encodes this binding (`D-06`).
-- **Three of this phase's rules fail SILENTLY, and each was got wrong on the first attempt during the pivot exploration** — narrowest-range-wins, the in-image skip, and bank-before-address. Each produced plausible, confident, wrong comments rather than an error. That is why criteria 2, 3 and 4 each require a control **observed red** without the fix, with the red transcript as a task deliverable **separate from** the task that implements the fix. **Six of this milestone's eighteen worthless-as-an-assertion criteria sit in this phase** — the largest single concentration — and the temptation to batch them into "the controls are in place" is exactly the failure mode. The full table with each required observation is at `.planning/research/PITFALLS.md` § *Pitfall 23*.
-- **There is no prior art to validate the decline against, and that is an argument for the controls rather than a gap to close.** MEASURED survey: SVD-Loader, radare2's SVD import and IDA's device definitions all annotate **unconditionally** from a flat device description, because their domain has no path-dependent address meaning.
-- **The importer must exist before the join**, because `AUTO-01`'s criterion reads annotations back out of the store rather than out of the pipeline's own stdout. And a Ghidra post-script writing `.annostore` directly is **structurally unavailable**, not merely discouraged: `anno-seam.test.ts` asserts `node:sqlite` is named by exactly one shipped module, so a Java writer would sit outside every guard's scope — an invisible violation rather than a caught one — and `openStore()`'s confinement, the paint index and the revert journal would all need re-implementing in Java against a container-side store.
-- **The transfer file is transient evidence, not a model.** `.annostore` is the model; `.asm` is a rendering of it through the shipped `anno export-asm`. Prior art is unanimous on this split — SourceGen's `.dis65` stores metadata only, and Mesen's CDL is pure evidence kept outside the model.
-- **`AUTO-07` is the containment for the pipeline's most dangerous failure, and it is not a review step.** Graphics bytes decoded as instructions mint phantom labels (`zpp_02`, `zpa_06`, `f_1B1A`) indistinguishable in form from genuine ones; a phantom routine inside a charset is promoted to a Ghidra function, yields phantom xrefs, feeds the join, and emerges as a confident wrong comment the next pass treats as established.
-- **One map per program point, not one per program.** A program that switches bank or charset per raster split has several valid graphics maps, and a single derived map is wrong for all but one — the same path-dependence limit as criterion 4.
-- **This annotates MACHINE addresses only.** What `$1173` does *in this program* remains a finding a human or agent produces, which is the reason the annotation store exists at all and the boundary between this phase and v0.9.0's `DECOMP-*`.
-- **Two gaps are carried rather than owned here, and no plan may quietly promise either**: sprite **bitmap** locations (the pointer values are program data usually written at runtime, so they are not register values Ghidra recovers) and the second `$DD00` VIC banking axis under path-dependent state. Both are recorded Out of Scope in `REQUIREMENTS.md`.
-- **`memmap.json` is more load-bearing after the pivot, not less** — it moves from a skill an agent invokes to a data source a pipeline stage joins against, which is why `AUTO-08`'s `memmapSha256` provenance rides on every derived row.
-- **Guards this phase breaks, including the fourth of the milestone's five reviewed decisions.** `BACKEND_SEAM_BYPASS_KEYS` in `stock-dispatch.test.ts` is **2 entries under an order-sensitive `deepEqual`**, and its own comment says *"A THIRD entry collides here rather than being absorbed into a superset."* **Avoid it by extending `ANNO_TOOL_DEFINITIONS` rather than adding a new tool family** — the importer needs 1-3 new entries, not a family. Then: `anno-verb-coverage.test.ts`'s `REAL_VERBS` scans **both** `src/skills/` and `installer/skills/`; `anno-derivation.test.ts` walks Phase 19's `upstream-procedure-manifest.json` and asserts a route in **both** directions; `check-skill-tool-coverage.mjs`'s allowlists are designed to *"SHRINK BY FAILING"*; and `absorbed-answer-key.test.ts` reads `.planning/phases/11-*/evidence/` with no existence guard.
-- **Skip `--research-phase`.** The three selection rules, their failure modes and the 18/18 proof-of-concept are measured in-repo. The absence of prior art is a reason for controls, not for research.
-
-### Phase 38: PROOF-01..03 on Real Cracked Code
-
-**Goal**: The three measurements Phase 23 recorded `could-not-run` are taken on
-real cracked releases — dxa's data-recovery rate and false-positive count on a
-named binary, Ghidra's computed-index dispatch resolution, and the point where a
-single forward-carried `$01` value becomes wrong — each stated beside the
-fixture figures rather than replacing them.
-**Depends on**: Phase 33 (the reproducible corpus every number is measured on), Phase 35 (dxa and its ground-truth partition script), Phase 36 (the Ghidra harness and the working opcode extension) and Phase 37 (the join these proofs read). `GATE-01`'s verdict narrows this phase's denominator rather than widening its claims
-**Requirements**: PROOF-01, PROOF-02, PROOF-03
-**Success Criteria** (what must be TRUE):
-
-  1. dxa's data-recovery rate and false-positive count read as numbers against a **named** real cracked release — binary identified by release id and hash — each carrying its **denominator and positive class**, and stated **beside** the source-derived fixture figures (`FIXTURE_FALSE_POSITIVES: 3`, `FIXTURE_DATA_RECOVERY_PCT: 72.39 (97/134)`, `FIXTURE_REPRODUCED: no`) rather than replacing them. The pivot's published `72.46%` / `0 FP` may appear **only** beside those, with the non-reproduction cause attached as a **hypothesis**. That `PROOF-01` has **no independent external check** is recorded as a named weakness of the measurement, not absorbed.
-  2. A **computed**-index indirect dispatch taken from real code — the case the pivot fixture never exercised, which used an immediate `ldx #$02` — is either resolved by Ghidra with the resolved target shown, or recorded as unresolved with its transcript. A corpus **searched** and found to contain no computed dispatch is reported as `not-exercised` with the search recorded, and never as a pass; it is no longer reportable as `could-not-run`, because the corpus now exists.
-  3. The point where a single forward-carried `$01` value stops being correct is **established rather than assumed, in both directions**, against code that banks ROM in and out: at least one address shown annotating differently under two bank states, or the absence of such an address in the corpus recorded as a fact **about the corpus** rather than about the model. The result is recorded whichever way it comes out.
-
-**Plans**: 4/4 plans executed
-
-Plans:
-**Wave 1**
-
-- [x] 38-01-PLAN.md — Evidence vocabulary and the PROOF-01 tracer measurement (wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 38-02-PLAN.md — PROOF-03: the `$01` boundary established in both directions (wave 2)
-- [x] 38-03-PLAN.md — PROOF-02 part 1: independent site enumeration and the loader-stage record (wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 38-04-PLAN.md — PROOF-02 part 2: the depacked flat-64K capture and the search over real game code (wave 3)
-
-Notes:
-
-- **`GATE-01`'s verdict, and what it narrows here.** Phase 33 recorded **`degrade`**, fired by rule **`R6`** (`ORACLE_NECESSITY: unproven`), against rules committed at `2a8ef95` before any measurement existed. The verdict, its derivation and the collected accepted limits are in [`docs/phase33-reproducible-run-gate-findings.md`](../../docs/phase33-reproducible-run-gate-findings.md). `R6` carries a **pre-mapped narrowing (`D-04`)**, reproduced rather than re-authored: the stop-identity oracle narrows to the two-term **`(PC, hit_count)`** form with the frame term `(LIN, CYC)` **recorded but not asserted**, and every downstream capture pair carries that weakening **in its own record**, not in a footnote to the findings document. **What that narrowing does to this phase: it does NOT narrow the denominator, and that is the load-bearing consequence.** `R5` — the branch that would have narrowed this phase to **method-only** and had it re-record its predecessor's `could-not-run` — did **not** fire: `C0_CAPTURE_PAIR: pass` was obtained on a real autostarted release with true drive emulation in the loop, so the reproducible corpus every number here is measured on exists. `PROOF-01`..`PROOF-03` proceed as scoped, and criterion 2's `not-exercised` reporting stays available while `could-not-run` no longer is. What the narrowing costs: every capture pair this phase reports states in its own record that it was compared under a two-term `(PC, hit_count)` oracle with the frame term recorded but not asserted — and that statement belongs beside each number, not in a single footnote, because these are the numbers the milestone exists to produce. Read the corpus `pass` for exactly what it supports: `CAPTURE_FRAME_EXACT: no` is recorded beside it, the 49-entry allow-list was derived from three runs two of which **are** the reported pair, so the equivalence verdict restates "the union fitted under the cap" rather than independently testing the pair, and all discriminating power sits in the cap of 64 — which a future run of the same script may well exceed (`33-03` measured 66 on a directly launched instance). A planted one-bit flip at `$C000` still fails, so the list is not vacuous. No test guard encodes this binding (`D-06`).
-- **This is the milestone's point.** `PROOF-01`..`PROOF-03` were recorded `could-not-run` by Phase 23 — **not** `not-exercised`, and that phase was emphatic about the distinction: no corpus was ever searched for a computed dispatch, so nothing is known about whether the construct is even present in real cracked code.
-- **State the new numbers BESIDE the old ones, never instead of them.** The fixture re-measurement against a pinned dxa reads `FIXTURE_FALSE_POSITIVES: 3`, `FIXTURE_DATA_RECOVERY_PCT: 72.39 (97/134)`, `FIXTURE_REPRODUCED: no`, and the pivot's own `72.46%` / `0 FP` figures do not reproduce because its 141/138 partition was not source-derivable and flattered dxa exactly where the headline lived. Attach the non-reproduction cause as a hypothesis, not as a finding.
-- **`PROOF-01` has no independent external check, and that is a named weakness of the measurement rather than a detail.** `memmapshow` was the specified oracle and is **stated ABSENT** by owner decision 2026-09-02 — excluded twice over, since the runtime-evidence layer is out of scope and it lives on the excluded text channel. This is the same weakness that let the pivot's unreproducible headline stand, so it is recorded rather than absorbed. Reversal condition, named so a future reader can tell whether it has been met: a binary-monitor-reachable execution oracle, or a decision to open the text channel.
-- **`PROOF-03` is unmeasured in BOTH directions.** Nothing is known about where a single forward-carried `$01` value stops being correct, in either direction. `R1` fired under first-match-wins at Phase 23, so `R7`'s pre-mapped narrowing was never evaluated and `AUTO-04` / `AUTO-05` are **unvalidated rather than narrowed**. Name the fixture that will measure it, and record the result whichever way it comes out — path-dependent bank state is the highest-risk item on the pivot's own record.
-- **Measurement, not design — skip `--research-phase`.** Every instrument this phase reads is delivered by Phases 33, 35, 36 and 37. If any of them is narrowed by `GATE-01`, this phase's **denominator** narrows with it; the claim does not widen to compensate.
-- Two standing baselines apply to every number produced here: **stop the broker** before trusting any suite result (a live broker reddens `BACK-05` deterministically), and use `npm run test:automated` rather than `npm test`, whose whole-glob run does not terminate unaided.
-
-## Sequencing Rationale (v0.8.0)
-
-**Six phases, at `standard` granularity.** Four researchers proposed structures
-that converged in shape and differed in granularity — four phases, a ten-node
-dependency graph, an MVP checklist with a P1/P2/P3 matrix, and none. This is the
-four-phase count with its two-engines phase **split**, because the SLEIGH
-compile gate and the Ghidra harness carry independent gates and the dxa ->
-Ghidra edge is the strongest in the graph. The finer nodes are absorbed as
-**plans** inside these phases, including the parallel edge inside Phase 33. Six
-sits inside the 4-6 `standard` band; nothing here is a technical layer and
-nothing here is a thin maintenance phase.
-
-**Why the gate is a phase and not a criterion inside one, for the third time —
-and what is different this time.** Phase 9's `R4` fired and returned `degrade`,
-and the milestone shipped smaller and correct. Phase 23's `R1` fired and
-returned `no-go`, five plans before the measurement it gates existed. A note
-inside a larger phase makes that gate skippable; a phase boundary makes it
-structural. What changes here is the gate's **input domain**: Phase 23 could
-return `could-not-run` because every one of its inputs needed a corpus.
-`GATE-01`'s `go` inputs include the protocol's jitter-immunity and the seed's
-effect, both measurable **before** any corpus exists, so this gate cannot fail
-to produce a verdict for want of a capture.
-
-**33 -> 35/36 -> 38.** `PROOF-*` need a reproducible corpus, and the corpus needs
-the protocol. This is the edge the whole milestone hangs on, and it is the one
-v0.6.0 discovered it did not have.
-
-**33's two halves are parallel.** The snapshot slicer touches no emulator and is
-independent of the stop, so it runs as a concurrent plan rather than behind one.
-
-**34 before 35 and 36, never after** — the constraint most likely to be
-"optimised" away and the one that costs most if it is. Three independent
-reasons: it gates the Ghidra post-script's output format; it gates any skill
-script reaching a host binary at all; and the whole-tree grep gate banning an
-external-binary spawn from a skill script can only be written once **nothing**
-violates it, while two skill scripts violate it today. Inlining
-`spawnSync("dxa", …)` "just for the measurement phase" means writing the
-violation twice and deleting it twice, and the second deletion is the one that
-gets skipped. Phase 34 reads no Phase 33 artifact — it sits after 33 only
-because `GATE-01` holds the authority to narrow it.
-
-**35 -> 36, the strongest edge in the graph.** Ghidra alone with zero hints
-produced **0 functions and 0 code bytes** on the pivot fixture. dxa's map is not
-an optimisation; it is what makes Ghidra work at all on a headerless 6502 image.
-
-**SLEIGH before the Ghidra acceptance run, inside 36** — the compile gate as the
-phase's earliest task and the language-selection assertion as its **first**
-criterion. Crack and packer code is exactly where the 105-byte gap bites, so an
-acceptance run taken before the extension works measures the wrong thing while
-reporting a pass.
-
-**36 -> 37 -> 38.** Nothing to import until the export exists; the join reads
-back out of the store; the proofs read the join. One edge inside that chain is a
-hard dependency rather than a preference: **`GHID-02`'s volatile carve gates
-`AUTO-04`** — no volatile carve means no recovered `$01` literals, which means
-no bank state, so the bank-before-address criterion would have nothing to
-resolve. **35 -> 37** holds as well, because `AUTO-07` feeds derived graphics
-ranges back to dxa as `-b` data blocks.
-
-**Where the researchers disagreed, and how it was resolved.** One folded dxa +
-SLEIGH + Ghidra into a single phase; another split them three ways and
-additionally split corpus capture and the importer into their own nodes. This
-roadmap splits the engines — they carry independent gates, and the dxa listing
-parser has nothing to do with the `.ldefs` question — but folds corpus capture
-into 33 and the importer into 37, because each is one plan and each is
-meaningless without its neighbour. Splitting the importer out would produce
-exactly the thin phase this project's granularity guidance says to fold.
-
-**Research flags.** `/gsd-plan-phase --research-phase 34` is warranted: the
-execution seam is the one section of this milestone's research resting on survey
-rather than measurement, with two unprobed questions (whether `-process` batch
-framing amortises the measured 12-17 s JVM startup across a corpus item, and the
-cost of Ghidra plus a JDK in GitHub Actions). Phase 33 needs **probes inside the
-phase**, not a research pass — autostart determinism with true drive emulation
-in the loop, and whether the transient allow-list method holds on a real
-release. Phases 35, 36, 37 and 38 are implementation and measurement against
-measured inputs; skip `--research-phase` for all four.
-
-**Eighteen criteria in this milestone are worthless as bare assertions**, and
-each needs a control **observed red** — against a failure mode that fails
-silently, asserting the fix is present proves nothing. Distribution: 8 in Phase
-33 (RAM-init determinism, the reproducible-run protocol, the capture
-equivalence oracle, `default_memspace`, warp-safe waits, and the three
-allow-list controls), 2 in Phase 34 (the 64 KiB cap, the new-prefix floor), 6
-across Phases 35 and 36 (the dxa parser's loud handling, the SLEIGH compile, the SLEIGH
-language selection, the harness log check, the volatile carve **on both import
-routes**, the `DataTypeManager` control) and 6 in Phase 37 (narrowest-range-wins,
-the tie-break, the in-image skip, bank-before-address, the path-dependent
-decline, the graphics feedback) — with overlap where one control serves two
-phases. **The plannable shape is fixed rather than left to preference:** for
-each row, a **task whose deliverable is the red transcript, separate from the
-task that implements the fix**, with the transcript committed. The risk is
-**scale**, not novelty — this project already does this well, and eighteen red
-observations is a lot. The warning signs, written down so a reviewer can use
-them: a criterion whose verification sentence contains "is present", "is set",
-"is configured" or "is marked"; a phase closing with a controls **count** but no
-transcripts; a control that has never been observed failing. The full table with
-each required observation is at `.planning/research/PITFALLS.md` §
-*Pitfall 23*.
-
-**The guard-breakage inventory is distributed into the phase that breaks each
-guard**, rather than collected here — see each phase's Notes. Roughly **18
-committed guards** will go red across the milestone, of which **five are
-reviewed decisions rather than mechanical fixes**: `ControlRequestKind`'s
-byte-exact declaration and `EXPECTED_IMPORTERS`' five-member host-path consumer
-set and `EXPECTED_EMULATOR_SPAWN_SITES`' `=== 1` (all Phase 34),
-`BACKEND_SEAM_BYPASS_KEYS`' two order-sensitive entries (Phase 37), and
-`MANUAL_ONLY_TESTS`' exactly-nine files (Phases 33, 35 and 36, wherever a live
-suite lands). Two traps a planner must not discover in a red CI run are called
-out where they bite, both in Phase 34: `spawn-seam.test.ts`'s discovery
-predicate matches `\bbinPath\b`, so a host-tool executor spawning **Ghidra** is
-counted as an *emulator* spawn site; and `hostpath-consumers.test.ts`'s
-non-vacuity floor is pinned over the `anno-*` prefix, so a new `ghidra-*` /
-`dxa-*` family sits outside its scan entirely.
-
 ## Progress
 
 **This per-phase table is load-bearing, not decorative.**
@@ -1270,7 +843,12 @@ v0.7.0 — opened 2026-08-26, Phases 27-32, **28/28 requirements mapped**
 it carries **no corpus dependency**, which is why it is reachable while Phase 23's
 `no-go` stands. Requirements cut in earlier milestones stay in their own
 `milestones/v*-REQUIREMENTS.md` marked `CUT` with rationale, so restoring one is a
-scope decision rather than archaeology.
+scope decision rather than archaeology. v0.8.0 — 6 phases (33-38), 47 plans, 118 tasks,
+43/43 requirements, shipped 2026-09-06 as `override_closeout`; `GATE-01`
+returned **`degrade`** by rule `R6`; no milestone audit run (fourth
+consecutive close without one); 4 items newly acknowledged, 31 carried forward,
+and the same 8 Phase 23 evidence-table rows disclosed-but-unsuppressable for the
+second close running.
 
 **Phase directories are not archived.** Unlike the roadmap and requirements,
 `.planning/phases/` accumulates across milestones by design.
@@ -1326,4 +904,5 @@ scoped work above rather than doing it.
 *v0.6.0 closed incomplete 2026-08-26 by its own gate (`no-go`, rule `R1`) and deliberately NOT archived — Phases 24 and 26 are held with live requirement text.*
 *v0.7.0 roadmap created 2026-08-26 — Phases 27-32, continuing numbering from Phase 26, 28/28 requirements mapped.*
 *v0.7.0 shipped and collapsed 2026-09-01 → `milestones/v0.7.0-ROADMAP.md`. Phase directories restored to `.planning/phases/` after archival was measured to redden 9 tests across 5 files — see the Progress note above.*
+*v0.8.0 shipped and collapsed 2026-09-06 → `milestones/v0.8.0-ROADMAP.md`. Phase directories again NOT archived (`--no-archive-phases`), per the standing v0.4.0 decision — `docs-review-disposition.test.ts` and `absorbed-answer-key.test.ts` both read `.planning/phases/` directly.*
 *Phase numbering is continuous across milestones and never reused, including the cut Phases 20-22, the held Phases 24 and 26, and Phase 25 whose content was taken forward while its number was retired.*

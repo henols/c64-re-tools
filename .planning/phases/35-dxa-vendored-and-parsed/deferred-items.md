@@ -11,11 +11,13 @@ task's changes... log out-of-scope discoveries here, do NOT fix them").
 `src/mcp/vice/host-scripts.test.ts`.
 
 **Observed:** Failed twice during this plan's session with:
+
 ```
 .gitignore is missing /tools/vendor/dxa/dxa -- a deployed artifact with no
 ignore line shows up as untracked noise in git status in whatever commit
 happens to follow.
 ```
+
 but PASSED on the plan's official opening-floor measurement run (recorded
 below) and on the closing-floor measurement run, both taken via
 `npm run test:automated` with no intervening code change to
@@ -79,6 +81,7 @@ can glob that path while the file exists and then `readFileSync` it after
 two separate subprocesses at two different instants, so they legitimately disagree.
 
 **Verification:**
+
 - `grep -arln 'zz-scratch-in03-negative' src/mcp/vice/ scripts/` → `src/mcp/vice/skill-honesty-checks.test.ts` (sole creator)
 - `ls src/skills/acme-build/zz-scratch-in03-negative.md` → absent at rest
 - `node --test audit-root-args.test.ts` **alone: 58/58 pass, 0 fail**
@@ -97,3 +100,4 @@ which is the idiom `dxa-live.test.ts` already uses.
 
 **Scope:** out of scope for phase 35 — not fixed. Left for whichever pass next
 touches these tests.
+  status: acknowledged
