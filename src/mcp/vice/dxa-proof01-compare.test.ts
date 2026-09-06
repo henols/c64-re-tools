@@ -105,6 +105,20 @@ test("3 certainData addresses, 2 in dxa's data set: recovered 2, denominator 3, 
 });
 
 // ============================================================================
+// Behavior 1b: the denominator sums BOTH certainCode.size and certainData.size
+// -- every other test in this file passes an empty certainCode, so without
+// this case a regression that dropped certainCode.size from the sum would
+// pass the whole suite unchanged (WR-03).
+// ============================================================================
+
+test("denominator sums certainCode.size and certainData.size, not certainData.size alone", () => {
+  const groundTruth = makeGroundTruth([0x0801], [0x0900, 0x0901]);
+  const listing = makeListing({ data: [0x0801] });
+  const comparison = compareByteDerivedRecovery({ listing, groundTruth });
+  assert.equal(comparison.denominator, 3, "denominator must include certainCode.size (2) plus certainData.size (1)");
+});
+
+// ============================================================================
 // Behavior 2: a certainData address inside dxa's unclassified map counts
 // toward neither recovered nor missed -- a third, named bucket
 // ============================================================================
