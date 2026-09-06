@@ -13,7 +13,7 @@
 // other).
 //
 // THE LOAD-BEARING FACT THIS MODULE MUST STATE, NOT COMPUTE AROUND
-// (`dxa-partition.ts:462-464`, quoted verbatim):
+// (`dxa-partition.ts:463-467`, quoted verbatim):
 //
 //   "The byte-derived ground-truth partition. `certainCode` is ALWAYS empty
 //   (A-09: this tier decides exactly two facts, and neither is ever code) --
@@ -58,7 +58,7 @@ import type { DumpListingMap } from "./dxa-listing.ts";
  * counts, since the reason is structural (the tier's own design, D-03),
  * never a fact about this particular release. */
 export const PROOF01_FALSE_POSITIVES_REFUSAL =
-  "structurally-uncomputable (certainCode.size is 0 on the byte-derived tier -- see dxa-partition.ts:462-464)";
+  "structurally-uncomputable (certainCode.size is 0 on the byte-derived tier -- see dxa-partition.ts:463-467)";
 
 /** Plain data the caller already fetched -- this module never fetches either
  * side itself. `listing` is `runDxaDisassemble()`'s own result map; `groundTruth`
