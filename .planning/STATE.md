@@ -4,10 +4,10 @@ milestone: v0.8.0
 milestone_name: Frame-Exact Capture and the Two Engines
 current_phase: 38
 status: completed
-stopped_at: Phase 38 complete — all phases complete
-last_updated: "2026-09-05T19:32:20.070Z"
-last_activity: 2026-09-05
-last_activity_desc: Phase 38 complete
+stopped_at: Phase 38 UAT complete (12/12, 0 issues) — milestone v0.8.0 ready to close
+last_updated: "2026-09-06T11:50:00Z"
+last_activity: 2026-09-06
+last_activity_desc: Phase 38 UAT complete — 12/12 passed, 0 issues
 state_head: f9486bac7ee543ee17e7a72ebaebf99831b589b7
 progress:
   total_phases: 6
@@ -21,9 +21,11 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-05 after Phase 37)
+See: .planning/PROJECT.md (updated 2026-09-06 after Phase 38)
 
-**Current focus:** Phase 38 — PROOF-01..03 on Real Cracked Code — executing, in
+**Current focus:** Milestone **v0.8.0** close — all six phases (33-38) complete, verified
+and UAT'd; next action is `/gsd-complete-milestone v0.8.0`. Phase 38 — PROOF-01..03 on Real
+Cracked Code — is complete. In
 milestone **v0.8.0 Frame-Exact Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
 **frame-exact emulator stop** owned for the first time behind a pre-committed
 go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
@@ -176,8 +178,17 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 38 (PROOF-01..03 on Real Cracked Code) — COMPLETE, verified 3/3
+Phase: 38 (PROOF-01..03 on Real Cracked Code) — COMPLETE, verified 3/3, UAT complete
 Plan: 4 of 4 (all complete)
+UAT: 12/12 passed, 0 issues (2026-09-06) — 7 deterministically auto-covered by their own
+passing verification refs, 5 presented as human checkpoints. All five human checkpoints were
+prose-honesty judgments the plans' own `<verify>` steps reserved for a human reader: that
+`PROOF-01`'s real-release figure reads **beside** the fixture and pivot figures, that the
+PROOF-03 record stands alone without a Phase 37 file open, that the loader-stage record scopes
+its claims to the depth searched and keeps Phase 36's BRK-trick finding as a **different**
+mechanism, that the depacked capture states its two-term oracle beside the numbers it
+qualifies, and that the roll-up's `not-exercised` reads as a statement about this corpus at
+the depths searched rather than a clean bill of health. Recorded in `38-UAT.md` (`909de768`).
 
 **`GATE-01` VERDICT: `degrade`, fired by rule `R6`** (`ORACLE_NECESSITY: unproven`).
 Recorded as machine-readable frontmatter in `docs/phase33-reproducible-run-gate-findings.md`,
@@ -1937,9 +1948,12 @@ actually describe are separately tracked and were acknowledged above:
 
 ## Session Continuity
 
-Last session: 2026-09-05T19:17:51.515Z
-Stopped at: Phase 38 complete — all phases complete
+Last session: 2026-09-06T11:50:00Z
+Stopped at: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone v0.8.0
+ready to close
 Resume file: None
+
+Earlier: Phase 38 complete — all phases complete (2026-09-05T19:17:51.515Z)
 
 Earlier: Completed 34-10-PLAN.md
   Plan 34-10 closed CR-05: resolveWorkspacePath() now walks both the workspace
