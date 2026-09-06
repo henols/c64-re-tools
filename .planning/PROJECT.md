@@ -234,21 +234,32 @@ rather than re-confirmed a fifth time.
 
 ### Active
 
-<!-- v0.8.0 shipped 2026-09-06; its five entries moved to Validated above. Nothing
-     below is a committed milestone yet — `.planning/REQUIREMENTS.md` is deleted at
-     the close and a fresh one is written by `/gsd-new-milestone`. These are the
-     standing hypotheses that survive v0.8.0, kept here so a reader is not told the
-     project has no forward intent. -->
+<!-- Rewritten 2026-09-06 at the open of milestone v0.9.0 — The Text Channel and
+     the Runtime Evidence Layer. The four bullets below are this milestone's
+     hypotheses; `.planning/REQUIREMENTS.md` carries their REQ-ID form. The two
+     standing hypotheses v0.9.0 does NOT take are kept below them, re-dated
+     rather than dropped, so a reader can still see the project's full forward
+     intent. -->
 
-- [ ] The rebuild half, on the substrate v0.8.0 now owns: decomposition to closure, rebuildable source behind a reassembly gate, and equivalence plus modifiability — `DECOMP-01`..`04`, `BUILD-01`..`06`, `EQUIV-01`..`04`, whose text stands in [`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md) and has never been re-scoped since it was cut
-- [ ] `PROOF-01`'s missing independent external check. It shipped measured (`100.00 (24/24)`) with the weakness named rather than absorbed — there is no second, independent classifier, which is the same hole that let the pivot's unreproducible `72.46%` / `0 FP` headline stand. The reversal condition stated at the v0.8.0 open still holds: a binary-monitor-reachable execution oracle, or a decision to open the text channel
-- [ ] `PROOF-03` on real cracked code. The bank-boundary claim is proven in **both** directions, but on a **synthetic** two-caller fixture; the `danish.d64` question is open and was recorded as open rather than quietly satisfied
-- [ ] Absolute-cycle equivalence above the VICE 3.9 floor. The run-equivalence oracle is raster line plus raster cycle plus the 64K comparison; `CPUHISTORY_GET` would strengthen it and needs ≥ 3.10, which this host does not run
+**This milestone's hypotheses (v0.9.0):**
+
+- [ ] The text-monitor channel is claimable as a *second* client without corrupting the binary client's view. Bind-time coexistence is confirmed against stock 3.9; interleaved command behaviour is **Unverified** and is the gate on everything else here, because the text monitor halts the machine on command exactly as the binary one does
+- [ ] What the emulator observed becomes durable, run-keyed, monotonically accumulating store state, joined against the byte-derived block table by a query that reports agreement **and** disagreement rather than overwriting. Bounded by a soundness asymmetry that is a design constraint, not a limitation to engineer away: an address observed executing **is** code; an address never touched proves nothing, so a run can license `code` and can never license `data`
+- [ ] `PROOF-01` gains the independent external check it shipped without, closing the reversal condition stated at the v0.8.0 open verbatim — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — and making its false-positive count computable for the first time
+- [ ] `c1541`, `petcat` and `cartconv` are reachable from a container-side skill script over v0.8.0's existing `host_tool` control op, so what a disk *claims* is a file can be compared against what a loader really reads
+
+**Standing, not taken by v0.9.0:**
+
+- [ ] The rebuild half, on the substrate v0.8.0 now owns: decomposition to closure, rebuildable source behind a reassembly gate, and equivalence plus modifiability — `DECOMP-01`..`04`, `BUILD-01`..`06`, `EQUIV-01`..`04`, whose text stands in [`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md) and has never been re-scoped since it was cut. **Re-mapped from v0.9.0 to v1.0.0 on 2026-09-06**, because the runtime-evidence layer is upstream of it rather than parallel to it
+- [ ] `PROOF-03` on real cracked code. The bank-boundary claim is proven in **both** directions, but on a **synthetic** two-caller fixture; the `danish.d64` question is open and was recorded as open rather than quietly satisfied. Not taken by v0.9.0
+- [ ] Absolute-cycle equivalence above the VICE 3.9 floor. The run-equivalence oracle is raster line plus raster cycle plus the 64K comparison; `CPUHISTORY_GET` would strengthen it and needs ≥ 3.10, which this host does not run. **v0.9.0 bears on this without owning it**: `chis` over the text channel returned per-entry cycle counts on genuine 3.9, so the *capability* may be reachable on this host even though the *opcode* is not — whether that is enough to lift the ceiling is a v1.0.0 question for `EQUIV-*`
 
 **Two capabilities are Validated but currently have NO ROUTE**, withdrawn by the
 v0.7.0 removal with no phase owning their return. They are named here as well as
 in their Validated notes, because a reader scanning only this list would
-otherwise miss that the project regressed on them deliberately:
+otherwise miss that the project regressed on them deliberately. **v0.9.0 does not
+restore them and was not scoped to** — the 2026-08-26 "no parity is owed"
+decision stands for a second milestone running:
 
 - `ANNO-13` — generated bit-name enums from `memmap.json` (`gen-enums` withdrawn;
   the heuristics survive as live code in `anno-enum-gen.ts`, and the by-hand route
@@ -312,6 +323,9 @@ capture route**, and **text-monitor `bsave` as a capture route**.*
 - **`.vsf` as an external analyser bootstrap input** *(added v0.3.0, D-34; closed `wont-fix` by Phase 15 plan 15-12)* — the synthesis route hands over `.prg` / `.d64` / flat-64K only. Phase 9 found that a `.vsf`'s machine type reads correct only by coincidence: `"C64SC"` matches none of the external analyser's literal arms, so it falls through to that tool's own C64 default and a non-C64 snapshot would be misreported. Prefer `.vsf` for anything *leaving* the emulator; that preference does not extend to this input set. Filed as `.planning/todos/completed/2026-08-20-vsf-as-a-bootstrap-input.md` — reverses only if a consumer has `.vsf` captures and cannot re-capture as `.raw`.
 - **Launching the external analyser with `--vice`, in any form** *(added v0.3.0, D-R1/D-07)* — not a scoping preference but a load-bearing invariant. It is what makes the whole `anno_*` family backend-agnostic and keeps the binary monitor's single-client rule intact. Guarded twice in code, not documented once.
 - **Uniform tool lists across backends** *(added v0.2.0)* — superseded the original "the MCP surface must not change" constraint and `.planning/intel/decisions.md`'s `DEC-preserve-mcp-surface`. Stock advertises only what it implements. A skill written against the full fork surface therefore *breaks* on stock rather than degrading, which is why the playbooks must name the stock route or the fork requirement.
+
+- **VICE's text-monitor assembler and disassembler (`a` / `d`), and `x64` ↔ `x64sc` mode switching** *(added v0.9.0, owner decision 2026-09-06)* — both become *available* the moment v0.9.0 opens the text channel, and both were declined on the spot as carrying no value here. Recorded so a later reader does not read their absence from v0.9.0's requirements as an oversight. Bulk disassembly already has two owned engines (vendored dxa 0.1.5 and Ghidra 12.1.3 under this project's NMOS 6502 SLEIGH language); a third, unowned, text-parsed one would be a fourth classifier nobody asked for. Reverses only on a named consumer.
+- **The v0.8.0 exclusion "dialling the `-remotemonitor` text channel at all" is deliberately REVERSED by v0.9.0** *(2026-09-06)* — it is left standing in `milestones/v0.8.0-REQUIREMENTS.md` as the correct decision *for that milestone*, and is superseded here rather than deleted there. The reversal is not a change of mind about the risk: the risk named at the time (the text monitor halts the machine on command, so it is a second channel needing the same serialization discipline, and interleaved text+binary command behaviour was never probed) is unchanged and is now the explicit gate on v0.9.0's first phase rather than a reason to stay out. What changed is that `PROOF-01` shipped with a named reversal condition — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — and this is that decision, made deliberately and on the record.
 
 ## Context
 
@@ -1262,6 +1276,82 @@ owned store.
   `ANNO-14` / `ANNO-15`, which no phase owns under the 2026-08-26 "no parity is
   owed" decision.
 
+## Current Milestone: v0.9.0 The Text Channel and the Runtime Evidence Layer
+
+**Goal:** Dial the `-remotemonitor` text-monitor port this project has opened on
+every stock launch since Phase 3 and never connected to, and make what the
+emulator *observed* a durable, accumulating class of fact — kept deliberately
+apart from what the bytes *imply*, with disagreement between the two as the
+highest-value output rather than an error to reconcile.
+
+**Target features:**
+
+- A **text-monitor client** behind the `channel: "binary" | "text"` discriminator
+  that `broker-state.mts:129-137` already anticipates, gated on a live probe of
+  the one item the exploration left Unverified: whether a text client and a
+  binary client can be connected simultaneously without one's halt/resume
+  corrupting the other's view. Bind-time coexistence is confirmed; interleaved
+  command behaviour is not, and the text monitor **halts on command** exactly
+  like the binary one (measured 2026-08-27: `sw` advanced only across `x`), so it
+  inherits `vice-sync.ts`'s serialization invariants rather than being a free
+  non-pausing side-channel.
+- **Parser seams** for `memmapshow` / `memmapzap`, `prof flat`, `chis`, `bt` and
+  `io`. These return human-formatted text with real drift risk across VICE
+  versions, so each format gets one owning module with pinned fixtures and
+  nothing else reading the raw text — the same single-seam discipline the rest of
+  the tree uses.
+- A **runtime evidence layer in `.annostore`**: observation rows keyed by run
+  identity (which image, which scenario, which bracket), monotone under union
+  across runs, joined against the byte-derived block table by a query that
+  reports **agreement and disagreement** and never silently overwrites. The block
+  table stays byte-derived; runtime evidence is a third independent classifier
+  alongside it and the byte-derived coverage census, and that independence is the
+  asset.
+- **`PROOF-01`'s named reversal condition, closed.** It shipped with its missing
+  independent external check named rather than absorbed, and its stated reversal
+  condition was "a binary-monitor-reachable execution oracle, or a decision to
+  open the text channel". `memmapshow`'s execute bit is that oracle, which makes
+  `PROOF-01`'s false-positive count computable for the first time.
+- **Three `CLAUDE.md` constraints re-scoped rather than deleted.** Each is
+  literally true as written and each is scoped to the *binary* monitor: `chis`
+  returns CPU history with per-entry cycle counts on **3.9**, so the capability is
+  not gated on ≥ 3.10 — only the `CPUHISTORY_GET` opcode is; `warp on` is a
+  monitor *command* working at runtime, though the absent `WarpMode` *resource* is
+  a real and separate fact; and `device c:` is the `default_memspace`
+  contamination remedy the binary monitor has none for.
+- **Preprocessing host tools — `c1541`, `petcat`, `cartconv`** — over the typed
+  `host_tool` control op v0.8.0 already shipped, so this is integration rather
+  than new architecture. Sector chains and the BAM against what a loader *really*
+  reads, BASIC/`SYS` stub decode before any generic disassembler is spent, and
+  CRT bank extraction.
+
+**Explicitly excluded by owner decision 2026-09-06**, recorded so a later reader
+does not treat them as oversights: VICE's text-monitor **assemble and
+disassemble** (`a` / `d`), and **`x64` ↔ `x64sc` mode switching**. Both are
+available over the channel this milestone opens and both were declined as
+carrying no value here.
+
+**Carried in as measured-false, not to be re-derived from the source document.**
+The exploration input (`docs/vice-mcp-ideas.md`) is an LLM transcript already
+consumed on 2026-08-27 into a live-probe note and a seed, both deeper than it.
+Three of its claims are falsified by this project's own measurements and must not
+re-enter scope through it: **VICE event record/replay does not exist** (`event.c`
+carries six event options, none `-record`; `x64sc -record` exits 255) — it was
+the false premise v0.8.0 opened on and had to correct mid-milestone, so
+reproducible run identity needs a mechanism that is *not* event replay; its
+"text monitor as a concurrent first-class channel" recommendation collides with
+stock's **one-client** binary monitor and is exactly the Unverified item the
+probe above exists to settle; and its flat warp advice would erase the subtler
+position recorded here rather than sharpen it.
+
+**Phase numbering continues at 39.** The rebuild half — `DECOMP-01`..`04`,
+`BUILD-01`..`06`, `EQUIV-01`..`04` — re-maps from v0.9.0 to **v1.0.0**, on the
+reasoning that the runtime-evidence layer is upstream of it: `DECOMP-01`'s
+code-vs-data boundary guessing in `$8000-$BFFF` is precisely what an execution
+oracle answers, and `EQUIV-*`'s measured ceiling (exact through anchor hit 50,
+lost from 75, `CPUHISTORY_GET` unavailable on the 3.9 floor) is a ceiling `chis`
+over the text channel may lift.
+
 ## Next Milestone Goals
 
 **Both items that stood here are now scoped — v0.8.0 took them** (2026-09-02) —
@@ -1753,7 +1843,7 @@ written).
 
 ---
 
-*Last updated: 2026-09-06 at the **close of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (full evolution review: "What This Is" and Core Value each gained a dated v0.8.0 paragraph rather than a rewrite; the **five** Active bullets from Phases 33, 35 and 36 that the Phase 38 transition deliberately left standing were moved to Validated together with a **sixth** entry for Phase 34's host-tool seam, which had no Active bullet of its own because it delivered the route the dxa and Ghidra hypotheses needed rather than either hypothesis; Active rewritten to four standing hypotheses that survive the milestone, with the note that `REQUIREMENTS.md` is deleted at the close and rewritten by `/gsd-new-milestone`; Out of Scope re-audited with **nothing removed** and this milestone's twelve owner-decided additions named; Context rewritten to the v0.8.0 codebase (~184k lines, six host tools, dxa 0.1.5 and Ghidra 12.1.3 as new declared prerequisites) with "Known issues" re-scoped from v0.7.0 to v0.8.0; Current State rewritten and the prior v0.7.0 narrative compressed to a "Prior milestone" paragraph since its detail already stands under `## Shipped: v0.7.0`; `## Current Milestone: v0.8.0` renamed to `## Shipped: v0.8.0` with its open-time scoping text preserved verbatim and labelled as the superseded forecast; `## Next Milestone Goals` re-grounded on v0.9.0 with five dated notes on what v0.8.0 changes about that plan; three Key Decisions rows added for the close itself — closing without a milestone audit for the **fourth** consecutive time, disclosing the same 8 un-acknowledgeable Phase 23 table rows a **second** time, and skipping quick-task archival). Previously 2026-09-06 after Phase 38 (PROOF-01..03 on Real Cracked Code) — the `PROOF-01`..`PROOF-03` hypothesis moved from Active to Validated with all three verdicts stated as measured (including PROOF-02's `not-exercised`, which is a statement about this corpus at the depths searched and not a clean bill of health), and three Key Decisions rows added: the `not-exercised` verdict itself, Ghidra-independent enumeration ordered before the Ghidra run, and real-release figures stated beside rather than in place of the fixture figures. **Five Active bullets from Phases 33, 35 and 36 remain unmoved** and are left for the v0.8.0 milestone close's full evolution review, which is where prior milestones audited them. Previously 2026-09-05 after Phase 37 (The Importer and the Automatic Annotation Join) — the `AUTO-01`..`AUTO-07` hypothesis moved from Active to Validated, and one Key Decisions row added for the const-write round-trip forced by code-review `CR-01`. Previously 2026-09-04 after Phase 34 (The Host-Tool Execution Seam) — one Key Decisions row added for the seam and its ban; no Active requirement moved, since Phase 34 delivers the route the dxa and Ghidra hypotheses need rather than either hypothesis itself. Previously 2026-09-02 at the **start of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (`## Current Milestone` added; Active rewritten from the empty placeholder to this milestone's seven hypotheses; `## Next Milestone Goals` narrowed to v0.9.0 now that both items standing there are scoped). Previously 2026-09-01 at the **close of milestone v0.7.0 — Own the Annotation Store** (full evolution review: What This Is, Core Value, all seven Active requirements moved to Validated, Out of Scope audited, Context and Current State rewritten, six Key Decisions rows added). Previously 2026-09-01 after Phase 32 (The Deletion and the Grep Gate) — the last phase of milestone v0.7.0. Previously 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
+*Last updated: 2026-09-06 at the **start of milestone v0.9.0 — The Text Channel and the Runtime Evidence Layer** (`## Current Milestone: v0.9.0` added below `## Shipped: v0.8.0`; Active rewritten from four standing hypotheses to this milestone's four plus the three it deliberately does NOT take, each re-dated rather than dropped, with the rebuild half's re-map from v0.9.0 to v1.0.0 stated in the bullet itself; two Out of Scope entries added — the owner's 2026-09-06 exclusion of text-monitor assemble/disassemble and `x64`↔`x64sc` switching, and the explicit, reasoned REVERSAL of v0.8.0's "dialling the `-remotemonitor` text channel at all" exclusion, which is superseded here and left standing there. Phase numbering continues at 39; phase directories were again NOT archived, per the measured v0.7.0 decision.) Previously 2026-09-06 at the **close of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (full evolution review: "What This Is" and Core Value each gained a dated v0.8.0 paragraph rather than a rewrite; the **five** Active bullets from Phases 33, 35 and 36 that the Phase 38 transition deliberately left standing were moved to Validated together with a **sixth** entry for Phase 34's host-tool seam, which had no Active bullet of its own because it delivered the route the dxa and Ghidra hypotheses needed rather than either hypothesis; Active rewritten to four standing hypotheses that survive the milestone, with the note that `REQUIREMENTS.md` is deleted at the close and rewritten by `/gsd-new-milestone`; Out of Scope re-audited with **nothing removed** and this milestone's twelve owner-decided additions named; Context rewritten to the v0.8.0 codebase (~184k lines, six host tools, dxa 0.1.5 and Ghidra 12.1.3 as new declared prerequisites) with "Known issues" re-scoped from v0.7.0 to v0.8.0; Current State rewritten and the prior v0.7.0 narrative compressed to a "Prior milestone" paragraph since its detail already stands under `## Shipped: v0.7.0`; `## Current Milestone: v0.8.0` renamed to `## Shipped: v0.8.0` with its open-time scoping text preserved verbatim and labelled as the superseded forecast; `## Next Milestone Goals` re-grounded on v0.9.0 with five dated notes on what v0.8.0 changes about that plan; three Key Decisions rows added for the close itself — closing without a milestone audit for the **fourth** consecutive time, disclosing the same 8 un-acknowledgeable Phase 23 table rows a **second** time, and skipping quick-task archival). Previously 2026-09-06 after Phase 38 (PROOF-01..03 on Real Cracked Code) — the `PROOF-01`..`PROOF-03` hypothesis moved from Active to Validated with all three verdicts stated as measured (including PROOF-02's `not-exercised`, which is a statement about this corpus at the depths searched and not a clean bill of health), and three Key Decisions rows added: the `not-exercised` verdict itself, Ghidra-independent enumeration ordered before the Ghidra run, and real-release figures stated beside rather than in place of the fixture figures. **Five Active bullets from Phases 33, 35 and 36 remain unmoved** and are left for the v0.8.0 milestone close's full evolution review, which is where prior milestones audited them. Previously 2026-09-05 after Phase 37 (The Importer and the Automatic Annotation Join) — the `AUTO-01`..`AUTO-07` hypothesis moved from Active to Validated, and one Key Decisions row added for the const-write round-trip forced by code-review `CR-01`. Previously 2026-09-04 after Phase 34 (The Host-Tool Execution Seam) — one Key Decisions row added for the seam and its ban; no Active requirement moved, since Phase 34 delivers the route the dxa and Ghidra hypotheses need rather than either hypothesis itself. Previously 2026-09-02 at the **start of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (`## Current Milestone` added; Active rewritten from the empty placeholder to this milestone's seven hypotheses; `## Next Milestone Goals` narrowed to v0.9.0 now that both items standing there are scoped). Previously 2026-09-01 at the **close of milestone v0.7.0 — Own the Annotation Store** (full evolution review: What This Is, Core Value, all seven Active requirements moved to Validated, Out of Scope audited, Context and Current State rewritten, six Key Decisions rows added). Previously 2026-09-01 after Phase 32 (The Deletion and the Grep Gate) — the last phase of milestone v0.7.0. Previously 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
 Annotation Store**. Written after Phase 23's pre-committed gate returned
 `no-go` (rule `R1`). Changes at this open: v0.6.0 moved from "Current
 Milestone" to "Held", shipping Phase 23 alone, with Phases 24 and 26 **held**

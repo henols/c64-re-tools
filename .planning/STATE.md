@@ -1,27 +1,25 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.8.0
-milestone_name: Frame-Exact Capture and the Two Engines
-status: Awaiting next milestone
-stopped_at: Milestone v0.8.0 shipped and archived 2026-09-06 — awaiting /gsd-new-milestone
-last_updated: "2026-09-06T15:51:29.401Z"
+milestone: v0.9.0
+milestone_name: The Text Channel and the Runtime Evidence Layer
+status: planning
+last_updated: "2026-09-06T20:07:23.210Z"
 last_activity: 2026-09-06
-last_activity_desc: Milestone v0.8.0 completed and archived
-state_head: 9e46b076fee79012e763f77cee6e5889939a50d5
+last_activity_desc: Milestone v0.9.0 opened — defining requirements
+stopped_at: Milestone v0.9.0 opened 2026-09-06 — requirements and roadmap next
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 47
-  completed_plans: 47
-  percent: 100
-current_phase: 38
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-06 at the v0.8.0 milestone close)
+See: .planning/PROJECT.md (updated 2026-09-06 at the v0.9.0 milestone open)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
@@ -29,34 +27,53 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Planning the next milestone. v0.9.0 is the standing candidate
-— the rebuild half (`DECOMP-*`, `BUILD-*`, `EQUIV-*`) on the substrate v0.8.0
-now owns. See PROJECT.md → `## Next Milestone Goals` for the five dated notes on
-what v0.8.0 changes about that plan.
+**Current focus:** Milestone **v0.9.0 The Text Channel and the Runtime
+Evidence Layer**, opened 2026-09-06. Defining requirements — no phases exist yet;
+phase numbering continues at **39**.
 
-**Current focus:** Milestone **v0.8.0** close — all six phases (33-38) complete, verified
-and UAT'd; next action is `/gsd-complete-milestone v0.8.0`. Phase 38 — PROOF-01..03 on Real
-Cracked Code — is complete. In
-milestone **v0.8.0 Frame-Exact Capture and the Two Engines**, opened 2026-09-02. Milestone scope, decided at the open: the
-**frame-exact emulator stop** owned for the first time behind a pre-committed
-go / degrade / no-go gate (the Phase 23 pattern), the validated `.vsf` `C64MEM`
-64K extraction that closes the other capture blocker, `PROOF-01`..`PROOF-03`
-turned from `could-not-run` into real measurements on real cracked code, and then
-v0.6.0's **held Phases 24 and 26** carrying `DXA-*`, `GHID-*`, `OPC-*` and
-`AUTO-*` byte-identical under **new** phase numbers. Phase numbering resumes at
-**33**; 24 and 26 stay retired. The text-monitor client and the accumulating
-runtime-evidence layer are **out of scope** by owner decision 2026-09-02 — only
-[`seeds/runtime-evidence-layer.md`](seeds/runtime-evidence-layer.md)'s
-reproducible-runs half (VICE event record/replay, as a candidate mechanism for
-the stop) is in. **v0.9.0** remains the rebuild half (`DECOMP-*`, `BUILD-*`,
-`EQUIV-*`).
+Milestone scope, decided at the open: **claim the `-remotemonitor` text channel**
+that `broker-launch.mjs:165` has appended to every stock launch since Phase 3 and
+that nothing has ever dialed, behind a live probe of the one Unverified item
+(whether a text client and a binary client can be connected at once without one's
+halt/resume corrupting the other's view — bind-time coexistence is confirmed,
+interleaved command behaviour is not); **parser seams** for `memmapshow`,
+`prof flat`, `chis`, `bt` and `io`, one owning module per format with pinned
+fixtures; a **runtime evidence layer in `.annostore`** holding run-keyed,
+monotonically accumulating observations joined against the byte-derived block
+table by a query that reports agreement *and* disagreement rather than
+overwriting; **`PROOF-01`'s named reversal condition closed** by using
+`memmapshow`'s execute bit as the independent execution oracle it shipped
+without; and **`c1541` / `petcat` / `cartconv`** reached over v0.8.0's existing
+`host_tool` control op.
+
+**Out of scope by owner decision 2026-09-06:** VICE's text-monitor assemble and
+disassemble (`a` / `d`), and `x64` ↔ `x64sc` mode switching — both become
+available the moment the channel opens and both were declined on the spot.
+**v0.8.0's exclusion "dialling the `-remotemonitor` text channel at all" is
+deliberately reversed here**, superseded rather than deleted, and the risk it
+named (the text monitor halts the machine on command, so it needs the same
+serialization discipline `vice-sync.ts` holds for the binary side) is unchanged
+and is now the gate on the first phase rather than a reason to stay out.
+
+**Three claims from the exploration input are MEASURED FALSE and must not
+re-enter scope**: VICE event record/replay does not exist (`event.c` has six event
+options, none `-record`; `x64sc -record` exits 255) — it was v0.8.0's false
+premise and had to be corrected mid-milestone, so run identity needs a different
+mechanism; "text monitor as a concurrent first-class channel" collides with
+stock's one-client rule and is precisely what the gate probes; and its flat warp
+advice would erase a subtler recorded position rather than sharpen it.
+
+**The rebuild half (`DECOMP-*`, `BUILD-*`, `EQUIV-*`) re-maps from v0.9.0 to
+v1.0.0**, because the runtime-evidence layer is upstream of it: `DECOMP-01`'s
+code-vs-data boundary guessing is what an execution oracle answers, and
+`EQUIV-*`'s measured ceiling is one `chis`-on-3.9 may lift.
 
 **Phase directories were deliberately NOT archived at the v0.7.0 close, and are
-not archived at this open either.** Archival was tried at that close and measured
+not archived at the v0.8.0 or the v0.9.0 open either.** Archival was tried at that close and measured
 to redden 9 tests across 5 files, so the 28 directories under
 `.planning/phases/` were restored and stay. `phases.clear` was therefore skipped
-in this `/gsd-new-milestone` run — this is a measured project decision, not an
-omission. v0.8.0's phases (33+) land alongside them.
+in the v0.8.0 open and skipped again in this v0.9.0 `/gsd-new-milestone` run — this is a measured project decision, not an
+omission. v0.8.0's phases (33-38) landed alongside them and v0.9.0's (39+) will too — 34 directories now.
 
 **Shipped:** v0.7.0 Own the Annotation Store — 2026-09-01 (6 phases 27-32, 80
 plans, 214 tasks, 28/28 requirements, 690 commits, 7 days, `override_closeout`).
@@ -189,32 +206,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: Milestone v0.8.0 complete — Phases 33-38, 47/47 plans, 43/43 requirements
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone (`/gsd-new-milestone`)
-Last activity: 2026-09-06 — Milestone v0.8.0 completed and archived
-
-**Where the detail went.** The milestone close reset this section; the Phase 38
-narrative it replaced is not lost. `GATE-01`'s `degrade` verdict and its full
-derivation are machine-readable frontmatter in
-`docs/phase33-reproducible-run-gate-findings.md`; the shipped scope is in
-[`milestones/v0.8.0-ROADMAP.md`](milestones/v0.8.0-ROADMAP.md) and
-[`milestones/v0.8.0-REQUIREMENTS.md`](milestones/v0.8.0-REQUIREMENTS.md); the
-close's own stats, gaps and overrides are in
-[`MILESTONES.md`](MILESTONES.md) → `## v0.8.0`.
-
-**Suite baseline carried across the close (a recorded baseline, never a gate).**
-`test:automated` stands at **2 failing tests in 1 file** — `anno-register.test.ts`
-`:385` and `:479`. The root cause is unchanged and is **out-of-phase, not a
-regression**: the anno tool register cites `STORE-01`, `STORE-04`, `STORE-06`
-and `MCP-04`, which no v0.8.0 requirements document declares, because the v0.8.0
-rewrite dropped the v0.7.0 ids. Measured before *and* after this close — the
-archive's fallback resolves to `milestones/v0.8.0-REQUIREMENTS.md`, which carries
-the same v0.8.0 ids the live file did, so the close neither improved nor worsened
-it. The correct repair may legitimately be a carried-ids section rather than a
-code change. **No Deferred Items row is filed for it**, on purpose: a row with no
-matching file under `.planning/todos/pending/` reds the two-directional ledger
-guard in the other direction.
+Status: Defining requirements
+Last activity: 2026-09-06 — Milestone v0.9.0 started
 
 ## Performance Metrics
 
