@@ -1,614 +1,300 @@
 # Architecture Research
 
-**Domain:** Integrating a frame-exact emulator stop and a dxa + Ghidra-headless analysis
-pipeline into an existing, mature container-in / host-out MCP architecture
-**Researched:** 2026-09-02
-**Tree state:** every `file:line` below was read at HEAD `36f8c7c` — see § Citation Ledger
-**Confidence:** HIGH on integration points and guard breakage (read from the tree);
-MEDIUM on the frame-exact mechanism (reasoned from settled protocol constraints, not
-probed this session); LOW on Ghidra-in-CI cost (nothing probed)
+**Domain:** VICE emulator control plane — text-monitor second channel, dual-channel scheduling, runtime-evidence store, host-binary executor
+**Researched:** 2026-09-06
+**Confidence:** HIGH for what exists today (verified against source, line-cited); MEDIUM for the new-module shapes proposed (design proposal, not yet built); LOW for anything downstream of the unresolved coexistence probe (explicitly gated, see below)
 
----
+This is not a general-domain survey. It is an integration design for a specific, mature codebase, answering the five questions the milestone context poses, each grounded in the actual files under `src/mcp/vice/`.
 
-## Executive Answer
+## Standard Architecture
 
-Four findings reframe the question before any of (a)–(e) is answered. Each is read from
-the tree, not inferred.
-
-1. **`vice-sync.ts` has zero importers anywhere in the repository.** `grep -rn 'from
-   "./vice-sync'` over `src/mcp/vice/*.ts` and `*.mts` returns exactly one hit —
-   `vice-sync.test.ts:22` — and `grep -rn "vice-sync\|runToCheckpoint\|waitCheckpointHit"
-   src/skills/` returns nothing. It is in `package.json`'s `files[]` (line 13) and is
-   pinned into the 5-member host-path consumer set (`hostpath-consumers.test.ts:144`), but
-   no live tool call reaches it. Its two invariants are **doctrine carried by comment
-   citation** across at least five sibling modules, not behaviour on any hot path.
-   *Consequence:* "both invariants must survive" does not mean "edit `vice-sync.ts`
-   carefully". It means every new wait is written against the same two rules, in the
-   idiom of the module it lives in.
-
-2. **The live stock wait already ports invariant 1 into a stock-native form, and already
-   supersedes invariant 2.** `stock-run-until.ts:6` — "resumes the machine exactly once,
-   waits **event-driven** for THAT checkpoint's own `CHECKPOINT_INFO`" — with its own
-   header at `:26-27` naming `vice-sync.ts`'s rule by quotation. There is no polling at
-   all, so "poll on `hit_count`, never on paused state" is satisfied *a fortiori*: it
-   waits on the checkpoint's own event, keyed by checkpoint id, never on paused state.
-   This is the precedent the frame-exact stop follows.
-
-3. **The frame arithmetic is already built.** `stock-timing.ts` holds
-   `readCycleBaseline()` (`:274` — Route A reads `CPUHISTORY_GET`'s newest entry's
-   monotonic uint64 `cycle`, exact for any bracket on VICE ≥ 3.10; Route B reconstructs
-   from `LIN`/`CYC` and refuses across a proven frame boundary),
-   `resolveVideoStandard()` (`:147`), `VIDEO_STANDARDS` with `cyclesPerLine` /
-   `screenLines` per standard (`:70-73`), and `positionWithinFrame()` (`:200`). A frame
-   index is `absoluteCycle / (cyclesPerLine * screenLines)` over values this module
-   already produces. Nothing new has to be measured to *compute* a frame.
-
-4. **The measured nondeterminism was measured on the fork, and the fork's stop is
-   asynchronous by construction.** The todo's table is fork evidence: "The fork's
-   stopping exec checkpoint reports its hit but pauses roughly a frame later, at a
-   wall-clock-determined instruction." CLAUDE.md records, from stock source, that a
-   stock checkpoint is evaluated **synchronously from inside the CPU loop**
-   (`mon_breakpoint.c:557-562`, `mon_breakpoint_event()` called before `cp->stop` is
-   checked). Those are different stop mechanisms with different determinism properties,
-   and **no measurement of the stock stop's frame reproducibility exists in this
-   repository.** *Consequence:* step zero of the frame-exact phase is a re-measurement on
-   stock. It may find the capability already present, or already one refinement away.
-
-The rest of this document answers (a)–(e) on those four facts.
-
----
-
-## System Overview — where the two new subsystems attach
+### System Overview — today, plus where v0.9.0's new pieces attach
 
 ```
-┌──────────────────────── CONTAINER SIDE (or host, undifferentiated) ─────────────────┐
-│                                                                                      │
-│  Claude Code / MCP client                                                            │
-│         │ stdio JSON-RPC                                                             │
-│         v                                                                            │
-│  vice-proxy.ts  ── tools/list from manifest, tools/call dispatch                    │
-│    ├─ manifest loop ──> buildBackendAwareTool ──> forwardToVice() :2985             │
-│    │                                                 │ rewriteArguments() :3050      │
-│    │                                                 v                               │
-│    │                                            vice.ts call() :697                  │
-│    │                                            DENY_LIST :201                       │
-│    ├─ RESULT_CONTINUE_TOOL ──> buildViceTool  (bypass #1)                            │
-│    └─ anno_* loop :3388     ──> buildViceTool  (bypass #2)                           │
-│                                    │                                                 │
-│                                    v                                                 │
-│                              anno-store.ts openStore() :432   ── .annostore           │
-│                              (the ONE node:sqlite namer)                             │
-│                                                                                      │
-│  vice-broker-client.ts ── { op:"acquire", id, token } :372 / :867                    │
-│         │                                                                            │
-└─────────┼────────────────────────────────────────────────────────────────────────────┘
-          │  TCP control channel, newline-JSON, MAX_LINE_BYTES = 65536
-          │  (broker-control.mts:242) · per-boot token, tokensMatch() :267
-          v
-┌──────────────────────── HOST SIDE ──────────────────────────────────────────────────┐
-│  vice-broker.mjs (compiled from .mts by build.ts, deployed to <root>/tools)          │
-│    broker-control.mts handleLine() :508 ── flat if/else over ControlRequestKind :30  │
-│    broker-launch.mts  buildViceArgs() :153 · maintainWarmFloor() :953 · inFlight :78 │
-│    vice-broker.mts    selectWarmInstance() :473 · handleRelease() :929               │
-│    broker-kill.mts    verifiedKill() :126 · uncaughtException -> kill+exit :367-374  │
-│         │                                                                            │
-│         v                                                                            │
-│    x64sc  (stock binary monitor  |  fork -mcpserver)                                 │
-│                                                                                      │
-│  ┌── NEW in v0.8.0 ────────────────────────────────────────────────────────────┐     │
-│  │  dxa (vendored C, pinned, built)      Ghidra analyzeHeadless (JVM)          │     │
-│  │        │                                     │                              │     │
-│  │        └── code/data map ───────────────────>│ pre-script: volatile carve   │     │
-│  │                                              │ post-script: DecompInterface │     │
-│  │                                              v                              │     │
-│  │                                    program.json / .asm / .c  (host FS)      │     │
-│  └───────────────────────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ Claude Code (container)                                                          │
+│  skills/*/scripts/*.mjs  ─────────────────────────────┐                          │
+│  vice_* / anno_* tool calls ─┐                         │ (NEW) host_tool RPC     │
+└───────────────────────────────┼─────────────────────────┼──────────────────────────┘
+                                │                         │
+                                ▼                         ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ vice-proxy.ts (stdio MCP entry)                                                   │
+│   buildBackendAwareTool() ──► stock-dispatch.ts ──► stock-*.ts (binary monitor)    │
+│   buildViceTool() (proxy-local) ──► anno-tools.ts ──► anno-store.ts (SQLite)       │
+│   (NEW) buildBackendAwareTool() ──► text-dispatch.ts ──► text-protocol.ts          │
+└───────────────┬─────────────────────────────┬───────────────────────┬────────────┘
+                │ TCP: acquire/release/        │ TCP: claim/dial       │ TCP: (NEW)
+                │ recycle/monitor_claim/        │ BINARY monitor        │ namespaced
+                │ (NEW) host_tool               │ socket                │ TEXT monitor
+                │                               │                       │ socket
+                ▼                               ▼                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ Host broker daemon (vice-broker.mts + broker-*.mts, compiled to resources/*.mjs)  │
+│  buildViceArgs(): appends -binarymonitor AND -remotemonitor to every stock launch  │
+│  broker-state.mts: InstanceRecord.remoteMonitorPort (allocated, unclaimed today)   │
+│  broker-control.mts: monitor_claim/monitor_release (binary only today), host_tool  │
+└───────────────┬─────────────────────────────┬───────────────────────┬────────────┘
+                │ launches                     │                       │
+                ▼                              ▼                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ x64sc (host): BinaryMonitorServer @ port A        MonitorServer (text) @ port B    │
+│               both serviced from the SAME monitor_vsync_hook() — single-threaded   │
+│  (NEW, host-side, no VICE code change) c1541 / petcat / cartconv — separate,       │
+│  stateless child processes, spawned per host_tool request, NOT part of x64sc       │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+Two structural facts anchor everything below:
 
-## (a) Where the frame-exact stop lives
+1. **The broker already provisions the text monitor and refuses to touch it.** `broker-launch.mts`'s `buildViceArgs()` appends `-remotemonitor -remotemonitoraddress ip4://<host>:<remoteMonitorPort>` to every stock launch when `remoteMonitorPort` is supplied (documented at `broker-launch.mts` in the `buildViceArgs()` doc comment, plan 03-04/D-13), and `broker-state.mts`'s `InstanceRecord.remoteMonitorPort` (~line 146) records the allocated port. `InstanceRecord.monitorClient` (~line 121) is documented, in its own header comment (~lines 137–144), as the field that should gain a `channel: "binary" | "text"` discriminator once a text client exists — **it does not have one today**, and nothing dials the port.
+2. **The binary monitor's client stack is a two-file pattern, not one.** `stock-protocol.ts` owns the wire bytes (`ViceMonitorClient`, frame constants, `net.Socket`), and `stock-connect.ts` owns the handshake sequence: claim the monitor from the broker over the control socket **before** any TCP dial, then open the raw socket, assert `api_version`, read build identity, settle capabilities once per binary (`stock-connect.ts`'s own header, lines 1–30). The text channel needs its own version of exactly this pair — not a modification of either file, because the wire format is unrelated (line-oriented prompts, not 11/12-byte binary frames) and mixing the two would violate "`node:net`/binmon bytes in exactly one module" (`.planning/codebase/ARCHITECTURE.md` § Architectural Constraints).
 
-### The three candidate homes, and which is wrong
+### Component Responsibilities — new vs. modified, named by file
 
-| Candidate | Verdict | Why |
-|-----------|---------|-----|
-| Edit `vice-sync.ts` | **Wrong home** | Zero importers (finding 1). Editing it changes no behaviour and cannot be tested — its five emulator-dependent primitives are five machine-visible `todo` entries at `vice-sync.test.ts:107-143`, deliberately. It is the doctrine document. |
-| New sibling in the stock family, next to `stock-run-until.ts` | **Right home for the mechanism** | `stock-run-until.ts:145` (`handleRunUntil`) already owns the live stopping-checkpoint wait, already resumes exactly once, already waits event-driven on `CHECKPOINT_INFO` (`waitForCheckpointHit()` at `:113`), and already reuses `stock-timing.ts`'s cycle primitives' sibling pattern. |
-| `buildViceArgs()` + the acquire protocol | **Only if the mechanism is launch-time** | That is the full structural cost the headless todo already priced. See below. |
+| Component | New / Modified | File | Responsibility |
+|---|---|---|---|
+| Text wire protocol | **NEW** | `src/mcp/vice/text-protocol.ts` | The one place that owns the text-monitor's line-oriented framing: send a command, read until the prompt/terminator, no other module touches this socket's bytes. Mirrors `stock-protocol.ts`'s role, not its code. |
+| Text connect/handshake | **NEW** | `src/mcp/vice/text-connect.ts` | Claims the text channel from the broker (extends `monitor_claim`), reads `remoteMonitorPort` off the lease, dials, and hands back a ready `TextMonitorClient`. Mirrors `stock-connect.ts`'s sequencing, not its code (no `api_version`/`VICE_INFO` — those are binary-monitor concepts). |
+| Dual-channel lock | **NEW** | `src/mcp/vice/monitor-lock.ts` (name TBD by probe outcome) | The single seam serializing any halt-issuing command across both channels. Shape (in-process mutex vs. broker-level lease) is decided by the probe — see below. |
+| Text dispatch | **NEW** | `src/mcp/vice/text-dispatch.ts` | Stock-only tool surface for the 5 commands the probe confirmed (`memmapshow`/`memmapzap`, `prof`, `chis`, `bt`, `io`, plus `warp`/`sw`/`device`), parallel in shape to `stock-dispatch.ts` but far narrower. |
+| Parser modules | **NEW** | `src/mcp/vice/text-parse-memmapshow.ts`, `text-parse-prof.ts`, `text-parse-chis.ts`, `text-parse-bt.ts`, `text-parse-io.ts` | One module per text format; pure `parse(raw: string): T[]`; no socket, no timing. |
+| Fixture pinning | **NEW** | `src/mcp/vice/fixtures/textmon/`, `src/mcp/vice/textmon-fixtures.ts` | Mirrors `binmon-fixtures.ts`'s `REQUIRED_PROVENANCE_KEYS` discipline (`capturedFrom`, `viceVersion`, `capturedAt`, `command`, `synthetic`) for text-format fixtures. |
+| Broker port surfacing | **MODIFIED** | `vice-broker-client.ts`'s `HeldLease` (line 757–759, currently `{ grantId, port, claimedAt }` with no text-port field), `broker-control.mts`'s acquire/status response builders | The container-side client has **no route today** to learn `remoteMonitorPort` — it is recorded host-side only (`broker-state.mts`) and never serialised into any control-plane response. This must be added before `text-connect.ts` can dial anything. |
+| Monitor claim | **MODIFIED** | `broker-state.mts`'s `InstanceRecord.monitorClient` (~121), `broker-control.mts`'s `monitor_claim`/`monitor_release` handling (~811–863), `vice-broker-client.ts`'s `claimMonitor()`/`releaseMonitor()` (~1037–1093) | Gains the anticipated `channel: "binary" | "text"` discriminator. Whether ownership stays per-socket or becomes a single cross-channel "halt authority" is the probe's decision, not a free choice. |
+| Runtime evidence schema | **NEW** | `anno-store.ts`'s `DDL` string (currently `anno_meta`/`anno_range`/`anno_label`/`anno_comment`/`anno_scope`/`anno_enum`/`anno_enum_usage`/`anno_xref`/`anno_snapshot`, lines ~246–312) | A new table, same seam, same file — `anno-store.ts` stays the only `node:sqlite` consumer (`anno-seam.test.ts` enforces this structurally). |
+| Runtime evidence derivation | **NEW** | `src/mcp/vice/anno-runtime-evidence.ts` | Mirrors `anno-coverage.ts`'s existing `classFromBytes()`/`classFromStore()` pair (lines ~1681, ~1692) with a third `classFromRuntime()`, and the union/report query. A new sibling module, not a growth of `anno-coverage.ts` (a different, already-large concern) and not a growth of `block-class.ts` (which is deliberately a pure 3-valued translator, not a query engine). |
+| Runtime evidence tool surface | **NEW** | `anno-tools.ts`'s `ANNO_TOOL_DEFINITIONS` (append) | At minimum an ingest verb (writes parsed observations) and a report verb (joins against the block table). Registered through `buildViceTool()` exactly like every other `anno_*` verb, so it never reaches `forwardToVice()` — no new interception rule needed (satisfied by construction, same as `MCP-02`). |
+| Host binaries | **MODIFIED** | `host-tool.mts`'s `HostToolId` union (~139), `HOST_TOOL_IDS` (~141), `HOST_TOOL_ARG_KEYS` (~180), `HOST_TOOL_PATH_ARG_KEYS` (~252), `HOST_TOOL_TIMEOUT_MS` (~1325) | Three new members: `c1541.*`, `petcat.decode`, `cartconv.identify` (or similar per-verb ids — see below). Same seven synchronized edits the file's own header already demands for any new tool. |
 
-### The mechanism, and why it probably is not launch-time
+## Sub-question 1 — Where does the text client live, and what owns it?
 
-**Recommended primary mechanism — cycle-aligned refinement, entirely runtime.**
+**It lives beside `vice.ts`/`stock-protocol.ts`/`stock-connect.ts`, container-side, in `src/mcp/vice/`.** Not in the broker.
 
-```
-1. arm stopping exec checkpoint at addr          (existing: stock-run-until.ts:244)
-2. one resume, wait for CHECKPOINT_INFO          (existing: :113, invariant 1 preserved)
-3. read absolute cycle                           (existing: readCycleBaseline() :274)
-4. compute frame index + intra-frame position     (existing: positionWithinFrame() :200,
-                                                    VIDEO_STANDARDS :70-73)
-5. advance to the next frame boundary            (existing wire op: ADVANCE_INSTRUCTIONS
-                                                    0x71, advanceInstructionsBody()
-                                                    stock-protocol.ts:751; handler
-                                                    stock-execution.ts:257)
-6. re-read cycle; assert landed position         (new: the alignment assertion)
-```
+Trace of how the binary client reaches the emulator today, to mirror exactly:
 
-Steps 1–5 are existing code. Only step 6 and the loop around 5 are new. This mechanism
-needs **no launch flag, no acquire-frame field, and no warm-floor change**, which is
-decisive: it sidesteps the entire structural blocker the headless todo documents.
+1. The broker (`vice-broker.mts` + `broker-launch.mts`, host-side, `.mts`) launches `x64sc` with `-binarymonitor -binarymonitoraddress ip4://<host>:<port>` and records the port in `broker-state.mts`'s `InstanceRecord`. The broker's job stops at *launch and bookkeeping* — it never speaks the binary-monitor wire protocol itself.
+2. The container-side `vice-broker-client.ts` acquires a lease (`acquire`) and, separately, claims exclusive monitor ownership (`monitor_claim`, ~lines 1037–1069) over the **control-plane** TCP socket — a JSON-line protocol, distinct from the binary-monitor wire itself.
+3. `stock-connect.ts` (container-side `.ts`, run unbuilt) is the ONE place that, having a successful claim, opens the actual `ViceMonitorClient` (`stock-protocol.ts`) — a **direct TCP dial from the container to the host's allocated port**, not proxied through the broker. `hostpath.ts`/`containerpath.ts` are **not involved** in this dial: those two modules translate filesystem paths crossing the container/host boundary (snapshot files, disk images, ACME sources), not network endpoint resolution. Host reachability for the dial itself is resolved the same way `vice.ts`'s `mcpHost()` resolves it (`VICE_MCP_HOST`/`host.docker.internal`/`127.0.0.1`, `container-guard.mts`-informed) — a **network hostname**, not a path.
 
-**Why not VICE event record/replay.** It is launch-time (`-eventstart` / `-eventplayback`),
-so it drags in every cost the headless todo enumerates — a mode field on the acquire
-frame, mode-aware warm-instance eligibility, a launch-mode field on `InstanceRecord`, and
-a decision about what `maintainWarmFloor()` pre-warms. It also cannot be retrofitted to a
-warm instance, so `selectWarmInstance()` (`vice-broker.mts:473`) would hand a
-record/replay-requesting caller a plain interactive instance silently — the one outcome
-the todo says to rule out. Recommend against it as the primary mechanism, and re-evaluate
-only if the re-measurement in step zero shows the cycle-aligned refinement cannot close
-the gap.
+The text client mirrors this exactly, as two new sibling files:
 
-**Two hard preconditions on the recommended mechanism, both from settled constraints.**
+- **`text-connect.ts`** — claims the text channel (extends `monitor_claim` with a `channel` field, or a new `monitor_claim_text` op if the probe requires a genuinely separate ownership model — see sub-question 3), reads the allocated `remoteMonitorPort` off the lease, and hands back a connected `TextMonitorClient`.
+- **`text-protocol.ts`** — the one module owning the text wire's bytes: write a command line, read until the prompt terminator (VICE's text monitor prints a `(C:$xxxx)` — style prompt; the exact terminator sentinel needs one more live capture to pin, same as the binary protocol's settled facts were pinned in `docs/phase0-binmon-findings.md`).
 
-- **VICE ≥ 3.10 for Route A.** `CPUHISTORY_GET` (0x86) does not exist on 3.9 —
-  Debian trixie/forky/sid and all current Ubuntu ship 3.9. Route B (`LIN`/`CYC`) is exact
-  only *within* one frame and refuses across a proven boundary
-  (`stock-timing.ts:15-18`), which is precisely the measurement a frame-exact stop needs.
-  So on 3.9 the honest answer is a **named refusal**, matching `capability-registry.ts`'s
-  established idiom (Rule A7), not a degraded guess. Do not "guess a `+ k * cyclesPerFrame`
-  correction" — `stock-timing.ts:30-31` forbids it by name.
-- **`default_memspace` contamination breaks step 5 outright.** CLAUDE.md's settled
-  constraint: a drive checkpoint hit sets `default_memspace` (`monitor.c:3393-3396`) and
-  nothing resets it, after which `ADVANCE_INSTRUCTIONS` steps the **drive** CPU. Since
-  `buildViceArgs()` emits `-drive8type 1541` unconditionally on stock
-  (`broker-launch.mts:202`), drive emulation is always live. Any alignment loop built on
-  `ADVANCE_INSTRUCTIONS` must therefore either prove no drive checkpoint was ever armed in
-  the session, or fail closed. This is the single most likely silent-wrong-answer in the
-  whole mechanism.
+**Required plumbing gap, found and not yet closed:** `vice-broker-client.ts`'s `HeldLease` interface (line 757–759) is `{ grantId, port, claimedAt }` — no text-port field. `broker-control.mts`'s acquire/status response builders likewise never serialize `InstanceRecord.remoteMonitorPort` to the client. **Neither `remoteMonitorPort` string appears anywhere in `broker-control.mts`, `vice-broker.mts`, or `vice-broker-client.ts` today** (confirmed by grep — zero hits). This is not a design choice to make; it is a small, mechanical, unavoidable prerequisite: the container-side text client has no way to learn which port to dial until this is added.
 
-### The invariants, restated as obligations on the new module
+**hostpath.ts/containerpath.ts implication:** not implicated for the socket connection itself (same as today's binary monitor). They ARE implicated for two adjacent things this milestone touches: (a) any file the parser/evidence layer writes to disk for fixture capture or bulk output must go through `containerpath.ts` on the way back to the container, same as every other host-produced artifact; (b) the host-tool executor's own path arguments (`c1541`/`petcat`/`cartconv` — see sub-question 5), which is a pre-existing, explicit constraint in `.planning/seeds/host-tool-executor.md` constraint #6, unrelated to the text channel.
 
-| Invariant | How it survives | Where it is checked |
-|-----------|-----------------|---------------------|
-| Exactly one resume per wait | Step 2 resumes once; steps 5's `ADVANCE_INSTRUCTIONS` is a step, **not** a resume — it is opcode 0x71, not `EXIT`/run. State this in the module header the way `stock-run-until.ts:26-27` states it. | Header prose + a unit assertion counting `CommandType.Exit` sends, which `stock-run-until.test.ts` already establishes as an idiom |
-| Poll on `hit_count`, never on paused state | Do not poll. Wait event-driven on `CHECKPOINT_INFO`, keyed on request-id-first demux (Rule A8) — `CHECKPOINT_INFO` (0x11) shares a response type with a legitimate command reply, noted at `stock-run-until.ts:79` | The demux is already guarded; the new module inherits it by using `session.client.send()` |
-| Never delete a VICE-marked `temporary` checkpoint | `stock-run-until.ts` arms a temporary checkpoint and takes a **different cleanup action on each of three paths** (hit / timeout / restarted) — only the timeout path deletes (`:20-24`). Copy that shape; do not add an undifferentiated `finally { delete }`. | `stock-run-until.test.ts` |
+## Sub-question 2 — The dual-channel controller
 
-### The tool-surface decision, and the cheap route
+**`vice-sync.ts` is the wrong seam to route through, and this is a factual correction to the milestone context, not a stylistic one.** Its imports are `import { call } from "./vice.ts"` — the **fork-only HTTP transport**. Its five exported functions (`readCheckpoint`, `waitCheckpointHit`, `runToCheckpoint`, `reset`, `screenshot`) all call `call("vice_execution_run", …)` etc. directly against the fork's HTTP endpoint. It is never imported by any `stock-*.ts` module (grep across `stock-checkpoints.ts`, `stock-run-until.ts`, `stock-machine.ts`, `stock-symbols.ts`, `stock-diagnose.ts`, `stock-reproducible-run.ts` finds only **comment references** to it, citing its invariant as precedent — never a real `import`). The stock backend already re-implements the *same two invariants* — exactly one resume per wait; poll on the checkpoint's own state, never on "is it paused" — **natively, per module**, against the binary-monitor's own primitives (`stock-reproducible-run.ts` states this explicitly at lines ~79, ~611, ~787: "vice-sync.ts's own invariant in its stock-native event-driven form").
 
-Two ways to expose it, with very different guard costs:
+So there is no single existing stock-side lock to extend. There is a *duplicated invariant*, independently upheld in several stock modules, all serialized today only because there is exactly one client of exactly one socket (`monitor_claim` guarantees this). **The moment a second channel exists, that guarantee stops being sufficient**, because `monitor_claim` today scopes ownership to the binary socket specifically (`InstanceRecord.monitorClient`, one field, no channel axis) — it says nothing about the text socket, which the probe's own finding establishes also halts the machine on command (`sw` before/after `x`, only advancing across the exit).
 
-- **Cheap (recommended): an optional `align` argument on the existing `vice_run_until`.**
-  SKILL-01 permits exactly this — "stock may add optional parameters but never removes,
-  retypes, or newly-requires one" — and `manifest-arg-compat.test.ts` is the guard that
-  encodes it. No new tool name, no change to the 38 or 62 counts, no new manifest entry,
-  no new registration line in `vice-proxy.ts`. On the fork the argument refuses by name.
-- **Expensive: a new `vice_frame_stop` tool.** Reddens `stock-dispatch.test.ts:1167` and
-  `:1173-1174` (the table's key count is asserted `=== 38` three ways) and requires a
-  `tools-manifest.stock.json` entry plus a regenerated `docs/tool-support.md`. Only take
-  this if the semantics genuinely cannot ride `vice_run_until`.
+**The concrete seam to build:** a single new module — call it `monitor-lock.ts` — that is the one place either channel's dispatch layer (`stock-dispatch.ts`'s existing halting operations, and the new `text-dispatch.ts`) acquires before issuing *any command that can halt the machine*. Its exact shape is not a free design choice; it is dictated by the probe:
 
-**Do not create a third proxy-local family for it.** `stock-dispatch.test.ts:1510` pins
-`BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "annoDef.name"]` in an
-**order-sensitive** `deepEqual`, with its own comment at `:1508-1509`: "A THIRD entry
-collides here rather than being absorbed into a superset." That is a deliberate speed
-bump, not a bug.
+- If the probe returns **GO** (serialized command issuance is sufficient — see below), this is a small **in-process async mutex**, since both channels are dialed by the same container-side MCP server process. No broker RPC needed; cheap.
+- If the probe returns **DEGRADE**, the lock must move to the broker (`broker-control.mts`, extending `monitor_claim`'s already-anticipated `channel` discriminator into a **cross-channel halt-authority lease** rather than a per-socket ownership flag) — because a second container-side session, or a second skill script process, could otherwise dial the *other* channel concurrently and defeat an in-process-only mutex.
+- If the probe returns **NO-GO**, the two channels cannot be live at once at all, and the lock becomes a **connect/disconnect gate**: opening the text socket first requires releasing the binary claim (or vice versa), turned into one logical channel with two incompatible physical protocols, never simultaneous.
 
-### If headless *is* also wanted (it is a separate, additive concern)
+This is exactly why the probe must be the first gate: the answer determines which of three structurally different modules gets built, and building the wrong one wastes the phase.
 
-The guard shapes prescribe the design. `broker-launch.test.ts:1761`, `:1773-1776` and
-`:1787-1797` are three whole-argv `assert.deepEqual` assertions; `:1799` and `:1806` are
-ordering assertions written to *survive* additions. So:
+## Sub-question 3 — The probe (first gate)
 
-- The mode must be an **optional field that defaults to absent**, so the no-mode argv
-  stays byte-identical and all three `deepEqual` assertions keep passing unchanged. This
-  also preserves the fork's byte-identical-argv promise (a Validated v0.2.0 requirement).
-- `InstanceRecord` already has the exact precedent: `remoteMonitorPort?: number` at
-  `broker-state.mts:142`, whose own comment (`:117-127`) says "Optional — additive, same
-  convention as every field group above". Add `launchMode?` the same way.
-- Any new flag goes **after** `-default` (index 0, or `-drive8type` is silently clobbered
-  back to its compiled-in value — `broker-launch.mts:182-192`).
-- **Warp is not a launch dimension.** The premise was corrected and verified live on
-  2026-08-27 against `/usr/bin/x64sc`: the text monitor's `warp on` / `warp off` works,
-  and `broker-launch.mts:213` already appends `-remotemonitor` on every stock launch with
-  the port recorded at `broker-state.mts:142` — and **nothing in the tree dials it.** Warp
-  is a runtime operation on an existing, allocated, unused channel.
+**What to measure**, using the same method the original probe used (`/usr/bin/x64sc -default -binarymonitor -binarymonitoraddress ip4://127.0.0.1:PORT_A -remotemonitor -remotemonitoraddress ip4://127.0.0.1:PORT_B`, a plain Node `net` socket on each port, both live simultaneously — bind-time coexistence is already confirmed, so this reuses the exact harness):
 
----
+1. **Idle coexistence, control.** Binary client issues a non-halting read (`MEM_GET`) while the text client is connected but silent. Confirm the read is correct and the text socket is still responsive afterward — establishes the floor.
+2. **Foreign-halt visibility.** Arm a non-stopping checkpoint on the binary channel (`CHECKPOINT_INFO` fires per hit, per CLAUDE.md's documented synchronous-delivery fact). While it is armed and the machine running, issue `memmapshow` on the text channel (a halting command, per the confirmed `sw`/`x` finding). Measure: does the binary channel's `CHECKPOINT_INFO` delivery still work correctly across a halt it did not itself cause? Does the binary channel ever misinterpret the foreign halt as its own `STOPPED` event in a way that would fool the "poll on hit_count, never on paused state" invariant — or does that invariant, being keyed on hit_count rather than pause state, already tolerate this for free (the favorable case)?
+3. **Concurrent in-flight commands.** Issue a halting command on each channel at overlapping wall-clock instants (binary: `ADVANCE_INSTRUCTIONS`; text: `prof flat 5`). Measure: does either response ever carry state contaminated by the other command's execution (e.g., an instruction-count or profile sample that could only be explained by interleaved execution neither side requested)? Does either socket ever return a reply misassociated with the wrong request (framing corruption) — the same failure class `stock-protocol.ts`'s request-id-first demux exists to prevent on the binary side alone.
+4. **Cross-channel resume visibility.** Halt via one channel (e.g., binary checkpoint hit), read the *other* channel's own state (text `sw`/`r` — the `STOPWATCH` column the original probe found), resume via the *other* channel (text `x`), and confirm the *halting* channel's next read reflects the resumed timing correctly. This is the direct dual-channel analogue of the single-channel `sw` bracket the original probe already ran.
+5. **Abrupt-disconnect recovery.** With the text channel holding a halt (mid-`memmapshow`, before typing `x`), kill the text client process (`SIGKILL`, mirroring this project's own durability-testing convention — see `anno-durability.test.ts`'s planted-`SIGKILL` pattern). Measure: does the machine stay permanently halted with the binary channel now indistinguishable from a genuine wedge under `vice-wedge-triage`'s existing model? Today's `monitor_claim`/`monitor_release` model clears binary ownership on the client's own disconnect (`broker-control.mts` ~388–397's "connection close IS the release" rule) — the text channel has no such mechanism yet, and this measurement decides whether it needs one before shipping at all.
 
-## (b) Where a JVM-scale host tool executes — three architectures, costed
+**Outcomes and their architectural consequences:**
 
-### Shared constraints all three must satisfy (read from the tree, not assumed)
+- **GO** — serialized command issuance (never two commands in flight across both sockets at once) is sufficient; a foreign-triggered halt is already tolerated by the existing hit-count-based invariant; no cross-talk observed. → Build the **in-process mutex** in `monitor-lock.ts`; extend `InstanceRecord.monitorClient` with a `channel` discriminator purely for bookkeeping/diagnostics, not for enforcement; both channels stay connected for the session's whole lifetime; the dual-channel controller is a thin wrapper, not a new distributed-lock concern.
+- **DEGRADE** — safe only when no command is in flight on the *other* channel at the moment a halting command is issued; some narrow, bounded inconsistency appears under true concurrency but is confined to a specific, nameable window (e.g., a stale event that a re-read resolves). → Build a **broker-level per-operation channel lease**: extend `monitor_claim`'s semantics from "own this socket" to "hold exclusive halt authority over this instance, regardless of which socket you're using it from" — `broker-control.mts` gates both `stock-dispatch.ts`'s halting calls and `text-dispatch.ts`'s calls through the SAME acquire/release RPC before either reaches its respective socket. More broker round-trips per call; correctness moves from "trust one process's in-memory mutex" to "trust the broker," which is the right place for a genuinely cross-process race.
+- **NO-GO** — corruption or deadlock persists even under serialized issuance (e.g., a `STOPPED`/`RESUMED` event misdelivered to the wrong socket, or state genuinely diverges by which channel touched it last, in a way client-side serialization structurally cannot prevent). → **Connect-text-only-while-binary-idle**: extend `monitor_claim`/`monitor_release` so opening the text socket requires holding no binary claim and vice versa — the two channels time-share, never coexist live. The runtime-evidence-gathering steps become their own exclusive phase (release the binary lease, claim+dial+capture+release the text lease, re-claim binary if needed), scheduled by the broker denying a `monitor_claim` for one channel while the other channel holds any claim on the same instance. This is the heaviest of the three and the one the milestone's hypothesis language ("claimable as a *second* client without corrupting the binary client's view") is written to test against — a NO-GO does not kill the runtime-evidence layer, it just means the layer's capture step is scheduled, not concurrent.
 
-| Constraint | Source | Consequence |
-|-----------|--------|-------------|
-| 64 KiB hard line cap, socket `destroy()`ed on overflow with no error frame | `broker-control.mts:242`, `:376` | Megabyte exports **cannot** ride the socket inline in any option. Overflow is indistinguishable from a connection drop. |
-| Any unhandled throw in the broker process kills the whole VICE pool | `broker-kill.mts:367-374` (`uncaughtException` / `unhandledRejection` → `run(…, 1)`) | Host-tool work runs in a **child process**, never inline, in all three options. Non-negotiable. |
-| Single-threaded event loop | broker is plain Node | A multi-minute synchronous run would stall acquires, the warm floor and monitor claims. Async spawn only. |
-| The connection IS the lease | `broker-control.mts:388-397` — `socket.on("close")` fires `onRelease` when `requestIdForThisConnection` is set | A host-tool connection must be routed **before** any lease-bearing path and handed a deps object containing none of the seven VICE callbacks (`broker-control.mts:145-180`). |
-| `ControlRequestKind` is a byte-exact-pinned 7-member union | type at `broker-control.mts:30`; guard at `broker-control.test.ts:877-890` asserts the **exact declaration string** | Adding *any* op is a reviewed decision that reds a committed guard. Identical cost in all three options — this is not a discriminator. |
-| Wire skew between separately-deployed halves | `build.ts` → committed `resources/*.mjs`, deployed by `install-resources.ts` into `<root>/tools` | A running broker can be older than the client dialing it. The 7 unprefixed ops cannot be renamed. |
+No production module in sub-questions 1 or 2 should be built ahead of this measurement — the mutex, the broker lease, and the connect-gate are three structurally different things, and picking the wrong one is exactly the wasted-phase risk the milestone's stated gate exists to avoid.
 
-### Option B1 — widen the existing `host-tool-executor` seam to cover stateful tools
+## Sub-question 4 — The evidence table's schema and its join
 
-| | |
-|---|---|
-| **NEW** | `host-tool-exec.mts` (host-side, child-spawning executor) + its compiled `resources/host-tool-exec.mjs`; a container-side `host-tool-client.ts`; a typed per-tool allowlist (seed constraint 5); a token-discovery route for skill scripts (seed constraint 3) |
-| **MODIFIED** | `broker-control.mts` (`ControlRequestKind` + a namespace-prefixed branch at the top of `handleLine()` `:508`, before the token gate at `:528` reads lease state); `build.ts`'s `HOST_BOUND_ARTIFACTS` (`:42-50`, exact-set assertion); `package.json` `files[]`; `acme.mjs` + `packer-finding.mjs` (the seed's retroactive scope) |
-| **Cost** | The seed's own framing is *stateless, short-lived open/send/close*. Ghidra is a JVM with a persistent project directory, a multi-minute run and a megabyte export. Widening the seam to cover it means the same seam now carries two lifetime models — the exact "half-migrated seam is the state that rots" failure the seed argues against, applied to itself. |
-| **Benefit** | One seam, one grep gate banning `spawnSync` of an external binary in `src/skills/*/scripts/`, one token-discovery answer, four cheap first consumers (`petcat`, `c1541`, `cartconv`, `acme`) get a home. |
+**Where it goes:** `anno-store.ts`'s `DDL` string (the ONE schema definition, lines ~246–312 today), appended alongside the nine existing tables. It stays in the same file because `anno-seam.test.ts` structurally asserts `anno-store.ts` is the only `node:sqlite` consumer — a second store file is exactly the "parallel store" this design must not create, and the seed itself already commits to "the block table stays byte-derived" (no mutation of `anno_range`).
 
-### Option B2 — a leased Ghidra subsystem alongside the VICE pool
+**Concrete shape**, following the existing tables' own conventions (autoincrement id, nullable `bank`, explicit index per hot column):
 
-| | |
-|---|---|
-| **NEW** | A second pool manager reusing `inFlight`'s shape (`broker-launch.mts:78-93`, `:373-378`, `:452-457`), `verifiedKill()` (`broker-kill.mts:126`), a persisted `ghidra.json` mirroring `broker.json` (`vice-broker.mts:239`, `:965`), and a fragile no-retry probe mirroring `vice-probe.ts:51`'s 1500 ms budget; a `ghidra.*` op namespace |
-| **MODIFIED** | `broker-control.mts` (union + dispatch + a second deps object); `broker-kill.mts` (a second kill-and-exit subject); `build.ts` artifact set; `host-scripts.test.ts` if a launch wrapper is a `.sh` |
-| **Cost** | **The lease has no subject.** A VICE instance is leased because it is a *stateful long-lived process with one binary-monitor client* (Rule A10). Phase 23's own recorded `analyzeHeadless` command line used `-deleteProject` — the project directory is created and destroyed per run. If the project dir is derived deterministically from the image content hash and deleted at the end, there is **no cross-call state to lease**. Building the lease machinery for a stateless-between-runs subsystem is the most expensive of the three and buys the least. |
-| **Benefit** | Real if — and only if — a *warm* Ghidra JVM is later wanted to amortise JVM startup across many runs. That is a measured optimisation, not a starting design. `.planning/ARCHITECTURE.md`'s Rule A21 is the dated record of this project already choosing a long-lived child once and reversing it on measured grounds; its reversal condition ("if per-call open/close is measured to be the dominant cost") is the right bar here too. |
-
-### Option B3 — filesystem handoff, control messages only over the socket
-
-| | |
-|---|---|
-| **NEW** | A container-side `ghidra-run.ts` that sends one control request and reads a *path*; the pre-script and post-script as committed `.java` files; the SLEIGH extension as committed `.slaspec`; a container-side importer for the export |
-| **MODIFIED** | `broker-control.mts` (union + one namespaced op returning `{ ok, outPath, logPath, exitCode }`, all far under 64 KiB); `install-resources.ts`'s deploy set (**by walk, no code change** — see below); `hostpath.ts` / `containerpath.ts` consumer set |
-| **Cost** | The path must be translated in both directions (`hostPath()` at `hostpath.ts:209`, `containerPath()` at `containerpath.ts:151`), which reddens `hostpath-consumers.test.ts:144` — a reviewed 5-member set. Requires the shared mount to actually exist; on a host-native install (this repo's own common case, per seed constraint 7) it is a no-op. |
-| **Benefit** | **This is what the seed's own constraint 2 already prescribes**: "Bulk results must be written to a file host-side and returned as a path (translated back through `containerpath.ts`)". And it is what the pivot prototype already *did* — `ExportAnalysis.java:13` writes via `PrintWriter(new FileWriter(...))`; `autoannotate2.mjs:1-3` reads it with `readFileSync`. Primary evidence from an executed run, not a design sketch. |
-
-### Recommendation
-
-**B3 for the artifact, B1's namespace for the control message.** Not a compromise — the
-two options answer different questions. Ghidra's statefulness is a *host filesystem* fact
-(a project directory), not a *protocol* fact, so it needs no lease; its bulk output is a
-*file*, so it must not ride the socket. What remains on the socket is a short request and
-a short reply, which is exactly the shape the host-tool executor was designed for. Take
-B1's seam and namespace, add `ghidra` and `dxa` as named ops with typed argument shapes
-(never argv passthrough — seed constraint 5), and let the answer be a path.
-
-**One unexpectedly clean delivery channel, verified.** `install-resources.ts` deploys
-`resources/` to `<root>/tools` by a **recursive walk** (`:99-114`), explicitly so "a file
-added under `resources/lib/` later deploys with no code change here" (`:96-98`). And
-`resources-sync.test.ts` scopes its byte-identity comparison to
-`GENERATED_EXTENSIONS = [".mjs"]` (`:34`), with its own comment at `:30-32`: "everything
-else (the shell scripts, `lib/`) is hand-authored and outside the comparison set BY
-CONSTRUCTION". So a committed `.java` post-script or a `.slaspec` under `resources/` is
-**auto-deployed host-side and outside resources-sync's scope** — an existing, tested,
-container→host file-delivery channel with no new mechanism. Caveat: a `.sh` there *is*
-caught, by `host-scripts.test.ts:202-209`.
-
-**Reject B2's lease for now, and record the reversal condition** the way Rule A21 records
-its own: reintroduce a leased warm JVM only if per-run JVM startup is *measured* to
-dominate a real analysis session.
-
----
-
-## (c) Where the recovered facts land
-
-### The two candidates
-
-- **(i)** Ghidra post-script writes `program.json` / `analysis.json`; a container-side
-  importer reads it into `.annostore`.
-- **(ii)** The post-script writes into the store directly.
-
-### Option (ii) is structurally unavailable, on this project's own rules
-
-| Rule | How (ii) violates it |
-|------|----------------------|
-| Single seam per concern | `anno-seam.test.ts` asserts `node:sqlite` is named by **exactly one** module of the shipped set (`THE_ONE_SEAM = "anno-store.ts"`, `:28`), with a *second* declared list for test files precisely because "outside the scope of the guard is how a dependency spreads unnoticed" (`:33-46`). A Java SQLite writer is outside every guard's scope entirely — not a violation the guard catches, a violation it cannot see. |
-| Confinement | `openStore()` (`anno-store.ts:432-450`) refuses a store path outside `workspaceRoot` **before** resolution and long before `new DatabaseSync`, and its escape hatch is deliberately named `unconfinedModuleDerivedPath` so a grep finds it. `anno-confinement.test.ts:5-13` records a real escape reproduced through a symlink. A Java writer would have to re-implement that, plus the narrowest-range-wins paint index (proven exact at all 65,536 addresses against an independent oracle), plus the revert journal. |
-| Container-in / host-out | The store lives container-side; the JVM runs host-side. (ii) requires the `.annostore` file itself on a shared mount, writable by a host process — inverting the split and making the store's durability guarantee (proven across a real `SIGKILL` in a separate OS process) a claim about two processes in two languages on two sides of a mount. |
-
-### Option (i) is right, and its drift objection has a structural answer
-
-The todo's own sharpest question is whether `program.json` "should be an intermediate at
-all, or whether … making `.asm` a rendering of the store rather than a third parallel
-output that can drift from it." The answer is a role assignment, not a file-count
-decision:
-
-| Artifact | Role | Drift risk |
-|----------|------|-----------|
-| `program.json` (Ghidra export) | **Transient evidence** of one run, with a recorded content hash. Never read after import. Belongs in the evidence tree, not a deliverable set. | None — it is not a model, so nothing can drift *from* it |
-| `.annostore` | **The one authoritative model.** Every fact the importer accepts becomes a store row. | n/a |
-| `program.asm` | A **rendering of the store**, via the already-shipped `anno export-asm` (EXPORT-01..03, under a real-ACME byte-diff oracle) | None — derived on demand |
-| `program.c` | Decompiler output. **Not a model and not derivable from the store.** Keep it as evidence beside `program.json`, with the same hash discipline. | None, provided nothing reads it back as input |
-
-That preserves the three-output *contract* the proposal contributes (its genuinely new
-idea) while destroying the drift hazard: two of the three outputs are evidence, one is a
-rendering, and the model is the store.
-
-**The importer is cheap, and this is the one surface that is extensible without a guard
-fight.** The `anno_*` tool count is deliberately **not** pinned — `anno-tools.test.ts:208`
-and `anno-derivation.test.ts:477` both assert only `ANNO_TOOL_DEFINITIONS.length > 0`.
-Adding tools flows through the existing single registration loop at `vice-proxy.ts:3388`,
-so it adds **no** entry to `BACKEND_SEAM_BYPASS_KEYS` and keeps MCP-02 satisfied by
-construction. (Observation: `ANNO_TOOL_DEFINITIONS.length` reads **19** at HEAD, where
-`PROJECT.md` says 18 — a stale prose count, not a guard failure, since nothing pins it.)
-
-**Two obligations the importer inherits, both from Phase 23's measured evidence.**
-
-1. `analyzeHeadless` **exits 0 even when a post-script throws**. The importer must grep
-   the run log for `ERROR REPORT SCRIPT ERROR` or every assertion built on its output is
-   worthless. This belongs in the *importer*, container-side, not in the post-script.
-2. Cross-references must carry their access kind (`READ` / `WRITE` / `READ_WRITE` /
-   `COMPUTED_JUMP`) — the pivot's own three decisive facts are all kind-bearing. The
-   store's `STORE-06` cross-reference union already produces a sorted de-duplicated list;
-   the import must not flatten kind out on the way in.
-
----
-
-## (d) Suggested build order, with the dependency edges named
-
-```
-  P-A  Frame-exact stop                    P-B  Snapshot 64K extraction
-       (re-measure on stock first)              (.vsf C64MEM slice, method proven)
-         │                                        │
-         │  ── both feed ──>  P-C  Real-corpus capture ── the substrate
-         │                          │
-         │                          │   [gate: pre-committed go/degrade/no-go rules,
-         │                          │    committed to git BEFORE any measurement]
-         v                          v
-  P-D  Host-tool executor seam  ──> P-E  dxa vendored + map parser
-       (B1 namespace + child-proc)         (DXA-01..03)
-                                            │
-                                            │ dxa's map is what makes Ghidra
-                                            │ work at all — 0 functions, 0 code
-                                            │ bytes with zero hints
-                                            v
-                                     P-F  SLEIGH extension
-                                          (OPC-01..03; source already exists,
-                                           766 lines, docs/undocumented-opcodes-ghidra.md)
-                                            │
-                                            │ MUST precede the acceptance run
-                                            v
-                                     P-G  Ghidra harness + volatile carve
-                                          (GHID-01..05; control observed RED)
-                                            │
-                                            v
-                                     P-H  Importer: export -> .annostore
-                                            │
-                                            v
-                                     P-I  Automatic annotation join
-                                          (AUTO-01..07)
-                                            │
-                                            v
-                                     P-J  PROOF-01..03 on real cracked code
+```sql
+create table anno_runtime_observation (
+  id integer primary key autoincrement,
+  run_id text not null,          -- see run-identity key below
+  address integer not null,
+  bank integer,
+  observed_exec integer not null check(observed_exec in (0, 1)),
+  captured_at text not null,
+  unique(run_id, address, bank)
+);
+create index anno_runtime_observation_address on anno_runtime_observation(address);
+create index anno_runtime_observation_run on anno_runtime_observation(run_id);
 ```
 
-### Edges, each named
+`observed_exec` is deliberately not a richer enum — the seed's own design constraint is that a run can license `code` and can *never* license `data`, so the column only ever needs to record "was this address seen executing in this run" (1) or is simply absent (never touched — no row, not a 0-row, since "no row" and "observed not-executing" are NOT the same fact and must not collide). The `unique(run_id, address, bank)` constraint makes repeat ingests of the same run idempotent (an `insert or ignore`), matching the monotone-union design: a later run only ever adds new `(run_id, address)` pairs, never touches an existing row.
 
-| Edge | Why it is real |
-|------|----------------|
-| P-A → P-C | The frame-exact stop is "the single gate" on securing a corpus. Without it two runs of the same release diverge at 201 multi-bit addresses, measured snapshot-to-snapshot with no transcription anywhere. |
-| P-B → P-C | Removes the *other* capture blocker (hex transcription lost a 32 KB write to truncation and an 8 KB write to ten dropped characters). Method already validated against `danish_r2_handoff.vsf`. Independent of P-A — **can run in parallel.** |
-| P-D → P-E, P-D → P-G | Both engines are host binaries. Reaching them by `spawnSync` from a skill script is the recorded prohibition, and two skill scripts already violate it (`acme.mjs:124`, `packer-finding.mjs:247,306`). Building the executor after the engines means writing the violation twice and migrating it. |
-| P-E → P-G | Load-bearing, and the strongest edge in the graph: Ghidra alone with zero hints produced **0 functions and 0 code bytes** on the pivot fixture. "The map from dxa is not an optimisation; it is what makes Ghidra work at all on a headerless 6502 image." |
-| P-F → P-G's acceptance run | Explicitly sequenced by the roadmap: GHID-04's acceptance is "structural facts recovered from *real cracked code*", which "is not honestly claimable while 105 opcode bytes are undecodable, because crack and packer code is exactly where that gap bites." Integration of P-F is cheap (the SLEIGH source exists in full); its *verification* needs P-G's harness, which is why they stay in one phase group with F ahead of G's acceptance. |
-| P-G → P-H | Nothing to import until the export exists. |
-| P-H → P-I | AUTO-01's criterion reads annotations back **out of the store**, not out of the pipeline's stdout. |
-| P-C → P-J | PROOF-01..03 are "real measurements on real cracked code rather than `could-not-run`". |
+**Run-identity key.** Do not invent a new identity scheme — Phase 33 already built one and this project's own single-seam discipline says reuse it. `capture-predicate.ts`'s `argvDigest()` (line 581, "usable as a run identity key (`REPRO-04`)") plus the capture-record convention PROJECT.md's v0.8.0 close already states verbatim: *"every capture record carries `(binary sha256, argv digest, seed)` as one key."* `run_id` should be the same composite, serialised as one string (e.g. `${binarySha256}:${argvDigest}:${seed}`) or stored as three columns with a composite unique index — either is acceptable, but it must be **the same three values**, not a fourth independently-invented scenario label. This directly answers "which image, which scenario, which bracket" from the seed: image → binary sha256, scenario+bracket → already folded into argv digest (the launch profile/arguments) and seed.
 
-### Two ordering choices worth arguing explicitly
+**The join query.** This project already has the exact reconciliation pattern to extend: `anno-coverage.ts`'s `classFromBytes()` (~1681) and `classFromStore()` (~1692), each producing a `DerivedClass` from an independent source, explicitly designed (per that function's own comment) so "a second annotation substrate [can] be substituted without this function changing at all." The new module — `anno-runtime-evidence.ts`, a sibling, not a growth of `anno-coverage.ts` (a different, already large, concern) — adds a third: `classFromRuntime(observations, address): DerivedClass`, returning `"code"` if any observation row exists for that address, `"unreached"` otherwise (never `"data"` — the soundness asymmetry is enforced structurally by the function never returning that branch). The report query then compares this against `classFromBytes()`/`classFromStore()`'s existing outputs for the same address set and emits three buckets: **agree** (all sources concur), **disagree** (runtime says code, bytes/store say data or undefined — the seed's stated highest-value output), and **runtime-silent** (no observation — informative about coverage, never treated as evidence for `data`).
 
-- **P-A's first task is a measurement, not an implementation.** Re-measure two runs on
-  the **stock** backend before writing any alignment code. Finding 4: the recorded
-  divergence is fork evidence, and stock's checkpoint fires synchronously from inside the
-  CPU loop. This could collapse P-A to a verification phase, or narrow it to step 6 alone.
-  Building the refinement loop first and then discovering it was unnecessary is the
-  avoidable version of this — and it is the same failure class this project has recorded
-  six times: an internal check standing in for an external one.
-- **P-D before P-E/P-G, not after.** Tempting to inline `spawnSync("dxa", …)` "just for
-  the measurement phase" and migrate later. The seed's own rationale refuses it: "a
-  half-migrated seam is the state that rots, and a retroactive migration is what makes the
-  rule mechanically enforceable." The grep gate that bans the pattern can only be written
-  once nothing violates it.
+**Tool surface.** New, not an extension of an existing verb — `ANNO_TOOL_DEFINITIONS` in `anno-tools.ts` gains at minimum:
+- an ingest verb (writes parsed-and-typed observation rows for one run — the only writer of `anno_runtime_observation`), and
+- a report verb (the read-only join above).
 
----
+Both register through `buildViceTool()` exactly like the other 21 `anno_*` verbs today, so — per the existing, already-proven `MCP-02` pattern — they never reach `forwardToVice()` by construction, no new interception rule needed. Per PROJECT.md's Out of Scope ("an entry in `capability-registry.ts` for the store" was explicitly rejected for the annotation store), these new verbs should **not** get a `capability-registry.ts` entry either — they are backend-independent, appear in neither manifest, same as every existing `anno_*` tool.
 
-## (e) Guards and tests that will go red
+## Sub-question 5 — The parser boundary
 
-Ordered by how surprising the breakage is. "Mechanical" = update the pinned set in the
-same commit that changes the subject. "Reviewed decision" = the guard exists to force an
-argument, and papering over it is the defect.
+**Where the modules live:** `src/mcp/vice/text-parse-memmapshow.ts`, `text-parse-prof.ts`, `text-parse-chis.ts`, `text-parse-bt.ts`, `text-parse-io.ts` — one file per format, following this codebase's existing "prefix-as-family" convention (`disasm-*.ts` for the pure disassembler is the closest existing analogue: import-free of any `stock-*`/`vice*` module, pure functions, exhaustively unit-testable). Each module's contract is `parse(raw: string): T[]`, nothing else — no socket, no connection, no timing, no knowledge of which channel produced the text.
 
-### Reviewed decisions — the guard is the point
+**How this avoids becoming a second transport seam:** the parser modules never see a live connection. `text-protocol.ts`/`text-connect.ts` own sending the command and collecting the raw response text (framed by the prompt terminator); everything downstream of "here is a string" is pure. This is the same separation `stock-protocol.ts` (wire bytes) vs. `stock-*.ts` (typed handlers via `stockAnswer()`) already enforces on the binary side — the parser boundary is this project's `stock-handler.ts`-equivalent for the text side, minus any transport code at all.
 
-| Guard | Location | Trips on | Note |
-|-------|----------|----------|------|
-| `ControlRequestKind` byte-exact declaration | `broker-control.test.ts:877-890` (subject: `broker-control.mts:30`) | **Any** new control-plane op — `dxa.*`, `ghidra.*`, `tool.*` | Asserts the exact union string with the message "the union must be exactly … plus plan 05's `monitor_claim`/`monitor_release`". Unavoidable in all three (b) options. |
-| `BACKEND_SEAM_BYPASS_KEYS` — 2 entries, order-sensitive | `stock-dispatch.test.ts:1510` | A third proxy-local tool family registered via `buildViceTool()` | Its own comment: "A THIRD entry collides here rather than being absorbed into a superset." **Avoid by extending `ANNO_TOOL_DEFINITIONS` instead of adding a family.** |
-| `EXPECTED_IMPORTERS` — 5-member host-path consumer set | `hostpath-consumers.test.ts:144` | Any new module importing `hostpath.ts` — i.e. anything translating a Ghidra/dxa artifact path | Header `:15-24`: "Widening the five-member list below is a REVIEWED DECISION, not a mechanical fix for a failing test." Also forbids adding any `STOCK_DERIVED_TOOLS` member to it. |
-| `EXPECTED_EMULATOR_SPAWN_SITES` — exactly 1 entry | `spawn-seam.test.ts:263-297` | **A trap:** the discovery predicate matches `\bbinPath\b` (`EMULATOR_BIN_SHAPE` at `:179`, `identNamesEmulatorBinary()` at `:191`). A host-tool executor that writes `spawnSync(binPath, [...])` for *Ghidra* is discovered as an "emulator spawn site" and reds the `=== 1` assertion at `:293-295`. | Avoid by naming the local something else (`toolPath`, `ghidraPath`), or widen the set deliberately. |
-| `MANUAL_ONLY_TESTS` — exactly nine files | `test-gate.test.ts:16` | A new live suite (live Ghidra, live frame-exact) not added to the list | Consequence: it silently runs in `test:automated` and fails on any machine without Ghidra. |
+**Fixture capture and pinning — the existing pattern to mirror, found and cited exactly.** `binmon-fixtures.ts` defines `REQUIRED_PROVENANCE_KEYS = ["capturedFrom", "viceVersion", "capturedAt", "command", "synthetic"]` (line 228) and refuses a fixture sidecar missing any of them; `capturedFrom` names the resolved binary path plus stock/fork kind (e.g. `"stock:/usr/bin/x64sc"`, per `probe-binmon.mjs` line 2320's convention), and `synthetic: false` is asserted for the three re-recorded real-hardware fixtures (`backend-detect.test.ts`'s `EXTV-02`). The text-format fixtures should use **the exact same five keys**, in a new `textmon-fixtures.ts` (a sibling loader/validator, not a reuse of `binmon-fixtures.ts` itself, since that module is typed to binary-monitor wire frames specifically — the PATTERN transfers, the code does not). Raw captures live under `src/mcp/vice/fixtures/textmon/<format>/`, one `.txt` (the literal captured text) + one `.json` sidecar per case, captured live during the probe itself (the probe's own harness already produces exactly this raw text — reuse the capture, don't re-run it later).
 
-### Mechanical, but easy to miss
+## Sub-question 6 — The three host binaries
 
-| Guard | Location | Trips on |
-|-------|----------|----------|
-| Whole-argv `assert.deepEqual` × 3 | `broker-launch.test.ts:1761`, `:1773-1776`, `:1787-1797` | Any unconditional new launch flag. **Avoidable**: an optional field defaulting to absent keeps all three green, and `:1799`/`:1806` are written to survive additions. |
-| Fork argv byte-identity | `broker-launch.test.ts:1761` | Any change to the fork branch — this is a Validated v0.2.0 promise, not just a test |
-| `HOST_BOUND_ARTIFACTS` — exact emitted set | `build.ts:42-50`; drift checked by `resources-sync.test.ts` | A new host-bound `.mts` (`host-tool-exec.mts`, a ghidra launcher). `build()` **throws** on an unexpected or missing artifact; the committed `resources/*.mjs` must be rebuilt and committed in the same change. |
-| `EXPECTED_TRACKED_SHELL_SCRIPTS` — repo-wide `git ls-files -- *.sh`, 5 entries | `host-scripts.test.ts:202-220` | **Any** new `.sh` anywhere in the tree — a dxa `build.sh`, a `analyzeHeadless` wrapper. Repo-wide set equality; nothing scopes it to `src/`. |
-| `REAL_VERBS` + skill-documentation coverage | `anno-verb-coverage.test.ts:53`, scanning **both** `src/skills/` and `installer/skills/` (`:227`) | A new CLI verb (`anno import-ghidra`, `dxa map`) undocumented in either skill tree |
-| `check-skill-tool-coverage.mjs` | `scripts/check-skill-tool-coverage.mjs` | Its allowlists are designed to "SHRINK BY FAILING": `PENDING_LATER_PHASE` entries are asserted **absent** from the stock manifest, so landing one fails until the stale entry is deleted |
-| `check-skill-cli-invocations.mjs` | `scripts/` | A documented invocation whose arguments do not actually work (29-REVIEW.md CR-04) |
-| `shippedTsModules()` throws on a `files[]` entry missing from disk | `shipped-modules.ts:151-162`; `shipped-modules.test.ts:55` | Adding a module to `files[]` before it exists, or renaming without updating it. Cascades into every structural guard that scans the shipped set. |
-| `scripts/check-npm-packages.mjs` leak checks | `:92-105` — `node_modules/`, `*.test.*`, `fixtures/`, `test-corpus.mjs` | Committing Ghidra/dxa **fixtures** under `fixtures/`. Vendored C source under `vendor/` is *not* caught — decide `files[]` membership deliberately. |
-| `ci-suite-coverage.test.ts` | whole file | A committed test file in a directory with no matching step in `ci.yml`'s `build` job. A new `vendor/dxa/` or Ghidra script test dir needs a CI step in the same commit. |
-| `docs-deferred-ledger.test.ts` — fails in **both** directions | `:101`, `:116` | Resolving the frame-exact / headless / vsf / Ghidra-proposal todos without moving their `STATE.md` Deferred Items rows, and vice versa |
-| `docs-linerefs.test.ts` | reads CLAUDE.md | Any edit shifting `vice-proxy.ts`'s `rewriteArguments()` call sites. Verified correct at HEAD: `:3050` / `:2985` / `:1529` / `:1505`. **Note the historical pattern** — these citations were stale twice before, and the second time only because the guard read CLAUDE.md and not `PROJECT.md`'s copy. Adding an interception near `forwardToVice()` shifts all four. |
-| `docs-dangling-refs.test.ts` | whole file | A shipped string literal naming a phase number. Phase 23's evidence scripts are `ExportAnalysis23.java` / `FlatVolatile.java` — **rename on promotion out of `.planning/phases/`**; the guard is scoped to normative documents, but the naming habit is the hazard. |
-| `absorbed-answer-key.test.ts` | reads `.planning/phases/11-*/evidence/` with no existence guard | Any phase archival. Independently recorded: phase dirs accumulate by design. |
-| `audit-integrity.test.ts` | `:28` cites `vice-sync.ts`'s untested waits by name | Retiring or restructuring `vice-sync.ts` |
+**What has to be added**, per `host-tool.mts`'s own header (which names the seven synchronized edit sites a new tool must touch, and a data-driven test census that catches a skipped one): each of `c1541`, `petcat`, `cartconv` needs entries in `HostToolId` (~139), `HOST_TOOL_IDS` (~141), `HOST_TOOL_ARG_KEYS` (~180), `HOST_TOOL_PATH_ARG_KEYS` (~252, for whichever args are paths — e.g. `c1541`'s disk-image argument, `cartconv`'s `.crt` input), and `HOST_TOOL_TIMEOUT_MS` (~1325). Following the existing naming convention (`acme.build`, `ghidra.analyze`, `dxa.disassemble`), the new ids should be per-capability, not per-binary: e.g. `c1541.chain` / `c1541.dir` (the seed's own stated first uses — BAM/chain vs. what the loader actually reads), `petcat.decode` (BASIC-stub SYS-entry recovery), `cartconv.identify` (CRT bank structure).
 
-### A stale claim this milestone must correct, and what correcting it costs
+**Version/digest declaration — the existing precedent does not transfer cleanly, and the right answer is a *different* existing precedent.** PROJECT.md states dxa and Ghidra are "both declared by version with a digest" — but this is two different mechanisms already: dxa is a **vendored source tarball**, pinned by a committed `dxa-0.1.5.tar.gz.sha256` sidecar checked by `dxa-build-gate.test.ts` (a build-time integrity gate over a tarball this project downloads and compiles itself). Ghidra is a **543 MiB non-vendored install**, declared by version only (12.1.3, in comments/docs; no sha256 pin was found for the Ghidra binary itself — it is too large and too platform-variable to make that practical). `c1541`/`petcat`/`cartconv` are neither: they are small, OS-installed binaries that typically ship **alongside VICE itself** (same package, same version family as `x64sc`), with no separate tarball to vendor and hash. The closest actual precedent in this tree is **`backend-detect.mts`'s own `--help` probe** — memoized once per process, no digest, version/capability inferred from the binary's own output. Recommend the same shape here: a version/availability probe (`c1541 --help` or equivalent) run once, its output captured as a fixture with the same `capturedFrom`/`synthetic` provenance discipline `binmon-fixtures.ts` already established, rather than inventing a sha256-pin mechanism these binaries don't fit.
 
-`capability-registry.ts:280-286` states, inside `vice_machine_config_set`'s reason: "warp
-on stock is a launch-time flag, not a resource that can be toggled while running." That
-was **refuted live** on 2026-08-27 (`warp` / `warp on` / `warp off` all answered on stock
-3.9's text monitor). `docs/tool-support.md:54` reproduces the sentence verbatim because it
-is **generated** from the registry, under a byte-identity drift guard
-(`tool-support-table.test.mjs`). So the correction is one commit touching two files —
-registry text plus regenerated table — and skipping the regeneration reds the drift guard.
+**Does c1541 supersede `d64-parse.mjs`? No, and this milestone should not decide otherwise.** `.planning/seeds/host-tool-executor.md` states this explicitly: *"Deliberately NOT decided here: whether `d64-parse.mjs` stays as the in-container fast path or defers to host `c1541`... Keep it, and let `c1541` be additive, until that record exists."* `d64-parse.mjs`'s own header calls itself "the permanent, sanctioned replacement for the forbidden `vice_disk_list` tool," and the seed names a real reason to keep both rather than deleting one: `c1541` sees BAM/sector-chain divergence a directory-chain parser structurally cannot (the exact fastloader/protection signal this project cares about), while `d64-parse.mjs` works with zero host round-trip and zero token/broker dependency. **This milestone should add `c1541` additively and explicitly decline to touch `d64-parse.mjs`** — deleting or deprecating it is its own future decision record, not a byproduct of landing the host-tool seam.
 
-### Two known-red baselines to establish before trusting any run
+## Architectural Patterns
 
-- **Stop the broker first.** A live broker reddens the BACK-05 assertion
-  deterministically. That is not a flake, and a phase measuring against a live-broker run
-  will read a false baseline.
-- **Use `npm run test:automated`, not `npm test`.** The whole-glob run does not terminate
-  unaided (`vice-proxy.test.ts` leaks two LISTEN sockets), and `test:automated` skips the
-  nine `MANUAL_ONLY_TESTS`. The clean floor for `test:automated` is **0** failures.
+### Pattern 1: Second-channel client mirrors the binary-monitor client's two-file split, never merges into it
 
----
+**What:** `text-protocol.ts` (wire bytes) + `text-connect.ts` (claim → dial → handshake) as two new sibling files, structured identically to `stock-protocol.ts` + `stock-connect.ts`.
+**When:** Any time a second wire protocol to the same external process is added.
+**Trade-offs:** More files, but preserves "one module owns each protocol's bytes" — the alternative (extending `stock-protocol.ts` to also speak text) would violate the single-seam discipline this codebase enforces by test (`anno-seam.test.ts`'s analogue for `node:sqlite` is the model; a `text-protocol` seam test should exist too).
 
-## Anti-Patterns specific to this integration
+### Pattern 2: Serialization discipline lives in a NEW seam, not in `vice-sync.ts`
 
-### Anti-Pattern 1: Putting the frame-exact stop behind `vice.ts`'s `call()`
+**What:** A `monitor-lock.ts` (or broker-level equivalent, per the probe) that both `stock-dispatch.ts` and `text-dispatch.ts` acquire before any halting command.
+**When:** Once the probe returns any answer other than "coexistence is free" (which the probe itself already rules out — halting is confirmed on both channels).
+**Trade-offs:** `vice-sync.ts` looks like the natural home by name, but it is fork-only, imports the fork's `call()` directly, and the stock backend already duplicates its invariant natively per module rather than centrally — routing text-channel work through it would be importing dead-for-stock code, not reuse.
 
-**What people do:** implement the alignment loop as a helper called from behind `call()`.
-**Why it's wrong:** MCP-02. `rewriteArguments()` runs at `vice-proxy.ts:3050`, inside
-`forwardToVice()` (`:2985`) and before `call()`. Anything behind `call()` receives
-host-translated paths. The alignment loop takes no paths *today*, which is exactly how
-this becomes a latent bug the day someone adds a snapshot-on-align argument.
-**Do this instead:** live in the stock family (`stock-dispatch.ts`'s
-`withDerivedTool(...)`), or ride `vice_run_until`'s existing dispatch. Never a new
-proxy-local family (`stock-dispatch.test.ts:1510`).
+### Pattern 3: Runtime evidence as a third independent classifier, following the codebase's own established reconciliation shape
 
-### Anti-Pattern 2: Running the JVM inline in the broker process
+**What:** `classFromRuntime()` alongside the existing `classFromBytes()`/`classFromStore()` (`anno-coverage.ts` ~1681/~1692), never collapsed into either.
+**When:** Any time a new, independently-sourced classification needs to be compared against — never merged with — an existing one.
+**Trade-offs:** More query surface, but preserves the disagreement signal the seed calls "the highest-value output of the whole design" — collapsing it into the block table (rejected explicitly in the seed) would destroy exactly that.
 
-**What people do:** `await spawn(...)` the analyser from a control handler.
-**Why it's wrong:** two independent failures. `broker-kill.mts:367-374` turns any
-unhandled throw into kill-and-exit for the **entire VICE pool** — a Ghidra bug becomes a
-lost capture in flight. And the single-threaded loop stalls acquires, the warm floor and
-monitor claims for the run's whole multi-minute duration.
-**Do this instead:** a child process, async spawn, its failure a response frame.
+### Pattern 4: Parser boundary is pure-text-in, typed-out, with the same fixture-provenance discipline as the binary side
 
-### Anti-Pattern 3: Letting the export ride the socket
+**What:** `text-parse-*.ts` modules with zero socket/timing knowledge; fixtures pinned with the same five `REQUIRED_PROVENANCE_KEYS` `binmon-fixtures.ts` already uses.
+**When:** Any text-format output from an external tool that this project must parse and trust.
+**Trade-offs:** Requires live-capturing real fixtures before writing parsers (cannot invent plausible-looking VICE output and call it a fixture — `binmon-fixtures.ts`'s own `synthetic` flag exists precisely to prevent that failure mode).
 
-**What people do:** return `program.json` inline as newline-JSON.
-**Why it's wrong:** `MAX_LINE_BYTES = 65536` (`broker-control.mts:242`) and overflow
-`destroy()`s the socket at `:376` **with no error frame** — client-side it is
-indistinguishable from a connection drop, i.e. from a wedge. This fails in production on
-the first real image, not in testing on the fixture.
-**Do this instead:** write host-side, return a path, translate through
-`containerpath.ts:151`.
+### Pattern 5: Host binaries via typed, per-capability `host_tool` ids — never a generic passthrough
 
-### Anti-Pattern 4: Writing the structural export against `DataTypeManager`
+**What:** `c1541.chain`, `petcat.decode`, `cartconv.identify` as new `HostToolId` members, each with its own typed arg allowlist, mirroring `acme.build`/`ghidra.analyze`/`dxa.disassemble`.
+**When:** Any new host-side, stateless binary this project needs to reach from a container-side skill script.
+**Trade-offs:** Seven synchronized edits per tool (by design — `host-tool.mts`'s own header states this is intentional, catching a skipped edit via a two-directions test census) versus a generic run-arbitrary-command op, which the seed explicitly calls a remote-execution seam and rejects.
 
-**What people do:** the obvious Ghidra-scripting route.
-**Why it's wrong:** measured on the pivot fixture, `getAllComposites()` and
-`getDefinedData()` return essentially nothing on 6502. `DecompInterface` yields the index
-bound, the split-pointer `CONCAT11` idiom and the record stride directly. Recorded as "the
-single most expensive mistake available in this design."
-**Do this instead:** `DecompInterface`, with a committed control asserting the
-`DataTypeManager` route returns essentially nothing, so the mistake cannot be re-made
-silently.
+## Data Flow
 
-### Anti-Pattern 5: Asserting the volatile carve is present
+### New flow: dual-channel capture into the runtime-evidence layer (post-probe, assuming GO or DEGRADE)
 
-**What people do:** a test that checks `setVolatile(true)` was called.
-**Why it's wrong:** the failure is silent — Ghidra deletes hardware writes as dead stores
-with no warning. Measured on `bank.a`: three of four `$01` writes and a `$d020` write
-eliminated under defaults. An assertion that the fix is present proves nothing about
-whether it is *measuring* the deletion.
-**Do this instead:** a control that removes the flag and observes the writes
-*disappearing* — red without the fix, green with it. Set it via `mem.getBlock(addr)` +
-`setVolatile(true)` on the **existing** block; creating a conflicting block throws
-`MemoryConflictException` and drops the whole run back to non-volatile.
+```
+skill/orchestrator triggers a capture run
+  -> text-connect.ts claims + dials text channel (behind monitor-lock.ts)
+  -> text-protocol.ts sends `memmapshow` / `prof flat N` / `chis N` / `bt`
+  -> raw text response
+  -> text-parse-*.ts (pure) -> typed rows
+  -> anno_* ingest verb (anno-tools.ts) -> anno-store.ts INSERT OR IGNORE
+       into anno_runtime_observation, keyed by (run_id, address, bank)
+  -> anno_* report verb -> anno-runtime-evidence.ts joins against
+       anno_range / block-class.ts-derived classes -> agree/disagree/silent
+```
 
-### Anti-Pattern 6: Trusting a green `analyzeHeadless` exit code
+### New flow: host binary invocation
 
-**What people do:** check `exitCode === 0`.
-**Why it's wrong:** it exits 0 even when a post-script throws. Recorded in Phase 23's
-`instrument-provenance.txt` alongside two siblings: it **refuses** a project directory
-containing a dot-prefixed path element (so `.planning/...` as a project path fails), and
-on the `.prg` route the classification line count is the **block total**, not the image
-size.
-**Do this instead:** grep the run log for `ERROR REPORT SCRIPT ERROR`, container-side, in
-the importer.
+```
+skill script (container) -> host-tool-client.ts (new, container-side,
+   mirrors vice-broker-client.ts's short-lived open/send/close convention)
+  -> broker-control.mts's `host_tool` op (already exists, six tools registered)
+  -> host-tool.mts's runHostTool() -> async spawn of c1541/petcat/cartconv
+       (host-side, per-invocation child process, never the broker's own process)
+  -> result digest back over the same socket (or, for bulk output, a
+       host-side file path translated through containerpath.ts)
+```
 
----
+## Anti-Patterns (specific to this integration)
 
-## Internal Boundaries — summary of what is NEW vs MODIFIED
+### Routing the text channel through `vice-sync.ts`
 
-| Boundary | New | Modified |
-|----------|-----|----------|
-| Frame-exact stop | `stock-frame-stop.ts` (or ~40 lines inside `stock-run-until.ts`) | `stock-dispatch.ts` (arg schema only, if riding `vice_run_until`); `tools-manifest.stock.json` only if a new tool name is chosen |
-| Snapshot 64K extraction | a `.vsf` module-walking slicer (pure, container-side, no emulator) | `c64-ram-capture/SKILL.md` |
-| Host-tool executor | `host-tool-exec.mts` + `resources/host-tool-exec.mjs`; `host-tool-client.ts`; typed allowlist; skill-side token discovery | `broker-control.mts` (union + top-of-`handleLine` routing + a callback-free deps object); `build.ts:42-50`; `package.json` `files[]`; `acme.mjs`; `packer-finding.mjs` |
-| dxa | `vendor/dxa/` at a pinned version; a listing parser that refuses by name; `THIRD-PARTY-NOTICES.md` GPLv2+ entry | `ci.yml` (build step) |
-| Ghidra | pre-script + post-script `.java` under `resources/` (auto-deployed by walk); `.slaspec` extension; a container-side runner | `ci.yml`; `capability-registry.ts` warp text + regenerated `docs/tool-support.md:54` |
-| Fact landing | an importer module + 1–3 new `ANNO_TOOL_DEFINITIONS` entries | nothing structural — the loop at `vice-proxy.ts:3388` already covers it, and the tool count is unpinned |
-| Automatic annotation join | a join module (the pivot's `autoannotate2.mjs` / `vicderive.mjs` are the prototypes) | `memmap.json` becomes a pipeline data source rather than a skill input |
+**What people might do:** Import `vice-sync.ts`'s helpers for the text channel because the invariant names match.
+**Why it's wrong:** `vice-sync.ts` calls the fork's HTTP `call()` directly; it has no route to the stock binary-monitor socket, let alone the text one. It would either silently target the wrong backend or fail to compile against a stock-only connection.
+**Do this instead:** Build the new `monitor-lock.ts` seam per the probe's verdict; treat `vice-sync.ts`'s two invariants as the *specification* to satisfy, not code to call.
+
+### A second `node:net`/text-wire consumer
+
+**What people might do:** Let `text-dispatch.ts`'s handler modules touch the raw socket directly, "just for this one command," bypassing `text-protocol.ts`.
+**Why it's wrong:** Exactly the bug class this codebase's own header comments document repeatedly (`mcpHost()`'s three inlined copies, `shipped-modules.ts`'s four hand copies) — a second place that frames text-monitor bytes will drift from the first the moment a VICE version changes the prompt format.
+**Do this instead:** Every text command goes through `text-protocol.ts`; handler modules only ever call its typed send/receive functions.
+
+### Promoting a runtime observation into the block table
+
+**What people might do:** Once an address is observed executing enough times, write it into `anno_range` as `data_type: code` directly, "since we're confident now."
+**Why it's wrong:** Explicitly rejected in the seed on the record — it collapses two independently-sourced classifiers into one, destroys the disagreement signal (the design's stated highest-value output), and an over-confident wrong promotion is unrecoverable (the store has no per-cell provenance to unwind it from).
+**Do this instead:** The report query surfaces disagreement; a human or a later, explicitly-designed promotion rule (not this milestone's job) decides whether and how to act on it.
+
+### A generic `host_tool.run` passthrough for c1541/petcat/cartconv
+
+**What people might do:** Add one `disk.run` op that accepts a subcommand string and forwards it, to avoid three separate typed ids.
+**Why it's wrong:** The seed calls this out by name as a remote-execution seam; `host-tool.mts`'s existing six tools all use per-capability typed ids with a fixed, server-constructed argv — this project already has the discipline (`DENY_LIST` in `vice.ts`, the power-cycle resource denials) and the same rule applies here.
+**Do this instead:** One `HostToolId` per capability, each with its own typed arg allowlist, per Pattern 5 above.
+
+## Integration Points
+
+### Internal Boundaries
+
+| Boundary | Communication | Notes |
+|---|---|---|
+| `text-dispatch.ts` ↔ `monitor-lock.ts` | direct function call, in-process (or broker RPC if DEGRADE/NO-GO) | Every halting command from either channel must pass through this seam; no direct socket access from dispatch modules. |
+| `text-connect.ts` ↔ broker control plane | JSON-line TCP, extends `monitor_claim`/`monitor_release` | Needs `remoteMonitorPort` added to the acquire/status response shape first — confirmed absent today. |
+| `text-parse-*.ts` ↔ `text-protocol.ts` | pure function call on a string | Parsers never see the socket; protocol module never interprets parsed structure. |
+| `anno-runtime-evidence.ts` ↔ `anno-store.ts` | SQL through the one open handle, same as every other `anno-*` derivation module | New table, same file, no second `node:sqlite` consumer. |
+| `anno-runtime-evidence.ts` ↔ `anno-coverage.ts` / `block-class.ts` | reads `classFromBytes()`/`classFromStore()`-shaped outputs | Read-only; the runtime module never mutates coverage state. |
+| `host-tool-client.ts` (new, container-side) ↔ `broker-control.mts`'s `host_tool` op | short-lived open/send/close TCP, same socket as VICE control ops, namespaced by tool id | Mirrors `vice-broker-client.ts`'s existing lease-connection idiom, but explicitly stateless (no lease held between calls). |
+| `host-tool.mts` ↔ `hostpath.ts`/`containerpath.ts` | path arguments in, produced paths out | Every `c1541`/`petcat`/`cartconv` path argument must resolve through the same `resolveWorkspacePath()` discipline `acme.build`/`ghidra.analyze` already use — no new path-translation site. |
+
+## Build Order
+
+Respecting dependencies, probe first:
+
+1. **Probe gate (dual-channel coexistence).** No new production module required — a throwaway harness in the spirit of `probe-binmon.mjs`/the original text-monitor probe, run against genuine stock 3.9 with both channels live. **Blocking**: nothing in steps 3, 5, or 6 below should be designed, let alone built, before this returns GO/DEGRADE/NO-GO, because each answer implies a different shape for `monitor-lock.ts` and for the `monitor_claim` extension.
+2. **Host-tool executor extension (c1541/petcat/cartconv).** Fully independent of the text channel (explicitly stated in the seed: "Independent of the text-monitor work"). Can proceed in parallel with step 1 — zero shared files, zero shared risk.
+3. **Text protocol + connect + the chosen lock shape.** Depends on step 1's verdict. Also needs the `remoteMonitorPort`-surfacing fix to `HeldLease`/broker responses (small, mechanical, do it as part of this step).
+4. **Parser modules + fixtures.** Can start as soon as step 1's probe harness produces raw captured text (reuse the probe's own output as the first fixture batch) — does not need step 3's client to be finished, only needs sample text, which the probe already generates. Runs in parallel with step 3.
+5. **Text dispatch (tool surface over the parsed data).** Depends on steps 3 and 4 both landing (needs a working client to call, and parsers to shape the response).
+6. **Runtime-evidence schema + `anno-runtime-evidence.ts` + new `anno_*` verbs.** The schema and join-query logic are pure/`anno-store.ts`-local and can be built and unit-tested against synthetic parsed rows in parallel with steps 3–5, gated only on the parser output shape being settled (an interface contract, not a build dependency). Wiring the live ingest path (capture → parse → store) depends on step 5.
+7. **`PROOF-01`'s independent external check.** Last — consumes the finished, live runtime-evidence layer against `danish.d64`, so it cannot start until steps 1–6 are proven working end to end.
+
+## Sources
+
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/vice-sync.ts` (imports, invariants, `call()` from `vice.ts`)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/stock-connect.ts`, `stock-protocol.ts` (binary-monitor client pattern to mirror)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/broker-state.mts` (`InstanceRecord.monitorClient`, `.remoteMonitorPort`)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/broker-launch.mts` (`buildViceArgs()`'s `-remotemonitor` append)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/broker-control.mts`, `vice-broker-client.ts` (`monitor_claim`/`monitor_release`, `HeldLease`, `host_tool` op)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/anno-store.ts` (`DDL`, schema conventions)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/anno-coverage.ts` (`classFromBytes()`, `classFromStore()`, `DerivedClass`)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/block-class.ts` (three-valued `BlockClass`, header rationale)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/host-tool.mts` (`HostToolId`, the seven synchronized edit sites)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/capture-predicate.ts` (`argvDigest()`, run-identity precedent)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/binmon-fixtures.ts` (`REQUIRED_PROVENANCE_KEYS` fixture pattern)
+- `/home/henrik/dev/henrik/git/c64-re-tools/src/skills/c64-ram-capture/scripts/d64-parse.mjs` (existing pure-JS `.d64` parser, kept additive)
+- `/home/henrik/dev/henrik/git/c64-re-tools/.planning/notes/text-monitor-channel-live-probe.md`, `.planning/seeds/runtime-evidence-layer.md`, `.planning/seeds/host-tool-executor.md` (design constraints and live-probe findings)
+- `/home/henrik/dev/henrik/git/c64-re-tools/.planning/codebase/ARCHITECTURE.md`, `.planning/PROJECT.md` (standing architectural rules and milestone history)
 
 ---
-
-## Citation Ledger
-
-Every `file:line` in this document was read at HEAD `36f8c7c`. Paths are relative to
-`src/mcp/vice/` unless prefixed.
-
-| Claim | Citation | Verified |
-|-------|----------|----------|
-| `rewriteArguments()` inside `forwardToVice()`, before `call()` | `vice-proxy.ts:3050` / `:2985` | ✅ matches CLAUDE.md |
-| Second `rewriteArguments()` site in `gatherWedgeEvidence()` | `vice-proxy.ts:1529` / `:1505` | ✅ matches CLAUDE.md |
-| `anno_*` registered via `buildViceTool()` | `vice-proxy.ts:3388` | ✅ |
-| `buildViceTool` definition | `vice-proxy.ts:3250` | ✅ |
-| `vice.ts` transport seam / deny-list | `vice.ts:697` / `:201` | ✅ |
-| `buildViceArgs()` / `VICE_ARGS` short-circuit / stock argv | `broker-launch.mts:153` / `:163` / `:202` / `:213` | ✅ |
-| Warm floor default / `maintainWarmFloor()` / `inFlight` | `broker-launch.mts:850` / `:953` / `:78`, `:373-378`, `:452-457` | ✅ |
-| Acquire frame — **two** sites, not one | `vice-broker-client.ts:372` **and `:867`** | ✅ (the todo names only `:372`) |
-| `selectWarmInstance()` / `handleRelease()` / backend param | `vice-broker.mts:473` / `:929` / `:404` | ✅ |
-| `remoteMonitorPort` additive-optional precedent | `broker-state.mts:117-141` | ✅ |
-| 64 KiB cap + silent destroy | `broker-control.mts:242` / `:376` | ✅ |
-| `ControlRequestKind` 7-member union | `broker-control.mts:30` | ✅ |
-| Seven VICE callbacks in deps | `broker-control.mts:145-180` | ✅ |
-| Token gate before any state read | `broker-control.mts:267`, `:528` | ✅ |
-| Connection close IS the release | `broker-control.mts:388-397` | ✅ |
-| `unknown op` → `bad_request` | `broker-control.mts:655` | ✅ |
-| `verifiedKill()` / kill-and-exit handlers | `broker-kill.mts:126` / `:367-374` | ✅ |
-| `broker.json` arbiter | `vice-broker.mts:239`, `:965` | ✅ |
-| `vice-sync.ts` invariants block | `vice-sync.ts:28-32` | ✅ |
-| `waitCheckpointHit` / `runToCheckpoint` / `readCheckpoint` | `vice-sync.ts:227` / `:262` / `:197` | ✅ |
-| Five `todo` entries, no stub | `vice-sync.test.ts:107-143` | ✅ |
-| `vice-sync.ts` has no importer in the shipped tree | `grep -rn 'from "./vice-sync' *.ts *.mts` → only `vice-sync.test.ts:22` | ✅ |
-| `stock-run-until.ts` event-driven, one resume | `:6`, `:26-27`, `:113`, `:145` | ✅ |
-| Cycle baseline / video standard / frame arithmetic | `stock-timing.ts:274` / `:147` / `:70-73` / `:200` | ✅ |
-| `ADVANCE_INSTRUCTIONS` encode + handler | `stock-protocol.ts:751`; `stock-execution.ts:257` | ✅ |
-| `openStore()` confinement-by-default | `anno-store.ts:432-450` | ✅ |
-| `node:sqlite` named by exactly one shipped module | `anno-seam.test.ts:28`, `:33-46` | ✅ |
-| Confinement escape reproduced via symlink | `anno-confinement.test.ts:5-13` | ✅ |
-| `ANNO_TOOL_DEFINITIONS.length` unpinned (`> 0`) | `anno-tools.test.ts:208`; `anno-derivation.test.ts:477` | ✅ (actual length 19) |
-| Stock tool count pinned three ways | `stock-dispatch.test.ts:1167`, `:1173-1174` | ✅ |
-| Fork surface pinned at 62 | `fork-manifest-surface.test.ts:58-65` | ✅ |
-| `BACKEND_SEAM_BYPASS_KEYS`, order-sensitive, 2 entries | `stock-dispatch.test.ts:1508-1510` | ✅ |
-| `proxyToolRegistrations()` regex-scans `tools[...] =` lines | `stock-dispatch.test.ts:1486-1493` | ✅ |
-| 5-member host-path consumer set | `hostpath-consumers.test.ts:144`; header `:15-24` | ✅ |
-| `HOST_BOUND_ARTIFACTS` exact-set assertion | `build.ts:42-50`, `:101-102` | ✅ |
-| `resources-sync` scoped to `.mjs` only | `resources-sync.test.ts:34`, `:25-33` | ✅ |
-| `install-resources.ts` deploys by recursive walk | `install-resources.ts:87-114` | ✅ |
-| `EXPECTED_TRACKED_SHELL_SCRIPTS`, 5 entries, repo-wide | `host-scripts.test.ts:202-220` | ✅ |
-| `EXPECTED_EMULATOR_SPAWN_SITES` = 1, matches `binPath` | `spawn-seam.test.ts:263`, `:179`, `:191`, `:293-295` | ✅ |
-| `MANUAL_ONLY_TESTS` = nine files | `test-gate.test.ts:16` | ✅ |
-| Whole-argv `deepEqual` × 3; ordering tests survive additions | `broker-launch.test.ts:1761`, `:1773-1776`, `:1787-1797`, `:1799`, `:1806` | ✅ |
-| Deferred ledger fails both directions | `docs-deferred-ledger.test.ts:101`, `:116` | ✅ |
-| `shippedTsModules()` from `files[]`, throws on missing | `shipped-modules.ts:151-162` | ✅ |
-| Tarball leak checks | `scripts/check-npm-packages.mjs:92-105` | ✅ |
-| Test-only host oracle absent from `files[]` (the pattern) | `acme-verify.test.ts:1649-1655` | ✅ |
-| `VICE_REQUIRE_ACME=1` hard-fail in CI (the pattern) | `.github/workflows/ci.yml:167`; `acme-gate.test.ts:146` | ✅ |
-| Refuted warp claim, and its generated copy | `capability-registry.ts:280-286`; `docs/tool-support.md:54` | ✅ |
-| Ghidra export written as a file, read by Node | `.planning/notes/dxa-ghidra-pivot-evidence/ExportAnalysis.java:13`; `autoannotate2.mjs:1-3`, `:21` | ✅ |
-| Ghidra alone: 0 functions, 0 code bytes | `.planning/notes/dxa-ghidra-pivot.md` measurement table | ✅ |
-| Narrowest-range / in-image-skip / bank-first rules | `.planning/notes/auto-annotation-from-ghidra-xrefs.md` | ✅ |
-
-**Unverified this session (declared, not asserted):** VICE's event-record flag names and
-their interaction with `-binarymonitor`; the actual cost of installing Ghidra + a JVM in
-GitHub Actions; whether stock's synchronous checkpoint is in fact frame-reproducible
-(finding 4 — this is P-A's first task, not a claim). Nothing in the build order depends on
-resolving these before P-A's measurement.
-
----
-*Architecture research for: frame-exact capture + dxa/Ghidra pipeline integration into c64-re-tools*
-*Researched: 2026-09-02 · tree state HEAD `36f8c7c`*
+*Architecture research for: c64-re-tools v0.9.0 (text channel + runtime evidence layer)*
+*Researched: 2026-09-06*
