@@ -217,18 +217,17 @@ test("compareByteDerivedRecovery() never reads the filesystem and never starts a
   const sourceBytes = readFileSync(MODULE_PATH);
   const source = sourceBytes.toString("utf8");
 
-  const bannedImportPatterns = [
-    /from\s+["']node:child_process["']/,
-    /require\(\s*["']child_process["']\s*\)/,
-    /from\s+["']node:fs["']/,
-    /from\s+["']node:fs\/promises["']/,
-    /require\(\s*["']fs["']\s*\)/,
-  ];
-  for (const pattern of bannedImportPatterns) {
-    assert.doesNotMatch(
-      source,
-      pattern,
-      `dxa-proof01-compare.ts must never import a filesystem or child-process module (matched: ${pattern})`,
+  // Substring/bare-name checks, not regex-shaped import patterns -- mirrors
+  // dxa-listing.test.ts's own (broader, simpler) guard. A regex tied to a
+  // specific import/require shape misses bare specifiers (`from "fs"`,
+  // no `node:` prefix), `require("node:fs")`, and any dynamic `import(...)`
+  // form; a plain substring check catches all of those uniformly.
+  const bannedSubstrings = ["child_process", "node:fs", '"fs"', "'fs'"];
+  for (const banned of bannedSubstrings) {
+    assert.equal(
+      source.includes(banned),
+      false,
+      `dxa-proof01-compare.ts must never reference ${banned} (filesystem or child-process access)`,
     );
   }
 
