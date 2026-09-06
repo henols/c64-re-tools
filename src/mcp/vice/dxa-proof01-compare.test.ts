@@ -236,7 +236,18 @@ test("compareByteDerivedRecovery() never reads the filesystem and never starts a
   // specific import/require shape misses bare specifiers (`from "fs"`,
   // no `node:` prefix), `require("node:fs")`, and any dynamic `import(...)`
   // form; a plain substring check catches all of those uniformly.
-  const bannedSubstrings = ["child_process", "node:fs", '"fs"', "'fs'"];
+  //
+  // The two fs entries are an OPENING QUOTE immediately followed by `fs`
+  // (`"fs` / `'fs`), not a closed `"fs"` / `'fs'` pair -- a closed-pair
+  // match only catches the bare module specifier exactly equal to "fs" and
+  // misses every subpath variant (`"fs/promises"`, `'fs/promises'`). Since
+  // every real fs specifier -- bare or subpath -- opens with `"fs` or `'fs`
+  // right after the quote, the open-quote form catches both `"fs"` and
+  // `"fs/promises"` (and their single-quoted twins) with one entry each,
+  // in static, `require`, and dynamic-`import` shapes alike. `node:fs`
+  // covers the `node:`-prefixed forms of both `fs` and `fs/promises` the
+  // same way, since it is a substring of both.
+  const bannedSubstrings = ["child_process", "node:fs", '"fs', "'fs"];
   for (const banned of bannedSubstrings) {
     assert.equal(
       source.includes(banned),
