@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 39
 current_phase_name: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 39-03-PLAN.md
-last_updated: "2026-09-07T21:06:47.939Z"
+stopped_at: Completed 39-04-PLAN.md
+last_updated: "2026-09-07T21:50:14.729Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 39 execution started
-state_head: 1ddd4a5a6db0ee48a09666f70612f42ef15a26b0
+state_head: c9bb7a2f98ae72a8a8422331354fadb9f6b28ecd
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -214,7 +214,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 39 (The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-09-07 — Phase 39 execution started
 
@@ -458,6 +458,7 @@ verdict nor the channel and can run beside Phase 39 from day one.
 | Phase 39 P01 | 25min | 2 tasks | 5 files |
 | Phase 39 P02 | 25min | 2 tasks | 5 files |
 | Phase 39 P03 | ~45min | 2 tasks | 5 files |
+| Phase 39 P04 | 55min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1014,6 +1015,8 @@ Recent decisions affecting current work:
 - [Phase 39]: Phase 39-02: Scoped all three affected CLAUDE.md constraints with a "binary monitor only" clause rather than deleting or weakening any of them, since each is literally true of the binary monitor.
 - [Phase 39]: Phase 39-02: Left the sibling warp/headless todo (2026-08-26-run-vice-headless...) untouched after re-checking it -- already resolved by Phase 33 independently, nothing to act on.
 - [Phase 39]: IDLE_COEXIST: clean, measured live -- sole no-go trigger is now a written fact, not an assumption — Both channels driven from one directly-spawned genuine stock x64sc process; all six ROM-window reads sha256-identical, zero desync/duplicate/unsolicited-frame counters moved
+- [Phase 39]: FOREIGN_HALT_VISIBILITY: visible -- an unsolicited STOPPED frame is observed on the binary channel whenever the text channel holds a foreign halt, paired every time with a previously unrecorded unsolicited REGISTER_INFO frame (39-04). — Measured live against genuine stock VICE 3.9 with the broker stopped, three control brackets (60/s) vs three measured brackets (0-1).
+- [Phase 39]: CROSS_CHANNEL_RESUME: clean -- a halt taken on either channel can be read and released from the other, in both directions, confirmed twice each by an independent liveness signal (39-04). — All four repetitions (two directions x two reps) clean against one live stock VICE 3.9 instance with the broker stopped.
 
 ### Pending Todos
 
@@ -1982,8 +1985,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-07T21:06:47.875Z
-Stopped at: Completed 39-03-PLAN.md
+Last session: 2026-09-07T21:50:14.659Z
+Stopped at: Completed 39-04-PLAN.md
 Resume file: None
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
