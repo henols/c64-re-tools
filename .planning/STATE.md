@@ -1005,7 +1005,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-9 pending (9 files in `.planning/todos/pending/` + 0 UAT-gap rows = 9) — see
+10 pending (10 files in `.planning/todos/pending/` + 0 UAT-gap rows = 10) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -1656,6 +1656,7 @@ regression and not this inheritance.
 | host-tool | 2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes | minor | Pending |
 | paths | 2026-09-07-consolidate-all-tool-written-files-under-c64-re-tools | minor | Pending |
 | testing | 2026-09-07-move-all-tests-into-a-separate-test-folder | minor | Pending |
+| broker | 2026-09-07-remove-pre-warm-launch-vice-on-first-request | minor | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
