@@ -868,7 +868,7 @@ exists when this phase closes.
   4. **The verdict names one of three serialization shapes, and the phase states what each implies for Phase 41** — `go` → an in-process async mutex, both channels connected for the session's lifetime, the `channel` discriminator kept for bookkeeping only; `degrade` → a broker-level cross-channel halt-authority lease, moving correctness from one process's in-memory mutex to the broker, at the cost of a round trip per halting call; `no-go` → a connect-gate in which opening one channel requires releasing the other's claim, the two time-sharing and never coexisting live. A `no-go` does **not** kill the runtime-evidence layer; it makes that layer's capture step scheduled rather than concurrent, and Phase 43 is written to survive it.
   5. **The probe's raw captured text survives the phase as the first fixture batch, with provenance, from both binaries on this host.** Every capture carries the same five keys the binary-monitor fixtures already require (`capturedFrom`, `viceVersion`, `capturedAt`, `command`, `synthetic`), with `synthetic: false` and `capturedFrom` naming the resolved binary path and its stock/fork kind. Captured from stock 3.9 **and** fork 3.10, so Phase 42 inherits two-binary provenance instead of re-running the capture — the loader refusing a sidecar that is missing a key is what makes this checkable rather than claimed.
 
-**Plans**: 7/8 plans executed
+**Plans**: 8 plans (8/8 executed)
 
 Plans:
 **Wave 1**
@@ -898,7 +898,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 39-08-PLAN.md — Derive and record the verdict from the seven transcribed values, and bind it to Phases 41-44
+- [x] 39-08-PLAN.md — Derive and record the verdict from the seven transcribed values, and bind it to Phases 41-44 — **verdict: `go`, rule `R15`** (`docs/phase39-dual-channel-coexistence-gate-findings.md`)
 
 **Cross-cutting constraints:**
 
@@ -907,6 +907,7 @@ Plans:
 Notes:
 
 - **This is the fourth time this project makes an assumption probe a phase rather than a criterion, and the first three all fired.** Phase 9's `R4` returned `degrade` and the milestone shipped smaller and correct. Phase 23's `R1` returned **`no-go`** and five of its eleven plans were deliberately never dispatched. Phase 33's `R6` returned `degrade` with `could-not-run` structurally unemittable and the one available override explicitly declined. The precedent is not decorative: gates here fire, and are obeyed.
+- **`CHAN-01` fired: `go`, rule `R15` — the first `go` any of this project's four go/degrade/no-go gates has returned.** All seven transcribed values sat at their best domain member (`IDLE_COEXIST: clean`, `FOREIGN_HALT_VISIBILITY: visible`, `CONCURRENT_INFLIGHT: clean`, `CROSS_CHANNEL_RESUME: clean`, `DISCONNECT_RECOVERY: recovers`, `HITCOUNT_INVARIANT_HOLDS: holds`, at any value of `TEXT_SINGLE_CLIENT: single`), so `R1`..`R14` were each evaluated and none matched; `R15`, the exhaustive default, fired. Neither pre-mapped narrowing (`R11`/`D-10`, `R13`/`D-11`) triggered — checked directly against the transcribed values, independent of which rule fired. Full derivation, all seven citations, the re-verified ordering proof and the re-run totality walk are in `docs/phase39-dual-channel-coexistence-gate-findings.md` (frontmatter `verdict`/`verdict_rule_applied`) — read there, not restated here. Both blocking UNVERIFIED items are settled: interleaved halt/resume (`HITCOUNT_INVARIANT_HOLDS: holds`) and the text-monitor single-client limit (`TEXT_SINGLE_CLIENT: single`). `CHAN-02`'s port-surfacing gap and `CHAN-03`'s reliable framing remain **open and unaddressed by this phase** — this phase routed around the first by spawning directly and shipped a deliberately crude throwaway text client for the second.
 - **What is already MEASURED, so the probe does not re-derive it.** Bind-time coexistence of the two channels is confirmed on both builds on this host. The `(C:$xxxx) ` prompt is a dependable terminator on both. And the text monitor **halts the machine on command** exactly as the binary one does — the stopwatch counter advanced only across an `x`. That last fact is why this is a gate at all: the text channel is a second halting channel needing the same discipline, not a free non-pausing side-channel.
 - **The abrupt-disconnect experiment may itself discover required mechanism.** Today's binary-side rule is "connection close IS the release" (`broker-control.mts` ~388-397), and the text channel has no analogue. If the measurement shows a killed text client leaves the machine permanently halted and indistinguishable from a genuine wedge, the mechanism that fixes it becomes named Phase 41 scope in the verdict — discovered here, not at Phase 41's gate.
 - **Do not build `monitor-lock.ts` in this phase, in any shape.** The mutex, the broker lease and the connect-gate are three structurally different things and picking the wrong one wastes a phase. The verdict is the deliverable.
@@ -946,7 +947,7 @@ timeout; every halt-taking operation on **either** channel passes through one
 serialization authority **whose shape Phase 39's verdict selected**; and an
 emulator that is merely contended between the two channels is reported as
 contended rather than diagnosed as wedged and destroyed.
-**Depends on**: Phase 39 (its verdict selects which of three structurally different serialization modules is built here — nothing in this phase is designed as though the answer is already known)
+**Depends on**: Phase 39's recorded verdict — `go`, rule `R15` (`docs/phase39-dual-channel-coexistence-gate-findings.md`) — which selects which of three structurally different serialization modules is built here; nothing in this phase is designed as though the answer is already known
 **Requirements**: CHAN-02, CHAN-03, CHAN-04, CHAN-05
 **Success Criteria** (what must be TRUE):
 
@@ -960,6 +961,9 @@ contended rather than diagnosed as wedged and destroyed.
 
 Notes:
 
+- **`CHAN-01` selected `go` (rule `R15`, `docs/phase39-dual-channel-coexistence-gate-findings.md`): build an in-process async mutex.** Both channels stay connected for the session's lifetime; `broker-state.mts:129-137`'s already-anticipated `channel: "binary" | "text"` discriminator is kept purely for bookkeeping, never for enforcement. This is the cheapest of the three shapes named in the Goal above — no broker round trip per halting call (the `degrade` cost) and no connect/release choreography (the `no-go` cost). `R15` carries **no narrowing** — it is the gate's exhaustive default with no antecedent — and neither pre-mapped narrowing (`R11`/`D-10`, `R13`/`D-11`) triggered either, checked directly against the transcribed values. So this phase's scope is **not** narrowed by `CHAN-01`: build the plain in-process mutex as originally scoped, with no additional required mechanism from the gate.
+- **`CHAN-02`'s port-surfacing gap and `CHAN-03`'s reliable framing remain open, unaddressed by Phase 39.** Phase 39 routed around the first by spawning `x64sc` directly rather than through the broker, and shipped a deliberately crude, throwaway text-monitor client for the second (`evidence/textmon-probe-client.mjs`, does not survive the phase). Both are this phase's own work, not settled facts to inherit.
+- **Three previously-unmeasured facts from Phase 39 bear directly on this phase's serialization/framing design**, per `docs/phase39-dual-channel-coexistence-gate-findings.md` § *Recorded facts that gate nothing*: (1) stock `x64sc` launched with `-console` plus either monitor flag starts CPU-HALTED until an explicit `EXIT` resume — launch sequencing must not assume the machine is already running; (2) **any** binary-channel command re-halts a running CPU, not only `EXIT` — a liveness check must be passive (poll on `hit_count`), never an explicit running-state poll, which would measure its own side effect; (3) a binary-owned checkpoint hit pushes an unsolicited breakpoint-notification banner to the TEXT console with no command from the text client at all — `CHAN-03`'s framing must drain this passively-arriving banner before treating the next prompt as a genuine reply.
 - **Two new sibling files, mirroring the binary client's split, never merging into it.** `text-protocol.ts` owns the text wire's bytes; `text-connect.ts` claims the channel, reads the port off the lease and hands back a connected client — structurally the same shape as `stock-protocol.ts` + `stock-connect.ts`. Extending `stock-protocol.ts` to also speak text would put two unrelated wire formats behind one seam.
 - **`monitor_claim` today has no channel axis.** `InstanceRecord.monitorClient` is one field scoped to the binary socket, and `broker-state.mts:129-137` already anticipates a `channel: "binary" | "text"` discriminator. Under `go` that discriminator is bookkeeping; under `degrade` it becomes enforcement; under `no-go` it becomes mutual exclusion. Same field, three different meanings — which is exactly why Phase 39 comes first.
 - **A new module family is outside the existing consumer floor.** `hostpath-consumers.test.ts`'s floor is pinned over the `anno-*` prefix as a literal, deliberately never derived from disk, so a `text-*` family is invisible to it. `text-connect.ts` resolves a network **hostname** (the same way `vice.ts`'s `mcpHost()` does) and not a filesystem path, so the preferred outcome is **not to become a host-path consumer at all**; if any module here does, add a second floor for the new prefix with a real unclassified module on disk as a positive control **observed red**, per the standing constraint.
@@ -973,7 +977,7 @@ one owning module each — with `memmapshow`'s **execute bit preserved as its ow
 bit** for RAM and ROM alike, so a code-versus-data answer derived from real
 execution exists as data rather than as text — and an unrecognised value fails
 loudly instead of being absorbed into a plausible-looking wrong answer.
-**Depends on**: Phase 39 for `PARSE-01..03` (its probe's raw captured text, taken from both binaries on this host, is the first fixture batch); Phase 41 for `PARSE-04` (a live per-command capability probe needs a dialable channel). `PARSE-01..03` can therefore run concurrently with Phase 41 — the parsers are pure functions that never see a socket
+**Depends on**: Phase 39 for `PARSE-01..03` — both its recorded verdict (`go`, rule `R15`, `docs/phase39-dual-channel-coexistence-gate-findings.md`) and its probe's raw captured text, taken from both binaries on this host, which is the first fixture batch; Phase 41 for `PARSE-04` (a live per-command capability probe needs a dialable channel). `PARSE-01..03` can therefore run concurrently with Phase 41 — the parsers are pure functions that never see a socket
 **Requirements**: PARSE-01, PARSE-02, PARSE-03, PARSE-04
 **Success Criteria** (what must be TRUE):
 
@@ -987,6 +991,7 @@ loudly instead of being absorbed into a plausible-looking wrong answer.
 
 Notes:
 
+- **`CHAN-01`'s `go` verdict (rule `R15`, `docs/phase39-dual-channel-coexistence-gate-findings.md`) narrows nothing for this phase.** `PARSE-01..04` are pure text-parsing functions that never see a socket or the serialization authority `CHAN-01` gates, so which of the three shapes Phase 41 builds has no bearing on them — stated explicitly rather than left for a reader to infer. The fixture batch's `FIXTURE_UNSUPPORTED: none` finding is, however, directly relevant: `chis` succeeded on genuine stock 3.9 over the text channel, confirming `PARSE-02`'s `chis`-on-3.9 capability claim independently of the binary monitor's separate `CPUHISTORY_GET` `>= 3.10` floor.
 - **The parsers are the text side's answer to `stock-handler.ts`, minus all transport.** `text-protocol.ts` owns sending the command and collecting the raw response; everything downstream of "here is a string" is pure and exhaustively unit-testable. The closest existing analogue in this tree is the `disasm-*.ts` family.
 - **Fixture provenance is the existing five keys, in a new sibling loader.** `capturedFrom` (resolved binary path plus stock/fork kind), `viceVersion`, `capturedAt`, `command`, `synthetic` — with `synthetic: false` asserted for every real capture. The **pattern** transfers from `binmon-fixtures.ts`; the **code** does not, because that module is typed to binary-monitor wire frames.
 - **Re-confirm the drift citations against the raw file before quoting them in shipped documentation.** The 3.0 / 3.4 / 3.5 changelog instances above come from research that read `NEWS` and `configure.ac` via automated summarization and said so. They are strong enough to justify the defence — which is the decision they are load-bearing for — and not yet strong enough to be quoted as exact upstream wording in a user-facing document.
@@ -1000,7 +1005,7 @@ program — joined against the byte-derived block table by a query that reports
 **disagreement first** and never overwrites it — with the phase opening on a
 committed-before-measurement A/B that says whether instrumenting a run destroys
 the frame-exact reproducibility its rows are keyed on.
-**Depends on**: Phase 41 (a dialable channel, to enable instrumentation and to run the A/B) and Phase 42 (`memmapshow`'s parsed execute bit is what is ingested). Under Phase 39's `no-go` the capture step here is **scheduled rather than concurrent** — release the binary lease, claim/dial/capture/release the text lease, re-claim — which changes how capture is sequenced and not what the layer is
+**Depends on**: Phase 41 (a dialable channel, to enable instrumentation and to run the A/B) and Phase 42 (`memmapshow`'s parsed execute bit is what is ingested). **Phase 39's recorded verdict is `go` (rule `R15`, `docs/phase39-dual-channel-coexistence-gate-findings.md`), not `no-go`, so the capture step here is CONCURRENT, not scheduled** — the release-lease/claim-dial-capture-release/re-claim sequencing a `no-go` would have required does not apply. This phase is written to survive either branch, and this note records which branch it landed on rather than implying a change of plan
 **Requirements**: EVID-01, EVID-02, EVID-03, EVID-04, EVID-05, EVID-06
 **Success Criteria** (what must be TRUE):
 
@@ -1028,7 +1033,7 @@ using observed execution as the oracle — closing the reversal condition stated
 verbatim at the v0.8.0 open ("a binary-monitor-reachable execution oracle, or a
 decision to open the text channel") by the second branch, deliberately and on the
 record.
-**Depends on**: Phases 41, 42 and 43 — it consumes the finished, live layer end to end and cannot start before all three are proven working together. It also consumes v0.8.0's shipped capture route unchanged, and Phase 38's recorded figures as they stand
+**Depends on**: Phases 41, 42 and 43 — it consumes the finished, live layer end to end and cannot start before all three are proven working together. It also consumes v0.8.0's shipped capture route unchanged, and Phase 38's recorded figures as they stand. Phase 39's recorded verdict (`go`, rule `R15`, `docs/phase39-dual-channel-coexistence-gate-findings.md`) narrows nothing for this phase directly — its bearing on this phase is entirely transitive, through whatever Phases 41-43 build under it
 **Requirements**: PROOF-04
 **Success Criteria** (what must be TRUE):
 
