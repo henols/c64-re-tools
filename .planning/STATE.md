@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 39
 current_phase_name: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 39-01-PLAN.md
-last_updated: "2026-09-07T20:08:20.767Z"
+stopped_at: Completed 39-02-PLAN.md
+last_updated: "2026-09-07T20:24:42.171Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 39 execution started
-state_head: 05c2c06916b8e41669e7d6a8b8e8447b4e760f59
+state_head: fe7670fadc2f7d660a50fa6348f36ea58341f67a
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -214,7 +214,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 39 (The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-09-07 — Phase 39 execution started
 
@@ -456,6 +456,7 @@ verdict nor the channel and can run beside Phase 39 from day one.
 | Phase 38 P03 | 24min | 2 tasks | 2 files |
 | Phase 38 P04 | 34min | 2 tasks | 2 files |
 | Phase 39 P01 | 25min | 2 tasks | 5 files |
+| Phase 39 P02 | 25min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1008,6 +1009,9 @@ Recent decisions affecting current work:
 - [Phase 38]: 38-03: PROOF02_LOADER_COMPUTED_DISPATCH recorded not-exercised -- zero computed-index sites enumerated at the loader/depacker depth, not a claim about the whole release.
 - [Phase 38]: [Phase 38 P04] PROOF02_COMPUTED_DISPATCH: not-exercised (roll-up across both loader and depacked depths) -- zero computed-index sites enumerated at either depth; not a claim that no computed dispatch construct exists anywhere in the release. The reported depacked capture pair (jitter 0 both sides) was byte-identical and frame-term-exact, a stricter result than Phase 33's own reported pair, and no entry points were supplied to the flat64k-route Ghidra run since the capture was taken mid-load.
 - [Phase 39]: Task 1 resolved `proceed`: froze CHAN-01 rules R1..R15, the seven input domains, and the D-10/D-11 pre-mapped degrade narrowings exactly as drafted, no value adjusted. — Two alternatives (soften-r2, adjust) were on offer and declined; R2's residual risk is mitigated procedurally via recorded fact-lines in SCHEMA.md section 3, never as an eighth gate input.
+- [Phase 39]: Phase 39-02: Corrected 07-RESEARCH.md's Pitfall 5 to name -remotemonitor/monitor_network.c as the reachable text-monitor route, without rewriting Phase 7's decision -- only its stated reason.
+- [Phase 39]: Phase 39-02: Scoped all three affected CLAUDE.md constraints with a "binary monitor only" clause rather than deleting or weakening any of them, since each is literally true of the binary monitor.
+- [Phase 39]: Phase 39-02: Left the sibling warp/headless todo (2026-08-26-run-vice-headless...) untouched after re-checking it -- already resolved by Phase 33 independently, nothing to act on.
 
 ### Pending Todos
 
@@ -1976,8 +1980,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-07T20:08:20.680Z
-Stopped at: Completed 39-01-PLAN.md
+Last session: 2026-09-07T20:24:42.108Z
+Stopped at: Completed 39-02-PLAN.md
 Resume file: None
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
