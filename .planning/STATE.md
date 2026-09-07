@@ -202,8 +202,8 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **8 open** pending todos (it read 0 at the
-v0.4.0 close; ten were filed after it, two closed — CR-05 by Phase 34 plan 34-11, and
+The Deferred Items ledger below reads **9 open** pending todos (it read 0 at the
+v0.4.0 close; eleven were filed after it, two closed — CR-05 by Phase 34 plan 34-11, and
 the Ghidra one-command decompile-wrapper proposal by Phase 36); the
 suppressed/acknowledged rows are recorded in their own sections.
 
@@ -1005,7 +1005,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-8 pending (8 files in `.planning/todos/pending/` + 0 UAT-gap rows = 8) — see
+9 pending (9 files in `.planning/todos/pending/` + 0 UAT-gap rows = 9) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -1199,6 +1199,26 @@ dual-read, no migration shim, no opt-back-in env var. Not scoped into any
 v0.9.0 phase. This paragraph's own count line above read 8 against a 7-file
 tree before this filing (stale by one in the opposite direction from the
 usual); with this todo the tree is genuinely 8 and both figures agree again.
+
+**A second todo was filed the same day (2026-09-07)**, also via `/gsd-capture`:
+`2026-09-07-move-all-tests-into-a-separate-test-folder`. Tests in this repo are
+colocated next to the module under test — 154 of them in `src/mcp/vice/` alone,
+interleaved with roughly as many source modules, plus nine more under
+`installer/` and `src/skills/*/scripts/`. The todo captures moving them into a
+dedicated test directory. Filed rather than done inline because the move is not
+mechanical: 482 sibling-relative import lines change depth (and the project
+deliberately has no `tsconfig` `paths` remapping, with every import carrying its
+real extension for Node type-stripping), and at least five path consumers key on
+the current layout — `package.json`'s cwd-only `node --test '*.test.*'` glob,
+`test-gate.mjs`'s bare-basename `MANUAL_ONLY_TESTS`, `ci-suite-coverage.test.ts`'s
+tree walk and `SKILLS_GLOB_PROOF`, `scripts/check-npm-packages.mjs`'s tarball leak
+assertions with `package.json`'s hand-maintained `files[]`, and `CLAUDE.md`'s
+Conventions section, which documents colocation as the standing rule. Get the
+glob wrong and the suite reports zero failures while running zero tests, so the
+todo names a before/after test-count comparison as the verification gate rather
+than a green run. Severity `minor`, confirmed at capture. Not scoped into any
+v0.9.0 phase. The tree is 9 files with this filing; the count line above and the
+ledger table row below were both updated in the same change.
 
 ### Quick Tasks Completed
 
@@ -1635,6 +1655,7 @@ regression and not this inheritance.
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 | host-tool | 2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes | minor | Pending |
 | paths | 2026-09-07-consolidate-all-tool-written-files-under-c64-re-tools | minor | Pending |
+| testing | 2026-09-07-move-all-tests-into-a-separate-test-folder | minor | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
