@@ -9,7 +9,7 @@ files:
   - CLAUDE.md
   - .planning/notes/stock-vice-migration-revised-loss-ledger.md
 
-resolves_phase:
+resolves_phase: 39
 audit_acknowledged:
   milestone: v0.7.0
   at: 2026-09-01

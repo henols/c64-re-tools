@@ -2,6 +2,7 @@
 created: 2026-09-03T20:22:00.000Z
 title: WR-03 — host-tool.mts's "nothing throws" contract has two holes
 area: host-tool-seam
+resolves_phase: 40
 severity: minor
 source_review: .planning/phases/34-the-host-tool-execution-seam/34-REVIEW.md
 finding_ids:
