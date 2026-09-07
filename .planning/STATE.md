@@ -1685,7 +1685,6 @@ regression and not this inheritance.
 | broker | 2026-08-24-reap-vicerc-scratch-dirs-in-broker-kill-recycle-path | minor | Pending |
 | planning | 2026-08-26-correct-the-false-real-corpus-claim-in-research-questions-md | major | Pending |
 | testing | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host | minor | Pending |
-| docs | 2026-08-28-phase-7-pitfall-5-overgeneralizes-text-monitor-unreachability | major | Pending |
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 | host-tool | 2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes | minor | Pending |
