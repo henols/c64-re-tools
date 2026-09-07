@@ -81,3 +81,35 @@ backtrace, `io` semantic register decode, `warp on/off`, and `device c:` — the
 - Consider whether `docs-linerefs.test.ts`-style mechanical pinning should cover
   the claim, given a correct finding in one planning artifact was overridden by an
   incorrect one in another with nothing catching it.
+
+## Resolution
+
+Resolved by Phase 39 plan `39-02` (2026-09-07). Four edits made, each citing
+`.planning/notes/text-monitor-channel-live-probe.md`:
+
+1. `.planning/phases/07-cycle-timing-and-wedge-triage/07-RESEARCH.md` — the
+   Alternatives Considered row and Pitfall 5 both keep the narrow
+   `t_binary_command` claim and now name `-remotemonitor` / `monitor_network.c`
+   as the third route. Phase 7's decision to reject the text route is
+   unchanged; only its stated reason is corrected, with an explicit note that
+   it rested on a false premise.
+2. `CLAUDE.md` — the three Constraints bullets this distortion produced
+   (`CPUHISTORY_GET` version floor, no-runtime-`WarpMode`, `default_memspace`
+   no-remedy) each gained a `binary monitor only` scoping clause naming the
+   measured text-channel remedy. Original assertions untouched.
+3. `.planning/notes/stock-vice-migration-revised-loss-ledger.md` — Loss 5
+   route 2 (which already had this right) now cross-references the
+   contradiction and names Phase 39 as where the port was first dialed.
+4. This file, moved from `.planning/todos/pending/` to
+   `.planning/todos/completed/` with its `## Deferred Items` row removed from
+   `.planning/STATE.md` in the same commit.
+
+The sibling pending todo
+`2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it` was
+re-checked as this todo instructs. It was found to already be resolved
+(2026-09-03, by Phase 33's additive acquire `profile`/warm-instance
+eligibility work) — its own Resolution section already incorporates this same
+correction (runtime `warp on`/`warp off` over the text channel, not a
+launch-time dimension) and cites this file by name. Nothing was open to act
+on; its file and ledger status are left exactly as they were found. See
+`39-02-SUMMARY.md` for the full finding.
