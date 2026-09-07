@@ -207,12 +207,42 @@
       "number": "38",
       "name": "PROOF-01..03 on Real Cracked Code",
       "status": "complete"
+    },
+    {
+      "number": "39",
+      "name": "The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)",
+      "status": "pending"
+    },
+    {
+      "number": "40",
+      "name": "The Three Preprocessing Host Tools",
+      "status": "pending"
+    },
+    {
+      "number": "41",
+      "name": "The Text Channel, Its Serialization Authority, and the Contention Verdict",
+      "status": "pending"
+    },
+    {
+      "number": "42",
+      "name": "The Text-Format Parsers and Their Two-Binary Fixtures",
+      "status": "pending"
+    },
+    {
+      "number": "43",
+      "name": "The Runtime Evidence Layer",
+      "status": "pending"
+    },
+    {
+      "number": "44",
+      "name": "PROOF-04 — The Independent External Check",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:discuss-phase",
-    "label": "Discuss Phase 39",
-    "reason": "Milestone v0.9.0 roadmapped — Phase 39 is the coexistence gate"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 39)",
+    "reason": "Phase 39 of 6 — needs a plan"
   },
-  "updated_at": "2026-09-06T20:07:23.220Z"
+  "updated_at": "2026-09-07T19:35:38.674Z"
 }
