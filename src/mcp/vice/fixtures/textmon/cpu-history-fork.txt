@@ -1,0 +1,5 @@
+.C:e5d4  F0 F7       BEQ $E5CD      A:00 X:00 Y:0a SP:f3 ..-...Z.     12186708
+.C:e5cd  A5 C6       LDA $C6        A:00 X:00 Y:0a SP:f3 ..-...Z.     12186711
+.C:e5cf  85 CC       STA $CC        A:00 X:00 Y:0a SP:f3 ..-...Z.     12186714
+.C:e5d1  8D 92 02    STA $0292      A:00 X:00 Y:0a SP:f3 ..-...Z.     12186717
+(C:$e5d4) 

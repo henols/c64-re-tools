@@ -1,0 +1,25 @@
+VIC-II:
+>C:d000  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@
+>C:d010  00 1b 00 00  00 00 c8 00  15 71 f0 00  00 00 00 00   @[@@@@H@uQ.@@@@@
+>C:d020  fe f6 f1 f2  f3 f4 f0 f1  f2 f3 f4 f5  f6 f7 fc ff   ................
+>C:d030  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................
+
+Raster cycle/line: 1/0 IRQ: 311
+Mode: Standard Text (ECM/BMM/MCM=0/0/0)
+Colors: Border: e BG: 6 
+Scroll X/Y: 0/3, RC 7, Idle: 1, 40x25
+VC $000, VCBASE $000, VMLI  0, Phi1 $00
+Video $0400, Charset $1000 (CharROM)
+
+Sprites: S.0 S.1 S.2 S.3 S.4 S.5 S.6 S.7
+Enabled:  no  no  no  no  no  no  no  no
+DMA/dis:  /   /   /   /   /   /   /   / 
+Pointer: $00 $00 $ff $ff $ff $ff $00 $00
+MC:      $00 $00 $00 $00 $00 $00 $00 $00
+MCBASE:  $00 $00 $00 $00 $00 $00 $00 $00
+X-Pos:  $000$000$000$000$000$000$000$000
+Y-Pos:     0   0   0   0   0   0   0   0
+X/Y-Exp:  /   /   /   /   /   /   /   / 
+Pri./MC: s/  s/  s/  s/  s/  s/  s/  s/ 
+Color:     1   2   3   4   5   6   7   c
+(C:$d040) 

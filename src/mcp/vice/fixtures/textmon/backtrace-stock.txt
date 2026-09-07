@@ -1,0 +1,7 @@
+             PC        .C:e5d1   8D 92 02    STA $0292
+e112 -> ffcf [SP +  3] .C:e112   20 CF FF    JSR $FFCF
+a562 -> e112 [SP +  5] .C:a562   20 12 E1    JSR $E112
+a483 -> a560 [SP +  7] .C:a483   20 60 A5    JSR $A560
+e39a -> e422 [SP + 11] .C:e39a   20 22 E4    JSR $E422
+RST  -> fce2 [SP +-241] .C:3139   00          BRK
+(C:$e5d1) 
