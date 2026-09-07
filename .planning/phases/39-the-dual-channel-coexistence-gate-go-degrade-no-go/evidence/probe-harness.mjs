@@ -47,7 +47,7 @@ const MCP_DIR = path.join(REPO_ROOT, "src", "mcp", "vice");
 const proto = await import(path.join(MCP_DIR, "stock-protocol.ts"));
 const launch = await import(path.join(MCP_DIR, "broker-launch.mts"));
 
-export const { CommandType, CheckpointOperation, ViceMonitorClient, memGetBody, memspaceBody } = proto;
+export const { CommandType, CheckpointOperation, ViceMonitorClient, memGetBody, memspaceBody, advanceInstructionsBody } = proto;
 /** The shipped, frozen determinism-flag array (broker-launch.mts). Imported,
  * never retyped: a later edit to this array changes what the probe launches
  * instead of leaving it measuring a stale copy. */
