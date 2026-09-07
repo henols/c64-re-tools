@@ -47,7 +47,7 @@ const MCP_DIR = path.join(REPO_ROOT, "src", "mcp", "vice");
 const proto = await import(path.join(MCP_DIR, "stock-protocol.ts"));
 const launch = await import(path.join(MCP_DIR, "broker-launch.mts"));
 
-export const { CommandType, CheckpointOperation, ViceMonitorClient, memGetBody } = proto;
+export const { CommandType, CheckpointOperation, ViceMonitorClient, memGetBody, memspaceBody } = proto;
 /** The shipped, frozen determinism-flag array (broker-launch.mts). Imported,
  * never retyped: a later edit to this array changes what the probe launches
  * instead of leaving it measuring a stale copy. */
@@ -295,6 +295,32 @@ export async function armNonStoppingExec(client, { address }) {
 export async function checkpointHitCount(client, cpId) {
   const reply = await client.send(CommandType.CheckpointGet, proto.cpNumBody(cpId));
   return reply.checkpoint.hitCount;
+}
+
+/**
+ * Arm a STOPPING (`stop_when_hit=true`) exec checkpoint at `address` --
+ * the mirror of armNonStoppingExec() above, added for 39-04 (`CROSS_CHANNEL_RESUME`
+ * direction two): a halt the BINARY client owns, distinct from a foreign
+ * halt induced over the text channel. Through the same shipped
+ * checkpointSetBody() encoder; never temporary, so the caller controls its
+ * own lifecycle (delete it explicitly via deleteCheckpoint() once its
+ * purpose is served, rather than relying on `temporary` auto-clearing it,
+ * which would remove it AFTER its one stopping hit -- fine for a single
+ * bracket, but this caller re-arms/re-uses the id across repetitions).
+ */
+export async function armStoppingExec(client, { address }) {
+  return client.send(
+    CommandType.CheckpointSet,
+    proto.checkpointSetBody({
+      start: address,
+      end: address,
+      stop: true,
+      enabled: true,
+      operation: CheckpointOperation.Exec,
+      temporary: false,
+      memspace: MEMSPACE_MAIN,
+    }),
+  );
 }
 
 /** Delete a checkpoint through the shipped CHECKPOINT_DELETE (0x13) encoder
