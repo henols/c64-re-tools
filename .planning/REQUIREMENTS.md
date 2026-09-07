@@ -139,6 +139,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PROOF-04 | Phase 44 | Pending |
 
 **Coverage:**
+
 - v0.9.0 requirements: 20 total
 - Mapped to phases: 20
 - Unmapped: 0 ✓
