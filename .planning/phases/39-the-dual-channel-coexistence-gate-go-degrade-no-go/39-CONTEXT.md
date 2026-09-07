@@ -60,8 +60,7 @@ committed are named at the end.
 
 ### The gate (`CHAN-01`)
 
-- **D-01: The rules, the schema and the evidence conventions are plan `39-01`,
-  and that plan touches nothing else.** Every measuring plan comes after it.
+- **D-01: The rules, the schema and the evidence conventions are plan `39-01`, and that plan touches nothing else.** Every measuring plan comes after it.
   **Git history is the proof** — the rules commit precedes the first measurement
   commit and is checkable with `git log`; no test guard. This is Phase 9's
   shape, Phase 23's `D-07` and Phase 33's `D-01`, reused because it has now
@@ -72,9 +71,7 @@ committed are named at the end.
   rules can never again be shown to predate it. Ordering is the entire
   mechanism.
 
-- **D-02: The gate takes exactly seven named, machine-readable inputs — one per
-  named experiment, plus the two blocking UNVERIFIED items as inputs of their
-  own.**
+- **D-02: The gate takes exactly seven named, machine-readable inputs — one per named experiment, plus the two blocking UNVERIFIED items as inputs of their own.**
 
   | Input | Domain | Source |
   |---|---|---|
@@ -95,8 +92,7 @@ committed are named at the end.
   against; adding an eighth input after the rules are committed re-opens the
   pre-commitment question for the whole gate.
 
-- **D-03: `could-not-run` is not an emittable verdict, and every input carries
-  an explicit `not-taken` member instead.** The verdict field's accepted values
+- **D-03: `could-not-run` is not an emittable verdict, and every input carries an explicit `not-taken` member instead.** The verdict field's accepted values
   are exactly `go` / `degrade` / `no-go`. An experiment that cannot be taken
   records *that* as an input value — criterion 2's "an experiment that cannot be
   taken records that, as a gate input; it is never silently omitted" — so the
@@ -118,8 +114,7 @@ committed are named at the end.
   — **Reversibility:** reversible — but a rule set found non-total *after* the
   first measurement lands cannot be repaired without breaking `D-01`.
 
-- **D-05: The verdict is machine-readable YAML frontmatter in
-  `docs/phase39-dual-channel-coexistence-gate-findings.md`** — `verdict:
+- **D-05: The verdict is machine-readable YAML frontmatter in `docs/phase39-dual-channel-coexistence-gate-findings.md`** — `verdict:
   go|degrade|no-go`, `verdict_rule_applied: R<N>`, plus all seven `D-02` inputs
   reproduced verbatim as frontmatter fields, each citing the evidence file and
   line its value was transcribed from. The document reproduces the full rule and
@@ -128,8 +123,7 @@ committed are named at the end.
   `docs/phase33-reproducible-run-gate-findings.md`.
   — **Reversibility:** reversible.
 
-- **D-06: The verdict binds Phases 41-44 through ROADMAP `Depends on` + Notes +
-  a STATE.md pointer, with no test guard.** Phase 23's `D-08` and Phase 33's
+- **D-06: The verdict binds Phases 41-44 through ROADMAP `Depends on` + Notes + a STATE.md pointer, with no test guard.** Phase 23's `D-08` and Phase 33's
   `D-06`, which closed Phase 9's criterion 5 the same way. A guard would encode
   roadmap policy in a suite belonging to a phase that ships almost no product
   code, and the likeliest outcome (`degrade` — proceed, narrowed) is exactly the
@@ -163,9 +157,7 @@ committed are named at the end.
   management and appears in no antecedent.
   — **Reversibility:** reversible.
 
-- **D-09: `IDLE_COEXIST` is the sole `no-go` trigger, and it triggers on both
-  `corrupts` and `not-taken` — by two separately numbered rules, so the record
-  distinguishes them.** If a non-halting read on the binary channel returns
+- **D-09: `IDLE_COEXIST` is the sole `no-go` trigger, and it triggers on both `corrupts` and `not-taken` — by two separately numbered rules, so the record distinguishes them.** If a non-halting read on the binary channel returns
   wrong data, errors, or desyncs merely because a silent text client is
   connected, then no serialization authority helps: the mutex, the lease and the
   connect-gate all assume the idle case is safe, and only the connect-gate
@@ -179,8 +171,7 @@ committed are named at the end.
   design; relaxing it after the numbers are visible is the exact move the
   pre-commitment exists to forbid.
 
-- **D-10: `DISCONNECT_RECOVERY: leaves-halted` is a `degrade` whose fix is named
-  in the verdict, and the narrowing is pre-mapped in `39-01`.** The ROADMAP
+- **D-10: A `leaves-halted` outcome for `DISCONNECT_RECOVERY` is a `degrade` whose fix is named in the verdict, and the narrowing is pre-mapped in `39-01`.** In outcome-line form that is `DISCONNECT_RECOVERY: leaves-halted`. The ROADMAP
   already states the obligation: "the mechanism that fixes it becomes named
   Phase 41 scope in the verdict — discovered here, not at Phase 41's gate." A
   killed text client leaving the machine permanently halted, indistinguishable
@@ -192,8 +183,7 @@ committed are named at the end.
   verdict time only by recording the override explicitly, which weakens the
   pre-commitment it exists to provide.
 
-- **D-11: Pre-mapped `degrade` narrowing is authored for `DISCONNECT_RECOVERY`
-  and `HITCOUNT_INVARIANT_HOLDS` only.** Phase 33's `D-04` shape, retargeted at
+- **D-11: Pre-mapped `degrade` narrowing is authored for `DISCONNECT_RECOVERY` and `HITCOUNT_INVARIANT_HOLDS` only.** Phase 33's `D-04` shape, retargeted at
   the two inputs where a narrowing written *after* seeing the result would be
   most suspect. The ROADMAP names the first. The second is the milestone's other
   blocking UNVERIFIED item and is where an after-the-fact author would be most
@@ -208,8 +198,7 @@ committed are named at the end.
 
 ### The probe and how instances are reached
 
-- **D-12: The probe spawns `x64sc` directly and does not go through the
-  broker.** `execve` the binary with `-default` **first**, then
+- **D-12: The probe spawns `x64sc` directly and does not go through the broker.** `execve` the binary with `-default` **first**, then
   `-binarymonitor` and `-remotemonitor` on ports the probe itself chose. The
   broker cannot hand a container-side caller the text port — `CHAN-02` records
   that `remoteMonitorPort` is recorded host-side in the instance record but
@@ -222,8 +211,7 @@ committed are named at the end.
   directly and not through the broker*.
   — **Reversibility:** reversible.
 
-- **D-13: The text-channel client is a throwaway probe helper in the phase's
-  evidence directory, and nothing from it survives into Phase 41.** It frames on
+- **D-13: The text-channel client is a throwaway probe helper in the phase's evidence directory, and nothing from it survives into Phase 41.** It frames on
   the `(C:$xxxx) ` prompt **crudely and deliberately** — `CHAN-03` owns framing
   that survives the prompt arriving split across TCP segments and that does not
   mistake the prompt appearing inside data for the end of a response, and
@@ -234,16 +222,14 @@ committed are named at the end.
   — **Reversibility:** reversible — but shipping a client here would foreclose
   the shape the verdict is supposed to select, which is one-way.
 
-- **D-14: The binary half of every experiment is driven through the shipped
-  `stock-protocol.ts` encoders, never hand-rolled frames.** Phase 33's probes
+- **D-14: The binary half of every experiment is driven through the shipped `stock-protocol.ts` encoders, never hand-rolled frames.** Phase 33's probes
   already do this and record it under a "what it does *not* retype" header, so a
   future edit to the shipped encoders changes what the probe sends instead of
   leaving it measuring a stale copy. Only the *text* half is throwaway.
   *(Claude's discretion — not put to the owner.)*
   — **Reversibility:** reversible.
 
-- **D-15: The gate is measured on genuine stock 3.9 at `/usr/bin/x64sc`; VICE
-  version is provenance, never a gate input.** In the owner's words: *"Baseline
+- **D-15: The gate is measured on genuine stock 3.9 at `/usr/bin/x64sc`; VICE version is provenance, never a gate input.** In the owner's words: *"Baseline
   is 3.9 and it doesn't matter if it's a later version."* So: the seven inputs
   are measured on the 3.9 baseline, which is what `CHAN-01`'s "live measurement
   against genuine stock VICE" names and what the stock backend Phase 41 serves
@@ -272,8 +258,7 @@ committed are named at the end.
 
 ### The fixture batch
 
-- **D-17: Only parseable command outputs become committed fixtures; the
-  coexistence experiments stay transcripts.** The raw bytes of the text-monitor
+- **D-17: Only parseable command outputs become committed fixtures; the coexistence experiments stay transcripts.** The raw bytes of the text-monitor
   command responses Phase 42 will have to parse — `memmapshow`, `prof flat`,
   `chis`, `bt`, `io`, and the bare prompt — each as a payload file plus its
   five-key sidecar. The experiments' interleavings stay as transcripts in their
@@ -284,8 +269,7 @@ committed are named at the end.
   — **Reversibility:** reversible — promoting a transcript to a fixture later is
   additive.
 
-- **D-18: Text fixtures live in `src/mcp/vice/fixtures/textmon/` with their own
-  sibling loader module; `binmon-fixtures.ts` is not extended.** That module's
+- **D-18: Text fixtures live in `src/mcp/vice/fixtures/textmon/` with their own sibling loader module; `binmon-fixtures.ts` is not extended.** That module's
   whole contract is byte-exact binary-monitor response frames — `STX`,
   `api_version`, the 12-byte header — and its own file header declares it the
   ONE place any test in the package builds or loads such a frame. Text captures
@@ -296,8 +280,7 @@ committed are named at the end.
   — **Reversibility:** costly — merging two loaders later is easy; unpicking a
   text consumer that grew a dependency on the binary frame encoder is not.
 
-- **D-19: Exactly one corpus-free automated test guards the loader, and
-  `MANUAL_ONLY_TESTS` is unchanged.** It asserts the loader refuses a sidecar
+- **D-19: Exactly one corpus-free automated test guards the loader, and `MANUAL_ONLY_TESTS` is unchanged.** It asserts the loader refuses a sidecar
   missing any of the five required keys, and that every committed sidecar
   carries `synthetic: false` with a `capturedFrom` naming the binary's kind and
   resolved absolute path — the shape `binmon-fixtures.test.ts` already uses. It
@@ -311,8 +294,7 @@ committed are named at the end.
   — **Reversibility:** costly — the two-directional gate means a file added to
   one side and not the other reds the suite immediately.
 
-- **D-20: When a command is unsupported on a binary, the refusal itself is
-  committed as a fixture.** The unsupported response is the capture, with a
+- **D-20: When a command is unsupported on a binary, the refusal itself is committed as a fixture.** The unsupported response is the capture, with a
   sidecar whose `command` field names the command and whose `note` names the
   missing capability **and the binary** — exactly what
   `fixtures/binmon/cpuhistory-get-unsupported.json` already does for the 3.9

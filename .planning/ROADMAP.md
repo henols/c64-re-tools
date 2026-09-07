@@ -868,7 +868,17 @@ exists when this phase closes.
   4. **The verdict names one of three serialization shapes, and the phase states what each implies for Phase 41** — `go` → an in-process async mutex, both channels connected for the session's lifetime, the `channel` discriminator kept for bookkeeping only; `degrade` → a broker-level cross-channel halt-authority lease, moving correctness from one process's in-memory mutex to the broker, at the cost of a round trip per halting call; `no-go` → a connect-gate in which opening one channel requires releasing the other's claim, the two time-sharing and never coexisting live. A `no-go` does **not** kill the runtime-evidence layer; it makes that layer's capture step scheduled rather than concurrent, and Phase 43 is written to survive it.
   5. **The probe's raw captured text survives the phase as the first fixture batch, with provenance, from both binaries on this host.** Every capture carries the same five keys the binary-monitor fixtures already require (`capturedFrom`, `viceVersion`, `capturedAt`, `command`, `synthetic`), with `synthetic: false` and `capturedFrom` naming the resolved binary path and its stock/fork kind. Captured from stock 3.9 **and** fork 3.10, so Phase 42 inherits two-binary provenance instead of re-running the capture — the loader refusing a sidecar that is missing a key is what makes this checkable rather than claimed.
 
-**Plans**: TBD
+**Plans**: 8 plans
+
+Plans:
+- [ ] 39-01-PLAN.md — Pre-commitment: the go/degrade/no-go rules, the frozen outcome-line schema, the evidence conventions and the executable 3,888-tuple totality walk, landed as ONE commit that touches nothing else
+- [ ] 39-02-PLAN.md — Correct the overgeneralized "text monitor unreachable" claim where it was made, scope the three binary-monitor-only constraints, and close the folded todo through the two-directional ledger guard
+- [ ] 39-03-PLAN.md — Tracer: one idle-coexistence measurement end to end (shared probe harness, throwaway text client, first byte-exact banner capture), plus the seeded verdict document
+- [ ] 39-04-PLAN.md — Measure foreign-halt visibility and cross-channel resume in both directions
+- [ ] 39-05-PLAN.md — Measure concurrent in-flight commands and settle the hit-count-invariant blocking item
+- [ ] 39-06-PLAN.md — Measure abrupt-disconnect recovery and settle the text-monitor single-client blocking item
+- [ ] 39-07-PLAN.md — Capture the first text-channel fixture batch from both binaries, with the sibling loader that refuses an incomplete sidecar and its one automated test
+- [ ] 39-08-PLAN.md — Derive and record the verdict from the seven transcribed values, and bind it to Phases 41-44
 
 Notes:
 
