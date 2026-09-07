@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 39
 current_phase_name: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)
 status: executing
-stopped_at: Completed 39-04-PLAN.md
-last_updated: "2026-09-07T21:50:14.729Z"
+stopped_at: Completed 39-05-PLAN.md
+last_updated: "2026-09-07T22:27:44.115Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 39 execution started
-state_head: c9bb7a2f98ae72a8a8422331354fadb9f6b28ecd
+state_head: 099c57384da7390bb61d78a5bcbff1a0175e705c
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -214,7 +214,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 39 (The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-09-07 — Phase 39 execution started
 
@@ -459,6 +459,7 @@ verdict nor the channel and can run beside Phase 39 from day one.
 | Phase 39 P02 | 25min | 2 tasks | 5 files |
 | Phase 39 P03 | ~45min | 2 tasks | 5 files |
 | Phase 39 P04 | 55min | 2 tasks | 5 files |
+| Phase 39 P05 | 32min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1017,6 +1018,8 @@ Recent decisions affecting current work:
 - [Phase 39]: IDLE_COEXIST: clean, measured live -- sole no-go trigger is now a written fact, not an assumption — Both channels driven from one directly-spawned genuine stock x64sc process; all six ROM-window reads sha256-identical, zero desync/duplicate/unsolicited-frame counters moved
 - [Phase 39]: FOREIGN_HALT_VISIBILITY: visible -- an unsolicited STOPPED frame is observed on the binary channel whenever the text channel holds a foreign halt, paired every time with a previously unrecorded unsolicited REGISTER_INFO frame (39-04). — Measured live against genuine stock VICE 3.9 with the broker stopped, three control brackets (60/s) vs three measured brackets (0-1).
 - [Phase 39]: CROSS_CHANNEL_RESUME: clean -- a halt taken on either channel can be read and released from the other, in both directions, confirmed twice each by an independent liveness signal (39-04). — All four repetitions (two directions x two reps) clean against one live stock VICE 3.9 instance with the broker stopped.
+- [Phase 39]: CONCURRENT_INFLIGHT: clean (39-05) -- both writes issued before either reply awaited, three reps, zero desync/duplicate deltas, max write gap 0ms
+- [Phase 39]: HITCOUNT_INVARIANT_HOLDS: holds (39-05) -- milestone's first blocking UNVERIFIED item settled: a foreign halt never satisfies the binary-side wait keyed on its own checkpoint's checkpoint_info event, across three injection timings including a genuine outstanding-wait collision
 
 ### Pending Todos
 
@@ -1985,8 +1988,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-07T21:50:14.659Z
-Stopped at: Completed 39-04-PLAN.md
+Last session: 2026-09-07T22:27:44.040Z
+Stopped at: Completed 39-05-PLAN.md
 Resume file: None
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
