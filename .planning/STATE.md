@@ -1005,7 +1005,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-10 pending (10 files in `.planning/todos/pending/` + 0 UAT-gap rows = 10) — see
+11 pending (11 files in `.planning/todos/pending/` + 0 UAT-gap rows = 11) — see
 `.planning/todos/pending/` (`/gsd-capture --list`). The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
@@ -1219,6 +1219,35 @@ todo names a before/after test-count comparison as the verification gate rather
 than a green run. Severity `minor`, confirmed at capture. Not scoped into any
 v0.9.0 phase. The tree is 9 files with this filing; the count line above and the
 ledger table row below were both updated in the same change.
+
+**A fourth todo was filed the same day (2026-09-07)**, also via `/gsd-capture`:
+`2026-09-07-installer-must-self-ignore-its-deployed-tools-in-the-consumer-repo`.
+`installResources()` copies all 11 `resources/` entries plus the
+`.vice-deployed.json` manifest into `<repoRoot>/tools/` on first tool call and
+never arranges for them to be ignored — it works here only because this repo
+hand-maintains 12 lines at `.gitignore:38-49`, kept in two-way parity with
+`resourceEntries()` by a gate (`host-scripts.test.ts:120`) that protects this
+repo and nothing else. A consumer therefore gets ~400 KB of generated launcher
+code, plus `ghidra-project.mts`'s `tools/ghidra-runs/<runId>/` scratch, written
+into their repo with no ignore entry at all: a permanently dirty `git status`,
+and a routine `git add -A` commits generated code the next plugin version
+silently overwrites. Verified before filing that all 12 deployed files in *this*
+checkout are `git check-ignore`-clean, so the gap is the consumer's tree
+specifically, not this one. Proposed fix is a generated `tools/.gitignore`
+deployed alongside the manifest, per-entry rather than a blanket `*` because
+`tools/` is a mixed directory the plugin already knows it does not own
+(`install-resources.ts:186-190` — the same reason `pruneResources()` consults
+only the manifest and never walks the target). Deliberately filed as a
+**separate** todo from `…-consolidate-all-tool-written-files-under-c64-re-tools`
+above and not merged into it: that one changes *where* files land and still
+expects the consumer to add one ignore line by hand, this one makes the tool
+ignore what it wrote wherever it writes it. They compose in either order, and
+the todo records which one gets simpler if the consolidation lands first.
+Severity `minor`. Not scoped into any v0.9.0 phase. The tree is 11 files with
+this filing — 10 before it, the tenth being
+`2026-09-07-remove-pre-warm-launch-vice-on-first-request`, which added its
+ledger row and count without a paragraph here; the count line above and the
+ledger table row below were both updated in the same change as this one.
 
 ### Quick Tasks Completed
 
@@ -1655,6 +1684,7 @@ regression and not this inheritance.
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 | host-tool | 2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes | minor | Pending |
 | paths | 2026-09-07-consolidate-all-tool-written-files-under-c64-re-tools | minor | Pending |
+| paths | 2026-09-07-installer-must-self-ignore-its-deployed-tools-in-the-consumer-repo | minor | Pending |
 | testing | 2026-09-07-move-all-tests-into-a-separate-test-folder | minor | Pending |
 | broker | 2026-09-07-remove-pre-warm-launch-vice-on-first-request | minor | Pending |
 
