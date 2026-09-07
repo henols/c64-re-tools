@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v0.8.0 — Frame-Exact Capture and the Two Engines",
+  "milestone": "v0.9.0 — The Text Channel and the Runtime Evidence Layer",
   "phases": [
     {
       "number": "1",
@@ -210,9 +210,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:discuss-phase",
+    "label": "Discuss Phase 39",
+    "reason": "Milestone v0.9.0 roadmapped — Phase 39 is the coexistence gate"
   },
-  "updated_at": "2026-09-06T15:51:29.444Z"
+  "updated_at": "2026-09-06T20:07:23.220Z"
 }
