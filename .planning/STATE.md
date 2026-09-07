@@ -4,17 +4,17 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 39
 current_phase_name: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)
-status: executing
-stopped_at: Completed 39-07-PLAN.md
-last_updated: "2026-09-07T23:31:11.894Z"
+status: verifying
+stopped_at: Completed 39-08-PLAN.md
+last_updated: "2026-09-07T23:56:56.540Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 39 execution started
-state_head: cafac7aabc44fbe8eaf0463f0bf7c6df09ae08af
+state_head: d0ab4920aa0c5f09352283fc73dfcc6737f5f636
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -215,7 +215,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 39 (The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-07 — Phase 39 execution started
 
 **The first phase's deliverable is evidence, not code.** `CHAN-01`'s verdict
@@ -462,6 +462,7 @@ verdict nor the channel and can run beside Phase 39 from day one.
 | Phase 39 P05 | 32min | 2 tasks | 5 files |
 | Phase 39 P06 | ~34min | 2 tasks | 5 files |
 | Phase 39 P07 | 40min | 2 tasks | 29 files |
+| Phase 39 P08 | 35min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1024,6 +1025,10 @@ Recent decisions affecting current work:
 - [Phase 39]: HITCOUNT_INVARIANT_HOLDS: holds (39-05) -- milestone's first blocking UNVERIFIED item settled: a foreign halt never satisfies the binary-side wait keyed on its own checkpoint's checkpoint_info event, across three injection timings including a genuine outstanding-wait collision
 - [Phase 39]: DISCONNECT_RECOVERY: recovers (near-instant, ~100ms) and TEXT_SINGLE_CLIENT: single (via accepted-then-silent), both measured live against genuine stock VICE 3.9 -- the milestone's second blocking UNVERIFIED item (TEXT_SINGLE_CLIENT) is now settled, and all seven of Phase 39's gate inputs are real, live-measured facts.
 - [Phase 39]: CHAN-01 fires: **`go`**, rule **`R15`** — all seven transcribed values sat at their best domain member, so `R1`..`R14` were each evaluated and none matched; `R15`, the exhaustive default, fired. This is the first `go` any of this project's four go/degrade/no-go gates has returned (Phase 9 `R4`: `degrade`; Phase 23 `R1`: `no-go`; Phase 33 `R6`: `degrade`). Neither pre-mapped narrowing (`R11`/`D-10`, `R13`/`D-11`) triggered, checked directly against the transcribed values independent of which rule fired. The pre-commitment ordering proof and the committed totality walk were both re-run after all seven measurements landed and reproduce their banked results exactly. Full derivation, all seven citations and the collected recorded facts/assumptions/accepted-limits live in one place: `docs/phase39-dual-channel-coexistence-gate-findings.md` (frontmatter `verdict`/`verdict_rule_applied`) — read there, not restated here. Consequence for Phase 41: build the plain in-process async mutex (the cheapest of the three shapes), with no narrowed scope from this gate; Phase 43's capture step is concurrent, not scheduled, under this verdict. Bound into Phases 41-44 via each phase's `.planning/ROADMAP.md` `**Depends on**` line and Notes.
+- [Phase 39]: 39-08: CHAN-01 fires go, rule R15 -- all seven transcribed values sat at their best domain member, so R1..R14 were each evaluated and none matched; R15, the exhaustive default, fired. First `go` any of this project's four go/degrade/no-go gates has returned (Phase 9 R4: degrade; Phase 23 R1: no-go; Phase 33 R6: degrade). Recorded in docs/phase39-dual-channel-coexistence-gate-findings.md.
+- [Phase 39]: 39-08: Neither pre-mapped narrowing fired -- R11's narrowing (D-10) did not trigger because DISCONNECT_RECOVERY: recovers, and R13's narrowing (D-11) did not trigger because HITCOUNT_INVARIANT_HOLDS: holds, both checked directly against the transcribed values independent of which rule fired. Phase 41 builds the plain in-process async mutex with no additional narrowed scope from this gate.
+- [Phase 39]: 39-08: Phase 43's capture step is concurrent, not scheduled, under this go verdict -- the no-go re-scoping named in ROADMAP.md and DECISION-RULE.md does not apply, and the ROADMAP entry now states which branch it landed on.
+- [Phase 39]: 39-08: No test guard added to bind the CHAN-01 verdict into Phases 41-44 (D-06, declined a third time in this project's history) -- ROADMAP.md Depends-on lines + Notes plus a STATE.md pointer are the entire enforcement mechanism, edited with scoped line-targeted edits and diffed before commit.
 
 ### Pending Todos
 
@@ -1992,8 +1997,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-07T23:31:11.801Z
-Stopped at: Completed 39-07-PLAN.md
+Last session: 2026-09-07T23:56:56.458Z
+Stopped at: Completed 39-08-PLAN.md
 Resume file: None
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
