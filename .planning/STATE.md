@@ -4,17 +4,17 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 39
 current_phase_name: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)
-status: ready_to_execute
-stopped_at: Phase 39 planned
-last_updated: "2026-09-07T19:35:38.618Z"
+status: executing
+stopped_at: Completed 39-01-PLAN.md
+last_updated: "2026-09-07T20:08:20.767Z"
 last_activity: 2026-09-07
-last_activity_desc: Phase 39 planned — 8 plans in 7 waves, plan-checker passed
-state_head: 436effe0ef563a53eae1e76e82dc3d5438c893b3
+last_activity_desc: Phase 39 execution started
+state_head: 05c2c06916b8e41669e7d6a8b8e8447b4e760f59
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -30,12 +30,13 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Milestone **v0.9.0 The Text Channel and the Runtime
+**Current focus:** Phase 39 — The Dual-Channel Coexistence Gate
+(Go/Degrade/No-Go), in milestone **v0.9.0 The Text Channel and the Runtime
 Evidence Layer**, opened 2026-09-06. Roadmap created 2026-09-06 — **six phases,
 39-44**, continuing numbering from Phase 38 rather than resetting, with 20/20
-requirements mapped and cross-checked mechanically. Nothing is planned or
-executed yet; the next step is planning **Phase 39**, whose deliverable is
-evidence rather than code.
+requirements mapped and cross-checked mechanically. Phase 39 is planned (8 plans
+in 7 waves, plan-checker passed) and now executing; its deliverable is evidence
+rather than code.
 
 Milestone scope, decided at the open: **claim the `-remotemonitor` text channel**
 that `broker-launch.mjs:165` has appended to every stock launch since Phase 3 and
@@ -212,10 +213,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 39 (The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)) — READY TO EXECUTE
-Plan: 0/8 executed (8 plans across 7 waves; 39-01 is the pre-commitment plan)
-Status: Phase 39 planned — ready to execute
-Last activity: 2026-09-07 — Phase 39 planned: 8 plans in 7 waves, plan-checker passed
+Phase: 39 (The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)) — EXECUTING
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-09-07 — Phase 39 execution started
 
 **The first phase's deliverable is evidence, not code.** `CHAN-01`'s verdict
 selects which of three structurally different serialization modules Phase 41
@@ -454,6 +455,7 @@ verdict nor the channel and can run beside Phase 39 from day one.
 | Phase 38 P02 | 50min | 2 tasks | 3 files |
 | Phase 38 P03 | 24min | 2 tasks | 2 files |
 | Phase 38 P04 | 34min | 2 tasks | 2 files |
+| Phase 39 P01 | 25min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1005,6 +1007,7 @@ Recent decisions affecting current work:
 - [Phase 38]: 38-03: Ghidra scratch workspace must avoid dot-prefixed path segments (resolveGhidraProject refuses .cache); use a sibling non-dot scratch root for Ghidra runs specifically.
 - [Phase 38]: 38-03: PROOF02_LOADER_COMPUTED_DISPATCH recorded not-exercised -- zero computed-index sites enumerated at the loader/depacker depth, not a claim about the whole release.
 - [Phase 38]: [Phase 38 P04] PROOF02_COMPUTED_DISPATCH: not-exercised (roll-up across both loader and depacked depths) -- zero computed-index sites enumerated at either depth; not a claim that no computed dispatch construct exists anywhere in the release. The reported depacked capture pair (jitter 0 both sides) was byte-identical and frame-term-exact, a stricter result than Phase 33's own reported pair, and no entry points were supplied to the flat64k-route Ghidra run since the capture was taken mid-load.
+- [Phase 39]: Task 1 resolved `proceed`: froze CHAN-01 rules R1..R15, the seven input domains, and the D-10/D-11 pre-mapped degrade narrowings exactly as drafted, no value adjusted. — Two alternatives (soften-r2, adjust) were on offer and declined; R2's residual risk is mitigated procedurally via recorded fact-lines in SCHEMA.md section 3, never as an eighth gate input.
 
 ### Pending Todos
 
@@ -1974,9 +1977,9 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-07T18:03:44.782Z
-Stopped at: Phase 39 context gathered
-Resume file: .planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/39-CONTEXT.md
+Last session: 2026-09-07T20:08:20.680Z
+Stopped at: Completed 39-01-PLAN.md
+Resume file: None
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
 v0.8.0 ready to close (2026-09-06T11:50:00Z)

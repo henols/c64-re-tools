@@ -868,12 +868,12 @@ exists when this phase closes.
   4. **The verdict names one of three serialization shapes, and the phase states what each implies for Phase 41** — `go` → an in-process async mutex, both channels connected for the session's lifetime, the `channel` discriminator kept for bookkeeping only; `degrade` → a broker-level cross-channel halt-authority lease, moving correctness from one process's in-memory mutex to the broker, at the cost of a round trip per halting call; `no-go` → a connect-gate in which opening one channel requires releasing the other's claim, the two time-sharing and never coexisting live. A `no-go` does **not** kill the runtime-evidence layer; it makes that layer's capture step scheduled rather than concurrent, and Phase 43 is written to survive it.
   5. **The probe's raw captured text survives the phase as the first fixture batch, with provenance, from both binaries on this host.** Every capture carries the same five keys the binary-monitor fixtures already require (`capturedFrom`, `viceVersion`, `capturedAt`, `command`, `synthetic`), with `synthetic: false` and `capturedFrom` naming the resolved binary path and its stock/fork kind. Captured from stock 3.9 **and** fork 3.10, so Phase 42 inherits two-binary provenance instead of re-running the capture — the loader refusing a sidecar that is missing a key is what makes this checkable rather than claimed.
 
-**Plans**: 8 plans
+**Plans**: 1/8 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 39-01-PLAN.md — Pre-commitment: the go/degrade/no-go rules, the frozen outcome-line schema, the evidence conventions and the executable 3,888-tuple totality walk, landed as ONE commit that touches nothing else
+- [x] 39-01-PLAN.md — Pre-commitment: the go/degrade/no-go rules, the frozen outcome-line schema, the evidence conventions and the executable 3,888-tuple totality walk, landed as ONE commit that touches nothing else
 - [ ] 39-02-PLAN.md — Correct the overgeneralized "text monitor unreachable" claim where it was made, scope the three binary-monitor-only constraints, and close the folded todo through the two-directional ledger guard
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -1178,7 +1178,7 @@ in a milestone archive.
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 7/7 | Complete | 2026-09-05 |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
-| 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 0/0 | Not started | - |
+| 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 1/8 | In Progress|  |
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 0/0 | Not started | - |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
