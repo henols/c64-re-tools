@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 status: planning
-last_updated: "2026-09-06T20:07:23.210Z"
+last_updated: "2026-09-06T21:30:00.000Z"
 last_activity: 2026-09-06
-last_activity_desc: Milestone v0.9.0 opened — defining requirements
-stopped_at: Milestone v0.9.0 opened 2026-09-06 — requirements and roadmap next
+last_activity_desc: v0.9.0 roadmap created — Phases 39-44, 20/20 requirements mapped
+stopped_at: v0.9.0 roadmap created 2026-09-06 — Phases 39-44; next is planning Phase 39, the dual-channel coexistence gate
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -28,8 +28,11 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
 **Current focus:** Milestone **v0.9.0 The Text Channel and the Runtime
-Evidence Layer**, opened 2026-09-06. Defining requirements — no phases exist yet;
-phase numbering continues at **39**.
+Evidence Layer**, opened 2026-09-06. Roadmap created 2026-09-06 — **six phases,
+39-44**, continuing numbering from Phase 38 rather than resetting, with 20/20
+requirements mapped and cross-checked mechanically. Nothing is planned or
+executed yet; the next step is planning **Phase 39**, whose deliverable is
+evidence rather than code.
 
 Milestone scope, decided at the open: **claim the `-remotemonitor` text channel**
 that `broker-launch.mjs:165` has appended to every stock launch since Phase 3 and
@@ -206,10 +209,17 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-09-06 — Milestone v0.9.0 started
+Phase: 39 of 44 — The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) — not started
+Plan: — (0 plans; Phase 39 not yet planned)
+Status: Roadmap created, planning next
+Last activity: 2026-09-06 — v0.9.0 roadmap created: Phases 39-44, 20/20 requirements mapped
+
+**The first phase's deliverable is evidence, not code.** `CHAN-01`'s verdict
+selects which of three structurally different serialization modules Phase 41
+builds — an in-process mutex, a broker-level halt-authority lease, or a
+connect-gate — so building any of them before the gate returns is rework by
+construction. Phase 40 (`c1541` / `petcat` / `cartconv`) depends on neither the
+verdict nor the channel and can run beside Phase 39 from day one.
 
 ## Performance Metrics
 
@@ -522,6 +532,56 @@ Last activity: 2026-09-06 — Milestone v0.9.0 started
   depacked capture substrate (D-03). Verdict at
   `docs/phase23-real-release-gate-findings.md`; Phases 24, 25 and 26 carry the
   amendment beside their success criteria, which are unchanged.
+
+- **v0.9.0 opened as Phases 39-44 (2026-09-06)**, continuing v0.8.0's numbering
+  rather than resetting to 1, and landing alongside the 34 phase directories
+  already under `.planning/phases/` — which are deliberately not archived, a
+  decision re-measured at the v0.7.0 close where archival reddened 9 tests
+  across 5 files. **Six phases at `standard` granularity**, the same count
+  v0.7.0 and v0.8.0 each reached, derived from the work rather than matched to
+  them. Research proposed ten items; four are not phases here. Two are
+  planning-only decision records folded into the phases that touch the relevant
+  code — the `.annostore` schema-bump question is `EVID-02` and rides with
+  Phase 43, and the `c1541`-supersedes-`d64-parse.mjs` question is already
+  deferred to Future Requirements and needs no phase at all. The other two are
+  not separable deliveries: the text dispatch layer is what `CHAN-03` means by
+  "a user's tool call can reach the text monitor", and the wedge-triage skill
+  update is `CHAN-05`, which may not ship a phase later than the hazard it
+  covers.
+
+- **v0.9.0: the coexistence probe is a phase, for the fourth time in this
+  project's history and the first three all fired.** `CHAN-01`'s verdict selects
+  which of three structurally different serialization modules Phase 41 builds —
+  in-process mutex, broker-level halt-authority lease, or connect-gate — so a
+  note inside a larger phase would make the gate skippable while a phase
+  boundary makes it structural. Phase 9's `R4` returned `degrade`; Phase 23's
+  `R1` returned `no-go` and five plans were never dispatched; Phase 33's `R6`
+  returned `degrade` with the one available override declined. Phases 41-44 each
+  state what they become under each verdict rather than assuming the favourable
+  one.
+
+- **v0.9.0: `EVID-06` is an exit criterion of Phase 43, not its own phase, and
+  the line is stated so the choice is checkable.** It carries the full gate
+  discipline — pass/fail rule fixed before the measurement — and runs at the
+  *head* of Phase 43, before the schema is settled, because retrofitting an
+  instrumentation axis onto a shipped run-identity key is the rework the
+  discipline exists to prevent. What it does not do is narrow or cancel a later
+  phase: both outcomes keep Phase 43's scope, selecting a labelling policy
+  inside it. That is the property Phases 9, 23 and 33 all had and `EVID-06` does
+  not.
+
+- **v0.9.0: `PROOF-04` is its own phase despite being a single requirement.** A
+  measurement phase must be free to close on `not-exercised`, which Phase 38 did
+  for `PROOF-02`. Folded into Phase 43 it would sit behind that phase's
+  shipped-code pass, where a green build can launder a weak measurement.
+
+- **v0.9.0: three new Standing Constraints added to ROADMAP.md at the roadmap's
+  creation**, each a hazard that fails *silently*: monitor-output format drift
+  is semantic rather than syntactic (3.4 inverted `mc`/`ms`'s glyph meaning with
+  no syntactic change); the text monitor halts the machine on command, so it is
+  a second channel needing the same serialization discipline and a contended
+  instance must not be diagnosed as wedged; and `c1541` and `cartconv` exit `0`
+  on error, so an exit-status check over them passes failures silently.
 
 ### Decisions
 

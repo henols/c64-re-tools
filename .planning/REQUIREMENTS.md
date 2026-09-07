@@ -117,31 +117,37 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CHAN-01 | — | Pending |
-| CHAN-02 | — | Pending |
-| CHAN-03 | — | Pending |
-| CHAN-04 | — | Pending |
-| CHAN-05 | — | Pending |
-| PARSE-01 | — | Pending |
-| PARSE-02 | — | Pending |
-| PARSE-03 | — | Pending |
-| PARSE-04 | — | Pending |
-| EVID-01 | — | Pending |
-| EVID-02 | — | Pending |
-| EVID-03 | — | Pending |
-| EVID-04 | — | Pending |
-| EVID-05 | — | Pending |
-| EVID-06 | — | Pending |
-| PREP-01 | — | Pending |
-| PREP-02 | — | Pending |
-| PREP-03 | — | Pending |
-| PREP-04 | — | Pending |
-| PROOF-04 | — | Pending |
+| CHAN-01 | Phase 39 | Pending |
+| CHAN-02 | Phase 41 | Pending |
+| CHAN-03 | Phase 41 | Pending |
+| CHAN-04 | Phase 41 | Pending |
+| CHAN-05 | Phase 41 | Pending |
+| PARSE-01 | Phase 42 | Pending |
+| PARSE-02 | Phase 42 | Pending |
+| PARSE-03 | Phase 42 | Pending |
+| PARSE-04 | Phase 42 | Pending |
+| EVID-01 | Phase 43 | Pending |
+| EVID-02 | Phase 43 | Pending |
+| EVID-03 | Phase 43 | Pending |
+| EVID-04 | Phase 43 | Pending |
+| EVID-05 | Phase 43 | Pending |
+| EVID-06 | Phase 43 | Pending |
+| PREP-01 | Phase 40 | Pending |
+| PREP-02 | Phase 40 | Pending |
+| PREP-03 | Phase 40 | Pending |
+| PREP-04 | Phase 40 | Pending |
+| PROOF-04 | Phase 44 | Pending |
 
 **Coverage:**
 - v0.9.0 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️ (populated by the roadmapper)
+- Mapped to phases: 20
+- Unmapped: 0 ✓
+
+Mapped 2026-09-06 at roadmap creation, and cross-checked **mechanically** against
+ROADMAP.md's own per-phase `**Requirements**:` lines rather than by eye: 20 ids
+mapped, 20 unique, 0 duplicates, 0 orphans, 0 extras. Phase 39 — `CHAN-01`.
+Phase 40 — `PREP-01..04`. Phase 41 — `CHAN-02..05`. Phase 42 — `PARSE-01..04`.
+Phase 43 — `EVID-01..06`. Phase 44 — `PROOF-04`.
 
 ---
 

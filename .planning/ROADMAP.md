@@ -13,6 +13,7 @@
 
 - ✅ **v0.7.0 Own the Annotation Store** — Phases 27-32 (shipped 2026-09-01)
 - ✅ **v0.8.0 Frame-Exact Capture and the Two Engines** — Phases 33-38 (opened 2026-09-02, shipped 2026-09-06; `GATE-01` returned `degrade` by rule `R6`)
+- 🚧 **v0.9.0 The Text Channel and the Runtime Evidence Layer** — Phases 39-44 (opened 2026-09-06; roadmap created 2026-09-06, 20/20 requirements mapped)
 
 *v0.8.0 continues phase numbering from Phase 32 — it starts at Phase **33**.
 Phase numbers are continuous across milestones and are **never** reused,
@@ -31,6 +32,12 @@ ids** (`DXA-01`, `DXA-02`, `GHID-01`, `GHID-03`, `GHID-04`, `OPC-01`,
 `AUTO-04`, `AUTO-05`, `AUTO-07`, `PROOF-01`, `PROOF-03`), each amendment
 stating what changed and on what evidence in `.planning/REQUIREMENTS.md`. The
 superseded forecast is dated and corrected here, not deleted.
+
+*v0.9.0 continues phase numbering from Phase 38 — it starts at Phase **39**.
+No number is reset and none is reused. Phase **directories** are likewise not
+archived, per the standing v0.4.0 decision re-measured at the v0.7.0 close, so
+Phases 39-44 land alongside the 34 directories already under `.planning/phases/`
+rather than in a fresh tree.*
 
 ## Standing Constraints
 
@@ -209,6 +216,40 @@ the pivot exploration, each of which fails **silently** when broken.
   second floor for its prefix**, pinned as a literal, with a **real**
   unclassified module created on disk as a positive control **observed red** —
   the technique `SEAM-02` used in Phase 27.
+
+- **Monitor-output format drift across VICE versions is *semantic*, not
+  syntactic, so a fixture-only defence keeps passing while returning the
+  inverse answer.** *(Added at the v0.9.0 open, 2026-09-06.)* The dated
+  instances: VICE **3.4** inverted the meaning of `mc`/`ms`'s glyphs with no
+  layout, delimiter or column change to signal it; **3.0** widened `chis`'s
+  cycle column; **3.5** added a new `memmapshow` access class. A parser pinned
+  before 3.4 raises nothing and reports the opposite of the truth. Any text
+  format this project parses is therefore pinned to an exact
+  `(binary sha256, VICE version)` pair, captured from **at least two real
+  binaries**, parsed into closed enums, and made to **fail loudly on an
+  unrecognised value** — the control being a planted fixture carrying one,
+  observed making the parser refuse.
+
+- **The text monitor halts the machine on command, so it is a second channel
+  needing the same serialization discipline — not a free side-channel.**
+  *(Added at the v0.9.0 open, 2026-09-06.)* MEASURED 2026-08-27 against genuine
+  stock 3.9: the stopwatch counter advanced only across an `x`. Bind-time
+  coexistence with the binary monitor is confirmed; **interleaved command
+  behaviour is not**, and the binary monitor's own one-client rule already
+  produces a second `connect()` that sits unserviced with no reply and no EOF,
+  indistinguishable from a wedge. Any code that issues a halting command on
+  either channel goes through one serialization authority, and any triage that
+  reads "not advancing" must be able to say *contended* as well as *wedged* —
+  a healthy contended instance recycled is evidence destroyed.
+
+- **`c1541` and `cartconv` exit `0` on error.** *(Added at the v0.9.0 open,
+  2026-09-06.)* MEASURED; only `petcat` returns non-zero. An exit-status check
+  over these two passes failures silently, which is the same failure class the
+  real-ACME verify path already refuses to have — it reads the tool's own
+  output and carries `skipped` as a third outcome that is never a pass. Every
+  host tool this project adds decides its outcome from what the tool *said*,
+  and proves it with a planted failure whose exit-status-only check is shown to
+  **pass** on the same input.
 
 ## Phases
 
@@ -484,6 +525,40 @@ inventory and the sequencing rationale:**
 **Requirements as shipped:** [`milestones/v0.8.0-REQUIREMENTS.md`](milestones/v0.8.0-REQUIREMENTS.md)
 
 </details>
+
+### 🚧 v0.9.0 The Text Channel and the Runtime Evidence Layer (Phases 39-44)
+
+**Goal:** Dial the `-remotemonitor` text-monitor port this project has opened on
+every stock launch since Phase 3 and never connected to, and make what the
+emulator *observed* a durable, accumulating class of fact — kept deliberately
+apart from what the bytes *imply*, with disagreement between the two as the
+highest-value output rather than an error to reconcile.
+
+**20 requirements, all mapped, each to exactly one phase** — `CHAN-01..05`,
+`PARSE-01..04`, `EVID-01..06`, `PREP-01..04`, `PROOF-04`. Cross-checked
+mechanically against the per-phase `**Requirements**:` lines below rather than by
+eye, because this project has a recorded history of a requirement owned by two
+phases or by none.
+
+**Six phases, and the first one's deliverable is evidence rather than code.**
+`CHAN-01`'s verdict selects which of three structurally different serialization
+modules Phase 41 builds, so every phase after it states what it becomes under
+each verdict rather than assuming the favourable one. Two items research proposed
+as phases are **not** phases here: the `.annostore` schema-bump question is a
+decision record folded into Phase 43 — it is `EVID-02`, and it belongs beside the
+code that adds the table — and the `c1541`-supersedes-`d64-parse.mjs` question is
+already deferred to Future Requirements and needs no phase at all.
+
+- [ ] **Phase 39: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)** - Five named live experiments against genuine stock 3.9 answer whether a text client and a binary client can drive one emulator without corrupting each other, against rules committed to git before any measurement exists — with the authority to narrow or cancel every phase after it
+- [ ] **Phase 40: The Three Preprocessing Host Tools** - `c1541`, `petcat` and `cartconv` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure on two tools that exit 0 on error — fully independent of the gate and of the channel, and runnable beside Phase 39 from day one
+- [ ] **Phase 41: The Text Channel, Its Serialization Authority, and the Contention Verdict** - A tool call reaches the text monitor with responses framed by the prompt rather than by a timeout, every halt-taking operation on either channel passes through the serialization shape Phase 39 selected, and a contended instance is reported as contended rather than recycled
+- [ ] **Phase 42: The Text-Format Parsers and Their Two-Binary Fixtures** - Five human-formatted text outputs become structured data behind one owning module each, with `memmapshow`'s execute bit preserved as its own bit — and a drifted format failing loudly instead of returning an inverted answer
+- [ ] **Phase 43: The Runtime Evidence Layer** - Observed execution becomes durable, run-keyed, monotonically accumulating store state joined against the byte-derived block table disagreement-first, opening on a committed-before-measurement A/B that says whether instrumenting a run destroys the reproducibility its rows are keyed on
+- [ ] **Phase 44: PROOF-04 — The Independent External Check** - `PROOF-01`'s false-positive count computed for the first time, using observed execution as the independent oracle it shipped without, closing a reversal condition stated verbatim at the v0.8.0 open
+
+**Phase details, the dependency edges, the per-verdict branches and the
+sequencing rationale** are in the two v0.9.0 sections further below, placed after
+v0.6.0's for the window-slicing reason recorded there.
 
 ## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)
 
@@ -762,6 +837,259 @@ cross-references and the store's write surface, and it is the only phase whose
 core rules are already known to fail *silently*. Running it last means its three
 red-observed controls run against the real pipeline rather than against a stub.
 
+## v0.9.0 The Text Channel and the Runtime Evidence Layer (Phase Details)
+
+*v0.9.0's phase details, placed **after** v0.6.0's for the same measured reason
+recorded above: `extractCurrentMilestoneScoped()` slices a milestone's window
+from its summary heading to the next version-bearing heading, skipping
+`Phase`-shaped headings on the way, and it locates a milestone's detail block by
+a `(Phase Details)` heading at or after that window's end. A v0.9.0 detail block
+placed between v0.6.0's summary and its `(Phase Details)` heading would fall
+inside v0.6.0's window instead. Do not reorder these sections.*
+
+### Phase 39: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)
+
+**Goal**: A recorded verdict — `go`, `degrade` or `no-go` — says whether a
+text-monitor client and a binary-monitor client can drive the same emulator
+without corrupting each other, derived from live measurement against genuine
+stock VICE 3.9 by rules committed to git before any measurement exists. **This
+phase's deliverable is evidence, not code**, and the verdict has the authority to
+narrow or cancel every phase after it: it selects which of three structurally
+different serialization modules Phase 41 builds, and a `no-go` re-scopes Phase
+43's capture step from concurrent to scheduled. No production module of Phase 41
+exists when this phase closes.
+**Depends on**: Nothing. Runs against genuine unpatched stock `x64sc` 3.9 at `/usr/bin/x64sc` (the fork 3.10 shadows it on `PATH`; both are on this host) and needs nothing from any prior milestone beyond the `-remotemonitor` flag the broker has appended to every stock launch since Phase 3 and that nothing has ever dialed
+**Requirements**: CHAN-01
+**Success Criteria** (what must be TRUE):
+
+  1. **The rules exist in git before the measurements do, and the verdict is derived rather than judged.** The go / degrade / no-go rules, the outcome-line schema and the evidence conventions are committed as the phase's first plan, with git order as the proof, and a totality walk shows every input tuple has exactly one antecedent — the shape `GATE-01` used at Phase 33 (108 tuples) and `ANNO-16` used at Phase 9. Whether `could-not-run` is emittable at all is **decided explicitly**, either by giving it a named antecedent or by showing it structurally unemittable; it is not left to be discovered at the end. A reader can check the commit that carries the rules precedes every commit that carries a measurement.
+  2. **All five named experiments are run with both channels live, and each records an outcome at column 0 of its own evidence file** — idle coexistence (a non-halting `MEM_GET` on the binary channel while the text client is connected and silent), foreign-halt visibility (a non-stopping checkpoint armed on the binary channel while a halting `memmapshow` is issued on the text one), concurrent in-flight commands (`ADVANCE_INSTRUCTIONS` against `prof flat 5` at overlapping instants), cross-channel resume (halt on one channel, read and resume from the other), and abrupt-disconnect recovery (`SIGKILL` the text client while it holds a halt). An experiment that cannot be taken records *that*, as a gate input; it is never silently omitted.
+  3. **Both blocking UNVERIFIED items are settled by measurement and recorded either way.** First, whether interleaved halt/resume corrupts the binary client's view — specifically whether the existing "poll on `hit_count`, never on paused state" invariant already tolerates a foreign halt for free, or whether a foreign `STOPPED` can be mistaken for the client's own. Second, whether VICE's text-monitor server enforces the same single-client limit the binary monitor does: MEASURED for the binary monitor, a second `connect()` sits unserviced in the backlog with no reply and no EOF, which is *indistinguishable from a wedge*, so a two-connection live test against the text port is run and its result recorded in whichever direction it comes out.
+  4. **The verdict names one of three serialization shapes, and the phase states what each implies for Phase 41** — `go` → an in-process async mutex, both channels connected for the session's lifetime, the `channel` discriminator kept for bookkeeping only; `degrade` → a broker-level cross-channel halt-authority lease, moving correctness from one process's in-memory mutex to the broker, at the cost of a round trip per halting call; `no-go` → a connect-gate in which opening one channel requires releasing the other's claim, the two time-sharing and never coexisting live. A `no-go` does **not** kill the runtime-evidence layer; it makes that layer's capture step scheduled rather than concurrent, and Phase 43 is written to survive it.
+  5. **The probe's raw captured text survives the phase as the first fixture batch, with provenance, from both binaries on this host.** Every capture carries the same five keys the binary-monitor fixtures already require (`capturedFrom`, `viceVersion`, `capturedAt`, `command`, `synthetic`), with `synthetic: false` and `capturedFrom` naming the resolved binary path and its stock/fork kind. Captured from stock 3.9 **and** fork 3.10, so Phase 42 inherits two-binary provenance instead of re-running the capture — the loader refusing a sidecar that is missing a key is what makes this checkable rather than claimed.
+
+**Plans**: TBD
+
+Notes:
+
+- **This is the fourth time this project makes an assumption probe a phase rather than a criterion, and the first three all fired.** Phase 9's `R4` returned `degrade` and the milestone shipped smaller and correct. Phase 23's `R1` returned **`no-go`** and five of its eleven plans were deliberately never dispatched. Phase 33's `R6` returned `degrade` with `could-not-run` structurally unemittable and the one available override explicitly declined. The precedent is not decorative: gates here fire, and are obeyed.
+- **What is already MEASURED, so the probe does not re-derive it.** Bind-time coexistence of the two channels is confirmed on both builds on this host. The `(C:$xxxx) ` prompt is a dependable terminator on both. And the text monitor **halts the machine on command** exactly as the binary one does — the stopwatch counter advanced only across an `x`. That last fact is why this is a gate at all: the text channel is a second halting channel needing the same discipline, not a free non-pausing side-channel.
+- **The abrupt-disconnect experiment may itself discover required mechanism.** Today's binary-side rule is "connection close IS the release" (`broker-control.mts` ~388-397), and the text channel has no analogue. If the measurement shows a killed text client leaves the machine permanently halted and indistinguishable from a genuine wedge, the mechanism that fixes it becomes named Phase 41 scope in the verdict — discovered here, not at Phase 41's gate.
+- **Do not build `monitor-lock.ts` in this phase, in any shape.** The mutex, the broker lease and the connect-gate are three structurally different things and picking the wrong one wastes a phase. The verdict is the deliverable.
+- **`vice-sync.ts` is not the seam any of the three shapes extends** — a factual correction to the milestone context, carried here so a planner does not lose an afternoon to it. It imports the fork-only `call()` from `vice.ts`, and no `stock-*.ts` module imports it; the several stock modules that uphold the same two invariants do so natively, per module, and reference `vice-sync.ts` only in comments.
+
+### Phase 40: The Three Preprocessing Host Tools
+
+**Goal**: `c1541`, `petcat` and `cartconv` are reachable from a container-side
+skill script over the typed `host_tool` control op v0.8.0 shipped — so a disk's
+real structure, a BASIC stub's handover point and a cartridge's bank layout are
+available before any disassembler is spent on the image — and a failure in any of
+the three is reported as a failure despite two of them exiting `0` on error.
+**Depends on**: Nothing in this milestone. Independent of Phase 39's verdict and of the text channel, and runnable concurrently with Phase 39 from day one — zero shared files. It consumes v0.8.0's shipped `host_tool` seam (six tool ids today) and the CI gate that bans every other route
+**Requirements**: PREP-01, PREP-02, PREP-03, PREP-04
+**Success Criteria** (what must be TRUE):
+
+  1. **A user gets a named file's real sector chain, plus the BAM and the directory, out of a `.d64` through `c1541`** — reached over `host_tool` from a container-side skill script with no `spawnSync` of a host binary anywhere, so `scripts/check-no-skill-external-spawn.mjs` stays green and its planted-violation controls are re-run rather than assumed still valid. `d64-parse.mjs` is untouched and undeprecated: `c1541` is **additive by decision**, and whether it eventually supersedes the hand-written parser is deferred on the record rather than settled as a side effect of adding a tool.
+  2. **A user is shown what a BASIC stub does and where it hands over to machine code, or is told plainly that it cannot be resolved.** The literal `SYS <decimal>` fast path resolves to an address; a computed argument produces a **named decline** rather than a guessed entry point, proven by a fixture that carries one. The decline is the point: a guessed entry point is spent on a disassembler downstream, and a wrong one is expensive.
+  3. **A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.
+  4. **A failure is reported as a failure, proven separately on each of the three.** MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
+
+**Plans**: TBD
+
+Notes:
+
+- **Seven synchronized edit sites per tool id**, named by `host-tool.mts`'s own header — `HostToolId`, `HOST_TOOL_IDS`, `HOST_TOOL_ARG_KEYS`, `HOST_TOOL_PATH_ARG_KEYS`, `HOST_TOOL_TIMEOUT_MS` among them — with a data-driven census test that catches a skipped one. Ids are **per capability, not per binary** (`c1541.chain`, `petcat.decode`, `cartconv.identify`), following `acme.build` / `ghidra.analyze` / `dxa.disassemble`. A generic run-arbitrary-command op is a remote-execution seam and was rejected on the record.
+- **The version/digest precedent to copy is `backend-detect.mts`'s `--help` probe, not dxa's or Ghidra's.** dxa is pinned by a committed tarball sha256 because this project vendors and builds it; Ghidra is declared by version only because it is a 543 MiB non-vendored install. These three are neither — they are small binaries that ship *alongside* `x64sc` from the same package. Probe availability and version once per process, capture the probe output as a fixture with the same provenance keys, and log **path and version per call**. That logging is also Pitfall 11's defence: the fork's `x64sc` already shadows stock on this host's `PATH`, and the same shadowing hazard applies to the whole VICE toolset, not just the emulator.
+- **Prefer read-only verbs; if any mutating `c1541` verb ships, it writes its evidence before it writes the disk.** This project already writes an incident record before any emulator kill; a destructive host-tool write inherits that discipline, proven by a planted test that shows the record exists before the mutating call executes rather than after it.
+- **The runtime correlation is NOT in this phase and this phase must not promise it.** Comparing a file's *claimed* sector chain against the sectors a loader *really* reads needs drive-side checkpoints, which need the `default_memspace` reset that only `device c:` provides — a capability Phase 41 opens, and additionally gated on `Drive8TrueEmulation` plus a non-zero `Drive8Type`, since drive memory reads with true drive emulation off return **silent zeros, not an error**. `PREP-01`'s text is static structure only. The drive-side fastloader signal is deferred beyond this milestone; a plan here that reaches for it is out of scope.
+- **Eligible carried fix.** This phase touches skill-script trees, so the unowned `mkdtemp` fix for scratch fixtures written inside walked trees — culprit and remedy both already named, no pass owns it — can be taken here rather than carried a third close.
+
+### Phase 41: The Text Channel, Its Serialization Authority, and the Contention Verdict
+
+**Goal**: A user's tool call reaches VICE's text monitor over the
+`-remotemonitor` port, with responses framed by the prompt rather than by a
+timeout; every halt-taking operation on **either** channel passes through one
+serialization authority **whose shape Phase 39's verdict selected**; and an
+emulator that is merely contended between the two channels is reported as
+contended rather than diagnosed as wedged and destroyed.
+**Depends on**: Phase 39 (its verdict selects which of three structurally different serialization modules is built here — nothing in this phase is designed as though the answer is already known)
+**Requirements**: CHAN-02, CHAN-03, CHAN-04, CHAN-05
+**Success Criteria** (what must be TRUE):
+
+  1. **A container-side caller can learn the text-monitor port of the instance it holds.** MEASURED as zero grep hits today: `remoteMonitorPort` is recorded host-side on the instance record and is never serialized into any acquire or status response, and `HeldLease` has no field for it. This is not a design choice — nothing can dial the port until it closes — so it lands first in this phase and is given no more weight than it deserves.
+  2. **A tool call issues a text-monitor command and gets its complete response back, framed by the prompt and not by a timeout.** MEASURED: the `(C:$xxxx) ` prompt is a dependable terminator on both builds on this host. Two planted controls prove the framing rather than assert it, each observed red without the fix: a prompt arriving **split across two TCP segments**, and a command whose own output **contains prompt-shaped text**. The text protocol has no frame delimiter — end of output is inferred, never declared — so a framing bug here surfaces as a truncated or merged response, not as an error.
+  3. **The serialization authority is the shape Phase 39 selected, and both channels' halting operations go through it.** Under `go` it is an in-process async mutex; under `degrade` a broker-level cross-channel halt-authority lease, moving `monitor_claim` from "own this socket" to "hold exclusive halt authority over this instance"; under `no-go` a connect-gate where the channels time-share and never coexist live. Whichever shape lands, the two existing binary-side invariants are unchanged and still hold — **exactly one resume per wait**, and **polling on `hit_count` rather than on paused state** — and a test asserts identical checkpoint-state visibility from both channels.
+  4. **A contended instance is reported as contended, and the skill that would have destroyed it is fixed in this same phase.** `vice_diagnose` gains the evidence needed to tell a two-channel hold from a genuine wedge, and `vice-wedge-triage` gains the verdict. The regression is specific and it is one this milestone would otherwise *introduce* into shipped software: the skill's verdict vocabulary has no entry for contention, and a text-channel hold the binary side cannot see reads as exactly the `wedged` signature — two cycle brackets reading zero — whose recommended remedy is a destructive recycle of a healthy instance. The new signature is **reproduced live** and recorded in the skill's provenance table at the same confidence discipline its existing verdicts carry, not added as an untested branch.
+  5. **The `default_memspace` remedy is exercised, not merely made available, and the three narrowed CLAUDE.md constraints gain a scoping clause rather than a deletion.** MEASURED hazard: a drive checkpoint hit sets `default_memspace` (`monitor.c:3393-3396`) and the binary monitor has no command that resets it, after which `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the **drive** CPU and `@bank:` conditions fail outright. A live test contaminates it and shows `device c:` over the text channel restoring main-CPU stepping. Each of the three constraints the live probe narrowed is **literally true as written and correctly scoped to the binary monitor**; each gains its clause and none is removed — the absent runtime `WarpMode` *resource* stays a real and separate fact from `warp on` being a working monitor *command*.
+
+**Plans**: TBD
+
+Notes:
+
+- **Two new sibling files, mirroring the binary client's split, never merging into it.** `text-protocol.ts` owns the text wire's bytes; `text-connect.ts` claims the channel, reads the port off the lease and hands back a connected client — structurally the same shape as `stock-protocol.ts` + `stock-connect.ts`. Extending `stock-protocol.ts` to also speak text would put two unrelated wire formats behind one seam.
+- **`monitor_claim` today has no channel axis.** `InstanceRecord.monitorClient` is one field scoped to the binary socket, and `broker-state.mts:129-137` already anticipates a `channel: "binary" | "text"` discriminator. Under `go` that discriminator is bookkeeping; under `degrade` it becomes enforcement; under `no-go` it becomes mutual exclusion. Same field, three different meanings — which is exactly why Phase 39 comes first.
+- **A new module family is outside the existing consumer floor.** `hostpath-consumers.test.ts`'s floor is pinned over the `anno-*` prefix as a literal, deliberately never derived from disk, so a `text-*` family is invisible to it. `text-connect.ts` resolves a network **hostname** (the same way `vice.ts`'s `mcpHost()` does) and not a filesystem path, so the preferred outcome is **not to become a host-path consumer at all**; if any module here does, add a second floor for the new prefix with a real unclassified module on disk as a positive control **observed red**, per the standing constraint.
+- **Under `no-go` this phase does not shrink to nothing** — the connect-gate is the *heaviest* of the three shapes, since it has to sequence claim/release across two protocols rather than serialize inside one process. Budget for that outcome rather than treating it as the cheap branch.
+- **`CHAN-05` may not slip.** Between the text channel shipping and the skill being updated, a shipped playbook actively recommends a destructive remedy for a healthy instance. That window is the reason the requirement says "both shipping alongside the text-channel code rather than after it", and it is why the skill update is a success criterion of this phase rather than a follow-up.
+
+### Phase 42: The Text-Format Parsers and Their Two-Binary Fixtures
+
+**Goal**: Five human-formatted text outputs become structured data behind exactly
+one owning module each — with `memmapshow`'s **execute bit preserved as its own
+bit** for RAM and ROM alike, so a code-versus-data answer derived from real
+execution exists as data rather than as text — and an unrecognised value fails
+loudly instead of being absorbed into a plausible-looking wrong answer.
+**Depends on**: Phase 39 for `PARSE-01..03` (its probe's raw captured text, taken from both binaries on this host, is the first fixture batch); Phase 41 for `PARSE-04` (a live per-command capability probe needs a dialable channel). `PARSE-01..03` can therefore run concurrently with Phase 41 — the parsers are pure functions that never see a socket
+**Requirements**: PARSE-01, PARSE-02, PARSE-03, PARSE-04
+**Success Criteria** (what must be TRUE):
+
+  1. **A user gets a per-address access map out of `memmapshow` in which execute is its own bit**, for both RAM and ROM, rather than folded into a read. This is the oracle `PROOF-01` shipped without, and every downstream claim in Phase 43 and Phase 44 rests on that bit being separately represented — a map that conflates execute with read cannot license `code` for an address at all.
+  2. **`prof flat`, `chis`, `bt` and `io` return structured results**: ranked self and total cycles per address; CPU history entries carrying their **per-entry cycle counts on 3.9** (MEASURED, and it matters — the *capability* is not gated on VICE ≥ 3.10; only the binary `CPUHISTORY_GET` opcode is, so CLAUDE.md's dependency constraint gains that scoping clause rather than being deleted); the reconstructed JSR chain; and the semantically decoded register view.
+  3. **Each format has exactly one owning module and nothing outside it reads the raw text**, asserted structurally rather than left to convention — the same single-seam discipline that keeps `anno-store.ts` the only `node:sqlite` consumer. Each module's whole contract is text in, typed values out: no socket, no timing, no knowledge of which channel produced the string.
+  4. **A drifted format fails loudly instead of returning an inverted answer.** MEASURED as real, and **semantic rather than syntactic**: VICE 3.4 inverted the meaning of `mc`/`ms`'s glyphs with no layout or delimiter change to signal it, 3.0 widened `chis`'s cycle column, and 3.5 added a `memmapshow` access class. So fixtures are captured from **at least two real VICE binaries** — genuine stock 3.9 at `/usr/bin/x64sc` and the fork 3.10 that shadows it on `PATH`, both present on this host, a hard requirement rather than an aspiration — pinned to the exact binary they came from under the same five provenance keys the binary-monitor fixtures already require. The control that makes this real is a planted fixture carrying an **unrecognised** enum value, observed making the parser refuse: a fixture-only defence would have kept passing while returning inverted answers.
+  5. **A missing build capability is named, per command and per binary.** MEASURED: this tracing/profiling support is opt-**out** at build time — the opposite polarity to the ≥ 3.10 opcode note — and the commands do **not** share one guard, so each is probed on its own and the answer cached per binary. A user is told which capability is missing and on which binary, and is never handed a silent empty result or a parse error that reads like a bug in this project.
+
+**Plans**: TBD
+
+Notes:
+
+- **The parsers are the text side's answer to `stock-handler.ts`, minus all transport.** `text-protocol.ts` owns sending the command and collecting the raw response; everything downstream of "here is a string" is pure and exhaustively unit-testable. The closest existing analogue in this tree is the `disasm-*.ts` family.
+- **Fixture provenance is the existing five keys, in a new sibling loader.** `capturedFrom` (resolved binary path plus stock/fork kind), `viceVersion`, `capturedAt`, `command`, `synthetic` — with `synthetic: false` asserted for every real capture. The **pattern** transfers from `binmon-fixtures.ts`; the **code** does not, because that module is typed to binary-monitor wire frames.
+- **Re-confirm the drift citations against the raw file before quoting them in shipped documentation.** The 3.0 / 3.4 / 3.5 changelog instances above come from research that read `NEWS` and `configure.ac` via automated summarization and said so. They are strong enough to justify the defence — which is the decision they are load-bearing for — and not yet strong enough to be quoted as exact upstream wording in a user-facing document.
+- **The drift defence is the reason this phase is separate from Phase 41 rather than folded into it.** A parser that silently returns an inverted answer is the failure mode this project has repeatedly paid for, and it is not the same risk as a socket that frames wrongly. Keeping the two in one phase would let a green transport pass carry a parser whose only evidence is that it did not throw.
+
+### Phase 43: The Runtime Evidence Layer
+
+**Goal**: What the emulator observed becomes durable, run-keyed, monotonically
+accumulating store state that a later session queries instead of re-running the
+program — joined against the byte-derived block table by a query that reports
+**disagreement first** and never overwrites it — with the phase opening on a
+committed-before-measurement A/B that says whether instrumenting a run destroys
+the frame-exact reproducibility its rows are keyed on.
+**Depends on**: Phase 41 (a dialable channel, to enable instrumentation and to run the A/B) and Phase 42 (`memmapshow`'s parsed execute bit is what is ingested). Under Phase 39's `no-go` the capture step here is **scheduled rather than concurrent** — release the binary lease, claim/dial/capture/release the text lease, re-claim — which changes how capture is sequenced and not what the layer is
+**Requirements**: EVID-01, EVID-02, EVID-03, EVID-04, EVID-05, EVID-06
+**Success Criteria** (what must be TRUE):
+
+  1. **The A/B lands before the schema is settled, against a pass/fail rule fixed before the measurement is taken.** UNVERIFIED and blocking: this layer keys rows by a reproducibility that instrumenting the run may itself destroy, and no documentation source answers it — only an A/B at v0.8.0's existing anchor sequence, instrumentation on versus off, does. **Both outcomes are planned for rather than one assumed.** If instrumentation does not perturb, run identity is v0.8.0's `(binary sha256, argv digest, seed)` composite unchanged. If it does, instrumented and frame-exact runs are **separated and labelled as such** in the schema and in every rendering, never quietly conflated — and because that is a schema consequence, the measurement is taken before the table exists rather than retrofitted onto a shipped key.
+  2. **A later session queries the evidence instead of re-running the program, and an existing store in the field has a decided fate.** Observations are durable rows in `.annostore`, keyed by run identity that **reuses** the capture identity v0.8.0 already established rather than minting a second notion of "the same run", and a re-ingest of the same run is idempotent. Durability is proven the way `STORE-04` was — mutate, `SIGKILL` in a separate OS process, reopen in a fresh process, read the value back. And adding the table to a store that already exists in the field has a **decided, recorded outcome** — either a migration arm or a deliberate re-affirmation of the current strict-equality refusal — reached from a factual check of whether such stores exist, and never defaulted into silently: the justification recorded for the last schema bump was "no store file exists yet", which is very likely stale after two milestones of real store use.
+  3. **A user can ask where the two classifiers disagree and gets the disagreements first.** Bytes say `data`, execution says `code` — the highest-value output of the whole design, and the classifiers' independence is the asset that produces it. The block table **stays byte-derived and is never silently overwritten** by an observation; agreement is reported as a count rather than as a wall of rows; and a planted test proves the disagreement state is reachable and rendered distinctly from both agreement and silence.
+  4. **The layer cannot state, imply, or render `data` on the strength of absence.** An address observed executing **is** code; an address never touched proves nothing; and a union across runs — however many — never becomes exhaustive. Enforced structurally rather than left to care: the runtime classifier has no `data` branch to return, "no row" and "observed not executing" are distinct facts the schema cannot let collide, and every percentage or summary carries the denominator it is a fraction of. Several individually-plausible implementation choices violate this quietly at different layers, so each gets its own control rather than one blanket assertion.
+  5. **A bracket is nameable, resettable and re-measurable without leakage.** Evidence gathered from a run states which bracket it belongs to, and a bracket can be reset and re-measured without a previous run's observations leaking into it — proven against a planted concurrent-reset or relaunch scenario, since a bracket's validity races anything else touching the map, not merely a second sequential run.
+
+**Plans**: TBD
+
+Notes:
+
+- **Why `EVID-06` is this phase's opening criterion and not its own phase — stated rather than assumed.** It is a gate with the full discipline (rule committed before measurement, verdict derived not judged), but its two outcomes both keep *this* phase's scope: it selects a labelling policy inside the layer. `CHAN-01` earns a phase boundary because its verdict selects which of three structurally different modules a **later** phase builds, which is the shape that has fired three times here. `EVID-06` does not narrow or cancel any later phase; it bounds what Phase 44 may claim, which is a statement Phase 44 makes about its own evidence. Placing it at the head of this phase — before the table exists — is what keeps it from becoming a retrofit, which is the whole reason it is a gate.
+- **New table in `anno-store.ts`'s single `DDL`, never a second store file.** `anno-seam.test.ts` structurally asserts `anno-store.ts` is the only `node:sqlite` consumer, and a parallel store is exactly what this design must not create.
+- **The runtime classifier is a third independent classifier, never collapsed into either existing one.** It sits beside the byte-derived and store-derived classifiers, following the reconciliation shape this codebase already uses. Promoting observed execution into the block table under a confidence bracket was rejected in the seed on the record and re-affirmed in Out of Scope: it has fewer moving parts, and it collapses two independent classifiers into one, destroys the disagreement signal, and makes a wrong promotion unrecoverable.
+- **The new verbs register proxy-locally through `buildViceTool()`**, exactly like the 21 `anno_*` tools today, so the derived-tool interception constraint is satisfied by construction rather than by an interception. They get **no** `capability-registry.ts` entry — the standing exclusion for the store applies to them unchanged.
+- **Run identity is reused, not re-invented.** The composite `(binary sha256, argv digest, seed)` already answers "which image, which scenario, which bracket": image is the binary digest, scenario and bracket fold into the argv digest and the seed. A fourth, independently invented scenario label would be a second notion of sameness sitting beside the first, which is the failure this project's single-seam discipline exists to prevent.
+
+### Phase 44: PROOF-04 — The Independent External Check
+
+**Goal**: `PROOF-01` gains the independent external check it shipped without. Its
+false-positive count becomes computable for the first time, on real cracked code,
+using observed execution as the oracle — closing the reversal condition stated
+verbatim at the v0.8.0 open ("a binary-monitor-reachable execution oracle, or a
+decision to open the text channel") by the second branch, deliberately and on the
+record.
+**Depends on**: Phases 41, 42 and 43 — it consumes the finished, live layer end to end and cannot start before all three are proven working together. It also consumes v0.8.0's shipped capture route unchanged, and Phase 38's recorded figures as they stand
+**Requirements**: PROOF-04
+**Success Criteria** (what must be TRUE):
+
+  1. **A false-positive count is computed and stated with its denominator and its positive class** — an address the byte-derived tier classified `data` and the emulator was observed executing. `PROOF-01`'s `100.00 (24/24)` recall on `BRUCE LEE (DC)` and the unchanged fixture `72.39 (97/134)` / pivot `72.46 (100/138)` figures are stated **beside** the new number rather than replaced by it, the discipline Phase 38 used throughout.
+  2. **The check is genuinely independent of the thing it checks.** The oracle is observed execution from a real run; the subject is the static classification dxa and Ghidra produced. Neither tier sees the other's output, asserted structurally rather than promised — otherwise this closes a reversal condition with a classifier grading its own homework, which is precisely the weakness `PROOF-01` was left carrying.
+  3. **A shortfall is recorded as a shortfall, and absence is never converted into `data`.** If a run reaches only part of the image, the answer is a count over what was reached with the denominator named — never a clean bill of health. If the check cannot be run at all, `not-exercised` is recorded together with what was searched and at what depth, which is the outcome Phase 38 recorded for `PROOF-02` rather than smoothing over. What this phase may claim is additionally bounded by Phase 43's `EVID-06` verdict: if instrumentation perturbs frame-exactness, these runs are labelled instrumented and any comparison against v0.8.0's frame-exact captures is stated as narrowed rather than assumed.
+
+**Plans**: TBD
+
+Notes:
+
+- **A single-requirement phase, deliberately, and the reason is not precedent alone.** A measurement phase must be free to close on `not-exercised`. Folded into Phase 43 it would sit behind that phase's shipped-code pass, where a green build can launder a weak measurement — the exact failure mode this project's audit discipline exists to keep visible. Phase 38 is the direct precedent for the shape, and `PROOF-04` continues that family's numbering rather than opening a new one, because it is the same question.
+- **The carried limits are v0.8.0's, not new ones, and they still bind.** The frame-exact stop is exact through anchor hit 50 and **lost from hit 75**, because AUTOSTART's power cycle does not reset the absolute emulated clock. Any depth claim past hit 50 states that limit beside itself.
+- **`PROOF-03` on real cracked code is explicitly not in this phase**, stays carried and unowned, and no plan here may quietly satisfy it as a side effect. Nor does this milestone restore `ANNO-13` / `ANNO-14` / `ANNO-15`; the 2026-08-26 "no parity is owed" decision stands for a second milestone running.
+
+## Sequencing Rationale (v0.9.0)
+
+**Six phases, at `standard` granularity** — the same count v0.7.0 and v0.8.0 each
+landed on, arrived at from the work rather than matched to them. Research proposed
+ten items; two of those (the `.annostore` schema-bump decision and the `c1541`
+supersession question) are **planning-only decision records, not phases**, and the
+requirements document says so: the first is `EVID-02` and is folded into the phase
+that adds the table, and the second is already deferred to Future Requirements and
+needs no phase at all. Two more of the ten (the text dispatch layer, and the wedge-
+triage skill update) are not separable deliveries — dispatch is what `CHAN-03`
+means by "a user's tool call can reach the text monitor", and the skill update is
+`CHAN-05`, which must not ship a phase later than the hazard it covers.
+
+**Why the coexistence probe is a phase and not a criterion inside one.** Its
+verdict selects which of three structurally different modules Phase 41 builds — an
+in-process mutex, a broker-level halt-authority lease, or a connect-gate. Those are
+not three configurations of one design; picking wrong wastes the phase. A note
+inside a larger phase makes that gate skippable; a phase boundary makes it
+structural. The precedent is not theoretical: Phase 9's `R4` returned `degrade`,
+Phase 23's `R1` returned **`no-go`** and five plans were deliberately never
+dispatched, and Phase 33's `R6` returned `degrade` with the one available override
+explicitly declined. **Nothing in Phases 41-44 is planned as though Phase 39's
+answer is already known**, and each of them states what it becomes under each
+verdict.
+
+**Why the preprocessing tools are their own phase and run beside the gate.**
+`PREP-01..04` depend on neither the verdict nor the channel — zero shared files
+with the text-channel work — and they are a coherent, independently verifiable
+capability rather than filler. Running them concurrently with Phase 39 is the only
+thing in this milestone that can absorb the gate's wall-clock cost, and folding
+them into a later phase would put four unrelated requirements behind a verdict they
+do not depend on. **One coupling is real and is recorded rather than glossed:** the
+disk-analysis *runtime correlation* — a file's claimed sector chain against what a
+loader really reads — needs drive-side checkpoints, which need the
+`default_memspace` reset that only `device c:` provides, a capability Phase 41
+opens. `PREP-01`'s text is static structure only, so Phase 40 stands alone; the
+runtime half is deferred beyond this milestone and Phase 40 may not promise it.
+
+**Why `CHAN-02` is a line item and not a phase.** The broker never surfaces
+`remoteMonitorPort` to the container side — MEASURED as zero grep hits across three
+files. It is small, mechanical and unavoidable, and nothing can dial the port until
+it lands, so it sits first inside Phase 41 where it unblocks, rather than being
+given weight it does not have.
+
+**Why the parsers are separate from the channel.** A socket that frames wrongly
+and a parser that silently returns an *inverted* answer are different risks with
+different controls, and only the second has a measured history upstream — 3.4
+inverted `mc`/`ms`'s glyph meaning with no syntactic change to signal it. Keeping
+them in one phase would let a green transport pass carry a parser whose only
+evidence is that it did not throw. The two run concurrently anyway: the parsers are
+pure functions over text Phase 39's probe already captured, and only `PARSE-04`'s
+live per-command capability probe needs the channel.
+
+**Why `EVID-06` is an exit criterion of the evidence phase rather than its own
+phase, stated so the choice is checkable.** It carries the full gate discipline —
+pass/fail rule fixed before the measurement, verdict derived rather than judged —
+and it runs at the **head** of Phase 43, before the schema is settled, because
+retrofitting an instrumentation axis onto a shipped run-identity key is exactly the
+rework the discipline exists to prevent. What it does *not* do is narrow or cancel
+a later phase: both of its outcomes keep Phase 43's scope, selecting a labelling
+policy inside it. That is the line this project's gate phases have always sat on —
+Phases 9, 23 and 33 each gated work *after* themselves — and `EVID-06` is on the
+other side of it. It still bounds what Phase 44 may claim, and Phase 44 states that
+bound about its own evidence rather than inheriting it silently.
+
+**Why `PROOF-04` is its own phase despite being one requirement.** A measurement
+phase has to be free to close on `not-exercised`, which Phase 38 did for `PROOF-02`
+and recorded rather than smoothed over. Folded into Phase 43 it would sit behind
+that phase's shipped-code pass, where a green build can launder a weak measurement.
+It is also the only phase that consumes the whole chain end to end — channel,
+parser, layer — so its failure mode is "the chain does not actually work on real
+cracked code", which is a milestone-level answer and not a plan-level one.
+
+**What this milestone deliberately does not take.** The rebuild half
+(`DECOMP-*`, `BUILD-*`, `EQUIV-*`) re-maps to v1.0.0 because the runtime-evidence
+layer is upstream of it rather than parallel to it. `PROOF-03` on real cracked code
+stays carried and unowned. `ANNO-13` / `ANNO-14` / `ANNO-15` still have no route
+and no owner, for a second milestone running. Each is named here so a reader
+scanning only the phase list does not read an absence as an oversight.
+
 ## Progress
 
 **This per-phase table is load-bearing, not decorative.**
@@ -816,6 +1144,12 @@ in a milestone archive.
 | 36. The SLEIGH Language and the Ghidra Harness | v0.8.0 | 7/7 | Complete | 2026-09-05 |
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
+| 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 0/0 | Not started | - |
+| 40. The Three Preprocessing Host Tools | v0.9.0 | 0/0 | Not started | - |
+| 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
+| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
+| 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
+| 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
@@ -906,3 +1240,4 @@ scoped work above rather than doing it.
 *v0.7.0 shipped and collapsed 2026-09-01 → `milestones/v0.7.0-ROADMAP.md`. Phase directories restored to `.planning/phases/` after archival was measured to redden 9 tests across 5 files — see the Progress note above.*
 *v0.8.0 shipped and collapsed 2026-09-06 → `milestones/v0.8.0-ROADMAP.md`. Phase directories again NOT archived (`--no-archive-phases`), per the standing v0.4.0 decision — `docs-review-disposition.test.ts` and `absorbed-answer-key.test.ts` both read `.planning/phases/` directly.*
 *Phase numbering is continuous across milestones and never reused, including the cut Phases 20-22, the held Phases 24 and 26, and Phase 25 whose content was taken forward while its number was retired.*
+*v0.9.0 roadmap created 2026-09-06 — Phases 39-44, continuing numbering from Phase 38, 20/20 requirements mapped (`CHAN-01..05`, `PARSE-01..04`, `EVID-01..06`, `PREP-01..04`, `PROOF-04`).*
