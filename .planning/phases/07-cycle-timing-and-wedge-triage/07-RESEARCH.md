@@ -166,7 +166,7 @@ None. No CI tool, no apt package, no external binary.
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
 | Frame-counting via a non-stopping ("trace") checkpoint at a fixed frame-boundary address, as `docs/phase0-binmon-findings.md` §1 originally proposed | Refuse multi-frame brackets on VICE < 3.10 and report exact cycles only within one frame | Rejected building the trace-checkpoint fallback: a 50-60 Hz hit rate exceeds this project's own `TRACE_HITS_PER_SECOND_LIMIT = 20` (`stock-checkpoints.ts:280`) within under a second, so the checkpoint would auto-disable itself mid-bracket via the existing D-11 guard — a mechanism this phase would be fighting, not using. See Pitfall 1. |
-| Reaching the text monitor's own `stopwatch` console command (`monitor.c:1547-1570`, `mon_parse.y:3592-3597`) over the wire | `CPUHISTORY_GET`'s per-entry cycle field | Rejected: exhaustively confirmed absent. The binary monitor's confirmed opcode set (`docs/phase0-binmon-findings.md` §5, cross-checked directly against `monitor_binary.c`'s `enum t_binary_command`) has no "execute monitor command text" opcode of any kind. The text-monitor `stopwatch` command is reachable only from the **interactive console** (`-console`), a wholly separate code path from the binary-monitor TCP port this client speaks. See Pitfall 5. |
+| Reaching the text monitor's own `stopwatch` console command (`monitor.c:1547-1570`, `mon_parse.y:3592-3597`) over the wire | `CPUHISTORY_GET`'s per-entry cycle field | Rejected for the *binary* port only: exhaustively confirmed absent. The binary monitor's confirmed opcode set (`docs/phase0-binmon-findings.md` §5, cross-checked directly against `monitor_binary.c`'s `enum t_binary_command`) has no "execute monitor command text" opcode of any kind, on any VICE version — a monitor command genuinely cannot be invoked over the binary port. **Correction (Phase 39, live-probed 2026-08-27 against genuine stock VICE 3.9 — see `.planning/notes/text-monitor-channel-live-probe.md`):** this row originally went further and claimed the text monitor is reachable *only* from the interactive console (`-console`); that generalization was false. A third route exists — `-remotemonitor` (`monitor_network.c`), a TCP listener that is neither the binary port nor the console — and this repo's own broker (`broker-launch.mts`) has appended it to every stock launch since Phase 3, with the allocated port recorded by `broker-state.mts`. See Pitfall 5. |
 | Porting the fork's ping-poll-while-running liveness bracket verbatim | A snapshot-resume-wait-halt-compare bracket using real wall-clock time | Rejected porting verbatim: every stock command halts the machine (`monitor_binary.c:281`), so a "ping" on stock is not the fork's non-pausing observation — it is itself a halt. See Pitfall 3. |
 | A generic "wait for any wire event" utility shared with Phase 3/5's existing polling patterns | A small, new, phase-local helper (`waitForCheckpointHit()`) | No existing helper of this shape exists in this tree (confirmed: no `waitForEvent`/`Promise.race`-based deadline helper anywhere in `.claude/mcp/vice`) — this phase is the first consumer, so it is new plumbing, not a reuse. |
 
@@ -527,7 +527,7 @@ block wrapping all three paths identically.
 ### Pitfall 5: Assuming the text monitor's `stopwatch` command is reachable over the binary monitor
 **What goes wrong:** Time spent trying to construct a wire message that invokes
 VICE's console `stopwatch` command (`mon_parse.y:3592-3597`,
-`monitor.c:1547-1570`) remotely.
+`monitor.c:1547-1570`) remotely **over the binary-monitor TCP port**.
 **Why it happens:** The fork's own `mon_stopwatch_get_elapsed()`/
 `mon_stopwatch_reset()` (`monitor.c:1557-1570`) look — from the outside — like they
 "belong" to the monitor console, and the fork's `mcp_tool_cycles_stopwatch()` calls
@@ -538,10 +538,38 @@ the vendored 3.8 tree and the fork's 3.10-vintage tree) has no "execute monitor
 command text" opcode of any kind, and the fork's own C code calls
 `mon_stopwatch_get_elapsed()` as a **plain in-process function call** from
 `mcp_tools_debug.c`, never through `monitor_binary_process_*()`'s command dispatch.
-This is a genuinely separate code path (the interactive `-console` text monitor)
-from the binary-monitor TCP port this client speaks to at all.
-**Warning signs:** A plan task titled "encode the stopwatch command body" — there
-is no such wire message, on any VICE version.
+A monitor command genuinely cannot be invoked over the **binary** port, on any
+VICE version.
+**Warning signs:** A plan task titled "encode the stopwatch command body over the
+binary port" — there is no such wire message, on any VICE version.
+
+**Correction (Phase 39, 2026-09-07 — see
+`.planning/notes/text-monitor-channel-live-probe.md`):** the paragraph above, as
+originally written, went on to conclude that this makes the text monitor
+reachable "only from the interactive console (`-console`), a wholly separate
+code path from the binary-monitor TCP port this client speaks." That
+generalization was false, and is corrected here rather than silently rewritten:
+`-remotemonitor` (`monitor_network.c`) opens a **third** route — a TCP listener
+that is neither the binary port nor the interactive console — and this repo's
+own broker has appended it to every stock launch since Phase 3
+(`broker-launch.mts`'s `-remotemonitor -remotemonitoraddress
+ip4://<host>:<port>` block, with the allocated port recorded by
+`broker-state.mts`). Live-probed 2026-08-27 against genuine unpatched stock
+`/usr/bin/x64sc` (VICE 3.9): `sw` / `stopwatch` returned real elapsed-cycle
+counts over a plain TCP socket to that port.
+
+Phase 7's decision to reject the text route for the cycle bracket is **not**
+rewritten here — rejecting it may still have been right on its own merits (a
+second channel, its own ownership question, halt-on-command semantics identical
+to the binary monitor's). What is corrected is only the *stated reason*: the
+decision was taken on a false premise (that the text monitor is unreachable at
+all) even though its outcome may still stand.
+
+Believing the channel unreachable is what left these recorded as unavailable on
+stock when all are confirmed working on genuine stock VICE 3.9: `chis` CPU
+history with per-entry cycle counts, `memmapshow`/`memmapzap` execute-access
+mapping, the `prof` profiler, `bt` backtrace, `io` semantic register decode,
+`warp on`/`warp off`, and `device c:`.
 
 ### Pitfall 6: `CPUHISTORY_GET`'s response has no decoder in this tree today
 **What goes wrong:** Assuming `session.client.send(CommandType.CpuHistoryGet, ...)`

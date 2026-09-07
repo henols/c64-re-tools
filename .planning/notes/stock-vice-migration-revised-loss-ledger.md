@@ -114,6 +114,17 @@ Two independent routes, neither needing CPU history or VICE 3.10:
    (`monitor_network.c:334`) resources, both polled unconditionally in
    `monitor_vsync_hook` (`monitor.c:406-407`).
 
+> **Cross-reference correction, 2026-09-07 (Phase 39, plan 39-02):** route 2 above
+> was contradicted, with nothing catching it, by
+> `.planning/phases/07-cycle-timing-and-wedge-triage/07-RESEARCH.md`'s Pitfall 5,
+> which overgeneralized the correct "no execute-monitor-command-text opcode over
+> the binary port" finding into "the text monitor is reachable only from the
+> interactive console" — and Pitfall 5 is what Phase 7 acted on, leaving the
+> `-remotemonitor` port opened and undialed from Phase 3 through Phase 38. Phase 39
+> is where that port was first dialed and where the correction landed; see
+> `07-RESEARCH.md`'s corrected Alternatives Considered row and Pitfall 5, and
+> `.planning/notes/text-monitor-channel-live-probe.md` for the live-probe evidence.
+
 Worst option, for the record: summing per-instruction costs via `ADVANCE_INSTRUCTIONS`
 (0x71) — one trap + round-trip per step, no cycle field in the response, client needs
 its own opcode table. Ballpark ≥100× slower than realtime (rate unverified).
