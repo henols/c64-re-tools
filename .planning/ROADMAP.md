@@ -871,14 +871,38 @@ exists when this phase closes.
 **Plans**: 8 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 39-01-PLAN.md — Pre-commitment: the go/degrade/no-go rules, the frozen outcome-line schema, the evidence conventions and the executable 3,888-tuple totality walk, landed as ONE commit that touches nothing else
 - [ ] 39-02-PLAN.md — Correct the overgeneralized "text monitor unreachable" claim where it was made, scope the three binary-monitor-only constraints, and close the folded todo through the two-directional ledger guard
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 39-03-PLAN.md — Tracer: one idle-coexistence measurement end to end (shared probe harness, throwaway text client, first byte-exact banner capture), plus the seeded verdict document
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 39-04-PLAN.md — Measure foreign-halt visibility and cross-channel resume in both directions
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 39-05-PLAN.md — Measure concurrent in-flight commands and settle the hit-count-invariant blocking item
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 39-06-PLAN.md — Measure abrupt-disconnect recovery and settle the text-monitor single-client blocking item
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 39-07-PLAN.md — Capture the first text-channel fixture batch from both binaries, with the sibling loader that refuses an incomplete sidecar and its one automated test
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 39-08-PLAN.md — Derive and record the verdict from the seven transcribed values, and bind it to Phases 41-44
+
+**Cross-cutting constraints:**
+
+- CHAN-01 (D-16): both measurements were taken with the broker stopped and no other emulator alive, refused in code, with `BROKER_STATE:` and the observed `test:automated` baseline recorded in each evidence file
 
 Notes:
 
