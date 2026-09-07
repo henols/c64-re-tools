@@ -202,8 +202,8 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **7 open** pending todos (it read 0 at the
-v0.4.0 close; nine were filed after it, two closed — CR-05 by Phase 34 plan 34-11, and
+The Deferred Items ledger below reads **8 open** pending todos (it read 0 at the
+v0.4.0 close; ten were filed after it, two closed — CR-05 by Phase 34 plan 34-11, and
 the Ghidra one-command decompile-wrapper proposal by Phase 36); the
 suppressed/acknowledged rows are recorded in their own sections.
 
@@ -1185,6 +1185,21 @@ and two `danish` snapshots diffed directly still show 201 multi-bit divergences
 though it did. Carried as a pending todo rather than acted on because Phase 23 is
 forbidden from modifying anything under `src/`.
 
+**A todo was filed 2026-09-07**, outside phase work, via `/gsd-capture`:
+`2026-09-07-consolidate-all-tool-written-files-under-c64-re-tools`. Every
+disk-writing tool in the plugin picks its own top-level location under the
+resolved project root — `.vice-supervisor/`, `.vice-snapshots/`, `tools/`,
+`tools/ghidra-runs/`, `.planning/incidents/`, `mcp-deps.lock.sha256` — so a
+consumer using more than one tool collects five or six unrelated root entries,
+each with its own `.gitignore` stanza. The todo proposes a single
+`.c64-re-tools/` root with typed subdirectories, as a **clean break with no
+back-compat**: severity confirmed `minor` by the operator at capture time with
+the explicit constraint "no support/fallback for the old structure", so no
+dual-read, no migration shim, no opt-back-in env var. Not scoped into any
+v0.9.0 phase. This paragraph's own count line above read 8 against a 7-file
+tree before this filing (stale by one in the opposite direction from the
+usual); with this todo the tree is genuinely 8 and both figures agree again.
+
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Status | Directory |
@@ -1619,6 +1634,7 @@ regression and not this inheritance.
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 | host-tool | 2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes | minor | Pending |
+| paths | 2026-09-07-consolidate-all-tool-written-files-under-c64-re-tools | minor | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
@@ -1903,10 +1919,13 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-06T11:50:00Z
-Stopped at: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone v0.8.0
-ready to close
+Last session: 2026-09-06T21:30:00Z
+Stopped at: Milestone v0.9.0 opened and roadmapped — Phases 39-44, 20/20 requirements
+mapped; next action is planning Phase 39, the dual-channel coexistence gate
 Resume file: None
+
+Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
+v0.8.0 ready to close (2026-09-06T11:50:00Z)
 
 Earlier: Phase 38 complete — all phases complete (2026-09-05T19:17:51.515Z)
 
@@ -2415,4 +2434,10 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan Phase 39 with `/gsd-discuss-phase 39` (or `/gsd-plan-phase 39` to skip discussion)
+- Phase 39 is a pre-committed go / degrade / no-go gate whose deliverable is
+  **evidence, not code**, and whose verdict selects which serialization shape
+  Phase 41 builds. Its rules must be committed before any measurement is taken,
+  and `monitor-lock.ts` must not be written in Phase 39 in any shape.
+- Phase 40 (the three preprocessing host tools) is fully independent of Phase 39's
+  verdict and of the text channel, and can run beside it from day one.
