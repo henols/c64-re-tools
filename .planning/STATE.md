@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Completed 40-02-PLAN.md
-last_updated: "2026-09-08T09:36:00.000Z"
+stopped_at: Completed 40-03-PLAN.md
+last_updated: "2026-09-08T10:15:55.925Z"
 last_activity: 2026-09-08
 last_activity_desc: Completed 40-02-PLAN.md (c1541 over the host-tool seam)
-state_head: c151e771ec9b870934898949f466fb6efec250a0
+state_head: 564f44d9b70005cd2aa72bc674051f56e7d070b9
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 10
+  completed_plans: 11
   percent: 17
 ---
 
@@ -214,7 +214,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-09-08 — Completed 40-02-PLAN.md (c1541 over the host-tool seam)
 
@@ -472,6 +472,7 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 | Phase 39 P07 | 40min | 2 tasks | 29 files |
 | Phase 39 P08 | 35min | 2 tasks | 3 files |
 | Phase 40 P01 | 44min | 3 tasks | 36 files |
+| Phase 40 P03 | 40 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -1052,6 +1053,7 @@ Recent decisions affecting current work:
 - [Phase 39]: 39-08: Phase 43's capture step is concurrent, not scheduled, under this go verdict -- the no-go re-scoping named in ROADMAP.md and DECISION-RULE.md does not apply, and the ROADMAP entry now states which branch it landed on.
 - [Phase 39]: 39-08: No test guard added to bind the CHAN-01 verdict into Phases 41-44 (D-06, declined a third time in this project's history) -- ROADMAP.md Depends-on lines + Notes plus a STATE.md pointer are the entire enforcement mechanism, edited with scoped line-targeted edits and diffed before commit.
 - [Phase 40]: Phase 40 plan 01: ghidra-project.mts's per-run project directories are exempted from the .c64-re-tools/ path consolidation and stay at tools/ghidra-runs/ -- Ghidra's own dot-segment refusal rejects any ancestor path segment starting with ".", so nesting a project under the dot-prefixed .c64-re-tools/ root would make every ghidra.analyze call fail. Verified directly; documented in ghidra-project.mts, CLAUDE.md, and an addendum on the folded consolidation todo.
+- [Phase 40]: Phase 40 plan 03: petcat.decode ships a host-side handover verdict (entrypoint/entrypointReason) attached only to that tool id's response; FUT-01 (deferred hand-written BASIC-token decoding) lifted by name for the new c64-petcat skill only, since it delivers the capability via the real petcat host tool. — A computed SYS argument must decline by name rather than guess an address (PREP-02); scoping the FUT-01 lift to one named skill keeps every other skill's description policed unchanged.
 
 ### Pending Todos
 
@@ -2020,8 +2022,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T09:36:00.000Z
-Stopped at: Completed 40-02-PLAN.md
+Last session: 2026-09-08T10:15:55.666Z
+Stopped at: Completed 40-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-01-PLAN.md
