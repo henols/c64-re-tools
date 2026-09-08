@@ -167,3 +167,42 @@ VICE 3.9 stock, `/usr/local/bin/c1541` VICE 3.10 fork — the fork is the one
   VICE build could realise for `-bam`/`-chain`/`-read` too. The real,
   installed binary's own split exit codes are recorded here as the honest,
   measured record of what THIS host's build actually does today.
+
+## `synthetic-corrupt.d64` (174848 bytes, 40-04, D-06)
+
+A byte-patched copy of `synthetic.d64` (identical sha256-verifiable base,
+patched in exactly two places), authored for the `c64-disk-access` skill's
+`audit` subcommand — the ported fakery detector's own corrupt-fixture
+control. Byte offsets computed against this project's own standard 1541
+zone table (`sectorsPerTrack()`; tracks 1-17 have 21 sectors each, so the
+directory sector at track 18 sector 1 starts at byte `17*21*256 + 256 =
+91648`):
+
+1. **Out-of-geometry first track/sector.** The `tracer` entry (directory
+   slot index 1, entry-relative offset 3 within the sector — i.e. absolute
+   byte `91648 + 32 + 3 = 91683`) has its own first-track byte changed from
+   `17` (0x11) to `40` (0x28) — a track that does not exist on a 35-track
+   image. Sector left at `1`. Triggers signature 2 (`D-06`).
+2. **Self-referential directory chain.** The directory sector's own
+   "next directory T/S" header (the FIRST TWO BYTES of the sector, absolute
+   offset `91648`/`91649`, shared by every entry that sector holds — see
+   `c1541.mjs`'s own `parseEntryFields()` comment) changed from `00 FF`
+   (end-of-chain) to `18 01` — pointing back at the sector itself. Triggers
+   the chain guard.
+
+sha256: `e95666c6288e849abb3b3def1b7959d6efdecaf57a8d1b8bd3f6422fb7571a2e`
+
+**MEASURED live 2026-09-08** (`/usr/local/bin/c1541`, VICE 3.10): `-dir` and
+`-bam` both still succeed normally (block counts and the allocation grid are
+unaffected by either patch — the corruption is only in the directory
+entry's own claimed fields, not in the BAM or the block-count field).
+`-entry basicstub` succeeds and reports the corrupted `Next directory T/S:
+18/1` header. `-entry tracer` FAILS OUTRIGHT — `c1541` itself tries to read
+track 40 sector 1 as part of resolving the entry and errors `Error - Error
+reading T:40 S:1 from disk image.` (exit 0) BEFORE ever printing a `T/S:`
+line, so the seam's own `classifyC1541EntryOutput()` refuses this call
+exactly as it would any other declared-shape-absent output — no separate
+error path was needed. The `audit` subcommand salvages the claimed track/
+sector out of that refusal message's own text (`salvageFirstTsFromRefusal()`
+in `c1541.mjs`) rather than losing the information the moment the entry
+call itself fails.
