@@ -4,16 +4,16 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 41
 current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
-status: planning
-stopped_at: Phase 41 context gathered
-last_updated: "2026-09-08T20:38:10.763Z"
+status: executing
+stopped_at: Phase 41 planned — 6 plans in 4 waves, ready to execute
+last_updated: "2026-09-08T21:46:36.085Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 40 complete, transitioned to Phase 41
-state_head: e8525e496b84373170eade016b27ff1f3ee01130
+last_activity_desc: Phase 41 planned — 6 plans in 4 waves
+state_head: 0c20673ea7d23a5d65367486b1dcc2273f95b747
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 19
+  total_plans: 25
   completed_plans: 19
   percent: 33
 ---
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 41 — The Text Channel, Its Serialization Authority, and the Contention Verdict
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-08 — Phase 40 complete, transitioned to Phase 41
+Phase: 41 (The Text Channel, Its Serialization Authority, and the Contention Verdict) — READY TO EXECUTE
+Plan: 0/6 executed
+Status: Ready to execute
+Last activity: 2026-09-08 — Phase 41 planned (6 plans, 4 waves)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came

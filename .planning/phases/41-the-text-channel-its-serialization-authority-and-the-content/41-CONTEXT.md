@@ -71,8 +71,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   allowlist later is additive, but a published raw-command tool cannot be
   narrowed without breaking every caller that used it.
 
-- **D-02: The two remedy tools ship now; the five Phase-42 commands stay behind
-  the internal allowlist.** `device c:` and `warp` reach `tools/list` in this
+- **D-02: The two remedy tools ship now; the five Phase-42 commands stay behind the internal allowlist.** `device c:` and `warp` reach `tools/list` in this
   phase because their results are honestly presentable. `memmapshow`,
   `prof flat`, `chis`, `bt` and `io` are reachable **in-process** through
   `text-protocol.ts`'s allowlist — and so are covered by `CHAN-03`'s framing
@@ -83,8 +82,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   — **Reversibility:** reversible — adding the five later is additive, and
   nothing published changes shape.
 
-- **D-03: `device c:` is an explicit tool plus a live contamination test — not
-  auto-healing on the stepping path.** Criterion 5 wants it "exercised, not
+- **D-03: `device c:` is an explicit tool plus a live contamination test — not auto-healing on the stepping path.** Criterion 5 wants it "exercised, not
   merely made available": the live test contaminates `default_memspace` and
   shows `device c:` restoring main-CPU stepping. It is **not** issued
   automatically before every `ADVANCE_INSTRUCTIONS` / `EXECUTE_UNTIL_RETURN`,
@@ -96,8 +94,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   — **Reversibility:** reversible — promoting it to automatic later is a local
   change at one seam.
 
-- **D-04: All three narrowed `CLAUDE.md` constraints are re-anchored to this
-  phase's evidence.** The scoping clauses **already exist** at
+- **D-04: All three narrowed `CLAUDE.md` constraints are re-anchored to this phase's evidence.** The scoping clauses **already exist** at
   `CLAUDE.md:32`, `:36` and `:42`, so criterion 5's "gains a scoping clause
   rather than a deletion" is textually satisfied already — but all three cite
   `MEASURED 2026-08-27`, which is the `/gsd-explore` live probe, **not a phase's
@@ -112,8 +109,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
 
 ### The serialization authority (`CHAN-04`)
 
-- **D-05: The mutex protects a holdable critical section, not a single wire
-  command.** The lock is acquired per **logical operation** and may span many
+- **D-05: The mutex protects a holdable critical section, not a single wire command.** The lock is acquired per **logical operation** and may span many
   wire commands, so `stock-run-until.ts`'s `waitForCheckpointHit()` and
   `stock-reproducible-run.ts`'s `waitForReproducibleStop()` hold it across
   resume → wait → observe. This is the **only** shape under which "exactly one
@@ -167,8 +163,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
 
 ### Reporting contention (`CHAN-05`)
 
-- **D-09: Contention is an evidence field, not a sixth verdict. The frozen five
-  are untouched.** `STOCK_DIAGNOSE_VERDICTS` is `Object.freeze`d at exactly five
+- **D-09: Contention is an evidence field, not a sixth verdict. The frozen five are untouched.** `STOCK_DIAGNOSE_VERDICTS` is `Object.freeze`d at exactly five
   by `D-03` (`stock-diagnose.ts:406-413`), with an explicit never-add comment,
   and `stock-diagnose.test.ts:846-851` asserts the list verbatim, in order, by
   length. That freeze stands. Instead, `vice_diagnose` gains an **always-present
@@ -181,8 +176,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   — **Reversibility:** reversible — the field is additive, and promoting it to a
   verdict later is still available.
 
-- **D-10: `wedged` is made structurally unreachable while contended — in code,
-  not in prose.** `vice_diagnose` consults the holder record before it can reach
+- **D-10: `wedged` is made structurally unreachable while contended — in code, not in prose.** `vice_diagnose` consults the holder record before it can reach
   `wedged`; with contention evidence present, `wedged` cannot be returned. The
   skill's row documents it. This is **deliberately stronger than the
   `jamObserved` precedent**, which qualifies `wedged` in the skill's prose and
@@ -195,8 +189,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   — **Reversibility:** costly — the guard sits inside the verdict derivation;
   removing it means re-deriving which paths may reach `wedged`.
 
-- **D-11: While contended, the verdict returned is `live`, carrying the
-  contention evidence.** The instance is healthy and responsive — not wedged —
+- **D-11: While contended, the verdict returned is `live`, carrying the contention evidence.** The instance is healthy and responsive — not wedged —
   and the evidence explains why the bracket read zero. This is exactly parallel
   to how `jamObserved` already qualifies `live`: the manifest already tells
   readers a `live` verdict can be a false negative on liveness, and
@@ -208,8 +201,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   that is positively known and healthy.
   — **Reversibility:** reversible.
 
-- **D-12: Live on genuine stock 3.9 only, recorded MEDIUM, single-binary basis
-  named.** The contention signature is reproduced live against
+- **D-12: Live on genuine stock 3.9 only, recorded MEDIUM, single-binary basis named.** The contention signature is reproduced live against
   `/usr/bin/x64sc` (genuine stock 3.9) and recorded in `vice-wedge-triage`'s
   provenance table at **MEDIUM**, with the single-binary basis stated. This is a
   deliberate departure from the table's existing HIGH rows, which are all
@@ -243,8 +235,7 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   (`(C:$ea31) `), with no command from the text client at all — framing must
   **drain that passively before treating the next prompt as a command reply**.
 
-- **D-14: The text socket is claimed through the broker with
-  `channel: "text"`.** A `monitor_claim` carrying `broker-state.mts:129-137`'s
+- **D-14: The text socket is claimed through the broker with an explicit channel discriminator.** A `monitor_claim` carrying `channel: "text"`, `broker-state.mts:129-137`'s
   already-anticipated discriminator, so a **second MCP process is refused by
   name on a working control socket** instead of vanishing into the
   `accepted-then-silent` black hole. That is Phase 39 fact #5's explicitly
@@ -263,16 +254,14 @@ async mutex, `R15` carries no narrowing, and neither pre-mapped narrowing
   machine left permanently halted by a killed text client is therefore **not
   needed** and must not be built.
 
-- **D-15: The port travels on the `grant` response and on `HeldLease`, and
-  nowhere else.** `remoteMonitorPort` joins `broker-control.mts:242`'s `grant`
+- **D-15: The port travels on the `grant` response and on `HeldLease`, and nowhere else.** `remoteMonitorPort` joins `broker-control.mts:242`'s `grant`
   beside `port` / `url` / `epoch_file` / `supervisor_dir`, and `HeldLease`
   (`vice-broker-client.ts:757`) gains the field. `StatusInstanceEntry` is
   **not** extended — that is exactly what criterion 1's "given no more weight
   than it deserves" asks for, and the claim-and-dial flow needs nothing more.
   — **Reversibility:** reversible — adding it to status later is additive.
 
-- **D-16: The text port is MANDATORY on every stock launch. The degrade path is
-  removed.** Owner direction, verbatim: *"it should not be possible, vice must be
+- **D-16: The text port is MANDATORY on every stock launch. The degrade path is removed.** Owner direction, verbatim: *"it should not be possible, vice must be
   started with the text channel."* `broker-launch.mts`'s
   `acquirePortAndLaunch()` currently **degrades** — a failed second-port
   allocation launches without `-remotemonitor` rather than failing the acquire

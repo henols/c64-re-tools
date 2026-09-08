@@ -1033,11 +1033,22 @@ contended rather than diagnosed as wedged and destroyed.
 **Plans**: 6 plans in 4 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 41-01-PLAN.md — Tracer: the text channel's first framed round trip (`remoteMonitorPort` reaches `HeldLease`; `text-protocol.ts` + `text-connect.ts`; the two planted framing controls)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 41-02-PLAN.md — The serialization authority: `channel-lock.ts`'s FIFO mutex, holder record and refusal text, wired into both channels' halting operations
 - [ ] 41-03-PLAN.md — One text client per instance: `monitorClient` promoted to a per-channel holder map, refused by name with holder and channel
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 41-04-PLAN.md — Contention as always-present evidence, `wedged` made structurally unreachable while contended, and `vice-wedge-triage` fixed at MEDIUM
 - [ ] 41-05-PLAN.md — The mandatory text port (D-16) and the retired warm floor (folded todo), with the promotion step moved rather than lost
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 41-06-PLAN.md — The two remedy tools shipped, the `default_memspace` remedy exercised live, and the three narrowed CLAUDE.md constraints re-cited
 
 Notes:
