@@ -56,6 +56,8 @@ whose whole job is to settle it.
 - [ ] ~~**PREP-03**: A cartridge image's bank structure is recovered through `cartconv` and presented as separate per-bank images the existing analysis engines can each consume, rather than as a flat ROM window that hides everything past the first bank.~~ **REMOVED 2026-09-08** — dropped by owner direction at the Phase 40 discussion; no `cartconv` work, no per-bank images. Not deferred to a named phase — if it returns, it returns as a new requirement. See `docs/phase40-preprocessing-tools-decisions.md` and the Excluded table below.
 - [x] **PREP-04**: A failure in any of these three tools is reported as a failure. *(MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. Exit-code checking alone would pass failures silently, so each tool's own output is what decides the outcome — the same discipline the existing real-ACME verify path already applies.)*
 
+- [ ] **PREP-05**: Every external tool is invoked by the broker, every tool's output lands under `.c64-re-tools/`, and the broker owns resolving each tool's output path — including any laundering that tool's own path rules require — so the MCP server and the skills work from a devcontainer with none of the tools installed inside it. *(Owner direction, 2026-09-08, Phase 40 UAT. Three of the four parts already hold: `vice-broker.mts` imports `runHostTool` and executes all 12 allowlisted tool ids host-side, and D-33 put every other writer under `.c64-re-tools/`. The single deviation is `ghidra.analyze`, whose runs root is computed as `join(repoRoot, "tools", ...)`. MEASURED 2026-09-08: Ghidra refuses a dot-prefixed segment in the **absolutized** path but does **not** resolve symlinks — `ProjectLocator` calls `getAbsolutePath()`, never `getCanonicalPath()` — so a broker-minted symlink handle satisfies Ghidra and this requirement at once. The recorded claim that the split is unavoidable is therefore an overstatement; see `notes/ghidra-dot-path-check-semantics.md` and gap `G-40-1`.)*
+
 ### Proof — closing a named reversal condition
 
 - [ ] **PROOF-04**: `PROOF-01` gains the independent external check it shipped without, using observed execution as the oracle, so its false-positive count becomes computable for the first time rather than structurally uncomputable. *(This closes the reversal condition stated verbatim at the v0.8.0 open — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — by taking the second branch deliberately. Continues the `PROOF-` numbering from v0.8.0's `PROOF-01..03` rather than opening a new family, because it is the same question.)*
@@ -137,12 +139,13 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PREP-02 | Phase 40 | Complete |
 | ~~PREP-03~~ | Phase 40 | ~~Pending~~ — **Removed 2026-09-08**, see Excluded table |
 | PREP-04 | Phase 40 | Complete |
+| PREP-05 | Phase 40 | Pending |
 | PROOF-04 | Phase 44 | Pending |
 
 **Coverage:**
 
-- v0.9.0 requirements: 19 total
-- Mapped to phases: 19
+- v0.9.0 requirements: 20 total
+- Mapped to phases: 20
 - Unmapped: 0 ✓
 
 **AMENDED 2026-09-08** — corrected from the original 2026-09-06 mapping of 20
@@ -154,6 +157,11 @@ lines rather than by eye: 19 ids mapped, 19 unique, 0 duplicates, 0 orphans, 0
 extras. Phase 39 — `CHAN-01`. Phase 40 — `PREP-01`, `PREP-02`, `PREP-04`
 (`PREP-03` removed). Phase 41 — `CHAN-02..05`. Phase 42 — `PARSE-01..04`.
 Phase 43 — `EVID-01..06`. Phase 44 — `PROOF-04`.
+
+**AMENDED 2026-09-08 (second amendment)** — `PREP-05` added by owner
+direction during the Phase 40 UAT, raising the count from 19 to 20. Mapped to
+Phase 40, the phase whose UAT surfaced it. It is **not** complete: the
+`ghidra.analyze` runs-root deviation it names is tracked as gap `G-40-1`.
 
 ---
 
