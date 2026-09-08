@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Phase 40 planned — 7 plans, verification passed
-last_updated: "2026-09-08T07:56:52.623Z"
+stopped_at: Completed 40-01-PLAN.md
+last_updated: "2026-09-08T08:53:22.669Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 40 planned — 7 plans in 7 waves
-state_head: d18540f16dcaab57c47aa7373fae1f82f2a5a046
+last_activity_desc: Phase 40 execution started
+state_head: c151e771ec9b870934898949f466fb6efec250a0
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 8
+  completed_plans: 9
   percent: 17
 ---
 
@@ -30,13 +30,13 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Phase 39 — The Dual-Channel Coexistence Gate
-(Go/Degrade/No-Go), in milestone **v0.9.0 The Text Channel and the Runtime
-Evidence Layer**, opened 2026-09-06. Roadmap created 2026-09-06 — **six phases,
-39-44**, continuing numbering from Phase 38 rather than resetting, with 20/20
-requirements mapped and cross-checked mechanically. Phase 39 is planned (8 plans
-in 7 waves, plan-checker passed) and now executing; its deliverable is evidence
-rather than code.
+**Current focus:** Phase 40 — The Three Preprocessing Host Tools, in milestone
+**v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
+Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
+Phase 38 rather than resetting, with 20/20 requirements mapped and cross-checked
+mechanically. Phase 39 completed 2026-09-08 (8/8 plans) and returned `go` on
+rule `R15`. Phase 40 is planned (7 plans in 7 waves, plan-checker passed) and
+now executing; it is independent of Phase 39's verdict and of the text channel.
 
 Milestone scope, decided at the open: **claim the `-remotemonitor` text channel**
 that `broker-launch.mjs:165` has appended to every stock launch since Phase 3 and
@@ -213,10 +213,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 40 (The Three Preprocessing Host Tools) — READY TO EXECUTE
-Plan: Not started
+Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-09-08 — Phase 40 planned — 7 plans in 7 waves
+Last activity: 2026-09-08 — Phase 40 execution started
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -470,6 +470,7 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 | Phase 39 P06 | ~34min | 2 tasks | 5 files |
 | Phase 39 P07 | 40min | 2 tasks | 29 files |
 | Phase 39 P08 | 35min | 2 tasks | 3 files |
+| Phase 40 P01 | 44min | 3 tasks | 36 files |
 
 ## Accumulated Context
 
@@ -1036,6 +1037,7 @@ Recent decisions affecting current work:
 - [Phase 39]: 39-08: Neither pre-mapped narrowing fired -- R11's narrowing (D-10) did not trigger because DISCONNECT_RECOVERY: recovers, and R13's narrowing (D-11) did not trigger because HITCOUNT_INVARIANT_HOLDS: holds, both checked directly against the transcribed values independent of which rule fired. Phase 41 builds the plain in-process async mutex with no additional narrowed scope from this gate.
 - [Phase 39]: 39-08: Phase 43's capture step is concurrent, not scheduled, under this go verdict -- the no-go re-scoping named in ROADMAP.md and DECISION-RULE.md does not apply, and the ROADMAP entry now states which branch it landed on.
 - [Phase 39]: 39-08: No test guard added to bind the CHAN-01 verdict into Phases 41-44 (D-06, declined a third time in this project's history) -- ROADMAP.md Depends-on lines + Notes plus a STATE.md pointer are the entire enforcement mechanism, edited with scoped line-targeted edits and diffed before commit.
+- [Phase 40]: Phase 40 plan 01: ghidra-project.mts's per-run project directories are exempted from the .c64-re-tools/ path consolidation and stay at tools/ghidra-runs/ -- Ghidra's own dot-segment refusal rejects any ancestor path segment starting with ".", so nesting a project under the dot-prefixed .c64-re-tools/ root would make every ghidra.analyze call fail. Verified directly; documented in ghidra-project.mts, CLAUDE.md, and an addendum on the folded consolidation todo.
 
 ### Pending Todos
 
@@ -2004,9 +2006,9 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T06:35:19.455Z
-Stopped at: Phase 40 context gathered
-Resume file: .planning/phases/40-the-three-preprocessing-host-tools/40-CONTEXT.md
+Last session: 2026-09-08T08:53:22.447Z
+Stopped at: Completed 40-01-PLAN.md
+Resume file: None
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
 v0.8.0 ready to close (2026-09-06T11:50:00Z)
