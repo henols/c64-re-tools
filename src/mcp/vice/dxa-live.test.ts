@@ -41,15 +41,38 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runDxaDisassemble, type DxaRunFn } from "./dxa-run.ts";
-import { listEntries, extractEntry } from "./anno-d64.ts";
 import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DXA_BIN_PATH = join(HERE, "vendor", "dxa", "dxa");
+
+// This file's OWN corpus case (below) needs `runHostTool()` (host-tool.mts)
+// directly, in-process -- no client subprocess and no skill script in the
+// loop (Phase 40 plan 40-06). `host-tool.mts` is a HOST-BOUND source module
+// whose own `ghidra-project.mjs` import only resolves once compiled
+// alongside its sibling under `resources/` (build.ts's own committed
+// output) -- a plain static import of the `.mts` source from this file
+// would throw `ERR_MODULE_NOT_FOUND` at load time. A dynamic import of a
+// `URL` (never a bare string literal specifier) keeps `tsc` from trying to
+// resolve a declaration file for the plain `.mjs` target -- the SAME idiom
+// `host-tool.test.ts` already uses for its own typed access to this
+// artifact, minus that file's own `build()` call: THIS file's own header
+// states it builds nothing, and `resources-sync.test.ts` (part of the
+// automated suite) already gates the committed artifact's freshness.
+const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
+  runHostTool: (
+    raw: unknown,
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+  ) => Promise<
+    | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
+    | { ok: false; message: string }
+  >;
+};
+const { runHostTool } = hostToolModule;
 
 /** Computed exactly once. Every test in this file passes this through
  * node:test's own `{ skip }` option -- never a hand-rolled early return,
@@ -227,12 +250,20 @@ test(
   },
 );
 
-// Phase 35, plan 35-04 (DXA-03), Task 3: the real-image exercise. Uses the
-// committed `anno-d64.ts` reader to pull one real `.prg` out of the Phase 23
-// corpus release -- no VICE, no broker, no capture pipeline in the loop.
-// `evidence/35-dxa03-real-image.md` records the release identity, the
-// extracted entry and the chosen range's provenance in full; this file only
-// asserts the exclusion, relatively, from dxa's own classification.
+// Phase 35, plan 35-04 (DXA-03), Task 3: the real-image exercise. Pulls one
+// real `.prg` out of the Phase 23 corpus release over the host-tool seam
+// (`c1541.dir` then `c1541.read`) -- the ONE disk-image route this project
+// has (D-04, D-08). Before 2026-09-08 (Phase 40 plan 40-06) this called the
+// now-deleted MCP-side pure-parse module's own in-process
+// directory-and-entry reader directly -- "no VICE, no broker, no capture
+// pipeline in the loop" was true of THAT route. ACCEPTED COST, same date:
+// the deleted module needed nothing running to answer this; the seam route
+// needs a resolvable `c1541` sibling binary and, on the container route,
+// the broker up -- already covered by this file's own live-gate skip
+// behaviour above, so that cost never surfaces here as an unexplained
+// failure. `evidence/35-dxa03-real-image.md` records the release identity,
+// the extracted entry and the chosen range's provenance in full; this file
+// only asserts the exclusion, relatively, from dxa's own classification.
 const CORPUS_PATH = join(
   repoRoot({ from: HERE }),
   ".planning",
@@ -258,17 +289,70 @@ const CORPUS_SKIP_REASON: string | false =
           `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
         : false;
 
+/** The smallest common ancestor directory of two absolute paths -- computed,
+ * never a fixed guess, so the seam request's `repoRoot` for THIS call is
+ * always exactly big enough to contain both the corpus image and the
+ * scratch output directory, and no bigger. Mirrors `c1541.mjs`'s own
+ * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.mjs`),
+ * duplicated here rather than imported -- this file must never reach into a
+ * skill script (D-36-12's own container/host-side split; a skill script
+ * additionally ships in the OTHER npm package). Duplicated a further two
+ * times in `ghidra-live.test.ts`/`ghidra-opcode-live.test.ts` per this
+ * project's own established convention. */
+function commonAncestorDir(a: string, b: string): string {
+  const partsA = resolvePath(a).split(sep);
+  const partsB = resolvePath(b).split(sep);
+  const common: string[] = [];
+  for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+    if (partsA[i] === partsB[i]) common.push(partsA[i]!);
+    else break;
+  }
+  const joined = common.join(sep);
+  return joined === "" ? sep : joined;
+}
+
+/** `path.relative()`, except the "same directory" case yields `"."` rather
+ * than `""` -- `resolveWorkspacePath()` (host-tool.mts) refuses an empty
+ * string but accepts `"."` as a no-op relative reference to its own root. */
+function toRel(root: string, abs: string): string {
+  const r = relative(root, abs);
+  return r === "" ? "." : r;
+}
+
+/** Reads the corpus release, extracts its first directory entry's program
+ * bytes over the host-tool seam (`c1541.dir` then `c1541.read`) -- see the
+ * header comment above this file's own CORPUS test for the accepted-cost
+ * record. */
+async function extractCorpusProgram(): Promise<Uint8Array> {
+  const scratch = mkdtempSync(join(tmpdir(), "dxa-live-corpus-dir-"));
+  try {
+    const root = commonAncestorDir(dirname(CORPUS_PATH), scratch);
+    const baseArgs = { image: toRel(root, CORPUS_PATH), outDir: toRel(root, scratch) };
+
+    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root });
+    if (!dirResp.ok) throw new Error(`dxa-live CORPUS: c1541.dir refused: ${dirResp.message}`);
+    const listingPath = dirResp.results[0]?.path;
+    if (!listingPath) throw new Error("dxa-live CORPUS: c1541.dir reported no listing output");
+    const listingText = readFileSync(listingPath, "utf8");
+    const entryMatch = listingText.match(/^\s*\d+\s+"([^"]*)"\s+\*?(?:prg|seq|usr|rel|del)\b/im);
+    if (!entryMatch) throw new Error("dxa-live CORPUS: the corpus image's directory listing has no entries");
+    const entryName = entryMatch[1]!.replace(/\s+$/, "");
+
+    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root });
+    if (!readResp.ok) throw new Error(`dxa-live CORPUS: c1541.read refused: ${readResp.message}`);
+    const readPath = readResp.results[0]?.path;
+    if (!readPath) throw new Error("dxa-live CORPUS: c1541.read reported no output file");
+    return new Uint8Array(readFileSync(readPath));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 test(
   "dxa-live CORPUS: a hand-annotated known-data range excludes those bytes from dxa's own code classification on a real cracked release",
   { skip: CORPUS_SKIP_REASON },
   async () => {
-    const corpusBytes = readFileSync(CORPUS_PATH);
-    const entries = listEntries(new Uint8Array(corpusBytes));
-    const entry = entries[0];
-    if (entry === undefined) {
-      throw new Error("dxa-live CORPUS: the corpus image has no directory entries");
-    }
-    const extracted = extractEntry(new Uint8Array(corpusBytes), entry.name);
+    const extracted = await extractCorpusProgram();
 
     // $0819 is a hand-read fact, not derived by this test: the extracted
     // .prg's own BASIC header line is `10 SYS2073` (offsets $0801-$0818),

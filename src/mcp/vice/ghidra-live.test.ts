@@ -50,13 +50,12 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
 import { installedLanguageIds, GHIDRA_RUNS_DIR_NAME } from "./ghidra-project.mts";
 import { repoRoot } from "./repo-root.ts";
-import { listEntries, extractEntry } from "./anno-d64.ts";
 // Phase 37, plan 37-08 (AUTO-07): the derived character-set range is computed
 // from the fixture's own real CONST_WRITES facts, never hard-coded -- the
 // SAME two production modules the join itself will use.
@@ -66,6 +65,30 @@ import { deriveGraphicsRanges } from "./anno-graphics.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
 const SCRIPTS_DIR = join(HERE, "vendor", "ghidra-scripts");
+
+// This file's OWN corpus case (below) needs `runHostTool()` (host-tool.mts)
+// directly, in-process -- no client subprocess and no skill script in the
+// loop (Phase 40 plan 40-06). `host-tool.mts` is a HOST-BOUND source module
+// whose own `ghidra-project.mjs` import only resolves once compiled
+// alongside its sibling under `resources/` (build.ts's own committed
+// output) -- a plain static import of the `.mts` source from this file
+// would throw `ERR_MODULE_NOT_FOUND` at load time. A dynamic import of a
+// `URL` (never a bare string literal specifier) keeps `tsc` from trying to
+// resolve a declaration file for the plain `.mjs` target -- the SAME idiom
+// `host-tool.test.ts` already uses for its own typed access to this
+// artifact, minus that file's own `build()` call: THIS file's own header
+// states it builds nothing, and `resources-sync.test.ts` (part of the
+// automated suite) already gates the committed artifact's freshness.
+const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
+  runHostTool: (
+    raw: unknown,
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+  ) => Promise<
+    | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
+    | { ok: false; message: string }
+  >;
+};
+const { runHostTool } = hostToolModule;
 
 /** The new language this phase adds (36-01), and the stock language it must
  * never collide with. Byte-exact, case-sensitive comparisons throughout --
@@ -1069,17 +1092,68 @@ const CORPUS_SKIP_REASON: string | false =
  * for the full derivation of each. */
 const CORPUS_ENTRY_POINTS: readonly string[] = ["$081b", "$b70a", "$b74c", "$b7e7", "$b790"];
 
-/** Reads the corpus release, extracts its first directory entry -- the SAME
- * directory-and-entry route `anno-d64.ts` already provides and
- * `dxa-live.test.ts`'s own corpus case established (D-36-18). */
-function extractCorpusProgram(): Uint8Array {
-  const corpusImageBytes = readFileSync(CORPUS_PATH);
-  const entries = listEntries(new Uint8Array(corpusImageBytes));
-  const entry = entries[0];
-  if (entry === undefined) {
-    throw new Error("ghidra-live acceptance: the corpus image has no directory entries");
+/** The smallest common ancestor directory of two absolute paths -- computed,
+ * never a fixed guess, so the seam request's `repoRoot` for THIS call is
+ * always exactly big enough to contain both the corpus image and the
+ * scratch output directory, and no bigger. Mirrors `c1541.mjs`'s own
+ * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.mjs`),
+ * duplicated here rather than imported -- this file must never reach into a
+ * skill script (D-36-12's own container/host-side split; a skill script
+ * additionally ships in the OTHER npm package). */
+function commonAncestorDir(a: string, b: string): string {
+  const partsA = resolvePath(a).split(sep);
+  const partsB = resolvePath(b).split(sep);
+  const common: string[] = [];
+  for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+    if (partsA[i] === partsB[i]) common.push(partsA[i]!);
+    else break;
   }
-  return extractEntry(new Uint8Array(corpusImageBytes), entry.name);
+  const joined = common.join(sep);
+  return joined === "" ? sep : joined;
+}
+
+/** `path.relative()`, except the "same directory" case yields `"."` rather
+ * than `""` -- `resolveWorkspacePath()` (host-tool.mts) refuses an empty
+ * string but accepts `"."` as a no-op relative reference to its own root. */
+function toRel(root: string, abs: string): string {
+  const r = relative(root, abs);
+  return r === "" ? "." : r;
+}
+
+/** Reads the corpus release, extracts its first directory entry's program
+ * bytes over the host-tool seam (`c1541.dir` then `c1541.read`) -- the ONE
+ * disk-image route this project has (D-04, D-08). Before 2026-09-08 (Phase
+ * 40 plan 40-06) this called the now-deleted MCP-side pure-parse module's
+ * own in-process directory-and-entry reader directly; that module carried
+ * no seam dependency of its own, and this is its replacement. ACCEPTED
+ * COST, same date: the deleted module needed nothing running to answer
+ * this; the seam route needs a resolvable `c1541` sibling binary and, on
+ * the container route, the broker up -- already covered by this file's own
+ * live-gate skip behaviour above, so that cost never surfaces here as an
+ * unexplained failure. */
+async function extractCorpusProgram(): Promise<Uint8Array> {
+  const scratch = mkdtempSync(join(tmpdir(), "ghidra-live-corpus-"));
+  try {
+    const root = commonAncestorDir(dirname(CORPUS_PATH), scratch);
+    const baseArgs = { image: toRel(root, CORPUS_PATH), outDir: toRel(root, scratch) };
+
+    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root });
+    if (!dirResp.ok) throw new Error(`ghidra-live acceptance: c1541.dir refused: ${dirResp.message}`);
+    const listingPath = dirResp.results[0]?.path;
+    if (!listingPath) throw new Error("ghidra-live acceptance: c1541.dir reported no listing output");
+    const listingText = readFileSync(listingPath, "utf8");
+    const entryMatch = listingText.match(/^\s*\d+\s+"([^"]*)"\s+\*?(?:prg|seq|usr|rel|del)\b/im);
+    if (!entryMatch) throw new Error("ghidra-live acceptance: the corpus image's directory listing has no entries");
+    const entryName = entryMatch[1]!.replace(/\s+$/, "");
+
+    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root });
+    if (!readResp.ok) throw new Error(`ghidra-live acceptance: c1541.read refused: ${readResp.message}`);
+    const readPath = readResp.results[0]?.path;
+    if (!readPath) throw new Error("ghidra-live acceptance: c1541.read reported no output file");
+    return new Uint8Array(readFileSync(readPath));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 interface StructuralFactLine {
@@ -1193,7 +1267,7 @@ test(
   "ghidra-live acceptance run: the five structural fact kinds, typed cross-references and the accounting identity on the real corpus",
   { skip: CORPUS_SKIP_REASON },
   async () => {
-    const extracted = extractCorpusProgram();
+    const extracted = await extractCorpusProgram();
     const ws = makeScratchWorkspace();
     try {
       writeFileSync(join(ws.root, "release.prg"), extracted);
@@ -1444,7 +1518,7 @@ test(
   "ghidra-live acceptance control (DataTypeManager): the SAME image, route and language as the acceptance run, one script argument apart, returns essentially nothing",
   { skip: CORPUS_SKIP_REASON },
   async () => {
-    const extracted = extractCorpusProgram();
+    const extracted = await extractCorpusProgram();
     const ws = makeScratchWorkspace();
     try {
       writeFileSync(join(ws.root, "release.prg"), extracted);
