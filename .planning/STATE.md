@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Completed 40-01-PLAN.md
-last_updated: "2026-09-08T08:53:22.669Z"
+stopped_at: Completed 40-02-PLAN.md
+last_updated: "2026-09-08T09:36:00.000Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 40 execution started
+last_activity_desc: Completed 40-02-PLAN.md (c1541 over the host-tool seam)
 state_head: c151e771ec9b870934898949f466fb6efec250a0
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 9
+  completed_plans: 10
   percent: 17
 ---
 
@@ -214,9 +214,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
-Last activity: 2026-09-08 — Phase 40 execution started
+Last activity: 2026-09-08 — Completed 40-02-PLAN.md (c1541 over the host-tool seam)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -235,7 +235,7 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 
 **Velocity:**
 
-- Total plans completed: 328
+- Total plans completed: 329
 - Average duration: —
 - Total execution time: —
 
@@ -277,6 +277,7 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 | 37 | 8 | - | - |
 | 38 | 4 | - | - |
 | 39 | 8 | - | - |
+| 40 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -607,6 +608,19 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
+
+- Phase 40 (40-02): fixed a `resolveWorkspacePath()` edge case where a workspace
+  root that resolves to the filesystem root (`/`) was always refused as
+  "escaping" itself (`walkedRoot.path + sep` produced `"//"`, a prefix no real
+  absolute path starts with) — discovered against this plan's own literal
+  verify command (an in-repo fixture, an out-of-repo `/tmp` scratch
+  `--out-dir`). Fixed once in the shared resolver every `host_tool` id uses.
+
+- Phase 40 (40-02): `c1541`/`petcat` are resolved as siblings of whichever
+  `x64sc` `backend-detect.mts` already resolved, never a bare-name spawn or a
+  configurable override — a host carrying both a stock and a fork build
+  (MEASURED live on this project's own dev host) would otherwise silently
+  answer with whichever build sorts first on `$PATH`.
 
 - Phase 37 (`CR-01`): the recovered const-write facts round-trip through the TWO-CALL
   tool surface — `anno_import_ghidra_export` returns them, `anno_join_memmap` accepts
@@ -2006,9 +2020,11 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T08:53:22.447Z
-Stopped at: Completed 40-01-PLAN.md
+Last session: 2026-09-08T09:36:00.000Z
+Stopped at: Completed 40-02-PLAN.md
 Resume file: None
+
+Earlier: Completed 40-01-PLAN.md
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
 v0.8.0 ready to close (2026-09-06T11:50:00Z)
