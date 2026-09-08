@@ -552,7 +552,7 @@ code that adds the table — and the `c1541`-supersedes-`d64-parse.mjs` question
 already deferred to Future Requirements and needs no phase at all.
 
 - [x] **Phase 39: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)** - Five named live experiments against genuine stock 3.9 answer whether a text client and a binary client can drive one emulator without corrupting each other, against rules committed to git before any measurement exists — with the authority to narrow or cancel every phase after it (completed 2026-09-08)
-- [x] **Phase 40: The Three Preprocessing Host Tools** - ~~`c1541`, `petcat` and `cartconv` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure on two tools that exit 0 on error~~ **AMENDED 2026-09-08** — `c1541` and `petcat` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure despite `c1541` exiting 0 on error (`cartconv` removed from scope by owner direction, see `docs/phase40-preprocessing-tools-decisions.md`) — fully independent of the gate and of the channel, and runnable beside Phase 39 from day one (completed 2026-09-08)
+- [ ] **Phase 40: The Three Preprocessing Host Tools** - ~~`c1541`, `petcat` and `cartconv` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure on two tools that exit 0 on error~~ **AMENDED 2026-09-08** — `c1541` and `petcat` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure despite `c1541` exiting 0 on error (`cartconv` removed from scope by owner direction, see `docs/phase40-preprocessing-tools-decisions.md`) — fully independent of the gate and of the channel, and runnable beside Phase 39 from day one
 - [ ] **Phase 41: The Text Channel, Its Serialization Authority, and the Contention Verdict** - A tool call reaches the text monitor with responses framed by the prompt rather than by a timeout, every halt-taking operation on either channel passes through the serialization shape Phase 39 selected, and a contended instance is reported as contended rather than recycled
 - [ ] **Phase 42: The Text-Format Parsers and Their Two-Binary Fixtures** - Five human-formatted text outputs become structured data behind one owning module each, with `memmapshow`'s execute bit preserved as its own bit — and a drifted format failing loudly instead of returning an inverted answer
 - [ ] **Phase 43: The Runtime Evidence Layer** - Observed execution becomes durable, run-keyed, monotonically accumulating store state joined against the byte-derived block table disagreement-first, opening on a committed-before-measurement A/B that says whether instrumenting a run destroys the reproducibility its rows are keyed on
@@ -1223,7 +1223,7 @@ in a milestone archive.
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
-| 40. The Three Preprocessing Host Tools | v0.9.0 | 7/7 | Complete | 2026-09-08 |
+| 40. The Three Preprocessing Host Tools | v0.9.0 | 7/7 | In Progress | - |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |

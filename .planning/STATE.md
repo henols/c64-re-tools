@@ -221,9 +221,9 @@ sections.
 
 ## Current Position
 
-Phase: 40 (The Three Preprocessing Host Tools) — COMPLETE
+Phase: 40 (The Three Preprocessing Host Tools) — EXECUTED, PENDING VERIFICATION
 Plan: 7 of 7
-Status: Phase complete, ready for Phase 41
+Status: All 7 plans executed with SUMMARYs; phase gates and goal verification not yet run
 Last activity: 2026-09-08 — Completed 40-07-PLAN.md (decisions doc, in-place amendments, `PREP-03` strike, three todo folds)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
