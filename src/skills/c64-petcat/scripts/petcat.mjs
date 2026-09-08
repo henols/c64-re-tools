@@ -173,7 +173,10 @@ function report(response, { json }) {
 
 // ------------------------------------------------------------------ options
 
-function parseOpts(argv) {
+// IN-01 (40-REVIEW.md): exported so petcat.test.mjs can cover this file's
+// own CLI-option parsing as a pure unit, mirroring c1541.mjs's own exported
+// parsers -- never spawns anything, never needs petcat installed.
+export function parseOpts(argv) {
   const o = { json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
