@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
-current_phase: 40
-current_phase_name: The Three Preprocessing Host Tools
-status: executing
-stopped_at: Completed 40-10-PLAN.md
-last_updated: "2026-09-08T17:59:56.955Z"
+current_phase: 41
+current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
+status: planning
+stopped_at: Phase 40 complete, ready to plan Phase 41
+last_updated: "2026-09-08T18:44:54.256Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 40 execution started
-state_head: de0ec6889a79d5f4e0a090d0f5c74198f0097537
+last_activity_desc: Phase 40 complete, transitioned to Phase 41
+state_head: d06e383ef30705449ae6210bfbdece8b148c3ee5
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 19
-  completed_plans: 18
-  percent: 17
+  completed_plans: 19
+  percent: 33
 ---
 
 # Project State
@@ -225,10 +225,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING (gap closure)
-Plan: 10 of 11
-Status: Plans 40-01..40-10 complete. 40-08 re-pointed the Ghidra runs root onto a symlink handle under the one root (D-33) and closed G-40-1's first half; 40-09 closed the second half (R2, the broker mints the handle), migrated remaining consumers, guarded the handle-only invariant, and added a live guard against real Ghidra 12.1.3; 40-10 corrected the record itself -- five forward-looking documents (repo-root.ts's census now test-gated, host-tool.mts, CLAUDE.md, A-07) say what is true, four historical records plus one addendum carry dated superseding notes. Executing the remaining G-40-1 gap-closure plan (40-11, bookkeeping) via /gsd-execute-phase 40 --gaps-only.
-Last activity: 2026-09-08 — Phase 40 plan 40-10 executed (gap closure)
+Phase: 41 — The Text Channel, Its Serialization Authority, and the Contention Verdict
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-08 — Phase 40 complete, transitioned to Phase 41
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -254,7 +254,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 
 **Velocity:**
 
-- Total plans completed: 329
+- Total plans completed: 339
 - Average duration: —
 - Total execution time: —
 
@@ -296,7 +296,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | 37 | 8 | - | - |
 | 38 | 4 | - | - |
 | 39 | 8 | - | - |
-| 40 | 2 | - | - |
+| 40 | 11 | - | - |
 
 **Recent Trend:**
 
@@ -2093,7 +2093,7 @@ evidence files.
 ## Session Continuity
 
 Last session: 2026-09-08T17:59:45.334Z
-Stopped at: Completed 40-10-PLAN.md
+Stopped at: Phase 40 complete, ready to plan Phase 41
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
