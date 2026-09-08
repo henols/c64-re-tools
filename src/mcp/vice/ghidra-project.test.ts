@@ -20,16 +20,20 @@
 // case here run to completion with NO Ghidra installation present.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, lstatSync, readlinkSync, symlinkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   DOT_SEGMENT_REFUSAL,
-  GHIDRA_RUNS_DIR_NAME,
+  GHIDRA_RUNS_HANDLE_NAME,
+  GHIDRA_RUNS_HANDLE_TARGET,
   RUN_ID_PATTERN,
   hasDotPrefixedSegment,
+  ghidraRunsRoot,
+  ghidraRunsRealRoot,
+  ensureGhidraRunsHandle,
   resolveGhidraProject,
   buildAnalyzeHeadlessArgv,
 } from "./ghidra-project.mts";
@@ -68,12 +72,12 @@ test("ghidra-project.mts's own source text references no child-process call and 
 // ---------------------------------------------------------------------------
 
 test("hasDotPrefixedSegment: a clean absolute path with no dotted segment is not dotted", () => {
-  const result = hasDotPrefixedSegment("/home/u/proj/tools/ghidra-runs/r1");
+  const result = hasDotPrefixedSegment("/home/u/proj/c64-re-tools/runs/ghidra/r1");
   assert.equal(result.dotted, false);
 });
 
 test("hasDotPrefixedSegment: a dot-prefixed LEAF directory is dotted, naming that segment", () => {
-  const result = hasDotPrefixedSegment("/home/u/proj/tools/ghidra-runs/.dotdir");
+  const result = hasDotPrefixedSegment("/home/u/proj/c64-re-tools/runs/ghidra/.dotdir");
   assert.equal(result.dotted, true);
   if (result.dotted) assert.equal(result.segment, ".dotdir");
 });
@@ -108,6 +112,30 @@ test("hasDotPrefixedSegment: a doubled separator produces an empty internal segm
 });
 
 // ---------------------------------------------------------------------------
+// ghidraRunsRoot / ghidraRunsRealRoot -- gap G-40-1 (plan 40-08). The ONE
+// anchor case in this file that pins both literal shapes by hand rather than
+// deriving them from the functions under test, so this suite cannot become
+// vacuous. Every OTHER expectation in this file derives from these two
+// functions instead of re-joining the segments itself.
+// ---------------------------------------------------------------------------
+
+test("ghidraRunsRoot()/ghidraRunsRealRoot(): pin the literal handle and physical-target shapes by hand", () => {
+  const root = "/synthetic-repo-root";
+  const expectedHandle = join(root, "c64-re-tools", "runs", "ghidra");
+  const expectedReal = join(root, ".c64-re-tools", "runs", "ghidra");
+  assert.equal(
+    ghidraRunsRoot(root),
+    expectedHandle,
+    `the Ghidra runs location moved (gap G-40-1) -- expected the HANDLE at ${expectedHandle}, with the PHYSICAL root at ${expectedReal}`,
+  );
+  assert.equal(
+    ghidraRunsRealRoot(root),
+    expectedReal,
+    `the Ghidra runs location moved (gap G-40-1) -- expected the PHYSICAL root at ${expectedReal}, reached through the HANDLE at ${expectedHandle}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // resolveGhidraProject -- narrowing, the dot-segment refusal, idempotency
 // ---------------------------------------------------------------------------
 
@@ -132,14 +160,29 @@ test("resolveGhidraProject: refuses a non-string/absent runId, never coerced", (
   assert.equal(result.ok, false);
 });
 
-test("resolveGhidraProject: accepts a clean repoRoot and a well-shaped runId, returning ok:true with runsRoot/projectLocation/projectName", async () => {
+test("resolveGhidraProject: accepts a clean repoRoot and a well-shaped runId, returning ok:true with runsRoot/projectLocation/projectName derived from ghidraRunsRoot()", async () => {
   await withTempDir((dir) => {
     const result = resolveGhidraProject({ repoRoot: dir, runId: "r1" });
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    assert.equal(result.runsRoot, join(dir, "tools", GHIDRA_RUNS_DIR_NAME));
-    assert.equal(result.projectLocation, join(dir, "tools", GHIDRA_RUNS_DIR_NAME, "r1"));
+    assert.equal(result.runsRoot, ghidraRunsRoot(dir));
+    assert.equal(result.projectLocation, join(ghidraRunsRoot(dir), "r1"));
     assert.equal(result.projectName, "r1");
+  });
+});
+
+test("resolveGhidraProject: an ok result lands the run directory PHYSICALLY under ghidraRunsRealRoot() -- the D-33 truth this whole plan exists for -- and remains reachable through ghidraRunsRoot() (the handle)", async () => {
+  await withTempDir((dir) => {
+    const result = resolveGhidraProject({ repoRoot: dir, runId: "physical-landing" });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(
+      existsSync(join(ghidraRunsRealRoot(dir), "physical-landing")),
+      true,
+      "the run directory must land physically under ghidraRunsRealRoot(), not merely be reachable through the handle",
+    );
+    assert.equal(existsSync(join(ghidraRunsRoot(dir), "physical-landing")), true, "the run directory must also be reachable through ghidraRunsRoot() (the handle)");
+    assert.equal(result.projectLocation, join(ghidraRunsRoot(dir), "physical-landing"));
   });
 });
 
@@ -152,13 +195,17 @@ test("resolveGhidraProject: CREATES the run directory as the last step of a succ
   });
 });
 
-test("resolveGhidraProject: refuses a repoRoot that itself contains a dot-prefixed segment, naming that segment -- rules out .vice-supervisor/ and .planning/ as ancestors", () => {
-  const result = resolveGhidraProject({ repoRoot: "/home/u/.vice-supervisor/nested", runId: "r1" });
-  assert.equal(result.ok, false);
-  if (!result.ok) {
-    assert.match(result.message, /\.vice-supervisor/);
-    assert.match(result.message, new RegExp(DOT_SEGMENT_REFUSAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
-  }
+test("resolveGhidraProject: refuses a repoRoot that itself contains a dot-prefixed segment, naming that segment -- rules out .vice-supervisor/ and .planning/ as ancestors -- and creates NOTHING on disk (the dot check runs before any filesystem write)", async () => {
+  await withTempDir((dir) => {
+    const repoRoot = join(dir, ".vice-supervisor", "nested");
+    const result = resolveGhidraProject({ repoRoot, runId: "r1" });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.message, /\.vice-supervisor/);
+      assert.match(result.message, new RegExp(DOT_SEGMENT_REFUSAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+    }
+    assert.deepEqual(readdirSync(dir), [], "a refused dot-prefixed repoRoot must create nothing on disk under the temp root -- no handle, no physical tree, nothing");
+  });
 });
 
 test("resolveGhidraProject: refuses a run id containing a path separator", () => {
@@ -193,10 +240,9 @@ test("resolveGhidraProject: refuses reusing an existing run directory under the 
   });
 });
 
-test("resolveGhidraProject: still refuses reuse even when a run's directory was created by an EARLIER, separate process (e.g. a completed prior run) rather than by this call's own reservation", async () => {
+test("resolveGhidraProject: still refuses reuse even when a run's directory was created by an EARLIER, separate process (e.g. a completed prior run) rather than by this call's own reservation -- pre-created PHYSICALLY under ghidraRunsRealRoot(), never through the handle, proving the resolver sees through it", async () => {
   await withTempDir((dir) => {
-    const runsRoot = join(dir, "tools", "ghidra-runs");
-    mkdirSync(join(runsRoot, "pre-existing-run"), { recursive: true });
+    mkdirSync(join(ghidraRunsRealRoot(dir), "pre-existing-run"), { recursive: true });
     const result = resolveGhidraProject({ repoRoot: dir, runId: "pre-existing-run" });
     assert.equal(result.ok, false);
     if (!result.ok) assert.match(result.message, /reused|reuse/i);
@@ -219,25 +265,139 @@ test("resolveGhidraProject: two DIFFERENT run ids produce disjoint project locat
 });
 
 // ---------------------------------------------------------------------------
+// ensureGhidraRunsHandle -- gap G-40-1 (plan 40-08). Mints/verifies the
+// broker-owned symlink handle; never repairs a wrong or foreign handle.
+// ---------------------------------------------------------------------------
+
+test("ensureGhidraRunsHandle: refuses a non-string/empty repoRoot, naming the offending value", () => {
+  for (const bad of [42, null, undefined, ""] as const) {
+    const result = ensureGhidraRunsHandle(bad);
+    assert.equal(result.ok, false, `expected a refusal for repoRoot=${JSON.stringify(bad)}`);
+  }
+});
+
+test("ensureGhidraRunsHandle: on a clean temp root, creates the physical runs tree AND mints the handle -- a symbolic link whose target is exactly the relative string", async () => {
+  await withTempDir((dir) => {
+    const result = ensureGhidraRunsHandle(dir);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
+    assert.equal(result.handle, handlePath);
+    assert.equal(result.target, GHIDRA_RUNS_HANDLE_TARGET);
+    assert.equal(existsSync(ghidraRunsRealRoot(dir)), true, "the physical runs tree must exist");
+    const stat = lstatSync(handlePath);
+    assert.equal(stat.isSymbolicLink(), true, "the handle must be a symbolic link");
+    assert.equal(readlinkSync(handlePath), GHIDRA_RUNS_HANDLE_TARGET, "the link target must be exactly the relative string, never absolute");
+  });
+});
+
+test("ensureGhidraRunsHandle: called a second time on the same root returns ok unchanged -- fully idempotent, the existing link untouched", async () => {
+  await withTempDir((dir) => {
+    const first = ensureGhidraRunsHandle(dir);
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
+    const targetBefore = readlinkSync(handlePath);
+    const second = ensureGhidraRunsHandle(dir);
+    assert.equal(second.ok, true);
+    if (!second.ok) return;
+    assert.equal(second.handle, first.handle);
+    assert.equal(second.target, first.target);
+    assert.equal(readlinkSync(handlePath), targetBefore, "the existing link must be untouched by the second, idempotent call");
+  });
+});
+
+test("ensureGhidraRunsHandle: refuses when a REAL DIRECTORY already sits at the handle path, naming the handle and that it is a directory -- and never repairs it", async () => {
+  await withTempDir((dir) => {
+    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
+    mkdirSync(handlePath, { recursive: true });
+    writeFileSync(join(handlePath, "sentinel.txt"), "untouched", "utf8");
+    const result = ensureGhidraRunsHandle(dir);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the handle path");
+      assert.match(result.message, /directory/i, "the refusal must name what was found");
+    }
+    const stat = lstatSync(handlePath);
+    assert.equal(stat.isDirectory(), true);
+    assert.equal(stat.isSymbolicLink(), false);
+    assert.equal(existsSync(join(handlePath, "sentinel.txt")), true, "ensureGhidraRunsHandle must NEVER delete, replace, or repair what it finds");
+  });
+});
+
+test("ensureGhidraRunsHandle: refuses when a symlink at the handle path points somewhere else -- including an ABSOLUTE path to the otherwise-correct real directory -- naming the found and expected targets, and never repairs it", async () => {
+  await withTempDir((dir) => {
+    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
+    mkdirSync(ghidraRunsRealRoot(dir), { recursive: true });
+    const wrongTarget = join(dir, GHIDRA_RUNS_HANDLE_TARGET); // absolute -- wrong even though it names the correct real directory
+    symlinkSync(wrongTarget, handlePath);
+    const result = ensureGhidraRunsHandle(dir);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.message, new RegExp(wrongTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the found (wrong) target");
+      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_TARGET.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the expected target");
+      assert.match(result.message, /absolute/i, "the refusal must state that an absolute target breaks the container route");
+    }
+    const stat = lstatSync(handlePath);
+    assert.equal(stat.isSymbolicLink(), true);
+    assert.equal(readlinkSync(handlePath), wrongTarget, "the wrong-target link must be untouched -- NEVER repaired");
+  });
+});
+
+test("ensureGhidraRunsHandle: refuses when a plain FILE sits at the handle path, naming what was found -- and never repairs it", async () => {
+  await withTempDir((dir) => {
+    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
+    writeFileSync(handlePath, "not a link", "utf8");
+    const result = ensureGhidraRunsHandle(dir);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the handle path");
+      assert.match(result.message, /file/i, "the refusal must name what was found");
+    }
+    const stat = lstatSync(handlePath);
+    assert.equal(stat.isFile(), true);
+    assert.equal(readFileSync(handlePath, "utf8"), "not a link", "ensureGhidraRunsHandle must NEVER delete, replace, or repair what it finds");
+  });
+});
+
+test("resolveGhidraProject: propagates an ensureGhidraRunsHandle() refusal without creating anything -- the regression test for the silent-violation hole where a missing/wrong handle let recursive mkdir materialise a second root", async () => {
+  await withTempDir((dir) => {
+    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
+    mkdirSync(handlePath, { recursive: true });
+    const result = resolveGhidraProject({ repoRoot: dir, runId: "should-never-exist" });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the propagated refusal must name the handle path");
+    }
+    assert.equal(
+      existsSync(join(handlePath, "runs", "ghidra", "should-never-exist")),
+      false,
+      "no run directory may appear under the unverified handle path -- this is the exact hole T-40-08-02 closes",
+    );
+    assert.equal(existsSync(join(ghidraRunsRealRoot(dir), "should-never-exist")), false, "no run directory may appear under the physical root either");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildAnalyzeHeadlessArgv -- positional order, -deleteProject, independent
 // dot-segment re-check
 // ---------------------------------------------------------------------------
 
 test("buildAnalyzeHeadlessArgv: places projectLocation and projectName first, includes -import <importPath>, -processor <processor>, -loader BinaryLoader, -loader-baseAddr and -deleteProject", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
   });
   assert.equal(result.ok, true);
   if (!result.ok) return;
-  assert.equal(result.argv[0], "/repo/tools/ghidra-runs/r1");
+  assert.equal(result.argv[0], "/repo/c64-re-tools/runs/ghidra/r1");
   assert.equal(result.argv[1], "r1");
   const importIdx = result.argv.indexOf("-import");
   assert.ok(importIdx !== -1);
-  assert.equal(result.argv[importIdx + 1], "/repo/tools/ghidra-runs/r1/input.bin");
+  assert.equal(result.argv[importIdx + 1], "/repo/c64-re-tools/runs/ghidra/r1/input.bin");
   const processorIdx = result.argv.indexOf("-processor");
   assert.ok(processorIdx !== -1);
   assert.equal(result.argv[processorIdx + 1], "6502:LE:16:nmos");
@@ -253,9 +413,9 @@ test("buildAnalyzeHeadlessArgv: places projectLocation and projectName first, in
 
 test('buildAnalyzeHeadlessArgv: refuses a missing "processor", naming the field and the accepted shape', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
   });
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.message, /processor/);
@@ -263,9 +423,9 @@ test('buildAnalyzeHeadlessArgv: refuses a missing "processor", naming the field 
 
 test('buildAnalyzeHeadlessArgv: refuses a "processor" that does not match LANGUAGE_ID_PATTERN', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "not a language id",
     loaderBaseAddr: "0x0",
   });
@@ -275,9 +435,9 @@ test('buildAnalyzeHeadlessArgv: refuses a "processor" that does not match LANGUA
 
 test('buildAnalyzeHeadlessArgv: refuses a "loaderBaseAddr" that does not match LOADER_BASE_ADDR_PATTERN', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0X0",
   });
@@ -287,9 +447,9 @@ test('buildAnalyzeHeadlessArgv: refuses a "loaderBaseAddr" that does not match L
 
 test("buildAnalyzeHeadlessArgv: appends -preScript/-postScript in a fixed documented order when given", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     preScript: "Pre.java",
@@ -308,7 +468,7 @@ test("buildAnalyzeHeadlessArgv: refuses outright when projectLocation is dot-pre
   const result = buildAnalyzeHeadlessArgv({
     projectLocation: "/repo/.hidden/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
   });
@@ -318,9 +478,9 @@ test("buildAnalyzeHeadlessArgv: refuses outright when projectLocation is dot-pre
 
 test("buildAnalyzeHeadlessArgv: refuses an unknown key BY NAME", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     bogusKey: "x",
   });
   assert.equal(result.ok, false);
@@ -339,9 +499,9 @@ test("buildAnalyzeHeadlessArgv: refuses a non-string/empty required field, never
 
 test("buildAnalyzeHeadlessArgv: refuses a preScript containing a parent-directory segment, naming the field, even when projectLocation is clean", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     preScript: "../x.java",
@@ -355,9 +515,9 @@ test("buildAnalyzeHeadlessArgv: refuses a preScript containing a parent-director
 
 test("buildAnalyzeHeadlessArgv: refuses a postScript containing a parent-directory segment, naming the field, even when projectLocation is clean", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     postScript: "../y.java",
@@ -371,9 +531,9 @@ test("buildAnalyzeHeadlessArgv: refuses a postScript containing a parent-directo
 
 test("buildAnalyzeHeadlessArgv: a preScript containing merely TWO DOTS in the filename (not a parent-directory SEGMENT) is accepted -- a substring test would have misjudged this", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     preScript: "..foo.java",
@@ -383,9 +543,9 @@ test("buildAnalyzeHeadlessArgv: a preScript containing merely TWO DOTS in the fi
 
 test("buildAnalyzeHeadlessArgv: a bare Ghidra script name for preScript/postScript (no path separator) is still accepted -- the parent-directory-segment check does not require absoluteness", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     preScript: "Pre.java",
@@ -396,9 +556,9 @@ test("buildAnalyzeHeadlessArgv: a bare Ghidra script name for preScript/postScri
 
 test("buildAnalyzeHeadlessArgv: is deterministic -- the same input yields two deepEqual argv arrays", () => {
   const input = {
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
   };
@@ -417,9 +577,9 @@ test("buildAnalyzeHeadlessArgv: is deterministic -- the same input yields two de
 
 test('buildAnalyzeHeadlessArgv: refuses a "noanalysis" that is not a boolean, independently of host-tool.mts\'s own check', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     noanalysis: "true",
@@ -430,9 +590,9 @@ test('buildAnalyzeHeadlessArgv: refuses a "noanalysis" that is not a boolean, in
 
 test('buildAnalyzeHeadlessArgv: refuses an "expectedClassificationLines" that is not a non-negative integer, independently of host-tool.mts\'s own check', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     postScript: "Post.java",
@@ -445,9 +605,9 @@ test('buildAnalyzeHeadlessArgv: refuses an "expectedClassificationLines" that is
 
 test('buildAnalyzeHeadlessArgv: refuses "entrypointsPath" without "preScript", independently of host-tool.mts\'s own check', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     entrypointsPath: "/repo/entry.txt",
@@ -461,9 +621,9 @@ test('buildAnalyzeHeadlessArgv: refuses "entrypointsPath" without "preScript", i
 
 test('buildAnalyzeHeadlessArgv: refuses "exportPath" without "postScript", independently of host-tool.mts\'s own check', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     exportPath: "/repo/out.txt",
@@ -477,9 +637,9 @@ test('buildAnalyzeHeadlessArgv: refuses "exportPath" without "postScript", indep
 
 test('buildAnalyzeHeadlessArgv: refuses "expectedClassificationLines" without "exportPath" -- it is the export script\'s own SECOND argument', () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     postScript: "Post.java",
@@ -492,9 +652,9 @@ test('buildAnalyzeHeadlessArgv: refuses "expectedClassificationLines" without "e
 test('buildAnalyzeHeadlessArgv: refuses a "scriptPath"/"entrypointsPath"/"exportPath" containing a parent-directory segment, naming the field', () => {
   for (const key of ["scriptPath", "entrypointsPath", "exportPath"] as const) {
     const input: Record<string, unknown> = {
-      projectLocation: "/repo/tools/ghidra-runs/r1",
+      projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
       projectName: "r1",
-      importPath: "/repo/tools/ghidra-runs/r1/input.bin",
+      importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.bin",
       processor: "6502:LE:16:nmos",
       loaderBaseAddr: "0x0",
     };
@@ -512,9 +672,9 @@ test('buildAnalyzeHeadlessArgv: refuses a "scriptPath"/"entrypointsPath"/"export
 
 test("buildAnalyzeHeadlessArgv: the full prg-route argv is pinned by deep equality against the expected literal array, and no entry contains a space", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r1",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
     projectName: "r1",
-    importPath: "/repo/tools/ghidra-runs/r1/input.prg",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r1/input.prg",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x801",
     noanalysis: true,
@@ -528,10 +688,10 @@ test("buildAnalyzeHeadlessArgv: the full prg-route argv is pinned by deep equali
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.deepEqual(result.argv, [
-    "/repo/tools/ghidra-runs/r1",
+    "/repo/c64-re-tools/runs/ghidra/r1",
     "r1",
     "-import",
-    "/repo/tools/ghidra-runs/r1/input.prg",
+    "/repo/c64-re-tools/runs/ghidra/r1/input.prg",
     "-processor",
     "6502:LE:16:nmos",
     "-loader",
@@ -559,9 +719,9 @@ test("buildAnalyzeHeadlessArgv: the full prg-route argv is pinned by deep equali
 
 test("buildAnalyzeHeadlessArgv: the full flat64k-route argv is pinned by deep equality against the expected literal array, and no entry contains a space", () => {
   const result = buildAnalyzeHeadlessArgv({
-    projectLocation: "/repo/tools/ghidra-runs/r2",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r2",
     projectName: "r2",
-    importPath: "/repo/tools/ghidra-runs/r2/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r2/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     noanalysis: true,
@@ -575,10 +735,10 @@ test("buildAnalyzeHeadlessArgv: the full flat64k-route argv is pinned by deep eq
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.deepEqual(result.argv, [
-    "/repo/tools/ghidra-runs/r2",
+    "/repo/c64-re-tools/runs/ghidra/r2",
     "r2",
     "-import",
-    "/repo/tools/ghidra-runs/r2/input.bin",
+    "/repo/c64-re-tools/runs/ghidra/r2/input.bin",
     "-processor",
     "6502:LE:16:nmos",
     "-loader",
@@ -606,9 +766,9 @@ test("buildAnalyzeHeadlessArgv: the full flat64k-route argv is pinned by deep eq
 
 test("buildAnalyzeHeadlessArgv: is deterministic with every new field populated -- two calls with identical input return deeply equal argv arrays", () => {
   const input = {
-    projectLocation: "/repo/tools/ghidra-runs/r3",
+    projectLocation: "/repo/c64-re-tools/runs/ghidra/r3",
     projectName: "r3",
-    importPath: "/repo/tools/ghidra-runs/r3/input.bin",
+    importPath: "/repo/c64-re-tools/runs/ghidra/r3/input.bin",
     processor: "6502:LE:16:nmos",
     loaderBaseAddr: "0x0",
     noanalysis: true,
