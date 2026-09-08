@@ -1030,7 +1030,15 @@ contended rather than diagnosed as wedged and destroyed.
   4. **A contended instance is reported as contended, and the skill that would have destroyed it is fixed in this same phase.** `vice_diagnose` gains the evidence needed to tell a two-channel hold from a genuine wedge, and `vice-wedge-triage` gains the verdict. The regression is specific and it is one this milestone would otherwise *introduce* into shipped software: the skill's verdict vocabulary has no entry for contention, and a text-channel hold the binary side cannot see reads as exactly the `wedged` signature — two cycle brackets reading zero — whose recommended remedy is a destructive recycle of a healthy instance. The new signature is **reproduced live** and recorded in the skill's provenance table at the same confidence discipline its existing verdicts carry, not added as an untested branch.
   5. **The `default_memspace` remedy is exercised, not merely made available, and the three narrowed CLAUDE.md constraints gain a scoping clause rather than a deletion.** MEASURED hazard: a drive checkpoint hit sets `default_memspace` (`monitor.c:3393-3396`) and the binary monitor has no command that resets it, after which `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the **drive** CPU and `@bank:` conditions fail outright. A live test contaminates it and shows `device c:` over the text channel restoring main-CPU stepping. Each of the three constraints the live probe narrowed is **literally true as written and correctly scoped to the binary monitor**; each gains its clause and none is removed — the absent runtime `WarpMode` *resource* stays a real and separate fact from `warp on` being a working monitor *command*.
 
-**Plans**: TBD
+**Plans**: 6 plans in 4 waves
+
+Plans:
+- [ ] 41-01-PLAN.md — Tracer: the text channel's first framed round trip (`remoteMonitorPort` reaches `HeldLease`; `text-protocol.ts` + `text-connect.ts`; the two planted framing controls)
+- [ ] 41-02-PLAN.md — The serialization authority: `channel-lock.ts`'s FIFO mutex, holder record and refusal text, wired into both channels' halting operations
+- [ ] 41-03-PLAN.md — One text client per instance: `monitorClient` promoted to a per-channel holder map, refused by name with holder and channel
+- [ ] 41-04-PLAN.md — Contention as always-present evidence, `wedged` made structurally unreachable while contended, and `vice-wedge-triage` fixed at MEDIUM
+- [ ] 41-05-PLAN.md — The mandatory text port (D-16) and the retired warm floor (folded todo), with the promotion step moved rather than lost
+- [ ] 41-06-PLAN.md — The two remedy tools shipped, the `default_memspace` remedy exercised live, and the three narrowed CLAUDE.md constraints re-cited
 
 Notes:
 
