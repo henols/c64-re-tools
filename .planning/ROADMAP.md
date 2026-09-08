@@ -13,7 +13,7 @@
 
 - ✅ **v0.7.0 Own the Annotation Store** — Phases 27-32 (shipped 2026-09-01)
 - ✅ **v0.8.0 Frame-Exact Capture and the Two Engines** — Phases 33-38 (opened 2026-09-02, shipped 2026-09-06; `GATE-01` returned `degrade` by rule `R6`)
-- 🚧 **v0.9.0 The Text Channel and the Runtime Evidence Layer** — Phases 39-44 (opened 2026-09-06; roadmap created 2026-09-06, 19/19 requirements mapped — corrected 2026-09-08 from 20/20 after `PREP-03` was removed, see `docs/phase40-preprocessing-tools-decisions.md`)
+- 🚧 **v0.9.0 The Text Channel and the Runtime Evidence Layer** — Phases 39-44 (opened 2026-09-06; roadmap created 2026-09-06, 20/20 requirements mapped — corrected 2026-09-08 from 20/20 to 19/19 after `PREP-03` was removed, then corrected again the same day to 20/20 after `PREP-05` was added by owner direction during the Phase 40 UAT (mapped to Phase 40 in `REQUIREMENTS.md`'s Traceability table since that UAT, but this line was stale until plan `40-11`); see `docs/phase40-preprocessing-tools-decisions.md`)
 
 *v0.8.0 continues phase numbering from Phase 32 — it starts at Phase **33**.
 Phase numbers are continuous across milestones and are **never** reused,
@@ -927,7 +927,7 @@ third delivered capability. `cartconv` was removed from this phase's scope by
 owner direction at the Phase 40 discussion (`PREP-03` withdrawn) before any of
 it was built; see `docs/phase40-preprocessing-tools-decisions.md`.
 **Depends on**: Nothing in this milestone. Independent of Phase 39's verdict and of the text channel, and runnable concurrently with Phase 39 from day one — zero shared files. It consumes v0.8.0's shipped `host_tool` seam (six tool ids today) and the CI gate that bans every other route
-**Requirements**: PREP-01, PREP-02, ~~PREP-03~~, PREP-04 (`PREP-03` removed 2026-09-08 — see REQUIREMENTS.md's Excluded table)
+**Requirements**: PREP-01, PREP-02, ~~PREP-03~~, PREP-04, PREP-05 (`PREP-03` removed 2026-09-08 — see REQUIREMENTS.md's Excluded table; `PREP-05` added to this line 2026-09-08 by plan `40-11` — it was mapped to Phase 40 in REQUIREMENTS.md since the Phase 40 UAT but missing from this line until now)
 **Success Criteria** (what must be TRUE):
 
   1. **A user gets a named file's real sector chain, plus the BAM and the directory, out of a `.d64` through `c1541`** — reached over `host_tool` from a container-side skill script with no `spawnSync` of a host binary anywhere, so `scripts/check-no-skill-external-spawn.mjs` stays green and its planted-violation controls are re-run rather than assumed still valid. ~~`d64-parse.mjs` is untouched and undeprecated: `c1541` is **additive by decision**, and whether it eventually supersedes the hand-written parser is deferred on the record rather than settled as a side effect of adding a tool.~~ **AMENDED 2026-09-08** — the supersession was reached and executed in this same phase, not deferred: `d64-parse.mjs` and its MCP-side duplicate `anno-d64.ts` are both deleted (plan 40-06), and `c1541` is the ONE `.d64` route, mechanically enforced by `d64-single-route.test.ts`. MEASURED: `c1541 -bam` returns a per-sector allocation map where the deleted parser had only per-track free counts, and `c1541 -entry` returns the first track/sector plus the raw entry bytes plus the next-directory pointer — strictly richer inputs than the parser computed. Full derivation: `docs/phase40-preprocessing-tools-decisions.md`.
@@ -935,7 +935,7 @@ it was built; see `docs/phase40-preprocessing-tools-decisions.md`.
   3. ~~**A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.~~ **REMOVED 2026-09-08** — dropped by owner direction at the Phase 40 discussion. No `cartconv` work, no per-bank images, no bank output contract; `PREP-03` is withdrawn (see REQUIREMENTS.md's Excluded table and `docs/phase40-preprocessing-tools-decisions.md`). This criterion is deliberately NOT renumbered — criterion 4 below stays "criterion 4" for anyone who cited it before this edit.
   4. **A failure is reported as a failure, proven separately on each of the two shipped tools.** **AMENDED 2026-09-08** — originally "each of the three"; `cartconv` was removed from scope (criterion 3, above) before this criterion's own tools were built. MEASURED: `c1541` exits **0 on error**; `petcat` returns non-zero only for a missing file, `0` on garbage input. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
 
-**Plans**: 10/11 plans executed in 11 waves (fully sequential — every plan after 40-01
+**Plans**: 11/11 plans executed in 11 waves (fully sequential — every plan after 40-01
 shares `host-tool.mts`, `ghidra-project.mts`, the skill tree, or the planning documents
 with its predecessor, so no two can run in the same wave). Plans 40-01 through 40-07
 were planned 2026-09-08 against `40-CONTEXT.md`'s 36 decisions; criteria 1, 3 and 4
@@ -1002,7 +1002,7 @@ Plans:
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 40-11-PLAN.md — `PREP-05` marked Complete, Phase 40's plan accounting, the superseded `STATE.md` decision entry, and the live-Ghidra guard todo closed; `worktree: false` because its deliverable is `STATE.md`/`ROADMAP.md` content
+- [x] 40-11-PLAN.md — `PREP-05` marked Complete, Phase 40's plan accounting, the superseded `STATE.md` decision entry, and the live-Ghidra guard todo closed; `worktree: false` because its deliverable is `STATE.md`/`ROADMAP.md` content
 
 Notes:
 
@@ -1257,7 +1257,7 @@ in a milestone archive.
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
-| 40. The Three Preprocessing Host Tools | v0.9.0 | 10/11 | In Progress | - |
+| 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | In Progress | - |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |

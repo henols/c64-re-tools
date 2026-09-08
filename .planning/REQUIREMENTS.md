@@ -56,7 +56,7 @@ whose whole job is to settle it.
 - [ ] ~~**PREP-03**: A cartridge image's bank structure is recovered through `cartconv` and presented as separate per-bank images the existing analysis engines can each consume, rather than as a flat ROM window that hides everything past the first bank.~~ **REMOVED 2026-09-08** — dropped by owner direction at the Phase 40 discussion; no `cartconv` work, no per-bank images. Not deferred to a named phase — if it returns, it returns as a new requirement. See `docs/phase40-preprocessing-tools-decisions.md` and the Excluded table below.
 - [x] **PREP-04**: A failure in any of these three tools is reported as a failure. *(MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. Exit-code checking alone would pass failures silently, so each tool's own output is what decides the outcome — the same discipline the existing real-ACME verify path already applies.)*
 
-- [ ] **PREP-05**: Every external tool is invoked by the broker, every tool's output lands under `.c64-re-tools/`, and the broker owns resolving each tool's output path — including any laundering that tool's own path rules require — so the MCP server and the skills work from a devcontainer with none of the tools installed inside it. *(Owner direction, 2026-09-08, Phase 40 UAT. Three of the four parts already hold: `vice-broker.mts` imports `runHostTool` and executes all 12 allowlisted tool ids host-side, and D-33 put every other writer under `.c64-re-tools/`. The single deviation is `ghidra.analyze`, whose runs root is computed as `join(repoRoot, "tools", ...)`. MEASURED 2026-09-08: Ghidra refuses a dot-prefixed segment in the **absolutized** path but does **not** resolve symlinks — `ProjectLocator` calls `getAbsolutePath()`, never `getCanonicalPath()` — so a broker-minted symlink handle satisfies Ghidra and this requirement at once. The recorded claim that the split is unavoidable is therefore an overstatement; see `notes/ghidra-dot-path-check-semantics.md` and gap `G-40-1`.)*
+- [x] **PREP-05**: Every external tool is invoked by the broker, every tool's output lands under `.c64-re-tools/`, and the broker owns resolving each tool's output path — including any laundering that tool's own path rules require — so the MCP server and the skills work from a devcontainer with none of the tools installed inside it. *(Owner direction, 2026-09-08, Phase 40 UAT. All four parts now hold: `vice-broker.mts` imports `runHostTool` and executes all 12 allowlisted tool ids host-side; D-33 put every other writer under `.c64-re-tools/`; and `ghidra.analyze`'s runs root now resolves under that same one root too, reached through a broker-minted, verified, non-dotted alias symlink with a RELATIVE target (`ensureGhidraRunsHandle()`, plans `40-08`/`40-09`) rather than the earlier `join(repoRoot, "tools", ...)` location. MEASURED 2026-09-08: Ghidra refuses a dot-prefixed segment in the **absolutized** path but does **not** resolve symlinks — `ProjectLocator` calls `getAbsolutePath()`, never `getCanonicalPath()` — so the symlink handle satisfies Ghidra and this requirement at once. The earlier recorded claim that the split was unavoidable was an overstatement; see `notes/ghidra-dot-path-check-semantics.md` and gap `G-40-1`, CLOSED 2026-09-08 by plans `40-08`/`40-09`/`40-10`/`40-11`.)*
 
 ### Proof — closing a named reversal condition
 
@@ -139,7 +139,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PREP-02 | Phase 40 | Complete |
 | ~~PREP-03~~ | Phase 40 | ~~Pending~~ — **Removed 2026-09-08**, see Excluded table |
 | PREP-04 | Phase 40 | Complete |
-| PREP-05 | Phase 40 | Pending |
+| PREP-05 | Phase 40 | Complete |
 | PROOF-04 | Phase 44 | Pending |
 
 **Coverage:**
@@ -162,6 +162,19 @@ Phase 43 — `EVID-01..06`. Phase 44 — `PROOF-04`.
 direction during the Phase 40 UAT, raising the count from 19 to 20. Mapped to
 Phase 40, the phase whose UAT surfaced it. It is **not** complete: the
 `ghidra.analyze` runs-root deviation it names is tracked as gap `G-40-1`.
+
+**AMENDED 2026-09-08 (third amendment, plan `40-11`)** — `PREP-05` is now
+**Complete** (checkbox and mapping-table row above): gap `G-40-1` is closed by
+plans `40-08`/`40-09`/`40-10`/`40-11`. Re-derived mechanically at this same
+plan, straight from the files rather than by adjusting the printed figures:
+21 requirement checkbox lines and 21 Traceability mapping-table rows, one
+struck through in each (`~~PREP-03~~`) — 20 in-scope requirements counted
+either way, agreeing with the `20 total` / `20 mapped` / `0 unmapped` figures
+above. The checkbox count and the mapping-table count no longer disagree.
+One separate, real discrepancy remained: `ROADMAP.md`'s own top-level
+`v0.9.0` milestone summary line still read `19/19 requirements mapped` at
+this plan's start — stale since the second amendment above added `PREP-05` —
+and is corrected to `20/20` in this same commit.
 
 ---
 
