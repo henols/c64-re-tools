@@ -36,6 +36,11 @@ import { startControlListener, type StartControlListenerResult, type AcquireOutc
 import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
 import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+// Gap G-40-1 (plan 40-08): the physical Ghidra runs location, now reached
+// through a broker-minted handle rather than a bare `tools/ghidra-runs/`
+// literal -- imported so this file's own assertion below cannot drift from
+// ghidra-project.mts's one authoritative definition.
+import { ghidraRunsRealRoot } from "./ghidra-project.mts";
 // 34-10 Task 2 (CR-05): a container-side import into a container-side test
 // file -- legal here, and anno-types.ts names no node:sqlite specifier, so
 // anno-seam.test.ts's TEST_FILES_NAMING_SQLITE list is untouched. Drives the
@@ -2164,8 +2169,8 @@ test(
               // its presence on disk is the observable proof the two runs
               // used distinct project locations, since the response itself
               // carries no project-location field for ghidra.analyze.
-              assert.ok(statSync(join(dir, "tools", "ghidra-runs", runIdA)).isDirectory());
-              assert.ok(statSync(join(dir, "tools", "ghidra-runs", runIdB)).isDirectory());
+              assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdA)).isDirectory());
+              assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdB)).isDirectory());
               assert.ok(
                 elapsedMs < sleepSeconds * 2 * 1000,
                 `expected the overlapping pair to finish well under the summed sleeps (${sleepSeconds * 2}s); took ${elapsedMs}ms`,

@@ -54,7 +54,7 @@ import { dirname, join, relative, resolve as resolvePath, sep } from "node:path"
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
-import { installedLanguageIds, GHIDRA_RUNS_DIR_NAME } from "./ghidra-project.mts";
+import { installedLanguageIds, ghidraRunsRealRoot } from "./ghidra-project.mts";
 import { repoRoot } from "./repo-root.ts";
 // Phase 37, plan 37-08 (AUTO-07): the derived character-set range is computed
 // from the fixture's own real CONST_WRITES facts, never hard-coded -- the
@@ -241,7 +241,7 @@ test(
       // and throws before ever returning -- this is the DIRECT assertion the
       // review demanded, replacing the prior manual re-parse of a normally
       // -returned result. The run log and export file are still inspected
-      // below (reconstructed from runId/GHIDRA_RUNS_DIR_NAME, since a thrown
+      // below (reconstructed from runId/ghidraRunsRealRoot(), since a thrown
       // call yields no GhidraRunResult to read a runLogPath off of) to keep
       // this gate's original file-content assertions intact.
       await assert.rejects(
@@ -264,7 +264,7 @@ test(
         "runGhidraAnalyze must reject when the post-script threw, never return a normal result",
       );
 
-      const runLogPath = join(ws.root, "tools", GHIDRA_RUNS_DIR_NAME, `${runId}.ghidra-run.log`);
+      const runLogPath = join(ghidraRunsRealRoot(ws.root), `${runId}.ghidra-run.log`);
       const logText = readFileSync(runLogPath, "utf8");
       const verdict = classifyGhidraRunLog(logText);
       assert.equal(verdict.scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
@@ -935,7 +935,7 @@ test(
       // and rejects before ever returning a GhidraRunResult -- mirroring the
       // GATE 1 fix above (this same file, "GATE 1" case). A thrown call
       // yields no result, so the run log is reconstructed below from
-      // runId/GHIDRA_RUNS_DIR_NAME (the same technique GATE 1 uses) and the
+      // runId/ghidraRunsRealRoot() (the same technique GATE 1 uses) and the
       // export path is reconstructed from exportRel, which was always
       // workspace-relative and never depended on the return value. The
       // exit-status assertion is preserved by reading it out of the
@@ -977,7 +977,7 @@ test(
         "runGhidraAnalyze must reject when the pre-script threw a genuine MemoryConflictException",
       );
 
-      const runLogPath = join(ws.root, "tools", GHIDRA_RUNS_DIR_NAME, `${runId}.ghidra-run.log`);
+      const runLogPath = join(ghidraRunsRealRoot(ws.root), `${runId}.ghidra-run.log`);
       const logText = readFileSync(runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
       assert.match(logText, /MemoryConflictException/, "the thrown exception must be the genuine memory-conflict type, not some other failure");
