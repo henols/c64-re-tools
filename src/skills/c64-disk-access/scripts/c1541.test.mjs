@@ -18,14 +18,14 @@
 //      return that would report a false PASS).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { auditEntries, parseDirListing, parseBamAllocation, parseEntryFields, salvageFirstTsFromRefusal } from "./c1541.mjs";
+import { auditEntries, parseDirListing, parseBamAllocation, parseEntryFields, salvageFirstTsFromRefusal, sectorsPerTrack } from "./c1541.mjs";
 import { projectRoot } from "../../c64-ram-capture/scripts/project-paths.mjs";
 
 const execFileP = promisify(execFile);
@@ -34,6 +34,18 @@ const SCRIPT = join(HERE, "c1541.mjs");
 const FIXTURES_DIR = join(projectRoot(), "src", "mcp", "vice", "fixtures", "c1541");
 const CLEAN_FIXTURE = join(FIXTURES_DIR, "synthetic.d64");
 const CORRUPT_FIXTURE = join(FIXTURES_DIR, "synthetic-corrupt.d64");
+
+// Phase 40, plan 40-04 (D-25): the acknowledged circularity is that
+// synthetic.d64/synthetic-corrupt.d64 were both BUILT by the very c1541
+// binary this suite tests reading back -- so their format-correctness claim
+// ultimately rests on c1541 agreeing with itself. The stated mitigation is
+// keeping ONE assertion against a real, INDEPENDENTLY-produced release image
+// in a live-gated test (fixtures/c1541/README.md's own "acknowledged mild
+// circularity" section names this). Phase 23's own evidence corpus is the
+// one such image already in the tree -- never copied into fixtures/ here,
+// since the point is that it is independently produced, not this phase's
+// artifact.
+const REAL_CORPUS_IMAGE = join(projectRoot(), ".planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/corpus/danish.d64");
 
 // ---------------------------------------------------------------------------
 // Tier 1: pure parsers, against literal MEASURED text (see
@@ -229,6 +241,87 @@ test(
       for (const e of result.entries) {
         assert.ok(e.suspicious_reasons.length > 0 || !e.suspicious, "a flagged entry must never carry an empty reason array");
       }
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Phase 40, plan 40-04 (Task 3, D-25): ONE assertion against a real,
+// INDEPENDENTLY-produced release image -- the stated mitigation for the
+// acknowledged circularity that every other fixture in this file was built
+// by the very tool under test. Gated on the corpus image's presence, never
+// on an opt-in env var (a checkout without the evidence tree stays green).
+// ---------------------------------------------------------------------------
+
+const CORPUS_SKIP_REASON = !existsSync(REAL_CORPUS_IMAGE)
+  ? `the Phase 23 evidence corpus image is absent at ${REAL_CORPUS_IMAGE} -- this case is skipped, never failed, on a checkout without that evidence tree`
+  : false;
+
+test(
+  "LIVE: a real, independently-produced release image (Phase 23's danish.d64) cross-validates the directory listing, one entry's first track/sector, and that entry's own sector chain against each other",
+  { skip: CORPUS_SKIP_REASON },
+  async () => {
+    const outDir = mkdtempSync(join(tmpdir(), "c1541-corpus-"));
+    try {
+      const { stdout: dirStdout } = await execFileP(process.execPath, [SCRIPT, "dir", "--image", REAL_CORPUS_IMAGE, "--out-dir", outDir, "--json"]);
+      const dirResponse = JSON.parse(dirStdout.trim());
+      assert.equal(dirResponse.ok, true, dirResponse.ok ? "" : dirResponse.message);
+      const dirText = readFileSync(dirResponse.results[0].path, "utf8");
+      // A self-agreeing tool could not fail to produce its own trailer, but
+      // this is still a real structural assertion about a real disk image
+      // this project never authored.
+      assert.match(dirText, /\d+\s+blocks free/i, "the directory listing must end in a numeric block-count trailer");
+
+      const names = parseDirListing(dirText);
+      assert.ok(names.length > 0, "the real corpus image must report at least one directory entry");
+      const { name } = names[0];
+
+      const { stdout: entryStdout } = await execFileP(process.execPath, [
+        SCRIPT,
+        "entry",
+        "--image",
+        REAL_CORPUS_IMAGE,
+        "--name",
+        name,
+        "--out-dir",
+        outDir,
+        "--json",
+      ]);
+      const entryResponse = JSON.parse(entryStdout.trim());
+      assert.equal(entryResponse.ok, true, entryResponse.ok ? "" : entryResponse.message);
+      const fields = parseEntryFields(readFileSync(entryResponse.results[0].path, "utf8"));
+      assert.ok(fields, "the entry response must carry a parseable T/S: line");
+      const spt = sectorsPerTrack(fields.firstTrack);
+      assert.ok(
+        fields.firstTrack >= 1 && fields.firstTrack <= 35 && spt !== null && fields.firstSector >= 0 && fields.firstSector < spt,
+        `entry "${name}"'s first track/sector ${fields.firstTrack}/${fields.firstSector} must resolve inside the image's own geometry`,
+      );
+
+      // The real cross-validation: two INDEPENDENT capabilities (the
+      // directory entry's own claimed first track/sector, and that same
+      // file's own sector-chain walk) must agree on the SAME real data --
+      // something a tool that merely agrees with itself could not fake by
+      // construction, since either capability could have diverged.
+      const { stdout: chainStdout } = await execFileP(process.execPath, [
+        SCRIPT,
+        "chain",
+        "--image",
+        REAL_CORPUS_IMAGE,
+        "--name",
+        name,
+        "--out-dir",
+        outDir,
+        "--json",
+      ]);
+      const chainResponse = JSON.parse(chainStdout.trim());
+      assert.equal(chainResponse.ok, true, chainResponse.ok ? "" : chainResponse.message);
+      const chainText = readFileSync(chainResponse.results[0].path, "utf8");
+      const firstHop = chainText.match(/\(\s*(\d+)\s*,\s*(\d+)\s*\)/);
+      assert.ok(firstHop, "the sector chain must begin with a (track,sector) tuple");
+      assert.equal(Number(firstHop[1]), fields.firstTrack, "the chain's first track must equal the entry's own claimed first track");
+      assert.equal(Number(firstHop[2]), fields.firstSector, "the chain's first sector must equal the entry's own claimed first sector");
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }

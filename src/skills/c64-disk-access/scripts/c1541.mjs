@@ -184,7 +184,7 @@ function stripAnsi(text) {
 /** The four sector-count zones of a standard 35-track 1541 image -- same
  * table `d64-parse.mjs` (:23-31) used, copied rather than imported since
  * that file is deleted in Phase 40 plan 40-06. */
-function sectorsPerTrack(track) {
+export function sectorsPerTrack(track) {
   if (!Number.isInteger(track) || track < 1 || track > 35) return null;
   if (track <= 17) return 21;
   if (track <= 24) return 19;

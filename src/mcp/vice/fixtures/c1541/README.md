@@ -206,3 +206,18 @@ error path was needed. The `audit` subcommand salvages the claimed track/
 sector out of that refusal message's own text (`salvageFirstTsFromRefusal()`
 in `c1541.mjs`) rather than losing the information the moment the entry
 call itself fails.
+
+## The real-corpus mitigation (40-04, Task 3, D-25)
+
+`synthetic.d64` and `synthetic-corrupt.d64` were BOTH built by the very
+`c1541` binary this project's `c1541.*` seam calls read back — the
+"acknowledged mild circularity" section above names the resulting risk.
+The mitigation lives in `src/skills/c64-disk-access/scripts/c1541.test.mjs`,
+as ONE live-gated test case cross-validating the directory listing, one
+entry's own claimed first track/sector, and that same entry's independently
+walked sector chain against each other, run against Phase 23's own evidence
+corpus image (`.planning/phases/23-the-real-release-gate-go-degrade-no-go/
+evidence/corpus/danish.d64`) — a real release this project did not create
+and never copies into this `fixtures/` tree. The case is gated on that
+corpus image's own presence on disk and SKIPS (never fails) when it is
+absent, so a checkout without the evidence tree stays green.
