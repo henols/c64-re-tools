@@ -53,7 +53,7 @@ whose whole job is to settle it.
 
 - [ ] **PREP-01**: A user can inspect a disk image's real structure — BAM, directory, and a named file's actual sector chain — through `c1541`, reached over the existing `host_tool` control op from a container-side skill script. *(The seam shipped in v0.8.0; this is integration, not new architecture.)*
 - [x] **PREP-02**: A user can see what a program's BASIC stub actually does and where it hands over to machine code, via `petcat`, before any disassembler is spent on it — and is told plainly when the stub cannot be resolved rather than given a guessed entry point.
-- [ ] **PREP-03**: A cartridge image's bank structure is recovered through `cartconv` and presented as separate per-bank images the existing analysis engines can each consume, rather than as a flat ROM window that hides everything past the first bank.
+- [ ] ~~**PREP-03**: A cartridge image's bank structure is recovered through `cartconv` and presented as separate per-bank images the existing analysis engines can each consume, rather than as a flat ROM window that hides everything past the first bank.~~ **REMOVED 2026-09-08** — dropped by owner direction at the Phase 40 discussion; no `cartconv` work, no per-bank images. Not deferred to a named phase — if it returns, it returns as a new requirement. See `docs/phase40-preprocessing-tools-decisions.md` and the Excluded table below.
 - [x] **PREP-04**: A failure in any of these three tools is reported as a failure. *(MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. Exit-code checking alone would pass failures silently, so each tool's own output is what decides the outcome — the same discipline the existing real-ACME verify path already applies.)*
 
 ### Proof — closing a named reversal condition
@@ -105,9 +105,10 @@ reader reading an absence as an oversight.
 | Deleting the three CLAUDE.md constraints the live probe narrowed | Each is literally true as written and each is correctly scoped to the *binary* monitor. They gain a scoping clause; they are not removed. The absent runtime `WarpMode` **resource** remains a real and separate fact from `warp on` being a working monitor **command**. |
 | Promoting observed-EXEC into the block table under a confidence bracket | Rejected in the seed on the record, and re-affirmed here. Fewer moving parts, but it collapses two independent classifiers into one, destroys the disagreement signal that is the design's highest-value output, and a wrong promotion is unrecoverable. |
 | Live read-only text-monitor tools with nothing persisted | Rejected in the seed on the record. Ships fastest, but each run's evidence dies with the session — the exact gap `CORE-01` already flagged and left as a dated open question. |
-| Bank-qualified addressing as a modelled store feature | Carried forward from v0.8.0's exclusions, unchanged. `PREP-03` resolves a cartridge to N independent per-bank images through the existing single-image flow; it does not introduce bank-qualified addresses into the store. |
-| Superseding or deleting the hand-written `.d64` parser | `PREP-01` is additive. Whether `c1541` eventually replaces `d64-parse.mjs` is a real question and is deliberately deferred rather than decided as a side effect of adding a tool. |
+| Bank-qualified addressing as a modelled store feature | Carried forward from v0.8.0's exclusions, unchanged. **AMENDED 2026-09-08** — this row previously justified itself by reference to `PREP-03` ("`PREP-03` resolves a cartridge to N independent per-bank images through the existing single-image flow; it does not introduce bank-qualified addresses into the store"), but `PREP-03` was removed by owner direction the same day (row below) and is no longer live. The exclusion stands on its own regardless: no cartridge work of any kind is in scope this milestone, so nothing introduces bank-qualified addresses either way. |
+| Superseding or deleting the hand-written `.d64` parser | ~~`PREP-01` is additive. Whether `c1541` eventually replaces `d64-parse.mjs` is a real question and is deliberately deferred rather than decided as a side effect of adding a tool.~~ **REVERSED 2026-09-08** — the supersession was reached and executed in this phase, not deferred: `d64-parse.mjs` and its MCP-side duplicate `anno-d64.ts` are both deleted, and `c1541` is the ONE `.d64` route, mechanically enforced by `d64-single-route.test.ts`. MEASURED: `c1541 -bam` returns a per-sector allocation map where the deleted parser had only per-track free counts, and `c1541 -entry` returns the first track/sector plus the raw entry bytes plus the next-directory pointer — strictly richer inputs. Full derivation: `docs/phase40-preprocessing-tools-decisions.md`. |
 | The rebuild half (`DECOMP-*`, `BUILD-*`, `EQUIV-*`) | Not excluded — **re-mapped to v1.0.0**. See Future Requirements for the reason, which is sequencing, not doubt. |
+| Cartridge bank recovery via `cartconv` (`PREP-03`) | **Added 2026-09-08.** Removed by owner direction at the Phase 40 discussion — no `cartconv` work, no per-bank images, no bank output contract. Not deferred to a named phase; returns only as a new requirement, if ever. See `docs/phase40-preprocessing-tools-decisions.md`. |
 
 ---
 
@@ -134,20 +135,24 @@ Which phases cover which requirements. Populated during roadmap creation.
 | EVID-06 | Phase 43 | Pending |
 | PREP-01 | Phase 40 | Pending |
 | PREP-02 | Phase 40 | Complete |
-| PREP-03 | Phase 40 | Pending |
+| ~~PREP-03~~ | Phase 40 | ~~Pending~~ — **Removed 2026-09-08**, see Excluded table |
 | PREP-04 | Phase 40 | Complete |
 | PROOF-04 | Phase 44 | Pending |
 
 **Coverage:**
 
-- v0.9.0 requirements: 20 total
-- Mapped to phases: 20
+- v0.9.0 requirements: 19 total
+- Mapped to phases: 19
 - Unmapped: 0 ✓
 
-Mapped 2026-09-06 at roadmap creation, and cross-checked **mechanically** against
-ROADMAP.md's own per-phase `**Requirements**:` lines rather than by eye: 20 ids
-mapped, 20 unique, 0 duplicates, 0 orphans, 0 extras. Phase 39 — `CHAN-01`.
-Phase 40 — `PREP-01..04`. Phase 41 — `CHAN-02..05`. Phase 42 — `PARSE-01..04`.
+**AMENDED 2026-09-08** — corrected from the original 2026-09-06 mapping of 20
+total / 20 mapped after `PREP-03` was removed from scope by owner direction
+during the Phase 40 discussion (struck above, in the Traceability table, and
+in the Excluded table; see `docs/phase40-preprocessing-tools-decisions.md`).
+Re-run **mechanically** against ROADMAP.md's own per-phase `**Requirements**:`
+lines rather than by eye: 19 ids mapped, 19 unique, 0 duplicates, 0 orphans, 0
+extras. Phase 39 — `CHAN-01`. Phase 40 — `PREP-01`, `PREP-02`, `PREP-04`
+(`PREP-03` removed). Phase 41 — `CHAN-02..05`. Phase 42 — `PARSE-01..04`.
 Phase 43 — `EVID-01..06`. Phase 44 — `PROOF-04`.
 
 ---

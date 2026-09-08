@@ -13,7 +13,7 @@
 
 - ✅ **v0.7.0 Own the Annotation Store** — Phases 27-32 (shipped 2026-09-01)
 - ✅ **v0.8.0 Frame-Exact Capture and the Two Engines** — Phases 33-38 (opened 2026-09-02, shipped 2026-09-06; `GATE-01` returned `degrade` by rule `R6`)
-- 🚧 **v0.9.0 The Text Channel and the Runtime Evidence Layer** — Phases 39-44 (opened 2026-09-06; roadmap created 2026-09-06, 20/20 requirements mapped)
+- 🚧 **v0.9.0 The Text Channel and the Runtime Evidence Layer** — Phases 39-44 (opened 2026-09-06; roadmap created 2026-09-06, 19/19 requirements mapped — corrected 2026-09-08 from 20/20 after `PREP-03` was removed, see `docs/phase40-preprocessing-tools-decisions.md`)
 
 *v0.8.0 continues phase numbering from Phase 32 — it starts at Phase **33**.
 Phase numbers are continuous across milestones and are **never** reused,
@@ -534,11 +534,13 @@ emulator *observed* a durable, accumulating class of fact — kept deliberately
 apart from what the bytes *imply*, with disagreement between the two as the
 highest-value output rather than an error to reconcile.
 
-**20 requirements, all mapped, each to exactly one phase** — `CHAN-01..05`,
-`PARSE-01..04`, `EVID-01..06`, `PREP-01..04`, `PROOF-04`. Cross-checked
-mechanically against the per-phase `**Requirements**:` lines below rather than by
-eye, because this project has a recorded history of a requirement owned by two
-phases or by none.
+**19 requirements, all mapped, each to exactly one phase** — `CHAN-01..05`,
+`PARSE-01..04`, `EVID-01..06`, `PREP-01`, `PREP-02`, `PREP-04`, `PROOF-04`.
+Cross-checked mechanically against the per-phase `**Requirements**:` lines
+below rather than by eye, because this project has a recorded history of a
+requirement owned by two phases or by none. **AMENDED 2026-09-08** — originally
+20 requirements including `PREP-03`, struck from scope by owner direction at
+the Phase 40 discussion; see `docs/phase40-preprocessing-tools-decisions.md`.
 
 **Six phases, and the first one's deliverable is evidence rather than code.**
 `CHAN-01`'s verdict selects which of three structurally different serialization
@@ -550,7 +552,7 @@ code that adds the table — and the `c1541`-supersedes-`d64-parse.mjs` question
 already deferred to Future Requirements and needs no phase at all.
 
 - [x] **Phase 39: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)** - Five named live experiments against genuine stock 3.9 answer whether a text client and a binary client can drive one emulator without corrupting each other, against rules committed to git before any measurement exists — with the authority to narrow or cancel every phase after it (completed 2026-09-08)
-- [ ] **Phase 40: The Three Preprocessing Host Tools** - `c1541`, `petcat` and `cartconv` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure on two tools that exit 0 on error — fully independent of the gate and of the channel, and runnable beside Phase 39 from day one
+- [ ] **Phase 40: The Three Preprocessing Host Tools** - ~~`c1541`, `petcat` and `cartconv` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure on two tools that exit 0 on error~~ **AMENDED 2026-09-08** — `c1541` and `petcat` reached over v0.8.0's typed `host_tool` control op, with a failure reported as a failure despite `c1541` exiting 0 on error (`cartconv` removed from scope by owner direction, see `docs/phase40-preprocessing-tools-decisions.md`) — fully independent of the gate and of the channel, and runnable beside Phase 39 from day one
 - [ ] **Phase 41: The Text Channel, Its Serialization Authority, and the Contention Verdict** - A tool call reaches the text monitor with responses framed by the prompt rather than by a timeout, every halt-taking operation on either channel passes through the serialization shape Phase 39 selected, and a contended instance is reported as contended rather than recycled
 - [ ] **Phase 42: The Text-Format Parsers and Their Two-Binary Fixtures** - Five human-formatted text outputs become structured data behind one owning module each, with `memmapshow`'s execute bit preserved as its own bit — and a drifted format failing loudly instead of returning an inverted answer
 - [ ] **Phase 43: The Runtime Evidence Layer** - Observed execution becomes durable, run-keyed, monotonically accumulating store state joined against the byte-derived block table disagreement-first, opening on a committed-before-measurement A/B that says whether instrumenting a run destroys the reproducibility its rows are keyed on
@@ -915,19 +917,23 @@ Notes:
 
 ### Phase 40: The Three Preprocessing Host Tools
 
-**Goal**: `c1541`, `petcat` and `cartconv` are reachable from a container-side
+**Goal**: `c1541` and `petcat` are reachable from a container-side
 skill script over the typed `host_tool` control op v0.8.0 shipped — so a disk's
-real structure, a BASIC stub's handover point and a cartridge's bank layout are
-available before any disassembler is spent on the image — and a failure in any of
-the three is reported as a failure despite two of them exiting `0` on error.
+real structure and a BASIC stub's handover point are
+available before any disassembler is spent on the image — and a failure in either
+is reported as a failure despite `c1541` exiting `0` on error. **AMENDED
+2026-09-08** — originally named `cartconv` and "a cartridge's bank layout" as a
+third delivered capability. `cartconv` was removed from this phase's scope by
+owner direction at the Phase 40 discussion (`PREP-03` withdrawn) before any of
+it was built; see `docs/phase40-preprocessing-tools-decisions.md`.
 **Depends on**: Nothing in this milestone. Independent of Phase 39's verdict and of the text channel, and runnable concurrently with Phase 39 from day one — zero shared files. It consumes v0.8.0's shipped `host_tool` seam (six tool ids today) and the CI gate that bans every other route
-**Requirements**: PREP-01, PREP-02, PREP-03, PREP-04
+**Requirements**: PREP-01, PREP-02, ~~PREP-03~~, PREP-04 (`PREP-03` removed 2026-09-08 — see REQUIREMENTS.md's Excluded table)
 **Success Criteria** (what must be TRUE):
 
-  1. **A user gets a named file's real sector chain, plus the BAM and the directory, out of a `.d64` through `c1541`** — reached over `host_tool` from a container-side skill script with no `spawnSync` of a host binary anywhere, so `scripts/check-no-skill-external-spawn.mjs` stays green and its planted-violation controls are re-run rather than assumed still valid. `d64-parse.mjs` is untouched and undeprecated: `c1541` is **additive by decision**, and whether it eventually supersedes the hand-written parser is deferred on the record rather than settled as a side effect of adding a tool.
+  1. **A user gets a named file's real sector chain, plus the BAM and the directory, out of a `.d64` through `c1541`** — reached over `host_tool` from a container-side skill script with no `spawnSync` of a host binary anywhere, so `scripts/check-no-skill-external-spawn.mjs` stays green and its planted-violation controls are re-run rather than assumed still valid. ~~`d64-parse.mjs` is untouched and undeprecated: `c1541` is **additive by decision**, and whether it eventually supersedes the hand-written parser is deferred on the record rather than settled as a side effect of adding a tool.~~ **AMENDED 2026-09-08** — the supersession was reached and executed in this same phase, not deferred: `d64-parse.mjs` and its MCP-side duplicate `anno-d64.ts` are both deleted (plan 40-06), and `c1541` is the ONE `.d64` route, mechanically enforced by `d64-single-route.test.ts`. MEASURED: `c1541 -bam` returns a per-sector allocation map where the deleted parser had only per-track free counts, and `c1541 -entry` returns the first track/sector plus the raw entry bytes plus the next-directory pointer — strictly richer inputs than the parser computed. Full derivation: `docs/phase40-preprocessing-tools-decisions.md`.
   2. **A user is shown what a BASIC stub does and where it hands over to machine code, or is told plainly that it cannot be resolved.** The literal `SYS <decimal>` fast path resolves to an address; a computed argument produces a **named decline** rather than a guessed entry point, proven by a fixture that carries one. The decline is the point: a guessed entry point is spent on a disassembler downstream, and a wrong one is expensive.
-  3. **A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.
-  4. **A failure is reported as a failure, proven separately on each of the three.** MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
+  3. ~~**A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.~~ **REMOVED 2026-09-08** — dropped by owner direction at the Phase 40 discussion. No `cartconv` work, no per-bank images, no bank output contract; `PREP-03` is withdrawn (see REQUIREMENTS.md's Excluded table and `docs/phase40-preprocessing-tools-decisions.md`). This criterion is deliberately NOT renumbered — criterion 4 below stays "criterion 4" for anyone who cited it before this edit.
+  4. **A failure is reported as a failure, proven separately on each of the two shipped tools.** **AMENDED 2026-09-08** — originally "each of the three"; `cartconv` was removed from scope (criterion 3, above) before this criterion's own tools were built. MEASURED: `c1541` exits **0 on error**; `petcat` returns non-zero only for a missing file, `0` on garbage input. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
 
 **Plans**: 6/7 plans executed in 7 waves (fully sequential — every plan after 40-01 shares
 `host-tool.mts`, the skill tree, or the planning documents with its predecessor,
@@ -967,7 +973,7 @@ Plans:
 Notes:
 
 - **Seven synchronized edit sites per tool id**, named by `host-tool.mts`'s own header — `HostToolId`, `HOST_TOOL_IDS`, `HOST_TOOL_ARG_KEYS`, `HOST_TOOL_PATH_ARG_KEYS`, `HOST_TOOL_TIMEOUT_MS` among them — with a data-driven census test that catches a skipped one. Ids are **per capability, not per binary** (`c1541.chain`, `petcat.decode`, `cartconv.identify`), following `acme.build` / `ghidra.analyze` / `dxa.disassemble`. A generic run-arbitrary-command op is a remote-execution seam and was rejected on the record.
-- **The version/digest precedent to copy is `backend-detect.mts`'s `--help` probe, not dxa's or Ghidra's.** dxa is pinned by a committed tarball sha256 because this project vendors and builds it; Ghidra is declared by version only because it is a 543 MiB non-vendored install. These three are neither — they are small binaries that ship *alongside* `x64sc` from the same package. Probe availability and version once per process, capture the probe output as a fixture with the same provenance keys, and log **path and version per call**. That logging is also Pitfall 11's defence: the fork's `x64sc` already shadows stock on this host's `PATH`, and the same shadowing hazard applies to the whole VICE toolset, not just the emulator.
+- **The version/digest precedent to copy is `backend-detect.mts`'s `--help` probe, not dxa's or Ghidra's.** dxa is pinned by a committed tarball sha256 because this project vendors and builds it; Ghidra is declared by version only because it is a 543 MiB non-vendored install. These three are neither — they are small binaries that ship *alongside* `x64sc` from the same package. Probe availability and version once per process, capture the probe output as a fixture with the same provenance keys, and log **path and version per call**. That logging is also Pitfall 11's defence: the fork's `x64sc` already shadows stock on this host's `PATH`, and the same shadowing hazard applies to the whole VICE toolset, not just the emulator. **AMENDED 2026-09-08** — the version half of this note was dropped by owner decision during the Phase 40 discussion: `c1541 --version` is unimplemented, and the tool whose version output was unreliable in the same way (`cartconv`) is itself now out of scope. Only path resolution and per-call path logging were built. A later planner reading this bullet directly must not re-add version probing on its strength alone; see `docs/phase40-preprocessing-tools-decisions.md`.
 - **Prefer read-only verbs; if any mutating `c1541` verb ships, it writes its evidence before it writes the disk.** This project already writes an incident record before any emulator kill; a destructive host-tool write inherits that discipline, proven by a planted test that shows the record exists before the mutating call executes rather than after it.
 - **The runtime correlation is NOT in this phase and this phase must not promise it.** Comparing a file's *claimed* sector chain against the sectors a loader *really* reads needs drive-side checkpoints, which need the `default_memspace` reset that only `device c:` provides — a capability Phase 41 opens, and additionally gated on `Drive8TrueEmulation` plus a non-zero `Drive8Type`, since drive memory reads with true drive emulation off return **silent zeros, not an error**. `PREP-01`'s text is static structure only. The drive-side fastloader signal is deferred beyond this milestone; a plan here that reaches for it is out of scope.
 - **Eligible carried fix.** This phase touches skill-script trees, so the unowned `mkdtemp` fix for scratch fixtures written inside walked trees — culprit and remedy both already named, no pass owns it — can be taken here rather than carried a third close.
@@ -1312,4 +1318,4 @@ scoped work above rather than doing it.
 *v0.7.0 shipped and collapsed 2026-09-01 → `milestones/v0.7.0-ROADMAP.md`. Phase directories restored to `.planning/phases/` after archival was measured to redden 9 tests across 5 files — see the Progress note above.*
 *v0.8.0 shipped and collapsed 2026-09-06 → `milestones/v0.8.0-ROADMAP.md`. Phase directories again NOT archived (`--no-archive-phases`), per the standing v0.4.0 decision — `docs-review-disposition.test.ts` and `absorbed-answer-key.test.ts` both read `.planning/phases/` directly.*
 *Phase numbering is continuous across milestones and never reused, including the cut Phases 20-22, the held Phases 24 and 26, and Phase 25 whose content was taken forward while its number was retired.*
-*v0.9.0 roadmap created 2026-09-06 — Phases 39-44, continuing numbering from Phase 38, 20/20 requirements mapped (`CHAN-01..05`, `PARSE-01..04`, `EVID-01..06`, `PREP-01..04`, `PROOF-04`).*
+*v0.9.0 roadmap created 2026-09-06 — Phases 39-44, continuing numbering from Phase 38, 19/19 requirements mapped (`CHAN-01..05`, `PARSE-01..04`, `EVID-01..06`, `PREP-01`, `PREP-02`, `PREP-04`, `PROOF-04`). **AMENDED 2026-09-08** — corrected from 20/20 after `PREP-03` was removed from scope by owner direction; see `docs/phase40-preprocessing-tools-decisions.md`.*
