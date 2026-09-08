@@ -246,7 +246,27 @@ export function ensureGhidraRunsHandle(repoRoot: unknown): EnsureGhidraRunsHandl
     };
   }
 
-  const target = readlinkSync(handlePath);
+  // Guarded for the same reason the two lstatSync() calls above are: this
+  // function documents "Never throws", and its broker call site
+  // (vice-broker.mts run(), requirement R2) sits deliberately OUTSIDE any
+  // try/catch so that a refusal is reported without stopping startup. An
+  // unguarded throw here would instead reach main()'s outer catch and abort
+  // the whole broker -- the exact opposite of R2's "a broker that cannot mint
+  // the handle still starts and says so". The window is narrow but real: the
+  // handle can be deleted or replaced between the verifying lstatSync() above
+  // and this readlinkSync() (TOCTOU). Found by code review, plan 40-09.
+  let target: string;
+  try {
+    target = readlinkSync(handlePath);
+  } catch (e) {
+    return {
+      ok: false,
+      message:
+        `ensureGhidraRunsHandle: ${handlePath} verified as a symbolic link but its target could not be read ` +
+        `(it was most likely removed or replaced concurrently): ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+
   if (target !== GHIDRA_RUNS_HANDLE_TARGET) {
     return {
       ok: false,
