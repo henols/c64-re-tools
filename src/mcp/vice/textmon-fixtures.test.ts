@@ -113,6 +113,45 @@ test("loadTextFixture: a sidecar missing a required provenance key throws Missin
   }
 });
 
+// WR-04 (39-REVIEW.md): the test above only ever removes four keys at once
+// (everything but capturedFrom) and only ever asserts on two of those four --
+// it cannot distinguish "the loader enforces all five keys" from "the loader
+// happens to enforce whichever two this one test bothered to check". This
+// loop proves each key's absence is refused INDIVIDUALLY, with the other
+// four present, by asserting the thrown message names exactly the one key
+// omitted -- one sub-case per REQUIRED_PROVENANCE_KEYS entry, five total.
+for (const omittedKey of REQUIRED_PROVENANCE_KEYS) {
+  test(`loadTextFixture: a sidecar missing only "${omittedKey}" throws MissingTextFixtureError naming it`, () => {
+    const dir = mkdtempSync(join(tmpdir(), "textmon-fixtures-test-"));
+    try {
+      const fullProvenance: Record<string, unknown> = {
+        capturedFrom: "stock:/usr/bin/x64sc",
+        viceVersion: "x64sc (VICE 3.9)",
+        capturedAt: new Date().toISOString(),
+        command: "memmapshow",
+        synthetic: false,
+      };
+      delete fullProvenance[omittedKey];
+      writeFileSync(join(dir, "access-map.txt"), "addr: IO  ROM RAM\n");
+      writeFileSync(join(dir, "access-map.json"), JSON.stringify(fullProvenance));
+      assert.throws(
+        () => loadTextFixture("access-map", { dir }),
+        (err: unknown) => {
+          assert.ok(err instanceof MissingTextFixtureError, `expected MissingTextFixtureError, got ${String(err)}`);
+          assert.match(
+            (err as Error).message,
+            new RegExp(omittedKey),
+            `message must name the one key actually omitted ("${omittedKey}")`,
+          );
+          return true;
+        },
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("loadTextFixture: a CORRUPT (unparseable) sidecar throws MissingTextFixtureError, not a bare SyntaxError", () => {
   const dir = mkdtempSync(join(tmpdir(), "textmon-fixtures-test-"));
   try {
