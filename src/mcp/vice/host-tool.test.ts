@@ -65,6 +65,9 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
   HOST_TOOL_TIMEOUT_MS: Readonly<Record<string, number>>;
   hostToolTimeoutMs: (tool: string, override?: number) => number;
   DEFAULT_HOST_TOOL_TIMEOUT_MS: number;
+  // Phase 40, plan 40-02 (Task 3): the output-shape classifier table --
+  // plain data (a function or null per tool id), not a response shape.
+  HOST_TOOL_OUTPUT_CLASSIFIERS: Readonly<Record<string, unknown>>;
   normaliseHostToolRequest: (raw: unknown) => { ok: true; request: { tool: string; args: Record<string, unknown> } } | { ok: false; message: string };
   resolveWorkspacePath: (repoRoot: string, relative: string) => { ok: true; path: string } | { ok: false; message: string };
   buildHostToolArgv: (
@@ -94,6 +97,7 @@ const {
   HOST_TOOL_TIMEOUT_MS,
   hostToolTimeoutMs,
   DEFAULT_HOST_TOOL_TIMEOUT_MS,
+  HOST_TOOL_OUTPUT_CLASSIFIERS,
 } = hostTool;
 
 /** 34-08 (CR-01): a SEPARATELY-typed alias to the SAME runtime function --
@@ -1874,6 +1878,15 @@ const HOST_TOOL_ARG_KEYS_REMAINDER: Readonly<Record<string, readonly string[]>> 
   // Phase 36, plan 36-01: `moduleName` is a validated opaque name
   // (RUN_ID_PATTERN), not a path -- mirrors ghidra.analyze's own `runId`.
   "ghidra.installExtension": Object.freeze(["moduleName"]),
+  // Phase 40, plan 40-02: `c1541.bam`/`c1541.dir` accept only path-bearing
+  // keys, so their own remainder is empty; `c1541.entry`/`c1541.chain`/
+  // `c1541.read` each accept exactly one non-path key, `name` -- a CBM
+  // filename/glob, never a path.
+  "c1541.bam": Object.freeze([]),
+  "c1541.dir": Object.freeze([]),
+  "c1541.entry": Object.freeze(["name"]),
+  "c1541.chain": Object.freeze(["name"]),
+  "c1541.read": Object.freeze(["name"]),
 };
 
 /** A minimal, otherwise-valid `args` object per tool -- just enough for
@@ -1901,6 +1914,11 @@ const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string,
   "oracle.run": () => ({ source: "a.bin" }),
   "dxa.disassemble": () => ({ image: "x.prg", imageKind: "prg" }),
   "ghidra.installExtension": () => ({ sourceDir: "ghidra-ext", moduleName: "census-module" }),
+  "c1541.bam": () => ({ image: "x.d64" }),
+  "c1541.dir": () => ({ image: "x.d64" }),
+  "c1541.entry": () => ({ image: "x.d64", name: "basicstub" }),
+  "c1541.chain": () => ({ image: "x.d64", name: "basicstub" }),
+  "c1541.read": () => ({ image: "x.d64", name: "basicstub" }),
 };
 
 /** The include list needs a single-element ARRAY where every other declared
@@ -1947,7 +1965,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
   // gains three more declared path keys (scriptPath, entrypointsPath,
   // exportPath). Phase 37, plan 37-08 raised it from 16 to 17:
   // ghidra.analyze gains one more declared path key (dataRangesPath).
-  assert.equal(totalDeclared, 17, "the declared path-key total across all tools must be 17 -- a different count means a key was added or dropped without updating this census");
+  // Phase 40, plan 40-02 raised it from 17 to 27: the five new c1541.* ids
+  // each declare two path-bearing keys (image, outDir) -- 17 + 10 = 27.
+  assert.equal(totalDeclared, 27, "the declared path-key total across all tools must be 27 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -1980,8 +2000,10 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       // plan 35-01 raised this from 7 to 12 (dxa.disassemble's five path
       // keys); Phase 36, plan 36-02 raised it from 13 to 16 (ghidra.analyze's
       // three new path keys); Phase 37, plan 37-08 raised it from 16 to 17
-      // (ghidra.analyze's one new path key, dataRangesPath).
-      assert.equal(totalDeclared, 17, "sanity: the declared path-key total must still be 17");
+      // (ghidra.analyze's one new path key, dataRangesPath). Phase 40,
+      // plan 40-02 raised it from 17 to 27 (the five c1541.* ids' own
+      // image/outDir pairs).
+      assert.equal(totalDeclared, 27, "sanity: the declared path-key total must still be 27");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {
@@ -2182,5 +2204,139 @@ test("CLI entry point: HOST_TOOL_TEST_FORCE_CLI_REJECT=1 forces runHostTool() to
     assert.equal(body.ok, false, "the envelope's ok field must be false");
     assert.equal(typeof body.message, "string", "the envelope's message field must be a string");
     assert.ok((body.message as string).length > 0, "the envelope's message field must be non-empty");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 40, plan 40-02 (Task 3): coverage for the five new c1541.* ids --
+// the classifier-table completeness gate, the success-envelope key-set
+// assertion (mirrors dxa-seam.test.ts's own), and the hyphen-leading-name
+// refusal case.
+//
+// c1541 has NO env-var override for its own location (D-13/D-14/D-15:
+// resolution is ONLY sibling-of-x64sc or a $PATH walk, deliberately, never
+// a configurable override this test could point elsewhere directly). These
+// tests redirect the SIBLING probe instead, by pointing VICE_BIN at a
+// throwaway file whose own directory holds a fake, controllable c1541
+// stand-in. VICE_BACKEND=fork takes resolvedBackend()'s own UN-MEMOISED
+// override branch (backend-detect.mts), which re-reads VICE_BIN fresh on
+// every call -- so this redirection survives that module's own
+// module-level memo. findSiblingBinary()'s OWN per-binary-name memo
+// (host-tool.mts) is shared across every test in THIS file, so every
+// c1541.* case below must use the SAME fake -- created once, at module
+// scope, since no earlier test in this file ever exercises a c1541.* tool
+// (the first call therefore determines the memo for the rest of the run).
+// ---------------------------------------------------------------------------
+
+const FAKE_C1541_DIR = mkdtempSync(join(tmpdir(), "host-tool-fake-c1541-"));
+const FAKE_X64SC_PATH = join(FAKE_C1541_DIR, "fake-x64sc");
+writeFileSync(FAKE_X64SC_PATH, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+const FAKE_C1541_PATH = join(FAKE_C1541_DIR, "c1541");
+writeFileSync(
+  FAKE_C1541_PATH,
+  [
+    "#!/usr/bin/env node",
+    'import { writeFileSync } from "node:fs";',
+    "const argv = process.argv.slice(2);",
+    'if (argv.includes("-dir")) {',
+    '  console.log(\'0 "fake            " 00 2a\');',
+    '  console.log(\'1    "basicstub"        prg \');',
+    '  console.log("662 blocks free.");',
+    '} else if (argv.includes("-bam")) {',
+    '  console.log(" 17  **...... ........ .....");',
+    '} else if (argv.includes("-entry")) {',
+    '  console.log("T/S: 17/0,  1 blocks");',
+    '} else if (argv.includes("-chain")) {',
+    '  console.log("(17, 0) -> 19");',
+    '} else if (argv.includes("-read")) {',
+    "  const outPath = argv[argv.length - 1];",
+    '  writeFileSync(outPath, Buffer.from("fake bytes"));',
+    "}",
+    "process.exit(0);",
+    "",
+  ].join("\n"),
+  "utf8",
+);
+chmodSync(FAKE_C1541_PATH, 0o755);
+
+async function withFakeC1541<T>(fn: () => Promise<T> | T): Promise<T> {
+  const previousBackend = process.env.VICE_BACKEND;
+  const previousBin = process.env.VICE_BIN;
+  process.env.VICE_BACKEND = "fork";
+  process.env.VICE_BIN = FAKE_X64SC_PATH;
+  try {
+    return await fn();
+  } finally {
+    if (previousBackend === undefined) delete process.env.VICE_BACKEND;
+    else process.env.VICE_BACKEND = previousBackend;
+    if (previousBin === undefined) delete process.env.VICE_BIN;
+    else process.env.VICE_BIN = previousBin;
+  }
+}
+
+test("HOST_TOOL_OUTPUT_CLASSIFIERS: every HOST_TOOL_IDS member has an own property, and the set of non-null entries equals exactly the ids this phase added, in both directions", () => {
+  assert.deepEqual(
+    [...HOST_TOOL_IDS].sort(),
+    Object.keys(HOST_TOOL_OUTPUT_CLASSIFIERS).sort(),
+    "HOST_TOOL_OUTPUT_CLASSIFIERS must have an entry for every HOST_TOOL_IDS member",
+  );
+  const nonNullIds = HOST_TOOL_IDS.filter((tool) => HOST_TOOL_OUTPUT_CLASSIFIERS[tool] !== null)
+    .slice()
+    .sort();
+  const expectedNonNullIds = ["c1541.bam", "c1541.chain", "c1541.dir", "c1541.entry", "c1541.read"].sort();
+  assert.deepEqual(
+    nonNullIds,
+    expectedNonNullIds,
+    "the set of ids with a non-null classifier must equal exactly the ids added by this phase, in both directions -- an id added without a classifier decision, or a classifier left behind for a removed id, each reds this",
+  );
+});
+
+test("c1541.*: each of the five ids' success envelope has exactly the five documented fields, and its own result has exactly path/sha256/byteLength", async () => {
+  await withFakeC1541(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+      const cases: Array<[string, Record<string, unknown>]> = [
+        ["c1541.dir", { image: "x.d64" }],
+        ["c1541.bam", { image: "x.d64" }],
+        ["c1541.entry", { image: "x.d64", name: "basicstub" }],
+        ["c1541.chain", { image: "x.d64", name: "basicstub" }],
+        ["c1541.read", { image: "x.d64", name: "basicstub" }],
+      ];
+      for (const [tool, args] of cases) {
+        const response = await runHostTool({ tool, args }, { repoRoot: dir });
+        assert.equal(response.ok, true, `${tool}: expected ok:true, got ${JSON.stringify(response)}`);
+        if (!response.ok) continue;
+        assert.deepEqual(
+          Object.keys(response).sort(),
+          ["exitStatus", "ok", "results", "stderrTail", "tool"].sort(),
+          `${tool}: response's own key set must be exactly the five documented fields -- a future field holding listing text must be reported here, not tolerated`,
+        );
+        assert.equal(response.results.length, 1, `${tool}: expected exactly one output result`);
+        const result = response.results[0]!;
+        assert.deepEqual(
+          Object.keys(result).sort(),
+          ["path", "sha256", "byteLength"].sort(),
+          `${tool}: result's own key set must be exactly path/sha256/byteLength`,
+        );
+      }
+    });
+  });
+});
+
+test('c1541.chain: args.name beginning with "-" is refused BY NAME, and no child process is ever spawned', async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+    const logLines: string[] = [];
+    const response = await runHostTool(
+      { tool: "c1541.chain", args: { image: "x.d64", name: "-oops" } },
+      { repoRoot: dir, log: (line) => logLines.push(line) },
+    );
+    assert.equal(response.ok, false, "a hyphen-leading name must be refused, never accepted");
+    if (!response.ok) assert.match(response.message, /name/, "the refusal message must name the offending field");
+    assert.equal(
+      logLines.length,
+      0,
+      "runHostTool() emits exactly one log line per ATTEMPTED invocation and none for a request refused before a child is spawned -- zero log lines proves no child was ever invoked",
+    );
   });
 });
