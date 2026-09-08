@@ -119,6 +119,30 @@ status: complete
 
 **Six scattered tool-written locations collapse into one `.c64-re-tools/` root (a seventh, Ghidra's per-run projects, is exempted for a hard technical reason discovered mid-execution); WR-03's two never-throw holes in `host-tool.mts` close with committed regression tests.**
 
+> **SUPERSEDED 2026-09-08 (gap `G-40-1`; see
+> `.planning/notes/ghidra-dot-path-check-semantics.md`).** This SUMMARY's
+> repeated claim — below, in its own key-decisions, and in its D5 coverage
+> entry — that Ghidra's runs root staying outside `.c64-re-tools/` was "a hard
+> external-tool constraint, not a preference" was produced by running this
+> project's OWN `hasDotPrefixedSegment()` check against a synthetic string,
+> corroborated only by this project's OWN pinned test literal
+> (`ghidra-project.test.ts`'s `join(dir, "tools", GHIDRA_RUNS_DIR_NAME)`
+> expectation). Neither of those observes Ghidra. This is not a small
+> distinction to soften: the mechanism by which a self-referential check
+> became external-tool evidence is the transferable lesson here, worth more
+> than the path change itself. MEASURED 2026-09-08 against real Ghidra
+> 12.1.3: the refusal binds the ABSOLUTIZED path argument (`ProjectLocator`
+> calls `java.io.File.getAbsolutePath()`, never `getCanonicalPath()`), so it
+> absolutizes but does not resolve a symlink — a broker-minted alias handle
+> satisfies both Ghidra's own check and the "one root" truth this plan's own
+> `must_haves.truths` demanded. This SUMMARY's own D5 coverage entry below
+> already carried `verification: []` plus `human_judgment: true` — a
+> contemporaneous admission the claim was never measured, and the exact
+> artefact that made this gap diagnosable at all. The one acceptance
+> criterion this SUMMARY recorded as NOT met (Task 3's `.gitignore`
+> `ghidra-runs` count, `## Issues Encountered` below) is now genuinely met,
+> closed by gap-closure plan `40-08` rather than waived.
+
 ## Performance
 
 - **Duration:** 44 min
@@ -134,7 +158,7 @@ status: complete
 - WR-03 hole 1 closed: `runOracleRun()`'s `mkdirSync()` moved inside its own `try`, resolving `{ ok: false, reason }` on a scratch-directory failure instead of throwing out of `runHostTool()`'s never-throw boundary. Regression-tested via a read-only scratch parent.
 - WR-03 hole 2 closed: the standalone `host-tool.mjs` CLI's `.then()` gained a `.catch()` mirroring `host-tool-client.ts`'s own shape. Regression-tested end-to-end via a documented, env-gated test-only hook (every organic rejection path was found to already be guarded by design).
 - `.gitignore` collapsed from five per-writer stanzas plus twelve per-file deploy entries to one `/.c64-re-tools/` stanza; `host-scripts.test.ts`'s two-way parity gate reworked into a directory-level relation; `CLAUDE.md` documents the new root, its four env-var overrides, and the Ghidra exception.
-- **Discovered and resolved mid-execution:** `ghidra-project.mts`'s runs root cannot move under `.c64-re-tools/` -- Ghidra's own dot-segment refusal rejects any ancestor path segment starting with `.`, which `.c64-re-tools` itself is. Verified directly, documented as the one exception to the phase's "one root" truth, and recorded on the folded consolidation todo for owner review.
+- **Discovered and resolved mid-execution:** `ghidra-project.mts`'s runs root cannot move under `.c64-re-tools/` -- Ghidra's own dot-segment refusal rejects any ancestor path segment starting with `.`, which `.c64-re-tools` itself is. Verified directly, documented as the one exception to the phase's "one root" truth, and recorded on the folded consolidation todo for owner review. (Superseded — see the note above `## Performance`.)
 
 ## Task Commits
 
@@ -164,7 +188,7 @@ status: complete
 
 ## Decisions Made
 
-See `key-decisions` in the frontmatter. Most consequential: **Ghidra's per-run project directories stay outside `.c64-re-tools/`** -- a hard external-tool constraint (Ghidra's own dot-segment refusal), not a design choice, discovered by direct verification (`hasDotPrefixedSegment()` on a synthetic path) before any code was written that would have broken `ghidra.analyze` permanently.
+See `key-decisions` in the frontmatter. Most consequential: **Ghidra's per-run project directories stay outside `.c64-re-tools/`** -- a hard external-tool constraint (Ghidra's own dot-segment refusal), not a design choice, discovered by direct verification (`hasDotPrefixedSegment()` on a synthetic path) before any code was written that would have broken `ghidra.analyze` permanently. (Superseded — see the note above `## Performance`.)
 
 ## Deviations from Plan
 
@@ -249,4 +273,4 @@ None - no external service configuration required.
 - FOUND commit: 7a8ec1e0
 - FOUND commit: aaa03144
 - Acceptance criteria re-verified: typecheck exits 0; `node --test repo-root.test.ts containerpath.test.ts incident-record.test.ts install-resources.test.ts host-tool.test.ts host-scripts.test.ts resources-sync.test.ts stock-paths.test.ts docs-linerefs.test.ts stock-machine.test.ts stock-dispatch.test.ts` reports 334/334 pass; `git status --porcelain resources/` empty after a fresh `node build.ts`; `grep -c '/.c64-re-tools/' .gitignore` == 1.
-- One acceptance criterion NOT met, documented above as a deviation: `grep -av '^#' .gitignore | grep -ac 'ghidra-runs'` reports 2, not 0 (Ghidra exemption).
+- One acceptance criterion NOT met, documented above as a deviation: `grep -av '^#' .gitignore | grep -ac 'ghidra-runs'` reports 2, not 0 (Ghidra exemption). **Now genuinely met, closed by gap-closure plan `40-08` rather than waived** — see the SUPERSEDED note above `## Performance`.

@@ -126,6 +126,42 @@ under a dot-prefixed ancestor. A future non-dot-prefixed alias directory
 attempted here -- scope discipline (D-35 in 40-01-PLAN.md: no new
 retention/reaping/symlink machinery invented in this phase).
 
+## Addendum (2026-09-08, gap `G-40-1`, plans `40-08`/`40-09`): SUPERSEDED 2026-09-08 -- the alias-handle reunification landed
+
+The addendum above's `:124-125` already floated "a future non-dot-prefixed
+alias directory ... symlinked INTO `.c64-re-tools/runs/ghidra/`" as a possible
+reunification, deliberately not attempted at the time. This is that
+reunification, landed by gap-closure plans `40-08` (the handle) and `40-09`
+(the broker mints it at startup).
+
+**What was actually wrong, and what corrects it.** The addendum's own
+"Resolution taken" called the split location "a hard external-tool
+constraint, not a preference." That claim was produced by running this
+project's OWN `hasDotPrefixedSegment()` check against a synthetic string --
+which observes this project's own code, and never observed Ghidra at all.
+MEASURED 2026-09-08 against real Ghidra 12.1.3
+(`.planning/notes/ghidra-dot-path-check-semantics.md`): Ghidra's refusal
+binds the ABSOLUTIZED path argument it is handed -- `ProjectLocator` calls
+`java.io.File.getAbsolutePath()`, never `getCanonicalPath()` -- so it
+absolutizes a relative argument but does **not** resolve a symlink. A
+broker-minted symlink handle therefore satisfies Ghidra's own check AND
+D-33's "one root" truth simultaneously: Ghidra is handed the non-dotted
+alias path, and the bytes land physically under `.c64-re-tools/`.
+
+**What the sketch's `runs/ghidra/` line now means in practice**: the
+original "Solution" sketch above lists `runs/ghidra/` as a subdirectory of
+`.c64-re-tools/` -- that is now literally true again. `resolveGhidraProject()`
+computes the physical location via `ghidraRunsRealRoot()`
+(`<repoRoot>/.c64-re-tools/runs/ghidra/<runId>`), and Ghidra itself is handed
+a path through `ghidraRunsRoot()`'s alias
+(`<repoRoot>/c64-re-tools/runs/ghidra/<runId>`, `c64-re-tools` a symlink whose
+RELATIVE target is `.c64-re-tools`, minted host-side by `vice-broker.mts` at
+startup and re-asserted idempotently by `ghidra-project.mts`'s
+`ensureGhidraRunsHandle()` on every resolve). No new retention/reaping
+machinery was invented -- the handle is minted once and verified, never
+repaired -- consistent with the original addendum's own D-35 scope
+discipline.
+
 ## Resolution
 
 **Fixed.** Plan `40-01` (commits `f739b4ff`, `7a8ec1e0`, `aaa03144`).
@@ -145,7 +181,10 @@ migration shim, no opt-back-in env var.
 **The one exception is the addendum above, not a new one**: `runs/ghidra/`
 stayed at `<repoRoot>/tools/ghidra-runs/` for the hard technical reason already
 recorded here — Ghidra's own dot-segment refusal — with the `.gitignore` entries
-for that path kept and simplified rather than deleted.
+for that path kept and simplified rather than deleted. **This exception no
+longer exists — see the SECOND addendum below** (2026-09-08, gap `G-40-1`):
+the alias-handle reunification landed, and `runs/ghidra/` is physically back
+under `.c64-re-tools/` like every other writer.
 
 See `40-01-SUMMARY.md` for the full task-by-task account, including the ten
 pinned-literal test files (outside this plan's own declared file list) that

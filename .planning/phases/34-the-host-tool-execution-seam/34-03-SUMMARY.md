@@ -101,6 +101,30 @@ status: complete
 
 ## Accomplishments
 
+> **SUPERSEDED 2026-09-08 (gap `G-40-1`; see
+> `.planning/notes/ghidra-dot-path-check-semantics.md`).** Every mention below
+> of `<repoRoot>/tools/ghidra-runs/` names the location as it stood at THIS
+> plan's own execution (2026-09-03) and is left unchanged as the historical
+> record — see `<correction_policy>` in plan `40-10-PLAN.md`. The location
+> moved to `<repoRoot>/.c64-re-tools/runs/ghidra/`, reached through a
+> non-dotted alias symlink, in gap-closure plans `40-08`/`40-09`. This
+> SUMMARY's `.gitignore` reasoning below (a "tracked-tooling" justification
+> for keeping `tools/` itself un-ignored while scratch-ignoring only
+> `tools/ghidra-runs/`) is DOUBLY superseded: the location moved, AND the
+> justification itself was already false when written — `git ls-files tools/`
+> was empty even at this plan's own execution time (no `.mjs` file has ever
+> been tracked under `tools/` in this repository's git history); the
+> reverse-engineering scripts the justification named lived under
+> `src/skills/*/scripts/`, not `tools/`. Plan `40-08` removed the false
+> justification along with the stale location when it collapsed `.gitignore`'s
+> three scattered Ghidra stanzas into one. The mechanism: Ghidra's own
+> dot-segment refusal binds the ABSOLUTIZED path argument it is handed
+> (`ProjectLocator` calls `java.io.File.getAbsolutePath()`, never
+> `getCanonicalPath()`), so it does not resolve a symlink — the superseded
+> method that missed this was running this project's own
+> `hasDotPrefixedSegment()` against a synthetic string, never against Ghidra
+> itself.
+
 - `ghidra-project.mts`: `hasDotPrefixedSegment()` walks every segment of an absolute path (not just the leaf), `resolveGhidraProject()` computes and now RESERVES (creates) a per-run-id project directory under `<repoRoot>/tools/ghidra-runs/`, refusing reuse under the same run id, and `buildAnalyzeHeadlessArgv()` emits `-deleteProject` while re-checking the dot rule independently so it holds even for a caller that skipped the resolver.
 - `ghidra-project.test.ts`: 28 cases, all passing with no Ghidra installation present — the dot-segment refusal (leaf, ancestor, `..`, doubled separator, `/` and `""` edge cases), the resolver's narrowing/idempotency/concurrency behavior, and the argv builder's determinism and independent re-check.
 - `host-tool.mts` gains `"ghidra.analyze"` as its second `HOST_TOOL_IDS` entry (`runId`/`importPath`/`preScript`/`postScript` only), reaching the dot rule and location construction through a value import of `ghidra-project.mjs` — never a copy — with the launcher resolved from `GHIDRA_HOME` and refused by name when unset or missing on disk, before any process is spawned.
@@ -128,13 +152,13 @@ Each task was committed atomically:
 - `src/mcp/vice/host-tool.test.ts` - 6 new `ghidra.analyze` cases extending plan 34-01's suite
 - `src/mcp/vice/build.ts`, `src/mcp/vice/tsconfig.build.json` - `ghidra-project.mjs`/`.mts` added to the host-bound artifact set
 - `src/mcp/vice/resources/ghidra-project.mjs`, `src/mcp/vice/resources/host-tool.mjs` - committed build artifacts
-- `.gitignore` - `/tools/ghidra-project.mjs` (deployed artifact) and `tools/ghidra-runs/` (runtime scratch output, no leading slash so the parity scan doesn't mistake it for a deployed resource) added
+- `.gitignore` - `/tools/ghidra-project.mjs` (deployed artifact) and `tools/ghidra-runs/` (runtime scratch output, no leading slash so the parity scan doesn't mistake it for a deployed resource) added (superseded — see the note above `## Accomplishments`)
 - `.planning/phases/34-the-host-tool-execution-seam/evidence/34-ghidra-dotpath.md` - the live transcript
 
 ## Decisions Made
 
 - **`resolveGhidraProject()` creates the directory it resolves, not just checks it.** See key-decisions above — a live finding, not a planned design choice, promoted to the resolver's own contract because the alternative (creating it in `host-tool.mts` or leaving it to the caller) would have split "the one place that owns the per-run project location" across two files.
-- **`.gitignore`'s `tools/ghidra-runs/` line omits the leading slash** deliberately, to stay outside `host-scripts.test.ts`'s `/tools/`-prefixed deployed-artifact parity scan (that scan requires every matched line to have a `resourceEntries()` counterpart, which a runtime-scratch directory does not have).
+- **`.gitignore`'s `tools/ghidra-runs/` line omits the leading slash** deliberately, to stay outside `host-scripts.test.ts`'s `/tools/`-prefixed deployed-artifact parity scan (that scan requires every matched line to have a `resourceEntries()` counterpart, which a runtime-scratch directory does not have). (Superseded — see the note above `## Accomplishments`.)
 - Reused plan 34-01's `resolveWorkspacePath()` for `importPath` unchanged — the workspace-escape mitigation is the same one site for every tool, never a second copy.
 
 ## Deviations from Plan
@@ -149,7 +173,7 @@ Each task was committed atomically:
 - **Verification:** Re-ran the live clean-run probe after the fix — `exitStatus: 0`, project directory created and survived (empty, post-`-deleteProject`), and a second call under the same run id refused in 173ms with no launch. All 28 `ghidra-project.test.ts` cases and all 61 `host-tool.test.ts`+`ghidra-project.test.ts` cases still pass.
 - **Committed in:** `5694f27` (separate fix commit, interleaved between Task 2 and Task 3)
 
-**2. [Rule 3 - Blocking] The new `resources/ghidra-project.mjs` artifact and `tools/ghidra-runs/` scratch directory needed `.gitignore` entries**
+**2. [Rule 3 - Blocking] The new `resources/ghidra-project.mjs` artifact and `tools/ghidra-runs/` scratch directory needed `.gitignore` entries** (superseded — see the note above `## Accomplishments`)
 - **Found during:** Task 2 (build side effect deployed `tools/ghidra-project.mjs`) and Task 3 (the live probe created `tools/ghidra-runs/` inside the real repo tree)
 - **Issue:** Mirrors plan 34-01's own precedent for `tools/host-tool.mjs`. Left un-ignored, both would show up as untracked noise in `git status`.
 - **Fix:** Added `/tools/ghidra-project.mjs` (deployed artifact, leading slash, matching the existing per-file block) and `tools/ghidra-runs/` (runtime scratch output, no leading slash, so `host-scripts.test.ts`'s parity scan does not demand a `resourceEntries()` counterpart for it) to `.gitignore`.
