@@ -2,38 +2,40 @@
 # the consumer side by scripts/ensure-mcp-deps.sh; never committed.
 node_modules/
 
-# The single tool-written root (D-33, 2026-09-08 clean break): every writer
-# in this codebase that used to scatter its output across five separate
-# locations (.vice-supervisor/, .vice-snapshots/, tools/*.mjs +
-# vice-launcher.sh + .vice-deployed.json, .planning/incidents/, and
-# ensure-mcp-deps.sh's lockfile stamp) now lands under ONE directory:
-# supervisor/ (broker state), snapshots/ (.vsf + .json sidecars), bin/
-# (deployed host launcher artifacts), runs/oracle/ (oracle.run scratch),
-# incidents/ (recycle incident records), cache/ (the lockfile stamp). A
-# consumer of this package gets exactly one ignorable directory and one
-# directory to delete, rather than five. This is a clean break: no dual-read
-# of the previous locations, no migration shim -- a pre-existing old-layout
-# tree (.vice-supervisor/, .vice-snapshots/, tools/*.mjs, .planning/incidents/)
-# is simply left on disk, unread, for the user to delete by hand.
-#
-# NOT covered by this stanza: ghidra.analyze's per-run project directories.
-# ghidra-project.mts's own GHIDRA_RUNS_DIR_NAME doc comment records why --
-# Ghidra's own dot-segment refusal (hasDotPrefixedSegment()) rejects EVERY
-# ancestor path segment starting with ".", so nesting a Ghidra project under
-# this dot-prefixed root would make every ghidra.analyze call fail. It stays
-# at tools/ghidra-runs/, ignored separately below.
+# The single tool-written root (D-33, 2026-09-08 clean break; alias added
+# 2026-09-08, gap G-40-1): every writer in this codebase that used to
+# scatter its output across five separate locations (.vice-supervisor/,
+# .vice-snapshots/, tools/*.mjs + vice-launcher.sh + .vice-deployed.json,
+# .planning/incidents/, and ensure-mcp-deps.sh's lockfile stamp) now lands
+# under ONE directory: supervisor/ (broker state), snapshots/ (.vsf + .json
+# sidecars), bin/ (deployed host launcher artifacts), runs/oracle/
+# (oracle.run scratch), runs/ghidra/ (ghidra.analyze's per-run project
+# directories, reached through the alias below), incidents/ (recycle
+# incident records), cache/ (the lockfile stamp). A consumer of this package
+# gets exactly one ignorable directory and one directory to delete, rather
+# than five. This is a clean break: no dual-read of the previous locations,
+# no migration shim -- a pre-existing old-layout tree (.vice-supervisor/,
+# .vice-snapshots/, tools/*.mjs, .planning/incidents/) is simply left on
+# disk, unread, for the user to delete by hand.
 /.c64-re-tools/
 
-# Host-side per-run Ghidra project directories, written by ghidra.analyze's
-# resolveGhidraProject() at <repoRoot>/tools/ghidra-runs/<runId>
-# (src/mcp/vice/ghidra-project.mts, SEAM-04) -- deliberately NOT part of the
-# single tool-written root's stanza above (see that stanza's own comment).
-# A *product* byproduct: any consumer of the ghidra.analyze tool gets these written into
-# their own repo. tools/ itself is NOT blanket-ignored -- it also holds
-# tracked reverse-engineering tooling (d64-parse.mjs, diff-images.mjs,
-# watch-loads.mjs, recovery-schema.mjs, releases.mjs and their tests) that
-# must stay tracked, so only this one scratch subdirectory is ignored.
-/tools/ghidra-runs/
+# The non-dotted ALIAS of the root above, not a second root: one broker-
+# minted symlink (ghidra-project.mts's ensureGhidraRunsHandle()) whose
+# RELATIVE target is .c64-re-tools/, existing solely because Ghidra's own
+# dot-segment refusal binds the ABSOLUTIZED project-location path
+# (getAbsolutePath(), never getCanonicalPath() -- MEASURED,
+# .planning/notes/ghidra-dot-path-check-semantics.md) while the bytes
+# genuinely live under .c64-re-tools/runs/ghidra/ above. tools/ itself is
+# now vestigial -- git ls-files tools/ is empty, and ghidra.analyze's old
+# tools/ghidra-runs/ location (this stanza's predecessor) was its last
+# production writer (D-33).
+# NO trailing slash on the line below -- MEASURED in a throwaway repo at
+# plan time (2026-09-08): git does not treat a symlink-to-directory as a
+# directory, so a trailing-slash pattern leaves the link showing as
+# untracked in every consumer's `git status`, while this slash-less form
+# ignores it (`git check-ignore -v` attributes it to this exact line). Do
+# NOT "tidy" this by adding a trailing slash.
+/c64-re-tools
 
 # build artifacts from scripts/package.sh
 dist/
@@ -133,12 +135,3 @@ dist/
 # / the sleigh-compile-gate.test.ts COMPILE half reproduce it from the
 # committed extension source on demand -- mirrors vendor/dxa/dxa above.
 /src/mcp/vice/vendor/ghidra-ext/data/languages/6502_nmos.sla
-
-# Phase 36 (OPC-04): a SECOND tools/ghidra-runs/ entry, anchored under
-# src/mcp/vice/ specifically. resolveGhidraProject() computes
-# <repoRoot>/tools/ghidra-runs/<runId>, and a test (or the compile gate)
-# that passes src/mcp/vice as its own repo root would otherwise leave
-# untracked run directories there -- the /tools/ghidra-runs/ entry above is
-# LEADING-slash anchored to the repository root only, so per git's own
-# anchoring rule it does not match this nested location.
-/src/mcp/vice/tools/ghidra-runs/
