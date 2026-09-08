@@ -25,6 +25,9 @@ findings:
   info: 1
   total: 2
 status: issues_found
+dispositions:
+  WR-01: fixed (22c13b30)
+  IN-01: acknowledged
 ---
 
 # Phase 40 (gap closure, `G-40-1`): Code Review Report
@@ -105,6 +108,8 @@ by the exhaustive unit suite above). No BLOCKER findings.
 ## Warnings
 
 ### WR-01: `ensureGhidraRunsHandle()` can throw despite its own "Never throws" contract, on a narrow TOCTOU between its verification `lstatSync()` and the immediately-following `readlinkSync()`
+
+**Disposition: FIXED** — commit `22c13b30`, applied by the phase 40 code-review gate. `readlinkSync()` is now wrapped in the same style as the two sibling `lstatSync()` calls and returns `ok: false` with a message naming the concurrent-change cause. Source and rebuilt `resources/ghidra-project.mjs` committed together; `ghidra-project` + `resources-sync` + `vice-broker-supervision` 60/60.
 
 **File:** `src/mcp/vice/ghidra-project.mts:249` (contract stated at line 157;
 mirrored, byte-true, in `src/mcp/vice/resources/ghidra-project.mjs:244`)
@@ -215,6 +220,8 @@ if (target !== GHIDRA_RUNS_HANDLE_TARGET) {
 ## Info
 
 ### IN-01: The two-part `.gitignore` stanza's rationale is now split across two comments with a subtle historical claim worth double-checking on the next touch
+
+**Disposition: ACKNOWLEDGED, not fixed** — the finding is correct and is explicitly not a defect. Mechanising this claim means a new census gate over `tools/`, which is scope this gap-closure round did not carry and which no phase 40 requirement asks for. Left as a forward-looking note for the next writer who touches that stanza.
 
 **File:** `.gitignore:1-33` (the `/.c64-re-tools/` and `/c64-re-tools`
 stanzas)
