@@ -185,13 +185,28 @@ function parseOpts(argv) {
 }
 
 // --------------------------------------------------------------------- main
+//
+// WR-04 (40-REVIEW.md): the CLI dispatch below MUST be guarded to run only
+// when this file is the actual entry point, not merely imported -- mirrors
+// c1541.mjs's own entry-point guard verbatim (Phase 40, plan 40-04, "Rule 3
+// fix, discovered mid-execution"), added there after an unguarded dispatch
+// ran with the TEST RUNNER's own process.argv on every import of
+// c1541.test.mjs, printing the usage banner and calling process.exit(0)
+// before a single test() call ever registered. Nothing imports petcat.mjs as
+// a module today (confirmed by grep across src/ and scripts/), so this was
+// latent rather than live here -- but the next petcat.test.mjs that imports
+// a pure helper from this file would reintroduce the exact bug c1541.mjs
+// already found and fixed once. Same shape
+// (`resolve(process.argv[1]) === fileURLToPath(import.meta.url)`), never a
+// second guard shape invented for this sibling script.
 
-const [cmd, ...rest] = process.argv.slice(2);
-const VERBS = {
-  decode: (argv) => runDecode(argv),
-};
-if (!cmd || !VERBS[cmd]) {
-  console.log(`usage: node ${selfPath()} <command> [options]
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [cmd, ...rest] = process.argv.slice(2);
+  const VERBS = {
+    decode: (argv) => runDecode(argv),
+  };
+  if (!cmd || !VERBS[cmd]) {
+    console.log(`usage: node ${selfPath()} <command> [options]
 
   decode --image <path.prg> [--out-dir <dir>] [--json]   detokenize a BASIC program and resolve its SYS handover point
 
@@ -199,6 +214,7 @@ Never invokes petcat directly and never guesses an entry point -- a computed
 SYS argument is reported as a named decline, never an address.
 
 options: --image PATH  --out-dir DIR  --json`);
-  process.exit(cmd ? 1 : 0);
+    process.exit(cmd ? 1 : 0);
+  }
+  await VERBS[cmd](rest);
 }
-await VERBS[cmd](rest);
