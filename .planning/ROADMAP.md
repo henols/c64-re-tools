@@ -935,7 +935,7 @@ it was built; see `docs/phase40-preprocessing-tools-decisions.md`.
   3. ~~**A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.~~ **REMOVED 2026-09-08** — dropped by owner direction at the Phase 40 discussion. No `cartconv` work, no per-bank images, no bank output contract; `PREP-03` is withdrawn (see REQUIREMENTS.md's Excluded table and `docs/phase40-preprocessing-tools-decisions.md`). This criterion is deliberately NOT renumbered — criterion 4 below stays "criterion 4" for anyone who cited it before this edit.
   4. **A failure is reported as a failure, proven separately on each of the two shipped tools.** **AMENDED 2026-09-08** — originally "each of the three"; `cartconv` was removed from scope (criterion 3, above) before this criterion's own tools were built. MEASURED: `c1541` exits **0 on error**; `petcat` returns non-zero only for a missing file, `0` on garbage input. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
 
-**Plans**: 8/11 plans executed in 11 waves (fully sequential — every plan after 40-01
+**Plans**: 9/11 plans executed in 11 waves (fully sequential — every plan after 40-01
 shares `host-tool.mts`, `ghidra-project.mts`, the skill tree, or the planning documents
 with its predecessor, so no two can run in the same wave). Plans 40-01 through 40-07
 were planned 2026-09-08 against `40-CONTEXT.md`'s 36 decisions; criteria 1, 3 and 4
@@ -994,7 +994,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 40-09-PLAN.md — `R2`: THE BROKER mints the handle at startup before the control listener accepts; the remaining consumer migration; the handle-only invariant guard and the live-Ghidra symlink guard
+- [x] 40-09-PLAN.md — `R2`: THE BROKER mints the handle at startup before the control listener accepts; the remaining consumer migration; the handle-only invariant guard and the live-Ghidra symlink guard
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
@@ -1257,7 +1257,7 @@ in a milestone archive.
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
-| 40. The Three Preprocessing Host Tools | v0.9.0 | 8/11 | In Progress | - |
+| 40. The Three Preprocessing Host Tools | v0.9.0 | 9/11 | In Progress | - |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
