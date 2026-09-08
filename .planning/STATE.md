@@ -5,11 +5,11 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Completed 40-06-PLAN.md
-last_updated: "2026-09-08T12:28:13.557Z"
+stopped_at: Completed 40-07-PLAN.md
+last_updated: "2026-09-08T12:52:28.443Z"
 last_activity: 2026-09-08
-last_activity_desc: Completed 40-02-PLAN.md (c1541 over the host-tool seam)
-state_head: 7d36844c1006a3ed23dc09a071655dcf24f942b0
+last_activity_desc: Completed 40-07-PLAN.md (decisions doc, in-place amendments, PREP-03 strike, three todo folds) — Phase 40 complete
+state_head: ed17400a4e5c7e6b75c98a272378f20f5ae243b5
 progress:
   total_phases: 6
   completed_phases: 1
@@ -491,6 +491,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 40 P04 | 50min | 3 tasks | 10 files |
 | Phase 40 P05 | 55min | 3 tasks | 9 files |
 | Phase 40 P06 | 34min | 3 tasks | 25 files |
+| Phase 40 P07 | 28min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -2079,9 +2080,11 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T12:28:13.440Z
-Stopped at: Completed 40-06-PLAN.md
+Last session: 2026-09-08T12:51:47.000Z
+Stopped at: Completed 40-07-PLAN.md — Phase 40 complete (7/7 plans)
 Resume file: None
+
+Earlier: Completed 40-06-PLAN.md
 
 Earlier: Completed 40-01-PLAN.md
 
