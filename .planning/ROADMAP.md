@@ -1257,7 +1257,7 @@ in a milestone archive.
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
-| 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | In Progress | - |
+| 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
