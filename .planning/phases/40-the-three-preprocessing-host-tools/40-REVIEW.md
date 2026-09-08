@@ -1,275 +1,248 @@
 ---
 phase: 40-the-three-preprocessing-host-tools
-reviewed: 2026-09-08T00:00:00Z
+reviewed: 2026-09-08T18:29:25Z
 depth: standard
-files_reviewed: 52
+files_reviewed: 15
 files_reviewed_list:
-  - CLAUDE.md
-  - docs/phase40-preprocessing-tools-decisions.md
-  - .gitignore
-  - scripts/check-npm-packages.mjs
-  - scripts/check-skill-tool-coverage.mjs
-  - scripts/ensure-mcp-deps.sh
-  - scripts/lib/skill-descriptions.mjs
-  - src/mcp/vice/build.ts
-  - src/mcp/vice/containerpath.test.ts
-  - src/mcp/vice/d64-single-route.test.ts
-  - src/mcp/vice/docs-linerefs.test.ts
-  - src/mcp/vice/dxa-live.test.ts
-  - src/mcp/vice/dxa-seam.test.ts
-  - src/mcp/vice/fixtures/c1541/README.md
-  - src/mcp/vice/fixtures/petcat/README.md
-  - src/mcp/vice/ghidra-live.test.ts
-  - src/mcp/vice/ghidra-opcode-live.test.ts
   - src/mcp/vice/ghidra-project.mts
-  - src/mcp/vice/hostpath-consumers.test.ts
-  - src/mcp/vice/host-scripts.test.ts
-  - src/mcp/vice/host-tool.mts
-  - src/mcp/vice/host-tool-oracle.test.ts
-  - src/mcp/vice/host-tool.test.ts
-  - src/mcp/vice/incident-record.test.ts
-  - src/mcp/vice/incident-record.ts
-  - src/mcp/vice/install-resources.test.ts
-  - src/mcp/vice/install-resources.ts
-  - src/mcp/vice/module-classification.ts
-  - src/mcp/vice/package.json
-  - src/mcp/vice/prg-image.ts
-  - src/mcp/vice/repo-root.test.ts
-  - src/mcp/vice/repo-root.ts
-  - src/mcp/vice/skill-basic-trigger.test.ts
-  - src/mcp/vice/skill-honesty-checks.test.ts
-  - src/mcp/vice/stock-dispatch.test.ts
-  - src/mcp/vice/stock-machine.test.ts
-  - src/mcp/vice/stock-paths.test.ts
-  - src/mcp/vice/stock-paths.ts
+  - src/mcp/vice/ghidra-project.test.ts
   - src/mcp/vice/vice-broker.mts
-  - src/mcp/vice/vice-proxy.test.ts
-  - src/mcp/vice/vice-proxy.ts
-  - src/mcp/vice/vsf-slice.ts
-  - src/skills/c64-disk-access/scripts/c1541.mjs
-  - src/skills/c64-disk-access/scripts/c1541.test.mjs
-  - src/skills/c64-disk-access/SKILL.md
-  - src/skills/c64-petcat/scripts/petcat.mjs
-  - src/skills/c64-petcat/SKILL.md
-  - src/skills/c64-program-recon/SKILL.md
-  - src/skills/c64-provenance-diff/scripts/recovery-schema.mjs
-  - src/skills/c64-ram-capture/scripts/derive-transients.mjs
-  - src/skills/c64-ram-capture/scripts/vsf-slice.mjs
-  - src/skills/c64-ram-capture/scripts/vsf-slice.test.mjs
-  - src/skills/c64-ram-capture/SKILL.md
+  - src/mcp/vice/vice-broker-supervision.test.ts
+  - src/mcp/vice/host-tool.mts
+  - src/mcp/vice/host-tool.test.ts
+  - src/mcp/vice/ghidra-live.test.ts
+  - src/mcp/vice/repo-root.ts
+  - src/mcp/vice/repo-root.test.ts
+  - src/mcp/vice/resources/ghidra-project.mjs
+  - src/mcp/vice/resources/host-tool.mjs
+  - src/mcp/vice/resources/vice-broker.mjs
+  - .gitignore
+  - CLAUDE.md
+  - docs/phase34-host-tool-seam-decisions.md
 findings:
   critical: 0
-  warning: 4
-  info: 2
-  total: 6
+  warning: 1
+  info: 1
+  total: 2
 status: issues_found
 ---
 
-# Phase 40: Code Review Report
+# Phase 40 (gap closure, `G-40-1`): Code Review Report
 
-**Reviewed:** 2026-09-08T00:00:00Z
+**Reviewed:** 2026-09-08T18:29:25Z
 **Depth:** standard
-**Files Reviewed:** 52
+**Files Reviewed:** 15
 **Status:** issues_found
+
+**This report SUPERSEDES the earlier 40-REVIEW.md for source scope.** The
+previous review covered the wider phase-40 pass (52 files, plans 40-01
+through 40-07); that pass is closed and its findings were dispositioned in
+`40-REVIEW-FIX.md`, which this report does not re-derive, re-open, or
+retract. This report covers **only** the 15-file gap-closure surface
+computed as `git diff --name-only f2b01477..HEAD` (planning artifacts
+excluded) for gap `G-40-1` / requirement `PREP-05`, delivered by plans
+40-08 through 40-11.
 
 ## Summary
 
-Phase 40 adds five `c1541.*` host-tool ids plus `petcat.decode` behind the
-existing `host_tool` execution seam, consolidates six scattered tool-written
-locations under one `.c64-re-tools/` root, and deletes the two hand-written
-`.d64` parsers (`anno-d64.ts`, `d64-parse.mjs`) in favour of `c1541` as the
-one disk-image route. I read the new/changed argument-narrowing, path-
-confinement, argv-construction and classifier code in `host-tool.mts` in
-full, the two new skill scripts (`c1541.mjs`, `petcat.mjs`), the new
-`d64-single-route.test.ts` mechanical guard, and cross-checked the
-`.c64-re-tools/` consolidation across `repo-root.ts`, `install-resources.ts`,
-`incident-record.ts`, `vice-broker.mts`, `vice-proxy.ts`, `ensure-mcp-deps.sh`
-and `.gitignore`.
+This gap-closure change moves the Ghidra per-run project root from
+`<repoRoot>/tools/ghidra-runs/<runId>` (outside the project's single
+tool-written root) to `<repoRoot>/.c64-re-tools/runs/ghidra/<runId>`,
+reached through a broker-minted, non-dotted alias symlink at
+`<repoRoot>/c64-re-tools` (relative target `.c64-re-tools`). The change is
+motivated by a specific, cited measurement
+(`.planning/notes/ghidra-dot-path-check-semantics.md`) that Ghidra's
+project-location refusal binds `getAbsolutePath()`, never
+`getCanonicalPath()`, and therefore never resolves a symlink.
 
-The security-sensitive core (`resolveWorkspacePath()`'s symlink-aware
-confinement, argv-array construction with no shell, the `name`
-leading-hyphen refusal, never-throw discipline, exit-status-is-never-the-
-oracle) is sound and matches the header comments' own stated guarantees. No
-BLOCKER-level defects were found: no injection route, no workspace escape,
-no silent-mutation path. The findings below are narrower correctness/
-robustness gaps: a stale-output-collision risk in `c1541.read`'s filename
-slugging, an unvalidated address range in `petcat.decode`'s entry-point
-resolution, an unbounded stdout accumulation for a tool spawned against
-attacker-influenced disk images, and a guard added to `c1541.mjs` (fixing a
-real bug discovered mid-phase) that was not carried over to the sibling
-`petcat.mjs`, which has an identical structural risk.
+This is an unusually well-verified change. I traced the full mechanism
+(`ensureGhidraRunsHandle()`, `resolveGhidraProject()`,
+`buildAnalyzeHeadlessArgv()`, the broker's startup mint at `vice-broker.mts`,
+and every consuming call site in `host-tool.mts`) against the four review
+priorities named in scope, and additionally:
+
+- Ran the full colocated unit suites for all five touched modules
+  (`ghidra-project.test.ts` — 53/53 pass; `vice-broker-supervision.test.ts` —
+  5/5 pass, including the two new R2 ordering/structural gates;
+  `repo-root.test.ts` — 9/9 pass, including the new NUL-tolerant census
+  gate; `host-tool.test.ts` — 104/104 pass, including the four new
+  handle-only-invariant gates).
+- Rebuilt `resources/*.mjs` from source (`node build.ts`) and confirmed
+  **zero drift** against the committed artifacts (`git status --short
+  resources/` clean after rebuild) — the three touched artifacts
+  (`ghidra-project.mjs`, `host-tool.mjs`, `vice-broker.mjs`) are byte-true
+  to their `.mts` sources.
+- Live-tested the `.gitignore` symlink-vs-trailing-slash claim in a
+  throwaway repo: confirmed `/c64-re-tools` (no trailing slash) ignores the
+  symlink and `/c64-re-tools/` does not — the comment's own empirical claim
+  is correct.
+- Ran the **opt-in, default-skipped** `ghidra-live.test.ts` suite live
+  against real Ghidra 12.1.3 (`GHIDRA_HOME` pointed at a genuine local
+  install): **22/22 non-corpus tests pass**, including both new SYMLINK
+  GUARD cases (positive: production route lands the project database
+  physically under `.c64-re-tools/`, with only the handle symlink in the
+  non-dotted tree; negative control: a literal dot-prefixed location
+  produces no project database at all, proving the guard is non-vacuous).
+  This directly confirms the core claim the whole change rests on, against
+  the real external tool, not merely against this project's own predicate.
+- Confirmed the `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze']` "handle-only
+  invariant" holds by direct source inspection: `resolveGhidraProject()` is
+  called directly in `host-tool.mts` (never routed through
+  `resolveWorkspacePath()`), and the project location has exactly one
+  derived sibling path (`dirname(projectLocation)` for the run log) — both
+  match the structural test's own claims.
+- Confirmed the ordering requirement (R2): `ensureGhidraRunsHandle()` is
+  called in `vice-broker.mts`'s `run()` after the unconditional startup
+  reap and before `startControlListener()` binds, matching both the
+  structural test and direct source reading.
+
+One genuine defect surfaced from tracing the error surface of
+`ensureGhidraRunsHandle()` specifically, per this review's stated priority
+1 — see WR-01 below. It is a narrow race, not a design flaw in the overall
+approach, and does not undermine the mechanism itself (confirmed live and
+by the exhaustive unit suite above). No BLOCKER findings.
 
 ## Warnings
 
-### WR-01: `c1541.entry`/`chain`/`read` output filenames can collide on different CBM names, letting a failed call report a stale prior result as success
+### WR-01: `ensureGhidraRunsHandle()` can throw despite its own "Never throws" contract, on a narrow TOCTOU between its verification `lstatSync()` and the immediately-following `readlinkSync()`
 
-**File:** `src/mcp/vice/host-tool.mts:1590-1624`
-**Issue:** The output path for `c1541.entry`/`c1541.chain`/`c1541.read` is
-built from `slug = name.replace(/[^A-Za-z0-9]/g, "_").slice(0, 32)`
-(`host-tool.mts:1597`), then joined as
-`` `${imageStem}.${slug}.<verb>.txt` `` / `` `${imageStem}.${slug}.bin` ``.
-Two different CBM names that differ only in punctuation or in characters
-past the 32nd retained character (e.g. `"A:B"` and `"A B"`, or two names
-that agree on their first 32 alphanumeric characters) collapse to the same
-output path for the same `image`/`outDir` pair.
+**File:** `src/mcp/vice/ghidra-project.mts:249` (contract stated at line 157;
+mirrored, byte-true, in `src/mcp/vice/resources/ghidra-project.mjs:244`)
 
-For `c1541.entry`/`c1541.chain` this is harmless in practice because
-`runHostTool()` unconditionally `writeFileSync`s the *current* invocation's
-captured stdout to that path before digesting it (`host-tool.mts:2604-2613`),
-so a colliding call always overwrites with its own fresh (possibly empty)
-output.
+**Issue:** The function's own doc comment states plainly: *"Mints (or
+verifies) the broker-owned symlink HANDLE ... **Never throws**; idempotent"*
+(line 157), and its own numbered "VERIFY unconditionally" step states
+*"`lstatSync()` must report a symbolic link, and `readlinkSync()` must equal
+`GHIDRA_RUNS_HANDLE_TARGET` by EXACT string comparison. **Anything else
+refuses.**"* (i.e. the documented contract is: any anomaly here — including
+a read failure — becomes an `ok: false` refusal, never an exception).
 
-For `c1541.read`, however, the output file is written by the **child
-process itself** (`argv: ["-attach", imagePath, "-read", name, outputPath]`,
-`host-tool.mts:1624`) — this module never pre-clears `outputPath` before
-spawning. If a prior successful `c1541.read` call for a different `name`
-that collides on the same `slug` left a valid, non-empty file at that exact
-path, and a later call for the colliding name fails inside `c1541` (e.g.
-because that name does not actually exist) without `c1541` truncating or
-recreating the file, `classifyC1541ReadOutput()` will find a pre-existing
-file at `outputPath` with `byteLength > 0` and report `ok: true` — silently
-attributing a previous, unrelated read's bytes to the new, failed request.
-This is exactly the "report success having asserted nothing real" failure
-mode this codebase's own header comments elsewhere name as unacceptable
-(e.g. `host-tool.mts:766-767`).
-**Fix:** Unlink `outputPath` (best-effort, ignoring `ENOENT`) immediately
-before spawning the `c1541.read` child, so a failed run can never be
-digested as a stale success:
+The implementation does not honor this for `readlinkSync()`. In the
+verification block:
+
 ```ts
-if (request.tool === "c1541.read") {
-  try { rmSync(outputPath, { force: true }); } catch { /* best-effort */ }
+// VERIFY unconditionally -- never trust the write above, whichever branch
+// took it.
+let stat: ReturnType<typeof lstatSync>;
+try {
+  stat = lstatSync(handlePath);
+} catch (e) {
+  return { ok: false, message: `...` };
 }
-```
-placed in `runHostTool()` just before `spawnHostTool()` is called for this
-tool, or alternatively derive the slug from a hash of the full `name` rather
-than a truncated character-class filter, to remove the collision itself.
 
-### WR-02: `petcat.decode`'s resolved `SYS` entry point is not range-checked against the C64's 16-bit address space
-
-**File:** `src/mcp/vice/host-tool.mts:2016-2034`
-**Issue:** `derivePetcatEntrypoint()` accepts any all-decimal-digit `SYS`
-argument as a literal entry point via `Number(argument)`
-(`host-tool.mts:2022-2026`) with no upper-bound check. A BASIC program can
-legally contain `SYS 999999` or an even larger decimal literal; `Number()`
-will happily convert an arbitrarily long digit string (with silent
-precision loss past 2^53, e.g. `Number("99999999999999999999")` yields
-`1e20`), and the response's `entrypoint` field is documented and consumed
-downstream (`c64-petcat/SKILL.md`, `c64-program-recon/SKILL.md`) as "the
-address the program hands over to" — i.e. it is expected to be spent
-directly on a disassembler. An out-of-range or precision-lossy value passed
-through as a real entry point without a stated reservation is a bug of
-exactly the same shape `LOADER_BASE_ADDR_PATTERN`/`RUN_ID_PATTERN` exist
-elsewhere in this file to prevent for other numeric/opaque fields.
-**Fix:** Bound the accepted literal to `0..65535` (the C64's real address
-space) and report anything outside that range through the same
-`entrypointReason` decline path used for a non-literal expression, e.g.:
-```ts
-if (/^\d+$/.test(argument)) {
-  const value = Number(argument);
-  if (Number.isSafeInteger(value) && value >= 0 && value <= 0xffff) {
-    return { entrypoint: value, entrypointReason: `literal SYS argument on BASIC line ${basicLine}: sys${argument}` };
-  }
-  return { entrypoint: null, entrypointReason: `SYS argument on BASIC line ${basicLine} (${argument}) is outside the C64's 16-bit address space and cannot be a real entry point` };
+if (!stat.isSymbolicLink()) {
+  ... return { ok: false, ... };
 }
+
+const target = readlinkSync(handlePath);   // <-- NOT wrapped in try/catch
+if (target !== GHIDRA_RUNS_HANDLE_TARGET) {
+  ... return { ok: false, ... };
+}
+
+return { ok: true, handle: handlePath, target };
 ```
 
-### WR-03: `spawnHostTool()`'s stdout accumulation is unbounded, and `c1541.chain`/`c1541.bam` run directly against untrusted, possibly-corrupt disk images
+The preceding `lstatSync()` call *is* wrapped in try/catch (as is the
+identical-shaped first `lstatSync()` earlier in the function, used to
+decide `handleAlreadyExists`), so the omission on `readlinkSync()` is an
+inconsistency within the same function rather than a stylistic choice.
 
-**File:** `src/mcp/vice/host-tool.mts:2115-2117`, `1848-1855`
-**Issue:** `child.stdout.on("data", ...)` appends every chunk to an
-in-memory string with no size cap; the only bound on a runaway child is the
-20s `DEFAULT_HOST_TOOL_TIMEOUT_MS` wall-clock kill. The code's own comment
-at `host-tool.mts:1848-1855` already flags this as a known gap
-("`spawnHostTool()`'s own stdout accumulation has no explicit bound today,
-and a sector chain (`c1541.chain`) is the first disk-image-driven input
-that could make it large") but only caps the *classifier's* read window
-(`STDOUT_CLASSIFY_CAP_BYTES`), not the accumulation itself. This project's
-own audit tooling (`c1541.mjs`'s `runAudit()`) explicitly exists to detect
-disk images with *fabricated or cyclic directory structures* — i.e. this
-tool is routinely pointed at adversarial or corrupted `.d64` images by
-design. If `c1541 -chain` does not itself guard against a cyclic **data**
-sector chain (distinct from the *directory* chain guard this project's own
-`auditEntries()` implements client-side), a crafted image could drive
-`c1541` to print output for the full 20-second timeout window, growing the
-buffered string without bound in that time.
-**Fix:** Cap the accumulated `stdout`/`stderr` buffers in `spawnHostTool()`
-at a fixed ceiling (e.g. drop/stop appending past `STDOUT_CLASSIFY_CAP_BYTES`
-or a slightly larger hard ceiling, keeping the tail since that is what the
-classifiers and `stderrTail` already consume), independent of the timeout,
-so a pathological child cannot grow unbounded memory even within its
-allotted time budget.
+If the handle is deleted, replaced, or otherwise made unreadable in the
+narrow window between the successful `lstatSync()` (which proved it is
+currently a symbolic link) and the `readlinkSync()` call a few lines later,
+`readlinkSync()` throws (e.g. `ENOENT`), and that exception is **not**
+caught anywhere in `ensureGhidraRunsHandle()` — it propagates to the
+caller as an uncaught exception, not a `{ ok: false, message }` result.
 
-### WR-04: `petcat.mjs` is missing the entry-point guard `c1541.mjs` needed for the identical reason
+This matters concretely for the broker's own call site
+(`src/mcp/vice/vice-broker.mts`'s `run()`, added by this same gap-closure
+plan 40-09):
 
-**File:** `src/skills/c64-petcat/scripts/petcat.mjs:189-204`
-**Issue:** `c1541.mjs` has an explicit guard around its CLI dispatch
-(`c1541.mjs:547`): `if (process.argv[1] && resolve(process.argv[1]) ===
-fileURLToPath(import.meta.url)) { ... }`, with a comment explaining this was
-a **fix for a real bug discovered mid-execution** in this same phase (plan
-40-04): without it, importing the module for its pure exported functions
-(as `c1541.test.mjs` does) would execute the CLI dispatch as an import side
-effect, using the test runner's own `process.argv` and calling
-`process.exit(0)` before any test ever registers.
+```ts
+const ghidraHandleResult = ensureGhidraRunsHandle(args.repoRoot);
+if (ghidraHandleResult.ok) { ... } else { ... }
+```
 
-`petcat.mjs` has the exact same shape — a top-level `const [cmd, ...rest] =
-process.argv.slice(2); ... await VERBS[cmd](rest);` with no entry-point
-guard (`petcat.mjs:189-204`) — but was never given the fix. Today nothing
-imports `petcat.mjs` as a module (confirmed by grep across `src/` and
-`scripts/`), so this is latent rather than live, but the lesson that
-produced the `c1541.mjs` fix applies here verbatim, and the omission means
-the next person who writes a `petcat.test.mjs` importing
-`derivePetcatEntrypoint`-equivalent helpers (there are none exported today,
-but a natural next step) reintroduces the exact bug this phase already
-found and fixed once.
-**Fix:** Add the same guard to `petcat.mjs`, mirroring `c1541.mjs` verbatim:
-```js
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [cmd, ...rest] = process.argv.slice(2);
-  const VERBS = { decode: (argv) => runDecode(argv) };
-  if (!cmd || !VERBS[cmd]) { /* usage */ process.exit(cmd ? 1 : 0); }
-  await VERBS[cmd](rest);
+This call sits with **no try/catch around it**, by explicit design — the
+adjacent comment states: *"Handled WITHOUT throwing: run() has no try/catch
+around this region and the broker must start regardless of the outcome
+here -- it serves twelve allowlisted tool ids and only one of them
+(ghidra.analyze) needs this handle."* If `ensureGhidraRunsHandle()` throws
+here, the exception propagates out of the `async function run()`, is
+caught only by `main()`'s outer `run(args).catch((e) => { ...
+process.exitCode = 1; })`, and the **entire broker fails to start** —
+`startControlListener()` is never reached, so all twelve allowlisted tool
+ids become unreachable, not merely `ghidra.analyze`. This is the exact
+opposite of R2's stated and tested intent ("the broker must start
+regardless of the outcome here").
+
+The trigger is a genuine, if narrow, race: the function's own docstring
+explicitly anticipates concurrent callers racing on this exact path (*"two
+host-side callers (the broker at startup, a concurrent brokerless spawn)
+can race here"*), and its own refusal message invites a human to intervene
+concurrently (*"Remove it by hand if it is safe to do so, then retry"*) —
+either of those, timed to land between the verification `lstatSync()` and
+`readlinkSync()`, reproduces this.
+
+The consequence is less severe on the other production call site
+(`resolveGhidraProject()` → `host-tool.mts`'s `runHostTool()`, invoked as an
+`async function`): a synchronous throw inside an `async` function becomes a
+rejected promise automatically, and `broker-control.mts`'s dispatch does
+`.catch()` that rejection into a generic `{ kind: "error", code:
+"internal", message: "host_tool threw" }` response — so only the single
+`ghidra.analyze` request fails (with its real message discarded in favor of
+the generic text), not the whole broker. The broker-startup call site is
+the one with the severe, contract-violating consequence.
+
+**Fix:** Wrap the `readlinkSync()` call the same way the two `lstatSync()`
+calls in this function already are, refusing by name rather than throwing:
+
+```ts
+let target: string;
+try {
+  target = readlinkSync(handlePath);
+} catch (e) {
+  return {
+    ok: false,
+    message: `ensureGhidraRunsHandle: failed to read the handle's link target (${handlePath}) after confirming it is a symbolic link -- a concurrent change won a race with this verification: ${e instanceof Error ? e.message : String(e)}`,
+  };
+}
+if (target !== GHIDRA_RUNS_HANDLE_TARGET) {
+  ...
 }
 ```
 
 ## Info
 
-### IN-01: `petcat.mjs` has no dedicated test file, unlike its sibling `c1541.mjs`
+### IN-01: The two-part `.gitignore` stanza's rationale is now split across two comments with a subtle historical claim worth double-checking on the next touch
 
-**File:** `src/skills/c64-petcat/scripts/petcat.mjs`
-**Issue:** `c1541.mjs` ships with a substantial `c1541.test.mjs` (pure-unit
-tier plus two live-gated tiers). `petcat.mjs` — added in the same phase,
-wrapping the same host-tool seam pattern — has no test file at all in the
-required-reading set or on disk (confirmed: no `petcat.test.mjs` exists
-under `src/skills/c64-petcat/`). The parsing logic it would need to cover
-(`derivePetcatEntrypoint`'s regex-based SYS-argument extraction) lives
-host-side in `host-tool.mts` and is tested there, but the skill script's own
-CLI plumbing (`parseOpts`, `report`, `runDecode`) is untested.
-**Fix:** Add a `petcat.test.mjs` mirroring `c1541.test.mjs`'s tier
-separation (pure CLI-option parsing tests that need no `petcat` binary, plus
-a live-gated end-to-end case against the committed fixtures under
-`fixtures/petcat/`).
+**File:** `.gitignore:1-33` (the `/.c64-re-tools/` and `/c64-re-tools`
+stanzas)
 
-### IN-02: `c1541.entry`/`chain`/`read`'s `name` validation refuses a leading hyphen but not other c1541-CLI-significant characters
+**Issue:** Not a defect — the split ignore-stanza design is correct and its
+central claim (no trailing slash on a symlink-to-directory pattern) was
+independently verified live in this review (see Summary). This is a
+forward-looking note only: the comment states *"tools/ itself is now
+vestigial -- `git ls-files tools/` is empty, and ghidra.analyze's old
+`tools/ghidra-runs/` location (this stanza's predecessor) was its last
+production writer (D-33)."* This is presented as a settled, checked fact
+(and it is, at review time — `git ls-files tools/` is indeed empty in this
+tree). Because it's phrased as a factual claim about the *current* tree
+rather than a structural invariant a test enforces, a future writer adding
+a file under `tools/` would make this specific sentence quietly false again
+with nothing to catch it (unlike the `.c64-re-tools` literal census, which
+gained a mechanical gate in this same phase). Given the census-gate pattern
+this same gap-closure round just established for exactly this class of
+claim (`repo-root.test.ts`'s new gate, and its own stated motivation, "T-40-10-02"),
+this is a plausible next candidate for the same treatment, not an issue to
+fix now.
 
-**File:** `src/mcp/vice/host-tool.mts:895-904`
-**Issue:** `normaliseHostToolRequest()` refuses `name.startsWith("-")` to
-stop `c1541`'s own CLI from reading a caller-supplied name as a flag. This
-covers the specific argument-injection vector the comment names, but is a
-narrow, single-character heuristic rather than a general validation of what
-a CBM filename/glob can legitimately contain. It is not a security gap
-(argv is an array, never shell-interpreted, so this is scoped to
-`c1541`'s *own* argument parser misreading a value, not to the OS shell),
-but a value that is empty after CBM-to-slug normalization, or one
-containing control characters, is passed straight through to `c1541`
-unexamined beyond the hyphen check.
-**Fix:** Consider whether `c1541`'s own CLI has any other flag-introducing
-sentinel besides a leading hyphen (e.g. does it ever treat a bare `--` or an
-argument matching a known verb name specially); if not, no change is
-needed beyond documenting that the hyphen check is deliberately the only
-one, which the current comment already does reasonably well.
+**Fix:** No action required for this phase. If `tools/` regains a
+production writer in a later phase, either drop the "vestigial" claim or
+add an equivalent mechanical check.
 
 ---
 
-_Reviewed: 2026-09-08T00:00:00Z_
+_Reviewed: 2026-09-08T18:29:25Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
