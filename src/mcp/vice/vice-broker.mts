@@ -69,6 +69,13 @@ import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor, type E
 // pass (host-tool.mts is added to HOST_BOUND_ARTIFACTS/tsconfig.build.json's
 // include[] in this same commit).
 import { runHostTool } from "./host-tool.mjs";
+// Gap G-40-1, requirement R2 (plan 40-09): a VALUE import of the same
+// handle-minting function for the SAME reason as the host-tool.mjs import
+// immediately above -- this file is always run from its own compiled
+// resources/ form, and "./ghidra-project.mjs" is compiled into that same
+// directory by the same build.ts pass (both source and target are already
+// listed in HOST_BOUND_ARTIFACTS, since plan 40-08 landed the module).
+import { ensureGhidraRunsHandle } from "./ghidra-project.mjs";
 import {
   startControlListener,
   newControlToken,
@@ -1143,6 +1150,39 @@ async function run(args: ParsedArgs): Promise<void> {
   process.stderr.write(
     `vice-broker: backend "${backend}" (source: ${backendResult.source}, binary: ${backendResult.binPath})\n`,
   );
+
+  // Gap G-40-1, requirement R2 (plan 40-09): THE BROKER mints/verifies the
+  // Ghidra runs-root handle here -- after the unconditional startup reap
+  // above, and BEFORE the control listener below accepts a single
+  // connection -- so a container-side MCP server with no host tooling of
+  // its own still finds the handle in place the moment it can reach this
+  // broker at all. This is deliberately NOT the only call site:
+  // resolveGhidraProject() (ghidra-project.mts) calls the same function as
+  // an idempotent precondition, because two host-side routes never involve
+  // a broker at all -- the direct spawn of resources/host-tool.mjs from
+  // host-tool-client.ts:269-273 (the everyday route on a host with no
+  // devcontainer, and the route CI uses), and tests importing that
+  // artifact directly. Both callers write the identical relative-target
+  // link, so a race between them is a benign EEXIST, not a conflict (see
+  // ensureGhidraRunsHandle()'s own header). The negative rule: container-
+  // side code must NEVER mint this handle -- the link target is relative
+  // and correct only when written from the host's view of the workspace.
+  //
+  // Handled WITHOUT throwing: run() has no try/catch around this region and
+  // the broker must start regardless of the outcome here -- it serves
+  // twelve allowlisted tool ids and only one of them (ghidra.analyze) needs
+  // this handle. A refusal is surfaced as ONE stderr line naming the
+  // consequence; every other tool id is unaffected.
+  const ghidraHandleResult = ensureGhidraRunsHandle(args.repoRoot);
+  if (ghidraHandleResult.ok) {
+    process.stderr.write(
+      `vice-broker: ghidra runs handle ${ghidraHandleResult.handle} -> ${ghidraHandleResult.target}\n`,
+    );
+  } else {
+    process.stderr.write(
+      `vice-broker: ghidra runs handle refused: ${ghidraHandleResult.message} -- ghidra.analyze will refuse by name until this is fixed by hand; every other tool id is unaffected\n`,
+    );
+  }
 
   // D-18: the singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
   let listener: Awaited<ReturnType<typeof startControlListener>>;
