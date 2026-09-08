@@ -32,3 +32,54 @@ and `docs-linerefs.test.ts`'s own planted-violation fixture — see
 **Not fixed here** — either add the missing `REQUIREMENTS.md` entries or
 retire the register entries that cite them, in whichever future phase owns
 that annotation-store work.
+
+## 2026-09-08, plan 40-05: a SECOND, orthogonal concurrent-scanner race in `audit-root-args.test.ts`, pre-existing
+
+While verifying the D-27 scratch-fixture fix (uniquely-named per-invocation
+scratch directories replacing fixed-name scratch files at the two named
+sites — `skill-honesty-checks.test.ts`'s `runCiScriptWithScratchFile()` and
+the assessed-but-unchanged `dxa-seam.test.ts` planted binary), a full
+`npm run test:automated` run intermittently (3 of 4 runs observed) also
+failed:
+
+- `audit-root-args.test.ts:982` — `check-skill-fork-honesty: every spelling
+  that RESOLVES to the repository root is accepted` — fails with
+  `--root . resolves to the repository root and must behave exactly like the
+  unflagged run (got 1, unflagged 0)`, citing whichever
+  `zz-scratch-<random>/zz-scratch-in03-positive.md` scratch directory
+  `skill-honesty-checks.test.ts`'s own deliberately-violating test case had
+  planted (and cleaned up) at that moment.
+
+**Confirmed pre-existing, not caused by this plan's fix:** stashing this
+plan's changes to `dxa-seam.test.ts` and `skill-honesty-checks.test.ts` and
+re-running the SAME full suite against the ORIGINAL (fixed-name-scratch-file)
+code reproduces the identical failure, with the identical mechanism (the
+original fixed-name file at `src/skills/acme-build/zz-scratch-in03-positive.md`
+observed mid-existence by the same `audit-root-args.test.ts` test). So the
+D-27 fix neither introduces nor worsens this; it is a DIFFERENT hazard in a
+file this plan's `files_modified` never named.
+
+**Root cause, distinct from D-27's two named sites:** `audit-root-args.test.ts`'s
+"every spelling ... is accepted" test runs FOUR sequential live spawns of
+`check-skill-fork-honesty.mjs` against the shared real `src/skills/` tree (an
+unflagged baseline, then three differently-spelled `--root` arguments all
+resolving to the same repository root) and asserts all four exit identically.
+Because Node's test runner executes test FILES concurrently, if
+`skill-honesty-checks.test.ts`'s own violating scratch fixture exists during
+SOME of those four sequential spawns but not others (its own window is a
+single `writeFileSync` + one `spawnSync` + cleanup, already about as short as
+it can be while still letting the CI script observe it — the whole point of
+that helper), the four spawns disagree with each other. No naming change at
+either D-27 site closes this: the artifact's CONTENT and the fact that it
+must sit inside the real `src/skills/` tree (never a tmpdir, or the CI script
+under test would never see it) is what causes the four-way comparison to
+occasionally see one live state and then another.
+
+**Not fixed here** — `audit-root-args.test.ts` is not one of this plan's
+`files_modified`, and closing it durably would need either (a) that test
+comparing something more tolerant of a live, shared, mutable tree instead of
+four back-to-back sequential snapshots, or (b) a way to serialize this file's
+run against any other file that plants a scratch fixture inside `src/skills/`
+mid-suite — a cross-file coordination this repository's test runner
+configuration does not currently provide. Left for whichever future pass owns
+`audit-root-args.test.ts`'s own hygiene.

@@ -13,7 +13,7 @@
 // proves the predicates the CI script runs in production.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,30 +94,39 @@ test("isStandaloneDisasmToken(): the documented provenance-ledger exemption line
 // CI script, not the predicate, per the plan's own instruction.
 // ---------------------------------------------------------------------------
 
-function runCiScriptWithScratchFile(scratchRelPath: string, content: string) {
-  // Written directly under src/skills/acme-build/ (an existing,
-  // already-walked skill directory) rather than into a fresh tmpdir --
-  // check-skill-fork-honesty.mjs only walks src/skills/, so a tmpdir
-  // scratch file would never be seen at all.
-  const scratchFile = join(ROOT, "src", "skills", "acme-build", scratchRelPath);
-  writeFileSync(scratchFile, content, "utf8");
-  try {
-    return spawnSync(process.execPath, [CI_SCRIPT], { cwd: ROOT, encoding: "utf8" });
-  } finally {
-    rmSync(scratchFile, { force: true });
-  }
+// D-27 (40-05): this used to write a FIXED-name scratch file directly under
+// src/skills/acme-build/ and remove it in a `finally`. Node's test runner
+// executes test FILES concurrently, so another file's own spawned
+// check-skill-fork-honesty.mjs/check-skill-description-overlap.mjs walk of
+// src/skills/ could observe that fixed-name artifact mid-write or
+// mid-delete -- an intermittent, unrelated-looking multi-failure elsewhere
+// in the suite. The fix is a uniquely-named scratch DIRECTORY per
+// invocation, created with mkdtempSync -- the same idiom dxa-live.test.ts
+// and audit-root-args.test.ts already use correctly -- created INSIDE
+// src/skills/acme-build/ rather than a system temp directory: the scanner
+// under test only walks src/skills/, so a tmpdir artifact would never be
+// seen at all, which is the whole point of this helper. Cleanup runs via
+// the test runner's own `t.after()` hook so it still runs when the
+// assertion below throws, not only on success.
+function runCiScriptWithScratchFile(t: import("node:test").TestContext, scratchRelName: string, content: string) {
+  const scratchDir = mkdtempSync(join(ROOT, "src", "skills", "acme-build", "zz-scratch-"));
+  t.after(() => rmSync(scratchDir, { recursive: true, force: true }));
+  writeFileSync(join(scratchDir, scratchRelName), content, "utf8");
+  return spawnSync(process.execPath, [CI_SCRIPT], { cwd: ROOT, encoding: "utf8" });
 }
 
-test("WR-03/IN-03 live check: a scratch file naming disasm-decoder.ts does NOT make the script fail", () => {
+test("WR-03/IN-03 live check: a scratch file naming disasm-decoder.ts does NOT make the script fail", (t) => {
   const result = runCiScriptWithScratchFile(
+    t,
     "zz-scratch-in03-negative.md",
     "# Scratch\n\nSee disasm-decoder.ts for the opcode table.\n"
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-test("WR-03/IN-03 live check: a scratch line 'acme.mjs disasm out.a' DOES make it fail", () => {
+test("WR-03/IN-03 live check: a scratch line 'acme.mjs disasm out.a' DOES make it fail", (t) => {
   const result = runCiScriptWithScratchFile(
+    t,
     "zz-scratch-in03-positive.md",
     "# Scratch\n\nRun `acme.mjs disasm out.a` to do the thing.\n"
   );
@@ -125,8 +134,9 @@ test("WR-03/IN-03 live check: a scratch line 'acme.mjs disasm out.a' DOES make i
   assert.match(result.stderr, /a bare "disasm" verb token reappeared/);
 });
 
-test("WR-03 regression: a scratch line with both cmdDisasm and the exemption string DOES fail (ordering still correct)", () => {
+test("WR-03 regression: a scratch line with both cmdDisasm and the exemption string DOES fail (ordering still correct)", (t) => {
   const result = runCiScriptWithScratchFile(
+    t,
     "zz-scratch-wr03-regression.md",
     '# Scratch\n\n// see acme.mjs cmdDisasm / toacme, evidence: "disasm"\n'
   );

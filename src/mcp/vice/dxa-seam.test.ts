@@ -195,7 +195,38 @@ test("HOST_TOOL_PATH_ARG_KEYS[dxa.disassemble]: every declared path key refuses 
  * findDxaBinary() (host-tool.mts) probes -- resources/vendor/dxa/dxa, which
  * this repository never populates itself -- so this case never touches the
  * real vendor/dxa/dxa (the SECOND candidate) and never requires it to have
- * been built. */
+ * been built.
+ *
+ * D-27 (40-05) ASSESSMENT -- why this site does NOT take the unique-directory
+ * idiom skill-honesty-checks.test.ts's runCiScriptWithScratchFile() moved to:
+ *
+ * findDxaBinary(here)'s candidate list is `[join(here, "vendor", "dxa",
+ * "dxa"), join(here, "..", "vendor", "dxa", "dxa")]` -- a FIXED,
+ * project-vendored path computed from the executing module's own directory
+ * (host-tool.mts's own header explicitly contrasts this with the c1541/petcat
+ * probe's per-call COMPUTED candidate). There is no env var or test-injected
+ * override consulted before that fixed list, unlike findAcmeLib()'s
+ * `process.env.ACME`-first candidate. So this case cannot plant its fixture
+ * under a unique per-invocation directory and still reach the code path under
+ * test -- the binary must exist at exactly the first candidate path, because
+ * that is the one production code will actually probe. Redirecting it would
+ * mean adding a new override to host-tool.mts itself (mirroring
+ * findAcmeLib()'s ACME-env pattern), which is a production-code change this
+ * doc/test-hygiene plan does not make.
+ *
+ * What observes the planted subtree, checked directly rather than assumed:
+ * `resources-sync.test.ts` walks the whole committed `resources/` tree, but
+ * filters to `GENERATED_EXTENSIONS = [".mjs"]` before comparing anything --
+ * this planted file is named `dxa`, carries no extension, and is filtered out
+ * before either of its two comparisons runs, so it cannot flip that test's
+ * verdict. `dxa-build-gate.test.ts` scans `src/mcp/vice/vendor/dxa/*.c` (the
+ * SOURCE vendor tree), a different directory tree entirely, not
+ * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
+ * path and branches on its presence, so -- unlike the fixed-name scratch file
+ * in `src/skills/acme-build/` -- this site has no currently-measured
+ * concurrent-scanner hazard. Cleanup already runs on an assertion failure as
+ * well as on success below: the `try` wraps the assertions themselves, not
+ * only the plant call, so a thrown `assert` still reaches the `finally`. */
 function plantFakeDxaBinary(): { binPath: string; cleanupDir: string } {
   const vendorDir = join(HERE, "resources", "vendor", "dxa");
   mkdirSync(vendorDir, { recursive: true });
