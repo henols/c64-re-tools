@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Completed 40-05-PLAN.md
-last_updated: "2026-09-08T11:37:09.289Z"
+stopped_at: Completed 40-06-PLAN.md
+last_updated: "2026-09-08T12:28:13.557Z"
 last_activity: 2026-09-08
 last_activity_desc: Completed 40-02-PLAN.md (c1541 over the host-tool seam)
-state_head: 0918848fc2a0667127b5b82bba6f87609497e259
+state_head: 7d36844c1006a3ed23dc09a071655dcf24f942b0
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 17
 ---
 
@@ -214,7 +214,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-09-08 — Completed 40-02-PLAN.md (c1541 over the host-tool seam)
 
@@ -475,6 +475,7 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 | Phase 40 P03 | 40 min | 3 tasks | 10 files |
 | Phase 40 P04 | 50min | 3 tasks | 10 files |
 | Phase 40 P05 | 55min | 3 tasks | 9 files |
+| Phase 40 P06 | 34min | 3 tasks | 25 files |
 
 ## Accumulated Context
 
@@ -1059,6 +1060,8 @@ Recent decisions affecting current work:
 - [Phase 40]: Phase 40 plan 04: re-verified c1541's own exit code on a genuine failure and found it is NOT uniform across subcommands on this host's resolved (fork) binary -- -dir/-entry exit 0, -bam/-chain/-read exit 1 -- contradicting host-tool.mts's own general D-11 header comment. All six PREP-04 non-vacuous controls therefore use fake stand-in binaries reproducing the documented worst-case shape (exit 0, declared shape absent) rather than the real, per-subcommand-inconsistent binary, keeping the suite hermetic and CI-safe. Fixed a real pre-existing bug in c1541.mjs: no entry-point guard, so importing it for its pure detector functions executed the CLI dispatch and called process.exit() before any test registered.
 - [Phase 40]: Re-cut c64-ram-capture/c64-program-recon descriptions to be true after 40-02/40-03's two new skills; pointers replace restated capability.
 - [Phase 40]: Second carried scratch-fixture site (dxa-seam.test.ts) assessed and left unchanged -- its fixture path is production-fixed with no test-time override; first site (skill-honesty-checks.test.ts) fixed via mkdtempSync + t.after().
+- [Phase 40]: 40-06: Deleted anno-d64.ts and d64-parse.mjs (the two independent 1541 disk-image readers), re-pointing every consumer onto the c1541.* host-tool seam and committing d64-single-route.test.ts as a non-vacuous structural invariant against a second parser reappearing.
+- [Phase 40]: 40-06: Lowered hostpath-consumers.test.ts's hand-pinned ANNO_MODULE_FLOOR 21->20 -- the first lowering it has ever needed -- since anno-d64.ts was one of the counted anno-*.ts production modules and is now deleted.
 
 ### Pending Todos
 
@@ -2027,8 +2030,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T11:37:09.149Z
-Stopped at: Completed 40-05-PLAN.md
+Last session: 2026-09-08T12:28:13.440Z
+Stopped at: Completed 40-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-01-PLAN.md
