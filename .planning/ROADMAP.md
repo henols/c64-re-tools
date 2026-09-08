@@ -929,7 +929,7 @@ the three is reported as a failure despite two of them exiting `0` on error.
   3. **A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.
   4. **A failure is reported as a failure, proven separately on each of the three.** MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
 
-**Plans**: 4/7 plans executed in 7 waves (fully sequential — every plan after 40-01 shares
+**Plans**: 5/7 plans executed in 7 waves (fully sequential — every plan after 40-01 shares
 `host-tool.mts`, the skill tree, or the planning documents with its predecessor,
 so no two can run in the same wave). Planned 2026-09-08 against `40-CONTEXT.md`'s
 36 decisions; criteria 1, 3 and 4 above and the goal sentence are amended in
@@ -954,7 +954,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 40-05-PLAN.md — the skill-surface re-cut (`D-19`), the stale skill-count prose, and the carried `mkdtemp` scratch-fixture fix
+- [x] 40-05-PLAN.md — the skill-surface re-cut (`D-19`), the stale skill-count prose, and the carried `mkdtemp` scratch-fixture fix
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -1217,7 +1217,7 @@ in a milestone archive.
 | 37. The Importer and the Automatic Annotation Join | v0.8.0 | 8/8 | Complete | 2026-09-05 |
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
-| 40. The Three Preprocessing Host Tools | v0.9.0 | 4/7 | In Progress | - |
+| 40. The Three Preprocessing Host Tools | v0.9.0 | 5/7 | In Progress | - |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |

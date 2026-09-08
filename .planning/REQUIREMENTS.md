@@ -52,7 +52,7 @@ whose whole job is to settle it.
 ### Preprocessing — the three VICE host binaries
 
 - [ ] **PREP-01**: A user can inspect a disk image's real structure — BAM, directory, and a named file's actual sector chain — through `c1541`, reached over the existing `host_tool` control op from a container-side skill script. *(The seam shipped in v0.8.0; this is integration, not new architecture.)*
-- [ ] **PREP-02**: A user can see what a program's BASIC stub actually does and where it hands over to machine code, via `petcat`, before any disassembler is spent on it — and is told plainly when the stub cannot be resolved rather than given a guessed entry point.
+- [x] **PREP-02**: A user can see what a program's BASIC stub actually does and where it hands over to machine code, via `petcat`, before any disassembler is spent on it — and is told plainly when the stub cannot be resolved rather than given a guessed entry point.
 - [ ] **PREP-03**: A cartridge image's bank structure is recovered through `cartconv` and presented as separate per-bank images the existing analysis engines can each consume, rather than as a flat ROM window that hides everything past the first bank.
 - [x] **PREP-04**: A failure in any of these three tools is reported as a failure. *(MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. Exit-code checking alone would pass failures silently, so each tool's own output is what decides the outcome — the same discipline the existing real-ACME verify path already applies.)*
 
@@ -133,7 +133,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | EVID-05 | Phase 43 | Pending |
 | EVID-06 | Phase 43 | Pending |
 | PREP-01 | Phase 40 | Pending |
-| PREP-02 | Phase 40 | Pending |
+| PREP-02 | Phase 40 | Complete |
 | PREP-03 | Phase 40 | Pending |
 | PREP-04 | Phase 40 | Complete |
 | PROOF-04 | Phase 44 | Pending |
