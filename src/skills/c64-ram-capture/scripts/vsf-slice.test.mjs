@@ -11,8 +11,9 @@
 //
 // Portable: the fixtures live in the MCP tree, which the plugin distribution
 // keeps in the same checkout. With that tree absent the fixture-driven checks
-// skip rather than fail, matching `d64-parse.test.mjs`'s posture towards a
-// corpus it cannot assume.
+// skip rather than fail, matching this project's other live-test files'
+// (e.g. `dxa-live.test.ts`'s) posture towards a corpus or binary they
+// cannot assume.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -210,10 +211,10 @@ test("the wrapper's header records the cross-package constraint and why route (b
   const src = readFileSync(WRAPPER, "utf8");
   // The decision has to be findable, or the next reader sees an oversight
   // where a choice was made.
-  assert.match(src, /anno-d64\.ts/, "the header must cite the module that records the constraint");
+  assert.match(src, /Phase 40 plan 40-06/, "the header must cite the retired precedent that recorded the constraint");
   assert.match(src, /@henols\/vice-mcp/);
   assert.match(src, /@henols\/c64-re-tools/);
-  assert.match(src, /d64-parse\.mjs/, "the header must name the two-copies precedent it declined");
+  assert.match(src, /two independent copies/, "the header must name the two-copies precedent it declined");
   assert.match(src, /\(b\)/, "the header must name which of the two answers was taken");
 });
 

@@ -14,8 +14,8 @@
 //      committed fixtures over the real seam -- gated on `c1541` actually
 //      being resolvable on PATH, skipped with a named reason otherwise
 //      (mirrors this project's own live-test skip convention, e.g.
-//      d64-parse.test.mjs's "no corpus -> skip", never a hand-rolled early
-//      return that would report a false PASS).
+//      dxa-live.test.ts's "no vendored binary -> skip", never a hand-rolled
+//      early return that would report a false PASS).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";

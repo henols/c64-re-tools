@@ -55,7 +55,6 @@
     "stock-reproducible-run.ts",
     "stock-diagnose.ts",
     "stock-recycle.ts",
-    "anno-d64.ts",
     "anno-cli.ts",
     "anno-symbols.ts",
     "anno-regbits-gen.ts",

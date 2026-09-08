@@ -31,8 +31,10 @@ const die = (m) => { console.error(`error: ${m}`); process.exit(1); };
 // The parameterisation gate must cover EVERY module of the recovery pipeline, not
 // just the ones sitting next to this file. When the six modules moved out of
 // `tools/` into the two skills that use them (2026-08-04), a `HERE`-only scan
-// silently stopped covering `d64-parse.mjs` and `dump-artifacts.mjs` -- a static
-// guard that keeps passing while checking less is worse than one that fails.
+// silently stopped covering the disk-image reader that used to live in the
+// sibling skill's `scripts/` directory (since deleted, Phase 40 plan 40-06)
+// and `dump-artifacts.mjs` -- a static guard that keeps passing while
+// checking less is worse than one that fails.
 // 2026-08-22 (plan 16-01): the second entry used to be built project-root-relative,
 // naming the skills tree's pre-relocation auto-discovery location by hand -- which
 // stopped resolving the moment the skills tree moved to its current source-tree

@@ -134,11 +134,12 @@ const VERB_TO_TOOL = {
 
 // ---------------------------------------------------------------- audit
 //
-// Phase 40, plan 40-04 (PREP-01, D-06). Ports the fakery detector
-// `src/skills/c64-ram-capture/scripts/d64-parse.mjs` carried at
-// `parseDirectory()` (:124-193) onto this skill's own seam-reached
-// capabilities, since `d64-parse.mjs` is deleted in 40-06 and `c1541`
-// becomes the only `.d64` route (40-CONTEXT.md D-04). Composes THREE
+// Phase 40, plan 40-04 (PREP-01, D-06). Ports the fakery detector the
+// skill-side pure-parse module carried at its own `parseDirectory()`
+// (that module -- `src/skills/c64-ram-capture/scripts/`'s own disk-image
+// reader -- deleted in phase 40 plan 40-06) onto this skill's own
+// seam-reached capabilities, now that `c1541` is the only `.d64` route
+// (40-CONTEXT.md D-04). Composes THREE
 // existing capabilities -- one `dir` call for names/block counts, one `bam`
 // call for the per-sector allocation map, and one `entry` call PER NAME for
 // that file's own claimed first track/sector and its directory sector's
@@ -182,8 +183,8 @@ function stripAnsi(text) {
 }
 
 /** The four sector-count zones of a standard 35-track 1541 image -- same
- * table `d64-parse.mjs` (:23-31) used, copied rather than imported since
- * that file is deleted in Phase 40 plan 40-06. */
+ * table the deleted skill-side pure-parse module used, copied rather than
+ * imported since that module is deleted in Phase 40 plan 40-06. */
 export function sectorsPerTrack(track) {
   if (!Number.isInteger(track) || track < 1 || track > 35) return null;
   if (track <= 17) return 21;
@@ -193,8 +194,9 @@ export function sectorsPerTrack(track) {
 }
 
 /** The directory chain's own starting sector on a standard 1541 image --
- * `d64-parse.mjs`'s own default (`{ startTrack = 18, startSector = 1 }`,
- * :124). Seeded into the next-directory visited set BEFORE any entry is
+ * the deleted skill-side pure-parse module's own default
+ * (`{ startTrack = 18, startSector = 1 }`). Seeded into the
+ * next-directory visited set BEFORE any entry is
  * read, so a next-directory pointer that refers back to this sector -- a
  * genuine self-reference, the shape this plan's own corrupt fixture plants
  * -- is caught on the very first entry that reports it. */
@@ -538,8 +540,9 @@ function parseOpts(argv) {
 // dispatch would run this section with the TEST RUNNER's own process.argv
 // (no recognised command) on every import, printing the usage banner and
 // calling process.exit(0) before a single test() call ever registers.
-// Mirrors d64-parse.mjs's own entry-point guard (`resolve(process.argv[1])
-// === fileURLToPath(import.meta.url)`) rather than inventing a second shape.
+// Mirrors the deleted skill-side pure-parse module's own entry-point guard
+// (`resolve(process.argv[1]) === fileURLToPath(import.meta.url)`) rather
+// than inventing a second shape.
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [cmd, ...rest] = process.argv.slice(2);

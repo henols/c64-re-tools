@@ -402,36 +402,6 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
       "basis stays free of the token the enforcing test's Direction 4 scans for.",
   },
   {
-    module: "anno-d64.ts",
-    scope: "discharged",
-    fate: {
-      kind: "renamed",
-      from: "retired-analyser-d64.ts",
-      to: "anno-d64.ts",
-      on: "2026-08-29",
-      why:
-        "1541 disk geometry is not a property of any tool; the verdict is unchanged and only the name moved.",
-    },
-    verdict: "capability",
-    basis: {
-      consumers: [
-        { path: "src/mcp/vice/anno-d64.test.ts", symbol: "sectorsPerTrack", line: 10 },
-      ],
-      requirements: ["SEAM-02"],
-      rationale:
-        "Pure Commodore 64 disk-format knowledge: per-track sector counts, track-and-sector to byte " +
-        "offset arithmetic, the directory walk, and the refusal to treat a non-plain image as one. " +
-        "Nothing in it consults the external analyser, and none of it changes when the substrate " +
-        "changes -- the geometry of a 1541 disk is not a property of any tool.",
-    },
-    extractables: [],
-    note:
-      "One of the four entries whose only requirement anchor is SEAM-02's own enumeration, which is the " +
-      "weakest basis shape in this record. Its skill-facing behaviour -- list the directory and refuse " +
-      "rather than guess which file inside the image to analyse -- is documented at " +
-      "src/skills/c64-program-recon/SKILL.md:359, and that guidance outlives the analyser.",
-  },
-  {
     module: "anno-enum-gen.ts",
     scope: "discharged",
     fate: {
@@ -693,7 +663,8 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     },
     note:
       "CONSUMER-CITATION UPDATE, 2026-08-29 (plan 29-07, D-14). This module dropped from SIX other " +
-      "entries' consumer lists in one commit -- anno-d64.ts (listEntries), anno-enum-gen.ts " +
+      "entries' consumer lists in one commit -- the disk-image directory reader deleted in Phase 40 " +
+      "plan 40-06 (listEntries), anno-enum-gen.ts " +
       "(generateEnums), anno-symbols.ts (exportLabels), anno-verify.ts (verifyProject), " +
       "anno-launch.ts (buildExportAsmArgs) and anno-project.ts (synthesizeProject) -- because the " +
       "six verbs that reached them were removed. Those consumer rows were DELETED rather than " +

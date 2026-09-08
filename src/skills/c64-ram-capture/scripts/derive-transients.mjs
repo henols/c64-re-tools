@@ -64,8 +64,9 @@
 // entry point, a static cross-package import resolves on neither npm-installer
 // route (see `vsf-slice.mjs`'s header for the measured constraint), and
 // `scripts/check-npm-packages.mjs`'s transitive closure walk would fail the
-// pack for one. So this is the `d64-parse.mjs` answer rather than the
-// `vsf-slice.mjs` answer: a second independent implementation of a rule that
+// pack for one. So this is the retired skill-side/MCP-side disk-image-reader
+// pair's own answer (Phase 40, plan 40-06) rather than the `vsf-slice.mjs`
+// answer: a second independent implementation of a rule that
 // is STABLE and TINY -- set membership over differing addresses, with no
 // ranges, no tolerances and no version-sensitive layout anywhere in it. The
 // agreement between the two is not left to trust: `derive-transients.test.mjs`

@@ -9,8 +9,7 @@
 // file, and that is the design.
 //
 // WHY IT INVOKES THE OTHER PACKAGE'S MODULE INSTEAD OF CARRYING A COPY.
-// `src/mcp/vice/anno-d64.ts`'s header records the cross-package constraint as
-// something measured rather than assumed: the MCP server ships as
+// THE CONSTRAINT, MEASURED rather than assumed: the MCP server ships as
 // `@henols/vice-mcp`, whose `files[]` lists only `src/mcp/vice/` contents,
 // while `src/skills/**` ships in the other package (`@henols/c64-re-tools`).
 // A plain `import` from a skill script into the MCP tree resolves on neither
@@ -21,12 +20,15 @@
 // That leaves two answers, and this file takes the second:
 //
 //   (a) a self-contained skill-side script carrying its own copy of the
-//       layout -- the `d64-parse.mjs` / `anno-d64.ts` precedent, which is two
-//       independent copies of the sector-chain walk.
+//       layout -- the retired skill-side/MCP-side disk-image-reader pair's
+//       own precedent (Phase 40 plan 40-06, two independent copies of the
+//       sector-chain walk, both deleted once the c1541 host-tool seam took
+//       over their one job).
 //   (b) a CLI entry point on the MCP-side module, which the skill invokes.
 //
-// (b), because the two cases are not alike. `d64-parse.mjs`'s duplicate is of
-// a STABLE, PUBLISHED disk format that has not changed in forty years. The
+// (b), because the two cases are not alike. That retired pair's own
+// duplicate was of a STABLE, PUBLISHED disk format that has not changed in
+// forty years. The
 // `.vsf` layout is version-sensitive: a second magic block moved the first
 // module offset, the memory module's body length differs between two module
 // minors that are both in the wild, and this project already had ONE stale

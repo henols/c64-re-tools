@@ -392,12 +392,15 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 //
 // WHY THE ENTRY POINT LIVES HERE AT ALL, rather than in a sibling CLI module:
 // the skill-side wrapper needs a route to this layout knowledge across a
-// package boundary. `anno-d64.ts`'s header records the constraint as measured
-// -- the MCP server ships as one npm package whose `files[]` covers only
-// `src/mcp/vice/`, the skills ship in the other package, and a plain
-// cross-package import resolves on neither installer route. Its own answer
-// was a second, independent copy of a *stable, published* disk format. That
-// answer is wrong for this format: the `.vsf` layout is version-sensitive,
+// package boundary. THE CONSTRAINT, MEASURED: the MCP server ships as one
+// npm package whose `files[]` covers only `src/mcp/vice/`, the skills ship
+// in the other package, and a plain cross-package import resolves on
+// neither installer route. This project's own precedent for that exact
+// constraint (the MCP-side disk-image reader deleted in Phase 40 plan
+// 40-06, once it moved to the seam that now provides its old capability)
+// answered it with a second, independent copy of a *stable, published*
+// disk format. That answer is wrong for this format: the `.vsf` layout is
+// version-sensitive,
 // this file's header documents one already-stale copy of it, and a second
 // copy of the one authoritative reading of a version-sensitive format is
 // exactly the divergence hazard the single-seam convention exists to remove.

@@ -169,7 +169,7 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // gitignored tools/") is wrong: tools/ is a MIXED directory holding both
 // gitignored deployment output (the .sh copies this same file's other tests
 // read straight out of resources/) AND tracked reverse-engineering tooling
-// (d64-parse.mjs, diff-images.mjs, watch-loads.mjs, recovery-schema.mjs,
+// (diff-images.mjs, watch-loads.mjs, recovery-schema.mjs,
 // releases.mjs and their tests) -- a directory-exclusion predicate cannot
 // tell those apart and would pass a gate that should fail. `git ls-files`
 // enumerates TRACKED files instead, which is the right question: deployed

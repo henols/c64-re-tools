@@ -275,8 +275,8 @@ function isSafeManifestCandidate(entry: unknown, targetDir: string): entry is st
  * `resourceEntries()` -- never a directory walk of `installTargetDir(root)`.
  * Before the 2026-09-08 `.c64-re-tools/` consolidation (D-33),
  * `installTargetDir(root)` was `<root>/tools`, a MIXED directory also
- * holding tracked reverse-engineering tooling (d64-parse.mjs,
- * diff-images.mjs, watch-loads.mjs, recovery-schema.mjs, releases.mjs and
+ * holding tracked reverse-engineering tooling (diff-images.mjs,
+ * watch-loads.mjs, recovery-schema.mjs, releases.mjs and
  * their tests) -- this manifest-only candidate set is what kept the prune
  * from ever reaching those tracked files. The deploy target has since moved
  * to `<root>/.c64-re-tools/bin`, no longer shared with that tracked tooling,

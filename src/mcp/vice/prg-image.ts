@@ -36,8 +36,7 @@
 // census) imports `decodeRawData`, `parsePrg` and `flatImageOrigin` for the
 // same three facts on the CLI's route. `scripts/check-npm-packages.mjs` walks
 // that closure over `files[]` and fails the pack the moment a reachable module
-// sits outside the listed set, exactly as `anno-d64.ts`'s own header records
-// for the same reason.
+// sits outside the listed set.
 //
 // CORRECTED 2026-08-30 (WR-07, plan 29-16). This paragraph previously named
 // `anno-cli.ts` as importing `parsePrg` and `flatImageOrigin` and rested the

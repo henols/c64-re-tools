@@ -469,8 +469,9 @@ export interface C1541ChainArgs {
   outDir?: string;
 }
 
-/** Mirrors `extractEntry(image, entryName)` (anno-d64.ts) one-for-one, so
- * 40-06's three live tests re-point with minimal change. */
+/** Mirrors `extractEntry(image, entryName)`, the now-deleted MCP-side
+ * pure-parse module's own signature (Phase 40 plan 40-06), one-for-one --
+ * so that plan's three live tests re-point with minimal change. */
 export interface C1541ReadArgs {
   image: string;
   name: string;
@@ -1613,7 +1614,8 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     }
 
     // request.tool === "c1541.read": the single-file byte-extraction route,
-    // mirroring extractEntry(image, entryName) (anno-d64.ts) one-for-one.
+    // mirroring extractEntry(image, entryName), the now-deleted MCP-side
+    // pure-parse module's own signature (Phase 40 plan 40-06), one-for-one.
     // The produced host path is the child's OWN output argument -- c1541
     // writes it directly, so this tool is deliberately absent from
     // TOOLS_WHOSE_OUTPUT_IS_STDOUT and the existing digest loop picks the

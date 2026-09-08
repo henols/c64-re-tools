@@ -301,17 +301,17 @@ test("pruneResources(): a file present under the deployment target but ABSENT fr
   const root = mkdtempSync(join(tmpdir(), "vice-prune-untracked-"));
   installResources({ root, log: () => {} });
   // Simulate an untracked file placed directly under the deploy target,
-  // never recorded in the installer's own manifest (formerly tools/d64-parse.mjs,
+  // never recorded in the installer's own manifest (formerly tools/diff-images.mjs,
   // tracked reverse-engineering tooling that used to share the pre-D-33 tools/
   // deploy target; the scenario is now synthetic since the deploy target no
   // longer shares a directory with that tooling, but the invariant it proves
   // -- an unmanifested file is never pruned -- is unconditional).
-  const untracked = join(installTargetDir(root), "d64-parse.mjs");
+  const untracked = join(installTargetDir(root), "diff-images.mjs");
   writeFileSync(untracked, "// tracked reverse-engineering tooling, not a deployed resource\n");
 
   const result = pruneResources({ root, log: () => {} });
 
-  assert.ok(!result.pruned.includes("d64-parse.mjs"), "a file absent from the manifest must never be pruned, even though it is not a current resource");
+  assert.ok(!result.pruned.includes("diff-images.mjs"), "a file absent from the manifest must never be pruned, even though it is not a current resource");
   assert.ok(existsSync(untracked), "the untracked, tracked-in-git file must survive the prune untouched");
 });
 
