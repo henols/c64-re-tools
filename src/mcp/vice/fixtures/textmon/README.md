@@ -14,20 +14,25 @@ Read each fixture's own sidecar, never this paragraph alone.
 
 ## Source paths
 
-| Fixture | Case | Captured from | VICE version | Captured at | Asserted by |
-|---|---|---|---|---|---|
-| `access-map-stock.txt` / `.json` | `access-map` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `access-map-fork.txt` / `.json` | `access-map` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `flat-profile-stock.txt` / `.json` | `flat-profile` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `flat-profile-fork.txt` / `.json` | `flat-profile` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `cpu-history-stock.txt` / `.json` | `cpu-history` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `cpu-history-fork.txt` / `.json` | `cpu-history` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `backtrace-stock.txt` / `.json` | `backtrace` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `backtrace-fork.txt` / `.json` | `backtrace` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `register-decode-stock.txt` / `.json` | `register-decode` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `register-decode-fork.txt` / `.json` | `register-decode` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `connect-banner-stock.txt` / `.json` | `connect-banner` | **real capture** — `stock:/usr/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `connect-banner-fork.txt` / `.json` | `connect-banner` | **real capture** — `fork:/usr/local/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+**The "Loader case name" column is exactly `loadTextFixture()`'s `caseName`
+argument** (confirmed against `listTextFixtures()`'s actual output) — it is
+always the command-group name plus a `-stock`/`-fork` suffix. The bare
+command-group name (e.g. `access-map`) is never a valid `caseName` by itself.
+
+| Fixture | Command group | Loader case name | Captured from | VICE version | Captured at | Asserted by |
+|---|---|---|---|---|---|---|
+| `access-map-stock.txt` / `.json` | `access-map` | `access-map-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `access-map-fork.txt` / `.json` | `access-map` | `access-map-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `flat-profile-stock.txt` / `.json` | `flat-profile` | `flat-profile-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `flat-profile-fork.txt` / `.json` | `flat-profile` | `flat-profile-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `cpu-history-stock.txt` / `.json` | `cpu-history` | `cpu-history-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `cpu-history-fork.txt` / `.json` | `cpu-history` | `cpu-history-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `backtrace-stock.txt` / `.json` | `backtrace` | `backtrace-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `backtrace-fork.txt` / `.json` | `backtrace` | `backtrace-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `register-decode-stock.txt` / `.json` | `register-decode` | `register-decode-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `register-decode-fork.txt` / `.json` | `register-decode` | `register-decode-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `connect-banner-stock.txt` / `.json` | `connect-banner` | `connect-banner-stock` | **real capture** — `stock:/usr/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `connect-banner-fork.txt` / `.json` | `connect-banner` | `connect-banner-fork` | **real capture** — `fork:/usr/local/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
 
 **The `capturedFrom` kind token (`stock`/`fork`) is DERIVED, not operator-supplied**
 — unlike the binmon tree's own recorded two-month mislabelling incident
@@ -51,7 +56,7 @@ below).
 The six parseable outputs the next phase's parsers will consume, one payload
 pair per command per binary:
 
-| Case | Command sent | What it captures |
+| Command group | Command sent | What it captures |
 |---|---|---|
 | `access-map` | `memmapshow` | The per-address IO/ROM/RAM access map (all 65536 addresses — ~1.6MB) |
 | `flat-profile` | `prof flat 5` (after `prof on`) | The flat profiler report, top 5 by cycles |
