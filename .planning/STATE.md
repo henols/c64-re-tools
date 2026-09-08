@@ -22,7 +22,7 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-06 at the v0.9.0 milestone open)
+See: .planning/PROJECT.md (updated 2026-09-08 after Phase 40)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
@@ -30,7 +30,8 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Phase 40 — The Three Preprocessing Host Tools, in milestone
+**Current focus:** Phase 41 — The Text Channel, Its Serialization Authority, and
+the Contention Verdict, in milestone
 **v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
 Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
 Phase 38 rather than resetting, with 20/20 requirements mapped and cross-checked
@@ -1395,6 +1396,25 @@ ledger table row below were both updated in the same change as this one.
 
 ### Blockers/Concerns
 
+- **Phase 40 carried items (2026-09-08), none blocking Phase 41.** The phase closed at
+  4/4 verified must-haves after a four-plan gap round (11/11 plans; gap `G-40-1` closed).
+  Three residuals ride forward, all recorded rather than silently inherited. (1) **`IN-01`
+  is acknowledged, not fixed** — `.gitignore`'s new comment asserts "tools/ itself is now
+  vestigial" as a checked fact about the current tree rather than as a test-gated
+  invariant, so a future writer adding a file under `tools/` makes that sentence quietly
+  false with nothing to catch it. Mechanising it means a second census gate, which no
+  Phase 40 requirement asked for; the sibling `.c64-re-tools` literal census DID gain one
+  (`repo-root.test.ts`). (2) **`40-UAT.md` still records `G-40-1` with its original
+  `severity: major` and open gap fields**, which is why `phase.complete` reports
+  "40-UAT.md: has diagnosed gaps". The gap is closed and verified; the UAT artifact was
+  deliberately left as the owner wrote it rather than back-edited from the orchestrator
+  seat, so closing it out belongs to `/gsd-verify-work 40` or `/gsd-audit-uat`. (3) **The
+  live Ghidra symlink guard is opt-in and default-SKIP**, as it must be — there is no
+  devcontainer in this repo and no Ghidra on CI — so the guarantee that a future Ghidra
+  release has not started resolving symlinks holds only when someone runs it with
+  `GHIDRA_HOME` set. It was run for real against 12.1.3 three times during this phase
+  (executor, code reviewer, verifier).
+
 - **Phase 37 carried items (2026-09-05), none blocking Phase 38.** The phase closed at
   5/5 must-haves on the first verification round (8/8 plans across 4 waves). Two residuals
   ride forward, both disclosed rather than silently inherited. (1) **The const-write facts
@@ -1407,9 +1427,18 @@ ledger table row below were both updated in the same change as this one.
   the verifier recorded this as a non-blocking documentation gap, since the tool's own
   `inputSchema` descriptions do document it, so a caller is not misled.
 
-- **Two test-suite facts, both characterised rather than chased (2026-09-05).** The
-  documented floor is 2 failing tests in `anno-register.test.ts` (`STORE-01`/`STORE-06`
-  requirement-id bookkeeping, out of every recent phase's scope). Separately, an
+- **Two test-suite facts, both characterised rather than chased (2026-09-05; floor
+  re-measured 2026-09-08).** The documented floor is now **3 failing tests across 2 files**,
+  not 2 in one: `anno-register.test.ts`'s `DIRECTION 5 (basis integrity)` and its
+  planted-violation control, plus `anno-import.test.ts`'s `annoRegisterEntryFor()` case.
+  Same single cause as before, with a wider id set than the entry originally named — the
+  anno tool register cites `STORE-01`, `STORE-04`, `STORE-06`, `IMP-01`, `IMP-02`,
+  `AUTO-01` and `MCP-04`, none of which are declared in `REQUIREMENTS.md` since the
+  v0.8.0 rewrite archived their milestone. Out of every recent phase's scope, and
+  deliberately NOT "fixed": re-adding closed-milestone ids to `REQUIREMENTS.md` to green
+  the check would falsify the very guard reporting them. Measured at the Phase 40 close
+  with the broker inactive and no worktrees live: 3603 tests, 3589 pass, 3 fail, 6
+  skipped. Separately, an
   intermittent INTER-FILE race was observed three times across this phase's gates:
   `audit-root-args.test.ts`'s `check-skill-tool-coverage` / `check-skill-fork-honesty`
   cases fail with `ENOENT` on a `zz-scratch-*.md` file another test file created and
@@ -2092,7 +2121,7 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T17:59:45.334Z
+Last session: 2026-09-08T18:52:00.000Z
 Stopped at: Phase 40 complete, ready to plan Phase 41
 Resume file: None
 
