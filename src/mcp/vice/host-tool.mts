@@ -2929,8 +2929,23 @@ async function runOracleRun(args: OracleRunArgs, deps: HostToolDeps): Promise<Ho
   // must not import the container-side repo-root.ts, so the two segments are
   // joined directly here -- ".c64-re-tools" and "runs"/"oracle" must stay
   // equal to `join(toolsDir(), "runs", "oracle")`, the same convention
-  // install-resources.ts's installTargetDir() and ghidra-project.mts's runs
-  // root use.
+  // install-resources.ts's installTargetDir() uses.
+  //
+  // CORRECTED 2026-09-08 (gap `G-40-1`; see
+  // .planning/notes/ghidra-dot-path-check-semantics.md): this used to also
+  // name ghidra-project.mts's runs root as following "the same convention",
+  // full stop. That is now true of the PHYSICAL location -- both this
+  // directory and the Ghidra runs root land under the same
+  // `.c64-re-tools/runs/<subdir>` shape -- but it is NOT true of how the
+  // location is REACHED. This scratch directory is joined DIRECTLY, exactly
+  // as written above. The Ghidra runs root is joined the same way
+  // internally (`ghidraRunsRealRoot()`), but Ghidra itself is never handed
+  // that direct path -- it is handed a path through
+  // `ghidraRunsRoot()`'s non-dotted ALIAS HANDLE (`<repoRoot>/c64-re-tools`,
+  // a symlink to `.c64-re-tools`), because Ghidra's own project-location
+  // check refuses a dot-prefixed segment in the path it is handed, while
+  // this scratch directory's caller (this project's own oracle spawn) has no
+  // such refusal and is handed the direct path unchanged.
   const scratchDir = join(repoRootAbs, ".c64-re-tools", "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   try {

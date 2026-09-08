@@ -183,16 +183,76 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
 }
 
 /** The ONE definition of the tool-written root every writer in this codebase
- * derives its location from (D-33, 2026-09-08 clean-break consolidation):
- * `join(repoRoot(...), ".c64-re-tools")`. Six writers that used to scatter
- * their output across five separate gitignored/tracked locations --
- * `.vice-supervisor/` (broker state), `.vice-snapshots/` (VSF snapshots),
- * `.planning/incidents/` (recycle incident records), `tools/` (deployed host
- * launcher scripts), the Ghidra runs directory, and the oracle host-tool's
- * scratch directory -- now all resolve their subdirectory through THIS
- * function rather than joining the top-level literal themselves. The literal
- * string ".c64-re-tools" therefore has exactly one non-comment occurrence in
- * this codebase: the line below.
+ * ultimately derives its location from (D-33, 2026-09-08 clean-break
+ * consolidation): `join(repoRoot(...), ".c64-re-tools")`.
+ *
+ * CORRECTED 2026-09-08 (gap `G-40-1`; see
+ * .planning/notes/ghidra-dot-path-check-semantics.md): this comment used to
+ * claim (a) that the Ghidra runs directory was among the writers resolving
+ * through THIS function, and (b) that the literal string below had exactly
+ * one non-comment occurrence in the codebase. Both were false when written,
+ * and neither was ever measured before being written down. The corrected
+ * picture:
+ *
+ *   - FIVE files call `toolsDir()`/`supervisorDir()` directly, across FOUR
+ *     distinct subdirectories: incident-record.ts (`incidents`),
+ *     stock-paths.ts (`snapshots`), vice-proxy.ts (`bin`, reading back the
+ *     deployed launcher path), and vice.ts + vice-broker-client.ts, both via
+ *     `supervisorDir()` (`supervisor`, the broker state directory -- one
+ *     writer, two readers).
+ *   - FOUR files cannot import this container-side module at all, so each
+ *     joins `".c64-re-tools"` with its own trailing segment(s) directly,
+ *     matching this function's shape by CONVENTION, never by shared code:
+ *     install-resources.ts's `installTargetDir()` (`bin` -- module-cycle
+ *     avoidance, since THIS file's own bottom-of-module call invokes it),
+ *     vice-broker.mts's `parseArgs()` state-dir fallback (`supervisor` --
+ *     host-bound, compiled separately by build.ts), host-tool.mts's
+ *     `oracle.run` scratch directory (`runs/oracle` -- host-bound), and
+ *     ghidra-project.mts's `ghidraRunsRoot()`/`ghidraRunsRealRoot()`
+ *     (`runs/ghidra` -- host-bound, reached through a symlinked alias
+ *     handle, see below). Every one of these four must keep its literal
+ *     equal to `join(toolsDir(...), <same segments>)`, by convention, or the
+ *     two halves of this codebase silently disagree on where the root is.
+ *
+ * The Ghidra runs root is emphatically NOT, and never was, one of the five
+ * files that call this function directly -- it is host-bound
+ * (ghidra-project.mts) and cannot import this file at all.
+ *
+ * The literal string ".c64-re-tools" therefore has exactly 6 non-comment
+ * occurrences in this codebase, across 5 files. repo-root.test.ts's census
+ * gate reads BOTH the count and this file list straight out of this
+ * sentence and the bullet list below -- never duplicated by hand a second
+ * time in the test -- and compares both against the real tree, with a
+ * planted-violation control proving the comparison predicate actually
+ * fires. That is the mechanism that stops this specific claim going false
+ * again (threat `T-40-10-02`):
+ *   - repo-root.ts -- this definition, the line below (1)
+ *   - install-resources.ts -- `installTargetDir()`'s `bin` join (1)
+ *   - vice-broker.mts -- `parseArgs()`'s state-dir fallback, BOTH branches
+ *     of one ternary on the same line (2)
+ *   - ghidra-project.mts -- `GHIDRA_RUNS_HANDLE_TARGET`, the alias handle's
+ *     relative symlink target (1)
+ *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1)
+ *
+ * The Ghidra alias handle: a non-dotted sibling of this root
+ * (`<repoRoot>/c64-re-tools`, no leading dot), a symlink whose RELATIVE
+ * target is this root's own directory name, minted host-side by the broker
+ * at startup (vice-broker.mts) and re-asserted, idempotently, as a
+ * precondition by ghidra-project.mts's `ensureGhidraRunsHandle()` on every
+ * resolve -- refused BY NAME, never repaired, when something unexpected
+ * already sits at the handle path. It exists because Ghidra's own
+ * project-location refusal binds the ABSOLUTIZED path argument it is
+ * handed (`ProjectLocator` calls `java.io.File.getAbsolutePath()`, never
+ * `getCanonicalPath()` -- MEASURED from the class's own bytecode -- so it
+ * absolutizes a relative argument but does not resolve a symlink), so a
+ * tool that refuses a dot-prefixed segment in the path it is HANDED can
+ * still be pointed, indirectly, at bytes that live physically inside this
+ * one root. The superseded method that produced the original overstated
+ * claim was running this project's OWN dot-segment-refusal check
+ * (`hasDotPrefixedSegment()`) against a synthetic string -- which observes
+ * this project, never Ghidra. See
+ * .planning/notes/ghidra-dot-path-check-semantics.md for the full live
+ * measurement against real Ghidra 12.1.3.
  *
  * This is a clean break, not a migration: no code path falls back to any of
  * the five previous locations when the new one is absent, and there is no
