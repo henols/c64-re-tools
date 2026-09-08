@@ -125,3 +125,29 @@ under a dot-prefixed ancestor. A future non-dot-prefixed alias directory
 `.c64-re-tools/runs/ghidra/`) could reunify the two trees, but is not
 attempted here -- scope discipline (D-35 in 40-01-PLAN.md: no new
 retention/reaping/symlink machinery invented in this phase).
+
+## Resolution
+
+**Fixed.** Plan `40-01` (commits `f739b4ff`, `7a8ec1e0`, `aaa03144`).
+
+One owning function, `toolsDir()` in `src/mcp/vice/repo-root.ts`, is the single
+definition of the `.c64-re-tools/` root; `supervisorDir()`, `stock-paths.ts`'s
+snapshot paths, `incident-record.ts`'s `incidentsDir()`, and
+`install-resources.ts`'s `installTargetDir()` all derive from it (or its
+documented two-segment join convention for the host-bound modules that cannot
+import it — `vice-broker.mts`, `host-tool.mts`, `scripts/ensure-mcp-deps.sh`).
+`.gitignore` collapsed from five per-writer stanzas plus twelve per-file deploy
+entries down to one `/.c64-re-tools/` stanza; `host-scripts.test.ts`'s two-way
+parity gate was rewritten from a per-file relation to a directory relation to
+match. Clean break, no back-compat, exactly as scoped: no dual-read, no
+migration shim, no opt-back-in env var.
+
+**The one exception is the addendum above, not a new one**: `runs/ghidra/`
+stayed at `<repoRoot>/tools/ghidra-runs/` for the hard technical reason already
+recorded here — Ghidra's own dot-segment refusal — with the `.gitignore` entries
+for that path kept and simplified rather than deleted.
+
+See `40-01-SUMMARY.md` for the full task-by-task account, including the ten
+pinned-literal test files (outside this plan's own declared file list) that
+needed updating for the move, and the `docs-linerefs.test.ts` citation drift
+this plan's own doc-comment insertion caused and fixed in the same commit.

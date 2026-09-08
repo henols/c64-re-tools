@@ -92,3 +92,27 @@ Constraints to respect:
 
 Suggested vehicle: `/gsd-quick` — two small edits, one build artifact, plus
 tests.
+
+## Resolution
+
+**Fixed.** Plan `40-01` Task 2 (commit `7a8ec1e0`).
+
+- **Hole 1** — `runOracleRun()`'s `mkdirSync(scratchDir, { recursive: true })` moved
+  inside its own `try` (before `spawnHostTool()`), so a full disk or a permission
+  error on the scratch parent now resolves `{ ok: false, reason }` instead of
+  throwing out of `runHostTool()`'s never-throw boundary. Regression-tested via a
+  read-only scratch parent.
+- **Hole 2** — the standalone `host-tool.mjs` CLI's `.then()` gained a `.catch()`
+  mirroring `host-tool-client.ts:419-427`'s already-correct shape, exactly as this
+  todo's own Solution section asked. Since every organic rejection path in
+  `runHostTool()`'s real business logic was found (by exhaustive code reading) to
+  already be guarded by design, the regression test drives the `.catch()` via a
+  documented, env-gated test-only hook (`HOST_TOOL_TEST_FORCE_CLI_REJECT=1`) rather
+  than an organic wire-input trigger — proving the CLI's own plumbing end-to-end
+  through the real compiled artifact without weakening `runHostTool()`'s contract.
+
+`src/mcp/vice/resources/host-tool.mjs` was regenerated via `node build.ts` in the
+same commit, keeping `resources-sync.test.ts` green.
+
+See `40-01-SUMMARY.md` for the full task account; both fixes verified via
+`node --test host-tool.test.ts` (green) and `npm run typecheck` (clean).

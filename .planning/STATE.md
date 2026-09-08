@@ -206,17 +206,25 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **9 open** pending todos (it read 0 at the
-v0.4.0 close; eleven were filed after it, two closed — CR-05 by Phase 34 plan 34-11, and
-the Ghidra one-command decompile-wrapper proposal by Phase 36); the
-suppressed/acknowledged rows are recorded in their own sections.
+The Deferred Items ledger below reads **7 open** pending todos, computed
+directly from the count of files in `.planning/todos/pending/` rather than by
+subtraction from a prior figure (it read 0 at the v0.4.0 close; eleven were
+filed after it). Five were closed before this update — CR-05 by Phase 34 plan
+34-11, and the Ghidra one-command decompile-wrapper proposal by Phase 36 — and
+**Phase 40 plan 40-07 closed three more**: the `host-tool.mts` never-throws
+contract's two holes (`WR-03`), consolidating every tool-written file under
+`.c64-re-tools/`, and the installer's self-ignore gap (resolved as moot by the
+consolidation landing first) — each moved to `.planning/todos/completed/`
+with its own `## Resolution` section, dropping pending 10 → 7 in that plan's
+own commit. The suppressed/acknowledged rows are recorded in their own
+sections.
 
 ## Current Position
 
-Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING
+Phase: 40 (The Three Preprocessing Host Tools) — COMPLETE
 Plan: 7 of 7
-Status: Ready to execute
-Last activity: 2026-09-08 — Completed 40-02-PLAN.md (c1541 over the host-tool seam)
+Status: Phase complete, ready for Phase 41
+Last activity: 2026-09-08 — Completed 40-07-PLAN.md (decisions doc, in-place amendments, `PREP-03` strike, three todo folds)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -229,7 +237,14 @@ in-process async mutex** — both channels connected for the session's lifetime,
 `channel` discriminator kept for bookkeeping only — not the broker lease and not
 the connect-gate. Phase 43's capture step stays concurrent. Verdict and its
 derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
-(`c1541` / `petcat` / `cartconv`) depends on neither the verdict nor the channel.
+(`c1541` / `petcat` — `cartconv` removed from scope 2026-09-08, see
+`docs/phase40-preprocessing-tools-decisions.md`) depended on neither the
+verdict nor the channel, and is now complete: `d64-parse.mjs` and `anno-d64.ts`
+are deleted, `c1541` is the ONE `.d64` route, `petcat.decode` ships with a
+named-decline verdict for computed `SYS` targets, and `.c64-re-tools/` is the
+one root every tool-written file lands under (Ghidra's per-run projects
+excepted, for a hard technical reason). `PREP-01` and `PREP-02` are now
+Complete; `PREP-03` is withdrawn, struck rather than deleted.
 
 ## Performance Metrics
 
@@ -612,6 +627,43 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
+
+- Phase 40 (40-07): the `d64-parse.mjs` → `c1541` supersession decision and the
+  `cartconv`/`PREP-03` removal are both recorded, with measured evidence and
+  accepted costs, in `docs/phase40-preprocessing-tools-decisions.md` — the two
+  locked statements they reverse (ROADMAP.md's Phase 40 success criterion 1;
+  REQUIREMENTS.md's "superseding or deleting the hand-written `.d64` parser"
+  exclusion row) are amended in place with dated riders, never deleted.
+- Phase 40 (40-01, D-33): the `.c64-re-tools/` path consolidation is a clean
+  break with no back-compat by explicit owner decision — no dual-read, no
+  migration shim, no opt-back-in env var; a pre-existing old-layout tree is
+  left alone and any live broker under the old layout must be stopped before
+  upgrading.
+- Phase 40 (40-01/40-02, D-01/D-02): the `host_tool` id set gained six
+  per-capability ids (`c1541.bam`, `c1541.dir`, `c1541.entry`, `c1541.chain`,
+  `c1541.read`, `petcat.decode`) — one id per capability, never per binary and
+  never one batched survey, following `acme.build`/`ghidra.analyze`/
+  `dxa.disassemble`'s existing precedent.
+- Phase 40 (D-09/D-10): the failure oracle for both binaries is a
+  positive-shape check living host-side in the seam — declaring the SHAPE a
+  success output must have, with absence of that shape as the failure —
+  never a negative error-phrase matcher, because both tools were MEASURED to
+  exit `0` on real failures (`c1541` always; `petcat` except on a missing
+  file). Exit status is recorded in the log line and never consulted.
+- Phase 40 (40-03, D-21): `petcat.decode`'s computed-`SYS` case is a **named
+  decline**, not a failure — `ok: true`, `entrypoint: null`, plus a reason
+  naming what was seen (e.g. the literal expression text). This keeps
+  `ok: false` meaning "the tool did not work", distinct from a resolved "no";
+  a required verdict enum was considered and declined as wider than needed.
+- Phase 40 (D-14): version probing for `c1541`/`petcat` was dropped by owner
+  decision even though ROADMAP.md's own Notes bullet asked for it — `c1541
+  --version` is unimplemented. Path resolution and per-call path logging were
+  built instead; a later planner must not re-add version probing on the
+  ROADMAP note's strength alone.
+- Phase 40: the phase closed with a corrected skill total of **nine** (seven at
+  the v0.7.0 close, plus `c64-disk-access` and a `petcat` skill this phase
+  added), and REQUIREMENTS.md's coverage corrected to 19 total / 19 mapped / 0
+  unmapped after `PREP-03`'s removal.
 
 - Phase 40 (40-02): fixed a `resolveWorkspacePath()` edge case where a workspace
   root that resolves to the filesystem root (`/`) was always refused as
@@ -1741,9 +1793,6 @@ regression and not this inheritance.
 | testing | 2026-08-26-back-05-test-fails-deterministically-on-a-live-broker-host | minor | Pending |
 | store | 2026-08-28-phase-28-review-in-02-fsync-portability-on-windows | minor | Pending |
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
-| host-tool | 2026-09-03-wr-03-host-tool-never-throws-contract-has-two-holes | minor | Pending |
-| paths | 2026-09-07-consolidate-all-tool-written-files-under-c64-re-tools | minor | Pending |
-| paths | 2026-09-07-installer-must-self-ignore-its-deployed-tools-in-the-consumer-repo | minor | Pending |
 | testing | 2026-09-07-move-all-tests-into-a-separate-test-folder | minor | Pending |
 | broker | 2026-09-07-remove-pre-warm-launch-vice-on-first-request | minor | Pending |
 

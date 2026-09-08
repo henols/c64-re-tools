@@ -127,3 +127,35 @@ constraint, so a blanket `*` becomes defensible). If this lands first, the
 consolidation moves the generated dotfile along with the rest. Do not merge
 them into one plan — the consolidation is a broad path refactor across six
 seams with pinned test literals, while this is a single new write in one seam.
+
+## Resolution
+
+**Resolved as moot by the consolidation landing first.** Plan `40-01` (commits
+`f739b4ff`, `7a8ec1e0`, `aaa03144`), the same plan that closed the sibling
+"consolidate all tool-written files" todo, took the consolidation route this
+todo's own "Relationship" section named as the simpler order.
+
+`installResources()`'s deployed launcher artifacts (`tools/*.mjs`,
+`vice-launcher.sh`, `.vice-deployed.json`) now land under
+`.c64-re-tools/bin/` instead of the mixed `tools/` directory this todo's whole
+problem statement depended on. `.gitignore` collapsed to a single
+`/.c64-re-tools/` stanza that ignores the **entire root**, not a per-entry
+list — so a consumer gets exactly **one** ignorable directory covering
+everything the plugin writes there, with no enumeration of individual
+deployed files required at all.
+
+This makes the enumeration this todo asked for (a generated, per-entry
+`tools/.gitignore` mirroring `resourceEntries()`) **unnecessary rather than
+delivered**: there is no longer a mixed directory for a per-entry ignore file
+to disambiguate. The three open questions this todo posed (manifest
+membership, whether this repo also deploys the generated file, a detect-only
+alternative) are moot for the same reason — none of them arises once the
+target directory is wholly owned by the plugin and wholly ignored.
+
+The one directory this consolidation did **not** move — `tools/ghidra-runs/`,
+kept at its original location for the hard Ghidra dot-segment reason recorded
+on the sibling todo — was already covered by its own pre-existing
+`.gitignore` entries before this phase, so it does not reopen the problem this
+todo described.
+
+See `40-01-SUMMARY.md` for the full task-by-task account.
