@@ -5,10 +5,10 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Completed 40-07-PLAN.md
+stopped_at: Phase 40 executed and gated — verification returned human_needed, 2 UAT items open
 last_updated: "2026-09-08T12:52:28.443Z"
 last_activity: 2026-09-08
-last_activity_desc: Completed 40-07-PLAN.md (decisions doc, in-place amendments, PREP-03 strike, three todo folds) — Phase 40 complete
+last_activity_desc: Phase 40 executed (7/7), gates run, verification human_needed — 2 UAT items open
 state_head: ed17400a4e5c7e6b75c98a272378f20f5ae243b5
 progress:
   total_phases: 6
@@ -221,9 +221,9 @@ sections.
 
 ## Current Position
 
-Phase: 40 (The Three Preprocessing Host Tools) — EXECUTED, PENDING VERIFICATION
+Phase: 40 (The Three Preprocessing Host Tools) — AWAITING UAT
 Plan: 7 of 7
-Status: All 7 plans executed with SUMMARYs; phase gates and goal verification not yet run
+Status: All 7 plans executed; all phase gates run; verification returned human_needed with 2 owner-judgment items in 40-UAT.md. Run /gsd-verify-work 40.
 Last activity: 2026-09-08 — Completed 40-07-PLAN.md (decisions doc, in-place amendments, `PREP-03` strike, three todo folds)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
