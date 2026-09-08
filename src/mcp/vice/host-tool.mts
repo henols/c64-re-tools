@@ -2570,6 +2570,25 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   // when no candidate matched, which spawnHostTool() treats identically to
   // "no override" (inherits the broker's own environment unchanged).
   const spawnEnv = acmeLib?.path ? { ...process.env, ACME: acmeLib.path } : undefined;
+  // WR-01 (40-REVIEW.md): c1541.read's output file is written by the CHILD
+  // process itself (`-read <name> <outputPath>`), never pre-cleared before
+  // this module's own spawn -- so a colliding slug (two different CBM names
+  // that agree on their first 32 alphanumeric characters) could leave a
+  // PRIOR successful read's bytes at `outputPath`, and a later, genuinely
+  // failing call for the colliding name would then digest that stale file
+  // and report `ok: true`. Best-effort unlink immediately before spawning
+  // removes any stale file so a failed run can never be mistaken for a
+  // fresh success; `force: true` makes a missing file a no-op (never an
+  // ENOENT throw).
+  if (request.tool === "c1541.read") {
+    try {
+      rmSync(built.outputs[0]!, { force: true });
+    } catch {
+      // Best-effort only -- if the unlink itself fails for some other
+      // reason (e.g. permissions), the spawn below proceeds unchanged and
+      // classifyC1541ReadOutput() still digests whatever c1541 produces.
+    }
+  }
   const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv);
   const elapsedMs = Date.now() - startedAt;
 
