@@ -5,11 +5,11 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Completed 40-03-PLAN.md
-last_updated: "2026-09-08T10:15:55.925Z"
+stopped_at: Completed 40-04-PLAN.md
+last_updated: "2026-09-08T11:03:31.928Z"
 last_activity: 2026-09-08
 last_activity_desc: Completed 40-02-PLAN.md (c1541 over the host-tool seam)
-state_head: 564f44d9b70005cd2aa72bc674051f56e7d070b9
+state_head: 6b563ee4eb4085968514c9fc8aee8951e2a16e1e
 progress:
   total_phases: 6
   completed_phases: 1
@@ -214,7 +214,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-09-08 — Completed 40-02-PLAN.md (c1541 over the host-tool seam)
 
@@ -473,6 +473,7 @@ derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
 | Phase 39 P08 | 35min | 2 tasks | 3 files |
 | Phase 40 P01 | 44min | 3 tasks | 36 files |
 | Phase 40 P03 | 40 min | 3 tasks | 10 files |
+| Phase 40 P04 | 50min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -1054,6 +1055,7 @@ Recent decisions affecting current work:
 - [Phase 39]: 39-08: No test guard added to bind the CHAN-01 verdict into Phases 41-44 (D-06, declined a third time in this project's history) -- ROADMAP.md Depends-on lines + Notes plus a STATE.md pointer are the entire enforcement mechanism, edited with scoped line-targeted edits and diffed before commit.
 - [Phase 40]: Phase 40 plan 01: ghidra-project.mts's per-run project directories are exempted from the .c64-re-tools/ path consolidation and stay at tools/ghidra-runs/ -- Ghidra's own dot-segment refusal rejects any ancestor path segment starting with ".", so nesting a project under the dot-prefixed .c64-re-tools/ root would make every ghidra.analyze call fail. Verified directly; documented in ghidra-project.mts, CLAUDE.md, and an addendum on the folded consolidation todo.
 - [Phase 40]: Phase 40 plan 03: petcat.decode ships a host-side handover verdict (entrypoint/entrypointReason) attached only to that tool id's response; FUT-01 (deferred hand-written BASIC-token decoding) lifted by name for the new c64-petcat skill only, since it delivers the capability via the real petcat host tool. — A computed SYS argument must decline by name rather than guess an address (PREP-02); scoping the FUT-01 lift to one named skill keeps every other skill's description policed unchanged.
+- [Phase 40]: Phase 40 plan 04: re-verified c1541's own exit code on a genuine failure and found it is NOT uniform across subcommands on this host's resolved (fork) binary -- -dir/-entry exit 0, -bam/-chain/-read exit 1 -- contradicting host-tool.mts's own general D-11 header comment. All six PREP-04 non-vacuous controls therefore use fake stand-in binaries reproducing the documented worst-case shape (exit 0, declared shape absent) rather than the real, per-subcommand-inconsistent binary, keeping the suite hermetic and CI-safe. Fixed a real pre-existing bug in c1541.mjs: no entry-point guard, so importing it for its pure detector functions executed the CLI dispatch and called process.exit() before any test registered.
 
 ### Pending Todos
 
@@ -2022,8 +2024,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T10:15:55.666Z
-Stopped at: Completed 40-03-PLAN.md
+Last session: 2026-09-08T11:03:31.825Z
+Stopped at: Completed 40-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-01-PLAN.md
