@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Phase 40 executed and gated — verification returned human_needed, 2 UAT items open
-last_updated: "2026-09-08T12:52:28.443Z"
+stopped_at: Completed 40-08-PLAN.md
+last_updated: "2026-09-08T17:05:00.760Z"
 last_activity: 2026-09-08
-last_activity_desc: Completed quick task 260908-m4k — no-auto-install constraint codified in CLAUDE.md + PROJECT.md
-state_head: ed17400a4e5c7e6b75c98a272378f20f5ae243b5
+last_activity_desc: Phase 40 execution started
+state_head: 6b0b76dc92bd40e17d5c0a55ed27adad9baefd43
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 15
-  completed_plans: 14
+  total_plans: 19
+  completed_plans: 16
   percent: 17
 ---
 
@@ -221,10 +221,10 @@ sections.
 
 ## Current Position
 
-Phase: 40 (The Three Preprocessing Host Tools) — AWAITING UAT
-Plan: 7 of 7
-Status: All 7 plans executed; all phase gates run; verification returned human_needed with 2 owner-judgment items in 40-UAT.md. Run /gsd-verify-work 40.
-Last activity: 2026-09-08 - Completed quick task 260908-m4k: no-auto-install constraint codified in CLAUDE.md + PROJECT.md
+Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING (gap closure)
+Plan: 8 of 11
+Status: Plans 40-01..40-08 complete. 40-08 re-pointed the Ghidra runs root onto a symlink handle under the one root (D-33) and closed G-40-1's first half. Executing the remaining three G-40-1 gap-closure plans (40-09..40-11) via /gsd-execute-phase 40 --gaps-only.
+Last activity: 2026-09-08 — Phase 40 plan 40-08 executed (gap closure)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -492,6 +492,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 40 P05 | 55min | 3 tasks | 9 files |
 | Phase 40 P06 | 34min | 3 tasks | 25 files |
 | Phase 40 P07 | 28min | 3 tasks | 7 files |
+| Phase 40 P08 | 20min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1115,6 +1116,7 @@ Recent decisions affecting current work:
 - [Phase 40]: Second carried scratch-fixture site (dxa-seam.test.ts) assessed and left unchanged -- its fixture path is production-fixed with no test-time override; first site (skill-honesty-checks.test.ts) fixed via mkdtempSync + t.after().
 - [Phase 40]: 40-06: Deleted anno-d64.ts and d64-parse.mjs (the two independent 1541 disk-image readers), re-pointing every consumer onto the c1541.* host-tool seam and committing d64-single-route.test.ts as a non-vacuous structural invariant against a second parser reappearing.
 - [Phase 40]: 40-06: Lowered hostpath-consumers.test.ts's hand-pinned ANNO_MODULE_FLOOR 21->20 -- the first lowering it has ever needed -- since anno-d64.ts was one of the counted anno-*.ts production modules and is now deleted.
+- [Phase 40]: Retired GHIDRA_RUNS_DIR_NAME outright (no deprecated alias); ensureGhidraRunsHandle() verifies a handle and NEVER repairs it, refusing by name instead — Plan 40-08 explicitly required no alias; a never-repairing refusal-by-name closes the silent-violation hole (T-40-08-02) where a missing/wrong handle would let recursive mkdir materialise a second, unverified root
 
 ### Pending Todos
 
@@ -2081,8 +2083,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T12:51:47.000Z
-Stopped at: Completed 40-07-PLAN.md — Phase 40 complete (7/7 plans)
+Last session: 2026-09-08T17:05:00.490Z
+Stopped at: Completed 40-08-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
