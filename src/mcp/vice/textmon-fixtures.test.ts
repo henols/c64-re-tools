@@ -204,7 +204,11 @@ test("listTextFixtures: a half-written pair (only a .txt, no .json) is invisible
 
 test("every committed sidecar under fixtures/textmon/ STATES its provenance as a real capture, with a capturedFrom naming the kind and path of the binary that actually answered", () => {
   const cases = listTextFixtures();
-  assert.ok(cases.length >= 6, `expected at least 6 committed cases, got ${cases.length}`);
+  // IN-02 (39-REVIEW.md): tightened from a loose `>= 6` floor to the exact
+  // known committed count (six command groups x two binaries) now that the
+  // batch is committed and its size is known -- a regression that silently
+  // dropped half the batch would previously still have passed this check.
+  assert.equal(cases.length, 12, `expected exactly 12 committed cases (6 command groups x 2 binaries), got ${cases.length}`);
   for (const caseName of cases) {
     const loaded = loadTextFixture(caseName);
     assert.equal(typeof loaded.provenance.synthetic, "boolean", `${caseName}.json must STATE synthetic as a boolean`);
@@ -222,7 +226,11 @@ test("the committed fixture tree contains captures from at least two distinct bi
   const kinds = new Set(cases.map((c) => String(loadTextFixture(c).provenance.capturedFrom).split(":")[0]));
   const paths = new Set(cases.map((c) => String(loadTextFixture(c).provenance.capturedFrom)));
   assert.ok(kinds.size >= 1, "at least one kind must be represented");
-  assert.ok(paths.size >= 2, `expected at least 2 distinct capturedFrom values across committed fixtures, got ${paths.size}`);
+  // IN-02 (39-REVIEW.md): tightened from a loose `>= 2` floor to the exact
+  // known count -- exactly two distinct capturedFrom values (stock and
+  // fork) are committed, and a regression that collapsed both binaries'
+  // paths into one would previously still have passed this check.
+  assert.equal(paths.size, 2, `expected exactly 2 distinct capturedFrom values across committed fixtures, got ${paths.size}`);
 });
 
 test("TEXTMON_FIXTURE_DIR points at the committed fixtures/textmon directory next to this module", () => {
