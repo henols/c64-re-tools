@@ -8,7 +8,7 @@ status: executing
 stopped_at: Phase 40 executed and gated — verification returned human_needed, 2 UAT items open
 last_updated: "2026-09-08T12:52:28.443Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 40 executed (7/7), gates run, verification human_needed — 2 UAT items open
+last_activity_desc: Completed quick task 260908-m4k — no-auto-install constraint codified in CLAUDE.md + PROJECT.md
 state_head: ed17400a4e5c7e6b75c98a272378f20f5ae243b5
 progress:
   total_phases: 6
@@ -224,7 +224,7 @@ sections.
 Phase: 40 (The Three Preprocessing Host Tools) — AWAITING UAT
 Plan: 7 of 7
 Status: All 7 plans executed; all phase gates run; verification returned human_needed with 2 owner-judgment items in 40-UAT.md. Run /gsd-verify-work 40.
-Last activity: 2026-09-08 — Completed 40-07-PLAN.md (decisions doc, in-place amendments, `PREP-03` strike, three todo folds)
+Last activity: 2026-09-08 - Completed quick task 260908-m4k: no-auto-install constraint codified in CLAUDE.md + PROJECT.md
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -1380,6 +1380,7 @@ ledger table row below were both updated in the same change as this one.
 | 260901-qzp | Erase the retired external analyser's name from the whole tree — ~20,200 occurrences across 612 files; retires the removal gate, the attribution chain and the fate-audit subsystem, preserving their non-subject coverage | 2026-09-01 | 09150c8 |  | [260901-qzp-purge-external-analyser-name-from-tree](./quick/260901-qzp-purge-external-analyser-name-from-tree/) |
 | 260902-ech | Strip the 6 unverified chat-artifact citations from `docs/undocumented-opcodes-ghidra.md` (5 carried `utm_source=chatgpt.com`; `[4]` pointed at a third-party VICE fork mirror) — 7 inline markers and 6 link definitions removed, 776 -> 766 lines, the author's own "not yet compiled" caveat preserved | 2026-09-02 | 6749c66 |  | [260902-ech-strip-unverifiable-chatgpt-artifact-cita](./quick/260902-ech-strip-unverifiable-chatgpt-artifact-cita/) |
 | 260902-tkg | Anchor `scripts/package.sh`'s leak guard — `tools/` to the archive root, `node_modules/` at any depth — unblocking the release build, RED on every push since 2026-08-29 on a false positive against nine phase-23 `evidence/tools/` files | 2026-09-02 | 5071e24 |  | [260902-tkg-anchor-tools-leak-guard-to-archive-root](./quick/260902-tkg-anchor-tools-leak-guard-to-archive-root/) |
+| 260908-m4k | Codify the owner's standing no-auto-install constraint for external tools as a `- **Dependency**:` bullet in CLAUDE.md's `### Constraints` list, mirrored byte-identically into `.planning/PROJECT.md` (the GSD-managed block's declared source, so a CLAUDE.md-only edit would have been wiped on the next regeneration). Documents the permitted detect-then-refuse-by-name pattern per tool and names the three deliberate out-of-scope cases (`ensure-mcp-deps.sh`'s own `npm ci`, CI's `apt install acme`, the installer's `--vendor` opt-in). No behavioural change — the tree already complied | 2026-09-08 | 6df87285, 4384ecec |  | [260908-m4k-document-the-no-auto-install-constraint-](./quick/260908-m4k-document-the-no-auto-install-constraint-/) |
 
 ### Blockers/Concerns
 
