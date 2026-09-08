@@ -216,7 +216,7 @@
     {
       "number": "40",
       "name": "The Three Preprocessing Host Tools",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "41",
@@ -244,5 +244,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 40 of 6 · 17% · executing"
   },
-  "updated_at": "2026-09-08T08:52:41.418Z"
+  "updated_at": "2026-09-08T10:15:18.170Z"
 }
