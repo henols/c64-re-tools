@@ -1814,9 +1814,11 @@ test("runHostTool: oracle.run resolves { ok: false } rather than throwing when t
       await withOracleEnv("UNP64", fakePath, async () => {
         const response = await runOracleHostTool({ tool: "oracle.run", args: { source: "input.bin" } }, { repoRoot: dir });
         assert.equal(response.ok, false, "a scratch-directory creation failure must resolve ok:false, never throw out of runHostTool()");
-        if (!response.ok) {
+        if ("tool" in response && response.tool === "oracle.run") {
           assert.equal(typeof response.reason, "string");
           assert.ok((response.reason as string).length > 0);
+        } else if (!response.ok) {
+          assert.fail(`expected the oracle.run-shaped ok:false response, got the generic shape: ${response.message}`);
         }
       });
     } finally {

@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 // of using @ts-expect-error over a declare-module shim in the first place:
 // a self-cancelling signal to remove it, never a silent suppression that
 // outlives its cause.
-import { DEPLOY_MANIFEST_NAME, resourceEntries } from "./install-resources.ts";
+import { DEPLOY_MANIFEST_NAME, resourceEntries, installTargetDir } from "./install-resources.ts";
 
 const execFileP = promisify(execFile);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -103,49 +103,64 @@ test("structural: vice-launcher.sh execs into the node entry point, so signal de
 // parity. A one-way check would let a stale entry survive a deletion (plan
 // 04's removal of vice-pool.sh must be able to shrink the ignore list with
 // it); this gate enforces BOTH directions.
+//
+// REWORKED 2026-09-08 (D-33, plan 40-01): the twelve per-file `/tools/*`
+// entries this gate used to compare against `resourceEntries()` name-for-name
+// collapsed into ONE directory stanza (`/.c64-re-tools/`) when the deploy
+// target moved from `<repoRoot>/tools/` to `<repoRoot>/.c64-re-tools/bin/`
+// (D-33) -- a per-file relation is unexpressible against a single directory
+// line, so per the owner's own instruction this gate is replaced with a
+// relation over the deployed DIRECTORY rather than deleted: direction 1 (every
+// deployed entry resolves under the one ignored deployment directory) and
+// direction 2 (the ignore file names that directory EXACTLY once, so a
+// collapse-gone-wrong that duplicated the stanza per writer still fails
+// here) -- both directions still fail independently, matching the original
+// gate's own two-way discipline.
 // ============================================================================
 
-/** The deployed-path lines in `.gitignore` -- every line under the "deployed
- * copies of src/mcp/vice/resources/" block starts with `/tools/`.
- * Filtering on that prefix (rather than reading the whole file) keeps this
- * gate from tripping on unrelated entries elsewhere in .gitignore
- * (.vice-supervisor/, node_modules/, ...). */
-function deployedIgnoreLines(gitignoreText: string): string[] {
-  return gitignoreText
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("/tools/"));
+/** The literal prefix every deployed artifact's absolute path must fall
+ * under -- `<repoRoot>/.c64-re-tools/` -- derived from a synthetic root via
+ * installTargetDir() rather than hardcoded a second time, so this test
+ * cannot silently drift from install-resources.ts's own definition. */
+function deployedDirPrefix(repoRootAbs: string): string {
+  return join(repoRootAbs, ".c64-re-tools") + "/";
 }
 
-test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + the deploy manifest) are in two-way parity", () => {
+test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + the deploy manifest) are in two-way parity over the deployed DIRECTORY", () => {
   const gitignoreText = readFileSync(join(REPO_ROOT, ".gitignore"), "utf8");
-  const ignoreLines = deployedIgnoreLines(gitignoreText);
-  const ignoreSet = new Set(ignoreLines);
+  const stanzaLines = gitignoreText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line === "/.c64-re-tools/");
 
-  const expectedLines = new Set([
-    ...resourceEntries().map((entry: string) => `/tools/${entry}`),
-    `/tools/${DEPLOY_MANIFEST_NAME}`,
-  ]);
-
-  // Direction 1: every current resource (and the manifest) has an ignore line.
-  for (const expected of expectedLines) {
+  // Direction 1: every current resource (and the manifest) resolves UNDER
+  // the one ignored deployment directory -- an artifact whose deploy target
+  // drifted outside .c64-re-tools/ would show up as untracked noise in git
+  // status in whatever commit happens to follow.
+  const syntheticRoot = "/synthetic-repo-root-for-parity-check";
+  const target = installTargetDir(syntheticRoot);
+  const prefix = deployedDirPrefix(syntheticRoot);
+  const deployedNames = [...resourceEntries(), DEPLOY_MANIFEST_NAME];
+  assert.ok(deployedNames.length > 0, "expected at least one deployed resource plus the manifest -- otherwise this direction is vacuous");
+  for (const name of deployedNames) {
+    const absolute = join(target, name);
     assert.ok(
-      ignoreSet.has(expected),
-      `.gitignore is missing ${expected} -- a deployed artifact with no ignore line shows up as ` +
-        "untracked noise in git status in whatever commit happens to follow. Add the line to " +
-        ".gitignore's deployed-path block (see install-resources.ts's resourceEntries())."
+      absolute === prefix.slice(0, -1) || absolute.startsWith(prefix),
+      `${name} resolves to ${absolute}, which does not fall under the single ignored deployment directory ` +
+        `${prefix} -- a deployed artifact outside it shows up as untracked noise in git status. ` +
+        "Check installTargetDir() (install-resources.ts) and .gitignore's single stanza agree."
     );
   }
 
-  // Direction 2: every deployed-path ignore line still names something real.
-  for (const line of ignoreLines) {
-    assert.ok(
-      expectedLines.has(line),
-      `.gitignore's ${line} names neither a current resources/ entry nor the deployment manifest -- ` +
-        "a stale ignore line silently outlives the deleted artifact it used to cover. Remove it from " +
-        ".gitignore's deployed-path block."
-    );
-  }
+  // Direction 2: the ignore file names the deployment directory EXACTLY
+  // ONCE -- a stale per-writer duplicate (the shape this gate replaced)
+  // would survive a naive re-collapse and silently reintroduce the mess
+  // this stanza exists to prevent.
+  assert.equal(
+    stanzaLines.length,
+    1,
+    `.gitignore must name the single tool-written root's deployment stanza (/.c64-re-tools/) exactly once; found ${stanzaLines.length}`
+  );
 });
 
 // ============================================================================

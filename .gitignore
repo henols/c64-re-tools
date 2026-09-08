@@ -2,51 +2,38 @@
 # the consumer side by scripts/ensure-mcp-deps.sh; never committed.
 node_modules/
 
-# Host-side VICE supervisor/broker runtime state, written under the resolved
-# project root at runtime (see src/mcp/vice/repo-root.ts).
-/.vice-supervisor/
-/.vice-supervisor.bak-*/
-
-# Host-side RAM snapshots written by the vice_snapshot_save tool, at the path
-# snapshotPathFor() builds in src/mcp/vice/stock-paths.ts
-# (<repoRoot>/.vice-snapshots/<name>.vsf plus its .json sidecar). This is a
-# *product* byproduct, not a project artifact: any consumer of that tool gets
-# these files written into their own repo, which is why it is ignored here
-# rather than something to clean up once.
-/.vice-snapshots/
+# The single tool-written root (D-33, 2026-09-08 clean break): every writer
+# in this codebase that used to scatter its output across five separate
+# locations (.vice-supervisor/, .vice-snapshots/, tools/*.mjs +
+# vice-launcher.sh + .vice-deployed.json, .planning/incidents/, and
+# ensure-mcp-deps.sh's lockfile stamp) now lands under ONE directory:
+# supervisor/ (broker state), snapshots/ (.vsf + .json sidecars), bin/
+# (deployed host launcher artifacts), runs/oracle/ (oracle.run scratch),
+# incidents/ (recycle incident records), cache/ (the lockfile stamp). A
+# consumer of this package gets exactly one ignorable directory and one
+# directory to delete, rather than five. This is a clean break: no dual-read
+# of the previous locations, no migration shim -- a pre-existing old-layout
+# tree (.vice-supervisor/, .vice-snapshots/, tools/*.mjs, .planning/incidents/)
+# is simply left on disk, unread, for the user to delete by hand.
+#
+# NOT covered by this stanza: ghidra.analyze's per-run project directories.
+# ghidra-project.mts's own GHIDRA_RUNS_DIR_NAME doc comment records why --
+# Ghidra's own dot-segment refusal (hasDotPrefixedSegment()) rejects EVERY
+# ancestor path segment starting with ".", so nesting a Ghidra project under
+# this dot-prefixed root would make every ghidra.analyze call fail. It stays
+# at tools/ghidra-runs/, ignored separately below.
+/.c64-re-tools/
 
 # Host-side per-run Ghidra project directories, written by ghidra.analyze's
 # resolveGhidraProject() at <repoRoot>/tools/ghidra-runs/<runId>
-# (src/mcp/vice/ghidra-project.mts, SEAM-04). A *product* byproduct exactly
-# like /.vice-snapshots/ above -- any consumer of the ghidra.analyze tool
-# gets these written into their own repo. Deliberately written WITHOUT a
-# leading slash (still anchored to this directory per git's own middle-slash
-# rule) so host-scripts.test.ts's `/tools/` deployed-artifact parity scan --
-# which matches on the literal `/tools/` prefix -- does not mistake this
-# runtime-scratch entry for a deployed resources/ artifact needing a
-# resourceEntries() counterpart; it is not one.
-tools/ghidra-runs/
-
-# tools/ is the generated, gitignored deployment target the MCP installer
-# copies resources/ into on first tool call (see install-resources.ts). Listed
-# per-file (not a blanket /tools/) so host-scripts.test.ts's two-way parity gate
-# with resourceEntries() holds; tools/ only ever holds these deployed artifacts.
-/tools/backend-detect.mjs
-/tools/broker-control.mjs
-/tools/broker-epoch.mjs
-/tools/broker-kill.mjs
-/tools/broker-launch.mjs
-/tools/broker-state.mjs
-/tools/container-guard.mjs
-/tools/ghidra-project.mjs
-/tools/host-tool.mjs
-/tools/vice-broker.mjs
-/tools/vice-launcher.sh
-/tools/.vice-deployed.json
-
-# Lockfile stamp written by ensure-mcp-deps.sh when CLAUDE_PLUGIN_DATA is
-# unavailable and it falls back to stamping next to the source.
-mcp-deps.lock.sha256
+# (src/mcp/vice/ghidra-project.mts, SEAM-04) -- deliberately NOT part of the
+# single tool-written root's stanza above (see that stanza's own comment).
+# A *product* byproduct: any consumer of the ghidra.analyze tool gets these written into
+# their own repo. tools/ itself is NOT blanket-ignored -- it also holds
+# tracked reverse-engineering tooling (d64-parse.mjs, diff-images.mjs,
+# watch-loads.mjs, recovery-schema.mjs, releases.mjs and their tests) that
+# must stay tracked, so only this one scratch subdirectory is ignored.
+/tools/ghidra-runs/
 
 # build artifacts from scripts/package.sh
 dist/
@@ -151,7 +138,7 @@ dist/
 # src/mcp/vice/ specifically. resolveGhidraProject() computes
 # <repoRoot>/tools/ghidra-runs/<runId>, and a test (or the compile gate)
 # that passes src/mcp/vice as its own repo root would otherwise leave
-# untracked run directories there -- the existing tools/ghidra-runs/ entry
-# above carries a slash in the middle, so per git's own anchoring rule it
-# only matches at the repository root, not at this nested location.
+# untracked run directories there -- the /tools/ghidra-runs/ entry above is
+# LEADING-slash anchored to the repository root only, so per git's own
+# anchoring rule it does not match this nested location.
 /src/mcp/vice/tools/ghidra-runs/

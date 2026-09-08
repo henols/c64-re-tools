@@ -2957,10 +2957,10 @@ test("containerize: a host-rooted grant epoch_file is rewritten so epoch drift i
     server = standIn.server;
     const stubPort = await listenOn(server, eth0);
 
-    // A REAL epoch file inside the container workspace's own .vice-supervisor/
-    // (gitignored) -- proves the path inverse is actually READ, not merely
-    // computed.
-    epochContainerDir = join(repoRoot(), ".vice-supervisor", `test-ccn-${process.pid}-${Date.now()}`);
+    // A REAL epoch file inside the container workspace's own
+    // .c64-re-tools/supervisor/ (gitignored) -- proves the path inverse is
+    // actually READ, not merely computed.
+    epochContainerDir = join(repoRoot(), ".c64-re-tools", "supervisor", `test-ccn-${process.pid}-${Date.now()}`);
     mkdirSync(epochContainerDir, { recursive: true });
     const epochContainerFile = join(epochContainerDir, "epoch.json");
     writeFileSync(epochContainerFile, JSON.stringify({ epoch: 1, pid: 4242, spawned_at: new Date().toISOString() }), "utf8");
