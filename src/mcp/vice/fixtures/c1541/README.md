@@ -119,3 +119,51 @@ captured text for its OWN declared success shape, and an error transcript
 carries none of them (no `blocks free` trailer, no per-sector allocation
 row, no `T/S:` line, no arrow pair) — so the classifier oracle, not the
 exit code, is what turns this into a refusal.
+
+## `not-a-disk.d64` (36 bytes, 40-04, D-12)
+
+The planted-failure fixture for `PREP-04`'s six per-tool non-vacuous
+controls (`host-tool-oracle.test.ts`). Plain ASCII text, deterministically
+authored (a fixed string, never random bytes), named with the disk-image
+extension but carrying no disk-image structure at all:
+
+```
+$ printf 'This is not a valid C64 disk image.\n' > not-a-disk.d64
+```
+
+sha256: `30dffc7e21a2e7c8a962356114fde605bb36dea37a7940aafecfc875ea459981`
+
+**MEASURED live 2026-09-08, both installed builds** (`/usr/bin/c1541`
+VICE 3.9 stock, `/usr/local/bin/c1541` VICE 3.10 fork — the fork is the one
+`findSiblingBinary()` actually resolves on this host, since
+`backend-detect.mts` resolves the fork's `x64sc` first):
+
+- `-attach not-a-disk.d64 -dir` and `-attach not-a-disk.d64 -entry <name>`
+  both print `cannot open file ...` / `OPENCBM: opening dynamic library
+  libopencbm.so failed!` / `Error - Import GCR: Unknown GCR image version
+  110.` / `Unknown disk image ...` and **exit 0** on BOTH builds — a
+  genuinely non-vacuous planted failure for `c1541.dir`/`c1541.entry`
+  against the REAL binary: a naive exit-status check would (wrongly) pass
+  this, while the classifier correctly refuses (no `blocks free` trailer,
+  no `T/S:` line).
+- `-attach not-a-disk.d64 -bam`, `-chain <name>` and `-read <name> <out>`
+  all **exit 1** on the fork build (a distinct `illegal value` / `error:
+  cannot read` internal path, not the same "cannot open" path `-dir`/
+  `-entry` take) — this makes a naive exit-status check ALSO refuse, an
+  AGREEING pair, which would be a vacuous control if this fixture were run
+  against the real binary for those three ids. The same nonexistent-path
+  input produces the identical split (0/0/1/1/1 across dir/entry/bam/chain/
+  read). On the STOCK build, `-entry`/`-chain`/`-read` against this fixture
+  additionally **SEGFAULT** (exit 139) — a real, separate crash this plan
+  does not fix and which the shipped seam never reaches in practice (it only
+  ever resolves the sibling of whichever `x64sc` is ALREADY resolved, the
+  fork build on every host measured this session).
+- Because of this split, `host-tool-oracle.test.ts`'s six two-directional
+  controls run against a FAKE, controllable stand-in for ALL SIX tool ids
+  (never the real binary) reproducing the "exit 0, declared shape absent"
+  text this file documents above for `-dir`/`-entry` — the general shape
+  `c1541`'s own header comment in `host-tool.mts` states for "c1541's own
+  exit status ... 0 even on a genuine failure", and the one a different
+  VICE build could realise for `-bam`/`-chain`/`-read` too. The real,
+  installed binary's own split exit codes are recorded here as the honest,
+  measured record of what THIS host's build actually does today.

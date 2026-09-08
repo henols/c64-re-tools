@@ -96,3 +96,30 @@ re-confirmed live this session. `petcat.decode`'s three-branch handover
 verdict (`host-tool.mts`) is tested against both fixtures: the literal one
 resolves to a numeric entry point (`2064`), and this one declines by name,
 quoting the unresolved expression.
+
+## `not-basic.prg` (64 bytes, 40-04, D-12)
+
+The planted-failure fixture for `PREP-04`'s `petcat.decode` non-vacuous
+control (`host-tool-oracle.test.ts`). 64 deterministic non-BASIC bytes
+(never random output, so the committed digest is stable) — byte `i` is
+`(i*7+3) mod 256`:
+
+```
+$ python3 -c "open('not-basic.prg','wb').write(bytes([(i*7+3)%256 for i in range(64)]))"
+```
+
+sha256: `39e3d7b6b5d075d37d053ad89b24b41bef4f3c29760c84447cab3f3be1882241`
+
+**MEASURED live 2026-09-08** (`/usr/local/bin/petcat`, VICE 3.10, and
+independently re-confirmed against `/usr/bin/petcat` VICE 3.9 stock — both
+builds agree): `petcat -2 not-basic.prg` prints a banner line **without**
+the `==<hex>==` address form (`;not-basic.prg {stop}{$0a}{down}...`, PETSCII
+control-code noise, never a recognised BASIC line) and **exits 0** — this
+IS the planted-failure input `classifyPetcatDecodeOutput()` must refuse
+while a naive exit-status check would (wrongly) pass it, precisely the
+non-vacuous control D-12 requires. Do NOT use a nonexistent path instead:
+it exits 1, on which the exit-status-only predicate would ALSO refuse,
+making the control vacuous. Do NOT use a zero-byte file: it produces a
+well-formed banner the shape oracle accepts (the `PREP-04` empty-input
+edge, covered separately by the handover verdict's no-handover-instruction
+branch, not by this fixture).
