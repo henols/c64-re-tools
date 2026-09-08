@@ -1,7 +1,14 @@
 #!/usr/bin/env node
-// Mechanical check behind Phase 5's success criterion 5: "running each of the
-// six skills' documented tool calls against the stock backend produces no
-// unadvertised-tool failure except for the tools proven unrecoverable."
+// Mechanical check behind Phase 5's success criterion 5 (paraphrased here on
+// purpose -- the criterion's own wording named a skill count that is already
+// stale prose, contradicted by a plain directory listing): running every
+// skill's documented tool calls against the stock backend produces no
+// unadvertised-tool failure except for the tools proven unrecoverable. This
+// script itself never pins a count: it scans every skill directory carrying
+// a SKILL.md, derived from the tree at run time (`topLevelSkillDirs()`
+// below), so the covered set grows or shrinks with the tree with no edit
+// needed here. The skill count Phase 5 wrote against was 6 (2026-08-17); the
+// tree carries 9 as of 2026-09-08 (Phase 40).
 //
 // Before this script existed, the skills-versus-manifest analysis behind the
 // 2026-08-17 scope cut (see ROADMAP.md "Cut from scope") was done BY HAND --

@@ -65,8 +65,13 @@
  * Jaccard.
  *
  * MEASURED, NOT CHOSEN. 19-RESEARCH.md section 4.3 scored all 55 unordered
- * pairs over this project's six skills plus all five upstream the external analyser
- * analyze procedures, using exactly the normalisation below:
+ * pairs over this project's skill inventory as it stood at Phase 19 (6
+ * skills, 2026-08-24) plus all five upstream the external analyser analyze
+ * procedures, using exactly the normalisation below. The inventory has grown
+ * since (9 skills as of 2026-09-08, Phase 40) -- the pair count and the
+ * measured scores below are that one dated measurement, not a live assertion
+ * about today's skill count; `realCorpus()`'s own callers derive the current
+ * count from the tree at run time, never from this comment.
  *
  *   - The clean project inventory's observed CEILING was 0.250, from
  *     `c64-program-recon` :: `c64-provenance-diff` ("reverse engineer a C64
