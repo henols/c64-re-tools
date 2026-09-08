@@ -36,8 +36,8 @@ ABSOLUTE PATH of the binary that actually answered (`probe-harness.mjs`'s
 `viceKind()`), never from an environment variable or a hand-typed string.
 
 Each `.txt` is the raw response bytes exactly as received over the text-monitor
-TCP socket — including both the entry-echo prompt and the final exit prompt the
-stock monitor frames every reply with (see "Framing" below) — terminator
+TCP socket — always including the final exit prompt, and additionally the
+entry-echo prompt for `memmapshow` only (see "Framing" below) — terminator
 included, with no trimming, re-wrapping or decoding. Each `.json` sidecar
 carries exactly the five required keys `capturedFrom`, `viceVersion`,
 `capturedAt`, `command`, `synthetic` (mirroring
@@ -71,13 +71,23 @@ binaries rather than stock alone, and commits it as a fixture rather than only
 a prose note: a parser build against this batch must not assume a banner
 exists to skip over.
 
-## Framing: every reply is entry-echo, then output, then exit-prompt
+## Framing: every reply ends with an exit-prompt; a leading entry-echo is command-dependent
 
-**Not previously documented anywhere in this project.** The stock text
-monitor's true reply framing for any command is **three parts**: an immediate
-echo of the current halted PC as a `(C:$xxxx) ` prompt (written before the
-command has actually executed), then the command's own output, then a second,
-final `(C:$xxxx) ` prompt once the monitor returns to its input-wait state.
+**Not previously documented anywhere in this project, and corrected here after
+CR-01 (`39-REVIEW.md`) found the original wording overgeneralized from a
+single case.** Every committed reply ends with a second `(C:$xxxx) ` prompt
+once the monitor returns to its input-wait state — that part holds for all
+twelve payloads. A *leading* entry-echo of the same form, written before the
+command has actually executed, was observed in this batch **only** for
+`memmapshow` (`access-map-{stock,fork}.txt`, 2 occurrences of `(C:$xxxx)` each
+— entry-echo plus exit-prompt). The other five committed pairs (`backtrace`,
+`cpu-history`, `flat-profile`, `register-decode` — 1 occurrence each, the
+trailing exit-prompt only) begin directly with the command's own output, and
+`connect-banner` (0 occurrences, both binaries) carries neither — it is the
+pre-prompt banner, captured before any command is sent (see "The empty
+banner" above). A parser must not assume every command reply is prefixed with
+an entry-echo prompt.
+
 For a command slow enough to compute (`memmapshow`, scanning all 65536
 addresses), the entry-echo and the rest of the reply routinely arrive as
 **separate TCP segments** — measured live while building the capture script:
