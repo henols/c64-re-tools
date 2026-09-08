@@ -162,6 +162,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Task 2 adds the remaining four `c1541.*` capabilities
 // (bam/entry/chain/read). Every one of the SAME seven synchronized edit
 // sites named above applies to EACH of the five.
+// Phase 40, plan 40-03 (PREP-02, D-21..D-24): "petcat.decode" is the twelfth
+// member -- detokenizes a BASIC stub and resolves its own machine-code
+// handover point (a literal `SYS` argument) when the listing has one. The
+// SAME seven synchronized edit sites named above apply.
 export type HostToolId =
   | "acme.build"
   | "ghidra.analyze"
@@ -173,7 +177,8 @@ export type HostToolId =
   | "c1541.dir"
   | "c1541.entry"
   | "c1541.chain"
-  | "c1541.read";
+  | "c1541.read"
+  | "petcat.decode";
 
 export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
   "acme.build",
@@ -187,6 +192,7 @@ export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
   "c1541.entry",
   "c1541.chain",
   "c1541.read",
+  "petcat.decode",
 ]);
 
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
@@ -271,6 +277,11 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
     "c1541.entry": Object.freeze(["image", "name", "outDir"]),
     "c1541.chain": Object.freeze(["image", "name", "outDir"]),
     "c1541.read": Object.freeze(["image", "name", "outDir"]),
+    // Phase 40, plan 40-03 (PREP-02, D-24): no dialect key here or anywhere
+    // else in this module -- the BASIC dialect is a fixed literal inside
+    // buildHostToolArgv()'s own petcat.decode branch, never a wire field. A
+    // caller has no way to request one, let alone a wrong one.
+    "petcat.decode": Object.freeze(["image", "outDir"]),
   }),
 );
 
@@ -330,6 +341,10 @@ export const HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<HostToolId, readonly strin
     "c1541.entry": Object.freeze(["image", "outDir"]),
     "c1541.chain": Object.freeze(["image", "outDir"]),
     "c1541.read": Object.freeze(["image", "outDir"]),
+    // Phase 40, plan 40-03 (PREP-02): both of `petcat.decode`'s accepted
+    // keys are path-bearing -- there is no non-path key at all, so its own
+    // HOST_TOOL_ARG_KEYS_REMAINDER entry (host-tool.test.ts) is empty.
+    "petcat.decode": Object.freeze(["image", "outDir"]),
   }),
 );
 
@@ -462,6 +477,17 @@ export interface C1541ReadArgs {
   outDir?: string;
 }
 
+/** Phase 40, plan 40-03 (PREP-02, D-24). `image` is the BASIC program
+ * `petcat` detokenizes; `outDir` defaults to `dirname(imagePath)` exactly as
+ * `dxa.disassemble`'s own default does. There is deliberately NO dialect
+ * field here -- the BASIC dialect is fixed server-side, inside
+ * `buildHostToolArgv()`'s own branch below; a caller cannot select, and
+ * cannot even see, one on the wire. */
+export interface PetcatDecodeArgs {
+  image: string;
+  outDir?: string;
+}
+
 export type HostToolRequest =
   | { tool: "acme.build"; args: AcmeBuildArgs }
   | { tool: "ghidra.analyze"; args: GhidraAnalyzeArgs }
@@ -473,7 +499,8 @@ export type HostToolRequest =
   | { tool: "c1541.dir"; args: C1541DirArgs }
   | { tool: "c1541.entry"; args: C1541EntryArgs }
   | { tool: "c1541.chain"; args: C1541ChainArgs }
-  | { tool: "c1541.read"; args: C1541ReadArgs };
+  | { tool: "c1541.read"; args: C1541ReadArgs }
+  | { tool: "petcat.decode"; args: PetcatDecodeArgs };
 
 export type NormaliseHostToolRequestResult = { ok: true; request: HostToolRequest } | { ok: false; message: string };
 
@@ -887,7 +914,25 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
     return { ok: true, request: { tool, args } };
   }
 
-  // Unreachable while HOST_TOOL_IDS has exactly eleven members -- kept so a
+  if (tool === "petcat.decode") {
+    const image = argsObj.image;
+    if (typeof image !== "string" || image === "") {
+      return { ok: false, message: `host_tool "petcat.decode" requires a non-empty string "image"; got ${describe(image)}` };
+    }
+    const args: PetcatDecodeArgs = { image };
+
+    if ("outDir" in argsObj) {
+      const outDir = argsObj.outDir;
+      if (typeof outDir !== "string" || outDir === "") {
+        return { ok: false, message: `host_tool "petcat.decode" args.outDir must be a non-empty string; got ${describe(outDir)}` };
+      }
+      args.outDir = outDir;
+    }
+
+    return { ok: true, request: { tool, args } };
+  }
+
+  // Unreachable while HOST_TOOL_IDS has exactly twelve members -- kept so a
   // future tool added to HOST_TOOL_IDS without a matching narrowing arm
   // fails loudly here rather than silently returning an under-typed request.
   return { ok: false, message: `normaliseHostToolRequest: no narrowing arm for tool "${tool}"` };
@@ -1206,12 +1251,27 @@ export interface ResolvedC1541Paths {
   outDirPath: string;
 }
 
+/** Phase 40, plan 40-03 (PREP-02): the resolved fields `petcat.decode`'s own
+ * `buildHostToolArgv()` branch needs. `imagePath` is resolved through
+ * `resolveWorkspacePath()` -- the SAME site `acme.build`'s `source` uses;
+ * `outDirPath` defaults to `dirname(imagePath)` exactly as
+ * `dxa.disassemble`'s own default does. A separate interface from
+ * `ResolvedC1541Paths`, even though the shape is identical today -- mirrors
+ * `C1541BamArgs`/`C1541DirArgs`'s own precedent of one interface per tool
+ * even where fields overlap, so a future divergence is a one-interface edit,
+ * never a shared-type refactor. */
+export interface ResolvedPetcatDecodePaths {
+  imagePath: string;
+  outDirPath: string;
+}
+
 export type ResolvedHostToolPaths =
   | ResolvedAcmeBuildPaths
   | ResolvedGhidraAnalyzePaths
   | ResolvedDxaDisassemblePaths
   | ResolvedGhidraInstallExtensionPaths
-  | ResolvedC1541Paths;
+  | ResolvedC1541Paths
+  | ResolvedPetcatDecodePaths;
 
 export type BuildHostToolArgvResult =
   | { ok: true; toolPath: string; argv: string[]; outputs: string[] }
@@ -1562,6 +1622,41 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     return { ok: true, toolPath: c1541Path, argv: ["-attach", imagePath, "-read", name, outputPath], outputs: [outputPath] };
   }
 
+  if (request.tool === "petcat.decode") {
+    const { imagePath, outDirPath } = resolved as ResolvedPetcatDecodePaths;
+
+    // D-13/D-15, same mechanism c1541.* already use above: resolved as a
+    // SIBLING of whichever x64sc backend-detect.mts already resolved, never
+    // a bare-name spawn, with a logged $PATH-fallback warning.
+    const petcatFound = findSiblingBinary("petcat", resolvedBackend().binPath, log);
+    if (petcatFound.path === null) {
+      return {
+        ok: false,
+        message: `host_tool "petcat.decode" refuses: "petcat" does not exist (tried: ${petcatFound.tried.join(", ")})`,
+      };
+    }
+    const petcatPath = petcatFound.path;
+
+    // D-24: the BASIC dialect is a FIXED literal here, server-side -- "-2"
+    // (BASIC V2.0, every stock C64's own dialect), first in argv, ahead of
+    // the resolved image path LAST. There is no wire field that selects it
+    // (HOST_TOOL_ARG_KEYS["petcat.decode"] carries no such key), nothing
+    // validates it, and no caller can request a different one.
+    const argv: string[] = ["-2", imagePath];
+
+    // A-03-style: petcat has no output-file option for a plain decode --
+    // every listing line is printed to its own stdout (MEASURED, this
+    // plan's own scratch runs against both committed fixtures, see
+    // fixtures/petcat/README.md). The seam captures stdout and writes it to
+    // this single outputs[] path, then digests the FILE -- never petcat's
+    // own exit status, which is 0 even on garbage input (D-11, MEASURED)
+    // and therefore never the pass/fail signal for a listing.
+    const imageStem = basename(imagePath).replace(/\.[^./]+$/, "");
+    const listingPath = join(outDirPath, `${imageStem}.bas.txt`);
+
+    return { ok: true, toolPath: petcatPath, argv, outputs: [listingPath] };
+  }
+
   return { ok: false, message: `buildHostToolArgv: no argv builder for tool "${(request as { tool: string }).tool}"` };
 }
 
@@ -1648,6 +1743,15 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     "c1541.entry": DEFAULT_HOST_TOOL_TIMEOUT_MS,
     "c1541.chain": DEFAULT_HOST_TOOL_TIMEOUT_MS,
     "c1541.read": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    // Phase 40, plan 40-03: DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a
+    // measurement rather than a round guess -- `petcat -2` completed in
+    // 1-2ms wall-clock against both committed fixtures (MEASURED, this
+    // plan's own scratch run), a >10000x headroom against this 20s ceiling.
+    // host-tool-client.ts's request-deadline table gains NO entry for this
+    // tool, for the same reason c1541.dir's own comment above states:
+    // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
+    // value.
+    "petcat.decode": DEFAULT_HOST_TOOL_TIMEOUT_MS,
   }),
 );
 
@@ -1694,6 +1798,20 @@ export type HostToolResponse =
       results: HostToolFileResult[];
       stderrTail: string;
     }
+  // Phase 40, plan 40-03 (D-21, D-22): petcat.decode's response carries the
+  // SAME five base fields every other tool above does, PLUS two fields
+  // present ONLY on this id's own responses -- never merged into the shared
+  // arm above, which every other tool id's own response-key-set assertion
+  // (dxa-seam.test.ts, host-tool.test.ts) depends on staying exactly five.
+  | {
+      ok: true;
+      tool: "petcat.decode";
+      exitStatus: number | null;
+      results: HostToolFileResult[];
+      stderrTail: string;
+      entrypoint: number | null;
+      entrypointReason: string;
+    }
   | { ok: false; message: string }
   | { ok: true; tool: "oracle.probe"; available: boolean; command: string | null; version: string | null; reason: string | null }
   | { ok: boolean; tool: "oracle.run"; stdout: string; reason: string | null };
@@ -1713,7 +1831,17 @@ export interface HostToolDeps {
  * argv passes the produced host path as the child's own output argument
  * (`-read <name> <outputPath>`), so the child writes that file itself and
  * the existing digest loop picks it up unchanged. */
-const TOOLS_WHOSE_OUTPUT_IS_STDOUT: ReadonlySet<HostToolId> = new Set(["dxa.disassemble", "c1541.bam", "c1541.dir", "c1541.entry", "c1541.chain"]);
+const TOOLS_WHOSE_OUTPUT_IS_STDOUT: ReadonlySet<HostToolId> = new Set([
+  "dxa.disassemble",
+  "c1541.bam",
+  "c1541.dir",
+  "c1541.entry",
+  "c1541.chain",
+  // Phase 40, plan 40-03: petcat.decode has no output-file option for a
+  // plain decode -- every listing line is printed to its own stdout,
+  // exactly like dxa.disassemble/c1541.* above.
+  "petcat.decode",
+]);
 
 /** Phase 40, plan 40-02 (Task 2): the byte cap this module's c1541.bam/
  * c1541.entry/c1541.chain classifiers apply to the captured text BEFORE
@@ -1780,6 +1908,12 @@ export const HOST_TOOL_OUTPUT_CLASSIFIERS: Readonly<Record<HostToolId, HostToolO
     // text, since c1541.read is absent from TOOLS_WHOSE_OUTPUT_IS_STDOUT
     // (the child writes its own output file).
     "c1541.read": ((ctx: { results: readonly HostToolFileResult[] }) => classifyC1541ReadOutput(ctx.results)) as HostToolOutputClassifier,
+    // Declared shape (D-09, MEASURED against both committed fixtures): the
+    // leading banner line petcat -2 prints for a recognised BASIC program,
+    // `;<path> ==<hex>==`. MEASURED also: petcat exits 0 on garbage input
+    // (D-11) and its output for a truly non-BASIC file carries no such
+    // banner at all -- confirmed live against 64 random bytes this plan.
+    "petcat.decode": ((ctx: { stdout: string }) => classifyPetcatDecodeOutput(ctx.stdout)) as HostToolOutputClassifier,
   }),
 );
 
@@ -1840,6 +1974,61 @@ export function classifyC1541ReadOutput(results: readonly HostToolFileResult[]):
       results.length === 1 ? ` (byteLength ${results[0]!.byteLength})` : ""
     }`,
   };
+}
+
+/** The declared success shape for petcat.decode's captured stdout: the
+ * leading banner line `petcat -2` prints for a recognised BASIC program,
+ * `;<path> ==<hex>==` (MEASURED against both committed fixtures --
+ * `;.../basic-stub.prg ==0801==`, `;.../computed-sys.prg ==0801==`).
+ * Absence of it means the file was not recognised as a BASIC program at
+ * all -- MEASURED against 64 random bytes, whose captured output carries a
+ * leading `;<path> ` but never the `==<hex>==` pair that follows it for a
+ * real BASIC program. petcat exits 0 either way (D-11) -- this classifier,
+ * not the exit code, is what decides success here. */
+export function classifyPetcatDecodeOutput(stdout: string): { ok: true } | { ok: false; reason: string } {
+  if (/;\S+\s+==[0-9a-fA-F]+==/.test(stdout)) return { ok: true };
+  return {
+    ok: false,
+    reason: `petcat.decode: captured stdout carries no ";<path> ==<hex>==" banner -- the file was not recognised as a BASIC program -- got: ${describe(tailBytes(stdout, 512))}`,
+  };
+}
+
+/** Phase 40, plan 40-03 (PREP-02, D-21, D-22): parses `petcat -2`'s own
+ * detokenized BASIC listing for the program's own machine-code handover
+ * instruction (`SYS`). Pure and total -- never throws -- reading ONLY the
+ * classifier-accepted captured stdout, called host-side immediately after
+ * the classifier above accepts. Three cases, ALL successes (D-21) --
+ * `ok: false` is reserved for the classifier's own shape refusal above,
+ * never for an unresolved SYS argument:
+ *   - an all-decimal-digit argument resolves to a numeric entry point,
+ *     named by the BASIC line it came from (the literal fast path);
+ *   - anything else is a named decline quoting the unresolved expression
+ *     verbatim, so a reader sees exactly what could not be resolved (the
+ *     computed case, D-23's own fixture);
+ *   - no SYS token at all is a named decline saying so.
+ * Matches the FIRST BASIC line whose statement (immediately after the line
+ * number) is the `sys` keyword -- petcat's own detokenized output always
+ * prints a line as `<blanks><line number> <statement>`, MEASURED against
+ * both committed fixtures (fixtures/dxa/basic-stub.prg, "10 sys2064";
+ * fixtures/petcat/computed-sys.prg, "10 sys peek(43)+256*peek(44)"). */
+export function derivePetcatEntrypoint(detokenizedText: string): { entrypoint: number | null; entrypointReason: string } {
+  for (const line of detokenizedText.split(/\r?\n/)) {
+    const m = line.match(/^\s*(\d+)\s+sys\s*(\S.*?)\s*$/i);
+    if (!m) continue;
+    const basicLine = m[1];
+    const argument = m[2]!;
+    if (/^\d+$/.test(argument)) {
+      return {
+        entrypoint: Number(argument),
+        entrypointReason: `literal SYS argument on BASIC line ${basicLine}: sys${argument}`,
+      };
+    }
+    return {
+      entrypoint: null,
+      entrypointReason: `SYS argument on BASIC line ${basicLine} is not a literal decimal value and cannot be resolved to an address: sys ${argument}`,
+    };
+  }
+  return { entrypoint: null, entrypointReason: "the listing contains no handover instruction" };
 }
 
 /** Digests one produced output file: byte size from a filesystem stat, sha256
@@ -2328,14 +2517,16 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
 
     built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName });
   } else {
-    // request.tool is one of the five c1541.* ids (Phase 40, plan 40-02).
-    // `image` resolved through the SAME resolveWorkspacePath() site every
-    // other tool's path argument uses; `outDir` defaults to
-    // dirname(imagePath) exactly as dxa.disassemble's own default does.
-    // `name` (entry/chain/read) is NOT resolved here -- it is a validated,
-    // non-path CBM filename/glob, read straight from request.args by
+    // request.tool is one of the five c1541.* ids (Phase 40, plan 40-02) or
+    // petcat.decode (Phase 40, plan 40-03) -- every remaining id resolves
+    // the SAME two fields, so this one branch covers all six. `image`
+    // resolved through the SAME resolveWorkspacePath() site every other
+    // tool's path argument uses; `outDir` defaults to dirname(imagePath)
+    // exactly as dxa.disassemble's own default does. `name` (c1541.entry/
+    // chain/read only) is NOT resolved here -- it is a validated, non-path
+    // CBM filename/glob, read straight from request.args by
     // buildHostToolArgv() (mirrors ghidra.analyze's own processor/runId
-    // split).
+    // split); petcat.decode has no such field at all.
     const imageResolved = resolveWorkspacePath(repoRootAbs, request.args.image);
     if (!imageResolved.ok) return { ok: false, message: imageResolved.message };
 
@@ -2457,6 +2648,15 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
     }
   }
 
+  // Phase 40, plan 40-03 (D-21, D-22): petcat.decode's handover verdict,
+  // computed HOST-SIDE immediately after the classifier above accepts and
+  // before the response envelope below is constructed. All three cases
+  // (literal/computed/no-SYS-token) are successes (D-21) -- the classifier's
+  // own shape refusal above is the only `ok: false` this tool ever reports;
+  // conflating the two would make PREP-04's failure oracle and PREP-02's
+  // decline indistinguishable.
+  const petcatVerdict = request.tool === "petcat.decode" ? derivePetcatEntrypoint(spawnResult.stdout) : null;
+
   // acme.build only: ACME's own "for <...> includes..." complaint names no
   // directory it tried -- append a note line (in the plain, non-MSVC shape
   // acme.mjs's own parseDiagnostics() already treats as a "note" entry)
@@ -2467,6 +2667,28 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   let stderrText = spawnResult.stderr;
   if (acmeLib && /ACME.*environment variable/i.test(stderrText)) {
     stderrText += `\nfor <...> includes, set $ACME to the directory holding ${ACME_LIB_MARKER} (looked in: ${acmeLib.tried.join(", ")})`;
+  }
+
+  // Phase 40, plan 40-03: the two verdict fields attach ONLY to
+  // petcat.decode's own response, never to the shared envelope below -- every
+  // other tool id's response key set is byte-for-byte what it was before
+  // this plan (dxa-seam.test.ts's own exact-key-set assertion is the
+  // committed guard on that).
+  if (request.tool === "petcat.decode") {
+    // Non-null by construction: petcatVerdict was computed from THIS SAME
+    // `request.tool === "petcat.decode"` check above; TypeScript cannot
+    // correlate the two independent expressions, so the assertion is
+    // narrowing-only, never a runtime risk.
+    const verdict = petcatVerdict!;
+    return {
+      ok: true,
+      tool: "petcat.decode",
+      exitStatus: spawnResult.exitCode,
+      results,
+      stderrTail: tailBytes(stderrText, STDERR_TAIL_CAP_BYTES),
+      entrypoint: verdict.entrypoint,
+      entrypointReason: verdict.entrypointReason,
+    };
   }
 
   return {

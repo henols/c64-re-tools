@@ -118,6 +118,28 @@ const runOracleHostTool = runHostTool as unknown as (
   | { ok: false; message: string }
 >;
 
+/** Phase 40, plan 40-03: a SEPARATELY-typed alias to the SAME runtime
+ * function, mirroring runOracleHostTool's own precedent above --
+ * petcat.decode's response carries two fields (entrypoint/entrypointReason)
+ * no other tool id's response does, so widening runHostTool's own generic
+ * return type to include them would let every OTHER tool's response satisfy
+ * a narrowing check against those fields too. */
+const runPetcatHostTool = runHostTool as unknown as (
+  raw: unknown,
+  deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+) => Promise<
+  | {
+      ok: true;
+      tool: "petcat.decode";
+      exitStatus: number | null;
+      results: Array<{ path: string; sha256: string; byteLength: number }>;
+      stderrTail: string;
+      entrypoint: number | null;
+      entrypointReason: string;
+    }
+  | { ok: false; message: string }
+>;
+
 // --------------------------------------------------------------- test helpers
 
 // 34-10 Task 3: wrapped in realpathSync, the same one-line addition
@@ -1887,6 +1909,10 @@ const HOST_TOOL_ARG_KEYS_REMAINDER: Readonly<Record<string, readonly string[]>> 
   "c1541.entry": Object.freeze(["name"]),
   "c1541.chain": Object.freeze(["name"]),
   "c1541.read": Object.freeze(["name"]),
+  // Phase 40, plan 40-03: `petcat.decode` accepts only path-bearing keys
+  // (image, outDir) -- no dialect key exists at all (D-24) -- so its own
+  // remainder is empty.
+  "petcat.decode": Object.freeze([]),
 };
 
 /** A minimal, otherwise-valid `args` object per tool -- just enough for
@@ -1919,6 +1945,7 @@ const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string,
   "c1541.entry": () => ({ image: "x.d64", name: "basicstub" }),
   "c1541.chain": () => ({ image: "x.d64", name: "basicstub" }),
   "c1541.read": () => ({ image: "x.d64", name: "basicstub" }),
+  "petcat.decode": () => ({ image: "x.prg" }),
 };
 
 /** The include list needs a single-element ARRAY where every other declared
@@ -1967,7 +1994,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
   // ghidra.analyze gains one more declared path key (dataRangesPath).
   // Phase 40, plan 40-02 raised it from 17 to 27: the five new c1541.* ids
   // each declare two path-bearing keys (image, outDir) -- 17 + 10 = 27.
-  assert.equal(totalDeclared, 27, "the declared path-key total across all tools must be 27 -- a different count means a key was added or dropped without updating this census");
+  // Phase 40, plan 40-03 raised it from 27 to 29: petcat.decode declares the
+  // same two path-bearing keys (image, outDir) -- 27 + 2 = 29.
+  assert.equal(totalDeclared, 29, "the declared path-key total across all tools must be 29 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -2002,8 +2031,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       // three new path keys); Phase 37, plan 37-08 raised it from 16 to 17
       // (ghidra.analyze's one new path key, dataRangesPath). Phase 40,
       // plan 40-02 raised it from 17 to 27 (the five c1541.* ids' own
-      // image/outDir pairs).
-      assert.equal(totalDeclared, 27, "sanity: the declared path-key total must still be 27");
+      // image/outDir pairs). Phase 40, plan 40-03 raised it from 27 to 29
+      // (petcat.decode's own image/outDir pair).
+      assert.equal(totalDeclared, 29, "sanity: the declared path-key total must still be 29");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {
@@ -2213,19 +2243,31 @@ test("CLI entry point: HOST_TOOL_TEST_FORCE_CLI_REJECT=1 forces runHostTool() to
 // assertion (mirrors dxa-seam.test.ts's own), and the hyphen-leading-name
 // refusal case.
 //
-// c1541 has NO env-var override for its own location (D-13/D-14/D-15:
-// resolution is ONLY sibling-of-x64sc or a $PATH walk, deliberately, never
-// a configurable override this test could point elsewhere directly). These
-// tests redirect the SIBLING probe instead, by pointing VICE_BIN at a
-// throwaway file whose own directory holds a fake, controllable c1541
-// stand-in. VICE_BACKEND=fork takes resolvedBackend()'s own UN-MEMOISED
+// Phase 40, plan 40-03 (Task 2): coverage for petcat.decode joins it in the
+// SAME fake-binary directory below (a fake "petcat" alongside the fake
+// "c1541", both siblings of the SAME fake x64sc) -- one directory, one
+// VICE_BIN redirection, both binaries resolved by findSiblingBinary() the
+// same way. `petcat` has no live host dependency in CI any more than c1541
+// does (40-RESEARCH.md's own CI survey: only `acme` is apt-installed) -- the
+// fake stand-in keeps this suite hermetic; the real binary was used live,
+// this plan's own session, to author fixtures/petcat/'s committed pair and
+// confirm the exact verdict wording these tests assert (see
+// fixtures/petcat/README.md).
+//
+// c1541/petcat have NO env-var override of their own location (D-13/D-14/
+// D-15: resolution is ONLY sibling-of-x64sc or a $PATH walk, deliberately,
+// never a configurable override this test could point elsewhere directly).
+// These tests redirect the SIBLING probe instead, by pointing VICE_BIN at a
+// throwaway file whose own directory holds fake, controllable c1541/petcat
+// stand-ins. VICE_BACKEND=fork takes resolvedBackend()'s own UN-MEMOISED
 // override branch (backend-detect.mts), which re-reads VICE_BIN fresh on
 // every call -- so this redirection survives that module's own
 // module-level memo. findSiblingBinary()'s OWN per-binary-name memo
 // (host-tool.mts) is shared across every test in THIS file, so every
-// c1541.* case below must use the SAME fake -- created once, at module
-// scope, since no earlier test in this file ever exercises a c1541.* tool
-// (the first call therefore determines the memo for the rest of the run).
+// c1541.*/petcat.decode case below must use the SAME fakes -- created once,
+// at module scope, since no earlier test in this file ever exercises either
+// tool (the first call therefore determines the memo for the rest of the
+// run).
 // ---------------------------------------------------------------------------
 
 const FAKE_C1541_DIR = mkdtempSync(join(tmpdir(), "host-tool-fake-c1541-"));
@@ -2259,6 +2301,41 @@ writeFileSync(
 );
 chmodSync(FAKE_C1541_PATH, 0o755);
 
+// Phase 40, plan 40-03 (Task 2): the fake petcat stand-in -- driven by the
+// requested image's own BASENAME (never its bytes; the fixture files this
+// suite writes for this branch are throwaway placeholders), so one fake
+// binary covers all four cases this plan's classifier/verdict logic must
+// handle: the literal fast path, the computed decline, the no-SYS-token
+// decline, and the not-a-BASIC-program shape failure. Output shapes
+// (banner, line format) MEASURED live against the real petcat this plan's
+// own session, recorded in fixtures/petcat/README.md.
+const FAKE_PETCAT_PATH = join(FAKE_C1541_DIR, "petcat");
+writeFileSync(
+  FAKE_PETCAT_PATH,
+  [
+    "#!/usr/bin/env node",
+    "const argv = process.argv.slice(2);",
+    "const imagePath = argv[argv.length - 1];",
+    'const base = (imagePath ?? "").split("/").pop() ?? "";',
+    'if (base.includes("basic-stub")) {',
+    "  console.log(`;${imagePath} ==0801==`);",
+    '  console.log("   10 sys2064");',
+    '} else if (base.includes("computed-sys")) {',
+    "  console.log(`;${imagePath} ==0801==`);",
+    '  console.log("   10 sys peek(43)+256*peek(44)");',
+    '} else if (base.includes("nosys")) {',
+    "  console.log(`;${imagePath} ==0801==`);",
+    "  console.log('   10 print \"hi\"');",
+    "} else {",
+    "  console.log(`;${imagePath} garbage-not-a-basic-program`);",
+    "}",
+    "process.exit(0);",
+    "",
+  ].join("\n"),
+  "utf8",
+);
+chmodSync(FAKE_PETCAT_PATH, 0o755);
+
 async function withFakeC1541<T>(fn: () => Promise<T> | T): Promise<T> {
   const previousBackend = process.env.VICE_BACKEND;
   const previousBin = process.env.VICE_BIN;
@@ -2283,7 +2360,7 @@ test("HOST_TOOL_OUTPUT_CLASSIFIERS: every HOST_TOOL_IDS member has an own proper
   const nonNullIds = HOST_TOOL_IDS.filter((tool) => HOST_TOOL_OUTPUT_CLASSIFIERS[tool] !== null)
     .slice()
     .sort();
-  const expectedNonNullIds = ["c1541.bam", "c1541.chain", "c1541.dir", "c1541.entry", "c1541.read"].sort();
+  const expectedNonNullIds = ["c1541.bam", "c1541.chain", "c1541.dir", "c1541.entry", "c1541.read", "petcat.decode"].sort();
   assert.deepEqual(
     nonNullIds,
     expectedNonNullIds,
@@ -2339,4 +2416,78 @@ test('c1541.chain: args.name beginning with "-" is refused BY NAME, and no child
       "runHostTool() emits exactly one log line per ATTEMPTED invocation and none for a request refused before a child is spawned -- zero log lines proves no child was ever invoked",
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 40, plan 40-03 (Task 2): petcat.decode -- the three handover-verdict
+// branches (literal/computed/no-SYS-token), all `ok: true`, plus the
+// not-a-BASIC-program shape failure (`ok: false`). Uses the fake petcat
+// stand-in above, driven by the requested image's own basename.
+// ---------------------------------------------------------------------------
+
+test("petcat.decode: a literal SYS argument resolves to a numeric entry point named by its source line, and the response key set is exactly the five base fields plus the two verdict fields", async () => {
+  await withFakeC1541(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "basic-stub.prg"), "tiny\n", "utf8");
+      const response = await runPetcatHostTool({ tool: "petcat.decode", args: { image: "basic-stub.prg" } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : response.message);
+      if (!response.ok) return;
+      assert.equal(response.entrypoint, 2064, "a literal all-decimal SYS argument must resolve to that exact number");
+      assert.match(response.entrypointReason, /line 10/, "the reason must name the BASIC line the SYS argument came from");
+      assert.deepEqual(
+        Object.keys(response).sort(),
+        ["entrypoint", "entrypointReason", "exitStatus", "ok", "results", "stderrTail", "tool"].sort(),
+        "petcat.decode's response key set must be exactly the five base fields plus the two verdict fields",
+      );
+    });
+  });
+});
+
+test("petcat.decode: a computed SYS argument declines by name -- null entry point, reason quoting the expression verbatim -- never a guessed address", async () => {
+  await withFakeC1541(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "computed-sys.prg"), "tiny\n", "utf8");
+      const response = await runPetcatHostTool({ tool: "petcat.decode", args: { image: "computed-sys.prg" } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : response.message);
+      if (!response.ok) return;
+      assert.equal(response.entrypoint, null, "a computed SYS argument must never resolve to a guessed address");
+      assert.match(
+        response.entrypointReason,
+        /peek\(43\)\+256\*peek\(44\)/,
+        "the reason must quote the unresolved expression verbatim, so a reader sees exactly what could not be resolved",
+      );
+    });
+  });
+});
+
+test('petcat.decode: no SYS token at all declines with "the listing contains no handover instruction"', async () => {
+  await withFakeC1541(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "nosys.prg"), "tiny\n", "utf8");
+      const response = await runPetcatHostTool({ tool: "petcat.decode", args: { image: "nosys.prg" } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : response.message);
+      if (!response.ok) return;
+      assert.equal(response.entrypoint, null);
+      assert.match(response.entrypointReason, /no handover instruction/);
+    });
+  });
+});
+
+test("petcat.decode: a file with no recognised banner fails the shape oracle -- ok: false, never a verdict", async () => {
+  await withFakeC1541(async () => {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "garbage.bin"), "tiny\n", "utf8");
+      const response = await runPetcatHostTool({ tool: "petcat.decode", args: { image: "garbage.bin" } }, { repoRoot: dir });
+      assert.equal(response.ok, false, "a file the classifier does not recognise as a BASIC program must never produce a verdict");
+      if (!response.ok) assert.match(response.message, /BASIC program/i);
+    });
+  });
+});
+
+test('petcat.decode: no wire-selectable BASIC dialect field -- HOST_TOOL_ARG_KEYS["petcat.decode"] carries no dialect key', () => {
+  assert.equal(
+    HOST_TOOL_ARG_KEYS["petcat.decode"]!.some((key) => /dialect/i.test(key)),
+    false,
+    'HOST_TOOL_ARG_KEYS["petcat.decode"] must carry no dialect-selecting key -- the dialect is fixed server-side (D-24)',
+  );
 });
