@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
 status: executing
-stopped_at: Completed 40-09-PLAN.md
-last_updated: "2026-09-08T17:34:52.531Z"
+stopped_at: Completed 40-10-PLAN.md
+last_updated: "2026-09-08T17:59:56.955Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 40 execution started
-state_head: 06c5f25d1678772bb963ff4c52a65d643430d8b9
+state_head: de0ec6889a79d5f4e0a090d0f5c74198f0097537
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 17
 ---
 
@@ -222,9 +222,9 @@ sections.
 ## Current Position
 
 Phase: 40 (The Three Preprocessing Host Tools) — EXECUTING (gap closure)
-Plan: 9 of 11
-Status: Plans 40-01..40-09 complete. 40-08 re-pointed the Ghidra runs root onto a symlink handle under the one root (D-33) and closed G-40-1's first half; 40-09 closed the second half (R2, the broker mints the handle), migrated remaining consumers, guarded the handle-only invariant, and added a live guard against real Ghidra 12.1.3. Executing the remaining two G-40-1 gap-closure plans (40-10..40-11) via /gsd-execute-phase 40 --gaps-only.
-Last activity: 2026-09-08 — Phase 40 plan 40-09 executed (gap closure)
+Plan: 10 of 11
+Status: Plans 40-01..40-10 complete. 40-08 re-pointed the Ghidra runs root onto a symlink handle under the one root (D-33) and closed G-40-1's first half; 40-09 closed the second half (R2, the broker mints the handle), migrated remaining consumers, guarded the handle-only invariant, and added a live guard against real Ghidra 12.1.3; 40-10 corrected the record itself -- five forward-looking documents (repo-root.ts's census now test-gated, host-tool.mts, CLAUDE.md, A-07) say what is true, four historical records plus one addendum carry dated superseding notes. Executing the remaining G-40-1 gap-closure plan (40-11, bookkeeping) via /gsd-execute-phase 40 --gaps-only.
+Last activity: 2026-09-08 — Phase 40 plan 40-10 executed (gap closure)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -494,6 +494,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 40 P07 | 28min | 3 tasks | 7 files |
 | Phase 40 P08 | 20min | 3 tasks | 6 files |
 | Phase 40 P09 | 55min | 3 tasks | 5 files |
+| Phase 40 P10 | ~25min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -1119,6 +1120,7 @@ Recent decisions affecting current work:
 - [Phase 40]: 40-06: Lowered hostpath-consumers.test.ts's hand-pinned ANNO_MODULE_FLOOR 21->20 -- the first lowering it has ever needed -- since anno-d64.ts was one of the counted anno-*.ts production modules and is now deleted.
 - [Phase 40]: Retired GHIDRA_RUNS_DIR_NAME outright (no deprecated alias); ensureGhidraRunsHandle() verifies a handle and NEVER repairs it, refusing by name instead — Plan 40-08 explicitly required no alias; a never-repairing refusal-by-name closes the silent-violation hole (T-40-08-02) where a missing/wrong handle would let recursive mkdir materialise a second, unverified root
 - [Phase 40]: Plan 40-09's live-Ghidra guard drives resolveGhidraProject() directly and spawns analyzeHeadless without -deleteProject for its positive half, rather than the full ghidra.analyze seam — Production's buildAnalyzeHeadlessArgv() always emits -deleteProject, which deletes exactly the artifacts the guard needs to inspect (MEASURED live); the handle is still minted by the real code under test
+- [Phase 40]: Census 'occurrence' defined as a non-comment source LINE holding the double-quoted literal, matched by repo-root.test.ts's new gate against the comment's own enumerated claim — Matches the original comment's own 'the line below' framing; a per-regex-match count would have double-counted vice-broker.mts's one line using the literal twice
 
 ### Pending Todos
 
@@ -2085,8 +2087,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T17:34:52.288Z
-Stopped at: Completed 40-09-PLAN.md
+Last session: 2026-09-08T17:59:45.334Z
+Stopped at: Completed 40-10-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
