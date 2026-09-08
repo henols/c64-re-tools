@@ -8,7 +8,7 @@
 //
 // Every test here drives installResources()/ensureResourcesInstalled()
 // against a SYNTHETIC temp root (mkdtempSync) so no test ever writes into
-// the real repo's tools/ -- matching vice-pool.test.mjs's own existing
+// the real repo's .c64-re-tools/bin/ -- matching vice-pool.test.mjs's own existing
 // temp-directory idiom. Nothing here imports vice-pool.mjs or
 // vice-session.mjs.
 import { test } from "node:test";
@@ -65,7 +65,7 @@ test("RESOURCES_DIR (quick-260731-p8a, path-anchor regression): points at the MO
   assert.ok(entries.includes("vice-launcher.sh"), "expected vice-launcher.sh (plan 01) to be a tracked resource");
 });
 
-test("installResources(): install-when-missing -- every file under resources/ lands at <root>/tools/<same relative path>", () => {
+test("installResources(): install-when-missing -- every file under resources/ lands at <root>/.c64-re-tools/bin/<same relative path>", () => {
   const root = mkdtempSync(join(tmpdir(), "vice-install-missing-"));
   const entries = resourceEntries();
   const result = installResources({ root, log: () => {} });
@@ -192,7 +192,7 @@ test("ensureResourcesInstalled(): fire-once-per-process -- calling it twice in o
     import { existsSync, rmSync } from "node:fs";
     import { join } from "node:path";
     const root = ${JSON.stringify(root)};
-    const target = join(root, "tools", "vice-broker.mjs");
+    const target = join(root, ".c64-re-tools", "bin", "vice-broker.mjs");
     ensureResourcesInstalled({ root });
     console.log("first:" + existsSync(target));
     rmSync(target);
@@ -241,7 +241,7 @@ test("installResources(): never throws when the target root is unwritable -- it 
 // -- the delete half installResources() never had (RESEARCH.md's Runtime
 // State Inventory). Every test below drives a SYNTHETIC temp root, same
 // idiom as the rest of this file; nothing here ever touches the real repo's
-// tools/.
+// .c64-re-tools/bin/.
 // ============================================================================
 
 test("readDeployManifest(): a missing, malformed, or shape-wrong manifest reads as an empty list -- never throws (T-01.6-13)", () => {
@@ -297,11 +297,15 @@ test("pruneResources(): a manifest entry naming a file no longer in resources/ i
   assert.ok(existsSync(survivor), "a still-current resource must never be touched by the prune");
 });
 
-test("pruneResources(): a file present under the deployment target but ABSENT from the manifest is left untouched -- this is what protects tracked reverse-engineering tooling sharing tools/", () => {
+test("pruneResources(): a file present under the deployment target but ABSENT from the manifest is left untouched -- before the 2026-09-08 .c64-re-tools/ consolidation this protected tracked reverse-engineering tooling sharing tools/ with the deploy target; the manifest-only discipline is kept unconditionally even now that the deploy target has moved", () => {
   const root = mkdtempSync(join(tmpdir(), "vice-prune-untracked-"));
   installResources({ root, log: () => {} });
-  // Simulate tools/d64-parse.mjs: tracked reverse-engineering tooling this
-  // installer never deployed and never recorded in its own manifest.
+  // Simulate an untracked file placed directly under the deploy target,
+  // never recorded in the installer's own manifest (formerly tools/d64-parse.mjs,
+  // tracked reverse-engineering tooling that used to share the pre-D-33 tools/
+  // deploy target; the scenario is now synthetic since the deploy target no
+  // longer shares a directory with that tooling, but the invariant it proves
+  // -- an unmanifested file is never pruned -- is unconditional).
   const untracked = join(installTargetDir(root), "d64-parse.mjs");
   writeFileSync(untracked, "// tracked reverse-engineering tooling, not a deployed resource\n");
 

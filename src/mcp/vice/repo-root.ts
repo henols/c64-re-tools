@@ -182,11 +182,35 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
   return resolve(from, "..", "..", "..");
 }
 
+/** The ONE definition of the tool-written root every writer in this codebase
+ * derives its location from (D-33, 2026-09-08 clean-break consolidation):
+ * `join(repoRoot(...), ".c64-re-tools")`. Six writers that used to scatter
+ * their output across five separate gitignored/tracked locations --
+ * `.vice-supervisor/` (broker state), `.vice-snapshots/` (VSF snapshots),
+ * `.planning/incidents/` (recycle incident records), `tools/` (deployed host
+ * launcher scripts), the Ghidra runs directory, and the oracle host-tool's
+ * scratch directory -- now all resolve their subdirectory through THIS
+ * function rather than joining the top-level literal themselves. The literal
+ * string ".c64-re-tools" therefore has exactly one non-comment occurrence in
+ * this codebase: the line below.
+ *
+ * This is a clean break, not a migration: no code path falls back to any of
+ * the five previous locations when the new one is absent, and there is no
+ * opt-back-in environment variable. A pre-existing tree at one of the old
+ * locations is simply left on disk, unread, for the user to delete by hand.
+ * `VICE_POOL_DIR` / `VICE_EPOCH_FILE` / `VICE_SUPERVISOR_DIR` /
+ * `VICE_INCIDENTS_DIR` are unaffected by this move -- they still override
+ * their respective resolved default, exactly as before; only the DEFAULT
+ * moved. */
+export function toolsDir(opts: RepoRootOptions = {}): string {
+  return join(repoRoot(opts), ".c64-re-tools");
+}
+
 /** The one shared directory name every module in this skill reads/writes
- * host-synchronised state through -- `join(repoRoot(...), ".vice-supervisor")`,
- * so the literal directory name also has exactly one definition. */
+ * host-synchronised state through -- `join(toolsDir(...), "supervisor")`,
+ * a subdirectory of the single tool-written root `toolsDir()` owns. */
 export function supervisorDir(opts: RepoRootOptions = {}): string {
-  return join(repoRoot(opts), ".vice-supervisor");
+  return join(toolsDir(opts), "supervisor");
 }
 
 // Fires once per process, on whatever entry point happens to import THIS

@@ -143,15 +143,15 @@ test("sanitizeSnapshotName: refuses a non-string value", () => {
 
 // --------------------------------------------------------- snapshotPathFor / snapshotMetaPathFor
 
-test("snapshotPathFor: returns an absolute path ending in /.vice-snapshots/<name>.vsf", () => {
+test("snapshotPathFor: returns an absolute path ending in /.c64-re-tools/snapshots/<name>.vsf", () => {
   const p = snapshotPathFor("x");
-  assert.ok(p.endsWith("/.vice-snapshots/x.vsf"));
+  assert.ok(p.endsWith("/.c64-re-tools/snapshots/x.vsf"));
   assert.ok(p.startsWith("/"));
 });
 
-test("snapshotMetaPathFor: returns an absolute path ending in /.vice-snapshots/<name>.json", () => {
+test("snapshotMetaPathFor: returns an absolute path ending in /.c64-re-tools/snapshots/<name>.json", () => {
   const p = snapshotMetaPathFor("x");
-  assert.ok(p.endsWith("/.vice-snapshots/x.json"));
+  assert.ok(p.endsWith("/.c64-re-tools/snapshots/x.json"));
   assert.ok(p.startsWith("/"));
 });
 

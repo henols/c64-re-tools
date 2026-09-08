@@ -1,9 +1,19 @@
 #!/usr/bin/env node
 // Records a vice_recycle incident to disk BEFORE anything is killed (D-17,
-// plan 01.3-01). This is the FIRST repo-tracked file any mcp__vice__* tool
-// has ever written -- see .planning/incidents/README.md for why the path is
-// committed rather than living under the gitignored .vice-supervisor/ tree
-// every other module in this directory reads/writes through.
+// plan 01.3-01).
+//
+// MOVED 2026-09-08 (D-33, clean break): this directory used to live at
+// `<repoRoot>/.planning/incidents`, repo-tracked and never gitignored, with
+// its own README.md inside the GSD planning tree explaining why. That was
+// the wrong place for product output to land -- writing incident records
+// (which can carry screenshots and snapshot metadata) into a consumer's GSD
+// planning tree was the named reason for the move. It now lives under the
+// single tool-written root `repo-root.ts`'s `toolsDir()` owns, alongside the
+// other five writers that root consolidates, and is gitignored along with
+// the rest of that root. There is no fallback to the old location and no
+// migration shim -- a pre-existing `.planning/incidents/` tree is left on
+// disk, unread, for the user to delete by hand. Never write incident records
+// back into the consumer's planning tree.
 //
 // This module makes NO network call of any kind, and never will -- the
 // file-writing remit this phase adds expands, the transport remit does not
@@ -21,19 +31,20 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 
-import { repoRoot } from "./repo-root.ts";
+import { toolsDir } from "./repo-root.ts";
 
 export const INCIDENT_RECORD_VERSION = 1;
 
-/** `<repoRoot>/.planning/incidents` -- repo-tracked, never gitignored.
- * `VICE_INCIDENTS_DIR` overrides the resolved location when set, mirroring
- * vice-broker-client.mjs's own `VICE_POOL_DIR` override -- the seam this
- * module's own test suite uses to write against a disposable temp
- * directory instead of the real, permanent `.planning/incidents/` every
- * production caller resolves to. */
+/** `<toolsDir>/incidents` -- gitignored, a subdirectory of the single
+ * tool-written root `repo-root.ts`'s `toolsDir()` owns (D-33, moved
+ * 2026-09-08). `VICE_INCIDENTS_DIR` overrides the resolved location when
+ * set, mirroring vice-broker-client.mjs's own `VICE_POOL_DIR` override --
+ * the seam this module's own test suite uses to write against a disposable
+ * temp directory instead of the real, permanent `<toolsDir>/incidents/`
+ * every production caller resolves to. */
 export function incidentsDir(): string {
   if (process.env.VICE_INCIDENTS_DIR) return resolve(process.env.VICE_INCIDENTS_DIR);
-  return join(repoRoot(), ".planning", "incidents");
+  return join(toolsDir(), "incidents");
 }
 
 function sanitiseUtcTimestamp(at: Date | string | number): string {

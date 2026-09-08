@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Deploys this skill's resources/ (the host-side shell launchers) into
-// <repo>/tools/ the first time any skill .mjs entry point runs, so a copy of
-// this skill directory alone is sufficient -- nobody has to remember to also
-// copy three shell scripts from somewhere else (D-1, quick-260730-q4b).
+// <repo>/.c64-re-tools/bin/ the first time any skill .mjs entry point runs,
+// so a copy of this skill directory alone is sufficient -- nobody has to
+// remember to also copy three shell scripts from somewhere else (D-1,
+// quick-260730-q4b). Deploy target moved from `<repo>/tools/` to
+// `<repo>/.c64-re-tools/bin/` on 2026-09-08 (D-33) -- see installTargetDir()
+// below.
 //
 // HOSTING CHOICE (D-3): this check lives in a DEDICATED module, triggered
 // from repo-root.mjs, for two reasons. First, repo-root.mjs is a pure path
@@ -87,9 +90,15 @@ export type ResourceStatus = "missing" | "present" | "diverged";
 export const RESOURCES_DIR = join(HERE, "resources");
 
 /** Where resources/ gets deployed to, for a given repo root. Always
- * `<root>/tools` -- the host's existing muscle-memory location. */
+ * `<root>/.c64-re-tools/bin` -- moved 2026-09-08 (D-33) under the single
+ * tool-written root every other writer in this codebase now resolves
+ * through `repo-root.ts`'s `toolsDir()`. This function cannot import
+ * `toolsDir()` itself (see this file's header: importing repo-root.ts here
+ * would be a module cycle), so it joins the two segments directly --
+ * `".c64-re-tools"` and `"bin"` must stay equal to `join(toolsDir(root),
+ * "bin")` by convention, not by shared code. */
 export function installTargetDir(root: string): string {
-  return join(root, "tools");
+  return join(root, ".c64-re-tools", "bin");
 }
 
 /** Recursive walk of RESOURCES_DIR, returning the relative path (posix-style,
@@ -263,13 +272,18 @@ function isSafeManifestCandidate(entry: unknown, targetDir: string): entry is st
  * step"; a retired executable would otherwise linger on the host forever).
  *
  * The candidate set is EXACTLY `readDeployManifest(root)` minus the current
- * `resourceEntries()` -- never a directory walk of `installTargetDir(root)`,
- * which is a MIXED directory also holding tracked reverse-engineering
- * tooling (d64-parse.mjs, diff-images.mjs, watch-loads.mjs,
- * recovery-schema.mjs, releases.mjs and their tests). A file present in the
- * target but ABSENT from the manifest is therefore left untouched no matter
- * what it is: the prune can only ever reach a path it recorded having placed
- * there itself (T-01.6-11).
+ * `resourceEntries()` -- never a directory walk of `installTargetDir(root)`.
+ * Before the 2026-09-08 `.c64-re-tools/` consolidation (D-33),
+ * `installTargetDir(root)` was `<root>/tools`, a MIXED directory also
+ * holding tracked reverse-engineering tooling (d64-parse.mjs,
+ * diff-images.mjs, watch-loads.mjs, recovery-schema.mjs, releases.mjs and
+ * their tests) -- this manifest-only candidate set is what kept the prune
+ * from ever reaching those tracked files. The deploy target has since moved
+ * to `<root>/.c64-re-tools/bin`, no longer shared with that tracked tooling,
+ * but the same manifest-only discipline is kept unconditionally: a file
+ * present in the target but ABSENT from the manifest is left untouched no
+ * matter what it is, so the prune can only ever reach a path it recorded
+ * having placed there itself (T-01.6-11).
  *
  * Every candidate is validated by isSafeManifestCandidate() BEFORE any
  * unlink is attempted; a rejected candidate is pushed to `skipped` (nothing

@@ -155,7 +155,7 @@ test("repoRoot() last-resort fallback pins the HOP COUNT as a property of depth,
 // proves the Node side (repo-root.ts's supervisorDir(), plus vice.ts's
 // EPOCH_FILE) and the shell side (tools/vice-launcher.sh's --print-paths,
 // via its own now-inlined resolve_repo_root()) resolve the SAME repo root,
-// and therefore the same .vice-supervisor directory.
+// and therefore the same .c64-re-tools/supervisor directory.
 //
 // NARROWED again from the vice-supervisor.sh/vice-broker.sh-era version:
 // that version also cross-checked the two retiring daemons' own
@@ -184,7 +184,7 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   // tools/ copies already exist (and were hand-verified moments ago).
   installResources({ root: repoRoot() });
 
-  const launcherScript = join(repoRoot(), "tools", "vice-launcher.sh");
+  const launcherScript = join(repoRoot(), ".c64-re-tools", "bin", "vice-launcher.sh");
   const resourcesLauncherScript = join(repoRoot(), "src", "mcp", "vice", "resources", "vice-launcher.sh");
   for (const p of [launcherScript, resourcesLauncherScript]) {
     assert.ok(existsSync(p), `expected ${p} to exist (resolved via repoRoot())`);
@@ -243,9 +243,9 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   // own) -- this is the direct successor of the old byte-for-byte
   // supervisor_dir/pool_dir/supervisorDir()/EPOCH_FILE cross-check, now that
   // the launcher is the only shell-side repo-root resolver left.
-  const expectedStateDir = join(launcherVals.repo_root, ".vice-supervisor");
-  assert.equal(nodeVals.supervisorDir, expectedStateDir, "Node supervisorDir() must equal <launcher repo_root>/.vice-supervisor");
-  assert.equal(nodeVals.epochDir, expectedStateDir, "dirname(EPOCH_FILE) must equal <launcher repo_root>/.vice-supervisor");
+  const expectedStateDir = join(launcherVals.repo_root, ".c64-re-tools", "supervisor");
+  assert.equal(nodeVals.supervisorDir, expectedStateDir, "Node supervisorDir() must equal <launcher repo_root>/.c64-re-tools/supervisor");
+  assert.equal(nodeVals.epochDir, expectedStateDir, "dirname(EPOCH_FILE) must equal <launcher repo_root>/.c64-re-tools/supervisor");
   assert.ok(
     !nodeVals.supervisorDir.includes(".claude"),
     `the agreed directory must not sit under .claude -- got ${nodeVals.supervisorDir} (the exact regression a naive move would introduce)`
@@ -254,7 +254,7 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
 
 test("path agreement without CONTAINER_WORKSPACE_PATH (D-6): the .git-walk branch -- the ONLY branch that ever runs on the real host -- still agrees between resources/ and tools/", async () => {
   const resourcesLauncherScript = join(repoRoot(), "src", "mcp", "vice", "resources", "vice-launcher.sh");
-  const launcherScript = join(repoRoot(), "tools", "vice-launcher.sh");
+  const launcherScript = join(repoRoot(), ".c64-re-tools", "bin", "vice-launcher.sh");
 
   const hostEnv = { ...process.env };
   for (const k of Object.keys(hostEnv)) {

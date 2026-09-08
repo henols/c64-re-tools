@@ -36,7 +36,7 @@
 import { dirname, join } from "node:path";
 
 import { ViceError, type ViceErrorOptions } from "./vice.ts";
-import { repoRoot } from "./repo-root.ts";
+import { repoRoot, toolsDir } from "./repo-root.ts";
 import { isInsideContainer } from "./container-guard.mts";
 import { tryHostPaths } from "./hostpath.ts";
 import { ErrorCode, StockProtocolError } from "./stock-protocol.ts";
@@ -167,21 +167,22 @@ export function sanitizeSnapshotName(name: unknown): string {
 
 /**
  * The container path a snapshot named `name` lives at:
- * `<repoRoot>/.vice-snapshots/<name>.vsf`. The directory is inside the
- * workspace rather than under `~/.config/vice/` (the fork's own location)
- * because only a workspace path is inside hostpath.ts's bind-mount mapping
- * -- anything outside it cannot be translated for the host at all -- and
- * keeping it inside the workspace makes workspace escape structurally
+ * `<toolsDir>/snapshots/<name>.vsf` -- a subdirectory of the single
+ * tool-written root `repo-root.ts`'s `toolsDir()` owns (D-33). The directory
+ * is inside the workspace rather than under `~/.config/vice/` (the fork's own
+ * location) because only a workspace path is inside hostpath.ts's bind-mount
+ * mapping -- anything outside it cannot be translated for the host at all --
+ * and keeping it inside the workspace makes workspace escape structurally
  * impossible rather than merely checked (T-3-05).
  */
 export function snapshotPathFor(name: string): string {
-  return join(repoRoot(), ".vice-snapshots", `${sanitizeSnapshotName(name)}.vsf`);
+  return join(toolsDir(), "snapshots", `${sanitizeSnapshotName(name)}.vsf`);
 }
 
 /** The sidecar metadata path for the same snapshot: same directory, `.json`
  * extension, same sanitisation. */
 export function snapshotMetaPathFor(name: string): string {
-  return join(repoRoot(), ".vice-snapshots", `${sanitizeSnapshotName(name)}.json`);
+  return join(toolsDir(), "snapshots", `${sanitizeSnapshotName(name)}.json`);
 }
 
 // Re-exported so a caller building a directory before translating (Task 3's

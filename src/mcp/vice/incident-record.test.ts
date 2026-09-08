@@ -4,7 +4,7 @@
 // own test suite doesn't need either. Every test redirects incidentsDir()
 // to a disposable temp directory via VICE_INCIDENTS_DIR (this module's own
 // override, mirroring vice-broker-client.mjs's VICE_POOL_DIR) so nothing
-// here ever touches the real, permanent .planning/incidents/.
+// here ever touches the real, permanent .c64-re-tools/incidents/.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -208,7 +208,7 @@ function fullEvidenceFixture(): IncidentEvidence {
         explanation: "$01 read as $37 -- the RAM KERNAL IRQ vector pair ($0314/$0315) resolves to $EA31.",
       },
     },
-    screenshot: { available: true, value: ".planning/incidents/20260802143000123-port6510-epoch7.png" },
+    screenshot: { available: true, value: ".c64-re-tools/incidents/20260802143000123-port6510-epoch7.png" },
   };
 }
 
@@ -226,7 +226,7 @@ test("a record rendered from a full evidence object contains every evidence item
     assert.match(rendered, /PC \$1103/);
     assert.match(rendered, /#3 \$4000 \(stop, enabled\)/);
     assert.match(rendered, /RAM KERNAL IRQ vector pair/);
-    assert.match(rendered, /screenshot: saved to \.planning\/incidents\/20260802143000123-port6510-epoch7\.png/);
+    assert.match(rendered, /screenshot: saved to \.c64-re-tools\/incidents\/20260802143000123-port6510-epoch7\.png/);
     // The frontmatter must still parse as YAML with the evidence section present.
     assert.match(rendered, /^---\n[\s\S]*?\n---\n/);
   });
@@ -297,7 +297,7 @@ test("finaliseIncidentRecord() preserves the ALREADY-RENDERED evidence section v
     assert.match(after, /outcome: 'ok'/);
     assert.match(after, /evidence_complete: true/, "evidence_complete must survive the finalise re-render");
     assert.match(after, /cycle bracket: 991234 cycles retired/, "the evidence section itself must survive the finalise re-render verbatim");
-    assert.match(after, /screenshot: saved to \.planning\/incidents\/20260802143000123-port6510-epoch7\.png/);
+    assert.match(after, /screenshot: saved to \.c64-re-tools\/incidents\/20260802143000123-port6510-epoch7\.png/);
   });
 });
 

@@ -49,10 +49,10 @@ function firstNonInternalIPv4(): string | null {
 // and independent of how this machine happens to be mounted.
 const SYNTHETIC_HOST_WS = "/synthetic-host-root/workspace";
 
-test("round-trip: containerPath(hostPath(p)) === p, for the workspace root, a .vice-supervisor path, and an ordinary file", () => {
+test("round-trip: containerPath(hostPath(p)) === p, for the workspace root, a .c64-re-tools/supervisor path, and an ordinary file", () => {
   const cases = [
     CONTAINER_WS,
-    join(CONTAINER_WS, ".vice-supervisor", "6520", "epoch.json"),
+    join(CONTAINER_WS, ".c64-re-tools", "supervisor", "6520", "epoch.json"),
     join(CONTAINER_WS, ".claude", "CLAUDE.md"),
   ];
   const prev = process.env.HOST_WORKSPACE_PATH;
@@ -93,8 +93,8 @@ test("the real captured grant: all three fields translate independently, three s
     id: "req-842411-1785573565561-c2cef69e",
     port: 6520,
     url: "http://127.0.0.1:6520/mcp",
-    epoch_file: `${hostRoot}/.vice-supervisor/6520/epoch.json`,
-    supervisor_dir: `${hostRoot}/.vice-supervisor/6520`,
+    epoch_file: `${hostRoot}/.c64-re-tools/supervisor/6520/epoch.json`,
+    supervisor_dir: `${hostRoot}/.c64-re-tools/supervisor/6520`,
     granted_at: "2026-08-01T08:39:26Z",
   };
   const alias = "host.docker.internal";
@@ -109,12 +109,12 @@ test("the real captured grant: all three fields translate independently, three s
   assert.equal(record.url, `http://${alias}:6520/mcp`, "url host must become the alias");
   assert.equal(
     record.epoch_file,
-    join(CONTAINER_WS, ".vice-supervisor", "6520", "epoch.json"),
+    join(CONTAINER_WS, ".c64-re-tools", "supervisor", "6520", "epoch.json"),
     "epoch_file must become the container form"
   );
   assert.equal(
     record.supervisor_dir,
-    join(CONTAINER_WS, ".vice-supervisor", "6520"),
+    join(CONTAINER_WS, ".c64-re-tools", "supervisor", "6520"),
     "supervisor_dir must become the container form"
   );
   assert.equal(changes.length, 3, "all three fields must be reported as changed");
