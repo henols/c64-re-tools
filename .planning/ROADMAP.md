@@ -929,7 +929,20 @@ the three is reported as a failure despite two of them exiting `0` on error.
   3. **A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.
   4. **A failure is reported as a failure, proven separately on each of the three.** MEASURED: `c1541` and `cartconv` exit **0 on error**; only `petcat` returns non-zero. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
 
-**Plans**: TBD
+**Plans**: 7 plans in 7 waves (fully sequential — every plan after 40-01 shares
+`host-tool.mts`, the skill tree, or the planning documents with its predecessor,
+so no two can run in the same wave). Planned 2026-09-08 against `40-CONTEXT.md`'s
+36 decisions; criteria 1, 3 and 4 above and the goal sentence are amended in
+place by plan 40-07, which is the phase's own bookkeeping deliverable.
+
+Plans:
+- [ ] 40-01-PLAN.md — the `.c64-re-tools/` consolidation (all writers, clean break) plus `WR-03`'s two never-throw holes; lands first per `D-36` constraint 1
+- [ ] 40-02-PLAN.md — TRACER: `c1541` end-to-end over the seam as five per-capability ids, the positive-shape oracle, sibling-binary resolution, and the `c64-disk-access` skill
+- [ ] 40-03-PLAN.md — `petcat.decode`, the authored computed-`SYS` fixture, the named-decline verdict, and the `c64-petcat` skill
+- [ ] 40-04-PLAN.md — `PREP-04`'s six two-directional non-vacuous controls, the ported fakery detector with its chain guard, and one real-corpus assertion
+- [ ] 40-05-PLAN.md — the skill-surface re-cut (`D-19`), the stale skill-count prose, and the carried `mkdtemp` scratch-fixture fix
+- [ ] 40-06-PLAN.md — delete `d64-parse.mjs` and `anno-d64.ts`, re-point every consumer, commit the one-route invariant; merged BY HAND per `D-36` constraint 2
+- [ ] 40-07-PLAN.md — the decisions doc, the in-place amendments, the `PREP-03` strike and count corrections, and the three todo folds; `USE_WORKTREES_FOR_PLAN=false` per `D-36` constraint 3
 
 Notes:
 
