@@ -23,7 +23,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync, symlinkSync, readdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, basename, isAbsolute, resolve as resolvePath } from "node:path";
+import { join, dirname, basename, isAbsolute, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -36,11 +36,11 @@ import { startControlListener, type StartControlListenerResult, type AcquireOutc
 import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
 import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-// Gap G-40-1 (plan 40-08): the physical Ghidra runs location, now reached
-// through a broker-minted handle rather than a bare `tools/ghidra-runs/`
-// literal -- imported so this file's own assertion below cannot drift from
-// ghidra-project.mts's one authoritative definition.
-import { ghidraRunsRealRoot } from "./ghidra-project.mts";
+// Gap G-40-1 (plan 40-08/40-09): the physical Ghidra runs location and its
+// non-dotted, broker-minted handle -- imported so this file's own
+// assertions below cannot drift from ghidra-project.mts's one authoritative
+// definition of either path.
+import { ghidraRunsRealRoot, ghidraRunsRoot, ensureGhidraRunsHandle } from "./ghidra-project.mts";
 // 34-10 Task 2 (CR-05): a container-side import into a container-side test
 // file -- legal here, and anno-types.ts names no node:sqlite specifier, so
 // anno-seam.test.ts's TEST_FILES_NAMING_SQLITE list is untouched. Drives the
@@ -1146,11 +1146,11 @@ test("runHostTool: ghidra.analyze with GHIDRA_HOME unset is refused by name, nev
 test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv whose first two elements are the project location and project name and which contains -deleteProject", async () => {
   await withFakeGhidraHome(async () => {
     const request = { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", loaderBaseAddr: "0x0" } };
-    const resolved = { importPath: "/repo/tools/ghidra-runs/r1/x.bin", projectLocation: "/repo/tools/ghidra-runs/r1", projectName: "r1" };
+    const resolved = { importPath: "/repo/c64-re-tools/runs/ghidra/r1/x.bin", projectLocation: "/repo/c64-re-tools/runs/ghidra/r1", projectName: "r1" };
     const built = buildHostToolArgv(request, resolved);
     assert.equal(built.ok, true);
     if (!built.ok) return;
-    assert.equal(built.argv[0], "/repo/tools/ghidra-runs/r1");
+    assert.equal(built.argv[0], "/repo/c64-re-tools/runs/ghidra/r1");
     assert.equal(built.argv[1], "r1");
     assert.ok(built.argv.includes("-deleteProject"));
     assert.ok(built.toolPath.endsWith(join("support", "analyzeHeadless")));
@@ -1275,8 +1275,8 @@ test("buildHostToolArgv: ghidra.analyze reads preScript/postScript from resolved
       args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", loaderBaseAddr: "0x0", preScript: "wire-pre.java", postScript: "wire-post.java" },
     };
     const resolved = {
-      importPath: "/repo/tools/ghidra-runs/r1/x.bin",
-      projectLocation: "/repo/tools/ghidra-runs/r1",
+      importPath: "/repo/c64-re-tools/runs/ghidra/r1/x.bin",
+      projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
       projectName: "r1",
       preScriptPath: "/repo/some/resolved-pre.java",
       postScriptPath: "/repo/some/resolved-post.java",
@@ -2171,6 +2171,16 @@ test(
               // carries no project-location field for ghidra.analyze.
               assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdA)).isDirectory());
               assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdB)).isDirectory());
+              // Gap G-40-1 (plan 40-09): the SAME directory must also be
+              // reachable through the non-dotted, broker-minted HANDLE --
+              // the path Ghidra was actually handed (ghidraRunsRoot()), not
+              // merely where the bytes physically live. Either assertion
+              // alone permits a regression the other catches: a handle
+              // pointed at the wrong target would still show the physical
+              // directory as present, and a physical-location mistake could
+              // still leave the handle-reachable path looking fine.
+              assert.ok(statSync(join(ghidraRunsRoot(dir), runIdA)).isDirectory());
+              assert.ok(statSync(join(ghidraRunsRoot(dir), runIdB)).isDirectory());
               assert.ok(
                 elapsedMs < sleepSeconds * 2 * 1000,
                 `expected the overlapping pair to finish well under the summed sleeps (${sleepSeconds * 2}s); took ${elapsedMs}ms`,
@@ -2188,6 +2198,126 @@ test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// Gap G-40-1 (plan 40-09): the handle-only invariant. debug/ghidra-run-dir-
+// outside-one-root.md's own Evidence (2026-09-08T00:27:00Z) states it
+// precisely: resolveWorkspacePath() REALPATHS its result (deliberate
+// decision A-16), so a caller-supplied path field routed through the
+// broker-minted handle would silently collapse back to the dotted real
+// path Ghidra refuses. The handle is therefore usable ONLY for the two
+// paths that are never realpath'd -- the computed project location and
+// its sibling run log. Four cases below guard this from four angles: the
+// mechanism (behavioural, non-vacuous), the surface (the typed key set),
+// the structure (a predicate over the source), and a planted-violation
+// control proving that structural predicate is not vacuous.
+// ---------------------------------------------------------------------------
+
+test("resolveWorkspacePath() REALPATHS a path routed through the Ghidra runs handle straight back to the dotted root -- the measured mechanism the handle-only invariant exists to guard (gap G-40-1, plan 40-09)", async () => {
+  await withTempDir(async (dir) => {
+    const handleResult = ensureGhidraRunsHandle(dir);
+    assert.equal(handleResult.ok, true, handleResult.ok ? "" : (handleResult as { ok: false; message: string }).message);
+
+    const resolved = hostTool.resolveWorkspacePath(dir, join("c64-re-tools", "runs", "ghidra"));
+    assert.equal(resolved.ok, true, resolved.ok ? "" : (resolved as { ok: false; message: string }).message);
+    if (!resolved.ok) return;
+
+    const dottedRoot = join(dir, ".c64-re-tools", "runs", "ghidra");
+    assert.equal(
+      resolved.path,
+      dottedRoot,
+      `resolveWorkspacePath() must realpath a handle-traversing relative path back to the dotted root (${dottedRoot}); got ${resolved.path} -- if this now returns the non-dotted handle path instead, resolveWorkspacePath() stopped realpathing and the handle-only invariant this file guards is no longer true`,
+    );
+    assert.ok(!resolved.path.includes(`${sep}c64-re-tools${sep}`), `the realpathed result must not carry the non-dotted handle segment anywhere; got ${resolved.path}`);
+  });
+});
+
+test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-supplied path fields, and none of the project-location/name/runs-root/run-id names the handle-only invariant forbids (gap G-40-1, plan 40-09)", () => {
+  const keys = hostTool.HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"] ?? [];
+  const expected = ["importPath", "preScript", "postScript", "scriptPath", "entrypointsPath", "exportPath", "dataRangesPath"];
+  assert.deepEqual(
+    [...keys].sort(),
+    [...expected].sort(),
+    `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must name exactly the seven caller-supplied path fields, got ${JSON.stringify([...keys].sort())}`,
+  );
+  for (const forbidden of ["projectLocation", "projectName", "runsRoot", "runId", "handle"]) {
+    assert.ok(
+      !keys.some((k) => k.toLowerCase() === forbidden.toLowerCase()),
+      `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must never name ${forbidden} -- no wire field may name the handle in the first place, since routing it through resolveWorkspacePath() would realpath straight back to the dotted root`,
+    );
+  }
+});
+
+/** Strips block comments and whole-line `//` comments -- this file's own
+ * copy of the shape every other structural-gate test file in this tree
+ * carries locally (broker-launch.test.ts, vice-broker-supervision.test.ts,
+ * acme-verify.test.ts, and others) rather than a shared import. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+}
+
+/** THE predicate the structural assertion AND its planted-violation control
+ * below both drive -- return-don't-assert, following docs-linerefs.test.ts's
+ * own shape, so a synthetic copy of host-tool.mts's source exercises
+ * exactly the same code the real assertion does.
+ *
+ * `forbiddenCalls`: every `resolveWorkspacePath(` call site (line-scoped;
+ * every real call site in host-tool.mts is single-line) whose second
+ * argument text names `project`, a `ghidraRuns*`/`RunsRoot`-shaped
+ * identifier, or `handle` -- i.e. anything derived from the resolved
+ * project, the runs root, or the handle, rather than a raw wire field.
+ *
+ * `projectLocationSiblingCount`: how many `dirname(projectLocation)`
+ * call sites exist -- the project location's ONE allowed derived sibling
+ * path, the run log. */
+function findWorkspacePathInvariantViolations(source: string): { forbiddenCalls: string[]; projectLocationSiblingCount: number } {
+  const stripped = stripComments(source);
+  const forbiddenCalls: string[] = [];
+  const FORBIDDEN_ARG = /\bproject\w*\b|\bghidraRuns\w*\b|\brunsRoot\w*\b|\bhandle\w*\b/i;
+  for (const line of stripped.split("\n")) {
+    const match = line.match(/resolveWorkspacePath\(\s*[^,]+,\s*(.+)\)/);
+    if (!match) continue;
+    const arg = (match[1] ?? "").trim();
+    if (FORBIDDEN_ARG.test(arg)) forbiddenCalls.push(line.trim());
+  }
+  const siblingMatches = stripped.match(/dirname\(\s*projectLocation\s*\)/g) ?? [];
+  return { forbiddenCalls, projectLocationSiblingCount: siblingMatches.length };
+}
+
+test("structural (gap G-40-1, plan 40-09): no resolveWorkspacePath() call site in host-tool.mts receives an argument derived from the resolved project, the runs root, or the handle, and the project location has exactly one derived sibling path (the run log)", () => {
+  const source = readFileSync(join(HERE, "host-tool.mts"), "utf8");
+  const result = findWorkspacePathInvariantViolations(source);
+
+  assert.deepEqual(
+    result.forbiddenCalls,
+    [],
+    `HANDLE-ONLY INVARIANT REGRESSION: found resolveWorkspacePath() call site(s) whose argument names the resolved project, the runs root, or the handle: ${JSON.stringify(result.forbiddenCalls)}. resolveWorkspacePath() realpaths its result (decision A-16) and would collapse a handle-routed path straight back to the dotted root Ghidra refuses.`,
+  );
+  assert.equal(
+    result.projectLocationSiblingCount,
+    1,
+    `expected exactly one dirname(projectLocation) call site (the run log) in host-tool.mts, found ${result.projectLocationSiblingCount} -- the project location must have exactly one derived sibling path`,
+  );
+});
+
+test("planted-violation (gap G-40-1, plan 40-09): the SAME structural predicate reports a synthetic resolveWorkspacePath(repoRootAbs, projectResolved.projectLocation) call site, and reports NOTHING for the real source", () => {
+  const source = readFileSync(join(HERE, "host-tool.mts"), "utf8");
+  const realResult = findWorkspacePathInvariantViolations(source);
+  assert.deepEqual(realResult.forbiddenCalls, [], "the real source must be reported by neither predicate branch before the synthetic violation is even introduced");
+
+  const anchor = "const importResolved = resolveWorkspacePath(repoRootAbs, request.args.importPath);";
+  assert.ok(source.includes(anchor), "expected to find the ghidra.analyze importPath resolution call site to plant a violation next to");
+  const planted = source.replace(
+    anchor,
+    `${anchor}\n    const plantedViolation = resolveWorkspacePath(repoRootAbs, projectResolved.projectLocation);`,
+  );
+  const plantedResult = findWorkspacePathInvariantViolations(planted);
+  assert.equal(
+    plantedResult.forbiddenCalls.length,
+    1,
+    `planted violation: expected the synthetic project-location-derived resolveWorkspacePath() call to be reported exactly once, found ${plantedResult.forbiddenCalls.length} -- without this control, the real assertion above could be passing on a predicate that never fires at all`,
+  );
+});
 
 // ---------------------------------------------------------------------------
 // WR-03 hole 2 regression (D-26, plan 40-01 Task 2): the standalone

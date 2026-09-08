@@ -26,9 +26,19 @@
 // `mkdtempSync`, copies the committed fixtures (`fixtures/ghidra/bank.prg`)
 // and the committed scripts (`vendor/ghidra-scripts/*.java`) into it, passes
 // that root as `repoRoot`, and removes it in a `finally`. This repository's
-// own `tools/ghidra-runs/` is never touched -- passing this file's own
-// directory as `repoRoot` would leave untracked run directories there,
-// because that ignore entry is anchored at the repository root. This host's
+// own `.c64-re-tools/` (and its non-dotted `c64-re-tools` handle, gap
+// G-40-1, plan 40-08/40-09) is never touched -- passing this file's own
+// directory as `repoRoot` would leave an untracked handle-plus-runs tree
+// there, because BOTH `.gitignore` stanzas (`/.c64-re-tools/`, `/c64-re-tools`)
+// are anchored at the repository root, not at this file's directory.
+// RE-CHECKED against plan 40-08's own nested-root measurement (its SUMMARY's
+// "git status --porcelain Nested-Root Measurement" section): a full
+// `npm run test:automated` run followed by `git status --porcelain` showed
+// nothing new under `src/mcp/vice/`, confirming the root-anchored patterns
+// genuinely do not reach a nested location -- an earlier version of this
+// comment named the now-retired per-run project directory's old two-segment
+// location (under `tools/`) for the same reason; the reasoning stands, only
+// the location changed. This host's
 // `/tmp` is RAM-backed with ageing disabled, so an untorn-down tree is leaked
 // memory, not leaked disk -- torn down anyway, always.
 //
@@ -54,7 +64,7 @@ import { dirname, join, relative, resolve as resolvePath, sep } from "node:path"
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
-import { installedLanguageIds, ghidraRunsRealRoot } from "./ghidra-project.mts";
+import { installedLanguageIds, ghidraRunsRealRoot, ghidraRunsRoot, ensureGhidraRunsHandle } from "./ghidra-project.mts";
 import { repoRoot } from "./repo-root.ts";
 // Phase 37, plan 37-08 (AUTO-07): the derived character-set range is computed
 // from the fixture's own real CONST_WRITES facts, never hard-coded -- the
@@ -1481,7 +1491,17 @@ function runGhidraAnalyzeDirectControl(
 ): { exitStatus: number | null; runLogText: string; exportText: string } {
   const ghidraHome = process.env.GHIDRA_HOME!;
   const analyzeHeadlessPath = join(ghidraHome, "support", "analyzeHeadless");
-  const projectLocation = join(ws.root, "tools", "ghidra-runs", opts.runId);
+  // Gap G-40-1 (plan 40-09): this function bypasses resolveGhidraProject()'s
+  // typed seam entirely (it drives analyzeHeadless directly to reach the
+  // DataTypeManager control-mode's third positional script argument, not
+  // yet wired through that seam -- see this function's own header comment
+  // above), so it must mint the SAME broker-owned handle
+  // resolveGhidraProject() would have minted and hand analyzeHeadless the
+  // SAME non-dotted handle path (ghidraRunsRoot()) that seam uses -- never
+  // a dotted literal Ghidra's own dot-segment refusal would reject.
+  const handleResult = ensureGhidraRunsHandle(ws.root);
+  if (!handleResult.ok) throw new Error(`runGhidraAnalyzeDirectControl: ${handleResult.message}`);
+  const projectLocation = join(ghidraRunsRoot(ws.root), opts.runId);
   mkdirSync(projectLocation, { recursive: true });
   const argv = [
     projectLocation,
