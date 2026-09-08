@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
-current_phase: 39
-current_phase_name: The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)
-status: verifying
-stopped_at: Completed 39-08-PLAN.md
-last_updated: "2026-09-07T23:56:56.540Z"
-last_activity: 2026-09-07
-last_activity_desc: Phase 39 execution started
-state_head: d0ab4920aa0c5f09352283fc73dfcc6737f5f636
+current_phase: 40
+current_phase_name: The Three Preprocessing Host Tools
+status: planning
+stopped_at: Phase 39 complete, ready to plan Phase 40
+last_updated: "2026-09-08T00:26:43.914Z"
+last_activity: 2026-09-08
+last_activity_desc: Phase 39 complete, transitioned to Phase 40
+state_head: 1a7d0ff075335671feebc0704980679b4dfd0897
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 8
   completed_plans: 8
-  percent: 0
+  percent: 17
 ---
 
 # Project State
@@ -213,23 +213,29 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 39 (The Dual-Channel Coexistence Gate (Go/Degrade/No-Go)) — EXECUTING
-Plan: 8 of 8
-Status: Phase complete — ready for verification
-Last activity: 2026-09-07 — Phase 39 execution started
+Phase: 40 — The Three Preprocessing Host Tools
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-08 — Phase 39 complete, transitioned to Phase 40
 
-**The first phase's deliverable is evidence, not code.** `CHAN-01`'s verdict
-selects which of three structurally different serialization modules Phase 41
-builds — an in-process mutex, a broker-level halt-authority lease, or a
-connect-gate — so building any of them before the gate returns is rework by
-construction. Phase 40 (`c1541` / `petcat` / `cartconv`) depends on neither the
-verdict nor the channel and can run beside Phase 39 from day one.
+**Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
+were measured live against genuine unpatched stock VICE 3.9 and every one came
+back at its best value: `IDLE_COEXIST: clean`, `FOREIGN_HALT_VISIBILITY: visible`,
+`CONCURRENT_INFLIGHT: clean`, `CROSS_CHANNEL_RESUME: clean`,
+`DISCONNECT_RECOVERY: recovers`, `HITCOUNT_INVARIANT_HOLDS: holds`,
+`TEXT_SINGLE_CLIENT: single`. Both blocking UNVERIFIED items are closed, and
+neither pre-mapped `degrade` narrowing triggered. **Phase 41 therefore builds the
+in-process async mutex** — both channels connected for the session's lifetime, the
+`channel` discriminator kept for bookkeeping only — not the broker lease and not
+the connect-gate. Phase 43's capture step stays concurrent. Verdict and its
+derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
+(`c1541` / `petcat` / `cartconv`) depends on neither the verdict nor the channel.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 320
+- Total plans completed: 328
 - Average duration: —
 - Total execution time: —
 
@@ -270,6 +276,7 @@ verdict nor the channel and can run beside Phase 39 from day one.
 | 36 | 7 | - | - |
 | 37 | 8 | - | - |
 | 38 | 4 | - | - |
+| 39 | 8 | - | - |
 
 **Recent Trend:**
 
@@ -1998,7 +2005,7 @@ evidence files.
 ## Session Continuity
 
 Last session: 2026-09-07T23:56:56.458Z
-Stopped at: Completed 39-08-PLAN.md
+Stopped at: Phase 39 complete, ready to plan Phase 40
 Resume file: None
 
 Earlier: Phase 38 UAT complete (12/12, 0 issues) — all phases complete, milestone
