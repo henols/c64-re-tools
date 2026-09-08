@@ -4,16 +4,16 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 40
 current_phase_name: The Three Preprocessing Host Tools
-status: planning
-stopped_at: Phase 40 context gathered
-last_updated: "2026-09-08T06:35:19.687Z"
+status: executing
+stopped_at: Phase 40 planned — 7 plans, verification passed
+last_updated: "2026-09-08T07:56:52.623Z"
 last_activity: 2026-09-08
-last_activity_desc: Phase 39 complete, transitioned to Phase 40
-state_head: 7b0fca734a0dd16b5f6c3d8bc616467b69f881b4
+last_activity_desc: Phase 40 planned — 7 plans in 7 waves
+state_head: d18540f16dcaab57c47aa7373fae1f82f2a5a046
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 8
+  total_plans: 15
   completed_plans: 8
   percent: 17
 ---
@@ -213,10 +213,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 40 — The Three Preprocessing Host Tools
+Phase: 40 (The Three Preprocessing Host Tools) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-08 — Phase 39 complete, transitioned to Phase 40
+Status: Ready to execute
+Last activity: 2026-09-08 — Phase 40 planned — 7 plans in 7 waves
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came

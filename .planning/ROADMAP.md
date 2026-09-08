@@ -936,12 +936,32 @@ so no two can run in the same wave). Planned 2026-09-08 against `40-CONTEXT.md`'
 place by plan 40-07, which is the phase's own bookkeeping deliverable.
 
 Plans:
+**Wave 1**
+
 - [ ] 40-01-PLAN.md — the `.c64-re-tools/` consolidation (all writers, clean break) plus `WR-03`'s two never-throw holes; lands first per `D-36` constraint 1
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 40-02-PLAN.md — TRACER: `c1541` end-to-end over the seam as five per-capability ids, the positive-shape oracle, sibling-binary resolution, and the `c64-disk-access` skill
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 40-03-PLAN.md — `petcat.decode`, the authored computed-`SYS` fixture, the named-decline verdict, and the `c64-petcat` skill
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 40-04-PLAN.md — `PREP-04`'s six two-directional non-vacuous controls, the ported fakery detector with its chain guard, and one real-corpus assertion
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 40-05-PLAN.md — the skill-surface re-cut (`D-19`), the stale skill-count prose, and the carried `mkdtemp` scratch-fixture fix
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 40-06-PLAN.md — delete `d64-parse.mjs` and `anno-d64.ts`, re-point every consumer, commit the one-route invariant; merged BY HAND per `D-36` constraint 2
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 40-07-PLAN.md — the decisions doc, the in-place amendments, the `PREP-03` strike and count corrections, and the three todo folds; `USE_WORKTREES_FOR_PLAN=false` per `D-36` constraint 3
 
 Notes:
