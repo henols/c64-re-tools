@@ -1355,6 +1355,29 @@ const STDERR_TAIL_CAP_BYTES = 64 * 1024;
  * exporting the number for its own parser and its own tests -- not a
  * duplicated maintenance burden, the same measured constant on both sides. */
 const ORACLE_STDOUT_CAP_BYTES = 64 * 1024;
+/** WR-03 (40-REVIEW.md): the hard ceiling spawnHostTool()'s own stdout/
+ * stderr accumulation enforces, independent of the DEFAULT_HOST_TOOL_TIMEOUT_MS
+ * wall-clock kill below -- previously the ONLY bound on a runaway child was
+ * the timeout, so a pathological process could grow an unbounded in-memory
+ * string for its full allotted budget. c1541.chain/c1541.bam are run
+ * directly against untrusted, possibly-corrupt disk images (this project's
+ * own audit tooling exists specifically to detect fabricated/cyclic
+ * directory structures), and c1541 has no documented guard of its own
+ * against a cyclic DATA sector chain.
+ *
+ * Deliberately NOT set to STDOUT_CLASSIFY_CAP_BYTES (64KiB) or "a slightly
+ * larger" ceiling close to it, despite that being this finding's own literal
+ * suggestion: TOOLS_WHOSE_OUTPUT_IS_STDOUT tools (dxa.disassemble, all four
+ * stdout-shaped c1541.* ids, petcat.decode) write the FULL captured stdout
+ * verbatim to their declared output file below (the writeFileSync() call
+ * right after the spawn) -- a full dxa.disassemble listing for a real
+ * 64KB-image fixture already measures well past 64KiB of text, so a cap
+ * anywhere near that size would silently truncate a legitimate disassembly
+ * into a corrupt, incomplete listing every time it ran, not just on a
+ * malicious input. This ceiling is sized purely as a runaway-memory guard
+ * against a pathological/looping child, far above any legitimate output
+ * this seam produces today. */
+const SPAWN_ACCUMULATION_HARD_CAP_BYTES = 64 * 1024 * 1024;
 /** Phase 40, plan 40-02: which tool ids write NO output file of their own --
  * their "output" IS the captured stdout, so runHostTool() turns it into a
  * file itself before the digest loop runs (see the usage site below).
@@ -1624,11 +1647,26 @@ function spawnHostTool(toolPath, argv, timeoutMs, env) {
         }, timeoutMs);
         if (typeof timer.unref === "function")
             timer.unref();
+        // WR-03: stop appending once the hard ceiling is reached, rather than
+        // capping via tailBytes()'s "keep the end" convention used elsewhere in
+        // this module -- unlike stderrTail/the classifier window (diagnostics
+        // only), this accumulated string doubles as the literal file content for
+        // TOOLS_WHOSE_OUTPUT_IS_STDOUT tools, so preserving the HEAD (the
+        // already-received, in-order prefix) rather than an arbitrary tail
+        // fragment keeps a capped run's written output internally coherent (a
+        // truncated-but-ordered listing) instead of discarding its beginning.
+        // The ceiling itself is set far above any legitimate output this seam
+        // produces (see SPAWN_ACCUMULATION_HARD_CAP_BYTES above), so this branch
+        // is never taken on a normal, successful run.
         child.stdout?.on("data", (chunk) => {
-            stdout += chunk.toString("utf8");
+            if (stdout.length < SPAWN_ACCUMULATION_HARD_CAP_BYTES) {
+                stdout += chunk.toString("utf8");
+            }
         });
         child.stderr?.on("data", (chunk) => {
-            stderr += chunk.toString("utf8");
+            if (stderr.length < SPAWN_ACCUMULATION_HARD_CAP_BYTES) {
+                stderr += chunk.toString("utf8");
+            }
         });
         child.on("error", (err) => {
             if (settled)
