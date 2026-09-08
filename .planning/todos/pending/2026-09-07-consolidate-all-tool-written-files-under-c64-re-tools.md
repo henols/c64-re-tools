@@ -99,3 +99,29 @@ Constraints the work has to respect:
 - **Docs**: `CLAUDE.md`'s configuration section, `.gitignore` (collapses to a
   single `/.c64-re-tools/`), and `incident-record.ts`'s own header comment about
   `.planning/incidents/README.md`.
+
+## Addendum (2026-09-08, plan 40-01 execution): `runs/ghidra/` is NOT movable
+
+The sketch above lists `runs/ghidra/` as a subdirectory of `.c64-re-tools/`, but
+executing this move revealed a hard conflict this todo's own "Solution" sketch
+never checked: `ghidra-project.mts`'s `hasDotPrefixedSegment()` refuses EVERY
+ancestor segment of a Ghidra project location that starts with `.` (proven
+against real Ghidra 12.1.3 -- `evidence/34-ghidra-dotpath.md`), and
+`.c64-re-tools` itself is dot-prefixed by design. Re-pointing
+`GHIDRA_RUNS_DIR_NAME` under `.c64-re-tools/` makes `resolveGhidraProject()`
+refuse EVERY call, unconditionally -- confirmed directly:
+`hasDotPrefixedSegment("/repo/.c64-re-tools/runs/ghidra/r1")` returns
+`{ dotted: true, segment: ".c64-re-tools" }`, and
+`ghidra-project.test.ts`'s own happy-path test pins `runsRoot` at
+`join(dir, "tools", GHIDRA_RUNS_DIR_NAME)`.
+
+**Resolution taken:** the Ghidra runs root is exempted from this consolidation
+and stays at `<repoRoot>/tools/ghidra-runs/`, documented in
+`GHIDRA_RUNS_DIR_NAME`'s own doc comment as the one deliberate exception to
+"every writer lands under one root". This is a hard external-tool constraint,
+not a preference -- there is no dot-prefix-safe way to nest a Ghidra project
+under a dot-prefixed ancestor. A future non-dot-prefixed alias directory
+(e.g. a project-scoped `c64-re-tools-ghidra-runs/` symlinked INTO
+`.c64-re-tools/runs/ghidra/`) could reunify the two trees, but is not
+attempted here -- scope discipline (D-35 in 40-01-PLAN.md: no new
+retention/reaping/symlink machinery invented in this phase).

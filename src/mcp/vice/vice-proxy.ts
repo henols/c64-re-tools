@@ -99,7 +99,7 @@ import {
 // 1500ms-budget round trip, no retry, no dependency on vice.ts's resilient
 // reconnect ladder.
 import { probeInstance, type ProbeResult } from "./vice-probe.ts";
-import { repoRoot } from "./repo-root.ts";
+import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
 // below is the only consumer in this file; see version.ts's own header for
 // why this file must never re-derive any part of the algorithm itself.
@@ -1604,7 +1604,13 @@ const ONLY_ROUTE_NOTE =
  * the launch/supervise/respawn-with-backoff job the bash supervisor did. */
 function brokerHostPath(): string {
   const root = repoRoot();
-  const target = join(root, "tools", "vice-launcher.sh");
+  // Moved 2026-09-08 (D-33): was join(root, "tools", "vice-launcher.sh"),
+  // matching installTargetDir()'s pre-consolidation value. Now derived from
+  // repo-root.ts's own toolsDir() -- this module is container-side, unlike
+  // install-resources.ts, so it CAN import that resolver directly rather
+  // than joining the literal a second time -- matching installTargetDir()'s
+  // new `<root>/.c64-re-tools/bin` value exactly.
+  const target = join(toolsDir(), "bin", "vice-launcher.sh");
   try {
     return hostPath(target, { workspaceRoot: root });
   } catch {
@@ -2352,7 +2358,7 @@ function buildHeldLease(session: BrokerControlSession): HeldLease {
   //     fresh from activeInstance() like every other field here (adoptGrant()
   //     put the CONTAINERIZED path there, so it is already in this process's
   //     view of the filesystem -- no second translation here).
-  //   - supervisorDir is the TOP-LEVEL `.vice-supervisor`, where backend.json
+  //   - supervisorDir is the TOP-LEVEL `.c64-re-tools/supervisor`, where backend.json
   //     lives, resolved through brokerRootDir() -- the SAME resolver
   //     broker.json is read from, never a locally re-derived path (the
   //     "re-deriving a cross-cutting seam locally" anti-pattern).

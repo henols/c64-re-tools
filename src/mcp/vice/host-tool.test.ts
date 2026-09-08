@@ -26,6 +26,10 @@ import { tmpdir } from "node:os";
 import { join, dirname, basename, isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
 
 import { build } from "./build.ts";
 import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type RecycleOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
@@ -1077,7 +1081,7 @@ test("runHostTool: a ghidra.analyze runId that escapes via a path separator is r
 
 test("runHostTool: a dot-prefixed repoRoot is refused for ghidra.analyze, naming the offending segment", async () => {
   await withTempDir(async (dir) => {
-    const dottedRepoRoot = join(dir, ".vice-supervisor", "nested");
+    const dottedRepoRoot = join(dir, ".c64-re-tools", "nested");
     mkdirSync(dottedRepoRoot, { recursive: true });
     writeFileSync(join(dottedRepoRoot, "x.bin"), "tiny\n", "utf8");
     const response = await runHostTool(
@@ -1085,7 +1089,7 @@ test("runHostTool: a dot-prefixed repoRoot is refused for ghidra.analyze, naming
       { repoRoot: dottedRepoRoot },
     );
     assert.equal(response.ok, false);
-    if (!response.ok) assert.match(response.message, /\.vice-supervisor/);
+    if (!response.ok) assert.match(response.message, /\.c64-re-tools/);
   });
 });
 
@@ -1792,6 +1796,35 @@ test("runHostTool: oracle.run spawns the SAME resolved command oracle.probe woul
   });
 });
 
+test("runHostTool: oracle.run resolves { ok: false } rather than throwing when the scratch directory cannot be created (WR-03 hole 1, D-26)", async () => {
+  await withTempDir(async (dir) => {
+    const fakeDir = join(dir, "fake-for-scratch-failure");
+    mkdirSync(fakeDir, { recursive: true });
+    const fakePath = writeFakeOracle(fakeDir, EXPECTED_ORACLE_BINARY_NAME, "stdout", "unreached");
+    writeFileSync(join(dir, "input.bin"), "tiny\n", "utf8");
+    // Pre-create the scratch parent read-only (no write/execute for the
+    // owner) so mkdirSync(scratchDir, { recursive: true }) -- moved INSIDE
+    // runOracleRun()'s own try block by this plan -- fails with EACCES
+    // instead of succeeding, exercising the exact refusal path this test
+    // guards.
+    const scratchParent = join(dir, ".c64-re-tools", "runs", "oracle");
+    mkdirSync(scratchParent, { recursive: true });
+    chmodSync(scratchParent, 0o500);
+    try {
+      await withOracleEnv("UNP64", fakePath, async () => {
+        const response = await runOracleHostTool({ tool: "oracle.run", args: { source: "input.bin" } }, { repoRoot: dir });
+        assert.equal(response.ok, false, "a scratch-directory creation failure must resolve ok:false, never throw out of runHostTool()");
+        if (!response.ok) {
+          assert.equal(typeof response.reason, "string");
+          assert.ok((response.reason as string).length > 0);
+        }
+      });
+    } finally {
+      chmodSync(scratchParent, 0o700); // restore so the temp dir can be cleaned up
+    }
+  });
+});
+
 test(
   'END TO END: an oracle.probe request carrying the retired "command" key is refused at the container-side caller with ok: false naming the key, over the real control-plane route, with all seven VICE callbacks provably uncalled',
   async () => {
@@ -2096,3 +2129,56 @@ test(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// WR-03 hole 2 regression (D-26, plan 40-01 Task 2): the standalone
+// host-tool.mjs CLI entry point's `runHostTool(...).then(...)` used to have
+// no `.catch()` -- a rejected promise became an unhandled rejection with NO
+// stdout at all, surfacing to a container-side caller as the opaque
+// "host-tool.mjs produced no output on stdout", indistinguishable from a
+// hang. Every fs call reachable from runHostTool()'s real business logic is
+// deliberately guarded (this file's own ghidra.analyze/acme.build/oracle.run
+// cases above all resolve `{ ok: false, ... }` rather than reject, by
+// design), so there is no organic wire input left that makes the CURRENT
+// implementation reject -- this is the never-throw discipline working as
+// intended, not a gap. Regression-testing the CLI's own `.catch()` plumbing
+// therefore uses the file's own documented TEST-ONLY escape hatch,
+// HOST_TOOL_TEST_FORCE_CLI_REJECT=1 (read from the BROKER PROCESS'S OWN
+// environment, exactly like resolveOracleCommand()'s UNP64/UNP64_PATH
+// lookup -- never a wire value, so a caller can never reach it by shaping
+// --request), which swaps in a Promise.reject() ahead of the real
+// runHostTool() call so this test spawns the REAL compiled CLI end-to-end.
+// ---------------------------------------------------------------------------
+
+test("CLI entry point: HOST_TOOL_TEST_FORCE_CLI_REJECT=1 forces runHostTool() to reject, and the standalone host-tool.mjs still prints a parseable { ok: false, message } JSON line to stdout with a non-zero exit code -- never an unhandled rejection with no output", async () => {
+  const hostToolMjsPath = fileURLToPath(new URL("./resources/host-tool.mjs", import.meta.url));
+  await withTempDir(async (dir) => {
+    const request = JSON.stringify({ tool: "oracle.probe", args: {} });
+    let stdout = "";
+    let exitCode: number | null = 0;
+    try {
+      const result = await execFileP(process.execPath, [hostToolMjsPath, "run", "--repo-root", dir, "--request", request], {
+        env: { ...process.env, HOST_TOOL_TEST_FORCE_CLI_REJECT: "1" },
+      });
+      stdout = result.stdout;
+    } catch (e) {
+      // execFile rejects when the child exits non-zero -- exactly the
+      // exit-code convention under test, so the rejection's own stdout/code
+      // fields (not a thrown assertion) are what this test reads.
+      const err = e as NodeJS.ErrnoException & { stdout?: string; code?: number | string };
+      stdout = err.stdout ?? "";
+      exitCode = typeof err.code === "number" ? err.code : 1;
+    }
+    assert.notEqual(exitCode, 0, "a rejected runHostTool() must produce a non-zero exit code, never a silent success");
+    const lastLine = stdout.trim().split("\n").filter(Boolean).at(-1);
+    assert.ok(lastLine, "stdout must carry at least one line -- the exact failure this regression guards against is NO output at all");
+    let parsed: unknown;
+    assert.doesNotThrow(() => {
+      parsed = JSON.parse(lastLine!);
+    }, "stdout's last line must be parseable JSON, not an unhandled-rejection stack trace");
+    const body = parsed as { ok?: unknown; message?: unknown };
+    assert.equal(body.ok, false, "the envelope's ok field must be false");
+    assert.equal(typeof body.message, "string", "the envelope's message field must be a string");
+    assert.ok((body.message as string).length > 0, "the envelope's message field must be non-empty");
+  });
+});

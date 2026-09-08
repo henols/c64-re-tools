@@ -2,7 +2,7 @@
 // Compiled by `tsc` from host-tool.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
 // deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
-// verbatim to tools/, so an edit made only here reaches the host but is lost on the very next
+// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // host-tool.mts
 //
@@ -1721,10 +1721,26 @@ async function runOracleRun(args, deps) {
     // translated back across the container boundary -- removed after this
     // function returns, mirroring packer-finding.mjs's own (removed)
     // "removed before this function returns" property (T-19-24).
-    const scratchDir = join(repoRootAbs, "tools", "oracle-runs", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(scratchDir, { recursive: true });
-    const scratchOut = join(scratchDir, "unpacked.out");
+    //
+    // MOVED 2026-09-08 (D-33): this used to be `<repoRoot>/tools/oracle-runs/...`.
+    // It is the SEVENTH writer this consolidation re-points -- found by grep
+    // during planning, not one of the folded todo's own six-writer list, and
+    // moved alongside them for the same reason: it now lives under
+    // `runs/oracle` beneath the single tool-written root `repo-root.ts`'s
+    // `toolsDir()` owns. This module is host-bound (compiled by build.ts) and
+    // must not import the container-side repo-root.ts, so the two segments are
+    // joined directly here -- ".c64-re-tools" and "runs"/"oracle" must stay
+    // equal to `join(toolsDir(), "runs", "oracle")`, the same convention
+    // install-resources.ts's installTargetDir() and ghidra-project.mts's runs
+    // root use.
+    const scratchDir = join(repoRootAbs, ".c64-re-tools", "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     try {
+        // WR-03 hole 1 (D-26): scratch-directory creation moved INSIDE this try
+        // block -- a full disk or an unwritable parent now resolves to the
+        // function's existing refusal shape instead of throwing synchronously
+        // out of runHostTool(), which sits outside any try/catch of its own.
+        mkdirSync(scratchDir, { recursive: true });
+        const scratchOut = join(scratchDir, "unpacked.out");
         const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);
         const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs);
         if (spawnResult.spawnErrorMessage !== null) {
@@ -1743,6 +1759,15 @@ async function runOracleRun(args, deps) {
         // only as the same measured constant on both sides of the seam.
         const stdout = spawnResult.stdout.length > ORACLE_STDOUT_CAP_BYTES ? spawnResult.stdout.slice(0, ORACLE_STDOUT_CAP_BYTES) : spawnResult.stdout;
         return { ok: true, tool: "oracle.run", stdout, reason: null };
+    }
+    catch (err) {
+        // WR-03 hole 1 (D-26): the only synchronous throw this block can produce
+        // is mkdirSync() above (a full disk or an unwritable scratch parent) --
+        // resolved here to the function's own refusal shape, naming the
+        // directory, rather than propagating out of runHostTool()'s never-throw
+        // boundary.
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, tool: "oracle.run", stdout: "", reason: `could not create the oracle scratch directory ${scratchDir}: ${message}` };
     }
     finally {
         try {
@@ -1799,9 +1824,36 @@ if (IS_ENTRY_POINT) {
             catch {
                 raw = null;
             }
-            runHostTool(raw, { repoRoot }).then((response) => {
+            // TEST-ONLY escape hatch for the WR-03 hole 2 regression case
+            // (host-tool.test.ts): every fs call reachable from runHostTool()'s
+            // real business logic is deliberately guarded (T-19-18's own
+            // discipline), so there is no organic wire input that makes the real
+            // function reject its promise today -- proving that is a GOOD thing,
+            // not a gap, but it also means the CLI's own `.catch()` below has no
+            // naturally-reachable trigger to regression-test against. This reads
+            // the BROKER PROCESS'S OWN environment, never a wire value, mirroring
+            // `resolveOracleCommand()`'s own "broker env, never wire" convention
+            // above -- a caller can never reach this by shaping `--request`. Unset
+            // in every real invocation; only host-tool.test.ts's own spawned
+            // subprocess ever sets it.
+            const runHostToolOrForcedRejectForTest = process.env.HOST_TOOL_TEST_FORCE_CLI_REJECT === "1"
+                ? Promise.reject(new Error("HOST_TOOL_TEST_FORCE_CLI_REJECT: simulated runHostTool() rejection for WR-03 hole 2 regression testing"))
+                : runHostTool(raw, { repoRoot });
+            runHostToolOrForcedRejectForTest
+                .then((response) => {
                 process.stdout.write(`${JSON.stringify(response)}\n`);
                 process.exitCode = response.ok ? 0 : 1;
+            })
+                // WR-03 hole 2 (D-26): a rejection from runHostTool() used to become
+                // an unhandled rejection with NO stdout at all -- surfacing to the
+                // caller as the opaque "host-tool.mjs produced no output on stdout",
+                // indistinguishable from a hang. Mirrors host-tool-client.ts's own
+                // never-reject CLI entry point field-for-field: same envelope shape
+                // ({ ok: false, message }), same stdout-not-stderr destination, same
+                // non-zero exit-code convention.
+                .catch((err) => {
+                process.stdout.write(`${JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) })}\n`);
+                process.exitCode = 1;
             });
         }
     }

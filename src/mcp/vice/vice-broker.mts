@@ -95,7 +95,12 @@ const USAGE = "usage: vice-broker.mjs --repo-root <path> [--state-dir <path>] [-
  * container guard needs no paths at all, matching the bash launcher's own
  * `--check-container` handling (answered before any path resolution).
  * `--state-dir` defaults to VICE_POOL_DIR from the environment when set,
- * otherwise `.vice-supervisor` under the repo root. */
+ * otherwise `.c64-re-tools/supervisor` under the repo root (moved 2026-09-08,
+ * D-33 -- was `.vice-supervisor`; the three-tier chain itself -- explicit
+ * `--state-dir`, then `VICE_POOL_DIR`, then this default -- is unchanged,
+ * only the default's location moved). This module is host-bound and compiled
+ * by `build.ts`, so it must not import the container-side `repo-root.ts`;
+ * the two segments are joined directly, matching that file's `toolsDir()`. */
 export function parseArgs(argv: string[]): ParsedArgs {
   let repoRoot: string | null = null;
   let stateDir: string | null = null;
@@ -120,7 +125,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     throw new Error(USAGE);
   }
 
-  const resolvedStateDir = stateDir ?? process.env.VICE_POOL_DIR ?? (repoRoot ? join(repoRoot, ".vice-supervisor") : ".vice-supervisor");
+  const resolvedStateDir =
+    stateDir ??
+    process.env.VICE_POOL_DIR ??
+    (repoRoot ? join(repoRoot, ".c64-re-tools", "supervisor") : join(".c64-re-tools", "supervisor"));
 
   return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
@@ -259,7 +267,7 @@ function writeBrokerRecordFile(stateDir: string, record: BrokerRecord): string {
 
 /** Builds a spawn function that redirects the child's stdout/stderr into a
  * FRESH per-launch log file under logDir (D-23: per-instance boot/crash
- * logs survive under .vice-supervisor/<port>/logs/, same paths, same
+ * logs survive under .c64-re-tools/supervisor/<port>/logs/, same paths, same
  * format as the retiring bash supervisor), returning both the spawn
  * closure and the log's path relative to supervisorDir (the epoch
  * record's own `log` field). Shared by both launch paths -- a cold
@@ -1121,7 +1129,7 @@ async function run(args: ParsedArgs): Promise<void> {
   // launch, and never called from inside broker-launch.mts's `inFlight`
   // single-owner guard (this call sits entirely outside it; no launch is
   // even possible yet at this point in run()). `supervisorDir: args.stateDir`
-  // is passed explicitly -- args.stateDir IS `.vice-supervisor` under this
+  // is passed explicitly -- args.stateDir IS `.c64-re-tools/supervisor` under this
   // broker's own repo root (see parseArgs() above), so this is the SAME
   // directory repo-root.ts's supervisorDir() would resolve to, without this
   // host-bound module ever importing that container-side resolver directly

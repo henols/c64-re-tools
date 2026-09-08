@@ -2,7 +2,7 @@
 // Compiled by `tsc` from broker-state.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
 // deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
-// verbatim to tools/, so an edit made only here reaches the host but is lost on the very next
+// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 import { createServer } from "node:net";
 /** Clears `monitorClient` as a side effect of release, recycle, or the

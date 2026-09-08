@@ -24,7 +24,16 @@ if [ ! -f "$LOCK" ]; then
 	exit 0
 fi
 
-STAMP_DIR="${CLAUDE_PLUGIN_DATA:-$MCP_DIR}"
+# Moved 2026-09-08 (D-33): when CLAUDE_PLUGIN_DATA is unset, the stamp used to
+# be written BESIDE the MCP package ($MCP_DIR) -- which, for an installed
+# plugin, is the plugin's OWN install directory, not the consumer's project.
+# It now lands under the single tool-written root's "cache" subdirectory at
+# the CONSUMER's project root (CLAUDE_PROJECT_DIR, the same signal
+# repo-root.ts's own branch 0 honours first; PLUGIN_ROOT is the fallback for
+# the in-repo, non-plugin dev layout where the two coincide).
+# CLAUDE_PLUGIN_DATA still wins over this default when set.
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$PLUGIN_ROOT}"
+STAMP_DIR="${CLAUDE_PLUGIN_DATA:-$PROJECT_ROOT/.c64-re-tools/cache}"
 mkdir -p "$STAMP_DIR"
 STAMP="$STAMP_DIR/mcp-deps.lock.sha256"
 

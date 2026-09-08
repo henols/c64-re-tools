@@ -242,7 +242,7 @@ test("handleSnapshotSave: name '../etc/passwd' refuses with zero sends", async (
   });
 });
 
-test("handleSnapshotSave: records a Dump body with default include flags 0x00/0x00 and a filename tail ending in /.vice-snapshots/ok_1.vsf", async () => {
+test("handleSnapshotSave: records a Dump body with default include flags 0x00/0x00 and a filename tail ending in /.c64-re-tools/snapshots/ok_1.vsf", async () => {
   await withTempRepoRoot(async (dir) => {
     const { session, sends } = makeSession();
     const result = await handleSnapshotSave({ name: "ok_1" }, session, fakeDeps);
@@ -254,7 +254,7 @@ test("handleSnapshotSave: records a Dump body with default include flags 0x00/0x
     assert.equal(body[1], 0x00);
     const filenameLen = body[2]!;
     const filename = body.subarray(3, 3 + filenameLen).toString("ascii");
-    assert.ok(filename.endsWith("/.vice-snapshots/ok_1.vsf"));
+    assert.ok(filename.endsWith("/.c64-re-tools/snapshots/ok_1.vsf"));
     assert.ok(filename.startsWith(dir));
   });
 });
@@ -274,7 +274,7 @@ test("handleSnapshotSave: a successful save writes a sidecar containing name, cr
     const { session } = makeSession();
     const result = await handleSnapshotSave({ name: "ok_3", description: "a test snapshot" }, session, fakeDeps);
     assert.equal(result.isError, false);
-    const metaPath = join(dir, ".vice-snapshots", "ok_3.json");
+    const metaPath = join(dir, ".c64-re-tools", "snapshots", "ok_3.json");
     assert.ok(existsSync(metaPath));
     const meta = JSON.parse(readFileSync(metaPath, "utf8"));
     assert.equal(meta.name, "ok_3");
@@ -292,7 +292,7 @@ test("handleSnapshotSave: a failing DUMP writes no sidecar", async () => {
     });
     const result = await handleSnapshotSave({ name: "ok_4" }, session, fakeDeps);
     assert.equal(result.isError, true);
-    const metaPath = join(dir, ".vice-snapshots", "ok_4.json");
+    const metaPath = join(dir, ".c64-re-tools", "snapshots", "ok_4.json");
     assert.equal(existsSync(metaPath), false);
   });
 });
@@ -302,7 +302,7 @@ test("handleSnapshotSave: a sidecar write failure still answers ok with metadata
     // Pre-create the exact sidecar path AS A DIRECTORY -- writeFileSync then
     // fails deterministically (EISDIR) regardless of uid/permissions, unlike
     // a chmod-based approach which is a no-op when tests run as root.
-    const metaPath = join(dir, ".vice-snapshots", "ok_5.json");
+    const metaPath = join(dir, ".c64-re-tools", "snapshots", "ok_5.json");
     mkdirSync(metaPath, { recursive: true });
     const { session } = makeSession();
     const result = await handleSnapshotSave({ name: "ok_5" }, session, fakeDeps);
@@ -315,8 +315,8 @@ test("handleSnapshotSave: a sidecar write failure still answers ok with metadata
 
 test("handleSnapshotLoad: a missing file refuses with a message listing the .vsf names present, records zero sends", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".vice-snapshots", "other.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "other.vsf"), "");
     const { session, sends } = makeSession();
     const result = await handleSnapshotLoad({ name: "missing" }, session, fakeDeps);
     assert.equal(result.isError, true);
@@ -327,8 +327,8 @@ test("handleSnapshotLoad: a missing file refuses with a message listing the .vsf
 
 test("handleSnapshotLoad: a successful load records an Undump body and reports the reply's programCounter", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".vice-snapshots", "ok_6.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "ok_6.vsf"), "");
     const { session, sends } = makeSession((commandType) =>
       commandType === CommandType.Undump ? { type: "undump", requestId: 1, errorCode: 0, programCounter: 0x0801 } : undefined,
     );
@@ -344,8 +344,8 @@ test("handleSnapshotLoad: a successful load records an Undump body and reports t
 
 test("handleSnapshotLoad: a load whose sidecar is absent answers with metadata: null rather than erroring", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".vice-snapshots", "ok_7.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "ok_7.vsf"), "");
     const { session } = makeSession(() => ({ type: "undump", requestId: 1, errorCode: 0, programCounter: 0 }));
     const result = await handleSnapshotLoad({ name: "ok_7" }, session, fakeDeps);
     assert.equal(result.isError, false);
@@ -360,8 +360,8 @@ test("handleSnapshotSave/Load: every ok-answer carries runState", async () => {
     const r1 = await handleSnapshotSave({ name: "ok_8" }, s1, fakeDeps);
     assert.ok("runState" in JSON.parse(r1.content[0]!.text));
 
-    mkdirSync(join(dir, ".vice-snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".vice-snapshots", "ok_9.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "ok_9.vsf"), "");
     const { session: s2 } = makeSession(() => ({ type: "undump", requestId: 1, errorCode: 0, programCounter: 0 }));
     const r2 = await handleSnapshotLoad({ name: "ok_9" }, s2, fakeDeps);
     assert.ok("runState" in JSON.parse(r2.content[0]!.text));

@@ -70,9 +70,27 @@ import { join, sep } from "node:path";
 export const DOT_SEGMENT_REFUSAL = "path element starting with '.' is not permitted";
 
 /** The runs-root directory name, joined under `<repoRoot>/tools/` (A-07) --
- * `install-resources.ts`'s own `installTargetDir()` root, already
- * non-dot-prefixed and already inside the bind-mounted workspace tree, so a
- * result path under it is always translatable by `containerPath()`. */
+ * a NON-dot-prefixed directory already inside the bind-mounted workspace
+ * tree, so a result path under it is always translatable by
+ * `containerPath()`.
+ *
+ * DELIBERATELY EXEMPTED from the 2026-09-08 `.c64-re-tools/` consolidation
+ * (D-33, plan 40-01): every OTHER tool-written location in this codebase
+ * moved under the single gitignored `.c64-re-tools/` root, but that root's
+ * own name is dot-prefixed BY DESIGN (a normal hidden-directory convention),
+ * and this module's own `hasDotPrefixedSegment()` -- proven against real
+ * Ghidra 12.1.3 (see this file's header, `evidence/34-ghidra-dotpath.md`) --
+ * refuses EVERY ancestor segment of a project location that starts with
+ * `.`, not merely the leaf. Re-pointing `GHIDRA_RUNS_DIR_NAME` under
+ * `.c64-re-tools/` would therefore make `resolveGhidraProject()` refuse
+ * EVERY call, unconditionally -- verified directly: `hasDotPrefixedSegment`
+ * on a synthetic `.c64-re-tools/runs/ghidra/<runId>` path reports
+ * `{ dotted: true, segment: ".c64-re-tools" }`. This is a hard external-tool
+ * constraint, not a preference, so the Ghidra runs root stays at
+ * `<repoRoot>/tools/ghidra-runs/` -- the one documented exception to D-33's
+ * "every writer lands under one root" truth. See this plan's own SUMMARY.md
+ * for the full discovery record; a follow-up todo tracks whether a future
+ * non-dot-prefixed alias could reunify it. */
 export const GHIDRA_RUNS_DIR_NAME = "ghidra-runs";
 
 /** Anchored, narrow run-id shape, in `vice-broker-client.ts`'s own

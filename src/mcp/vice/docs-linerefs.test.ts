@@ -359,7 +359,7 @@ test("planted-violation (WR-09): a citation pointing at an unrelated top-level f
 
   // And the two citations CLAUDE.md names as function starts must be among the
   // accepted set -- the arm is not allowed to narrow onto nothing.
-  for (const lineNumber of [1505, 2985]) {
+  for (const lineNumber of [1505, 2991]) {
     const verdict = citationResolves(lineNumber, viceProxyLines);
     assert.ok(
       verdict.ok && verdict.why.startsWith("enclosing function"),

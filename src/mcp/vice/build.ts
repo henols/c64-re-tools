@@ -63,7 +63,7 @@ export function GENERATED_BANNER(relSourcePath: string): string {
     `// Compiled by \`tsc\` from ${relSourcePath}. Edit the TypeScript source and rebuild;\n` +
     "// changes made directly to this file are silently overwritten by the next build, and are never\n" +
     "// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents\n" +
-    "// verbatim to tools/, so an edit made only here reaches the host but is lost on the very next\n" +
+    "// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next\n" +
     "// rebuild.\n"
   );
 }
