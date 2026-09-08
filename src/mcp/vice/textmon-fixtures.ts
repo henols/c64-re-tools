@@ -117,8 +117,22 @@ const REGENERATE_COMMAND =
  * sidecar is unparseable or parses to something that is not a plain
  * object, or when the sidecar is missing one or more of the five required
  * provenance keys.
+ *
+ * IN-01 (39-REVIEW.md): `caseName` is rejected outright if it contains a
+ * path separator or `..` -- every real case name is a bare, suffixed stem
+ * (e.g. `access-map-stock`) with no directory component, so this cannot
+ * reject a legitimate caller. `caseName` is only ever a hardcoded literal
+ * from this package's own tests today, so this is defense-in-depth for a
+ * currently-unreachable path, not a fix for a demonstrated exploit.
  */
 export function loadTextFixture(caseName: string, { dir }: LoadTextFixtureOptions = {}): TextFixture {
+  if (/[/\\]|\.\./.test(caseName)) {
+    throw new MissingTextFixtureError(
+      `Captured text fixture caseName "${caseName}" contains a path separator or ".." -- refusing to resolve it outside the fixture directory`,
+      { command: REGENERATE_COMMAND },
+    );
+  }
+
   const baseDir = dir ?? TEXTMON_FIXTURE_DIR;
   const txtPath = join(baseDir, `${caseName}.txt`);
   const jsonPath = join(baseDir, `${caseName}.json`);

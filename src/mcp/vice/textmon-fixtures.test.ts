@@ -228,3 +228,19 @@ test("the committed fixture tree contains captures from at least two distinct bi
 test("TEXTMON_FIXTURE_DIR points at the committed fixtures/textmon directory next to this module", () => {
   assert.match(TEXTMON_FIXTURE_DIR, /fixtures[/\\]textmon$/);
 });
+
+// IN-01 (39-REVIEW.md): loadTextFixture() refuses a caseName that could
+// resolve outside baseDir, before ever touching the filesystem.
+test("loadTextFixture: refuses a caseName containing a path separator or \"..\" before touching the filesystem", () => {
+  for (const malicious of ["../../../etc/passwd", "sub/dir", "sub\\dir", "..", "a/../b"]) {
+    assert.throws(
+      () => loadTextFixture(malicious),
+      (err: unknown) => {
+        assert.ok(err instanceof MissingTextFixtureError, `expected MissingTextFixtureError, got ${String(err)}`);
+        assert.match((err as Error).message, /path separator or "\.\."/);
+        return true;
+      },
+      `expected loadTextFixture("${malicious}") to be refused`,
+    );
+  }
+});
