@@ -15,13 +15,11 @@ and name the offending address when it is wrong.
 
 ```bash
 S=src/skills/c64-ram-capture/scripts    # from the repo root
-P=$S/d64-parse.mjs   A=$S/dump-artifacts.mjs
+A=$S/dump-artifacts.mjs
 C=$S/compare.mjs     L=$S/releases.mjs
 T=$S/derive-transients.mjs               V=$S/vsf-slice.mjs
 TD=src/skills/c64-ram-capture/transients # the derived allow-lists live here
 
-node $P directory --image path/to/image.d64      # what's on the disk (--json flags faked entries)
-node $P bam       --image path/to/image.d64      # disk name, DOS type, occupied track ranges
 node $A assemble  --chunks chunks.json           # size + digest, writes nothing
 node $A write-set --release <id> --label <label> \
                   --chunks chunks.json --raw raw.json    # the four committed artifacts
@@ -59,31 +57,9 @@ variable — the thrown error names both when this fails.
 
 ## Read the disk first
 
-`scripts/d64-parse.mjs` parses `.d64` bytes directly, so it answers what is on the
-disk whether or not the emulator is up:
-
-```bash
-$ node $P directory --image demo.d64
-PRG "DEMO GAME" first=5/0 blocks=5
-
-$ node $P bam --image demo.d64
-disk name: "DEMO DISK"  id: 38  dos type: 2A
-first dir sector: 18/1
-occupied track ranges: 5
-```
-
-Do not eyeball the directory for fakery — `--json` decides it. Every entry carries
-`suspicious` plus `suspicious_reasons`, set when the block count is 0, when the
-first track/sector falls outside the image, or when it points into a track the BAM
-reports as entirely free. That last case is the signature of an entry claiming a
-file never written to disk.
-
-`scripts/d64-parse.test.mjs` proves the detector both **fires** on a synthetic
-faked entry and stays silent on a well-formed one — a guard proven only silent is
-not a guard. It also sweeps whatever real `.d64` corpus the project ships,
-skipping when there is none. A non-null `chain_error` is the separate failure: a
-directory chain that leaves the image or loops, reported instead of hanging.
-**Confidence: HIGH** (synthetic fire-and-silence tests, plus a corpus sweep).
+Disk-image structure — the directory, the block allocation map, a named file's
+sector chain or raw bytes, and directory-fakery detection — is
+`c64-disk-access`'s job now. Read the disk with it before booting anything.
 
 ## Boot a disk
 
@@ -377,6 +353,7 @@ This one owns the image and its identity. It does not restate what the others ca
 
 | Need | Go to |
 |---|---|
+| A disk image's directory, BAM, sector chains, or directory-fakery detection | `c64-disk-access` |
 | Which address to read next, and what the answer rules out | `c64-program-recon` |
 | Every way a live read gives a wrong answer | `c64-program-recon` — `references/observation-hazards.md`. **Read before driving.** |
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
@@ -419,7 +396,6 @@ split: the workflow fits in one file, which is the right call when it does.
 | `scripts/derive-transients.mjs` | `derive` / `check` — the per-release transient allow-list, derived from N ≥ 3 runs as the pairwise union, under a committed cap of 64 that **voids** rather than warns. Covered by `scripts/derive-transients.test.mjs`. |
 | `transients/README.md` | The committed derivation method, the artifact shape, the cap's reasoning with its four measured reference points, and the rule that no address set is inherited between releases. Its `.gitignore` refuses every image byte form. |
 | `templates/capture-record.template.md` | The per-capture record: identity including the three-row reproducibility key and the `capture route` row, machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
-| `scripts/d64-parse.mjs` | `.d64` directory, BAM, and `--json` fakery detection. Fixture-tested against both real images by `scripts/d64-parse.test.mjs`. |
 | `scripts/dump-artifacts.mjs` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |
 | `RELEASES.json.example` | A copyable release-registry shape — see `## Release registry shape` above. |
 

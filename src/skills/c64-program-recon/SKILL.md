@@ -23,6 +23,17 @@ node $D sprites --dd00 3E --d018 18 --d015 0F --ptrs 20,21,22,23,FF,FF,FF,FF
 The script does only the arithmetic that a lookup table cannot — register bits to concrete
 addresses — over values **you** fetched through `mcp__plugin_c64-re-tools_vice__*`. It contacts nothing.
 
+## Before disassembling anything
+
+Two adjacent jobs belong to other skills, and pointing at their owners is cheaper than re-deriving
+either one here:
+
+- **A file still sitting inside a `.d64` image** — its directory, block allocation map, sector
+  chain, or raw bytes — is `c64-disk-access`'s job. Get the file out of the image there first.
+- **A tokenized BASIC stub rather than raw machine code** — detokenizing it and finding where it
+  hands over to machine code, including the named decline when no static handover address exists —
+  is `c64-petcat`'s job. See below for the one thing it does not also do.
+
 ## The order
 
 Each step is a read whose answer rules something out. Do not skip ahead: step 6 is cheap once the
@@ -561,19 +572,26 @@ documented earlier on this page.
 | Disassembly appears to break mid-routine | Undocumented opcodes. Check the binary-info hint and keep reading. |
 | Zero-page usage contradicts the main program's | The routine runs from the IRQ. Its context is IRQ-relative. |
 
-## REFERENCE-ONLY: decoding Commodore BASIC tokens
+## A tokenized BASIC stub: detokenize with c64-petcat, don't hand-decode it
 
-**This capability is DEFERRED under `FUT-01` and this skill does not claim
-it.** The reason is empirical, not a shortage of effort: a commercial C64 title
-captured after its loader has run almost universally reduces to a one-line
-`SYS` stub, so a token decoder would spend its life decoding `10 SYS 2064` and
-nothing else. The material below is carried as **reference text only** — read
-it if you hit the rare program that really does carry a tokenised BASIC
-program, and note that none of its trigger phrases appear in any skill's
-`description:` frontmatter, so it cannot fire on its own.
+**Detokenizing a `SYS` stub and resolving its machine-code handover address is
+`c64-petcat`'s job, not this skill's.** Reach for its `decode` verb before
+reading tokenized bytes by hand: it wraps VICE's own `petcat` to produce the
+readable listing and to report the handover address — or a *named decline*
+(`entrypoint: null` with a reason) when the `SYS` argument is not a static
+value, which is a resolved answer, never a guess to spend a disassembler on.
+Corrected here: an earlier note claimed none of `c64-petcat`'s trigger phrases
+overlapped this skill's frontmatter; that was true only because the skill did
+not exist yet, and it is superseded now that it does.
 
-If a future milestone lifts `FUT-01`, this section is the starting point rather
-than a fresh research task.
+The material below stays as **reference text only**, narrowed to what
+`c64-petcat` does NOT do — write the tokenized bytes' typed ranges and
+comments into this project's annotation store. That is rare in practice: a
+commercial C64 title captured after its loader has run almost universally
+reduces to a one-line `SYS` stub, so most sessions never reach this section at
+all. When one does, use `c64-petcat`'s resolved listing and handover address
+as the source of truth rather than re-deriving them by hand from the byte
+layout below.
 
 ### Line anatomy
 
@@ -642,6 +660,8 @@ This one is the route between the stations. It does not restate what the others 
 
 | Need | Go to |
 |---|---|
+| A disk image's directory, BAM, sector chains, or a named file's raw bytes | `c64-disk-access` |
+| Detokenizing a BASIC stub, or its machine-code handover address | `c64-petcat` |
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
 | Assembling | `acme-build` |
