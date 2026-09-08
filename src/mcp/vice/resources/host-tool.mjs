@@ -1531,9 +1531,25 @@ export function derivePetcatEntrypoint(detokenizedText) {
         const basicLine = m[1];
         const argument = m[2];
         if (/^\d+$/.test(argument)) {
+            // WR-02 (40-REVIEW.md): an all-decimal-digit SYS argument used to be
+            // accepted as a literal entry point with no upper-bound check --
+            // `Number()` converts an arbitrarily long digit string (with silent
+            // precision loss past 2^53) and a BASIC program can legally contain
+            // `SYS 999999` or larger. The C64's real address space is 0..65535;
+            // anything outside that range (or that loses precision on the way to
+            // a safe integer) is reported through the SAME named-decline path the
+            // non-literal ("computed") case below already uses, rather than
+            // passed through as a real entry point.
+            const value = Number(argument);
+            if (Number.isSafeInteger(value) && value >= 0 && value <= 0xffff) {
+                return {
+                    entrypoint: value,
+                    entrypointReason: `literal SYS argument on BASIC line ${basicLine}: sys${argument}`,
+                };
+            }
             return {
-                entrypoint: Number(argument),
-                entrypointReason: `literal SYS argument on BASIC line ${basicLine}: sys${argument}`,
+                entrypoint: null,
+                entrypointReason: `SYS argument on BASIC line ${basicLine} (${argument}) is outside the C64's 16-bit address space and cannot be a real entry point`,
             };
         }
         return {
