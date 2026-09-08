@@ -132,7 +132,11 @@ export const HOST_TOOL_IDS = Object.freeze([
     "oracle.run",
     "dxa.disassemble",
     "ghidra.installExtension",
+    "c1541.bam",
     "c1541.dir",
+    "c1541.entry",
+    "c1541.chain",
+    "c1541.read",
 ]);
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
  * (the vsf-slice.mjs WR-04 idiom) so no prototype key can ever resolve to a
@@ -205,10 +209,16 @@ export const HOST_TOOL_ARG_KEYS = Object.freeze(Object.assign(Object.create(null
     // tree; `moduleName` names the install target directory under
     // <GHIDRA_HOME>/Ghidra/Extensions/.
     "ghidra.installExtension": Object.freeze(["sourceDir", "moduleName"]),
-    // Phase 40, plan 40-02 (PREP-01, Task 1 -- the tracer): `image` is the
-    // `.d64` to list; `outDir` defaults to `dirname(imagePath)`, exactly as
-    // `dxa.disassemble`'s own default does.
+    // Phase 40, plan 40-02 (PREP-01): `image` is the `.d64` these five
+    // capabilities read; `outDir` defaults to `dirname(imagePath)`, exactly
+    // as `dxa.disassemble`'s own default does. `name` (entry/chain/read) is
+    // a CBM filename or glob pattern -- never a path, never resolved
+    // through `resolveWorkspacePath()` (see HOST_TOOL_PATH_ARG_KEYS below).
+    "c1541.bam": Object.freeze(["image", "outDir"]),
     "c1541.dir": Object.freeze(["image", "outDir"]),
+    "c1541.entry": Object.freeze(["image", "name", "outDir"]),
+    "c1541.chain": Object.freeze(["image", "name", "outDir"]),
+    "c1541.read": Object.freeze(["image", "name", "outDir"]),
 }));
 /** 34-08 (Task 3): the answer to ONE question -- which accepted argument
  * keys, per tool, name a filesystem path and therefore MUST pass
@@ -254,10 +264,17 @@ export const HOST_TOOL_PATH_ARG_KEYS = Object.freeze(Object.assign(Object.create
     // classifies for this tool.
     "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
     "ghidra.installExtension": Object.freeze(["sourceDir"]),
-    // Phase 40, plan 40-02 (PREP-01): both of `c1541.dir`'s accepted keys
-    // are path-bearing -- its `HOST_TOOL_ARG_KEYS_REMAINDER` entry
-    // (host-tool.test.ts) is therefore empty.
+    // Phase 40, plan 40-02 (PREP-01): `image`/`outDir` are path-bearing on
+    // all five ids; `name` (entry/chain/read) is deliberately absent here
+    // -- it is a CBM filename/glob, not a path, and is the one key each of
+    // those three tools' own `HOST_TOOL_ARG_KEYS_REMAINDER` entry
+    // (host-tool.test.ts) classifies. `c1541.bam`/`c1541.dir` have no
+    // non-path keys at all, so their own remainder entries are empty.
+    "c1541.bam": Object.freeze(["image", "outDir"]),
     "c1541.dir": Object.freeze(["image", "outDir"]),
+    "c1541.entry": Object.freeze(["image", "outDir"]),
+    "c1541.chain": Object.freeze(["image", "outDir"]),
+    "c1541.read": Object.freeze(["image", "outDir"]),
 }));
 const HOST_TOOL_SHAPE = `an object with a "tool" field naming one of ${HOST_TOOL_IDS.map((t) => JSON.stringify(t)).join(", ")}, and an optional "args" object`;
 function isPlainObject(value) {
@@ -597,22 +614,53 @@ export function normaliseHostToolRequest(raw) {
         }
         return { ok: true, request: { tool, args: { sourceDir, moduleName } } };
     }
-    if (tool === "c1541.dir") {
+    if (tool === "c1541.bam" || tool === "c1541.dir") {
         const image = argsObj.image;
         if (typeof image !== "string" || image === "") {
-            return { ok: false, message: `host_tool "c1541.dir" requires a non-empty string "image"; got ${describe(image)}` };
+            return { ok: false, message: `host_tool "${tool}" requires a non-empty string "image"; got ${describe(image)}` };
         }
         const args = { image };
         if ("outDir" in argsObj) {
             const outDir = argsObj.outDir;
             if (typeof outDir !== "string" || outDir === "") {
-                return { ok: false, message: `host_tool "c1541.dir" args.outDir must be a non-empty string; got ${describe(outDir)}` };
+                return { ok: false, message: `host_tool "${tool}" args.outDir must be a non-empty string; got ${describe(outDir)}` };
             }
             args.outDir = outDir;
         }
         return { ok: true, request: { tool, args } };
     }
-    // Unreachable while HOST_TOOL_IDS has exactly seven members -- kept so a
+    if (tool === "c1541.entry" || tool === "c1541.chain" || tool === "c1541.read") {
+        const image = argsObj.image;
+        if (typeof image !== "string" || image === "") {
+            return { ok: false, message: `host_tool "${tool}" requires a non-empty string "image"; got ${describe(image)}` };
+        }
+        // T-40-02-02, D-01/D-02: `name` is a CBM filename or glob pattern --
+        // REQUIRED, never a path -- and refused BY NAME when its first
+        // character is a hyphen, before the child is ever spawned. The
+        // utility's own CLI would otherwise read such a value as a flag, an
+        // argument-injection route into a host process driven by
+        // container-side input.
+        const name = argsObj.name;
+        if (typeof name !== "string" || name === "") {
+            return { ok: false, message: `host_tool "${tool}" requires a non-empty string "name"; got ${describe(name)}` };
+        }
+        if (name.startsWith("-")) {
+            return {
+                ok: false,
+                message: `host_tool "${tool}" args.name must not begin with "-" -- c1541's own CLI would read it as a flag rather than a filename; got ${describe(name)}`,
+            };
+        }
+        const args = { image, name };
+        if ("outDir" in argsObj) {
+            const outDir = argsObj.outDir;
+            if (typeof outDir !== "string" || outDir === "") {
+                return { ok: false, message: `host_tool "${tool}" args.outDir must be a non-empty string; got ${describe(outDir)}` };
+            }
+            args.outDir = outDir;
+        }
+        return { ok: true, request: { tool, args } };
+    }
+    // Unreachable while HOST_TOOL_IDS has exactly eleven members -- kept so a
     // future tool added to HOST_TOOL_IDS without a matching narrowing arm
     // fails loudly here rather than silently returning an under-typed request.
     return { ok: false, message: `normaliseHostToolRequest: no narrowing arm for tool "${tool}"` };
@@ -1060,7 +1108,11 @@ export function buildHostToolArgv(request, resolved, log) {
         // string-concatenated single argument (must_haves.prohibitions).
         return { ok: true, toolPath: sleighPath, argv: [slaspecPath, slaPath], outputs: [slaPath] };
     }
-    if (request.tool === "c1541.dir") {
+    if (request.tool === "c1541.bam" ||
+        request.tool === "c1541.dir" ||
+        request.tool === "c1541.entry" ||
+        request.tool === "c1541.chain" ||
+        request.tool === "c1541.read") {
         const { imagePath, outDirPath } = resolved;
         // T-40-02-04, D-13, D-15: resolved as a SIBLING of whichever x64sc
         // backend-detect.mts already resolved -- never a bare-name spawn, which
@@ -1075,24 +1127,64 @@ export function buildHostToolArgv(request, resolved, log) {
         if (c1541Found.path === null) {
             return {
                 ok: false,
-                message: `host_tool "c1541.dir" refuses: "c1541" does not exist (tried: ${c1541Found.tried.join(", ")})`,
+                message: `host_tool "${request.tool}" refuses: "c1541" does not exist (tried: ${c1541Found.tried.join(", ")})`,
             };
         }
-        // A-02-style fixed flags: `-attach <imagePath> -dir`, argv as an ARRAY
-        // of individually-validated entries, never a shell string
-        // (must_haves.prohibitions). Deterministic: the same resolved paths
-        // yield a byte-identical argv array on two successive calls.
-        const argv = ["-attach", imagePath, "-dir"];
-        // c1541 has NO output-file option for `-dir` -- every listing line is
-        // printed to its OWN stdout (MEASURED against the real committed
-        // fixture, fixtures/c1541/README.md). The seam captures stdout and
-        // writes it to this single outputs[] path, then digests the FILE --
-        // never c1541's own exit status, which is 0 even on a genuine failure
-        // (D-11, MEASURED: "Error - Cannot open file ..." exits 0) and is
-        // therefore never the pass/fail signal for a listing.
+        const c1541Path = c1541Found.path;
         const imageStem = basename(imagePath).replace(/\.[^./]+$/, "");
-        const listingPath = join(outDirPath, `${imageStem}.dir.txt`);
-        return { ok: true, toolPath: c1541Found.path, argv, outputs: [listingPath] };
+        // A-02-style fixed flags: `-attach <imagePath> <verb-flag> [name]`,
+        // argv as an ARRAY of individually-validated entries, never a shell
+        // string (must_haves.prohibitions). Deterministic: the same resolved
+        // paths (and, for entry/chain/read, the same already-validated `name`)
+        // yield a byte-identical argv array on two successive calls. c1541 has
+        // NO output-file option for `-dir`/`-bam`/`-entry`/`-chain` -- every
+        // listing line is printed to its OWN stdout (MEASURED against the real
+        // committed fixture, fixtures/c1541/README.md); the seam captures
+        // stdout and writes it to a single outputs[] path (TOOLS_WHOSE_OUTPUT_IS_STDOUT
+        // above), then digests the FILE -- never c1541's own exit status, which
+        // is 0 even on a genuine failure (D-11, MEASURED: "Error - Cannot open
+        // file ..." exits 0) and is therefore never the pass/fail signal for a
+        // listing. `-read` is the one exception: the child writes the output
+        // file itself, so its argv passes the produced host path as its own
+        // final positional argument.
+        if (request.tool === "c1541.dir") {
+            return { ok: true, toolPath: c1541Path, argv: ["-attach", imagePath, "-dir"], outputs: [join(outDirPath, `${imageStem}.dir.txt`)] };
+        }
+        if (request.tool === "c1541.bam") {
+            return { ok: true, toolPath: c1541Path, argv: ["-attach", imagePath, "-bam"], outputs: [join(outDirPath, `${imageStem}.bam.txt`)] };
+        }
+        // c1541.entry / c1541.chain / c1541.read: `name` is a CBM filename or
+        // glob pattern, already validated (non-empty, no leading hyphen) by
+        // normaliseHostToolRequest() -- never re-derived here. `slug` is
+        // `name` with every character outside [A-Za-z0-9] replaced by `_`,
+        // truncated to 32 characters (interface_contract), so an arbitrary CBM
+        // name never becomes an unsafe or over-long filesystem path segment.
+        const { name } = request.args;
+        const slug = name.replace(/[^A-Za-z0-9]/g, "_").slice(0, 32);
+        if (request.tool === "c1541.entry") {
+            return {
+                ok: true,
+                toolPath: c1541Path,
+                argv: ["-attach", imagePath, "-entry", name],
+                outputs: [join(outDirPath, `${imageStem}.${slug}.entry.txt`)],
+            };
+        }
+        if (request.tool === "c1541.chain") {
+            return {
+                ok: true,
+                toolPath: c1541Path,
+                argv: ["-attach", imagePath, "-chain", name],
+                outputs: [join(outDirPath, `${imageStem}.${slug}.chain.txt`)],
+            };
+        }
+        // request.tool === "c1541.read": the single-file byte-extraction route,
+        // mirroring extractEntry(image, entryName) (anno-d64.ts) one-for-one.
+        // The produced host path is the child's OWN output argument -- c1541
+        // writes it directly, so this tool is deliberately absent from
+        // TOOLS_WHOSE_OUTPUT_IS_STDOUT and the existing digest loop picks the
+        // file up unchanged.
+        const outputPath = join(outDirPath, `${imageStem}.${slug}.bin`);
+        return { ok: true, toolPath: c1541Path, argv: ["-attach", imagePath, "-read", name, outputPath], outputs: [outputPath] };
     }
     return { ok: false, message: `buildHostToolArgv: no argv builder for tool "${request.tool}"` };
 }
@@ -1164,6 +1256,18 @@ export const HOST_TOOL_TIMEOUT_MS = Object.freeze(Object.assign(Object.create(nu
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
     // value.
     "c1541.dir": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    // Phase 40, plan 40-02 (Task 2): DEFAULT_HOST_TOOL_TIMEOUT_MS for all
+    // four, justified from a measurement rather than a round guess -- each
+    // of `c1541 -attach fixtures/c1541/synthetic.d64 -bam`, `-entry
+    // basicstub`, `-chain basicstub` and `-read basicstub <out>` completed
+    // in 14-16ms wall-clock (MEASURED, this plan's own scratch run against
+    // the committed fixture), a >1200x headroom against this 20s ceiling.
+    // host-tool-client.ts's request-deadline table gains NO entry for any
+    // of these, for the same reason c1541.dir's own comment above states.
+    "c1541.bam": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    "c1541.entry": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    "c1541.chain": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    "c1541.read": DEFAULT_HOST_TOOL_TIMEOUT_MS,
 }));
 /** The resolver every spawn site reads its budget from: an explicit
  * override (`deps.timeoutMs` -- the in-process test seam) always wins;
@@ -1186,13 +1290,24 @@ const STDERR_TAIL_CAP_BYTES = 64 * 1024;
  * exporting the number for its own parser and its own tests -- not a
  * duplicated maintenance burden, the same measured constant on both sides. */
 const ORACLE_STDOUT_CAP_BYTES = 64 * 1024;
-/** Phase 40, plan 40-02 (Task 1 -- the tracer): which tool ids write NO
- * output file of their own -- their "output" IS the captured stdout, so
- * runHostTool() turns it into a file itself before the digest loop runs
- * (see the usage site below). Replaces the condition that used to name
- * only "dxa.disassemble" directly -- a future addition is one entry in
- * this frozen set, never a near-duplicate `if` branch. */
-const TOOLS_WHOSE_OUTPUT_IS_STDOUT = new Set(["dxa.disassemble", "c1541.dir"]);
+/** Phase 40, plan 40-02: which tool ids write NO output file of their own --
+ * their "output" IS the captured stdout, so runHostTool() turns it into a
+ * file itself before the digest loop runs (see the usage site below).
+ * Replaces the condition that used to name only "dxa.disassemble" directly
+ * -- a future addition is one entry in this frozen set, never a
+ * near-duplicate `if` branch. `c1541.read` is deliberately ABSENT -- its
+ * argv passes the produced host path as the child's own output argument
+ * (`-read <name> <outputPath>`), so the child writes that file itself and
+ * the existing digest loop picks it up unchanged. */
+const TOOLS_WHOSE_OUTPUT_IS_STDOUT = new Set(["dxa.disassemble", "c1541.bam", "c1541.dir", "c1541.entry", "c1541.chain"]);
+/** Phase 40, plan 40-02 (Task 2): the byte cap this module's c1541.bam/
+ * c1541.entry/c1541.chain classifiers apply to the captured text BEFORE
+ * testing it against a declared shape -- spawnHostTool()'s own stdout
+ * accumulation has no explicit bound today, and a sector chain
+ * (c1541.chain) is the first disk-image-driven input that could make it
+ * large. Same value and the same tail/cap convention (tailBytes(), keep
+ * the END, not the start) STDERR_TAIL_CAP_BYTES below already applies. */
+const STDOUT_CLASSIFY_CAP_BYTES = 64 * 1024;
 /** Total `Readonly<Record<HostToolId, HostToolOutputClassifier | null>>` --
  * built with the SAME `Object.freeze(Object.assign(Object.create(null),
  * ...))` idiom HOST_TOOL_ARG_KEYS uses. Pre-existing ids map to `null`,
@@ -1214,18 +1329,83 @@ export const HOST_TOOL_OUTPUT_CLASSIFIERS = Object.freeze(Object.assign(Object.c
     // here, since the complaint lands on stdout, not stderr, and is
     // unrelated to whether the listing itself succeeded.
     "c1541.dir": ((ctx) => classifyC1541DirOutput(ctx.stdout)),
+    // Declared shape (D-09, MEASURED against the committed fixture): at
+    // least one per-sector allocation row -- a digit-prefixed line
+    // followed by a run of `*`/`.` characters.
+    "c1541.bam": ((ctx) => classifyC1541BamOutput(ctx.stdout)),
+    // Declared shape (D-09, MEASURED against the committed fixture): a
+    // `T/S: <t>/<s>, <n> blocks` line.
+    "c1541.entry": ((ctx) => classifyC1541EntryOutput(ctx.stdout)),
+    // Declared shape (D-09, MEASURED against the committed fixture): at
+    // least one `(track,sector) ->` arrow pair. MEASURED: a single-sector
+    // file's chain output does NOT repeat a second (track,sector) tuple on
+    // the right of the arrow -- the LAST hop prints only the byte count
+    // used in the final sector, a plain integer -- so this classifier
+    // matches on "at least one (t,s) followed by an arrow", not on a
+    // tuple-on-both-sides shape (see fixtures/c1541/README.md).
+    "c1541.chain": ((ctx) => classifyC1541ChainOutput(ctx.stdout)),
+    // Declared shape (D-09): `results` contains exactly one entry whose
+    // `byteLength` is greater than zero -- reads `results`, not captured
+    // text, since c1541.read is absent from TOOLS_WHOSE_OUTPUT_IS_STDOUT
+    // (the child writes its own output file).
+    "c1541.read": ((ctx) => classifyC1541ReadOutput(ctx.results)),
 }));
 /** The declared success shape for c1541.dir's captured stdout: at least one
  * numeric block-count trailer of the form `<N> blocks free` (MEASURED
  * against the committed fixture, fixtures/c1541/README.md). A `-dir`
  * listing is small and bounded by the disk's own directory-sector budget,
- * so this classifier tests the FULL captured text -- Task 2's own
- * classifiers (bam/entry/chain), whose input can grow with a disk image's
- * sector-chain contents, are the ones that classify over a capped prefix. */
+ * so this classifier tests the FULL captured text -- c1541.bam/entry/chain
+ * below, whose input can grow with a disk image's sector-chain contents,
+ * classify over a capped prefix instead. */
 export function classifyC1541DirOutput(stdout) {
     if (/\d+\s+blocks\s+free/i.test(stdout))
         return { ok: true };
     return { ok: false, reason: `c1541.dir: captured stdout carries no "<N> blocks free" trailer -- got: ${describe(tailBytes(stdout, 512))}` };
+}
+/** The declared success shape for c1541.bam's captured stdout: at least one
+ * per-sector allocation row (MEASURED against the committed fixture,
+ * fixtures/c1541/README.md) -- a digit-prefixed line ("  1  ........
+ * ........ .....", "17  **...... ........ .....") followed by a run of at
+ * least two `*`/`.` characters. */
+export function classifyC1541BamOutput(stdout) {
+    const capped = tailBytes(stdout, STDOUT_CLASSIFY_CAP_BYTES);
+    if (/^\s*\d{1,2}\s+[*.]{2,}/m.test(capped))
+        return { ok: true };
+    return { ok: false, reason: `c1541.bam: captured stdout carries no per-sector allocation row -- got: ${describe(capped.slice(0, 512))}` };
+}
+/** The declared success shape for c1541.entry's captured stdout: a `T/S:
+ * <t>/<s>, <n> blocks` line (MEASURED against the committed fixture,
+ * fixtures/c1541/README.md -- e.g. "T/S: 17/0,  1 blocks", note the double
+ * space before the count). */
+export function classifyC1541EntryOutput(stdout) {
+    const capped = tailBytes(stdout, STDOUT_CLASSIFY_CAP_BYTES);
+    if (/T\/S:\s*\d+\/\d+,\s*\d+\s*blocks/.test(capped))
+        return { ok: true };
+    return { ok: false, reason: `c1541.entry: captured stdout carries no "T/S: <t>/<s>, <n> blocks" line -- got: ${describe(capped.slice(0, 512))}` };
+}
+/** The declared success shape for c1541.chain's captured stdout: at least
+ * one `(track,sector) ->` arrow pair (MEASURED against the committed
+ * fixture, fixtures/c1541/README.md -- a single-sector file's chain reads
+ * `(17, 0) -> 19`; a multi-sector file's reads `(17, 2) -> (17,12) -> 28`).
+ * Matches on a track/sector tuple immediately followed by an arrow, NOT on
+ * a tuple appearing on BOTH sides of the arrow -- the committed fixture's
+ * own single-sector files never produce the latter shape. */
+export function classifyC1541ChainOutput(stdout) {
+    const capped = tailBytes(stdout, STDOUT_CLASSIFY_CAP_BYTES);
+    if (/\(\s*\d+\s*,\s*\d+\s*\)\s*->/.test(capped))
+        return { ok: true };
+    return { ok: false, reason: `c1541.chain: captured stdout carries no "(track,sector) ->" arrow pair -- got: ${describe(capped.slice(0, 512))}` };
+}
+/** The declared success shape for c1541.read: `results` (the digest loop's
+ * own output, not captured text) contains exactly one entry whose
+ * `byteLength` is greater than zero. */
+export function classifyC1541ReadOutput(results) {
+    if (results.length === 1 && results[0].byteLength > 0)
+        return { ok: true };
+    return {
+        ok: false,
+        reason: `c1541.read: expected exactly one result with a byteLength greater than zero; got ${results.length} result(s)${results.length === 1 ? ` (byteLength ${results[0].byteLength})` : ""}`,
+    };
 }
 /** Digests one produced output file: byte size from a filesystem stat, sha256
  * over its real bytes. A zero-byte file yields `byteLength: 0` and the
@@ -1698,10 +1878,14 @@ export async function runHostTool(raw, deps) {
         built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName });
     }
     else {
-        // request.tool === "c1541.dir" (Phase 40, plan 40-02, Task 1 -- the
-        // tracer). `image` resolved through the SAME resolveWorkspacePath()
-        // site every other tool's path argument uses; `outDir` defaults to
+        // request.tool is one of the five c1541.* ids (Phase 40, plan 40-02).
+        // `image` resolved through the SAME resolveWorkspacePath() site every
+        // other tool's path argument uses; `outDir` defaults to
         // dirname(imagePath) exactly as dxa.disassemble's own default does.
+        // `name` (entry/chain/read) is NOT resolved here -- it is a validated,
+        // non-path CBM filename/glob, read straight from request.args by
+        // buildHostToolArgv() (mirrors ghidra.analyze's own processor/runId
+        // split).
         const imageResolved = resolveWorkspacePath(repoRootAbs, request.args.image);
         if (!imageResolved.ok)
             return { ok: false, message: imageResolved.message };

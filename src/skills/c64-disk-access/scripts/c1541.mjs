@@ -23,6 +23,7 @@
 //     `.d64` in this script) when the seam refuses. A seam refusal is
 //     reported as `{ ok: false, message }`; it is never retried by
 //     re-implementing the read here.
+import { readFileSync } from "node:fs";
 import { dirname, relative, isAbsolute, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -122,28 +123,41 @@ const die = (m) => { console.error(`error: ${m}`); process.exit(1); };
 
 // ------------------------------------------------------------- capabilities
 
-/** Task 1 (the tracer) wires "dir" only; Task 2 adds
- * "bam"/"entry"/"chain"/"read" to this table -- the one place a subcommand
- * name maps to its `host_tool` id. */
+/** The one place a subcommand name maps to its `host_tool` id. */
 const VERB_TO_TOOL = {
+  bam: "c1541.bam",
   dir: "c1541.dir",
+  entry: "c1541.entry",
+  chain: "c1541.chain",
+  read: "c1541.read",
 };
+
+/** `entry`/`chain`/`read` all require a CBM name -- the seam itself refuses
+ * a request missing `name` for these, but failing fast here gives a plain
+ * usage message rather than a round-trip to the seam for a mistake this
+ * script can already see. */
+const VERBS_REQUIRING_NAME = new Set(["entry", "chain", "read"]);
 
 /**
  * Runs one c1541 capability against `--image` (required), `--name`
- * (required for entry/chain/read, refused if given for bam/dir), and
- * `--out-dir` (optional, defaults to the seam's own dirname(image) default
- * exactly as acme.build's own outDir default does). Prints the seam's
- * response verbatim as one line of JSON when `--json` is given -- the
- * response IS the reportable shape (`{ ok, tool, exitStatus, results,
- * stderrTail }` / `{ ok: false, message }`), so no reshaping happens here.
+ * (required for entry/chain/read, ignored for bam/dir), and `--out-dir`
+ * (optional, defaults to the seam's own dirname(image) default exactly as
+ * acme.build's own outDir default does). Prints the seam's response
+ * verbatim as one line of JSON when `--json` is given -- the response IS
+ * the reportable shape (`{ ok, tool, exitStatus, results, stderrTail }` /
+ * `{ ok: false, message }`), so no reshaping happens here except for
+ * `entry`, whose own listing file this script additionally parses for the
+ * first track/sector (see augmentEntryResponse() below).
  */
 async function runCapability(verb, argv) {
   const tool = VERB_TO_TOOL[verb];
   if (!tool) die(`unknown c1541 capability: ${verb}`);
 
   const o = parseOpts(argv);
-  if (!o.image) die(`usage: ${verb} --image <path.d64> [--out-dir <dir>] [--json]`);
+  if (!o.image) die(`usage: ${verb} --image <path.d64> [--name <cbm-name>] [--out-dir <dir>] [--json]`);
+  if (VERBS_REQUIRING_NAME.has(verb) && !o.name) {
+    die(`usage: ${verb} --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]`);
+  }
 
   const imageAbs = resolve(o.image);
   const outDirAbs = o.outDir ? resolve(o.outDir) : dirname(imageAbs);
@@ -156,9 +170,33 @@ async function runCapability(verb, argv) {
   if (o.outDir) args.outDir = toRel(repoRoot, outDirAbs);
   if (o.name !== undefined) args.name = o.name;
 
-  const response = await invokeSeam(tool, args, repoRoot);
+  let response = await invokeSeam(tool, args, repoRoot);
+  if (verb === "entry") response = augmentEntryResponse(response);
   report(response, o);
   process.exit(response.ok ? 0 : 1);
+}
+
+/** Reads `c1541.entry`'s own listing file back and parses its `T/S:
+ * <t>/<s>, <n> blocks` line (MEASURED against the committed fixture,
+ * fixtures/c1541/README.md) into numeric `firstTrack`/`firstSector` fields
+ * on the response -- never a second copy of the classifier's own oracle;
+ * this parses purely for DISPLAY, after the seam has already decided
+ * ok/not-ok. A response the seam reported as a failure, or a listing this
+ * parse cannot make sense of, is returned UNCHANGED -- never a thrown
+ * error and never a fabricated track/sector pair. */
+function augmentEntryResponse(response) {
+  if (!response.ok) return response;
+  const listingPath = response.results?.[0]?.path;
+  if (!listingPath) return response;
+  let text;
+  try {
+    text = readFileSync(listingPath, "utf8");
+  } catch {
+    return response;
+  }
+  const m = text.match(/T\/S:\s*(\d+)\/(\d+),\s*(\d+)\s*blocks/);
+  if (!m) return response;
+  return { ...response, firstTrack: Number(m[1]), firstSector: Number(m[2]) };
 }
 
 function report(response, { json }) {
@@ -172,6 +210,9 @@ function report(response, { json }) {
   }
   for (const r of response.results ?? []) {
     console.log(`${r.path}  (${r.byteLength} bytes, sha256 ${r.sha256})`);
+  }
+  if (response.firstTrack !== undefined) {
+    console.log(`first track/sector: ${response.firstTrack}/${response.firstSector}`);
   }
 }
 
@@ -192,11 +233,23 @@ function parseOpts(argv) {
 // --------------------------------------------------------------------- main
 
 const [cmd, ...rest] = process.argv.slice(2);
-const VERBS = { dir: (argv) => runCapability("dir", argv) };
+const VERBS = {
+  bam: (argv) => runCapability("bam", argv),
+  dir: (argv) => runCapability("dir", argv),
+  entry: (argv) => runCapability("entry", argv),
+  chain: (argv) => runCapability("chain", argv),
+  read: (argv) => runCapability("read", argv),
+};
 if (!cmd || !VERBS[cmd]) {
   console.log(`usage: node ${selfPath()} <command> [options]
 
-  dir    --image <path.d64> [--out-dir <dir>] [--json]   list a disk image's directory
+  bam    --image <path.d64> [--out-dir <dir>] [--json]                  block allocation map
+  dir    --image <path.d64> [--out-dir <dir>] [--json]                  directory listing
+  entry  --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]  one directory entry's raw fields
+  chain  --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]  a named file's sector chain
+  read   --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]  extract a named file's bytes
+
+Read-only -- no -format/-write/-bwrite/-delete verb is reachable from this script.
 
 options: --image PATH  --name CBM-NAME  --out-dir DIR  --json`);
   process.exit(cmd ? 1 : 0);
