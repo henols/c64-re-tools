@@ -51,6 +51,12 @@ imported — by `../../textmon-fixtures.ts` per D-18), plus the optional `note`
 key for an unsupported-command capture (D-20; none fired in this batch — see
 below).
 
+**`capturedAt` is run-level, not per-capture** (WR-02, `39-REVIEW.md`): every
+sidecar in this batch carries the SAME millisecond-precision `capturedAt`,
+because the capture script stamps the batch run's start time, not each
+individual capture's completion time — do not read `capturedAt` as a
+per-capture timestamp or use it to order or time-compare individual captures.
+
 ## The command set
 
 The six parseable outputs the next phase's parsers will consume, one payload
