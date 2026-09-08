@@ -102,6 +102,27 @@ import {
   LOADER_BASE_ADDR_PATTERN,
   RUN_ID_PATTERN,
 } from "./ghidra-project.mjs";
+// Phase 40, plan 40-02 (T-40-02-04, D-13): this module's SECOND sibling
+// import. `resolvedBackend()` is the ONE place that decides which x64sc
+// build is on this host (backend-detect.mts's own header) -- findSiblingBinary()
+// below resolves c1541/petcat as siblings of THAT resolved binary rather than
+// by a bare-name spawn, which a host carrying both a stock and a fork build
+// (MEASURED live on this project's own dev host: /usr/local/bin/x64sc is the
+// fork, /usr/bin/x64sc is genuine stock, and $PATH resolves the fork first)
+// would otherwise silently answer with whichever build's directory happens
+// to sort first. A VALUE import, exactly like ghidra-project.mjs above, for
+// the same reason: it is invoked where the sibling binary is actually
+// resolved, inside this process. resolvedBackend() is itself memoised at
+// module scope (backend-detect.mts's own `memoisedResult`) and this project's
+// broker already calls it once at startup before the control listener binds
+// (vice-broker.mts's run()) -- for the control-plane route this call below
+// is therefore always a cache hit, never a second probe. The host route (no
+// broker in the loop, see this plan's own host_route_note) has no such
+// warm memo and pays one `--help` probe per invocation, mirroring the
+// existing, already-accepted cost vice-broker.mts's own startup call pays
+// once per broker lifetime -- never re-probed per c1541.* call within the
+// SAME process, per findSiblingBinary()'s own memo below.
+import { resolvedBackend } from "./backend-detect.mjs";
 
 // Phase 35, plan 35-01 (A-01): this module's own directory, used ONLY to
 // compute the vendored dxa binary's fixed path. Never an environment-variable
@@ -136,7 +157,19 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // the three copied stock 6502 language files) into
 // <GHIDRA_HOME>/Ghidra/Extensions/<moduleName>/ and compiles its .sla with
 // support/sleigh. The SAME seven synchronized edit sites named above apply.
-export type HostToolId = "acme.build" | "ghidra.analyze" | "oracle.probe" | "oracle.run" | "dxa.disassemble" | "ghidra.installExtension";
+// Phase 40, plan 40-02 (PREP-01, D-02): "c1541.dir" is the seventh member --
+// this plan's tracer (Task 1), a single c1541 disk-image directory listing.
+// Task 2 adds the remaining four `c1541.*` capabilities
+// (bam/entry/chain/read). Every one of the SAME seven synchronized edit
+// sites named above applies to EACH of the five.
+export type HostToolId =
+  | "acme.build"
+  | "ghidra.analyze"
+  | "oracle.probe"
+  | "oracle.run"
+  | "dxa.disassemble"
+  | "ghidra.installExtension"
+  | "c1541.dir";
 
 export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
   "acme.build",
@@ -145,6 +178,7 @@ export const HOST_TOOL_IDS: readonly HostToolId[] = Object.freeze([
   "oracle.run",
   "dxa.disassemble",
   "ghidra.installExtension",
+  "c1541.dir",
 ]);
 
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
@@ -219,6 +253,10 @@ export const HOST_TOOL_ARG_KEYS: Readonly<Record<HostToolId, readonly string[]>>
     // tree; `moduleName` names the install target directory under
     // <GHIDRA_HOME>/Ghidra/Extensions/.
     "ghidra.installExtension": Object.freeze(["sourceDir", "moduleName"]),
+    // Phase 40, plan 40-02 (PREP-01, Task 1 -- the tracer): `image` is the
+    // `.d64` to list; `outDir` defaults to `dirname(imagePath)`, exactly as
+    // `dxa.disassemble`'s own default does.
+    "c1541.dir": Object.freeze(["image", "outDir"]),
   }),
 );
 
@@ -267,6 +305,10 @@ export const HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<HostToolId, readonly strin
     // classifies for this tool.
     "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
     "ghidra.installExtension": Object.freeze(["sourceDir"]),
+    // Phase 40, plan 40-02 (PREP-01): both of `c1541.dir`'s accepted keys
+    // are path-bearing -- its `HOST_TOOL_ARG_KEYS_REMAINDER` entry
+    // (host-tool.test.ts) is therefore empty.
+    "c1541.dir": Object.freeze(["image", "outDir"]),
   }),
 );
 
@@ -356,13 +398,27 @@ export interface DxaDisassembleArgs {
   outDir?: string;
 }
 
+/** Phase 40, plan 40-02 (PREP-01, Task 1 -- the tracer). `image` is the
+ * `.d64` to list; `outDir` defaults to `dirname(imagePath)` exactly as
+ * `dxa.disassemble`'s own default does. This interface's shape is
+ * identical to `C1541BamArgs` (Task 2) -- they are declared separately
+ * rather than shared, mirroring how `AcmeBuildArgs`/`DxaDisassembleArgs`
+ * each get their own interface even where fields overlap, so a future
+ * divergence between the two tools' accepted shapes is a one-interface
+ * edit, not a shared-type refactor. */
+export interface C1541DirArgs {
+  image: string;
+  outDir?: string;
+}
+
 export type HostToolRequest =
   | { tool: "acme.build"; args: AcmeBuildArgs }
   | { tool: "ghidra.analyze"; args: GhidraAnalyzeArgs }
   | { tool: "oracle.probe"; args: OracleProbeArgs }
   | { tool: "oracle.run"; args: OracleRunArgs }
   | { tool: "dxa.disassemble"; args: DxaDisassembleArgs }
-  | { tool: "ghidra.installExtension"; args: GhidraInstallExtensionArgs };
+  | { tool: "ghidra.installExtension"; args: GhidraInstallExtensionArgs }
+  | { tool: "c1541.dir"; args: C1541DirArgs };
 
 export type NormaliseHostToolRequestResult = { ok: true; request: HostToolRequest } | { ok: false; message: string };
 
@@ -724,7 +780,25 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
     return { ok: true, request: { tool, args: { sourceDir, moduleName } } };
   }
 
-  // Unreachable while HOST_TOOL_IDS has exactly six members -- kept so a
+  if (tool === "c1541.dir") {
+    const image = argsObj.image;
+    if (typeof image !== "string" || image === "") {
+      return { ok: false, message: `host_tool "c1541.dir" requires a non-empty string "image"; got ${describe(image)}` };
+    }
+    const args: C1541DirArgs = { image };
+
+    if ("outDir" in argsObj) {
+      const outDir = argsObj.outDir;
+      if (typeof outDir !== "string" || outDir === "") {
+        return { ok: false, message: `host_tool "c1541.dir" args.outDir must be a non-empty string; got ${describe(outDir)}` };
+      }
+      args.outDir = outDir;
+    }
+
+    return { ok: true, request: { tool, args } };
+  }
+
+  // Unreachable while HOST_TOOL_IDS has exactly seven members -- kept so a
   // future tool added to HOST_TOOL_IDS without a matching narrowing arm
   // fails loudly here rather than silently returning an under-typed request.
   return { ok: false, message: `normaliseHostToolRequest: no narrowing arm for tool "${tool}"` };
@@ -927,7 +1001,19 @@ export function resolveWorkspacePath(repoRoot: string, relative: string): Resolv
   if (!walkedCandidate.ok) {
     return { ok: false, message: walkedCandidate.message };
   }
-  if (walkedCandidate.path !== walkedRoot.path && !walkedCandidate.path.startsWith(walkedRoot.path + sep)) {
+  // Phase 40, plan 40-02 (Rule 1 bug, discovered against this plan's own
+  // literal verify command): when the workspace root walks to the
+  // filesystem root itself (`walkedRoot.path === sep`, e.g. "/"), appending
+  // `sep` a second time produces "//" -- a prefix no real absolute path
+  // ever starts with (`resolvePath()`/`realpathSync()` always normalise to
+  // a single leading separator), so EVERY candidate under root "/" was
+  // wrongly refused as "escaping" a root that in fact contains it. A root
+  // this broad is a legitimate input -- c1541.mjs's own commonAncestorDir()
+  // (mirroring acme.mjs's) collapses to "/" whenever a committed fixture
+  // inside the repo and a scratch --out-dir outside it share no smaller
+  // ancestor, exactly this plan's own Task 1 verify command.
+  const requiredPrefix = walkedRoot.path === sep ? walkedRoot.path : walkedRoot.path + sep;
+  if (walkedCandidate.path !== walkedRoot.path && !walkedCandidate.path.startsWith(requiredPrefix)) {
     return {
       ok: false,
       message: `workspace path escapes the workspace root: ${describe(relative)} resolves to ${walkedCandidate.path}, outside ${walkedRoot.path}`,
@@ -1014,11 +1100,29 @@ export interface ResolvedGhidraInstallExtensionPaths {
   moduleName: string;
 }
 
+/** Phase 40, plan 40-02 (PREP-01, Task 1 -- the tracer): the resolved fields
+ * every `c1541.*` id's own buildHostToolArgv() branch needs. `imagePath` is
+ * resolved through resolveWorkspacePath() -- the SAME site acme.build's
+ * `source` uses; `outDirPath` defaults to `dirname(imagePath)` exactly as
+ * `dxa.disassemble`'s own default does. Shared by all five `c1541.*` ids
+ * (Task 2 adds the other four) -- unlike ghidra.analyze's per-tool resolved
+ * shape, every c1541 capability resolves the SAME two fields, so one
+ * interface covers all five rather than five near-duplicates. The
+ * non-path `name` argument (entry/chain/read, Task 2) is deliberately
+ * ABSENT here -- it is read straight from `request.args.name` inside
+ * buildHostToolArgv(), never threaded through `resolved`, mirroring
+ * ghidra.analyze's own `processor`/`runId` split. */
+export interface ResolvedC1541Paths {
+  imagePath: string;
+  outDirPath: string;
+}
+
 export type ResolvedHostToolPaths =
   | ResolvedAcmeBuildPaths
   | ResolvedGhidraAnalyzePaths
   | ResolvedDxaDisassemblePaths
-  | ResolvedGhidraInstallExtensionPaths;
+  | ResolvedGhidraInstallExtensionPaths
+  | ResolvedC1541Paths;
 
 export type BuildHostToolArgvResult =
   | { ok: true; toolPath: string; argv: string[]; outputs: string[] }
@@ -1026,8 +1130,11 @@ export type BuildHostToolArgvResult =
 
 /** Deterministic: the same typed request and the same resolved paths yield a
  * byte-identical argv array on two successive calls -- no randomness, no
- * timestamp, no environment-dependent ordering. */
-export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHostToolPaths): BuildHostToolArgvResult {
+ * timestamp, no environment-dependent ordering. `log` is OPTIONAL and used
+ * ONLY by the c1541.dir branch (Phase 40) to report a PATH-fallback binary
+ * resolution (T-40-02-04, D-16) -- every pre-existing branch ignores it,
+ * exactly as they already ignore any parameter they do not need. */
+export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHostToolPaths, log?: (line: string) => void): BuildHostToolArgvResult {
   if (request.tool === "acme.build") {
     const { args } = request;
     const { sourcePath, outDirPath, includePaths } = resolved as ResolvedAcmeBuildPaths;
@@ -1280,6 +1387,45 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     return { ok: true, toolPath: sleighPath, argv: [slaspecPath, slaPath], outputs: [slaPath] };
   }
 
+  if (request.tool === "c1541.dir") {
+    const { imagePath, outDirPath } = resolved as ResolvedC1541Paths;
+
+    // T-40-02-04, D-13, D-15: resolved as a SIBLING of whichever x64sc
+    // backend-detect.mts already resolved -- never a bare-name spawn, which
+    // a host carrying both a stock and a fork build would silently answer
+    // with whichever build's directory happens to sort first on $PATH
+    // (MEASURED live on this project's own dev host, see the import
+    // comment above). `resolvedBackend()` with no `supervisorDir` never
+    // touches the on-disk cache; it still memoises in-process, which is
+    // what keeps a long-running broker's SECOND call here free -- see the
+    // import comment's own memoisation posture.
+    const c1541Found = findSiblingBinary("c1541", resolvedBackend().binPath, log);
+    if (c1541Found.path === null) {
+      return {
+        ok: false,
+        message: `host_tool "c1541.dir" refuses: "c1541" does not exist (tried: ${c1541Found.tried.join(", ")})`,
+      };
+    }
+
+    // A-02-style fixed flags: `-attach <imagePath> -dir`, argv as an ARRAY
+    // of individually-validated entries, never a shell string
+    // (must_haves.prohibitions). Deterministic: the same resolved paths
+    // yield a byte-identical argv array on two successive calls.
+    const argv: string[] = ["-attach", imagePath, "-dir"];
+
+    // c1541 has NO output-file option for `-dir` -- every listing line is
+    // printed to its OWN stdout (MEASURED against the real committed
+    // fixture, fixtures/c1541/README.md). The seam captures stdout and
+    // writes it to this single outputs[] path, then digests the FILE --
+    // never c1541's own exit status, which is 0 even on a genuine failure
+    // (D-11, MEASURED: "Error - Cannot open file ..." exits 0) and is
+    // therefore never the pass/fail signal for a listing.
+    const imageStem = basename(imagePath).replace(/\.[^./]+$/, "");
+    const listingPath = join(outDirPath, `${imageStem}.dir.txt`);
+
+    return { ok: true, toolPath: c1541Found.path, argv, outputs: [listingPath] };
+  }
+
   return { ok: false, message: `buildHostToolArgv: no argv builder for tool "${(request as { tool: string }).tool}"` };
 }
 
@@ -1344,6 +1490,16 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     // above states: DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already
     // exceeds this value.
     "ghidra.installExtension": DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    // Phase 40, plan 40-02 (Task 1 -- the tracer): DEFAULT_HOST_TOOL_TIMEOUT_MS,
+    // justified from a measurement rather than a round guess -- `c1541
+    // -attach fixtures/c1541/synthetic.d64 -dir` completed in 15ms
+    // wall-clock (MEASURED, this plan's own scratch run against the
+    // committed fixture), a >1300x headroom against this 20s ceiling.
+    // host-tool-client.ts's request-deadline table gains NO entry for this
+    // tool, for the same reason dxa.disassemble's own comment above states:
+    // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
+    // value.
+    "c1541.dir": DEFAULT_HOST_TOOL_TIMEOUT_MS,
   }),
 );
 
@@ -1385,7 +1541,7 @@ export interface HostToolFileResult {
 export type HostToolResponse =
   | {
       ok: true;
-      tool: "acme.build" | "ghidra.analyze" | "dxa.disassemble" | "ghidra.installExtension";
+      tool: "acme.build" | "ghidra.analyze" | "dxa.disassemble" | "ghidra.installExtension" | "c1541.dir";
       exitStatus: number | null;
       results: HostToolFileResult[];
       stderrTail: string;
@@ -1398,6 +1554,65 @@ export interface HostToolDeps {
   repoRoot: string;
   log?: (line: string) => void;
   timeoutMs?: number;
+}
+
+/** Phase 40, plan 40-02 (Task 1 -- the tracer): which tool ids write NO
+ * output file of their own -- their "output" IS the captured stdout, so
+ * runHostTool() turns it into a file itself before the digest loop runs
+ * (see the usage site below). Replaces the condition that used to name
+ * only "dxa.disassemble" directly -- a future addition is one entry in
+ * this frozen set, never a near-duplicate `if` branch. */
+const TOOLS_WHOSE_OUTPUT_IS_STDOUT: ReadonlySet<HostToolId> = new Set(["dxa.disassemble", "c1541.dir"]);
+
+/** Phase 40, plan 40-02 (Task 1 -- the tracer, D-09, D-10): the shape a
+ * tool's OWN captured output must have for a call to be reported as a
+ * success. Absence of the declared shape is the failure -- exit status is
+ * recorded in the log line only and is NEVER consulted here (D-11,
+ * MEASURED: `c1541` exits 0 even on a genuine failure, see
+ * fixtures/c1541/README.md). Runs host-side, inside runHostTool(), so every
+ * caller (broker control-plane route and host route alike) gets the same
+ * verdict -- never re-derived container-side. */
+export type HostToolOutputClassifier = (ctx: {
+  stdout: string;
+  stderr: string;
+  results: readonly HostToolFileResult[];
+}) => { ok: true } | { ok: false; reason: string };
+
+/** Total `Readonly<Record<HostToolId, HostToolOutputClassifier | null>>` --
+ * built with the SAME `Object.freeze(Object.assign(Object.create(null),
+ * ...))` idiom HOST_TOOL_ARG_KEYS uses. Pre-existing ids map to `null`,
+ * meaning "no declared shape, behaviour unchanged" -- NEVER absent, so a
+ * tool id never falls through to an implicit success. `host-tool.test.ts`'s
+ * completeness case (Task 3) asserts every HOST_TOOL_IDS member has an own
+ * property here. */
+export const HOST_TOOL_OUTPUT_CLASSIFIERS: Readonly<Record<HostToolId, HostToolOutputClassifier | null>> = Object.freeze(
+  Object.assign(Object.create(null) as Record<HostToolId, HostToolOutputClassifier | null>, {
+    "acme.build": null,
+    "ghidra.analyze": null,
+    "oracle.probe": null,
+    "oracle.run": null,
+    "dxa.disassemble": null,
+    "ghidra.installExtension": null,
+    // Declared shape (D-09, MEASURED against the committed fixture): a
+    // `<N> blocks free` trailer. MEASURED also: c1541 prints an "OPENCBM:
+    // opening dynamic library libopencbm.so failed!" complaint to stdout on
+    // EVERY call on this host -- a negative stderr oracle would be wrong
+    // here, since the complaint lands on stdout, not stderr, and is
+    // unrelated to whether the listing itself succeeded.
+    "c1541.dir": ((ctx: { stdout: string }) => classifyC1541DirOutput(ctx.stdout)) as HostToolOutputClassifier,
+  }),
+);
+
+/** The declared success shape for c1541.dir's captured stdout: at least one
+ * numeric block-count trailer of the form `<N> blocks free` (MEASURED
+ * against the committed fixture, fixtures/c1541/README.md). A `-dir`
+ * listing is small and bounded by the disk's own directory-sector budget,
+ * so this classifier tests the FULL captured text -- Task 2's own
+ * classifiers (bam/entry/chain), whose input can grow with a disk image's
+ * sector-chain contents, are the ones that classify over a capped prefix. */
+export function classifyC1541DirOutput(stdout: string): { ok: true } | { ok: false; reason: string } {
+  if (/\d+\s+blocks\s+free/i.test(stdout)) return { ok: true };
+  return { ok: false, reason: `c1541.dir: captured stdout carries no "<N> blocks free" trailer -- got: ${describe(tailBytes(stdout, 512))}` };
 }
 
 /** Digests one produced output file: byte size from a filesystem stat, sha256
@@ -1554,6 +1769,73 @@ function findAcmeLib(): { path: string | null; tried: string[] } {
     if (existsSync(join(c, ACME_LIB_MARKER))) return { path: c, tried };
   }
   return { path: null, tried };
+}
+
+// ---------------------------------------------------------------------------
+// The c1541/petcat sibling-binary probe (Phase 40, plan 40-02, T-40-02-04,
+// D-13, D-15). Follows findDxaBinary()'s own candidate-list idiom: try the
+// most-trustworthy candidate first, fall back only when it does not exist,
+// and return every candidate tried so a refusal can name them all. Unlike
+// findDxaBinary() (a FIXED, project-vendored path) and findAcmeLib() (a
+// FIXED list of well-known host install locations), this probe's first
+// candidate is COMPUTED per call, from whichever x64sc backend-detect.mts
+// already resolved -- see the resolvedBackend() import comment above for
+// why that call is cheap here. No version probe (D-14): the ROADMAP Notes
+// bullet asking for one was overruled by the project owner on 2026-09-08
+// and must not be re-added.
+// ---------------------------------------------------------------------------
+
+/** Memoised per binary name for the process lifetime (T-40-02-04's own
+ * instruction) -- mirrors backend-detect.mts's own stated posture of
+ * resolving once per process, never re-probing per call. A `null` (not
+ * found) answer is memoised too: a transient host misconfiguration that
+ * resolves differently mid-process is not a case this module has ever
+ * handled for any of its other binary probes (findDxaBinary()/
+ * findAcmeLib() are also called fresh per buildHostToolArgv() invocation
+ * but read a fixed, unchanging candidate set -- this probe's OWN
+ * per-binary-name memo exists because its first candidate is computed from
+ * a resolvedBackend() call that is itself memoised, so re-deriving it per
+ * call would just re-walk $PATH for no new information). */
+const siblingBinaryMemo = new Map<string, { path: string | null; tried: string[] }>();
+
+function findSiblingBinary(binaryName: string, resolvedX64scPath: string, log?: (line: string) => void): { path: string | null; tried: string[] } {
+  const memoised = siblingBinaryMemo.get(binaryName);
+  if (memoised) return memoised;
+
+  const tried: string[] = [];
+
+  // First candidate: the SAME directory the resolved x64sc itself lives in.
+  const siblingCandidate = join(dirname(resolvedX64scPath), binaryName);
+  tried.push(siblingCandidate);
+  if (existsSync(siblingCandidate)) {
+    const result = { path: siblingCandidate, tried };
+    siblingBinaryMemo.set(binaryName, result);
+    return result;
+  }
+
+  // Fallback: a $PATH walk (mirrors defaultResolveBinPath()'s own algorithm,
+  // backend-detect.mts), logging a warning naming the resolved x64sc path,
+  // the PATH match, and that this MAY be a DIFFERENT VICE build than the
+  // emulator -- never a silent PATH fallback (D-15).
+  const pathEnv = process.env.PATH ?? "";
+  for (const dir of pathEnv.split(":")) {
+    if (!dir) continue;
+    const candidate = join(dir, binaryName);
+    tried.push(candidate);
+    if (existsSync(candidate)) {
+      log?.(
+        `host_tool: "${binaryName}" was not found alongside the resolved x64sc (${resolvedX64scPath}); ` +
+          `falling back to a $PATH match at ${candidate} -- this may be a DIFFERENT VICE build than the emulator`,
+      );
+      const result = { path: candidate, tried };
+      siblingBinaryMemo.set(binaryName, result);
+      return result;
+    }
+  }
+
+  const result = { path: null, tried };
+  siblingBinaryMemo.set(binaryName, result);
+  return result;
 }
 
 /** Narrows, resolves, builds argv, then spawns the child ASYNCHRONOUSLY.
@@ -1747,8 +2029,8 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       datablocksPath,
       labelsPath,
     });
-  } else {
-    // request.tool === "ghidra.installExtension" (36-01, D-36-01). `sourceDir`
+  } else if (request.tool === "ghidra.installExtension") {
+    // (36-01, D-36-01). `sourceDir`
     // resolved through the SAME resolveWorkspacePath() site every other
     // tool's path argument uses. The materialisation side effects (create
     // the install directory, copy the vendored tree, copy the three stock
@@ -1818,6 +2100,24 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
     }
 
     built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName });
+  } else {
+    // request.tool === "c1541.dir" (Phase 40, plan 40-02, Task 1 -- the
+    // tracer). `image` resolved through the SAME resolveWorkspacePath()
+    // site every other tool's path argument uses; `outDir` defaults to
+    // dirname(imagePath) exactly as dxa.disassemble's own default does.
+    const imageResolved = resolveWorkspacePath(repoRootAbs, request.args.image);
+    if (!imageResolved.ok) return { ok: false, message: imageResolved.message };
+
+    let outDirPath: string;
+    if (request.args.outDir !== undefined) {
+      const outDirResolved = resolveWorkspacePath(repoRootAbs, request.args.outDir);
+      if (!outDirResolved.ok) return { ok: false, message: outDirResolved.message };
+      outDirPath = outDirResolved.path;
+    } else {
+      outDirPath = dirname(imageResolved.path);
+    }
+
+    built = buildHostToolArgv(request, { imagePath: imageResolved.path, outDirPath }, deps.log);
   }
   if (!built.ok) {
     // WR-01: buildHostToolArgv()'s own GHIDRA_HOME/launcher/language preflight
@@ -1850,23 +2150,34 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   const elapsedMs = Date.now() - startedAt;
 
   if (spawnResult.spawnErrorMessage !== null) {
-    deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs}`);
+    deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs} bin=${built.toolPath}`);
     return { ok: false, message: `runHostTool: failed to launch "${built.toolPath}": ${spawnResult.spawnErrorMessage}` };
   }
   if (spawnResult.timedOut) {
-    deps.log?.(`host_tool tool=${request.tool} exit=timeout elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs}`);
+    deps.log?.(`host_tool tool=${request.tool} exit=timeout elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs} bin=${built.toolPath}`);
     return { ok: false, message: `runHostTool: "${request.tool}" timed out after ${timeoutMs}ms and was killed` };
   }
 
-  deps.log?.(`host_tool tool=${request.tool} exit=${spawnResult.exitCode ?? "null"} elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs}`);
+  // Phase 40, plan 40-02 (D-16): `bin=` names the RESOLVED absolute binary
+  // path that answered this call -- for every tool, not only c1541.* --
+  // `built.toolPath` is already the resolved path every branch above
+  // produces, so this is a pure addition to an existing field, never a new
+  // resolution. A transcript read in isolation can now say which build
+  // answered, which matters most for a host carrying two VICE builds
+  // (T-40-02-04, MEASURED live on this project's own dev host).
+  deps.log?.(`host_tool tool=${request.tool} exit=${spawnResult.exitCode ?? "null"} elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs} bin=${built.toolPath}`);
 
-  // dxa.disassemble only (A-03): dxa has NO output-file option -- every
-  // listing line is fprintf(stdout, ...) (vendor/dxa/dump.c). Every other
+  // dxa.disassemble (A-03): dxa has NO output-file option -- every listing
+  // line is fprintf(stdout, ...) (vendor/dxa/dump.c). c1541.dir (Phase 40,
+  // plan 40-02, Task 1 -- the tracer): c1541 -dir has no output-file option
+  // either -- every listing line is printed to its own stdout (MEASURED
+  // against the committed fixture, fixtures/c1541/README.md). Every other
   // tool's outputs[] entries are already real files the child process wrote
-  // itself; this is the one tool whose "output" IS the captured stdout, so
-  // this is the one place that stdout is turned into a file before the
-  // digest loop below ever runs. No second spawn call is added.
-  if (request.tool === "dxa.disassemble" && built.outputs.length > 0) {
+  // itself; TOOLS_WHOSE_OUTPUT_IS_STDOUT names the ones whose "output" IS
+  // the captured stdout, so this is the one place that stdout is turned
+  // into a file before the digest loop below ever runs. No second spawn
+  // call is added.
+  if (TOOLS_WHOSE_OUTPUT_IS_STDOUT.has(request.tool) && built.outputs.length > 0) {
     try {
       writeFileSync(built.outputs[0]!, spawnResult.stdout, "utf8");
     } catch {
@@ -1898,6 +2209,21 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   for (const outputPath of built.outputs) {
     const digested = digestOutputFile(outputPath);
     if (digested) results.push(digested);
+  }
+
+  // Phase 40, plan 40-02 (D-09, D-10): the classifier table entry for this
+  // tool id, run immediately after the digest loop and before the success
+  // envelope is constructed. Pre-existing ids map to `null` -- "no declared
+  // shape, behaviour unchanged" -- so this is a no-op for every tool that
+  // predates this plan. Absence of the declared success shape IS the
+  // failure; exit status stays recorded in the log line only and is never
+  // consulted here (D-11).
+  const classifier = HOST_TOOL_OUTPUT_CLASSIFIERS[request.tool];
+  if (classifier) {
+    const verdict = classifier({ stdout: spawnResult.stdout, stderr: spawnResult.stderr, results });
+    if (!verdict.ok) {
+      return { ok: false, message: `host_tool "${request.tool}" refuses: ${verdict.reason}` };
+    }
   }
 
   // acme.build only: ACME's own "for <...> includes..." complaint names no
