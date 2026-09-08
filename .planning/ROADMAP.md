@@ -935,11 +935,29 @@ it was built; see `docs/phase40-preprocessing-tools-decisions.md`.
   3. ~~**A cartridge resolves to N separate per-bank images the existing engines each consume** through `cartconv`, rather than a flat ROM window that hides everything past the first bank. Each bank enters the existing single-image dxa / Ghidra flow unchanged, and **no bank-qualified addressing enters the store** — the v0.8.0 exclusion is carried unchanged, and `PREP-03` resolves the banking by producing N images, not by modelling banks.~~ **REMOVED 2026-09-08** — dropped by owner direction at the Phase 40 discussion. No `cartconv` work, no per-bank images, no bank output contract; `PREP-03` is withdrawn (see REQUIREMENTS.md's Excluded table and `docs/phase40-preprocessing-tools-decisions.md`). This criterion is deliberately NOT renumbered — criterion 4 below stays "criterion 4" for anyone who cited it before this edit.
   4. **A failure is reported as a failure, proven separately on each of the two shipped tools.** **AMENDED 2026-09-08** — originally "each of the three"; `cartconv` was removed from scope (criterion 3, above) before this criterion's own tools were built. MEASURED: `c1541` exits **0 on error**; `petcat` returns non-zero only for a missing file, `0` on garbage input. So each tool's own output decides the outcome — the same discipline the real-ACME verify path already applies, which refuses to read an exit status. Each tool carries a planted failure fixture observed producing a refusal, and the control that makes it non-vacuous is showing that an exit-status-only check **passes** on that same input.
 
-**Plans**: 7/7 plans executed in 7 waves (fully sequential — every plan after 40-01 shares
-`host-tool.mts`, the skill tree, or the planning documents with its predecessor,
-so no two can run in the same wave). Planned 2026-09-08 against `40-CONTEXT.md`'s
-36 decisions; criteria 1, 3 and 4 above and the goal sentence are amended in
-place by plan 40-07, which is the phase's own bookkeeping deliverable.
+**Plans**: 7/11 plans executed in 11 waves (fully sequential — every plan after 40-01
+shares `host-tool.mts`, `ghidra-project.mts`, the skill tree, or the planning documents
+with its predecessor, so no two can run in the same wave). Plans 40-01 through 40-07
+were planned 2026-09-08 against `40-CONTEXT.md`'s 36 decisions; criteria 1, 3 and 4
+above and the goal sentence were amended in place by plan 40-07.
+
+**Gap closure — `G-40-1` (Waves 8-11, planned 2026-09-08).** The UAT round returned one
+major issue: `ghidra.analyze`'s per-run project directories landed at
+`<repoRoot>/tools/ghidra-runs/`, outside D-33's single tool-written root, recorded across
+five documents as an unavoidable external-tool constraint. The owner rejected the
+location with two binding requirements — not under `tools/`, and the symlink created BY
+THE BROKER so container tooling keeps working. MEASURED against real Ghidra 12.1.3
+(`.planning/notes/ghidra-dot-path-check-semantics.md`, 5 live runs plus `javap` on
+`ProjectLocator`): the recorded justification is an overstatement. The dot refusal binds
+the **absolutized path argument** — `getAbsolutePath()`, never `getCanonicalPath()` — so
+it absolutizes but does **not** resolve symlinks, and a full import plus analysis
+succeeds through a symlinked handle with the program database physically under
+`.c64-re-tools/`. Waves 8-11 re-point the runs root under the one root behind a
+broker-minted, verified, relative-target alias handle; close the silent-violation hole
+where a missing handle plus recursive `mkdir` would recreate the two-root split
+invisibly; add the two guards the diagnosis requires; and correct every document that
+recorded the inference as external fact. Root cause and full citation set:
+`.planning/debug/ghidra-run-dir-outside-one-root.md`. Satisfies `PREP-05`.
 
 Plans:
 **Wave 1**
@@ -969,6 +987,22 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 
 - [x] 40-07-PLAN.md — the decisions doc, the in-place amendments, the `PREP-03` strike and count corrections, and the three todo folds; `USE_WORKTREES_FOR_PLAN=false` per `D-36` constraint 3
+
+**Wave 8** *(gap closure for `G-40-1`, blocked on Wave 7 completion)*
+
+- [ ] 40-08-PLAN.md — TRACER: `ensureGhidraRunsHandle()` plus the re-pointed runs root, so Ghidra per-run project data lands physically under `.c64-re-tools/` reached through a verified non-dotted alias symlink; the migrated unit suite; three `.gitignore` stanzas collapsed to one
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 40-09-PLAN.md — `R2`: THE BROKER mints the handle at startup before the control listener accepts; the remaining consumer migration; the handle-only invariant guard and the live-Ghidra symlink guard
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 40-10-PLAN.md — the record correction: `repo-root.ts`'s two false claims (now gated), `host-tool.mts`'s convention comment, `CLAUDE.md`'s D-33 bullet, `A-07`, and four historical records superseded with dated notes rather than rewritten
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 40-11-PLAN.md — `PREP-05` marked Complete, Phase 40's plan accounting, the superseded `STATE.md` decision entry, and the live-Ghidra guard todo closed; `worktree: false` because its deliverable is `STATE.md`/`ROADMAP.md` content
 
 Notes:
 
