@@ -292,7 +292,22 @@ function annoProductionModules(): string[] {
 // graphics-range arithmetic). Again a RELATION -- the value plan 37-06
 // measured, plus the one module this plan adds -- and again read literally:
 // 21 is strictly greater than the 20 it replaces.
-const ANNO_MODULE_FLOOR = 17 + 2 + 1 + 1;
+//
+// LOWERED FROM 21 TO 20 BY PLAN 40-06 (D-04, D-08, PREP-01) -- the first
+// LOWERING this floor has ever needed, so it is recorded with the same
+// discipline a raise gets, not silently absorbed. `anno-d64.ts` (one of the
+// three post-rename `anno-*` modules the original 15-baseline counted, per
+// its own `module-classification.ts` entry's `renamed` fate dated
+// 2026-08-29) is DELETED, not renamed: its one job -- 1541 directory-and-
+// entry reading -- moved onto the `c1541.*` host-tool seam (`c64-disk-access`
+// skill, plans 40-02/40-04), which carries no `anno-` prefix and is outside
+// this derivation by construction, exactly like `acme-verify.ts`/
+// `memmap-lookup.ts` above. The change is again a RELATION -- the value plan
+// 37-07 measured, MINUS the one module this plan removes -- read literally
+// against D-13's own discipline: a floor tracks a REAL family's REAL count,
+// and an honest deletion is a real count change, not the "adjust the literal
+// to fit" this test's own failure message forbids.
+const ANNO_MODULE_FLOOR = 17 + 2 + 1 + 1 - 1;
 
 test("the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();
