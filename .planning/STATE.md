@@ -22,7 +22,7 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-08 after Phase 40)
+See: .planning/PROJECT.md (updated 2026-09-10 after Phase 42)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
@@ -30,14 +30,15 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Phase 42 — The Text-Format Parsers and Their Two-Binary Fixtures
-the Contention Verdict, in milestone
+**Current focus:** Phase 43 — The Runtime Evidence Layer, in milestone
 **v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
 Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
 Phase 38 rather than resetting, with 20/20 requirements mapped and cross-checked
-mechanically. Phase 39 completed 2026-09-08 (8/8 plans) and returned `go` on
-rule `R15`. Phase 40 is planned (7 plans in 7 waves, plan-checker passed) and
-now executing; it is independent of Phase 39's verdict and of the text channel.
+mechanically. Four of the six are complete: Phase 39 on 2026-09-08 (8/8 plans),
+returning `go` on rule `R15`; Phase 40 on 2026-09-08 (11/11); Phase 41 on
+2026-09-09 (6/6); and Phase 42 on 2026-09-10 (16/16, across two gap-closure
+rounds), verification `passed` 5/5 with `PARSE-01`..`PARSE-04` all Complete.
+Phase 43 is not yet planned.
 
 Milestone scope, decided at the open: **claim the `-remotemonitor` text channel**
 that `broker-launch.mjs:165` has appended to every stock launch since Phase 3 and
@@ -1427,6 +1428,30 @@ ledger table row below were both updated in the same change as this one.
 
 ### Blockers/Concerns
 
+- **Phase 42 carried items (2026-09-10), none blocking Phase 43.** The phase closed at
+  16/16 plans and 5/5 verified must-haves after two gap-closure rounds; round 2 closed
+  exactly one finding, `CR-02`, and the round-2 code review returned `status: clean`.
+  Five residuals ride forward, every one of them restated verbatim in the phase's own
+  evidence record (`docs/phase42-text-format-drift-citations.md`, "Closing block, round 2")
+  rather than allowed to read as closed by a green round. (1) **No tool in this tree can
+  start VICE's profiler** — still unstarted by any shipped handler, open at
+  `.planning/WINDOWS.md` #55. (2) **Two manual-only verifications remain unclosed**: no
+  genuinely `--disable-cpuhistory` VICE build exists on this host, and `io`'s two
+  degradation strings are still source-traced (`monitor.c:1980-2000`), not live-observed —
+  round 2's live `io $dc00` dial hit the `unsupported-chip` chip-gate refusal, not either
+  degradation string. (3) **RAM-execute hardware evidence stands at 0/1565** over the
+  searched denominator — accepted scope, not attempted. (4) **`IN-02`'s behavioural half is
+  still unbuilt**, per plan 42-13's recorded decision: no committed capture and no known
+  VICE behaviour exercises the payload shape it would guard against. (5) **`42-VALIDATION.md`
+  is still `status: draft`, `nyquist_compliant: false`, Approval pending** — the nyquist
+  capability is active, so closing it belongs to `/gsd-validate-phase 42` and was
+  deliberately not back-edited from the orchestrator seat. Separately, and NOT a Phase 42
+  defect: the automated gate's documented floor is 3 failures (`anno-import.test.ts:352`,
+  `anno-register.test.ts:385`, `anno-register.test.ts:479`, an undeclared `STORE-06` id),
+  reproduced across four runs this session; `npm run test:automated` also skips twelve
+  MANUAL_ONLY_TESTS by design; and `audit-root-args.test.ts:982` fails intermittently under
+  parallel load (58/58 in isolation) as the known repo-tree scratch race.
+
 - **Phase 40 carried items (2026-09-08), none blocking Phase 41.** The phase closed at
   4/4 verified must-haves after a four-plan gap round (11/11 plans; gap `G-40-1` closed).
   Three residuals ride forward, all recorded rather than silently inherited. (1) **`IN-01`
@@ -2152,11 +2177,11 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T21:59:54.273Z
+Last session: 2026-09-09T22:22:12.419Z
 Stopped at: Phase 42 complete, ready to plan Phase 43
 Resume file: None
 
-Earlier: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remained at that point
+Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)
 
 Earlier: Completed 40-06-PLAN.md
 
