@@ -17,7 +17,7 @@ affects: [41-06]
 actuals:
   tokens: 44000
   tasks: 3
-  commits: 2
+  commits: 3
 
 tech-stack:
   added: []
@@ -140,6 +140,7 @@ coverage:
 
 1. **Task 2: Fail the acquire on a failed text-port allocation, and correct the prose it leaves behind** - `66d2ef2e` (feat)
 2. **Task 3: Retire the warm floor, moving the promotion step rather than losing it** - `c8eaea64` (feat)
+3. **Post-completion fixup (orchestrator spot-check, deviation #4 below): correct `countLaunching()`'s stale comment and two related dead imports** - `70dcc05f` (fix)
 
 **Task 1** was a `checkpoint:decision` pre-resolved by the orchestrator before this executor was spawned -- see "Task 1 checkpoint resolution" below.
 
@@ -245,9 +246,17 @@ See `key-decisions` in the frontmatter above. In summary: option B for the check
 - **Verification:** `node --test broker-kill.test.ts` green; repo-wide `grep -arc 'VICE_BROKER_WARM_FLOOR' src/mcp/vice/ | grep -v ':0$' | grep -v '/resources/' | grep -v '/node_modules/'` returns empty (0 matches).
 - **Committed in:** `c8eaea64` (Task 3 commit)
 
+**4. [Rule 1 - Bug/false documentation, post-hoc] `countLaunching()`'s doc comment still asserted two launch paths, and two more dead imports in `vice-broker.mts` from the same removal**
+- **Found during:** NOT found at commit time -- this plan's own repo-wide sweep (deviation #3, above) missed it because the comment names neither `maintainWarmFloor` in isolation grep-friendly form nor `VICE_BROKER_WARM_FLOOR`; it was caught by the orchestrator's own post-completion spot-check and reported back to this executor, which is why this correction is a separate, later commit rather than folded into Task 3's own commit. The SUMMARY is being edited to record this rather than silently backdating it into the Task 3 deviation list above, so it does not claim a clean sweep this plan did not actually have at Task 3's own commit time.
+- **Issue:** `broker-state.mts`'s `countLaunching()` doc comment still read "THE single counter both launch paths (a cold acquire... and warm floor maintenance, via maintainWarmFloor...) consult" -- present tense, describing a mechanism (`maintainWarmFloor()`) this plan's own Task 3 had already deleted. Investigating it surfaced a second, closely related, previously-missed defect: `vice-broker.mts` still imported `countReady`, `countTotal` and `countLaunching` from `broker-state.mjs`, but none was called anywhere in the file's actual code -- their only use was as `maintainWarmFloorForRealBroker()`'s own deps, passed through by shorthand object-property syntax (`countReady,` etc.) into the now-deleted `maintainWarmFloor()` call, which is why an earlier parenthesised grep (`countReady(`) during Task 3 missed them as unused.
+- **Fix:** Rewrote `countLaunching()`'s doc comment to state plainly that only one launch path remains and that nothing in production calls the counter today, while preserving the 2026-08-01 outage rationale for why a single counter exists. Removed the three dead imports from `vice-broker.mts` (`atCapacity`, the one import genuinely called, is untouched).
+- **Files modified:** `src/mcp/vice/broker-state.mts`, `src/mcp/vice/vice-broker.mts`, `src/mcp/vice/resources/broker-state.mjs`, `src/mcp/vice/resources/vice-broker.mjs`
+- **Verification:** `npm run typecheck` clean; `npm run build` regenerated both `.mjs` artifacts (JSDoc on real functions survives type-stripping, unlike a comment on a type/interface member, which is why `broker-state.mjs` changed this time when it had not after Task 2's own comment-only edit); `node --test resources-sync.test.ts` -- 2/2 pass; `node --test broker-state.test.ts broker-launch.test.ts vice-broker-acquire.test.ts vice-broker-supervision.test.ts broker-kill.test.ts broker-control.test.ts` -- 243/243 pass.
+- **Committed in:** `70dcc05f` (post-completion fixup commit, not part of the original Task 2/3 commits)
+
 ---
 
-**Total deviations:** 3 auto-fixed groups (1 Rule 2/3 architectural-adjacent addition, 1 Rule 3 blocking test fix, 1 Rule 1 false-documentation correction), spanning 12 files outside this plan's own `files_modified` list. **Impact on plan:** All were necessary consequences of the plan's own stated action text or its own acceptance criteria (the repo-wide `VICE_BROKER_WARM_FLOOR` grep gate is unconditional, not scoped to `files_modified`). No scope creep beyond what CHAN-02's own stated behaviour required.
+**Total deviations:** 4 auto-fixed groups (1 Rule 2/3 architectural-adjacent addition, 1 Rule 3 blocking test fix, 2 Rule 1 false-documentation corrections -- one at Task 3's own commit time, one post-hoc after an orchestrator spot-check), spanning 13 files outside this plan's own `files_modified` list. **Impact on plan:** All were necessary consequences of the plan's own stated action text or its own acceptance criteria (the repo-wide `VICE_BROKER_WARM_FLOOR` grep gate is unconditional, not scoped to `files_modified`). Deviation #4 is a documented instance of this plan's own initial "false documentation" sweep being incomplete -- caught by review rather than by this plan's own process -- recorded rather than smoothed over.
 
 ## Issues Encountered
 
@@ -284,3 +293,4 @@ None - no external service configuration required.
 - `selectWarmInstance()`'s function body diffed byte-identical against pre-plan `HEAD`.
 - `atCapacity`, `resolveCeiling`, `VICE_BROKER_MAX` in `broker-state.mts` confirmed unedited via `git diff --stat` (0 hunks touching those symbols).
 - No unexpected deletions in either task commit beyond the deliberate removal of retired warm-floor code/tests (each named explicitly in the commit body).
+- Post-completion fixup (`70dcc05f`) confirmed present via `git log --oneline -1`; `npm run typecheck` clean; `npm run build` + `node --test resources-sync.test.ts` -- 2/2 pass; `node --test broker-state.test.ts broker-launch.test.ts vice-broker-acquire.test.ts vice-broker-supervision.test.ts broker-kill.test.ts broker-control.test.ts` -- 243/243 pass; a repo-wide grep for `maintainWarmFloor` outside `.test.` and `resources/` files confirms all four surviving mentions are past-tense/retrospective.
