@@ -34,14 +34,18 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   TextMonitorClient,
   PROMPT_RE,
   TEXT_COMMAND_ALLOWLIST,
+  TEXT_COMMAND_PARAM_SPECS,
   isAllowlistedTextCommand,
+  buildTextCommand,
+  isDialableTextCommandForVerb,
   TextFramingError,
   TEXT_MAX_BUFFERED_LEN,
   TEXT_QUIESCENCE_MS,
@@ -119,6 +123,104 @@ test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eight named verb
   for (const cmd of TEXT_COMMAND_ALLOWLIST) {
     assert.doesNotMatch(cmd, /\bload\b|\bsave\b/, `${JSON.stringify(cmd)} must not be a file-touching verb`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Parameterized commands (D-42-1, plan 42-04): TEXT_COMMAND_PARAM_SPECS,
+// buildTextCommand(), isDialableTextCommandForVerb(), and the widened
+// isAllowlistedTextCommand().
+// ---------------------------------------------------------------------------
+
+test("buildTextCommand: the three canonical renderings match the exact command string each fixture was actually captured with", () => {
+  const chis = loadTextFixture("cpu-history-stock");
+  const chisResult = buildTextCommand("chis", 4);
+  assert.equal(chisResult.ok, true);
+  assert.equal(chisResult.ok && chisResult.command, chis.provenance.command);
+
+  const profFlat = loadTextFixture("flat-profile-stock");
+  const profFlatResult = buildTextCommand("prof flat", 5);
+  assert.equal(profFlatResult.ok, true);
+  assert.equal(profFlatResult.ok && profFlatResult.command, profFlat.provenance.command);
+
+  const io = loadTextFixture("register-decode-stock");
+  const ioResult = buildTextCommand("io", 53280); // 53280 == 0xd020
+  assert.equal(ioResult.ok, true);
+  assert.equal(ioResult.ok && ioResult.command, io.provenance.command);
+});
+
+test("buildTextCommand: refuses a non-integer, a negative, a NaN, an Infinity, a numeric string, and an out-of-range value -- each naming the verb and the accepted range", () => {
+  const cases: Array<{ title: string; value: unknown }> = [
+    { title: "non-integer", value: 4.5 },
+    { title: "negative", value: -1 },
+    { title: "NaN", value: Number.NaN },
+    { title: "Infinity", value: Number.POSITIVE_INFINITY },
+    { title: "numeric string", value: "4" },
+    { title: "out-of-range", value: 65536 },
+  ];
+  for (const { title, value } of cases) {
+    const result = buildTextCommand("chis", value);
+    assert.equal(result.ok, false, `expected ${title} (${JSON.stringify(value)}) to be refused`);
+    assert.ok(!result.ok);
+    assert.match(result.message, /"chis"/, `${title}: message must name the verb`);
+    assert.match(result.message, /1 and 65535/, `${title}: message must name the accepted range`);
+  }
+});
+
+test("buildTextCommand: refuses a verb with no spec entry, rather than falling through to a bare concatenation", () => {
+  const result = buildTextCommand("quit", 4);
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok);
+  assert.match(result.message, /"quit"/);
+  assert.match(result.message, /no parameterized form/);
+});
+
+test("isDialableTextCommandForVerb / isAllowlistedTextCommand: accept every canonical rendering the builder produces", () => {
+  for (const [verb, value] of [
+    ["chis", 4],
+    ["prof flat", 5],
+    ["io", 53280],
+  ] as const) {
+    const built = buildTextCommand(verb, value);
+    assert.ok(built.ok);
+    const command = built.ok ? built.command : "";
+    assert.ok(isDialableTextCommandForVerb(verb, command), `expected ${JSON.stringify(command)} to be dialable for ${verb}`);
+    assert.ok(isAllowlistedTextCommand(command), `expected ${JSON.stringify(command)} to be allowlisted`);
+  }
+});
+
+test("isAllowlistedTextCommand: refuses a doubled space, a trailing space, an uppercase verb, a leading zero on the count, uppercase hex in the address, and an appended second parameter -- only the canonical rendering is dialable", () => {
+  const cases: Array<{ title: string; cmd: string }> = [
+    { title: "doubled space", cmd: "chis  4" },
+    { title: "trailing space", cmd: "chis 4 " },
+    { title: "uppercase verb", cmd: "CHIS 4" },
+    { title: "leading zero on count", cmd: "chis 04" },
+    { title: "uppercase hex address", cmd: "io $D020" },
+    { title: "appended second parameter", cmd: "chis 4 5" },
+  ];
+  for (const { title, cmd } of cases) {
+    assert.equal(isAllowlistedTextCommand(cmd), false, `${title}: ${JSON.stringify(cmd)} must not be dialable`);
+  }
+});
+
+test("D-42-1 prohibition: no parameter kind in TEXT_COMMAND_PARAM_SPECS accepts a string domain", () => {
+  for (const [verb, spec] of Object.entries(TEXT_COMMAND_PARAM_SPECS)) {
+    assert.ok(
+      spec.kind === "count" || spec.kind === "address",
+      `${verb}'s spec kind must be "count" or "address", never a free-text/string domain -- got ${JSON.stringify(spec.kind)}`,
+    );
+  }
+});
+
+test("command()'s refusal ORDER: the control-character check precedes the dialability check in source order (unchanged by D-42-1)", () => {
+  const sourcePath = fileURLToPath(new URL("./text-protocol.ts", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+  const commandBodyStart = source.indexOf("command(cmd: string, _opts: TextCommandOptions = {})");
+  assert.ok(commandBodyStart >= 0, "command() must exist in text-protocol.ts");
+  const controlCharIndex = source.indexOf("FORBIDDEN_COMMAND_CHARS_RE.test(cmd)", commandBodyStart);
+  const dialabilityIndex = source.indexOf("!isAllowlistedTextCommand(cmd)", commandBodyStart);
+  assert.ok(controlCharIndex > commandBodyStart, "the control-character check must be inside command()");
+  assert.ok(dialabilityIndex > commandBodyStart, "the dialability check must be inside command()");
+  assert.ok(controlCharIndex < dialabilityIndex, "the control-character check must precede the dialability check");
 });
 
 test("TextMonitorClient.command(): refuses a non-allowlisted command before any byte reaches the socket", async () => {
