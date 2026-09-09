@@ -193,6 +193,10 @@ Failing files: `anno-import.test.ts`, `anno-register.test.ts` -- exactly the doc
 - Next: 42-12, 42-13, 42-14 per the existing gap-closure sequence (IN-02, in `textmon-profile.ts`, is documentation-only and addressed by 42-12 per this plan's own `<plan_decisions>`).
 - No blockers.
 
+## Self-Check: PASSED
+
+All key files confirmed present on disk (`textmon-registers.ts`, `textmon-registers.test.ts`, `textmon-seam.test.ts`, `text-tools.ts`, `text-tools.test.ts`, `tools-manifest.stock.json`, this SUMMARY). All three commit hashes (`ccb519c6`, `6c15f288`, `307edbc0`) confirmed present in `git log --oneline --all`.
+
 ---
 *Phase: 42-the-text-format-parsers-and-their-two-binary-fixtures*
 *Completed: 2026-09-09*
