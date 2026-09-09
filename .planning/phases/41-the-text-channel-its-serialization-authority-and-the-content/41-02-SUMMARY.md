@@ -197,3 +197,16 @@ None - no external service configuration required.
 ---
 *Phase: 41-the-text-channel-its-serialization-authority-and-the-content*
 *Completed: 2026-09-09*
+
+## Self-Check: PASSED
+
+- All created files confirmed present via `[ -f ]`: `channel-lock.ts`, `channel-lock.test.ts`.
+- All modified files confirmed present via `[ -f ]`: `stock-dispatch.ts`, `text-protocol.ts`.
+- Both task commits (`8458db47`, `b4b6a758`) and this SUMMARY's own commit (`2953733d`) confirmed present via `git log --oneline --all`.
+- `npm run typecheck` clean.
+- `node --test channel-lock.test.ts` -- 16/16 pass (>= 11 required).
+- `node --test stock-dispatch.test.ts channel-lock.test.ts text-protocol.test.ts` -- 167/167 pass.
+- `node --test stock-run-until.test.ts stock-reproducible-run.test.ts` -- 57/57 pass; `git diff --name-only` confirms both files untouched by this plan.
+- `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test text-monitor-live.test.ts` -- 4/4 pass, 0 skipped, broker/x64sc confirmed stopped beforehand.
+- `npm run test:automated` -- final two consecutive runs both landed at exactly 3 failures, confined to `anno-register.test.ts`/`anno-import.test.ts`'s documented pre-existing baseline.
+- No unexpected deletions in either task commit (`git diff --diff-filter=D --name-only` empty for both).
