@@ -56,6 +56,12 @@
 //     period is an equally legitimate reading from a different host; both
 //     are accepted and the OBSERVED separator is recorded on the result
 //     rather than assumed or discarded.
+//   - Never fold a never-started profiler into `missing-header`, and never
+//     move `PROFILING_NOT_STARTED_TEXT` outside this module. `text-tools.ts`
+//     branches on the `profiling-not-started` CODE this module exports,
+//     never on VICE's own text -- the single-owner rule PARSE-03's
+//     structural guard enforces (textmon-seam.test.ts) is not weakened to
+//     fix a message.
 
 /** One decoded `prof flat` row, in VICE's own emitted order (rank order by
  * cycles, descending) -- this module performs no sort of its own, ever.
@@ -77,9 +83,12 @@ export interface FlatProfileEntry {
   readonly address: number | "ROOT";
 }
 
-/** The full decoded flat profile. `decimalSeparator` records which of the
- * two accepted decimal-point characters was observed in the payload's
- * percentage fields -- a real environmental fact, never assumed. */
+/** The full decoded flat profile. `decimalSeparator` records the FIRST data
+ * row's observed decimal-point character (comma or period) -- a real
+ * environmental fact, never assumed -- and is NOT validated against any
+ * later row. A caller must not read it as a whole-payload guarantee that
+ * every row shares the same separator; it names only what the first row
+ * showed. */
 export interface FlatProfile {
   readonly entries: readonly FlatProfileEntry[];
   readonly decimalSeparator: "," | ".";
@@ -88,14 +97,18 @@ export interface FlatProfile {
 /** The closed refusal-code union (D-42-3): an empty response, a missing or
  * unrecognised header/rule pair, a structurally malformed row (wrong field
  * count, non-hex address), an unrecognised thousands separator (a numeric
- * group broken apart by an ASCII space rather than joined by U+202F), and
- * an unrecognised percentage shape. */
+ * group broken apart by an ASCII space rather than joined by U+202F), an
+ * unrecognised percentage shape, and a profiler that was never started
+ * (`profiling-not-started`) -- the profiler subsystem is present and the
+ * command is fine, it simply has nothing recorded yet, which is a
+ * different fact from a header that failed to match. */
 export type FlatProfileRefusalCode =
   | "empty-response"
   | "missing-header"
   | "malformed-row"
   | "unrecognised-separator"
-  | "unrecognised-percentage";
+  | "unrecognised-percentage"
+  | "profiling-not-started";
 
 /** A parser refusal (D-42-3): returned, never thrown. `line` and
  * `lineNumber` name the offending content whenever one exists -- for the
@@ -126,6 +139,17 @@ const TRAILING_PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * the reported row count. */
 const HEADER_LINE = "        Total      %          Self      %";
 const RULES_LINE = "------------- ------ ------------- ------";
+
+/** VICE's own cold-profiler sentence, quoted byte-for-byte -- including its
+ * embedded double quotes and its trailing period -- from
+ * `text-protocol.ts`'s `TEXT_COMMAND_ALLOWLIST` doc comment and
+ * `docs/phase42-text-format-drift-citations.md`'s Block 9. Unlike this
+ * module's siblings' source-traced strings, this one is MEASURED: observed
+ * live against genuine stock `x64sc (VICE 3.9)`, 2026-09-09. `prof flat`
+ * alone, on a freshly connected session that has never issued `prof on`,
+ * returns exactly this sentence -- the profiler subsystem is compiled in
+ * and the command itself is fine, it simply has nothing recorded yet. */
+export const PROFILING_NOT_STARTED_TEXT = 'No profiling data available. Start profiling with "prof on".';
 
 /** The narrow no-break space (U+202F) VICE uses as its thousands separator
  * -- see this module's header comment for the full hazard explanation. */
@@ -233,6 +257,20 @@ export function parseFlatProfile(text: string): FlatProfileParseResult {
         "prof flat: the response contained only prompt text and no header -- never decoded as a zero-row profile",
         "",
         0,
+      ),
+    };
+  }
+
+  const trimmedBody = body.trim();
+  if (trimmedBody === PROFILING_NOT_STARTED_TEXT) {
+    return {
+      ok: false,
+      refusal: makeRefusal(
+        "profiling-not-started",
+        `prof flat: the connected machine replied: ${PROFILING_NOT_STARTED_TEXT} -- profiling is not currently ` +
+          "running there, this is not a missing build capability, and it is not a failure to read the reply",
+        trimmedBody,
+        1,
       ),
     };
   }

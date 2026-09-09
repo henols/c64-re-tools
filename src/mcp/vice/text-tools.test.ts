@@ -21,6 +21,7 @@ import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockFo
 import type { HeldLease } from "./vice-broker-client.ts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { CPUHISTORY_DISABLED_STUB } from "./text-capability-probe.ts";
+import { PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
 
 beforeEach(() => {
   resetChannelLockForTests();
@@ -590,6 +591,48 @@ test("handleProfileFlat: an indeterminate (empty) reply produces its own named m
       const result = await handleProfileFlat({}, deps);
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /unknown, not negative/);
+    },
+  );
+});
+
+// Plan 42-13 (G2): VICE's own cold-profiler sentence -- correctly classified
+// "capable" (it is not a build gap) -- must surface as a named
+// profiling-not-started state, never through the parse-failure wrapper the
+// other refusal codes use.
+test("handleProfileFlat: VICE's own cold-profiler sentence surfaces as a named profiling-not-started state, never the parse-failure wrapper", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${PROFILING_NOT_STARTED_TEXT}\n${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProfileFlat({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_profile_flat/);
+      assert.ok(
+        result.content[0]!.text.includes(PROFILING_NOT_STARTED_TEXT),
+        "expected the cold-profiler sentence verbatim in the user-facing text",
+      );
+      assert.doesNotMatch(
+        result.content[0]!.text,
+        /could not be parsed/,
+        "the profiling-not-started refusal must not carry the other codes' parse-failure wrapper",
+      );
+    },
+  );
+});
+
+test("handleProfileFlat: a different refusal code (missing-header) still carries the parse-failure wrapper -- proving the profiling-not-started special case is scoped to one code, not applied to all", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`this is not the header\nnor is this\n${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProfileFlat({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /could not be parsed/, "every code other than profiling-not-started keeps the parse-failure wrapper");
+      assert.match(result.content[0]!.text, /missing-header/);
     },
   );
 });

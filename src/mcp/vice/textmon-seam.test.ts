@@ -360,7 +360,7 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
     name: "flat profile",
     module: "textmon-profile.ts",
     testFile: "textmon-profile.test.ts",
-    // textmon-profile.ts:122 -- THOUSANDS_SEPARATOR, the SOURCE-CODE ESCAPE
+    // textmon-profile.ts:156 -- THOUSANDS_SEPARATOR, the SOURCE-CODE ESCAPE
     // SPELLING of U+202F (narrow no-break space), never the raw UTF-8
     // bytes: see containsFormatLiteral() below for why this one format is
     // matched differently from the other four.
@@ -381,6 +381,11 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       {
         file: "text-monitor-live.test.ts",
         reason: "plan 42-09's live opt-in suite, calling this owner's own parse export directly on a reply dialed from genuine stock VICE to prove the live wiring, not merely the fixture shape",
+      },
+      {
+        file: "text-tools.test.ts",
+        reason:
+          "plan 42-13's profiling-not-started handler tests, importing PROFILING_NOT_STARTED_TEXT from the owning module rather than re-spelling VICE's cold-profiler sentence",
       },
     ],
   },

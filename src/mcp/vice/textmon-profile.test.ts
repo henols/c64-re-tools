@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
-import { parseFlatProfile, type FlatProfileParseResult } from "./textmon-profile.ts";
+import { parseFlatProfile, PROFILING_NOT_STARTED_TEXT, type FlatProfileParseResult } from "./textmon-profile.ts";
 
 const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = HERE.replace(/textmon-profile\.test\.ts$/, "textmon-profile.ts");
@@ -159,6 +159,35 @@ test("parseFlatProfile: a payload with missing/altered header lines refuses with
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.refusal.code, "missing-header");
   assertRealCapturesStillParseCleanly();
+});
+
+// ---------------------------------------------------------------------------
+// Plan 42-13 (G2): VICE's own cold-profiler sentence is a named state
+// (profiling-not-started), never the missing-header refusal -- paired with
+// the real-capture discriminating control.
+// ---------------------------------------------------------------------------
+
+test("parseFlatProfile: VICE's own cold-profiler sentence, prompt-framed exactly as a real reply is, refuses with profiling-not-started (never missing-header), naming the sentence verbatim -- paired with the real-capture discriminating control", () => {
+  const payload = `${PROFILING_NOT_STARTED_TEXT}\n(C:$fd50) `;
+  const result = parseFlatProfile(payload);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "profiling-not-started");
+    assert.notEqual(result.refusal.code, "missing-header");
+    assert.match(result.refusal.message, /^prof flat:/);
+    assert.ok(
+      result.refusal.message.includes(PROFILING_NOT_STARTED_TEXT),
+      "expected the refusal message to contain VICE's own sentence verbatim",
+    );
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("idempotency: two parses of the cold-profiler reply are deeply equal", () => {
+  const payload = `${PROFILING_NOT_STARTED_TEXT}\n(C:$fd50) `;
+  const first = parseFlatProfile(payload);
+  const second = parseFlatProfile(payload);
+  assert.deepEqual(first, second);
 });
 
 test("parseFlatProfile: a planted row whose address field is not four hex digits refuses with the malformed-row code -- paired with the real-capture discriminating control", () => {

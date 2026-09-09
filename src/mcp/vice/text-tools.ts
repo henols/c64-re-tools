@@ -456,6 +456,17 @@ export async function handleProfileFlat(args: Record<string, unknown>, deps: Sto
 
     const parsed = parseFlatProfile(response);
     if (!parsed.ok) {
+      // A profiler that was never started (profiling-not-started, plan
+      // 42-13) is a named state the owning module recognises, not a parse
+      // defect -- rendering it through the wrapper below would make a
+      // legitimate external condition (the profiler subsystem simply has
+      // nothing recorded yet) read as a bug in this project. This changes
+      // the DESCRIPTION of the cold state only: the separate, still-open
+      // inability for this tree to start profiling on the user's behalf
+      // (Window #55) is unaffected. Every other code keeps the wrapper.
+      if (parsed.refusal.code === "profiling-not-started") {
+        return isErrorText(`vice_profile_flat: ${parsed.refusal.message}`);
+      }
       return isErrorText(
         `vice_profile_flat: prof flat's response could not be parsed (${parsed.refusal.code} at line ` +
           `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
