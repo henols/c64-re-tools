@@ -24,12 +24,15 @@ import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
 
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
+// Plan 41-05 (folded todo): countReady/countTotal/countLaunching are DROPPED
+// from this import -- they were used only as maintainWarmFloorForRealBroker()'s
+// own deps for the now-retired maintainWarmFloor(), passed through by
+// shorthand property (`countReady,` etc.), never called directly in this
+// file. atCapacity() is the one survivor actually called here (its own
+// cold-launch-arm gate, below).
 import {
   createBrokerState,
   nextFreePort,
-  countReady,
-  countTotal,
-  countLaunching,
   atCapacity,
   resolveBasePort,
   clearMonitorClient,

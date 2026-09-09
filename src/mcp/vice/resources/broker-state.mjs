@@ -186,14 +186,23 @@ export function countReady(state) {
 export function countTotal(state) {
     return state.instances.size;
 }
-/** Counts instances currently "launching" -- THE single counter both launch
- * paths (a cold acquire, via handleAcquire in vice-broker.mts, and warm
- * floor maintenance, via maintainWarmFloor in broker-launch.mts) consult
- * before starting a new launch. Two counters that could ever disagree about
- * whether a boot is already under way is exactly how the two bash launch
- * paths raced each other into the 2026-08-01 outage (three simultaneous
- * x64sc launches: one SEGV, one exit 1, one exit 0 at the identical spawn
- * second) -- there is now exactly one, read here and nowhere else. */
+/** Counts instances currently "launching". Plan 41-05 (folded todo) retired
+ * the warm floor and its own maintainWarmFloor() -- the SECOND launch path
+ * that used to read this counter as a pre-check before starting a new
+ * launch, alongside the cold-acquire arm's own equivalent check. With only
+ * one launch path left (vice-broker.mts's handleAcquire(), guarded by
+ * acquirePortAndLaunch()'s own single-owner `inFlight` boolean in
+ * broker-launch.mts -- a SEPARATE, synchronous primitive, not this
+ * function), nothing in production calls this counter today; it remains
+ * exported alongside countReady()/countTotal() as status-shaped
+ * infrastructure. It is named here, and its history preserved, because it
+ * is why a SINGLE counter -- not two, one per launch path -- was the fix
+ * for the 2026-08-01 outage (three simultaneous x64sc launches: one SEGV,
+ * one exit 1, one exit 0 at the identical spawn second): two counters that
+ * could ever disagree about whether a boot was already under way is exactly
+ * how that outage happened, and the discipline of reading exactly one is
+ * what this function's own existence still documents, even with one launch
+ * path left to (potentially) consult it. */
 export function countLaunching(state) {
     let n = 0;
     for (const record of state.instances.values()) {
