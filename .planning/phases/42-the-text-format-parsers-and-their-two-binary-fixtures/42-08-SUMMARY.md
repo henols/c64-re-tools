@@ -185,5 +185,89 @@ None - no external service configuration required.
 - 0 NUL bytes in this SUMMARY.md and in textmon-seam.test.ts
 
 ---
+
+## POST-MERGE ADDENDUM (2026-09-09)
+
+**This is a narrow, single-cause fix commit against this plan's deliverable, applied after
+merge -- NOT a re-execution of plan 42-08 and NOT a new plan.** It closes the exact gap this
+plan's own "Next Phase Readiness" section predicted.
+
+### What happened
+
+The post-merge gate on the merged wave-3 tree reported 9 failures, all in
+`textmon-seam.test.ts`, none anywhere else new. This was exactly the predicted collision
+between this plan (42-08, which measured its declared consumer sets in a worktree forked
+BEFORE plan 42-07's tool wiring landed) and plan 42-07 (which, once merged, wired
+`text-tools.ts` to import all four of the remaining parsers):
+
+- `text-tools.ts` became a second importer of `textmon-cpuhistory.ts`, `textmon-backtrace.ts`,
+  `textmon-profile.ts` and `textmon-registers.ts` via `handleCpuHistory`, `handleBacktrace`,
+  `handleProfileFlat` and `handleIoRegisters` (4 import-consumer-set failures + 4 full-tree-scan
+  failures, 8 total).
+- `stock-dispatch.test.ts`'s new `vice_io_registers` conformance test (also from plan 42-07)
+  legitimately embeds the IO-registers row marker `>C:` in a realistic register-dump stub reply
+  (1 literal-consumer-set failure).
+
+The access map (`textmon-memmap.ts`) never failed, because its declared set already listed
+`text-tools.ts` -- plan 42-01 had wired it before plan 42-08 measured. That asymmetry was the
+model for this fix: make the four newly-wired formats look like memmap already did.
+
+### What changed
+
+`src/mcp/vice/textmon-seam.test.ts` only:
+
+1. Added `text-tools.ts` to the `importConsumers` array for CPU history, backtrace, flat
+   profile and IO registers, each entry carrying its own `reason` string naming plan 42-07 and
+   the specific handler function that delegates to the owner's parse export
+   (`handleCpuHistory` / `handleBacktrace` / `handleProfileFlat` / `handleIoRegisters`).
+2. Added `stock-dispatch.test.ts` to IO registers' `literalConsumers` array, with a `reason`
+   naming plan 42-07's `vice_io_registers` conformance test and its realistic stub reply.
+3. Rewrote the header comment's "WAVE-3 CONCURRENCY" note (originally written as a forward
+   prediction) to describe the resolved, post-merge state: what the prediction was, that it
+   came true exactly as stated, and how it was resolved -- the explanation is preserved, not
+   deleted.
+
+No other file was touched. No production code changed -- 42-07's wiring was correct; only this
+guard's declared data was stale.
+
+### Guard strictness verified, not just asserted
+
+Every assertion in the file is exactly as strict as before the fix:
+
+- No test was deleted, skipped, `.todo`'d, or commented out (33/33 tests still present and
+  passing, same count as before).
+- No equality assertion was loosened into a subset/superset or "contains" check.
+- No declared set was derived from the measurement it checks against -- each new entry is a
+  hand-written literal string in `FORMAT_OWNERS`, not a copy of the measured array.
+- The planted-violation controls (4 planted, 3 clean) are untouched.
+
+**Verified the guard still fails on an undeclared consumer**, live, not just by inspection:
+temporarily removed the new `text-tools.ts` entry from CPU history's `importConsumers` array,
+re-ran `node --test textmon-seam.test.ts`, and confirmed exactly 2 tests went red (CPU
+history's import-consumer-set equality test and its full-tree-scan test), each failing with the
+expected "does not equal the declared set" / "checkViolations() found real violations" message
+naming `text-tools.ts` as the unexpected importer. Then restored the fix from a pre-edit backup
+and re-ran to confirm 33/33 green again.
+
+### Verification results
+
+- `node --test textmon-seam.test.ts`: 33/33 pass (was 24/33, 9 failing, before the fix).
+- `npm run test:automated`: exit 1, 8 failures -- `anno-register.test.ts` (2),
+  `anno-import.test.ts` (1), `dxa-seam.test.ts` (4, vendored `dxa` binary not built in this
+  worktree), `repo-root.test.ts` (1, worktree path trips a "not under .claude" assertion).
+  `textmon-seam.test.ts` is absent from the failing set. This 8-failure count matches plan
+  42-07's own measured worktree baseline byte-for-byte (same four files, same per-file counts) --
+  a pre-existing worktree-environment artifact, not introduced by this fix and out of this
+  fix's scope. It is NOT the 3-failure floor (`anno-register` 2 + `anno-import` 1) measured
+  outside a worktree; `dxa-seam` and `repo-root` are worktree-specific and were not touched.
+- `npm run typecheck`: clean, no `error TS`.
+- Both changed files (`textmon-seam.test.ts` and this SUMMARY.md) confirmed 0 NUL bytes.
+
+### Scope
+
+Only `src/mcp/vice/textmon-seam.test.ts` was modified by the fix commit, plus this addendum to
+the existing SUMMARY.md. `.planning/STATE.md` and `.planning/ROADMAP.md` were not touched.
+
+---
 *Phase: 42-the-text-format-parsers-and-their-two-binary-fixtures*
 *Completed: 2026-09-09*
