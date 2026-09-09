@@ -30,7 +30,13 @@ import {
   type ConnectOptions,
   type ResolvedResponse,
 } from "./stock-protocol.ts";
-import { MonitorOwnershipError, type ClaimMonitorOutcome, type ReleaseMonitorOutcome } from "./vice-broker-client.ts";
+import {
+  MonitorOwnershipError,
+  type ClaimMonitorOutcome,
+  type ClaimMonitorOptions,
+  type ReleaseMonitorOptions,
+  type ReleaseMonitorOutcome,
+} from "./vice-broker-client.ts";
 import { MachineRestartedError } from "./vice.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 
@@ -175,15 +181,20 @@ interface StubBrokerControlOptions {
   releaseOutcome?: ReleaseMonitorOutcome;
 }
 
-function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): { brokerControl: StockConnectBrokerControl; state: { claimCalls: number; releaseCalls: number } } {
-  const state = { claimCalls: 0, releaseCalls: 0 };
+function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
+  brokerControl: StockConnectBrokerControl;
+  state: { claimCalls: number; releaseCalls: number; claimedWith: ClaimMonitorOptions[]; releasedWith: ReleaseMonitorOptions[] };
+} {
+  const state = { claimCalls: 0, releaseCalls: 0, claimedWith: [] as ClaimMonitorOptions[], releasedWith: [] as ReleaseMonitorOptions[] };
   const brokerControl: StockConnectBrokerControl = {
-    async claimMonitor() {
+    async claimMonitor(claimOpts) {
       state.claimCalls += 1;
+      state.claimedWith.push(claimOpts);
       return opts.claimOutcome ?? { ok: true };
     },
-    async releaseMonitor() {
+    async releaseMonitor(releaseOpts) {
       state.releaseCalls += 1;
+      state.releasedWith.push(releaseOpts);
       return opts.releaseOutcome ?? { ok: true };
     },
   };
@@ -803,7 +814,7 @@ test("stockConnect: a completed handshake writes the capability record exactly o
 test("stockConnect: ownership -- a refused claim rejects with MonitorOwnershipError naming the holder, before any binmon connect is attempted", async () => {
   await withStockStubServer(happyPathResponder(), async (port, connectionCount) => {
     const { brokerControl } = makeStubBrokerControl({
-      claimOutcome: { ok: false, reason: "monitor_owned", holder: { grantId: "grant-other", claimedAt: 12345, pid: 999 } },
+      claimOutcome: { ok: false, reason: "monitor_owned", holder: { grantId: "grant-other", claimedAt: 12345, pid: 999, channel: "binary" } },
     });
     await assert.rejects(
       stockConnect({ host: "127.0.0.1", port, targetId: "grant-8", brokerControl }),
@@ -812,11 +823,37 @@ test("stockConnect: ownership -- a refused claim rejects with MonitorOwnershipEr
         const ownershipErr = err as MonitorOwnershipError;
         assert.equal(ownershipErr.holderGrantId, "grant-other");
         assert.equal(ownershipErr.holderClaimedAt, 12345);
+        assert.equal(ownershipErr.channel, "binary", "plan 41-03 (D-14): the channel rides on the ownership error");
         assert.doesNotMatch(ownershipErr.message, /wedged|hung|unresponsive/i);
         return true;
       },
     );
     assert.equal(connectionCount(), 0, "a refused claim must never open a socket to the binmon port");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 41-03 (D-14): stockConnect()/stockDisconnect() claim and release the
+// "binary" channel explicitly, at every call site, never relying on the
+// client's own default.
+// ---------------------------------------------------------------------------
+
+test("stockConnect/stockDisconnect (D-14): claims and releases channel 'binary' explicitly, on the success path", async () => {
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl, state } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-d14-1", brokerControl });
+    assert.equal(state.claimedWith[0]?.channel, "binary");
+    await stockDisconnect(session);
+    assert.equal(state.releasedWith[0]?.channel, "binary");
+  });
+});
+
+test("stockConnect (D-14): a failure after a successful claim releases 'binary', never 'text'", async () => {
+  await withStockStubServer(happyPathResponder({ cpuHistoryErrorCode: ErrorCode.InvalidApiVersion }), async (port) => {
+    const { brokerControl, state } = makeStubBrokerControl();
+    await assert.rejects(stockConnect({ host: "127.0.0.1", port, targetId: "grant-d14-2", brokerControl }));
+    assert.equal(state.claimedWith[0]?.channel, "binary");
+    assert.equal(state.releasedWith[0]?.channel, "binary", "a failed stock handshake must release its OWN binary claim, never a text claim");
   });
 });
 

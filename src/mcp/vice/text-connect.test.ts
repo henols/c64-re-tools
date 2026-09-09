@@ -10,10 +10,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
+import { execFileSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import type { StockConnectBrokerControl } from "./stock-connect.ts";
-import { MonitorOwnershipError, type ClaimMonitorOutcome, type ReleaseMonitorOutcome } from "./vice-broker-client.ts";
+import {
+  MonitorOwnershipError,
+  type ClaimMonitorOutcome,
+  type ClaimMonitorOptions,
+  type ReleaseMonitorOptions,
+  type ReleaseMonitorOutcome,
+} from "./vice-broker-client.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Stub broker control -- mirrors stock-connect.test.ts's makeStubBrokerControl().
@@ -26,16 +38,18 @@ interface StubBrokerControlOptions {
 
 function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
   brokerControl: StockConnectBrokerControl;
-  state: { claimCalls: number; releaseCalls: number };
+  state: { claimCalls: number; releaseCalls: number; claimedWith: ClaimMonitorOptions[]; releasedWith: ReleaseMonitorOptions[] };
 } {
-  const state = { claimCalls: 0, releaseCalls: 0 };
+  const state = { claimCalls: 0, releaseCalls: 0, claimedWith: [] as ClaimMonitorOptions[], releasedWith: [] as ReleaseMonitorOptions[] };
   const brokerControl: StockConnectBrokerControl = {
-    async claimMonitor() {
+    async claimMonitor(claimOpts) {
       state.claimCalls += 1;
+      state.claimedWith.push(claimOpts);
       return opts.claimOutcome ?? { ok: true };
     },
-    async releaseMonitor() {
+    async releaseMonitor(releaseOpts) {
       state.releaseCalls += 1;
+      state.releasedWith.push(releaseOpts);
       return opts.releaseOutcome ?? { ok: true };
     },
   };
@@ -86,8 +100,11 @@ test("textConnect: claims before dialling, connects, and textDisconnect() releas
       assert.equal(session.targetId, "grant-1");
       assert.equal(session.port, port);
       assert.ok(session.client.connected);
+      // Plan 41-03 (D-14): textConnect() claims "text" explicitly.
+      assert.equal(state.claimedWith[0]?.channel, "text");
       await textDisconnect(session);
       assert.equal(state.releaseCalls, 1);
+      assert.equal(state.releasedWith[0]?.channel, "text", "textDisconnect() releases 'text' explicitly");
       assert.ok(!session.client.connected);
     },
   );
@@ -105,17 +122,20 @@ test("textConnect: a monitor_owned claim refusal propagates as MonitorOwnershipE
     },
     async (port) => {
       const { brokerControl, state } = makeStubBrokerControl({
-        claimOutcome: { ok: false, reason: "monitor_owned", holder: { grantId: "other-grant", claimedAt: 12345, pid: 999 } },
+        claimOutcome: { ok: false, reason: "monitor_owned", holder: { grantId: "other-grant", claimedAt: 12345, pid: 999, channel: "text" } },
       });
       await assert.rejects(
         () => textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-2", brokerControl }),
         (err: unknown) => {
           assert.ok(err instanceof MonitorOwnershipError, `expected MonitorOwnershipError, got ${String(err)}`);
           assert.match((err as Error).message, /already claimed by grant other-grant/);
+          assert.equal((err as MonitorOwnershipError).channel, "text", "plan 41-03 (D-14): channel === 'text' on the propagated error");
+          assert.doesNotMatch((err as Error).message, /wedge|hang|frozen|stuck|unresponsive/i);
           return true;
         },
       );
       assert.equal(state.claimCalls, 1);
+      assert.equal(state.claimedWith[0]?.channel, "text");
       // Give any accidental async dial attempt time to land before asserting.
       await new Promise((resolve) => setTimeout(resolve, 50));
       assert.equal(connectionAttempted, false, "a refused claim must never reach a socket dial (PROTO-08/D-13)");
@@ -185,6 +205,7 @@ test("textConnect: a dial failure after a successful claim releases the claim be
   );
   assert.equal(state.claimCalls, 1, "the claim must have been attempted");
   assert.equal(state.releaseCalls, 1, "a failed dial must release the claim it just took, before propagating");
+  assert.equal(state.releasedWith[0]?.channel, "text", "a textConnect() failure releases the text channel, never a binary claim (D-14)");
 });
 
 test("textConnect: the ORIGINAL dial failure is preserved even when the release itself also fails", async () => {
@@ -200,4 +221,67 @@ test("textConnect: the ORIGINAL dial failure is preserved even when the release 
     },
   );
   assert.equal(state.releaseCalls, 1, "the release must still have been ATTEMPTED even though it failed");
+});
+
+// ---------------------------------------------------------------------------
+// Plan 41-03 (D-14): the structural prohibition this plan carries -- no
+// module on any halting path reads the broker's per-channel ownership map.
+// ---------------------------------------------------------------------------
+
+test("structural (D-14): no module in package.json's files[] other than the four broker-side ones reads the monitorClients identifier", () => {
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
+  // The four broker-side modules named in Task 1 -- promoted there, not
+  // read on any halting path. None of these actually appears in files[]
+  // today (they are host-bound, compiled to resources/*.mjs, and never
+  // published in the shipped tarball), but the exclusion is named
+  // explicitly anyway, per the plan's own wording, rather than assumed.
+  const BROKER_SIDE = new Set(["broker-state.mts", "broker-control.mts", "broker-launch.mts", "vice-broker.mts"]);
+  const offenders: string[] = [];
+  for (const rel of pkg.files) {
+    if (BROKER_SIDE.has(rel)) continue;
+    if (!rel.endsWith(".ts") && !rel.endsWith(".mts")) continue;
+    const full = join(HERE, rel);
+    if (!existsSync(full)) continue;
+    const text = readFileSync(full, "utf8");
+    if (text.includes("monitorClients")) offenders.push(rel);
+  }
+  assert.deepEqual(offenders, [], `no halting-path module may read monitorClients: ${JSON.stringify(offenders)}`);
+});
+
+test("structural (D-14): git ls-files agrees -- the identifier appears only in the four broker-side modules, their resources/*.mjs artifacts, and InstanceRecord test fixtures", () => {
+  const output = execFileSync("git", ["ls-files"], { cwd: HERE, encoding: "utf8" });
+  const files = output
+    .split("\n")
+    .map((f) => f.trim())
+    .filter((f) => f !== "");
+  const ALLOWED = new Set([
+    "broker-state.mts",
+    "broker-control.mts",
+    "broker-launch.mts",
+    "vice-broker.mts",
+    "resources/broker-state.mjs",
+    "resources/broker-control.mjs",
+    "resources/broker-launch.mjs",
+    "resources/vice-broker.mjs",
+    "broker-state.test.ts",
+    "broker-control.test.ts",
+    "broker-launch.test.ts",
+    "broker-kill.test.ts",
+    "vice-broker-acquire.test.ts",
+    "vice-broker-supervision.test.ts",
+    // This structural test's OWN source file, which necessarily contains the
+    // literal string "monitorClients" as the identifier it searches for --
+    // not a halting-path reference to the field.
+    "text-connect.test.ts",
+  ]);
+  const offenders: string[] = [];
+  for (const rel of files) {
+    if (ALLOWED.has(rel)) continue;
+    if (!/\.(ts|mts|mjs)$/.test(rel)) continue;
+    const full = join(HERE, rel);
+    if (!existsSync(full)) continue;
+    const text = readFileSync(full, "utf8");
+    if (text.includes("monitorClients")) offenders.push(rel);
+  }
+  assert.deepEqual(offenders, [], `no halting-path module may read monitorClients: ${JSON.stringify(offenders)}`);
 });

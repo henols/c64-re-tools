@@ -29,8 +29,9 @@
 //     was down) that a silent reconnect would paper over.
 //   - Never re-derive a parallel claim interface. StockConnectBrokerControl
 //     (stock-connect.ts) is reused here as-is -- the SAME narrow structural
-//     interface, extended (at the call site below) with an optional
-//     `channel` field a later plan (41-03) actually wires end to end.
+//     interface, extended (plan 41-03, D-14) with an optional `channel`
+//     field on the options object claimMonitor()/releaseMonitor() already
+//     take, never a second interface.
 import { TextMonitorClient } from "./text-protocol.ts";
 import { ViceError } from "./vice.ts";
 import type { StockConnectBrokerControl } from "./stock-connect.ts";
@@ -82,11 +83,11 @@ async function safeDisconnect(client: TextMonitorClient): Promise<void> {
  *      by name, naming targetId, and says the instance has no text-monitor
  *      port recorded. Never a dial against a guessed port.
  *   2. claimMonitor() -- BEFORE any socket is opened, exactly like
- *      stockConnect()'s own step 1. A `monitor_owned` refusal (once plan
- *      41-03 wires the `channel: "text"` discriminator end to end) rejects
- *      with MonitorOwnershipError naming the holder; a `timeout` refusal
- *      rejects distinctly (the broker did not answer, which is not "someone
- *      else owns it").
+ *      stockConnect()'s own step 1, claiming `channel: "text"` explicitly
+ *      (plan 41-03, D-14). A `monitor_owned` refusal rejects with
+ *      MonitorOwnershipError naming the holder AND the text channel; a
+ *      `timeout` refusal rejects distinctly (the broker did not answer,
+ *      which is not "someone else owns it").
  *   3. Open a TextMonitorClient against host:remoteMonitorPort.
  *
  * Every failure path releases the monitor claim before propagating -- a
@@ -105,12 +106,14 @@ export async function textConnect({
     );
   }
 
-  const claimOutcome = await brokerControl.claimMonitor({ targetId });
+  // Plan 41-03 (D-14): explicit "text" -- never relies on claimMonitor()'s
+  // own binary default.
+  const claimOutcome = await brokerControl.claimMonitor({ targetId, channel: "text" });
   if (!claimOutcome.ok) {
     if (claimOutcome.reason === "monitor_owned") {
       throw new MonitorOwnershipError(
-        `textConnect: text monitor for target ${targetId} on port ${remoteMonitorPort} is already claimed by grant ${claimOutcome.holder.grantId}`,
-        { holderGrantId: claimOutcome.holder.grantId, holderClaimedAt: claimOutcome.holder.claimedAt, port: remoteMonitorPort },
+        `textConnect: text monitor for target ${targetId} on port ${remoteMonitorPort} is already claimed by grant ${claimOutcome.holder.grantId} -- another client holds this instance's single text-monitor socket`,
+        { holderGrantId: claimOutcome.holder.grantId, holderClaimedAt: claimOutcome.holder.claimedAt, port: remoteMonitorPort, channel: claimOutcome.holder.channel },
       );
     }
     // "timeout" (the broker did not answer) is kept strictly distinct from
@@ -130,7 +133,9 @@ export async function textConnect({
     // REPLACE the original failure. Both outcomes are reported on stderr;
     // neither can displace `err`.
     try {
-      const released = await brokerControl.releaseMonitor({ targetId });
+      // Plan 41-03 (D-14): explicit "text" -- a failure here must release
+      // only the text claim this call itself took, never a binary claim.
+      const released = await brokerControl.releaseMonitor({ targetId, channel: "text" });
       if (!released.ok) {
         console.error(
           `textConnect: text-monitor release for target ${targetId} after a failed handshake was refused (${released.reason}) -- the instance may still be claimed`,
@@ -148,5 +153,5 @@ export async function textConnect({
  * without the other. Mirrors stockDisconnect() exactly. */
 export async function textDisconnect(session: TextConnectSession): Promise<void> {
   await safeDisconnect(session.client);
-  await session.brokerControl.releaseMonitor({ targetId: session.targetId });
+  await session.brokerControl.releaseMonitor({ targetId: session.targetId, channel: "text" });
 }

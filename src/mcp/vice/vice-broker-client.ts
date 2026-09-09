@@ -639,25 +639,44 @@ export type ControlHostStateResult =
   | { ok: true; hostState: ControlHostStateFields }
   | { ok: false; kind: ControlFailureKind; message: string };
 
-/** Plan 05 (BROK-02/PROTO-08, D-13): the current monitor-socket holder's own
- * identity, named in a `monitor_owned` refusal -- field-for-field the same
- * shape the broker's own MonitorHolder carries (broker-control.mts), minus
- * nothing (pid included, matching GrantRecord's own convention this whole
- * mechanism mirrors). */
+// ---------------------------------------------------------------------------
+// MonitorClaimChannel (plan 41-03, D-14): the two-value channel contract,
+// declared HERE as a local literal union rather than imported from
+// broker-state.mts -- that module is host-bound and compiled into
+// resources/*.mjs, and this file is the container-side half. The shared
+// thing between the declarations is the CONTRACT ("binary" | "text"), not
+// the declaration itself -- channel-lock.ts's own MonitorChannel and
+// broker-state.mts's own MonitorChannel each declare it separately for the
+// same reason.
+// ---------------------------------------------------------------------------
+export type MonitorClaimChannel = "binary" | "text";
+
+/** Plan 05 (BROK-02/PROTO-08, D-13; gains `channel` in plan 41-03, D-14): the
+ * current monitor-socket holder's own identity, named in a `monitor_owned`
+ * refusal -- field-for-field the same shape the broker's own MonitorHolder
+ * carries (broker-control.mts), minus nothing (pid included, matching
+ * GrantRecord's own convention this whole mechanism mirrors). */
 export interface MonitorClaimHolder {
   grantId: string;
   claimedAt: number;
   pid: number | null;
+  channel: MonitorClaimChannel;
 }
 
 export interface ClaimMonitorOptions {
   targetId: string;
   timeoutMs?: number;
+  /** Plan 41-03 (D-14): which monitor socket to claim. Omitted is
+   * byte-identical to `"binary"` -- every pre-41-03 call site (and every
+   * broker that predates this field) keeps working unchanged. */
+  channel?: MonitorClaimChannel;
 }
 
 export interface ReleaseMonitorOptions {
   targetId: string;
   timeoutMs?: number;
+  /** Plan 41-03 (D-14): same default-to-binary posture as ClaimMonitorOptions.channel. */
+  channel?: MonitorClaimChannel;
 }
 
 /** Discriminated claim outcome (plan 05): `monitor_owned` is kept STRICTLY
@@ -684,6 +703,9 @@ export interface MonitorOwnershipErrorOptions {
   holderGrantId?: string;
   holderClaimedAt?: number;
   port?: number;
+  /** Plan 41-03 (D-14): which socket is contended -- so a handshake failure
+   * can say which channel was refused without re-parsing the message. */
+  channel?: MonitorClaimChannel;
 }
 
 /** Thrown (by a caller that prefers to raise rather than branch on
@@ -705,13 +727,15 @@ export class MonitorOwnershipError extends ViceError {
   holderGrantId?: string;
   holderClaimedAt?: number;
   port?: number;
+  channel?: MonitorClaimChannel;
 
-  constructor(message: string, { holderGrantId, holderClaimedAt, port }: MonitorOwnershipErrorOptions = {}) {
+  constructor(message: string, { holderGrantId, holderClaimedAt, port, channel }: MonitorOwnershipErrorOptions = {}) {
     super(message);
     this.name = "MonitorOwnershipError";
     this.holderGrantId = holderGrantId;
     this.holderClaimedAt = holderClaimedAt;
     this.port = port;
+    this.channel = channel;
   }
 }
 
@@ -837,12 +861,17 @@ type RawLineOutcome = { ok: true; line: Record<string, unknown> } | { ok: false;
 /** Never-throw extraction of a `holder` payload from untrusted wire input --
  * absent or malformed input answers `undefined`, never a partially-filled
  * object (plan 05's own never-throw-on-untrusted-input posture, matching
- * this file's own header comment on broker.json reads). */
-function extractHolder(raw: unknown): MonitorClaimHolder | undefined {
+ * this file's own header comment on broker.json reads). `channel` (plan
+ * 41-03, D-14) defaults to `requestedChannel` -- THE channel this request
+ * itself named -- when the wire omits it or sends something unrecognised;
+ * never fabricated as a plausible value, in the same register the
+ * `grantId: "unknown"` fallback one layer up (claimMonitor()'s own) uses. */
+function extractHolder(raw: unknown, requestedChannel: MonitorClaimChannel): MonitorClaimHolder | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const h = raw as Record<string, unknown>;
   if (typeof h.grantId !== "string" || typeof h.claimedAt !== "number") return undefined;
-  return { grantId: h.grantId, claimedAt: h.claimedAt, pid: typeof h.pid === "number" ? h.pid : null };
+  const channel = h.channel === "text" || h.channel === "binary" ? h.channel : requestedChannel;
+  return { grantId: h.grantId, claimedAt: h.claimedAt, pid: typeof h.pid === "number" ? h.pid : null, channel };
 }
 
 /** Builds the session object wrapping an already-CONNECTED socket. Wires the
@@ -926,8 +955,13 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
             // Plan 05: forward `holder` verbatim ONLY for monitor_owned --
             // every other error code carries no such field on the wire, and
             // extractHolder() itself never invents one from absent/malformed
-            // input.
-            const holder = code === "monitor_owned" ? extractHolder(line.holder) : undefined;
+            // input. Plan 41-03 (D-14): the requested channel comes from
+            // THIS payload (the request this response answers), read from
+            // the same closure `payload` sendAndAwaitLine() was called
+            // with -- an absent/malformed wire `channel` is never fabricated,
+            // it defaults to the channel this specific request itself named.
+            const requestedChannel: MonitorClaimChannel = payload.channel === "text" ? "text" : "binary";
+            const holder = code === "monitor_owned" ? extractHolder(line.holder, requestedChannel) : undefined;
             resolvePromise({
               ok: false,
               kind: code,
@@ -1066,7 +1100,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   }
 
   /** Claims exclusive ownership of `opts.targetId`'s monitor socket, sending
-   * `{ op: "monitor_claim", id, target_id, token }` through the SAME
+   * `{ op: "monitor_claim", id, target_id, channel, token }` through the SAME
    * `sendAndAwaitLine()` path -- the same session, the same token, the same
    * newline-delimited JSON discipline every other op uses; no second
    * control connection is ever opened, and this function never dials the
@@ -1074,10 +1108,12 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
    * -- see MonitorOwnershipError's own header comment for why the claim is
    * made BEFORE any binmon connect()). `timeout` is reported distinctly
    * from `monitor_owned`: a timeout means the broker did not answer, never
-   * that someone else owns the socket. */
+   * that someone else owns the socket. `channel` (plan 41-03, D-14) defaults
+   * to `"binary"` when omitted -- byte-identical to every pre-41-03 call. */
   async function claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome> {
     const requestId = newRequestId();
-    const raw = await sendAndAwaitLine({ op: "monitor_claim", id: requestId, target_id: opts.targetId, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    const channel: MonitorClaimChannel = opts.channel ?? "binary";
+    const raw = await sendAndAwaitLine({ op: "monitor_claim", id: requestId, target_id: opts.targetId, channel, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
       // WR-08: the `monitor_owned` REASON survives even when the wire's own
@@ -1089,11 +1125,11 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
       // requires (and MonitorOwnershipError exists to preserve) was lost. The
       // broker has told us WHICH state this is; not being able to name the
       // holder does not make it a different state. Holder fields default to
-      // "unknown"/0/null so the wording still reads as an ownership conflict
-      // rather than an emulator fault -- never fabricated as a plausible grant
-      // id, which would be worse than admitting it is unknown.
+      // "unknown"/0/null/`channel` so the wording still reads as an ownership
+      // conflict rather than an emulator fault -- never fabricated as a
+      // plausible grant id, which would be worse than admitting it is unknown.
       if (raw.kind === "monitor_owned") {
-        return { ok: false, reason: "monitor_owned", holder: raw.holder ?? { grantId: "unknown", claimedAt: 0, pid: null } };
+        return { ok: false, reason: "monitor_owned", holder: raw.holder ?? { grantId: "unknown", claimedAt: 0, pid: null, channel } };
       }
       if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
       return { ok: false, reason: "internal" };
@@ -1105,14 +1141,16 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   }
 
   /** Releases a previously claimed monitor socket, sending
-   * `{ op: "monitor_release", id, target_id, token }` over the SAME
+   * `{ op: "monitor_release", id, target_id, channel, token }` over the SAME
    * session. Tolerates a broker that has already cleared the record (the
    * broker's own onMonitorRelease answers `ok: true` for an already-cleared
    * target) -- this function never retries and never opens a second
-   * connection. */
+   * connection. `channel` (plan 41-03, D-14) defaults to `"binary"` when
+   * omitted. */
   async function releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome> {
     const requestId = newRequestId();
-    const raw = await sendAndAwaitLine({ op: "monitor_release", id: requestId, target_id: opts.targetId, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    const channel: MonitorClaimChannel = opts.channel ?? "binary";
+    const raw = await sendAndAwaitLine({ op: "monitor_release", id: requestId, target_id: opts.targetId, channel, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
       if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };

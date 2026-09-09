@@ -402,12 +402,14 @@ async function safeResume(client: ViceMonitorClient): Promise<void> {
  * leave a frozen C64 behind either.
  */
 export async function stockConnect({ host, port, targetId, brokerControl, deps = {} }: StockConnectOptions): Promise<StockConnectSession> {
-  const claimOutcome = await brokerControl.claimMonitor({ targetId });
+  // Plan 41-03 (D-14): explicit, not relying on claimMonitor()'s own default
+  // -- the binary path names its own channel at the call site.
+  const claimOutcome = await brokerControl.claimMonitor({ targetId, channel: "binary" });
   if (!claimOutcome.ok) {
     if (claimOutcome.reason === "monitor_owned") {
       throw new MonitorOwnershipError(
         `stockConnect: monitor for target ${targetId} on port ${port} is already claimed by grant ${claimOutcome.holder.grantId}`,
-        { holderGrantId: claimOutcome.holder.grantId, holderClaimedAt: claimOutcome.holder.claimedAt, port },
+        { holderGrantId: claimOutcome.holder.grantId, holderClaimedAt: claimOutcome.holder.claimedAt, port, channel: claimOutcome.holder.channel },
       );
     }
     // "timeout" (the broker did not answer) is kept strictly distinct from
@@ -474,7 +476,9 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
     // reason. Both outcomes are now reported on stderr and neither can
     // displace `err`.
     try {
-      const released = await brokerControl.releaseMonitor({ targetId });
+      // Plan 41-03 (D-14): explicit "binary" -- never releases the "text"
+      // claim as a side effect of a failed binary handshake.
+      const released = await brokerControl.releaseMonitor({ targetId, channel: "binary" });
       if (!released.ok) {
         console.error(
           `stockConnect: monitor release for target ${targetId} after a failed handshake was refused (${released.reason}) -- the instance may still be claimed`,
@@ -493,7 +497,7 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
  * stockConnect()'s own failure-path release above. */
 export async function stockDisconnect(session: StockConnectSession): Promise<void> {
   await safeDisconnect(session.client);
-  await session.brokerControl.releaseMonitor({ targetId: session.targetId });
+  await session.brokerControl.releaseMonitor({ targetId: session.targetId, channel: "binary" });
 }
 
 // ---------------------------------------------------------------------------

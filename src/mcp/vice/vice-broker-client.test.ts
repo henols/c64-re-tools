@@ -912,10 +912,78 @@ test("monitor_claim: claimMonitor() against a stub answering ok resolves a succe
   }
 });
 
+// ---------------------------------------------------------------------------
+// Plan 41-03 (D-14): the `channel` field on claimMonitor()/releaseMonitor().
+// ---------------------------------------------------------------------------
+
+test("monitor_claim (D-14): claimMonitor() with no channel puts 'binary' on the wire", async () => {
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.claimMonitor({ targetId });
+    assert.deepEqual(result, { ok: true });
+    const claimLine = rawLines.find((l) => l.op === "monitor_claim" && l.target_id === targetId);
+    assert.equal(claimLine?.channel, "binary", `expected channel 'binary' on the wire: ${JSON.stringify(rawLines)}`);
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_claim (D-14): claimMonitor({ channel: 'text' }) puts 'text' on the wire", async () => {
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.claimMonitor({ targetId, channel: "text" });
+    assert.deepEqual(result, { ok: true });
+    const claimLine = rawLines.find((l) => l.op === "monitor_claim" && l.target_id === targetId);
+    assert.equal(claimLine?.channel, "text", `expected channel 'text' on the wire: ${JSON.stringify(rawLines)}`);
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("monitor_release (D-14): releaseMonitor() with no channel puts 'binary' on the wire; releaseMonitor({channel:'text'}) puts 'text'", async () => {
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onMonitorRelease: () => ({ ok: true }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    await opened.session.releaseMonitor({ targetId });
+    await opened.session.releaseMonitor({ targetId, channel: "text" });
+    const releaseLines = rawLines.filter((l) => l.op === "monitor_release" && l.target_id === targetId);
+    assert.equal(releaseLines[0]?.channel, "binary");
+    assert.equal(releaseLines[1]?.channel, "text");
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("monitor_claim: claimMonitor() against a stub answering monitor_owned resolves a discriminated ownership-conflict outcome carrying the holder's grantId/claimedAt -- never throws, never retries", async () => {
   const { server, dir } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
-    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242 } }),
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242, channel: "binary" } }),
   });
   try {
     const opened = await openBrokerControl(dir);
@@ -927,7 +995,7 @@ test("monitor_claim: claimMonitor() against a stub answering monitor_owned resol
     if (result.ok) return;
     assert.equal(result.reason, "monitor_owned", "the refusal must come from the broker's holder comparison, not the control-plane ownership gate");
     if (result.reason !== "monitor_owned") return;
-    assert.deepEqual(result.holder, { grantId: "req-holder", claimedAt: 12345, pid: 4242 });
+    assert.deepEqual(result.holder, { grantId: "req-holder", claimedAt: 12345, pid: 4242, channel: "binary" });
     await opened.session.release();
   } finally {
     server.close();
@@ -938,7 +1006,7 @@ test("monitor_claim: claimMonitor() against a stub answering monitor_owned resol
 test("monitor_claim ownership conflict: the failure outcome's own message, and MonitorOwnershipError's message, name the holding grant and never use the words wedged, hung or unresponsive", async () => {
   const { server, dir } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
-    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242 } }),
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242, channel: "binary" } }),
   });
   try {
     const opened = await openBrokerControl(dir);
@@ -955,10 +1023,12 @@ test("monitor_claim ownership conflict: the failure outcome's own message, and M
       holderGrantId: result.holder.grantId,
       holderClaimedAt: result.holder.claimedAt,
       port: 6600,
+      channel: result.holder.channel,
     });
     assert.ok(err instanceof Error);
     assert.equal(err.holderGrantId, "req-holder");
     assert.equal(err.port, 6600);
+    assert.equal(err.channel, "binary", "plan 41-03 (D-14): the channel rides on the constructed error");
     assert.doesNotMatch(err.message, /wedged|hung|unresponsive/i);
     await opened.session.release();
   } finally {
@@ -1019,6 +1089,7 @@ test("WR-08: a monitor_owned refusal whose holder payload is malformed keeps the
     if (result.reason !== "monitor_owned") return;
     assert.equal(result.holder.grantId, "unknown", "the holder is admitted as unknown, never fabricated as a plausible grant id");
     assert.equal(result.holder.pid, null);
+    assert.equal(result.holder.channel, "binary", "plan 41-03 (D-14): a wire holder that omits channel defaults to the channel THIS request asked for");
     await opened.session.release();
   } finally {
     server.close();
@@ -1051,7 +1122,7 @@ test("monitor_claim: claimMonitor() never dials the binmon port itself, on succe
   let acceptedConnections = 0;
   const { server, dir } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
-    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 1, pid: null } }),
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 1, pid: null, channel: "binary" } }),
   });
   server.on("connection", () => {
     acceptedConnections++;

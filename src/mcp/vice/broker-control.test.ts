@@ -845,6 +845,10 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
     "broker-kill.test.ts",
     "vice-broker-acquire.test.ts",
     "vice-broker-supervision.test.ts",
+    // Plan 41-03, Task 2: text-connect.test.ts carries its OWN, near-identical
+    // structural test (the identifier it searches for is necessarily present
+    // in its own source) -- not a halting-path reference to the field.
+    "text-connect.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {
