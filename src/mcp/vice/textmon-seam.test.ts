@@ -302,6 +302,10 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
     importConsumers: [
       { file: "textmon-memmap.test.ts", reason: "the owner's own test file" },
       { file: "text-tools.ts", reason: "the declared handler module: handleMemmapShow, whose body delegates to the owner's own parse and range-projection exports" },
+      {
+        file: "text-monitor-live.test.ts",
+        reason: "plan 42-09's live opt-in suite, calling this owner's own parse export directly on a reply dialed from genuine stock VICE to prove the live wiring, not merely the fixture shape",
+      },
     ],
   },
   {
@@ -320,6 +324,10 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       {
         file: "text-tools.ts",
         reason: "plan 42-07's handleCpuHistory, whose body delegates to the owner's own parse export",
+      },
+      {
+        file: "text-monitor-live.test.ts",
+        reason: "plan 42-09's live opt-in suite, calling this owner's own parse export directly on a reply dialed from genuine stock VICE to prove the live wiring, not merely the fixture shape",
       },
     ],
   },
@@ -341,6 +349,10 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       {
         file: "text-tools.ts",
         reason: "plan 42-07's handleBacktrace, whose body delegates to the owner's own parse export",
+      },
+      {
+        file: "text-monitor-live.test.ts",
+        reason: "plan 42-09's live opt-in suite, calling this owner's own parse export directly on a reply dialed from genuine stock VICE to prove the live wiring, not merely the fixture shape",
       },
     ],
   },
@@ -365,6 +377,10 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       {
         file: "text-tools.ts",
         reason: "plan 42-07's handleProfileFlat, whose body delegates to the owner's own parse export",
+      },
+      {
+        file: "text-monitor-live.test.ts",
+        reason: "plan 42-09's live opt-in suite, calling this owner's own parse export directly on a reply dialed from genuine stock VICE to prove the live wiring, not merely the fixture shape",
       },
     ],
   },
@@ -391,6 +407,10 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       {
         file: "text-tools.ts",
         reason: "plan 42-07's handleIoRegisters, whose body delegates to the owner's own parse export",
+      },
+      {
+        file: "text-monitor-live.test.ts",
+        reason: "plan 42-09's live opt-in suite, calling this owner's own parse export directly on a reply dialed from genuine stock VICE to prove the live wiring, not merely the fixture shape",
       },
     ],
   },

@@ -117,8 +117,14 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
   assert.ok(!isAllowlistedTextCommand("device c"), "the colon is required -- device c (no colon) is a different, non-allowlisted string");
 });
 
-test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eight named verbs, never a file-touching monitor verb (T-41-02)", () => {
-  const expected = ["device c:", "warp on", "warp off", "memmapshow", "prof flat", "chis", "bt", "io"];
+test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the ten named verbs, never a file-touching monitor verb (T-41-02)", () => {
+  // Widened to ten in plan 42-09 (a conscious, measured widening, not a
+  // speculative one, per this constant's own header comment): `prof on`/
+  // `prof off` were added so the live opt-in suite can toggle VICE's own
+  // profiler on before proving `prof flat`'s parsing path against real
+  // rows, and off again afterward -- MEASURED live that `prof flat` alone
+  // returns "No profiling data available..." on a fresh instance.
+  const expected = ["device c:", "warp on", "warp off", "memmapshow", "prof flat", "chis", "bt", "io", "prof on", "prof off"];
   assert.deepEqual([...TEXT_COMMAND_ALLOWLIST].sort(), [...expected].sort());
   for (const cmd of TEXT_COMMAND_ALLOWLIST) {
     assert.doesNotMatch(cmd, /\bload\b|\bsave\b/, `${JSON.stringify(cmd)} must not be a file-touching verb`);
