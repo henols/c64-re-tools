@@ -5,10 +5,10 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: Completed 42-14-PLAN.md — Phase 42's gap-closure round is finished, all 14 plans executed
+stopped_at: Phase 42 gap-closure round 1 executed and verified — 4/5, gaps_found. CR-02 (pre-existing, io degradation probe cached binary-wide) blocks criterion 5; PARSE-04 reverted to Pending. Next: /gsd-plan-phase 42 --gaps
 last_updated: "2026-09-09T19:42:46.574Z"
 last_activity: 2026-09-09
-last_activity_desc: "Plan 42-14 executed — the round's own evidence record (five gap blocks, the final gate figure, a live re-run of all five formats on the final tree, and a \"still open\" closing block) appended to docs/phase42-text-format-drift-citations.md; PARSE-03 and PARSE-04 returned to Complete in REQUIREMENTS.md on measured grounds. Phase 42's gap-closure round is complete."
+last_activity_desc: "Phase 42 gap-closure round 1 complete and re-verified: all five original findings closed (CR-01, WR-01, WR-02, IN-01, IN-02 docs half), but the post-round code review surfaced CR-02 -- a pre-existing binary-wide cache key on io's per-address degradation probe -- which falsifies success criterion 5. Verification scored 4/5 gaps_found; PARSE-04 reverted to Pending, PARSE-01/02/03 stay Complete."
 state_head: 5914a49b56c3f158036bb7ff9f345615bccb641a
 progress:
   total_phases: 6
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — GAP-CLOSURE COMPLETE, ready for verification
+Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — VERIFIED 4/5, GAPS FOUND (not complete)
 Plan: 14 of 14 executed (9 original + 5 gap-closure: 42-10, 42-11, 42-12, 42-13, 42-14)
-Status: Gap-closure complete — 42-10, 42-11, 42-12, 42-13, 42-14 all done (CR-01, WR-02, IN-01, G5, G2, G3 closed; the round's own evidence record written; PARSE-03/PARSE-04 restored to Complete on measured grounds)
-Last activity: 2026-09-09 — Plan 42-14 executed: appended the round's evidence record to docs/phase42-text-format-drift-citations.md (five gap blocks, final gate figure at the documented 3-failure floor, a live re-run of all five formats on the final tree, a closing "still open" block) and returned PARSE-03/PARSE-04 to Complete in REQUIREMENTS.md
+Status: Gap-closure round 1 executed and re-verified. All five findings it targeted are closed (CR-01, WR-01, WR-02, IN-01, IN-02's documentation half), and the automated-gate regression is gone (3941/3927/3, the documented floor). One NEW gap blocks the phase: CR-02, a pre-existing defect dating to plan 42-07 -- handleIoRegisters caches io's per-address chip-degradation verdict under a binary-wide key, so a later call to a different address is judged on an earlier response. It falsifies success criterion 5, so PARSE-04 is reverted to Pending; PARSE-01/02/03 remain Complete. Dispositioned as an open pending todo, not silently carried.
+Last activity: 2026-09-09 — Phase 42 gap-closure round 1 verified 4/5 (gaps_found); CR-02 filed as a deferred todo and PARSE-04 reverted to Pending
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
