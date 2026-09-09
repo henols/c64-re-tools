@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
-current_phase: 41
-current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
-status: executing
-stopped_at: Completed 41-06-PLAN.md -- Phase 41 all 6 plans done
-last_updated: "2026-09-09T10:09:02.621Z"
+current_phase: 42
+current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
+status: planning
+stopped_at: Phase 41 complete, ready to plan Phase 42
+last_updated: "2026-09-09T10:39:58.636Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 41 execution started
-state_head: b28e41e66d47881953a4393f0702b1426ef1c7d5
+last_activity_desc: Phase 41 complete, transitioned to Phase 42
+state_head: 7f24f5952663ea75018f67c681c8a2368844f5d7
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 25
   completed_plans: 25
-  percent: 33
+  percent: 50
 ---
 
 # Project State
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 41 (The Text Channel, Its Serialization Authority, and the Contention Verdict) — EXECUTING
-Plan: 6 of 6
-Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 complete (CHAN-04), 41-03 complete (CHAN-02 discriminator), 41-04 complete (CHAN-05), 41-05 complete (CHAN-02: mandatory text port, warm floor retired), 41-06 next
-Last activity: 2026-09-09 — Phase 41 execution continues at wave 3 (41-06 remaining)
+Phase: 42 — The Text-Format Parsers and Their Two-Binary Fixtures
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-09 — Phase 41 complete, transitioned to Phase 42
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -255,7 +255,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 
 **Velocity:**
 
-- Total plans completed: 339
+- Total plans completed: 345
 - Average duration: —
 - Total execution time: —
 
@@ -298,6 +298,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | 38 | 4 | - | - |
 | 39 | 8 | - | - |
 | 40 | 11 | - | - |
+| 41 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -2138,7 +2139,7 @@ evidence files.
 ## Session Continuity
 
 Last session: 2026-09-09T10:09:02.083Z
-Stopped at: Completed 41-06-PLAN.md -- Phase 41 all 6 plans done
+Stopped at: Phase 41 complete, ready to plan Phase 42
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
