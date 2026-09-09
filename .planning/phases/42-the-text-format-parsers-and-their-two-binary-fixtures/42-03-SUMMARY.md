@@ -173,3 +173,17 @@ None - no external service configuration required.
 ---
 *Phase: 42-the-text-format-parsers-and-their-two-binary-fixtures*
 *Completed: 2026-09-09*
+
+## Self-Check: PASSED
+
+- FOUND: `src/mcp/vice/textmon-profile.ts`
+- FOUND: `src/mcp/vice/textmon-profile.test.ts`
+- FOUND: `src/mcp/vice/textmon-registers.ts`
+- FOUND: `src/mcp/vice/textmon-registers.test.ts`
+- FOUND: `.planning/phases/42-the-text-format-parsers-and-their-two-binary-fixtures/42-03-SUMMARY.md`
+- FOUND commit: `24c15c0e` (Task 1)
+- FOUND commit: `cff6a81a` (Task 2)
+- Re-ran all `<acceptance_criteria>` across both tasks: PASS (42/42 tests green)
+- Re-ran the plan-level `<verification>` block: `node --test textmon-profile.test.ts textmon-registers.test.ts` (42/42 pass), `npm run typecheck` (clean), `npm run test:automated` (8 pre-existing failures, at the measured baseline, unchanged by this plan)
+- Note: REQUIREMENTS.md was NOT updated by this worktree agent -- `.claude/gsd-core/` is not vendored into this isolated worktree (gitignored install, per CLAUDE.md), so `requirements.ready-ids` could not be computed here. PARSE-02/PARSE-03 are declared by most plans in this phase (42-01 through 42-09); with only 42-01 and 42-03 landed so far, the shared-ID gate would almost certainly report neither ready yet regardless. Left for the orchestrator's centralized post-wave update.
+
