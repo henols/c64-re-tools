@@ -119,6 +119,14 @@ function stockInstanceRecord(port: number, pid: number, supervisorDir: string): 
     // Plan 41-03 (D-14): monitorClients is non-optional -- "no claim on any
     // channel" is an empty map, never an absent field.
     monitorClients: {},
+    // Plan 41-05 (D-16): a stock record now REQUIRES this field -- a real
+    // stock cold launch always carries one (a failed text-port allocation
+    // fails the whole acquire before any record like this one is ever
+    // written), and the crash-respawn path this test drives threads it
+    // forward from record.remoteMonitorPort, which would otherwise be
+    // undefined and trip spawnAndRecordInstance()'s own construction-site
+    // assertion on the respawn.
+    remoteMonitorPort: port + 1,
   };
 }
 
@@ -200,9 +208,11 @@ test("CR-01: a crash-respawn installed through the REAL superviseDepsFor() relau
 });
 
 // ===========================================================================
-// CR-01, structural half: the two production call sites must pass a resolved
-// backend. The behavioural test above proves the BUILDER threads what it is
-// given; this proves the CALLERS give it something, which is the half a
+// CR-01, structural half: the production call site(s) must pass a resolved
+// backend (plan 41-05, folded todo: NARROWED from two to one -- the retired
+// warm floor was the second). The behavioural test above proves the BUILDER
+// threads what it is given; this proves the CALLERS give it something, which
+// is the half a
 // signature change alone could still regress (e.g. a literal "fork" typed in
 // at a stock call site).
 // ===========================================================================
@@ -220,8 +230,12 @@ test("structural: every superviseDepsFor() call site in vice-broker.mts passes t
   const backendCallSites = (brokerSource.match(/superviseDepsFor\(\s*stateDir\s*,\s*state\s*,\s*backend\b/g) ?? []).length;
   assert.equal(
     backendCallSites,
-    2,
-    `expected exactly 2 superviseDepsFor(stateDir, state, backend...) call sites (handleAcquire's cold arm and maintainWarmFloorForRealBroker), found ${backendCallSites} -- a new supervised launch path must thread the resolved backend too`,
+    1,
+    // Plan 41-05 (folded todo): NARROWED from 2 to 1 -- the retired
+    // maintainWarmFloorForRealBroker() was the second call site this
+    // assertion used to count; it is removed along with the warm floor,
+    // leaving handleAcquire's cold arm as the ONLY real launch path left.
+    `expected exactly 1 superviseDepsFor(stateDir, state, backend...) call site (handleAcquire's cold arm), found ${backendCallSites} -- a new supervised launch path must thread the resolved backend too`,
   );
 });
 

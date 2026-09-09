@@ -541,7 +541,6 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     started_at: hs.startedAt,
                     node_version: hs.nodeVersion,
                     vice_bin: hs.viceBin,
-                    warm_floor: hs.warmFloor,
                     max_instances: hs.maxInstances,
                     base_port: hs.basePort,
                     backend: hs.backend,

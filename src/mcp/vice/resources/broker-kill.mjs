@@ -325,7 +325,13 @@ export function startupBanner() {
         "vice-broker: nohup/setsid/systemd -- this launcher does not offer a --detach flag.",
     ];
     if (process.env.VICE_BROKER_SPARES !== undefined) { // banner-only presence check (D-25/P-13) -- never reads the value
-        lines.push("vice-broker: NOTE -- the VICE_BROKER_SPARES environment variable is set and is IGNORED; it was retired with no alias or fallback. Use VICE_BROKER_WARM_FLOOR instead.");
+        lines.push(
+        // Plan 41-05 (folded todo): this note's own former "use the warm-floor
+        // knob instead" replacement is ITSELF retired along with the warm
+        // floor -- pointing an operator at a second dead knob would be worse
+        // than pointing at none. VICE now launches strictly on demand, on the
+        // first request; there is no warming knob left to name.
+        "vice-broker: NOTE -- the VICE_BROKER_SPARES environment variable is set and is IGNORED; it was retired with no alias or fallback. There is no replacement -- VICE now launches strictly on demand, on the first request.");
     }
     return lines.join("\n");
 }

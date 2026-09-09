@@ -1250,7 +1250,9 @@ export function buildHostToolArgv(request, resolved, log) {
 // uncaughtException/unhandledRejection handlers kill the ENTIRE VICE pool on
 // any unhandled throw in this process, and a synchronous spawn for a
 // multi-second tool run would block the single-threaded event loop for its
-// whole duration, starving acquires, the warm floor, and monitor claims.
+// whole duration, starving acquires, the launching -> ready promotion sweep
+// (plan 41-05 retires the warm floor this comment used to name alongside
+// it), and monitor claims.
 // ---------------------------------------------------------------------------
 /** Fallback per-invocation timeout for a tool id absent from
  * HOST_TOOL_TIMEOUT_MS below -- unreachable today, since every HOST_TOOL_IDS

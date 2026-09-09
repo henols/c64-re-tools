@@ -409,7 +409,7 @@ test("startupBanner: names the foreground lifetime, that every emulator launched
   assert.match(banner, /voids? every session|no.*reconnect/i);
 });
 
-test("startupBanner: names the retired VICE_BROKER_SPARES variable as set-and-ignored, naming VICE_BROKER_WARM_FLOOR as its replacement, only when the retired variable is set (D-25/P-13)", () => { // banner
+test("startupBanner: names the retired VICE_BROKER_SPARES variable as set-and-ignored with no replacement, only when the retired variable is set (D-25/P-13; plan 41-05 retires the former warm-floor-knob replacement note too)", () => { // banner
   const saved = process.env.VICE_BROKER_SPARES; // banner
   try {
     delete process.env.VICE_BROKER_SPARES; // banner
@@ -420,7 +420,13 @@ test("startupBanner: names the retired VICE_BROKER_SPARES variable as set-and-ig
     const withVar = startupBanner();
     assert.match(withVar, /VICE_BROKER_SPARES/, "the retired variable must be named when it is set"); // banner
     assert.match(withVar, /ignored/i, "the line must say the retired variable is ignored");
-    assert.match(withVar, /VICE_BROKER_WARM_FLOOR/, "the line must name the replacement variable");
+    // Plan 41-05 (folded todo): the banner no longer names a replacement
+    // variable -- the former warm-floor knob it used to point operators at
+    // is itself retired along with the warm floor, so there is nothing left
+    // to point an operator at. Checked by the positive "no replacement"
+    // assertion below rather than a negative match on the retired knob's
+    // own name, so this test file itself carries no surviving reference to it.
+    assert.match(withVar, /no replacement/i, "the line must say plainly that there is no replacement");
   } finally {
     if (saved === undefined) delete process.env.VICE_BROKER_SPARES; // banner
     else process.env.VICE_BROKER_SPARES = saved; // banner

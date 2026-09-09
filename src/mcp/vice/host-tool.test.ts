@@ -930,7 +930,7 @@ async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ li
     },
     onHostState: (): HostStateFields => {
       spies.onHostState.push(true);
-      return { pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 1, maxInstances: 1, basePort: 6600, backend: "fork" };
+      return { pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 1, basePort: 6600, backend: "fork" };
     },
     onMonitorClaim: (): MonitorClaimOutcome => {
       spies.onMonitorClaim.push(true);

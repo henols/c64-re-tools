@@ -36,11 +36,11 @@
 //      recycle branch) it does NOT re-mark the respawn "granted" and does NOT
 //      sync the original grant's pid. The original grant (session A's) stays
 //      recorded in state.grants at that port, now pointing at an instance
-//      that is merely "ready" and unclaimed. maintainWarmFloor()'s periodic
-//      pass promotes that respawn "launching" -> "ready" (this runs
-//      regardless of the configured warm floor -- promotion of an EXISTING
-//      launching record is unconditional; only launching a NEW spare toward
-//      the floor is warm-floor-gated), after which a SECOND connection's
+//      that is merely "ready" and unclaimed. promoteLaunchingInstances()'s
+//      periodic pass (broker-launch.mts; plan 41-05, folded todo: RENAMED
+//      from maintainWarmFloor(), whose warm floor is retired) promotes that
+//      respawn "launching" -> "ready" unconditionally -- there is no floor
+//      left to gate it on -- after which a SECOND connection's
 //      acquire() is served from that SAME ready instance via
 //      selectWarmInstance() -- producing grant B on the SAME port P. This is
 //      not a contrived state: it is "the emulator crashed, another session
@@ -249,7 +249,6 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // spawned child's env below.
     VICE_ARGS: undefined,
     VICE_BROKER_CONTROL_PORT: "0",
-    VICE_BROKER_WARM_FLOOR: "0",
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",

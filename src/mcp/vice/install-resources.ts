@@ -182,7 +182,9 @@ export function hostLaunchInstructions(root: string): string {
     `vice-mcp-selector: deployed host launcher scripts to ${installTargetDir(root)}`,
     "vice-mcp-selector: for MCP-mediated access (mcp__vice__* tools), start the on-demand broker from the HOST workspace, e.g.:",
     `  ${displayPath}`,
-    "vice-mcp-selector: the broker launches a boot-fresh instance per session on demand, supervises it, and respawns a crashed one with backoff, while keeping a warm floor of spare instances ready.",
+    // Plan 41-05 (folded todo): the warm floor is retired -- the broker
+    // launches strictly on demand now, with no speculative pre-warming.
+    "vice-mcp-selector: the broker launches a boot-fresh instance strictly on demand, on the first request, supervises it, and respawns a crashed one with backoff.",
     "vice-mcp-selector: it cannot run inside the container -- the container guard refuses with exit 2.",
     "vice-mcp-selector: if it refuses when it should not, run it with --check-container for the full per-signal diagnostic.",
     "vice-mcp-selector: press Ctrl-C to stop it -- SIGINT/SIGTERM are handled and it shuts down cleanly.",

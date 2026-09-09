@@ -362,26 +362,51 @@ test(
   },
 );
 
+// Plan 41-05 (folded todo): "wired supervision: a warm-floor stub child
+// killed out from under the real broker is respawned on the same port by
+// the same wrapper" used to sit here. REMOVED along with the warm floor --
+// there is no longer a warm-spare launch path to distinguish it from the
+// "wired supervision: a granted stub child killed..." test directly above,
+// which already drives the identical crash-supervision wiring (kill a real
+// granted child, observe the respawn on the same port with an advanced
+// epoch, exactly one instance directory remains) through the ONLY launch
+// path left. Two tests asserting the same wiring through two call sites
+// that now share one path would be redundant, not additional coverage.
+
 // ---------------------------------------------------------------------------
-// 01.6.2-12-PLAN.md, Task 2: expands the proven slice to the warm-floor
-// launch path. This test needs a real readiness mechanism to observe a
-// spare at all, so it spawns the probe-answering stub emulator above in
-// place of /bin/sleep (MIGRATED off the retiring external-command probe
-// fixture by 01.6.2.1-02-PLAN.md, Task 2 -- see writeProbeAnsweringStub()'s
-// own header comment). The warm floor is configured to 1 via
-// VICE_BROKER_WARM_FLOOR so the instance-directory count assertions below are
-// unambiguous (recorded here and in the plan's own SUMMARY for
-// reproducibility).
+// 01.6.2.1-01-PLAN.md, Task 1 (P-01/P-04): the e2e half of Defect 5's close --
+// an acquire over the REAL control plane, against the REAL spawned broker
+// artifact, served from an already-ready instance rather than paying a cold
+// launch. A unit test cannot see an orphaned module (handleAcquire() could
+// be perfectly correct in isolation while the real entry point never reaches
+// it -- exactly 01.6.2's own crash-supervisor gap, and this plan's own
+// Defect 5); this is the proof a fully-controlled stub cannot give.
+//
+// Plan 41-05 (folded todo): RE-POINTED off the retired warm floor. This
+// fixture used to configure the (now-retired) warm-floor knob to 1 and wait
+// for the periodic pass to speculatively pre-launch a spare; that mechanism
+// is gone. The candidate this test needs -- a `ready`, UNGRANTED instance
+// for a later acquire to be served from -- is instead produced the way this
+// plan's own SUMMARY argues it now arises in production: an ORDINARY
+// (non-deliberate) crash of a GRANTED instance. broker-launch.mts's
+// handleExit() respawns it into `launching` with NO restoration of
+// `granted` (only the DELIBERATE recycle branch restores that), and the
+// periodic pass's promoteLaunchingInstances() promotes it to `ready` once
+// its probe succeeds -- at which point it is exactly the kind of candidate
+// selectWarmInstance() (vice-broker.mts) walks. The isolation the removed
+// warm-floor env assignment used to provide is now the default (nothing
+// warms speculatively at all); this test's own sequencing -- wait for the
+// respawn, wait for it to reach "ready", THEN send the second acquire -- is
+// what replaces it.
 // ---------------------------------------------------------------------------
 
 test(
-  "wired supervision: a warm-floor stub child killed out from under the real broker is respawned on the same port by the same wrapper",
+  "wired warm-hit (plan 41-05): an acquire over the real control plane is served from a ready, ungranted instance an ordinary crash-respawn left behind, spawning no second instance (Defect 5, P-01/P-04)",
   { timeout: 20000 },
   async () => {
     build();
-    const WARM_FLOOR = 1;
-    const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-supervise-warm-"));
-    const probeDir = mkdtempSync(join(tmpdir(), "broker-e2e-probe-"));
+    const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-warm-hit-"));
+    const probeDir = mkdtempSync(join(tmpdir(), "broker-e2e-warm-hit-probe-"));
     const stubPath = writeProbeAnsweringStub(probeDir);
     // VICE_ARGS deliberately UNSET (not merely omitted) -- see
     // writeProbeAnsweringStub()'s own header comment for why the stub
@@ -390,173 +415,48 @@ test(
       VICE_RESTART_BACKOFF_S: "0",
       VICE_BIN: stubPath,
       VICE_ARGS: undefined,
-      VICE_BROKER_WARM_FLOOR: String(WARM_FLOOR),
     });
     try {
       await waitForBrokerJson(stateDir);
 
-      // The periodic evaluation pass, not this test, decides when the spare
-      // actually launches -- poll for its instance directory to appear
-      // rather than assuming a fixed number of poll intervals have elapsed.
-      const warmInstanceAppeared = await waitFor(() => {
-        const dirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-        return dirs.length >= 1;
-      }, 10000);
-      assert.ok(warmInstanceAppeared, "a warm spare must be launched by the periodic evaluation pass within the deadline");
-
-      const portDirsBefore = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-      assert.equal(
-        portDirsBefore.length,
-        WARM_FLOOR,
-        `exactly the configured warm floor (${WARM_FLOOR}) of instance directories must exist, found ${JSON.stringify(portDirsBefore.map((d) => d.name))}`,
-      );
-      const warmPort = Number(portDirsBefore[0].name);
-      const epochPath = join(stateDir, portDirsBefore[0].name, "epoch.json");
-
-      const epochAppeared = await waitFor(() => {
-        try {
-          const parsed = JSON.parse(readFileSync(epochPath, "utf8"));
-          return typeof parsed.pid === "number";
-        } catch {
-          return false;
-        }
-      }, 5000);
-      assert.ok(epochAppeared, "the warm spare's epoch.json must carry a pid within the deadline");
-
-      const epochBefore = JSON.parse(readFileSync(epochPath, "utf8"));
+      // First acquire: a real cold launch, granted.
+      const firstAcquired = await acquireOverControlPlane(stateDir);
+      const firstGrant = firstAcquired.grant;
+      const epochBefore = JSON.parse(readFileSync(firstGrant.epoch_file, "utf8"));
       const pidBefore: number = epochBefore.pid;
-      assert.ok(isAlive(pidBefore), `warm spare pid ${pidBefore} must be alive before the kill`);
+      assert.ok(isAlive(pidBefore), `granted child pid ${pidBefore} must be alive before the kill`);
 
-      // Kill the warm spare from OUTSIDE the broker, exactly like the
-      // cold-acquire proof above -- the SAME wrapper must observe this exit
-      // regardless of which launch path produced the child.
+      // An ORDINARY (non-deliberate) crash of the GRANTED instance -- see
+      // this test's own header comment above for why this is the surviving
+      // path that leaves a ready-but-ungranted candidate behind.
       process.kill(pidBefore, "SIGKILL");
       const killedGone = await waitFor(() => !isAlive(pidBefore), 5000);
-      assert.ok(killedGone, `killed warm spare pid ${pidBefore} must actually exit before a respawn can be observed`);
+      assert.ok(killedGone, `killed child pid ${pidBefore} must actually exit before a respawn can be observed`);
 
       const respawned = await waitFor(() => {
         let epoch: Record<string, unknown>;
         try {
-          epoch = JSON.parse(readFileSync(epochPath, "utf8"));
+          epoch = JSON.parse(readFileSync(firstGrant.epoch_file, "utf8"));
         } catch {
           return false;
         }
-        return (
-          typeof epoch.epoch === "number" &&
-          epoch.epoch > epochBefore.epoch &&
-          typeof epoch.pid === "number" &&
-          epoch.pid !== pidBefore &&
-          isAlive(epoch.pid as number)
-        );
+        return typeof epoch.pid === "number" && epoch.pid !== pidBefore && isAlive(epoch.pid as number);
       }, 10000);
-      assert.ok(respawned, "the killed warm spare must be respawned on the same port with an advanced epoch and a new, live pid within the deadline");
+      assert.ok(respawned, "the crashed instance must be respawned within the deadline");
 
-      const epochAfter = JSON.parse(readFileSync(epochPath, "utf8"));
-      assert.equal(epochAfter.epoch, epochBefore.epoch + 1, "the epoch integer must advance by exactly one on respawn");
+      // Release the first (now-stale) grant -- the respawned instance's own
+      // pid no longer matches it, so handleRelease() retires only the
+      // grant's bookkeeping and leaves the respawned instance untouched
+      // (broker-state.mts's own pid-identity check), exactly the state this
+      // test needs to exist for the second, unrelated acquire below.
+      firstAcquired.release();
 
-      // The respawn must not be double-counted as an additional spare --
-      // poll for the ABSENCE of a second instance directory within a
-      // bounded deadline, using the SAME predicate-polling helper (inverted)
-      // rather than sleeping a fixed duration and hoping nothing appeared.
-      const extraSpareAppeared = await waitFor(() => {
-        const dirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-        return dirs.length > WARM_FLOOR;
-      }, 1500);
-      assert.equal(extraSpareAppeared, false, "the respawn must not be read as an additional spare, warming a second one on top of it");
-
-      const portDirsAfter = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-      assert.equal(
-        portDirsAfter.length,
-        WARM_FLOOR,
-        `exactly the configured warm floor (${WARM_FLOOR}) of instance directories must remain after the respawn, found ${JSON.stringify(portDirsAfter.map((d) => d.name))}`,
-      );
-      assert.equal(Number(portDirsAfter[0].name), warmPort, "the respawned instance must occupy the SAME port the warm spare originally held");
-
-      assert.equal(handle.child.exitCode, null, "the broker process itself must still be running after the respawn");
-      assert.equal(handle.child.signalCode, null, "the broker process itself must not have been signalled");
-    } finally {
-      await stopBroker(handle);
-      rmSync(stateDir, { recursive: true, force: true });
-      rmSync(probeDir, { recursive: true, force: true });
-    }
-  },
-);
-
-// ---------------------------------------------------------------------------
-// 01.6.2.1-01-PLAN.md, Task 1 (P-01/P-04): the e2e half of Defect 5's close --
-// an acquire over the REAL control plane, against the REAL spawned broker
-// artifact, served from an already-warm instance rather than paying a cold
-// launch. A unit test cannot see an orphaned module (handleAcquire() could
-// be perfectly correct in isolation while the real entry point never reaches
-// it -- exactly 01.6.2's own crash-supervisor gap, and this plan's own
-// Defect 5); this is the proof a fully-controlled stub cannot give.
-//
-// This fixture's env var is migrated in THIS plan's own commit
-// (01.6.2.1-05-PLAN.md, D-10/D-11): the retired predecessor variable's name
-// is gone, and this fixture now sets VICE_BROKER_WARM_FLOOR, matching the
-// landed warm-floor supervision test above. The OTHER retiring fixture
-// this test used to depend on (the external-command probe env var) is
-// MIGRATED as of 01.6.2.1-02-PLAN.md, Task 2 -- this test now reaches
-// `ready` through the surviving in-process HTTP mechanism via the
-// probe-answering stub emulator above, the same fixture the landed
-// supervision test just above was migrated onto.
-// ---------------------------------------------------------------------------
-
-test(
-  "wired warm floor: an acquire over the real control plane with one probe-live warm instance ready is served from it and spawns no second instance (Defect 5, P-01/P-04)",
-  { timeout: 20000 },
-  async () => {
-    build();
-    const WARM_FLOOR = 1;
-    const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-warm-acquire-"));
-    const probeDir = mkdtempSync(join(tmpdir(), "broker-e2e-warm-acquire-probe-"));
-    const stubPath = writeProbeAnsweringStub(probeDir);
-    // VICE_ARGS deliberately UNSET (not merely omitted) -- see
-    // writeProbeAnsweringStub()'s own header comment for why the stub
-    // depends on buildViceArgs()'s CONSTRUCTING branch running.
-    const handle = startBroker(stateDir, {
-      VICE_BIN: stubPath,
-      VICE_ARGS: undefined,
-      VICE_BROKER_WARM_FLOOR: String(WARM_FLOOR),
-    });
-    try {
-      await waitForBrokerJson(stateDir);
-
-      // The periodic evaluation pass, not this test, decides when the spare
-      // actually launches -- poll for its instance directory to appear
-      // rather than assuming a fixed number of poll intervals have elapsed.
-      const warmInstanceAppeared = await waitFor(() => {
-        const dirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-        return dirs.length >= 1;
-      }, 10000);
-      assert.ok(warmInstanceAppeared, "a warm spare must be launched by the periodic evaluation pass within the deadline");
-
-      const portDirsBeforeAcquire = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-      assert.equal(portDirsBeforeAcquire.length, 1, `expected exactly one warm instance directory before the acquire, found ${JSON.stringify(portDirsBeforeAcquire.map((d) => d.name))}`);
-      const warmPort = Number(portDirsBeforeAcquire[0].name);
-
-      // Wait for the warm instance's OWN epoch.json to actually carry a pid
-      // first (the instance directory can appear one launch step ahead of
-      // this), then wait for the record's own STATE to reach "ready" --
-      // maintainWarmFloor() only promotes "launching" -> "ready" via its own
-      // probe pass on a LATER poll tick (VICE_BROKER_POLL_MS), and
-      // handleAcquire()'s warm-instance selector only ever considers a
-      // record whose recorded state is "ready" (never merely "launching").
-      // Polled through a SEPARATE, never-acquiring control session (status
-      // is read-only) rather than the instance directory's own existence,
-      // which this test already confirmed above and which says nothing
-      // about the record's in-memory state.
-      const epochPath = join(stateDir, portDirsBeforeAcquire[0].name, "epoch.json");
-      const epochAppeared = await waitFor(() => {
-        try {
-          const parsed = JSON.parse(readFileSync(epochPath, "utf8"));
-          return typeof parsed.pid === "number";
-        } catch {
-          return false;
-        }
-      }, 5000);
-      assert.ok(epochAppeared, "the warm spare's epoch.json must carry a pid within the deadline");
-
+      // Wait for the RESPAWNED record's own recorded state to reach
+      // "ready" -- promoteLaunchingInstances() only promotes on a LATER
+      // poll tick (VICE_BROKER_POLL_MS), and handleAcquire()'s
+      // warm-instance selector only ever considers a record whose recorded
+      // state is "ready" (never merely "launching"). Polled through a
+      // SEPARATE, never-acquiring control session (status is read-only).
       const pollOutcome = await openBrokerControl(stateDir);
       assert.ok(pollOutcome.ok, `openBrokerControl (status poll) failed: ${JSON.stringify(pollOutcome)}`);
       let becameReady = false;
@@ -565,7 +465,7 @@ test(
         while (Date.now() < deadline && !becameReady) {
           const statusResult = await pollOutcome.session.status();
           if (statusResult.ok) {
-            const entry = statusResult.instances.find((i) => i.port === warmPort);
+            const entry = statusResult.instances.find((i) => i.port === firstGrant.port);
             if (entry && entry.state === "ready") {
               becameReady = true;
               break;
@@ -575,24 +475,25 @@ test(
         }
         await pollOutcome.session.release();
       }
-      assert.ok(becameReady, "the warm instance must reach recorded state \"ready\" within the deadline before the acquire is sent");
+      assert.ok(becameReady, "the respawned instance must reach recorded state \"ready\" within the deadline before the second acquire is sent");
 
-      const acquired = await acquireOverControlPlane(stateDir);
-      const grant = acquired.grant;
-
-      assert.equal(grant.port, warmPort, "the grant must name the ALREADY-EXISTING warm instance's own port, not a freshly allocated one");
+      // The second, UNRELATED acquire: served from the ready, ungranted
+      // instance the crash-respawn left behind -- no second spawn.
+      const secondAcquired = await acquireOverControlPlane(stateDir);
+      const secondGrant = secondAcquired.grant;
+      assert.equal(secondGrant.port, firstGrant.port, "the second acquire must be served from the SAME respawned instance, not a freshly launched one");
 
       // The load-bearing assertion: still exactly ONE instance directory --
       // no second instance was spawned to satisfy this acquire.
-      const portDirsAfterAcquire = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
+      const portDirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
       assert.equal(
-        portDirsAfterAcquire.length,
+        portDirs.length,
         1,
-        `expected exactly one instance directory to still exist after the acquire (served from the warm floor, no cold launch), found ${JSON.stringify(portDirsAfterAcquire.map((d) => d.name))}`,
+        `expected exactly one instance directory to still exist after the second acquire (served from the ready, ungranted respawn, no cold launch), found ${JSON.stringify(portDirs.map((d) => d.name))}`,
       );
-      assert.equal(Number(portDirsAfterAcquire[0].name), warmPort, "the sole remaining instance directory must be the SAME warm instance the grant named");
+      assert.equal(Number(portDirs[0].name), firstGrant.port, "the sole remaining instance directory must be the SAME respawned instance the second grant named");
 
-      acquired.release();
+      secondAcquired.release();
     } finally {
       await stopBroker(handle);
       rmSync(stateDir, { recursive: true, force: true });
@@ -693,15 +594,14 @@ test(
   async () => {
     build();
     const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-recycle-"));
-    // VICE_BROKER_WARM_FLOOR=0: this test's port-count and pid-stability
+    // Plan 41-05 (folded todo): this test's port-count and pid-stability
     // assertions are only meaningful if NOTHING besides this test's own
-    // acquire/recycle sequence ever launches or frees a port. Node's global
-    // fetch gives maintainWarmFloor() a real HTTP readiness mechanism by
-    // default (never "no_mechanism"), so leaving the warm floor at its
-    // default of 3 would auto-launch speculative spares on other free ports
-    // during this test's own wait windows -- disabling it here isolates the
-    // scenario this test is actually proving.
-    const handle = startBroker(stateDir, { VICE_RESTART_BACKOFF_S: "0", VICE_BROKER_POLL_MS: "100", VICE_BROKER_WARM_FLOOR: "0" });
+    // acquire/recycle sequence ever launches or frees a port. The isolation
+    // that used to require an explicit env override here (disabling
+    // speculative pre-warming) is now the DEFAULT -- VICE launches strictly
+    // on demand, on the first request, so nothing besides this test's own
+    // acquire/recycle sequence can ever launch or free a port.
+    const handle = startBroker(stateDir, { VICE_RESTART_BACKOFF_S: "0", VICE_BROKER_POLL_MS: "100" });
     try {
       const brokerJson = await waitForBrokerJson(stateDir);
       const host = String(brokerJson.control_host);
@@ -784,12 +684,14 @@ test(
     build();
     const POLL_MS = 100;
     const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-release-"));
-    // VICE_BROKER_WARM_FLOOR=0: same isolation reasoning as the recycle test
-    // above -- a release frees its port back to the allocator, and an
-    // auto-warmed spare landing on that SAME now-free port would rewrite
-    // this test's own epoch.json with an unrelated pid, corrupting the
-    // exact "no replacement appears" assertion this test exists to make.
-    const handle = startBroker(stateDir, { VICE_RESTART_BACKOFF_S: "0", VICE_BROKER_POLL_MS: String(POLL_MS), VICE_BROKER_WARM_FLOOR: "0" });
+    // Plan 41-05 (folded todo): same isolation reasoning as the recycle test
+    // above -- a release frees its port back to the allocator, and a
+    // speculatively pre-warmed spare landing on that SAME now-free port
+    // would rewrite this test's own epoch.json with an unrelated pid,
+    // corrupting the exact "no replacement appears" assertion this test
+    // exists to make. That isolation is now the DEFAULT (VICE launches
+    // strictly on demand), so no override is needed here to get it.
+    const handle = startBroker(stateDir, { VICE_RESTART_BACKOFF_S: "0", VICE_BROKER_POLL_MS: String(POLL_MS) });
     try {
       const brokerJson = await waitForBrokerJson(stateDir);
       const host = String(brokerJson.control_host);
@@ -911,15 +813,14 @@ test(
     const POLL_MS = 500;
     const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-disconnect-queued-"));
     const occupied = await bindOccupyingListeners(OCCUPIED_BASE_PORT, OCCUPIED_PORT_COUNT);
-    // VICE_BROKER_WARM_FLOOR=0: same isolation reasoning as the recycle/release
-    // tests above -- an auto-warmed spare (Node's global fetch makes the
-    // warm floor's readiness mechanism real by default) could land on some
-    // OTHER free candidate in this same widened scan region and add a
-    // second, unrelated instance, corrupting this test's own "exactly one
-    // instance" assertions.
+    // Plan 41-05 (folded todo): same isolation reasoning as the
+    // recycle/release tests above -- a speculatively pre-warmed spare could
+    // land on some OTHER free candidate in this same widened scan region
+    // and add a second, unrelated instance, corrupting this test's own
+    // "exactly one instance" assertions. That isolation is now the DEFAULT
+    // (VICE launches strictly on demand), so no override is needed here.
     const handle = startBroker(stateDir, {
       VICE_BROKER_POLL_MS: String(POLL_MS),
-      VICE_BROKER_WARM_FLOOR: "0",
       VICE_BROKER_BASE_PORT: String(OCCUPIED_BASE_PORT),
     });
     try {

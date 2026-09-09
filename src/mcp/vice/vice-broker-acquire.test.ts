@@ -1,7 +1,7 @@
 // vice-broker-acquire.test.ts
 //
-// 01.6.2.1-01-PLAN.md, Task 1 (P-01/P-02/P-03/P-04): unit-level proof that
-// handleAcquire() consults the warm floor before ever cold-launching. Covers
+// 01.6.2.1-01-PLAN.md, Task 1 (P-01/P-02/P-03/P-04): unit-level proof of
+// handleAcquire()'s own selectWarmInstance()/cold-launch decision. Covers
 // the EMITTED resources/vice-broker.mjs directly -- vice-broker.mts cannot be
 // imported unbuilt (it value-imports its siblings by their ".mjs" specifier,
 // which resolves only once tsc has compiled the whole tree into resources/,
@@ -14,9 +14,23 @@
 // a hand-built BrokerState -- there is no TCP control plane or real spawn
 // anywhere in this file; every probe, kill and cold-launch spawn is injected
 // through HandleAcquireDeps, the SAME dependency-seam shape
-// broker-launch.mts's own BrokerDeps/TryLaunchDeps/MaintainWarmFloorDeps
+// broker-launch.mts's own BrokerDeps/TryLaunchDeps/AcquirePortAndLaunchDeps
 // already establish. No test in this file opens a real connection to
 // anything (`.claude/CLAUDE.md` § Emulator Access) and no `x64sc` runs.
+//
+// Plan 41-05 (folded todo): `selectWarmInstance()` survives the warm floor's
+// removal INTACT -- it is not warm-floor-specific machinery. A `ready`,
+// UNGRANTED instance can still exist without any speculative warming: an
+// ordinary (non-deliberate) crash of a GRANTED instance respawns into
+// `launching` state with NO restoration of "granted" (broker-launch.mts's
+// handleExit(), the non-recycle branch -- only the DELIBERATE recycle branch
+// restores it), and once promoteLaunchingInstances() later probes it ready,
+// it is exactly the kind of candidate this file's own warm-hit tests below
+// exercise. The tests below keep their names/comments describing "the warm
+// floor" where they describe THIS candidate shape (a ready, ungranted
+// instance in state.instances) -- accurate, since that shape survives,
+// though its origin is a crash-respawn race now rather than deliberate
+// pre-warming.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
@@ -36,7 +50,6 @@ import type { LaunchProfile } from "./broker-launch.mts";
 import type { HandleAcquireDeps } from "./vice-broker.mts";
 import type { AcquireOutcome } from "./broker-control.mts";
 import type { KillStage } from "./broker-kill.mts";
-import type { ViceBackend } from "./backend-detect.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.url).href;
@@ -44,12 +57,6 @@ const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.u
 interface BrokerModule {
   handleAcquire: (requestId: string, stateDir: string, state: BrokerState, deps?: HandleAcquireDeps) => Promise<AcquireOutcome>;
   handleRelease: (requestId: string, state: BrokerState) => void;
-  /** Test-only escape hatch (see vice-broker.mts's own doc comment on this
-   * export) -- drives the warm-floor arm's REAL makeLoggingSpawn()+
-   * stashingSpawn+withCrashSupervision() composition with no injected spawn
-   * override, the only way Task 3's warm-floor case can prove that arm's
-   * own independent dropper is fixed rather than merely typed. */
-  _maintainWarmFloorForRealBroker: (stateDir: string, state: BrokerState, backend: ViceBackend) => Promise<void>;
 }
 
 /** Rebuilds resources/ from the current TypeScript source, then imports the
@@ -122,11 +129,11 @@ function stubAllocateRemoteMonitorPort(): (state: BrokerState, exclude: Readonly
 }
 
 // ---------------------------------------------------------------------------
-// I-1 composition proof (08.2-06-PLAN.md, Task 3). The tests below are the
-// non-bypassable proof this plan exists for: they call handleAcquire() /
-// _maintainWarmFloorForRealBroker() with buildColdSpawnFactory (or any
-// spawn override) OMITTED, so the REAL makeLoggingSpawn()+
-// withCrashSupervision() composition in vice-broker.mts runs end to end,
+// I-1 composition proof (08.2-06-PLAN.md, Task 3). The test below is the
+// non-bypassable proof this plan exists for: it calls handleAcquire() with
+// buildColdSpawnFactory (or any spawn override) OMITTED, so the REAL
+// makeLoggingSpawn()+withCrashSupervision() composition in vice-broker.mts
+// runs end to end,
 // all the way down to a real nodeSpawn() call. A test that injects a spawn
 // stub here proves nothing -- the defect this plan closes is precisely
 // that the composition BETWEEN the stub seam and nodeSpawn silently drops
@@ -281,54 +288,19 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
   }
 });
 
-test("maintainWarmFloor spare launch (real makeLoggingSpawn + withCrashSupervision composition via _maintainWarmFloorForRealBroker, no injected spawn override): a warm-floor stock launch's real nodeSpawn call also gets a fresh scratch XDG_CONFIG_HOME", async () => {
-  const { _maintainWarmFloorForRealBroker } = await loadBrokerModule();
-  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-warm-state-"));
-  const savedViceBin = process.env.VICE_BIN;
-  const savedRecordFile = process.env.VICE_BROKER_TEST_RECORD_FILE;
-  const savedAmbientXdg = process.env.XDG_CONFIG_HOME;
-  const scratchDirs: string[] = [stateDir];
-
-  try {
-    const script = writeRecorderScript();
-    scratchDirs.push(script.scriptDir);
-    const outDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-warm-out-"));
-    scratchDirs.push(outDir);
-    const outFile = join(outDir, "warm.txt");
-    process.env.VICE_BIN = script.scriptPath;
-    process.env.VICE_BROKER_TEST_RECORD_FILE = outFile;
-
-    const state = createState();
-    await _maintainWarmFloorForRealBroker(stateDir, state, "stock");
-
-    const records = Array.from(state.instances.values());
-    assert.equal(records.length, 1, "exactly one warm-floor spare instance must have launched toward the warm floor");
-    const record = records[0]!;
-    assert.ok(record.pid, "the real spawn must have produced a pid");
-
-    const recorded = await waitForFile(outFile);
-    assert.notEqual(recorded, "<unset>", "a warm-floor stock launch must set XDG_CONFIG_HOME, not leave it unset");
-    assert.ok(recorded.length > 0, "the recorded XDG_CONFIG_HOME must be a non-empty string");
-    assert.notEqual(recorded, savedAmbientXdg, "the scratch dir must not equal the ambient XDG_CONFIG_HOME");
-    assert.ok(recorded.startsWith(tmpdir()), `the scratch dir must live under os.tmpdir(), got ${recorded}`);
-
-    const logsDir = join(stateDir, String(record.port), "logs");
-    assert.ok(existsSync(logsDir) && readdirSync(logsDir).length > 0, "the warm-floor arm's per-instance log file must exist -- proves its own stdio-wins merge order, independent of the cold-acquire arm's");
-
-    killTestInstance(state, record.port);
-    await waitForProcessExit(record.pid!);
-  } finally {
-    if (savedViceBin === undefined) delete process.env.VICE_BIN;
-    else process.env.VICE_BIN = savedViceBin;
-    if (savedRecordFile === undefined) delete process.env.VICE_BROKER_TEST_RECORD_FILE;
-    else process.env.VICE_BROKER_TEST_RECORD_FILE = savedRecordFile;
-    if (savedAmbientXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-    else process.env.XDG_CONFIG_HOME = savedAmbientXdg;
-    for (const dir of scratchDirs) {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-});
+// Plan 41-05 (folded todo): the warm-floor-specific I-1 composition test that
+// used to sit here (driving _maintainWarmFloorForRealBroker() directly, with
+// no injected spawn override) is REMOVED along with the function it drove --
+// the warm floor is retired. Its subject -- the REAL makeLoggingSpawn() +
+// withCrashSupervision() composition receiving the third options argument
+// for a stock launch, with no spawn stub able to fake the proof -- is NOT
+// lost coverage: the "handleAcquire cold acquire (real makeLoggingSpawn +
+// withCrashSupervision composition, buildColdSpawnFactory OMITTED)" test
+// above already drives the IDENTICAL composition through the cold-acquire
+// arm (the only launch arm left), for both the stock and fork cases. Two
+// tests asserting the same composition through two call sites that now
+// share one underlying spawn-composition path would be redundant, not
+// additional coverage.
 
 // ---------------------------------------------------------------------------
 // RED-first (P-04): this test must fail against today's (pre-P-01)

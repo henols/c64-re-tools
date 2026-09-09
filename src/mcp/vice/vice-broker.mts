@@ -41,7 +41,10 @@ import {
 import {
   acquirePortAndLaunch,
   deleteInstanceRecord,
-  maintainWarmFloor,
+  // Plan 41-05 (folded todo): replaces maintainWarmFloor -- the warm floor
+  // itself is retired; this is ONLY the launching -> ready promotion sweep
+  // the floor used to carry as its own step 1.
+  promoteLaunchingInstances,
   probeReady,
   runBrokerPass,
   withCrashSupervision,
@@ -141,14 +144,18 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
 
-// The final fourteen-field set (plan 05, D-27, G/K): version, written_by,
-// pid, started_at, heartbeat_at, node_version, control_host, control_port,
-// control_token, warm_floor, max_instances, base_port, poll_ms, dry_run.
-// The bash original's `ttl_seconds` field is DELETED, not merely renamed --
-// it is one of criterion F's six retiring lease mechanisms; the connection
-// is the lease now, and keeping a TTL-shaped field here would advertise an
-// authority that no longer exists. Every other bash config-echo field is
-// kept even though no consumer parses it beyond a status message
+// The final thirteen-field set (plan 05, D-27, G/K; NARROWED to thirteen by
+// plan 41-05, folded todo): version, written_by, pid, started_at,
+// heartbeat_at, node_version, control_host, control_port, control_token,
+// max_instances, base_port, poll_ms, dry_run. The bash original's
+// `ttl_seconds` field is DELETED, not merely renamed -- it is one of
+// criterion F's six retiring lease mechanisms; the connection is the lease
+// now, and keeping a TTL-shaped field here would advertise an authority that
+// no longer exists. `warm_floor` is DELETED for the same reason (plan
+// 41-05): a published field whose knob no longer exists is false
+// documentation, not harmless residue -- there is no warm floor left to
+// echo a configured value for. Every other bash config-echo field is kept
+// even though no consumer parses it beyond a status message
 // (readBrokerLiveness() reads only `pid` and `heartbeat_at`) -- a human
 // reading this file by hand benefits from the full configuration echo,
 // which is why the bash version carried it and why this port keeps it.
@@ -162,7 +169,6 @@ export interface BrokerRecord {
   control_host: string;
   control_port: number;
   control_token: string;
-  warm_floor: number;
   max_instances: number;
   base_port: number;
   poll_ms: number;
@@ -176,30 +182,23 @@ export interface BrokerRecord {
 export const WRITTEN_BY = "vice-broker.mjs";
 
 // ---------------------------------------------------------------------------
-// Small, locally-duplicated env-var readers (plan 05) -- the SAME pattern
+// Small, locally-duplicated env-var reader (plan 05) -- the SAME pattern
 // broker-kill.mts's own resolveBasePortForReap()/resolveViceBinForReap()
 // already established: this module cannot import broker-launch.mts's
-// PRIVATE resolveWarmFloor()/resolveCeiling() (they are not exported, and
-// this file is already the top-level wiring module value-importing every
-// sibling .mjs directly -- exporting them would widen broker-launch.mts's
-// own surface for a one-line env-var read this file can duplicate exactly
-// as cheaply). Both mirror broker-launch.mts's defaults precisely
-// (VICE_BROKER_WARM_FLOOR/1, VICE_BROKER_MAX/16) so broker.json's config echo
-// and host_state's own answer can never disagree with what maintainWarmFloor
-// itself actually enforces. The floor default dropped from 3 to 1 in
-// 01.6.2.1-03-PLAN.md (D-06) -- BOTH readers changed together in that same
-// commit, deliberately, because this invariant (the two numbers never
-// disagree) breaks silently the moment only one of them moves. The
-// ceiling's own default (16) is untouched by D-06 -- it is the unrun
-// concurrency-ceiling spike's territory, not this phase's.
+// PRIVATE resolveCeiling() (it is not exported, and this file is already
+// the top-level wiring module value-importing every sibling .mjs directly --
+// exporting it would widen broker-launch.mts's own surface for a one-line
+// env-var read this file can duplicate exactly as cheaply). Mirrors
+// broker-launch.mts's own default precisely (VICE_BROKER_MAX/16) so
+// broker.json's config echo and host_state's own answer can never disagree
+// with what atCapacity() itself actually enforces. Plan 41-05 (folded todo):
+// this used to be a PAIR with resolveWarmFloorForRecord() (VICE_BROKER_WARM_
+// FLOOR/1), kept in lockstep with broker-launch.mts's own matching pair
+// (01.6.2.1-03-PLAN.md, D-06) so the two numbers could never disagree. The
+// warm-floor half of that pair is RETIRED along with the floor itself -- the
+// ceiling's own default (16) is untouched, since it is a separate concern
+// (VICE_BROKER_MAX / atCapacity()) this plan does not touch.
 // ---------------------------------------------------------------------------
-function resolveWarmFloorForRecord(): number {
-  const raw = process.env.VICE_BROKER_WARM_FLOOR;
-  if (raw === undefined || raw === "") return 1;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : 1;
-}
-
 function resolveCeilingForRecord(): number {
   const raw = process.env.VICE_BROKER_MAX;
   if (raw === undefined || raw === "") return 16;
@@ -331,9 +330,10 @@ function writeEpochForLaunch(record: InstanceRecord, logRelPath: string): void {
 }
 
 /** Builds the supervision dependency object for withCrashSupervision(),
- * once per launch, so both real launch paths (handleAcquire here; Task 2's
- * maintainWarmFloorForRealBroker) pass a structurally identical
- * SuperviseChildDeps object into the SAME shared wrapper. Deliberately does
+ * once per launch, so the real launch path (handleAcquire's own cold arm,
+ * here -- plan 41-05 retires the second real launch path this comment used
+ * to name, the warm floor) passes a structurally identical SuperviseChildDeps
+ * object into the shared wrapper. Deliberately does
  * NOT set spawnFactory: on a respawn, launchSupervised() (broker-launch.mts)
  * derives its own per-instance log path from instanceLogDirFor and names
  * that same path in the epoch record it writes -- supplying a competing
@@ -772,11 +772,17 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
     }
     record = result.record;
 
-    // Only the cold-launch arm ever writes a FRESH epoch record -- the warm
-    // arm's winner already has one, written when it was warmed
-    // (maintainWarmFloorForRealBroker()'s own onLaunched hook), and
-    // rewriting it here would advance an epoch no restart caused, which the
-    // container-side assertSameMachine() would read as a machine change.
+    // Only the cold-launch arm ever writes a FRESH epoch record here --
+    // selectWarmInstance()'s own winner already has one. Plan 41-05 (folded
+    // todo) changes WHY that is true without changing that it IS true: a
+    // ready, ungranted candidate no longer comes from a warm-floor pass's
+    // own onLaunched hook (retired along with the floor) -- it comes from
+    // broker-launch.mts's own crash-supervision respawn path
+    // (launchSupervised(), which writes its own epoch record via
+    // deps.epoch.writeEpochRecord() on every launch and every respawn).
+    // Either way, rewriting the epoch here would advance an epoch no restart
+    // caused, which the container-side assertSameMachine() would read as a
+    // machine change.
     writeEpochForLaunch(record, lastLogRelPath);
   }
 
@@ -965,84 +971,26 @@ async function handleRecycleForRealBroker(targetId: string, state: BrokerState):
   return { port: instance.port, pid: instance.pid, viceBin: instance.viceBin, killStage, epochBefore, outcome, reason };
 }
 
-/** The warm-floor concern of the fixed-order evaluation pass (D-24 drops
- * the projection write; the grant sweep does not appear -- D-12's
- * connection-is-the-lease). Builds a fresh MaintainWarmFloorDeps per call
- * (never reused across passes) wiring broker-state.mjs's real
- * allocatePort/counts and broker-launch.mjs's real probeReady, and hooks
- * onLaunched to write the SAME epoch record a cold acquire writes -- a
- * warm instance is a real process the moment it exists, per D-04.
- *
- * WR-04 (01.6.2.1-REVIEW.md): the log-path stash below is a LOCAL variable,
- * declared fresh once per call to THIS function -- exactly mirroring how
- * handleAcquire()'s own equivalent cold-launch log-path variable
- * (`lastLogRelPath`) is already scoped locally rather than to the module.
- * Both the write site (the spawn-wrapping closure) and the read site (the
- * `onLaunched` callback) live inside this SAME function body, so this is a
- * pure relocation with no behavioural change -- it removes the
- * cross-call-sharing risk a module-level `let` carried (correct only
- * because of invariants -- at most one launch per call, never invoked
- * concurrently with itself -- enforced elsewhere and never checked at the
- * point the variable used to be declared). */
-function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, backend: ViceBackend): Promise<void> {
-  let lastWarmLaunchLogRelPath = "";
-  return maintainWarmFloor({
+/** Plan 41-05 (folded todo): the second concern of the fixed-order
+ * evaluation pass, RENAMED from the retired warm-floor maintenance function
+ * this replaces (D-24 drops the projection write; the grant sweep does not
+ * appear -- D-12's connection-is-the-lease). Unlike the function it
+ * replaces, this one never launches anything -- it wires only
+ * broker-launch.mjs's real promoteLaunchingInstances() against this
+ * broker's own state and the backend-aware readiness probe, so a
+ * `launching` instance (however it got there -- a cold acquire's own
+ * instance, or a crash-respawn) is promoted to `ready` the moment it
+ * answers. */
+function promoteLaunchingForRealBroker(state: BrokerState, backend: ViceBackend): Promise<void> {
+  return promoteLaunchingInstances({
     state,
-    stateDir,
     backend,
-    spawnFactory: (port: number) => {
-      const supervisorDir = join(stateDir, String(port));
-      const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"));
-      // I-1 rider (08.2-06-PLAN.md, Task 2): forwards a third options
-      // argument -- this is a SECOND, independent dropper on the
-      // warm-floor arm; fixing only makeLoggingSpawn above would leave
-      // this arm's own scratch XDG_CONFIG_HOME dropped right here.
-      const stashingSpawn = (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio): ChildProcess => {
-        const child = spawn(cmd, args, options);
-        // Stash the log path where onLaunched (fired synchronously right
-        // after this returns, still within the SAME maintainWarmFloor()
-        // call -- at most one launch per call, per the serialised-warming
-        // invariant) can find it. withCrashSupervision() below composes
-        // AROUND this function, so the stash still runs (and still
-        // completes before onLaunched reads it) before the exit listener
-        // is ever attached.
-        lastWarmLaunchLogRelPath = logRelPath;
-        return child;
-      };
-      // CR-01 (03-REVIEW.md): the SAME resolved `backend` this function
-      // already receives for the launch argv is threaded into the supervision
-      // deps, so a warm instance's own crash-respawn stays on its backend.
-      return withCrashSupervision("spare", port, stashingSpawn, superviseDepsFor(stateDir, state, backend));
-    },
-    // WR-01: same backend-aware probe route as handleAcquire's, from the SAME
-    // resolved verdict this function already receives for the launch argv.
+    // WR-01: same backend-aware probe route as handleAcquire's, from the
+    // SAME resolved verdict this function already receives.
     probe: (port: number) => probeReady(port, { backend }),
-    allocatePort: nextFreePort,
-    // Plan 03-04 (DIRECT-06, D-13): same wiring as handleAcquire()'s own
-    // cold-launch arm -- acquirePortAndLaunch() (reached via
-    // maintainWarmFloor() below) gates the second allocation on
-    // `backend === "stock"` itself, so this function need not check the
-    // backend before passing it.
-    allocateRemoteMonitorPort: (s: BrokerState, exclude: ReadonlySet<number>) => nextFreePort(s, { exclude }),
-    countReady,
-    countTotal,
-    countLaunching,
-    onLaunched: (record: InstanceRecord) => {
-      writeEpochForLaunch(record, lastWarmLaunchLogRelPath);
-    },
     log: (line: string) => process.stderr.write(`${line}\n`),
   });
 }
-
-/** Exported ONLY so a test can drive the warm-floor arm's REAL spawn
- * composition (this function's own makeLoggingSpawn()+stashingSpawn+
- * withCrashSupervision() closure above) through the built artifact, the
- * same escape-hatch pattern `_superviseDepsFor` already establishes for the
- * respawn composition -- see vice-broker-acquire.test.ts's I-1 composition
- * tests (08.2-06-PLAN.md, Task 3), which call this directly with no spawn
- * override so the warm floor's own independent `stashingSpawn` dropper
- * cannot hide behind an injected stub. */
-export const _maintainWarmFloorForRealBroker = maintainWarmFloorForRealBroker;
 
 /** Releases a grant and identity-verified-kills its instance -- but ONLY
  * when the port's CURRENT occupant is proven to be the SAME process this
@@ -1269,7 +1217,6 @@ async function run(args: ParsedArgs): Promise<void> {
         startedAt,
         nodeVersion: process.version,
         viceBin: resolveViceBinForHostState(),
-        warmFloor: resolveWarmFloorForRecord(),
         maxInstances: resolveCeilingForRecord(),
         basePort: resolveBasePort(),
         // WR-04: the verdict THIS process resolved once, at startup, above --
@@ -1329,9 +1276,11 @@ async function run(args: ParsedArgs): Promise<void> {
 
   // A successful bind writes the record UNCONDITIONALLY, overwriting
   // whatever was there -- the bind itself is the proof of singleton status
-  // (D-17). The fourteen-field set (D-27, criterion G): the lease
-  // time-to-live field the bash original carried is gone -- the connection
-  // is the lease now (D-12) -- and every other config-echo field survives
+  // (D-17). The thirteen-field set (D-27, criterion G; narrowed from
+  // fourteen by plan 41-05): the lease time-to-live field the bash original
+  // carried is gone -- the connection is the lease now (D-12) -- `warm_floor`
+  // is likewise gone (plan 41-05: there is no warm floor left to echo a
+  // configured value for) -- and every other config-echo field survives
   // even though no consumer parses it beyond a status message, because a
   // human reading this file by hand benefits from the full echo.
   let record: BrokerRecord = {
@@ -1344,7 +1293,6 @@ async function run(args: ParsedArgs): Promise<void> {
     control_host: listener.host,
     control_port: listener.port,
     control_token: token, // never logged -- T-01.6.2-02
-    warm_floor: resolveWarmFloorForRecord(),
     max_instances: resolveCeilingForRecord(),
     base_port: resolveBasePort(),
     poll_ms: pollMs,
@@ -1364,25 +1312,28 @@ async function run(args: ParsedArgs): Promise<void> {
   }, heartbeatMs);
 
   // The fixed-order evaluation pass (runBrokerPass, broker-launch.mts):
-  // serve pending acquires, then maintain the warm floor -- mirroring
-  // vice-broker.sh's own broker_once() ordering. Ticks on
-  // VICE_BROKER_POLL_MS (default 500, the SAME env var name and semantics
-  // the bash daemon used). serveAcquires now drains the arrival-ordered
-  // pending-acquire structure this listener instance owns (D-08's
-  // mechanism; plan 02's own `serveAcquires: () => {}` comment reserved
-  // exactly this room) -- an acquire queued because a launch was already in
-  // flight is retried here, on the SAME pass that also maintains the warm
-  // floor, so a stalled pass shows up as a stale record rather than a
-  // silently wrong one. Re-entrancy guarded: a pass that is still running
-  // (e.g. a slow readiness probe against a genuinely slow host) is never
-  // overlapped by the next tick.
+  // serve pending acquires, then promote launching -> ready -- mirroring
+  // vice-broker.sh's own broker_once() ordering (plan 41-05, folded todo:
+  // the warm floor this pass used to maintain as its second concern is
+  // RETIRED; see runBrokerPass()'s own comment in broker-launch.mts for what
+  // the fixed order still buys now that only serveAcquires() ever launches
+  // anything). Ticks on VICE_BROKER_POLL_MS (default 500, the SAME env var
+  // name and semantics the bash daemon used). serveAcquires now drains the
+  // arrival-ordered pending-acquire structure this listener instance owns
+  // (D-08's mechanism; plan 02's own `serveAcquires: () => {}` comment
+  // reserved exactly this room) -- an acquire queued because a launch was
+  // already in flight is retried here, on the SAME pass that also promotes
+  // any newly-ready instance, so a stalled pass shows up as a stale record
+  // rather than a silently wrong one. Re-entrancy guarded: a pass that is
+  // still running (e.g. a slow readiness probe against a genuinely slow
+  // host) is never overlapped by the next tick.
   let passInFlight = false;
   setInterval(() => {
     if (passInFlight) return;
     passInFlight = true;
     runBrokerPass({
       serveAcquires: () => drainPendingAcquires(listener.pendingAcquires),
-      maintainWarmFloor: () => maintainWarmFloorForRealBroker(args.stateDir, state, backend),
+      promoteLaunching: () => promoteLaunchingForRealBroker(state, backend),
     })
       .catch((e) => {
         process.stderr.write(`vice-broker: evaluation pass failed: ${(e as Error).message}\n`);

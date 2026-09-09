@@ -93,7 +93,6 @@ function baseListenerOptions(onHostTool: (raw: unknown) => Promise<unknown>) {
       startedAt: "2026-01-01T00:00:00Z",
       nodeVersion: process.version,
       viceBin: "x64sc",
-      warmFloor: 1,
       maxInstances: 1,
       basePort: 6600,
       backend: "fork" as const,

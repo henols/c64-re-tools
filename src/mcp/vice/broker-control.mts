@@ -175,12 +175,15 @@ export type MonitorClaimOutcome = { ok: true } | { ok: false; code: "monitor_own
  * documented tolerance for releasing twice. */
 export type MonitorReleaseOutcome = { ok: true } | { ok: false; code: "denied" | "bad_request" | "internal" };
 
+// Plan 41-05 (folded todo): `warmFloor` is DELETED, not merely renamed --
+// the warm floor itself is retired, and a published field whose knob no
+// longer exists is false documentation, so it goes rather than reporting a
+// constant.
 export interface HostStateFields {
   pid: number;
   startedAt: string;
   nodeVersion: string;
   viceBin: string;
-  warmFloor: number;
   maxInstances: number;
   basePort: number;
   /** WR-04: the backend verdict THIS broker resolved at startup -- the one that
@@ -303,7 +306,6 @@ export type ControlResponse =
       started_at: string;
       node_version: string;
       vice_bin: string;
-      warm_floor: number;
       max_instances: number;
       base_port: number;
       /** WR-04: see HostStateFields.backend for why this is on the wire. */
@@ -867,7 +869,6 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           started_at: hs.startedAt,
           node_version: hs.nodeVersion,
           vice_bin: hs.viceBin,
-          warm_floor: hs.warmFloor,
           max_instances: hs.maxInstances,
           base_port: hs.basePort,
           backend: hs.backend,

@@ -145,12 +145,15 @@ async function stopBroker(child: ChildProcess): Promise<void> {
   if (!exited) child.kill("SIGKILL");
 }
 
-// The final fourteen-field discovery-record set (plan 05, D-27, criterion
-// G/K) -- amended a second and final time from plan 01's nine-key tracer
-// assertion. `ttl_seconds` (the bash fixture's own lease-time-to-live field)
-// is DELETED, not carried forward: it is one of criterion F's six retiring
-// lease mechanisms, and the connection is the lease now.
-const BROKER_JSON_FOURTEEN_KEYS = [
+// The thirteen-field discovery-record set (plan 05, D-27, criterion G/K --
+// amended a second time from plan 01's nine-key tracer assertion; NARROWED
+// from fourteen to thirteen by plan 41-05, folded todo). `ttl_seconds` (the
+// bash fixture's own lease-time-to-live field) is DELETED, not carried
+// forward: it is one of criterion F's six retiring lease mechanisms, and the
+// connection is the lease now. `warm_floor` is likewise DELETED (plan
+// 41-05): the warm floor itself is retired, and a published field whose
+// knob no longer exists is false documentation.
+const BROKER_JSON_THIRTEEN_KEYS = [
   "version",
   "written_by",
   "pid",
@@ -160,14 +163,13 @@ const BROKER_JSON_FOURTEEN_KEYS = [
   "control_host",
   "control_port",
   "control_token",
-  "warm_floor",
   "max_instances",
   "base_port",
   "poll_ms",
   "dry_run",
 ];
 
-test("emitted artifact starts a LONG-LIVED broker: writes the fourteen-field discovery record (mode 0600), binds a control listener on 0.0.0.0", async () => {
+test("emitted artifact starts a LONG-LIVED broker: writes the thirteen-field discovery record (mode 0600), binds a control listener on 0.0.0.0", async () => {
   const deployDir = freshDeployDir();
   const { child } = runBrokerAsync(
     deployDir,
@@ -182,10 +184,11 @@ test("emitted artifact starts a LONG-LIVED broker: writes the fourteen-field dis
     const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
     assert.deepEqual(
       Object.keys(record).sort(),
-      [...BROKER_JSON_FOURTEEN_KEYS].sort(),
-      "the long-lived broker's discovery record must carry EXACTLY these fourteen fields, no lease-TTL field among them",
+      [...BROKER_JSON_THIRTEEN_KEYS].sort(),
+      "the long-lived broker's discovery record must carry EXACTLY these thirteen fields, no lease-TTL field and no warm-floor field among them",
     );
     assert.ok(!("ttl_seconds" in record), "the lease time-to-live field must be gone -- the connection is the lease now (D-12)");
+    assert.ok(!("warm_floor" in record), "the warm-floor field must be gone -- the warm floor itself is retired (plan 41-05)");
     assert.equal(record.written_by, "vice-broker.mjs");
     assert.notEqual(
       record.written_by,
@@ -199,7 +202,6 @@ test("emitted artifact starts a LONG-LIVED broker: writes the fourteen-field dis
     assert.ok((record.control_token as string).length > 0);
     assert.ok(!Number.isNaN(Date.parse(record.heartbeat_at as string)), "heartbeat_at must be a parseable timestamp");
     assert.ok(!Number.isNaN(Date.parse(record.started_at as string)));
-    assert.equal(record.warm_floor, 1, "default warm floor, D-06 (01.6.2.1-03-PLAN.md) -- down from 3");
     assert.equal(record.max_instances, 16, "default instance ceiling, unchanged this phase");
     assert.equal(record.base_port, 6600, "default base port, D-18");
     assert.equal(record.poll_ms, 500, "default poll interval, unchanged this phase");
@@ -300,7 +302,7 @@ test("a pre-existing broker.json naming this test's own live pid no longer block
     assert.ok(wroteNewRecord, "a record naming this test's own live pid must NOT block a restart -- only a real bind conflict does now");
 
     const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
-    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_FOURTEEN_KEYS].sort());
+    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_THIRTEEN_KEYS].sort());
     assert.notEqual(record.pid, before, "the new record must name the SPAWNED BROKER's own pid, not the old fixture's");
   } finally {
     await stopBroker(child);
@@ -326,7 +328,7 @@ test("overwrites a record naming a DEAD pid -- a stale record on disk never bloc
     assert.ok(wroteNewRecord, "a dead-pid record (even with heartbeat_at) must be overwritten, not refused");
 
     const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
-    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_FOURTEEN_KEYS].sort());
+    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_THIRTEEN_KEYS].sort());
     assert.notEqual(record.pid, 999999999, "the new record must name the SPAWNED BROKER's own pid, not the dead fixture pid");
     assert.ok(Number.isInteger(record.pid) && (record.pid as number) > 0);
   } finally {
@@ -350,7 +352,7 @@ test("a record file truncated mid-JSON is treated as absent and overwritten rath
     const wroteNewRecord = await waitFor(() => {
       try {
         const parsed = JSON.parse(readFileSync(recordPath, "utf8"));
-        return Object.keys(parsed).length === BROKER_JSON_FOURTEEN_KEYS.length;
+        return Object.keys(parsed).length === BROKER_JSON_THIRTEEN_KEYS.length;
       } catch {
         return false;
       }

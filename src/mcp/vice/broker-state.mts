@@ -186,12 +186,13 @@ export interface InstanceRecord {
   // two distinct reasons that both have to hold:
   //
   //   1. A record created through a path that requests no profile remains a
-  //      valid InstanceRecord without this field -- every pre-33-06 caller,
-  //      every fork launch, and every warm-floor spare.
+  //      valid InstanceRecord without this field -- every pre-33-06 caller
+  //      and every fork launch (plan 41-05, folded todo: the warm-floor
+  //      spare this comment used to name here is retired -- there is no
+  //      longer a speculative launch path to be profile-less by omission).
   //   2. A broker restarted mid-phase reads state-directory records written
   //      BEFORE this field existed (33-RESEARCH.md § Runtime State
-  //      Inventory). ABSENT MEANS PROFILE-LESS, which is precisely what the
-  //      warm floor already does today, so such a broker degrades to
+  //      Inventory). ABSENT MEANS PROFILE-LESS, so such a broker degrades to
   //      today's semantics rather than to an error.
   //
   // DO NOT give this field a default value. An explicit `{}` and an absent

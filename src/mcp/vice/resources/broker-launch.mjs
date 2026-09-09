@@ -14,8 +14,12 @@
 // in-process mechanism (collapsed from a three-way branch by Phase
 // 01.6.2.1's own plan 02 -- D-05 as amended by P-05/P-06/P-07; see
 // probeReady()'s own header comment below for the amendment's record),
-// serialised warm-floor maintenance (one launch per pass, never more), and
-// the fixed-order evaluation pass both surviving concerns run through.
+// the launching -> ready promotion sweep (promoteLaunchingInstances() --
+// plan 41-05, folded todo: this used to be step 1 inside a warm-floor
+// maintenance function that speculatively pre-launched spare instances;
+// that floor is RETIRED and VICE now launches strictly on demand, but the
+// promotion sweep outlived it), and the fixed-order evaluation pass both
+// surviving concerns run through.
 //
 // Plan 03, Task 2 grows this module into a real per-child supervisor
 // (C2/D-23), absorbing resources/vice-supervisor.sh wholesale: superviseChild()
@@ -375,15 +379,17 @@ function spawnAndRecordInstance(reason, port, deps) {
     // always supplies its own deps.spawn / deps.spawnFactory, so the widened
     // default wrapper above is dead code on the real launch paths. This
     // function's job is only to COMPUTE the value at the one seam that should
-    // own it; the forwarding to nodeSpawn() happens at four further hops --
-    // makeLoggingSpawn() and maintainWarmFloorForRealBroker's inner
-    // stashingSpawn in vice-broker.mts, and withCrashSupervision()'s wrapper
-    // body and launchSupervised()'s defaultRealSpawn in this file. All four
-    // now forward the options argument (plan 08.2-06 closed them in this same
-    // phase, with a handleAcquire() composition test that omits
-    // buildColdSpawnFactory so an injected stub cannot fake the proof). If you
-    // add a fifth spawn hop, it must forward options too, or production stock
-    // launches silently lose their config isolation again.
+    // own it; the forwarding to nodeSpawn() happens at three further hops --
+    // makeLoggingSpawn() in vice-broker.mts, and withCrashSupervision()'s
+    // wrapper body and launchSupervised()'s defaultRealSpawn in this file
+    // (plan 41-05, folded todo: a FOURTH hop, the retired warm floor's own
+    // inner stashingSpawn closure in vice-broker.mts, is REMOVED along with
+    // the function that held it). All three now forward the options argument
+    // (plan 08.2-06 closed them in this same phase, with a handleAcquire()
+    // composition test that omits buildColdSpawnFactory so an injected stub
+    // cannot fake the proof). If you add another spawn hop, it must forward
+    // options too, or production stock launches silently lose their config
+    // isolation again.
     //
     // Scratch-dir lifetime: this function deliberately does NOT clean the
     // directory up -- the spawned emulator process outlives this function's
@@ -452,10 +458,10 @@ function spawnAndRecordInstance(reason, port, deps) {
  *
  * This is the RIGHT primitive when the port is already decided and fixed
  * (most tests; any future caller with its own allocation scheme). It is
- * deliberately NOT what handleAcquire or maintainWarmFloor call for a
- * FRESH port, because nextFreePort() itself is asynchronous (a real
- * port-in-use probe requires it) -- see acquirePortAndLaunch()'s own
- * header comment for the race that creates and how it is closed. */
+ * deliberately NOT what handleAcquire calls for a FRESH port, because
+ * nextFreePort() itself is asynchronous (a real port-in-use probe requires
+ * it) -- see acquirePortAndLaunch()'s own header comment for the race that
+ * creates and how it is closed. */
 export function tryLaunchOne(reason, port, deps) {
     if (inFlight)
         return null;
@@ -472,26 +478,37 @@ export function tryLaunchOne(reason, port, deps) {
  * instant tryLaunchOne() alone guards. This closes a genuine race window
  * tryLaunchOne() cannot: nextFreePort()'s own port-in-use probe is
  * asynchronous (plan 02, C4 -- a real bind-and-release check), so two
- * overlapping callers (a cold acquire arriving over the TCP control
- * listener at any moment, and a warm-floor pass on its own poll timer)
- * could otherwise BOTH be told the SAME candidate port is free before
- * either commits it to state.instances -- a double-launch on one port,
- * silently overwriting the earlier record. The guard is checked and set
- * SYNCHRONOUSLY before the first `await`, exactly like tryLaunchOne()'s
- * own discipline, so a second concurrent call is refused immediately
- * (`launch_in_flight`) rather than racing on the allocation.
+ * overlapping callers could otherwise BOTH be told the SAME candidate port
+ * is free before either commits it to state.instances -- a double-launch on
+ * one port, silently overwriting the earlier record. The guard is checked
+ * and set SYNCHRONOUSLY before the first `await`, exactly like
+ * tryLaunchOne()'s own discipline, so a second concurrent call is refused
+ * immediately (`launch_in_flight`) rather than racing on the allocation.
  *
- * This is also the function that restores vice-broker.sh's own
- * process_requests() throttle (its `in_flight` local, checked before a
- * COLD launch, not only before a warm one): a cold acquire and a
- * warm-floor pass can never launch simultaneously, matching the bash
+ * Plan 41-05 (folded todo): this guard's own reasoning OUTLIVED the warm
+ * floor it was originally written alongside -- it exists because of the
+ * 2026-08-01 triple-launch outage (three simultaneous x64sc launches: one
+ * SEGV, one exit 1, one exit 0 at the identical spawn second) and is
+ * regression-tested (CLAUDE.md), and that history has nothing to do with
+ * whether a warm floor exists. Today the only caller of this function is the
+ * cold-acquire arm (vice-broker.mts's handleAcquire(), via `serveAcquires()`
+ * in runBrokerPass()); the overlap this guard closes is now TWO OR MORE
+ * concurrent acquires -- e.g. two requests arriving over the TCP control
+ * listener at nearly the same moment, or one arriving while an EARLIER
+ * acquire's own launch is still resolving -- never a warming pass, which no
+ * longer exists. This is also the function that restores vice-broker.sh's
+ * own process_requests() throttle (its `in_flight` local): whatever launches
+ * this broker ever attempts, they never overlap, matching the bash
  * original's declined-to-change behaviour (RESEARCH.md §A1/§C). D-07
  * (01.6.2.1-03-PLAN.md) layers non-preemptive PRIORITY on top of this same
- * "one at a time" guard, never replacing it: this function still only ever
- * refuses a second concurrent caller (`launch_in_flight`), and never kills
- * or preempts whichever caller already holds the slot -- which reason wins
- * this slot NEXT, once it frees, falls out of runBrokerPass()'s own fixed
- * evaluation order (that function's own invariant comment), not from
+ * "one at a time" guard, never replacing it, and the anti-pattern it names --
+ * killing or relaunching preemptively to serve a newer request -- is likewise
+ * unaffected by the floor's removal: this function still only ever refuses a
+ * second concurrent caller (`launch_in_flight`), and never kills or preempts
+ * whichever caller already holds the slot. Among multiple QUEUED acquires,
+ * which one wins this slot NEXT, once it frees, falls out of the
+ * arrival-ordered pending-acquire structure (broker-control.mts's D-08
+ * mechanism) that requeues a refused acquire for the next pass -- not from
  * anything in this function. The refusal below logs which reason currently
  * holds the slot and which reason is waiting, so the decision is
  * reconstructable from the log after an incident. */
@@ -586,8 +603,9 @@ export async function acquirePortAndLaunch(reason, deps) {
  * instance permanently consumed one more port out of the fixed
  * PORT_SCAN_CEILING window even though the OS port was free again the instant
  * the owning process exited -- a long-running broker (the explicit design goal
- * of an on-demand pool with crash supervision and a warm floor) eventually
- * exhausts its band and answers `no_free_port` to ordinary launches purely
+ * of an on-demand pool with crash supervision, per plan 41-05 launched
+ * strictly on demand rather than kept warm) eventually exhausts its band and
+ * answers `no_free_port` to ordinary launches purely
  * from routine churn, with no operator recourse short of a broker restart.
  *
  * A RESPAWN is deliberately NOT a call site: the replacement instance keeps
@@ -838,8 +856,8 @@ async function defaultBinmonProbe(port, timeoutMs) {
  * fully honoured by this collapse, not reversed by it.
  *
  * No retry loop, deliberately: a still-booting instance simply fails THIS
- * pass and is re-probed on the next one (maintainWarmFloor()'s own per-pass
- * cadence, or a later grant-time re-probe) -- this is what makes the
+ * pass and is re-probed on the next one (promoteLaunchingInstances()'s own
+ * per-pass cadence, or a later grant-time re-probe) -- this is what makes the
  * shortened ~1s default below safe rather than reckless: a slow host is
  * re-probed, never starved, and the seconds-valued timeout knob
  * (VICE_BROKER_PROBE_TIMEOUT_S) still lets an operator on a slow host raise
@@ -858,61 +876,22 @@ export async function probeReady(port, deps = {}) {
     const httpProbe = deps.httpProbe ?? defaultHttpProbe;
     return httpProbe(port, timeoutMs);
 }
-// ---------------------------------------------------------------------------
-// Serialised warm-floor maintenance
-// ---------------------------------------------------------------------------
-function resolveWarmFloor(override) {
-    if (typeof override === "number")
-        return override;
-    const raw = process.env.VICE_BROKER_WARM_FLOOR;
-    if (raw === undefined || raw === "")
-        return 1;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : 1;
-}
-function resolveCeiling(override) {
-    if (typeof override === "number")
-        return override;
-    const raw = process.env.VICE_BROKER_MAX;
-    if (raw === undefined || raw === "")
-        return 16;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : 16;
-}
-/** Promotes launching instances via probe, then -- unless a launch is
- * already in flight -- launches AT MOST ONE instance toward the warm floor
- * and returns. Never loops to reach the floor in one call: reaching
- * VICE_BROKER_WARM_FLOOR this way costs one
- * additional CALL per warm instance instead of one call total, which is the exact
- * trade the 2026-08-01 outage made non-negotiable (three simultaneous
- * x64sc launches: one SEGV, one exit 1, one exit 0 at the identical spawn
- * second). `async`/`await` makes launching everything needed in one go
- * look free and idiomatic; it is actively dangerous here. DO NOT gather
- * several pending launches into a single concurrent await, and do not
- * "helpfully" loop this function internally until the floor is met.
- *
- * D-05's probe-live floor evaluation (count_ready() trusting probe-live
- * instances rather than a recorded `ready` state) is explicitly Phase
- * 01.6.2.1's criterion L, NOT this plan's -- countReady() here still
- * counts by RECORDED state, exactly like the bash original's count_ready()
- * before Decision 5.2. A reviewer must not mistake this for an oversight:
- * it is the declined-for-this-phase choice RESEARCH.md §A1 recommends, and
- * grant_from_spare()'s own live re-probe at GRANT time (broker-kill.mts /
- * plan 04's territory) is a separate, already-correct mechanism this plan
- * does not touch. */
-export async function maintainWarmFloor(deps) {
+/** Promotes every `launching` instance whose readiness probe now succeeds to
+ * `ready`, recording its readiness timestamp and logging the elapsed boot
+ * time. Runs regardless of whether a launch is in flight -- promotion and a
+ * NEW launch starting are independent concerns; an already-launched instance
+ * becomes usable the moment it answers, whether or not this same pass goes on
+ * to start anything further. No retry loop: a still-booting instance simply
+ * fails THIS pass and is re-probed on the next one (runBrokerPass()'s own
+ * per-tick cadence). */
+export async function promoteLaunchingInstances(deps) {
     const log = deps.log ?? defaultLog;
     const now = deps.now ?? (() => Date.now());
     // WR-01: the DEFAULT probe follows this call's own backend, so a caller that
-    // threads `backend` for the launch argv and omits `probe` gets a matching
-    // readiness route rather than an HTTP POST at a binary-monitor port. An
-    // explicitly injected `probe` still wins, unchanged.
+    // threads `backend` and omits `probe` gets a matching readiness route
+    // rather than an HTTP POST at a binary-monitor port. An explicitly
+    // injected `probe` still wins, unchanged.
     const probe = deps.probe ?? ((port) => probeReady(port, { backend: deps.backend ?? "fork" }));
-    // Step 1: promote every "launching" instance whose probe now succeeds.
-    // Runs regardless of whether a launch is in flight -- promotion and
-    // speculative warming are independent concerns; an already-launched
-    // instance becomes usable the moment it answers, whether or not this
-    // pass goes on to warm anything further.
     for (const record of deps.state.instances.values()) {
         if (record.state !== "launching")
             continue;
@@ -924,65 +903,6 @@ export async function maintainWarmFloor(deps) {
             record.readyAt = readyAt;
             log(`vice-broker: port ${record.port} launching -> ready (${elapsedMs}ms)`);
         }
-    }
-    // Step 2 (P-06: the warm-zero "no readiness mechanism" branch that used
-    // to sit here is GONE -- the surviving probe mechanism is in-process and
-    // always available, so there is no "no mechanism" state left to warm
-    // zero against). No new boot starts while one is already under way --
-    // THE single in-flight counter (countLaunching) both this function and a
-    // cold acquire (vice-broker.mts's handleAcquire) consult.
-    if (deps.countLaunching(deps.state) > 0) {
-        // D-07's launch-slot decision log line, this decision point's own half:
-        // name WHICH reason currently holds the slot (the launching record's
-        // own `reason`, whichever call produced it -- cold acquire or an
-        // earlier warming pass), not merely that warming is waiting.
-        const inFlightRecord = Array.from(deps.state.instances.values()).find((r) => r.state === "launching");
-        const winningReason = inFlightRecord?.reason ?? "unknown";
-        log(`vice-broker: launch-slot decision -- ${winningReason} holds the slot; spare waits (D-07)`);
-        return;
-    }
-    const ready = deps.countReady(deps.state);
-    const total = deps.countTotal(deps.state);
-    const warmFloor = resolveWarmFloor(deps.warmFloor);
-    const ceiling = resolveCeiling(deps.ceiling);
-    if (!(ready < warmFloor && total < ceiling)) {
-        return;
-    }
-    // acquirePortAndLaunch() holds the SAME single in_flight owner across
-    // its own async port allocation -- not merely tryLaunchOne()'s
-    // synchronous spawn instant. This is what actually closes the race
-    // between this warm-floor launch and a cold acquire (vice-broker.mts's
-    // handleAcquire) arriving over the TCP control listener at any moment:
-    // the countLaunching() check just above is a cheap PRE-check (bails
-    // early when a launch is already recorded), but nextFreePort() is
-    // itself asynchronous, so without the guard held across the allocation
-    // too, two overlapping callers could still both be told the same
-    // candidate port is free before either commits it.
-    const result = await acquirePortAndLaunch("spare", {
-        state: deps.state,
-        stateDir: deps.stateDir,
-        allocatePort: deps.allocatePort,
-        allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
-        spawn: deps.spawn,
-        spawnFactory: deps.spawnFactory,
-        now: deps.now,
-        viceBin: deps.viceBin,
-        mcpHost: deps.mcpHost,
-        backend: deps.backend,
-        binmonHost: deps.binmonHost,
-    });
-    if (result.ok) {
-        log(`vice-broker: warmed 1 warm instance this pass -- ${ready + 1} of ${warmFloor} ready, remainder warmed on later passes`);
-        deps.onLaunched?.(result.record);
-    }
-    else if (result.reason === "no_free_port") {
-        log(`vice-broker: no free port available -- warming no further warm instances; ${ready} of ${warmFloor} ready`);
-    }
-    else {
-        // A launch started (cold or warm) between this function's own
-        // countLaunching() check above and this call -- a narrow window
-        // closed by the guard rather than assumed impossible.
-        log("vice-broker: a warm-floor launch was attempted but a launch was already in flight -- deferring to a later pass");
     }
 }
 /** The fixed pass order (mirrors vice-broker.sh's own broker_once(), whose
@@ -997,21 +917,26 @@ export async function maintainWarmFloor(deps) {
  * instrumented no-op functions and assert call ORDER without needing a
  * real broker, a real port or a real launch.
  *
- * D-07 (01.6.2.1-03-PLAN.md): THIS is where launch priority actually lives
- * -- serving acquires before maintaining the warm floor is what lets a
- * request-driven launch win a freed slot before a warming launch, within
- * one pass, on top of the single in-flight owner (acquirePortAndLaunch()'s
- * own invariant comment) that this order never weakens. Inverting this
- * order lets a warming launch take the slot first and go untested against
- * a concurrently arriving acquire, which is exactly the regression
- * broker-launch.test.ts's own D-07 priority test is written to catch (its
- * own discriminating-power demonstration inverts this exact order and
- * observes the test go red). Priority decides only which reason wins the
- * NEXT freed slot -- it is never a substitute for the lock, and it never
- * kills or abandons whichever boot is already in flight. */
+ * Plan 41-05 (folded todo): the warm floor that D-07 (01.6.2.1-03-PLAN.md)
+ * originally reasoned about here is GONE -- `promoteLaunching` never calls
+ * acquirePortAndLaunch() and so never competes for the single in-flight
+ * launch slot the way a warm-floor spare launch used to. `serveAcquires()`
+ * (via its own drainPendingAcquires()) is now the ONLY caller in this pass
+ * that ever launches anything, so D-07's original "which reason wins a
+ * freed slot" question has nothing left to decide BETWEEN these two steps --
+ * that reasoning still applies WITHIN the acquire arm itself (two overlapping
+ * acquires still resolve through the single in-flight owner
+ * (acquirePortAndLaunch()'s own invariant comment), which this reordering
+ * never weakens). What the fixed order still buys: promoting AFTER serving
+ * means an instance that becomes probe-ready DURING this exact tick is not
+ * available to any acquire THIS SAME pass -- selectWarmInstance() sees it on
+ * the NEXT pass instead, a bound of one poll interval (VICE_BROKER_POLL_MS),
+ * never a correctness gap, since a cold acquire finding no ready candidate
+ * falls straight through to its own dedicated cold launch rather than
+ * waiting on one. */
 export async function runBrokerPass(deps) {
     await deps.serveAcquires();
-    await deps.maintainWarmFloor();
+    await deps.promoteLaunching();
 }
 // ===========================================================================
 // Per-child supervision (Plan 03, Task 2 -- C2/D-23): absorbs
@@ -1050,9 +975,11 @@ function resolveCount(envVar, defaultValue, override) {
  *   UNEXPLAINED exit, not this one. The pre-kill crash history and backoff
  *   are carried forward UNCHANGED, and a pre-kill "granted" state is
  *   restored on the fresh record -- the relaunch primitive always creates a
- *   new record in the "launching" state, and leaving it there would let the
- *   warm floor's own ready-count numerator mistake a recycled session's own
- *   machine for an available warm instance.
+ *   new record in the "launching" state, and leaving it there (once
+ *   promoted to "ready" by the next probe pass) would let a LATER,
+ *   UNRELATED acquire's own selectWarmInstance() walk (vice-broker.mts)
+ *   mistake a recycled session's own machine for an available candidate to
+ *   grant out from under the session that already owns it.
  * - deliberateKill set WITHOUT respawnAfterKill -> "deliberate_teardown":
  *   drop the instance, no respawn. This is T-01.6.2-21's whole point --
  *   without reading this flag, every deliberate teardown would respawn
@@ -1200,8 +1127,9 @@ async function handleExit(reason, port, deps) {
 export function withCrashSupervision(reason, port, baseSpawn, deps) {
     // I-1 rider (08.2-06-PLAN.md, Task 1): forwards a third options argument
     // in the BODY, not just the type -- this is the hop that matters most,
-    // because it wraps every real launch path (cold acquire, warm floor, and
-    // every respawn). A type-only widening would still silently drop a
+    // because it wraps every real launch path (cold acquire and every
+    // respawn -- plan 41-05 retires the warm floor, the third path this
+    // comment used to name). A type-only widening would still silently drop a
     // caller's options at this call site.
     return (cmd, args, options) => {
         const child = baseSpawn(cmd, args, options);
@@ -1243,7 +1171,9 @@ export function withCrashSupervision(reason, port, baseSpawn, deps) {
  * come back unwarped while its record still claimed warp, which is exactly the
  * mismatch-between-grant-and-request that D-16's eligibility rule exists to
  * make impossible. `undefined` is correct for a FIRST launch through
- * superviseChild() (a warm-floor spare is profile-less) and for every fork
+ * superviseChild() -- production has no profile-less first-launch call site
+ * of its own left after plan 41-05 retires the warm floor, but this
+ * module's own unit tests still drive one directly -- and for every fork
  * launch, which is why this parameter is optional too. */
 function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonitorPort, profile) {
     const supervisorDir = join(deps.stateDir, String(port));

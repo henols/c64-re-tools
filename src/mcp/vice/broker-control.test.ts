@@ -155,7 +155,7 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
-      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const })),
+      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 16, basePort: 6600, backend: "fork" as const })),
     onMonitorClaim: (requestId, targetId, channel) => {
       monitorClaimCalls.push(targetId);
       monitorClaimChannels.push(channel);
@@ -327,9 +327,9 @@ test("status: one entry per instance, carrying port, url, state, reason, epoch a
   }
 });
 
-test("host_state: carries the broker pid, node version, resolved emulator binary, warm-floor target, instance ceiling and band base", async () => {
+test("host_state: carries the broker pid, node version, resolved emulator binary, instance ceiling and band base", async () => {
   const { listener, token } = await startTestListener({
-    onHostState: () => ({ pid: 12345, startedAt: "2026-08-04T00:00:00Z", nodeVersion: "v24.0.0", viceBin: "/usr/bin/x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const }),
+    onHostState: () => ({ pid: 12345, startedAt: "2026-08-04T00:00:00Z", nodeVersion: "v24.0.0", viceBin: "/usr/bin/x64sc", maxInstances: 16, basePort: 6600, backend: "fork" as const }),
   });
   const client = makeClient(listener.port);
   try {
@@ -339,7 +339,12 @@ test("host_state: carries the broker pid, node version, resolved emulator binary
     assert.equal(resp.pid, 12345);
     assert.equal(resp.node_version, "v24.0.0");
     assert.equal(resp.vice_bin, "/usr/bin/x64sc");
-    assert.equal(resp.warm_floor, 3);
+    // Plan 41-05 (folded todo): warm_floor is DELETED, not merely renamed --
+    // the warm floor itself is retired, and a published field whose knob no
+    // longer exists is false documentation. Asserted absent rather than
+    // simply un-asserted, so a regression that reintroduces the field is
+    // caught here.
+    assert.equal(Object.prototype.hasOwnProperty.call(resp, "warm_floor"), false, "the host_state wire response must not carry a warm_floor field");
     assert.equal(resp.max_instances, 16);
     assert.equal(resp.base_port, 6600);
   } finally {
@@ -356,7 +361,6 @@ test("WR-04 host_state: carries the broker's OWN backend verdict, so the contain
         startedAt: "2026-08-13T00:00:00Z",
         nodeVersion: "v24.0.0",
         viceBin: "/usr/bin/x64sc",
-        warmFloor: 3,
         maxInstances: 16,
         basePort: 6600,
         backend,
@@ -1372,7 +1376,6 @@ test("singleton: a broker started against a port held by a plain non-broker list
       control_host: "0.0.0.0",
       control_port: 0,
       control_token: "0".repeat(64),
-      warm_floor: 3,
       max_instances: 16,
       base_port: 6600,
       poll_ms: 500,
@@ -1465,7 +1468,12 @@ test("structural: the release and recycle handlers both set the deliberate-death
   const recycleRegion = extractSourceRegion(
     source,
     "async function handleRecycleForRealBroker(targetId: string, state: BrokerState): Promise<RecycleOutcome> {",
-    "function maintainWarmFloorForRealBroker(stateDir: string, state: BrokerState, backend: ViceBackend): Promise<void> {",
+    // Plan 41-05 (folded todo): the end marker is RENAMED, not deleted --
+    // the retired maintainWarmFloorForRealBroker() this used to bound the
+    // region against is replaced by promoteLaunchingForRealBroker(), the
+    // next function declared after handleRecycleForRealBroker() in source
+    // order.
+    "function promoteLaunchingForRealBroker(state: BrokerState, backend: ViceBackend): Promise<void> {",
   );
   const releaseRegion = extractSourceRegion(
     source,
@@ -1559,7 +1567,6 @@ async function startProfileRecordingListener(
       startedAt: "2026-01-01T00:00:00Z",
       nodeVersion: process.version,
       viceBin: "x64sc",
-      warmFloor: 3,
       maxInstances: 16,
       basePort: 6600,
       backend,
@@ -1856,7 +1863,6 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
       startedAt: "2026-01-01T00:00:00Z",
       nodeVersion: process.version,
       viceBin: "x64sc",
-      warmFloor: 3,
       maxInstances: 16,
       basePort: 6600,
       backend: "stock" as const,

@@ -250,7 +250,6 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // is exactly the gap this file exists to close.
     VICE_ARGS: undefined,
     VICE_BROKER_CONTROL_PORT: "0",
-    VICE_BROKER_WARM_FLOOR: "0",
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",

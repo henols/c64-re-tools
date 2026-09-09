@@ -360,10 +360,11 @@ test("structural: no broker module hand-rolls a second copy of the request-id pa
 // The case that matters is not the happy one. A broker restarted mid-phase
 // reads state-directory records SERIALISED BEFORE this field existed, so the
 // property that has to hold is: a record with no `profile` key at all is
-// still a valid InstanceRecord, and is treated as profile-less -- which IS
-// the warm floor's behaviour today. That degrades an older record to today's
-// semantics rather than to an error, and it is pinned here rather than left
-// implicit (the threat register accepts T-33-25 on exactly that basis).
+// still a valid InstanceRecord, and is treated as profile-less by
+// profileEligible() (vice-broker.mts). That degrades an older record to
+// today's semantics rather than to an error, and it is pinned here rather
+// than left implicit (the threat register accepts T-33-25 on exactly that
+// basis).
 // ---------------------------------------------------------------------------
 
 test("InstanceRecord.profile (33-06): absent by default, and accepts the documented warp/headless shape with no default value of its own", () => {
@@ -425,7 +426,7 @@ test("InstanceRecord.profile (33-06, T-33-25, restart tolerance): a record SERIA
   const { profileEligible } = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
     profileEligible: (record: InstanceRecord, requested?: { warp?: boolean; headless?: boolean }) => boolean;
   };
-  assert.equal(profileEligible(revived), true, "an older, profile-less record must remain eligible for a profile-less acquire -- today's warm-floor behaviour, not an error");
+  assert.equal(profileEligible(revived), true, "an older, profile-less record must remain eligible for a profile-less acquire -- degraded gracefully, not an error");
   assert.equal(profileEligible(revived, {}), true, "and for an explicit empty profile");
   assert.equal(profileEligible(revived, { warp: false, headless: false }), true, "and for a both-false profile");
   assert.equal(profileEligible(revived, { warp: true }), false, "but NOT for a warp request -- it was not launched warped and cannot be retro-warped");

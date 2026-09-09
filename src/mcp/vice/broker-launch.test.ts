@@ -6,6 +6,15 @@
 // concurrency race test (the required deliverable criterion C names)
 // alongside these fixtures rather than duplicating them.
 //
+// Plan 41-05 (folded todo): the warm floor is RETIRED. Its own promotion
+// step (launching -> ready) survives as promoteLaunchingInstances(), tested
+// below in its own section; the floor-arithmetic tests (a floor of N
+// launching one per pass, the default settling point, and so on) are
+// deleted along with the behaviour they described. The overlapping-launch
+// case, whose real subject is the single-owner inFlight guard rather than
+// the floor, is re-pointed at acquirePortAndLaunch() directly so the guard
+// keeps its regression test.
+//
 // Every launch/probe test uses the injected spawn/probe seam with a stub;
 // no real x64sc runs anywhere in this file.
 import { test } from "node:test";
@@ -21,9 +30,6 @@ import type { ChildProcess, SpawnOptionsWithoutStdio } from "node:child_process"
 import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 import {
   createBrokerState,
-  countReady as realCountReady,
-  countTotal as realCountTotal,
-  countLaunching as realCountLaunching,
   type BrokerState,
   type InstanceRecord,
   type PortAllocationResult,
@@ -32,7 +38,7 @@ import {
   tryLaunchOne,
   isLaunchInFlight,
   probeReady,
-  maintainWarmFloor,
+  promoteLaunchingInstances,
   runBrokerPass,
   acquirePortAndLaunch,
   deleteInstanceRecord,
@@ -228,37 +234,15 @@ test("structural: vice-broker.mts records a grant in exactly one place, and its 
 });
 
 // ===========================================================================
-// 01.6.2.1-07-PLAN.md, Task 3: WR-04's structural anti-regression gate --
-// the warm-launch log-path variable must no longer sit at module scope
-// (the cross-call-sharing risk the review names), and must instead be
-// declared, indented, inside maintainWarmFloorForRealBroker()'s own body --
-// proving it MOVED rather than merely vanished.
+// Plan 41-05 (folded todo): 01.6.2.1-07-PLAN.md's own WR-04 structural gate
+// (which used to sit here, asserting the warm-launch log-path variable was
+// declared inside maintainWarmFloorForRealBroker()'s own body rather than at
+// module scope) is REMOVED along with the function and the variable it
+// tested -- the warm floor's own log-path stash no longer exists to
+// regress. The cold-launch arm's OWN equivalent variable (`lastLogRelPath`
+// inside handleAcquire()) is a separate, pre-existing, already-local
+// variable this gate never covered and this removal does not touch.
 // ===========================================================================
-
-test("structural: vice-broker.mts's warm-launch log-path variable is declared inside maintainWarmFloorForRealBroker()'s own body, not at module scope (WR-04)", () => {
-  const brokerSource = stripComments(readFileSync(join(HERE, "vice-broker.mts"), "utf8"));
-
-  // The identifier must NOT be declared at module scope (column zero).
-  const moduleScopeDeclaration = /^let\s+lastWarmLaunchLogRelPath\b/m.test(brokerSource);
-  assert.equal(
-    moduleScopeDeclaration,
-    false,
-    "the warm-launch log-path variable must no longer be declared at module scope (column zero) -- WR-04's cross-call-sharing risk",
-  );
-
-  // The identifier must still exist, indented, inside a function body.
-  const indentedDeclaration = /^[ \t]+let\s+lastWarmLaunchLogRelPath\b/m.test(brokerSource);
-  assert.ok(
-    indentedDeclaration,
-    "the warm-launch log-path variable must still be declared, indented, inside maintainWarmFloorForRealBroker()'s own body -- proving it MOVED rather than merely vanished",
-  );
-
-  // Sanity: the declaration, the write site and the read site all still
-  // reference the SAME identifier -- a regression that renamed rather than
-  // relocated it would otherwise pass the two checks above vacuously.
-  const referenceCount = (brokerSource.match(/\blastWarmLaunchLogRelPath\b/g) ?? []).length;
-  assert.ok(referenceCount >= 3, `expected at least 3 references (declaration, write, read) to lastWarmLaunchLogRelPath, found ${referenceCount}`);
-});
 
 function makeInstance(overrides: Partial<InstanceRecord> = {}): InstanceRecord {
   return {
@@ -624,62 +608,38 @@ test("WR-01 binmon probe: the probe never leaves its socket open -- stock VICE h
   );
 });
 
-// ----------------------------------------------------------- maintainWarmFloor
+// ------------------------------------------------- promoteLaunchingInstances
+//
+// Plan 41-05 (folded todo): this section replaces the retired
+// "maintainWarmFloor" section. The FLOOR-ARITHMETIC cases (a floor of 3
+// launching exactly one per pass; three passes launching three; the default
+// settling at one; the countLaunching()-pre-check overlapping-launch case)
+// are DELETED along with the behaviour they described -- there is no floor
+// left to arithmetic against, and promoteLaunchingInstances() never calls
+// acquirePortAndLaunch() at all, so it never competes for the single-owner
+// launch slot the retired countLaunching()-pre-check test exercised. The
+// PROMOTION cases below move onto promoteLaunchingInstances() UNCHANGED in
+// substance -- extraction, not rewrite.
+// ---------------------------------------------------------------------------
 
-function makeWarmFloorDeps(state: BrokerState, overrides: Partial<Parameters<typeof maintainWarmFloor>[0]> = {}) {
-  const spawnCalls: string[][] = [];
+function makePromoteDeps(state: BrokerState, overrides: Partial<Parameters<typeof promoteLaunchingInstances>[0]> = {}) {
   return {
-    deps: {
-      state,
-      stateDir: "/tmp/vice-supervisor-test",
-      spawn: (cmd: string, args: string[]) => {
-        spawnCalls.push(args);
-        return stubChild(1000 + spawnCalls.length);
-      },
-      now: () => 5000,
-      probe: () => Promise.resolve(true),
-      allocatePort: (async (s: BrokerState): Promise<PortAllocationResult> => {
-        let port = 6600;
-        while (s.instances.has(port)) port++;
-        return { ok: true, port };
-      }) as (s: BrokerState) => Promise<PortAllocationResult>,
-      countReady: realCountReady,
-      countTotal: realCountTotal,
-      countLaunching: realCountLaunching,
-      log: () => {},
-      ...overrides,
-    },
-    spawnCalls,
+    state,
+    now: () => 5000,
+    probe: () => Promise.resolve(true),
+    log: () => {},
+    ...overrides,
   };
 }
 
-test("maintainWarmFloor: a pass with a floor of 3 and zero warm instances launches exactly one", async () => {
-  const state = createBrokerState();
-  const { deps, spawnCalls } = makeWarmFloorDeps(state, { warmFloor: 3, ceiling: 16 });
-  await maintainWarmFloor(deps);
-  assert.equal(spawnCalls.length, 1);
-  assert.equal(countInstances(state), 1);
-});
-
-test("maintainWarmFloor: three consecutive passes with a floor of 3 launch exactly three, one per pass", async () => {
-  const state = createBrokerState();
-  const { deps, spawnCalls } = makeWarmFloorDeps(state, { warmFloor: 3, ceiling: 16 });
-  await maintainWarmFloor(deps);
-  await maintainWarmFloor(deps);
-  await maintainWarmFloor(deps);
-  assert.equal(spawnCalls.length, 3);
-  assert.equal(countInstances(state), 3);
-});
-
-test("maintainWarmFloor: a launching instance whose probe succeeds is promoted to ready with a readiness timestamp", async () => {
+test("promoteLaunchingInstances: a launching instance whose probe succeeds is promoted to ready with a readiness timestamp", async () => {
   const state = createBrokerState();
   state.instances.set(6600, makeInstance({ port: 6600, state: "launching", launchedAt: 1000 }));
-  const { deps } = makeWarmFloorDeps(state, {
-    warmFloor: 0, // nothing more to warm -- isolates the promotion behaviour
+  const deps = makePromoteDeps(state, {
     now: () => 1500,
     probe: () => Promise.resolve(true),
   });
-  await maintainWarmFloor(deps);
+  await promoteLaunchingInstances(deps);
   const record = state.instances.get(6600)!;
   assert.equal(record.state, "ready");
   assert.equal(record.readyAt, 1500);
@@ -687,23 +647,23 @@ test("maintainWarmFloor: a launching instance whose probe succeeds is promoted t
 
 // 01.6.2-10-PLAN.md ledger row 27 (RE-OBSERVED): the retiring bash suite's
 // "maintain_spares boot-time log" test asserted the promotion log line
-// carried an elapsed-ms figure. maintainWarmFloor()'s own promotion log line
-// (broker-launch.mts) still names the elapsed time -- this was the one
-// surviving half of that retiring test with no dedicated assertion in this
-// file until now; the retiring test's OTHER half (a poll-interval caveat
-// reading VICE_BROKER_POLL_MS) has no equivalent, since this design is not
-// discrete-poll-interval based (ledger row 27's own DELETED-adjacent note).
-test("maintainWarmFloor: promoting a launching instance to ready logs the elapsed time in milliseconds", async () => {
+// carried an elapsed-ms figure. promoteLaunchingInstances()'s own promotion
+// log line (broker-launch.mts) still names the elapsed time -- this was the
+// one surviving half of that retiring test with no dedicated assertion in
+// this file until now; the retiring test's OTHER half (a poll-interval
+// caveat reading VICE_BROKER_POLL_MS) has no equivalent, since this design
+// is not discrete-poll-interval based (ledger row 27's own DELETED-adjacent
+// note).
+test("promoteLaunchingInstances: promoting a launching instance to ready logs the elapsed time in milliseconds", async () => {
   const state = createBrokerState();
   state.instances.set(6600, makeInstance({ port: 6600, state: "launching", launchedAt: 1000 }));
   const logs: string[] = [];
-  const { deps } = makeWarmFloorDeps(state, {
-    warmFloor: 0, // nothing more to warm -- isolates the promotion log line
+  const deps = makePromoteDeps(state, {
     now: () => 1250,
     probe: () => Promise.resolve(true),
     log: (l: string) => logs.push(l),
   });
-  await maintainWarmFloor(deps);
+  await promoteLaunchingInstances(deps);
   const promotionLine = logs.find((l) => /launching -> ready/.test(l));
   assert.ok(promotionLine, `expected a promotion log line, got: ${JSON.stringify(logs)}`);
   assert.match(
@@ -713,112 +673,78 @@ test("maintainWarmFloor: promoting a launching instance to ready logs the elapse
   );
 });
 
-test("maintainWarmFloor: a launching instance whose probe fails stays launching and is not promoted", async () => {
+test("promoteLaunchingInstances: a launching instance whose probe fails stays launching and is not promoted", async () => {
   const state = createBrokerState();
   state.instances.set(6600, makeInstance({ port: 6600, state: "launching" }));
-  const { deps } = makeWarmFloorDeps(state, {
-    warmFloor: 0,
+  const deps = makePromoteDeps(state, {
     probe: () => Promise.resolve(false),
   });
-  await maintainWarmFloor(deps);
+  await promoteLaunchingInstances(deps);
   assert.equal(state.instances.get(6600)!.state, "launching");
   assert.equal(state.instances.get(6600)!.readyAt, null);
 });
 
-test("maintainWarmFloor: a pass overlapping an in-flight launch produces no second spawn; the following pass produces one", async () => {
+// Plan 41-05: the property the folded todo's own item 1 names -- the
+// promotion step is reachable "with no warm-floor concern present at all."
+// A cold-launched `launching` record (via acquirePortAndLaunch(), exactly as
+// a real cold acquire would leave one mid-boot -- see this function's own
+// header comment: handleAcquire() grants it synchronously without ever
+// observing "ready", so THIS is the realistic route a "launching" record
+// takes) is promoted by runBrokerPass() alone, with no floor-shaped deps
+// anywhere in the picture.
+test("promoteLaunchingInstances (plan 41-05): a cold-launched launching record is promoted to ready by runBrokerPass() with no warm-floor concern present at all", async () => {
   const state = createBrokerState();
-  // Simulate an in-flight cold launch already recorded (as tryLaunchOne
-  // would have done synchronously before this pass ever runs).
-  state.instances.set(6600, makeInstance({ port: 6600, state: "launching" }));
-  const { deps, spawnCalls } = makeWarmFloorDeps(state, {
-    warmFloor: 3,
-    probe: () => Promise.resolve(false), // stays launching
+  const coldResult = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/promote-no-floor-6600",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    spawn: () => stubChild(9002),
+    now: () => 1000,
   });
-  await maintainWarmFloor(deps);
-  assert.equal(spawnCalls.length, 0, "no new spawn while one instance is still launching");
+  assert.ok(coldResult.ok, "the cold acquire launch itself must succeed to set up this scenario");
+  assert.equal(state.instances.get(6600)!.state, "launching");
 
-  // Now let the in-flight one become ready, then run again -- warming
-  // should proceed on this LATER pass.
-  const { deps: deps2, spawnCalls: spawnCalls2 } = makeWarmFloorDeps(state, {
-    warmFloor: 3,
-    probe: () => Promise.resolve(true),
+  await runBrokerPass({
+    serveAcquires: () => {},
+    promoteLaunching: () => promoteLaunchingInstances({ state, now: () => 1300, probe: () => Promise.resolve(true), log: () => {} }),
   });
-  await maintainWarmFloor(deps2);
-  assert.equal(spawnCalls2.length, 1, "warming proceeds once the earlier launch is no longer in flight");
-});
 
-// D-06/D-20 (01.6.2.1-03-PLAN.md, Task 1): the warm floor's default dropped
-// from 3 to 1. This test is the specified proof, and it is written to READ
-// the default rather than inject one -- makeWarmFloorDeps() below is called
-// with NO `warmFloor` key in its overrides at all, so resolveWarmFloor()
-// falls through to whatever the CODE's own default is (via
-// VICE_BROKER_WARM_FLOOR, guarded to absent for this test's own integrity). A
-// floor of 3 would fail this test (demonstrated live during this task's
-// execution and recorded in the plan's own SUMMARY, not asserted here as a
-// separate red-then-green step -- this test asserts only the CORRECT,
-// landed behaviour).
-test("maintainWarmFloor: with no floor override, an idle broker settles at exactly one warm instance -- reading the default (D-06/D-20)", async () => {
-  const savedFloorEnv = process.env.VICE_BROKER_WARM_FLOOR;
-  delete process.env.VICE_BROKER_WARM_FLOOR;
-  try {
-    const state = createBrokerState();
-    // No `warmFloor` key anywhere in this overrides object -- resolveWarmFloor()
-    // must fall through to the code's own default.
-    const { deps, spawnCalls } = makeWarmFloorDeps(state, {
-      probe: () => Promise.resolve(true), // promotes immediately, so a second pass can observe the settled state
-    });
-
-    await maintainWarmFloor(deps); // pass 1: nothing ready yet, launches the first (and, at floor 1, only) instance
-    await maintainWarmFloor(deps); // pass 2: promotes it to ready; ready(1) is no longer < floor(1) -- no further spawn
-    await maintainWarmFloor(deps); // pass 3: still settled -- no further spawn
-
-    assert.equal(spawnCalls.length, 1, `exactly one spawn total with the default floor -- an idle broker must settle at exactly one warm instance, got ${spawnCalls.length}`);
-    assert.equal(countReadyInstances(state), 1, "exactly one ready instance once settled");
-    assert.equal(countInstances(state), 1, "no extra instance record of any kind exists beyond the one settled warm instance");
-  } finally {
-    if (savedFloorEnv === undefined) {
-      delete process.env.VICE_BROKER_WARM_FLOOR;
-    } else {
-      process.env.VICE_BROKER_WARM_FLOOR = savedFloorEnv;
-    }
-  }
+  const record = state.instances.get(6600)!;
+  assert.equal(record.state, "ready", "the cold-launched record must be promoted with no floor-shaped dependency in the picture");
+  assert.equal(record.readyAt, 1300);
 });
 
 function countInstances(state: BrokerState): number {
   return state.instances.size;
 }
 
-function countReadyInstances(state: BrokerState): number {
-  return Array.from(state.instances.values()).filter((r) => r.state === "ready").length;
-}
-
 // ------------------------------------------------------------- runBrokerPass
 
-test("runBrokerPass: calls the acquire-serving concern before the warm-floor concern", async () => {
+test("runBrokerPass: calls the acquire-serving concern before the promotion concern", async () => {
   const order: string[] = [];
   await runBrokerPass({
     serveAcquires: () => {
       order.push("serveAcquires");
     },
-    maintainWarmFloor: () => {
-      order.push("maintainWarmFloor");
+    promoteLaunching: () => {
+      order.push("promoteLaunching");
     },
   });
-  assert.deepEqual(order, ["serveAcquires", "maintainWarmFloor"]);
+  assert.deepEqual(order, ["serveAcquires", "promoteLaunching"]);
 });
 
-test("runBrokerPass: awaits an async serveAcquires before starting maintainWarmFloor", async () => {
+test("runBrokerPass: awaits an async serveAcquires before starting promoteLaunching", async () => {
   const order: string[] = [];
   await runBrokerPass({
     serveAcquires: async () => {
       await new Promise((r) => setTimeout(r, 5));
       order.push("serveAcquires");
     },
-    maintainWarmFloor: () => {
-      order.push("maintainWarmFloor");
+    promoteLaunching: () => {
+      order.push("promoteLaunching");
     },
   });
-  assert.deepEqual(order, ["serveAcquires", "maintainWarmFloor"]);
+  assert.deepEqual(order, ["serveAcquires", "promoteLaunching"]);
 });
 
 // ===========================================================================
@@ -916,40 +842,21 @@ test("criterion C: two concurrent launch requests against a stubbed, deferred po
   assert.equal(isLaunchInFlight(), false, "the guard must be clear once both requests have settled");
 });
 
-test("criterion C: a warming pass overlapping a cold acquire's still-in-flight launch produces no second spawn; the next pass, once promoted, produces one", async () => {
-  const state = createBrokerState();
-
-  // A real cold acquire launch, via acquirePortAndLaunch() itself (not a
-  // seeded fixture) -- it lands in state.instances as "launching"
-  // synchronously once its (immediately-resolving) allocatePort settles,
-  // exactly as vice-broker.mts's handleAcquire would leave it mid-boot.
-  const coldResult = await acquirePortAndLaunch("acquire", {
-    state,
-    stateDir: "/tmp/race-cold-6600",
-    allocatePort: async () => ({ ok: true, port: 6600 }),
-    spawn: () => stubChild(9001),
-  });
-  assert.ok(coldResult.ok, "the cold acquire launch itself must succeed to set up this scenario");
-  assert.equal(state.instances.get(6600)!.state, "launching");
-
-  const { deps, spawnCalls } = makeWarmFloorDeps(state, {
-    warmFloor: 3,
-    probe: () => Promise.resolve(false), // still not ready
-  });
-  await maintainWarmFloor(deps);
-  assert.equal(spawnCalls.length, 0, "no second spawn while the cold acquire's launch is still in flight");
-  assert.equal(state.instances.get(6600)!.state, "launching", "the cold instance must still be launching, untouched by this pass");
-
-  // The SAME instance's probe now succeeds -- the next pass promotes it to
-  // ready, sees countLaunching()===0, and warming may proceed.
-  const { deps: deps2, spawnCalls: spawnCalls2 } = makeWarmFloorDeps(state, {
-    warmFloor: 3,
-    probe: () => Promise.resolve(true),
-  });
-  await maintainWarmFloor(deps2);
-  assert.equal(state.instances.get(6600)!.state, "ready", "the earlier cold instance must now be promoted");
-  assert.equal(spawnCalls2.length, 1, "warming proceeds on the pass after the earlier launch is no longer in flight");
-});
+// Plan 41-05 (folded todo): the second "criterion C" test that used to sit
+// here -- "a warming pass overlapping a cold acquire's still-in-flight
+// launch produces no second spawn" -- is REMOVED along with the behaviour it
+// tested. Its own DISCRIMINATING-POWER note (below, at the time) recorded
+// that this test's "no second spawn" property was enforced by the retired
+// maintainWarmFloor()'s OWN independent countLaunching()>0 pre-check -- a
+// RECORDED-STATE throttle checked before acquirePortAndLaunch() was ever
+// reached -- NOT by the single-owner inFlight guard the first "criterion C"
+// test above proves. That pre-check has no equivalent left:
+// promoteLaunchingInstances() never calls acquirePortAndLaunch() at all, so
+// there is nothing left to throttle. The single-owner guard's own regression
+// coverage is entirely retained by the FIRST "criterion C" test above,
+// unchanged -- it already drives two overlapping acquirePortAndLaunch()
+// calls directly, with no maintainWarmFloor() involvement at all, so it
+// needed no re-pointing.
 
 // Task 3's third required assertion -- "an injected spawn rejection leaves
 // the guard clear, and the next launch request spawns" -- is ALREADY
@@ -965,38 +872,29 @@ test("criterion C: a warming pass overlapping a cold acquire's still-in-flight l
 // temporarily moved to AFTER `await deps.allocatePort(...)` instead of
 // before it (the realistic shape of this exact mistake: "let me just
 // allocate the port first, then check if something else is already
-// launching"). The FIRST "criterion C" test above -- the two-concurrent-
+// launching"). The "criterion C" test above -- the two-concurrent-
 // requests test -- FAILED against that regressed version (spawnCallCount
 // observed as 2, both requests succeeding instead of one being refused as
 // launch_in_flight), proving it has real discriminating power against the
 // exact regression it exists to catch, rather than passing vacuously
-// regardless of the guard's correctness. The SECOND test (the cross-pass
-// overlap) did NOT fail against this same regression -- correctly so, and
-// recorded here rather than silently: that test's own "no second spawn"
-// property is enforced by maintainWarmFloor()'s independent
-// countLaunching()>0 pre-check (a RECORDED-STATE throttle, checked before
-// acquirePortAndLaunch() is ever reached), not by the in_flight guard this
-// specific regression broke -- the cold instance was already fully
-// launched and recorded before the warm pass ever ran, so there was no
-// overlap window for this particular mistake to exploit. The two tests
-// therefore discriminate two DIFFERENT invariants, both real. The
-// regression was reverted immediately after this check; no trace of it
-// remains in the committed source. This mirrors Phase 01.6.1's own
-// practice of proving a guard's tests against an injected regression
-// before trusting them.
+// regardless of the guard's correctness. The regression was reverted
+// immediately after this check; no trace of it remains in the committed
+// source. This mirrors Phase 01.6.1's own practice of proving a guard's
+// tests against an injected regression before trusting them.
 
 // ===========================================================================
 // 01.6.2.1-03-PLAN.md, Task 2: D-07 -- non-preemptive launch priority,
-// layered on the SAME single in-flight owner criterion C's two tests above
-// already prove (re-confirmed passing immediately before this task's own
+// layered on the SAME single in-flight owner criterion C's test above
+// already proves (re-confirmed passing immediately before this task's own
 // implementation began, per this task's own stated prerequisite --
 // 01.6.2-VERIFICATION.md observable truth #9, sealed at a full-suite re-run
 // of 390 tests / 385 pass / 0 fail / 5 todo).
 //
 // Read against the landed code before writing anything, per this task's own
 // instruction to determine (not assume) what already holds: the fixed pass
-// order (runBrokerPass(): serve acquires, then maintain the warm floor)
-// already existed: TRUE. The single in-flight owner already prevents a
+// order (runBrokerPass(): serve acquires, then promote launching -- plan
+// 41-05 retires the warm floor this order originally maintained) already
+// existed: TRUE. The single in-flight owner already prevents a
 // second spawn: TRUE (criterion C, above). Plan 01's warm-instance selector
 // (vice-broker.mts's selectWarmInstance()) already lets a waiting request
 // take a ready instance whichever reason booted it -- performing no
@@ -1075,78 +973,17 @@ test("D-07: an in-flight boot is never preempted -- no kill of any kind is issue
   assert.equal(state.instances.get(completedPort)!.reason, "spare", "the record's own reason is unchanged -- eligibility for a later grant never depends on which reason booted it");
 });
 
-test("D-07: a request-driven launch wins the freed slot over a warming launch in the same pass, and the decision is logged naming both reasons", async () => {
-  const state = createBrokerState();
-  const logs: string[] = [];
-  let spawnCallCount = 0;
-  const stubSpawn = (_cmd: string, _args: string[]) => {
-    spawnCallCount++;
-    return stubChild(7000 + spawnCallCount);
-  };
-  const dynamicAllocatePort = async (s: BrokerState): Promise<PortAllocationResult> => {
-    let port = 6600;
-    while (s.instances.has(port)) port++;
-    return { ok: true, port };
-  };
-
-  let acquireOk = false;
-  let warmSpawnCountBefore = 0;
-  let warmSpawnCountAfter = 0;
-
-  await runBrokerPass({
-    serveAcquires: async () => {
-      const result = await acquirePortAndLaunch("acquire", {
-        state,
-        stateDir: "/tmp/d07-priority-acquire",
-        allocatePort: dynamicAllocatePort,
-        spawn: stubSpawn,
-        log: (l: string) => logs.push(l),
-      });
-      acquireOk = result.ok;
-    },
-    maintainWarmFloor: async () => {
-      warmSpawnCountBefore = spawnCallCount;
-      const { deps } = makeWarmFloorDeps(state, {
-        warmFloor: 3,
-        ceiling: 16,
-        spawn: stubSpawn,
-        // Still booting within THIS pass -- realistic (a real emulator
-        // takes real time to boot), and the same idiom the landed
-        // "overlapping an in-flight launch" test above already uses for
-        // this exact scenario.
-        probe: () => Promise.resolve(false),
-        log: (l: string) => logs.push(l),
-      });
-      await maintainWarmFloor(deps);
-      warmSpawnCountAfter = spawnCallCount;
-    },
-  });
-
-  assert.equal(acquireOk, true, "the request-driven launch must succeed and take the slot");
-  assert.equal(spawnCallCount, 1, "exactly one spawn in this pass -- the acquire's own");
-  assert.equal(warmSpawnCountAfter, warmSpawnCountBefore, "the warming launch must NOT occur in the same pass -- the acquire already holds the boot in flight");
-
-  const decisionLine = logs.find((l) => /launch-slot decision/.test(l));
-  assert.ok(decisionLine, `expected a launch-slot decision log line naming both reasons, got: ${JSON.stringify(logs)}`);
-  assert.match(decisionLine!, /acquire/, "the winning reason (acquire) must be named");
-  assert.match(decisionLine!, /spare/, "the waiting reason (spare) must be named");
-});
-
-// DISCRIMINATING-POWER CHECK (performed during Task 2's execution, recorded
-// here and in the plan's own SUMMARY rather than left implicit): runBrokerPass()'s
-// own body was temporarily inverted (`await deps.maintainWarmFloor(); await
-// deps.serveAcquires();`, warming before acquires). Against that inversion, the
-// priority test immediately above went RED: with warming running first, its own
-// acquirePortAndLaunch("spare", ...) call takes the slot before the acquire ever
-// gets a turn, and by the time the acquire's own call runs the slot has already
-// freed again (maintainWarmFloor()'s own call to acquirePortAndLaunch() fully
-// resolves, releasing `inFlight`, before maintainWarmFloor() itself returns) --
-// so BOTH launches proceed (spawnCallCount observed as 2, and
-// warmSpawnCountAfter > warmSpawnCountBefore), failing both assertions that
-// exactly one spawn occurs and that warming did not also launch. Restoring the
-// original order returned the test to GREEN. This proves the test has real
-// discriminating power against the exact regression D-07's priority guarantee
-// exists to prevent, rather than passing vacuously regardless of pass order.
+// Plan 41-05 (folded todo): "D-07: a request-driven launch wins the freed
+// slot over a warming launch in the same pass, and the decision is logged
+// naming both reasons" -- and its own DISCRIMINATING-POWER CHECK note --
+// used to sit here. REMOVED along with the scenario it proved: with the
+// warm floor retired, `promoteLaunching` never calls acquirePortAndLaunch(),
+// so there is no second launcher left within one pass to WIN a freed slot
+// against. D-07's launch-slot decision log line itself survives unchanged
+// (broker-launch.mts's acquirePortAndLaunch(), still exercised by the
+// `criterion C` two-concurrent-requests test above), and the fixed pass
+// order's own remaining purpose is covered by the two `runBrokerPass` order
+// tests above.
 
 // ===========================================================================
 // Plan 03, Task 2: superviseChild() -- the per-child supervisor absorbed
@@ -1895,14 +1732,16 @@ test("buildViceArgs (I-2): the -default/-drive8type ordering invariant holds in 
 // stock launches. They do NOT prove a real broker launch is isolated --
 // deps.spawn / deps.spawnFactory is never undefined on the real broker
 // daemon's own paths, so the widened default wrapper is dead code there,
-// and the forwarding happens at four further hops (makeLoggingSpawn() and
-// maintainWarmFloorForRealBroker's inner stashingSpawn in vice-broker.mts,
-// and withCrashSupervision()'s wrapper body and launchSupervised()'s
-// defaultRealSpawn in this file). Those four hops now forward the options
-// argument -- plan 08.2-06 closed them in this same phase, and the
-// non-bypassable proof lives in vice-broker-acquire.test.ts, which calls
-// handleAcquire() with buildColdSpawnFactory OMITTED so no injected stub
-// can satisfy it. These two tests remain seam-level by design.
+// and the forwarding happens at three further hops (makeLoggingSpawn() in
+// vice-broker.mts, and withCrashSupervision()'s wrapper body and
+// launchSupervised()'s defaultRealSpawn in this file -- plan 41-05 retires
+// the fourth hop this comment used to name, the warm floor's own
+// maintainWarmFloorForRealBroker inner stashingSpawn closure). Those three
+// hops now forward the options argument -- plan 08.2-06 closed them in this
+// same phase, and the non-bypassable proof lives in
+// vice-broker-acquire.test.ts, which calls handleAcquire() with
+// buildColdSpawnFactory OMITTED so no injected stub can satisfy it. These
+// two tests remain seam-level by design.
 //
 // Neither test asserts anything about -drive8type (Task 1's own tests do
 // that): I-1 and I-2 are separate root causes and their acceptance stays
