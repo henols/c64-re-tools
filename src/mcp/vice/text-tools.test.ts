@@ -806,3 +806,43 @@ test("handleIoRegisters: a decoded-prose block missing its Colors: line refuses 
     },
   );
 });
+
+// WR-02 (plan 42-11): a chip this parser does not decode is refused by its
+// own name, end to end -- never dressed up as a parse failure.
+test("handleIoRegisters (WR-02): a CIA1-renamed reply refuses end-to-end naming the chip and VIC-II, without the other codes' parse-failure wrapper phrasing", async () => {
+  const fixture = loadTextFixture("register-decode-stock");
+  const mutated = fixture.text.replace("VIC-II:", "CIA1:");
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(mutated);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleIoRegisters({ address: 0xdc00 }, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /CIA1/);
+      assert.match(result.content[0]!.text, /VIC-II/);
+      assert.doesNotMatch(result.content[0]!.text, /could not be parsed/, "the unsupported-chip refusal must not carry the other codes' parse-failure wrapper");
+    },
+  );
+});
+
+test("handleIoRegisters: a malformed dump row still refuses through the parse-failure wrapper, naming the code -- proving the unsupported-chip special case is scoped to one code, not applied to all", async () => {
+  const fixture = loadTextFixture("register-decode-stock");
+  const mutated = fixture.text.replace(
+    ">C:d030  ff ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................",
+    ">C:d030  zz ff ff ff  ff ff ff ff  ff ff ff ff  ff ff ff ff   ................",
+  );
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(mutated);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /could not be parsed/, "every code other than unsupported-chip keeps the parse-failure wrapper");
+      assert.match(result.content[0]!.text, /malformed-dump/);
+    },
+  );
+});

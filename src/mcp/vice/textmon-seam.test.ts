@@ -400,6 +400,11 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
         reason:
           "plan 42-07's conformance test exercising vice_io_registers end-to-end through dispatchStock() with a realistic register-dump stub reply",
       },
+      {
+        file: "text-tools.test.ts",
+        reason:
+          "plan 42-11's malformed-dump-row scoped-wrapper control, mutating a real register-decode-stock capture that carries this marker on every dump row",
+      },
       { file: SEAM_FILE, reason: SELF_DECLARATION_REASON },
     ],
     importConsumers: [

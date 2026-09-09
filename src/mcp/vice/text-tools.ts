@@ -575,9 +575,10 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
     // CPUHISTORY_GATED_COMMANDS in text-capability-probe.ts), so "capable" here is
     // not the same as "nothing to refuse": the probe module's own renderer is
     // always consulted below, since it is what additionally catches io's own
-    // per-chip runtime degradation.
-    const classification = classifyTextCapabilityResponse("io", response);
-    void classification;
+    // per-chip runtime degradation. For this verb the classifier can therefore
+    // return only capable or indeterminate, NEVER missing -- that invariant is
+    // stated here in prose rather than by a computed-and-discarded call, since
+    // this handler has nothing further to do with the classifier's answer.
     const verdict = await probeTextCapability({ command: "io", identity, brokerIdentity, dial: async () => response });
     const refusalMessage = textCapabilityRefusalMessage([verdict]);
     if (refusalMessage !== "") {
@@ -586,6 +587,15 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
 
     const parsed = parseIoRegisters(response);
     if (!parsed.ok) {
+      // A chip this parser does not decode (unsupported-chip, plan 42-11,
+      // WR-02) is a legitimately different reply whose register dump read
+      // cleanly -- reporting it through the parse-failure wrapper below
+      // would make an external chip difference read as a defect in this
+      // project. Render the parser's own message verbatim, under the tool
+      // name only. Every other refusal code keeps the wrapper unchanged.
+      if (parsed.refusal.code === "unsupported-chip") {
+        return isErrorText(`vice_io_registers: ${parsed.refusal.message}`);
+      }
       return isErrorText(
         `vice_io_registers: io's response could not be parsed (${parsed.refusal.code} at line ` +
           `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
