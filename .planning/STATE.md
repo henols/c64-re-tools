@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 41
 current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
 status: executing
-stopped_at: Completed 41-03-PLAN.md
-last_updated: "2026-09-09T07:11:54.298Z"
+stopped_at: Completed 41-04-PLAN.md
+last_updated: "2026-09-09T08:04:52.175Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 41 execution started
-state_head: e87b3c741c8ecf4c1997bf4e9ef4d90c7adcb40a
+state_head: b4fa224ca93363f4dad58fffab0be70b05f69ee5
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 25
-  completed_plans: 22
+  completed_plans: 23
   percent: 33
 ---
 
@@ -30,7 +30,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Phase 41 — The Text Channel, Its Serialization Authority, and
+**Current focus:** Phase 41 — The Text Channel, Its Serialization Authority, and the Contention Verdict
 the Contention Verdict, in milestone
 **v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
 Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
@@ -227,9 +227,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 41 (The Text Channel, Its Serialization Authority, and the Contention Verdict) — EXECUTING
-Plan: 4 of 6
-Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 complete (CHAN-04), 41-03 complete (CHAN-02 discriminator), 41-04 next
-Last activity: 2026-09-09 — Completed 41-03-PLAN.md
+Plan: 5 of 6
+Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 complete (CHAN-04), 41-03 complete (CHAN-02 discriminator), 41-04 complete (CHAN-05), 41-05 next
+Last activity: 2026-09-09 — Phase 41 execution continues at wave 3 (41-05, 41-06 remaining)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -503,6 +503,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 41 P01 | 70min | 2 tasks | 17 files |
 | Phase 41 P02 | 95min | 2 tasks | 8 files |
 | Phase 41 P03 | 40min | 2 tasks | 20 files |
+| Phase 41 P04 | 50min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1135,6 +1136,7 @@ Recent decisions affecting current work:
 - [Phase 41]: channel-lock.ts: hand-built FIFO async mutex with a {channel,operation,grantId,heldSince} holder record serializes both monitor channels (CHAN-04); CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS derived in prose from RUN_UNTIL_MAX_TIMEOUT_MS+30000ms without importing it
 - [Phase 41]: withDerivedTool's needsSession:false branch never acquires channel-lock.ts's mutex; vice_diagnose (plan 41-04) will take it non-blockingly via tryAcquireChannelLock() instead
 - [Phase 41]: InstanceRecord.monitorClients made non-optional (per-channel holder map) — Forces every raw InstanceRecord construction site to state its claim intent explicitly, closing the "absent field silently means no claim" gap the old optional monitorClient field left open (D-14, plan 41-03).
+- [Phase 41]: channelContention is derived once per vice_diagnose call and spread into evidence on the identical shape jamObserved already established; wedged is made structurally unreachable while contended via a tryAcquireChannelLock() guard before the first liveness bracket (D-09/D-10/D-11, CHAN-05).
 
 ### Pending Todos
 
@@ -2129,8 +2131,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T07:11:53.924Z
-Stopped at: Completed 41-03-PLAN.md
+Last session: 2026-09-09T08:04:21.389Z
+Stopped at: Completed 41-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
