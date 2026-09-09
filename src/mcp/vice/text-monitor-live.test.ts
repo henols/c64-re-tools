@@ -645,3 +645,108 @@ test(
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
   },
 );
+
+// ---------------------------------------------------------------------------
+// Plan 41-04 (CHAN-05, D-09/D-10/D-11): a live text-channel hold reads as
+// CONTENTION, not a wedge -- vice_diagnose called concurrently, through the
+// REAL dispatchStock() path, must answer live/bracketsRun:0/channel:"text"
+// while the hold is live, and channelContention.held:false with a real
+// bracket run once released.
+// ---------------------------------------------------------------------------
+
+test(
+  "text-monitor-live (CHAN-05): vice_diagnose observes a live text-channel hold as contention (live, bracketsRun:0, channel:text), then a real bracket runs once released",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async () => {
+    clearHeldStockSession();
+    resetChannelLockForTests();
+    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
+
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
+      const opened = await openBrokerControl(stateDir);
+      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const session: BrokerControlSession = opened.session;
+
+      const acquired = await session.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      assert.equal(typeof grant.remote_monitor_port, "number");
+      const remoteMonitorPort = grant.remote_monitor_port as number;
+
+      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      recordPid(epochBefore.pid);
+
+      const binmonReady = await waitForPortOpen(host, grant.port, 30000);
+      assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
+
+      const lease: HeldLease = {
+        host,
+        port: grant.port,
+        targetId: grant.id,
+        brokerControl: session,
+        epochFile: grant.epoch_file,
+        supervisorDir: stateDir,
+      };
+      const deps: StockDispatchDeps = {
+        ensureLease: async () => ({ ok: true as const, lease }),
+        connect: (opts: StockConnectOptions) => stockConnect(opts),
+      };
+
+      const textSession = await textConnect({ host, remoteMonitorPort, targetId: grant.id, brokerControl: session });
+
+      try {
+        // Hold the text channel's own halt authority across a real command,
+        // and call vice_diagnose CONCURRENTLY, through the REAL dispatchStock()
+        // path, WHILE the lock is still held -- this is the actual proof:
+        // vice_diagnose must observe the foreign hold and answer contention,
+        // never resuming a machine the text channel is holding. Returned from
+        // the callback (rather than assigned to an outer `let`) so TypeScript
+        // never has to narrow a closure-reassigned variable.
+        const diagnoseDuringHold = await withTextChannelLock("device c:", async () => {
+          const response = await textSession.client.command("device c:");
+          assert.ok(response.length > 0, `device c: response must be non-empty, got: ${JSON.stringify(response)}`);
+
+          const result = await dispatchStock("vice_diagnose", {}, deps);
+          return parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
+        });
+
+        assert.equal(diagnoseDuringHold.verdict, "live", "D-11: a contended instance is healthy, not wedged");
+        const evidenceDuringHold = diagnoseDuringHold.evidence as Record<string, unknown>;
+        assert.equal(evidenceDuringHold.bracketsRun, 0, "no bracket was run while contended -- the machine was never resumed");
+        const contentionDuringHold = evidenceDuringHold.channelContention as Record<string, unknown>;
+        assert.equal(contentionDuringHold.held, true);
+        assert.equal(contentionDuringHold.channel, "text");
+        assert.equal(contentionDuringHold.operation, "device c:");
+        assert.equal(typeof contentionDuringHold.heldMs, "number");
+        console.log(
+          `text-monitor-live: MEASURED CHAN-05 contention on ${viceBinPath} -- verdict=${diagnoseDuringHold.verdict}, ` +
+            `evidence=${JSON.stringify(evidenceDuringHold)}`,
+        );
+
+        // The hold is released now (withTextChannelLock's own finally already
+        // ran) -- re-call vice_diagnose and confirm a REAL bracket runs and
+        // channelContention reports held:false.
+        const afterResult = await dispatchStock("vice_diagnose", {}, deps);
+        const afterPayload = parseOkPayload(afterResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        const afterEvidence = afterPayload.evidence as Record<string, unknown>;
+        assert.equal((afterEvidence.channelContention as Record<string, unknown>).held, false, "the hold must be released by now");
+        assert.ok(
+          (afterEvidence.bracketsRun as number) > 0,
+          `expected a real bracket to run once uncontended, got bracketsRun=${afterEvidence.bracketsRun}`,
+        );
+        console.log(
+          `text-monitor-live: MEASURED post-release vice_diagnose on ${viceBinPath} -- verdict=${afterPayload.verdict}, ` +
+            `evidence=${JSON.stringify(afterEvidence)}`,
+        );
+      } finally {
+        await textDisconnect(textSession);
+      }
+
+      await session.release();
+    });
+
+    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+  },
+);
