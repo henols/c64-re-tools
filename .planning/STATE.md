@@ -4,16 +4,16 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
-status: planning
-stopped_at: Phase 41 complete, ready to plan Phase 42
-last_updated: "2026-09-09T10:39:58.636Z"
+status: executing
+stopped_at: Phase 42 planned (9 plans, 4 waves), ready to execute
+last_updated: "2026-09-09T12:09:29.714Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 41 complete, transitioned to Phase 42
-state_head: 7f24f5952663ea75018f67c681c8a2368844f5d7
+last_activity_desc: Phase 42 planned — 9 plans in 4 waves, plan-checker passed
+state_head: b3fb953e7a13d7868373f55ce51ca545c347a5eb
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 25
+  total_plans: 34
   completed_plans: 25
   percent: 50
 ---
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 — The Text-Format Parsers and Their Two-Binary Fixtures
+Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-09 — Phase 41 complete, transitioned to Phase 42
+Status: Ready to execute
+Last activity: 2026-09-09 — Phase 42 planned (9 plans, 4 waves), plan-checker passed
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
