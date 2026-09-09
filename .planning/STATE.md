@@ -5,17 +5,17 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remain
-last_updated: "2026-09-09T18:42:23.643Z"
+stopped_at: Completed 42-12-PLAN.md (G5 broker-teardown observation closed); gap-closure plans 42-13..42-14 remain
+last_updated: "2026-09-09T18:57:41.152Z"
 last_activity: 2026-09-09
-last_activity_desc: Plan 42-11 executed — io chip gate closes WR-02, handleIoRegisters drops discarded classification (IN-01)
-state_head: 98cf4dba861136262f8c8bff36c897321449aa9f
+last_activity_desc: Plan 42-12 executed — text-monitor-live.test.ts's teardown assertion now observes the broker child it spawns (not just the emulator), a scratch-scoped sweep catches unrecorded grandchildren, and an unskipped planted control proves the assertion can fail (G5)
+state_head: 18ac59d27f18e8c3967aeaa4effd33002577b208
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 39
-  completed_plans: 36
-  percent: 50
+  completed_plans: 37
+  percent: 95
 ---
 
 # Project State
@@ -509,6 +509,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 41 P06 | 46min | 2 tasks | 15 files |
 | Phase 42 P10 | 25 min | 2 tasks | 4 files |
 | Phase 42 P11 | 40min | 2 tasks | 6 files |
+| Phase 42 P12 | 25min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1149,6 +1150,7 @@ Recent decisions affecting current work:
 - [Phase 42]: 42-10: closed CR-01 with a new refusal code incomplete-decoded-state (not a reuse of unparseable-value) -- the two codes report different drift shapes and collapsing them would lie about which occurred. — unparseable-value is a per-line fact with a real offending line; incomplete-decoded-state is a per-block fact whose whole content is the set of names never observed.
 - [Phase 42]: Plan 42-11 closed WR-02 by making the sprite-table/decoded-prose requirement chip-conditional (parseIoRegisters refuses a non-VIC-II chip section by name via a new unsupported-chip refusal code), rather than narrowing vice_io_registers's advertised 0-65535 address range -- the chip-conditional approach keeps the published tool contract additive-only.
 - [Phase 42]: handleIoRegisters renders the unsupported-chip refusal as the parser's own message verbatim under the tool name, with no parse-failure wrapper -- every other refusal code keeps the existing wrapper unchanged, so a legitimately different chip is never reported as a defect in this project.
+- [Phase 42]: Plan 42-12 closed G5 -- text-monitor-live.test.ts's teardown assertion now folds the broker child's own pid into the existing pidsAliveAfterTeardown array (no per-call-site edit needed) and adds a scratch-path-scoped stray-process sweep plus a proven scratch-dir-removal check, all kept honest by an unskipped planted-violation control that runs with no VICE_LIVE_STOCK_BIN set -- replacing a teardown-verification method that checked a systemd unit this file never starts and grepped only for the emulator, never the broker.
 
 ### Pending Todos
 
@@ -2143,9 +2145,11 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T18:42:22.998Z
-Stopped at: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remain
+Last session: 2026-09-09T18:57:00.000Z
+Stopped at: Completed 42-12-PLAN.md (G5 broker-teardown observation closed); gap-closure plans 42-13..42-14 remain
 Resume file: None
+
+Earlier: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remained at that point
 
 Earlier: Completed 40-06-PLAN.md
 
