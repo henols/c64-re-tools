@@ -77,7 +77,7 @@ import { handleCyclesStopwatch, forgetTimingForOtherTargets } from "./stock-timi
 import { handleRunUntil } from "./stock-run-until.ts";
 import { handleDiagnoseStock } from "./stock-diagnose.ts";
 import { handleRecycleStock } from "./stock-recycle.ts";
-import { handleDeviceConsole, handleWarpSet } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow } from "./text-tools.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -829,6 +829,7 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   // correct one, matching vice_diagnose's own precedent above.
   vice_device_console: withDerivedTool("vice_device_console", { needsSession: false }, handleDeviceConsole),
   vice_warp_set: withDerivedTool("vice_warp_set", { needsSession: false }, handleWarpSet),
+  vice_memmap_show: withDerivedTool("vice_memmap_show", { needsSession: false }, handleMemmapShow),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a

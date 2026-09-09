@@ -297,7 +297,7 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
       "timing infrastructure; not yet built, and no shipped skill calls it.",
   },
 
-  // --- stock-only-gain (4), providedBy: stock ------------------------------
+  // --- stock-only-gain (5), providedBy: stock ------------------------------
   {
     name: "vice_execution_until_return",
     category: "stock-only-gain",
@@ -325,6 +325,15 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     reason:
       "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"warp on\"/\"warp off\" " +
       "command, reached over the -remotemonitor channel this project dials as of plan 41-06.",
+  },
+  {
+    name: "vice_memmap_show",
+    category: "stock-only-gain",
+    providedBy: "stock",
+    reason:
+      "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"memmapshow\" command, " +
+      "reached over the -remotemonitor channel, returning a structured access map in which execute is its own " +
+      "bit for both RAM and ROM.",
   },
 ];
 

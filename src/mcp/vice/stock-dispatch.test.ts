@@ -93,6 +93,9 @@ const STOCK_ONLY_TOOLS = new Set([
   // monitor (D-07's frozen v0.1.x fork list).
   "vice_device_console",
   "vice_warp_set",
+  // Plan 42-01, PARSE-01: the memmapshow access-map tool -- same reasoning
+  // as the pair above, reached over the same text-monitor channel.
+  "vice_memmap_show",
 ]);
 
 // Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
@@ -2858,6 +2861,17 @@ conformanceTest("vice_warp_set", async () => {
       const deps = buildTextConformanceDeps(port);
       const result = await dispatchStock("vice_warp_set", { enabled: true }, deps);
       assertAnswerConforms("vice_warp_set", result);
+    },
+  );
+});
+
+conformanceTest("vice_memmap_show", async () => {
+  await withConformanceTextServer(
+    (_line, socket) => socket.write("addr: IO  ROM RAM\n0000: --- --- rw-\n(C:$0000) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_memmap_show", {}, deps);
+      assertAnswerConforms("vice_memmap_show", result);
     },
   );
 });

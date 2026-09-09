@@ -3815,6 +3815,181 @@
           "runState"
         ]
       }
+    },
+    {
+      "name": "vice_memmap_show",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and issues the single allowlisted verb \"memmapshow\", returning a structured, adjacency-merged access map in which execute is its own bit, for both RAM and ROM, never folded into a read. \"startAddress\", \"endAddress\" and \"maxRanges\" are client-side projection filters applied AFTER parsing -- none of the three ever reaches the socket, and the dialed command is always the frozen literal \"memmapshow\". An address with no recorded access is reported only via the gap between \"addressesWithRecordedAccess\" and \"addressesQueried\" -- never rendered, named, or implied as data.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "startAddress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Inclusive lower bound of the projection filter. Defaults to 0. Applied after parsing, never sent to the text monitor."
+          },
+          "endAddress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "Inclusive upper bound of the projection filter. Defaults to 65535. Applied after parsing, never sent to the text monitor."
+          },
+          "maxRanges": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096,
+            "description": "Hard ceiling on the number of emitted merged ranges. Defaults to 256, clamped to 4096 regardless of what is requested."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "ranges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "integer"
+                },
+                "end": {
+                  "type": "integer"
+                },
+                "io": {
+                  "type": "object",
+                  "properties": {
+                    "read": {
+                      "type": "boolean"
+                    },
+                    "write": {
+                      "type": "boolean"
+                    },
+                    "execute": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "read",
+                    "write",
+                    "execute"
+                  ]
+                },
+                "rom": {
+                  "type": "object",
+                  "properties": {
+                    "read": {
+                      "type": "boolean"
+                    },
+                    "write": {
+                      "type": "boolean"
+                    },
+                    "execute": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "read",
+                    "write",
+                    "execute"
+                  ]
+                },
+                "ram": {
+                  "type": "object",
+                  "properties": {
+                    "read": {
+                      "type": "boolean"
+                    },
+                    "write": {
+                      "type": "boolean"
+                    },
+                    "execute": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "read",
+                    "write",
+                    "execute"
+                  ]
+                },
+                "annotations": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "dummy",
+                      "uninitialized-read",
+                      "uninitialized-exec"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "io",
+                "rom",
+                "ram",
+                "annotations"
+              ]
+            }
+          },
+          "rangeCount": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "addressesWithRecordedAccess": {
+            "type": "integer"
+          },
+          "addressesQueried": {
+            "type": "integer"
+          },
+          "executeCounts": {
+            "type": "object",
+            "properties": {
+              "io": {
+                "type": "integer"
+              },
+              "rom": {
+                "type": "integer"
+              },
+              "ram": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "io",
+              "rom",
+              "ram"
+            ]
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "ranges",
+          "rangeCount",
+          "truncated",
+          "addressesWithRecordedAccess",
+          "addressesQueried",
+          "executeCounts",
+          "runState"
+        ]
+      }
     }
   ]
 }
