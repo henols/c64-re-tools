@@ -1079,12 +1079,12 @@ loudly instead of being absorbed into a plausible-looking wrong answer.
   4. **A drifted format fails loudly instead of returning an inverted answer.** MEASURED as real, and **semantic rather than syntactic**: VICE 3.4 inverted the meaning of `mc`/`ms`'s glyphs with no layout or delimiter change to signal it, 3.0 widened `chis`'s cycle column, and 3.5 added a `memmapshow` access class. So fixtures are captured from **at least two real VICE binaries** — genuine stock 3.9 at `/usr/bin/x64sc` and the fork 3.10 that shadows it on `PATH`, both present on this host, a hard requirement rather than an aspiration — pinned to the exact binary they came from under the same five provenance keys the binary-monitor fixtures already require. The control that makes this real is a planted fixture carrying an **unrecognised** enum value, observed making the parser refuse: a fixture-only defence would have kept passing while returning inverted answers.
   5. **A missing build capability is named, per command and per binary.** MEASURED: this tracing/profiling support is opt-**out** at build time — the opposite polarity to the ≥ 3.10 opcode note — and the commands do **not** share one guard, so each is probed on its own and the answer cached per binary. A user is told which capability is missing and on which binary, and is never handed a silent empty result or a parse error that reads like a bug in this project.
 
-**Plans**: 9 plans in 4 waves
+**Plans**: 1/9 plans executed in 4 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 42-01-PLAN.md — Tracer: `memmapshow` end to end — `textmon-memmap.ts` (execute as its own bit, RAM and ROM), both real captures, the planted unrecognised-value control, the declared-synthetic RAM-execute case, and `vice_memmap_show` registered at every guarded site
+- [x] 42-01-PLAN.md — Tracer: `memmapshow` end to end — `textmon-memmap.ts` (execute as its own bit, RAM and ROM), both real captures, the planted unrecognised-value control, the declared-synthetic RAM-execute case, and `vice_memmap_show` registered at every guarded site
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -1300,7 +1300,7 @@ in a milestone archive.
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
-| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/9 | Not started | - |
+| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 1/9 | In Progress | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
 

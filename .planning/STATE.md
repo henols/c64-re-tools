@@ -6,10 +6,10 @@ current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
 stopped_at: Phase 42 planned (9 plans, 4 waves), ready to execute
-last_updated: "2026-09-09T12:09:29.714Z"
+last_updated: "2026-09-09T12:32:31.586Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 42 planned — 9 plans in 4 waves, plan-checker passed
-state_head: b3fb953e7a13d7868373f55ce51ca545c347a5eb
+last_activity_desc: Phase 42 execution started
+state_head: 6f97058fed1fa2d71cb45eda58a73e2eead2903c
 progress:
   total_phases: 6
   completed_phases: 3
@@ -30,7 +30,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Phase 41 — The Text Channel, Its Serialization Authority, and the Contention Verdict
+**Current focus:** Phase 42 — The Text-Format Parsers and Their Two-Binary Fixtures
 the Contention Verdict, in milestone
 **v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
 Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-09-09 — Phase 42 planned (9 plans, 4 waves), plan-checker passed
+Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — EXECUTING
+Plan: 1 of 9
+Status: Executing Phase 42
+Last activity: 2026-09-09 — Phase 42 execution started
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
