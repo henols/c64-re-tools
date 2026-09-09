@@ -21,7 +21,7 @@ import type { StockConnectBrokerControl } from "./stock-connect.ts";
 import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import type { HeldLease } from "./vice-broker-client.ts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
-import { CPUHISTORY_DISABLED_STUB } from "./text-capability-probe.ts";
+import { CPUHISTORY_DISABLED_STUB, resetTextCapabilityCache } from "./text-capability-probe.ts";
 import { PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
 
 beforeEach(() => {
@@ -949,6 +949,50 @@ test("handleIoRegisters: a malformed dump row still refuses through the parse-fa
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /could not be parsed/, "every code other than unsupported-chip keeps the parse-failure wrapper");
       assert.match(result.content[0]!.text, /malformed-dump/);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CR-02, direction (a): a first io call that hit a degrading chip must never
+// cause a later call to a healthy chip to be refused -- the real dump
+// reaching the caller is the whole point. Driven through a RESOLVED identity
+// AND an AGREEING broker identity (makeDepsWithBrokerIdentity) so the cache
+// is genuinely live -- a disagreeing identity would suppress caching and
+// make this control vacuous, which is exactly why the original bug was never
+// caught.
+// ---------------------------------------------------------------------------
+
+test("handleIoRegisters (CR-02, direction a): a degrading first call never causes a later call's real register dump to be discarded", async () => {
+  const fixture = loadTextFixture("register-decode-stock");
+  let callCount = 0;
+  await withStubTextServer(
+    (_line, socket) => {
+      callCount++;
+      if (callCount === 1) {
+        socket.write(`No details available.\n${PROMPT}`);
+      } else {
+        socket.write(fixture.text);
+      }
+    },
+    async (port) => {
+      resetTextCapabilityCache();
+      const deps = makeDepsWithBrokerIdentity(port, { backend: "stock", binPath: "/usr/bin/x64sc" }, "/usr/bin/x64sc");
+
+      const first = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(first.isError, true, "expected the first, degrading call to refuse");
+      assert.match(first.content[0]!.text, /nothing to report here/);
+
+      const second = await handleIoRegisters({ address: 0xd021 }, deps);
+      assert.equal(
+        second.isError,
+        false,
+        `expected the second call's real register dump to succeed, not be discarded behind the first call's cached refusal -- got ${JSON.stringify(second)}`,
+      );
+      const payload = JSON.parse(second.content[0]!.text) as Record<string, unknown>;
+      const sections = payload.sections as Array<{ chip: string }>;
+      assert.equal(sections.length, 1);
+      assert.equal(sections[0]!.chip, "VIC-II");
     },
   );
 });

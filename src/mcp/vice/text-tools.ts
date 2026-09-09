@@ -81,6 +81,7 @@ import { parseIoRegisters } from "./textmon-registers.ts";
 import {
   classifyTextCapabilityResponse,
   probeTextCapability,
+  textCapabilityVerdictFor,
   textCapabilityRefusalMessage,
   textCapabilityIdentityWarning,
   type TextCapabilityIdentity,
@@ -592,6 +593,22 @@ export async function handleBacktrace(args: Record<string, unknown>, deps: Stock
  * is always consulted below, whatever this classification said, since that
  * is the one place the chip-degradation-vs-missing-capability distinction
  * is drawn.
+ *
+ * CR-02 (corrected): `io`'s outcome is decided by THIS CALL's OWN `address`
+ * argument, not by a property of the binary -- so it must never be
+ * classified through `probeTextCapability()`'s memoised entry point. The
+ * old wiring did exactly that, and a second call to a different address
+ * silently received the FIRST call's cached verdict: one call's evidence
+ * answering another call's question. This handler instead builds its
+ * verdict directly from the response THIS call just received, via
+ * `textCapabilityVerdictFor()` (no dial, no cache read, no cache write),
+ * and hands that verdict to the unchanged `textCapabilityRefusalMessage()`
+ * -- still the one place the chip-degradation-vs-missing-capability
+ * distinction is drawn, just applied to the right response. Do not
+ * "simplify" this back onto `probeTextCapability()`; `io` is additionally
+ * excluded from that cache's domain structurally (`NEVER_CACHED_COMMANDS`
+ * in text-capability-probe.ts) so this handler could not reach it that way
+ * even by accident.
  */
 export async function handleIoRegisters(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
   const { address } = args;
@@ -622,7 +639,14 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
     // return only capable or indeterminate, NEVER missing -- that invariant is
     // stated here in prose rather than by a computed-and-discarded call, since
     // this handler has nothing further to do with the classifier's answer.
-    const verdict = await probeTextCapability({ command: "io", identity, brokerIdentity, dial: async () => response });
+    //
+    // CR-02: this verdict is built from the response THIS call just
+    // received, via textCapabilityVerdictFor() -- NOT via probeTextCapability(),
+    // which would classify on a possibly-stale cached verdict built from a
+    // DIFFERENT call's address. io's outcome is per-call, per-address content,
+    // never a binary-wide capability fact, so it never reaches the memoised
+    // entry point at all.
+    const verdict = textCapabilityVerdictFor({ command: "io", response, identity, ...(brokerIdentity !== undefined ? { brokerIdentity } : {}) });
     const refusalMessage = textCapabilityRefusalMessage([verdict]);
     if (refusalMessage !== "") {
       return isErrorText(withIdentityWarning(`vice_io_registers: ${refusalMessage}`, identityWarning));

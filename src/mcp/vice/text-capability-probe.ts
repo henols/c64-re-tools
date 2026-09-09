@@ -31,6 +31,21 @@
 // reference to the tool-written root -- asserted mechanically by this
 // module's own test, not by review.
 //
+// D-42-2, CONTINUED (CR-02): the cache holds facts that are properties of a
+// BINARY FILE -- and a fact that varies with a caller's OWN ARGUMENT is a
+// different kind of fact that must never enter it. `io`'s chip-level
+// degradation (IO_CHIP_DEGRADATION_STRINGS below) is decided by the
+// specific address the caller dialed, not by how the binary was built --
+// filing it under the binary-wide cache key let one call's answer to one
+// address decide every later call's answer to every other address. A
+// caller with a per-call, per-argument question takes
+// `textCapabilityVerdictFor()` instead: it builds exactly the verdict
+// `runProbe()` would build over a response the caller ALREADY HAS, with no
+// dial, no cache read and no cache write. `io` is that caller, and is
+// additionally removed from the cache's domain structurally (see
+// `NEVER_CACHED_COMMANDS`) so no future caller can put it back by routing
+// it back through the memoised entry point.
+//
 // D-42-3 (inherited from textmon-memmap.ts, decided once for all five text
 // parsers this phase adds): refuse by RETURNING, never by throwing. This
 // module never throws for a malformed, empty, unresolved, or disagreeing
@@ -82,6 +97,11 @@
 //     for its whole lifetime.
 //   - Never conflate `cpuHistoryAvailable` (backend-detect.mts) with this
 //     module's own verdicts -- see the paragraph above.
+//   - Never route a per-call, per-argument classification (a fact that
+//     varies with the caller's OWN argument, not with how the binary was
+//     built) through `probeTextCapability()`'s memoised entry point -- use
+//     `textCapabilityVerdictFor()` over the response the caller already has
+//     instead (CR-02, D-42-2 CONTINUED above).
 
 import type { ViceBackend } from "./backend-detect.mts";
 
@@ -348,27 +368,48 @@ export interface ProbeTextCapabilityOptions {
   readonly dial: (command: TextCapabilityCommand) => Promise<string>;
 }
 
-async function runProbe(
-  command: TextCapabilityCommand,
-  identity: TextCapabilityIdentity,
-  brokerIdentity: TextCapabilityBrokerIdentity | undefined,
-  dial: (command: TextCapabilityCommand) => Promise<string>,
-  key: string | null,
-): Promise<TextCapabilityVerdict> {
+/** Inputs to {@link textCapabilityVerdictFor}: everything a caller who has
+ * ALREADY OBSERVED a response (because it dialed the command itself, for
+ * its own reasons) needs to get the same classification `runProbe()` would
+ * have produced, without a dial and without touching the cache. */
+export interface TextCapabilityVerdictForOptions {
+  readonly command: TextCapabilityCommand;
+  readonly response: string;
+  readonly identity: TextCapabilityIdentity;
+  readonly brokerIdentity?: TextCapabilityBrokerIdentity;
+  /** Present only when the CALLER's own dial rejected -- this function never
+   * dials, so it cannot observe a dial failure itself; a caller that wants
+   * the `dialError` shape represented in the returned verdict supplies it
+   * here. */
+  readonly dialError?: string;
+}
+
+/**
+ * Builds exactly the verdict `runProbe()` builds today, over a response the
+ * caller has ALREADY RECEIVED -- NO dial, NO cache read, and NO cache write.
+ * That is this function's whole contract.
+ *
+ * WHY THIS EXISTS (CR-02): a caller whose outcome is decided by ITS OWN
+ * ARGUMENT -- not by a property of the binary -- must never have that
+ * per-call fact memoised under the binary-wide capability cache. `io`'s
+ * chip-level degradation is exactly this: it is decided by the `address`
+ * the caller dialed, so `handleIoRegisters` calls this function directly
+ * over the response it already dialed for its own reasons, instead of
+ * reaching `probeTextCapability()`'s memoised entry point at all.
+ *
+ * Every optional field is spread in only when it has a value, exactly
+ * mirroring `runProbe()`'s own object-literal construction -- there is
+ * exactly ONE verdict-construction site in this module, reached by both
+ * `runProbe()` (which additionally dials and may cache) and this function
+ * (which never does either).
+ */
+export function textCapabilityVerdictFor(options: TextCapabilityVerdictForOptions): TextCapabilityVerdict {
+  const { command, response, identity, brokerIdentity, dialError } = options;
   const disagreement = identityDisagreementText(identity, brokerIdentity);
-
-  let response = "";
-  let dialError: string | undefined;
-  try {
-    response = await dial(command);
-  } catch (err) {
-    dialError = err instanceof Error ? err.message : String(err);
-  }
-
   const classification: TextCapabilityClassification =
     dialError !== undefined ? { outcome: "indeterminate" } : classifyTextCapabilityResponse(command, response);
 
-  const verdict: TextCapabilityVerdict = {
+  return {
     command,
     outcome: classification.outcome,
     response,
@@ -379,8 +420,33 @@ async function runProbe(
     ...(dialError !== undefined ? { dialError } : {}),
     ...(disagreement !== null ? { identityDisagreement: disagreement } : {}),
   };
+}
 
-  const cacheable = key !== null && disagreement === null && dialError === undefined && classification.outcome !== "indeterminate";
+async function runProbe(
+  command: TextCapabilityCommand,
+  identity: TextCapabilityIdentity,
+  brokerIdentity: TextCapabilityBrokerIdentity | undefined,
+  dial: (command: TextCapabilityCommand) => Promise<string>,
+  key: string | null,
+): Promise<TextCapabilityVerdict> {
+  let response = "";
+  let dialError: string | undefined;
+  try {
+    response = await dial(command);
+  } catch (err) {
+    dialError = err instanceof Error ? err.message : String(err);
+  }
+
+  const verdict = textCapabilityVerdictFor({
+    command,
+    response,
+    identity,
+    ...(brokerIdentity !== undefined ? { brokerIdentity } : {}),
+    ...(dialError !== undefined ? { dialError } : {}),
+  });
+
+  const cacheable =
+    key !== null && verdict.identityDisagreement === undefined && dialError === undefined && verdict.outcome !== "indeterminate";
   if (cacheable) {
     let forKey = capabilityCache.get(key!);
     if (!forKey) {

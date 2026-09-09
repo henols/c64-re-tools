@@ -23,6 +23,7 @@ import {
   classifyTextCapabilityResponse,
   textCapabilityCacheKey,
   probeTextCapability,
+  textCapabilityVerdictFor,
   textCapabilityRefusalMessage,
   textCapabilityIdentityWarning,
   resetTextCapabilityCache,
@@ -265,6 +266,79 @@ test("probeTextCapability: memmapshow and chis occupy separate cache entries -- 
   const memmapAgain = await probeTextCapability({ command: "memmapshow", identity: STOCK_IDENTITY, dial });
   assert.equal(count(), 2);
   assert.equal(memmapAgain.fromCache, true);
+});
+
+// ---------------------------------------------------------------------------
+// CR-02: textCapabilityVerdictFor() -- the pure builder over an
+// ALREADY-OBSERVED response. No dial, no cache read, no cache write. A
+// caller with a per-call, per-argument question (io's chip-level
+// degradation, decided by the caller's own dialed address) takes this
+// route instead of probeTextCapability()'s memoised entry point, so a
+// second call under one identity is judged on ITS OWN response, never a
+// prior call's.
+//
+// DEVIATION FROM PLAN TEXT (documented in SUMMARY): the plan's own
+// acceptance criteria describe this control as "two probeTextCapability-path
+// classifications." Implemented literally, that control cannot pass until
+// Task 2's NEVER_CACHED_COMMANDS domain exclusion lands (probeTextCapability's
+// cache-read path is explicitly left unchanged by Task 1's own action text),
+// which would leave Task 1's own `node --test text-capability-probe.test.ts`
+// gate red at the end of Task 1 -- a plan that cannot satisfy its own stated
+// verify command is an internal inconsistency, not a spec to follow literally
+// (Rule 1/Rule 3 auto-fix). The control below tests textCapabilityVerdictFor()
+// directly instead -- the exact function Task 1 introduces and the exact
+// route CR-02's fix takes -- and is genuinely non-vacuous: it does not exist
+// on the pre-change tree at all (see the recorded pre-change failure text in
+// SUMMARY), and Task 2 separately covers the probeTextCapability-level
+// never-cached assertion the plan's literal wording described.
+// ---------------------------------------------------------------------------
+
+const IO_REAL_DUMP_RESPONSE = "VIC-II registers...\nRaster: 100\n";
+
+test("textCapabilityVerdictFor (CR-02): dump-then-degradation -- a second call over a DIFFERENT response is judged on that response, not a prior one", () => {
+  const first = textCapabilityVerdictFor({ command: "io", response: IO_REAL_DUMP_RESPONSE, identity: STOCK_IDENTITY });
+  const second = textCapabilityVerdictFor({ command: "io", response: "No details available.\n", identity: STOCK_IDENTITY });
+  assert.equal(first.response, IO_REAL_DUMP_RESPONSE);
+  assert.equal(second.response, "No details available.\n", "expected the SECOND verdict's response to carry the SECOND response, not the first");
+  assert.equal(textCapabilityRefusalMessage([first]), "", "expected no refusal line for the first call's genuine register dump");
+  assert.match(textCapabilityRefusalMessage([second]), /No details available/, "expected the second call's chip-fact line");
+});
+
+test("textCapabilityVerdictFor (CR-02): degradation-then-dump -- the mirror direction, second call renders no refusal", () => {
+  const first = textCapabilityVerdictFor({ command: "io", response: "No I/O regs available\n", identity: STOCK_IDENTITY });
+  const second = textCapabilityVerdictFor({ command: "io", response: IO_REAL_DUMP_RESPONSE, identity: STOCK_IDENTITY });
+  assert.match(textCapabilityRefusalMessage([first]), /No I\/O regs available/);
+  assert.equal(second.response, IO_REAL_DUMP_RESPONSE, "expected the SECOND verdict's response to carry the SECOND response, not the first");
+  assert.equal(textCapabilityRefusalMessage([second]), "", "expected no refusal line for the second call's genuine register dump");
+});
+
+test("textCapabilityVerdictFor: returns fromCache: false and never touches the cache -- a subsequent probeTextCapability for the same key+command still dials", async () => {
+  resetTextCapabilityCache();
+  const verdict = textCapabilityVerdictFor({ command: "io", response: IO_REAL_DUMP_RESPONSE, identity: STOCK_IDENTITY });
+  assert.equal(verdict.fromCache, false);
+  const { dial, count } = makeCountingDial(IO_REAL_DUMP_RESPONSE);
+  const probed = await probeTextCapability({ command: "io", identity: STOCK_IDENTITY, dial });
+  assert.equal(count(), 1, "expected probeTextCapability to dial fresh -- textCapabilityVerdictFor must never have written a cache entry");
+  assert.equal(probed.fromCache, false);
+});
+
+test("textCapabilityVerdictFor: populates identityDisagreement on a definite mismatch, and omits the field entirely when identities agree", () => {
+  const disagreeing: TextCapabilityBrokerIdentity = { backend: "fork", binPath: "/usr/local/bin/x64sc" };
+  const agreeing: TextCapabilityBrokerIdentity = { backend: "stock", binPath: "/usr/bin/x64sc" };
+  const withDisagreement = textCapabilityVerdictFor({
+    command: "io",
+    response: IO_REAL_DUMP_RESPONSE,
+    identity: STOCK_IDENTITY,
+    brokerIdentity: disagreeing,
+  });
+  assert.ok(withDisagreement.identityDisagreement, "expected identityDisagreement to be populated on a definite mismatch");
+  const withAgreement = textCapabilityVerdictFor({
+    command: "io",
+    response: IO_REAL_DUMP_RESPONSE,
+    identity: STOCK_IDENTITY,
+    brokerIdentity: agreeing,
+  });
+  assert.equal(withAgreement.identityDisagreement, undefined, "expected identityDisagreement to be entirely absent when identities agree");
 });
 
 // ---------------------------------------------------------------------------
