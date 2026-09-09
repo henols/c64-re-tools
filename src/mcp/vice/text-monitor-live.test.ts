@@ -18,6 +18,46 @@
 // Opt in with:
 //   VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test text-monitor-live.test.ts
 //
+// TEARDOWN VERIFICATION METHOD (this file's own record -- read this before
+// citing anything else as evidence a run left nothing behind):
+//   - This harness spawns the broker artifact DIRECTLY as a child process
+//     (`spawn(process.execPath, [BROKER_ARTIFACT, ...])` in startBroker())
+//     and never starts or reads a systemd/launchd service unit of any kind.
+//     A service-unit status check (e.g. `systemctl --user is-active
+//     vice-broker.service`) is NOT evidence about this file and must never
+//     be cited as such -- there is nothing here for it to observe.
+//   - Teardown is asserted over three subjects, every one of them in
+//     `HarnessReport`: the recorded emulator pids (`recordedPids` ->
+//     `pidsAliveAfterTeardown`), the broker child's OWN pid (also folded
+//     into `pidsAliveAfterTeardown`, so the same empty-array assertion
+//     covers it), and any process anywhere on the host whose command line
+//     contains this harness's own unique scratch-directory path
+//     (`strayPidsMatchingScratch`). The third is what catches a grandchild
+//     no pid was ever recorded for -- the exact shape of the leak recorded
+//     below.
+//   - The scratch directory's removal is ASSERTED (`scratchDirRemoved`,
+//     checked with `existsSync()` after `rmSync()`), never assumed just
+//     because `rmSync()` was called -- this host's `/tmp` is a RAM-backed
+//     filesystem with automatic aging DISABLED, so anything left there
+//     stays until reboot.
+//   - This whole method is kept honest by an unskipped planted-violation
+//     control in this same file (the "teardown control" test below): it
+//     plants a marker-carrying process, proves the sweep helper and
+//     `isAlive()` both observe it alive, then reaps it and proves both
+//     report it gone. A reader who wants to check the teardown guard is
+//     still real runs this file with NO environment variable set at all --
+//     `node --test text-monitor-live.test.ts` -- and reads that one case's
+//     result; it does not need a live emulator to answer the question.
+//
+//   The incident this method replaced: a broker child from an earlier live
+//   run survived roughly twenty-five minutes with its scratch directory
+//   still intact, and both checks that had claimed to verify teardown were
+//   looking at something else -- a service unit this file never starts, and
+//   a process-name grep that named only the emulator, never the broker.
+//   This is more than tidiness: a live broker deterministically reddens an
+//   unrelated ordering assertion (BACK-05, see below), so a suite reading
+//   taken after such a leak is not a reading of the tree it claims to be.
+//
 // WHAT NOT TO DO:
 //   - Never acquire a child process, socket, or temp dir outside
 //     withBrokerHarness()'s own try/finally -- teardown must run even when
@@ -26,6 +66,14 @@
 //     leftover x64sc process is already running -- D-16's own discipline
 //     (39-CONTEXT.md): a live broker deterministically reddens the BACK-05
 //     ordering assertion and voids any live capture in this same run.
+//   - Never cite a service-unit status (systemd, launchd, or otherwise) as
+//     teardown evidence for this file. This harness does not start one, so
+//     such a check observes nothing this file is responsible for.
+//   - Never add a new live case whose teardown assertion covers only
+//     `pidsAliveAfterTeardown` without ALSO asserting
+//     `strayPidsMatchingScratch` deep-equals `[]` and `scratchDirRemoved` is
+//     `true` -- that is exactly the gap that let the incident above go
+//     undetected.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
