@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 41
 current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
 status: executing
-stopped_at: Completed 41-02-PLAN.md
-last_updated: "2026-09-09T06:40:25.195Z"
+stopped_at: Completed 41-03-PLAN.md
+last_updated: "2026-09-09T07:11:54.298Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 41 execution started
-state_head: 51ed436d5b7b7259b98aa354e981e50828fbcde0
+state_head: e87b3c741c8ecf4c1997bf4e9ef4d90c7adcb40a
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 25
-  completed_plans: 21
+  completed_plans: 22
   percent: 33
 ---
 
@@ -227,9 +227,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 41 (The Text Channel, Its Serialization Authority, and the Contention Verdict) — EXECUTING
-Plan: 3 of 6
-Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 complete (CHAN-04), 41-03 next
-Last activity: 2026-09-09 — Completed 41-02-PLAN.md
+Plan: 4 of 6
+Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 complete (CHAN-04), 41-03 complete (CHAN-02 discriminator), 41-04 next
+Last activity: 2026-09-09 — Completed 41-03-PLAN.md
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -502,6 +502,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 40 P10 | ~25min | 3 tasks | 11 files |
 | Phase 41 P01 | 70min | 2 tasks | 17 files |
 | Phase 41 P02 | 95min | 2 tasks | 8 files |
+| Phase 41 P03 | 40min | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -1133,6 +1134,7 @@ Recent decisions affecting current work:
 - [Phase 41]: Both CHAN-03 planted controls are proven as live RED/GREEN A/B demonstrations on the shipped TextMonitorClient class (quiescenceMs:0 vs default TEXT_QUIESCENCE_MS for Control 2; a same-file negative per-chunk-decode comparison for Control 1) rather than via git-archaeology.
 - [Phase 41]: channel-lock.ts: hand-built FIFO async mutex with a {channel,operation,grantId,heldSince} holder record serializes both monitor channels (CHAN-04); CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS derived in prose from RUN_UNTIL_MAX_TIMEOUT_MS+30000ms without importing it
 - [Phase 41]: withDerivedTool's needsSession:false branch never acquires channel-lock.ts's mutex; vice_diagnose (plan 41-04) will take it non-blockingly via tryAcquireChannelLock() instead
+- [Phase 41]: InstanceRecord.monitorClients made non-optional (per-channel holder map) — Forces every raw InstanceRecord construction site to state its claim intent explicitly, closing the "absent field silently means no claim" gap the old optional monitorClient field left open (D-14, plan 41-03).
 
 ### Pending Todos
 
@@ -2127,8 +2129,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T06:40:24.574Z
-Stopped at: Completed 41-02-PLAN.md
+Last session: 2026-09-09T07:11:53.924Z
+Stopped at: Completed 41-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
