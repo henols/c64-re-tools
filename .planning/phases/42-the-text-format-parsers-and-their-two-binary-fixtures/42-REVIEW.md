@@ -65,8 +65,27 @@ The actual code change for this round is narrow and fully isolated to three file
 this review's scope is byte-identical to the tree round 1 already reviewed and found clean apart
 from `CR-02` itself.
 
-**CR-02 disposition: RESOLVED, verified independently rather than accepted on the plan's own
-summary.**
+CR-02 is carried forward from the round-1 review and adjudicated below, verified independently
+rather than accepted on the plan's own summary. It is dispositioned RESOLVED, not reopened;
+`findings.critical: 0` in this file's frontmatter reflects that there is no OPEN Critical finding
+in this round, not that CR-02 was never raised. No other finding, of any severity, was raised or
+carried forward.
+
+## CR-02: `io`'s capability-probe cache served a stale, address-specific response to later calls — RESOLVED (round 2)
+
+**File:** `src/mcp/vice/text-capability-probe.ts` (the cache, `NEVER_CACHED_COMMANDS`, `textCapabilityVerdictFor()`), `src/mcp/vice/text-tools.ts:649` (`handleIoRegisters`)
+
+**Originally filed:** round-1 re-review, 2026-09-09T19:52:54Z (this same `42-REVIEW.md`, prior
+revision) — `handleIoRegisters` classified each `io` reply through `probeTextCapability()`'s
+binary-wide, identity-keyed cache, even though `io`'s chip-level degradation outcome is decided
+by the caller's own `address` argument, not by a property of the connected binary. A second call
+to a different address could be silently answered from the first call's cached verdict, producing
+either a false refusal (a real dump discarded because a prior call to a different, degrading
+address was cached first) or a wrong-wording refusal (a genuine chip degradation missed because a
+prior call's real dump was cached first).
+
+**Disposition: RESOLVED**, verified independently in this round rather than accepted on the
+plan's own summary:
 
 - `NEVER_CACHED_COMMANDS` (`text-capability-probe.ts:154`, frozen, sole member `"io"`) is checked
   at all three places a cache can act, and I traced each one directly against the source rather
@@ -88,9 +107,9 @@ summary.**
   its capability/degradation check — it calls `textCapabilityVerdictFor()` directly on the
   response it just dialed. `textCapabilityVerdictFor()` (`text-capability-probe.ts:427-444`) does
   no dial, no cache read, and no cache write by construction — it is a pure function over an
-  already-observed response. This closes the defect structurally, not just at the `probeTextCapability`
-  call site: even if `NEVER_CACHED_COMMANDS` were ever accidentally reverted, `handleIoRegisters`
-  itself no longer has a code path back into the shared cache.
+  already-observed response. This closes the defect structurally, not just at the
+  `probeTextCapability` call site: even if `NEVER_CACHED_COMMANDS` were ever accidentally
+  reverted, `handleIoRegisters` itself no longer has a code path back into the shared cache.
 - I ran `node --test text-capability-probe.test.ts text-tools.test.ts` myself (not merely reading
   the SUMMARY's transcription) — 95/95 pass, including the two new handler-level end-to-end
   controls (`handleIoRegisters (CR-02, direction a)` and `(direction b)`) that drive the fix
@@ -111,17 +130,19 @@ summary.**
 
 I found no way CR-02 survives, on any of the three cache-interaction paths, in either the pure
 verdict builder, the handler, or the exported memoised entry point other callers still legitimately
-use for the other four commands.
+use for the other four commands. **No fix requested — carried forward as resolved.**
 
-**No new findings.** I traced `handleIoRegisters` end to end against the fix, re-derived the two
-failure directions from the original finding by hand against the current source (not from the
-SUMMARY's prose alone), confirmed the five other unaffected text-tool handlers still hold their
-own separate, correctly-functioning capability-cache usage (`memmapshow`, `chis`, `prof flat`,
-`bt` all still call `probeTextCapability()` and still cache correctly — proven by
+## No New Findings
+
+I traced `handleIoRegisters` end to end against the fix, re-derived the two failure directions
+from the original finding by hand against the current source (not from the SUMMARY's prose
+alone), confirmed the five other unaffected text-tool handlers still hold their own separate,
+correctly-functioning capability-cache usage (`memmapshow`, `chis`, `prof flat`, `bt` all still
+call `probeTextCapability()` and still cache correctly — proven by
 `text-capability-probe.test.ts`'s discriminating "memmapshow still caches under the same identity"
-assertion sitting alongside every `io`-specific control), and re-ran the affected test files myself.
-All reviewed files meet quality standards; no Critical, Warning, or Info issues found in this
-round's diff or in the unchanged remainder of the scope.
+assertion sitting alongside every `io`-specific control), and re-ran the affected test files
+myself. All reviewed files meet quality standards; no Critical, Warning, or Info issues found in
+this round's diff or in the unchanged remainder of the scope.
 
 ---
 
