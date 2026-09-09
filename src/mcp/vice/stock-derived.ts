@@ -117,6 +117,10 @@ export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
   "vice_device_console", // Plan 41-06, CHAN-03 -- text-channel remedy tool, needsSession:false (text-tools.ts)
   "vice_warp_set", // Plan 41-06, CHAN-03 -- text-channel remedy tool, needsSession:false (text-tools.ts)
   "vice_memmap_show", // Plan 42-01, PARSE-01 -- text-channel access-map tool, needsSession:false (text-tools.ts)
+  "vice_cpu_history", // Plan 42-07, PARSE-02 -- text-channel CPU-history tool, needsSession:false (text-tools.ts)
+  "vice_profile_flat", // Plan 42-07, PARSE-02 -- text-channel flat-profile tool, needsSession:false (text-tools.ts)
+  "vice_backtrace", // Plan 42-07, PARSE-02/D-42-4 -- text-channel backtrace tool, shares the fork's own name, needsSession:false (text-tools.ts)
+  "vice_io_registers", // Plan 42-07, PARSE-02 -- text-channel register-decode tool, needsSession:false (text-tools.ts)
 ]);
 
 /**

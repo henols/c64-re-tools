@@ -114,13 +114,23 @@ test("plan 41-06: vice_machine_config_set's reason no longer claims the text cha
   assert.match(entry!.reason, /vice_warp_set/, "the corrected clause must name vice_warp_set as the new runtime route");
 });
 
-test("plan 41-06: vice_device_console and vice_warp_set are registered as stock-only-gain, providedBy: stock", () => {
-  for (const name of ["vice_device_console", "vice_warp_set"]) {
+test("plan 41-06/42-01/42-07: the text-channel tool set is registered as stock-only-gain, providedBy: stock", () => {
+  for (const name of ["vice_device_console", "vice_warp_set", "vice_memmap_show", "vice_cpu_history", "vice_profile_flat", "vice_io_registers"]) {
     const entry = capabilityEntryFor(name);
     assert.ok(entry, `${name} must be registered in CAPABILITY_REGISTRY`);
     assert.equal(entry!.category, "stock-only-gain");
     assert.equal(entry!.providedBy, "stock");
   }
+});
+
+test("plan 42-07/D-42-4: vice_backtrace has NO registry entry -- it is now a SHARED tool (the fork already advertises the name), not a capability gap", () => {
+  assert.equal(
+    capabilityEntryFor("vice_backtrace"),
+    undefined,
+    "vice_backtrace left the manifest-derived divergence set once the stock text-monitor implementation landed " +
+      "under the fork's own existing name with a backward-compatible argument shape (D-42-4) -- a registry entry " +
+      "for a name that no longer diverges is exactly what the mechanical completeness test below exists to catch",
+  );
 });
 
 test("same-backend miss: every entry's own providedBy backend yields no refusal for that entry", () => {

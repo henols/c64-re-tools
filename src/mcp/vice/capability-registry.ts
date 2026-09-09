@@ -94,7 +94,7 @@ const KEYBOARD_ALTERNATIVE =
   "will not see buffer injection.";
 
 /**
- * The 26-entry capability delta: every tool one backend advertises that the
+ * The 31-entry capability delta: every tool one backend advertises that the
  * other genuinely does not, after excluding registration artifacts
  * (vice_diagnose/vice_recycle) and DENY_LIST's own four meta-tools -- see
  * the header comment above and 08-RESEARCH.md's "Capability Delta Registry"
@@ -157,7 +157,7 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     alternative: KEYBOARD_ALTERNATIVE,
   },
 
-  // --- descoped (18), providedBy: fork -------------------------------------
+  // --- descoped (17), providedBy: fork -------------------------------------
   {
     name: "vice_disk_detach",
     category: "descoped",
@@ -187,12 +187,6 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     category: "descoped",
     providedBy: "fork",
     reason: "Descoped alongside vice_display_screenshot -- no shipped skill calls it.",
-  },
-  {
-    name: "vice_backtrace",
-    category: "descoped",
-    providedBy: "fork",
-    reason: "No shipped skill calls it.",
   },
   {
     name: "vice_checkpoint_group_add",
@@ -297,7 +291,7 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
       "timing infrastructure; not yet built, and no shipped skill calls it.",
   },
 
-  // --- stock-only-gain (5), providedBy: stock ------------------------------
+  // --- stock-only-gain (8), providedBy: stock ------------------------------
   {
     name: "vice_execution_until_return",
     category: "stock-only-gain",
@@ -335,6 +329,40 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
       "reached over the -remotemonitor channel, returning a structured access map in which execute is its own " +
       "bit for both RAM and ROM.",
   },
+  {
+    name: "vice_cpu_history",
+    category: "stock-only-gain",
+    providedBy: "stock",
+    reason:
+      "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"chis\" command, reached " +
+      "over the -remotemonitor channel, returning decoded CPU-history entries with per-entry cycle counts.",
+  },
+  {
+    name: "vice_profile_flat",
+    category: "stock-only-gain",
+    providedBy: "stock",
+    reason:
+      "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"prof flat\" command, " +
+      "reached over the -remotemonitor channel, returning ranked cycle counts by address.",
+  },
+  {
+    name: "vice_io_registers",
+    category: "stock-only-gain",
+    providedBy: "stock",
+    reason:
+      "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"io\" command, reached " +
+      "over the -remotemonitor channel, returning a decoded chip register dump.",
+  },
+  // vice_backtrace, the fifth text-monitor parser plan 42-07 adds, is
+  // deliberately NOT in this registry at all (D-42-4): the fork already
+  // advertises that name over its own custom HTTP API, so landing the
+  // text-monitor implementation under the same (backward-compatible)
+  // argument shape makes it a SHARED tool, not a divergence either
+  // direction -- it left the manifest-derived divergence set this registry
+  // tracks, and the mechanical completeness test below asserts exactly that.
+  // Its former "descoped" entry (reason: "No shipped skill calls it.") was
+  // removed in this same change, never left to rot alongside a name that no
+  // longer diverges.
 ];
 
 /**

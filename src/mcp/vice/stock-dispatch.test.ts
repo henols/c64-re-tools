@@ -96,6 +96,14 @@ const STOCK_ONLY_TOOLS = new Set([
   // Plan 42-01, PARSE-01: the memmapshow access-map tool -- same reasoning
   // as the pair above, reached over the same text-monitor channel.
   "vice_memmap_show",
+  // Plan 42-07, PARSE-02: the three remaining stock-only text-channel
+  // parsers, same reasoning -- reached over the same text-monitor channel,
+  // no fork HTTP-API equivalent. vice_backtrace is deliberately NOT here:
+  // it shares the fork's own existing tool name (D-42-4), so it has a real
+  // fork-manifest counterpart and is not stock-only.
+  "vice_cpu_history",
+  "vice_profile_flat",
+  "vice_io_registers",
 ]);
 
 // Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
@@ -2872,6 +2880,81 @@ conformanceTest("vice_memmap_show", async () => {
       const deps = buildTextConformanceDeps(port);
       const result = await dispatchStock("vice_memmap_show", {}, deps);
       assertAnswerConforms("vice_memmap_show", result);
+    },
+  );
+});
+
+// --------------------------------------------------------- plan 42-07: the four remaining text formats
+
+conformanceTest("vice_cpu_history", async () => {
+  await withConformanceTextServer(
+    (_line, socket) =>
+      socket.write(".C:e5d1  8D 92 02    STA $0292      A:00 X:00 Y:0a SP:f3 ..-...Z.     11302187\n(C:$e5d1) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_cpu_history", {}, deps);
+      assertAnswerConforms("vice_cpu_history", result);
+    },
+  );
+});
+
+conformanceTest("vice_profile_flat", async () => {
+  await withConformanceTextServer(
+    (_line, socket) =>
+      socket.write(
+        "        Total      %          Self      %\n------------- ------ ------------- ------\n" +
+          "2 326 151  98,5% 2 326 151  98,5% ffcf\n(C:$e5d1) ",
+      ),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_profile_flat", {}, deps);
+      assertAnswerConforms("vice_profile_flat", result);
+    },
+  );
+});
+
+conformanceTest("vice_backtrace", async () => {
+  await withConformanceTextServer(
+    (_line, socket) => socket.write("             PC        .C:e5d1   8D 92 02    STA $0292\n(C:$e5d1) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_backtrace", {}, deps);
+      assertAnswerConforms("vice_backtrace", result);
+    },
+  );
+});
+
+conformanceTest("vice_io_registers", async () => {
+  await withConformanceTextServer(
+    (_line, socket) =>
+      socket.write(
+        "VIC-II:\n" +
+          ">C:d000  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@\n" +
+          "\n" +
+          "Raster cycle/line: 0/311 IRQ: 311\n" +
+          "Mode: Standard Text (ECM/BMM/MCM=0/0/0)\n" +
+          "Colors: Border: e BG: 6 \n" +
+          "Scroll X/Y: 0/3, RC 7, Idle: 1, 40x25\n" +
+          "VC $3e8, VCBASE $3e8, VMLI  0, Phi1 $ff\n" +
+          "Video $0400, Charset $1000 (CharROM)\n" +
+          "\n" +
+          "Sprites: S.0 S.1 S.2 S.3 S.4 S.5 S.6 S.7\n" +
+          "Enabled:  no  no  no  no  no  no  no  no\n" +
+          "DMA/dis:  /   /   /   /   /   /   /   / \n" +
+          "Pointer: $00 $00 $ff $ff $ff $ff $00 $00\n" +
+          "MC:      $00 $00 $00 $00 $00 $00 $00 $00\n" +
+          "MCBASE:  $00 $00 $00 $00 $00 $00 $00 $00\n" +
+          "X-Pos:  $000$000$000$000$000$000$000$000\n" +
+          "Y-Pos:     0   0   0   0   0   0   0   0\n" +
+          "X/Y-Exp:  /   /   /   /   /   /   /   / \n" +
+          "Pri./MC: s/  s/  s/  s/  s/  s/  s/  s/ \n" +
+          "Color:     1   2   3   4   5   6   7   c\n" +
+          "(C:$d040) ",
+      ),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_io_registers", { address: 0xd020 }, deps);
+      assertAnswerConforms("vice_io_registers", result);
     },
   );
 });

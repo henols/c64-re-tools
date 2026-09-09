@@ -3990,6 +3990,446 @@
           "runState"
         ]
       }
+    },
+    {
+      "name": "vice_cpu_history",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"chis\" (or \"chis N\" for a caller-chosen decimal row count -- the ONE place that string is built, and validated/rendered there, never here), returning the decoded CPU-history entries -- address, raw bytes, disassembly, registers, processor flags and cycle count -- in the emulator's own emitted order. \"chis\" is compiled behind the same build-time flag as vice_memmap_show's \"memmapshow\"; a build without --enable-cpuhistory is reported as a named missing capability with its remedy, never a parse error.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "Number of most-recent history rows to request. Omitted dials the bare \"chis\" verb."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "integer"
+                },
+                "bytes": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "disassembly": {
+                  "type": "string"
+                },
+                "registers": {
+                  "type": "object",
+                  "properties": {
+                    "a": {
+                      "type": "integer"
+                    },
+                    "x": {
+                      "type": "integer"
+                    },
+                    "y": {
+                      "type": "integer"
+                    },
+                    "sp": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "x",
+                    "y",
+                    "sp"
+                  ]
+                },
+                "flags": {
+                  "type": "object",
+                  "properties": {
+                    "n": {
+                      "type": "boolean"
+                    },
+                    "v": {
+                      "type": "boolean"
+                    },
+                    "unused": {
+                      "type": "boolean"
+                    },
+                    "b": {
+                      "type": "boolean"
+                    },
+                    "d": {
+                      "type": "boolean"
+                    },
+                    "i": {
+                      "type": "boolean"
+                    },
+                    "z": {
+                      "type": "boolean"
+                    },
+                    "c": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "v",
+                    "unused",
+                    "b",
+                    "d",
+                    "i",
+                    "z",
+                    "c"
+                  ]
+                },
+                "cycles": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "address",
+                "bytes",
+                "disassembly",
+                "registers",
+                "flags",
+                "cycles"
+              ]
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "entries",
+          "count",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_profile_flat",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"prof flat\" (or \"prof flat N\" for a caller-chosen decimal row count, validated/rendered by the transport's own builder), returning ranked cycle counts by address -- total and self cycles, each with a percentage -- in the emulator's own rank order (highest first). \"prof flat\" carries no build-time guard at all.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "Number of ranked rows to request. Omitted dials the bare \"prof flat\" verb."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "totalCycles": {
+                  "type": "integer"
+                },
+                "totalPercent": {
+                  "type": "number"
+                },
+                "selfCycles": {
+                  "type": "integer"
+                },
+                "selfPercent": {
+                  "type": "number"
+                },
+                "address": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "totalCycles",
+                "totalPercent",
+                "selfCycles",
+                "selfPercent",
+                "address"
+              ]
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "decimalSeparator": {
+            "type": "string",
+            "enum": [
+              ",",
+              "."
+            ]
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "entries",
+          "count",
+          "decimalSeparator",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_backtrace",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the bare, unparameterized \"bt\" verb -- \"depth\" never reaches the wire; it truncates the PARSED frame list client-side, since \"bt\" itself takes no wire parameter -- returning the current-PC frame plus the reconstructed JSR-chain frames in the emulator's own emitted order, each with its origin, callee, SP offset, raw bytes and disassembly. The fork advertises this same tool name over its own custom HTTP API with an UNDECLARED response shape; this stock entry's structured, declared outputSchema is the two backends' one point of difference for this shared name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "depth": {
+            "type": "number",
+            "description": "Max stack frames to show (default: 16, max: 64). A client-side projection filter applied to the PARSED frame list -- \"bt\" itself takes no wire parameter."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "currentPc": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "type": "integer"
+              },
+              "bytes": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "disassembly": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "address",
+              "bytes",
+              "disassembly"
+            ]
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {},
+                "callee": {
+                  "type": "integer"
+                },
+                "spOffset": {
+                  "type": "integer"
+                },
+                "address": {
+                  "type": "integer"
+                },
+                "bytes": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "disassembly": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "origin",
+                "callee",
+                "spOffset",
+                "address",
+                "bytes",
+                "disassembly"
+              ]
+            }
+          },
+          "returnedCount": {
+            "type": "integer"
+          },
+          "totalCount": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "currentPc",
+          "frames",
+          "returnedCount",
+          "totalCount",
+          "truncated",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_io_registers",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"io $aaaa\" for the REQUIRED \"address\" argument (the bare \"io\" verb dumps every chip; this tool decodes the chip covering exactly one address), returning the chip's 64-byte register dump, its decoded VIC-II display state, and its sprite table. Every decoded-prose line this parser does not recognise is preserved verbatim and counted, never silently dropped or mapped onto a typed field. \"io\" carries no build-time guard, but degrades per-chip at runtime with its own two fixed strings when a chip has nothing to report -- reported as a named chip fact, never mistaken for a missing build capability.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "REQUIRED. The C64 address whose covering chip is decoded."
+          }
+        },
+        "required": [
+          "address"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chip": {
+                  "type": "string"
+                },
+                "dump": {
+                  "type": "object",
+                  "properties": {
+                    "baseAddress": {
+                      "type": "integer"
+                    },
+                    "bytes": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "required": [
+                    "baseAddress",
+                    "bytes"
+                  ]
+                },
+                "decoded": {
+                  "type": "object"
+                },
+                "sprites": {
+                  "type": "object",
+                  "properties": {
+                    "columns": {
+                      "type": "integer"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "values": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "values"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "columns",
+                    "rows"
+                  ]
+                }
+              },
+              "required": [
+                "chip",
+                "dump",
+                "decoded",
+                "sprites"
+              ]
+            }
+          },
+          "unrecognisedLines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unrecognisedLineCount": {
+            "type": "integer"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "sections",
+          "unrecognisedLines",
+          "unrecognisedLineCount",
+          "runState"
+        ]
+      }
     }
   ]
 }
