@@ -197,3 +197,14 @@ None - no external service configuration required.
 ---
 *Phase: 42-the-text-format-parsers-and-their-two-binary-fixtures*
 *Completed: 2026-09-09*
+
+## Self-Check: PASSED
+
+- FOUND: `src/mcp/vice/text-capability-probe.ts`
+- FOUND: `src/mcp/vice/text-capability-probe.test.ts`
+- FOUND: `.planning/phases/42-the-text-format-parsers-and-their-two-binary-fixtures/42-05-SUMMARY.md`
+- FOUND commit: `0096e613` (Task 1)
+- FOUND commit: `350fb5d4` (Task 2)
+- FOUND commit: `d729feb2` (this SUMMARY)
+- Re-ran all `<acceptance_criteria>` across both tasks: PASS
+- Re-ran the plan-level `<verification>` block (`node --test text-capability-probe.test.ts` -- 29/29 pass; `node --test docs-dangling-refs.test.ts comment-phase-pointers.test.ts` -- 24/24 pass; `npm run typecheck` -- clean, no `error TS`; `npm run test:automated` -- exit 1, exactly 8 pre-existing failures matching the measured baseline, no new failing files): PASS
