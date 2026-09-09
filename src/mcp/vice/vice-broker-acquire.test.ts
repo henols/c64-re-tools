@@ -104,6 +104,23 @@ function alwaysReadyProbe(): (port: number) => Promise<boolean> {
   return () => Promise.resolve(true);
 }
 
+/** Plan 41-05 (D-16): a stock cold launch's second (`-remotemonitor`) port
+ * allocation is now MANDATORY -- acquirePortAndLaunch() fails the whole
+ * acquire when `allocateRemoteMonitorPort` is omitted (undefined resolves)
+ * or fails. Every test in this file that drives `handleAcquire()` with
+ * `backend: "stock"` must supply a working allocator or its cold-launch arm
+ * throws before ever reaching the spawn factory this file actually means to
+ * exercise. Fixed at a high, never-colliding port (this file's own state
+ * never touches 6900+) rather than derived from `exclude`, since none of
+ * these tests care WHICH text port was allocated, only that one was. */
+function stubAllocateRemoteMonitorPort(): (state: BrokerState, exclude: ReadonlySet<number>) => Promise<{ ok: true; port: number }> {
+  return async (_state, exclude) => {
+    let candidate = 6900;
+    while (exclude.has(candidate)) candidate++;
+    return { ok: true, port: candidate };
+  };
+}
+
 // ---------------------------------------------------------------------------
 // I-1 composition proof (08.2-06-PLAN.md, Task 3). The tests below are the
 // non-bypassable proof this plan exists for: they call handleAcquire() /
@@ -210,7 +227,7 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
     process.env.VICE_BIN = stockScript.scriptPath;
     process.env.VICE_BROKER_TEST_RECORD_FILE = stockOutFile;
 
-    const stockOutcome = await handleAcquire("i1-stock", stateDir, stockState, { backend: "stock" });
+    const stockOutcome = await handleAcquire("i1-stock", stateDir, stockState, { backend: "stock", allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort() });
     assert.equal(stockOutcome.ok, true, `expected a successful grant, got ${JSON.stringify(stockOutcome)}`);
     if (!stockOutcome.ok) return;
     const stockRecord = stockState.instances.get(stockOutcome.grant.port);
@@ -941,6 +958,7 @@ test("handleAcquire (33-06, D-15/D-16, tracer): a {warp:true} acquire against a 
     kill: recordingKill(killCalls),
     buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
     backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
     profile: { warp: true },
   });
 
@@ -1034,6 +1052,7 @@ test("handleAcquire (33-06, D-16): a warm instance recorded {warp:true} IS grant
     kill: recordingKill(killCalls),
     buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
     backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
     profile: { warp: true },
   });
 
@@ -1056,6 +1075,7 @@ test("handleAcquire (33-06, D-16): a profile-less acquire is INELIGIBLE for a {w
     kill: recordingKill(killCalls),
     buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
     backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
     // No profile -- an ordinary interactive acquire must NOT be silently
     // handed a warped machine, which would change what its own run measures.
   });
@@ -1085,6 +1105,7 @@ test("handleAcquire (33-06, D-16, headless): a {headless:true} acquire against a
     kill: recordingKill(killCalls),
     buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
     backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
     profile: { headless: true },
   });
 
@@ -1127,6 +1148,7 @@ test("handleAcquire (33-06, D-16, capacity interaction): an ineligible miss AT C
     kill: recordingKill(killCalls),
     buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
     backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
     profile: { warp: true },
   });
 
@@ -1138,6 +1160,26 @@ test("handleAcquire (33-06, D-16, capacity interaction): an ineligible miss AT C
   assert.equal(state.instances.get(6600)?.state, "ready", "and the mismatched warm instance is left exactly as it was");
   assert.equal(killCalls.length, 0);
   assert.equal(state.grants.size, 0, "a refusal records no grant at all");
+});
+
+test("handleAcquire (D-16, plan 41-05, checkpoint option B): a stock cold launch whose text-port allocation fails returns no_free_text_port -- distinct from the generic no_free_port -- and no grant is recorded", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+
+  const spawnCalls: number[] = [];
+  const outcome = await handleAcquire("req-41-05-text-port-fail", "/tmp/vice-broker-acquire-test", state, {
+    buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    allocateRemoteMonitorPort: async () => ({ ok: false, reason: "no_free_port" }),
+  });
+
+  assert.equal(outcome.ok, false, `expected the acquire to fail when the text-port allocation fails, got ${JSON.stringify(outcome)}`);
+  if (!outcome.ok) {
+    assert.equal(outcome.reason, "no_free_text_port", "the failure reason must be the DISTINCT no_free_text_port code, not the generic no_free_port and not internal");
+  }
+  assert.equal(spawnCalls.length, 0, "no process may be spawned when the text-port allocation fails");
+  assert.equal(state.instances.size, 0, "no InstanceRecord may exist");
+  assert.equal(state.grants.size, 0, "no grant may be recorded");
 });
 
 test("structural (33-06, T-33-23): the profile-eligibility filter is a synchronous `continue` placed BEFORE the readiness-probe await inside selectWarmInstance() -- the single-owner launch guard gains no new await", () => {

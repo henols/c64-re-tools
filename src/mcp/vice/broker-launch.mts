@@ -188,10 +188,13 @@ export type LaunchProfile = { warp?: boolean; headless?: boolean };
  * than implied stock-3.9 coverage. Widening THIS bind away from loopback emits
  * its own one-time stderr note (`warnedRemoteMonitorBindWidened`), naming
  * the resolved address and stating that VICE's TEXT monitor accepts
- * arbitrary monitor commands and is unauthenticated -- Phase 3 dials
- * nothing on this port; only the launch flag lands now (see D-13's own
- * rationale: adding the flag later would require relaunching a live
- * instance, destroying all emulation state).
+ * arbitrary monitor commands and is unauthenticated. Phase 41 dials this
+ * port (text-connect.ts's textConnect()) and Phase 41-05 (D-16) made it
+ * MANDATORY on every stock launch -- a stock launch that cannot bind it now
+ * fails the whole acquire rather than launching without it (see D-13's own
+ * rationale for why the flag itself is set at launch time and not added
+ * later: doing so would require relaunching a live instance, destroying all
+ * emulation state).
  *
  * Phase 33, plan 33-05 (`D-15`, `REPRO-01`, `REPRO-05`): the stock branch now
  * also emits STOCK_DETERMINISM_FLAGS unconditionally, and takes an optional
@@ -453,6 +456,21 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   const now = deps.now ?? ((): number => Date.now());
   const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
   const backend = deps.backend ?? "fork";
+  // Plan 41-05 (D-16): the ONE construction site for a fresh InstanceRecord
+  // asserts the invariant every downstream consumer (HeldLease,
+  // textConnect(), etc.) was written against -- a stock record NEVER lacks a
+  // text-monitor port. acquirePortAndLaunch() above already fails the whole
+  // acquire before ever reaching this function when the second allocation
+  // fails, so a caller that lands here with `backend: "stock"` and no
+  // `remoteMonitorPort` is a defect in THIS module (a call site that bypassed
+  // that guarantee), not a state a stock record may legitimately carry --
+  // throw by name rather than silently writing a record that violates it.
+  // The fork case is real and unaffected: this check is stock-only.
+  if (backend === "stock" && deps.remoteMonitorPort === undefined) {
+    throw new Error(
+      "spawnAndRecordInstance: backend \"stock\" requires remoteMonitorPort (D-16) -- a stock launch that cannot bind a text-monitor port must fail the acquire before reaching this construction site, never write a portless stock record",
+    );
+  }
   const viceArgs = buildViceArgs(port, {
     backend,
     mcpHost: deps.mcpHost,
@@ -532,6 +550,11 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
     // ONE place a fresh InstanceRecord is constructed, so this is the ONE
     // place this default is set.
     monitorClients: {},
+    // Plan 41-05 (D-16): key omitted only on the FORK path now -- the guard
+    // above already throws before this point for any stock call with no
+    // remoteMonitorPort, so a stock record reaching this line always
+    // supplies the key. "Absent" means fork, never "stock allocation
+    // failed" (that state no longer exists).
     ...(deps.remoteMonitorPort === undefined ? {} : { remoteMonitorPort: deps.remoteMonitorPort }),
     // Phase 33, plan 33-06: same key-omitted-when-undefined idiom as
     // remoteMonitorPort directly above. An absent request must produce a
@@ -591,18 +614,21 @@ export interface AcquirePortAndLaunchDeps {
    * fork-when-omitted default, threaded through to spawnAndRecordInstance(). */
   backend?: ViceBackend;
   binmonHost?: string;
-  /** Plan 03-04 (DIRECT-06, D-13): resolves the SECOND (`-remotemonitor`)
-   * port, given the primary port already allocated as `exclude` (so the
-   * second allocation can never return the SAME candidate the first one
-   * just claimed, before its InstanceRecord exists to make `exclude`
-   * redundant). Optional -- omitted entirely (the default for every
-   * pre-Phase-3 caller and every fork launch) means no second port is ever
-   * requested, and `buildViceArgs()`'s stock branch stays byte-identical to
-   * before this field existed. Called ONLY when `backend === "stock"` --
-   * this function gates that itself; a caller need not check the backend
-   * before providing it. A failed second allocation degrades to launching
-   * WITHOUT `-remotemonitor` rather than failing the whole acquire -- a
-   * port nothing uses yet must never make the backend unavailable. */
+  /** Plan 03-04 (DIRECT-06, D-13); tightened by plan 41-05 (D-16): resolves
+   * the SECOND (`-remotemonitor`) port, given the primary port already
+   * allocated as `exclude` (so the second allocation can never return the
+   * SAME candidate the first one just claimed, before its InstanceRecord
+   * exists to make `exclude` redundant). Optional -- omitted entirely (the
+   * default for every pre-Phase-3 caller and every fork launch) means no
+   * second port is ever requested, and `buildViceArgs()`'s stock branch
+   * stays byte-identical to before this field existed. Called ONLY when
+   * `backend === "stock"` -- this function gates that itself; a caller need
+   * not check the backend before providing it. REQUIRED for a stock launch
+   * to succeed at all (D-16): the text port is mandatory on every stock
+   * launch, so when this allocator is provided and its allocation fails,
+   * `acquirePortAndLaunch()` fails the WHOLE acquire (`no_free_text_port`)
+   * rather than degrading to a launch without `-remotemonitor` -- no stock
+   * instance may ever exist without a text-monitor port. */
   allocateRemoteMonitorPort?: (state: BrokerState, exclude: ReadonlySet<number>) => Promise<PortAllocationResult>;
   /** Phase 33, plan 33-06 (REPRO-05, D-15/D-16): see TryLaunchDeps.profile's
    * own doc comment -- passed straight through to spawnAndRecordInstance()
@@ -616,7 +642,14 @@ export interface AcquirePortAndLaunchDeps {
 
 export type AcquireLaunchResult =
   | { ok: true; record: InstanceRecord }
-  | { ok: false; reason: "launch_in_flight" | "no_free_port" };
+  // Plan 41-05 (D-16, checkpoint option B): `no_free_text_port` is a
+  // DISTINCT failure from `no_free_port` -- a host that fails only on the
+  // SECOND (`-remotemonitor`) allocation, after the primary port already
+  // succeeded, is a materially different situation from one that cannot
+  // allocate at all, and the control plane (broker-control.mts's
+  // AcquireOutcome/ControlErrorCode) carries the same distinction through
+  // rather than collapsing it to the generic `no_free_port` reason.
+  | { ok: false; reason: "launch_in_flight" | "no_free_port" | "no_free_text_port" };
 
 /** Holds the SAME single in_flight owner across the ENTIRE
  * allocate-a-port-then-launch sequence -- not merely the synchronous spawn
@@ -689,12 +722,23 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
         deps.state.blockedPorts.add(remoteResult.port);
         remoteMonitorPort = remoteResult.port;
       } else {
-        // Degrade, never fail: a port nothing dials yet (Phase 3 builds no
-        // text-monitor client) must never make the backend unavailable.
+        // Plan 41-05 (D-16): FAIL, never degrade. Owner direction, verbatim:
+        // "it should not be possible, vice must be started witht the text
+        // channel." A stock launch that cannot bind a text-monitor port
+        // fails the whole acquire -- no process is spawned. The PRIMARY port
+        // allocated moments earlier is not yet in `state.instances` and was
+        // never added to `state.blockedPorts` by this function (only
+        // `nextFreePort()`'s own in-use probe blocks a candidate, and that
+        // never ran against the winning candidate) -- so it is already
+        // allocatable again on the very next call with no further release
+        // step; a discriminating-power test proves this rather than assuming
+        // it. This failure arm must NEVER call spawnAndRecordInstance() or
+        // otherwise leave a port "spoken for" on the caller's behalf.
         log(
           `vice-broker: second (-remotemonitor) port allocation failed (${remoteResult.reason}) -- ` +
-            `launching WITHOUT -remotemonitor; nothing in Phase 3 dials the text-monitor port anyway`,
+            `abandoning the stock launch; the text-monitor port is mandatory on every stock launch (D-16) and the acquire fails`,
         );
+        return { ok: false, reason: "no_free_text_port" };
       }
     }
 
@@ -1689,8 +1733,20 @@ function launchSupervised(
  * (crash respawn with backoff, crash-loop give-up, kill-never-recycle via
  * the deliberate-kill marker, and the per-instance boot/crash log), exactly
  * mirroring resources/vice-supervisor.sh's own respawn loop but expressed
- * as an event-loop exit handler instead of a `while true` poll. */
-export function superviseChild(reason: string, port: number, deps: SuperviseChildDeps): InstanceRecord | null {
+ * as an event-loop exit handler instead of a `while true` poll.
+ *
+ * Plan 41-05 (D-16): `remoteMonitorPort` is an OPTIONAL fourth parameter,
+ * threaded straight through to launchSupervised() exactly like every other
+ * optional trailing parameter in this file -- `undefined` (the default) is
+ * correct for a `backend: "fork"` launch, which carries none. A
+ * `backend: "stock"` caller MUST supply it: spawnAndRecordInstance()'s own
+ * construction-site assertion (D-16) throws otherwise, since this function
+ * is a genuine first-launch call site, not merely a respawn. This is not a
+ * production stock first-launch path today (only acquirePortAndLaunch() is)
+ * -- it exists for this module's own unit tests to drive a supervised first
+ * launch directly, and the parameter exists so a stock test case can do so
+ * without violating the same guarantee production code enforces. */
+export function superviseChild(reason: string, port: number, deps: SuperviseChildDeps, remoteMonitorPort?: number): InstanceRecord | null {
   const initialBackoffMs = resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
-  return launchSupervised(reason, port, deps, [], initialBackoffMs);
+  return launchSupervised(reason, port, deps, [], initialBackoffMs, remoteMonitorPort);
 }

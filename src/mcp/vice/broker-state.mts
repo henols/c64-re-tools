@@ -157,18 +157,25 @@ export interface InstanceRecord {
    * client's pid, which this broker cannot observe over TCP. */
   monitorClients: Partial<Record<MonitorChannel, { grantId: string; claimedAt: number; pid: number | null }>>;
   // ------------------------------------------------------------------
-  // Plan 03-04 (DIRECT-06, D-13): the SECOND, broker-allocated port stock's
+  // Plan 03-04 (DIRECT-06, D-13); made MANDATORY on every stock record by
+  // plan 41-05 (D-16): the SECOND, broker-allocated port stock's
   // `-remotemonitor` text monitor binds, alongside `-binarymonitor` on
-  // `port` above. Optional -- additive, same convention as every field
-  // group above: absent on the fork backend, and absent on stock when the
-  // second port allocation itself failed (broker-launch.mts's
-  // acquirePortAndLaunch() degrades to launching WITHOUT `-remotemonitor`
-  // rather than failing the whole acquire). Dialed since plan 41-01
+  // `port` above. PRESENT on every stock record, ABSENT ONLY on the fork --
+  // a stock launch that cannot bind a text-monitor port now fails the WHOLE
+  // acquire (broker-launch.mts's acquirePortAndLaunch(), `no_free_text_port`)
+  // rather than producing a portless stock record; there is no longer a
+  // "second allocation failed" case for this field to be absent on. The
+  // field stays optional in the TYPE (the fork case is real, and this is a
+  // structural type, not a discriminated union keyed on backend) -- the
+  // stock invariant is enforced as a runtime assertion at the one
+  // construction site (broker-launch.mts's spawnAndRecordInstance()), not a
+  // type-level claim the fork case would violate. Dialed since plan 41-01
   // (text-connect.ts's textConnect()) -- see the MONITOR-OWNERSHIP DECISION
   // banner above for the ownership discipline now governing this socket.
   // ------------------------------------------------------------------
   /** The second, broker-allocated port stock's `-remotemonitor` text
-   * monitor binds -- see the banner above for the ownership discipline
+   * monitor binds -- present on every stock record, absent only on the
+   * fork (D-16). See the banner above for the ownership discipline
    * governing this socket. */
   remoteMonitorPort?: number;
   // ------------------------------------------------------------------

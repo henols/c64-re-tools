@@ -350,9 +350,13 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                         url: outcome.grant.url,
                         epoch_file: outcome.grant.epochFile,
                         supervisor_dir: outcome.grant.supervisorDir,
-                        // D-15: key omitted entirely when absent (fork grant, or a
-                        // stock grant whose second port allocation itself failed) --
-                        // never a fabricated 0 or null standing in for "no port".
+                        // D-15; tightened by plan 41-05 (D-16): key omitted entirely
+                        // when absent -- the fork case only now. A stock grant whose
+                        // second (text-monitor) port allocation failed never reaches
+                        // this line at all: acquirePortAndLaunch() fails the WHOLE
+                        // acquire (`no_free_text_port`) before any grant is produced,
+                        // so "absent" no longer needs to cover that case. Never a
+                        // fabricated 0 or null standing in for "no port".
                         ...(outcome.grant.remoteMonitorPort === undefined ? {} : { remote_monitor_port: outcome.grant.remoteMonitorPort }),
                     });
                     return true;

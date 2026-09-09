@@ -54,7 +54,21 @@ import type { MonitorChannel } from "./broker-state.mjs";
 // own reasoning one op-family over: adding a ninth kind per tool would mean
 // a new dispatch path to keep in sync with every other tool's, forever.
 export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool";
-export type ControlErrorCode = "unauthorized" | "bad_request" | "denied" | "no_free_port" | "at_capacity" | "internal" | "monitor_owned";
+// Plan 41-05 (D-16, checkpoint option B): `no_free_text_port` joins the
+// vocabulary as its OWN code -- a stock acquire that fails only on the
+// SECOND (`-remotemonitor`) allocation is reported distinctly from
+// `no_free_port` (which still means the FIRST/primary allocation failed, or
+// the fork's single allocation failed), so a port-starved host's exact
+// failure cause is legible at the control plane, not only in the broker log.
+export type ControlErrorCode =
+  | "unauthorized"
+  | "bad_request"
+  | "denied"
+  | "no_free_port"
+  | "no_free_text_port"
+  | "at_capacity"
+  | "internal"
+  | "monitor_owned";
 
 export interface ControlRequest {
   op: string;
@@ -69,13 +83,14 @@ export interface AcquireGrant {
   url: string;
   epochFile: string;
   supervisorDir: string;
-  /** Plan 41-01 (D-15): the broker-allocated port stock's `-remotemonitor`
-   * text monitor binds. Optional here -- absent on a fork instance record,
-   * and (until a later plan closes broker-launch.mts's own port-allocation
-   * degrade path) potentially absent on a stock one too. `handleAcquire()`
-   * omits this key entirely when the record has none, the same
-   * key-omitted-when-undefined idiom `spawnAndRecordInstance()` already uses
-   * for this same field. */
+  /** Plan 41-01 (D-15); made mandatory-on-stock by plan 41-05 (D-16): the
+   * broker-allocated port stock's `-remotemonitor` text monitor binds.
+   * Optional here only for the fork case -- a stock instance record always
+   * carries it, because a stock launch that cannot bind one now fails the
+   * whole acquire (broker-launch.mts's acquirePortAndLaunch()) rather than
+   * ever producing a grant without it. `handleAcquire()` omits this key
+   * entirely when the record has none, the same key-omitted-when-undefined
+   * idiom `spawnAndRecordInstance()` already uses for this same field. */
   remoteMonitorPort?: number;
 }
 
@@ -89,7 +104,12 @@ export interface AcquireGrant {
  * below) apart from a genuine `internal` fault. */
 export type AcquireOutcome =
   | { ok: true; grant: AcquireGrant }
-  | { ok: false; reason: "no_free_port" | "at_capacity" | "launch_in_flight" | "internal" };
+  // Plan 41-05 (D-16, checkpoint option B): `no_free_text_port` -- the
+  // stock-only failure of the SECOND (`-remotemonitor`) allocation, distinct
+  // from `no_free_port` (the primary/only allocation failing). See
+  // ControlErrorCode's own comment for why this is a separate code rather
+  // than collapsing into the existing `no_free_port` reason.
+  | { ok: false; reason: "no_free_port" | "no_free_text_port" | "at_capacity" | "launch_in_flight" | "internal" };
 
 /** The recycle acknowledgement's business fields, field-for-field the same
  * set resources/vice-broker.sh's write_recycle_ack() emits (id, target_id,
@@ -660,9 +680,13 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
               url: outcome.grant.url,
               epoch_file: outcome.grant.epochFile,
               supervisor_dir: outcome.grant.supervisorDir,
-              // D-15: key omitted entirely when absent (fork grant, or a
-              // stock grant whose second port allocation itself failed) --
-              // never a fabricated 0 or null standing in for "no port".
+              // D-15; tightened by plan 41-05 (D-16): key omitted entirely
+              // when absent -- the fork case only now. A stock grant whose
+              // second (text-monitor) port allocation failed never reaches
+              // this line at all: acquirePortAndLaunch() fails the WHOLE
+              // acquire (`no_free_text_port`) before any grant is produced,
+              // so "absent" no longer needs to cover that case. Never a
+              // fabricated 0 or null standing in for "no port".
               ...(outcome.grant.remoteMonitorPort === undefined ? {} : { remote_monitor_port: outcome.grant.remoteMonitorPort }),
             });
             return true;

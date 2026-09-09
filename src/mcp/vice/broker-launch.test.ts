@@ -1917,6 +1917,12 @@ test("spawnAndRecordInstance (I-1 rider, via tryLaunchOne): a stock launch's inj
     supervisorDir: "/tmp/i1-stock-seam",
     epochFile: "/tmp/i1-stock-seam/epoch.json",
     backend: "stock",
+    // Plan 41-05 (D-16): a stock launch now REQUIRES this field --
+    // spawnAndRecordInstance() throws otherwise. This test's own subject is
+    // the I-1 XDG_CONFIG_HOME rider, not D-16's port requirement, so an
+    // arbitrary port satisfies the invariant without being load-bearing to
+    // what this test actually asserts.
+    remoteMonitorPort: 6799,
     spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
       spawnArgsSeen.push([command, args, options]);
       return stubChild(4243);
@@ -2086,25 +2092,89 @@ test("acquirePortAndLaunch (D-13): a stock launch's second allocation receives a
   assert.ok(state.blockedPorts.has(6601), "the second port must be blocked so it is never re-offered");
 });
 
-test("acquirePortAndLaunch (D-13): a second-port allocation failure still succeeds, with no remoteMonitorPort and no -remotemonitor in argv", async () => {
+test("acquirePortAndLaunch (D-16, plan 41-05): a second-port allocation failure FAILS THE WHOLE ACQUIRE, spawns nothing, and leaves state.instances empty", async () => {
   const state = createBrokerState();
   let secondAllocationCalls = 0;
+  let spawnCalls = 0;
   const result = await acquirePortAndLaunch("acquire", {
     state,
-    stateDir: "/tmp/d13-stock-second-port-fail",
+    stateDir: "/tmp/d16-stock-second-port-fail",
     backend: "stock",
     allocatePort: async () => ({ ok: true, port: 6600 }),
     allocateRemoteMonitorPort: async () => {
       secondAllocationCalls++;
       return { ok: false, reason: "no_free_port" };
     },
+    spawn: () => {
+      spawnCalls++;
+      return stubChild(4242);
+    },
+  });
+  assert.equal(result.ok, false, "a failed text-port allocation must fail the whole acquire -- owner direction (D-16): 'it should not be possible, vice must be started witht the text channel'");
+  assert.equal(!result.ok && result.reason, "no_free_text_port", "the failure reason must name the text-port allocation specifically (checkpoint option B), not the generic no_free_port");
+  assert.equal(secondAllocationCalls, 1);
+  assert.equal(spawnCalls, 0, "no process may ever be spawned when the text-port allocation fails");
+  assert.equal(state.instances.size, 0, "no InstanceRecord may exist for a failed text-port allocation");
+});
+
+test("acquirePortAndLaunch (D-16, discriminating power): the primary port allocated before a text-port allocation failure is allocatable again on the very next call -- no leak", async () => {
+  const state = createBrokerState();
+  const first = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d16-primary-port-reuse",
+    backend: "stock",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async () => ({ ok: false, reason: "no_free_port" }),
     spawn: () => stubChild(4242),
   });
-  assert.ok(result.ok, "the launch must still succeed even though the second allocation failed");
-  assert.equal(secondAllocationCalls, 1);
-  const record = (result as { ok: true; record: InstanceRecord }).record;
-  assert.equal(record.remoteMonitorPort, undefined, "remoteMonitorPort must be undefined on a failed second allocation");
-  assert.ok(!record.viceArgs.includes("-remotemonitor"), "the argv must not include -remotemonitor when the second allocation failed");
+  assert.equal(first.ok, false);
+
+  let secondAllocatePortSawExclusions = false;
+  const second = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d16-primary-port-reuse",
+    backend: "stock",
+    allocatePort: async () => {
+      // If the primary port had leaked (added to blockedPorts or left in
+      // state.instances by the previous failed attempt), a real allocator
+      // would skip it; this stub simply reports what it received and always
+      // offers 6600 back, so the plant is on ANY caller-observable leak, not
+      // on this stub's own selection logic.
+      secondAllocatePortSawExclusions = state.instances.has(6600) || state.blockedPorts.has(6600);
+      return { ok: true, port: 6600 };
+    },
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6601 }),
+    spawn: () => stubChild(4243),
+  });
+  assert.equal(secondAllocatePortSawExclusions, false, "the primary port must not be blocked or already recorded after the first attempt's own failure");
+  assert.ok(second.ok, "a fresh attempt with a working second allocator must succeed, reusing the SAME primary port the failed attempt allocated");
+  assert.equal(second.ok && second.record.port, 6600);
+});
+
+test("spawnAndRecordInstance (D-16, via tryLaunchOne): throws, naming the missing field, when handed backend \"stock\" with no remoteMonitorPort", () => {
+  const state = createBrokerState();
+  assert.throws(
+    () => {
+      tryLaunchOne("acquire", 6600, {
+        state,
+        supervisorDir: "/tmp/d16-stock-no-port-throw",
+        epochFile: "/tmp/d16-stock-no-port-throw/epoch.json",
+        backend: "stock",
+        spawn: () => stubChild(4242),
+      });
+    },
+    /remoteMonitorPort/,
+    "a stock construction site with no remoteMonitorPort must throw by name rather than write a portless stock record",
+  );
+  assert.equal(state.instances.size, 0, "no record may have been written before the throw");
+  assert.equal(isLaunchInFlight(), false, "the in-flight guard must still be released even though spawnAndRecordInstance() threw");
+});
+
+test("grep gate (D-16): broker-launch.mts's source no longer carries the removed degrade log's own wording about the text-monitor port going undialed", () => {
+  const source = readFileSync(join(HERE, "broker-launch.mts"), "utf8");
+  assert.ok(!source.includes("nothing in Phase 3 dials the text-monitor port"), "the removed degrade log's own phrase must not survive anywhere in the source");
+  assert.ok(!source.includes("launching WITHOUT -remotemonitor"), "the removed degrade log's own phrase must not survive anywhere in the source");
+  assert.ok(!source.includes("Degrade, never fail"), "the removed degrade branch's own comment must not survive anywhere in the source");
 });
 
 test("acquirePortAndLaunch (D-13): a fork launch never calls allocateRemoteMonitorPort, and the record carries no remoteMonitorPort", async () => {
@@ -2156,11 +2226,15 @@ function bootStockInstanceWithSecondPort(
     },
     ...overrides,
   });
-  const record = superviseChild("acquire", port, deps);
+  // Plan 41-05 (D-16): remoteMonitorPort is now REQUIRED at construction --
+  // supplied to superviseChild() directly (its own optional fourth
+  // parameter) rather than patched onto the record after the fact, which
+  // would now throw before this call ever returns. Blocking the port
+  // separately still mirrors what acquirePortAndLaunch() itself does for a
+  // real stock cold launch (spawnAndRecordInstance() does not touch
+  // state.blockedPorts -- only the caller that resolved the port does).
+  const record = superviseChild("acquire", port, deps, remotePort);
   assert.ok(record, "the initial supervised launch must succeed");
-  // What acquirePortAndLaunch() does for a real stock cold launch: the record
-  // carries the second port and the port itself is blocked from reallocation.
-  record!.remoteMonitorPort = remotePort;
   deps.state.blockedPorts.add(remotePort);
   return { deps, children, port, remotePort };
 }

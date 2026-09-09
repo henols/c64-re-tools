@@ -740,6 +740,13 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
     });
 
     if (!result.ok) {
+      // Plan 41-05 (D-16, checkpoint option B): `result.reason` passes
+      // straight through -- `AcquireLaunchResult`'s reason union
+      // ("launch_in_flight" | "no_free_port" | "no_free_text_port") is a
+      // subset of `AcquireOutcome`'s, so a failed text-port allocation's own
+      // `no_free_text_port` reaches the control plane as its own distinct
+      // code (broker-control.mts's ControlErrorCode) rather than collapsing
+      // to `internal` or to the generic `no_free_port`.
       return { ok: false, reason: result.reason };
     }
     if (result.record.pid === null) {
@@ -752,7 +759,14 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
       // even though the caller was already told "internal" right now.
       // CR-02: deleteInstanceRecord(), not a bare map delete -- a stock launch
       // that failed this way already had its second port allocated and
-      // blocked by acquirePortAndLaunch().
+      // blocked by acquirePortAndLaunch(), and deleteInstanceRecord() hands
+      // that second port back to the allocator (via state.blockedPorts) in
+      // the SAME step as it removes the broken record -- confirmed still
+      // true after plan 41-05 (D-16): this branch is reached only once a
+      // record already exists, i.e. only once BOTH allocations already
+      // succeeded (a failed second allocation now fails the acquire before
+      // any record -- and before this `pid === null` check -- is ever
+      // reached at all).
       deleteInstanceRecord(state, result.record.port);
       return { ok: false, reason: "internal" };
     }

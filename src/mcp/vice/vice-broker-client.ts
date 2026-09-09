@@ -307,10 +307,11 @@ export interface AcquireGrant {
   url: string;
   epoch_file: string;
   supervisor_dir: string;
-  /** Plan 41-01 (D-15): the broker-allocated port stock's `-remotemonitor`
-   * text monitor binds. Absent on a fork grant; absent on a stock grant only
-   * in the (until a later plan closes it) degrade case where the second
-   * port allocation itself failed. */
+  /** Plan 41-01 (D-15); made mandatory-in-fact by plan 41-05 (D-16): the
+   * broker-allocated port stock's `-remotemonitor` text monitor binds.
+   * Absent on a fork grant only -- a stock grant that could not bind a
+   * text-monitor port no longer reaches the wire at all: the acquire fails
+   * outright (`no_free_text_port`) before any grant is produced. */
   remote_monitor_port?: number;
 }
 
@@ -823,16 +824,20 @@ export interface HeldLease {
    * backend-detect.mts's own documented degradation for an omitted
    * supervisorDir. */
   supervisorDir: string;
-  /** Plan 41-01 (D-15): THIS instance's own text-monitor port, read by
-   * text-connect.ts's textConnect() to dial the `-remotemonitor` channel.
-   * MANDATORY on a stock grant, ABSENT on a fork grant -- the fork never
-   * launches with `-remotemonitor` and advertises no text tools. Its
-   * absence on a stock lease is a real defect, not a tolerated state
-   * (mirrors epochFile's own "NOT optional" discipline above): a later
-   * milestone plan closes the one remaining case in which a stock instance
-   * could lack one (broker-launch.mts's own port-allocation degrade path),
-   * after which this field's optionality here is a transitional TypeScript
-   * convenience only, never a semantic "sometimes missing". */
+  /** Plan 41-01 (D-15); made mandatory-in-fact by plan 41-05 (D-16): THIS
+   * instance's own text-monitor port, read by text-connect.ts's
+   * textConnect() to dial the `-remotemonitor` channel. MANDATORY on a
+   * stock grant, ABSENT on a fork grant -- the fork never launches with
+   * `-remotemonitor` and advertises no text tools. Its absence on a stock
+   * lease is a real defect, not a tolerated state (mirrors epochFile's own
+   * "NOT optional" discipline above): the mechanism that makes this true is
+   * broker-launch.mts's acquirePortAndLaunch(), which now FAILS THE WHOLE
+   * ACQUIRE when the text-port allocation fails (`no_free_text_port`)
+   * rather than degrading to a portless launch -- there is no longer a code
+   * path that produces a stock grant, and therefore a HeldLease, without
+   * this field. Its optionality here is a transitional TypeScript
+   * convenience only (the fork case is real), never a semantic "sometimes
+   * missing on stock". */
   remoteMonitorPort?: number;
 }
 
