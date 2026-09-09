@@ -1,6 +1,6 @@
 ---
 phase: 42-the-text-format-parsers-and-their-two-binary-fixtures
-reviewed: 2026-09-09T19:52:54Z
+reviewed: 2026-09-10T00:00:00Z
 depth: standard
 files_reviewed: 30
 files_reviewed_list:
@@ -36,190 +36,95 @@ files_reviewed_list:
   - src/mcp/vice/tools-manifest.stock.json
   - src/mcp/vice/tool-support-table.test.mjs
 findings:
-  critical: 1
+  critical: 0
   warning: 0
   info: 0
-  total: 1
-status: issues_found
+  total: 0
+status: clean
 ---
 
-# Phase 42: Code Review Report (Re-Review After Gap-Closure)
+# Phase 42: Code Review Report (Round 2 Gap-Closure Re-Review)
 
-**Reviewed:** 2026-09-09T19:52:54Z
+**Reviewed:** 2026-09-10T00:00:00Z
 **Depth:** standard
 **Files Reviewed:** 30
-**Status:** issues_found
+**Status:** clean
 
 ## Summary
 
-This is a re-review of the gap-closure round (plans 42-10 through 42-14) against the five
-findings recorded in the prior `42-REVIEW.md` (2026-09-09T16:01:20Z). All five reused finding IDs
-are addressed below with an explicit disposition, verified against the code as it stands, not
-against the plans' own summaries.
+This is the round-2 re-review of this phase's scope, specifically targeting the single Critical
+finding (`CR-02`) the round-1 re-review filed (dated 2026-09-09T19:52:54Z): `handleIoRegisters`
+classified each `io` reply through `probeTextCapability()`'s binary-wide, identity-keyed cache,
+even though `io`'s chip-level degradation outcome is decided by the caller's own `address`
+argument, not by a property of the connected binary — so a second call to a different address
+could be silently answered from the first call's cached verdict.
 
-**Disposition of the five prior findings, verified against source and tests:**
+The actual code change for this round is narrow and fully isolated to three files:
+`text-capability-probe.ts`, `text-tools.ts`, and `text-monitor-live.test.ts` (confirmed by diffing
+`e5beed69..c8b83078`, the exact commit range spanning plans 42-15 and 42-16). Every other file in
+this review's scope is byte-identical to the tree round 1 already reviewed and found clean apart
+from `CR-02` itself.
 
-- **CR-01 (critical, unchecked decoded-state cast) — RESOLVED.** `decodeProseLines()`
-  (`textmon-registers.ts:414-454`) now filters `REQUIRED_IO_DECODED_KEYS` (19 keys,
-  `textmon-registers.ts:380-400`) against the accumulated state via `in` and refuses
-  `incomplete-decoded-state`, naming every absent field, before the former unchecked
-  `state as IoDecodedState` cast is ever reached. `textmon-registers.test.ts:419-439` asserts, by
-  reading the interface body off this module's own real source, that `REQUIRED_IO_DECODED_KEYS`
-  is set-equal to `IoDecodedState`'s declared fields in both directions — a field added to the
-  interface later without a matching addition to the constant fails this test, closing the exact
-  drift CR-01 named. Verified.
-- **WR-02 (chip-mismatch reply worded as malformed VIC-II reply) / IN-01 (discarded
-  classification call) — RESOLVED.** The chip gate in `parseIoRegisters()`
-  (`textmon-registers.ts:639-663`) sits after dump-row validation (so `unrecognised-memspace`
-  still outranks it — proven by `textmon-registers.test.ts:493-499`) and before the
-  blank-separator/decoded-prose/sprite-table checks, so a non-VIC-II chip is refused by its own
-  name (`unsupported-chip`) rather than falling into a VIC-II-shaped complaint.
-  `handleIoRegisters` (`text-tools.ts:639-641`) renders that one code's message verbatim, with no
-  wrapper, while every other code keeps the generic "response could not be parsed" wrapper. The
-  discarded `classifyTextCapabilityResponse("io", response)` call IN-01 named is gone; the
-  handler now consults the probe's own renderer unconditionally instead. `textmon-registers.test.ts:452-499`
-  proves the chip gate reports the actual chip name (CIA1, SID), never a hard-coded alternative,
-  and that a malformed-dump/incomplete-decoded-state/sprite-column-count code is never produced
-  for a legitimately different chip. Verified.
-- **WR-01 (dropped binary-identity disagreement) — RESOLVED.** `textCapabilityIdentityWarning()`
-  (`text-capability-probe.ts:288-304`) is now called by all five text-tool handlers
-  (`text-tools.ts`), before the dial, and surfaced both on the success path (an optional
-  `identityWarning` field, never in any tool's `required` list) and on every post-lease error path
-  via `withIdentityWarning()` (`text-tools.ts:389-391`), refusal text first. `tools-manifest.stock.json`
-  confirms `identityWarning` is `type: string` on all five tools and required on none.
-  `text-capability-probe.test.ts:466-474` and `text-tools.test.ts`'s five-handler success-path test
-  both exercise this end to end. Verified.
-- **IN-02 (decimalSeparator doc overstated a whole-payload guarantee) — DOCUMENTATION HALF
-  RESOLVED, BEHAVIOURAL HALF DELIBERATELY STILL OPEN, as stated.** `FlatProfile.decimalSeparator`'s
-  doc comment (`textmon-profile.ts:86-91`) now correctly states it records only the FIRST data
-  row's observed separator and is not validated against later rows. No per-row
-  separator-consistency check was added — this is an explicit, recorded decision (no committed
-  capture or known VICE behaviour exercises a payload mixing separators), not a fix that landed
-  incompletely by accident. Nothing to re-raise here; restated for completeness only.
+**CR-02 disposition: RESOLVED, verified independently rather than accepted on the plan's own
+summary.**
 
-**A new, previously unflagged issue was found during this re-review** (not one of the five
-reused IDs — see CR-02 below): the capability-probe cache `probeTextCapability()` uses to answer
-"is this text-monitor command build-capable" is shared, unmodified, by `handleIoRegisters` for a
-second purpose it was never designed for — detecting `io`'s own per-address, per-call chip
-degradation text — and the cache's "capable, once true, forever true for this binary" contract
-is unsound for that second purpose, because unlike a build flag, `io`'s per-call content varies
-with the caller's own `address` argument.
+- `NEVER_CACHED_COMMANDS` (`text-capability-probe.ts:154`, frozen, sole member `"io"`) is checked
+  at all three places a cache can act, and I traced each one directly against the source rather
+  than trusting the doc comment's claim:
+  - **Write path:** `runProbe()`'s `cacheable` predicate (`text-capability-probe.ts:469-474`)
+    ANDs in `!NEVER_CACHED_COMMANDS.includes(command)` — an `io` verdict is never written to
+    `capabilityCache`, however definitive its outcome.
+  - **Read path:** `probeTextCapability()` (`text-capability-probe.ts:516-527`) checks
+    `NEVER_CACHED_COMMANDS.includes(command)` and returns `runProbe(...)` directly, BEFORE the
+    `capabilityCache.get(key)` read that every other command reaches — `io` can never be served a
+    stale cached verdict even if one somehow existed.
+  - **In-flight memo:** the same early return in the read path additionally sits before the
+    `inFlightProbes` check, so two concurrent `io` probes for the same identity do not share one
+    in-flight dial's promise — verified live in
+    `text-capability-probe.test.ts`'s "two concurrent un-awaited io probes dial TWICE and each
+    receives its own response" case, which asserts the two concurrent calls receive two
+    genuinely different `response` values, not one shared answer.
+- `handleIoRegisters` (`text-tools.ts:649`) no longer reaches `probeTextCapability()` at all for
+  its capability/degradation check — it calls `textCapabilityVerdictFor()` directly on the
+  response it just dialed. `textCapabilityVerdictFor()` (`text-capability-probe.ts:427-444`) does
+  no dial, no cache read, and no cache write by construction — it is a pure function over an
+  already-observed response. This closes the defect structurally, not just at the `probeTextCapability`
+  call site: even if `NEVER_CACHED_COMMANDS` were ever accidentally reverted, `handleIoRegisters`
+  itself no longer has a code path back into the shared cache.
+- I ran `node --test text-capability-probe.test.ts text-tools.test.ts` myself (not merely reading
+  the SUMMARY's transcription) — 95/95 pass, including the two new handler-level end-to-end
+  controls (`handleIoRegisters (CR-02, direction a)` and `(direction b)`) that drive the fix
+  through a RESOLVED, AGREEING broker identity so the cache is genuinely live during the test —
+  the exact condition the original bug needed to be reachable in and the exact condition
+  round 1's tests failed to exercise (`makeDeps()` left the identity unresolved, so
+  `textCapabilityCacheKey()` returned `null` and the cache was never touched).
+- `vice_io_registers`'s published `inputSchema` in `tools-manifest.stock.json` is unchanged by
+  this round's diff (confirmed via `git diff e5beed69 c8b83078 -- tools-manifest.stock.json`,
+  empty) — the backward-compatibility contract this project requires is intact.
+- The new live control in `text-monitor-live.test.ts` (registered as the pre-existing 13th
+  `MANUAL_ONLY_TESTS` entry, not a new file needing gate registration) dials `io` at two different
+  addresses/chips (`$d020` VIC-II, `$dc00` CIA1) in one session and asserts the second verdict's
+  `fromCache` is `false` and its `response` strictly equals the second reply — this is the
+  genuine end-to-end proof no fixture or stub can substitute for, and it is additive to the
+  existing five-format live case rather than a new broker-launching test (no new teardown
+  surface introduced).
 
-## Critical Issues
+I found no way CR-02 survives, on any of the three cache-interaction paths, in either the pure
+verdict builder, the handler, or the exported memoised entry point other callers still legitimately
+use for the other four commands.
 
-### CR-02: `io`'s capability-probe cache serves a stale, address-specific response to every later call, causing false refusals and false non-refusals
-
-**File:** `src/mcp/vice/text-capability-probe.ts:415-444` (the cache), `src/mcp/vice/text-tools.ts:613-629` (`handleIoRegisters`'s unconditional probe call)
-
-**Issue:**
-
-`handleIoRegisters` is the one handler among the five text tools that calls `probeTextCapability()`
-**unconditionally**, on every call, regardless of `classifyTextCapabilityResponse()`'s own verdict
-(`text-tools.ts:616-625`, comment: "the probe module's own renderer is always consulted below,
-since it is what additionally catches io's own per-chip runtime degradation"). This is necessary
-because `io` carries no build-time guard at all — `classifyTextCapabilityResponse()` can only ever
-return `capable`/`indeterminate` for it — and the *only* place that recognises `io`'s two runtime
-chip-degradation strings ("No details available." / "No I/O regs available") ahead of the parser
-is `text-capability-probe.ts`'s `ioChipDegradationText()`, consulted via `textCapabilityRefusalMessage()`.
-
-But `probeTextCapability()` (`text-capability-probe.ts:415-444`) is a **cache keyed only on
-`{backend, binPath, command}`** — it was designed for `memmapshow`/`chis`, where "capable" is a
-genuine, process-lifetime-stable property of the *binary* (a build-time C macro), so caching one
-verdict per binary is correct. `io`'s classification is **not** binary-wide: whether a given `io`
-call's reply is a real register dump or one of the two degradation strings depends on the
-**address argument of that specific call**, which the cache key does not include.
-
-Concretely, for a given (backend, binPath) identity, within one MCP server process:
-
-1. The FIRST `vice_io_registers` call for that identity — for ANY address — dials, gets some
-   response (`response = await client.command(command, ...)`), classifies `capable` (always, for
-   `io`, once non-empty), and **that exact verdict, carrying that exact `response` string, is
-   cached** (`runProbe()`'s `cacheable` check: `classification.outcome !== "indeterminate"` is
-   true for any non-empty `io` reply, degraded or not).
-2. Every SUBSEQUENT `vice_io_registers` call for the same identity — even to a completely
-   different address/chip — calls `probeTextCapability()` again with `dial: async () => response`
-   (the CURRENT call's fresh response), but `probeTextCapability()` finds the cached verdict and
-   returns it **without ever invoking `dial()`** (`text-capability-probe.ts:425-429`:
-   `if (cached) return { ...cached, fromCache: true };`). The verdict handed back to
-   `textCapabilityRefusalMessage()` therefore carries the FIRST call's `response`, not the
-   current call's.
-
-This produces two distinct, reachable wrong answers, depending on which response happened to be
-cached first:
-
-- **False refusal (data that should have been returned is discarded).** If the FIRST `io` call for
-  a binary happens to hit a chip that degrades (e.g. an address with no dump function), that
-  degraded response is cached as the "capable" verdict for `io` on that identity. Every
-  SUBSEQUENT call — including one to `$D020` (VIC-II) that comes back with a perfectly good
-  64-byte register dump — gets the STALE cached (degraded) response handed to
-  `ioChipDegradationText()`, which matches it, so `textCapabilityRefusalMessage()` renders "the
-  chip has nothing to report here" and `handleIoRegisters` returns an error **for a call that
-  actually succeeded**, discarding the real register dump this call obtained. This persists for
-  the rest of the process's life (the cache is never invalidated per-address, only reset by
-  `resetTextCapabilityCache()`, which no production code path calls).
-- **Wrong-wording refusal (the exact WR-02 failure class, for two different codes).** If the FIRST
-  `io` call is a real dump (cached "capable", non-degraded), a LATER call to an address that
-  genuinely degrades will have its degradation missed by the (stale) capability layer — the probe
-  returns `refusalMessage === ""` because the stale cached response isn't a degradation string —
-  and falls through to `parseIoRegisters(response)` with the REAL (degraded) response. The parser
-  independently recognises the two degradation strings via its own top-of-function equality check
-  and returns them as named refusal codes (`no-details-available`/`no-io-regs-available`,
-  `textmon-registers.ts:538-561`). But `handleIoRegisters`'s parse-refusal branch only special-cases
-  `unsupported-chip` (plan 42-11's fix) — every OTHER code, including these two legitimate,
-  named, non-defect outcomes, still gets wrapped in `"io's response could not be parsed (${code}
-  at line ...) -- ${message}"` (`text-tools.ts:642-648`). This is precisely the "a legitimate
-  chip reply reads like a parser defect in this project" failure mode WR-02 fixed for
-  `unsupported-chip`, silently reopened for `no-details-available`/`no-io-regs-available` the
-  moment the capability-probe cache goes stale.
-
-This is reachable in production, not merely in theory: `deps.resolvedBinaryPath`/
-`resolvedBinaryPathIsResolved` are set from `stock-dispatch.ts`'s real, one-time, resolved
-`resolvedBackend()` call (`handlePing`'s own doc comment, `stock-dispatch.ts:681-694`), so
-`textCapabilityCacheKey()` is non-null for any real deployment — the cache is genuinely populated
-and genuinely reused across distinct `vice_io_registers` calls within one broker session, which is
-the normal way an agent uses this tool (probing several chip addresses in one investigation).
-
-This is untested: `text-capability-probe.test.ts` has no test calling `probeTextCapability` twice
-for `"io"` with two DIFFERENT responses under the same identity. `text-tools.test.ts`'s
-`handleIoRegisters` tests all use `makeDeps()`, which never sets `resolvedBinaryPath`/
-`resolvedBinaryPathIsResolved`, so `identity.resolved` is `false` and `textCapabilityCacheKey()`
-returns `null` for every one of those tests — the cache is structurally never exercised by the
-existing suite for this handler, which is exactly why this was not caught.
-
-**Fix:** `io`'s per-address content check must never be served from the same cache that
-legitimately memoises a binary-wide build capability. Two independent ways to fix this, either
-sufficient:
-
-```ts
-// Option A: never cache "io" at all -- its outcome is not a property of the
-// binary, so caching it is categorically wrong regardless of key shape.
-// In runProbe():
-const cacheable =
-  key !== null &&
-  disagreement === null &&
-  dialError === undefined &&
-  classification.outcome !== "indeterminate" &&
-  command !== "io"; // io's "capable" is per-call content, never binary-wide
-```
-
-or, if `io`'s verdict should still be cacheable for its (nonexistent) build-guard half:
-
-```ts
-// Option B: never SERVE a cached verdict for "io" without re-classifying the
-// CURRENT response for chip-degradation -- i.e. handleIoRegisters must not
-// rely on probeTextCapability()'s cache hit path for the degradation check at
-// all, and should call ioChipDegradationText()-equivalent logic directly
-// against the fresh `response` on every call, independent of whatever
-// probeTextCapability() returns.
-```
-
-Whichever fix lands, add a `text-capability-probe.test.ts` case that calls `probeTextCapability`
-twice for `"io"` under the SAME resolved identity with two DIFFERENT responses (one real dump,
-one degradation string) and asserts the SECOND call's degradation detection reflects the SECOND
-response, not the first — the exact scenario this finding traces through by hand above.
+**No new findings.** I traced `handleIoRegisters` end to end against the fix, re-derived the two
+failure directions from the original finding by hand against the current source (not from the
+SUMMARY's prose alone), confirmed the five other unaffected text-tool handlers still hold their
+own separate, correctly-functioning capability-cache usage (`memmapshow`, `chis`, `prof flat`,
+`bt` all still call `probeTextCapability()` and still cache correctly — proven by
+`text-capability-probe.test.ts`'s discriminating "memmapshow still caches under the same identity"
+assertion sitting alongside every `io`-specific control), and re-ran the affected test files myself.
+All reviewed files meet quality standards; no Critical, Warning, or Info issues found in this
+round's diff or in the unchanged remainder of the scope.
 
 ---
 
-_Reviewed: 2026-09-09T19:52:54Z_
+_Reviewed: 2026-09-10T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
