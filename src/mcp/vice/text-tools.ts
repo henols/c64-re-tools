@@ -69,11 +69,22 @@
 //     withChannelLockHeld()'s own discipline in stock-dispatch.ts.
 //   - Never embed a phase number in any string or template literal here.
 import { textConnect, textDisconnect } from "./text-connect.ts";
-import { withTextChannelLock, type TextMonitorClient } from "./text-protocol.ts";
+import { withTextChannelLock, buildTextCommand, type TextMonitorClient } from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { ChannelLockTimeoutError } from "./channel-lock.ts";
 import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, type StockToolResult } from "./stock-handler.ts";
 import { parseAccessMap, accessMapRanges, type AccessMap, type AccessMapRangesOptions } from "./textmon-memmap.ts";
+import { parseCpuHistory } from "./textmon-cpuhistory.ts";
+import { parseBacktrace } from "./textmon-backtrace.ts";
+import { parseFlatProfile } from "./textmon-profile.ts";
+import { parseIoRegisters } from "./textmon-registers.ts";
+import {
+  classifyTextCapabilityResponse,
+  probeTextCapability,
+  textCapabilityRefusalMessage,
+  type TextCapabilityIdentity,
+  type TextCapabilityBrokerIdentity,
+} from "./text-capability-probe.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 /**
@@ -290,6 +301,286 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
       command: "memmapshow",
       ...projection,
       executeCounts: executeCounts(parsed.value),
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Plan 42-07: the four remaining text formats -- chis, prof flat, bt, io --
+// plus the shared capability-identity helper every one of the five text
+// tools in this file (including handleMemmapShow above, retrofitted) uses to
+// classify a raw reply for build capability BEFORE handing it to a parser
+// (PARSE-04, D-42-2). See text-capability-probe.ts's own header comment for
+// the full three-outcome design this section leans on.
+// ---------------------------------------------------------------------------
+
+/** THE ONE place that decides what identity a capability answer is
+ * attributed to (D-42-2), used by all five text tools in this file.
+ * `identity` comes from `deps.resolvedBinaryPath`/
+ * `deps.resolvedBinaryPathIsResolved` -- the SAME single dispatch-layer
+ * resolution `stock-dispatch.ts`'s own `StockDispatchDeps` doc comment
+ * documents, never re-resolved here. Every tool registered in this file
+ * runs ONLY on the stock backend (STOCK_DERIVED_TOOLS), so `backend` is
+ * always the "stock" literal -- never invented for a caller this module
+ * could not actually be talking to.
+ *
+ * `brokerIdentity`, when obtainable, is the broker's OWN reported identity
+ * (`BrokerControlSession.hostState()`'s `backend`/`vice_bin` fields) for
+ * `probeTextCapability()`'s own cross-check (D-42-2). A failed `hostState()`
+ * call (a broker predating the field, no lease at all, or a control-plane
+ * hiccup) is ABSENT EVIDENCE, never disagreement -- `brokerIdentity` is
+ * simply omitted, matching `probeTextCapability()`'s own documented
+ * treatment of an omitted broker identity.
+ */
+async function capabilityIdentityFor(
+  deps: StockDispatchDeps,
+): Promise<{ identity: TextCapabilityIdentity; brokerIdentity?: TextCapabilityBrokerIdentity }> {
+  const identity: TextCapabilityIdentity = {
+    backend: "stock",
+    binPath: deps.resolvedBinaryPath ?? "",
+    resolved: deps.resolvedBinaryPathIsResolved ?? false,
+  };
+
+  const leaseOutcome = await deps.ensureLease();
+  if (!leaseOutcome.ok || leaseOutcome.lease === null) {
+    return { identity };
+  }
+
+  try {
+    const hostStateResult = await leaseOutcome.lease.brokerControl.hostState();
+    if (!hostStateResult.ok) return { identity };
+    return {
+      identity,
+      brokerIdentity: { backend: hostStateResult.hostState.backend, binPath: hostStateResult.hostState.vice_bin },
+    };
+  } catch {
+    return { identity };
+  }
+}
+
+/**
+ * `vice_cpu_history` -- dials `chis`, optionally parameterized with a
+ * caller-chosen decimal row count via `buildTextCommand()` (the ONE place
+ * such a string is built, D-42-1). An omitted `count` dials the bare frozen
+ * verb; a supplied one is validated and rendered by the builder alone --
+ * this handler never states or duplicates the builder's own bound.
+ * Classifies the raw reply for build capability before parsing (PARSE-04):
+ * `chis` shares FEATURE_CPUMEMHISTORY with `memmapshow`, so a disabled build
+ * is named by capability, command, binary and remedy -- never a parser
+ * refusal.
+ */
+export async function handleCpuHistory(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const { count } = args;
+  let command = "chis";
+  if (count !== undefined) {
+    const built = buildTextCommand("chis", count);
+    if (!built.ok) {
+      return isErrorText(`vice_cpu_history: ${built.message} -- refusing before any text-monitor byte is written`);
+    }
+    command = built.command;
+  }
+
+  const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+
+  return withTextTool("vice_cpu_history", deps, async (client) => {
+    const response = await client.command(command, { timeoutMs: 30000 });
+
+    const classification = classifyTextCapabilityResponse("chis", response);
+    if (classification.outcome !== "capable") {
+      const verdict = await probeTextCapability({ command: "chis", identity, brokerIdentity, dial: async () => response });
+      return isErrorText(`vice_cpu_history: ${textCapabilityRefusalMessage([verdict])}`);
+    }
+
+    const parsed = parseCpuHistory(response);
+    if (!parsed.ok) {
+      return isErrorText(
+        `vice_cpu_history: chis's response could not be parsed (${parsed.refusal.code} at line ` +
+          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+      );
+    }
+
+    return derivedAnswer({
+      command,
+      entries: parsed.value.entries,
+      count: parsed.value.entries.length,
+    });
+  });
+}
+
+/**
+ * `vice_profile_flat` -- dials `prof flat`, optionally parameterized with a
+ * caller-chosen decimal row count via `buildTextCommand()`, exactly mirroring
+ * `handleCpuHistory()`'s argument shape. `prof flat` carries NO build-time
+ * guard at all -- the classifier can only ever return `capable` or
+ * `indeterminate` for this verb -- but is still classified before parsing so
+ * an indeterminate (empty/unframeable) reply is a named state rather than a
+ * silent empty success.
+ */
+export async function handleProfileFlat(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const { count } = args;
+  let command = "prof flat";
+  if (count !== undefined) {
+    const built = buildTextCommand("prof flat", count);
+    if (!built.ok) {
+      return isErrorText(`vice_profile_flat: ${built.message} -- refusing before any text-monitor byte is written`);
+    }
+    command = built.command;
+  }
+
+  const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+
+  return withTextTool("vice_profile_flat", deps, async (client) => {
+    const response = await client.command(command, { timeoutMs: 30000 });
+
+    const classification = classifyTextCapabilityResponse("prof flat", response);
+    if (classification.outcome !== "capable") {
+      const verdict = await probeTextCapability({ command: "prof flat", identity, brokerIdentity, dial: async () => response });
+      return isErrorText(`vice_profile_flat: ${textCapabilityRefusalMessage([verdict])}`);
+    }
+
+    const parsed = parseFlatProfile(response);
+    if (!parsed.ok) {
+      return isErrorText(
+        `vice_profile_flat: prof flat's response could not be parsed (${parsed.refusal.code} at line ` +
+          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+      );
+    }
+
+    return derivedAnswer({
+      command,
+      entries: parsed.value.entries,
+      count: parsed.value.entries.length,
+      decimalSeparator: parsed.value.decimalSeparator,
+    });
+  });
+}
+
+/** True iff `value` is a representable integer 1 through 64 -- the shared
+ * bound the fork's own `vice_backtrace` tool description already declares
+ * ("Max stack frames to show (default: 16, max: 64)"). This is the ONE
+ * exception D-42-1 states explicitly: `depth` is a client-side projection
+ * FILTER applied to the PARSED frame list, never part of the "bt" command
+ * itself (the verb takes no wire parameter at all), so it is validated
+ * locally rather than through `buildTextCommand()`. */
+function isValidBacktraceDepthArg(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 64;
+}
+
+/**
+ * `vice_backtrace` -- takes the name the fork's own tool already advertises
+ * (D-42-4): landing the text-monitor implementation under the SAME name,
+ * with a backward-compatible argument shape (the fork's optional numeric
+ * `depth` stays optional and stays numeric), makes this a SHARED tool
+ * rather than a second vocabulary for one capability. Dials the bare,
+ * unparameterized `bt` verb -- `depth`, when supplied, truncates the
+ * PARSED frames only, and the answer reports both the returned count and
+ * the total so truncation is never silently a function of the argument.
+ * `bt` carries no build-time guard; classified before parsing anyway so an
+ * indeterminate reply is a named state.
+ */
+export async function handleBacktrace(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const { depth } = args;
+  if (depth !== undefined && !isValidBacktraceDepthArg(depth)) {
+    return isErrorText(
+      `vice_backtrace: "depth" must be an integer 1 through 64 (got ${JSON.stringify(depth)}) -- refusing before ` +
+        `any text-monitor byte is written`,
+    );
+  }
+
+  const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+
+  return withTextTool("vice_backtrace", deps, async (client) => {
+    const response = await client.command("bt", { timeoutMs: 30000 });
+
+    const classification = classifyTextCapabilityResponse("bt", response);
+    if (classification.outcome !== "capable") {
+      const verdict = await probeTextCapability({ command: "bt", identity, brokerIdentity, dial: async () => response });
+      return isErrorText(`vice_backtrace: ${textCapabilityRefusalMessage([verdict])}`);
+    }
+
+    const parsed = parseBacktrace(response);
+    if (!parsed.ok) {
+      return isErrorText(
+        `vice_backtrace: bt's response could not be parsed (${parsed.refusal.code} at line ` +
+          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+      );
+    }
+
+    const totalCount = parsed.value.frames.length;
+    const truncated = isValidBacktraceDepthArg(depth) && depth < totalCount;
+    const frames = isValidBacktraceDepthArg(depth) ? parsed.value.frames.slice(0, depth) : parsed.value.frames;
+
+    return derivedAnswer({
+      command: "bt",
+      currentPc: parsed.value.currentPc,
+      frames,
+      returnedCount: frames.length,
+      totalCount,
+      truncated,
+    });
+  });
+}
+
+/**
+ * `vice_io_registers` -- dials `io $aaaa` for a REQUIRED `address` argument:
+ * unlike the other three parameterized tools, this one refuses a MISSING
+ * address outright, because the bare "io" verb dumps every chip and this
+ * tool decodes the chip covering exactly one. `address` is validated and
+ * rendered by `buildTextCommand()` alone. `io` carries no build-time guard
+ * -- `classifyTextCapabilityResponse()` can only ever return `capable` or
+ * `indeterminate` for this verb -- but it still degrades PER-CHIP at
+ * runtime with its own two fixed strings, a fact the classifier alone
+ * cannot see; the probe module's own renderer (`textCapabilityRefusalMessage()`)
+ * is always consulted below, whatever this classification said, since that
+ * is the one place the chip-degradation-vs-missing-capability distinction
+ * is drawn.
+ */
+export async function handleIoRegisters(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const { address } = args;
+  if (address === undefined) {
+    return isErrorText(
+      `vice_io_registers: "address" is REQUIRED (the bare "io" verb dumps every chip; this tool decodes the chip ` +
+        `covering ONE address) -- refusing before any text-monitor byte is written`,
+    );
+  }
+  const built = buildTextCommand("io", address);
+  if (!built.ok) {
+    return isErrorText(`vice_io_registers: ${built.message} -- refusing before any text-monitor byte is written`);
+  }
+  const command = built.command;
+
+  const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+
+  return withTextTool("vice_io_registers", deps, async (client) => {
+    const response = await client.command(command, { timeoutMs: 30000 });
+
+    // "io" is never gated behind FEATURE_CPUMEMHISTORY -- classifyTextCapabilityResponse()
+    // only ever returns "capable" or "indeterminate" for this verb (see
+    // CPUHISTORY_GATED_COMMANDS in text-capability-probe.ts), so "capable" here is
+    // not the same as "nothing to refuse": the probe module's own renderer is
+    // always consulted below, since it is what additionally catches io's own
+    // per-chip runtime degradation.
+    const classification = classifyTextCapabilityResponse("io", response);
+    void classification;
+    const verdict = await probeTextCapability({ command: "io", identity, brokerIdentity, dial: async () => response });
+    const refusalMessage = textCapabilityRefusalMessage([verdict]);
+    if (refusalMessage !== "") {
+      return isErrorText(`vice_io_registers: ${refusalMessage}`);
+    }
+
+    const parsed = parseIoRegisters(response);
+    if (!parsed.ok) {
+      return isErrorText(
+        `vice_io_registers: io's response could not be parsed (${parsed.refusal.code} at line ` +
+          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+      );
+    }
+
+    return derivedAnswer({
+      command,
+      sections: parsed.value.sections,
+      unrecognisedLines: parsed.value.unrecognisedLines,
+      unrecognisedLineCount: parsed.value.unrecognisedLines.length,
     });
   });
 }

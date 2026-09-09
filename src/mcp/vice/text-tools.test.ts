@@ -14,11 +14,13 @@ import assert from "node:assert/strict";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 
-import { handleDeviceConsole, handleWarpSet, handleMemmapShow } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import type { StockConnectBrokerControl } from "./stock-connect.ts";
 import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import type { HeldLease } from "./vice-broker-client.ts";
+import { loadTextFixture } from "./textmon-fixtures.ts";
+import { CPUHISTORY_DISABLED_STUB } from "./text-capability-probe.ts";
 
 beforeEach(() => {
   resetChannelLockForTests();
@@ -346,6 +348,388 @@ test("handleMemmapShow: a parse refusal surfaces as isErrorText naming the tool,
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /vice_memmap_show/);
       assert.match(result.content[0]!.text, /empty-response/);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Plan 42-07: the four remaining text formats -- vice_cpu_history,
+// vice_profile_flat, vice_backtrace, vice_io_registers -- driven from the
+// committed fixtures/textmon/ captures via loadTextFixture(), never
+// hand-typed replies, matching this phase's own PARSE-02 verification
+// requirement.
+// ---------------------------------------------------------------------------
+
+// --------------------------------------------------------- vice_cpu_history
+
+test("handleCpuHistory: no count argument dials the bare 'chis' verb and returns entries in parser order", async () => {
+  const fixture = loadTextFixture("cpu-history-stock");
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(fixture.text);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleCpuHistory({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["chis"]);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, "chis");
+      const entries = payload.entries as Array<{ address: number }>;
+      assert.equal(entries.length, 4);
+      assert.equal(payload.count, 4);
+      assert.equal(entries[0]!.address, 0xe5d1);
+    },
+  );
+});
+
+test("handleCpuHistory: a supplied count dials buildTextCommand()'s canonical rendering ('chis 4')", async () => {
+  const fixture = loadTextFixture("cpu-history-stock");
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(fixture.text);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleCpuHistory({ count: 4 }, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["chis 4"]);
+    },
+  );
+});
+
+test("handleCpuHistory: refuses an out-of-range count by name, via buildTextCommand's own message, no lease resolved", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleCpuHistory({ count: 0 }, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /vice_cpu_history/);
+  assert.match(result.content[0]!.text, /"chis" requires an integer between 1 and 65535/);
+  assert.equal(leaseCalled, false, "no lease should ever be resolved before the argument check runs");
+});
+
+test("handleCpuHistory: a disabled-stub reply (chis shares FEATURE_CPUMEMHISTORY with memmapshow) produces the capability message, NOT a parser refusal code", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${CPUHISTORY_DISABLED_STUB}\n${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleCpuHistory({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_cpu_history/);
+      assert.match(result.content[0]!.text, /CPU-and-memory-history build support/);
+      assert.doesNotMatch(result.content[0]!.text, /malformed-line/, "a missing-capability reply must never surface as a parser refusal code");
+    },
+  );
+});
+
+test("handleCpuHistory: an indeterminate (empty) reply produces its own named message, never a silent empty success", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleCpuHistory({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /unknown, not negative/);
+    },
+  );
+});
+
+// --------------------------------------------------------- vice_profile_flat
+
+test("handleProfileFlat: no count argument dials the bare 'prof flat' verb and returns entries in parser order", async () => {
+  const fixture = loadTextFixture("flat-profile-stock");
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(fixture.text);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProfileFlat({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["prof flat"]);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, "prof flat");
+      const entries = payload.entries as Array<{ address: number; totalCycles: number }>;
+      assert.equal(entries.length, 5);
+      assert.equal(payload.count, 5);
+      assert.equal(entries[0]!.totalCycles, 2326151);
+    },
+  );
+});
+
+test("handleProfileFlat: a supplied count dials buildTextCommand()'s canonical rendering ('prof flat 5')", async () => {
+  const fixture = loadTextFixture("flat-profile-stock");
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(fixture.text);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProfileFlat({ count: 5 }, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["prof flat 5"]);
+    },
+  );
+});
+
+test("handleProfileFlat: refuses an out-of-range count by name, via buildTextCommand's own message, no lease resolved", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleProfileFlat({ count: 70000 }, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /vice_profile_flat/);
+  assert.match(result.content[0]!.text, /"prof flat" requires an integer between 1 and 65535/);
+  assert.equal(leaseCalled, false);
+});
+
+// "prof flat" carries NO build-time guard at all (text-capability-probe.ts's
+// own CPUHISTORY_GATED_COMMANDS excludes it deliberately, plan 42-05) -- so,
+// unlike vice_cpu_history's disabled-stub case above, feeding it the
+// FEATURE_CPUMEMHISTORY disabled-stub text can NEVER classify "missing": the
+// classifier correctly reports "capable" (it is not a build-gap reply for
+// THIS verb), and the response is handed to the parser, which then refuses it
+// structurally because the text is not a "prof flat" header. This is the
+// documented, already-tested 42-05 design (see that plan's own SUMMARY,
+// "bt/prof flat/io can never classify missing"), not a gap in this task --
+// asserting the OPPOSITE here would require re-litigating a decision this
+// phase already closed.
+test("handleProfileFlat: the FEATURE_CPUMEMHISTORY disabled-stub text is NOT a build-gap reply for this verb -- classifies capable, then refuses structurally in the parser (42-05's documented design)", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${CPUHISTORY_DISABLED_STUB}\n${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProfileFlat({}, deps);
+      assert.equal(result.isError, true);
+      assert.doesNotMatch(result.content[0]!.text, /CPU-and-memory-history build support/, "prof flat must never classify this text as a missing build capability");
+      assert.match(result.content[0]!.text, /missing-header/, "expected the parser's own structural refusal, not a capability message");
+    },
+  );
+});
+
+test("handleProfileFlat: an indeterminate (empty) reply produces its own named message, never a silent empty success", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProfileFlat({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /unknown, not negative/);
+    },
+  );
+});
+
+// --------------------------------------------------------- vice_backtrace
+
+test("handleBacktrace: dials the bare 'bt' verb (takes no wire parameter) and returns the current-PC frame plus every frame in parser order", async () => {
+  const fixture = loadTextFixture("backtrace-stock");
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(fixture.text);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleBacktrace({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["bt"]);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, "bt");
+      const currentPc = payload.currentPc as { address: number };
+      assert.equal(currentPc.address, 0xe5d1);
+      const frames = payload.frames as unknown[];
+      assert.equal(frames.length, 5);
+      assert.equal(payload.returnedCount, 5);
+      assert.equal(payload.totalCount, 5);
+      assert.equal(payload.truncated, false);
+    },
+  );
+});
+
+test("handleBacktrace: a depth argument truncates the PARSED frames and reports the returned count, the total count, and the truncated flag", async () => {
+  const fixture = loadTextFixture("backtrace-stock");
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(fixture.text);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleBacktrace({ depth: 2 }, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      const frames = payload.frames as unknown[];
+      assert.equal(frames.length, 2);
+      assert.equal(payload.returnedCount, 2);
+      assert.equal(payload.totalCount, 5, "the total is never a function of the depth argument");
+      assert.equal(payload.truncated, true);
+    },
+  );
+});
+
+test("handleBacktrace: refuses an out-of-range depth by name, no lease resolved -- depth never reaches the wire", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleBacktrace({ depth: 65 }, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /vice_backtrace/);
+  assert.match(result.content[0]!.text, /"depth" must be an integer 1 through 64/);
+  assert.equal(leaseCalled, false);
+});
+
+// "bt" also carries NO build-time guard (see the identical note on
+// vice_profile_flat above) -- the disabled-stub text classifies "capable"
+// for this verb and refuses structurally in the parser instead, per 42-05's
+// own documented, already-tested design.
+test("handleBacktrace: the FEATURE_CPUMEMHISTORY disabled-stub text is NOT a build-gap reply for this verb -- classifies capable, then refuses structurally in the parser (42-05's documented design)", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${CPUHISTORY_DISABLED_STUB}\n${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleBacktrace({}, deps);
+      assert.equal(result.isError, true);
+      assert.doesNotMatch(result.content[0]!.text, /CPU-and-memory-history build support/, "bt must never classify this text as a missing build capability");
+      assert.match(result.content[0]!.text, /missing-current-pc-line/, "expected the parser's own structural refusal, not a capability message");
+    },
+  );
+});
+
+test("handleBacktrace: an indeterminate (empty) reply produces its own named message, never a silent empty success", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleBacktrace({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /unknown, not negative/);
+    },
+  );
+});
+
+// --------------------------------------------------------- vice_io_registers
+
+test("handleIoRegisters: a required address dials buildTextCommand()'s canonical 'io $d020' rendering and returns the decoded chip section", async () => {
+  const fixture = loadTextFixture("register-decode-stock");
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(fixture.text);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["io $d020"]);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, "io $d020");
+      const sections = payload.sections as Array<{ chip: string }>;
+      assert.equal(sections.length, 1);
+      assert.equal(sections[0]!.chip, "VIC-II");
+      // The real capture is a fully clean decode -- unrecognisedLineCount must
+      // still be PRESENT even though it is zero, the caller's signal that
+      // drift was checked for and none was found.
+      assert.equal(payload.unrecognisedLineCount, 0);
+      assert.deepEqual(payload.unrecognisedLines, []);
+    },
+  );
+});
+
+test("handleIoRegisters: refuses a missing address argument outright -- it is REQUIRED, no lease resolved", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleIoRegisters({}, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /vice_io_registers/);
+  assert.match(result.content[0]!.text, /"address" is REQUIRED/);
+  assert.equal(leaseCalled, false);
+});
+
+test("handleIoRegisters: refuses an out-of-range address by name, via buildTextCommand's own message, no lease resolved", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleIoRegisters({ address: 70000 }, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /vice_io_registers/);
+  assert.match(result.content[0]!.text, /"io" requires an integer between 0 and 65535/);
+  assert.equal(leaseCalled, false);
+});
+
+// "io" carries no build-time guard either, but degrades gracefully PER-CHIP
+// at runtime with its own two fixed strings -- this IS the disabled-stub
+// equivalent that is actually reachable for this verb (unlike prof flat/bt
+// above), and it must produce the chip-level-degradation message, never a
+// parser refusal code.
+test("handleIoRegisters: a chip-level degradation reply ('No details available.') produces the chip-fact message, NOT a parser refusal code", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`No details available.\n${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_io_registers/);
+      assert.match(result.content[0]!.text, /nothing to report here/);
+      assert.doesNotMatch(result.content[0]!.text, /no-details-available/, "a chip degradation reply must never surface as a parser refusal code");
+    },
+  );
+});
+
+test("handleIoRegisters: an indeterminate (empty) reply produces its own named message, never a silent empty success", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /unknown, not negative/);
     },
   );
 });
