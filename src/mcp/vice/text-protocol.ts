@@ -558,6 +558,18 @@ export class TextMonitorClient extends EventEmitter {
     if (pending) {
       pending.reject(err);
     } else {
+      // IN-01: no command is outstanding when this fires, so there is no
+      // promise to reject -- "desync" is the only signal. This deliberately
+      // mirrors stock-protocol.ts's own "desync" convention for its binary
+      // ViceMonitorClient: neither of this class's two current production
+      // consumers (text-connect.ts, text-tools.ts) attach a listener, exactly
+      // like the binary client's own production call sites today. That is a
+      // known diagnosability gap (a genuinely desynced text channel produces
+      // no operator-visible signal until the next real command is issued
+      // against it), not an oversight -- left unconsumed BY DESIGN, pending a
+      // future plan that exposes the banner/desync stream to a caller. A
+      // fix that wires a listener onto only this class, asymmetric with the
+      // binary client's identical convention, is explicitly NOT wanted here.
       this.emit("desync", err);
     }
   }
