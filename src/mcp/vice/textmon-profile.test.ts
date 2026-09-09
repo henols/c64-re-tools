@@ -173,6 +173,31 @@ test("parseFlatProfile: a planted row whose address field is not four hex digits
   assertRealCapturesStillParseCleanly();
 });
 
+test("parseFlatProfile: a row whose address field is the literal \"ROOT\" pseudo-frame parses, address is the string \"ROOT\" (not coerced to a number) -- MEASURED live (plan 42-09) against genuine stock VICE, never captured by either committed fixture", () => {
+  const rootRow = "        550 100,0%             0   0,0% ROOT";
+  const payload = `${HEADER}\n${RULES}\n${rootRow}\n`;
+  const result = parseFlatProfile(payload);
+  assert.equal(result.ok, true, `expected a ROOT pseudo-frame row to parse, got: ${JSON.stringify(!result.ok ? result.refusal : null)}`);
+  if (!result.ok) return;
+  assert.equal(result.value.entries.length, 1);
+  assert.equal(result.value.entries[0]!.address, "ROOT");
+  assert.equal(typeof result.value.entries[0]!.address, "string");
+  assertRealCapturesStillParseCleanly();
+});
+
+test("parseFlatProfile: a ROOT row alongside an ordinary hex-address row parses both, in VICE's own emitted order -- never re-sorted", () => {
+  const rootRow = "        550 100,0%             0   0,0% ROOT";
+  const hexRow = "        100  50,0%           100  50,0% 1111";
+  const payload = `${HEADER}\n${RULES}\n${rootRow}\n${hexRow}\n`;
+  const result = parseFlatProfile(payload);
+  assert.equal(result.ok, true, `expected both rows to parse, got: ${JSON.stringify(!result.ok ? result.refusal : null)}`);
+  if (!result.ok) return;
+  assert.equal(result.value.entries.length, 2);
+  assert.equal(result.value.entries[0]!.address, "ROOT");
+  assert.equal(result.value.entries[1]!.address, 0x1111);
+  assertRealCapturesStillParseCleanly();
+});
+
 test("parseFlatProfile: a planted row whose numeric groups are separated by an ASCII space instead of the narrow no-break space refuses with the unrecognised-separator code, rather than parsing to the first group alone -- paired with the real-capture discriminating control", () => {
   const badRow = "2 326 151  98,5% 2 326 151  98,5% ffcf";
   const payload = `${HEADER}\n${RULES}\n${badRow}\n`;

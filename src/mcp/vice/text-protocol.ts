@@ -95,6 +95,18 @@ export const PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * parsers. Frozen: a ninth entry is a conscious edit here, never a
  * speculative widening, and never a free-text field accepting anything
  * outside this list.
+ *
+ * `prof on`/`prof off` (plan 42-09, a conscious, measured widening, not a
+ * speculative one): live-testing `prof flat` against a genuinely fresh
+ * stock instance MEASURED that VICE's own profiler defaults to off --
+ * `prof flat` alone returns `"No profiling data available. Start profiling
+ * with \"prof on\"."`, never real rows, until `prof on` is issued first on
+ * that same machine. No handler in this tree issues `prof on` today (a
+ * real, separately-tracked production gap -- `vice_profile_flat` cannot
+ * yet produce real data against a freshly launched instance); these two
+ * verbs are added here ONLY so the live opt-in suite can toggle the
+ * profiler on before proving `prof flat`'s own parsing path, and off again
+ * afterward, leaving the toggle itself reachable but unused elsewhere.
  */
 export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
   "device c:",
@@ -105,6 +117,8 @@ export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
   "chis",
   "bt",
   "io",
+  "prof on",
+  "prof off",
 ] as const);
 
 export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];

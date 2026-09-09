@@ -58,13 +58,23 @@
 //     rather than assumed or discarded.
 
 /** One decoded `prof flat` row, in VICE's own emitted order (rank order by
- * cycles, descending) -- this module performs no sort of its own, ever. */
+ * cycles, descending) -- this module performs no sort of its own, ever.
+ * `address` is a 16-bit machine address for an ordinary call-tree entry, or
+ * the literal string `"ROOT"` for VICE's own synthetic top-level pseudo-frame
+ * -- MEASURED live (plan 42-09) against genuine stock VICE: cycles that
+ * elapsed outside any traced call (e.g. idle-loop time before any subroutine
+ * call happened during the profiled window) are attributed to a row whose
+ * address FIELD is the literal text `ROOT`, not a hex address, and neither
+ * committed fixture under `fixtures/textmon/` happened to capture this row
+ * shape (both captures ran long enough that no cycles landed there). This is
+ * a real, closed two-member shape -- never a third string, and never
+ * silently coerced to a number. */
 export interface FlatProfileEntry {
   readonly totalCycles: number;
   readonly totalPercent: number;
   readonly selfCycles: number;
   readonly selfPercent: number;
-  readonly address: number;
+  readonly address: number | "ROOT";
 }
 
 /** The full decoded flat profile. `decimalSeparator` records which of the
@@ -315,12 +325,18 @@ export function parseFlatProfile(text: string): FlatProfileParseResult {
       };
     }
     const addressToken = addressTokens[0]!;
-    if (!/^[0-9a-fA-F]{4}$/.test(addressToken)) {
+    // "ROOT" (exact, case-sensitive) is VICE's own synthetic top-level
+    // pseudo-frame -- MEASURED live (plan 42-09), see FlatProfileEntry's own
+    // doc comment. Checked before the hex-digit shape so a genuine ROOT row
+    // is never misrouted through the hex-address refusal below.
+    const isRootPseudoFrame = addressToken === "ROOT";
+    if (!isRootPseudoFrame && !/^[0-9a-fA-F]{4}$/.test(addressToken)) {
       return {
         ok: false,
         refusal: makeRefusal(
           "malformed-row",
-          `prof flat: line ${lineNumber} has an address field that is not four hex digits: ${JSON.stringify(addressToken)}`,
+          `prof flat: line ${lineNumber} has an address field that is not four hex digits (and is not the literal ` +
+            `"ROOT" pseudo-frame): ${JSON.stringify(addressToken)}`,
           line,
           lineNumber,
         ),
@@ -396,7 +412,7 @@ export function parseFlatProfile(text: string): FlatProfileParseResult {
       totalPercent: totalPercentResult.value,
       selfCycles: selfCyclesResult.value,
       selfPercent: selfPercentResult.value,
-      address: parseInt(addressToken, 16),
+      address: isRootPseudoFrame ? "ROOT" : parseInt(addressToken, 16),
     });
   }
 

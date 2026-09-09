@@ -38,11 +38,24 @@ import { connect } from "node:net";
 import { build } from "./build.ts";
 import { openBrokerControl, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
-import { TEXT_COMMAND_ALLOWLIST, withTextChannelLock } from "./text-protocol.ts";
+import { TEXT_COMMAND_ALLOWLIST, withTextChannelLock, buildTextCommand } from "./text-protocol.ts";
 import { dispatchStock, clearHeldStockSession, ensureStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import { CommandType, checkpointSetBody, CheckpointOperation, cpNumBody } from "./stock-protocol.ts";
+import { parseAccessMap } from "./textmon-memmap.ts";
+import { parseCpuHistory } from "./textmon-cpuhistory.ts";
+import { parseBacktrace } from "./textmon-backtrace.ts";
+import { parseFlatProfile } from "./textmon-profile.ts";
+import { parseIoRegisters } from "./textmon-registers.ts";
+import {
+  classifyTextCapabilityResponse,
+  probeTextCapability,
+  textCapabilityCacheKey,
+  resetTextCapabilityCache,
+  type TextCapabilityIdentity,
+  type TextCapabilityCommand,
+} from "./text-capability-probe.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
@@ -1094,6 +1107,317 @@ test(
         `expected a non-empty response, got: ${JSON.stringify(offPayload)}`,
       );
       console.log(`text-monitor-live (D-04): MEASURED vice_warp_set(false) on ${viceBinPath}: ${JSON.stringify(offPayload.response)}`);
+
+      await session.release();
+    });
+
+    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 42-09 (PARSE-01..04): the five text formats, live, against genuine
+// stock VICE -- PARSED, not merely received. Each of memmapshow/chis/
+// prof flat/bt/io is dialed through the channel-lock wrapper exactly like
+// every other case in this file, classified for build capability (PARSE-04)
+// BEFORE parsing, then handed to its OWNING module (textmon-*.ts) with
+// format-specific shape assertions. The three parameterized verbs (chis,
+// prof flat, io) are dialed with buildTextCommand()'s own rendered output,
+// never a hand-built string; memmapshow and bt stay the bare frozen literal,
+// matching every earlier test in this file. All five dials, the capability
+// probe (all five commands, the real cache key), and the RAM-execute
+// observation share ONE harness acquisition -- one emulator launch, not
+// five, per the plan's own instruction.
+//
+// The RAM-execute count is recorded either way: this test asserts nothing
+// about it being non-zero (the emulator's own execution window decides that),
+// it only logs the numerator and the denominator so Task 2 can record
+// whichever outcome actually occurred as a finding, not a caveat.
+// ---------------------------------------------------------------------------
+
+test(
+  "text-monitor-live (plan 42-09): all five text formats parse a reply produced live by genuine stock VICE, the capability probe answers capable for all five and keys on the resolved binary path, and the RAM-execute count is recorded either way",
+  { skip: SKIP_REASON, timeout: 90000 },
+  async () => {
+    clearHeldStockSession();
+    resetChannelLockForTests();
+    resetTextCapabilityCache();
+    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
+
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
+      const opened = await openBrokerControl(stateDir);
+      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const session: BrokerControlSession = opened.session;
+
+      const acquired = await session.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      assert.equal(typeof grant.remote_monitor_port, "number");
+      const remoteMonitorPort = grant.remote_monitor_port as number;
+
+      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      recordPid(epochBefore.pid);
+
+      const binmonReady = await waitForPortOpen(host, grant.port, 30000);
+      assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
+
+      const textSession = await textConnect({ host, remoteMonitorPort, targetId: grant.id, brokerControl: session });
+
+      // D-42-2's own resolved-identity shape: this test dialed the binary
+      // directly by its own absolute path (VICE_LIVE_STOCK_BIN_ENV, checked
+      // existsSync() at this file's own opt-in gate above), so `resolved` is
+      // genuinely true here -- never asserted from an unresolved bare name.
+      const identity: TextCapabilityIdentity = {
+        backend: "stock",
+        binPath: viceBinPath,
+        resolved: true,
+      };
+
+      // A binary-channel lease/deps pair -- needed only to resume real
+      // execution briefly before dialing `prof flat` (see that section
+      // below), mirroring the "criterion 3"/"criterion 5" tests' own
+      // HeldLease/StockDispatchDeps construction earlier in this file.
+      const lease: HeldLease = {
+        host,
+        port: grant.port,
+        targetId: grant.id,
+        brokerControl: session,
+        epochFile: grant.epoch_file,
+        supervisorDir: stateDir,
+      };
+      const deps: StockDispatchDeps = {
+        ensureLease: async () => ({ ok: true as const, lease }),
+        connect: (opts: StockConnectOptions) => stockConnect(opts),
+      };
+
+      try {
+        // MEASURED (this plan, live): the FIRST command issued against a
+        // freshly cold-launched instance's text monitor carries an EXTRA
+        // leading `(C:$xxxx) ` prompt beyond any command-specific entry echo
+        // -- a one-time monitor-activation artifact, not a per-connection or
+        // per-command one. Confirmed by direct diagnostic: dialing the same
+        // verb twice on one session showed the doubled prefix ONLY on the
+        // first dial; the second and third were single-prompt-framed. This
+        // is orthogonal to what this task proves (that a live reply decodes)
+        // -- recorded in this phase's own evidence record (Task 2) as a
+        // genuine finding, not smoothed over -- and is drained here with one
+        // harmless, already-allowlisted warm-up dial (`device c:`, the same
+        // verb this file's own first test above issues) before any of the
+        // five formats below is measured, so each of the five sees a
+        // steady-state, single-prompt-framed reply exactly like every other
+        // live case in this file.
+        const warmupResponse = await withTextChannelLock("device c:", () => textSession.client.command("device c:"));
+        assert.ok(warmupResponse.length > 0, "the warm-up device c: dial must return a non-empty response");
+
+        // -------------------------------------------------------------
+        // memmapshow -- bare frozen verb, no parameter.
+        // -------------------------------------------------------------
+        assert.ok(TEXT_COMMAND_ALLOWLIST.includes("memmapshow"), "memmapshow must be in TEXT_COMMAND_ALLOWLIST for this proof to issue it");
+        const memmapResponse = await withTextChannelLock("memmapshow", () =>
+          textSession.client.command("memmapshow", { timeoutMs: 30000 }),
+        );
+        const memmapClassification = classifyTextCapabilityResponse("memmapshow", memmapResponse);
+        assert.equal(
+          memmapClassification.outcome,
+          "capable",
+          `memmapshow's classification must be capable before parsing, got: ${JSON.stringify(memmapClassification)}`,
+        );
+        const memmapParsed = parseAccessMap(memmapResponse);
+        assert.ok(
+          memmapParsed.ok,
+          `memmapshow's live reply must parse: ${JSON.stringify(!memmapParsed.ok ? memmapParsed.refusal : null)}`,
+        );
+        if (!memmapParsed.ok) return;
+        assert.ok(memmapParsed.value.entries.length > 0, "memmapshow's parsed access map must carry at least one entry");
+        console.log(
+          `text-monitor-live (42-09): MEASURED memmapshow on ${viceBinPath} -- entries=${memmapParsed.value.entries.length}`,
+        );
+
+        // RAM-execute observation (criterion 1's RAM half) -- recorded
+        // either way, no assertion on the count itself.
+        let ramExecuteCount = 0;
+        for (const entry of memmapParsed.value.entries) {
+          if (entry.ram.execute) ramExecuteCount++;
+        }
+        console.log(
+          `text-monitor-live (42-09): MEASURED RAM-execute observation on ${viceBinPath} -- ` +
+            `ramExecuteCount=${ramExecuteCount} totalEntries=${memmapParsed.value.entries.length}`,
+        );
+
+        // -------------------------------------------------------------
+        // chis -- parameterized via buildTextCommand(), never hand-built.
+        // -------------------------------------------------------------
+        const chisBuild = buildTextCommand("chis", 20);
+        assert.ok(chisBuild.ok, `buildTextCommand("chis", 20) must succeed: ${JSON.stringify(chisBuild)}`);
+        if (!chisBuild.ok) return;
+        const chisResponse = await withTextChannelLock(chisBuild.command, () =>
+          textSession.client.command(chisBuild.command, { timeoutMs: 30000 }),
+        );
+        const chisClassification = classifyTextCapabilityResponse("chis", chisResponse);
+        assert.equal(
+          chisClassification.outcome,
+          "capable",
+          `chis's classification must be capable before parsing, got: ${JSON.stringify(chisClassification)}`,
+        );
+        const chisParsed = parseCpuHistory(chisResponse);
+        assert.ok(chisParsed.ok, `chis's live reply must parse: ${JSON.stringify(!chisParsed.ok ? chisParsed.refusal : null)}`);
+        if (!chisParsed.ok) return;
+        assert.ok(chisParsed.value.entries.length > 0, "chis's parsed CPU history must carry at least one entry");
+        for (const entry of chisParsed.value.entries) {
+          assert.ok(entry.cycles > 0, `every chis entry's cycles must be positive, got: ${entry.cycles}`);
+        }
+        const cycleValues = chisParsed.value.entries.map((e) => e.cycles);
+        console.log(
+          `text-monitor-live (42-09): MEASURED chis ("${chisBuild.command}") on ${viceBinPath} -- ` +
+            `entries=${chisParsed.value.entries.length}, cycle range ${Math.min(...cycleValues)}-${Math.max(...cycleValues)}`,
+        );
+
+        // -------------------------------------------------------------
+        // prof flat -- parameterized via buildTextCommand(). MEASURED
+        // (this plan, live): VICE's own profiler defaults to off, and
+        // `prof flat` alone (with no CPU cycles elapsed since connect,
+        // this session having stayed halted throughout) returns "No
+        // profiling data available..." -- no build-time guard, and not a
+        // parser refusal either, just an empty subsystem. `prof on` (this
+        // plan's own conscious, measured allowlist widening -- see
+        // text-protocol.ts's own header comment) is issued first, the
+        // binary channel resumes real execution briefly so the profiler
+        // has genuine cycles to attribute, and `prof off` restores the
+        // toggle afterward so this instance is left as it was found.
+        // -------------------------------------------------------------
+        assert.ok(TEXT_COMMAND_ALLOWLIST.includes("prof on"), "prof on must be in TEXT_COMMAND_ALLOWLIST for this proof to issue it");
+        const profOnResponse = await withTextChannelLock("prof on", () => textSession.client.command("prof on"));
+        assert.ok(profOnResponse.length > 0, "prof on must return a non-empty response");
+        console.log(`text-monitor-live (42-09): MEASURED prof on on ${viceBinPath}: ${JSON.stringify(profOnResponse)}`);
+
+        const sessionOutcome = await ensureStockSession(deps);
+        assert.ok(sessionOutcome.ok, `ensureStockSession failed: ${JSON.stringify(sessionOutcome)}`);
+        await dispatchStock("vice_execution_run", {}, deps);
+        await new Promise((r) => setTimeout(r, 500));
+
+        // MEASURED (this plan, live): resuming the CPU and then halting it
+        // again via the next inbound monitor byte reproduces the SAME
+        // unsolicited leading-prompt artifact this test's own top-of-session
+        // warm-up drains -- VICE announces the fresh halt with its own
+        // prompt line before the next command's real output, merged into
+        // the same framed reply. A second warm-up dial here (bare, unparsed)
+        // drains that halt announcement so `prof flat` below sees a clean,
+        // single-prompt-framed reply, exactly like every other case in this
+        // test that is not the first command after a resume.
+        const postResumeWarmup = await withTextChannelLock("device c:", () => textSession.client.command("device c:"));
+        assert.ok(postResumeWarmup.length > 0, "the post-resume warm-up device c: dial must return a non-empty response");
+
+        const profBuild = buildTextCommand("prof flat", 20);
+        assert.ok(profBuild.ok, `buildTextCommand("prof flat", 20) must succeed: ${JSON.stringify(profBuild)}`);
+        if (!profBuild.ok) return;
+        const profResponse = await withTextChannelLock(profBuild.command, () =>
+          textSession.client.command(profBuild.command, { timeoutMs: 30000 }),
+        );
+        const profClassification = classifyTextCapabilityResponse("prof flat", profResponse);
+        assert.equal(
+          profClassification.outcome,
+          "capable",
+          `prof flat's classification must be capable before parsing, got: ${JSON.stringify(profClassification)}`,
+        );
+        const profParsed = parseFlatProfile(profResponse);
+        assert.ok(profParsed.ok, `prof flat's live reply must parse: ${JSON.stringify(!profParsed.ok ? profParsed.refusal : null)}`);
+        if (!profParsed.ok) return;
+        assert.ok(profParsed.value.entries.length > 0, "prof flat's parsed rows must carry at least one entry");
+        console.log(
+          `text-monitor-live (42-09): MEASURED prof flat ("${profBuild.command}") on ${viceBinPath} -- ` +
+            `rows=${profParsed.value.entries.length}, leading row=${JSON.stringify(profParsed.value.entries[0])}`,
+        );
+
+        const profOffResponse = await withTextChannelLock("prof off", () => textSession.client.command("prof off"));
+        assert.ok(profOffResponse.length > 0, "prof off must return a non-empty response");
+        console.log(`text-monitor-live (42-09): MEASURED prof off on ${viceBinPath}: ${JSON.stringify(profOffResponse)}`);
+
+        // -------------------------------------------------------------
+        // bt -- bare frozen verb, no parameter.
+        // -------------------------------------------------------------
+        assert.ok(TEXT_COMMAND_ALLOWLIST.includes("bt"), "bt must be in TEXT_COMMAND_ALLOWLIST for this proof to issue it");
+        const btResponse = await withTextChannelLock("bt", () => textSession.client.command("bt", { timeoutMs: 30000 }));
+        const btClassification = classifyTextCapabilityResponse("bt", btResponse);
+        assert.equal(
+          btClassification.outcome,
+          "capable",
+          `bt's classification must be capable before parsing, got: ${JSON.stringify(btClassification)}`,
+        );
+        const btParsed = parseBacktrace(btResponse);
+        assert.ok(btParsed.ok, `bt's live reply must parse: ${JSON.stringify(!btParsed.ok ? btParsed.refusal : null)}`);
+        if (!btParsed.ok) return;
+        assert.equal(typeof btParsed.value.currentPc.address, "number", "bt's current-PC frame must carry a numeric address");
+        console.log(
+          `text-monitor-live (42-09): MEASURED bt on ${viceBinPath} -- chain depth=${btParsed.value.frames.length}, ` +
+            `currentPc=0x${btParsed.value.currentPc.address.toString(16)}`,
+        );
+
+        // -------------------------------------------------------------
+        // io -- parameterized via buildTextCommand(), address $d020 (VIC-II
+        // border colour, matching fixtures/textmon/register-decode-stock's
+        // own captured command).
+        // -------------------------------------------------------------
+        const ioBuild = buildTextCommand("io", 0xd020);
+        assert.ok(ioBuild.ok, `buildTextCommand("io", 0xd020) must succeed: ${JSON.stringify(ioBuild)}`);
+        if (!ioBuild.ok) return;
+        const ioResponse = await withTextChannelLock(ioBuild.command, () =>
+          textSession.client.command(ioBuild.command, { timeoutMs: 30000 }),
+        );
+        const ioClassification = classifyTextCapabilityResponse("io", ioResponse);
+        assert.equal(
+          ioClassification.outcome,
+          "capable",
+          `io's classification must be capable before parsing, got: ${JSON.stringify(ioClassification)}`,
+        );
+        const ioParsed = parseIoRegisters(ioResponse);
+        assert.ok(ioParsed.ok, `io's live reply must parse: ${JSON.stringify(!ioParsed.ok ? ioParsed.refusal : null)}`);
+        if (!ioParsed.ok) return;
+        assert.ok(ioParsed.value.sections.length > 0, "io's parsed sections must carry at least one entry");
+        const vicSection = ioParsed.value.sections[0]!;
+        assert.equal(vicSection.sprites.columns, 8, "io's decoded sprite table must report eight columns");
+        console.log(
+          `text-monitor-live (42-09): MEASURED io ("${ioBuild.command}") on ${viceBinPath} -- chip=${vicSection.chip}, ` +
+            `rasterLine=${vicSection.decoded.rasterLine}, borderColor=0x${vicSection.decoded.borderColor.toString(16)}`,
+        );
+
+        // -------------------------------------------------------------
+        // Capability case: probe all five commands against the real
+        // identity, assert every verdict capable, and log the real cache
+        // key -- D-42-2's own property, observed live rather than argued
+        // from the unit tests: the key must name the resolved absolute
+        // path, never a bare binary name.
+        // -------------------------------------------------------------
+        const dialedByCommand: Record<TextCapabilityCommand, string> = {
+          memmapshow: memmapResponse,
+          "prof flat": profResponse,
+          chis: chisResponse,
+          bt: btResponse,
+          io: ioResponse,
+        };
+        for (const command of Object.keys(dialedByCommand) as TextCapabilityCommand[]) {
+          const response = dialedByCommand[command];
+          const verdict = await probeTextCapability({ command, identity, dial: async () => response });
+          assert.equal(
+            verdict.outcome,
+            "capable",
+            `probeTextCapability(${command}) must answer capable against genuine stock VICE, got: ${JSON.stringify(verdict)}`,
+          );
+          const cacheKey = textCapabilityCacheKey(identity);
+          assert.ok(cacheKey !== null, `the cache key must be non-null for a resolved identity, got: ${JSON.stringify(identity)}`);
+          assert.ok(
+            cacheKey!.includes(viceBinPath),
+            `the cache key must name the resolved absolute binary path, not a bare name -- got "${cacheKey}"`,
+          );
+          console.log(
+            `text-monitor-live (42-09): MEASURED capability probe(${command}) on ${viceBinPath} -- ` +
+              `outcome=${verdict.outcome}, cacheKey=${JSON.stringify(cacheKey)}`,
+          );
+        }
+      } finally {
+        await textDisconnect(textSession);
+      }
 
       await session.release();
     });
