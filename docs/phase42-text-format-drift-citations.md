@@ -449,3 +449,269 @@ and states so rather than letting a green live run imply otherwise:
 2. **`io`'s two degradation strings (PARSE-04).** Both stay source-traced (`monitor.c:1980–2000`),
    not live-observed — this run's own `io $d020` dial (Block 11) hit VIC-II's normal register
    dump path, not either degradation string.
+
+---
+
+## Gap-Closure Round (Plans 42-10 through 42-14) — measured on the tree it ships
+
+This section records what the round measured, not what its plans proposed. It transcribes the
+verbatim refusal messages, manifest-check outputs, teardown observations and gate figures each
+plan's own SUMMARY recorded, and adds this plan's own re-measurement on the final, post-round
+tree. Following this document's own convention: a claim carrying a run is labelled **MEASURED**
+and names the command; a claim read from source stays **source-traced**. Every block below is
+MEASURED unless stated otherwise.
+
+### Block 15 (measured, plan 42-10): CR-01 — the unchecked decoded-state cast
+
+**What was wrong:** `decodeProseLines()` in `textmon-registers.ts` accumulated the `io` format's
+six recognised decoded-prose fields into a `Partial<Record<keyof IoDecodedState, unknown>>` and
+returned `state as IoDecodedState` with no check that all 19 required fields were actually
+observed. A dropped, renamed, or emptied recognised line produced `ok: true` with `undefined`
+silently typed as a required field — the exact "semantic drift, no syntax change" failure mode
+Success Criterion 4 exists to prevent.
+
+**What changed:** a required-keys completeness gate was inserted in `decodeProseLines()`
+immediately before the former unchecked cast (`textmon-registers.ts:439-445`). It filters the new
+exported `REQUIRED_IO_DECODED_KEYS` constant (`textmon-registers.ts:380`, 19 keys, `IoDecodedState`'s
+own declaration order) against the accumulated state via the `in` operator and refuses by name,
+listing every absent field, when any are missing.
+
+**Symbol/refusal code introduced:** `"incomplete-decoded-state"`, the ninth member of
+`IoRegistersRefusalCode` (`textmon-registers.ts:204`).
+
+**Proving command and verbatim output** — `node --test textmon-registers.test.ts` (planted
+control: the real `register-decode-stock` capture with its `Colors:` line removed):
+
+```json
+{
+  "ok": false,
+  "refusal": {
+    "code": "incomplete-decoded-state",
+    "message": "io: the decoded-prose block spanning lines 7-11 did not carry every required field -- absent: borderColor, backgroundColor -- never returned as a complete decode",
+    "line": "",
+    "lineNumber": 7
+  }
+}
+```
+
+A companion source census (`textmon-registers.test.ts`) reads `IoDecodedState`'s own declared
+field names off this module's real source with `readFileSync` and asserts set-equality with
+`REQUIRED_IO_DECODED_KEYS` in both directions — the guard cannot silently fall out of sync with
+the interface it polices.
+
+### Block 16 (measured, plan 42-11): WR-02/IN-01 — the chip gate
+
+**What was wrong:** `parseIoRegisters()` unconditionally required a `Sprites:` header and the
+`io` decoded-prose fields for every chip section, though `vice_io_registers`'s own advertised
+schema accepts any address in `0-65535`. A CIA1, CIA2, or SID address — every one inside that
+range — always refused with a message worded as if a malformed VIC-II reply had arrived, never
+naming the real chip. Separately, `handleIoRegisters` computed a
+`classifyTextCapabilityResponse("io", response)` result and discarded it (IN-01).
+
+**What changed:** a chip gate in `parseIoRegisters()` (`textmon-registers.ts:648-657`), placed
+after the dump-row validation (so the `default_memspace` contamination hazard still outranks it)
+and before the blank-separator/sprite checks, refuses any non-VIC-II chip section by the chip's
+own name, stating the dump read cleanly. `handleIoRegisters`'s parse-refusal branch in
+`text-tools.ts` gained a second arm: `unsupported-chip` renders the parser's own message verbatim
+under the tool name with no wrapper, while every other code keeps the existing
+`io's response could not be parsed (...)` wrapper. IN-01's discarded classification call was
+removed.
+
+**Symbol/refusal code introduced:** `"unsupported-chip"`, plus the module constant
+`VIC_II_CHIP_NAME = "VIC-II"` (`textmon-registers.ts:205`, `:270`).
+
+**Proving command and verbatim output** — `node --test textmon-registers.test.ts` (planted
+control: the real `register-decode-stock` capture with its header renamed `VIC-II:` -> `CIA1:`):
+
+```json
+{
+  "ok": false,
+  "refusal": {
+    "code": "unsupported-chip",
+    "message": "io: chip \"CIA1\" is not supported -- its register dump read cleanly (64 bytes at $d000), but only \"VIC-II\" sections carry the decoded display state and sprite table this parser models -- dial an address covered by the VIC-II chip for a decoded answer",
+    "line": "CIA1:",
+    "lineNumber": 1
+  }
+}
+```
+
+`vice_io_registers`'s published `description` in `tools-manifest.stock.json` discloses the
+VIC-II-only decode bound; its `inputSchema` is proven byte-unchanged by a machine-readable check:
+`{"min": 0, "max": 65535, "type": "integer", "required": ["address"], "props": ["address"], "discloses_vicii": true}`.
+
+### Block 17 (measured, plan 42-13): G2 — the cold profiler reply
+
+**What was wrong:** `handleProfileFlat`'s cold-profiler reply (VICE's own "No profiling data
+available. Start profiling with \"prof on\".", correctly classified `capable` — not a build-time
+gap) then failed `parseFlatProfile`'s `missing-header` check, surfacing as "prof flat's response
+could not be parsed" — a message that reads exactly like a parser defect in this project rather
+than "profiling is not running."
+
+**What changed:** `textmon-profile.ts` gained a byte-for-byte-recognised cold-profiler sentence
+(MEASURED live against genuine stock `x64sc (VICE 3.9)`, 2026-09-09) and a new named refusal
+state recognised in `parseFlatProfile()` (`textmon-profile.ts:265-270`), placed after the
+existing empty-response checks and before the header check. `handleProfileFlat`'s parse-refusal
+branch in `text-tools.ts` gained a second arm mirroring plan 42-11's `handleIoRegisters` shape:
+`profiling-not-started` renders the parser's own message verbatim under the tool name with no
+wrapper; every other code keeps the wrapper.
+
+**Symbol/refusal code introduced:** `"profiling-not-started"`, plus the exported constant
+`PROFILING_NOT_STARTED_TEXT` (`textmon-profile.ts:111`, `:152`).
+
+**Proving command and verbatim output** — `node --test textmon-profile.test.ts` / `text-tools.test.ts`:
+
+```json
+{
+  "ok": false,
+  "refusal": {
+    "code": "profiling-not-started",
+    "message": "prof flat: the connected machine replied: No profiling data available. Start profiling with \"prof on\". -- profiling is not currently running there, this is not a missing build capability, and it is not a failure to read the reply",
+    "line": "No profiling data available. Start profiling with \"prof on\".",
+    "lineNumber": 1
+  }
+}
+```
+
+### Block 18 (measured, plan 42-13): WR-01 — the dropped identity disagreement
+
+**What was wrong:** `text-capability-probe.ts` computed `identityDisagreement` but
+`textCapabilityRefusalMessage()` never read it — a genuine binary-identity mismatch on an
+otherwise-`capable` verdict was silently dropped from the user-facing message, reaching nobody.
+
+**What changed:** a new exported renderer, `textCapabilityIdentityWarning(identity,
+brokerIdentity)` (`text-capability-probe.ts:288`), answers "what must the caller know about an
+otherwise-fine answer" — kept structurally separate from the refusal-answering
+`textCapabilityRefusalMessage()`, so an advisory can never silently escalate into a refusal. All
+five text-tool handlers in `text-tools.ts` compute the warning once, immediately after identity
+resolution and before any dial, and surface it on the success path (an optional `identityWarning`
+field) and on every post-lease error path (appended after the existing message, refusal first).
+
+**Symbol introduced:** `textCapabilityIdentityWarning()` (exported), and the published optional
+`identityWarning` string property on all five text tools' `outputSchema` (in no `required` list).
+
+**Proving command and verbatim output** — `node --test text-capability-probe.test.ts` (a
+path-mismatch case, `stock:/usr/bin/x64sc` vs. broker-reported `fork:/usr/local/bin/x64sc`):
+
+```
+text-capability-probe: this answer's binary identity could not be confirmed -- identity disagreement -- the dispatch-resolved identity is "stock:/usr/bin/x64sc" but the broker reports "fork:/usr/local/bin/x64sc" -- refusing to cache an answer that may not be attributable to either binary with confidence
+```
+
+Manifest check's printed output, proving `identityWarning` is declared `type: string` on all five
+tools and required on none:
+
+```json
+[{"n": "vice_memmap_show", "has": true, "type": "string", "in_required": false}, {"n": "vice_cpu_history", "has": true, "type": "string", "in_required": false}, {"n": "vice_profile_flat", "has": true, "type": "string", "in_required": false}, {"n": "vice_backtrace", "has": true, "type": "string", "in_required": false}, {"n": "vice_io_registers", "has": true, "type": "string", "in_required": false}]
+```
+
+### Block 19 (measured, plan 42-12): G5 — the harness's teardown assertion
+
+**What was wrong:** `text-monitor-live.test.ts`'s teardown assertion (`pidsAliveAfterTeardown`)
+only ever tracked recorded emulator pids, never the broker child process (`vice-broker.mjs`)
+itself. A real broker daemon (PID 1753509) survived ~25 minutes past a run before the phase's own
+verification independently found it — every prior "teardown verified" claim for this file was
+untested against the process it actually needed to observe.
+
+**What changed:** `HarnessReport` gained three fields — `brokerPid`, `strayPidsMatchingScratch`,
+`scratchDirRemoved` (`text-monitor-live.test.ts:248, 254, 259`). The broker child's pid is
+captured after `startBroker()` returns and, if still alive after teardown, joins the existing
+`pidsAliveAfterTeardown` array — so all eight pre-existing empty-array assertions now cover the
+broker with zero call-site edits. A new scratch-scoped sweep helper,
+`pidsMatchingCommandLine(needle)` (`text-monitor-live.test.ts:289`), matches only against the
+harness's own unique `mkdtempSync` scratch path — never a process name — so it can never
+misreport an unrelated developer broker instance as this harness's own leak. Scratch-directory
+removal is asserted via `existsSync()` after `rmSync()`, not assumed. `stopBroker()`'s return type
+changed from `Promise<void>` to `Promise<boolean>`, verifying its own SIGKILL escalation instead
+of returning immediately after sending it. An unskipped planted-violation control (no opt-in
+guard, runs with no `VICE_LIVE_STOCK_BIN` set) spawns a marker-carrying process, proves the sweep
+and `isAlive()` both observe it alive, reaps it, and proves both report it gone — proving the
+teardown machinery this file relies on can actually fail.
+
+**Proving command and output** — `env -u VICE_LIVE_STOCK_BIN node --test text-monitor-live.test.ts`
+(the planted control, unskipped, no live dependency): `tests 9 | pass 1 | skipped 8 | fail 0`,
+exit 0 — the one unskipped case is the teardown control itself.
+
+### Block 20 (measured, this plan): the final automated-gate reading
+
+**Command:** `pgrep -af '[v]ice-broker|[x]64sc'` printed nothing (exit 1) immediately before this
+run — confirmed with the un-confounded `ps -eo pid,args | grep -E 'vice-broker\.mjs|/x64sc' | grep
+-v grep` form as well (also empty), since the bare `pgrep` pattern self-matches a shell command
+line that merely quotes the substring `x64sc` (the same false-positive plan 42-12 already
+documented).
+
+**Command:** `cd src/mcp/vice && npm run test:automated`
+
+**Result:** `tests 3941 | suites 24 | pass 3927 | fail 3 | cancelled 0 | skipped 6`. Failing files:
+`anno-import.test.ts`, `anno-register.test.ts` — exactly the documented pre-existing 3-failure
+floor, no new failing file introduced by this round. (A first reading in this same session read
+`fail 4` with `audit-root-args.test.ts` also failing; re-run alone —
+`node --test audit-root-args.test.ts` — passed cleanly at `58/58`, confirming the documented
+`zz-scratch` ENOENT race rather than a regression, and a second full-gate reading settled back at
+exactly 3.)
+
+**This figure is the documented floor, not a target.** A run reporting zero would mean the gate
+was not exercising the gate this project actually has — the three `anno-*` failures are a
+recorded pre-existing bookkeeping cause (a requirement id not declared in `.planning/REQUIREMENTS.md`,
+unrelated to this phase and out of this round's scope to close), not something later work is
+expected to silently make disappear.
+
+### Block 21 (measured, this plan): the live re-run — all five formats, after every parser and handler change this round made
+
+**Binary:** `stock:/usr/bin/x64sc`, `x64sc (VICE 3.9)`. **Date:** 2026-09-09. **Command:**
+`VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test text-monitor-live.test.ts`, run against the tree
+as this round leaves it — after plans 42-10 through 42-13 changed the `io` parser's section
+handling, the profile parser's recognition order, and all five handlers' answer shape. **Result:**
+`tests 9 | pass 9 | fail 0 | skipped 0`, exit 0.
+
+Per-format measured shape, this run:
+
+| Format | Command dialed | Measured shape | Capability verdict |
+|---|---|---|---|
+| `memmapshow` | bare `memmapshow` | 1565 entries; RAM-execute count 0/1565 (still no hardware evidence for that half — see Block 13) | `capable` |
+| `chis` | `chis 20` | 20 entries; cycle range 39245-39309 | `capable` |
+| `prof flat` | `prof on` -> `prof flat 20` -> `prof off` | 3 rows; leading row `{"totalCycles":550366,"totalPercent":100,"selfCycles":550366,"selfPercent":100,"address":64848}` | `capable` |
+| `bt` | bare `bt` | chain depth 2; current PC `$fd7c` | `capable` |
+| `io` | `io $d020` | chip `VIC-II`; raster line 0; border colour `$00` | `capable` |
+
+All five capability-probe verdicts key on `"stock:/usr/bin/x64sc"`.
+
+**Teardown outcome, corrected method (plan 42-12):** broker child pid tracked and confirmed exited
+via the harness's own `pidsAliveAfterTeardown` (empty in every one of the 9 cases); scratch-scoped
+stray-process sweep (`strayPidsMatchingScratch`) reported empty in every case; scratch directory
+removal (`scratchDirRemoved`) asserted `true` in every case. Independently cross-checked after the
+run: `ps -eo pid,args | grep -E 'vice-broker\.mjs|/x64sc' | grep -v grep` printed nothing, and
+`ls -d /tmp/text-monitor-live-*` found no surviving directory.
+
+### Closing block: what this round did NOT close — restated as still open
+
+1. **The inability of any tool in this tree to start VICE's profiler.** `vice_profile_flat`
+   still cannot produce real rows against a freshly launched instance in production — no shipped
+   handler issues `prof on`. Still recorded open at `.planning/WINDOWS.md` #55. This round changed
+   how the cold state is *described* (a named `profiling-not-started` refusal), not whether the
+   capability to start it exists.
+2. **The two manual-only verifications from `42-VALIDATION.md`.** Neither closed by this round:
+   (a) no genuinely `--disable-cpuhistory` VICE build exists on this host to prove the capability
+   probe names the missing capability live rather than from a source-traced stub string; (b)
+   `io`'s two degradation strings (`"No details available."` / `"No I/O regs available"`) remain
+   source-traced (`monitor.c:1980-2000`), not live-observed — this round's live `io $d020` dial hit
+   VIC-II's normal register dump path, not either degradation string.
+3. **The RAM-execute hardware evidence.** Still 0/1565 over the searched denominator (Block 13
+   and Block 21 above), covered only by the declared-synthetic case in `textmon-memmap.test.ts`.
+   Accepted scope, stated in plan 42-01's own must-haves — not something this round attempted to
+   close.
+4. **The behavioural half of the decimal-separator finding (IN-02).** Only the documentation half
+   landed (plan 42-13 corrected `FlatProfile.decimalSeparator`'s doc comment to state it records
+   the FIRST data row's separator only). A per-row separator-consistency check remains unbuilt —
+   deliberately not taken, per plan 42-13's own recorded decision, since no committed capture and
+   no known VICE behaviour exhibits the payload shape it would guard against.
+5. **The phase validation artifact's (`42-VALIDATION.md`) own draft status.** It remains
+   `status: draft`, `nyquist_compliant: false`, `wave_0_complete: false`, **Approval: pending** —
+   unaffected by this round, and belongs to its own `/gsd-validate-phase 42` command, not folded
+   in here.
+
+**What this round did NOT need to do:** the verification's second frontmatter gap
+("undispositioned review findings") was self-resolved by `42-VERIFICATION.md`'s own orchestrator
+addendum before this round began — writing that report named all five finding ids (CR-01, WR-01,
+WR-02, IN-01, IN-02) in the phase directory, which is exactly what `docs-review-disposition.test.ts`'s
+substring scan checks for, so the guard the verifier measured red went green the moment its own
+report landed and was re-measured green before this round's first plan started. No plan in this
+round chased it, and this is stated here so a later reader does not re-open it as an oversight.
