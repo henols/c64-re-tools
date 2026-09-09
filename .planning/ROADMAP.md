@@ -1079,7 +1079,7 @@ loudly instead of being absorbed into a plausible-looking wrong answer.
   4. **A drifted format fails loudly instead of returning an inverted answer.** MEASURED as real, and **semantic rather than syntactic**: VICE 3.4 inverted the meaning of `mc`/`ms`'s glyphs with no layout or delimiter change to signal it, 3.5–3.6 widened `chis`'s cycle column, and 3.9–3.10 added a `memmapshow` access class (re-verified against raw NEWS this phase, `docs/phase42-text-format-drift-citations.md` Blocks 1–3). So fixtures are captured from **at least two real VICE binaries** — genuine stock 3.9 at `/usr/bin/x64sc` and the fork 3.10 that shadows it on `PATH`, both present on this host, a hard requirement rather than an aspiration — pinned to the exact binary they came from under the same five provenance keys the binary-monitor fixtures already require. The control that makes this real is a planted fixture carrying an **unrecognised** enum value, observed making the parser refuse: a fixture-only defence would have kept passing while returning inverted answers.
   5. **A missing build capability is named, per command and per binary.** MEASURED: this tracing/profiling support is opt-**out** at build time — the opposite polarity to the ≥ 3.10 opcode note. The affected commands do **not** each carry their own separate guard: two share one guard and one stub string (`memmapshow`/`chis`), two carry none (`bt`/`prof flat`), and one degrades per-chip at runtime instead of refusing (`io`) — `docs/phase42-text-format-drift-citations.md` Block 4. That correction leaves the criterion's operative requirement unchanged: each command is still probed on its own and the answer cached per binary. A user is told which capability is missing and on which binary, and is never handed a silent empty result or a parse error that reads like a bug in this project.
 
-**Plans**: 5/9 plans executed in 4 waves
+**Plans**: 6/9 plans executed in 4 waves
 
 Plans:
 **Wave 1**
@@ -1092,7 +1092,7 @@ Plans:
 - [x] 42-03-PLAN.md — `prof flat` and `io` parsers: the narrow-no-break-space separator JavaScript's whitespace class would have eaten, order preserved without a sort, and the sprite table sliced at the capture's own column offsets
 - [x] 42-04-PLAN.md — `TEXT_COMMAND_ALLOWLIST` parameterization (D-42-1): a per-verb spec table, one builder, canonical-rendering-only dialability, and the zero-bytes-reached-the-socket controls
 - [x] 42-05-PLAN.md — The per-command, per-binary build-capability probe (D-42-2): in-process cache keyed on a proven binary identity, never persisted, with the shared-guard remedy stated once
-- [ ] 42-06-PLAN.md — The drift citations corrected and made quotable: two attributions re-attributed, one confirmed, the guard-sharing claim corrected, and this phase's own evidence record *(runs with `USE_WORKTREES_FOR_PLAN=false` — it delivers ROADMAP content)*
+- [x] 42-06-PLAN.md — The drift citations corrected and made quotable: two attributions re-attributed, one confirmed, the guard-sharing claim corrected, and this phase's own evidence record *(runs with `USE_WORKTREES_FOR_PLAN=false` — it delivers ROADMAP content)*
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -1300,7 +1300,7 @@ in a milestone archive.
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
-| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 5/9 | In Progress | - |
+| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 6/9 | In Progress | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
 
