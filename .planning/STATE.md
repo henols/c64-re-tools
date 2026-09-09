@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: Completed 42-10-PLAN.md (CR-01 closed); gap-closure plans 42-11..42-14 remain
-last_updated: "2026-09-09T18:21:29.214Z"
+stopped_at: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remain
+last_updated: "2026-09-09T18:42:23.643Z"
 last_activity: 2026-09-09
-last_activity_desc: Plan 42-10 executed — io required-fields completeness gate closes CR-01
-state_head: 30f78283b183ff8554ecdf01134212dd970eff9b
+last_activity_desc: Plan 42-11 executed — io chip gate closes WR-02, handleIoRegisters drops discarded classification (IN-01)
+state_head: 98cf4dba861136262f8c8bff36c897321449aa9f
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 39
-  completed_plans: 35
+  completed_plans: 36
   percent: 50
 ---
 
@@ -227,9 +227,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — EXECUTING (gap closure)
-Plan: 9 of 9 original executed; gap-closure plans 42-10..42-14 executing (1 of 5 done: 42-10)
-Status: Gap-closure executing — 42-10 complete (CR-01 closed), 42-11..42-14 remaining
-Last activity: 2026-09-09 — Plan 42-10 executed: io required-fields completeness gate closes CR-01
+Plan: 9 of 9 original executed; gap-closure plans 42-10..42-14 executing (2 of 5 done: 42-10, 42-11)
+Status: Gap-closure executing — 42-10, 42-11 complete (CR-01, WR-02, IN-01 closed), 42-12..42-14 remaining
+Last activity: 2026-09-09 — Plan 42-11 executed: io chip gate closes WR-02, handleIoRegisters drops discarded classification (IN-01)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -508,6 +508,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 41 P05 | 62 min | 3 tasks | 26 files |
 | Phase 41 P06 | 46min | 2 tasks | 15 files |
 | Phase 42 P10 | 25 min | 2 tasks | 4 files |
+| Phase 42 P11 | 40min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1146,6 +1147,8 @@ Recent decisions affecting current work:
 - [Phase 41]: Plan 41-06: registered vice_device_console/vice_warp_set needsSession:false (not the plan's suggested withStockSession) after measuring that the binary-locking adapters wrap the whole handler call in channel-lock.ts's single cross-channel mutex, which would self-deadlock against an internal withTextChannelLock() call. — Neither tool needs a binary session; each resolves its own lease and dials only the text channel, matching vice_diagnose's own needsSession:false precedent.
 - [Phase 41]: Plan 41-06: default_memspace contamination exercised live -- a real drive checkpoint over the whole 1541 ROM range froze main-CPU stepping, and device c: restored it. Detected via the checkpoint's own unsolicited CHECKPOINT_INFO event, not CHECKPOINT_LIST polling, after measuring CHECKPOINT_LIST is scoped to default_memspace. — CHECKPOINT_LIST cannot see a checkpoint on another memspace until it has already fired once; the unsolicited event sidesteps that chicken-and-egg.
 - [Phase 42]: 42-10: closed CR-01 with a new refusal code incomplete-decoded-state (not a reuse of unparseable-value) -- the two codes report different drift shapes and collapsing them would lie about which occurred. — unparseable-value is a per-line fact with a real offending line; incomplete-decoded-state is a per-block fact whose whole content is the set of names never observed.
+- [Phase 42]: Plan 42-11 closed WR-02 by making the sprite-table/decoded-prose requirement chip-conditional (parseIoRegisters refuses a non-VIC-II chip section by name via a new unsupported-chip refusal code), rather than narrowing vice_io_registers's advertised 0-65535 address range -- the chip-conditional approach keeps the published tool contract additive-only.
+- [Phase 42]: handleIoRegisters renders the unsupported-chip refusal as the parser's own message verbatim under the tool name, with no parse-failure wrapper -- every other refusal code keeps the existing wrapper unchanged, so a legitimately different chip is never reported as a defect in this project.
 
 ### Pending Todos
 
@@ -2140,8 +2143,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T18:21:28.730Z
-Stopped at: Completed 42-10-PLAN.md (CR-01 closed); gap-closure plans 42-11..42-14 remain
+Last session: 2026-09-09T18:42:22.998Z
+Stopped at: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remain
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
