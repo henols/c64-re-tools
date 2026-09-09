@@ -273,3 +273,125 @@ test("encoding: for each real capture, buffer.length equals Buffer.byteLength(te
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: the two controls that make the defence real.
+//
+// Control 1 (criterion 4) -- four planted unrecognised values, each paired
+// with the discriminating assertion that the SAME, unchanged parser still
+// returns ok:true over both real captures. A parser that mapped every
+// unrecognised character to `false` would pass the real-capture half and
+// fail this half -- exactly the silently-absorbed inversion a
+// fixture-only defence cannot catch.
+//
+// Control 2 (criterion 1's RAM half) -- the real captures were taken from
+// an idle KERNAL loop that executed only ROM, so no RAM-execute glyph
+// appears in either. A declared-synthetic payload supplies it, honestly
+// labelled, beside a real-capture assertion that the ROM half stays
+// grounded in hardware evidence.
+// ---------------------------------------------------------------------------
+
+let cachedStockParsesOk: boolean | undefined;
+let cachedForkParsesOk: boolean | undefined;
+
+/** The discriminating half of Control 1: proves the four planted-refusal
+ * tests below are not satisfied by a parser that refuses everything.
+ * Memoized (module-scope cache) since it is called from four separate
+ * tests against the same ~1.6MB real fixture. */
+function assertRealCapturesStillParseCleanly(): void {
+  if (cachedStockParsesOk === undefined) {
+    cachedStockParsesOk = parseAccessMap(loadTextFixture("access-map-stock").text).ok;
+  }
+  if (cachedForkParsesOk === undefined) {
+    cachedForkParsesOk = parseAccessMap(loadTextFixture("access-map-fork").text).ok;
+  }
+  assert.equal(cachedStockParsesOk, true, "discriminating control: the real stock capture must still parse cleanly (unchanged parser)");
+  assert.equal(cachedForkParsesOk, true, "discriminating control: the real fork capture must still parse cleanly (unchanged parser)");
+}
+
+const HEADER = "addr: IO  ROM RAM";
+const WELL_FORMED_LINE_1 = "0000: --- --- rw- (dummy)";
+const WELL_FORMED_LINE_2 = "0001: --- --- rw-";
+
+test("planted refusal 1/4: an unrecognised glyph character ('z') in the RAM column refuses with unrecognised-glyph, naming the character and the line -- paired with the real-capture discriminating control", () => {
+  const badLine = "0002: --- --- rwz";
+  const payload = `${HEADER}\n${WELL_FORMED_LINE_1}\n${WELL_FORMED_LINE_2}\n${badLine}\n`;
+  const result = parseAccessMap(payload);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "unrecognised-glyph");
+    assert.equal(result.refusal.line, badLine);
+    assert.equal(result.refusal.lineNumber, 4);
+    assert.match(result.refusal.message, /"z"/);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted refusal 2/4: an uppercase read glyph ('R') refuses with unrecognised-glyph -- recognition is exact, not case-insensitive -- paired with the real-capture discriminating control", () => {
+  const badLine = "0002: --- --- Rw-";
+  const payload = `${HEADER}\n${WELL_FORMED_LINE_1}\n${WELL_FORMED_LINE_2}\n${badLine}\n`;
+  const result = parseAccessMap(payload);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "unrecognised-glyph");
+    assert.equal(result.refusal.line, badLine);
+    assert.equal(result.refusal.lineNumber, 4);
+    assert.match(result.refusal.message, /"R"/);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted refusal 3/4: an unrecognised parenthesised trailer refuses with unrecognised-annotation -- paired with the real-capture discriminating control", () => {
+  const badLine = "0002: --- --- rw- (bogus)";
+  const payload = `${HEADER}\n${WELL_FORMED_LINE_1}\n${WELL_FORMED_LINE_2}\n${badLine}\n`;
+  const result = parseAccessMap(payload);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "unrecognised-annotation");
+    assert.equal(result.refusal.line, badLine);
+    assert.equal(result.refusal.lineNumber, 4);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted refusal 4/4: a non-hex address field refuses with malformed-line -- paired with the real-capture discriminating control", () => {
+  const badLine = "zzzz: --- --- rw-";
+  const payload = `${HEADER}\n${WELL_FORMED_LINE_1}\n${WELL_FORMED_LINE_2}\n${badLine}\n`;
+  const result = parseAccessMap(payload);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "malformed-line");
+    assert.equal(result.refusal.line, badLine);
+    assert.equal(result.refusal.lineNumber, 4);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("synthetic RAM-execute: a --x RAM column decodes ram.execute===true with ram.read===false and ram.write===false -- no live capture can supply this without running code from RAM", () => {
+  const payload = `${HEADER}\n0002: --- --- --x\n`;
+  const result = parseAccessMap(payload);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const entry = result.value.entries[0]!;
+  assert.deepEqual(entry.ram, { read: false, write: false, execute: true });
+});
+
+test("synthetic RAM-execute: an r-x RAM column decodes both ram.read and ram.execute true, with IO and ROM columns all false", () => {
+  const payload = `${HEADER}\n0002: --- --- r-x\n`;
+  const result = parseAccessMap(payload);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const entry = result.value.entries[0]!;
+  assert.equal(entry.ram.read, true);
+  assert.equal(entry.ram.execute, true);
+  assert.deepEqual(entry.io, { read: false, write: false, execute: false });
+  assert.deepEqual(entry.rom, { read: false, write: false, execute: false });
+});
+
+test("grounding control: the real stock capture carries at least one entry with rom.execute===true -- the ROM half stays evidence-backed while the RAM half above is honestly labelled synthetic", () => {
+  const result = parseAccessMap(loadTextFixture("access-map-stock").text);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const entry = result.value.entries.find((e) => e.rom.execute);
+  assert.ok(entry, "expected at least one real entry with rom.execute===true");
+});
