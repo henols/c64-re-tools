@@ -207,7 +207,7 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **8 open** pending todos, computed
+The Deferred Items ledger below reads **7 open** pending todos, computed
 directly from the count of files in `.planning/todos/pending/` rather than by
 subtraction from a prior figure (it read 0 at the v0.4.0 close; eleven were
 filed after it). Five were closed before this update — CR-05 by Phase 34 plan
@@ -1865,7 +1865,6 @@ regression and not this inheritance.
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 | testing | 2026-09-07-move-all-tests-into-a-separate-test-folder | minor | Pending |
 | broker | 2026-09-07-remove-pre-warm-launch-vice-on-first-request | minor | Pending |
-| text-channel | 2026-09-09-io-degradation-probe-cached-under-a-binary-wide-key | major | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on

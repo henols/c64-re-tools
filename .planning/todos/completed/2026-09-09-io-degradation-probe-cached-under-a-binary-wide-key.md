@@ -78,3 +78,47 @@ is present at commit `5258a210`, the tree as phase 42 originally completed), and
 changing the caching contract is a behavioural change that deserves its own plan
 with its own tests rather than being folded into a round that was already
 verifying itself.
+
+## Resolution
+
+**Fixed.** 2026-09-09, closed across two plans: plan **42-15** made the
+behavioural fix, plan **42-16** proved it live and closed this record.
+
+Both remedies from this todo's own "Fix sketch" landed together, not either
+alone: `handleIoRegisters` (`src/mcp/vice/text-tools.ts`) no longer reaches
+`probeTextCapability`'s memoised entry point at all for `io` — it classifies
+the response it itself dialed via a new pure verdict builder,
+`textCapabilityVerdictFor()` (`TextCapabilityVerdictForOptions`), with no
+dial, no cache read and no cache write. Separately and additionally, `io` was
+removed from the capability cache's domain structurally via
+`NEVER_CACHED_COMMANDS` (frozen, sole member `"io"`), wired into
+`runProbe()`'s `cacheable` write predicate, `probeTextCapability()`'s
+cache-read early return, and its in-flight-memo skip — so a future caller
+routing `io` back through the memoised entry point cannot silently re-admit
+it to the cache's domain. Remedy 1 alone (keying on `built.command` instead
+of the literal `"io"`) would have left the same category error standing for
+two different addresses sharing one binary; the chosen remedy removes `io`
+from the cache's domain entirely rather than widening the key it is filed
+under.
+
+Named tests now covering both failure directions plus the concurrency and
+never-cached cases (all in `src/mcp/vice/`): `text-tools.test.ts`'s
+`handleIoRegisters (CR-02, direction a)` (a degrading first call no longer
+discards a later call's real register dump) and `(direction b)` (a healthy
+first call no longer suppresses a later call's genuine chip degradation);
+`text-capability-probe.test.ts`'s `probeTextCapability (CR-02): io is
+excluded from the cache's domain` (paired with a discriminating `memmapshow`
+control proving unrelated commands still cache) and `two concurrent
+un-awaited io probes dial TWICE` (the in-flight memo never applies to `io`).
+
+Live two-address measurement (plan 42-16, this round): `stock:/usr/bin/x64sc`
+(`x64sc (VICE 3.9)`), 2026-09-09, `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node
+--test text-monitor-live.test.ts` — `io $d020` (VIC-II) dialed first inside
+the existing five-format live case, then `io $dc00` (CIA1) dialed a second
+time under the same resolved identity; the second verdict's `fromCache` was
+`false` and its `response` strictly equalled the second reply (parsed to the
+`unsupported-chip` refusal, distinct from the first's VIC-II decode) —
+`tests 9 | pass 9 | fail 0 | skipped 0`, exit 0.
+
+Pointer to the full evidence block: `docs/phase42-text-format-drift-citations.md`,
+"Round 2 Gap-Closure (Plans 42-15, 42-16)" — Blocks 22-24.
