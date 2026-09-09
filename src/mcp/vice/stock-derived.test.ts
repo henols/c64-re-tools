@@ -12,8 +12,8 @@ import { hostPath } from "./hostpath.ts";
 
 // --------------------------------------------------------- STOCK_DERIVED_TOOLS
 
-test("STOCK_DERIVED_TOOLS: exactly sixteen entries -- vice_disassemble plus Phase 5's DERIV-01/DERIV-04/DERIV-05/DERIV-06 octet plus Phase 7's TIME-01/TIME-02/TIME-04 quartet plus plan 41-06's CHAN-03 pair plus plan 42-01's PARSE-01 entry", () => {
-  assert.equal(STOCK_DERIVED_TOOLS.size, 16);
+test("STOCK_DERIVED_TOOLS: exactly twenty entries -- vice_disassemble plus Phase 5's DERIV-01/DERIV-04/DERIV-05/DERIV-06 octet plus Phase 7's TIME-01/TIME-02/TIME-04 quartet plus plan 41-06's CHAN-03 pair plus plan 42-01's PARSE-01 entry plus plan 42-07's PARSE-02 quartet", () => {
+  assert.equal(STOCK_DERIVED_TOOLS.size, 20);
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_disassemble"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_memory_search"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_memory_compare"));
@@ -30,6 +30,10 @@ test("STOCK_DERIVED_TOOLS: exactly sixteen entries -- vice_disassemble plus Phas
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_device_console"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_warp_set"));
   assert.ok(STOCK_DERIVED_TOOLS.has("vice_memmap_show"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_cpu_history"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_profile_flat"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_backtrace"));
+  assert.ok(STOCK_DERIVED_TOOLS.has("vice_io_registers"));
 });
 
 // --------------------------------------------------------- derivedContainerPath

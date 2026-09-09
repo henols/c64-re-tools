@@ -4,10 +4,10 @@
 
 The fork and stock backends deliberately advertise different tool lists. A tool advertised on both backends keeps the same name and a backward-compatible argument shape on either one — stock may add optional parameters but never removes, retypes, or newly-requires one. Calling a tool the active backend does not advertise returns an error naming the reason and the backend that does provide it.
 
-- Total tools: 66
-- Available on both backends: 37
-- Fork-only: 24
-- Stock-only: 5
+- Total tools: 69
+- Available on both backends: 38
+- Fork-only: 23
+- Stock-only: 8
 - Fork manifest generated at: 2026-07-31T15:56:00.302Z
 - Stock manifest generated at: 2026-08-14T00:00:00.000Z
 
@@ -16,7 +16,7 @@ Legend: ✅ available, — not available.
 | Tool | Fork | Stock | Note |
 |------|------|-------|------|
 | vice_autostart | ✅ | ✅ |  |
-| vice_backtrace | ✅ | — | not yet built (descoped): No shipped skill calls it. |
+| vice_backtrace | ✅ | ✅ |  |
 | vice_checkpoint_add | ✅ | ✅ |  |
 | vice_checkpoint_delete | ✅ | ✅ |  |
 | vice_checkpoint_group_add | ✅ | — | not yet built (descoped): No shipped skill calls any checkpoint-group tool. |
@@ -29,6 +29,7 @@ Legend: ✅ available, — not available.
 | vice_checkpoint_toggle | ✅ | ✅ |  |
 | vice_cia_get_state | ✅ | ✅ |  |
 | vice_cia_set_state | ✅ | — | not yet built (descoped): The write half of a tool whose read half already ships on stock; no shipped skill calls the write half. |
+| vice_cpu_history | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent; this is the native text-monitor "chis" command, reached over the -remotemonitor channel, returning decoded CPU-history entries with per-entry cycle counts. |
 | vice_cycles_stopwatch | ✅ | ✅ |  |
 | vice_device_console | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent; this is the native text-monitor "device c:" command, reached over the -remotemonitor channel this project dials as of plan 41-06. |
 | vice_diagnose | ✅ | ✅ |  |
@@ -42,6 +43,7 @@ Legend: ✅ available, — not available.
 | vice_execution_run | ✅ | ✅ |  |
 | vice_execution_step | ✅ | ✅ |  |
 | vice_execution_until_return | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent RPC; this is the native EXECUTE_UNTIL_RETURN opcode. |
+| vice_io_registers | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent; this is the native text-monitor "io" command, reached over the -remotemonitor channel, returning a decoded chip register dump. |
 | vice_joystick_set | ✅ | ✅ |  |
 | vice_joystick_tap | ✅ | — | not yet built (descoped): Requires running the machine for a measured hold-then-release interval, which depends on timing infrastructure; not yet built, and no shipped skill calls it. |
 | vice_keyboard_chord | ✅ | — | hardware-unrecoverable: KEYBOARD_FEED injects a whole string at a time; it has no primitive for holding multiple keys down together for a span of frames. vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input -- but a program polling $DC00/$DC01 directly will not see buffer injection. |
@@ -62,6 +64,7 @@ Legend: ✅ available, — not available.
 | vice_memory_search | ✅ | ✅ |  |
 | vice_memory_write | ✅ | ✅ |  |
 | vice_ping | ✅ | ✅ |  |
+| vice_profile_flat | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent; this is the native text-monitor "prof flat" command, reached over the -remotemonitor channel, returning ranked cycle counts by address. |
 | vice_recycle | ✅ | ✅ |  |
 | vice_registers_available | — | ✅ | stock-only gain: The fork has no equivalent enumeration call; this is the native REGISTERS_AVAILABLE opcode. |
 | vice_registers_get | ✅ | ✅ |  |

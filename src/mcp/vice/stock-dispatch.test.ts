@@ -96,6 +96,14 @@ const STOCK_ONLY_TOOLS = new Set([
   // Plan 42-01, PARSE-01: the memmapshow access-map tool -- same reasoning
   // as the pair above, reached over the same text-monitor channel.
   "vice_memmap_show",
+  // Plan 42-07, PARSE-02: the three remaining stock-only text-channel
+  // parsers, same reasoning -- reached over the same text-monitor channel,
+  // no fork HTTP-API equivalent. vice_backtrace is deliberately NOT here:
+  // it shares the fork's own existing tool name (D-42-4), so it has a real
+  // fork-manifest counterpart and is not stock-only.
+  "vice_cpu_history",
+  "vice_profile_flat",
+  "vice_io_registers",
 ]);
 
 // Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
@@ -395,18 +403,39 @@ test("manifest/backend (D-01 structural): no tool entry in tools-manifest.stock.
   assert.equal(warpSet!.inputSchema?.additionalProperties, false);
 });
 
-test("manifest/backend (D-02 structural): the five parse-target verbs are present in TEXT_COMMAND_ALLOWLIST and absent from every tool name in tools-manifest.stock.json", () => {
+test("manifest/backend (D-02 structural): the five parse-target verbs are present in TEXT_COMMAND_ALLOWLIST and are never themselves a tool name in tools-manifest.stock.json", () => {
+  // Plan 42-07 (the four remaining PARSE-02 parsers, plus the Task 3 retrofit
+  // of memmapshow's own capability check) made every one of these five verbs
+  // reachable through a NAMED TOOL whose name differs from the raw verb
+  // string ("chis" -> vice_cpu_history, "prof flat" -> vice_profile_flat,
+  // "bt" -> vice_backtrace, "io" -> vice_io_registers, "memmapshow" ->
+  // vice_memmap_show, already landed in plan 42-01). What was stale here was
+  // never the two facts this test asserts -- both remain TRUE and must keep
+  // passing -- only the RATIONALE: earlier plans stated the verbs were
+  // reachable in-process but not yet advertised because their owning parsers
+  // had not landed. They have landed now, and the distinction this test
+  // protects -- a verb string is never itself a tool name, no matter how
+  // reachable the verb becomes -- is MORE load-bearing after this plan than
+  // before it: every one of the five names below is now a live derived-tool
+  // registration (STOCK_DERIVED_TOOLS/stock-dispatch.ts), so a future change
+  // that accidentally advertised a bare verb as a tool name would collide
+  // with this exact assertion, not merely with an unreached one.
   const PARSE_TARGET_VERBS = ["memmapshow", "prof flat", "chis", "bt", "io"];
   for (const verb of PARSE_TARGET_VERBS) {
     assert.ok(
       (TEXT_COMMAND_ALLOWLIST as readonly string[]).includes(verb),
-      `"${verb}" must remain in TEXT_COMMAND_ALLOWLIST -- it is reachable in-process, just not yet advertised`,
+      `"${verb}" must remain in TEXT_COMMAND_ALLOWLIST -- every one of the five verbs is reachable in-process ` +
+        `through its own named tool`,
     );
   }
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const toolNames = new Set(stock.tools.map((t) => t.name));
   for (const verb of PARSE_TARGET_VERBS) {
-    assert.ok(!toolNames.has(verb), `"${verb}" must NOT appear as a tool name in tools-manifest.stock.json -- its owning parser has not landed (D-02)`);
+    assert.ok(
+      !toolNames.has(verb),
+      `"${verb}" must NOT appear as a tool name in tools-manifest.stock.json -- it is reachable through its own ` +
+        `distinctly-named tool (D-02), never advertised under the raw verb string itself`,
+    );
   }
 });
 
@@ -2872,6 +2901,81 @@ conformanceTest("vice_memmap_show", async () => {
       const deps = buildTextConformanceDeps(port);
       const result = await dispatchStock("vice_memmap_show", {}, deps);
       assertAnswerConforms("vice_memmap_show", result);
+    },
+  );
+});
+
+// --------------------------------------------------------- plan 42-07: the four remaining text formats
+
+conformanceTest("vice_cpu_history", async () => {
+  await withConformanceTextServer(
+    (_line, socket) =>
+      socket.write(".C:e5d1  8D 92 02    STA $0292      A:00 X:00 Y:0a SP:f3 ..-...Z.     11302187\n(C:$e5d1) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_cpu_history", {}, deps);
+      assertAnswerConforms("vice_cpu_history", result);
+    },
+  );
+});
+
+conformanceTest("vice_profile_flat", async () => {
+  await withConformanceTextServer(
+    (_line, socket) =>
+      socket.write(
+        "        Total      %          Self      %\n------------- ------ ------------- ------\n" +
+          "2 326 151  98,5% 2 326 151  98,5% ffcf\n(C:$e5d1) ",
+      ),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_profile_flat", {}, deps);
+      assertAnswerConforms("vice_profile_flat", result);
+    },
+  );
+});
+
+conformanceTest("vice_backtrace", async () => {
+  await withConformanceTextServer(
+    (_line, socket) => socket.write("             PC        .C:e5d1   8D 92 02    STA $0292\n(C:$e5d1) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_backtrace", {}, deps);
+      assertAnswerConforms("vice_backtrace", result);
+    },
+  );
+});
+
+conformanceTest("vice_io_registers", async () => {
+  await withConformanceTextServer(
+    (_line, socket) =>
+      socket.write(
+        "VIC-II:\n" +
+          ">C:d000  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00   @@@@@@@@@@@@@@@@\n" +
+          "\n" +
+          "Raster cycle/line: 0/311 IRQ: 311\n" +
+          "Mode: Standard Text (ECM/BMM/MCM=0/0/0)\n" +
+          "Colors: Border: e BG: 6 \n" +
+          "Scroll X/Y: 0/3, RC 7, Idle: 1, 40x25\n" +
+          "VC $3e8, VCBASE $3e8, VMLI  0, Phi1 $ff\n" +
+          "Video $0400, Charset $1000 (CharROM)\n" +
+          "\n" +
+          "Sprites: S.0 S.1 S.2 S.3 S.4 S.5 S.6 S.7\n" +
+          "Enabled:  no  no  no  no  no  no  no  no\n" +
+          "DMA/dis:  /   /   /   /   /   /   /   / \n" +
+          "Pointer: $00 $00 $ff $ff $ff $ff $00 $00\n" +
+          "MC:      $00 $00 $00 $00 $00 $00 $00 $00\n" +
+          "MCBASE:  $00 $00 $00 $00 $00 $00 $00 $00\n" +
+          "X-Pos:  $000$000$000$000$000$000$000$000\n" +
+          "Y-Pos:     0   0   0   0   0   0   0   0\n" +
+          "X/Y-Exp:  /   /   /   /   /   /   /   / \n" +
+          "Pri./MC: s/  s/  s/  s/  s/  s/  s/  s/ \n" +
+          "Color:     1   2   3   4   5   6   7   c\n" +
+          "(C:$d040) ",
+      ),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_io_registers", { address: 0xd020 }, deps);
+      assertAnswerConforms("vice_io_registers", result);
     },
   );
 });

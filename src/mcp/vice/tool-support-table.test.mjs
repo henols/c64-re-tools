@@ -213,10 +213,12 @@ test("a fixture manifest pair with a reduced tool list produces strictly fewer r
 test("a fixture stock manifest that ADDS a currently fork-only name moves that row's stock cell to available", () => {
   const scratchDir = mkdtempSync(join(tmpdir(), "tool-support-table-"));
   try {
-    // vice_backtrace is fork-only (descoped, registered) in the real
+    // vice_disk_detach is fork-only (descoped, registered) in the real
     // manifests today -- verified by this test's own before-assertion, not
-    // assumed.
-    const FORK_ONLY_TARGET = "vice_backtrace";
+    // assumed. Plan 42-07 moved vice_backtrace (this test's previous
+    // subject) into the SHARED-tool set, so it can no longer serve as a
+    // "currently fork-only" fixture subject.
+    const FORK_ONLY_TARGET = "vice_disk_detach";
     const realDoc = generateToolSupportTable();
     const realForkManifest = JSON.parse(readFileSync(FORK_MANIFEST_PATH, "utf8"));
     const realStockManifest = JSON.parse(readFileSync(STOCK_MANIFEST_PATH, "utf8"));
@@ -242,7 +244,7 @@ test("a fixture stock manifest that ADDS a currently fork-only name moves that r
     assert.ok(mutatedTargetRow, `${FORK_ONLY_TARGET}'s row disappeared after being added to the stock manifest`);
     assert.match(
       mutatedTargetRow,
-      /^\| vice_backtrace \| ✅ \| ✅ \|/,
+      /^\| vice_disk_detach \| ✅ \| ✅ \|/,
       `expected ${FORK_ONLY_TARGET}'s row to show BOTH backends available after the stock manifest add, got: ${mutatedTargetRow}`,
     );
   } finally {
