@@ -3849,6 +3849,9 @@
           "command": {
             "type": "string"
           },
+          "identityWarning": {
+            "type": "string"
+          },
           "ranges": {
             "type": "array",
             "items": {
@@ -4012,6 +4015,9 @@
           "command": {
             "type": "string"
           },
+          "identityWarning": {
+            "type": "string"
+          },
           "entries": {
             "type": "array",
             "items": {
@@ -4146,6 +4152,9 @@
           "command": {
             "type": "string"
           },
+          "identityWarning": {
+            "type": "string"
+          },
           "entries": {
             "type": "array",
             "items": {
@@ -4221,6 +4230,9 @@
         "type": "object",
         "properties": {
           "command": {
+            "type": "string"
+          },
+          "identityWarning": {
             "type": "string"
           },
           "currentPc": {
@@ -4331,6 +4343,9 @@
         "type": "object",
         "properties": {
           "command": {
+            "type": "string"
+          },
+          "identityWarning": {
             "type": "string"
           },
           "sections": {

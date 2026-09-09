@@ -16,6 +16,7 @@ import type { AddressInfo } from "node:net";
 
 import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockToolResult } from "./stock-handler.ts";
 import type { StockConnectBrokerControl } from "./stock-connect.ts";
 import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import type { HeldLease } from "./vice-broker-client.ts";
@@ -64,7 +65,10 @@ async function withStubTextServer<T>(onLine: (line: string, socket: Socket) => v
 
 /** A minimal claim/release-only stub -- textConnect()'s own
  * StockConnectBrokerControl narrow interface, matching text-connect.test.ts's
- * makeStubBrokerControl() shape. */
+ * makeStubBrokerControl() shape. Carries NO `hostState()` method, so
+ * capabilityIdentityFor() (text-tools.ts) always falls into its
+ * no-broker-identity branch through this stub -- exactly the "current stub
+ * carries no hostState() today" gap plan 42-13's own read_first names. */
 function makeStubBrokerControl(): StockConnectBrokerControl {
   return {
     async claimMonitor() {
@@ -74,6 +78,39 @@ function makeStubBrokerControl(): StockConnectBrokerControl {
       return { ok: true };
     },
   };
+}
+
+/** Plan 42-13 (G3): a sibling stub that DOES carry a `hostState()`,
+ * resolving the caller-chosen `backend`/`binPath` -- so a test can drive
+ * `capabilityIdentityFor()`'s broker-identity branch and exercise
+ * `textCapabilityIdentityWarning()` end to end through a real handler. */
+function makeStubBrokerControlWithHostState(hostState: {
+  backend: "fork" | "stock" | null;
+  binPath: string;
+}): StockConnectBrokerControl {
+  return {
+    async claimMonitor() {
+      return { ok: true };
+    },
+    async releaseMonitor() {
+      return { ok: true };
+    },
+    async hostState() {
+      return {
+        ok: true,
+        hostState: {
+          pid: 1,
+          started_at: "",
+          node_version: "",
+          vice_bin: hostState.binPath,
+          warm_floor: 0,
+          max_instances: 1,
+          base_port: 0,
+          backend: hostState.backend,
+        },
+      };
+    },
+  } as unknown as StockConnectBrokerControl;
 }
 
 /** Builds StockDispatchDeps.ensureLease() so it resolves a HeldLease pointed
@@ -93,6 +130,32 @@ function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}): Sto
   return {
     ensureLease: async () => ({ ok: true, lease }),
     ...overrides,
+  };
+}
+
+/** Plan 42-13 (G3): builds StockDispatchDeps with a resolved binary identity
+ * (`resolvedBinaryPath`/`resolvedBinaryPathIsResolved`) AND a broker control
+ * whose `hostState()` resolves the caller-chosen identity -- so
+ * `capabilityIdentityFor()` (text-tools.ts) resolves BOTH identities
+ * `textCapabilityIdentityWarning()` compares. */
+function makeDepsWithBrokerIdentity(
+  port: number,
+  brokerHostState: { backend: "fork" | "stock" | null; binPath: string },
+  resolvedBinaryPath = "/usr/bin/x64sc",
+): StockDispatchDeps {
+  const lease: HeldLease = {
+    host: "127.0.0.1",
+    port: 6502,
+    targetId: "grant-1",
+    brokerControl: makeStubBrokerControlWithHostState(brokerHostState) as unknown as HeldLease["brokerControl"],
+    epochFile: "",
+    supervisorDir: "",
+    remoteMonitorPort: port,
+  };
+  return {
+    ensureLease: async () => ({ ok: true, lease }),
+    resolvedBinaryPath,
+    resolvedBinaryPathIsResolved: true,
   };
 }
 
@@ -888,4 +951,122 @@ test("handleIoRegisters: a malformed dump row still refuses through the parse-fa
       assert.match(result.content[0]!.text, /malformed-dump/);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Plan 42-13 (G3): the identity cross-check reaches the caller, on every
+// tool and on both paths -- computed once per handler from the identities
+// capabilityIdentityFor(deps) already resolved, before any dial.
+// ---------------------------------------------------------------------------
+
+const DISAGREEING_BROKER_HOST_STATE = { backend: "fork" as const, binPath: "/usr/local/bin/x64sc" };
+const AGREEING_BROKER_HOST_STATE = { backend: "stock" as const, binPath: "/usr/bin/x64sc" };
+
+test("handleMemmapShow: a success path with a disagreeing broker identity carries a non-empty identityWarning in the answer payload", async () => {
+  const body = "addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n0001: --- --x ---\n";
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${body}${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDepsWithBrokerIdentity(port, DISAGREEING_BROKER_HOST_STATE);
+      const result = await handleMemmapShow({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(typeof payload.identityWarning, "string");
+      assert.notEqual(payload.identityWarning, "");
+      assert.match(String(payload.identityWarning), /\/usr\/bin\/x64sc/);
+      assert.match(String(payload.identityWarning), /\/usr\/local\/bin\/x64sc/);
+    },
+  );
+});
+
+test("handleMemmapShow: a refusal path with a disagreeing broker identity carries both the refusal and the warning, refusal first", async () => {
+  const body = "not the memmapshow header at all\n0000: --- --- ---\n";
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${body}${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDepsWithBrokerIdentity(port, DISAGREEING_BROKER_HOST_STATE);
+      const result = await handleMemmapShow({}, deps);
+      assert.equal(result.isError, true);
+      const text = result.content[0]!.text;
+      assert.match(text, /could not be parsed/);
+      assert.match(text, /identity disagreement/);
+      const refusalIdx = text.indexOf("could not be parsed");
+      const warningIdx = text.indexOf("identity disagreement");
+      assert.ok(
+        refusalIdx >= 0 && warningIdx >= 0 && refusalIdx < warningIdx,
+        `expected the refusal text before the identity warning, got: ${JSON.stringify(text)}`,
+      );
+    },
+  );
+});
+
+test("handleMemmapShow: an agreeing broker identity carries no identityWarning property at all", async () => {
+  const body = "addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n0001: --- --x ---\n";
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${body}${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDepsWithBrokerIdentity(port, AGREEING_BROKER_HOST_STATE);
+      const result = await handleMemmapShow({}, deps);
+      assert.equal(result.isError, false);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(Object.prototype.hasOwnProperty.call(payload, "identityWarning"), false);
+    },
+  );
+});
+
+test("all five text tools surface a disagreeing broker identity's warning on their success path -- a future handler cannot silently drop it", async () => {
+  const cases: Array<{ name: string; reply: string; call: (deps: StockDispatchDeps) => Promise<StockToolResult> }> = [
+    {
+      name: "vice_memmap_show",
+      reply: `addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n${PROMPT}`,
+      call: (deps) => handleMemmapShow({}, deps),
+    },
+    {
+      name: "vice_cpu_history",
+      reply: loadTextFixture("cpu-history-stock").text,
+      call: (deps) => handleCpuHistory({}, deps),
+    },
+    {
+      name: "vice_profile_flat",
+      reply: loadTextFixture("flat-profile-stock").text,
+      call: (deps) => handleProfileFlat({}, deps),
+    },
+    {
+      name: "vice_backtrace",
+      reply: loadTextFixture("backtrace-stock").text,
+      call: (deps) => handleBacktrace({}, deps),
+    },
+    {
+      name: "vice_io_registers",
+      reply: loadTextFixture("register-decode-stock").text,
+      call: (deps) => handleIoRegisters({ address: 0xd020 }, deps),
+    },
+  ];
+
+  for (const testCase of cases) {
+    await withStubTextServer(
+      (_line, socket) => {
+        socket.write(testCase.reply);
+      },
+      async (port) => {
+        const deps = makeDepsWithBrokerIdentity(port, DISAGREEING_BROKER_HOST_STATE);
+        const result = await testCase.call(deps);
+        assert.equal(result.isError, false, `${testCase.name}: expected success, got ${JSON.stringify(result)}`);
+        const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        assert.equal(typeof payload.identityWarning, "string", `${testCase.name}: expected a non-empty identityWarning string`);
+        assert.notEqual(payload.identityWarning, "", `${testCase.name}: expected identityWarning to be non-empty`);
+        assert.match(
+          String(payload.identityWarning),
+          /identity disagreement/,
+          `${testCase.name}: expected the identity-disagreement wording`,
+        );
+      },
+    );
+  }
 });

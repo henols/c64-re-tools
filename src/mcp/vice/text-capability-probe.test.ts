@@ -24,8 +24,10 @@ import {
   textCapabilityCacheKey,
   probeTextCapability,
   textCapabilityRefusalMessage,
+  textCapabilityIdentityWarning,
   resetTextCapabilityCache,
   type TextCapabilityIdentity,
+  type TextCapabilityBrokerIdentity,
   type TextCapabilityCommand,
   type TextCapabilityVerdict,
 } from "./text-capability-probe.ts";
@@ -419,6 +421,56 @@ test("textCapabilityRefusalMessage: no rendered message names a phase number (mi
   };
   const message = textCapabilityRefusalMessage([missingVerdict("memmapshow"), missingVerdict("chis"), indeterminate, ioDegraded]);
   assert.doesNotMatch(message, PHASE_NUMBER_RE);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 42-13 (G3): textCapabilityIdentityWarning -- the identity cross-check
+// reaching the caller on the SUCCESS path too, not only inside a refusal.
+// ---------------------------------------------------------------------------
+
+const AGREEING_BROKER_IDENTITY: TextCapabilityBrokerIdentity = { backend: "stock", binPath: "/usr/bin/x64sc" };
+
+test("textCapabilityIdentityWarning: agreeing identities render empty", () => {
+  assert.equal(textCapabilityIdentityWarning(STOCK_IDENTITY, AGREEING_BROKER_IDENTITY), "");
+});
+
+test("textCapabilityIdentityWarning: an omitted broker identity renders empty", () => {
+  assert.equal(textCapabilityIdentityWarning(STOCK_IDENTITY, undefined), "");
+});
+
+test("textCapabilityIdentityWarning: a broker identity with a null backend and an empty path renders empty -- absent evidence is not disagreement", () => {
+  const brokerIdentity: TextCapabilityBrokerIdentity = { backend: null, binPath: "" };
+  assert.equal(textCapabilityIdentityWarning(STOCK_IDENTITY, brokerIdentity), "");
+});
+
+test("textCapabilityIdentityWarning: a differing binary path renders non-empty, naming both observed identities", () => {
+  const brokerIdentity: TextCapabilityBrokerIdentity = { backend: "stock", binPath: "/usr/local/bin/x64sc" };
+  const message = textCapabilityIdentityWarning(STOCK_IDENTITY, brokerIdentity);
+  assert.notEqual(message, "");
+  assert.match(message, /stock:\/usr\/bin\/x64sc/);
+  assert.match(message, /stock:\/usr\/local\/bin\/x64sc/);
+});
+
+test("textCapabilityIdentityWarning: a differing backend renders non-empty, naming both observed identities", () => {
+  const brokerIdentity: TextCapabilityBrokerIdentity = { backend: "fork", binPath: "/usr/bin/x64sc" };
+  const message = textCapabilityIdentityWarning(STOCK_IDENTITY, brokerIdentity);
+  assert.notEqual(message, "");
+  assert.match(message, /stock:\/usr\/bin\/x64sc/);
+  assert.match(message, /fork:\/usr\/bin\/x64sc/);
+});
+
+// WR-01's own stated test: a capable verdict carrying identityDisagreement
+// must produce a non-empty user-facing message from at least one handler.
+// Proven here at the renderer level, from the same two identity values the
+// verdict was built from -- the renderer is what every handler calls.
+test("textCapabilityIdentityWarning (WR-01): a capable verdict alongside a disagreeing broker identity renders a non-empty message", async () => {
+  resetTextCapabilityCache();
+  const brokerIdentity: TextCapabilityBrokerIdentity = { backend: "fork", binPath: "/usr/local/bin/x64sc" };
+  const { dial } = makeCountingDial("some real backtrace output");
+  const verdict = await probeTextCapability({ command: "bt", identity: STOCK_IDENTITY, brokerIdentity, dial });
+  assert.equal(verdict.outcome, "capable");
+  const message = textCapabilityIdentityWarning(STOCK_IDENTITY, brokerIdentity);
+  assert.notEqual(message, "", "expected a non-empty identity-warning message alongside a capable verdict");
 });
 
 test("source-level: text-capability-probe.ts's own module comment marks the stub/degradation strings source-traced, never live-measured", () => {

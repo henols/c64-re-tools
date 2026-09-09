@@ -266,27 +266,56 @@ function ioChipDegradationText(command: TextCapabilityCommand, response: string)
 // The identity cross-check.
 // ---------------------------------------------------------------------------
 
-/** `null` when there is nothing to disagree about (no broker identity
- * supplied, or every field it reports is absent evidence); otherwise a
- * human-readable sentence naming BOTH observed identities, for embedding in
- * a verdict and, from there, a rendered message -- never silently keyed to
- * one of the two without saying so. */
-function identityDisagreementText(
+/** Renders a binary-identity disagreement for the caller of the ANSWER being
+ * returned right now -- empty string (`""`) when there is nothing to
+ * report: no broker identity supplied, or every field it reports is absent
+ * evidence (a null backend, an empty path). Only a DEFINITE, named mismatch
+ * ever renders; absent evidence is never disagreement, mirroring this
+ * module's own caching discipline (D-42-2) for the identical two-value
+ * comparison.
+ *
+ * Deliberately separate from {@link textCapabilityRefusalMessage}: that
+ * function answers "is there something that blocks this call" -- a
+ * non-empty return makes a handler refuse. This one answers "is there
+ * something the caller must know about an answer that is otherwise fine" --
+ * an advisory, not a refusal. Merging the two would silently convert a mere
+ * identity disagreement into a hard refusal of an otherwise-working call,
+ * which is a heavier behaviour change than a disagreement warrants and is
+ * not what this function is for. Callers append this string's own line to
+ * an answer that already succeeded or already refused for an unrelated
+ * reason -- never construct a NEW refusal purely because this returned
+ * non-empty. */
+export function textCapabilityIdentityWarning(
   identity: TextCapabilityIdentity,
   brokerIdentity: TextCapabilityBrokerIdentity | undefined,
-): string | null {
-  if (!brokerIdentity) return null;
+): string {
+  if (!brokerIdentity) return "";
   const backendAbsent = brokerIdentity.backend === null;
   const pathAbsent = brokerIdentity.binPath === "";
   const backendDisagrees = !backendAbsent && brokerIdentity.backend !== identity.backend;
   const pathDisagrees = !pathAbsent && brokerIdentity.binPath !== identity.binPath;
-  if (!backendDisagrees && !pathDisagrees) return null;
+  if (!backendDisagrees && !pathDisagrees) return "";
   return (
-    `text-capability-probe: identity disagreement -- the dispatch-resolved identity is ` +
-    `"${identity.backend}:${identity.binPath}" but the broker reports ` +
+    `text-capability-probe: this answer's binary identity could not be confirmed -- identity disagreement -- the ` +
+    `dispatch-resolved identity is "${identity.backend}:${identity.binPath}" but the broker reports ` +
     `"${brokerIdentity.backend ?? "(none)"}:${brokerIdentity.binPath || "(empty)"}" -- refusing to cache an ` +
     `answer that may not be attributable to either binary with confidence`
   );
+}
+
+/** `null` when there is nothing to disagree about, otherwise a
+ * human-readable sentence naming BOTH observed identities, for embedding in
+ * a verdict and, from there, a rendered message -- never silently keyed to
+ * one of the two without saying so. A thin wrapper over
+ * {@link textCapabilityIdentityWarning} so there is exactly one wording in
+ * exactly one place; `runProbe()`'s caching behaviour (D-42-2) is
+ * unaffected by this reimplementation. */
+function identityDisagreementText(
+  identity: TextCapabilityIdentity,
+  brokerIdentity: TextCapabilityBrokerIdentity | undefined,
+): string | null {
+  const warning = textCapabilityIdentityWarning(identity, brokerIdentity);
+  return warning === "" ? null : warning;
 }
 
 // ---------------------------------------------------------------------------

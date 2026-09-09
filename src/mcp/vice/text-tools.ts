@@ -82,6 +82,7 @@ import {
   classifyTextCapabilityResponse,
   probeTextCapability,
   textCapabilityRefusalMessage,
+  textCapabilityIdentityWarning,
   type TextCapabilityIdentity,
   type TextCapabilityBrokerIdentity,
 } from "./text-capability-probe.ts";
@@ -289,6 +290,7 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
   }
 
   const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+  const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
 
   return withTextTool("vice_memmap_show", deps, async (client) => {
     const response = await client.command("memmapshow", { timeoutMs: 30000 });
@@ -296,14 +298,17 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
     const classification = classifyTextCapabilityResponse("memmapshow", response);
     if (classification.outcome !== "capable") {
       const verdict = await probeTextCapability({ command: "memmapshow", identity, brokerIdentity, dial: async () => response });
-      return isErrorText(`vice_memmap_show: ${textCapabilityRefusalMessage([verdict])}`);
+      return isErrorText(withIdentityWarning(`vice_memmap_show: ${textCapabilityRefusalMessage([verdict])}`, identityWarning));
     }
 
     const parsed = parseAccessMap(response);
     if (!parsed.ok) {
       return isErrorText(
-        `vice_memmap_show: memmapshow's response could not be parsed (${parsed.refusal.code} at line ` +
-          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+        withIdentityWarning(
+          `vice_memmap_show: memmapshow's response could not be parsed (${parsed.refusal.code} at line ` +
+            `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+          identityWarning,
+        ),
       );
     }
 
@@ -317,6 +322,7 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
       command: "memmapshow",
       ...projection,
       executeCounts: executeCounts(parsed.value),
+      ...(identityWarning !== "" ? { identityWarning } : {}),
     });
   });
 }
@@ -374,6 +380,16 @@ async function capabilityIdentityFor(
   }
 }
 
+/** Appends `warning` (from {@link textCapabilityIdentityWarning}) on its own
+ * line after `text` when non-empty; returns `text` unchanged when there is
+ * nothing to report. Used on every POST-LEASE error path in every handler
+ * below (plan 42-13, G3) -- never on a pre-dial argument-validation refusal,
+ * which returns before an identity is ever resolved and has nothing to
+ * attribute a warning to. */
+function withIdentityWarning(text: string, warning: string): string {
+  return warning === "" ? text : `${text}\n${warning}`;
+}
+
 /**
  * `vice_cpu_history` -- dials `chis`, optionally parameterized with a
  * caller-chosen decimal row count via `buildTextCommand()` (the ONE place
@@ -397,6 +413,7 @@ export async function handleCpuHistory(args: Record<string, unknown>, deps: Stoc
   }
 
   const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+  const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
 
   return withTextTool("vice_cpu_history", deps, async (client) => {
     const response = await client.command(command, { timeoutMs: 30000 });
@@ -404,14 +421,17 @@ export async function handleCpuHistory(args: Record<string, unknown>, deps: Stoc
     const classification = classifyTextCapabilityResponse("chis", response);
     if (classification.outcome !== "capable") {
       const verdict = await probeTextCapability({ command: "chis", identity, brokerIdentity, dial: async () => response });
-      return isErrorText(`vice_cpu_history: ${textCapabilityRefusalMessage([verdict])}`);
+      return isErrorText(withIdentityWarning(`vice_cpu_history: ${textCapabilityRefusalMessage([verdict])}`, identityWarning));
     }
 
     const parsed = parseCpuHistory(response);
     if (!parsed.ok) {
       return isErrorText(
-        `vice_cpu_history: chis's response could not be parsed (${parsed.refusal.code} at line ` +
-          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+        withIdentityWarning(
+          `vice_cpu_history: chis's response could not be parsed (${parsed.refusal.code} at line ` +
+            `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+          identityWarning,
+        ),
       );
     }
 
@@ -419,6 +439,7 @@ export async function handleCpuHistory(args: Record<string, unknown>, deps: Stoc
       command,
       entries: parsed.value.entries,
       count: parsed.value.entries.length,
+      ...(identityWarning !== "" ? { identityWarning } : {}),
     });
   });
 }
@@ -444,6 +465,7 @@ export async function handleProfileFlat(args: Record<string, unknown>, deps: Sto
   }
 
   const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+  const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
 
   return withTextTool("vice_profile_flat", deps, async (client) => {
     const response = await client.command(command, { timeoutMs: 30000 });
@@ -451,7 +473,7 @@ export async function handleProfileFlat(args: Record<string, unknown>, deps: Sto
     const classification = classifyTextCapabilityResponse("prof flat", response);
     if (classification.outcome !== "capable") {
       const verdict = await probeTextCapability({ command: "prof flat", identity, brokerIdentity, dial: async () => response });
-      return isErrorText(`vice_profile_flat: ${textCapabilityRefusalMessage([verdict])}`);
+      return isErrorText(withIdentityWarning(`vice_profile_flat: ${textCapabilityRefusalMessage([verdict])}`, identityWarning));
     }
 
     const parsed = parseFlatProfile(response);
@@ -465,11 +487,14 @@ export async function handleProfileFlat(args: Record<string, unknown>, deps: Sto
       // inability for this tree to start profiling on the user's behalf
       // (Window #55) is unaffected. Every other code keeps the wrapper.
       if (parsed.refusal.code === "profiling-not-started") {
-        return isErrorText(`vice_profile_flat: ${parsed.refusal.message}`);
+        return isErrorText(withIdentityWarning(`vice_profile_flat: ${parsed.refusal.message}`, identityWarning));
       }
       return isErrorText(
-        `vice_profile_flat: prof flat's response could not be parsed (${parsed.refusal.code} at line ` +
-          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+        withIdentityWarning(
+          `vice_profile_flat: prof flat's response could not be parsed (${parsed.refusal.code} at line ` +
+            `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+          identityWarning,
+        ),
       );
     }
 
@@ -478,6 +503,7 @@ export async function handleProfileFlat(args: Record<string, unknown>, deps: Sto
       entries: parsed.value.entries,
       count: parsed.value.entries.length,
       decimalSeparator: parsed.value.decimalSeparator,
+      ...(identityWarning !== "" ? { identityWarning } : {}),
     });
   });
 }
@@ -515,6 +541,7 @@ export async function handleBacktrace(args: Record<string, unknown>, deps: Stock
   }
 
   const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+  const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
 
   return withTextTool("vice_backtrace", deps, async (client) => {
     const response = await client.command("bt", { timeoutMs: 30000 });
@@ -522,14 +549,17 @@ export async function handleBacktrace(args: Record<string, unknown>, deps: Stock
     const classification = classifyTextCapabilityResponse("bt", response);
     if (classification.outcome !== "capable") {
       const verdict = await probeTextCapability({ command: "bt", identity, brokerIdentity, dial: async () => response });
-      return isErrorText(`vice_backtrace: ${textCapabilityRefusalMessage([verdict])}`);
+      return isErrorText(withIdentityWarning(`vice_backtrace: ${textCapabilityRefusalMessage([verdict])}`, identityWarning));
     }
 
     const parsed = parseBacktrace(response);
     if (!parsed.ok) {
       return isErrorText(
-        `vice_backtrace: bt's response could not be parsed (${parsed.refusal.code} at line ` +
-          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+        withIdentityWarning(
+          `vice_backtrace: bt's response could not be parsed (${parsed.refusal.code} at line ` +
+            `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+          identityWarning,
+        ),
       );
     }
 
@@ -544,6 +574,7 @@ export async function handleBacktrace(args: Record<string, unknown>, deps: Stock
       returnedCount: frames.length,
       totalCount,
       truncated,
+      ...(identityWarning !== "" ? { identityWarning } : {}),
     });
   });
 }
@@ -577,6 +608,7 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
   const command = built.command;
 
   const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+  const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
 
   return withTextTool("vice_io_registers", deps, async (client) => {
     const response = await client.command(command, { timeoutMs: 30000 });
@@ -593,7 +625,7 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
     const verdict = await probeTextCapability({ command: "io", identity, brokerIdentity, dial: async () => response });
     const refusalMessage = textCapabilityRefusalMessage([verdict]);
     if (refusalMessage !== "") {
-      return isErrorText(`vice_io_registers: ${refusalMessage}`);
+      return isErrorText(withIdentityWarning(`vice_io_registers: ${refusalMessage}`, identityWarning));
     }
 
     const parsed = parseIoRegisters(response);
@@ -605,11 +637,14 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
       // project. Render the parser's own message verbatim, under the tool
       // name only. Every other refusal code keeps the wrapper unchanged.
       if (parsed.refusal.code === "unsupported-chip") {
-        return isErrorText(`vice_io_registers: ${parsed.refusal.message}`);
+        return isErrorText(withIdentityWarning(`vice_io_registers: ${parsed.refusal.message}`, identityWarning));
       }
       return isErrorText(
-        `vice_io_registers: io's response could not be parsed (${parsed.refusal.code} at line ` +
-          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+        withIdentityWarning(
+          `vice_io_registers: io's response could not be parsed (${parsed.refusal.code} at line ` +
+            `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+          identityWarning,
+        ),
       );
     }
 
@@ -618,6 +653,7 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
       sections: parsed.value.sections,
       unrecognisedLines: parsed.value.unrecognisedLines,
       unrecognisedLineCount: parsed.value.unrecognisedLines.length,
+      ...(identityWarning !== "" ? { identityWarning } : {}),
     });
   });
 }
