@@ -19,6 +19,7 @@
     "stock-connect.ts",
     "text-protocol.ts",
     "text-connect.ts",
+    "channel-lock.ts",
     "containerpath.ts",
     "hostpath.ts",
     "repo-root.ts",
