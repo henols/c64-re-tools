@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 41
 current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
 status: executing
-stopped_at: Completed 41-05-PLAN.md
-last_updated: "2026-09-09T09:12:33.877Z"
+stopped_at: Completed 41-06-PLAN.md -- Phase 41 all 6 plans done
+last_updated: "2026-09-09T10:09:02.621Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 41 execution started
-state_head: c8eaea6465a599137d43d6053d5a264581cd80ab
+state_head: b28e41e66d47881953a4393f0702b1426ef1c7d5
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 25
-  completed_plans: 24
+  completed_plans: 25
   percent: 33
 ---
 
@@ -505,6 +505,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 41 P03 | 40min | 2 tasks | 20 files |
 | Phase 41 P04 | 50min | 2 tasks | 5 files |
 | Phase 41 P05 | 62 min | 3 tasks | 26 files |
+| Phase 41 P06 | 46min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -1140,6 +1141,8 @@ Recent decisions affecting current work:
 - [Phase 41]: channelContention is derived once per vice_diagnose call and spread into evidence on the identical shape jamObserved already established; wedged is made structurally unreachable while contended via a tryAcquireChannelLock() guard before the first liveness bracket (D-09/D-10/D-11, CHAN-05).
 - [Phase 41]: D-16 (plan 41-05): a stock launch that cannot bind a text-monitor port now fails the whole acquire (no_free_text_port) instead of degrading -- no stock instance can ever exist without one. — Owner direction, verbatim: "it should not be possible, vice must be started witht the text channel." Checkpoint option B chosen -- the failure gets its own distinct reason code rather than collapsing into the generic no_free_port.
 - [Phase 41]: The warm floor is retired (folded todo, plan 41-05): VICE now launches strictly on demand. The launching-to-ready promotion step survives as promoteLaunchingInstances(); selectWarmInstance() survives unchanged because an ordinary crash-respawn of a granted instance can still leave a ready-but-ungranted candidate. — The floor helped exactly the requests that cared least about boot latency (profileEligible() skips it for any warp-requesting acquire). Latency on the first cold launch is an accepted trade, not a regression.
+- [Phase 41]: Plan 41-06: registered vice_device_console/vice_warp_set needsSession:false (not the plan's suggested withStockSession) after measuring that the binary-locking adapters wrap the whole handler call in channel-lock.ts's single cross-channel mutex, which would self-deadlock against an internal withTextChannelLock() call. — Neither tool needs a binary session; each resolves its own lease and dials only the text channel, matching vice_diagnose's own needsSession:false precedent.
+- [Phase 41]: Plan 41-06: default_memspace contamination exercised live -- a real drive checkpoint over the whole 1541 ROM range froze main-CPU stepping, and device c: restored it. Detected via the checkpoint's own unsolicited CHECKPOINT_INFO event, not CHECKPOINT_LIST polling, after measuring CHECKPOINT_LIST is scoped to default_memspace. — CHECKPOINT_LIST cannot see a checkpoint on another memspace until it has already fired once; the unsolicited event sidesteps that chicken-and-egg.
 
 ### Pending Todos
 
@@ -2134,8 +2137,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T09:12:33.330Z
-Stopped at: Completed 41-05-PLAN.md
+Last session: 2026-09-09T10:09:02.083Z
+Stopped at: Completed 41-06-PLAN.md -- Phase 41 all 6 plans done
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
