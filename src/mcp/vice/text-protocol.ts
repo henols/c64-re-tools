@@ -16,23 +16,20 @@
 // there is nothing to correlate a reply against beyond "is a command
 // outstanding right now".
 //
-// Plan 41-01, Task 1: the happy path, PLUS a quiescence window pulled forward
-// from Task 2's own scope. A prompt split across chunks is already handled
-// structurally below (concat-then-match, never per-chunk decode). The
-// quiescence window itself, however, turned out NOT to be an optional
-// hardening deferrable to Task 2: this task's own live acceptance criterion
-// (a real `device c:` round trip against genuine stock VICE) was MEASURED to
-// fail without it -- a fresh connection's very FIRST command reply can
-// arrive as TWO separate TCP chunks, the first being nothing but a residual
-// leading prompt (`(C:$xxxx) `) with no command output yet attached, which a
-// resolve-on-first-tail-match design mistakes for the complete (empty)
-// response before the real output ever arrives. That is the exact shape
-// Control 2 (a tail match that is not really final) exists to catch, just
-// occurring naturally rather than needing to be planted -- see this plan's
-// SUMMARY for the measured repro. Task 2 still owns the passive banner drain
-// (D-13(b)) for bytes arriving with no command outstanding, enforcement of
-// TEXT_MAX_BUFFERED_LEN, and the full deterministic test suite (including a
-// controlled RED/GREEN demonstration of this exact mechanism).
+// Plan 41-01: Task 1 shipped the happy path plus a quiescence window pulled
+// forward from Task 2's original scope -- this task's own live acceptance
+// criterion (a real `device c:` round trip against genuine stock VICE) was
+// MEASURED to fail without it. A fresh connection's very FIRST command reply
+// can arrive as TWO separate TCP chunks: a residual leading prompt
+// (`(C:$xxxx) `) with no command output yet attached, then the real output.
+// A resolve-on-first-tail-match design mistakes the first chunk alone for a
+// complete (empty) response -- exactly the shape Control 2 (a tail match
+// that is not really final) exists to catch, occurring naturally rather than
+// needing to be planted. See the plan SUMMARY for the measured repro. Task 2
+// adds: the passive banner drain (D-13(b)) for bytes arriving with no
+// command outstanding, enforcement of TEXT_MAX_BUFFERED_LEN, and the full
+// deterministic test suite (including a controlled RED/GREEN demonstration
+// of both planted controls).
 //
 // WHAT NOT TO DO:
 //   - Never re-implement text-wire framing in a dispatcher, a tool handler,
@@ -247,6 +244,10 @@ export class TextMonitorClient extends EventEmitter {
   #pending: PendingTextCommand | null = null;
   #quiescenceTimer: NodeJS.Timeout | null = null;
   #quiescenceMs: number;
+  /** Task 2 (D-13(b)): incremented every time a passively-arriving,
+   * no-command-outstanding banner is drained -- never used to resolve a
+   * later command's promise, only counted and emitted on `banner`. */
+  bannerFramesDrained = 0;
   #onDataBound = (chunk: Buffer) => this.#onData(chunk);
   #onCloseBound = () => this.#onClose();
   #onErrorBound = (err: Error) => this.#onError(err);
@@ -331,17 +332,24 @@ export class TextMonitorClient extends EventEmitter {
    * the text protocol is not multiplexed.
    */
   command(cmd: string, _opts: TextCommandOptions = {}): Promise<string> {
+    // Checked BEFORE the allowlist membership check, deliberately: every
+    // TEXT_COMMAND_ALLOWLIST entry is already clean of these characters, so
+    // ordering it first makes this refusal reachable and testable in its own
+    // right (a string carrying an embedded control character is refused
+    // BY THAT REASON, not merely folded into the generic non-allowlisted
+    // refusal) while changing nothing about which strings are ultimately
+    // accepted.
+    if (FORBIDDEN_COMMAND_CHARS_RE.test(cmd)) {
+      return Promise.reject(
+        new ViceError(`text-protocol: refusing command ${JSON.stringify(cmd)} containing a CR, LF, or C0 control character`),
+      );
+    }
     if (!isAllowlistedTextCommand(cmd)) {
       return Promise.reject(
         new ViceError(
           `text-protocol: refusing non-allowlisted command ${JSON.stringify(cmd)} -- every outbound text-monitor ` +
             `command must come from TEXT_COMMAND_ALLOWLIST (D-01)`,
         ),
-      );
-    }
-    if (FORBIDDEN_COMMAND_CHARS_RE.test(cmd)) {
-      return Promise.reject(
-        new ViceError(`text-protocol: refusing command ${JSON.stringify(cmd)} containing a CR, LF, or C0 control character`),
       );
     }
     if (this.#closed || !this.connected || !this.#socket) {
@@ -407,8 +415,20 @@ export class TextMonitorClient extends EventEmitter {
     }
 
     if (!this.#pending) {
-      // Task 1 has no banner concept yet -- bytes with nothing outstanding
-      // are simply held (Task 2 adds the passive banner drain, D-13(b)).
+      // D-13(b): a passively-arriving banner (e.g. a binary-owned
+      // checkpoint-hit notification pushed to this same text console) with
+      // no command outstanding. Drained once it ends in a real prompt,
+      // counted, and emitted -- NEVER used to resolve a later command's
+      // promise. Bytes still arriving mid-banner simply keep accumulating
+      // here (capped below) until the banner's own prompt appears.
+      if (bufferEndsWithPrompt(this.#buffer)) {
+        const raw = this.#buffer;
+        this.#buffer = Buffer.alloc(0);
+        this.bannerFramesDrained += 1;
+        this.emit("banner", raw.toString("utf8"));
+        return;
+      }
+      this.#checkCap();
       return;
     }
 
@@ -421,8 +441,10 @@ export class TextMonitorClient extends EventEmitter {
         this.#finishPending();
       }, this.#quiescenceMs);
       if (typeof this.#quiescenceTimer.unref === "function") this.#quiescenceTimer.unref();
+      return;
     }
-    // Task 2 adds: an accumulation-cap check here.
+
+    this.#checkCap();
   }
 
   /** Finalizes the currently outstanding command against the buffer accrued
@@ -438,6 +460,30 @@ export class TextMonitorClient extends EventEmitter {
     const decoded = raw.toString("utf8");
     const payload = decoded.replace(PROMPT_RE, "");
     pending.resolve(payload);
+  }
+
+  /** Enforces TEXT_MAX_BUFFERED_LEN against accumulated-but-not-yet-framed
+   * bytes, whether a command is outstanding or a banner is being drained.
+   * Exceeding the cap with no prompt in sight is a refusal (TextFramingError
+   * naming the byte count and the outstanding command, if any) -- never a
+   * truncated payload handed back as if it were complete. */
+  #checkCap(): void {
+    if (this.#buffer.length <= TEXT_MAX_BUFFERED_LEN) return;
+    const observedBytes = this.#buffer.length;
+    const outstandingCommand = this.#pending?.command ?? null;
+    this.#buffer = Buffer.alloc(0);
+    const err = new TextFramingError(
+      `text-protocol: accumulated buffer exceeded TEXT_MAX_BUFFERED_LEN (${TEXT_MAX_BUFFERED_LEN}) with no prompt in sight` +
+        (outstandingCommand ? ` while "${outstandingCommand}" was outstanding` : " while draining a banner"),
+      { observedBytes, outstandingCommand },
+    );
+    const pending = this.#pending;
+    this.#pending = null;
+    if (pending) {
+      pending.reject(err);
+    } else {
+      this.emit("desync", err);
+    }
   }
 
   #onClose(): void {

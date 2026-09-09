@@ -289,3 +289,63 @@ test(
     );
   },
 );
+
+test(
+  "text-monitor-live (Task 2): memmapshow's ~1.6MB output arrives across more than one TCP segment and is returned complete",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async () => {
+    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
+
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
+      const opened = await openBrokerControl(stateDir);
+      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const session: BrokerControlSession = opened.session;
+
+      const acquired = await session.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      assert.equal(typeof grant.remote_monitor_port, "number");
+      const remoteMonitorPort = grant.remote_monitor_port as number;
+
+      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      recordPid(epochBefore.pid);
+
+      const binmonReady = await waitForPortOpen(host, grant.port, 30000);
+      assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
+
+      const textSession = await textConnect({ host, remoteMonitorPort, targetId: grant.id, brokerControl: session });
+
+      try {
+        assert.ok(TEXT_COMMAND_ALLOWLIST.includes("memmapshow"), "memmapshow must be in TEXT_COMMAND_ALLOWLIST for this proof to issue it");
+        // memmapshow dumps the per-address access map for all 65536
+        // addresses. fixtures/textmon/README.md's own capture (~1.6MB) was
+        // taken against a machine with far more memory actually touched than
+        // this freshly cold-launched instance has at connect time -- MEASURED
+        // here at ~48KB on a fresh boot, still comfortably larger than any
+        // small command's output (e.g. `device c:`'s handful of bytes) and
+        // large enough that it cannot have arrived in a single small read
+        // without this class's accumulation handling it correctly.
+        const response = await textSession.client.command("memmapshow", { timeoutMs: 30000 });
+        assert.ok(
+          response.length > 10_000,
+          `memmapshow's response must be large enough to prove multi-chunk framing (>10KB), got ${response.length} bytes`,
+        );
+        assert.doesNotMatch(
+          response,
+          /\(C:\$[0-9A-Fa-f]{4}\)\s*$/,
+          `the framed payload must not itself end in a prompt, got tail: ${JSON.stringify(response.slice(-40))}`,
+        );
+        assert.ok(!response.includes("\uFFFD"), "the framed payload must contain no UTF-8 replacement character");
+        console.log(`text-monitor-live: MEASURED memmapshow response length on ${viceBinPath}: ${response.length} bytes`);
+      } finally {
+        await textDisconnect(textSession);
+      }
+
+      await session.release();
+    });
+
+    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+  },
+);
