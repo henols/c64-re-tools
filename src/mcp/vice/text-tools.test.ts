@@ -338,6 +338,30 @@ test("handleMemmapShow: refuses startAddress greater than endAddress by name, no
 });
 
 test("handleMemmapShow: a parse refusal surfaces as isErrorText naming the tool, the refusal code, and the offending line -- never a partial answer", async () => {
+  // A non-empty, non-whitespace body -- deliberately, since plan 42-07 Task 3
+  // retrofits this handler to classify for build capability BEFORE parsing
+  // (see the dedicated test below): a whitespace-only reply now surfaces as
+  // an INDETERMINATE capability message at that earlier stage, never reaching
+  // parseAccessMap()'s own "empty-response" refusal code at all. This case
+  // instead exercises a reply that passes classification (capable -- it is
+  // not the CPUHISTORY_DISABLED_STUB literal) but is still structurally
+  // wrong for memmapshow's own header, reaching the parser's refusal.
+  const body = "not the memmapshow header at all\n0000: --- --- ---\n";
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${body}${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapShow({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_memmap_show/);
+      assert.match(result.content[0]!.text, /missing-header/);
+    },
+  );
+});
+
+test("handleMemmapShow: an indeterminate (empty) reply produces its own named capability message BEFORE ever reaching the parser, never a silent empty success", async () => {
   await withStubTextServer(
     (_line, socket) => {
       socket.write(PROMPT); // resolves to an empty payload once the trailing prompt is stripped
@@ -347,7 +371,33 @@ test("handleMemmapShow: a parse refusal surfaces as isErrorText naming the tool,
       const result = await handleMemmapShow({}, deps);
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /vice_memmap_show/);
-      assert.match(result.content[0]!.text, /empty-response/);
+      assert.match(result.content[0]!.text, /unknown, not negative/);
+      assert.doesNotMatch(result.content[0]!.text, /empty-response/, "an indeterminate capability reply must never surface the parser's own empty-response code");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Plan 42-07 Task 3: handleMemmapShow retrofitted with the same
+// classify-before-parse ordering the four PARSE-02 handlers use -- "chis"
+// shares FEATURE_CPUMEMHISTORY with "memmapshow", so a disabled-stub reply
+// must produce the capability message, never a parser refusal code (plan
+// 42-01 wrote this handler before text-capability-probe.ts existed, so it
+// originally handed the disabled-stub text straight to the parser).
+// ---------------------------------------------------------------------------
+
+test("handleMemmapShow: a disabled-stub reply (memmapshow shares FEATURE_CPUMEMHISTORY with chis) produces the capability message, NOT a parser refusal code", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`${CPUHISTORY_DISABLED_STUB}\n${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapShow({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_memmap_show/);
+      assert.match(result.content[0]!.text, /CPU-and-memory-history build support/);
+      assert.doesNotMatch(result.content[0]!.text, /missing-header|malformed-line/, "a missing-capability reply must never surface as a parser refusal code");
     },
   );
 });

@@ -243,9 +243,16 @@ function executeCounts(map: AccessMap): { io: number; rom: number; ram: number }
  * ever reaches the socket, and the dialed command is the frozen literal,
  * never a built string). Refuses any argument outside its documented
  * bounds BEFORE any lease is resolved or any byte is written, mirroring
- * `handleWarpSet()`'s shape. On a parse refusal, answers `isErrorText`
- * naming the tool, the refusal code, and the offending line/lineNumber --
- * never a partial or best-effort access map.
+ * `handleWarpSet()`'s shape. Retrofitted in plan 42-07 with the same
+ * classify-before-parse ordering the four PARSE-02 handlers use: `chis`
+ * shares FEATURE_CPUMEMHISTORY with `memmapshow`, so a disabled build is
+ * named by capability, command, binary and remedy -- never a parser
+ * refusal. Plan 42-01 wrote this handler before text-capability-probe.ts
+ * existed, so it originally handed a disabled-stub reply straight to the
+ * parser (a parse error that reads like a defect in this project, exactly
+ * the outcome PARSE-04 forbids). On a genuine parse refusal, answers
+ * `isErrorText` naming the tool, the refusal code, and the offending
+ * line/lineNumber -- never a partial or best-effort access map.
  */
 export async function handleMemmapShow(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
   const { startAddress, endAddress, maxRanges } = args;
@@ -281,8 +288,17 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
     );
   }
 
+  const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+
   return withTextTool("vice_memmap_show", deps, async (client) => {
     const response = await client.command("memmapshow", { timeoutMs: 30000 });
+
+    const classification = classifyTextCapabilityResponse("memmapshow", response);
+    if (classification.outcome !== "capable") {
+      const verdict = await probeTextCapability({ command: "memmapshow", identity, brokerIdentity, dial: async () => response });
+      return isErrorText(`vice_memmap_show: ${textCapabilityRefusalMessage([verdict])}`);
+    }
+
     const parsed = parseAccessMap(response);
     if (!parsed.ok) {
       return isErrorText(

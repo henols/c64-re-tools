@@ -403,18 +403,39 @@ test("manifest/backend (D-01 structural): no tool entry in tools-manifest.stock.
   assert.equal(warpSet!.inputSchema?.additionalProperties, false);
 });
 
-test("manifest/backend (D-02 structural): the five parse-target verbs are present in TEXT_COMMAND_ALLOWLIST and absent from every tool name in tools-manifest.stock.json", () => {
+test("manifest/backend (D-02 structural): the five parse-target verbs are present in TEXT_COMMAND_ALLOWLIST and are never themselves a tool name in tools-manifest.stock.json", () => {
+  // Plan 42-07 (the four remaining PARSE-02 parsers, plus the Task 3 retrofit
+  // of memmapshow's own capability check) made every one of these five verbs
+  // reachable through a NAMED TOOL whose name differs from the raw verb
+  // string ("chis" -> vice_cpu_history, "prof flat" -> vice_profile_flat,
+  // "bt" -> vice_backtrace, "io" -> vice_io_registers, "memmapshow" ->
+  // vice_memmap_show, already landed in plan 42-01). What was stale here was
+  // never the two facts this test asserts -- both remain TRUE and must keep
+  // passing -- only the RATIONALE: earlier plans stated the verbs were
+  // reachable in-process but not yet advertised because their owning parsers
+  // had not landed. They have landed now, and the distinction this test
+  // protects -- a verb string is never itself a tool name, no matter how
+  // reachable the verb becomes -- is MORE load-bearing after this plan than
+  // before it: every one of the five names below is now a live derived-tool
+  // registration (STOCK_DERIVED_TOOLS/stock-dispatch.ts), so a future change
+  // that accidentally advertised a bare verb as a tool name would collide
+  // with this exact assertion, not merely with an unreached one.
   const PARSE_TARGET_VERBS = ["memmapshow", "prof flat", "chis", "bt", "io"];
   for (const verb of PARSE_TARGET_VERBS) {
     assert.ok(
       (TEXT_COMMAND_ALLOWLIST as readonly string[]).includes(verb),
-      `"${verb}" must remain in TEXT_COMMAND_ALLOWLIST -- it is reachable in-process, just not yet advertised`,
+      `"${verb}" must remain in TEXT_COMMAND_ALLOWLIST -- every one of the five verbs is reachable in-process ` +
+        `through its own named tool`,
     );
   }
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const toolNames = new Set(stock.tools.map((t) => t.name));
   for (const verb of PARSE_TARGET_VERBS) {
-    assert.ok(!toolNames.has(verb), `"${verb}" must NOT appear as a tool name in tools-manifest.stock.json -- its owning parser has not landed (D-02)`);
+    assert.ok(
+      !toolNames.has(verb),
+      `"${verb}" must NOT appear as a tool name in tools-manifest.stock.json -- it is reachable through its own ` +
+        `distinctly-named tool (D-02), never advertised under the raw verb string itself`,
+    );
   }
 });
 
