@@ -4,10 +4,10 @@
 
 The fork and stock backends deliberately advertise different tool lists. A tool advertised on both backends keeps the same name and a backward-compatible argument shape on either one — stock may add optional parameters but never removes, retypes, or newly-requires one. Calling a tool the active backend does not advertise returns an error naming the reason and the backend that does provide it.
 
-- Total tools: 65
+- Total tools: 66
 - Available on both backends: 37
 - Fork-only: 24
-- Stock-only: 4
+- Stock-only: 5
 - Fork manifest generated at: 2026-07-31T15:56:00.302Z
 - Stock manifest generated at: 2026-08-14T00:00:00.000Z
 
@@ -54,6 +54,7 @@ Legend: ✅ available, — not available.
 | vice_machine_config_get | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. |
 | vice_machine_config_set | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. Its advertised WarpMode resource is fork-only: stock has no runtime WarpMode resource at all -- measured err=0x01 OBJECT_MISSING over RESOURCE_GET (0x51) on VICE 3.9. As of plan 41-06 the text-monitor channel IS dialed by this project, and runtime warp toggling on stock is available through vice_warp_set, a native text-monitor command -- distinct from this (still-absent) runtime WarpMode resource; on the stock backend warp requested at launch time remains a separate mechanism from vice_warp_set. |
 | vice_machine_reset | ✅ | ✅ |  |
+| vice_memmap_show | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent; this is the native text-monitor "memmapshow" command, reached over the -remotemonitor channel, returning a structured access map in which execute is its own bit for both RAM and ROM. |
 | vice_memory_banks | ✅ | ✅ |  |
 | vice_memory_compare | ✅ | ✅ |  |
 | vice_memory_fill | ✅ | — | not yet built (descoped): No shipped skill calls it. |

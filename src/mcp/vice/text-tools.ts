@@ -73,6 +73,7 @@ import { withTextChannelLock, type TextMonitorClient } from "./text-protocol.ts"
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { ChannelLockTimeoutError } from "./channel-lock.ts";
 import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, type StockToolResult } from "./stock-handler.ts";
+import { parseAccessMap, accessMapRanges, type AccessMap, type AccessMapRangesOptions } from "./textmon-memmap.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 
 /**
@@ -190,6 +191,105 @@ export async function handleWarpSet(args: Record<string, unknown>, deps: StockDi
         "there is no runtime WarpMode resource on stock -- this is a monitor command, and warp requested at " +
         "launch time is a separate mechanism; the response above carries warp's OWN observed state, not an " +
         "assumption that this write took",
+    });
+  });
+}
+
+/** True iff `value` is a representable, non-negative whole number bounded
+ * to the C64's 16-bit address space -- the shared narrowing for
+ * `startAddress`/`endAddress`. Declared locally, per this module tree's
+ * own "repeated per file, never centrally imported" convention
+ * (disasm-decoder.ts). */
+function isValidAddressArg(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0xffff;
+}
+
+/** True iff `value` is a representable integer 1 through 4096 -- the
+ * `maxRanges` narrowing. */
+function isValidMaxRangesArg(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 4096;
+}
+
+/** Per-column execute counts over the WHOLE parsed map (never the
+ * `maxRanges`-truncated projection) -- so the counts stay meaningful even
+ * when the emitted range list itself is truncated. */
+function executeCounts(map: AccessMap): { io: number; rom: number; ram: number } {
+  let io = 0;
+  let rom = 0;
+  let ram = 0;
+  for (const entry of map.entries) {
+    if (entry.io.execute) io++;
+    if (entry.rom.execute) rom++;
+    if (entry.ram.execute) ram++;
+  }
+  return { io, rom, ram };
+}
+
+/**
+ * `vice_memmap_show` -- dials the single allowlisted, unparameterized verb
+ * `memmapshow` (D-42-1: `startAddress`/`endAddress`/`maxRanges` are
+ * client-side projection FILTERS applied after parsing; none of the three
+ * ever reaches the socket, and the dialed command is the frozen literal,
+ * never a built string). Refuses any argument outside its documented
+ * bounds BEFORE any lease is resolved or any byte is written, mirroring
+ * `handleWarpSet()`'s shape. On a parse refusal, answers `isErrorText`
+ * naming the tool, the refusal code, and the offending line/lineNumber --
+ * never a partial or best-effort access map.
+ */
+export async function handleMemmapShow(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const { startAddress, endAddress, maxRanges } = args;
+
+  if (startAddress !== undefined && !isValidAddressArg(startAddress)) {
+    return isErrorText(
+      `vice_memmap_show: "startAddress" must be an integer 0 through 65535 (got ${JSON.stringify(startAddress)}) -- ` +
+        `refusing before any text-monitor byte is written`,
+    );
+  }
+  if (endAddress !== undefined && !isValidAddressArg(endAddress)) {
+    return isErrorText(
+      `vice_memmap_show: "endAddress" must be an integer 0 through 65535 (got ${JSON.stringify(endAddress)}) -- ` +
+        `refusing before any text-monitor byte is written`,
+    );
+  }
+  if (
+    startAddress !== undefined &&
+    endAddress !== undefined &&
+    isValidAddressArg(startAddress) &&
+    isValidAddressArg(endAddress) &&
+    startAddress > endAddress
+  ) {
+    return isErrorText(
+      `vice_memmap_show: "startAddress" (${JSON.stringify(startAddress)}) must not be greater than "endAddress" ` +
+        `(${JSON.stringify(endAddress)}) -- refusing before any text-monitor byte is written`,
+    );
+  }
+  if (maxRanges !== undefined && !isValidMaxRangesArg(maxRanges)) {
+    return isErrorText(
+      `vice_memmap_show: "maxRanges" must be an integer 1 through 4096 (got ${JSON.stringify(maxRanges)}) -- ` +
+        `refusing before any text-monitor byte is written`,
+    );
+  }
+
+  return withTextTool("vice_memmap_show", deps, async (client) => {
+    const response = await client.command("memmapshow", { timeoutMs: 30000 });
+    const parsed = parseAccessMap(response);
+    if (!parsed.ok) {
+      return isErrorText(
+        `vice_memmap_show: memmapshow's response could not be parsed (${parsed.refusal.code} at line ` +
+          `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+      );
+    }
+
+    const rangesOpts: AccessMapRangesOptions = {};
+    if (isValidAddressArg(startAddress)) rangesOpts.startAddress = startAddress;
+    if (isValidAddressArg(endAddress)) rangesOpts.endAddress = endAddress;
+    if (isValidMaxRangesArg(maxRanges)) rangesOpts.maxRanges = maxRanges;
+    const projection = accessMapRanges(parsed.value, rangesOpts);
+
+    return derivedAnswer({
+      command: "memmapshow",
+      ...projection,
+      executeCounts: executeCounts(parsed.value),
     });
   });
 }

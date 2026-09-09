@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 
-import { handleDeviceConsole, handleWarpSet } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow } from "./text-tools.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import type { StockConnectBrokerControl } from "./stock-connect.ts";
 import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
@@ -275,6 +275,77 @@ test("handleWarpSet: a ChannelLockTimeoutError surfaces as refusal text byte-ide
       } finally {
         handle.release();
       }
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// handleMemmapShow: issues exactly the frozen "memmapshow" verb and answers
+// the parsed, bounded projection -- Plan 42-01, PARSE-01.
+// ---------------------------------------------------------------------------
+
+test("handleMemmapShow: issues exactly 'memmapshow' and returns a parsed, bounded access map", async () => {
+  const receivedLines: string[] = [];
+  const body = "addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n0001: --- --x ---\n";
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(`${body}${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapShow({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["memmapshow"], "exactly one command, exactly this literal");
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, "memmapshow");
+      assert.equal(payload.rangeCount, 2);
+      assert.equal(payload.truncated, false);
+      const counts = payload.executeCounts as { io: number; rom: number; ram: number };
+      assert.equal(counts.rom, 1);
+    },
+  );
+});
+
+test("handleMemmapShow: refuses a non-integer startAddress by name, no lease resolved, no byte written", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleMemmapShow({ startAddress: "not a number" }, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /"startAddress" must be an integer/);
+  assert.equal(leaseCalled, false, "no lease should ever be resolved before the argument check runs");
+});
+
+test("handleMemmapShow: refuses startAddress greater than endAddress by name, no lease resolved", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleMemmapShow({ startAddress: 100, endAddress: 50 }, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /must not be greater than/);
+  assert.equal(leaseCalled, false);
+});
+
+test("handleMemmapShow: a parse refusal surfaces as isErrorText naming the tool, the refusal code, and the offending line -- never a partial answer", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(PROMPT); // resolves to an empty payload once the trailing prompt is stripped
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapShow({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_memmap_show/);
+      assert.match(result.content[0]!.text, /empty-response/);
     },
   );
 });

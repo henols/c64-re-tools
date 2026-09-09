@@ -116,6 +116,7 @@ export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
   "vice_recycle", // Phase 7, TIME-04
   "vice_device_console", // Plan 41-06, CHAN-03 -- text-channel remedy tool, needsSession:false (text-tools.ts)
   "vice_warp_set", // Plan 41-06, CHAN-03 -- text-channel remedy tool, needsSession:false (text-tools.ts)
+  "vice_memmap_show", // Plan 42-01, PARSE-01 -- text-channel access-map tool, needsSession:false (text-tools.ts)
 ]);
 
 /**
