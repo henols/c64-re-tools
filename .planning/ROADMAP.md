@@ -1319,7 +1319,7 @@ in a milestone archive.
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
-| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 12/14 | In Progress | - |
+| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 13/14 | In Progress | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
 
