@@ -313,3 +313,139 @@ explicitly names the stock route or the fork requirement, not a silent assumptio
 That is a skill-text decision that belongs with whichever future phase gives one of these two
 playbooks an actual reason to call these tools in its own worked examples, not with the phase
 that builds the tools themselves.
+
+---
+
+## Live Evidence (Plan 42-09): all five formats, decoded from a reply produced live
+
+Plans `42-01`–`42-07` proved the parsers against twelve committed captures from two real
+binaries — the fixtures prove the SHAPE. This plan proves the PATH: a tool call reaching
+genuine stock VICE on this host, the reply coming back through the framing transport, and the
+owning parser turning it into structured data, for all five formats, in one opt-in run
+(`src/mcp/vice/text-monitor-live.test.ts`), against genuine stock `/usr/bin/x64sc`.
+
+**Binary:** `stock:/usr/bin/x64sc`, `x64sc (VICE 3.9)`. **Date:** 2026-09-09. **Harness:** a real
+broker daemon (`resources/vice-broker.mjs`) launching a real, freshly cold-booted `x64sc`
+instance; the live suite reports `tests 8, pass 8, fail 0` with zero skipped cases.
+
+### Block 7 (measured): `memmapshow` — access map
+
+- **Command dialed:** the bare frozen verb `memmapshow`, via the channel-lock wrapper.
+- **Measured result:** 1565 decoded entries (VICE's own sparse emission — an address with no
+  recorded access is skipped, never padded back to 65536 rows).
+- **Capability classification:** `capable`, asserted before parsing.
+
+**Label: MEASURED.**
+
+### Block 8 (measured): `chis` — CPU history
+
+- **Command dialed:** `chis 20`, rendered by `buildTextCommand("chis", 20)` — never a hand-built
+  string.
+- **Measured result:** 20 decoded entries; every entry's cycle count positive; the observed
+  cycle range across the batch was 39245–39309.
+- **Capability classification:** `capable`, asserted before parsing.
+
+**Label: MEASURED.**
+
+### Block 9 (measured): `prof flat` — flat profile
+
+- **Command dialed:** `prof flat 20`, rendered by `buildTextCommand("prof flat", 20)`.
+- **Measured result:** 3 decoded rows; the leading row: `totalCycles: 530709, totalPercent: 100,
+  selfCycles: 530709, selfPercent: 100, address: 64848` (`$FD50`).
+- **Capability classification:** `capable`, asserted before parsing.
+- **A genuinely new live finding, not present in either committed fixture:** VICE's own flat
+  profiler defaults to OFF. `prof flat` alone, on a freshly connected session that has never
+  issued `prof on`, returns `"No profiling data available. Start profiling with \"prof on\"."`
+  — not a build-time guard (VICE always compiles `prof flat` in), not a parser refusal either,
+  simply an empty subsystem with nothing yet to report. `TEXT_COMMAND_ALLOWLIST` (`text-protocol.ts`)
+  was widened by two entries, `prof on`/`prof off`, in this plan — a conscious, measured
+  widening per that constant's own header comment, not a speculative one — so the live suite
+  can toggle the profiler on, resume the CPU briefly through the binary channel so the profiler
+  has genuine cycles to attribute, dial `prof flat`, then toggle it off again, leaving the
+  instance as it was found. **No production handler in this tree issues `prof on` today** —
+  `text-tools.ts`'s `handleProfileFlat` dials `prof flat` alone — so `vice_profile_flat`, as
+  shipped, cannot yet produce real profile rows against a freshly launched instance in
+  production use. This is a real, separately-tracked gap this live run surfaced; closing it
+  (teaching `handleProfileFlat` to toggle profiling itself, and to classify the "No profiling
+  data available" line as its own named state rather than an implicit capable-empty answer) is
+  future work, not this plan's own declared scope.
+- **A second genuinely new live finding:** VICE's flat profiler can emit a synthetic top-level
+  pseudo-frame whose address FIELD is the literal text `ROOT`, not a hex address — cycles that
+  elapsed outside any traced call (e.g. the idle-loop time between the profiler being enabled
+  and the first `JSR` executed) are attributed there. Neither committed fixture happened to
+  capture this row shape (both ran long enough that no cycles landed at the root). `textmon-profile.ts`
+  is corrected in this plan: `FlatProfileEntry.address` widens from `number` to `number | "ROOT"`,
+  the row parser recognises the literal `"ROOT"` token before the hex-digit shape check, and two
+  new unit tests (`textmon-profile.test.ts`) cover a bare ROOT row and a ROOT row alongside an
+  ordinary hex-address row, both asserting VICE's own emitted order is preserved.
+
+**Label: MEASURED** (the row count, cycle values, and the ROOT pseudo-frame shape); the two
+findings above are measured live facts about VICE's own runtime behavior, not source-traced.
+
+### Block 10 (measured): `bt` — backtrace
+
+- **Command dialed:** the bare frozen verb `bt`, via the channel-lock wrapper.
+- **Measured result:** call-chain depth 2; current-PC frame at `$FD7C`.
+- **Capability classification:** `capable`, asserted before parsing.
+
+**Label: MEASURED.**
+
+### Block 11 (measured): `io` — register decode
+
+- **Command dialed:** `io $d020`, rendered by `buildTextCommand("io", 0xd020)` — matching
+  `fixtures/textmon/register-decode-stock`'s own captured command.
+- **Measured result:** one decoded section, chip `VIC-II`; decoded raster line 311; decoded
+  border colour `$00`.
+- **Capability classification:** `capable`, asserted before parsing.
+
+**Label: MEASURED.**
+
+### Block 12 (measured): the capability probe — all five commands, the real cache key
+
+`probeTextCapability()` was run against all five commands' own live replies above, using the
+identity `{ backend: "stock", binPath: "/usr/bin/x64sc", resolved: true }` (this test dialed the
+binary directly by its own absolute path, so `resolved` is genuinely true, never asserted from
+an unresolved bare name). Every verdict: `capable`. The cache key `textCapabilityCacheKey()`
+produced, verbatim, for every one of the five commands: `"stock:/usr/bin/x64sc"` — D-42-2's own
+property, observed live rather than only argued from the unit tests: **the key names the
+resolved absolute path of the binary, never a bare name.**
+
+**Label: MEASURED.**
+
+### Block 13 (measured): the RAM-execute observation — a shortfall, recorded as one
+
+The live access map (Block 7, 1565 entries) was searched in full for entries whose RAM column
+has its execute bit set. **Result: 0 RAM-execute entries found, out of 1565 total entries
+searched.** This is recorded as a shortfall, not smoothed into the RAM-execute-found outcome:
+the freshly cold-launched instance's boot window, in this run, never executed code from RAM
+before the live suite captured `memmapshow`'s reply. Criterion 1's RAM half of the access map's
+execute claim therefore remains covered by the declared-synthetic case in `textmon-memmap.test.ts`
+only — this live run did not add hardware evidence for that specific half. The IO and ROM
+halves, and the RAM read/write halves, are unaffected by this shortfall.
+
+**Label: MEASURED** (a real search, over a real live access map, with its full denominator).
+
+### Block 14 (not a citation): the stock-only bound on this live run
+
+The live half above is stock-only **by construction**, not by omission: `broker-launch.mjs`
+appends the `-remotemonitor` text-channel launch flags on its stock launch branch only — a fork
+instance the broker leases has no text channel at all to dial. A live run through the broker can
+therefore exercise exactly one of the two binaries. This does **not** weaken PARSE-03's
+two-binary requirement: that requirement is about FIXTURES, and both binaries' fixtures are
+already committed under `fixtures/textmon/`, captured by launching each binary directly rather
+than through the broker (`39-07`, `CHAN-01`). The two binaries and their versions, named for
+the record: `stock:/usr/bin/x64sc` (`x64sc (VICE 3.9)`, this plan's own live half) and
+`fork:/usr/local/bin/x64sc` (`x64sc (VICE 3.10)`, the fork half of the two-binary fixture
+requirement, satisfied by the committed fork captures rather than by this plan's own live run).
+
+### This plan's two remaining bounds, left standing
+
+This live run does **not** close either of `42-VALIDATION.md`'s two manual-only verifications,
+and states so rather than letting a green live run imply otherwise:
+
+1. **A genuinely `--disable-cpuhistory` VICE build naming its missing capability (PARSE-04).** No
+   such build exists on this host, and this plan does not build one. `CPUHISTORY_DISABLED_STUB`
+   stays source-traced (`mon_memmap.c:422–459`), not live-observed.
+2. **`io`'s two degradation strings (PARSE-04).** Both stay source-traced (`monitor.c:1980–2000`),
+   not live-observed — this run's own `io $d020` dial (Block 11) hit VIC-II's normal register
+   dump path, not either degradation string.
