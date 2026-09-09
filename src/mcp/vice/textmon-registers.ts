@@ -15,20 +15,26 @@
 // that silently launders a wire error into a parse result, because it
 // never touches the wire at all.
 //
-// THREE OUTCOMES, NOT TWO, FOR THE DECODED-PROSE SECTION (this plan's own
-// D-42-3 refinement). `prof flat`, `chis`, `bt` and `memmapshow` are closed
-// formats: every field is either recognised or it is drift. `io`'s middle
-// section is not -- it is free-form decoded prose whose line set differs
-// per chip, and a parser that refused every line it had not seen before
-// would refuse a legitimate reply from a chip the committed captures never
-// sampled. So THIS module has three outcomes for that section only:
-// recognised fields decode to typed values; a recognised label whose VALUE
-// cannot be parsed refuses by name (that is drift, and it is loud, via the
-// `unparseable-value` refusal code); and a line matching no recognised
-// shape at all is preserved verbatim in `unrecognisedLines`, which the
-// result carries and the tool reports as a count -- never mapped onto a
-// typed field. The hex dump, the memspace marker and the sprite table are
-// CLOSED sets and refuse like every other format's fields.
+// FOUR OUTCOMES, NOT TWO, FOR THE DECODED-PROSE SECTION (originally "three
+// outcomes" per this plan's own D-42-3 refinement; a fourth outcome was
+// added by plan 42-10 to close CR-01). `prof flat`, `chis`, `bt` and
+// `memmapshow` are closed formats: every field is either recognised or it is
+// drift. `io`'s middle section is not -- it is free-form decoded prose whose
+// line set differs per chip, and a parser that refused every line it had
+// not seen before would refuse a legitimate reply from a chip the committed
+// captures never sampled. So THIS module has four outcomes for that section
+// only: recognised fields decode to typed values; a recognised label whose
+// VALUE cannot be parsed refuses by name (that is drift, and it is loud, via
+// the `unparseable-value` refusal code); a line matching no recognised shape
+// at all is preserved verbatim in `unrecognisedLines`, which the result
+// carries and the tool reports as a count -- never mapped onto a typed
+// field; and a required field that was NEVER OBSERVED AT ALL -- because its
+// one recognised line was dropped, renamed or reordered out of recognition
+// -- refuses by name via `incomplete-decoded-state`, naming every absent
+// field, rather than being cast onto `IoDecodedState` with `undefined`
+// silently sitting in a field typed `number`, `boolean` or `string`. The
+// hex dump, the memspace marker and the sprite table are CLOSED sets and
+// refuse like every other format's fields.
 //
 // WHAT NOT TO DO:
 //   - Never import anything -- not `node:` anything, not `text-protocol.ts`,
@@ -59,6 +65,12 @@
 //     constraint) makes every following field describe the wrong CPU; the
 //     refusal names the `vice_device_console` remedy tool by name, matching
 //     plan 42-02's own established convention for the same hazard.
+//   - Never restore an unchecked cast onto `IoDecodedState`, and never
+//     supply a default, a zero, an empty string or an inferred value for a
+//     field the decoded-prose block never observed (this was CR-01).
+//     `REQUIRED_IO_DECODED_KEYS`'s completeness check in `decodeProseLines()`
+//     exists precisely to stop that -- an absent observation is refused by
+//     name via `incomplete-decoded-state`, never manufactured.
 
 /** One 64-byte VIC-II register dump, decoded from four `>C:aaaa  ...` rows.
  * `baseAddress` is the first row's own address field -- never assumed. */
@@ -160,8 +172,11 @@ export interface IoRegisters {
 /** The closed refusal-code union (D-42-3): an empty response, a malformed
  * dump row, an unrecognised memspace marker, a recognised decoded-prose
  * label whose value could not be parsed, an unrecognised sprite-row label,
- * a sprite header declaring a column count other than eight, and the two
- * graceful-degradation outcomes (see this module's header comment). */
+ * a sprite header declaring a column count other than eight, the two
+ * graceful-degradation outcomes (see this module's header comment), and a
+ * decoded-prose block that did not carry every one of `IoDecodedState`'s
+ * required fields -- a required label was dropped, renamed or reordered
+ * out of recognition (plan 42-10, CR-01). */
 export type IoRegistersRefusalCode =
   | "empty-response"
   | "malformed-dump"
@@ -170,7 +185,8 @@ export type IoRegistersRefusalCode =
   | "unrecognised-sprite-row"
   | "sprite-column-count"
   | "no-details-available"
-  | "no-io-regs-available";
+  | "no-io-regs-available"
+  | "incomplete-decoded-state";
 
 /** A parser refusal (D-42-3): returned, never thrown. `line` and
  * `lineNumber` name the offending content whenever one exists. */
@@ -329,6 +345,38 @@ const PROSE_RECOGNISERS: ReadonlyArray<{
   },
 ];
 
+/** The nineteen keys `IoDecodedState` declares as required, in the EXACT
+ * order the interface declares them. This is the guard for the one cast in
+ * this module -- `decodeProseLines()`'s `state as IoDecodedState` -- and the
+ * refusal message below lists absent keys in this same order, so the same
+ * drifted input always produces a byte-identical message. TypeScript cannot
+ * derive an array of keys from an interface at runtime, so this list's
+ * equality with `IoDecodedState`'s own declared field set is asserted by
+ * this module's own test (a census read off this file's real source), not
+ * by review alone -- a field added to the interface later without a
+ * matching addition here would otherwise silently re-open CR-01. */
+export const REQUIRED_IO_DECODED_KEYS: readonly (keyof IoDecodedState)[] = [
+  "rasterCycle",
+  "rasterLine",
+  "rasterIrqLine",
+  "mode",
+  "borderColor",
+  "backgroundColor",
+  "scrollX",
+  "scrollY",
+  "rasterCounter",
+  "idle",
+  "screenColumns",
+  "screenRows",
+  "vc",
+  "vcbase",
+  "vmli",
+  "phi1",
+  "videoBase",
+  "charsetBase",
+  "charsetSource",
+];
+
 type DecodeProseResult =
   | { ok: true; state: IoDecodedState }
   | { ok: false; refusal: TextParseRefusal };
@@ -365,6 +413,20 @@ function decodeProseLines(proseLines: readonly string[], startLineNumber: number
       };
     }
     recogniser.apply(match, state);
+  }
+  const absentKeys = REQUIRED_IO_DECODED_KEYS.filter((key) => !(key in state));
+  if (absentKeys.length > 0) {
+    const lastLineNumber = startLineNumber + proseLines.length - 1;
+    return {
+      ok: false,
+      refusal: makeRefusal(
+        "incomplete-decoded-state",
+        `io: the decoded-prose block spanning lines ${startLineNumber}-${lastLineNumber} did not carry every ` +
+          `required field -- absent: ${absentKeys.join(", ")} -- never returned as a complete decode`,
+        "",
+        startLineNumber,
+      ),
+    };
   }
   return { ok: true, state: state as IoDecodedState };
 }

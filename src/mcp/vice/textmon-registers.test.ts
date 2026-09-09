@@ -303,6 +303,34 @@ test("planted control: an unrecognised decoded-prose line is preserved verbatim 
 });
 
 // ---------------------------------------------------------------------------
+// The required-keys completeness gate (CR-01, plan 42-10): a required
+// decoded-prose field that was never observed at all -- a dropped, renamed
+// or reordered recognised line -- must refuse by name, never be cast onto
+// IoDecodedState with the missing field(s) silently undefined.
+// ---------------------------------------------------------------------------
+
+test("planted control (CR-01): a decoded-prose block missing its Colors: line refuses with incomplete-decoded-state naming borderColor and backgroundColor -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText().replace("Colors: Border: e BG: 6 \n", "");
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "incomplete-decoded-state");
+    assert.match(result.refusal.message, /borderColor/);
+    assert.match(result.refusal.message, /backgroundColor/);
+  }
+
+  // Discriminating control (in the same case, so it cannot pass vacuously):
+  // the unmutated real capture still parses ok:true with a numeric
+  // borderColor -- the completeness gate did not break the happy path.
+  const unmutated = parseIoRegisters(realStockText());
+  assert.equal(unmutated.ok, true);
+  if (unmutated.ok) {
+    assert.equal(typeof unmutated.value.sections[0]!.decoded.borderColor, "number");
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+// ---------------------------------------------------------------------------
 // Idempotency and concurrency.
 // ---------------------------------------------------------------------------
 

@@ -783,3 +783,26 @@ test("handleIoRegisters: an indeterminate (empty) reply produces its own named m
     },
   );
 });
+
+// CR-01 (plan 42-10): the tool, not only the parser, must refuse a drifted
+// io reply rather than answer with absent required fields.
+test("handleIoRegisters: a decoded-prose block missing its Colors: line refuses end-to-end, naming incomplete-decoded-state and the two absent fields, never a serialized answer", async () => {
+  const fixture = loadTextFixture("register-decode-stock");
+  const drifted = fixture.text.replace("Colors: Border: e BG: 6 \n", "");
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(drifted);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /incomplete-decoded-state/);
+      assert.match(result.content[0]!.text, /borderColor/);
+      assert.match(result.content[0]!.text, /backgroundColor/);
+      // The tool refuses rather than answering -- no serialized answer
+      // payload (a "sections" JSON array) appears in the error text.
+      assert.doesNotMatch(result.content[0]!.text, /"sections":/);
+    },
+  );
+});
