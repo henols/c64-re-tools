@@ -1079,7 +1079,7 @@ loudly instead of being absorbed into a plausible-looking wrong answer.
   4. **A drifted format fails loudly instead of returning an inverted answer.** MEASURED as real, and **semantic rather than syntactic**: VICE 3.4 inverted the meaning of `mc`/`ms`'s glyphs with no layout or delimiter change to signal it, 3.5–3.6 widened `chis`'s cycle column, and 3.9–3.10 added a `memmapshow` access class (re-verified against raw NEWS this phase, `docs/phase42-text-format-drift-citations.md` Blocks 1–3). So fixtures are captured from **at least two real VICE binaries** — genuine stock 3.9 at `/usr/bin/x64sc` and the fork 3.10 that shadows it on `PATH`, both present on this host, a hard requirement rather than an aspiration — pinned to the exact binary they came from under the same five provenance keys the binary-monitor fixtures already require. The control that makes this real is a planted fixture carrying an **unrecognised** enum value, observed making the parser refuse: a fixture-only defence would have kept passing while returning inverted answers.
   5. **A missing build capability is named, per command and per binary.** MEASURED: this tracing/profiling support is opt-**out** at build time — the opposite polarity to the ≥ 3.10 opcode note. The affected commands do **not** each carry their own separate guard: two share one guard and one stub string (`memmapshow`/`chis`), two carry none (`bt`/`prof flat`), and one degrades per-chip at runtime instead of refusing (`io`) — `docs/phase42-text-format-drift-citations.md` Block 4. That correction leaves the criterion's operative requirement unchanged: each command is still probed on its own and the answer cached per binary. A user is told which capability is missing and on which binary, and is never handed a silent empty result or a parse error that reads like a bug in this project.
 
-**Plans**: 16 plans — 9/9 original plans executed in 4 waves, plus 5 gap-closure plans (42-10..42-14) executed in 3 further waves after verification returned `gaps_found`, plus 2 round-2 gap-closure plans (42-15..42-16) in 2 further waves after the re-verification scored 4/5 on one new finding
+**Plans**: 15/16 plans executed — 9/9 original plans executed in 4 waves, plus 5 gap-closure plans (42-10..42-14) executed in 3 further waves after verification returned `gaps_found`, plus 2 round-2 gap-closure plans (42-15..42-16) in 2 further waves after the re-verification scored 4/5 on one new finding
 
 Plans:
 **Wave 1**
@@ -1126,7 +1126,7 @@ Plans:
 
 **Wave 9** *(tracer — the one Blocker, closed end to end before any evidence work)*
 
-- [ ] 42-15-PLAN.md — CR-02: `io`'s per-address chip-degradation classification leaves the binary-wide capability cache — a pure `textCapabilityVerdictFor()` builder with one verdict-construction site, `NEVER_CACHED_COMMANDS` closing the write, read and in-flight-memo paths, and one planted control per reachable wrong answer, each red against the pre-change tree
+- [x] 42-15-PLAN.md — CR-02: `io`'s per-address chip-degradation classification leaves the binary-wide capability cache — a pure `textCapabilityVerdictFor()` builder with one verdict-construction site, `NEVER_CACHED_COMMANDS` closing the write, read and in-flight-memo paths, and one planted control per reachable wrong answer, each red against the pre-change tree
 
 **Wave 10** *(blocked on Wave 9)*
 
@@ -1329,7 +1329,7 @@ in a milestone archive.
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
-| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 14/16 | In Progress | - |
+| 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 15/16 | In Progress | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
 
