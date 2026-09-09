@@ -1079,7 +1079,7 @@ loudly instead of being absorbed into a plausible-looking wrong answer.
   4. **A drifted format fails loudly instead of returning an inverted answer.** MEASURED as real, and **semantic rather than syntactic**: VICE 3.4 inverted the meaning of `mc`/`ms`'s glyphs with no layout or delimiter change to signal it, 3.5–3.6 widened `chis`'s cycle column, and 3.9–3.10 added a `memmapshow` access class (re-verified against raw NEWS this phase, `docs/phase42-text-format-drift-citations.md` Blocks 1–3). So fixtures are captured from **at least two real VICE binaries** — genuine stock 3.9 at `/usr/bin/x64sc` and the fork 3.10 that shadows it on `PATH`, both present on this host, a hard requirement rather than an aspiration — pinned to the exact binary they came from under the same five provenance keys the binary-monitor fixtures already require. The control that makes this real is a planted fixture carrying an **unrecognised** enum value, observed making the parser refuse: a fixture-only defence would have kept passing while returning inverted answers.
   5. **A missing build capability is named, per command and per binary.** MEASURED: this tracing/profiling support is opt-**out** at build time — the opposite polarity to the ≥ 3.10 opcode note. The affected commands do **not** each carry their own separate guard: two share one guard and one stub string (`memmapshow`/`chis`), two carry none (`bt`/`prof flat`), and one degrades per-chip at runtime instead of refusing (`io`) — `docs/phase42-text-format-drift-citations.md` Block 4. That correction leaves the criterion's operative requirement unchanged: each command is still probed on its own and the answer cached per binary. A user is told which capability is missing and on which binary, and is never handed a silent empty result or a parse error that reads like a bug in this project.
 
-**Plans**: 12/14 plans executed — 9/9 original plans executed in 4 waves, plus 5 gap-closure plans (42-10..42-14) added in 3 further waves after verification returned `gaps_found`
+**Plans**: 13/14 plans executed — 9/9 original plans executed in 4 waves, plus 5 gap-closure plans (42-10..42-14) added in 3 further waves after verification returned `gaps_found`
 
 Plans:
 **Wave 1**
@@ -1116,7 +1116,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 42-13-PLAN.md — G2 + WR-01 (+ the documentation half of IN-02): a never-started profiler is a named state owned by its own module, and a definite binary-identity disagreement reaches the caller of all five text tools on both the success and the refusal path
+- [x] 42-13-PLAN.md — G2 + WR-01 (+ the documentation half of IN-02): a never-started profiler is a named state owned by its own module, and a definite binary-identity disagreement reaches the caller of all five text tools on both the success and the refusal path
 
 **Wave 8** *(blocked on Wave 7)*
 

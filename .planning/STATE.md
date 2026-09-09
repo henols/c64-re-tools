@@ -5,17 +5,17 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: Completed 42-12-PLAN.md (G5 broker-teardown observation closed); gap-closure plans 42-13..42-14 remain
-last_updated: "2026-09-09T18:57:41.152Z"
+stopped_at: Completed 42-13-PLAN.md (G2/G3 profiling-not-started state and identity-warning cross-check closed); gap-closure plan 42-14 remains
+last_updated: "2026-09-09T19:20:36.000Z"
 last_activity: 2026-09-09
-last_activity_desc: Plan 42-12 executed — text-monitor-live.test.ts's teardown assertion now observes the broker child it spawns (not just the emulator), a scratch-scoped sweep catches unrecorded grandchildren, and an unskipped planted control proves the assertion can fail (G5)
+last_activity_desc: Plan 42-13 executed — handleProfileFlat's cold-profiler reply is a named profiling-not-started state owned by textmon-profile.ts (G2), and textCapabilityIdentityWarning() surfaces a computed binary-identity disagreement to the caller of all five text tools on both paths (G3)
 state_head: 18ac59d27f18e8c3967aeaa4effd33002577b208
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 39
-  completed_plans: 37
-  percent: 95
+  completed_plans: 38
+  percent: 97
 ---
 
 # Project State
@@ -227,9 +227,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — EXECUTING (gap closure)
-Plan: 9 of 9 original executed; gap-closure plans 42-10..42-14 executing (2 of 5 done: 42-10, 42-11)
-Status: Gap-closure executing — 42-10, 42-11 complete (CR-01, WR-02, IN-01 closed), 42-12..42-14 remaining
-Last activity: 2026-09-09 — Plan 42-11 executed: io chip gate closes WR-02, handleIoRegisters drops discarded classification (IN-01)
+Plan: 9 of 9 original executed; gap-closure plans 42-10..42-14 executing (4 of 5 done: 42-10, 42-11, 42-12, 42-13)
+Status: Gap-closure executing — 42-10, 42-11, 42-12, 42-13 complete (CR-01, WR-02, IN-01, G5, G2, G3 closed), 42-14 remaining
+Last activity: 2026-09-09 — Plan 42-13 executed: handleProfileFlat's cold-profiler reply is now a named profiling-not-started state (G2), and the identity cross-check reaches the caller of all five text tools on both paths (G3)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
