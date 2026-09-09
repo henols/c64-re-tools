@@ -132,6 +132,27 @@ export type TextCapabilityCommand = (typeof TEXT_CAPABILITY_COMMANDS)[number];
  * different wording, never a build-capability claim. */
 export const CPUHISTORY_GATED_COMMANDS: readonly TextCapabilityCommand[] = Object.freeze(["memmapshow", "chis"]);
 
+/** CR-02: commands whose outcome is decided by the CALLER'S OWN ARGUMENT --
+ * not by how the binary was built -- and therefore have no binary-wide
+ * answer to memoise. Excluded from the cache's domain in all three places a
+ * cache can act: `runProbe()`'s `cacheable` predicate never writes a
+ * verdict for one, and `probeTextCapability()` consults neither the
+ * cache-read early return nor the `inFlightProbes` in-flight memo for one --
+ * it dials fresh, unconditionally, every single call.
+ *
+ * `io` is the sole member: its chip-level runtime degradation
+ * (IO_CHIP_DEGRADATION_STRINGS above) is decided by the specific `address`
+ * the caller dialed, so the SAME binary answers differently for two
+ * different addresses in the same process lifetime -- the opposite of
+ * `CPUHISTORY_GATED_COMMANDS`, whose members' outcome IS a build-time
+ * property of the binary file and stays constant for the binary's whole
+ * process lifetime. A future command belongs here if, and only if, its
+ * outcome can differ between two calls to the SAME binary under the SAME
+ * identity -- `text-capability-probe.test.ts`'s own cacheability-invariant
+ * case fails by name for any `TEXT_CAPABILITY_COMMANDS` member in neither
+ * this set nor provably cacheable. */
+export const NEVER_CACHED_COMMANDS: readonly TextCapabilityCommand[] = Object.freeze(["io"]);
+
 /** The exact disabled-stub TEXT (VICE's own C source prints this line
  * followed by a trailing newline; this constant omits the newline because
  * classification always compares against a trimmed, already-split line).
@@ -446,7 +467,11 @@ async function runProbe(
   });
 
   const cacheable =
-    key !== null && verdict.identityDisagreement === undefined && dialError === undefined && verdict.outcome !== "indeterminate";
+    key !== null &&
+    verdict.identityDisagreement === undefined &&
+    dialError === undefined &&
+    verdict.outcome !== "indeterminate" &&
+    !NEVER_CACHED_COMMANDS.includes(command);
   if (cacheable) {
     let forKey = capabilityCache.get(key!);
     if (!forKey) {
@@ -486,6 +511,19 @@ export async function probeTextCapability(options: ProbeTextCapabilityOptions): 
     // Unkeyable identity: never cached, never memoised in-flight -- there is
     // no key to memoise against.
     return runProbe(command, identity, brokerIdentity, dial, null);
+  }
+
+  if (NEVER_CACHED_COMMANDS.includes(command)) {
+    // CR-02: a command in this set has no binary-wide answer to memoise --
+    // go straight to runProbe() with the key already computed (runProbe's
+    // own `cacheable` predicate refuses to write it back, above). The
+    // in-flight memo is skipped too, not only the persistent cache: two
+    // concurrent probes for a per-call command sharing one memoised promise
+    // is the SAME defect in a narrower window -- one caller's in-flight
+    // dial would otherwise hand its response to a second caller asking a
+    // DIFFERENT question (a different address), which a fix that closed
+    // only the persistent cache would leave wide open.
+    return runProbe(command, identity, brokerIdentity, dial, key);
   }
 
   const cachedForKey = capabilityCache.get(key);

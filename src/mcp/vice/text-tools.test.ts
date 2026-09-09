@@ -998,6 +998,63 @@ test("handleIoRegisters (CR-02, direction a): a degrading first call never cause
 });
 
 // ---------------------------------------------------------------------------
+// CR-02, direction (b): the mirror direction -- a first io call that
+// returned a real dump must never cause a later call to a genuinely
+// degrading chip to be reported through the generic parse-failure wrapper.
+// Same resolved-and-agreeing identity setup as direction (a).
+// ---------------------------------------------------------------------------
+
+test("handleIoRegisters (CR-02, direction b): a healthy first call never suppresses a later call's genuine chip degradation behind the parse-failure wrapper", async () => {
+  const fixture = loadTextFixture("register-decode-stock");
+  let callCount = 0;
+  await withStubTextServer(
+    (_line, socket) => {
+      callCount++;
+      if (callCount === 1) {
+        socket.write(fixture.text);
+      } else {
+        socket.write(`No details available.\n${PROMPT}`);
+      }
+    },
+    async (port) => {
+      resetTextCapabilityCache();
+      const deps = makeDepsWithBrokerIdentity(port, { backend: "stock", binPath: "/usr/bin/x64sc" }, "/usr/bin/x64sc");
+
+      const first = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(first.isError, false, `expected the first, real-dump call to succeed, got ${JSON.stringify(first)}`);
+
+      const second = await handleIoRegisters({ address: 0xd021 }, deps);
+      assert.equal(second.isError, true, "expected the second, degrading call to refuse");
+      assert.match(second.content[0]!.text, /nothing to report here/, "expected the chip-fact wording, not a silently cached success");
+      assert.doesNotMatch(second.content[0]!.text, /could not be parsed/, "the chip-level degradation must never read through the generic parse-failure wrapper");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CR-02: the empty-reply indeterminate state must survive the rewiring under
+// a RESOLVED identity too -- the file already covers this under an
+// UNRESOLVED identity (above); this variant proves the fix did not move the
+// empty case onto the parser's own empty-response path once the cache is
+// genuinely live.
+// ---------------------------------------------------------------------------
+
+test("handleIoRegisters (CR-02): an indeterminate (empty) reply under a RESOLVED, agreeing identity still produces its own named message", async () => {
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      resetTextCapabilityCache();
+      const deps = makeDepsWithBrokerIdentity(port, { backend: "stock", binPath: "/usr/bin/x64sc" }, "/usr/bin/x64sc");
+      const result = await handleIoRegisters({ address: 0xd020 }, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /unknown, not negative/);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Plan 42-13 (G3): the identity cross-check reaches the caller, on every
 // tool and on both paths -- computed once per handler from the identities
 // capabilityIdentityFor(deps) already resolved, before any dial.

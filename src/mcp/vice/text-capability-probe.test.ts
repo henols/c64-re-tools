@@ -20,6 +20,7 @@ import { loadTextFixture } from "./textmon-fixtures.ts";
 import {
   TEXT_CAPABILITY_COMMANDS,
   CPUHISTORY_DISABLED_STUB,
+  NEVER_CACHED_COMMANDS,
   classifyTextCapabilityResponse,
   textCapabilityCacheKey,
   probeTextCapability,
@@ -339,6 +340,100 @@ test("textCapabilityVerdictFor: populates identityDisagreement on a definite mis
     brokerIdentity: agreeing,
   });
   assert.equal(withAgreement.identityDisagreement, undefined, "expected identityDisagreement to be entirely absent when identities agree");
+});
+
+// ---------------------------------------------------------------------------
+// CR-02, Task 2: NEVER_CACHED_COMMANDS -- io removed from the cache's
+// domain structurally, in all three places a cache can act.
+// ---------------------------------------------------------------------------
+
+test("NEVER_CACHED_COMMANDS: frozen, exactly one member", () => {
+  assert.ok(Object.isFrozen(NEVER_CACHED_COMMANDS));
+  assert.deepEqual(NEVER_CACHED_COMMANDS, ["io"]);
+});
+
+test("probeTextCapability (CR-02): io is excluded from the cache's domain -- two sequential probes dial twice, paired with memmapshow still caching under the same identity", async () => {
+  resetTextCapabilityCache();
+  const ioDial = makeCountingDial(() => IO_REAL_DUMP_RESPONSE);
+  const first = await probeTextCapability({ command: "io", identity: STOCK_IDENTITY, dial: ioDial.dial });
+  const second = await probeTextCapability({ command: "io", identity: STOCK_IDENTITY, dial: ioDial.dial });
+  assert.equal(ioDial.count(), 2, "expected io to dial fresh on every probe -- it has no cache entry to serve from");
+  assert.equal(first.fromCache, false);
+  assert.equal(second.fromCache, false);
+
+  // Discriminating pair: memmapshow under the SAME identity still caches --
+  // this would pass against a cache that was simply broken for everything.
+  const memmapDial = makeCountingDial("addr: IO  ROM RAM\n0000: --- --- rw-\n");
+  await probeTextCapability({ command: "memmapshow", identity: STOCK_IDENTITY, dial: memmapDial.dial });
+  const memmapAgain = await probeTextCapability({ command: "memmapshow", identity: STOCK_IDENTITY, dial: memmapDial.dial });
+  assert.equal(memmapDial.count(), 1, "expected memmapshow to dial once and serve its second probe from cache");
+  assert.equal(memmapAgain.fromCache, true);
+});
+
+test("probeTextCapability (CR-02): two concurrent un-awaited io probes dial TWICE and each receives its own response -- the in-flight memo never applies to io", async () => {
+  resetTextCapabilityCache();
+  const responses = [IO_REAL_DUMP_RESPONSE, "No details available.\n"];
+  let call = 0;
+  const dial = async (_command: TextCapabilityCommand): Promise<string> => responses[call++]!;
+  const p1 = probeTextCapability({ command: "io", identity: STOCK_IDENTITY, dial });
+  const p2 = probeTextCapability({ command: "io", identity: STOCK_IDENTITY, dial });
+  const [r1, r2] = await Promise.all([p1, p2]);
+  assert.equal(call, 2, "expected two concurrent io probes to dial twice -- no in-flight memo shared between them");
+  assert.equal(r1.response, responses[0]);
+  assert.equal(r2.response, responses[1]);
+  assert.notEqual(r1.response, r2.response, "expected the two concurrent probes to carry DIFFERENT responses");
+});
+
+test("cacheability invariant: every TEXT_CAPABILITY_COMMANDS member is either cached-and-served or declared in NEVER_CACHED_COMMANDS", async () => {
+  for (const command of TEXT_CAPABILITY_COMMANDS) {
+    resetTextCapabilityCache();
+    const response = `${command} real capable reply, never a degradation string and never empty\n`;
+    const { dial, count } = makeCountingDial(response);
+    const first = await probeTextCapability({ command, identity: STOCK_IDENTITY, dial });
+    assert.equal(first.outcome, "capable", `expected ${command} to classify capable so this invariant isolates caching alone`);
+    const second = await probeTextCapability({ command, identity: STOCK_IDENTITY, dial });
+    if (NEVER_CACHED_COMMANDS.includes(command)) {
+      assert.equal(count(), 2, `${command} is declared in NEVER_CACHED_COMMANDS but its second probe was served from cache instead of dialing fresh`);
+      assert.equal(second.fromCache, false, `${command} is declared in NEVER_CACHED_COMMANDS but reported fromCache: true`);
+    } else {
+      assert.equal(
+        count(),
+        1,
+        `${command} is not in NEVER_CACHED_COMMANDS but dialed twice instead of caching -- add it to NEVER_CACHED_COMMANDS or fix its caching`,
+      );
+      assert.equal(second.fromCache, true, `${command} is not in NEVER_CACHED_COMMANDS but its second probe was not served from cache`);
+    }
+  }
+});
+
+test("degradation matching (CR-02/encoding): decided by the TRIMMED FIRST NON-EMPTY LINE, byte equality only -- a case-differing string or a later-line match never renders the chip-fact line", () => {
+  const caseDiffering: TextCapabilityVerdict = {
+    command: "io",
+    outcome: "capable",
+    response: "no details available.\n",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  assert.equal(textCapabilityRefusalMessage([caseDiffering]), "", "expected a case-differing degradation string to render no chip-fact line");
+
+  const laterLine: TextCapabilityVerdict = {
+    command: "io",
+    outcome: "capable",
+    response: `${IO_REAL_DUMP_RESPONSE}No details available.\n`,
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  assert.equal(
+    textCapabilityRefusalMessage([laterLine]),
+    "",
+    "expected the degradation string on a LATER line to render no chip-fact line -- only the first non-empty line is compared",
+  );
+});
+
+test("textCapabilityCacheKey (CR-02/encoding): distinguishes two binary paths differing only by letter case -- a byte comparison, never case-folded", () => {
+  const lower: TextCapabilityIdentity = { backend: "stock", binPath: "/usr/bin/x64sc", resolved: true };
+  const upper: TextCapabilityIdentity = { backend: "stock", binPath: "/usr/bin/X64SC", resolved: true };
+  assert.notEqual(textCapabilityCacheKey(lower), textCapabilityCacheKey(upper));
 });
 
 // ---------------------------------------------------------------------------
