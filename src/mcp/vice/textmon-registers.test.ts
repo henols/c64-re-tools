@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
-import { parseIoRegisters, type IoRegistersParseResult } from "./textmon-registers.ts";
+import { parseIoRegisters, REQUIRED_IO_DECODED_KEYS, type IoRegistersParseResult } from "./textmon-registers.ts";
 
 const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = HERE.replace(/textmon-registers\.test\.ts$/, "textmon-registers.ts");
@@ -328,6 +328,116 @@ test("planted control (CR-01): a decoded-prose block missing its Colors: line re
     assert.equal(typeof unmutated.value.sections[0]!.decoded.borderColor, "number");
   }
   assertRealCapturesStillParseCleanly();
+});
+
+test("planted control (CR-01): a spelling-only rename (Colors: -> Colours:) -- no layout or delimiter change, exactly the semantic-drift class this phase documents for the mc/ms glyph inversion -- leaves the label unrecognised and refuses incomplete-decoded-state naming borderColor and backgroundColor -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText().replace("Colors: Border: e BG: 6 ", "Colours: Border: e BG: 6 ");
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "incomplete-decoded-state");
+    assert.match(result.refusal.message, /borderColor/);
+    assert.match(result.refusal.message, /backgroundColor/);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted control (CR-01): a decoded-prose block with zero lines refuses naming all nineteen required fields, counted rather than string-matched -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText().replace(
+    "Raster cycle/line: 0/311 IRQ: 311\n" +
+      "Mode: Standard Text (ECM/BMM/MCM=0/0/0)\n" +
+      "Colors: Border: e BG: 6 \n" +
+      "Scroll X/Y: 0/3, RC 7, Idle: 1, 40x25\n" +
+      "VC $3e8, VCBASE $3e8, VMLI  0, Phi1 $ff\n" +
+      "Video $0400, Charset $1000 (CharROM)\n",
+    "",
+  );
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "incomplete-decoded-state");
+    for (const key of REQUIRED_IO_DECODED_KEYS) {
+      assert.match(result.refusal.message, new RegExp(key), `expected the empty-prose refusal to name ${key}`);
+    }
+    const namedCount = REQUIRED_IO_DECODED_KEYS.filter((key) => result.refusal.message.includes(key)).length;
+    assert.equal(namedCount, 19, "expected all nineteen required field names in the empty-prose refusal message");
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted control (CR-01): removing the VC $ line names exactly vc, vcbase, vmli, phi1 -- the message reports the real absent set, not a fixed string -- and does NOT name borderColor -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText().replace("VC $3e8, VCBASE $3e8, VMLI  0, Phi1 $ff\n", "");
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "incomplete-decoded-state");
+    assert.match(result.refusal.message, /\bvc\b/);
+    assert.match(result.refusal.message, /vcbase/);
+    assert.match(result.refusal.message, /vmli/);
+    assert.match(result.refusal.message, /phi1/);
+    assert.doesNotMatch(result.refusal.message, /borderColor/);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted control (CR-01): ordering determinism -- removing Colors: and Video $ at once produces byte-identical refusal messages across two parses, with names in REQUIRED_IO_DECODED_KEYS declaration order (borderColor before backgroundColor before videoBase before charsetBase before charsetSource) -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText()
+    .replace("Colors: Border: e BG: 6 \n", "")
+    .replace("Video $0400, Charset $1000 (CharROM)\n", "");
+  const first = parseIoRegisters(mutated);
+  const second = parseIoRegisters(mutated);
+  assert.equal(first.ok, false);
+  assert.equal(second.ok, false);
+  if (!first.ok && !second.ok) {
+    assert.equal(first.refusal.code, "incomplete-decoded-state");
+    assert.equal(first.refusal.message, second.refusal.message, "expected byte-identical refusal messages across two parses of the same drifted input");
+    const msg = first.refusal.message;
+    const borderColorIdx = msg.indexOf("borderColor");
+    const backgroundColorIdx = msg.indexOf("backgroundColor");
+    const videoBaseIdx = msg.indexOf("videoBase");
+    const charsetBaseIdx = msg.indexOf("charsetBase");
+    const charsetSourceIdx = msg.indexOf("charsetSource");
+    for (const idx of [borderColorIdx, backgroundColorIdx, videoBaseIdx, charsetBaseIdx, charsetSourceIdx]) {
+      assert.ok(idx >= 0, `expected all five field names present in ${JSON.stringify(msg)}`);
+    }
+    assert.ok(borderColorIdx < backgroundColorIdx, "expected borderColor before backgroundColor");
+    assert.ok(backgroundColorIdx < videoBaseIdx, "expected backgroundColor before videoBase");
+    assert.ok(videoBaseIdx < charsetBaseIdx, "expected videoBase before charsetBase");
+    assert.ok(charsetBaseIdx < charsetSourceIdx, "expected charsetBase before charsetSource");
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("idempotency (refusal arm): two parses of the same drifted (Colors: line removed) payload are deeply equal", () => {
+  const mutated = realStockText().replace("Colors: Border: e BG: 6 \n", "");
+  const first = parseIoRegisters(mutated);
+  const second = parseIoRegisters(mutated);
+  assert.equal(first.ok, false);
+  assert.deepEqual(first, second);
+});
+
+test("interface census: REQUIRED_IO_DECODED_KEYS equals IoDecodedState's own declared field set, read from this module's real source -- what stops a field added to the interface later from silently re-opening CR-01", () => {
+  const src = readFileSync(OWN_MODULE, "utf8");
+  const interfaceMatch = /export interface IoDecodedState \{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(interfaceMatch, "expected to find the IoDecodedState interface body in this module's source");
+  const body = interfaceMatch![1]!;
+  const declaredFieldNames = [...body.matchAll(/^\s*readonly (\w+):/gm)].map((m) => m[1]!);
+  assert.ok(declaredFieldNames.length > 0, "expected at least one declared field -- the interface body regex may have failed to match");
+
+  const declaredSet = new Set(declaredFieldNames);
+  const constSet = new Set<string>(REQUIRED_IO_DECODED_KEYS);
+  const declaredNotInConst = declaredFieldNames.filter((f) => !constSet.has(f));
+  const constNotInDeclared = REQUIRED_IO_DECODED_KEYS.filter((k) => !declaredSet.has(k));
+  assert.deepEqual(
+    declaredNotInConst,
+    [],
+    `IoDecodedState declares fields REQUIRED_IO_DECODED_KEYS is missing: ${JSON.stringify(declaredNotInConst)}`,
+  );
+  assert.deepEqual(
+    constNotInDeclared,
+    [],
+    `REQUIRED_IO_DECODED_KEYS names fields IoDecodedState no longer declares: ${JSON.stringify(constNotInDeclared)}`,
+  );
 });
 
 // ---------------------------------------------------------------------------
