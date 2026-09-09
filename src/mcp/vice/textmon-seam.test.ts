@@ -78,20 +78,34 @@
 // make the guard more correct; it would make it red against a codebase that
 // has done nothing wrong.
 //
-// A SECOND NOTE ON MEASURED REALITY: WAVE-3 CONCURRENCY. This plan runs
-// concurrently, in its own worktree, alongside a sibling plan that owns
-// text-tools.ts, stock-dispatch.ts and friends and is (as of this file's
-// authoring) in the middle of wiring vice_cpuhistory_get/vice_backtrace_get/
-// vice_profile_flat/vice_io_registers_get through text-tools.ts. Measured in
-// THIS worktree, text-tools.ts imports ONLY textmon-memmap.ts today -- the
-// other four parsers have no importer yet beyond their own test file. The
-// import-consumer declarations below reflect that measured truth, not the
-// sibling plan's anticipated end state. When the sibling plan's wiring
-// lands, text-tools.ts becoming a second importer for those four parsers is
-// exactly the "new consumer" this guard's own philosophy expects to fail
+// A SECOND NOTE ON MEASURED REALITY: WAVE-3 CONCURRENCY, RESOLVED POST-MERGE.
+// This plan (42-08) ran concurrently, in its own worktree, alongside a
+// sibling plan (42-07) that owns text-tools.ts, stock-dispatch.ts and
+// friends and was (as of this file's original authoring) in the middle of
+// wiring vice_cpu_history/vice_backtrace/vice_profile_flat/vice_io_registers
+// through text-tools.ts. Measured in 42-08's OWN worktree at that time,
+// text-tools.ts imported ONLY textmon-memmap.ts -- the other four parsers
+// had no importer yet beyond their own test file, so the import-consumer
+// declarations at that point reflected that pre-merge measured truth, not
+// 42-07's anticipated end state. That was exactly the intended behaviour:
+// this guard's own philosophy is that a new consumer appearing must fail
 // loudly and be resolved by a DELIBERATE follow-up edit naming the plan that
-// added it -- never a silent widening. That is this guard doing its job,
-// not a defect in it.
+// added it, never absorbed silently.
+//
+// That follow-up has now happened. Both plans merged, and the post-merge
+// gate caught precisely the nine failures this comment predicted -- text-
+// tools.ts became a second importer of textmon-cpuhistory.ts,
+// textmon-backtrace.ts, textmon-profile.ts and textmon-registers.ts (four
+// import-consumer-set and four full-tree-scan failures), and 42-07's own
+// stock-dispatch.ts conformance test for vice_io_registers legitimately
+// embeds the IO-registers row marker ">C:" in a realistic register-dump
+// stub reply (the fifth, literal-consumer-set failure). FORMAT_OWNERS below
+// now declares text-tools.ts as CPU history's, backtrace's, flat profile's
+// and IO registers' import consumer, and stock-dispatch.test.ts as IO
+// registers' fifth literal consumer, each entry naming plan 42-07 as the
+// change that introduced it -- mirroring the access map's own entry, which
+// already listed text-tools.ts because plan 42-01 had wired it before 42-08
+// measured. The guard did its job; this is the deliberate resolution.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -301,7 +315,13 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       { file: "textmon-cpuhistory.ts", reason: "the owner: FLAG_SET_GLYPHS, matched position-by-position against every flag string" },
       { file: SEAM_FILE, reason: SELF_DECLARATION_REASON },
     ],
-    importConsumers: [{ file: "textmon-cpuhistory.test.ts", reason: "the owner's own test file" }],
+    importConsumers: [
+      { file: "textmon-cpuhistory.test.ts", reason: "the owner's own test file" },
+      {
+        file: "text-tools.ts",
+        reason: "plan 42-07's handleCpuHistory, whose body delegates to the owner's own parse export",
+      },
+    ],
   },
   {
     name: "backtrace",
@@ -316,7 +336,13 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       { file: "textmon-backtrace.test.ts", reason: "the owner's own test file, using this opener in synthetic frame-line fixtures" },
       { file: SEAM_FILE, reason: SELF_DECLARATION_REASON },
     ],
-    importConsumers: [{ file: "textmon-backtrace.test.ts", reason: "the owner's own test file" }],
+    importConsumers: [
+      { file: "textmon-backtrace.test.ts", reason: "the owner's own test file" },
+      {
+        file: "text-tools.ts",
+        reason: "plan 42-07's handleBacktrace, whose body delegates to the owner's own parse export",
+      },
+    ],
   },
   {
     name: "flat profile",
@@ -334,7 +360,13 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       },
       { file: SEAM_FILE, reason: SELF_DECLARATION_REASON },
     ],
-    importConsumers: [{ file: "textmon-profile.test.ts", reason: "the owner's own test file" }],
+    importConsumers: [
+      { file: "textmon-profile.test.ts", reason: "the owner's own test file" },
+      {
+        file: "text-tools.ts",
+        reason: "plan 42-07's handleProfileFlat, whose body delegates to the owner's own parse export",
+      },
+    ],
   },
   {
     name: "IO registers",
@@ -347,9 +379,20 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
     literalConsumers: [
       { file: "textmon-registers.ts", reason: "the owner: the fixed row marker DUMP_ROW_PREFIX_RE/DUMP_ROW_RE anchor every hex-dump row on" },
       { file: "textmon-registers.test.ts", reason: "the owner's own test file, using this marker in synthetic dump-row fixtures" },
+      {
+        file: "stock-dispatch.test.ts",
+        reason:
+          "plan 42-07's conformance test exercising vice_io_registers end-to-end through dispatchStock() with a realistic register-dump stub reply",
+      },
       { file: SEAM_FILE, reason: SELF_DECLARATION_REASON },
     ],
-    importConsumers: [{ file: "textmon-registers.test.ts", reason: "the owner's own test file" }],
+    importConsumers: [
+      { file: "textmon-registers.test.ts", reason: "the owner's own test file" },
+      {
+        file: "text-tools.ts",
+        reason: "plan 42-07's handleIoRegisters, whose body delegates to the owner's own parse export",
+      },
+    ],
   },
 ];
 
