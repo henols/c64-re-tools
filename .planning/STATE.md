@@ -5,17 +5,17 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: Completed 42-13-PLAN.md (G2/G3 profiling-not-started state and identity-warning cross-check closed); gap-closure plan 42-14 remains
-last_updated: "2026-09-09T19:20:36.000Z"
+stopped_at: Completed 42-14-PLAN.md — Phase 42's gap-closure round is finished, all 14 plans executed
+last_updated: "2026-09-09T19:42:46.574Z"
 last_activity: 2026-09-09
-last_activity_desc: Plan 42-13 executed — handleProfileFlat's cold-profiler reply is a named profiling-not-started state owned by textmon-profile.ts (G2), and textCapabilityIdentityWarning() surfaces a computed binary-identity disagreement to the caller of all five text tools on both paths (G3)
-state_head: 18ac59d27f18e8c3967aeaa4effd33002577b208
+last_activity_desc: "Plan 42-14 executed — the round's own evidence record (five gap blocks, the final gate figure, a live re-run of all five formats on the final tree, and a \"still open\" closing block) appended to docs/phase42-text-format-drift-citations.md; PARSE-03 and PARSE-04 returned to Complete in REQUIREMENTS.md on measured grounds. Phase 42's gap-closure round is complete."
+state_head: 5914a49b56c3f158036bb7ff9f345615bccb641a
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 39
-  completed_plans: 38
-  percent: 97
+  completed_plans: 39
+  percent: 50
 ---
 
 # Project State
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — EXECUTING (gap closure)
-Plan: 9 of 9 original executed; gap-closure plans 42-10..42-14 executing (4 of 5 done: 42-10, 42-11, 42-12, 42-13)
-Status: Gap-closure executing — 42-10, 42-11, 42-12, 42-13 complete (CR-01, WR-02, IN-01, G5, G2, G3 closed), 42-14 remaining
-Last activity: 2026-09-09 — Plan 42-13 executed: handleProfileFlat's cold-profiler reply is now a named profiling-not-started state (G2), and the identity cross-check reaches the caller of all five text tools on both paths (G3)
+Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — GAP-CLOSURE COMPLETE, ready for verification
+Plan: 14 of 14 executed (9 original + 5 gap-closure: 42-10, 42-11, 42-12, 42-13, 42-14)
+Status: Gap-closure complete — 42-10, 42-11, 42-12, 42-13, 42-14 all done (CR-01, WR-02, IN-01, G5, G2, G3 closed; the round's own evidence record written; PARSE-03/PARSE-04 restored to Complete on measured grounds)
+Last activity: 2026-09-09 — Plan 42-14 executed: appended the round's evidence record to docs/phase42-text-format-drift-citations.md (five gap blocks, final gate figure at the documented 3-failure floor, a live re-run of all five formats on the final tree, a closing "still open" block) and returned PARSE-03/PARSE-04 to Complete in REQUIREMENTS.md
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -510,6 +510,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 42 P10 | 25 min | 2 tasks | 4 files |
 | Phase 42 P11 | 40min | 2 tasks | 6 files |
 | Phase 42 P12 | 25min | 2 tasks | 1 files |
+| Phase 42 P14 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1151,6 +1152,7 @@ Recent decisions affecting current work:
 - [Phase 42]: Plan 42-11 closed WR-02 by making the sprite-table/decoded-prose requirement chip-conditional (parseIoRegisters refuses a non-VIC-II chip section by name via a new unsupported-chip refusal code), rather than narrowing vice_io_registers's advertised 0-65535 address range -- the chip-conditional approach keeps the published tool contract additive-only.
 - [Phase 42]: handleIoRegisters renders the unsupported-chip refusal as the parser's own message verbatim under the tool name, with no parse-failure wrapper -- every other refusal code keeps the existing wrapper unchanged, so a legitimately different chip is never reported as a defect in this project.
 - [Phase 42]: Plan 42-12 closed G5 -- text-monitor-live.test.ts's teardown assertion now folds the broker child's own pid into the existing pidsAliveAfterTeardown array (no per-call-site edit needed) and adds a scratch-path-scoped stray-process sweep plus a proven scratch-dir-removal check, all kept honest by an unskipped planted-violation control that runs with no VICE_LIVE_STOCK_BIN set -- replacing a teardown-verification method that checked a systemd unit this file never starts and grepped only for the emulator, never the broker.
+- [Phase 42]: Restored PARSE-03 and PARSE-04 to Complete in REQUIREMENTS.md after re-measuring both demotion causes green on the final gap-closure-round tree (io drift refusal for all five formats; the cold-profiler state named and the identity disagreement reaching the caller) -- a conditional, scoped flip, never assumed from the plans having merely run.
 
 ### Pending Todos
 
@@ -2145,8 +2147,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T18:57:00.000Z
-Stopped at: Completed 42-12-PLAN.md (G5 broker-teardown observation closed); gap-closure plans 42-13..42-14 remain
+Last session: 2026-09-09T19:42:46.006Z
+Stopped at: Completed 42-14-PLAN.md — Phase 42's gap-closure round is finished, all 14 plans executed
 Resume file: None
 
 Earlier: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remained at that point
