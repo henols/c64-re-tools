@@ -48,6 +48,20 @@ const MAX_LINE_BYTES = 65536;
  * and T-02-18's prohibition on wedge/hang vocabulary in this file's
  * monitor-op refusals. */
 const MONITOR_OWNERSHIP_DENIAL = "monitor_claim/monitor_release may only target the grant this connection itself holds";
+/** Resolves the `channel` field on a `monitor_claim`/`monitor_release`
+ * request line (plan 41-03, D-14): an ABSENT field means `binary`
+ * deliberately -- a broker restarted mid-phase against a client that
+ * predates this field keeps working (backward compatibility, this plan's
+ * own must-have). An unrecognised NON-EMPTY value is `bad_request`, never a
+ * silent fallback and never cast -- the caller below names both accepted
+ * values in the refusal message. */
+function resolveMonitorChannel(raw) {
+    if (raw === undefined)
+        return "binary";
+    if (raw === "binary" || raw === "text")
+        return raw;
+    return "bad_request";
+}
 // ---------------------------------------------------------------------------
 // Phase 33, plan 33-06 (REPRO-05, D-15, T-33-03/T-33-04): the launch-profile
 // narrowing site.
@@ -539,15 +553,25 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     writeLine(socket, { kind: "error", code: "denied", message: MONITOR_OWNERSHIP_DENIAL });
                     return;
                 }
+                const channel = resolveMonitorChannel(req.channel);
+                if (channel === "bad_request") {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: `monitor_claim: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+                    });
+                    return;
+                }
                 const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
-                const outcome = opts.onMonitorClaim(requestId, targetId);
+                const outcome = opts.onMonitorClaim(requestId, targetId, channel);
                 if (outcome.ok) {
                     writeLine(socket, { kind: "monitor_claimed" });
                 }
                 else if (outcome.code === "monitor_owned") {
-                    // Ownership conflict, named by holder -- deliberately worded to
-                    // never suggest the emulator itself has stopped answering
-                    // (T-02-18; the plan's own grep gate polices this).
+                    // Ownership conflict, named by holder AND channel (plan 41-03,
+                    // D-14) -- deliberately worded to never suggest the emulator
+                    // itself has stopped answering (T-02-18; the plan's own grep gate
+                    // polices this).
                     //
                     // WR-08 (broker side): `holder` is REQUIRED by MonitorClaimOutcome for
                     // this code, but this handler runs inside socket.on("data") with no
@@ -555,13 +579,14 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     // TypeError out of the control listener and take the broker process
                     // with it -- a type contract is not a runtime guarantee at a wire
                     // boundary. The fallback names the holder as unknown rather than
-                    // fabricating one, matching what the container-side client now does
-                    // with a malformed holder payload.
-                    const holder = outcome.holder ?? { grantId: "unknown", claimedAt: 0, pid: null };
+                    // fabricating one (matching what the container-side client now does
+                    // with a malformed holder payload), and defaults `channel` to the
+                    // channel THIS request asked for -- never a fabricated third value.
+                    const holder = outcome.holder ?? { grantId: "unknown", claimedAt: 0, pid: null, channel };
                     writeLine(socket, {
                         kind: "error",
                         code: "monitor_owned",
-                        message: `instance already has a monitor client (grant ${holder.grantId}, claimed at ${holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
+                        message: `instance already has a monitor client on the ${holder.channel} channel (grant ${holder.grantId}, claimed at ${holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
                         holder,
                     });
                 }
@@ -579,8 +604,17 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     writeLine(socket, { kind: "error", code: "denied", message: MONITOR_OWNERSHIP_DENIAL });
                     return;
                 }
+                const channel = resolveMonitorChannel(req.channel);
+                if (channel === "bad_request") {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: `monitor_release: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+                    });
+                    return;
+                }
                 const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("release-monitor");
-                const outcome = opts.onMonitorRelease(requestId, targetId);
+                const outcome = opts.onMonitorRelease(requestId, targetId, channel);
                 if (outcome.ok) {
                     writeLine(socket, { kind: "monitor_released" });
                 }

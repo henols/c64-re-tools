@@ -36,6 +36,7 @@ import {
   type BrokerState,
   type InstanceRecord,
   type PortAllocationResult,
+  type MonitorChannel,
 } from "./broker-state.mjs";
 import {
   acquirePortAndLaunch,
@@ -801,7 +802,10 @@ function handleStatus(state: BrokerState): StatusInstanceEntry[] {
     state: r.state,
     reason: r.reason,
     epoch: typeof r.epoch === "number" ? r.epoch : null,
-    hasMonitorClient: r.monitorClient !== undefined,
+    // Plan 41-03 (D-14): "at least one channel is claimed" -- promoted from
+    // a single-field check, byte-identical wire shape, meaning stated
+    // explicitly (D-15).
+    hasMonitorClient: Object.keys(r.monitorClients).length > 0,
   }));
 }
 
@@ -817,49 +821,55 @@ function resolveInstanceForMonitorTarget(targetId: string, state: BrokerState): 
   return state.instances.get(grant.port) ?? null;
 }
 
-/** Answers `monitor_claim` (plan 05, BROK-02/PROTO-08, D-13): exclusive
- * monitor-socket ownership enforced HERE, broker-side, so a conflicting
- * claim is refused by name before any second `connect()` is ever attempted
- * -- the one state stock VICE cannot report and no client-side heuristic
- * can diagnose. `targetId` doubles as both "which instance" (resolved via
- * the SAME grant lookup handleRelease()/handleRecycleForRealBroker() already
- * use) and "the requesting grant's own identity" -- the claim IS the grant,
- * so there is no separate identity to carry. A repeated claim from the SAME
- * grant is idempotent (`ok: true`, no second holder created); a claim from
- * a DIFFERENT grant while the instance already has a holder is refused,
- * naming the current holder (T-02-18) -- never the emulator's own fault. */
-export function handleMonitorClaim(requestId: string, targetId: string, state: BrokerState): MonitorClaimOutcome {
+/** Answers `monitor_claim` (plan 05, BROK-02/PROTO-08, D-13; per-channel
+ * since plan 41-03, D-14): exclusive monitor-socket ownership enforced
+ * HERE, broker-side, PER CHANNEL, so a conflicting claim is refused by name
+ * before any second `connect()` is ever attempted -- the one state stock
+ * VICE cannot report and no client-side heuristic can diagnose. `targetId`
+ * doubles as both "which instance" (resolved via the SAME grant lookup
+ * handleRelease()/handleRecycleForRealBroker() already use) and "the
+ * requesting grant's own identity" -- the claim IS the grant, so there is
+ * no separate identity to carry. A repeated claim from the SAME grant on
+ * the SAME channel is idempotent (`ok: true`, no second holder created); a
+ * claim from a DIFFERENT grant while that channel already has a holder is
+ * refused, naming the current holder and the channel (T-02-18) -- never the
+ * emulator's own fault. A DIFFERENT channel's holder is irrelevant to this
+ * decision -- claiming one channel never evicts or is refused by the
+ * other's holder. */
+export function handleMonitorClaim(requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState): MonitorClaimOutcome {
   void requestId; // correlation only -- the claim's own identity is targetId itself
   const instance = resolveInstanceForMonitorTarget(targetId, state);
   if (!instance) return { ok: false, code: "bad_request" };
 
-  const existing = instance.monitorClient;
+  const existing = instance.monitorClients[channel];
   if (!existing) {
-    instance.monitorClient = { grantId: targetId, claimedAt: Date.now(), pid: instance.pid };
+    instance.monitorClients[channel] = { grantId: targetId, claimedAt: Date.now(), pid: instance.pid };
     return { ok: true };
   }
   if (existing.grantId === targetId) {
-    return { ok: true }; // idempotent repeat from the SAME grant -- no second holder
+    return { ok: true }; // idempotent repeat from the SAME grant on the SAME channel -- no second holder
   }
-  return { ok: false, code: "monitor_owned", holder: { grantId: existing.grantId, claimedAt: existing.claimedAt, pid: existing.pid } };
+  return { ok: false, code: "monitor_owned", holder: { grantId: existing.grantId, claimedAt: existing.claimedAt, pid: existing.pid, channel } };
 }
 
-/** Answers `monitor_release` (plan 05, T-02-01): clears `monitorClient` ONLY
- * when `targetId` names the CURRENT holder -- a non-holder is refused, not
+/** Answers `monitor_release` (plan 05, T-02-01; per-channel since plan
+ * 41-03, D-14): clears ONLY the named channel's entry, ONLY when `targetId`
+ * names that channel's CURRENT holder -- a non-holder is refused, not
  * silently accepted (spoofing a release is exactly T-02-01's own
- * disposition). An instance with no current holder at all tolerates the
+ * disposition). A channel with no current holder at all tolerates the
  * release as a success, matching the container-side client's own documented
  * tolerance for releasing a socket the broker already cleared. */
-export function handleMonitorRelease(requestId: string, targetId: string, state: BrokerState): MonitorReleaseOutcome {
+export function handleMonitorRelease(requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState): MonitorReleaseOutcome {
   void requestId; // correlation only, matching handleMonitorClaim()'s own posture
   const instance = resolveInstanceForMonitorTarget(targetId, state);
   if (!instance) return { ok: false, code: "bad_request" };
 
-  if (!instance.monitorClient) return { ok: true }; // already cleared -- tolerated, not an error
-  if (instance.monitorClient.grantId !== targetId) {
+  const existing = instance.monitorClients[channel];
+  if (!existing) return { ok: true }; // already cleared -- tolerated, not an error
+  if (existing.grantId !== targetId) {
     return { ok: false, code: "denied" };
   }
-  clearMonitorClient(instance);
+  clearMonitorClient(instance, channel);
   return { ok: true };
 }
 
@@ -1064,10 +1074,11 @@ export function handleRelease(requestId: string, state: BrokerState): void {
 
   if (instance && instance.pid === grant.pid) {
     markDeliberateDeath(instance, false);
-    // Plan 05: releasing clears monitor-client ownership as a side effect
-    // -- redundant with the instance-map deletion two lines below (the
-    // WHOLE record, monitorClient included, is going away), but explicit
-    // for the same reason GrantRecord's own clearing is explicit here: the
+    // Plan 05: releasing clears monitor-client ownership (every channel) as
+    // a side effect -- redundant with the instance-map deletion two lines
+    // below (the WHOLE record, monitorClients included, is going away), but
+    // explicit for the same reason GrantRecord's own clearing is explicit
+    // here: the
     // instance-map deletion is a Task-2-era invariant this task must not
     // depend on silently continuing to hold.
     clearMonitorClient(instance);
@@ -1237,8 +1248,8 @@ async function run(args: ParsedArgs): Promise<void> {
           repoRoot: args.repoRoot,
           log: (line: string) => process.stderr.write(`${line}\n`),
         }),
-      onMonitorClaim: (requestId, targetId) => handleMonitorClaim(requestId, targetId, state),
-      onMonitorRelease: (requestId, targetId) => handleMonitorRelease(requestId, targetId, state),
+      onMonitorClaim: (requestId, targetId, channel) => handleMonitorClaim(requestId, targetId, channel, state),
+      onMonitorRelease: (requestId, targetId, channel) => handleMonitorRelease(requestId, targetId, channel, state),
       onHostState: (): HostStateFields => ({
         pid: process.pid,
         startedAt,

@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { connect } from "node:net";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -36,6 +36,8 @@ import {
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
 } from "./broker-control.mts";
+// Plan 41-03 (D-14): the channel contract's one host-bound declaration.
+import type { MonitorChannel } from "./broker-state.mts";
 // Phase 33, plan 33-06 (D-15): the profile shape is imported from its one
 // definition, exactly as the production modules import it -- a local shape
 // here would let these assertions pass against a boundary that accepts
@@ -110,19 +112,31 @@ interface StubDeps {
   onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
   onHostState?: () => HostStateFields;
-  onMonitorClaim?: (requestId: string, targetId: string) => MonitorClaimOutcome;
-  onMonitorRelease?: (requestId: string, targetId: string) => MonitorReleaseOutcome;
+  onMonitorClaim?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorClaimOutcome;
+  onMonitorRelease?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorReleaseOutcome;
   onHostTool?: (raw: unknown) => Promise<unknown>;
 }
 
-async function startTestListener(
-  deps: StubDeps = {},
-): Promise<{ listener: StartControlListenerResult; token: string; releases: string[]; recycleCalls: string[]; monitorClaimCalls: string[]; monitorReleaseCalls: string[] }> {
+async function startTestListener(deps: StubDeps = {}): Promise<{
+  listener: StartControlListenerResult;
+  token: string;
+  releases: string[];
+  recycleCalls: string[];
+  monitorClaimCalls: string[];
+  monitorReleaseCalls: string[];
+  // Plan 41-03 (D-14): the channel each monitor_claim/monitor_release call
+  // actually resolved to, in call order -- alongside the pre-existing
+  // targetId-only arrays above (kept for every pre-41-03 assertion).
+  monitorClaimChannels: MonitorChannel[];
+  monitorReleaseChannels: MonitorChannel[];
+}> {
   const token = newControlToken();
   const releases: string[] = [];
   const recycleCalls: string[] = [];
   const monitorClaimCalls: string[] = [];
   const monitorReleaseCalls: string[] = [];
+  const monitorClaimChannels: MonitorChannel[] = [];
+  const monitorReleaseChannels: MonitorChannel[] = [];
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
@@ -142,13 +156,15 @@ async function startTestListener(
     onHostState:
       deps.onHostState ??
       (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const })),
-    onMonitorClaim: (requestId, targetId) => {
+    onMonitorClaim: (requestId, targetId, channel) => {
       monitorClaimCalls.push(targetId);
-      return deps.onMonitorClaim?.(requestId, targetId) ?? ({ ok: false, code: "internal" } as MonitorClaimOutcome);
+      monitorClaimChannels.push(channel);
+      return deps.onMonitorClaim?.(requestId, targetId, channel) ?? ({ ok: false, code: "internal" } as MonitorClaimOutcome);
     },
-    onMonitorRelease: (requestId, targetId) => {
+    onMonitorRelease: (requestId, targetId, channel) => {
       monitorReleaseCalls.push(targetId);
-      return deps.onMonitorRelease?.(requestId, targetId) ?? ({ ok: false, code: "internal" } as MonitorReleaseOutcome);
+      monitorReleaseChannels.push(channel);
+      return deps.onMonitorRelease?.(requestId, targetId, channel) ?? ({ ok: false, code: "internal" } as MonitorReleaseOutcome);
     },
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- no existing test in this file exercises host_tool
@@ -156,7 +172,7 @@ async function startTestListener(
     // never called by any pre-existing case here.
     onHostTool: deps.onHostTool ?? (async () => ({ ok: false, message: "no onHostTool stub configured" })),
   });
-  return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls };
+  return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls, monitorClaimChannels, monitorReleaseChannels };
 }
 
 // ============================================================================
@@ -427,10 +443,10 @@ test("monitor_claim: an ok stub answers the monitor_claimed response kind", asyn
   }
 });
 
-test("monitor_claim: a monitor_owned stub answers an error carrying code monitor_owned and the holder's own grantId/claimedAt/pid, worded as an ownership conflict", async () => {
+test("monitor_claim: a monitor_owned stub answers an error carrying code monitor_owned and the holder's own grantId/claimedAt/pid/channel, worded as an ownership conflict", async () => {
   const { listener, token } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-a", claimedAt: 111, pid: 4242 } }),
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-a", claimedAt: 111, pid: 4242, channel: "binary" } }),
   });
   const client = makeClient(listener.port);
   try {
@@ -442,9 +458,153 @@ test("monitor_claim: a monitor_owned stub answers an error carrying code monitor
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "monitor_owned");
-    assert.deepEqual(resp.holder, { grantId: "req-a", claimedAt: 111, pid: 4242 });
+    assert.deepEqual(resp.holder, { grantId: "req-a", claimedAt: 111, pid: 4242, channel: "binary" });
     assert.match(String(resp.message), /ownership conflict/i);
     assert.doesNotMatch(String(resp.message), /wedge|hung|unresponsive/i, "a monitor_owned refusal must never read as a wedge or a hang");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+// ============================================================================
+// Plan 41-03 (D-14): the `channel` axis -- items 4-9 of the plan's own list.
+// ============================================================================
+
+test("monitor_claim (D-14): claiming 'text' on an instance whose 'binary' channel is held by a DIFFERENT grant succeeds -- the two channels are independent", async () => {
+  const { listener, token, monitorClaimChannels } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    // The stub models a real per-channel map: "binary" is already held by
+    // "req-a", "text" has no holder at all yet.
+    onMonitorClaim: (_requestId, targetId, channel) => {
+      if (channel === "binary" && targetId !== "req-a") {
+        return { ok: false, code: "monitor_owned", holder: { grantId: "req-a", claimedAt: 111, pid: 4242, channel: "binary" } };
+      }
+      return { ok: true };
+    },
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-b");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", channel: "text", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "monitor_claimed");
+    assert.deepEqual(monitorClaimChannels, ["text"]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim (D-14): a 'text' claim from a second grant while a first grant holds 'text' is refused monitor_owned, naming the first grant's id and the text channel, with no wedge/hang/frozen/stuck/unresponsive vocabulary", async () => {
+  const { listener, token } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-first", claimedAt: 222, pid: 4242, channel: "text" } }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-second");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-second", channel: "text", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "monitor_owned");
+    assert.deepEqual(resp.holder, { grantId: "req-first", claimedAt: 222, pid: 4242, channel: "text" });
+    assert.match(String(resp.message), /req-first/);
+    assert.match(String(resp.message), /text/);
+    assert.doesNotMatch(String(resp.message), /wedge|hang|frozen|stuck|unresponsive/i);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim (D-14): an unrecognised non-empty channel value is bad_request, naming both accepted values", async () => {
+  const { listener, token, monitorClaimCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", channel: "drive", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.match(String(resp.message), /"binary"/);
+    assert.match(String(resp.message), /"text"/);
+    assert.deepEqual(monitorClaimCalls, [], "an invalid channel must be refused BEFORE onMonitorClaim ever runs");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_claim (D-14): no channel field at all behaves exactly as channel: 'binary' -- the backward-compatibility case", async () => {
+  const { listener, token, monitorClaimChannels } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorClaim: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "monitor_claimed");
+    assert.deepEqual(monitorClaimChannels, ["binary"]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_release (D-14): no channel field at all behaves exactly as channel: 'binary'", async () => {
+  const { listener, token, monitorReleaseChannels } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorRelease: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "monitor_released");
+    assert.deepEqual(monitorReleaseChannels, ["binary"]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("monitor_release (D-14): an unrecognised non-empty channel value is bad_request, naming both accepted values", async () => {
+  const { listener, token, monitorReleaseCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorRelease: () => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", channel: "drive", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.match(String(resp.message), /"binary"/);
+    assert.match(String(resp.message), /"text"/);
+    assert.deepEqual(monitorReleaseCalls, [], "an invalid channel must be refused BEFORE onMonitorRelease ever runs");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("status (D-14): hasMonitorClient is true when only the text channel is claimed", async () => {
+  const entries: StatusInstanceEntry[] = [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "granted", reason: "acquire", epoch: 1, hasMonitorClient: true }];
+  const { listener, token } = await startTestListener({ onStatus: () => entries });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "status", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "status");
+    assert.deepEqual((resp.instances as StatusInstanceEntry[])[0]?.hasMonitorClient, true);
   } finally {
     client.close();
     listener.server.close();
@@ -657,6 +817,45 @@ test("monitor_release: a broker-side non-holder outcome answers a refusal, not s
     client.close();
     listener.server.close();
   }
+});
+
+test("structural (D-14): no halting-path module reads monitorClients -- the only files containing that identifier are the four broker-side modules, their compiled resources/*.mjs artifacts, and the InstanceRecord test fixtures that must satisfy its non-optional field", () => {
+  const output = execFileSync("git", ["ls-files"], { cwd: HERE, encoding: "utf8" });
+  const files = output
+    .split("\n")
+    .map((f) => f.trim())
+    .filter((f) => f !== "");
+  // The four broker-side modules THIS plan promotes monitorClients in, plus
+  // their compiled/committed resources/*.mjs siblings (expected to carry the
+  // identifier verbatim) and every test file that constructs a raw
+  // InstanceRecord literal and must therefore satisfy its non-optional
+  // field -- none of these is a halting-path consumer.
+  const ALLOWED = new Set([
+    "broker-state.mts",
+    "broker-control.mts",
+    "broker-launch.mts",
+    "vice-broker.mts",
+    "resources/broker-state.mjs",
+    "resources/broker-control.mjs",
+    "resources/broker-launch.mjs",
+    "resources/vice-broker.mjs",
+    "broker-state.test.ts",
+    "broker-control.test.ts",
+    "broker-launch.test.ts",
+    "broker-kill.test.ts",
+    "vice-broker-acquire.test.ts",
+    "vice-broker-supervision.test.ts",
+  ]);
+  const offenders: string[] = [];
+  for (const rel of files) {
+    if (ALLOWED.has(rel)) continue;
+    if (!/\.(ts|mts|mjs)$/.test(rel)) continue;
+    const full = join(HERE, rel);
+    if (!existsSync(full)) continue;
+    const text = readFileSync(full, "utf8");
+    if (text.includes("monitorClients")) offenders.push(rel);
+  }
+  assert.deepEqual(offenders, [], `no halting-path module may read monitorClients: ${JSON.stringify(offenders)}`);
 });
 
 test("an unknown request kind answers the bad_request error code, and no callback is invoked", async () => {

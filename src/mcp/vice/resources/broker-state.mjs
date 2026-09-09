@@ -5,14 +5,38 @@
 // verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 import { createServer } from "node:net";
-/** Clears `monitorClient` as a side effect of release, recycle, or the
- * instance's own process exit (see InstanceRecord.monitorClient's own header
- * comment for the three call sites) -- so a dead or torn-down client can
- * never hold this lock forever. A no-op when no monitor client is currently
- * recorded (idempotent, matching monitor_release's own tolerance for an
- * already-cleared record). */
-export function clearMonitorClient(record) {
-    record.monitorClient = undefined;
+// ---------------------------------------------------------------------------
+// MonitorChannel (plan 41-03, D-14): exactly two channels exist -- stock VICE
+// exposes precisely the binary monitor and the `-remotemonitor` text
+// channel -- and this project has no plan to add a third. Frozen so a
+// consumer cannot accidentally push a third value onto it at runtime.
+//
+// Declared here a SECOND time in channel-lock.ts (and a third time, as a
+// local literal union, in vice-broker-client.ts) rather than imported from a
+// single shared home: channel-lock.ts is a container-side module and this
+// module is host-bound and compiled into resources/*.mjs, so neither can
+// import the other at runtime. The shared thing between the declarations is
+// the two-value CONTRACT ("binary" | "text"), not the declaration itself.
+// ---------------------------------------------------------------------------
+export const MONITOR_CHANNELS = Object.freeze(["binary", "text"]);
+/** Clears ONE channel's entry when `channel` is passed (an explicit
+ * `monitor_release` for that channel), or EVERY channel's entry when it is
+ * omitted (the whole record's ownership is going away -- recycle, release,
+ * or the instance's own process exit; see InstanceRecord.monitorClients'
+ * own header comment for the exact call sites of each case) -- so a dead or
+ * torn-down client can never hold this lock forever, on any channel. The
+ * ONE place a holder entry is cleared, apart from broker-launch.mts's
+ * handleExit(), which assigns `{}` directly for a documented reason (see
+ * that function's own comment). A no-op when the targeted channel (or, with
+ * no channel, every channel) is not currently held -- idempotent, matching
+ * monitor_release's own tolerance for an already-cleared record. */
+export function clearMonitorClient(record, channel) {
+    if (channel !== undefined) {
+        delete record.monitorClients[channel];
+        return;
+    }
+    for (const ch of MONITOR_CHANNELS)
+        delete record.monitorClients[ch];
 }
 export function createBrokerState() {
     return { instances: new Map(), grants: new Map(), blockedPorts: new Set() };

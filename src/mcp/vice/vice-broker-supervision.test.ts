@@ -116,6 +116,9 @@ function stockInstanceRecord(port: number, pid: number, supervisorDir: string): 
     viceBin: "x64sc",
     viceArgs: ["-binarymonitor", "-binarymonitoraddress", `ip4://127.0.0.1:${port}`],
     dryRun: false,
+    // Plan 41-03 (D-14): monitorClients is non-optional -- "no claim on any
+    // channel" is an empty map, never an absent field.
+    monitorClients: {},
   };
 }
 

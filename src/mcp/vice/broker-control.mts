@@ -35,6 +35,14 @@ import { timingSafeEqual, randomBytes } from "node:crypto";
 // and a second local copy here is exactly how the wire boundary and the argv
 // builder would drift apart.
 import type { LaunchProfile } from "./broker-launch.mjs";
+// TYPE-ONLY import (plan 41-03, D-14) -- same discipline as the LaunchProfile
+// import directly above: fully erased under this project's
+// verbatimModuleSyntax/isolatedModules settings, so this module stays
+// importable unbuilt. MonitorChannel is the two-value channel contract
+// ("binary" | "text"); broker-state.mts is its one canonical declaration for
+// every HOST-BOUND module, mirrored (not imported, for the container side)
+// by channel-lock.ts and vice-broker-client.ts.
+import type { MonitorChannel } from "./broker-state.mjs";
 
 // Phase 34, plan 34-01 (A-01): STILL ONE OP PER SUBSYSTEM. `host_tool` is the
 // EIGHTH member -- and the whole host-tool subsystem, not one member per
@@ -109,29 +117,35 @@ export interface StatusInstanceEntry {
   reason: string;
   epoch: number | null;
   /** Plan 05: whether this instance currently has a claimed monitor client
-   * (InstanceRecord.monitorClient set), computed on demand from the SAME
-   * in-memory map every other status field reads. */
+   * on ANY channel (InstanceRecord.monitorClients has at least one entry),
+   * computed on demand from the SAME in-memory map every other status field
+   * reads. Byte-identical wire shape since plan 05 (D-15) -- promoted by
+   * plan 41-03 (D-14) to a per-channel holder map, this field's own MEANING
+   * is now stated explicitly rather than left inferable: "at least one
+   * channel is claimed", never "the binary channel is claimed" alone. */
   hasMonitorClient: boolean;
 }
 
-/** The claim conflict's refusal payload (plan 05, T-02-18): names the
- * holding grant and its claim timestamp so a refusal is reported as an
- * ownership conflict, never as a wedged or unresponsive emulator.
- * `pid` mirrors GrantRecord.pid's own convention -- broker-state.mts's
- * InstanceRecord.monitorClient's own header comment explains why. */
+/** The claim conflict's refusal payload (plan 05, T-02-18; gains `channel`
+ * in plan 41-03, D-14): names the holding grant, its claim timestamp and
+ * NOW which channel is contended, so a refusal is reported as an ownership
+ * conflict, never as a wedged or unresponsive emulator. `pid` mirrors
+ * GrantRecord.pid's own convention -- broker-state.mts's
+ * InstanceRecord.monitorClients' own header comment explains why. */
 export interface MonitorHolder {
   grantId: string;
   claimedAt: number;
   pid: number | null;
+  channel: MonitorChannel;
 }
 
 /** Discriminated outcome for `monitor_claim` (plan 05, D-13): resolved by
  * vice-broker.mts's own handleMonitorClaim(), which is the SOLE writer of
- * InstanceRecord.monitorClient on a successful claim. `monitor_owned` is a
- * distinct outcome from every other error -- it carries the holder's own
- * identity, because a refusal answered "someone else has it, and here is
- * who" is what makes this an ownership conflict rather than an unexplained
- * hang. */
+ * an entry in InstanceRecord.monitorClients on a successful claim.
+ * `monitor_owned` is a distinct outcome from every other error -- it
+ * carries the holder's own identity, because a refusal answered "someone
+ * else has it, and here is who" is what makes this an ownership conflict
+ * rather than an unexplained hang. */
 export type MonitorClaimOutcome = { ok: true } | { ok: false; code: "monitor_owned"; holder: MonitorHolder } | { ok: false; code: "bad_request" | "internal" };
 
 /** Discriminated outcome for `monitor_release` (plan 05, T-02-01): `denied`
@@ -205,15 +219,16 @@ export interface StartControlListenerOptions {
    * written (plan 05, T-02-16). `requestId` is this specific claim request's
    * own correlation id; `targetId` both resolves which instance is being
    * claimed (the same way onRecycle's targetId resolves its own target) AND
-   * is the claiming identity compared against a conflicting holder -- see
-   * vice-broker.mts's handleMonitorClaim() for the resolution and
+   * is the claiming identity compared against a conflicting holder;
+   * `channel` (plan 41-03, D-14) is the resolved channel this request named
+   * -- see vice-broker.mts's handleMonitorClaim() for the resolution and
    * idempotency rules. */
-  onMonitorClaim: (requestId: string, targetId: string) => MonitorClaimOutcome;
+  onMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorClaimOutcome;
   /** Called on `monitor_release`, under the same token gate. Clearing is
    * refused (not silently accepted) when `targetId` names a grant that is
-   * NOT the current holder -- see MonitorReleaseOutcome's own header
-   * comment for the already-cleared tolerance. */
-  onMonitorRelease: (requestId: string, targetId: string) => MonitorReleaseOutcome;
+   * NOT the current holder of `channel` -- see MonitorReleaseOutcome's own
+   * header comment for the already-cleared tolerance. */
+  onMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorReleaseOutcome;
   /** Phase 34, plan 34-01 (SEAM-01): called on `host_tool`, AFTER the token
    * check has already passed -- the SAME gate every other op runs. Handed
    * its OWN function, declared alongside these seven and NEVER composed
@@ -301,6 +316,19 @@ const MAX_LINE_BYTES = 65536;
  * monitor-op refusals. */
 const MONITOR_OWNERSHIP_DENIAL =
   "monitor_claim/monitor_release may only target the grant this connection itself holds";
+
+/** Resolves the `channel` field on a `monitor_claim`/`monitor_release`
+ * request line (plan 41-03, D-14): an ABSENT field means `binary`
+ * deliberately -- a broker restarted mid-phase against a client that
+ * predates this field keeps working (backward compatibility, this plan's
+ * own must-have). An unrecognised NON-EMPTY value is `bad_request`, never a
+ * silent fallback and never cast -- the caller below names both accepted
+ * values in the refusal message. */
+function resolveMonitorChannel(raw: unknown): MonitorChannel | "bad_request" {
+  if (raw === undefined) return "binary";
+  if (raw === "binary" || raw === "text") return raw;
+  return "bad_request";
+}
 
 // ---------------------------------------------------------------------------
 // Phase 33, plan 33-06 (REPRO-05, D-15, T-33-03/T-33-04): the launch-profile
@@ -830,14 +858,24 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           writeLine(socket, { kind: "error", code: "denied" as ControlErrorCode, message: MONITOR_OWNERSHIP_DENIAL });
           return;
         }
+        const channel = resolveMonitorChannel(req.channel);
+        if (channel === "bad_request") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: `monitor_claim: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+          });
+          return;
+        }
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
-        const outcome = opts.onMonitorClaim(requestId, targetId);
+        const outcome = opts.onMonitorClaim(requestId, targetId, channel);
         if (outcome.ok) {
           writeLine(socket, { kind: "monitor_claimed" });
         } else if (outcome.code === "monitor_owned") {
-          // Ownership conflict, named by holder -- deliberately worded to
-          // never suggest the emulator itself has stopped answering
-          // (T-02-18; the plan's own grep gate polices this).
+          // Ownership conflict, named by holder AND channel (plan 41-03,
+          // D-14) -- deliberately worded to never suggest the emulator
+          // itself has stopped answering (T-02-18; the plan's own grep gate
+          // polices this).
           //
           // WR-08 (broker side): `holder` is REQUIRED by MonitorClaimOutcome for
           // this code, but this handler runs inside socket.on("data") with no
@@ -845,13 +883,14 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           // TypeError out of the control listener and take the broker process
           // with it -- a type contract is not a runtime guarantee at a wire
           // boundary. The fallback names the holder as unknown rather than
-          // fabricating one, matching what the container-side client now does
-          // with a malformed holder payload.
-          const holder = outcome.holder ?? { grantId: "unknown", claimedAt: 0, pid: null };
+          // fabricating one (matching what the container-side client now does
+          // with a malformed holder payload), and defaults `channel` to the
+          // channel THIS request asked for -- never a fabricated third value.
+          const holder = outcome.holder ?? { grantId: "unknown", claimedAt: 0, pid: null, channel };
           writeLine(socket, {
             kind: "error",
             code: "monitor_owned",
-            message: `instance already has a monitor client (grant ${holder.grantId}, claimed at ${holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
+            message: `instance already has a monitor client on the ${holder.channel} channel (grant ${holder.grantId}, claimed at ${holder.claimedAt}) -- this is an ownership conflict, not an emulator failure`,
             holder,
           });
         } else {
@@ -867,8 +906,17 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           writeLine(socket, { kind: "error", code: "denied" as ControlErrorCode, message: MONITOR_OWNERSHIP_DENIAL });
           return;
         }
+        const channel = resolveMonitorChannel(req.channel);
+        if (channel === "bad_request") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: `monitor_release: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+          });
+          return;
+        }
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("release-monitor");
-        const outcome = opts.onMonitorRelease(requestId, targetId);
+        const outcome = opts.onMonitorRelease(requestId, targetId, channel);
         if (outcome.ok) {
           writeLine(socket, { kind: "monitor_released" });
         } else {

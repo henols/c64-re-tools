@@ -527,6 +527,11 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
     viceBin,
     viceArgs,
     dryRun: false,
+    // Plan 41-03 (D-14): non-optional, defaulted to an empty map -- "no
+    // claim on any channel" is an empty map, never an absent field. The
+    // ONE place a fresh InstanceRecord is constructed, so this is the ONE
+    // place this default is set.
+    monitorClients: {},
     ...(deps.remoteMonitorPort === undefined ? {} : { remoteMonitorPort: deps.remoteMonitorPort }),
     // Phase 33, plan 33-06: same key-omitted-when-undefined idiom as
     // remoteMonitorPort directly above. An absent request must produce a
@@ -679,7 +684,7 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
         // does. `state.blockedPorts` is a plain Set the type import already
         // describes, so mutating it directly needs no value import at all --
         // exactly the same discipline handleExit()'s own
-        // `record.monitorClient = undefined` uses in place of
+        // `record.monitorClients = {}` uses in place of
         // clearMonitorClient().
         deps.state.blockedPorts.add(remoteResult.port);
         remoteMonitorPort = remoteResult.port;
@@ -1405,22 +1410,25 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
 
   const log = deps.log ?? defaultLog;
 
-  // Plan 05 (BROK-02/PROTO-08): the process behind this instance's monitor
-  // socket has just exited, by every path this function can take (crash,
-  // recycle, or a deliberate teardown) -- clear the ownership record HERE,
+  // Plan 05 (BROK-02/PROTO-08), promoted to a per-channel map by plan 41-03
+  // (D-14): the process behind this instance's monitor sockets has just
+  // exited, by every path this function can take (crash, recycle, or a
+  // deliberate teardown) -- clear EVERY channel's ownership record HERE,
   // once, before any of those paths branch, so a client that died without
-  // releasing can never hold this lock forever. Redundant with the
-  // respawn/delete paths below (a fresh InstanceRecord never carries this
-  // field forward; a deleted one has no field to carry), but explicit for
-  // the same reason broker-state.mts's own header comment names this as one
-  // of the three required clearing sites. Assigned directly (not via
-  // broker-state.mjs's clearMonitorClient()) -- this module's own
+  // releasing can never hold this lock forever on any channel. Redundant
+  // with the respawn/delete paths below (a fresh InstanceRecord never
+  // carries this forward; a deleted one has no field to carry), but
+  // explicit for the same reason broker-state.mts's own header comment
+  // names this as one of the required clearing sites. Assigned directly
+  // (not via broker-state.mjs's clearMonitorClient()) -- this module's own
   // type-only import of that sibling (see this file's own header comment a
   // few lines above) is load-bearing: a VALUE import would turn "./broker-
   // state.mjs" into a real runtime resolution this file cannot satisfy when
   // loaded directly (as broker-launch.test.ts does), rather than the
-  // compiled resources/ sibling this specifier is actually shaped for.
-  record.monitorClient = undefined;
+  // compiled resources/ sibling this specifier is actually shaped for. `{}`
+  // (not `undefined`) since `monitorClients` is non-optional -- "no claim
+  // on any channel" is an empty map.
+  record.monitorClients = {};
 
   if (record.deliberateKill) {
     if (record.respawnAfterKill) {

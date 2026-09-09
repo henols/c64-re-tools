@@ -23,6 +23,7 @@ import {
   _snapshotState,
   clearMonitorClient,
   DEFAULT_BASE_PORT,
+  MONITOR_CHANNELS,
   type BrokerState,
   type InstanceRecord,
 } from "./broker-state.mts";
@@ -71,6 +72,9 @@ function makeInstance(overrides: Partial<InstanceRecord> = {}): InstanceRecord {
     viceBin: "x64sc",
     viceArgs: [],
     dryRun: false,
+    // Plan 41-03 (D-14): monitorClients is non-optional -- "no claim on any
+    // channel" is an empty map, never an absent field.
+    monitorClients: {},
     ...overrides,
   };
 }
@@ -274,30 +278,60 @@ test("the request-id validator the broker would use accepts the container-side g
   }
 });
 
-// ------------------------------------------------- plan 05: monitorClient
+// ---------------------------------------------------------------------------
+// Plan 41-03 (D-14): InstanceRecord.monitorClients, promoted from a single
+// field to a per-channel holder map. The invariant tests below are written
+// so they go red the instant a future phase reintroduces a
+// single-channel-scoped holder.
+// ---------------------------------------------------------------------------
 
-test("InstanceRecord.monitorClient: accepts the documented grantId/claimedAt/pid shape, absent by default", () => {
-  const instance = makeInstance();
-  assert.equal(instance.monitorClient, undefined, "a freshly constructed record carries no monitor client by default");
-
-  instance.monitorClient = { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 };
-  assert.deepEqual(instance.monitorClient, { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 });
+test("MONITOR_CHANNELS: frozen and exactly ['binary', 'text'], in order", () => {
+  assert.deepEqual(MONITOR_CHANNELS, ["binary", "text"]);
+  assert.ok(Object.isFrozen(MONITOR_CHANNELS));
 });
 
-test("clearMonitorClient: clears a set monitorClient", () => {
-  const instance = makeInstance({ monitorClient: { grantId: "req-1", claimedAt: 111, pid: 4242 } });
+test("InstanceRecord.monitorClients: present and empty on a freshly constructed record -- asserted on the field's OWN presence, so a re-introduced optional single field fails both compilation and this assertion", () => {
+  const instance = makeInstance();
+  assert.ok(Object.prototype.hasOwnProperty.call(instance, "monitorClients"), "a freshly constructed record must carry a monitorClients KEY");
+  assert.deepEqual(instance.monitorClients, {}, "and it must be an EMPTY map, never an absent field");
+
+  instance.monitorClients.binary = { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 };
+  assert.deepEqual(instance.monitorClients.binary, { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 });
+});
+
+test("clearMonitorClient(record, 'text'): clears only the text entry, leaving the binary entry intact", () => {
+  const instance = makeInstance({
+    monitorClients: {
+      binary: { grantId: "req-bin", claimedAt: 100, pid: 4242 },
+      text: { grantId: "req-txt", claimedAt: 200, pid: 4242 },
+    },
+  });
+  clearMonitorClient(instance, "text");
+  assert.deepEqual(instance.monitorClients.binary, { grantId: "req-bin", claimedAt: 100, pid: 4242 }, "the binary entry must survive a text-scoped clear");
+  assert.equal(instance.monitorClients.text, undefined);
+});
+
+test("clearMonitorClient(record): with no channel argument, clears BOTH channels", () => {
+  const instance = makeInstance({
+    monitorClients: {
+      binary: { grantId: "req-bin", claimedAt: 100, pid: 4242 },
+      text: { grantId: "req-txt", claimedAt: 200, pid: 4242 },
+    },
+  });
   clearMonitorClient(instance);
-  assert.equal(instance.monitorClient, undefined);
+  assert.deepEqual(instance.monitorClients, {});
 });
 
-test("clearMonitorClient: a no-op, and does not throw, when no monitor client is currently recorded", () => {
+test("clearMonitorClient: a no-op, and does not throw, when the targeted channel is not currently held", () => {
   const instance = makeInstance();
+  assert.doesNotThrow(() => clearMonitorClient(instance, "text"));
+  assert.deepEqual(instance.monitorClients, {});
   assert.doesNotThrow(() => clearMonitorClient(instance));
-  assert.equal(instance.monitorClient, undefined);
+  assert.deepEqual(instance.monitorClients, {});
 });
 
 test("clearMonitorClient: leaves every other field on the record untouched", () => {
-  const instance = makeInstance({ monitorClient: { grantId: "req-1", claimedAt: 111, pid: 4242 }, reason: "acquire" });
+  const instance = makeInstance({ monitorClients: { binary: { grantId: "req-1", claimedAt: 111, pid: 4242 } }, reason: "acquire" });
   clearMonitorClient(instance);
   assert.equal(instance.reason, "acquire");
   assert.equal(instance.pid, 4242);

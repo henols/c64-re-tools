@@ -275,6 +275,9 @@ function makeInstance(overrides: Partial<InstanceRecord> = {}): InstanceRecord {
     viceBin: "x64sc",
     viceArgs: [],
     dryRun: false,
+    // Plan 41-03 (D-14): monitorClients is non-optional -- "no claim on any
+    // channel" is an empty map, never an absent field.
+    monitorClients: {},
     ...overrides,
   };
 }
@@ -2266,6 +2269,7 @@ test("deleteInstanceRecord: releases only a record's OWN second port, never an u
     viceBin: "x64sc",
     viceArgs: [],
     dryRun: false,
+    monitorClients: {},
     remoteMonitorPort: 6601,
   });
 
@@ -2291,6 +2295,7 @@ test("deleteInstanceRecord: releases only a record's OWN second port, never an u
     viceBin: "x64sc",
     viceArgs: [],
     dryRun: false,
+    monitorClients: {},
   });
   deleteInstanceRecord(state, 6602);
   assert.equal(state.instances.has(6602), false, "a fork record with no second port must still be deleted");

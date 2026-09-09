@@ -21,6 +21,22 @@ import { createServer } from "node:net";
 // modules cannot form a load-time cycle. A VALUE import here would.
 import type { LaunchProfile } from "./broker-launch.mjs";
 
+// ---------------------------------------------------------------------------
+// MonitorChannel (plan 41-03, D-14): exactly two channels exist -- stock VICE
+// exposes precisely the binary monitor and the `-remotemonitor` text
+// channel -- and this project has no plan to add a third. Frozen so a
+// consumer cannot accidentally push a third value onto it at runtime.
+//
+// Declared here a SECOND time in channel-lock.ts (and a third time, as a
+// local literal union, in vice-broker-client.ts) rather than imported from a
+// single shared home: channel-lock.ts is a container-side module and this
+// module is host-bound and compiled into resources/*.mjs, so neither can
+// import the other at runtime. The shared thing between the declarations is
+// the two-value CONTRACT ("binary" | "text"), not the declaration itself.
+// ---------------------------------------------------------------------------
+export const MONITOR_CHANNELS = Object.freeze(["binary", "text"] as const);
+export type MonitorChannel = (typeof MONITOR_CHANNELS)[number];
+
 export type InstanceState = "launching" | "ready" | "granted";
 
 export interface InstanceRecord {
@@ -94,31 +110,52 @@ export interface InstanceRecord {
    * field is derived from, so the two can never disagree. */
   logPath?: string;
   // ------------------------------------------------------------------
-  // Plan 05 (BROK-02/PROTO-08, D-13/D-15): exclusive monitor-socket
-  // ownership, enforced broker-side. Optional -- additive, same convention
-  // as the Plan 03 fields above. The SINGLE WRITER is vice-broker.mts's
-  // onMonitorClaim/onMonitorRelease control-plane handlers (handleMonitorClaim/
-  // handleMonitorRelease): set on a successful monitor_claim, cleared by
-  // clearMonitorClient() below on an explicit monitor_release, on this
+  // Plan 05 (BROK-02/PROTO-08, D-13/D-15), PROMOTED to a per-channel map by
+  // plan 41-03 (D-14): exclusive monitor-socket ownership, enforced
+  // broker-side, now keyed by MonitorChannel. NON-OPTIONAL -- every record
+  // carries a `monitorClients` object from construction
+  // (spawnAndRecordInstance() in broker-launch.mts defaults it to `{}`), so
+  // "no claim on any channel" is an EMPTY MAP, never an absent field --
+  // deliberately, so the single-holder reading this promotion replaces
+  // cannot survive by omission. The SINGLE WRITER of an entry is
+  // vice-broker.mts's onMonitorClaim/onMonitorRelease control-plane
+  // handlers (handleMonitorClaim/handleMonitorRelease): an entry is set on
+  // a successful monitor_claim for that channel, cleared by
+  // clearMonitorClient() below for that one channel on an explicit
+  // monitor_release, and cleared for EVERY channel together on this
   // instance's own release/recycle (vice-broker.mts's handleRelease() /
-  // handleRecycleForRealBroker()), and on the instance's process exit
-  // (broker-launch.mts's crash-supervision handleExit()) -- so a client that
-  // died without releasing cannot permanently lock the instance.
+  // handleRecycleForRealBroker()) and on the instance's process exit
+  // (broker-launch.mts's crash-supervision handleExit()) -- so a client
+  // that died without releasing can never permanently lock the instance on
+  // any channel.
   //
   // NAMED PITFALL (RESEARCH.md Common Pitfalls #2): this is NOT the same
   // question GrantRecord.pid already answers. GrantRecord says "which
   // container-side process holds this instance's LIFECYCLE grant" -- issued
-  // at acquire time, strictly BEFORE the client has dialled the binmon port
-  // at all. This field says "has the raw binmon socket actually been
-  // claimed" -- a later, separate event. Treating the existing grant as
-  // already solving exclusive monitor-client ownership is the mistake this
-  // comment exists to head off.
+  // at acquire time, strictly BEFORE the client has dialled either monitor
+  // socket at all. This field says "has THIS CHANNEL's raw socket actually
+  // been claimed" -- a later, separate, per-channel event. Treating the
+  // existing grant as already solving exclusive monitor-client ownership is
+  // the mistake this comment exists to head off.
+  //
+  // MONITOR-OWNERSHIP DECISION (plan 41-03, D-14): the holder map is keyed
+  // by channel ("binary" | "text", MonitorChannel above). Both channels may
+  // be claimed SIMULTANEOUSLY by the SAME grant, and claiming one channel
+  // never evicts, and is never refused by, the other channel's holder. This
+  // map is bookkeeping for SOCKET OWNERSHIP ONLY -- no halting operation
+  // anywhere in this tree consults it; cross-channel serialization of
+  // halting operations is entirely channel-lock.ts's in-process mutex's job
+  // (Phase 39's `go` verdict, rule R15), never this map's. The
+  // `-remotemonitor` text-monitor port IS dialed (text-connect.ts's
+  // textConnect(), plan 41-01) -- this comment hands no further
+  // discriminator work to a future phase.
   // ------------------------------------------------------------------
-  /** Set by a successful `monitor_claim`; cleared by clearMonitorClient().
-   * `pid` mirrors GrantRecord.pid's own convention -- the EMULATOR CHILD
-   * PROCESS's pid (this instance's own `pid` field at claim time), not the
-   * connecting client's pid, which this broker cannot observe over TCP. */
-  monitorClient?: { grantId: string; claimedAt: number; pid: number | null };
+  /** Keyed by channel; an entry is set by a successful `monitor_claim` for
+   * that channel and cleared by clearMonitorClient(). `pid` mirrors
+   * GrantRecord.pid's own convention -- the EMULATOR CHILD PROCESS's pid
+   * (this instance's own `pid` field at claim time), not the connecting
+   * client's pid, which this broker cannot observe over TCP. */
+  monitorClients: Partial<Record<MonitorChannel, { grantId: string; claimedAt: number; pid: number | null }>>;
   // ------------------------------------------------------------------
   // Plan 03-04 (DIRECT-06, D-13): the SECOND, broker-allocated port stock's
   // `-remotemonitor` text monitor binds, alongside `-binarymonitor` on
@@ -126,26 +163,13 @@ export interface InstanceRecord {
   // group above: absent on the fork backend, and absent on stock when the
   // second port allocation itself failed (broker-launch.mts's
   // acquirePortAndLaunch() degrades to launching WITHOUT `-remotemonitor`
-  // rather than failing the whole acquire). NOTHING IN PHASE 3 DIALS THIS
-  // PORT -- there is no text-monitor client yet, and no protocol code
-  // anywhere in this tree opens a socket to it. It exists now, at launch
-  // time only, because adding the flag later would require relaunching a
-  // live instance, which destroys all emulation state (D-13's own
-  // rationale, `03-04-PLAN.md`).
-  //
-  // MONITOR-OWNERSHIP DECISION, stated out loud here so Phase 7 finds it:
-  // `monitorClient` above stays a SINGLE field per instance, keyed by
-  // grant, and it covers the BINARY-MONITOR socket ONLY. The
-  // `-remotemonitor` socket is deliberately UNCLAIMED in Phase 3 -- since
-  // nothing dials it, there is no ownership conflict to guard yet, so
-  // there is nothing for monitor_claim/monitor_release to enforce for this
-  // second socket. Phase 7, which builds the text-monitor client (Phase
-  // 2's D-13), is the right place to add a `channel: "binary" | "text"`
-  // discriminator to `monitorClient` -- do NOT add one speculatively here.
+  // rather than failing the whole acquire). Dialed since plan 41-01
+  // (text-connect.ts's textConnect()) -- see the MONITOR-OWNERSHIP DECISION
+  // banner above for the ownership discipline now governing this socket.
   // ------------------------------------------------------------------
   /** The second, broker-allocated port stock's `-remotemonitor` text
-   * monitor binds -- see the banner above for the full ownership decision
-   * this field's absence implies. */
+   * monitor binds -- see the banner above for the ownership discipline
+   * governing this socket. */
   remoteMonitorPort?: number;
   // ------------------------------------------------------------------
   // Phase 33, plan 33-06 (REPRO-05, D-15/D-16): the launch profile this
@@ -186,14 +210,23 @@ export interface InstanceRecord {
   profile?: LaunchProfile;
 }
 
-/** Clears `monitorClient` as a side effect of release, recycle, or the
- * instance's own process exit (see InstanceRecord.monitorClient's own header
- * comment for the three call sites) -- so a dead or torn-down client can
- * never hold this lock forever. A no-op when no monitor client is currently
- * recorded (idempotent, matching monitor_release's own tolerance for an
- * already-cleared record). */
-export function clearMonitorClient(record: InstanceRecord): void {
-  record.monitorClient = undefined;
+/** Clears ONE channel's entry when `channel` is passed (an explicit
+ * `monitor_release` for that channel), or EVERY channel's entry when it is
+ * omitted (the whole record's ownership is going away -- recycle, release,
+ * or the instance's own process exit; see InstanceRecord.monitorClients'
+ * own header comment for the exact call sites of each case) -- so a dead or
+ * torn-down client can never hold this lock forever, on any channel. The
+ * ONE place a holder entry is cleared, apart from broker-launch.mts's
+ * handleExit(), which assigns `{}` directly for a documented reason (see
+ * that function's own comment). A no-op when the targeted channel (or, with
+ * no channel, every channel) is not currently held -- idempotent, matching
+ * monitor_release's own tolerance for an already-cleared record. */
+export function clearMonitorClient(record: InstanceRecord, channel?: MonitorChannel): void {
+  if (channel !== undefined) {
+    delete record.monitorClients[channel];
+    return;
+  }
+  for (const ch of MONITOR_CHANNELS) delete record.monitorClients[ch];
 }
 
 export interface GrantRecord {
