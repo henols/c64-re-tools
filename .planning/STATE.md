@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
-current_phase: 42
-current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
-status: executing
-stopped_at: Completed 42-16-PLAN.md
-last_updated: "2026-09-09T22:00:17.256Z"
-last_activity: 2026-09-09
-last_activity_desc: "Phase 42 gap-closure round 2 execution started: 42-15 (CR-02 fix) and 42-16 (live proof + evidence + PARSE-04 restoration), both gap_closure: true. Isolation auto-degraded to none (#683 base-check: HEAD a7eaaf91 diverged from origin/HEAD a3c0d21d) -- both plans run sequentially on the main working tree."
-state_head: 3a4eec8fb79d2a2a69e404733a2cfce2ed754dc6
+current_phase: 43
+current_phase_name: The Runtime Evidence Layer
+status: planning
+stopped_at: Phase 42 complete, ready to plan Phase 43
+last_updated: "2026-09-09T22:22:12.353Z"
+last_activity: 2026-09-10
+last_activity_desc: Phase 42 complete, transitioned to Phase 43
+state_head: 50ab56ffc09ec56cd7cbf3ae4f481cc6df43ec59
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 41
   completed_plans: 41
-  percent: 50
+  percent: 67
 ---
 
 # Project State
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — gap-closure round 2 COMPLETE (16/16 plans)
-Plan: 16 of 16 executed (9 original + 5 gap-closure round 1: 42-10..42-14 + 2 gap-closure round 2: 42-15, 42-16)
-Status: Gap-closure round 2 is COMPLETE. Round 1 closed all five findings it targeted (CR-01, WR-01, WR-02, IN-01, IN-02's documentation half) and the automated-gate regression is gone (3954/3940/3, the documented floor). Round 2 closed CR-02 -- a pre-existing defect dating to plan 42-07 where handleIoRegisters cached io's per-address chip-degradation verdict under a binary-wide key, so a later call to a different address was judged on an earlier response. 42-15 fixed it with both remedies the verification named -- a pure textCapabilityVerdictFor() builder so the verdict comes from the response that call received, plus a NEVER_CACHED_COMMANDS set closing the cache write, read and in-flight-memo paths -- and 42-16 proved it live over two io addresses ($d020 VIC-II, $dc00 CIA1) in one genuine-stock VICE 3.9 session (fromCache=false, judged on the second reply), recorded the evidence in docs/phase42-text-format-drift-citations.md, returned PARSE-04 to Complete on that measurement (all four PARSE-01..04 now Complete), and closed the CR-02 disposition with its ledger row (pending count 8 -> 7). Both round-2 plans ran sequentially on the main working tree: the #683 worktree base-check auto-degrade fired (HEAD a7eaaf91 vs origin/HEAD a3c0d21d), and 42-16 delivers STATE.md content, which carries the stock USE_WORKTREES_FOR_PLAN=false carve-out regardless.
-Last activity: 2026-09-09 — Phase 42 gap-closure round 2 completed (42-15, 42-16); phase 42 fully closed at 16/16 plans
+Phase: 43 — The Runtime Evidence Layer
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-10 — Phase 42 complete, transitioned to Phase 43
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -255,7 +255,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 
 **Velocity:**
 
-- Total plans completed: 345
+- Total plans completed: 361
 - Average duration: —
 - Total execution time: —
 
@@ -299,6 +299,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | 39 | 8 | - | - |
 | 40 | 11 | - | - |
 | 41 | 6 | - | - |
+| 42 | 16 | - | - |
 
 **Recent Trend:**
 
@@ -2152,7 +2153,7 @@ evidence files.
 ## Session Continuity
 
 Last session: 2026-09-09T21:59:54.273Z
-Stopped at: Completed 42-16-PLAN.md
+Stopped at: Phase 42 complete, ready to plan Phase 43
 Resume file: None
 
 Earlier: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remained at that point
