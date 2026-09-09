@@ -218,3 +218,15 @@ None - no external service configuration required.
 ---
 *Phase: 42-the-text-format-parsers-and-their-two-binary-fixtures*
 *Completed: 2026-09-09*
+
+## Self-Check: PASSED
+
+- FOUND: `src/mcp/vice/textmon-memmap.ts`
+- FOUND: `src/mcp/vice/textmon-memmap.test.ts`
+- FOUND: `.planning/phases/42-the-text-format-parsers-and-their-two-binary-fixtures/42-01-SUMMARY.md`
+- FOUND commit: `d6557226` (Task 1)
+- FOUND commit: `83258080` (Task 2)
+- FOUND commit: `b6229fae` (Task 3)
+- FOUND commit: `24d3b3e8` (this SUMMARY)
+- Re-ran all `<acceptance_criteria>` across all three tasks: PASS
+- Re-ran the plan-level `<verification>` block (`textmon-memmap.test.ts`, `npm run typecheck`, the six-file registration/hygiene guard suite, `npm run test:automated`): PASS (automated gate at the measured baseline of 8 pre-existing failures)
