@@ -263,6 +263,178 @@ test("TextMonitorClient.command(): refuses a command containing an embedded line
   );
 });
 
+// ---------------------------------------------------------------------------
+// Task 2 controls (D-42-1): nothing reaches the socket early for a
+// parameterized command, and nothing smuggles a second command through a
+// parameter -- proven through command(), the REAL public entry point, not
+// merely through buildTextCommand() alone. Reuses the same stub-server
+// harness and "record whether any byte arrived" shape as the two refusal
+// cases immediately above.
+//
+// The three refusal cases below are paired with the three acceptance cases
+// that follow them: together they discriminate a module that actually
+// validates from one that vacuously refuses everything. A hypothetical
+// module that refused every parameterized command (including the three
+// canonical renderings) would pass all three refusal cases here and FAIL
+// all three acceptance cases below -- proving the refusal cases alone are
+// not sufficient evidence of correct behavior.
+// ---------------------------------------------------------------------------
+
+test("command() [chis]: refuses a parameterized command whose parameter text embeds a C0 control character, before any byte reaches the socket", async () => {
+  let socketReceivedBytes = false;
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        socketReceivedBytes = true;
+      });
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      await assert.rejects(
+        () => withTextChannelLock("chis", () => client.command("chis 4\rquit")),
+        /CR, LF, or C0 control character/,
+      );
+      await sleep(50);
+      assert.equal(socketReceivedBytes, false, "no byte may reach the socket for a parameterized command carrying an embedded control character");
+      await client.disconnect();
+    },
+  );
+});
+
+test("command() [prof flat]: refuses a parameterized command carrying a second monitor command after a separator, before any byte reaches the socket", async () => {
+  let socketReceivedBytes = false;
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        socketReceivedBytes = true;
+      });
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      await assert.rejects(
+        () => withTextChannelLock("prof flat", () => client.command("prof flat 5;quit")),
+        /refusing non-allowlisted command/,
+      );
+      await sleep(50);
+      assert.equal(socketReceivedBytes, false, "no byte may reach the socket for a parameterized command smuggling a second verb after a separator");
+      await client.disconnect();
+    },
+  );
+});
+
+test("command() [chis]: refuses an out-of-range parameterized value routed through the public command() entry point, before any byte reaches the socket", async () => {
+  let socketReceivedBytes = false;
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => {
+        socketReceivedBytes = true;
+      });
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      await assert.rejects(
+        () => withTextChannelLock("chis", () => client.command("chis 65536")),
+        /refusing non-allowlisted command/,
+      );
+      await sleep(50);
+      assert.equal(socketReceivedBytes, false, "no byte may reach the socket for an out-of-range parameterized value, even routed through command() directly rather than buildTextCommand()");
+      await client.disconnect();
+    },
+  );
+});
+
+test("command() [chis]: the canonical rendering IS dialed, byte-identical to buildTextCommand()'s own output, with no trailing separator added by this module", async () => {
+  const built = buildTextCommand("chis", 4);
+  assert.ok(built.ok);
+  const command = built.ok ? built.command : "";
+  let received = Buffer.alloc(0);
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", (chunk: Buffer) => {
+        received = Buffer.concat([received, chunk]);
+        socket.write(Buffer.from("ok\n(C:$e5d1) ", "utf8"));
+      });
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const payload = await withTextChannelLock(command, () => client.command(command));
+      assert.equal(payload, "ok\n");
+      await client.disconnect();
+    },
+  );
+  assert.equal(received.toString("utf8"), `${command}\n`, `expected the stub server to receive exactly ${JSON.stringify(command)} (plus the trailing newline command() itself adds)`);
+});
+
+test("command() [prof flat]: the canonical rendering IS dialed, byte-identical to buildTextCommand()'s own output, with no trailing separator added by this module", async () => {
+  const built = buildTextCommand("prof flat", 5);
+  assert.ok(built.ok);
+  const command = built.ok ? built.command : "";
+  let received = Buffer.alloc(0);
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", (chunk: Buffer) => {
+        received = Buffer.concat([received, chunk]);
+        socket.write(Buffer.from("ok\n(C:$e5d1) ", "utf8"));
+      });
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const payload = await withTextChannelLock(command, () => client.command(command));
+      assert.equal(payload, "ok\n");
+      await client.disconnect();
+    },
+  );
+  assert.equal(received.toString("utf8"), `${command}\n`, `expected the stub server to receive exactly ${JSON.stringify(command)} (plus the trailing newline command() itself adds)`);
+});
+
+test("command() [io]: the canonical rendering IS dialed, byte-identical to buildTextCommand()'s own output, with no trailing separator added by this module", async () => {
+  const built = buildTextCommand("io", 53280); // 53280 == 0xd020
+  assert.ok(built.ok);
+  const command = built.ok ? built.command : "";
+  let received = Buffer.alloc(0);
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", (chunk: Buffer) => {
+        received = Buffer.concat([received, chunk]);
+        socket.write(Buffer.from("ok\n(C:$e5d1) ", "utf8"));
+      });
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const payload = await withTextChannelLock(command, () => client.command(command));
+      assert.equal(payload, "ok\n");
+      await client.disconnect();
+    },
+  );
+  assert.equal(received.toString("utf8"), `${command}\n`, `expected the stub server to receive exactly ${JSON.stringify(command)} (plus the trailing newline command() itself adds)`);
+});
+
+test("D-42-1 prohibition (source-level): text-protocol.ts's own source declares no parameter kind with a string domain", () => {
+  // The mechanical form of this plan's front-matter prohibition -- the
+  // runtime-object check earlier in this file ("no parameter kind in
+  // TEXT_COMMAND_PARAM_SPECS accepts a string domain") proves today's
+  // shipped table; this one additionally proves the TYPE DECLARATION
+  // itself has not been widened, which is the assertion that would notice
+  // a later "just let the caller pass the rest of the line" edit even
+  // before it is wired into a spec entry.
+  const sourcePath = fileURLToPath(new URL("./text-protocol.ts", import.meta.url));
+  const source = readFileSync(sourcePath, "utf8");
+  assert.doesNotMatch(source, /kind:\s*"string"/, 'no spec entry may declare kind: "string"');
+  const kindTypeMatch = source.match(/export type TextCommandParamKind = ("[^"]+"(?:\s*\|\s*"[^"]+")*);/);
+  assert.ok(kindTypeMatch, "TextCommandParamKind's own type declaration must be found in source");
+  assert.equal(
+    kindTypeMatch![1],
+    '"count" | "address"',
+    "TextCommandParamKind must remain exactly count|address -- a later widening to include a string domain would fail this assertion",
+  );
+});
+
 test("textConnect (D-13(a)): connect() never reads or waits for a connect banner -- it resolves with zero bytes sent by the server", async () => {
   await withStubNetServer(
     () => {
