@@ -43,6 +43,7 @@ import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetSymbolStoreForTest } from "./stock-symbols.ts";
 import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests } from "./channel-lock.ts";
 import {
   resetCheckpointStateForTest,
   handleCheckpointSetCondition,
@@ -460,6 +461,11 @@ beforeEach(() => {
   resetBankCatalogsForTest();
   resetRegisterCatalogsForTest();
   resetCheckpointStateForTest();
+  // Plan 41-02 (CHAN-04): channel-lock.ts's mutex is process-wide module
+  // state, exactly like the resets above -- reset it here too so a lock
+  // held (or a queued waiter) left by a prior test can never leak into the
+  // next one.
+  resetChannelLockForTests();
 });
 
 const STUB_BROKER_CONTROL = {
@@ -2884,6 +2890,127 @@ test("withDerivedTool: needsSession:true returns an { ok: false } lease refusal 
   assert.equal(result.isError, true);
   assert.match(JSON.stringify(result.content), /broker: dead_or_hung \(verbatim message\)/);
   assert.equal(handlerCalled, false, "a refusal must never reach the delegated handler");
+});
+
+// ---------------------------------------------------------------------------
+// Plan 41-02 (CHAN-04): both binary-side adapters route through
+// channel-lock.ts's mutex via withChannelLockHeld(), and the needsSession:
+// false branch does not.
+// ---------------------------------------------------------------------------
+
+test("CHAN-04: withStockSession and withDerivedTool's needsSession:true branch both reach acquireChannelLock; the needsSession:false branch does not", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-chan04-1", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+
+  // A single mutable holder object, rather than separate `let` bindings, so
+  // TypeScript's control-flow narrowing does not collapse each observation
+  // to its initial value -- it only tracks a plain `let`'s last
+  // DIRECTLY-VISIBLE assignment in its own declaring scope, ignoring
+  // assignments made inside a nested closure (see
+  // stock-a4-checkpoint-flood.test.ts's own identical note).
+  const observed: {
+    duringStockSession: ReturnType<typeof currentChannelLockHolder>;
+    duringDerivedTrue: ReturnType<typeof currentChannelLockHolder>;
+    duringDerivedFalse: ReturnType<typeof currentChannelLockHolder> | "unset";
+  } = { duringStockSession: null, duringDerivedTrue: null, duringDerivedFalse: "unset" };
+
+  const stockSessionHandler: StockSessionHandler = async () => {
+    observed.duringStockSession = currentChannelLockHolder();
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  await withStockSession("vice_probe_stock_session", stockSessionHandler)({}, deps);
+  assert.ok(observed.duringStockSession, "withStockSession must hold the lock while the handler runs");
+  assert.equal(observed.duringStockSession!.channel, "binary");
+  assert.equal(observed.duringStockSession!.operation, "vice_probe_stock_session");
+  assert.equal(currentChannelLockHolder(), null, "the lock must be released once withStockSession's handler returns");
+
+  const derivedTrueHandler: StockSessionHandler = async () => {
+    observed.duringDerivedTrue = currentChannelLockHolder();
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  await withDerivedTool("vice_disassemble", { needsSession: true }, derivedTrueHandler)({}, deps);
+  assert.ok(observed.duringDerivedTrue, "withDerivedTool's needsSession:true branch must hold the lock while the handler runs");
+  assert.equal(observed.duringDerivedTrue!.channel, "binary");
+  assert.equal(observed.duringDerivedTrue!.operation, "vice_disassemble");
+  assert.equal(currentChannelLockHolder(), null);
+
+  const derivedFalseHandler: DerivedPureHandler = async () => {
+    observed.duringDerivedFalse = currentChannelLockHolder();
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  await withDerivedTool("vice_symbols_lookup", { needsSession: false }, derivedFalseHandler)({}, deps);
+  assert.equal(observed.duringDerivedFalse, null, "the needsSession:false branch must NEVER acquire the lock -- it never touches the wire");
+  assert.equal(currentChannelLockHolder(), null);
+});
+
+test("CHAN-04: dispatching vice_symbols_lookup (needsSession:false) through the REAL dispatch table leaves currentChannelLockHolder() null throughout", async () => {
+  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
+  assert.equal(currentChannelLockHolder(), null);
+  const result = await dispatchStock("vice_symbols_lookup", { name: "main" }, deps);
+  assert.equal(result.isError, false);
+  assert.equal(currentChannelLockHolder(), null, "vice_symbols_lookup is needsSession:false and pure client-side -- it must never acquire halt authority");
+});
+
+test("CHAN-04: a handler that throws leaves currentChannelLockHolder() null after dispatch returns", async () => {
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-chan04-2", brokerControl: STUB_BROKER_CONTROL });
+  const handler: StockSessionHandler = async () => {
+    throw new Error("boom: the handler let this escape");
+  };
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const result = await withStockSession("vice_probe_throwing", handler)({}, deps);
+  assert.equal(result.isError, true);
+  assert.equal(currentChannelLockHolder(), null, "the lock must be released even when the delegated handler throws (release-on-throw, D-05)");
+});
+
+test("CHAN-04: a second concurrent dispatch of a session-taking tool with a 1ms channelLockTimeoutMs override is refused with channelLockRefusalMessage()'s own wording, byte-identical, with none of the forbidden words", async () => {
+  let releaseFirstHandler: (() => void) | null = null;
+  const firstHandlerGate = new Promise<void>((resolve) => {
+    releaseFirstHandler = resolve;
+  });
+  const firstHandler: StockSessionHandler = async () => {
+    await firstHandlerGate;
+    return { content: [{ type: "text", text: "{}" }], isError: false };
+  };
+  const secondHandler: StockSessionHandler = async () => {
+    throw new Error("must not be called -- the second dispatch must be refused before reaching this handler");
+  };
+
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-chan04-3", brokerControl: STUB_BROKER_CONTROL });
+  const firstDeps: StockDispatchDeps = {
+    ensureLease: async () => ({ ok: true, lease }),
+    connect: async (opts) => fakeSession(opts),
+  };
+  const secondDeps: StockDispatchDeps = { ...firstDeps, channelLockTimeoutMs: 1 };
+
+  const firstPromise = withStockSession("vice_probe_first_holder", firstHandler)({}, firstDeps);
+  // Give the first dispatch a turn to acquire the lock and enter its
+  // (still-gated) handler before the second dispatch attempts to acquire.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const holderDuringSecond = currentChannelLockHolder();
+  assert.ok(holderDuringSecond, "the first dispatch must be holding the lock by the time the second one is attempted");
+  assert.equal(holderDuringSecond!.channel, "binary");
+  assert.equal(holderDuringSecond!.operation, "vice_probe_first_holder");
+
+  const secondResult = await withStockSession("vice_probe_second_tool", secondHandler)({}, secondDeps);
+  assert.equal(secondResult.isError, true);
+  const refusalText = JSON.parse(JSON.stringify(secondResult.content))[0].text as string;
+  const expectedShape = /^channel-lock: the binary channel currently holds halt authority \(operation "vice_probe_first_holder", grant unknown, held for \d+ms\) -- this call must wait for that channel to release before it can proceed$/;
+  assert.match(refusalText, expectedShape, `expected byte-identical channelLockRefusalMessage() wording, got: ${JSON.stringify(refusalText)}`);
+  const lower = refusalText.toLowerCase();
+  for (const forbidden of ["wedge", "wedged", "hang", "hung", "frozen", "stuck", "unresponsive"]) {
+    assert.ok(!lower.includes(forbidden), `refusal text must not contain "${forbidden}": ${refusalText}`);
+  }
+
+  releaseFirstHandler!();
+  const firstResult = await firstPromise;
+  assert.equal(firstResult.isError, false);
+  assert.equal(currentChannelLockHolder(), null);
 });
 
 // ---------------------------------------------------------------------------

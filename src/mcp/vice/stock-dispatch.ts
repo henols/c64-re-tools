@@ -24,6 +24,10 @@
 //     one place a tools/call for the stock backend is routed from.
 //   - Never acquire a broker lease here (Task 2's own ensureStockSession()
 //     header comment explains this prohibition fully).
+//   - Never acquire channel-lock.ts's mutex anywhere but inside
+//     withChannelLockHeld() (plan 41-02, CHAN-04) -- that is the ONE acquire
+//     site on the binary side, and it wraps the delegated HANDLER call only,
+//     never the session-acquisition preamble above it.
 import { resolve, join } from "node:path";
 
 import type { ViceBackend } from "./backend-detect.mts";
@@ -43,6 +47,7 @@ import {
 } from "./stock-handler.ts";
 import { attachRunStateTracker } from "./stock-runstate.ts";
 import { STOCK_DERIVED_TOOLS, type DerivedPureHandler } from "./stock-derived.ts";
+import { acquireChannelLock, ChannelLockTimeoutError } from "./channel-lock.ts";
 
 // The six family modules (plans 03-06 through 03-11) -- each exports its
 // tools as StockSessionHandler-shaped values; this file (D-09) is the ONE
@@ -202,6 +207,12 @@ export interface StockDispatchDeps {
    * Omitted defaults to `false` -- the honest answer when nothing said
    * otherwise. */
   resolvedBinaryPathIsResolved?: boolean;
+  /** Test-only override of channel-lock.ts's acquire bound for THIS call's
+   * withChannelLockHeld() wrapping. Production call sites never set this --
+   * they always take channel-lock.ts's own CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS
+   * default. Exists so a test can observe a ChannelLockTimeoutError (and its
+   * refusal text) without waiting out the real ~630-second default. */
+  channelLockTimeoutMs?: number;
 }
 
 export type EnsureStockSessionOutcome = { ok: true; session: StockConnectSession } | { ok: false; message: string };
@@ -463,6 +474,53 @@ export { stockDisconnect };
 export type StockHandler = (args: Record<string, unknown>, deps: StockDispatchDeps) => Promise<StockToolResult>;
 
 /**
+ * withChannelLockHeld -- acquires channel-lock.ts's mutex for
+ * `channel: "binary"` around `fn`, releasing in a `finally` so a throwing
+ * `fn` still releases (D-05). This is the ONE acquire site on the binary
+ * side; withStockSession() and withDerivedTool()'s `needsSession: true`
+ * branch both call it, and neither may acquire the lock any other way.
+ *
+ * This is what makes the lock's critical section span a whole LOGICAL
+ * operation, not a single wire command: `vice_run_until`'s wait
+ * (stock-run-until.ts's `waitForCheckpointHit()`) and the reproducible-run
+ * path's wait (stock-reproducible-run.ts's `waitForReproducibleStop()`,
+ * reached through `runReproducible()`) both run INSIDE the wrapped `fn`, so
+ * the lock stays held across resume -> wait -> observe without either wait
+ * path being re-cut.
+ *
+ * FORBIDDEN ALTERNATIVE, named here because it is the obvious-looking wrong
+ * design: acquiring and releasing this lock around each individual wire
+ * command instead of around the whole handler call. A per-wire-command lock
+ * preserves the resume count while destroying what the count protects -- a
+ * foreign command (e.g. a text-channel command) can land in the gap between
+ * "resume sent" and "checkpoint observed", halting a machine that was
+ * supposed to be running toward the checkpoint, so the checkpoint never
+ * fires even though no protocol invariant was technically violated per
+ * command (41-RESEARCH.md Pitfall 6).
+ *
+ * A `ChannelLockTimeoutError` is converted into refusal text using the
+ * error's OWN message verbatim -- it is already `channelLockRefusalMessage()`'s
+ * output -- and NEVER routed through `convertWireError()`, which would
+ * re-frame a legitimate ownership statement as a wire fault.
+ */
+async function withChannelLockHeld(toolName: string, timeoutMs: number | undefined, fn: () => Promise<StockToolResult>): Promise<StockToolResult> {
+  let handle;
+  try {
+    handle = await acquireChannelLock({ channel: "binary", operation: toolName, timeoutMs });
+  } catch (err) {
+    if (err instanceof ChannelLockTimeoutError) {
+      return isErrorText(err.message);
+    }
+    throw err;
+  }
+  try {
+    return await fn();
+  } finally {
+    handle.release();
+  }
+}
+
+/**
  * withStockSession -- THE ONE adapter every STOCK_DISPATCH_TABLE entry goes
  * through (Task 1, plan 03-12). Before this existed, `viceHandlerPing` was
  * the only table entry and re-implemented, inline, the exact three-step
@@ -489,6 +547,17 @@ export type StockHandler = (args: Record<string, unknown>, deps: StockDispatchDe
  *      Code for the rest of the session (T-3-04) -- a single escaped
  *      exception here would silently end the session's entire tool surface,
  *      not just this one call.
+ *
+ * Step 3's own try/catch runs INSIDE withChannelLockHeld(toolName, ...)
+ * (plan 41-02, CHAN-04): the session-acquisition step above (step 1/2) is
+ * NOT covered by the lock -- only the delegated handler call is -- so a
+ * broker liveness classification or a handshake failure never queues behind
+ * the OTHER channel's halt authority. This is what makes D-05's critical
+ * section span a whole logical operation: `vice_run_until`'s and the
+ * reproducible-run path's waits run inside their handlers, so the lock is
+ * held across resume -> wait -> observe without either wait path being
+ * re-cut (see withChannelLockHeld()'s own header for the forbidden
+ * per-wire-command alternative).
  */
 export function withStockSession(toolName: string, handler: StockSessionHandler): StockHandler {
   return async (args, deps) => {
@@ -503,11 +572,13 @@ export function withStockSession(toolName: string, handler: StockSessionHandler)
       return isErrorText(outcome.message);
     }
 
-    try {
-      return await handler(args, outcome.session, deps);
-    } catch (err) {
-      return convertWireError(toolName, err);
-    }
+    return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, async () => {
+      try {
+        return await handler(args, outcome.session, deps);
+      } catch (err) {
+        return convertWireError(toolName, err);
+      }
+    });
   };
 }
 
@@ -531,7 +602,14 @@ export function withStockSession(toolName: string, handler: StockSessionHandler)
  * calls ensureStockSession() at all -- not a lighter-weight variant of it
  * (04-RESEARCH.md Pitfall 3) -- and invokes `handler(args, deps)` inside a
  * single try/catch converting through convertWireError(), so the
- * never-throw boundary still holds.
+ * never-throw boundary still holds. This branch also NEVER acquires
+ * channel-lock.ts's mutex (plan 41-02, CHAN-04): taking halt authority for a
+ * pure client-side computation that never touches the wire would block a
+ * REAL halting operation for no reason. `vice_diagnose` is also registered
+ * `needsSession: false` and therefore also does not acquire here -- its own
+ * handler takes the lock with `tryAcquireChannelLock()` (channel-lock.ts)
+ * instead, deliberately, so that diagnosing contention never queues behind
+ * the holder it is diagnosing (plan 41-04).
  *
  * `needsSession: true` runs the EXACT same three-step preamble
  * withStockSession() runs, reusing the same imported converters -- never a
@@ -539,7 +617,11 @@ export function withStockSession(toolName: string, handler: StockSessionHandler)
  * inside its own try/catch -> convertHandshakeError(toolName, err); a
  * `{ ok: false }` outcome returns outcome.message verbatim through
  * isErrorText(), never re-worded; otherwise handler(args, outcome.session, deps)
- * inside a SECOND try/catch -> convertWireError(toolName, err).
+ * inside a SECOND try/catch -> convertWireError(toolName, err), with that
+ * second try/catch running inside withChannelLockHeld(toolName, ...) --
+ * exactly the same wrapping withStockSession() applies, and for the same
+ * reason (see that function's own comment on the forbidden per-wire-command
+ * alternative).
  */
 export function withDerivedTool(toolName: string, opts: { needsSession: true }, handler: StockSessionHandler): StockHandler;
 export function withDerivedTool(toolName: string, opts: { needsSession: false }, handler: DerivedPureHandler): StockHandler;
@@ -572,11 +654,13 @@ export function withDerivedTool(
       return isErrorText(outcome.message);
     }
 
-    try {
-      return await (handler as StockSessionHandler)(args, outcome.session, deps);
-    } catch (err) {
-      return convertWireError(toolName, err);
-    }
+    return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, async () => {
+      try {
+        return await (handler as StockSessionHandler)(args, outcome.session, deps);
+      } catch (err) {
+        return convertWireError(toolName, err);
+      }
+    });
   };
 }
 

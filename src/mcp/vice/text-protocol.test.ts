@@ -30,7 +30,7 @@
 //   scenario the default-configured class (quiescenceMs: TEXT_QUIESCENCE_MS)
 //   is then shown to survive -- so the control is a live A/B on the shipped
 //   code, not a reimplementation of it.
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
@@ -45,8 +45,19 @@ import {
   TextFramingError,
   TEXT_MAX_BUFFERED_LEN,
   TEXT_QUIESCENCE_MS,
+  withTextChannelLock,
 } from "./text-protocol.ts";
 import { TEXTMON_FIXTURE_DIR, listTextFixtures, loadTextFixture } from "./textmon-fixtures.ts";
+import { resetChannelLockForTests } from "./channel-lock.ts";
+
+// Plan 41-02 (D-07, CHAN-04): command() now refuses unless the text
+// channel's own halt authority is held. Every real (non-refusal) command()
+// call in this file below is therefore wrapped in withTextChannelLock() --
+// this beforeEach is hygiene against a lock left held by a prior test that
+// threw before its own release ran.
+beforeEach(() => {
+  resetChannelLockForTests();
+});
 
 // ---------------------------------------------------------------------------
 // Shared harness -- mirrors stock-protocol.test.ts's own withStubNetServer().
@@ -182,7 +193,7 @@ test("Control 1: a prompt split across two socket chunks (even byte-at-a-time) y
     async (port) => {
       const client = new TextMonitorClient();
       await client.connect("127.0.0.1", port);
-      const payload = await client.command("device c:");
+      const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
       assert.equal(payload, "Setting default device to `Computer'\n");
       await client.disconnect();
     },
@@ -228,7 +239,7 @@ test("Control 2 (planted RED, without the fix): a quiescence window of 0ms accep
       // first tail match (the mid-stream prompt) is accepted immediately.
       const client = new TextMonitorClient({ quiescenceMs: 0 });
       await client.connect("127.0.0.1", port);
-      const payload = await client.command("device c:");
+      const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
       // RED: the real output never made it into the payload -- the command
       // resolved on the mid-stream prompt alone, empty of real content.
       assert.equal(payload, "", `RED observation (recorded in the plan SUMMARY): payload was ${JSON.stringify(payload)}, expected the mid-stream prompt to be wrongly accepted as final and empty`);
@@ -248,7 +259,7 @@ test("Control 2 (fixed, GREEN): the default quiescence window survives prompt-sh
     async (port) => {
       const client = new TextMonitorClient(); // default TEXT_QUIESCENCE_MS
       await client.connect("127.0.0.1", port);
-      const payload = await client.command("device c:");
+      const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
       assert.equal(payload, "(C:$1234) the real command output\n", "the mid-stream prompt-shaped text must be preserved in the payload, and only the true trailing prompt stripped");
       await client.disconnect();
     },
@@ -284,7 +295,7 @@ test("D-13(b): a passively-arriving banner with no command outstanding is draine
       // Now issue a real command over the SAME connection -- its own
       // response must be the command's own output, never the drained banner.
       socket_!.write(Buffer.from("Setting default device to `Computer'\n(C:$e5d1) ", "utf8"));
-      const payload = await client.command("device c:");
+      const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
       assert.equal(payload, "Setting default device to `Computer'\n");
       assert.equal(client.bannerFramesDrained, 1, "the banner counter must not increment again for a real command's own reply");
       await client.disconnect();
@@ -304,7 +315,7 @@ test("a command whose entire response is just the prompt resolves with an empty 
     async (port) => {
       const client = new TextMonitorClient();
       await client.connect("127.0.0.1", port);
-      const payload = await client.command("warp on");
+      const payload = await withTextChannelLock("warp on", () => client.command("warp on"));
       assert.equal(payload, "");
       await client.disconnect();
     },
@@ -335,7 +346,7 @@ test("a split three-byte UTF-8 sequence (U+202F) across two chunks decodes to on
     async (port) => {
       const client = new TextMonitorClient();
       await client.connect("127.0.0.1", port);
-      const payload = await client.command("prof flat");
+      const payload = await withTextChannelLock("prof flat", () => client.command("prof flat"));
       assert.equal(payload, `1${narrowNbsp.toString("utf8")}234\n`);
       assert.ok(!payload.includes("\uFFFD"), `payload must contain no replacement character, got: ${JSON.stringify(payload)}`);
       await client.disconnect();
@@ -396,7 +407,7 @@ test("exceeding TEXT_MAX_BUFFERED_LEN with no prompt in sight refuses with TextF
       const client = new TextMonitorClient();
       await client.connect("127.0.0.1", port);
       await assert.rejects(
-        () => client.command("bt"),
+        () => withTextChannelLock("bt", () => client.command("bt")),
         (err: unknown) => {
           assert.ok(err instanceof TextFramingError, `expected a TextFramingError, got: ${String(err)}`);
           const framingErr = err as TextFramingError;

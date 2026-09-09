@@ -34,6 +34,10 @@
 // WHAT NOT TO DO:
 //   - Never re-implement text-wire framing in a dispatcher, a tool handler,
 //     or channel-lock.ts -- this module is the ONE place it happens.
+//   - Never call command() outside withTextChannelLock() (plan 41-02,
+//     CHAN-04) -- command() itself refuses when channel-lock.ts's mutex is
+//     not currently held by the text channel, so a call site that bypasses
+//     withTextChannelLock() is refused, not silently allowed through.
 //   - Never widen stock-protocol.ts to also speak text. The binary and text
 //     wires are structurally different protocols (length-prefixed frames
 //     with a request-id demux vs. a free-text prompt terminator with no
@@ -55,6 +59,7 @@ import { EventEmitter } from "node:events";
 import net from "node:net";
 
 import { ViceError } from "./vice.ts";
+import { acquireChannelLock, currentChannelLockHolder } from "./channel-lock.ts";
 
 // ---------------------------------------------------------------------------
 // The prompt terminator and the closed command allowlist.
@@ -192,6 +197,40 @@ function bufferEndsWithPrompt(buf: Buffer): boolean {
   const windowLen = Math.min(buf.length, 32);
   const tail = buf.subarray(buf.length - windowLen).toString("latin1");
   return PROMPT_RE.test(tail);
+}
+
+// ---------------------------------------------------------------------------
+// withTextChannelLock() -- the text channel's ONE acquire seam for
+// channel-lock.ts's mutex (plan 41-02, CHAN-04, D-07).
+// ---------------------------------------------------------------------------
+
+export interface WithTextChannelLockOptions {
+  /** Test-only override of channel-lock.ts's acquire bound. Production call
+   * sites never set this -- they always take channel-lock.ts's own
+   * CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS default. */
+  timeoutMs?: number;
+}
+
+/**
+ * The text channel's ONE acquire seam for channel-lock.ts's mutex. Acquires
+ * `channel: "text"`, runs `fn`, and releases in a `finally` so a throwing
+ * `fn` still releases -- matching stock-dispatch.ts's `withChannelLockHeld()`
+ * on the binary side exactly, and satisfying D-07's requirement that
+ * `text-protocol.ts` and `stock-dispatch.ts` both import the one primitive.
+ *
+ * Every real text-monitor command MUST be issued from inside this function:
+ * `command()` below refuses, by name, whenever channel-lock.ts's mutex is
+ * not currently held by the text channel -- so a call site that forgets to
+ * acquire is refused rather than silently bypassing the authority (D-07's
+ * "cannot be silently bypassed" requirement).
+ */
+export async function withTextChannelLock<T>(operation: string, fn: () => Promise<T>, opts: WithTextChannelLockOptions = {}): Promise<T> {
+  const handle = await acquireChannelLock({ channel: "text", operation, timeoutMs: opts.timeoutMs });
+  try {
+    return await fn();
+  } finally {
+    handle.release();
+  }
 }
 
 interface PendingTextCommand {
@@ -349,6 +388,23 @@ export class TextMonitorClient extends EventEmitter {
         new ViceError(
           `text-protocol: refusing non-allowlisted command ${JSON.stringify(cmd)} -- every outbound text-monitor ` +
             `command must come from TEXT_COMMAND_ALLOWLIST (D-01)`,
+        ),
+      );
+    }
+    // D-07 (plan 41-02, CHAN-04): a text command issued without the text
+    // channel holding channel-lock.ts's mutex is a defect, not a variant --
+    // refusing it BY NAME is what keeps the serialization authority from
+    // being silently bypassable by a call site that forgot to route through
+    // withTextChannelLock(). Checked before the connection-state checks
+    // below: holding halt authority is a prerequisite for issuing ANY
+    // command, independent of whether a socket happens to be connected.
+    const lockHolder = currentChannelLockHolder();
+    if (lockHolder === null || lockHolder.channel !== "text") {
+      return Promise.reject(
+        new ViceError(
+          `text-protocol: refusing command ${JSON.stringify(cmd)} -- the text channel does not currently hold ` +
+            `channel-lock.ts's halt authority; every text-monitor command must be issued from inside ` +
+            `withTextChannelLock()`,
         ),
       );
     }
