@@ -715,3 +715,159 @@ WR-02, IN-01, IN-02) in the phase directory, which is exactly what `docs-review-
 substring scan checks for, so the guard the verifier measured red went green the moment its own
 report landed and was re-measured green before this round's first plan started. No plan in this
 round chased it, and this is stated here so a later reader does not re-open it as an oversight.
+
+## Round 2 Gap-Closure (Plans 42-15, 42-16) — CR-02 closed and re-measured live
+
+Round 1 (Blocks 15-21 above) closed the five findings the original review raised. This section
+covers a SIXTH finding, surfaced only by the round-1 re-review after round 1 had already
+finished: `CR-02`, pre-existing since plan 42-07 and not one of round 1's original five targets.
+Round 1's five closures are NOT re-claimed here — see the closing block above for that record.
+
+### Block 22 (measured, plan 42-15): CR-02 — `io`'s per-address chip degradation served from a
+binary-wide cache
+
+**Finding id:** CR-02, filed as `.planning/todos/pending/2026-09-09-io-degradation-probe-cached-under-a-binary-wide-key.md`,
+raised by the round-1 re-review dated 2026-09-09T19:52:54Z, confirmed pre-existing (present at
+commit `5258a210`, the tree as phase 42 originally completed).
+
+**The defect, in one sentence:** `handleIoRegisters` classified each `io` reply by calling
+`probeTextCapability({ command: "io", ... })` with the LITERAL string `"io"` as the cache key's
+command component (never the address-specific command actually dialed), and `probeTextCapability`'s
+cache is a property of a BINARY FILE, not of a per-call, per-address fact — so every `io` call
+after the first was judged on the FIRST call's cached verdict, not its own reply.
+
+**Both reachable wrong answers, transcribed verbatim from `42-15-SUMMARY.md`'s own planted-control
+evidence** (observed red against the pre-change tree, both directions):
+
+Direction (a) — a degrading first call discards a later real dump:
+
+```
+✖ handleIoRegisters (CR-02, direction a): a degrading first call never causes a later call's real register dump to be discarded (106.89518ms)
+  AssertionError [ERR_ASSERTION]: expected the second call's real register dump to succeed, not be discarded behind the first call's cached refusal -- got {"content":[{"type":"text","text":"vice_io_registers: io: /usr/bin/x64sc reports \"No details available.\" -- the chip has nothing to report here, not a missing build capability."}],"isError":true}
+
+  true !== false
+```
+
+Direction (b) (probe-level control, before `NEVER_CACHED_COMMANDS` existed) — the module did not
+even export the fix's own entry points yet:
+
+```
+file:///home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/text-capability-probe.test.ts:23
+  NEVER_CACHED_COMMANDS,
+  ^^^^^^^^^^^^^^^^^^^^^
+SyntaxError: The requested module './text-capability-probe.ts' does not provide an export named 'NEVER_CACHED_COMMANDS'
+```
+
+**The remedy chosen — both halves landed together, not either alone:**
+1. `textCapabilityVerdictFor()` (`TextCapabilityVerdictForOptions`), a pure verdict builder with
+   NO dial, NO cache read and NO cache write — `handleIoRegisters` now calls it directly on the
+   response it itself dialed, never reaching `probeTextCapability`'s memoised entry point at all.
+2. `NEVER_CACHED_COMMANDS` (frozen, sole member `"io"`), structurally excluding `io` from the
+   cache's domain in all three places a cache can act: the write (`runProbe`'s `cacheable`
+   predicate), the read (`probeTextCapability`'s cache-read early return), and the concurrency
+   memo (`inFlightProbes`).
+
+**The remedy NOT chosen, and what it would have cost:** keying the probe on the address-specific
+command actually dialed (`built.command`, e.g. `"io $d020"`) instead of the literal `"io"`, alone,
+with no structural exclusion. That would have closed direction (a)/(b) for a single address, but
+leaves the SAME category error standing for two DIFFERENT addresses under the SAME binary — an
+`io $d020` verdict and an `io $dc00` verdict would each cache correctly under their own key, but
+a caller that widened the addressed keyspace (e.g. probing every visible chip once at startup)
+would still be filing a per-call, per-argument fact into a cache whose stated contract
+(D-42-2) is "a property of a binary file." The chosen remedy removes `io` from that cache's
+domain entirely rather than merely widening the key it is filed under.
+
+**Every symbol the fix introduced:** `textCapabilityVerdictFor(options)`,
+`TextCapabilityVerdictForOptions` (interface), `NEVER_CACHED_COMMANDS` (frozen const) — all three
+in `src/mcp/vice/text-capability-probe.ts`.
+
+**The commands whose output proves it** (plan 42-15's own record): `node --test
+text-capability-probe.test.ts` — `fail 0` (45 pass) after the fix, `fail 1` (import error) on the
+pre-fix tree for the never-cached control; `node --test text-tools.test.ts` — `fail 0` (50 pass)
+after the fix, direction-(a) control failing exactly as transcribed above on the pre-fix tree;
+`node --test textmon-registers.test.ts text-capability-probe.test.ts text-tools.test.ts
+textmon-seam.test.ts` — `fail 0` (162 pass); nine-file module-family sweep — `fail 0` (287 pass);
+`npm run typecheck` — exit 0; `git diff -- src/mcp/vice/tools-manifest.json` — empty (the
+published `vice_io_registers` `inputSchema` is byte-unchanged).
+
+Label: MEASURED (plan 42-15's own execution record, transcribed here rather than re-derived).
+
+### Block 23 (MEASURED, plan 42-16): the live two-address `io` re-measurement
+
+**Binary:** `stock:/usr/bin/x64sc`. **Reported version:** `x64sc (VICE 3.9)`. **Date:** 2026-09-09.
+**Command:** `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test text-monitor-live.test.ts`, run
+against the tree as plan 42-15 leaves it, extending the same existing five-format live case
+(no new `withBrokerHarness` invocation).
+
+**Both `io` commands as built, this run:** first `"io $d020"` (VIC-II, dialed inside the
+pre-existing five-format sequence), second `"io $dc00"` (CIA1, the new two-address control —
+chosen from `buildTextCommand("io", ...)`'s own accepted `0..65535` address bound and from a
+different chip than the first dial, per 42-11's chip gate).
+
+**The discriminating result:** the second verdict's `fromCache` is `false`; its `response`
+strictly equals the second reply, not the first; the two replies are proven to differ (the
+control asserts this and would fail naming both replies if they did not); and
+`textCapabilityVerdictFor` and `probeTextCapability` are shown to agree live on the second
+reply's outcome. The second reply parses via `parseIoRegisters` to the `unsupported-chip`
+refusal code (CIA1 is outside `io`'s VIC-II-only decode range, 42-11's chip gate) — recorded as
+the outcome, not asserted as the interesting fact; the interesting fact is that the SECOND call's
+own answer, whatever it is, is what came back.
+
+**MEASURED log line, this run:**
+
+```
+text-monitor-live (42-16): MEASURED CR-02 two-address io control on /usr/bin/x64sc -- first="io $d020", second="io $dc00", fromCache=false, secondParseOutcome=unsupported-chip
+```
+
+**Teardown outcome, corrected three-part method (never a service-unit status):** broker pid
+tracked and confirmed exited (`pidsAliveAfterTeardown` empty); scratch-scoped stray-process sweep
+(`strayPidsMatchingScratch`) empty; scratch directory removal (`scratchDirRemoved`) `true`.
+Independently cross-checked immediately before and after the run with the un-confounded form
+(`ps -eo pid,args | grep -E 'vice-broker\.mjs|/x64sc' | grep -v grep`, since the bare `pgrep`
+pattern self-matches its own quoted shell invocation, the same false positive Block 20 already
+documented): both checks printed nothing before the run (exit 1) and nothing after
+(exit 1); `ls -d /tmp/text-monitor-live-*` found no surviving scratch directory after the run
+(exit 2, no match).
+
+**Suite result:** `tests 9 | pass 9 | fail 0 | skipped 0`, exit 0 — the new control ran on the
+post-fix tree, it did not silently skip.
+
+Label: MEASURED.
+
+### Block 24 (MEASURED, plan 42-16): the final automated-gate reading, this round's close
+
+**Environment claim:** `ps -eo pid,args | grep -E 'vice-broker\.mjs|/x64sc' | grep -v grep`
+printed nothing (exit 1) immediately before this run.
+
+**Command:** `cd src/mcp/vice && npm run test:automated`.
+
+**Result:** `tests 3954 | suites 24 | pass 3940 | fail 3 | cancelled 0 | skipped 6`. Failing
+files: `anno-import.test.ts`, `anno-register.test.ts` — exactly the documented pre-existing
+3-failure floor, no new failing file introduced by this round's changes.
+
+**This figure is the documented floor, not a target.** A run reporting zero would mean the gate
+was not exercising the gate this project actually has.
+
+Label: MEASURED.
+
+### Closing block, round 2: what this round did NOT close — restated as still open
+
+Round 1's five closures (Blocks 15-19 above) are NOT re-claimed by this round. This round closed
+exactly one finding, CR-02 (Blocks 22-23 above). Every item round 1's own closing block already
+named as deliberately excluded remains excluded, unchanged by round 2:
+
+1. **The inability of any tool in this tree to start VICE's profiler.** Still unstarted in
+   production by any shipped handler; still open at `.planning/WINDOWS.md` #55.
+2. **The two manual-only verifications from `42-VALIDATION.md`.** Neither closed by this round:
+   (a) no genuinely `--disable-cpuhistory` VICE build exists on this host; (b) `io`'s two
+   degradation strings (`"No details available."` / `"No I/O regs available"`) remain
+   source-traced (`monitor.c:1980-2000`), not live-observed — this round's live `io $dc00` dial
+   hit the `unsupported-chip` chip-gate refusal, not either degradation string.
+3. **The RAM-execute hardware evidence.** Still 0/1565 over the searched denominator, unchanged
+   by this round — accepted scope, not attempted here.
+4. **The behavioural half of the decimal-separator finding (IN-02).** Still unbuilt, per plan
+   42-13's own recorded decision — no committed capture and no known VICE behaviour exercises the
+   payload shape it would guard against.
+5. **The phase validation artifact's (`42-VALIDATION.md`) own draft status.** Still
+   `status: draft`, `nyquist_compliant: false`, `wave_0_complete: false`, **Approval: pending** —
+   unaffected by this round, belongs to `/gsd-validate-phase 42`.

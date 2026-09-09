@@ -100,6 +100,7 @@ import {
   classifyTextCapabilityResponse,
   probeTextCapability,
   textCapabilityCacheKey,
+  textCapabilityVerdictFor,
   resetTextCapabilityCache,
   type TextCapabilityIdentity,
   type TextCapabilityCommand,
@@ -1657,6 +1658,53 @@ test(
               `outcome=${verdict.outcome}, cacheKey=${JSON.stringify(cacheKey)}`,
           );
         }
+
+        // -------------------------------------------------------------
+        // CR-02 two-address `io` control: one call's evidence must never
+        // answer another call's question. `io` was already dialed once
+        // above at $d020 (VIC-II) and fed through probeTextCapability in
+        // the loop just above. This dials `io` a SECOND time, at a
+        // DIFFERENT chip's address ($dc00, CIA1 -- 42-11's chip gate
+        // gives it a known, distinguishable `unsupported-chip` outcome),
+        // and asserts the second verdict is built from the SECOND reply,
+        // not served from the first's cache entry.
+        // -------------------------------------------------------------
+        const ioSecondBuild = buildTextCommand("io", 0xdc00);
+        assert.ok(ioSecondBuild.ok, `buildTextCommand("io", 0xdc00) must succeed: ${JSON.stringify(ioSecondBuild)}`);
+        if (!ioSecondBuild.ok) return;
+        const ioSecondResponse = await withTextChannelLock(ioSecondBuild.command, () =>
+          textSession.client.command(ioSecondBuild.command, { timeoutMs: 30000 }),
+        );
+        assert.notEqual(
+          ioSecondResponse,
+          ioResponse,
+          "the second io address was not discriminating -- first and second replies were identical: " +
+            `first (${ioBuild.command})=${JSON.stringify(ioResponse)}, second (${ioSecondBuild.command})=${JSON.stringify(ioSecondResponse)}`,
+        );
+        const ioSecondVerdict = await probeTextCapability({ command: "io", identity, dial: async () => ioSecondResponse });
+        assert.equal(
+          ioSecondVerdict.fromCache,
+          false,
+          `the second io dial's verdict must not be served from cache (CR-02), got: ${JSON.stringify(ioSecondVerdict)}`,
+        );
+        assert.equal(
+          ioSecondVerdict.response,
+          ioSecondResponse,
+          "the second io verdict's response must strictly equal the second reply, not the first (CR-02)",
+        );
+        const ioSecondVerdictDirect = textCapabilityVerdictFor({ command: "io", response: ioSecondResponse, identity });
+        assert.equal(
+          ioSecondVerdictDirect.outcome,
+          ioSecondVerdict.outcome,
+          "textCapabilityVerdictFor and probeTextCapability must agree live on the second io reply's outcome",
+        );
+        const ioSecondParsed = parseIoRegisters(ioSecondResponse);
+        const ioSecondParseOutcome = ioSecondParsed.ok ? (ioSecondParsed.value.sections[0]?.chip ?? "decoded") : ioSecondParsed.refusal.code;
+        console.log(
+          `text-monitor-live (42-16): MEASURED CR-02 two-address io control on ${viceBinPath} -- ` +
+            `first="${ioBuild.command}", second="${ioSecondBuild.command}", fromCache=${ioSecondVerdict.fromCache}, ` +
+            `secondParseOutcome=${ioSecondParseOutcome}`,
+        );
       } finally {
         await textDisconnect(textSession);
       }
