@@ -5,15 +5,15 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: Phase 42 gap-closure round 1 executed and verified — 4/5, gaps_found. CR-02 (pre-existing, io degradation probe cached binary-wide) blocks criterion 5; PARSE-04 reverted to Pending. Next: /gsd-plan-phase 42 --gaps
-last_updated: "2026-09-09T19:42:46.574Z"
+stopped_at: "Phase 42 gap-closure round 2 planned — 2 plans (42-15, 42-16) in waves 9-10, both gap_closure: true, scoped to CR-02 alone. Plan-checker returned VERIFICATION PASSED. Next: /gsd-execute-phase 42 --gaps-only"
+last_updated: "2026-09-09T20:45:48.030Z"
 last_activity: 2026-09-09
 last_activity_desc: "Phase 42 gap-closure round 1 complete and re-verified: all five original findings closed (CR-01, WR-01, WR-02, IN-01, IN-02 docs half), but the post-round code review surfaced CR-02 -- a pre-existing binary-wide cache key on io's per-address degradation probe -- which falsifies success criterion 5. Verification scored 4/5 gaps_found; PARSE-04 reverted to Pending, PARSE-01/02/03 stay Complete."
-state_head: 5914a49b56c3f158036bb7ff9f345615bccb641a
+state_head: 8869b1440552124a68d3b7a630619dcf90fa08a8
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 39
+  total_plans: 41
   completed_plans: 39
   percent: 50
 ---
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — VERIFIED 4/5, GAPS FOUND (not complete)
-Plan: 14 of 14 executed (9 original + 5 gap-closure: 42-10, 42-11, 42-12, 42-13, 42-14)
-Status: Gap-closure round 1 executed and re-verified. All five findings it targeted are closed (CR-01, WR-01, WR-02, IN-01, IN-02's documentation half), and the automated-gate regression is gone (3941/3927/3, the documented floor). One NEW gap blocks the phase: CR-02, a pre-existing defect dating to plan 42-07 -- handleIoRegisters caches io's per-address chip-degradation verdict under a binary-wide key, so a later call to a different address is judged on an earlier response. It falsifies success criterion 5, so PARSE-04 is reverted to Pending; PARSE-01/02/03 remain Complete. Dispositioned as an open pending todo, not silently carried.
-Last activity: 2026-09-09 — Phase 42 gap-closure round 1 verified 4/5 (gaps_found); CR-02 filed as a deferred todo and PARSE-04 reverted to Pending
+Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — READY TO EXECUTE
+Plan: 14 of 16 executed (9 original + 5 gap-closure round 1: 42-10..42-14) — 2 round-2 gap-closure plans planned, not yet executed: 42-15 (wave 9), 42-16 (wave 10)
+Status: Gap-closure round 1 executed and re-verified. All five findings it targeted are closed (CR-01, WR-01, WR-02, IN-01, IN-02's documentation half), and the automated-gate regression is gone (3941/3927/3, the documented floor). One NEW gap blocks the phase: CR-02, a pre-existing defect dating to plan 42-07 -- handleIoRegisters caches io's per-address chip-degradation verdict under a binary-wide key, so a later call to a different address is judged on an earlier response. It falsifies success criterion 5, so PARSE-04 is reverted to Pending; PARSE-01/02/03 remain Complete. Dispositioned as an open pending todo, not silently carried. Gap-closure round 2 is now PLANNED and ready to execute: 42-15 (tracer, wave 9) closes CR-02 with both remedies the verification named -- a pure textCapabilityVerdictFor() builder so the verdict comes from the response that call received, plus a NEVER_CACHED_COMMANDS set closing the cache write, read and in-flight-memo paths -- and 42-16 (wave 10, USE_WORKTREES_FOR_PLAN=false) proves it live over two io addresses in one genuine-stock session, records the evidence, returns PARSE-04 to Complete only on that measurement, and closes the CR-02 disposition with its ledger row. Plan-checker: VERIFICATION PASSED, 8/8 phase-specific checks.
+Last activity: 2026-09-09 — Phase 42 gap-closure round 2 planned: 2 plans (42-15, 42-16) scoped to CR-02 alone, plan-checker VERIFICATION PASSED
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
