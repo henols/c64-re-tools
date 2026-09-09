@@ -388,7 +388,7 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
     name: "IO registers",
     module: "textmon-registers.ts",
     testFile: "textmon-registers.test.ts",
-    // textmon-registers.ts:236/242 -- the fixed ">C:" marker DUMP_ROW_PREFIX_RE
+    // textmon-registers.ts:252/258 -- the fixed ">C:" marker DUMP_ROW_PREFIX_RE
     // and DUMP_ROW_RE both anchor on: ">" then the main-CPU memspace letter
     // then ":", opening every 16-byte register-dump row.
     literal: ">C:",

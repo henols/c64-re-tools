@@ -71,6 +71,13 @@
 //     `REQUIRED_IO_DECODED_KEYS`'s completeness check in `decodeProseLines()`
 //     exists precisely to stop that -- an absent observation is refused by
 //     name via `incomplete-decoded-state`, never manufactured.
+//   - Never restore an unconditional sprite-table requirement (this was
+//     WR-02), and never narrow `vice_io_registers`'s advertised 0-65535
+//     address range to make a non-VIC-II chip disappear. A CIA1, CIA2 or
+//     SID reply is a legitimate, in-schema answer; it is refused by its own
+//     name via `unsupported-chip`, never dressed up as a malformed VIC-II
+//     section and never made unreachable by shrinking the published
+//     contract.
 
 /** One 64-byte VIC-II register dump, decoded from four `>C:aaaa  ...` rows.
  * `baseAddress` is the first row's own address field -- never assumed. */
@@ -159,7 +166,11 @@ export interface IoChipSection {
 /** The full decoded `io` reply. `sections` is an array even though the
  * tool in plan 42-07 always dials a single-address form -- the command
  * itself accepts a bare invocation that dumps every chip, and a parser
- * that hard-assumed one section would refuse a legitimate reply.
+ * that hard-assumed one section would refuse a legitimate reply. The array
+ * shape survives that reasoning unchanged, but only VIC-II sections
+ * decode (plan 42-11, WR-02): a CIA1, CIA2 or SID section is refused by
+ * the chip's own name rather than being reported as a VIC-II section
+ * missing its sprite table.
  * `unrecognisedLines` carries every decoded-prose line this module did not
  * recognise, verbatim, across every section -- drift stays visible in the
  * answer instead of being dropped from it, and a caller reporting a
@@ -173,10 +184,14 @@ export interface IoRegisters {
  * dump row, an unrecognised memspace marker, a recognised decoded-prose
  * label whose value could not be parsed, an unrecognised sprite-row label,
  * a sprite header declaring a column count other than eight, the two
- * graceful-degradation outcomes (see this module's header comment), and a
+ * graceful-degradation outcomes (see this module's header comment), a
  * decoded-prose block that did not carry every one of `IoDecodedState`'s
  * required fields -- a required label was dropped, renamed or reordered
- * out of recognition (plan 42-10, CR-01). */
+ * out of recognition (plan 42-10, CR-01) -- and a chip section this parser
+ * does not decode, whose register dump nonetheless read cleanly (plan
+ * 42-11, WR-02): the sprite-table and decoded-prose requirements are
+ * VIC-II-only, so a CIA1, CIA2 or SID reply is refused by the chip's own
+ * name rather than being reported as a malformed VIC-II section. */
 export type IoRegistersRefusalCode =
   | "empty-response"
   | "malformed-dump"
@@ -186,7 +201,8 @@ export type IoRegistersRefusalCode =
   | "sprite-column-count"
   | "no-details-available"
   | "no-io-regs-available"
-  | "incomplete-decoded-state";
+  | "incomplete-decoded-state"
+  | "unsupported-chip";
 
 /** A parser refusal (D-42-3): returned, never thrown. `line` and
  * `lineNumber` name the offending content whenever one exists. */
@@ -246,6 +262,12 @@ const DUMP_ROW_RE =
  * accepts anywhere a marker appears (CLAUDE.md's documented
  * `default_memspace` contamination constraint). */
 const MAIN_CPU_MEMSPACE = "C";
+
+/** The only chip whose decoded display state and sprite table this parser
+ * models. The chip gate in `parseIoRegisters()` is what keeps every other
+ * chip section from being reported as a malformed VIC-II reply (plan
+ * 42-11, WR-02). */
+const VIC_II_CHIP_NAME = "VIC-II";
 
 const SPRITE_HEADER_PREFIX = "Sprites: ";
 
@@ -608,6 +630,32 @@ export function parseIoRegisters(text: string): IoRegistersParseResult {
         refusal: makeRefusal(
           "malformed-dump",
           `io: chip section "${chip}" (line ${lineNumber}) has no register dump rows following its header`,
+          headerLine,
+          lineNumber,
+        ),
+      };
+    }
+
+    // --- chip gate (plan 42-11, WR-02) ------------------------------------
+    // The sprite table and decoded-prose sections below are VIC-II-only --
+    // a CIA1, CIA2 or SID reply (every one of them inside vice_io_registers'
+    // own advertised 0-65535 address range) is refused HERE, by the chip's
+    // own name, rather than being reported below as a VIC-II section
+    // missing its Sprites: header. This sits after the dump-row validation
+    // above (so a drive-contaminated memspace still refuses
+    // unrecognised-memspace first) and before every check below that would
+    // otherwise misread a legitimately different chip as a layout defect.
+    if (chip !== VIC_II_CHIP_NAME) {
+      const byteCount = byteRows.reduce((sum, row) => sum + row.length, 0);
+      const baseAddressHex = `$${baseAddress.toString(16).padStart(4, "0")}`;
+      return {
+        ok: false,
+        refusal: makeRefusal(
+          "unsupported-chip",
+          `io: chip "${chip}" is not supported -- its register dump read cleanly (${byteCount} bytes at ` +
+            `${baseAddressHex}), but only "${VIC_II_CHIP_NAME}" sections carry the decoded display state and ` +
+            `sprite table this parser models -- dial an address covered by the ${VIC_II_CHIP_NAME} chip for a ` +
+            "decoded answer",
           headerLine,
           lineNumber,
         ),

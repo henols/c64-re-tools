@@ -441,6 +441,67 @@ test("interface census: REQUIRED_IO_DECODED_KEYS equals IoDecodedState's own dec
 });
 
 // ---------------------------------------------------------------------------
+// The chip gate (WR-02, plan 42-11): the sprite table and decoded-prose
+// requirements are VIC-II-only. A CIA1, CIA2 or SID address -- every one of
+// them inside vice_io_registers' own advertised 0-65535 range -- must be
+// refused by the chip's own name, never reported as a malformed VIC-II
+// reply, and a chip section this parser does not decode must refuse the
+// WHOLE reply, never a partial one.
+// ---------------------------------------------------------------------------
+
+test("planted control (WR-02): renaming the capture's chip header to CIA1: refuses with unsupported-chip naming CIA1, never sprite-column-count or incomplete-decoded-state, and states the dump read cleanly at its hex base address -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText().replace("VIC-II:", "CIA1:");
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "unsupported-chip");
+    assert.match(result.refusal.message, /CIA1/);
+    assert.notEqual(result.refusal.code, "sprite-column-count");
+    assert.notEqual(result.refusal.code, "incomplete-decoded-state");
+    assert.match(result.refusal.message, /\$d000/);
+    assert.match(result.refusal.message, /read cleanly/);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted control (WR-02): renaming the capture's chip header to SID: refuses with unsupported-chip naming SID -- proving the gate reads the chip rather than matching one hard-coded alternative -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText().replace("VIC-II:", "SID:");
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "unsupported-chip");
+    assert.match(result.refusal.message, /SID/);
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted control (WR-02): a real VIC-II section immediately followed by a CIA1-renamed section refuses as a whole naming CIA1 -- no value, no partial section list -- paired with the real-capture discriminating control", () => {
+  const realText = realStockText();
+  const firstSection = realText.replace(/\(C:\$[0-9A-Fa-f]{4}\)\s*$/, "");
+  const secondSectionBody = realText.replace("VIC-II:", "CIA1:").replace(/\(C:\$[0-9A-Fa-f]{4}\)\s*$/, "");
+  const payload = `${firstSection}\n${secondSectionBody}(C:$d040) `;
+  const result = parseIoRegisters(payload);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "unsupported-chip");
+    assert.match(result.refusal.message, /CIA1/);
+  }
+  assert.ok(!("value" in result), "expected no value present on a refused two-section result");
+  assertRealCapturesStillParseCleanly();
+});
+
+test("planted control (WR-02): inside a CIA1-renamed section, a memspace marker other than the main CPU's still refuses unrecognised-memspace, not unsupported-chip -- proving the memspace hazard outranks the chip gate -- paired with the real-capture discriminating control", () => {
+  const mutated = realStockText().replace("VIC-II:", "CIA1:").replace(">C:d000", ">D:d000");
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "unrecognised-memspace");
+    assert.notEqual(result.refusal.code, "unsupported-chip");
+  }
+  assertRealCapturesStillParseCleanly();
+});
+
+// ---------------------------------------------------------------------------
 // Idempotency and concurrency.
 // ---------------------------------------------------------------------------
 
