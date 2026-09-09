@@ -3738,6 +3738,83 @@
           "runState"
         ]
       }
+    },
+    {
+      "name": "vice_device_console",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the single allowlisted verb \"device c:\", resetting the current default device (memspace) back to the main CPU. Use this after a drive checkpoint hit leaves default_memspace pointed at a drive unit -- ADVANCE_INSTRUCTIONS and EXECUTE_UNTIL_RETURN then step the wrong CPU, and a bank-qualified checkpoint condition fails outright, until this is issued. This is an explicit tool, not auto-healing: nothing on the binary-side stepping path calls it automatically.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "response",
+          "note",
+          "runState"
+        ]
+      }
+    },
+    {
+      "name": "vice_warp_set",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"warp on\" or \"warp off\" depending on \"enabled\". There is no runtime WarpMode *resource* on stock -- measured err=0x01 OBJECT_MISSING over RESOURCE_GET -- so this is the only way to toggle warp at runtime on this backend; warp requested at launch time (-warp / InitialWarpMode) is a separate mechanism this tool does not touch. The response reports warp's own OBSERVED state rather than assuming the write took.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "true issues \"warp on\", false issues \"warp off\"."
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "type": "boolean"
+          },
+          "response": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "requested",
+          "response",
+          "note",
+          "runState"
+        ]
+      }
     }
   ]
 }

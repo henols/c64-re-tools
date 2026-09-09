@@ -282,9 +282,11 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
       "Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist " +
       "subset that never shipped on stock. Its advertised WarpMode resource is fork-only: stock " +
       "has no runtime WarpMode resource at all -- measured err=0x01 OBJECT_MISSING over " +
-      "RESOURCE_GET (0x51) on VICE 3.9 -- and runtime warp toggling on stock exists only as a " +
-      "text-monitor command, a channel this project does not dial, so on the stock backend warp " +
-      "is requested at launch time.",
+      "RESOURCE_GET (0x51) on VICE 3.9. As of plan 41-06 the text-monitor channel IS dialed by " +
+      "this project, and runtime warp toggling on stock is available through vice_warp_set, a " +
+      "native text-monitor command -- distinct from this (still-absent) runtime WarpMode " +
+      "resource; on the stock backend warp requested at launch time remains a separate mechanism " +
+      "from vice_warp_set.",
   },
   {
     name: "vice_joystick_tap",
@@ -295,7 +297,7 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
       "timing infrastructure; not yet built, and no shipped skill calls it.",
   },
 
-  // --- stock-only-gain (2), providedBy: stock ------------------------------
+  // --- stock-only-gain (4), providedBy: stock ------------------------------
   {
     name: "vice_execution_until_return",
     category: "stock-only-gain",
@@ -307,6 +309,22 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     category: "stock-only-gain",
     providedBy: "stock",
     reason: "The fork has no equivalent enumeration call; this is the native REGISTERS_AVAILABLE opcode.",
+  },
+  {
+    name: "vice_device_console",
+    category: "stock-only-gain",
+    providedBy: "stock",
+    reason:
+      "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"device c:\" command, " +
+      "reached over the -remotemonitor channel this project dials as of plan 41-06.",
+  },
+  {
+    name: "vice_warp_set",
+    category: "stock-only-gain",
+    providedBy: "stock",
+    reason:
+      "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"warp on\"/\"warp off\" " +
+      "command, reached over the -remotemonitor channel this project dials as of plan 41-06.",
   },
 ];
 

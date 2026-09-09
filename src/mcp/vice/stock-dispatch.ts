@@ -77,6 +77,7 @@ import { handleCyclesStopwatch, forgetTimingForOtherTargets } from "./stock-timi
 import { handleRunUntil } from "./stock-run-until.ts";
 import { handleDiagnoseStock } from "./stock-diagnose.ts";
 import { handleRecycleStock } from "./stock-recycle.ts";
+import { handleDeviceConsole, handleWarpSet } from "./text-tools.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -810,6 +811,24 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   // evidence and has no verdict vocabulary of its own to preserve.
   vice_diagnose: withDerivedTool("vice_diagnose", { needsSession: false }, handleDiagnoseStock),
   vice_recycle: withDerivedTool("vice_recycle", { needsSession: true }, handleRecycleStock),
+
+  // text-channel remedy tools (plan 41-06, CHAN-03). needsSession:false,
+  // deliberately -- NOT withStockSession()/withDerivedTool(needsSession:
+  // true): both of those wrap the whole handler call in
+  // withChannelLockHeld("binary", ...), and each handler below takes its OWN
+  // channel-lock.ts acquire for `channel: "text"` internally
+  // (withTextChannelLock(), text-protocol.ts). Registering through either
+  // binary-locking adapter would nest a second acquireChannelLock() call
+  // inside the first (channel-lock.ts is one single, non-reentrant mutex
+  // across both channels) -- a self-deadlock that only resolves by expiring
+  // CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS. See text-tools.ts's own header comment
+  // (ADAPTER CHOICE) for the full measurement. Neither handler needs a
+  // binary session at all -- both resolve the lease via deps.ensureLease()
+  // themselves and dial only through textConnect() -- so needsSession:false
+  // is not merely the deadlock-avoiding choice, it is also the structurally
+  // correct one, matching vice_diagnose's own precedent above.
+  vice_device_console: withDerivedTool("vice_device_console", { needsSession: false }, handleDeviceConsole),
+  vice_warp_set: withDerivedTool("vice_warp_set", { needsSession: false }, handleWarpSet),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a

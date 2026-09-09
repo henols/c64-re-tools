@@ -4,10 +4,10 @@
 
 The fork and stock backends deliberately advertise different tool lists. A tool advertised on both backends keeps the same name and a backward-compatible argument shape on either one — stock may add optional parameters but never removes, retypes, or newly-requires one. Calling a tool the active backend does not advertise returns an error naming the reason and the backend that does provide it.
 
-- Total tools: 63
+- Total tools: 65
 - Available on both backends: 37
 - Fork-only: 24
-- Stock-only: 2
+- Stock-only: 4
 - Fork manifest generated at: 2026-07-31T15:56:00.302Z
 - Stock manifest generated at: 2026-08-14T00:00:00.000Z
 
@@ -30,6 +30,7 @@ Legend: ✅ available, — not available.
 | vice_cia_get_state | ✅ | ✅ |  |
 | vice_cia_set_state | ✅ | — | not yet built (descoped): The write half of a tool whose read half already ships on stock; no shipped skill calls the write half. |
 | vice_cycles_stopwatch | ✅ | ✅ |  |
+| vice_device_console | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent; this is the native text-monitor "device c:" command, reached over the -remotemonitor channel this project dials as of plan 41-06. |
 | vice_diagnose | ✅ | ✅ |  |
 | vice_disassemble | ✅ | ✅ |  |
 | vice_disk_attach | ✅ | ✅ |  |
@@ -51,7 +52,7 @@ Legend: ✅ available, — not available.
 | vice_keyboard_restore | ✅ | — | hardware-unrecoverable: RESTORE pulses the NMI line directly; it is not part of the keyboard matrix, and KEYBOARD_FEED has no way to produce it. vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input -- but a program polling $DC00/$DC01 directly will not see buffer injection. |
 | vice_keyboard_type | ✅ | ✅ |  |
 | vice_machine_config_get | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. |
-| vice_machine_config_set | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. Its advertised WarpMode resource is fork-only: stock has no runtime WarpMode resource at all -- measured err=0x01 OBJECT_MISSING over RESOURCE_GET (0x51) on VICE 3.9 -- and runtime warp toggling on stock exists only as a text-monitor command, a channel this project does not dial, so on the stock backend warp is requested at launch time. |
+| vice_machine_config_set | ✅ | — | not yet built (descoped): Full resource get/set access was descoped; the fork's tool is a hand-curated whitelist subset that never shipped on stock. Its advertised WarpMode resource is fork-only: stock has no runtime WarpMode resource at all -- measured err=0x01 OBJECT_MISSING over RESOURCE_GET (0x51) on VICE 3.9. As of plan 41-06 the text-monitor channel IS dialed by this project, and runtime warp toggling on stock is available through vice_warp_set, a native text-monitor command -- distinct from this (still-absent) runtime WarpMode resource; on the stock backend warp requested at launch time remains a separate mechanism from vice_warp_set. |
 | vice_machine_reset | ✅ | ✅ |  |
 | vice_memory_banks | ✅ | ✅ |  |
 | vice_memory_compare | ✅ | ✅ |  |
@@ -77,6 +78,7 @@ Legend: ✅ available, — not available.
 | vice_symbols_lookup | ✅ | ✅ |  |
 | vice_vicii_get_state | ✅ | ✅ |  |
 | vice_vicii_set_state | ✅ | — | not yet built (descoped): The write half of a tool whose read half already ships on stock; no shipped skill calls the write half. |
+| vice_warp_set | — | ✅ | stock-only gain: The fork's custom HTTP API has no equivalent; this is the native text-monitor "warp on"/"warp off" command, reached over the -remotemonitor channel this project dials as of plan 41-06. |
 | vice_watch_add | ✅ | ✅ |  |
 
 See `docs/stock-vice-parity.md` for the full narrative reasoning behind every divergence above.

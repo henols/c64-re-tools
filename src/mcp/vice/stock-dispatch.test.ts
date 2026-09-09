@@ -44,6 +44,7 @@ import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetSymbolStoreForTest } from "./stock-symbols.ts";
 import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests } from "./channel-lock.ts";
+import { TEXT_COMMAND_ALLOWLIST } from "./text-protocol.ts";
 import {
   resetCheckpointStateForTest,
   handleCheckpointSetCondition,
@@ -84,7 +85,15 @@ function readManifest(path: string): Manifest {
 // names permitted to exist on the stock manifest with no fork counterpart.
 // A future stock-only addition is a deliberate edit to this named list,
 // never a silently loosened "every stock name needs a fork match" assertion.
-const STOCK_ONLY_TOOLS = new Set(["vice_execution_until_return", "vice_registers_available"]);
+const STOCK_ONLY_TOOLS = new Set([
+  "vice_execution_until_return",
+  "vice_registers_available",
+  // Plan 41-06, CHAN-03: the two text-channel remedy tools -- the fork's
+  // custom HTTP API has no equivalent, and the fork never dials the text
+  // monitor (D-07's frozen v0.1.x fork list).
+  "vice_device_console",
+  "vice_warp_set",
+]);
 
 // Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
 // above. vice_diagnose/vice_recycle are served proxy-locally (RECYCLE_TOOL/
@@ -343,6 +352,58 @@ test("manifest/backend (D-06 runState enum): every stock entry's outputSchema de
     assert.equal(runState!.type, "string", `"${tool.name}"'s runState property must be type "string"`);
     assert.deepEqual(runState!.enum, ["running", "stopped", "unknown"], `"${tool.name}"'s runState enum must be exactly ["running","stopped","unknown"]`);
     assert.ok(tool.outputSchema?.required?.includes("runState"), `"${tool.name}"'s outputSchema.required must include "runState"`);
+  }
+});
+
+test("manifest/backend (D-01 structural): no tool entry in tools-manifest.stock.json has a string-typed input property passed to the text monitor as a command; vice_warp_set's only property is a boolean", () => {
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  const COMMAND_NAME_HINTS = /\bcommand\b|\bcmd\b|\bverb\b/i;
+  for (const tool of stock.tools) {
+    const props = tool.inputSchema?.properties ?? {};
+    for (const [propName, propSchema] of Object.entries(props)) {
+      if (propSchema?.type === "string") {
+        assert.doesNotMatch(
+          propName,
+          COMMAND_NAME_HINTS,
+          `"${tool.name}"'s string property "${propName}" looks like a free-text monitor-command field -- D-01 forbids one`,
+        );
+        const description = String((propSchema as { description?: string }).description ?? "");
+        assert.doesNotMatch(
+          description,
+          COMMAND_NAME_HINTS,
+          `"${tool.name}"'s string property "${propName}" is described as a monitor command -- D-01 forbids a free-text command field`,
+        );
+      }
+    }
+  }
+  const warpSet = stock.tools.find((t) => t.name === "vice_warp_set");
+  assert.ok(warpSet, "vice_warp_set must exist on the stock manifest");
+  const warpProps = Object.keys(warpSet!.inputSchema?.properties ?? {});
+  assert.deepEqual(warpProps, ["enabled"], "vice_warp_set's inputSchema must declare exactly one property, \"enabled\"");
+  assert.equal(warpSet!.inputSchema?.properties?.enabled?.type, "boolean", "vice_warp_set's \"enabled\" must be type \"boolean\"");
+  const deviceConsole = stock.tools.find((t) => t.name === "vice_device_console");
+  assert.ok(deviceConsole, "vice_device_console must exist on the stock manifest");
+  assert.deepEqual(
+    Object.keys(deviceConsole!.inputSchema?.properties ?? {}),
+    [],
+    "vice_device_console's inputSchema must declare no properties at all",
+  );
+  assert.equal(deviceConsole!.inputSchema?.additionalProperties, false);
+  assert.equal(warpSet!.inputSchema?.additionalProperties, false);
+});
+
+test("manifest/backend (D-02 structural): the five parse-target verbs are present in TEXT_COMMAND_ALLOWLIST and absent from every tool name in tools-manifest.stock.json", () => {
+  const PARSE_TARGET_VERBS = ["memmapshow", "prof flat", "chis", "bt", "io"];
+  for (const verb of PARSE_TARGET_VERBS) {
+    assert.ok(
+      (TEXT_COMMAND_ALLOWLIST as readonly string[]).includes(verb),
+      `"${verb}" must remain in TEXT_COMMAND_ALLOWLIST -- it is reachable in-process, just not yet advertised`,
+    );
+  }
+  const stock = readManifest(STOCK_MANIFEST_PATH);
+  const toolNames = new Set(stock.tools.map((t) => t.name));
+  for (const verb of PARSE_TARGET_VERBS) {
+    assert.ok(!toolNames.has(verb), `"${verb}" must NOT appear as a tool name in tools-manifest.stock.json -- its owning parser has not landed (D-02)`);
   }
 });
 
@@ -2726,6 +2787,79 @@ conformanceTest("vice_recycle", async () => {
   } finally {
     rmSync(incidentsDir, { recursive: true, force: true });
   }
+});
+
+// --------------------------------------------------------- text-channel remedy tools (plan 41-06, CHAN-03)
+//
+// Neither tool is needsSession:true, so buildConformanceSession()/
+// buildConformanceDeps() (the BINARY-protocol stub above) do not apply --
+// each handler resolves its OWN lease via deps.ensureLease() and dials a
+// TEXT-monitor session through textConnect(), so the stub server here speaks
+// the text protocol's own line-in/prompt-out shape, matching
+// text-tools.test.ts's own withStubTextServer() convention.
+
+async function withConformanceTextServer<T>(onLine: (line: string, socket: Socket) => void, fn: (port: number) => Promise<T>): Promise<T> {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    let buf = "";
+    socket.on("data", (chunk) => {
+      buf += chunk.toString("utf8");
+      let idx: number;
+      while ((idx = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, idx);
+        buf = buf.slice(idx + 1);
+        onLine(line, socket);
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const port = (server.address() as AddressInfo).port;
+  try {
+    return await fn(port);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+function buildTextConformanceDeps(port: number, overrides: Partial<StockDispatchDeps> = {}): StockDispatchDeps {
+  const lease: HeldLease = {
+    host: "127.0.0.1",
+    port: 6502,
+    targetId: "conformance-text",
+    brokerControl: CONFORMANCE_BROKER_CONTROL,
+    epochFile: "",
+    supervisorDir: "",
+    remoteMonitorPort: port,
+  };
+  return {
+    ensureLease: async () => ({ ok: true as const, lease }),
+    ...overrides,
+  };
+}
+
+conformanceTest("vice_device_console", async () => {
+  await withConformanceTextServer(
+    (_line, socket) => socket.write("(C:$0000) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_device_console", {}, deps);
+      assertAnswerConforms("vice_device_console", result);
+    },
+  );
+});
+
+conformanceTest("vice_warp_set", async () => {
+  await withConformanceTextServer(
+    (_line, socket) => socket.write("warp: on(C:$0000) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_warp_set", { enabled: true }, deps);
+      assertAnswerConforms("vice_warp_set", result);
+    },
+  );
 });
 
 test("regression (Phase 7, TIME-04): stockHandlerFor resolves both proxy-local tools -- a stock call no longer reaches dispatchStock()'s refuse-by-name branch", async () => {

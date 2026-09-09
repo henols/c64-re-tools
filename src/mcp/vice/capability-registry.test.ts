@@ -105,6 +105,24 @@ test("DENY_LIST boundary: no DENY_LIST entry is duplicated into the capability r
   }
 });
 
+test("plan 41-06: vice_machine_config_set's reason no longer claims the text channel is undialed, and still names OBJECT_MISSING and launch-time warp", () => {
+  const entry = capabilityEntryFor("vice_machine_config_set");
+  assert.ok(entry, "vice_machine_config_set must still be registered");
+  assert.doesNotMatch(entry!.reason, /a channel this project does not dial/, "the corrected clause must not claim the text channel is undialed");
+  assert.match(entry!.reason, /OBJECT_MISSING/, "the corrected clause must still name the measured OBJECT_MISSING error");
+  assert.match(entry!.reason, /launch time/, "the corrected clause must still state warp on stock is requested at launch time");
+  assert.match(entry!.reason, /vice_warp_set/, "the corrected clause must name vice_warp_set as the new runtime route");
+});
+
+test("plan 41-06: vice_device_console and vice_warp_set are registered as stock-only-gain, providedBy: stock", () => {
+  for (const name of ["vice_device_console", "vice_warp_set"]) {
+    const entry = capabilityEntryFor(name);
+    assert.ok(entry, `${name} must be registered in CAPABILITY_REGISTRY`);
+    assert.equal(entry!.category, "stock-only-gain");
+    assert.equal(entry!.providedBy, "stock");
+  }
+});
+
 test("same-backend miss: every entry's own providedBy backend yields no refusal for that entry", () => {
   for (const entry of CAPABILITY_REGISTRY) {
     assert.equal(

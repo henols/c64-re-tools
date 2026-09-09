@@ -653,6 +653,8 @@ const DERIVED_TOOL_MODULES: Record<string, string> = {
   vice_run_until: "stock-run-until.ts",
   vice_diagnose: "stock-diagnose.ts",
   vice_recycle: "stock-recycle.ts",
+  vice_device_console: "text-tools.ts",
+  vice_warp_set: "text-tools.ts",
 };
 
 test("D-05-12: DERIVED_TOOL_MODULES' key set equals STOCK_DERIVED_TOOLS exactly", () => {
