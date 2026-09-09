@@ -50,7 +50,16 @@
 //     bind-widening warning already states for this same channel. Every
 //     outbound command must come from TEXT_COMMAND_ALLOWLIST below;
 //     command() refuses anything else BY NAME, before a single byte reaches
-//     the socket (D-01).
+//     the socket (D-01). The ONE stated, bounded exception (D-42-1, plan
+//     42-04): TEXT_COMMAND_PARAM_SPECS lets exactly three of those eight
+//     verbs also carry a caller-chosen value, but that value is always a
+//     typed, bounded number -- never a string, never a rest-of-line
+//     passthrough, never a `params` field -- validated and rendered by
+//     buildTextCommand(), the ONE place such a string is built, and
+//     accepted as dialable only when isDialableTextCommandForVerb()'s own
+//     re-render round trip reproduces it byte-for-byte. This does not
+//     widen what "free-text command" means above; it narrows one bounded
+//     numeric slot per verb.
 //   - Never frame a response by a timeout, a byte count, or any fallback
 //     that hands back a plausible-looking partial payload. A response that
 //     cannot be honestly framed refuses by name (TextFramingError), naming
@@ -100,20 +109,182 @@ export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
 
 export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];
 
-/** Type-narrowing predicate over TEXT_COMMAND_ALLOWLIST -- the ONE place a
- * string is checked against the closed command set. */
-export function isAllowlistedTextCommand(cmd: string): cmd is TextCommand {
-  return (TEXT_COMMAND_ALLOWLIST as readonly string[]).includes(cmd);
+// ---------------------------------------------------------------------------
+// Parameterized commands (D-42-1, plan 42-04). Three of the eight
+// allowlisted verbs -- "chis", "prof flat", "io" -- were captured on the
+// real wire carrying a caller-chosen value ("chis 4", "prof flat 5",
+// "io $d020" -- see fixtures/textmon/{cpu-history,flat-profile,
+// register-decode}-stock.json's own "command" field), so a bare literal
+// alone cannot reach them meaningfully. TEXT_COMMAND_ALLOWLIST above is NOT
+// widened for this: it stays exactly the eight frozen literals, and its own
+// membership assertion is unaffected. TEXT_COMMAND_PARAM_SPECS is a SIBLING
+// table describing, for the subset of verbs that take one, the bounded
+// typed value each accepts and the ONE renderer that turns a validated
+// value into the exact command string VICE was captured accepting.
+// ---------------------------------------------------------------------------
+
+/** The parameter kind a spec entry declares. "count" bounds a decimal
+ * row/entry count (chis, prof flat), rendered as the verb, one space, and
+ * the decimal digits with no padding and no leading zero. "address" bounds
+ * a 16-bit machine address (io), rendered as the verb, one space, a dollar
+ * sign, and exactly four lowercase hex digits, zero-padded -- the exact
+ * form the committed register-decode-stock fixture was captured with. */
+export type TextCommandParamKind = "count" | "address";
+
+export interface TextCommandParamSpec {
+  readonly kind: TextCommandParamKind;
+  readonly min: number;
+  readonly max: number;
+  readonly render: (value: number) => string;
+}
+
+function renderCountParam(verb: string, value: number): string {
+  return `${verb} ${value}`;
+}
+
+function renderAddressParam(verb: string, value: number): string {
+  return `${verb} $${value.toString(16).padStart(4, "0")}`;
+}
+
+/**
+ * Frozen, per-verb parameter specs (D-42-1). Keyed by the verb exactly as
+ * it appears in TEXT_COMMAND_ALLOWLIST above. A verb with no entry here
+ * takes no parameter -- it keeps dialing its bare frozen literal, unchanged
+ * (the three no-parameter verbs -- "device c:", "warp on", "warp off" --
+ * are deliberately absent). The count bound is 1 through 65535: one because
+ * a zero-row request is not a request, and 65535 because that is the same
+ * 16-bit domain the CPU-history count lives in on this machine
+ * (CPUHISTORY_GET's own count field, monitor_binary.c:1492). The address
+ * bound is 0 through 65535, the full 16-bit machine address space.
+ */
+export const TEXT_COMMAND_PARAM_SPECS: Readonly<Record<string, TextCommandParamSpec>> = Object.freeze({
+  chis: Object.freeze({
+    kind: "count",
+    min: 1,
+    max: 65535,
+    render: (value: number) => renderCountParam("chis", value),
+  }),
+  "prof flat": Object.freeze({
+    kind: "count",
+    min: 1,
+    max: 65535,
+    render: (value: number) => renderCountParam("prof flat", value),
+  }),
+  io: Object.freeze({
+    kind: "address",
+    min: 0,
+    max: 65535,
+    render: (value: number) => renderAddressParam("io", value),
+  }),
+} satisfies Record<string, TextCommandParamSpec>);
+
+function isSafeIntegerNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+export type BuildTextCommandResult = { readonly ok: true; readonly command: string } | { readonly ok: false; readonly message: string };
+
+/**
+ * THE ONE place a parameterized text-monitor command string is ever
+ * constructed (D-42-1). Looks `verb` up in TEXT_COMMAND_PARAM_SPECS and
+ * refuses BY NAME when it has no entry -- never falls through to a bare
+ * concatenation. Validates `value` as a number, a safe integer, and within
+ * the spec's inclusive bounds; a string that merely looks numeric is
+ * refused too -- the parameter's type is a number, and accepting a string
+ * here would be the first step back toward a free-text field. Returns a
+ * discriminated result rather than throwing (mirrors textmon-memmap.ts's
+ * D-42-3 discipline for the same reason): a refusal is a value the caller
+ * renders to the user, not an exception whose meaning a catch block has to
+ * guess.
+ */
+export function buildTextCommand(verb: string, value: unknown): BuildTextCommandResult {
+  const spec = (TEXT_COMMAND_PARAM_SPECS as Record<string, TextCommandParamSpec | undefined>)[verb];
+  if (!spec) {
+    return {
+      ok: false,
+      message: `text-protocol: "${verb}" has no parameterized form -- refusing rather than concatenating a value onto an unrecognised verb`,
+    };
+  }
+  if (!isSafeIntegerNumber(value) || value < spec.min || value > spec.max) {
+    return {
+      ok: false,
+      message: `text-protocol: "${verb}" requires an integer between ${spec.min} and ${spec.max} (got ${JSON.stringify(value)})`,
+    };
+  }
+  return { ok: true, command: spec.render(value) };
+}
+
+/** Strict decimal-digits-only match for a "count" parameter's candidate
+ * text -- never Number()'s own permissive parsing (which accepts leading/
+ * trailing whitespace, a leading "+", scientific notation, etc.), because
+ * the ROUND TRIP below depends on rejecting anything the renderer itself
+ * would never have produced. */
+function parseCountParamText(text: string): number | null {
+  if (!/^[0-9]+$/.test(text)) return null;
+  const n = Number(text);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+/** Strict `$` plus one-or-more hex-digit match for an "address" parameter's
+ * candidate text. Case-insensitive on input (parseInt handles that), but
+ * the round trip below still rejects an uppercase-hex rendering, because
+ * the RE-RENDER is always lowercase and compared with strict equality. */
+function parseAddressParamText(text: string): number | null {
+  const match = /^\$([0-9A-Fa-f]+)$/.exec(text);
+  if (!match) return null;
+  const n = parseInt(match[1]!, 16);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+/**
+ * True when `cmd` is byte-identical to what verb's own renderer produces
+ * for the value `cmd` claims to carry (D-42-1). Implemented by extracting
+ * the candidate parameter text after the verb and its single separating
+ * space, parsing it back to a number under the spec's own kind, re-
+ * rendering through the same renderer, and comparing the result to `cmd`
+ * with strict equality. This round trip -- never a hand-written pattern --
+ * is what makes the accepted set exactly the canonical forms and rejects a
+ * doubled space, a trailing space, a leading zero, an uppercase rendering
+ * and an appended second parameter, without any of those needing to be
+ * enumerated individually.
+ */
+export function isDialableTextCommandForVerb(verb: string, cmd: string): boolean {
+  const spec = (TEXT_COMMAND_PARAM_SPECS as Record<string, TextCommandParamSpec | undefined>)[verb];
+  if (!spec) return false;
+  const prefix = `${verb} `;
+  if (!cmd.startsWith(prefix)) return false;
+  const paramText = cmd.slice(prefix.length);
+  const parsed = spec.kind === "address" ? parseAddressParamText(paramText) : parseCountParamText(paramText);
+  if (parsed === null || parsed < spec.min || parsed > spec.max) return false;
+  return spec.render(parsed) === cmd;
+}
+
+/** The ONE place a string is checked against the dialable command set --
+ * either an exact TEXT_COMMAND_ALLOWLIST literal, or a spec verb's own
+ * canonical parameterized rendering (D-42-1). A plain boolean, not a type
+ * predicate over TextCommand: the dialable set is now larger than that
+ * eight-member union, since a parameterized command is a distinct runtime
+ * string TextCommand's own literal union does not (and should not) name. */
+export function isAllowlistedTextCommand(cmd: string): boolean {
+  if ((TEXT_COMMAND_ALLOWLIST as readonly string[]).includes(cmd)) return true;
+  for (const verb of Object.keys(TEXT_COMMAND_PARAM_SPECS)) {
+    if (cmd.startsWith(`${verb} `) && isDialableTextCommandForVerb(verb, cmd)) return true;
+  }
+  return false;
 }
 
 /** Any carriage return, line feed, or other C0 control character. Defense in
  * depth: every TEXT_COMMAND_ALLOWLIST entry above is already a fixed literal
- * with none of these, so this can never actually fire against an
- * allowlisted command today -- it exists so a FUTURE allowlist entry, or a
- * bug in isAllowlistedTextCommand() itself, cannot smuggle a second command
- * onto the wire via an embedded line terminator (canon-referral breadcrumb:
- * generic command injection is `/gsd-secure-phase` canon, not re-litigated
- * here). */
+ * with none of these, so this can never actually fire against a bare
+ * allowlisted command -- but as of D-42-1 (plan 42-04) isAllowlistedTextCommand()
+ * also accepts a RENDERED parameterized command, so this check is no longer
+ * merely hypothetical defense in depth for that path: a bug in a spec's
+ * render() function, or in isDialableTextCommandForVerb()'s own round trip,
+ * is now a real way a control character could reach this far, and this
+ * check is what still stops it before a single byte is written. It also
+ * guards any future allowlist entry the same way it always did. (canon-
+ * referral breadcrumb: generic command injection is `/gsd-secure-phase`
+ * canon, not re-litigated here). */
 const FORBIDDEN_COMMAND_CHARS_RE = /[\r\n\x00-\x1f]/;
 
 /**
@@ -236,7 +407,11 @@ export async function withTextChannelLock<T>(operation: string, fn: () => Promis
 interface PendingTextCommand {
   resolve: (value: string) => void;
   reject: (reason: unknown) => void;
-  command: TextCommand;
+  // D-42-1 (plan 42-04): a dialable command is no longer only ever a
+  // TextCommand literal -- isAllowlistedTextCommand() also accepts a
+  // spec verb's own canonical parameterized rendering, a distinct runtime
+  // string TextCommand's closed union does not (and should not) name.
+  command: string;
 }
 
 export interface TextMonitorClientOptions {
