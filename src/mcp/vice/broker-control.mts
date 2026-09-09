@@ -61,6 +61,14 @@ export interface AcquireGrant {
   url: string;
   epochFile: string;
   supervisorDir: string;
+  /** Plan 41-01 (D-15): the broker-allocated port stock's `-remotemonitor`
+   * text monitor binds. Optional here -- absent on a fork instance record,
+   * and (until a later plan closes broker-launch.mts's own port-allocation
+   * degrade path) potentially absent on a stock one too. `handleAcquire()`
+   * omits this key entirely when the record has none, the same
+   * key-omitted-when-undefined idiom `spawnAndRecordInstance()` already uses
+   * for this same field. */
+  remoteMonitorPort?: number;
 }
 
 /** Discriminated acquire outcome (plan 05): the tracer's onAcquire used to
@@ -239,7 +247,7 @@ export interface StartControlListenerResult {
 }
 
 export type ControlResponse =
-  | { kind: "grant"; id: string; port: number; url: string; epoch_file: string; supervisor_dir: string }
+  | { kind: "grant"; id: string; port: number; url: string; epoch_file: string; supervisor_dir: string; remote_monitor_port?: number }
   | { kind: "released" }
   | {
       kind: "recycle_ack";
@@ -624,6 +632,10 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
               url: outcome.grant.url,
               epoch_file: outcome.grant.epochFile,
               supervisor_dir: outcome.grant.supervisorDir,
+              // D-15: key omitted entirely when absent (fork grant, or a
+              // stock grant whose second port allocation itself failed) --
+              // never a fabricated 0 or null standing in for "no port".
+              ...(outcome.grant.remoteMonitorPort === undefined ? {} : { remote_monitor_port: outcome.grant.remoteMonitorPort }),
             });
             return true;
           }

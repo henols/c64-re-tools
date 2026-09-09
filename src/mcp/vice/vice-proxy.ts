@@ -2189,6 +2189,14 @@ function handleResultContinue(args: Record<string, unknown>): ToolCallResult {
 // instance down.
 let controlSession: BrokerControlSession | null = null;
 let grantId: string | null = null;
+// Plan 41-01 (D-15): THIS session's own text-monitor port, stashed by
+// adoptGrant() beside grantId -- never memoised anywhere else. `null` means
+// either no grant has been adopted yet, this is a fork instance (which never
+// carries one), or the observed wire value failed validation (see
+// adoptGrant()'s own stderr warning for that last case). Read fresh by
+// buildHeldLease() on every call, exactly like activeInstance() and grantId
+// above it -- never cached past a replacement acquisition.
+let grantRemoteMonitorPort: number | null = null;
 
 // ----------------------------------------------------- grant containerization
 //
@@ -2362,7 +2370,19 @@ function buildHeldLease(session: BrokerControlSession): HeldLease {
   //     lives, resolved through brokerRootDir() -- the SAME resolver
   //     broker.json is read from, never a locally re-derived path (the
   //     "re-deriving a cross-cutting seam locally" anti-pattern).
-  return { host, port, targetId: grantId ?? "", brokerControl: session, epochFile, supervisorDir: brokerRootDir() };
+  return {
+    host,
+    port,
+    targetId: grantId ?? "",
+    brokerControl: session,
+    epochFile,
+    supervisorDir: brokerRootDir(),
+    // Plan 41-01 (D-15): read fresh off the module-level variable
+    // adoptGrant() stashed, exactly like every other field here -- `null`
+    // becomes `undefined` on the lease (HeldLease.remoteMonitorPort is
+    // optional; `null` is not a value that type carries).
+    ...(grantRemoteMonitorPort === null ? {} : { remoteMonitorPort: grantRemoteMonitorPort }),
+  };
 }
 
 async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
@@ -2506,6 +2526,29 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
 function adoptGrant(grant: Record<string, unknown>): void {
   grantId = typeof grant.id === "string" ? grant.id : null;
   const containerized = containerizeGrant({ ...grant });
+
+  // Plan 41-01 (D-15): validate before stashing. `containerizeGrant()` never
+  // translates this field (a port number needs no host<->container path or
+  // URL rewrite), so `containerized.remote_monitor_port` is exactly the raw
+  // wire value. A value that is not an integer in 1..65535 is rejected,
+  // grantRemoteMonitorPort is left null, and a one-line stderr warning names
+  // the observed value -- never a silent coercion, matching
+  // containerizeGrant()'s own posture for an invalid grant.port.
+  const rawRemoteMonitorPort = containerized.remote_monitor_port;
+  if (rawRemoteMonitorPort === undefined) {
+    grantRemoteMonitorPort = null;
+  } else {
+    const n = Number(rawRemoteMonitorPort);
+    if (Number.isInteger(n) && n >= 1 && n <= 65535) {
+      grantRemoteMonitorPort = n;
+    } else {
+      grantRemoteMonitorPort = null;
+      console.error(
+        `vice-proxy: adoptGrant ${grantId ?? "(no id)"}: remote_monitor_port (${JSON.stringify(rawRemoteMonitorPort)}) is not a valid integer port in 1..65535 -- the text channel will not be dialed for this instance`,
+      );
+    }
+  }
+
   useInstance({
     port: containerized.port as number,
     url: containerized.url as string,
@@ -2715,6 +2758,7 @@ async function handleGrantedInstanceUnreachable(probe: ProbeResult, oldEpoch: Ep
   // report it exactly the same way.
   await session.release();
   grantId = null;
+  grantRemoteMonitorPort = null;
   const result = await session.acquire();
   if (result.ok) {
     adoptGrant({ ...result.grant });

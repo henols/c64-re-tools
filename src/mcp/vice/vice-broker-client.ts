@@ -307,6 +307,23 @@ export interface AcquireGrant {
   url: string;
   epoch_file: string;
   supervisor_dir: string;
+  /** Plan 41-01 (D-15): the broker-allocated port stock's `-remotemonitor`
+   * text monitor binds. Absent on a fork grant; absent on a stock grant only
+   * in the (until a later plan closes it) degrade case where the second
+   * port allocation itself failed. */
+  remote_monitor_port?: number;
+}
+
+/** Plan 41-01: parses the wire's `remote_monitor_port` into a validated
+ * integer in 1..65535, or `undefined` when the key is absent OR the observed
+ * value is not a valid port -- never a fabricated 0/null standing in for
+ * "no port", and never an unvalidated number handed downstream to a dial.
+ * Shared by both AcquireGrant construction sites below so the same
+ * validation cannot drift between them. */
+function parseOptionalRemoteMonitorPort(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : undefined;
 }
 
 export interface AcquireOverControlPlaneHandle {
@@ -458,12 +475,14 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
       if (resp.kind === "grant") {
         settled = true;
         clearTimeout(timer);
+        const remoteMonitorPort = parseOptionalRemoteMonitorPort(resp.remote_monitor_port);
         const grant: AcquireGrant = {
           id: String(resp.id),
           port: Number(resp.port),
           url: String(resp.url),
           epoch_file: String(resp.epoch_file),
           supervisor_dir: String(resp.supervisor_dir),
+          ...(remoteMonitorPort === undefined ? {} : { remote_monitor_port: remoteMonitorPort }),
         };
         resolvePromise({
           grant,
@@ -780,6 +799,17 @@ export interface HeldLease {
    * backend-detect.mts's own documented degradation for an omitted
    * supervisorDir. */
   supervisorDir: string;
+  /** Plan 41-01 (D-15): THIS instance's own text-monitor port, read by
+   * text-connect.ts's textConnect() to dial the `-remotemonitor` channel.
+   * MANDATORY on a stock grant, ABSENT on a fork grant -- the fork never
+   * launches with `-remotemonitor` and advertises no text tools. Its
+   * absence on a stock lease is a real defect, not a tolerated state
+   * (mirrors epochFile's own "NOT optional" discipline above): a later
+   * milestone plan closes the one remaining case in which a stock instance
+   * could lack one (broker-launch.mts's own port-allocation degrade path),
+   * after which this field's optionality here is a transitional TypeScript
+   * convenience only, never a semantic "sometimes missing". */
+  remoteMonitorPort?: number;
 }
 
 /** One in-flight request's settlement callback -- pushed onto the session's
@@ -938,12 +968,14 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     if (line.kind !== "grant") {
       return { ok: false, kind: "protocol", message: `openBrokerControl: acquire got unexpected response kind ${String(line.kind)}` };
     }
+    const remoteMonitorPort = parseOptionalRemoteMonitorPort(line.remote_monitor_port);
     const grant: AcquireGrant = {
       id: String(line.id),
       port: Number(line.port),
       url: String(line.url),
       epoch_file: String(line.epoch_file),
       supervisor_dir: String(line.supervisor_dir),
+      ...(remoteMonitorPort === undefined ? {} : { remote_monitor_port: remoteMonitorPort }),
     };
     return { ok: true, grant };
   }

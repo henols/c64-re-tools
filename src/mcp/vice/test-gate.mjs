@@ -98,6 +98,14 @@
 // against two REAL captured run logs); the `ghidra.analyze` wire-request
 // shape's own mirror assertion lives in host-tool.test.ts.
 //
+// This section's THIRTEENTH entry (phase 41, plan 41-01, CHAN-02/CHAN-03)
+// covers text-monitor-live.test.ts: it spawns a real broker daemon AND a
+// real genuine-stock emulator process, dials the newly-opened
+// `-remotemonitor` text channel end to end, and asserts a complete,
+// prompt-framed response against genuine stock VICE -- the ONE live proof
+// this phase's plan requires. Like every sibling above it is default-SKIP
+// everywhere (opt in via VICE_LIVE_STOCK_BIN) and never hangs CI.
+//
 // STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
 // shape a manual-only live suite depends on MUST have a mirror assertion in
 // the automated set. A manual-only file is invisible to this gate by
@@ -115,8 +123,8 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact twelve test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a thirteenth file needs the
+/** The exact thirteen test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if a fourteenth file needs the
  * same treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
@@ -131,6 +139,7 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "dxa-live.test.ts",
   "ghidra-live.test.ts",
   "ghidra-opcode-live.test.ts",
+  "text-monitor-live.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS

@@ -775,7 +775,18 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
 
   return {
     ok: true,
-    grant: { port: record.port, url: record.url, epochFile: record.epochFile, supervisorDir: record.supervisorDir },
+    grant: {
+      port: record.port,
+      url: record.url,
+      epochFile: record.epochFile,
+      supervisorDir: record.supervisorDir,
+      // Plan 41-01 (D-15): key omitted entirely when the record has none --
+      // the fork case, and (until a later plan closes the port-allocation
+      // degrade path) a stock instance whose second port allocation itself
+      // failed. Same key-omitted-when-undefined idiom
+      // spawnAndRecordInstance() already uses for this same field.
+      ...(record.remoteMonitorPort === undefined ? {} : { remoteMonitorPort: record.remoteMonitorPort }),
+    },
   };
 }
 

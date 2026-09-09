@@ -336,6 +336,10 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                         url: outcome.grant.url,
                         epoch_file: outcome.grant.epochFile,
                         supervisor_dir: outcome.grant.supervisorDir,
+                        // D-15: key omitted entirely when absent (fork grant, or a
+                        // stock grant whose second port allocation itself failed) --
+                        // never a fabricated 0 or null standing in for "no port".
+                        ...(outcome.grant.remoteMonitorPort === undefined ? {} : { remote_monitor_port: outcome.grant.remoteMonitorPort }),
                     });
                     return true;
                 }
