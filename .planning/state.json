@@ -226,7 +226,7 @@
     {
       "number": "42",
       "name": "The Text-Format Parsers and Their Two-Binary Fixtures",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "43",
@@ -244,5 +244,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 42 of 6 · 50% · executing"
   },
-  "updated_at": "2026-09-09T12:32:31.666Z"
+  "updated_at": "2026-09-09T15:10:27.119Z"
 }

@@ -6,15 +6,15 @@ current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
 stopped_at: Phase 42 planned (9 plans, 4 waves), ready to execute
-last_updated: "2026-09-09T12:32:31.586Z"
+last_updated: "2026-09-09T15:10:27.044Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 42 execution started
-state_head: 6f97058fed1fa2d71cb45eda58a73e2eead2903c
+last_activity_desc: Phase 42 execution resumed (wave continue)
+state_head: a3c0d21d8f8ff95cdb2d70aabed1697c969e703e
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 34
-  completed_plans: 25
+  completed_plans: 33
   percent: 50
 ---
 
@@ -227,9 +227,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — EXECUTING
-Plan: 1 of 9
+Plan: 9 of 9 (8 complete, 42-09 executing)
 Status: Executing Phase 42
-Last activity: 2026-09-09 — Phase 42 execution started
+Last activity: 2026-09-09 — Phase 42 execution resumed (wave continue)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
