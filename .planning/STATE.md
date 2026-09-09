@@ -5,15 +5,15 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: Phase 42 planned (9 plans, 4 waves), ready to execute
-last_updated: "2026-09-09T15:10:27.044Z"
+stopped_at: Phase 42 gap-closure planned (5 plans, 42-10..42-14, waves 5-8), ready to execute --gaps-only
+last_updated: "2026-09-09T17:58:27.799Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 42 execution resumed (wave continue)
-state_head: a3c0d21d8f8ff95cdb2d70aabed1697c969e703e
+last_activity_desc: Phase 42 gap-closure round 1 planned (5 plans for 5 verified gaps)
+state_head: 2391ef443e889bcabd812ac086ef1c29964b5c3a
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 34
+  total_plans: 39
   completed_plans: 33
   percent: 50
 ---
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — EXECUTING
-Plan: 9 of 9 (8 complete, 42-09 executing)
-Status: Executing Phase 42
-Last activity: 2026-09-09 — Phase 42 execution resumed (wave continue)
+Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — READY TO EXECUTE
+Plan: 14 planned — 9 of 9 original executed; 5 gap-closure plans (42-10..42-14) pending
+Status: Ready to execute
+Last activity: 2026-09-09 — Phase 42 gap-closure round 1 planned (5 plans for 5 verified gaps)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
