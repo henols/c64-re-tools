@@ -50,6 +50,7 @@ import type { StockConnectSession } from "./stock-connect.ts";
 import { runStateFor, jamObservedFor } from "./stock-runstate.ts";
 import { MachineRestartedError, readEpoch, type EpochResult } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
+import { tryAcquireChannelLock, currentChannelLockHolder, type ChannelLockHandle, type ChannelLockHolder, type MonitorChannel } from "./channel-lock.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention,
@@ -649,6 +650,29 @@ function renderStockWedgedReport(bracket1: StockLivenessBracketResult, bracket2:
   );
 }
 
+/** D-10/D-11: rendered when step 4's guard finds a FOREIGN hold already live
+ * -- `tryAcquireChannelLock()` returned `null`, so no bracket was ever run.
+ * `holder` is a snapshot taken at the moment the guard observed it; the
+ * authoritative `evidence.channelContention` is derived independently and
+ * slightly later, inside diagnoseVerdictResult() -- a few milliseconds'
+ * difference in `heldMs` between the two is expected and honest, not a bug.
+ * Deliberately self-contained (repeats the channel/operation/duration the
+ * universal channelContentionNote() will also append), so this report reads
+ * completely even if the note above it is somehow stripped. Must never
+ * contain wedge, wedged, hang, hung, frozen, stuck or unresponsive. */
+function renderStockContendedReport(holder: ChannelLockHolder): string {
+  const heldMs = Math.max(0, Date.now() - holder.heldSince);
+  const grantId = holder.grantId ?? "unknown";
+  return (
+    "vice_diagnose verdict: live\n\n" +
+    `The ${holder.channel} channel currently holds this instance's halt authority (operation "${holder.operation}", ` +
+    `grant ${grantId}, held for ${heldMs}ms). No liveness bracket was run: this call was never granted halt ` +
+    "authority, so the machine was never resumed and liveness was not measured here -- the contention evidence is " +
+    "what explains the zero bracket count, not a bracket that read zero. The instance is healthy and answering: " +
+    "this is never a reason to recycle. Wait for the other channel's operation to finish, or find its holder."
+  );
+}
+
 /** The `detail` half of the `liveness_unmeasurable` refusal (07-REVIEW.md
  * WR-02). Deliberately carries NO "vice_diagnose:" prefix of its own --
  * diagnoseUnavailableResult() owns the documented, machine-parseable prefix,
@@ -751,24 +775,118 @@ const JAM_OBSERVED_NOTE =
   "a wedge. Recover with vice_machine_reset -- do NOT vice_recycle, which destroys an instance a reset " +
   "would have fixed.";
 
+// ---------------------------------------------------------------------------
+// D-09/D-10/D-11 (plan 41-04, CHAN-05): channelContention -- always-present
+// cross-cutting evidence on the jamObserved model, plus the guard (in
+// handleDiagnoseStock()'s step 4, below) that makes `wedged` structurally
+// unreachable while contended.
+//
+// DELIBERATE ASYMMETRY WITH jamObserved, RECORDED HERE SO A LATER READER DOES
+// NOT "FIX" IT: jamObserved guards only in vice-wedge-triage/SKILL.md's
+// prose and still lets `wedged` return -- the caller has to read the
+// evidence and choose not to recycle. channelContention guards in CODE, in
+// the handler itself, and makes `wedged` structurally unreachable while a
+// foreign hold is live. The reason is the cost of being wrong: a contended
+// instance is not merely misdiagnosed, it would be DESTROYED by the
+// documented `wedged` remedy (T-41-15). Do not collapse this asymmetry by
+// demoting the code guard to a prose-only warning to match jamObserved's
+// shape -- they are deliberately different because what they are protecting
+// against is not the same severity.
+// ---------------------------------------------------------------------------
+
+/** Always-present evidence on every `vice_diagnose` verdict (D-09), naming
+ * whether the OTHER monitor channel currently holds this instance's halt
+ * authority. `channel`/`operation`/`grantId`/`heldMs` are `null` exactly when
+ * `held` is `false` -- never omitted, so "not held" and "held for under a
+ * millisecond" stay distinguishable (`heldMs: null` vs `heldMs: 0`). */
+export interface StockChannelContention {
+  held: boolean;
+  channel: MonitorChannel | null;
+  operation: string | null;
+  grantId: string | null;
+  heldMs: number | null;
+}
+
+/**
+ * Derives `StockChannelContention` from channel-lock.ts's holder record.
+ *
+ * `self` is the handle THIS diagnose call itself currently holds, if any --
+ * passed only from inside handleDiagnoseStock()'s own step-4 guard, while it
+ * holds the lock across its own liveness bracket(s). When `self` is
+ * non-null, this call IS the current holder by construction (only one
+ * holder can exist at a time), so reporting that as "contention" would be
+ * dishonest -- a diagnose call's own halt authority over its own bracket is
+ * not a FOREIGN hold. Every other caller (the four verdicts reached before
+ * the guard ever runs) passes no `self`, and a genuine foreign hold observed
+ * at that moment is reported exactly as measured.
+ *
+ * `grantId` reads the literal `unknown` when the holder recorded none --
+ * never fabricated, matching claimMonitor()'s own posture. `heldMs` is
+ * `Math.max(0, Math.trunc(nowMs - holder.heldSince))`, a non-negative whole
+ * millisecond integer.
+ */
+export function channelContentionFor(nowMs: number, self: ChannelLockHandle | null): StockChannelContention {
+  if (self !== null) {
+    return { held: false, channel: null, operation: null, grantId: null, heldMs: null };
+  }
+  const holder = currentChannelLockHolder();
+  if (holder === null) {
+    return { held: false, channel: null, operation: null, grantId: null, heldMs: null };
+  }
+  return {
+    held: true,
+    channel: holder.channel,
+    operation: holder.operation,
+    grantId: holder.grantId ?? "unknown",
+    heldMs: Math.max(0, Math.trunc(nowMs - holder.heldSince)),
+  };
+}
+
+/** Appended to a verdict's report in the same register as JAM_OBSERVED_NOTE
+ * above, whenever `channelContention.held` is true -- deliberately UNIVERSAL:
+ * contention is evidence cutting across all five verdicts (D-09), not
+ * exclusive to the live-with-bracketsRun:0 path the guard itself reaches. A
+ * concurrent foreign hold can just as easily be observed while THIS call is
+ * answering restarted/checkpoint_trap/monitor_held_elsewhere. Must never
+ * contain wedge, wedged, hang, hung, frozen, stuck or unresponsive -- the
+ * same register channelLockRefusalMessage() (channel-lock.ts) already
+ * establishes, and the instance is healthy and answering regardless of which
+ * verdict carries this note. */
+function channelContentionNote(contention: StockChannelContention): string {
+  return (
+    "\n\nCHANNEL CONTENTION: the " +
+    `${contention.channel} channel currently holds this instance's halt authority (operation ` +
+    `"${contention.operation}", grant ${contention.grantId}, held for ${contention.heldMs}ms). The instance is ` +
+    "healthy and answering -- this is never a reason to recycle."
+  );
+}
+
 /** WR-04: `jamObserved` is derived HERE, from the same seam as
  * `machinePaused`, and stamped into EVERY verdict's evidence -- not added
  * per-call-site, for the same reason WR-03 removed the hand-passed
  * `machinePaused`. It is evidence on the existing five verdicts, never a
  * sixth verdict (D-03). Always present (never omitted when false), so an
- * absent field can never be read as "no jam". */
+ * absent field can never be read as "no jam". D-09: `channelContention` joins
+ * it here, on the identical always-present, derived-once, spread-unconditionally
+ * shape -- see `self`'s doc comment on channelContentionFor() above for why
+ * this function must be told which handle (if any) THIS call itself holds. */
 function diagnoseVerdictResult(
   session: StockConnectSession | null,
   verdict: StockDiagnoseVerdict,
   evidence: Record<string, unknown>,
   report: string,
+  self: ChannelLockHandle | null = null,
 ): StockToolResult {
   const { machinePaused, machinePausedSource } = deriveMachinePaused(session);
   const jamObserved = session === null ? false : jamObservedFor(session.client);
+  const channelContention = channelContentionFor(Date.now(), self);
+  let finalReport = report;
+  if (jamObserved) finalReport += JAM_OBSERVED_NOTE;
+  if (channelContention.held) finalReport += channelContentionNote(channelContention);
   const payload: Record<string, unknown> = {
     verdict,
-    evidence: { ...evidence, jamObserved },
-    report: jamObserved ? report + JAM_OBSERVED_NOTE : report,
+    evidence: { ...evidence, jamObserved, channelContention },
+    report: finalReport,
     machinePaused,
     machinePausedSource,
   };
@@ -936,47 +1054,93 @@ export async function handleDiagnoseStock(_args: Record<string, unknown>, deps: 
     }
 
     // Step 4: the liveness bracket -- the only step that resumes.
-    let bracket1: StockLivenessBracketResult;
+    //
+    // D-10 guard, placed immediately BEFORE the first bracket can run --
+    // that is, before the only step that resumes the machine, and therefore
+    // before any path that can reach the `wedged` return below.
+    // tryAcquireChannelLock() is the SYNCHRONOUS, non-blocking entry point,
+    // chosen deliberately over acquireChannelLock(): a diagnostic that
+    // queued behind a foreign hold would block behind the exact holder it
+    // exists to report, and one that merely peeked at the holder record
+    // without taking the lock could still have a foreign hold begin during
+    // its own bracket. On `null` a foreign hold is live RIGHT NOW --
+    // short-circuit to `live` with contention evidence and `bracketsRun: 0`
+    // (the honest count: the machine was never resumed, so liveness was not
+    // measured), with NO bracket run at all -- this is D-11's verdict choice
+    // (the instance is healthy and responsive, not wedged). On a handle,
+    // hold it across BOTH brackets and release in a `finally` covering every
+    // return from here on, so a thrown bracket still releases. This is what
+    // makes `wedged` structurally unreachable while contended: the only
+    // route to it is through a bracket, and a bracket only runs when this
+    // lock was actually taken by THIS call.
+    const channelHandle = tryAcquireChannelLock({ channel: "binary", operation: "vice_diagnose" });
+    if (channelHandle === null) {
+      const holder = currentChannelLockHolder();
+      // Invariant: tryAcquireChannelLock() returning null means SOME holder
+      // exists (that is precisely why it refused) -- currentChannelLockHolder()
+      // reading null here would be a lock-module invariant violation, not a
+      // reachable case this handler needs to degrade gracefully for.
+      if (holder === null) {
+        return diagnoseUnavailableResult(
+          "unknown",
+          "channel-lock: tryAcquireChannelLock() refused but currentChannelLockHolder() reported no holder -- internal invariant violation.",
+        );
+      }
+      return diagnoseVerdictResult(session, "live", { bracketsRun: 0 }, renderStockContendedReport(holder));
+    }
     try {
-      bracket1 = await runStockLivenessBracket(session);
-    } catch (err) {
-      return diagnoseUnavailableResult("evidence_gathering_failed", `the liveness bracket failed (${describeStockError(err)}).`);
-    }
+      let bracket1: StockLivenessBracketResult;
+      try {
+        bracket1 = await runStockLivenessBracket(session);
+      } catch (err) {
+        return diagnoseUnavailableResult("evidence_gathering_failed", `the liveness bracket failed (${describeStockError(err)}).`);
+      }
 
-    if (bracket1.advanced === null) {
-      return diagnoseUnavailableResult("liveness_unmeasurable", inconclusiveBracketText(bracket1));
-    }
-    if (bracket1.advanced) {
-      return diagnoseVerdictResult(session, "live", { bracketsRun: 1, bracket: serializeBracket(bracket1) }, renderStockLiveReport(bracket1));
-    }
+      if (bracket1.advanced === null) {
+        return diagnoseUnavailableResult("liveness_unmeasurable", inconclusiveBracketText(bracket1));
+      }
+      if (bracket1.advanced) {
+        return diagnoseVerdictResult(
+          session,
+          "live",
+          { bracketsRun: 1, bracket: serializeBracket(bracket1) },
+          renderStockLiveReport(bracket1),
+          channelHandle,
+        );
+      }
 
-    // Run a second bracket only when the first shows no advance -- mirroring
-    // the fork's own short-circuit.
-    let bracket2: StockLivenessBracketResult;
-    try {
-      bracket2 = await runStockLivenessBracket(session);
-    } catch (err) {
-      return diagnoseUnavailableResult("evidence_gathering_failed", `the second liveness bracket failed (${describeStockError(err)}).`);
-    }
+      // Run a second bracket only when the first shows no advance -- mirroring
+      // the fork's own short-circuit.
+      let bracket2: StockLivenessBracketResult;
+      try {
+        bracket2 = await runStockLivenessBracket(session);
+      } catch (err) {
+        return diagnoseUnavailableResult("evidence_gathering_failed", `the second liveness bracket failed (${describeStockError(err)}).`);
+      }
 
-    if (bracket2.advanced === null) {
-      return diagnoseUnavailableResult("liveness_unmeasurable", inconclusiveBracketText(bracket2));
-    }
-    if (bracket2.advanced) {
+      if (bracket2.advanced === null) {
+        return diagnoseUnavailableResult("liveness_unmeasurable", inconclusiveBracketText(bracket2));
+      }
+      if (bracket2.advanced) {
+        return diagnoseVerdictResult(
+          session,
+          "live",
+          { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
+          renderStockLiveReport(bracket2),
+          channelHandle,
+        );
+      }
+
       return diagnoseVerdictResult(
         session,
-        "live",
+        "wedged",
         { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
-        renderStockLiveReport(bracket2),
+        renderStockWedgedReport(bracket1, bracket2),
+        channelHandle,
       );
+    } finally {
+      channelHandle.release();
     }
-
-    return diagnoseVerdictResult(
-      session,
-      "wedged",
-      { bracketsRun: 2, bracket1: serializeBracket(bracket1), bracket2: serializeBracket(bracket2) },
-      renderStockWedgedReport(bracket1, bracket2),
-    );
   } catch (err) {
     // WR-02: the outer catch-all goes through the classifier too, so there is
     // no isError answer this handler can produce that lacks the documented

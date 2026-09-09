@@ -31,6 +31,7 @@ import { resetCheckpointStateForTest } from "./stock-checkpoints.ts";
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { MachineRestartedError, type EpochResult } from "./vice.ts";
+import { tryAcquireChannelLock, currentChannelLockHolder, resetChannelLockForTests } from "./channel-lock.ts";
 import {
   resolveStockLiveIrqHandler,
   gatherStockCheckpointTrapEvidence,
@@ -38,6 +39,7 @@ import {
   handleDiagnoseStock,
   diagnoseSessionTimeoutMs,
   diagnoseBracketWindowMs,
+  channelContentionFor,
   STOCK_DIAGNOSE_VERDICTS,
   STOCK_DIAGNOSE_UNAVAILABLE_OUTCOME,
   STOCK_DIAGNOSE_UNAVAILABLE_REASONS,
@@ -69,6 +71,7 @@ beforeEach(() => {
   resetRegisterCatalogsForTest();
   resetCheckpointStateForTest();
   resetRunStateTrackersForTest();
+  resetChannelLockForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -602,6 +605,199 @@ test("handleDiagnoseStock (WR-04): a JAM on the wedged path also carries jamObse
 });
 
 // ---------------------------------------------------------------------------
+// D-09/D-10/D-11 (plan 41-04, CHAN-05): evidence.channelContention, always
+// present, and the guard that makes `wedged` structurally unreachable while
+// a foreign hold is live. resetChannelLockForTests() runs in this file's own
+// beforeEach() (added above), so each test below starts from an unheld lock.
+// ---------------------------------------------------------------------------
+
+function diagnoseDepsFor(session: StockConnectSession): StockDispatchDeps {
+  return {
+    ensureLease: async () => ({ ok: true as const, lease: { host: "127.0.0.1", port: 6502, targetId: "t-1", brokerControl: {}, epochFile: "", supervisorDir: "" } }),
+    connect: async () => session,
+  } as unknown as StockDispatchDeps;
+}
+
+test("channelContentionFor: with no holder, held:false and all four detail fields null (heldMs null, never 0)", () => {
+  const contention = channelContentionFor(Date.now(), null);
+  assert.deepEqual(contention, { held: false, channel: null, operation: null, grantId: null, heldMs: null });
+});
+
+test("channelContention: present on checkpoint_trap, and on both restarted/monitor_held_elsewhere paths already pinned by the shape oracles above", async () => {
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [{ id: 5, start: 0xc000, stopWhenHit: true, enabled: true, operation: EXEC_OP, hitCount: 3 }],
+  });
+  const result = await handleDiagnoseStock({}, diagnoseDepsFor(session));
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "checkpoint_trap");
+  const evidence = answer.evidence as Record<string, unknown>;
+  assert.equal("channelContention" in evidence, true, "always present -- an absent field must never be readable as 'not contended'");
+  assert.deepEqual(evidence.channelContention, { held: false, channel: null, operation: null, grantId: null, heldMs: null });
+});
+
+test("channelContention: with NO holder, two zero-advance brackets still answer wedged -- the guard narrows only the contended path", async () => {
+  const { session, sendCalls } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }]],
+    cpuHistoryReplies: [{ cycle: 500n }, { cycle: 500n }],
+  });
+  const result = await handleDiagnoseStock({}, diagnoseDepsFor(session));
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "wedged", "an uncontended double-zero must still reach wedged -- the guard must not narrow this");
+  const evidence = answer.evidence as Record<string, unknown>;
+  assert.deepEqual((evidence.channelContention as Record<string, unknown>).held, false);
+  assert.equal(sendCountFor(sendCalls, CommandType.Exit), 2, "both brackets must have actually run");
+  assert.equal(currentChannelLockHolder(), null, "the guard's own handle must have released after the handler returned");
+});
+
+test("channelContention: a foreign hold on the binary channel -> live, bracketsRun 0, evidence names the holder", async () => {
+  const before = Date.now();
+  const handle = tryAcquireChannelLock({ channel: "binary", operation: "vice_run_until", grantId: "grant-xyz" });
+  assert.notEqual(handle, null, "test setup: the foreign hold must actually be granted");
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [],
+  });
+  const result = await handleDiagnoseStock({}, diagnoseDepsFor(session));
+  assert.equal(result.isError, false);
+  const answer = parseAnswer(result);
+  assert.equal(answer.verdict, "live", "D-11: a contended instance is healthy, not wedged");
+  const evidence = answer.evidence as Record<string, unknown>;
+  assert.equal(evidence.bracketsRun, 0, "no bracket was run: the machine was never resumed by this call");
+  const contention = evidence.channelContention as Record<string, unknown>;
+  assert.equal(contention.held, true);
+  assert.equal(contention.channel, "binary");
+  assert.equal(contention.operation, "vice_run_until");
+  assert.equal(contention.grantId, "grant-xyz");
+  assert.equal(typeof contention.heldMs, "number");
+  assert.ok((contention.heldMs as number) >= 0 && (contention.heldMs as number) <= Date.now() - before + 50, `heldMs out of plausible range: ${contention.heldMs}`);
+});
+
+test("channelContention: a foreign hold present -> no liveness bracket runs at all (zero CommandType.Exit sends)", async () => {
+  const handle = tryAcquireChannelLock({ channel: "text", operation: "text_command" });
+  assert.notEqual(handle, null, "test setup: the foreign hold must actually be granted");
+  const { session, sendCalls } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [],
+  });
+  const result = await handleDiagnoseStock({}, diagnoseDepsFor(session));
+  assert.equal(result.isError, false);
+  assert.equal(sendCountFor(sendCalls, CommandType.Exit), 0, "diagnosing contention must never resume a machine another channel is holding");
+});
+
+test("channelContention: a holder with no grantId reports the literal 'unknown', never a fabricated id", async () => {
+  const handle = tryAcquireChannelLock({ channel: "text", operation: "text_command" }); // no grantId passed
+  assert.notEqual(handle, null);
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [],
+  });
+  const result = await handleDiagnoseStock({}, diagnoseDepsFor(session));
+  const answer = parseAnswer(result);
+  const contention = (answer.evidence as Record<string, unknown>).channelContention as Record<string, unknown>;
+  assert.equal(contention.grantId, "unknown");
+});
+
+test("channelContention: the contended report and note contain the channel name and a millisecond figure, and none of wedge/hang/frozen/stuck/unresponsive", async () => {
+  const handle = tryAcquireChannelLock({ channel: "text", operation: "text_command" });
+  assert.notEqual(handle, null);
+  const { session } = makeFakeSession({
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    registersGetReplies: [[{ id: 0, value: 0xc000 }]],
+    checkpoints: [],
+  });
+  const result = await handleDiagnoseStock({}, diagnoseDepsFor(session));
+  const answer = parseAnswer(result);
+  const report = (answer.report as string).toLowerCase();
+  for (const banned of ["wedge", "hang", "frozen", "stuck", "unresponsive"]) {
+    assert.doesNotMatch(report, new RegExp(banned), `contended report must not contain "${banned}": ${report}`);
+  }
+  assert.match(report, /text/, "the contended report must name the holding channel");
+  assert.match(report, /\d+ms/, "the contended report must carry a millisecond figure");
+});
+
+test("channelContention: a bracket that throws while the handle is held still releases it", async () => {
+  const { session } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }]],
+    cpuHistoryReplies: [{ cycle: 500n }],
+  });
+  const originalSend = session.client.send.bind(session.client);
+  (session.client as unknown as { send: typeof session.client.send }).send = async (commandType, body) => {
+    if (commandType === CommandType.Exit) {
+      throw new Error("synthetic mid-bracket resume failure");
+    }
+    return originalSend(commandType, body as Buffer);
+  };
+  const result = await handleDiagnoseStock({}, diagnoseDepsFor(session));
+  assert.equal(result.isError, true, "the bracket failure must still answer a well-formed isError:true result");
+  assert.equal(currentChannelLockHolder(), null, "the guard's handle must release even when the bracket it wraps throws");
+});
+
+test("channelContention: present (held:false, uncontended) on both the live-bracket-advances verdict and the wedged verdict", async () => {
+  const { session: liveSession } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }]],
+    cpuHistoryReplies: [{ cycle: 500n }, { cycle: 999999n }],
+  });
+  const liveResult = await handleDiagnoseStock({}, diagnoseDepsFor(liveSession));
+  const liveAnswer = parseAnswer(liveResult);
+  assert.equal(liveAnswer.verdict, "live");
+  assert.deepEqual((liveAnswer.evidence as Record<string, unknown>).channelContention, {
+    held: false,
+    channel: null,
+    operation: null,
+    grantId: null,
+    heldMs: null,
+  });
+
+  const { session: wedgedSession } = makeFakeSession({
+    cpuHistory: "available",
+    memoryGetReplies: [Buffer.from([0x37]), Buffer.from([0x00, 0xc1])],
+    checkpoints: [],
+    registersGetReplies: [[{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }], [{ id: 0, value: 0x1000 }]],
+    cpuHistoryReplies: [{ cycle: 500n }, { cycle: 500n }],
+  });
+  const wedgedResult = await handleDiagnoseStock({}, diagnoseDepsFor(wedgedSession));
+  const wedgedAnswer = parseAnswer(wedgedResult);
+  assert.equal(wedgedAnswer.verdict, "wedged");
+  assert.deepEqual((wedgedAnswer.evidence as Record<string, unknown>).channelContention, {
+    held: false,
+    channel: null,
+    operation: null,
+    grantId: null,
+    heldMs: null,
+  });
+});
+
+test("manifest (D-09): vice_diagnose's evidence.required contains both jamObserved and channelContention", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { dirname, join } = await import("node:path");
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  const manifest = JSON.parse(readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8")) as {
+    tools: Array<{ name: string; outputSchema?: { properties?: { evidence?: { required?: string[] } } } }>;
+  };
+  const entry = manifest.tools.find((t) => t.name === "vice_diagnose");
+  const required = entry?.outputSchema?.properties?.evidence?.required ?? [];
+  assert.ok(required.includes("jamObserved"), `evidence.required missing jamObserved: ${JSON.stringify(required)}`);
+  assert.ok(required.includes("channelContention"), `evidence.required missing channelContention: ${JSON.stringify(required)}`);
+});
+
+// ---------------------------------------------------------------------------
 // Task 3, tests 1/2/3: monitor_held_elsewhere / restarted (thrown + epoch)
 // ---------------------------------------------------------------------------
 
@@ -700,8 +896,8 @@ test("handleDiagnoseStock (shape oracle): both restarted branches carry EXACTLY 
   const thrownEvidence = thrownAnswer.evidence as Record<string, unknown>;
   assert.deepEqual(
     Object.keys(thrownEvidence).sort(),
-    ["baselineEpoch", "currentEpoch", "jamObserved"],
-    `session-null restarted evidence must be EXACTLY {baselineEpoch,currentEpoch,jamObserved}, got: ${JSON.stringify(thrownEvidence)}`,
+    ["baselineEpoch", "channelContention", "currentEpoch", "jamObserved"],
+    `session-null restarted evidence must be EXACTLY {baselineEpoch,channelContention,currentEpoch,jamObserved}, got: ${JSON.stringify(thrownEvidence)}`,
   );
 
   // Branch B: session-non-null (on-disk epoch differing from the session's baseline).
@@ -722,8 +918,8 @@ test("handleDiagnoseStock (shape oracle): both restarted branches carry EXACTLY 
   const epochEvidence = epochAnswer.evidence as Record<string, unknown>;
   assert.deepEqual(
     Object.keys(epochEvidence).sort(),
-    ["baselineEpoch", "currentEpoch", "jamObserved"],
-    `session-non-null restarted evidence must be EXACTLY {baselineEpoch,currentEpoch,jamObserved}, got: ${JSON.stringify(epochEvidence)}`,
+    ["baselineEpoch", "channelContention", "currentEpoch", "jamObserved"],
+    `session-non-null restarted evidence must be EXACTLY {baselineEpoch,channelContention,currentEpoch,jamObserved}, got: ${JSON.stringify(epochEvidence)}`,
   );
 });
 
@@ -756,8 +952,8 @@ test("handleDiagnoseStock (shape oracle): the monitor_held_elsewhere verdict car
   const evidence = answer.evidence as Record<string, unknown>;
   assert.deepEqual(
     Object.keys(evidence).sort(),
-    ["holderClaimedAt", "holderGrantId", "jamObserved", "port"],
-    `monitor_held_elsewhere evidence must be EXACTLY {holderGrantId,holderClaimedAt,port,jamObserved}, got: ${JSON.stringify(evidence)}`,
+    ["channelContention", "holderClaimedAt", "holderGrantId", "jamObserved", "port"],
+    `monitor_held_elsewhere evidence must be EXACTLY {holderGrantId,holderClaimedAt,port,jamObserved,channelContention}, got: ${JSON.stringify(evidence)}`,
   );
 });
 
