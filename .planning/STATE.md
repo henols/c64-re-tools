@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 41
 current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
 status: executing
-stopped_at: Completed 41-04-PLAN.md
-last_updated: "2026-09-09T08:04:52.175Z"
+stopped_at: Completed 41-05-PLAN.md
+last_updated: "2026-09-09T09:12:33.877Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 41 execution started
-state_head: b4fa224ca93363f4dad58fffab0be70b05f69ee5
+state_head: c8eaea6465a599137d43d6053d5a264581cd80ab
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 25
-  completed_plans: 23
+  completed_plans: 24
   percent: 33
 ---
 
@@ -227,9 +227,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 41 (The Text Channel, Its Serialization Authority, and the Contention Verdict) — EXECUTING
-Plan: 5 of 6
-Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 complete (CHAN-04), 41-03 complete (CHAN-02 discriminator), 41-04 complete (CHAN-05), 41-05 next
-Last activity: 2026-09-09 — Phase 41 execution continues at wave 3 (41-05, 41-06 remaining)
+Plan: 6 of 6
+Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 complete (CHAN-04), 41-03 complete (CHAN-02 discriminator), 41-04 complete (CHAN-05), 41-05 complete (CHAN-02: mandatory text port, warm floor retired), 41-06 next
+Last activity: 2026-09-09 — Phase 41 execution continues at wave 3 (41-06 remaining)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -504,6 +504,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 41 P02 | 95min | 2 tasks | 8 files |
 | Phase 41 P03 | 40min | 2 tasks | 20 files |
 | Phase 41 P04 | 50min | 2 tasks | 5 files |
+| Phase 41 P05 | 62 min | 3 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -1137,6 +1138,8 @@ Recent decisions affecting current work:
 - [Phase 41]: withDerivedTool's needsSession:false branch never acquires channel-lock.ts's mutex; vice_diagnose (plan 41-04) will take it non-blockingly via tryAcquireChannelLock() instead
 - [Phase 41]: InstanceRecord.monitorClients made non-optional (per-channel holder map) — Forces every raw InstanceRecord construction site to state its claim intent explicitly, closing the "absent field silently means no claim" gap the old optional monitorClient field left open (D-14, plan 41-03).
 - [Phase 41]: channelContention is derived once per vice_diagnose call and spread into evidence on the identical shape jamObserved already established; wedged is made structurally unreachable while contended via a tryAcquireChannelLock() guard before the first liveness bracket (D-09/D-10/D-11, CHAN-05).
+- [Phase 41]: D-16 (plan 41-05): a stock launch that cannot bind a text-monitor port now fails the whole acquire (no_free_text_port) instead of degrading -- no stock instance can ever exist without one. — Owner direction, verbatim: "it should not be possible, vice must be started witht the text channel." Checkpoint option B chosen -- the failure gets its own distinct reason code rather than collapsing into the generic no_free_port.
+- [Phase 41]: The warm floor is retired (folded todo, plan 41-05): VICE now launches strictly on demand. The launching-to-ready promotion step survives as promoteLaunchingInstances(); selectWarmInstance() survives unchanged because an ordinary crash-respawn of a granted instance can still leave a ready-but-ungranted candidate. — The floor helped exactly the requests that cared least about boot latency (profileEligible() skips it for any warp-requesting acquire). Latency on the first cold launch is an accepted trade, not a regression.
 
 ### Pending Todos
 
@@ -2131,8 +2134,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T08:04:21.389Z
-Stopped at: Completed 41-04-PLAN.md
+Last session: 2026-09-09T09:12:33.330Z
+Stopped at: Completed 41-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
