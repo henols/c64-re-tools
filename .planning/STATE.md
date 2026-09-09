@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 41
 current_phase_name: The Text Channel, Its Serialization Authority, and the Contention Verdict
 status: executing
-stopped_at: Phase 41 planned — 6 plans in 4 waves, ready to execute
-last_updated: "2026-09-08T21:46:36.085Z"
-last_activity: 2026-09-08
-last_activity_desc: Phase 41 planned — 6 plans in 4 waves
-state_head: 0c20673ea7d23a5d65367486b1dcc2273f95b747
+stopped_at: Completed 41-01-PLAN.md
+last_updated: "2026-09-09T05:59:47.537Z"
+last_activity: 2026-09-09
+last_activity_desc: Phase 41 execution started
+state_head: bf6d886c679caa57ea84707af0f4ac665308c890
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 25
-  completed_plans: 19
+  completed_plans: 20
   percent: 33
 ---
 
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 41 (The Text Channel, Its Serialization Authority, and the Contention Verdict) — READY TO EXECUTE
-Plan: 0/6 executed
-Status: Ready to execute
-Last activity: 2026-09-08 — Phase 41 planned (6 plans, 4 waves)
+Phase: 41 (The Text Channel, Its Serialization Authority, and the Contention Verdict) — EXECUTING
+Plan: 2 of 6
+Status: Executing — 41-01 complete (CHAN-02, CHAN-03), 41-02 next
+Last activity: 2026-09-09 — Completed 41-01-PLAN.md
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -500,6 +500,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 40 P08 | 20min | 3 tasks | 6 files |
 | Phase 40 P09 | 55min | 3 tasks | 5 files |
 | Phase 40 P10 | ~25min | 3 tasks | 11 files |
+| Phase 41 P01 | 70min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -1127,6 +1128,8 @@ Recent decisions affecting current work:
 - [Phase 40]: Plan 40-09's live-Ghidra guard drives resolveGhidraProject() directly and spawns analyzeHeadless without -deleteProject for its positive half, rather than the full ghidra.analyze seam — Production's buildAnalyzeHeadlessArgv() always emits -deleteProject, which deletes exactly the artifacts the guard needs to inspect (MEASURED live); the handle is still minted by the real code under test
 - [Phase 40]: Census 'occurrence' defined as a non-comment source LINE holding the double-quoted literal, matched by repo-root.test.ts's new gate against the comment's own enumerated claim — Matches the original comment's own 'the line below' framing; a per-regex-match count would have double-counted vice-broker.mts's one line using the literal twice
 - [Phase 40]: Plan 40-11 (gap G-40-1 resolution): the Ghidra runs root now resolves under the single .c64-re-tools/ root; Ghidra is handed a non-dotted alias symlink with a RELATIVE target rather than the dotted path directly. The broker mints the handle at startup (ensureGhidraRunsHandle(), plan 40-09's R2) and resolveGhidraProject() re-asserts it as an idempotent precondition before every run (plan 40-08); an unverified handle refuses BY NAME rather than being repaired or mkdir-ed through. The fragility this depends on -- Ghidra continuing to call getAbsolutePath() rather than getCanonicalPath() -- is covered by a live, opt-in guard proving both halves against real Ghidra 12.1.3.
+- [Phase 41]: Pulled the quiescence-window mechanism forward from Task 2 into Task 1 (Rule 1 auto-fix): the tracer's own live verify measurably failed on the naive resolve-on-first-tail-match design against real stock VICE (a residual leading prompt arrives as its own TCP chunk ahead of a command's real output) -- fixed inline, documented in the plan SUMMARY.
+- [Phase 41]: Both CHAN-03 planted controls are proven as live RED/GREEN A/B demonstrations on the shipped TextMonitorClient class (quiescenceMs:0 vs default TEXT_QUIESCENCE_MS for Control 2; a same-file negative per-chunk-decode comparison for Control 1) rather than via git-archaeology.
 
 ### Pending Todos
 
@@ -2121,9 +2124,9 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-08T20:38:10.490Z
-Stopped at: Phase 41 context gathered
-Resume file: .planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/41-CONTEXT.md
+Last session: 2026-09-09T05:59:47.233Z
+Stopped at: Completed 41-01-PLAN.md
+Resume file: None
 
 Earlier: Completed 40-06-PLAN.md
 

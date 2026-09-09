@@ -1030,12 +1030,12 @@ contended rather than diagnosed as wedged and destroyed.
   4. **A contended instance is reported as contended, and the skill that would have destroyed it is fixed in this same phase.** `vice_diagnose` gains the evidence needed to tell a two-channel hold from a genuine wedge, and `vice-wedge-triage` gains the verdict. The regression is specific and it is one this milestone would otherwise *introduce* into shipped software: the skill's verdict vocabulary has no entry for contention, and a text-channel hold the binary side cannot see reads as exactly the `wedged` signature — two cycle brackets reading zero — whose recommended remedy is a destructive recycle of a healthy instance. The new signature is **reproduced live** and recorded in the skill's provenance table at the same confidence discipline its existing verdicts carry, not added as an untested branch.
   5. **The `default_memspace` remedy is exercised, not merely made available, and the three narrowed CLAUDE.md constraints gain a scoping clause rather than a deletion.** MEASURED hazard: a drive checkpoint hit sets `default_memspace` (`monitor.c:3393-3396`) and the binary monitor has no command that resets it, after which `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the **drive** CPU and `@bank:` conditions fail outright. A live test contaminates it and shows `device c:` over the text channel restoring main-CPU stepping. Each of the three constraints the live probe narrowed is **literally true as written and correctly scoped to the binary monitor**; each gains its clause and none is removed — the absent runtime `WarpMode` *resource* stays a real and separate fact from `warp on` being a working monitor *command*.
 
-**Plans**: 6 plans in 4 waves
+**Plans**: 1/6 plans executed in 4 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 41-01-PLAN.md — Tracer: the text channel's first framed round trip (`remoteMonitorPort` reaches `HeldLease`; `text-protocol.ts` + `text-connect.ts`; the two planted framing controls)
+- [x] 41-01-PLAN.md — Tracer: the text channel's first framed round trip (`remoteMonitorPort` reaches `HeldLease`; `text-protocol.ts` + `text-connect.ts`; the two planted framing controls)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -1277,7 +1277,7 @@ in a milestone archive.
 | 38. PROOF-01..03 on Real Cracked Code | v0.8.0 | 4/4 | Complete | 2026-09-05 |
 | 39. The Dual-Channel Coexistence Gate (Go/Degrade/No-Go) | v0.9.0 | 8/8 | Complete | 2026-09-08 |
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
-| 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 0/0 | Not started | - |
+| 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 1/6 | In Progress | - |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 0/0 | Not started | - |
 | 43. The Runtime Evidence Layer | v0.9.0 | 0/0 | Not started | - |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
