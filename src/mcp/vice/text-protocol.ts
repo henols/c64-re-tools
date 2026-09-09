@@ -473,15 +473,22 @@ export class TextMonitorClient extends EventEmitter {
     if (!this.#pending) {
       // D-13(b): a passively-arriving banner (e.g. a binary-owned
       // checkpoint-hit notification pushed to this same text console) with
-      // no command outstanding. Drained once it ends in a real prompt,
-      // counted, and emitted -- NEVER used to resolve a later command's
-      // promise. Bytes still arriving mid-banner simply keep accumulating
-      // here (capped below) until the banner's own prompt appears.
+      // no command outstanding. WR-01: this path must apply the SAME
+      // quiescence discipline as the pending-command branch below --
+      // prompt-shaped text can occur mid-banner exactly as it can
+      // mid-command-response (Control 2's own shape), and draining
+      // immediately on the first tail match risks splitting one logical
+      // banner into two events, or -- worse -- leaking a banner's true
+      // trailing bytes into an unrelated command's response buffer if a
+      // command is issued in the narrow window between the false match and
+      // the banner's real tail arriving. Arm the quiescence window and only
+      // drain once a tail match SURVIVES it with no further bytes arriving.
       if (bufferEndsWithPrompt(this.#buffer)) {
-        const raw = this.#buffer;
-        this.#buffer = Buffer.alloc(0);
-        this.bannerFramesDrained += 1;
-        this.emit("banner", raw.toString("utf8"));
+        this.#quiescenceTimer = setTimeout(() => {
+          this.#quiescenceTimer = null;
+          this.#finishBanner();
+        }, this.#quiescenceMs);
+        if (typeof this.#quiescenceTimer.unref === "function") this.#quiescenceTimer.unref();
         return;
       }
       this.#checkCap();
@@ -516,6 +523,19 @@ export class TextMonitorClient extends EventEmitter {
     const decoded = raw.toString("utf8");
     const payload = decoded.replace(PROMPT_RE, "");
     pending.resolve(payload);
+  }
+
+  /** Finalizes a passively-drained banner (D-13(b)) against the buffer
+   * accrued so far, mirroring #finishPending()'s discipline for the
+   * pending-command path: only invoked after a tail match has survived the
+   * quiescence window with no further bytes arriving in between (WR-01) --
+   * never on the first tail match alone. Never resolves or touches
+   * #pending; a banner is passive output, not a command reply. */
+  #finishBanner(): void {
+    const raw = this.#buffer;
+    this.#buffer = Buffer.alloc(0);
+    this.bannerFramesDrained += 1;
+    this.emit("banner", raw.toString("utf8"));
   }
 
   /** Enforces TEXT_MAX_BUFFERED_LEN against accumulated-but-not-yet-framed

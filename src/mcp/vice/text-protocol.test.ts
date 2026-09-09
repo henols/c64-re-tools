@@ -304,6 +304,89 @@ test("D-13(b): a passively-arriving banner with no command outstanding is draine
 });
 
 // ---------------------------------------------------------------------------
+// WR-01 -- the banner-drain path must apply the SAME quiescence discipline
+// as the pending-command path (Control 2's own shape, applied to D-13(b)).
+// ---------------------------------------------------------------------------
+
+test("WR-01 (planted RED, without the fix): a quiescence window of 0ms on the banner-drain path splits one logical banner into two events on prompt-shaped mid-banner text", async () => {
+  const midBannerPrompt = Buffer.from("BREAK: 3 A 08FE  A9 00       LDA #$00\n(C:$1234) ", "utf8"); // prompt-shaped, but NOT the banner's real tail
+  const realTail = Buffer.from("more banner output\n(C:$08fe) ", "utf8"); // arrives after a short delay, with NO command outstanding
+  await withStubNetServer(
+    (socket) => {
+      socket.write(midBannerPrompt); // no command outstanding
+      setTimeout(() => socket.write(realTail), 15);
+    },
+    async (port) => {
+      // quiescenceMs: 0 -- the RED configuration: no window survives, so the
+      // banner-drain path's first tail match is accepted immediately,
+      // exactly like the pre-fix code (which had no quiescence window at
+      // all on this branch).
+      const client = new TextMonitorClient({ quiescenceMs: 0 });
+      const banners: string[] = [];
+      client.on("banner", (text: string) => banners.push(text));
+      await client.connect("127.0.0.1", port);
+      await sleep(100);
+      // RED: one logical banner got split into two separate banner events.
+      assert.equal(client.bannerFramesDrained, 2, `RED observation: expected the mid-banner prompt-shaped text to be wrongly accepted as final, splitting the banner; got bannerFramesDrained=${client.bannerFramesDrained}`);
+      assert.equal(banners.length, 2);
+      await client.disconnect();
+    },
+  );
+});
+
+test("WR-01 (fixed, GREEN): the default quiescence window on the banner-drain path survives prompt-shaped mid-banner text and drains exactly one complete banner", async () => {
+  const midBannerPrompt = Buffer.from("BREAK: 3 A 08FE  A9 00       LDA #$00\n(C:$1234) ", "utf8");
+  const realTail = Buffer.from("more banner output\n(C:$08fe) ", "utf8");
+  await withStubNetServer(
+    (socket) => {
+      socket.write(midBannerPrompt); // no command outstanding
+      setTimeout(() => socket.write(realTail), 15); // well inside TEXT_QUIESCENCE_MS
+    },
+    async (port) => {
+      const client = new TextMonitorClient(); // default TEXT_QUIESCENCE_MS
+      const banners: string[] = [];
+      client.on("banner", (text: string) => banners.push(text));
+      await client.connect("127.0.0.1", port);
+      await sleep(150); // outlast the quiescence window plus the 15ms real-tail delay
+      assert.equal(client.bannerFramesDrained, 1, "the mid-banner prompt-shaped text must not be mistaken for the banner's real terminator");
+      assert.equal(banners.length, 1);
+      assert.match(banners[0]!, /BREAK: 3 A 08FE/);
+      assert.match(banners[0]!, /more banner output/);
+      assert.ok(banners[0]!.endsWith("(C:$08fe) "), "the banner must end with its TRUE trailing prompt, not the mid-banner one");
+      await client.disconnect();
+    },
+  );
+});
+
+test("WR-01: a real command issued after a fully-drained banner (through the quiescence window) still resolves with only its own output", async () => {
+  const midBannerPrompt = Buffer.from("BREAK: 3 A 08FE  A9 00       LDA #$00\n(C:$1234) ", "utf8");
+  const realTail = Buffer.from("more banner output\n(C:$08fe) ", "utf8");
+  let socket_: import("node:net").Socket | null = null;
+  await withStubNetServer(
+    (socket) => {
+      socket_ = socket;
+      socket.write(midBannerPrompt);
+      setTimeout(() => socket.write(realTail), 15);
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      const banners: string[] = [];
+      client.on("banner", (text: string) => banners.push(text));
+      await client.connect("127.0.0.1", port);
+      await sleep(150); // let the banner fully drain (through its own quiescence window) first
+      assert.equal(client.bannerFramesDrained, 1);
+      assert.equal(banners.length, 1);
+
+      socket_!.write(Buffer.from("Setting default device to `Computer'\n(C:$e5d1) ", "utf8"));
+      const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
+      assert.equal(payload, "Setting default device to `Computer'\n", "the command's own response must never carry banner residue");
+      assert.equal(client.bannerFramesDrained, 1, "the banner counter must not increment again for a real command's own reply");
+      await client.disconnect();
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Empty-output case.
 // ---------------------------------------------------------------------------
 
