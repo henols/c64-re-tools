@@ -284,6 +284,150 @@ test("textCapabilityRefusalMessage: renders in TEXT_CAPABILITY_COMMANDS order re
 });
 
 // ---------------------------------------------------------------------------
+// Task 2: the user-facing answer's three distinguishable shapes.
+// ---------------------------------------------------------------------------
+
+function missingVerdict(command: TextCapabilityCommand, binPath = "/usr/bin/x64sc"): TextCapabilityVerdict {
+  const classification = classifyTextCapabilityResponse(command, CPUHISTORY_DISABLED_STUB);
+  return {
+    command,
+    outcome: "missing",
+    response: CPUHISTORY_DISABLED_STUB,
+    capability: classification.capability,
+    remedy: classification.remedy,
+    identity: { backend: "stock", binPath, resolved: true },
+    fromCache: false,
+  };
+}
+
+test("textCapabilityRefusalMessage: a single missing verdict's message names the command, the capability, the binary path and the configure flag", () => {
+  const message = textCapabilityRefusalMessage([missingVerdict("chis")]);
+  assert.match(message, /chis/);
+  assert.match(message, /\/usr\/bin\/x64sc/);
+  assert.match(message, /--enable-cpuhistory/);
+});
+
+test("textCapabilityRefusalMessage: two missing verdicts sharing the stub render exactly ONE remedy sentence naming both commands", () => {
+  const message = textCapabilityRefusalMessage([missingVerdict("memmapshow"), missingVerdict("chis")]);
+  const lines = message.split("\n");
+  assert.equal(lines.length, 1, `expected exactly one merged line, got: ${JSON.stringify(lines)}`);
+  assert.match(lines[0]!, /memmapshow/);
+  assert.match(lines[0]!, /chis/);
+  // Exactly one occurrence of the remedy sentence's distinctive substring.
+  const remedyOccurrences = (message.match(/--enable-cpuhistory/g) ?? []).length;
+  assert.equal(remedyOccurrences, 1);
+});
+
+test("textCapabilityRefusalMessage: a missing verdict and an indeterminate verdict render as separate, distinctly-worded lines", () => {
+  const indeterminate: TextCapabilityVerdict = {
+    command: "bt",
+    outcome: "indeterminate",
+    response: "",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  const message = textCapabilityRefusalMessage([missingVerdict("chis"), indeterminate]);
+  const lines = message.split("\n");
+  assert.equal(lines.length, 2);
+  assert.notEqual(lines[0], lines[1]);
+  assert.match(lines[0]!, /missing/);
+  assert.doesNotMatch(lines[0]!, /unknown/);
+  assert.match(lines[1]!, /unknown/);
+  assert.doesNotMatch(lines[1]!, /missing/);
+});
+
+test("textCapabilityRefusalMessage: bt and prof flat render no build-capability claim -- a capable verdict for them produces no line at all", () => {
+  const btCapable: TextCapabilityVerdict = {
+    command: "bt",
+    outcome: "capable",
+    response: "some real backtrace output",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  const profCapable: TextCapabilityVerdict = {
+    command: "prof flat",
+    outcome: "capable",
+    response: "some real profiler output",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  const message = textCapabilityRefusalMessage([btCapable, profCapable]);
+  assert.equal(message, "", "expected no rendered line for two fully-capable no-guard verdicts");
+});
+
+test("textCapabilityRefusalMessage: the register command's own two degradation strings render as a chip-level degradation, distinct wording from a missing build capability", () => {
+  const ioNoDetails: TextCapabilityVerdict = {
+    command: "io",
+    outcome: "capable",
+    response: "No details available.\n",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  const ioNoRegs: TextCapabilityVerdict = {
+    command: "io",
+    outcome: "capable",
+    response: "No I/O regs available\n",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  const message1 = textCapabilityRefusalMessage([ioNoDetails]);
+  assert.match(message1, /io:/);
+  assert.match(message1, /No details available/);
+  assert.doesNotMatch(message1, /--enable-cpuhistory/);
+  // The chip-degradation wording explicitly NEGATES the missing-capability
+  // template ("not a missing build capability") rather than reusing it --
+  // it must never contain the missing template's own "is missing on" phrase.
+  assert.doesNotMatch(message1, /is missing on/);
+
+  const message2 = textCapabilityRefusalMessage([ioNoRegs]);
+  assert.match(message2, /No I\/O regs available/);
+  assert.doesNotMatch(message2, /--enable-cpuhistory/);
+  assert.doesNotMatch(message2, /is missing on/);
+
+  // Distinct wording from the missing-build-capability shape.
+  const missingMessage = textCapabilityRefusalMessage([missingVerdict("chis")]);
+  assert.notEqual(message1, missingMessage);
+});
+
+test("textCapabilityRefusalMessage: io's own genuine register dump (not one of the two degradation strings) renders no line", () => {
+  const ioReal: TextCapabilityVerdict = {
+    command: "io",
+    outcome: "capable",
+    response: "VIC-II registers...\nRaster: 100\n",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  assert.equal(textCapabilityRefusalMessage([ioReal]), "");
+});
+
+test("textCapabilityRefusalMessage: no rendered message names a phase number (mirrors docs-dangling-refs.test.ts's FLOW-02 pattern)", () => {
+  const PHASE_NUMBER_RE = /\bPhase\s+\d/i;
+  const indeterminate: TextCapabilityVerdict = {
+    command: "bt",
+    outcome: "indeterminate",
+    response: "",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+    dialError: "ECONNRESET",
+  };
+  const ioDegraded: TextCapabilityVerdict = {
+    command: "io",
+    outcome: "capable",
+    response: "No details available.\n",
+    identity: STOCK_IDENTITY,
+    fromCache: false,
+  };
+  const message = textCapabilityRefusalMessage([missingVerdict("memmapshow"), missingVerdict("chis"), indeterminate, ioDegraded]);
+  assert.doesNotMatch(message, PHASE_NUMBER_RE);
+});
+
+test("source-level: text-capability-probe.ts's own module comment marks the stub/degradation strings source-traced, never live-measured", () => {
+  const src = readFileSync(OWN_MODULE, "utf8");
+  assert.match(src, /SOURCE-TRACED, not live-observed/);
+  assert.doesNotMatch(src, /MEASURED/);
+});
+
+// ---------------------------------------------------------------------------
 // Source-level: no filesystem write, no reference to the tool-written root.
 // ---------------------------------------------------------------------------
 
