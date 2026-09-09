@@ -28,7 +28,7 @@
 //     ordering assertion and voids any live capture in this same run.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -165,13 +165,20 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
   return handle;
 }
 
-async function stopBroker(handle: BrokerHandle): Promise<void> {
-  if (handle.child.exitCode !== null || handle.child.signalCode !== null) return;
+/**
+ * Sends SIGTERM, escalates to SIGKILL if the child has not exited within the
+ * bounded wait, and -- unlike the version this replaces -- VERIFIES the
+ * SIGKILL fallback rather than returning immediately after sending it.
+ * Returns whether the child actually exited (by either signal), so the
+ * caller can record a negative outcome instead of discarding it.
+ */
+async function stopBroker(handle: BrokerHandle): Promise<boolean> {
+  if (handle.child.exitCode !== null || handle.child.signalCode !== null) return true;
   handle.child.kill("SIGTERM");
   const exited = await waitFor(() => handle.child.exitCode !== null || handle.child.signalCode !== null, 3000);
-  if (!exited) {
-    handle.child.kill("SIGKILL");
-  }
+  if (exited) return true;
+  handle.child.kill("SIGKILL");
+  return waitFor(() => handle.child.exitCode !== null || handle.child.signalCode !== null, 3000);
 }
 
 async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
@@ -184,6 +191,24 @@ async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<
 interface HarnessReport {
   recordedPids: number[];
   pidsAliveAfterTeardown: number[];
+  /** The broker child's own pid, as observed by this harness (null only if
+   * `spawn()` never assigned one -- see `startBroker()`). Recorded
+   * unconditionally, independent of whether it survived teardown; a
+   * surviving broker pid is what gets PUSHED onto `pidsAliveAfterTeardown`
+   * above, covered by every existing empty-array assertion with no edit at
+   * those call sites. */
+  brokerPid: number | null;
+  /** Pids of any process (anywhere on the host) whose full command line
+   * contains this harness's own unique scratch-directory path -- catches a
+   * grandchild neither `recordedPids` nor `brokerPid` ever named. See
+   * `pidsMatchingCommandLine()`'s own doc comment for why the needle is
+   * always the scratch path, never a process name. */
+  strayPidsMatchingScratch: number[];
+  /** Whether the scratch directory this harness created was actually
+   * removed -- PROVEN via `existsSync()` after `rmSync()`, not assumed
+   * because `rmSync()` was called. This host's `/tmp` is a RAM-backed
+   * filesystem with aging disabled: a leak here is a leak until reboot. */
+  scratchDirRemoved: boolean;
 }
 
 function isAlive(pid: number): boolean {
@@ -195,18 +220,71 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Lists the pids of every currently-running process whose full command line
+ * contains `needle`, excluding this process's own pid (so the helper can
+ * never report itself). Diagnostic only: a failure to run `ps` at all
+ * (unsupported platform, `ps` missing) returns an empty array rather than
+ * throwing -- this must never be the reason a run fails for a cause
+ * unrelated to what it is checking.
+ *
+ * The needle passed by every caller in this file is this harness's own
+ * unique `mkdtempSync` scratch-directory path, never a process name (e.g.
+ * "vice-broker"). A tree-wide name search would report a developer's own,
+ * genuinely unrelated broker instance as THIS harness's leak -- wrong, and
+ * exactly the kind of false positive that gets a guard disabled. Every
+ * process this harness is responsible for carries the scratch path in its
+ * own argv (`--repo-root <scratchDir>` for the broker, and everything the
+ * broker itself launches inherits it too), and nothing else on the host
+ * does.
+ */
+function pidsMatchingCommandLine(needle: string): number[] {
+  try {
+    const output = execFileSync("ps", ["-eo", "pid=,args="], {
+      encoding: "utf8",
+      env: { ...process.env, COLUMNS: "10000" },
+    });
+    const pids: number[] = [];
+    for (const line of output.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const match = trimmed.match(/^(\d+)\s+(.*)$/);
+      if (!match) continue;
+      const pid = parseInt(match[1]!, 10);
+      const args = match[2]!;
+      if (pid === process.pid) continue;
+      if (args.includes(needle)) pids.push(pid);
+    }
+    return pids;
+  } catch {
+    return [];
+  }
+}
+
 async function withBrokerHarness(viceBinPath: string, fn: (ctx: { stateDir: string; recordPid: (pid: number) => void; host: string }) => Promise<void>): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "text-monitor-live-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
   const handle = startBroker(stateDir, viceBinPath, scratchDir);
+  // Captured immediately after startBroker() returns, before anything else
+  // can fail -- this is the pid the teardown half below is responsible for.
+  const brokerPid: number | null = typeof handle.child.pid === "number" ? handle.child.pid : null;
   let pidsAliveAfterTeardown: number[] = [];
+  let strayPidsMatchingScratch: number[] = [];
+  let scratchDirRemoved = false;
   try {
     await waitForBrokerJson(stateDir);
     await fn({ stateDir, recordPid: (pid: number) => recordedPids.add(pid), host: "127.0.0.1" });
   } finally {
-    await stopBroker(handle);
+    const brokerExitedCleanly = await stopBroker(handle);
+    if (!brokerExitedCleanly && brokerPid !== null) {
+      try {
+        process.kill(brokerPid, "SIGKILL");
+      } catch {
+        // already gone -- best effort.
+      }
+    }
     for (const pid of recordedPids) {
       try {
         process.kill(pid, "SIGKILL");
@@ -218,13 +296,87 @@ async function withBrokerHarness(viceBinPath: string, fn: (ctx: { stateDir: stri
       const gone = await waitFor(() => !isAlive(pid), 3000);
       if (!gone) pidsAliveAfterTeardown.push(pid);
     }
+    if (brokerPid !== null) {
+      const brokerGone = await waitFor(() => !isAlive(brokerPid), 3000);
+      if (!brokerGone) pidsAliveAfterTeardown.push(brokerPid);
+    }
+    // Scratch-scoped stray-process sweep -- catches a grandchild this
+    // harness never recorded a pid for. Best-effort SIGKILL anything found,
+    // so the harness leaves nothing behind even while reporting that it had
+    // to.
+    strayPidsMatchingScratch = pidsMatchingCommandLine(scratchDir);
+    for (const pid of strayPidsMatchingScratch) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // best-effort -- still reported below regardless of reap outcome.
+      }
+    }
     rmSync(scratchDir, { recursive: true, force: true });
-    if (pidsAliveAfterTeardown.length > 0) {
-      console.error(`text-monitor-live: pids still alive after teardown: ${JSON.stringify(pidsAliveAfterTeardown)}`);
+    scratchDirRemoved = !existsSync(scratchDir);
+    if (pidsAliveAfterTeardown.length > 0 || strayPidsMatchingScratch.length > 0 || !scratchDirRemoved) {
+      console.error(
+        `text-monitor-live: teardown leak -- pidsAliveAfterTeardown=${JSON.stringify(pidsAliveAfterTeardown)}, ` +
+          `brokerPid=${JSON.stringify(brokerPid)}, strayPidsMatchingScratch=${JSON.stringify(strayPidsMatchingScratch)}, ` +
+          `scratchDirRemoved=${scratchDirRemoved}`,
+      );
     }
   }
-  return { recordedPids: [...recordedPids], pidsAliveAfterTeardown };
+  return { recordedPids: [...recordedPids], pidsAliveAfterTeardown, brokerPid, strayPidsMatchingScratch, scratchDirRemoved };
 }
+
+// ---------------------------------------------------------------------------
+// The planted-violation control -- NO skip guard. Proves the assertions
+// above can actually go red, by planting a process the sweep must find,
+// asserting the helpers agree it is alive, then reaping it and asserting
+// they agree it is gone. Runs on `node --test text-monitor-live.test.ts`
+// with NO environment variable set at all -- a five-second answer to "is the
+// teardown guard still real?", independent of any live emulator.
+// ---------------------------------------------------------------------------
+
+test(
+  "text-monitor-live (teardown control): the stray-process sweep and isAlive() observe a planted process alive, then correctly report it gone once reaped -- proves the teardown assertion can fail",
+  { timeout: 15000 },
+  async () => {
+    const marker = `text-monitor-live-teardown-control-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)", marker]);
+    let reaped = false;
+    try {
+      assert.ok(typeof child.pid === "number", "the planted child process must have been assigned a pid");
+      const childPid = child.pid as number;
+
+      const foundAlive = await waitFor(() => pidsMatchingCommandLine(marker).includes(childPid), 5000);
+      assert.ok(foundAlive, `expected the sweep helper to find the planted process (marker=${marker}) within 5s`);
+      assert.ok(isAlive(childPid), "isAlive() must report the planted process alive while it is running");
+
+      child.kill("SIGKILL");
+      reaped = true;
+      const gone = await waitFor(() => !isAlive(childPid), 5000);
+      assert.ok(gone, "expected the planted process to be dead (per isAlive()) within 5s of SIGKILL");
+
+      const stillFound = pidsMatchingCommandLine(marker);
+      assert.deepEqual(
+        stillFound,
+        [],
+        `expected the sweep helper to report no pids matching the marker once reaped, got: ${JSON.stringify(stillFound)}`,
+      );
+      assert.ok(!isAlive(childPid), "isAlive() must report the planted process dead once reaped");
+    } finally {
+      if (!reaped) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // best effort -- the assertion below still checks nothing survived.
+        }
+      }
+    }
+    assert.deepEqual(
+      pidsMatchingCommandLine(marker),
+      [],
+      `nothing matching this control's own marker "${marker}" may survive the case`,
+    );
+  },
+);
 
 // ---------------------------------------------------------------------------
 // The proof.
@@ -305,6 +457,12 @@ test(
       [],
       `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report.recordedPids)})`,
     );
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
 
@@ -367,6 +525,12 @@ test(
     });
 
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
 
@@ -545,6 +709,12 @@ test(
     });
 
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
 
@@ -656,6 +826,12 @@ test(
     });
 
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
 
@@ -761,6 +937,12 @@ test(
     });
 
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
 
@@ -1028,6 +1210,12 @@ test(
     });
 
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
 
     if (skipReason) {
       // node:test's own skip mechanism -- so this outcome shows up as
@@ -1112,6 +1300,12 @@ test(
     });
 
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
 
@@ -1423,5 +1617,11 @@ test(
     });
 
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(
+      report.strayPidsMatchingScratch,
+      [],
+      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
+    );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
