@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 42
 current_phase_name: The Text-Format Parsers and Their Two-Binary Fixtures
 status: executing
-stopped_at: "Completed 42-15-PLAN.md (CR-02 closed); next: 42-16 (live proof + PARSE-04 restoration)"
-last_updated: "2026-09-09T21:41:27.117Z"
+stopped_at: Completed 42-16-PLAN.md
+last_updated: "2026-09-09T22:00:17.256Z"
 last_activity: 2026-09-09
 last_activity_desc: "Phase 42 gap-closure round 2 execution started: 42-15 (CR-02 fix) and 42-16 (live proof + evidence + PARSE-04 restoration), both gap_closure: true. Isolation auto-degraded to none (#683 base-check: HEAD a7eaaf91 diverged from origin/HEAD a3c0d21d) -- both plans run sequentially on the main working tree."
-state_head: d44784745196d39d97ad2abb595ebd485f43bd61
+state_head: 3a4eec8fb79d2a2a69e404733a2cfce2ed754dc6
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 41
-  completed_plans: 40
+  completed_plans: 41
   percent: 50
 ---
 
@@ -226,10 +226,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — EXECUTING (gap-closure round 2)
-Plan: 15 of 16 executed (9 original + 5 gap-closure round 1: 42-10..42-14) — round 2 in flight: 42-15 (wave 9), 42-16 (wave 10)
-Status: Gap-closure round 2 is EXECUTING. Round 1 closed all five findings it targeted (CR-01, WR-01, WR-02, IN-01, IN-02's documentation half) and the automated-gate regression is gone (3941/3927/3, the documented floor). The one open blocker is CR-02, a pre-existing defect dating to plan 42-07 -- handleIoRegisters caches io's per-address chip-degradation verdict under a binary-wide key, so a later call to a different address is judged on an earlier response. It falsifies success criterion 5, so PARSE-04 is currently Pending; PARSE-01/02/03 remain Complete. Round 2: 42-15 closes CR-02 with both remedies the verification named -- a pure textCapabilityVerdictFor() builder so the verdict comes from the response that call received, plus a NEVER_CACHED_COMMANDS set closing the cache write, read and in-flight-memo paths -- and 42-16 proves it live over two io addresses in one genuine-stock session, records the evidence, returns PARSE-04 to Complete only on that measurement, and closes the CR-02 disposition with its ledger row. Both plans run sequentially on the main working tree: the #683 worktree base-check auto-degrade fired (HEAD a7eaaf91 vs origin/HEAD a3c0d21d), and 42-16 delivers STATE.md content, which carries the stock USE_WORKTREES_FOR_PLAN=false carve-out regardless.
-Last activity: 2026-09-09 — Phase 42 gap-closure round 2 execution started (42-15, 42-16)
+Phase: 42 (The Text-Format Parsers and Their Two-Binary Fixtures) — gap-closure round 2 COMPLETE (16/16 plans)
+Plan: 16 of 16 executed (9 original + 5 gap-closure round 1: 42-10..42-14 + 2 gap-closure round 2: 42-15, 42-16)
+Status: Gap-closure round 2 is COMPLETE. Round 1 closed all five findings it targeted (CR-01, WR-01, WR-02, IN-01, IN-02's documentation half) and the automated-gate regression is gone (3954/3940/3, the documented floor). Round 2 closed CR-02 -- a pre-existing defect dating to plan 42-07 where handleIoRegisters cached io's per-address chip-degradation verdict under a binary-wide key, so a later call to a different address was judged on an earlier response. 42-15 fixed it with both remedies the verification named -- a pure textCapabilityVerdictFor() builder so the verdict comes from the response that call received, plus a NEVER_CACHED_COMMANDS set closing the cache write, read and in-flight-memo paths -- and 42-16 proved it live over two io addresses ($d020 VIC-II, $dc00 CIA1) in one genuine-stock VICE 3.9 session (fromCache=false, judged on the second reply), recorded the evidence in docs/phase42-text-format-drift-citations.md, returned PARSE-04 to Complete on that measurement (all four PARSE-01..04 now Complete), and closed the CR-02 disposition with its ledger row (pending count 8 -> 7). Both round-2 plans ran sequentially on the main working tree: the #683 worktree base-check auto-degrade fired (HEAD a7eaaf91 vs origin/HEAD a3c0d21d), and 42-16 delivers STATE.md content, which carries the stock USE_WORKTREES_FOR_PLAN=false carve-out regardless.
+Last activity: 2026-09-09 — Phase 42 gap-closure round 2 completed (42-15, 42-16); phase 42 fully closed at 16/16 plans
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -512,6 +512,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 42 P12 | 25min | 2 tasks | 1 files |
 | Phase 42 P14 | 20min | 2 tasks | 3 files |
 | Phase 42 P15 | 17min | 2 tasks | 4 files |
+| Phase 42-the-text-format-parsers-and-their-two-binary-fixtures P16 | 20min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1155,6 +1156,7 @@ Recent decisions affecting current work:
 - [Phase 42]: Plan 42-12 closed G5 -- text-monitor-live.test.ts's teardown assertion now folds the broker child's own pid into the existing pidsAliveAfterTeardown array (no per-call-site edit needed) and adds a scratch-path-scoped stray-process sweep plus a proven scratch-dir-removal check, all kept honest by an unskipped planted-violation control that runs with no VICE_LIVE_STOCK_BIN set -- replacing a teardown-verification method that checked a systemd unit this file never starts and grepped only for the emulator, never the broker.
 - [Phase 42]: Restored PARSE-03 and PARSE-04 to Complete in REQUIREMENTS.md after re-measuring both demotion causes green on the final gap-closure-round tree (io drift refusal for all five formats; the cold-profiler state named and the identity disagreement reaching the caller) -- a conditional, scoped flip, never assumed from the plans having merely run.
 - [Phase 42]: CR-02 closed: io classified via a pure builder (textCapabilityVerdictFor), structurally excluded from the capability cache (NEVER_CACHED_COMMANDS) — Both remedies from 42-VERIFICATION.md's gap applied together -- either alone leaves a real hole
+- [Phase 42]: Plan 42-16 proved plan 42-15's CR-02 fix live over two io addresses in one genuine-stock VICE 3.9 session (fromCache=false, judged on the second reply), recorded the round-2 evidence in docs/phase42-text-format-drift-citations.md, returned PARSE-04 to Complete on that measurement, and closed the CR-02 disposition record with its STATE.md ledger row moving in the same commit (pending count 8 -> 7). — The flip was gated on re-measurement, not on a plan having run: every item the demotion cause named (cache exclusion in all three sites, both wrong-answer directions, empty-reply handling, and a live two-address proof) was individually confirmed green first.
 
 ### Pending Todos
 
@@ -2149,8 +2151,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T21:41:26.433Z
-Stopped at: Completed 42-15-PLAN.md (CR-02 closed); next: 42-16 (live proof + PARSE-04 restoration)
+Last session: 2026-09-09T21:59:54.273Z
+Stopped at: Completed 42-16-PLAN.md
 Resume file: None
 
 Earlier: Completed 42-11-PLAN.md (WR-02, IN-01 closed); gap-closure plans 42-12..42-14 remained at that point
