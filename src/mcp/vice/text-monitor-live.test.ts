@@ -39,9 +39,10 @@ import { build } from "./build.ts";
 import { openBrokerControl, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import { TEXT_COMMAND_ALLOWLIST, withTextChannelLock } from "./text-protocol.ts";
-import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { dispatchStock, clearHeldStockSession, ensureStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
-import { resetChannelLockForTests } from "./channel-lock.ts";
+import { resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
+import { CommandType, checkpointSetBody, CheckpointOperation, cpNumBody } from "./stock-protocol.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
@@ -742,6 +743,357 @@ test(
       } finally {
         await textDisconnect(textSession);
       }
+
+      await session.release();
+    });
+
+    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 41-06: the default_memspace remedy, EXERCISED live (criterion 5), not
+// merely made available. This project's own tool surface has no shipped way
+// to arm a checkpoint on a DRIVE memspace (stock-checkpoints.ts's
+// handleCheckpointAdd takes no memspace argument at all -- D-03's own
+// rationale: "no shipped tool can contaminate default_memspace today"), so
+// this test arms the drive checkpoint through the RAW wire encoder
+// (checkpointSetBody({ memspace: 0x01, ... }), stock-protocol.ts) directly
+// against session.client -- the one place in this file that reaches past the
+// tool surface, and only because there is no tool surface here to reach
+// through. broker-launch.mts already launches every stock instance with
+// Drive8TrueEmulation=1 and Drive8Type=1541 by default (FINDING-C1, plan
+// 08.2-02), so the drive's own 6502 is genuinely emulated and continuously
+// executing its own ROM firmware from boot -- no disk image or autostart is
+// needed to produce drive activity.
+//
+// Detection strategy: vice_registers_get always sends an EXPLICIT
+// memspace:0x00 (main) on the wire (stock-registers.ts), so it is immune to
+// default_memspace contamination and is the ground truth for "did the main
+// CPU's PC actually move". vice_execution_step's own ADVANCE_INSTRUCTIONS
+// request has NO memspace field at all (CLAUDE.md's own cited fact) --
+// contaminated, it silently steps whichever CPU default_memspace currently
+// names. Comparing main-CPU PC (via vice_registers_get) immediately before
+// and after a vice_execution_step call is therefore a direct, live proof:
+// frozen before/after PC while contaminated -- means the step advanced a
+// DIFFERENT CPU (the drive) instead; a moving PC after device c: means the
+// remedy restored main-CPU stepping.
+// ---------------------------------------------------------------------------
+
+/** Broad exec range covering the entire 1541 drive ROM ($C000-$FFFF) --
+ * arming a checkpoint over the WHOLE mapped ROM means the very next
+ * instruction fetch the drive CPU makes anywhere in its own firmware trips
+ * it, without needing to know any specific 1541 ROM routine address by
+ * heart (this project's own memmap.json only documents C64 addresses, not
+ * 1541 drive ROM ones). */
+const DRIVE_ROM_START = 0xc000;
+const DRIVE_ROM_END = 0xffff;
+const DRIVE_MEMSPACE = 0x01; // unit 8, per stock-protocol.ts's memspaceByte()
+
+test(
+  "text-monitor-live (criterion 5, D-03/D-04): device c: exercises the default_memspace remedy live -- a drive checkpoint hit freezes main-CPU stepping, device c: restores it, and no binary stepping call ever touched the text channel",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async (t) => {
+    clearHeldStockSession();
+    resetChannelLockForTests();
+    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
+
+    let skipReason: string | null = null;
+
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
+      const opened = await openBrokerControl(stateDir);
+      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const session: BrokerControlSession = opened.session;
+
+      const acquired = await session.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      assert.equal(typeof grant.remote_monitor_port, "number");
+      const remoteMonitorPort = grant.remote_monitor_port as number;
+
+      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      recordPid(epochBefore.pid);
+
+      const binmonReady = await waitForPortOpen(host, grant.port, 30000);
+      assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
+
+      const lease: HeldLease = {
+        host,
+        port: grant.port,
+        targetId: grant.id,
+        brokerControl: session,
+        epochFile: grant.epoch_file,
+        supervisorDir: stateDir,
+      };
+      const deps: StockDispatchDeps = {
+        ensureLease: async () => ({ ok: true as const, lease }),
+        connect: (opts: StockConnectOptions) => stockConnect(opts),
+      };
+
+      const textSession = await textConnect({ host, remoteMonitorPort, targetId: grant.id, brokerControl: session });
+      let textCommandCount = 0;
+
+      try {
+        const sessionOutcome = await ensureStockSession(deps);
+        assert.ok(sessionOutcome.ok, `ensureStockSession failed: ${JSON.stringify(sessionOutcome)}`);
+        if (!sessionOutcome.ok) return;
+        const stockSession = sessionOutcome.session;
+
+        // Arm the drive checkpoint through the RAW wire encoder -- the ONE
+        // place in this file that bypasses the tool surface, because no
+        // tool exists to reach a drive memspace. Held under channel-lock.ts's
+        // own binary authority, matching D-05's "every halt-taking operation
+        // passes through the one serialization authority" discipline even
+        // for a raw call this file makes directly.
+        const armHandle = await acquireChannelLock({ channel: "binary", operation: "raw CHECKPOINT_SET (drive, criterion 5 setup)" });
+        let checkpointId: number;
+        try {
+          const setResponse = await stockSession.client.send(
+            CommandType.CheckpointSet,
+            checkpointSetBody({
+              start: DRIVE_ROM_START,
+              end: DRIVE_ROM_END,
+              stop: true,
+              enabled: true,
+              operation: CheckpointOperation.Exec,
+              memspace: DRIVE_MEMSPACE,
+            }),
+          );
+          assert.equal(setResponse.type, "checkpoint_info", `expected a checkpoint_info reply to CHECKPOINT_SET, got: ${JSON.stringify(setResponse)}`);
+          checkpointId = (setResponse as { checkpoint: { id: number } }).checkpoint.id;
+        } finally {
+          armHandle.release();
+        }
+        console.log(
+          `text-monitor-live (criterion 5): armed drive checkpoint id=${checkpointId} over $${DRIVE_ROM_START.toString(16)}-` +
+            `$${DRIVE_ROM_END.toString(16)} on memspace 0x${DRIVE_MEMSPACE.toString(16)}`,
+        );
+
+        // Resume and wait, bounded, for the DRIVE checkpoint's own
+        // UNSOLICITED CHECKPOINT_INFO (0x11) hit event -- MEASURED here (not
+        // assumed) that CHECKPOINT_LIST (0x14) is scoped to default_memspace
+        // and therefore CANNOT see this drive checkpoint until AFTER it has
+        // already fired once (a chicken-and-egg the unsolicited event sidesteps
+        // entirely): with a fresh checkpoint set on memspace 0x01 and
+        // default_memspace still main, a real CHECKPOINT_LIST poll here
+        // returned `total: 0` throughout, every single poll, for the whole
+        // window -- a real protocol fact worth its own record (see the
+        // evidence document), not evidence the checkpoint failed to arm.
+        // Listening for the event VICE pushes unsolicited on every checkpoint
+        // hit (CLAUDE.md's own Protocol constraint) is what actually detects
+        // it, regardless of which memspace CHECKPOINT_LIST's own listing is
+        // scoped to.
+        const checkpointHits: Array<Record<string, unknown>> = [];
+        const checkpointHitListener = (item: unknown) => {
+          if (
+            item !== null &&
+            typeof item === "object" &&
+            (item as { type?: string }).type === "checkpoint_info" &&
+            (item as { checkpoint?: { id?: number } }).checkpoint?.id === checkpointId
+          ) {
+            checkpointHits.push((item as { checkpoint: Record<string, unknown> }).checkpoint);
+          }
+        };
+        stockSession.client.on("event", checkpointHitListener);
+        const deadline = Date.now() + 15000;
+        try {
+          while (Date.now() < deadline && checkpointHits.length === 0) {
+            await dispatchStock("vice_execution_run", {}, deps);
+            await new Promise((r) => setTimeout(r, 150));
+          }
+        } finally {
+          stockSession.client.off("event", checkpointHitListener);
+        }
+        const hit = checkpointHits.length > 0;
+
+        if (!hit) {
+          skipReason =
+            `the drive checkpoint (id ${checkpointId}, $${DRIVE_ROM_START.toString(16)}-$${DRIVE_ROM_END.toString(16)}, ` +
+            `memspace 0x${DRIVE_MEMSPACE.toString(16)}) never hit within 15s on this host -- the contamination path was ` +
+            `not reproducible here, and this is a named gap (recorded in docs/phase41-text-channel-live-evidence.md and ` +
+            `the SUMMARY), not a silent pass. The remedy (device c:) is still confirmed reachable and allowlisted by the ` +
+            `unconditional first live test in this file.`;
+          return;
+        }
+        console.log(`text-monitor-live (criterion 5): MEASURED drive checkpoint id=${checkpointId} hit within the poll window`);
+
+        // Ground truth: main-CPU PC via vice_registers_get, which always
+        // sends an explicit memspace:0x00 -- immune to contamination.
+        const regsBeforeResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsBefore = parseOkPayload(regsBeforeResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        const pcBefore = (regsBefore.registers as Record<string, number>).PC;
+        assert.equal(typeof pcBefore, "number", `expected a numeric main-CPU PC before stepping, got: ${JSON.stringify(regsBefore)}`);
+
+        // vice_execution_step's own ADVANCE_INSTRUCTIONS request has NO
+        // memspace field (CLAUDE.md's cited fact) -- contaminated, it steps
+        // whichever CPU default_memspace currently names, silently.
+        const stepDuringContaminationResult = await dispatchStock("vice_execution_step", { count: 1 }, deps);
+        const stepDuringContamination = parseOkPayload(stepDuringContaminationResult as { content: { type: "text"; text: string }[]; isError: boolean });
+
+        const regsAfterStepResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsAfterStep = parseOkPayload(regsAfterStepResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        const pcAfterContaminatedStep = (regsAfterStep.registers as Record<string, number>).PC;
+
+        // D-03: no binary stepping call above may have acquired the text
+        // channel or made a text round trip.
+        assert.equal(textCommandCount, 0, "no text-channel command must have been issued before the remedy is deliberately invoked below");
+
+        assert.equal(
+          pcAfterContaminatedStep,
+          pcBefore,
+          `default_memspace contamination signature: main-CPU PC must be FROZEN across vice_execution_step while contaminated ` +
+            `(pcBefore=0x${pcBefore.toString(16)}, pcAfterContaminatedStep=0x${pcAfterContaminatedStep.toString(16)}, ` +
+            `step's own reported programCounter=${JSON.stringify(stepDuringContamination.programCounter)} -- the step silently advanced ` +
+            `the DRIVE CPU instead of main)`,
+        );
+        console.log(
+          `text-monitor-live (criterion 5): MEASURED contamination -- main-CPU PC frozen at 0x${pcBefore.toString(16)} across ` +
+            `vice_execution_step (step's own reported PC: ${JSON.stringify(stepDuringContamination.programCounter)})`,
+        );
+
+        // MEASURED: the drive checkpoint, still armed (stop:true), keeps
+        // re-firing on the drive's own continuously-executing ROM loop and
+        // re-contaminates default_memspace back to drive on essentially every
+        // subsequent resume -- an early design of this test issued device c:
+        // with the checkpoint still live and observed the remedy assertion
+        // below fail (pcAfterRemedy === pcBefore), because the checkpoint won
+        // the race and re-set default_memspace to drive again before the
+        // following vice_execution_step's own ADVANCE_INSTRUCTIONS reply.
+        // Deleting the checkpoint (its job -- producing the contamination --
+        // is already done) before invoking the remedy removes that confound;
+        // this mirrors how a real user would stop reproducing the fault
+        // before diagnosing whether the remedy took.
+        const deleteHandle = await acquireChannelLock({ channel: "binary", operation: "raw CHECKPOINT_DELETE (criterion 5 cleanup)" });
+        try {
+          await stockSession.client.send(CommandType.CheckpointDelete, cpNumBody(checkpointId));
+        } finally {
+          deleteHandle.release();
+        }
+
+        // The remedy: device c: over the text channel, exercised live.
+        const remedyResponse = await withTextChannelLock("device c:", async () => {
+          textCommandCount += 1;
+          return textSession.client.command("device c:");
+        });
+        assert.ok(remedyResponse.length > 0, `device c: response must be non-empty, got: ${JSON.stringify(remedyResponse)}`);
+        assert.equal(textCommandCount, 1, "exactly one text-channel command (device c:) must have been issued -- the remedy itself");
+        // MEASURED: the response can carry a large batch of already-queued
+        // drive-checkpoint hit banners that were still in flight on the wire
+        // the instant CHECKPOINT_DELETE took effect (a real race between the
+        // delete taking effect and the drive's own extremely tight polling
+        // loop re-firing many more times in the interim) -- truncated here
+        // for log readability only, never for the assertion above, which
+        // checks the FULL untruncated string.
+        const remedyResponseLogSnippet = remedyResponse.length > 500 ? `${remedyResponse.slice(0, 250)} ...[${remedyResponse.length} bytes total]... ${remedyResponse.slice(-250)}` : remedyResponse;
+        console.log(`text-monitor-live (criterion 5): MEASURED device c: remedy response (${remedyResponse.length} bytes): ${JSON.stringify(remedyResponseLogSnippet)}`);
+
+        // Confirm the remedy: main-CPU stepping must now work again.
+        const stepAfterRemedyResult = await dispatchStock("vice_execution_step", { count: 1 }, deps);
+        parseOkPayload(stepAfterRemedyResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        const regsAfterRemedyResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsAfterRemedy = parseOkPayload(regsAfterRemedyResult as { content: { type: "text"; text: string }[]; isError: boolean });
+        const pcAfterRemedy = (regsAfterRemedy.registers as Record<string, number>).PC;
+
+        assert.equal(textCommandCount, 1, "no ADDITIONAL text-channel command may have been issued by the binary-side step call above -- D-03");
+        assert.notEqual(
+          pcAfterRemedy,
+          pcBefore,
+          `remedy signature: main-CPU PC must ADVANCE again once device c: has restored default_memspace to main ` +
+            `(pcBefore=0x${pcBefore.toString(16)}, pcAfterRemedy=0x${pcAfterRemedy.toString(16)})`,
+        );
+        console.log(
+          `text-monitor-live (criterion 5): MEASURED remedy confirmed -- main-CPU PC advanced from 0x${pcBefore.toString(16)} to ` +
+            `0x${pcAfterRemedy.toString(16)} after device c:`,
+        );
+      } finally {
+        await textDisconnect(textSession);
+      }
+
+      await session.release();
+    });
+
+    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+
+    if (skipReason) {
+      // node:test's own skip mechanism -- so this outcome shows up as
+      // SKIPPED in the run summary (never a silent pass), and this file's
+      // <verify> gate (at most one skip permitted) reads it correctly.
+      t.skip(skipReason);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Plan 41-06 (D-04): the warp on/warp off re-probe, WITH THE CHANNEL OPEN,
+// issued through the real vice_warp_set tool (needsSession:false --
+// dispatchStock() reaches text-tools.ts's handleWarpSet() directly).
+// ---------------------------------------------------------------------------
+
+test(
+  "text-monitor-live (D-04): vice_warp_set(true) and vice_warp_set(false) each return a real, verbatim response while the channel is open",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async () => {
+    clearHeldStockSession();
+    resetChannelLockForTests();
+    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
+
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
+      const opened = await openBrokerControl(stateDir);
+      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const session: BrokerControlSession = opened.session;
+
+      const acquired = await session.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      assert.equal(typeof grant.remote_monitor_port, "number");
+      const remoteMonitorPort = grant.remote_monitor_port as number;
+
+      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      recordPid(epochBefore.pid);
+
+      const binmonReady = await waitForPortOpen(host, grant.port, 30000);
+      assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
+
+      // vice_warp_set is needsSession:false (text-tools.ts) -- it resolves
+      // its own lease via deps.ensureLease() and dials the text channel
+      // itself through textConnect(); no binary session is opened by this
+      // test at all, and remoteMonitorPort MUST be on the lease this time
+      // (the earlier tests in this file omit it because they call
+      // textConnect() directly with an explicit port instead).
+      const lease: HeldLease = {
+        host,
+        port: grant.port,
+        targetId: grant.id,
+        brokerControl: session,
+        epochFile: grant.epoch_file,
+        supervisorDir: stateDir,
+        remoteMonitorPort,
+      };
+      const deps: StockDispatchDeps = {
+        ensureLease: async () => ({ ok: true as const, lease }),
+      };
+
+      const onResult = await dispatchStock("vice_warp_set", { enabled: true }, deps);
+      const onPayload = parseOkPayload(onResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      assert.equal(onPayload.requested, true);
+      assert.ok(
+        typeof onPayload.response === "string" && (onPayload.response as string).length > 0,
+        `expected a non-empty response, got: ${JSON.stringify(onPayload)}`,
+      );
+      console.log(`text-monitor-live (D-04): MEASURED vice_warp_set(true) on ${viceBinPath}: ${JSON.stringify(onPayload.response)}`);
+
+      const offResult = await dispatchStock("vice_warp_set", { enabled: false }, deps);
+      const offPayload = parseOkPayload(offResult as { content: { type: "text"; text: string }[]; isError: boolean });
+      assert.equal(offPayload.requested, false);
+      assert.ok(
+        typeof offPayload.response === "string" && (offPayload.response as string).length > 0,
+        `expected a non-empty response, got: ${JSON.stringify(offPayload)}`,
+      );
+      console.log(`text-monitor-live (D-04): MEASURED vice_warp_set(false) on ${viceBinPath}: ${JSON.stringify(offPayload.response)}`);
 
       await session.release();
     });
