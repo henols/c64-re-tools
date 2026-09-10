@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 32
+open_count: 34
 waived_count: 14
 fixed_count: 9
-total_count: 55
-last_updated: 2026-09-09T15:46:50.380Z
+total_count: 57
+last_updated: 2026-09-10T22:10:09.848Z
 ---
 
 # Broken Windows Ledger
@@ -70,6 +70,8 @@ last_updated: 2026-09-09T15:46:50.380Z
 | 53 | 33 | deviation | .planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/33-12-PLAN.md |  | 33-12 Task 3's first <verify> was not run as written: its whole-file 'grep -a <stem> .planning/STATE.md' is unsatisfiable without deleting v0.7.0 milestone-close records the Deferred Items section explicitly preserves. Substituted the shipped ledger guard's own section-scoped bare-stem-table-cell predicate; docs-deferred-ledger.test.ts + audit-integrity.test.ts green (50/0). | open |  | 2026-09-03T00:41:21.858Z |  |
 | 54 | 40 | deviation | src/mcp/vice/audit-root-args.test.ts | 982 | Pre-existing, orthogonal concurrent-scanner race (four sequential live spawns vs shared mutable src/skills/ tree) intermittently fails full-suite runs; confirmed pre-existing on original code, not caused by 40-05's D-27 fix; see deferred-items.md | open |  | 2026-09-08T11:33:37.828Z |  |
 | 55 | 42 | deviation | src/mcp/vice/text-tools.ts |  | vice_profile_flat cannot produce real profile rows in production: handleProfileFlat dials prof flat alone, but VICE profiler defaults off and needs prof on issued first (MEASURED live, plan 42-09); no handler in this tree issues prof on today | open |  | 2026-09-09T15:46:50.380Z |  |
+| 56 | 45 | deviation | src/skills/routine-queue-walker/scripts/completeness-report.test.mjs |  | Task 3 (tdd=true) implementation predated its test tier -- RED phase not observed, tests confirmed green on first run rather than watched fail first | open |  | 2026-09-10T22:10:09.499Z |  |
+| 57 | 45 | unrun-verify | src/mcp/vice/fixtures/decomp-execution-manifest.json |  | Manifest's own JSON-schema check (9 fixtures, 6 executed/3 not-executed with reasons) was run ad hoc during execution, not committed as a standing automated test | open |  | 2026-09-10T22:10:09.848Z |  |
 
 ````json
 [
@@ -731,6 +733,30 @@ last_updated: 2026-09-09T15:46:50.380Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-09T15:46:50.380Z",
+    "resolved_at": null
+  },
+  {
+    "id": 56,
+    "kind": "deviation",
+    "phase": "45",
+    "file": "src/skills/routine-queue-walker/scripts/completeness-report.test.mjs",
+    "line": null,
+    "description": "Task 3 (tdd=true) implementation predated its test tier -- RED phase not observed, tests confirmed green on first run rather than watched fail first",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T22:10:09.499Z",
+    "resolved_at": null
+  },
+  {
+    "id": 57,
+    "kind": "unrun-verify",
+    "phase": "45",
+    "file": "src/mcp/vice/fixtures/decomp-execution-manifest.json",
+    "line": null,
+    "description": "Manifest's own JSON-schema check (9 fixtures, 6 executed/3 not-executed with reasons) was run ad hoc during execution, not committed as a standing automated test",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T22:10:09.848Z",
     "resolved_at": null
   }
 ]
