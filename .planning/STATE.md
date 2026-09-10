@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 43
 current_phase_name: The Runtime Evidence Layer
 status: executing
-stopped_at: Completed 43-05-PLAN.md
-last_updated: "2026-09-10T10:53:26.064Z"
+stopped_at: Completed 43-06-PLAN.md
+last_updated: "2026-09-10T11:36:16.464Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 43 execution started
-state_head: 8d53cd5d30122a2554a837aa2ba0eb3d713e7b2e
+state_head: fa2a785629647e73349ff7a0b4d6499cb3eb4958
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 48
-  completed_plans: 46
+  completed_plans: 47
   percent: 67
 ---
 
@@ -228,9 +228,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 43 (The Runtime Evidence Layer) — EXECUTING
-Plan: 6 of 7
-Status: Plan 05 complete (evid-ingest.ts's pure transform plus anno_evid_ingest, the MCP write verb carrying one memmapshow reply into anno_evid_exec), plan 06 next
-Last activity: 2026-09-10 — Phase 43 plan 05 complete
+Plan: 7 of 7
+Status: Plan 06 complete (anno_evid_disagreements/anno_evid_runs/anno_evid_reset plus the evid-disagreements CLI verb, rendering the reconciliation join disagreement-first with agreement as a count), plan 07 next
+Last activity: 2026-09-10 — Phase 43 plan 06 complete
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -520,6 +520,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 43 P03 | 30min | 3 tasks | 11 files |
 | Phase 43 P04 | 55 min | 3 tasks | 4 files |
 | Phase 43 P05 | 40 min | 3 tasks | 7 files |
+| Phase 43 P06 | ~3h | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -1170,6 +1171,8 @@ Recent decisions affecting current work:
 - [Phase 43]: vice_memmap_zap ships as a stock-only tool that dials memmapzap then memmapshow so its answer proves the clear via an observable post-zap count. Live testing against genuine stock VICE 3.9 found that a memmapshow dialed immediately after memmapzap, in the same locked session with the CPU halted throughout, always returns a header with zero data lines (parseAccessMap's own no-data-lines refusal) -- handleMemmapZap treats this one code, in this one handler only, as a confirmed-empty map rather than a refusal, since the two-dial sequence structurally rules out the ambiguity that refusal exists to guard against for an arbitrary caller (handleMemmapShow is unaffected).
 - [Phase 43]: 43-04: reconcileObservedExecution() joins the byte-derived block table against anno_evid_exec, disagreements first, agreement as a count only, denominator on every count (EVID-03/EVID-04).
 - [Phase 43]: Phase 43 plan 05: a row is written iff an observed execute bit is true (never from read/write access alone, never from an address's absence); anno_evid_ingest digests argv itself via argvDigest(), accepting no caller-supplied digest.
+- [Phase 43]: anno_evid_disagreements takes max_results as OPTIONAL (unlike every other list-returning anno_* verb's required-with-no-default convention) because an empty or small disagreement report is the ordinary, sound case. — A dedicated assertOptionalMaxResults sits beside assertMaxResults rather than loosening the shared rule for every other verb.
+- [Phase 43]: The evid-disagreements CLI verb doc was placed in its OWN new section in tool-selection.md, not appended to the existing export-asm row, because that row's own withdrawn/returned phrasing shares a blank-line paragraph with anything appended, which falsely trips the withdrawal-status guard for an unrelated verb. — Discovered live when anno-verb-coverage.test.ts reported evid-disagreements as documented withdrawn; fixed by moving the mention to its own paragraph.
 
 ### Pending Todos
 
@@ -2188,8 +2191,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-10T10:53:24.519Z
-Stopped at: Completed 43-05-PLAN.md
+Last session: 2026-09-10T11:36:15.500Z
+Stopped at: Completed 43-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)

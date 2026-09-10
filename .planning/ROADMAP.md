@@ -1158,7 +1158,7 @@ the frame-exact reproducibility its rows are keyed on.
   4. **The layer cannot state, imply, or render `data` on the strength of absence.** An address observed executing **is** code; an address never touched proves nothing; and a union across runs — however many — never becomes exhaustive. Enforced structurally rather than left to care: the runtime classifier has no `data` branch to return, "no row" and "observed not executing" are distinct facts the schema cannot let collide, and every percentage or summary carries the denominator it is a fraction of. Several individually-plausible implementation choices violate this quietly at different layers, so each gets its own control rather than one blanket assertion.
   5. **A bracket is nameable, resettable and re-measurable without leakage.** Evidence gathered from a run states which bracket it belongs to, and a bracket can be reset and re-measured without a previous run's observations leaking into it — proven against a planted concurrent-reset or relaunch scenario, since a bracket's validity races anything else touching the map, not merely a second sequential run.
 
-**Plans**: 5/7 plans executed
+**Plans**: 6/7 plans executed
 
 Plans:
 **Wave 1**
@@ -1180,7 +1180,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 43-06-PLAN.md — the askable layer: `anno_evid_disagreements`, `anno_evid_runs`, `anno_evid_reset`, the `evid-disagreements` CLI rendering three states distinctly, and the run-identity round-trip contract test
+- [x] 43-06-PLAN.md — the askable layer: `anno_evid_disagreements`, `anno_evid_runs`, `anno_evid_reset`, the `evid-disagreements` CLI rendering three states distinctly, and the run-identity round-trip contract test
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -1356,7 +1356,7 @@ in a milestone archive.
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
-| 43. The Runtime Evidence Layer | v0.9.0 | 5/7 | In Progress | - |
+| 43. The Runtime Evidence Layer | v0.9.0 | 6/7 | In Progress | - |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
