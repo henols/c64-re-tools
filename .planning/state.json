@@ -226,7 +226,7 @@
     {
       "number": "42",
       "name": "The Text-Format Parsers and Their Two-Binary Fixtures",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "43",
@@ -241,8 +241,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 43)",
-    "reason": "Phase 43 of 6 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 43 of 6 · 67% · executing"
   },
-  "updated_at": "2026-09-09T22:22:12.419Z"
+  "updated_at": "2026-09-10T06:11:51.003Z"
 }
