@@ -1370,7 +1370,7 @@ in a milestone archive.
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
-| 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
+| 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
