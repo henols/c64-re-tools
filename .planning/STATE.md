@@ -4,16 +4,16 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 43
 current_phase_name: The Runtime Evidence Layer
-status: planning
-stopped_at: Phase 42 complete, ready to plan Phase 43
-last_updated: "2026-09-09T22:22:12.353Z"
+status: executing
+stopped_at: Phase 43 planned (7 plans, 6 waves), ready to execute
+last_updated: "2026-09-10T06:11:50.917Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 42 complete, transitioned to Phase 43
-state_head: 50ab56ffc09ec56cd7cbf3ae4f481cc6df43ec59
+last_activity_desc: Phase 43 planned — 7 plans in 6 waves
+state_head: 68ad30423d8b480621c8fb6d6d40b09d5674d0ea
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 41
+  total_plans: 48
   completed_plans: 41
   percent: 67
 ---
@@ -227,10 +227,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 43 — The Runtime Evidence Layer
+Phase: 43 (The Runtime Evidence Layer) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-10 — Phase 42 complete, transitioned to Phase 43
+Status: Ready to execute
+Last activity: 2026-09-10 — Phase 43 planned (7 plans, 6 waves)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came

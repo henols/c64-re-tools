@@ -1161,12 +1161,29 @@ the frame-exact reproducibility its rows are keyed on.
 **Plans**: 7 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 43-01-PLAN.md — EVID-06's committed-before-measurement A/B: `memmapzap` onto the shipped text allowlist, the instrumentation-perturbation measurement at two anchor depths with its control-of-the-control, and the verdict plus the run-identity decision it selects
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 43-02-PLAN.md — the schema decision and the durable home: a blocking checkpoint on migration-arm versus re-affirmed refusal, `SCHEMA_VERSION` 4 with its dated factual basis, the `anno_evid_exec` table in the single `DDL`, and durability across a real process death
 - [ ] 43-03-PLAN.md — `vice_memmap_zap`, the emulator-side half of a bracket reset, registered across the six stock surfaces and proven live by a strictly lower post-zap recorded-access count
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 43-04-PLAN.md — `evid-reconcile.ts`, the pure disagreement-first join: four separately-named buckets, an explicit denominator, no rate anywhere, and the classifier independence proven through a substituted vocabulary
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 43-05-PLAN.md — `evid-ingest.ts` and `anno_evid_ingest`: one `memmapshow` reply becomes durable rows, a row only for an observed execute bit, and run identity derived by the shipped digest at one site
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 43-06-PLAN.md — the askable layer: `anno_evid_disagreements`, `anno_evid_runs`, `anno_evid_reset`, the `evid-disagreements` CLI rendering three states distinctly, and the run-identity round-trip contract test
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 43-07-PLAN.md — the two properties no single verb can prove: one derived key walk refusing a rate and demanding a denominator across every answer, plus the concurrent two-identity SIGKILL planting
 
 Notes:
