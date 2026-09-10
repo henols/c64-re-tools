@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v0.9.0 — The Text Channel and the Runtime Evidence Layer",
+  "milestone": "v1.0.0",
   "phases": [
     {
       "number": "1",
@@ -240,9 +240,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd:discuss-phase",
+    "label": "Discuss the first phase",
+    "reason": "Project initialized — plan your first phase"
   },
-  "updated_at": "2026-09-10T17:07:56.062Z"
+  "updated_at": "2026-09-10T17:57:37.112Z"
 }
