@@ -1,7 +1,7 @@
 ---
 phase: 44-proof-04-the-independent-external-check
 verified: 2026-09-10T00:00:00Z
-status: human_needed
+status: passed
 score: 3/3 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -16,7 +16,7 @@ human_verification:
 **Phase Goal:** `PROOF-01` gains the independent external check it shipped without. Its false-positive count becomes computable for the first time, on real cracked code, using observed execution as the oracle — closing the reversal condition stated verbatim at the v0.8.0 open ("a binary-monitor-reachable execution oracle, or a decision to open the text channel") by the second branch, deliberately and on the record.
 
 **Verified:** 2026-09-10
-**Status:** human_needed
+**Status:** passed (human verification signed off 2026-09-10 — 44-UAT.md test 1)
 
 ## Goal Achievement
 
