@@ -556,7 +556,7 @@ already deferred to Future Requirements and needs no phase at all.
 - [x] **Phase 41: The Text Channel, Its Serialization Authority, and the Contention Verdict** - A tool call reaches the text monitor with responses framed by the prompt rather than by a timeout, every halt-taking operation on either channel passes through the serialization shape Phase 39 selected, and a contended instance is reported as contended rather than recycled (completed 2026-09-09)
 - [x] **Phase 42: The Text-Format Parsers and Their Two-Binary Fixtures** - Five human-formatted text outputs become structured data behind one owning module each, with `memmapshow`'s execute bit preserved as its own bit — and a drifted format failing loudly instead of returning an inverted answer (completed 2026-09-10)
 - [x] **Phase 43: The Runtime Evidence Layer** - Observed execution becomes durable, run-keyed, monotonically accumulating store state joined against the byte-derived block table disagreement-first, opening on a committed-before-measurement A/B that says whether instrumenting a run destroys the reproducibility its rows are keyed on (completed 2026-09-10)
-- [ ] **Phase 44: PROOF-04 — The Independent External Check** - `PROOF-01`'s false-positive count computed for the first time, using observed execution as the independent oracle it shipped without, closing a reversal condition stated verbatim at the v0.8.0 open
+- [x] **Phase 44: PROOF-04 — The Independent External Check** - `PROOF-01`'s false-positive count computed for the first time, using observed execution as the independent oracle it shipped without, closing a reversal condition stated verbatim at the v0.8.0 open (completed 2026-09-10)
 
 **Phase details, the dependency edges, the per-verdict branches and the
 sequencing rationale** are in the two v0.9.0 sections further below, placed after
@@ -1370,7 +1370,7 @@ in a milestone archive.
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
-| 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | In Progress | - |
+| 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

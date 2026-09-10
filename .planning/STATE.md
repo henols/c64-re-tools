@@ -4,18 +4,18 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 44
 current_phase_name: PROOF-04 — The Independent External Check
-status: verifying
-stopped_at: Completed 44-03-PLAN.md
-last_updated: "2026-09-10T16:01:46.242Z"
+status: completed
+stopped_at: Phase 44 complete — all phases complete
+last_updated: "2026-09-10T16:30:44.024Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 44 execution started
-state_head: 2d9f89b3a060806ebaef0e0cc7c9e6391667b6e8
+last_activity_desc: Phase 44 complete
+state_head: 4e8e6277ae0fddcbeeb00cfa709cc7079fc820a5
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 51
   completed_plans: 51
-  percent: 83
+  percent: 100
 ---
 
 # Project State
@@ -227,10 +227,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 44 (PROOF-04 — The Independent External Check) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-09-10 — Phase 44 execution started
+Phase: 44 (PROOF-04 — The Independent External Check)
+Plan: 3 of 3 (complete)
+Status: All phases complete
+Last activity: 2026-09-10 — Phase 44 complete
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -256,7 +256,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 
 **Velocity:**
 
-- Total plans completed: 368
+- Total plans completed: 371
 - Average duration: —
 - Total execution time: —
 
@@ -302,6 +302,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | 41 | 6 | - | - |
 | 42 | 16 | - | - |
 | 43 | 7 | - | - |
+| 44 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -2202,7 +2203,7 @@ evidence files.
 ## Session Continuity
 
 Last session: 2026-09-10T16:01:45.223Z
-Stopped at: Completed 44-03-PLAN.md
+Stopped at: Phase 44 complete — all phases complete
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
