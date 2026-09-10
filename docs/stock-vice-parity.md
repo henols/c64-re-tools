@@ -516,6 +516,32 @@ Present in the binary monitor, absent from today's tool surface — genuine upsi
    (e.g., auto-detect CPU-history support).
 8. **No-side-effect memory reads** — `MEM_GET` can read I/O without triggering side
    effects; cleaner introspection than a naive peek.
+9. **The memory-access map, shown and now zappable (`memmapshow`/`memmapzap`,
+   text-monitor commands over `-remotemonitor`).** `vice_memmap_show`
+   (Phase 42, PARSE-01) reads VICE's accumulated per-address IO/ROM/RAM
+   access map, execute recorded as its own bit distinct from read/write.
+   `vice_memmap_zap` (plan 43-03, EVID-05) adds the other half: it clears
+   that accumulated map so a runtime-evidence measurement bracket can start
+   from nothing, rather than inheriting whatever `memmapshow` accumulated
+   since the instance booted. The tool takes no arguments and dials TWO
+   commands, not one: `memmapzap` alone returns a bare acknowledgement, not
+   evidence anything was cleared, so the handler dials `memmapshow`
+   immediately afterward and answers with the post-zap
+   `addressesWithRecordedAccess`/`addressesQueried` figures — an observable
+   post-condition, never a trust-me acknowledgement. The build-capability
+   verdict for a build without `FEATURE_CPUMEMHISTORY` is deliberately
+   **borrowed** from classifying that `memmapshow` reply rather than
+   inventing a fresh claim about `memmapzap`'s own disabled-build behavior:
+   `text-capability-probe.ts`'s `CPUHISTORY_GATED_COMMANDS` set holds only
+   `memmapshow` and `chis`, whose disabled-stub text is source-traced
+   against VICE's own C source; whether a disabled build prints that same
+   stub for `memmapzap` itself is NOT known from anything this project has
+   read, so `memmapzap` is intentionally left out of that set rather than
+   asserting an unverified claim. This is an accepted limit, not a silence:
+   on such a build the tool still refuses by capability name with its
+   remedy, because the `memmapshow` dial immediately behind it is the one
+   whose refusal is source-traced — it simply does not claim to have
+   independently verified `memmapzap`'s own stub text.
 
 ## C. What the VICE MCP does *more than raw stock* (the value-add to port)
 
