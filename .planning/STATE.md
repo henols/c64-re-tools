@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 43
 current_phase_name: The Runtime Evidence Layer
 status: executing
-stopped_at: Completed 43-03-PLAN.md
-last_updated: "2026-09-10T09:51:56.270Z"
+stopped_at: Completed 43-04-PLAN.md
+last_updated: "2026-09-10T10:14:46.184Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 43 execution started
-state_head: 656a1fedadc7010ee9fc56333b45b95a10f4cf5e
+state_head: 64ac7769f96a05965a2404fe16373e78d268ad46
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 48
-  completed_plans: 44
+  completed_plans: 45
   percent: 67
 ---
 
@@ -228,9 +228,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 43 (The Runtime Evidence Layer) — EXECUTING
-Plan: 4 of 7
-Status: Plan 03 complete (vice_memmap_zap, live-verified against genuine stock VICE 3.9), plan 04 next
-Last activity: 2026-09-10 — Phase 43 plan 03 complete
+Plan: 5 of 7
+Status: Plan 04 complete (evid-reconcile.ts's reconcileObservedExecution(), disagreement-first join with EVID-03/EVID-04 structural soundness), plan 05 next
+Last activity: 2026-09-10 — Phase 43 plan 04 complete
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -518,6 +518,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 43 P01 | 55min | 3 tasks | 5 files |
 | Phase 43 P02 | 50min | 3 tasks | 7 files |
 | Phase 43 P03 | 30min | 3 tasks | 11 files |
+| Phase 43 P04 | 55 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1166,6 +1167,7 @@ Recent decisions affecting current work:
 - [Phase 43]: EVID-02: reaffirm-refusal -- a version-3 .annostore does not open under SCHEMA_VERSION 4; no migration arm written. Decided from a dated four-part factual check (filesystem search, git history, release-tag dates, one-machine scope) transcribed into anno-types.ts's SCHEMA_VERSION doc comment.
 - [Phase 43]: EVID-01 evidence table anno_evid_exec keyed by the no-change run-identity composite (image_sha256, argv_digest, seed), no run_class column, per plan 43-01's live A/B verdict.
 - [Phase 43]: vice_memmap_zap ships as a stock-only tool that dials memmapzap then memmapshow so its answer proves the clear via an observable post-zap count. Live testing against genuine stock VICE 3.9 found that a memmapshow dialed immediately after memmapzap, in the same locked session with the CPU halted throughout, always returns a header with zero data lines (parseAccessMap's own no-data-lines refusal) -- handleMemmapZap treats this one code, in this one handler only, as a confirmed-empty map rather than a refusal, since the two-dial sequence structurally rules out the ambiguity that refusal exists to guard against for an arbitrary caller (handleMemmapShow is unaffected).
+- [Phase 43]: 43-04: reconcileObservedExecution() joins the byte-derived block table against anno_evid_exec, disagreements first, agreement as a count only, denominator on every count (EVID-03/EVID-04).
 
 ### Pending Todos
 
@@ -2184,8 +2186,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-10T09:51:55.260Z
-Stopped at: Completed 43-03-PLAN.md
+Last session: 2026-09-10T10:14:45.376Z
+Stopped at: Completed 43-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)
