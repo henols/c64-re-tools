@@ -257,6 +257,30 @@ Anything the per-measure findings list names belongs in Phase 4's leftovers
 table, by address. A finding is a named defect in one named measure — it is
 never a rating, and there is no number to report as "the coverage".
 
+### The decomposition-completeness gate (phase 45)
+
+This is a DIFFERENT, non-overlapping measurement from the `anno coverage`
+call above — neither replaces the other. Where `anno coverage` is a
+derived-from-bytes census this store's own block table cannot move, the
+decomposition-completeness gate answers Phase 45's own closure bar: whether
+this fixture's byte-derived block classification and its own real,
+observed-execution evidence agree, with the disagreement query itself a
+required, non-defaultable input rather than an optional cross-check.
+
+```
+node src/mcp/vice/vice-proxy.ts anno decomp-completeness --store <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
+```
+
+All three arguments are REQUIRED, and none is derived from another: `--store`
+names the annotation store; `--disagreements` names the JSON `anno
+evid-disagreements --store <same store> --json` wrote for THIS store's own
+run; `--manifest` names the committed execution manifest recording which of
+the nine fixtures were actually run under Phase 33's reproducible-run
+protocol, and which were declared not-executed and why. Omitting any of the
+three refuses by name rather than rendering an empty-disagreement report —
+"the query was never run" and "the query found nothing" must never read the
+same.
+
 ## When something fails
 
 - A failed call is not a reason to drop a queue entry. Log the address, the

@@ -77,10 +77,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import-lbl"];
 
 /** The verbs the CLI really dispatches. Same reasoning, opposite polarity.
- * Grew from two to three on 2026-08-31 with `export-asm`, and from three to
+ * Grew from two to three on 2026-08-31 with `export-asm`, from three to
  * four by phase 43 plan 43-06 with `evid-disagreements` -- the CLI route for
- * EVID-03's disagreement query. */
-const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm", "evid-disagreements"];
+ * EVID-03's disagreement query -- and from four to five by phase 45 plan
+ * 45-01 with `decomp-completeness` (D-07). */
+const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm", "evid-disagreements", "decomp-completeness"];
 
 /** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
  * missing or placeholder key by name, so any test that renders for real needs
@@ -773,7 +774,7 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 4, `expected exactly 4 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 5, `expected exactly 5 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
@@ -1955,10 +1956,13 @@ test("evid-disagreements: --help documents exactly --store and --json, and names
   assert.match(helpResult.stdout, /^ {2}evid-disagreements --store FILE \[--json\]$/m);
 });
 
-test("evid-disagreements: the unknown-verb refusal now names FOUR verbs, not three", async () => {
+test("decomp-completeness: the unknown-verb refusal now names FIVE verbs, not four", async () => {
   const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["not-a-real-verb"]));
   assert.notEqual(code, 0);
-  assert.match(stderr, /this CLI has exactly four: render-memmap, coverage, export-asm and evid-disagreements/);
+  assert.match(
+    stderr,
+    /this CLI has exactly five: render-memmap, coverage, export-asm, evid-disagreements and decomp-completeness/,
+  );
 });
 
 test(

@@ -8,12 +8,18 @@
 // consuming project for some other filesystem-path-resolving design to find.
 //
 // ---------------------------------------------------------------------------
-// FOUR VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29; third verb landed
-// 2026-08-31; fourth verb, `evid-disagreements`, landed by phase 43 plan
-// 43-06 -- the CLI route for EVID-03's disagreement query, so a planted test
-// has three RENDERED, textually-distinguishable states to compare rather
-// than only the MCP tool's JSON, which a test can only inspect
-// structurally).
+// FIVE VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29 -- FOUR at the
+// time; third verb landed 2026-08-31; fourth verb, `evid-disagreements`,
+// landed by phase 43 plan 43-06 -- the CLI route for EVID-03's disagreement
+// query, so a planted test has three RENDERED, textually-distinguishable
+// states to compare rather than only the MCP tool's JSON, which a test can
+// only inspect structurally; fifth verb, `decomp-completeness`, landed by
+// phase 45 plan 45-01 -- the CLI route for the decomposition-completeness
+// report's ONLY data path into a real store (D-07). D-14's original
+// "FOUR VERBS. THAT IS THE WHOLE SURFACE" framing is DELIBERATELY
+// SUPERSEDED by D-07, exactly as plan 43-06 (three -> four) already
+// superseded it once before -- this is the second raise over the same
+// decision, not a silent reopening of it).
 // ---------------------------------------------------------------------------
 // This file used to carry eight. Six were removed in one commit because they
 // were delivery paths for the retired external analyser this project used to
@@ -133,12 +139,12 @@ import type { ExportAsmResult } from "./anno-export-asm.ts";
 // and never reads a store, a file or a tool on its own behalf -- a caller
 // fetches and hands the data in, which is exactly what makes the store
 // re-point below a CALLER-side change and nothing more.
-import { buildCoverageReport, coverageFindings, loadProjectImage } from "./anno-coverage.ts";
+import { buildCoverageReport, coverageFindings, loadProjectImage, AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 import type { CoverageReport, LoadedProject, AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
 import type { BlockEntry } from "./block-class.ts";
-import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations } from "./anno-store.ts";
+import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations, listObservedRuns } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 // The disagreement query's own pure join (EVID-03/EVID-04, plan 43-06). This
 // is the SAME reconcileObservedExecution() the anno_evid_disagreements MCP
@@ -271,6 +277,39 @@ verbs:
       Requires an EXISTING annotation store; creates none and writes
       nothing.
 
+  decomp-completeness --store FILE --disagreements FILE --manifest FILE [--json]
+      Phase 45's decomposition-closure completeness answer for ONE
+      per-fixture store (D-07). Three REQUIRED arguments, none defaulted from
+      another: --store names the annotation store; --disagreements names the
+      JSON "anno evid-disagreements --store <same store> --json" wrote for
+      THIS store's own run; --manifest names the execution manifest (D-13)
+      recording which committed fixtures were actually run. Omitting ANY of
+      the three refuses BY NAME with exit 1 -- there is no default and no
+      empty-array substitute for a missing disagreement input, because an
+      omitted query and a query that found nothing must never render the
+      same report (D-09 mechanism 1).
+      The supplied --disagreements document is refused, by name, when it is
+      missing any EvidReconciliation field, and when its own recorded
+      runIdentity (image_sha256/argv_digest/seed) matches no row in the
+      SAME store's own evid-runs table -- a fabricated or foreign empty
+      document is refused, never rendered as "no disagreements" (RESEARCH.md
+      Pitfall 9, anti-vacuity). The supplied --manifest is refused, by name,
+      when it does not list the fixture this store belongs to -- an unlisted
+      fixture is never defaulted to "executed".
+      Reports the store's byte census (per data type, with an explicit
+      denominator and an undefined-byte count that must read zero), the
+      survivor search (auto-named labels still sitting in a code region,
+      matched by the SAME frozen prefix set routine-queue-walker's own
+      candidate queue uses), the fixture's own execution disposition read
+      from --manifest (a NOT EXECUTED fixture renders that fact by name,
+      never a clean bill of health), and the disagreement input verbatim.
+      Never prints a percentage, rate or combined figure (D-05's own rule,
+      applied here too). --json prints the raw JSON answer instead of the
+      rendered report.
+      Requires an EXISTING annotation store, an EXISTING --disagreements
+      document and an EXISTING --manifest file; creates none and writes
+      nothing.
+
 Every verb requires inputs that already exist. None creates a project, a
 store or a sidecar, and none derives one path from another -- this CLI
 never guesses (D-02).
@@ -306,6 +345,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   coverage: ["--store", "--out", "--force", "--sample"],
   "export-asm": ["--store", "--out", "--force"],
   "evid-disagreements": ["--store", "--json"],
+  "decomp-completeness": ["--store", "--disagreements", "--manifest", "--json"],
 });
 
 /**
@@ -1568,10 +1608,25 @@ async function cmdEvidDisagreements(rest: string[]): Promise<number> {
     return 1;
   }
   let reconciliation: EvidReconciliation;
+  // Rule 2 (missing critical functionality), phase 45 plan 45-01: `runIdentity`
+  // is NOT an `EvidReconciliation` field -- it rides alongside the spread
+  // reconciliation in the JSON envelope, exactly like `store` already does.
+  // Added so `decomp-completeness` (D-09 mechanism 1/2) has a run identity to
+  // validate this document against the SAME store's own `anno_evid_runs`
+  // table, rather than accepting a fabricated or foreign empty document as
+  // this run's own answer. `null` when the store holds zero or more than one
+  // distinct run identity -- an ambiguous "which run" is refused by the
+  // consuming verb, never guessed here.
+  let runIdentity: { imageSha256: string; argvDigest: string; seed: string } | null = null;
   try {
     const blocks = blocksFromStore(listRanges(handle));
     const observations = listExecObservations(handle);
     reconciliation = reconcileObservedExecution({ blocks, observations });
+    const { runs } = listObservedRuns(handle);
+    if (runs.length === 1) {
+      const run = runs[0]!;
+      runIdentity = { imageSha256: run.imageSha256, argvDigest: run.argvDigest, seed: run.seed };
+    }
   } catch (err) {
     console.error(`evid-disagreements: ${errMsg(err)}`);
     return 1;
@@ -1580,11 +1635,458 @@ async function cmdEvidDisagreements(rest: string[]): Promise<number> {
   }
 
   if (json) {
-    console.log(JSON.stringify({ store: storePath, ...reconciliation }, null, 2));
+    console.log(JSON.stringify({ store: storePath, runIdentity, ...reconciliation }, null, 2));
     return 0;
   }
   printEvidDisagreementsReport(storePath, reconciliation);
   return 0;
+}
+
+// ---------------------------------------------------------------------------
+// decomp-completeness (D-07, phase 45 plan 45-01) -- the fifth verb.
+// ---------------------------------------------------------------------------
+
+/**
+ * The frozen survivor prefix set (phase 45 plan 45-01 task 2), measured
+ * against a real dxa+Ghidra-derived store rather than against roadmap prose
+ * alone -- see docs/phase45-wave0-measurements.md for the MEASURED label
+ * population (zero labels; derivation writes typed ranges and xrefs, never
+ * names) and the reasoning this set was frozen against. `AUTO_NAME_PREFIX_RE`
+ * (imported from anno-coverage.ts, NEVER restated as a second literal here --
+ * a census over this file for any of its own eleven prefix strings returns
+ * zero, proving that) covers the eleven upstream-analyser-shaped
+ * prefixes; this file adds three defensive, ANCHORED, case-sensitive cases no
+ * import route writes today, kept here in case a future one ever carries a
+ * raw dxa or Ghidra name through unrenamed: `l_XXXX` (an underscored form no
+ * current tool emits), `FUN_XXXX`/`LAB_XXXX` (Ghidra's own default naming),
+ * and `lXXX`/`lXXXX` (dxa's own real, no-underscore listing convention,
+ * `dxa-listing.test.ts:52`). Anchored at both ends, unlike
+ * `AUTO_NAME_PREFIX_RE`'s prefix-only match, because these three shapes are
+ * short enough that an unanchored match would false-fire on a legitimate
+ * longer authored name that merely starts the same way.
+ */
+const SURVIVOR_EXTRA_RE = /^(?:l_[0-9a-f]{4}|(?:FUN|LAB)_[0-9a-f]{4}|l[0-9a-f]{3,4})$/;
+
+/** True iff `name` is a survivor under the frozen set above. ASCII
+ * case-sensitive throughout -- `l_0810` IS a survivor, `L_0810` is NOT
+ * (anno-coverage.test.ts's own `L_` exclusion precedent, restated for this
+ * phase's own prefix set rather than reused blindly, since `L_` was never
+ * one of `AUTO_NAME_PREFIX_RE`'s eleven prefixes to begin with). */
+function isSurvivorLabelName(name: string): boolean {
+  return AUTO_NAME_PREFIX_RE.test(name) || SURVIVOR_EXTRA_RE.test(name);
+}
+
+/** One row of the manifest `anno decomp-completeness --manifest FILE` reads
+ * (D-13). `path` is relative to `src/mcp/vice/fixtures`; `reason` is
+ * required (non-empty) when `execution` is `"not-executed"` and `null`
+ * otherwise. */
+interface DecompExecutionManifestEntry {
+  path: string;
+  execution: "executed" | "not-executed";
+  reason: string | null;
+  ghidraRoute: "flat64k" | "prg";
+}
+
+interface DecompExecutionManifest {
+  fixtures: DecompExecutionManifestEntry[];
+}
+
+/** Strips a trailing recognised extension and any leading directory
+ * segments, so `dxa/tracer.prg` and `tracer.annostore` both reduce to the
+ * bare stem `tracer` -- the ONE fixture-identity comparison this verb makes.
+ * Never a full-path comparison: the manifest's paths are fixtures-relative,
+ * the store's own path is caller-supplied and workspace-relative, and the
+ * two coordinate systems only ever agree on the bare stem. */
+function fixtureStem(path: string): string {
+  const base = basename(path);
+  return base.replace(/\.[^./]+$/, "");
+}
+
+/** The subset of `EvidReconciliation` (verbatim field names, never renamed --
+ * D-10) that a `--disagreements` document must carry for
+ * `decomp-completeness` to accept it as real, plus the `runIdentity` this
+ * verb (via `cmdEvidDisagreements`'s own `--json` branch) adds alongside it.
+ * `disagreementInput` in the `--json` answer below is exactly this shape. */
+interface DecompDisagreementInput extends EvidReconciliation {
+  runIdentity: { imageSha256: string; argvDigest: string; seed: string };
+}
+
+const EVID_RECONCILIATION_FIELDS = [
+  "disagreements",
+  "disagreementCount",
+  "agreementCount",
+  "blockCoveredNeverObservedCount",
+  "observedOutsideAnyBlockCount",
+  "observedAtUndefinedBlockCount",
+  "denominator",
+  "positiveClass",
+  "tier",
+] as const;
+
+/**
+ * Validates a parsed `--disagreements` document has every `EvidReconciliation`
+ * field AND a complete `runIdentity` -- refusing BY NAME, never silently
+ * treating a missing field as an empty answer (D-09 mechanism 2: a required
+ * output-schema field only the real `--disagreements` input can populate).
+ * Returns the validated document (typed as `DecompDisagreementInput`) or a
+ * refusal message string. Never throws.
+ */
+function validateDisagreementDocumentShape(doc: unknown): DecompDisagreementInput | string {
+  if (typeof doc !== "object" || doc === null) {
+    return "decomp-completeness: the --disagreements document is not a JSON object -- refusing to render (D-09)";
+  }
+  const bag = doc as Record<string, unknown>;
+  for (const field of EVID_RECONCILIATION_FIELDS) {
+    if (!(field in bag)) {
+      return (
+        `decomp-completeness: the --disagreements document is missing the "${field}" field -- ` +
+        "this is not a real anno evid-disagreements --json answer, refusing to render (D-09)"
+      );
+    }
+  }
+  const runIdentity = bag.runIdentity;
+  if (
+    typeof runIdentity !== "object" ||
+    runIdentity === null ||
+    typeof (runIdentity as Record<string, unknown>).imageSha256 !== "string" ||
+    typeof (runIdentity as Record<string, unknown>).argvDigest !== "string" ||
+    typeof (runIdentity as Record<string, unknown>).seed !== "string"
+  ) {
+    return (
+      "decomp-completeness: the --disagreements document carries no complete runIdentity " +
+      "(image_sha256/argv_digest/seed) -- an empty or ambiguous-run document is refused rather than " +
+      "rendered as \"no disagreements\" (D-09 mechanism 2, RESEARCH.md Pitfall 9)"
+    );
+  }
+  return doc as DecompDisagreementInput;
+}
+
+interface DecompCompletenessParsedArgs {
+  positional: string[];
+  store?: string;
+  storeMissingValue?: boolean;
+  disagreements?: string;
+  disagreementsMissingValue?: boolean;
+  manifest?: string;
+  manifestMissingValue?: boolean;
+  json?: boolean;
+  unknownOption?: string;
+}
+
+/** Copies `parseEvidDisagreementsArgs()`'s own shape, function for function,
+ * for three required flags instead of one -- same `*MissingValue` refusal,
+ * same unknown-option refusal, same never-silently-swallow-the-next-token
+ * discipline. */
+function parseDecompCompletenessArgs(rest: string[]): DecompCompletenessParsedArgs {
+  const positional: string[] = [];
+  let store: string | undefined;
+  let storeMissingValue = false;
+  let disagreements: string | undefined;
+  let disagreementsMissingValue = false;
+  let manifest: string | undefined;
+  let manifestMissingValue = false;
+  let json = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--store") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) storeMissingValue = true;
+      else {
+        store = value;
+        i++;
+      }
+    } else if (a === "--disagreements") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) disagreementsMissingValue = true;
+      else {
+        disagreements = value;
+        i++;
+      }
+    } else if (a === "--manifest") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) manifestMissingValue = true;
+      else {
+        manifest = value;
+        i++;
+      }
+    } else if (a === "--json") {
+      json = true;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, store, storeMissingValue, disagreements, disagreementsMissingValue, manifest, manifestMissingValue, json, unknownOption };
+}
+
+/**
+ * `decomp-completeness --store FILE --disagreements FILE --manifest FILE
+ * [--json]` -- copies `cmdEvidDisagreements()`'s own shape: parse -> refuse
+ * unknown option -> refuse missing value -> refuse missing required argument
+ * BY NAME -> `storePathWithinWorkspace()` every caller-supplied path -> open
+ * the store `mustExist: true` -> gather -> `--json` branch or rendered
+ * branch. Three required arguments, none defaulted from another (D-09
+ * mechanism 1).
+ */
+async function cmdDecompCompleteness(rest: string[]): Promise<number> {
+  const { store, storeMissingValue, disagreements, disagreementsMissingValue, manifest, manifestMissingValue, json, unknownOption } =
+    parseDecompCompletenessArgs(rest);
+
+  if (unknownOption) {
+    console.error(`decomp-completeness: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (storeMissingValue) {
+    console.error("decomp-completeness: --store requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (disagreementsMissingValue) {
+    console.error("decomp-completeness: --disagreements requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (manifestMissingValue) {
+    console.error("decomp-completeness: --manifest requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (!store) {
+    console.error("decomp-completeness: --store FILE is required -- this verb answers a question about ONE annotation store.\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (!disagreements) {
+    console.error(
+      "decomp-completeness: --disagreements FILE is required -- there is no default and no empty-array " +
+        "substitute; omitting the disagreement input must never render the same report as a real, empty answer (D-09).\n",
+    );
+    console.log(USAGE);
+    return 1;
+  }
+  if (!manifest) {
+    console.error(
+      "decomp-completeness: --manifest FILE is required -- a fixture absent from the manifest is refused, " +
+        "never defaulted to \"executed\" (D-13).\n",
+    );
+    console.log(USAGE);
+    return 1;
+  }
+
+  const workspaceRoot = repoRoot();
+  let storePath: string;
+  let disagreementsPath: string;
+  let manifestPath: string;
+  try {
+    storePath = storePathWithinWorkspace(store, workspaceRoot);
+    disagreementsPath = storePathWithinWorkspace(disagreements, workspaceRoot);
+    manifestPath = storePathWithinWorkspace(manifest, workspaceRoot);
+  } catch (err) {
+    console.error(`decomp-completeness: ${errMsg(err)}`);
+    return 1;
+  }
+
+  if (!existsSync(storePath)) {
+    console.error(
+      `decomp-completeness: annotation store not found: ${storePath} -- refusing to CREATE one, because "the ` +
+        'annotations are gone" and "there are no annotations" must not read the same.',
+    );
+    return 1;
+  }
+  if (!existsSync(disagreementsPath)) {
+    console.error(`decomp-completeness: --disagreements file not found: ${disagreementsPath}`);
+    return 1;
+  }
+  if (!existsSync(manifestPath)) {
+    console.error(`decomp-completeness: --manifest file not found: ${manifestPath}`);
+    return 1;
+  }
+
+  let disagreementDoc: unknown;
+  try {
+    disagreementDoc = JSON.parse(readFileSync(disagreementsPath, "utf8"));
+  } catch (err) {
+    console.error(`decomp-completeness: --disagreements file is not valid JSON: ${errMsg(err)}`);
+    return 1;
+  }
+  const validated = validateDisagreementDocumentShape(disagreementDoc);
+  if (typeof validated === "string") {
+    console.error(validated);
+    return 1;
+  }
+  const disagreementInput = validated;
+
+  let manifestDoc: unknown;
+  try {
+    manifestDoc = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (err) {
+    console.error(`decomp-completeness: --manifest file is not valid JSON: ${errMsg(err)}`);
+    return 1;
+  }
+  if (
+    typeof manifestDoc !== "object" ||
+    manifestDoc === null ||
+    !Array.isArray((manifestDoc as Record<string, unknown>).fixtures)
+  ) {
+    console.error(`decomp-completeness: --manifest file does not carry a top-level "fixtures" array: ${manifestPath}`);
+    return 1;
+  }
+  const manifestFixtures = (manifestDoc as DecompExecutionManifest).fixtures;
+
+  const stem = fixtureStem(storePath);
+  const manifestEntry = manifestFixtures.find((f) => fixtureStem(f.path) === stem);
+  if (!manifestEntry) {
+    console.error(
+      `decomp-completeness: no fixture matching store ${JSON.stringify(basename(storePath))} (stem ${JSON.stringify(stem)}) ` +
+        `is listed in the manifest ${manifestPath} -- an unlisted fixture is refused, never defaulted to "executed" (D-13).`,
+    );
+    return 1;
+  }
+
+  let handle: AnnoStoreHandle;
+  try {
+    handle = openStore(storePath, { workspaceRoot, mustExist: true });
+  } catch (err) {
+    console.error(`decomp-completeness: ${errMsg(err)}`);
+    return 1;
+  }
+
+  let report: {
+    store: string;
+    fixture: string;
+    executionDisposition: "executed" | "not-executed";
+    notExecutedReason: string | null;
+    byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number };
+    survivors: { address: number; name: string }[];
+    disagreementInput: DecompDisagreementInput;
+  };
+  try {
+    const ranges = listRanges(handle);
+    const { runs } = listObservedRuns(handle);
+    const matchesSomeRun = runs.some(
+      (r) =>
+        r.imageSha256 === disagreementInput.runIdentity.imageSha256 &&
+        r.argvDigest === disagreementInput.runIdentity.argvDigest &&
+        r.seed === disagreementInput.runIdentity.seed,
+    );
+    if (!matchesSomeRun) {
+      console.error(
+        `decomp-completeness: the --disagreements document's run identity (image_sha256=${disagreementInput.runIdentity.imageSha256}, ` +
+          `argv_digest=${disagreementInput.runIdentity.argvDigest}, seed=${JSON.stringify(disagreementInput.runIdentity.seed)}) ` +
+          `matches no row in ${storePath}'s own evid-runs table -- a fabricated or foreign document is refused, never rendered.`,
+      );
+      closeStore(handle);
+      return 1;
+    }
+
+    const sortedRanges = [...ranges].sort((a, b) => a.start - b.start);
+    const byType: Record<string, number> = {};
+    let denominator = 0;
+    let undefinedCount = 0;
+    let cursor = sortedRanges.length > 0 ? sortedRanges[0]!.start : 0;
+    for (const r of sortedRanges) {
+      if (r.start > cursor) {
+        const gap = r.start - cursor;
+        undefinedCount += gap;
+        denominator += gap;
+      }
+      const len = r.endInclusive - r.start + 1;
+      byType[r.dataType] = (byType[r.dataType] ?? 0) + len;
+      denominator += len;
+      cursor = Math.max(cursor, r.endInclusive + 1);
+    }
+
+    const labels = listLabels(handle);
+    const survivors = labels
+      .filter((l) => isSurvivorLabelName(l.name) && sortedRanges.some((r) => r.dataType === "code" && l.address >= r.start && l.address <= r.endInclusive))
+      .map((l) => ({ address: l.address, name: l.name }))
+      .sort((a, b) => a.address - b.address);
+
+    report = {
+      store: storePath,
+      fixture: manifestEntry.path,
+      executionDisposition: manifestEntry.execution,
+      notExecutedReason: manifestEntry.execution === "not-executed" ? manifestEntry.reason : null,
+      byteCensus: { byType, undefinedCount, denominator },
+      survivors,
+      disagreementInput,
+    };
+  } catch (err) {
+    console.error(`decomp-completeness: ${errMsg(err)}`);
+    closeStore(handle);
+    return 1;
+  }
+  closeStore(handle);
+
+  if (json) {
+    console.log(JSON.stringify(report, null, 2));
+    return 0;
+  }
+  printDecompCompletenessReport(report);
+  return 0;
+}
+
+/**
+ * Copies `printEvidDisagreementsReport()`'s rendering discipline exactly:
+ * every measure under its own heading, disagreements first, `denominator`
+ * beside every count, an explicit sentence stating what absence does NOT
+ * prove, and never a percentage, rate or combined figure (D-05's own rule,
+ * applied here too). This is the FALLBACK text renderer for a direct CLI
+ * invocation without `--json`; `completeness-report.mjs`'s
+ * `renderCompletenessReport()` is the report the routine-queue-walker skill
+ * actually reads, built from this same verb's `--json` answer.
+ */
+function printDecompCompletenessReport(r: {
+  store: string;
+  fixture: string;
+  executionDisposition: "executed" | "not-executed";
+  notExecutedReason: string | null;
+  byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number };
+  survivors: { address: number; name: string }[];
+  disagreementInput: DecompDisagreementInput;
+}): void {
+  console.log(`decomp-completeness: ${r.store}`);
+  console.log(`  FIXTURE: ${r.fixture}`);
+  if (r.executionDisposition === "not-executed") {
+    console.log(`  NOT EXECUTED: ${r.notExecutedReason ?? "(no reason recorded)"}`);
+  } else {
+    console.log("  EXECUTED: this fixture was run under Phase 33's reproducible-run protocol.");
+  }
+  console.log("");
+  console.log(`  BYTE CENSUS (denominator ${r.byteCensus.denominator})`);
+  for (const [type, count] of Object.entries(r.byteCensus.byType).sort()) {
+    console.log(`    ${type}: ${count} of ${r.byteCensus.denominator}`);
+  }
+  console.log(`    undefined: ${r.byteCensus.undefinedCount} of ${r.byteCensus.denominator}`);
+  console.log("");
+  console.log(`  SURVIVORS (${r.survivors.length})`);
+  if (r.survivors.length === 0) {
+    console.log("    none");
+  } else {
+    for (const s of r.survivors) console.log(`    ${hexAddr(s.address)}  ${s.name}`);
+  }
+  console.log("");
+  console.log(`  DISAGREEMENTS (${r.disagreementInput.disagreementCount} of ${r.disagreementInput.denominator})`);
+  if (r.disagreementInput.disagreements.length === 0) {
+    console.log("    none");
+  } else {
+    for (const d of r.disagreementInput.disagreements) {
+      console.log(`    ${hexAddr(d.address)}  byte-derived=${d.byteDerived}  runtime=${d.runtime}  banks=${d.sourceBanks.join(",")}`);
+    }
+  }
+  console.log(`  AGREEMENT: ${r.disagreementInput.agreementCount} of ${r.disagreementInput.denominator}`);
+  console.log(
+    `  NO OBSERVATION: ${r.disagreementInput.blockCoveredNeverObservedCount} of ${r.disagreementInput.denominator} -- ` +
+      "an address never observed executing proves NOTHING about what it is; absence is not evidence for or against any classification.",
+  );
+  console.log("");
+  console.log(
+    "  Read every figure above against the others, never combined into one -- together they name what this " +
+      "store's block table covers, never what the program actually is.",
+  );
 }
 
 /**
@@ -1633,6 +2135,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         return await cmdExportAsm(rest);
       case "evid-disagreements":
         return await cmdEvidDisagreements(rest);
+      case "decomp-completeness":
+        return await cmdDecompCompleteness(rest);
       default:
         // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
         // `anno:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
@@ -1641,7 +2145,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         // keeps its current name, so no consumer, test or record entry moves
         // with it (see the plan's <wr14_scope_decision>).
         console.error(
-          `anno: unknown verb "${verb}" -- this CLI has exactly four: render-memmap, coverage, export-asm and evid-disagreements\n`,
+          `anno: unknown verb "${verb}" -- this CLI has exactly five: render-memmap, coverage, export-asm, ` +
+            "evid-disagreements and decomp-completeness\n",
         );
         console.log(USAGE);
         return 1;

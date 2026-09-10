@@ -201,6 +201,12 @@ export const REQUIRED_FLAGS = Object.freeze({
   "render-memmap": Object.freeze(["--provenance"]),
   "export-asm": Object.freeze(["--store"]),
   "evid-disagreements": Object.freeze(["--store"]),
+  // decomp-completeness (phase 45 plan 45-01, D-07): all three of --store,
+  // --disagreements and --manifest are required -- `anno-cli.ts`'s own
+  // refusal branches name each in turn ("--store FILE is required", "--
+  // disagreements FILE is required", "--manifest FILE is required"), and
+  // none defaults from another (D-09 mechanism 1).
+  "decomp-completeness": Object.freeze(["--store", "--disagreements", "--manifest"]),
 });
 
 // ---------------------------------------------------------------------------
@@ -286,6 +292,16 @@ export const FLAG_KINDS = Object.freeze({
   }),
   "evid-disagreements": Object.freeze({
     "--store": Object.freeze([".annostore", ".store"]),
+  }),
+  // decomp-completeness (phase 45 plan 45-01): --store is the same annotation
+  // store artefact every other verb's --store names; --disagreements and
+  // --manifest are both JSON documents (the former the `anno
+  // evid-disagreements --json` answer for THIS store, the latter the
+  // committed execution manifest, D-13).
+  "decomp-completeness": Object.freeze({
+    "--store": Object.freeze([".annostore", ".store"]),
+    "--disagreements": Object.freeze([".json"]),
+    "--manifest": Object.freeze([".json"]),
   }),
 });
 

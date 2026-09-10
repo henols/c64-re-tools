@@ -183,6 +183,9 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "export-asm", argument: "--store", kind: "flag" },
   { verb: "export-asm", argument: "--out", kind: "flag" },
   { verb: "evid-disagreements", argument: "--store", kind: "flag" },
+  { verb: "decomp-completeness", argument: "--store", kind: "flag" },
+  { verb: "decomp-completeness", argument: "--disagreements", kind: "flag" },
+  { verb: "decomp-completeness", argument: "--manifest", kind: "flag" },
 ];
 
 /**
@@ -215,6 +218,12 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * same seam in `cmdEvidDisagreements()`; the verb has no positional and no
  * `--out`, so it contributes exactly one to this floor rather than three.
  *
+ * RAISED 10 -> 13 by phase 45 plan 45-01, in the commit that landed
+ * `decomp-completeness`. Its three path arguments (`--store`,
+ * `--disagreements`, `--manifest`) are each confined by the same seam in
+ * `cmdDecompCompleteness()`; the verb has no positional and no `--out`, so
+ * it contributes exactly three to this floor.
+ *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
  * would discard the entire non-vacuity it exists to provide: a truncated or
@@ -222,7 +231,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 10;
+const CLI_PATH_ARGUMENT_FLOOR = 13;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.

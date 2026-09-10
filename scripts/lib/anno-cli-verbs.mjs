@@ -88,8 +88,18 @@
  * against a real store rather than only exposed as an MCP tool). Named in
  * `src/skills/c64-program-recon/references/tool-selection.md` in the same
  * commit, so `verbsMissingFromSkills()` never fires on it.
+ *
+ * RAISED FOUR -> FIVE by phase 45 plan 45-01, in the commit that added
+ * `decomp-completeness` (D-07) -- the fifth verb, and the CLI route through
+ * which the decomposition-completeness report (D-04, a routine-queue-walker
+ * skill script, never an MCP tool) reaches store data. This DELIBERATELY
+ * SUPERSEDES the historical 2026-08-29 four-verb cap this constant's own
+ * header once asserted as the whole surface (D-14) -- exactly the same shape
+ * of raise plan 43-06 already made once (three -> four), not a silent bump.
+ * Named in `src/skills/routine-queue-walker/SKILL.md` in the same commit, so
+ * `verbsMissingFromSkills()` never fires on it.
  */
-export const ANNO_CLI_VERB_FLOOR = 4;
+export const ANNO_CLI_VERB_FLOOR = 5;
 
 /**
  * Strips `//` line comments and `/* ... *\/` block comments from `src`,

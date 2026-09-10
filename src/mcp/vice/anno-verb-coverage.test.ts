@@ -55,8 +55,18 @@ const CI_SCRIPT = join(ROOT, "scripts", "check-skill-tool-coverage.mjs");
  * for EVID-03's disagreement query, named in
  * `src/skills/c64-program-recon/references/tool-selection.md` in the same
  * commit so the positive-control test below stays satisfied.
+ *
+ * RAISED FOUR -> FIVE by phase 45 plan 45-01, together with
+ * `ANNO_CLI_VERB_FLOOR` again: `decomp-completeness` landed as the CLI route
+ * for the decomposition-completeness report's ONLY data path into a real
+ * store (D-07), named in `src/skills/routine-queue-walker/SKILL.md` in the
+ * same commit so the positive-control test below stays satisfied. The
+ * historical 2026-08-29 four-verb cap (D-14) is DELIBERATELY SUPERSEDED by
+ * D-07 -- the same shape of raise this file's own comment history already
+ * made once (three -> four); this is the second raise over that decision,
+ * never a silent reopening of it.
  */
-const REAL_VERBS = ["coverage", "export-asm", "render-memmap", "evid-disagreements"];
+const REAL_VERBS = ["coverage", "export-asm", "render-memmap", "evid-disagreements", "decomp-completeness"];
 
 /**
  * The verbs the COMMENT-HYGIENE synthetic source below carries. Deliberately
@@ -150,7 +160,7 @@ function dummyDispatch(verb) {
 }
 `;
 
-test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 4 known verbs, never 'default'", () => {
+test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 5 known verbs, never 'default'", () => {
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.deepEqual(verbs, [...REAL_VERBS].sort());
@@ -188,7 +198,7 @@ test("comment hygiene: a case hidden in a block comment or a line comment is nev
 });
 
 test("non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it", () => {
-  assert.equal(ANNO_CLI_VERB_FLOOR, 4);
+  assert.equal(ANNO_CLI_VERB_FLOOR, 5);
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.ok(verbs.length >= ANNO_CLI_VERB_FLOOR);

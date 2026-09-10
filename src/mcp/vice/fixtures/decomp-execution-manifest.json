@@ -1,0 +1,59 @@
+{
+  "_note": "Phase 45 plan 45-01 (D-13). The execution subset is named up front, fixed by 45-RESEARCH.md Priority Finding 1 (measured against every committed fixture's own provenance README) and not re-derived here. Every fixture with a genuine entry point gets a live run under Phase 33's reproducible-run protocol; fixtures with nothing meaningful to execute are declared not-executed BY NAME, never silently omitted -- the anti-vacuity guard for DECOMP-01's soundness asymmetry. export-asm/smc.prg's own `jmp $0801` NEVER HALTS -- its run must be bounded by a checkpoint or a cycle count, never by waiting for a natural return.",
+  "fixtures": [
+    {
+      "path": "dxa/tracer.prg",
+      "execution": "executed",
+      "reason": null,
+      "ghidraRoute": "flat64k"
+    },
+    {
+      "path": "dxa/fixture.prg",
+      "execution": "executed",
+      "reason": null,
+      "ghidraRoute": "flat64k"
+    },
+    {
+      "path": "dxa/basic-stub.prg",
+      "execution": "not-executed",
+      "reason": "A 12-byte canonical 10 SYS 2064 BASIC stub followed by 4 arbitrary bytes (aa bb cc dd) explicitly built as unknown-region ground truth, never real code -- running it would SYS 2064 into four garbage bytes with no defined behaviour, and the fixture's own purpose (byte-derived partition ground truth) does not depend on execution.",
+      "ghidraRoute": "prg"
+    },
+    {
+      "path": "ghidra/bank.prg",
+      "execution": "executed",
+      "reason": null,
+      "ghidraRoute": "flat64k"
+    },
+    {
+      "path": "ghidra/bank-path-dependent.prg",
+      "execution": "executed",
+      "reason": null,
+      "ghidraRoute": "flat64k"
+    },
+    {
+      "path": "ghidra/charset-phantom.prg",
+      "execution": "executed",
+      "reason": null,
+      "ghidraRoute": "flat64k"
+    },
+    {
+      "path": "export-asm/smc.prg",
+      "execution": "executed",
+      "reason": null,
+      "ghidraRoute": "prg"
+    },
+    {
+      "path": "petcat/computed-sys.prg",
+      "execution": "not-executed",
+      "reason": "Pure BASIC (10 sys peek(43)+256*peek(44)) with no machine-code payload of its own; the computed SYS target depends on runtime BASIC-pointer state this standalone fixture never establishes meaningfully. Its entire purpose (petcat.decode's computed-vs-literal SYS handover verdict) is about the BASIC tokenization/decode layer, not about running the program.",
+      "ghidraRoute": "prg"
+    },
+    {
+      "path": "petcat/not-basic.prg",
+      "execution": "not-executed",
+      "reason": "64 deterministic non-BASIC bytes ((i*7+3) mod 256), the PREP-04 planted-failure fixture for petcat.decode's non-vacuous control. By construction it is not a program; it exists to make petcat.decode refuse it.",
+      "ghidraRoute": "prg"
+    }
+  ]
+}
