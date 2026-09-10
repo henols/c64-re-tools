@@ -2300,10 +2300,12 @@ function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown): unknown {
  * (never absorbs a drifted reply, T-43-22); on success it writes the WHOLE
  * observation array through ONE `insertExecObservations()` call, so the
  * write is one transaction through the store's single commit site
- * (T-43-26). `observationsWritten` is computed from what is ACTUALLY NEW
- * (queried before the write), not from the size of the array handed in --
- * re-ingesting the identical reply must report `observationsWritten: 0`
- * even though the same-shaped array was passed again.
+ * (T-43-26). `observationsWritten` is `insertExecObservations()`'s own
+ * `insertedCount` (WR-02) -- counted row-by-row INSIDE that same
+ * transaction, never from a separate pre-write read -- not the size of the
+ * array handed in: re-ingesting the identical reply must report
+ * `observationsWritten: 0` even though the same-shaped array was passed
+ * again.
  *
  * `denominator` travels beside every count this answer reports
  * (`addressesQueried`, the parsed map's own projection) -- a bare
@@ -2356,14 +2358,14 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
     };
   }
 
-  const existing = listExecObservations(handle, {
-    imageSha256: ingested.runIdentity.imageSha256,
-    argvDigest: ingested.runIdentity.argvDigest,
-    seed: ingested.runIdentity.seed,
-  });
-  const existingKeys = new Set(existing.map((row) => `${row.address}:${row.sourceBank}`));
-  const observationsWritten = ingested.observations.filter((o) => !existingKeys.has(`${o.address}:${o.sourceBank}`)).length;
-
+  // WR-02: `observationsWritten` is the COUNT `insertExecObservations()`
+  // itself returns, counted row-by-row INSIDE its own `applyWrite`
+  // transaction -- never a `listExecObservations()` read taken before that
+  // transaction opens. A separately-derived pre-read can be overtaken by a
+  // concurrent writer to the same run identity between the read and this
+  // call's own commit, overstating how many rows THIS call actually added;
+  // counting inside the transaction that performs the insert is the one
+  // place this number can be exact.
   const written = insertExecObservations(handle, {
     imageSha256: ingested.runIdentity.imageSha256,
     argvDigest: ingested.runIdentity.argvDigest,
@@ -2376,7 +2378,7 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
     store: handle.path,
     revision: written.revision,
     changed: written.changed,
-    observationsWritten,
+    observationsWritten: written.insertedCount,
     addressesWithRecordedAccess,
     addressesQueried,
     denominator: addressesQueried,

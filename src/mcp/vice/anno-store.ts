@@ -3515,7 +3515,19 @@ function toEvidExecRow(row: RawEvidExecRow): EvidExecRow {
  * states for every other write entry point in this module. `revision` still
  * advances by exactly one on every accepted call, no-op or not, for the same
  * reason.
+ *
+ * `insertedCount` (WR-02) IS COUNTED INSIDE THIS SAME TRANSACTION, never
+ * derived from a separate read taken before `applyWrite` opens it: a caller
+ * that wants "how many of these rows were actually new" must not be handed a
+ * number computed from a `listExecObservations()` snapshot that a concurrent
+ * writer to the SAME run identity could have moved past between that read
+ * and this insert's own commit. Counting the per-row `existing`/insert
+ * branch already taken above is the one place this number can be exact.
  */
+export interface InsertExecObservationsResult extends AnnoWriteResult {
+  insertedCount: number;
+}
+
 export function insertExecObservations(
   handle: AnnoStoreHandle,
   args: {
@@ -3525,7 +3537,7 @@ export function insertExecObservations(
     observations: readonly { address: unknown; sourceBank: unknown }[];
     baseRevision?: number;
   },
-): AnnoWriteResult {
+): InsertExecObservationsResult {
   const imageSha256 = assertRunIdentityDigest(args.imageSha256, "imageSha256");
   const argvDigest = assertRunIdentityDigest(args.argvDigest, "argvDigest");
   const seed = assertRunIdentitySeed(args.seed);
@@ -3545,7 +3557,7 @@ export function insertExecObservations(
   const { revision, result } = applyWrite(
     handle,
     (db) => {
-      let anyInserted = false;
+      let insertedCount = 0;
       for (const obs of parsedObservations) {
         const existing = db
           .prepare("select id from anno_evid_exec where image_sha256 = ? and argv_digest = ? and seed = ? and address = ? and source_bank = ?")
@@ -3558,13 +3570,13 @@ export function insertExecObservations(
           obs.address,
           obs.sourceBank,
         );
-        anyInserted = true;
+        insertedCount++;
       }
-      return anyInserted;
+      return insertedCount;
     },
     { baseRevision: args.baseRevision },
   );
-  return { revision, changed: result };
+  return { revision, changed: result > 0, insertedCount: result };
 }
 
 /** One shape used by `listExecObservations`'s four fixed queries below. */
