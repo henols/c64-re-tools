@@ -200,3 +200,173 @@ test("Behavior 5: structural source assertion -- no filesystem, child-process, n
   assert.equal(/["'](code|Code|data|Byte|Undefined|undefined)["']\s*===\s*\w+\.type/.test(source), false);
   assert.equal(/\w+\.type\s*===\s*["'](code|Code|data|Byte|Undefined|undefined)["']/.test(source), false);
 });
+
+// ============================================================================
+// Task 2 -- the third and fourth buckets, and the denominator that makes
+// them honest
+// ============================================================================
+
+test("Behavior 6: a block covered by no observation at all is entirely blockCoveredNeverObservedCount", () => {
+  const input: EvidReconcileInput = {
+    blocks: [makeBlock(0x1000, 0x100f, "code")],
+    observations: [],
+  };
+  const result = reconcileObservedExecution(input);
+
+  assert.equal(result.blockCoveredNeverObservedCount, 16);
+  assert.equal(result.agreementCount, 0);
+  assert.equal(result.disagreementCount, 0);
+  assert.equal(result.denominator, 16);
+  assert.deepEqual(result.disagreements, []);
+});
+
+test("Behavior 7: an observation outside any block increments observedOutsideAnyBlockCount only", () => {
+  const input: EvidReconcileInput = {
+    blocks: [makeBlock(0x3000, 0x300f, "code")],
+    observations: [makeObservation(0x9000)],
+  };
+  const result = reconcileObservedExecution(input);
+
+  assert.equal(result.observedOutsideAnyBlockCount, 1);
+  assert.deepEqual(result.disagreements, []);
+  assert.equal(result.agreementCount, 0);
+  // The block itself has 16 addresses, none of which received the outside
+  // observation, so it is entirely never-observed -- proving the outside
+  // observation did not leak into the block-covered accounting at all.
+  assert.equal(result.blockCoveredNeverObservedCount, 16);
+});
+
+test("Behavior 8: an observation at an explicitly undefined block increments observedAtUndefinedBlockCount only", () => {
+  const input: EvidReconcileInput = {
+    blocks: [makeBlock(0x6000, 0x6000, "undefined")],
+    observations: [makeObservation(0x6000)],
+  };
+  const result = reconcileObservedExecution(input);
+
+  assert.equal(result.observedAtUndefinedBlockCount, 1);
+  assert.equal(result.disagreementCount, 0);
+  assert.equal(result.agreementCount, 0);
+  assert.equal(result.blockCoveredNeverObservedCount, 0);
+  assert.equal(result.observedOutsideAnyBlockCount, 0);
+});
+
+test("Behavior 9: the block-covered bucket counts sum to denominator, derived from the inputs rather than pinned by hand", () => {
+  const input: EvidReconcileInput = {
+    blocks: [
+      makeBlock(0x4000, 0x4003, "Byte"), // data: 4 addresses, one observed -> 1 disagreement + 3 never-observed
+      makeBlock(0x5000, 0x5003, "code"), // code: 4 addresses, one observed -> 1 agreement + 3 never-observed
+      makeBlock(0x6000, 0x6003, "undefined"), // undefined: 4 addresses, one observed -> 1 undefined-observed + 3 never-observed
+    ],
+    observations: [
+      makeObservation(0x4000),
+      makeObservation(0x5000),
+      makeObservation(0x6000),
+      makeObservation(0x9999), // outside every block -- must NOT enter this identity
+    ],
+  };
+  const result = reconcileObservedExecution(input);
+
+  assert.equal(result.denominator, 12);
+  assert.equal(result.disagreementCount, 1);
+  assert.equal(result.agreementCount, 1);
+  assert.equal(result.observedAtUndefinedBlockCount, 1);
+  assert.equal(result.blockCoveredNeverObservedCount, 9);
+  assert.equal(result.observedOutsideAnyBlockCount, 1);
+
+  // The identity: every block-covered address falls into EXACTLY one of
+  // these four buckets. observedOutsideAnyBlockCount is deliberately NOT a
+  // term here -- it counts addresses the block table does not cover at all,
+  // so it is not a fraction of denominator and must not be added to it.
+  const blockCoveredSum =
+    result.disagreementCount +
+    result.agreementCount +
+    result.blockCoveredNeverObservedCount +
+    result.observedAtUndefinedBlockCount;
+  assert.equal(blockCoveredSum, result.denominator);
+});
+
+test("Behavior 10: an empty blocks array returns denominator 0 without throwing, with every block-covered count 0", () => {
+  const input: EvidReconcileInput = {
+    blocks: [],
+    observations: [makeObservation(0x1234), makeObservation(0x5678)],
+  };
+
+  let reconciled!: EvidReconciliation;
+  assert.doesNotThrow(() => {
+    reconciled = reconcileObservedExecution(input);
+  });
+
+  assert.equal(reconciled.denominator, 0);
+  assert.equal(reconciled.disagreementCount, 0);
+  assert.equal(reconciled.agreementCount, 0);
+  assert.equal(reconciled.blockCoveredNeverObservedCount, 0);
+  assert.equal(reconciled.observedAtUndefinedBlockCount, 0);
+  assert.equal(reconciled.observedOutsideAnyBlockCount, 2);
+  assert.deepEqual(reconciled.disagreements, []);
+});
+
+/** The banned-key vocabulary, named once so it is readable in one place. */
+const BANNED_SUMMARY_VOCABULARY =
+  /overall|combined|aggregate|composite|score|headline|percent|pct|rate|ratio|fraction|exhaustive|complete|totalcoverage|totalclassified/i;
+
+test("Behavior 11: a recursive key walk over the whole result finds no key matching the banned summary vocabulary", () => {
+  const input: EvidReconcileInput = {
+    blocks: [makeBlock(0x7000, 0x7000, "Byte")],
+    observations: [makeObservation(0x7000)],
+  };
+  const result = reconcileObservedExecution(input);
+
+  const seen: string[] = [];
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const v of value) walk(v);
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      seen.push(key);
+      assert.ok(
+        !BANNED_SUMMARY_VOCABULARY.test(key),
+        `result key ${JSON.stringify(key)} reads as an aggregate/rate/coverage figure -- EVID-03/EVID-04 forbid one`,
+      );
+      walk(v);
+    }
+  };
+  walk(result);
+
+  const topLevelKeyCount = Object.keys(result).length;
+  assert.ok(
+    seen.length > topLevelKeyCount,
+    `the key walk visited only ${seen.length} keys (top level alone has ${topLevelKeyCount}) -- it must actually descend into the nested disagreement rows, not stop at the top level`,
+  );
+});
+
+test("Behavior 12: every object carrying a *Count key also carries denominator", () => {
+  const input: EvidReconcileInput = {
+    blocks: [
+      makeBlock(0x4000, 0x4003, "Byte"),
+      makeBlock(0x5000, 0x5003, "code"),
+      makeBlock(0x6000, 0x6003, "undefined"),
+    ],
+    observations: [makeObservation(0x4000), makeObservation(0x5000), makeObservation(0x6000), makeObservation(0x9999)],
+  };
+  const result = reconcileObservedExecution(input);
+
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const v of value) walk(v);
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    const hasCountKey = Object.keys(record).some((key) => key.endsWith("Count"));
+    if (hasCountKey) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(record, "denominator"),
+        `an object carrying a *Count key must also carry denominator, found keys: ${Object.keys(record).join(", ")}`,
+      );
+    }
+    for (const v of Object.values(record)) walk(v);
+  };
+  walk(result);
+});
