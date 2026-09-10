@@ -2,6 +2,155 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v0.9.0 — The Text Channel and the Runtime Evidence Layer
+
+**Shipped:** 2026-09-10 (`override_closeout`)
+**Phases:** 6 (39-44) | **Plans:** 51 | **Tasks:** 123 | **Requirements:** 20/20 in-scope
+
+### What Was Built
+
+A **second monitor channel** to the same running emulator. The `-remotemonitor`
+text port the broker had appended to every stock launch since Phase 3, and that
+nothing had ever dialed, is open end to end — after a pre-committed gate
+answered from live measurement whether a second client could exist at all.
+Both channels pass through one FIFO mutex (`channel-lock.ts`), and a machine
+merely contended between them now reports contention **by name** instead of
+being diagnosed as wedged and recycled.
+
+**Five human-formatted text outputs became structured data**: `memmapshow`,
+`chis`, `bt`, `prof flat` and `io`, each with exactly one owning parser,
+fixtures pinned to the two real VICE binaries they came from, and every closed
+vocabulary refusing by name on drift rather than decoding a plausible-looking
+wrong answer.
+
+**A third independent classifier.** `anno_evid_exec` at `SCHEMA_VERSION` 4
+stores what the emulator was *observed* executing, keyed by run identity,
+monotonically accumulating, joined against the byte-derived block table by a
+query that reports **disagreement first**.
+
+**`PROOF-01`'s named reversal condition, closed** — its false-positive count is
+computable for the first time: 168/45072 at anchor hit 50, 434/45072 at hit
+3000, both recorded beside each other.
+
+Plus two new skills (`c64-petcat`, `c64-disk-access`) on the existing
+`host_tool` seam, and every tool-written path consolidated under one
+`.c64-re-tools/` root.
+
+### What Worked
+
+**Freezing a gate's rules *and* a totality proof before taking any measurement.**
+Phase 39 committed `CHAN-01`'s R1..R15 plus a 3,888-tuple executable proof that
+every input combination maps to exactly one verdict — before any of the seven
+measurements existed. The gate then returned **`go`** on rule `R15`, the first
+`go` any of this project's four gates has produced. Nobody had to argue about
+it, and `could-not-run` was structurally unemittable. This is now three
+consecutive milestones where a pre-committed gate was honoured (`no-go` at
+v0.6.0, `degrade` at v0.8.0, `go` here) — the practice has survived every
+verdict, including the one that cancelled a milestone.
+
+**Measuring the remedy, not merely its availability.** Phase 41 did not settle
+for "`device c:` should reset `default_memspace`". It armed a real drive
+checkpoint over the whole 1541 ROM range, watched main-CPU `ADVANCE_INSTRUCTIONS`
+freeze at a fixed PC, then watched `device c:` restore forward-stepping — on
+genuine stock `/usr/bin/x64sc`. The contamination itself was exercised, not just
+the remedy's reachability.
+
+**Letting a live run surface findings instead of confirming a plan.** Phase 42's
+live run produced two genuine live-only discoveries — a session-boundary
+prompt-doubling transport artifact and a real production gap in
+`vice_profile_flat` — plus a parser-correctness fix. All were recorded honestly
+rather than smoothed over, and the phase took two gap-closure rounds as a
+result.
+
+**Refusing by name, everywhere.** The milestone's most repeated pattern: a
+`CIA1`/`SID` address refused by the chip's own name rather than reported as a
+malformed VIC-II reply; an incomplete decoded-prose object refused as
+`incomplete-decoded-state` rather than cast; a cold profiler reported as
+`profiling-not-started` rather than "could not be parsed". Each replaced a
+plausible-looking wrong answer with a named one.
+
+### What Was Inefficient
+
+**Phase 42 cost 16 plans across two gap-closure rounds** — nearly a third of the
+milestone's total, for four requirements. The parsers themselves were
+straightforward; the cost was in the gap rounds (CR-01, WR-02, G2, G3, G5), most
+of which were quality findings on freshly written code rather than integration
+surprises. A tighter first pass on the refuse-by-name discipline would have
+folded several of them in.
+
+**The same 8 scanner false positives were re-investigated for a third close.**
+Phase 23's evidence *tables* are read as deferred items by `audit-open` and
+cannot be acknowledged by its writer. The v0.8.0 close left an explicit note
+saying a future close should "re-disclose rather than re-investigate" — and this
+close still spent the effort re-deriving the refusal once before trusting the
+note. The note was right; the fix belongs upstream in the scanner.
+
+**Bookkeeping drift needed a dedicated plan, twice.** Plans 40-08 and 40-11
+existed largely to bring `REQUIREMENTS.md` / `ROADMAP.md` / `STATE.md` back into
+agreement with what earlier plans had actually landed, including a
+`19/19`-vs-`20/20` requirement count that was stale in one document for days
+after a mid-milestone scope change. Two owner-directed scope changes
+(`PREP-03` out, `PREP-05` in) landing mid-phase is the underlying cause.
+
+### Patterns Established
+
+- **Freeze the totality proof with the rules.** A gate is only derived rather
+  than judged if every input combination provably maps to exactly one verdict,
+  and that proof is committed before the inputs exist.
+- **One mutex per *machine*, not per channel.** Two independent locks would have
+  let a text command land inside a held binary wait. The single cross-channel
+  lock also caught a real design error at registration time — two new tools had
+  to be `needsSession:false` or they would self-deadlock against it.
+- **A destructive verdict needs a non-destructive sibling before you add a
+  second client.** `wedged` authorises a recycle; contention looks identical on
+  stock's `accepted-then-silent` wire. Shipping the second channel without
+  `CHAN-05` would have made the triage playbook destroy healthy instances.
+- **Absence is a count, never a class.** `RuntimeExecClass` has no `data`
+  member, so "never observed executing" cannot be rendered as evidence of data
+  by any code path. The soundness asymmetry is enforced by the type, not by
+  reviewer care.
+- **Record two measurements beside each other when neither supersedes the
+  other.** Phase 44 published both anchor depths against one identical subject
+  digest rather than picking the more defensible number.
+- **Re-scope a constraint rather than deleting it when it turns out to be
+  narrower than written.** Three `CLAUDE.md` constraints were each literally
+  true but silently scoped to the binary monitor; all three were amended with
+  dated riders naming the channel, not removed.
+
+### Key Lessons
+
+1. **A gate that has returned `no-go`, `degrade` and now `go` is a working
+   instrument, not a formality.** The `go` is the weakest evidence of the three
+   — it is the verdict that lets you proceed — which is exactly why freezing the
+   rules beforehand mattered most here.
+2. **Opening a channel is cheap; making two channels safe is the work.** Phase
+   41's port-dialing was the small part. The mutex, the per-channel holder map,
+   the contention verdict, and deleting the warm floor's speculative
+   pre-launching were the milestone.
+3. **A milestone that adds a new *kind* of fact must state what the fact cannot
+   say.** The runtime evidence layer's value depends entirely on never letting
+   "unobserved" drift into "data" — so that was enforced structurally on day one
+   rather than reviewed for later.
+4. **Owner-directed mid-milestone scope changes need a bookkeeping owner.** Two
+   changes (`PREP-03`, `PREP-05`) produced stale counts in three documents and
+   two remediation plans. The scope change itself was correct both times.
+5. **Five consecutive closes without a milestone audit is now the norm, not a
+   lapse to flag each time** — but v0.7.0's `STORE-03` contradiction has now
+   been carried by *three* milestones, which is the concrete cost the trend was
+   flagged to surface.
+
+### Cost Observations
+
+- Timeline: 5 days (2026-09-06 → 2026-09-10), 360 commits, 401 files changed
+  (+188,417 / −7,702)
+- Plans per phase ranged 3 (Phase 44) to 16 (Phase 42) — the widest spread of
+  any milestone so far
+- Live-emulator measurement appeared in five of six phases, against genuine
+  stock `/usr/bin/x64sc` VICE 3.9
+- **0 new npm dependencies and 0 new external prerequisites** — the text channel
+  is a hand-rolled line protocol over a raw socket; `c1541` and `petcat` resolve
+  as siblings of the already-resolved `x64sc`
+
 ## Milestone: v0.8.0 — Frame-Exact Capture and the Two Engines
 
 **Shipped:** 2026-09-06 (`override_closeout`)
@@ -776,6 +925,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.6.0 | 1 of 4 | 6 of 11 | **Closed incomplete by its own gate** (`no-go`, rule `R1`). First time a pre-committed verdict cancelled the milestone that wrote it — honoured rather than overridden |
 | v0.7.0 | 6 | 80 | First large deletion. Introduced the classification registry as *deletion driver* (never a prefix glob), a checked `ModuleFate`, and non-vacuity thresholds derived from the artifact rather than pinned |
 | v0.8.0 | 6 | 47 | First milestone measured on **real cracked code** rather than a synthetic fixture. Second pre-committed gate honoured (`degrade`, `R6`), this one proven **total** over its 108-tuple input space. Introduced the typed host-tool control op with its ban written as a CI gate, `not-exercised` as a first-class verdict, and proving a carve **by disappearance** |
+| v0.9.0 | 6 | 51 | First **`go`** from a pre-committed gate — the third distinct verdict (`no-go`/`degrade`/`go`) the practice has produced and honoured. First time the project drives one emulator over **two concurrent channels**. Introduced the totality proof frozen alongside the rules, one mutex per *machine* rather than per channel, a non-destructive sibling to a destructive verdict, and absence-as-a-count enforced by the type system |
 
 ### Cumulative Quality
 
@@ -786,6 +936,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.4.0 | **2351** (0 fail, 39 skipped, 5 todo, 24 suites) | 4 carried + `fork-live.test.ts` (the fork's `-mcpserver` HTTP transport exercised live for the first time, 6/6) | `audit-gate.mjs`, `hop-chain-comments` + `comment-phase-pointers` guards, `skill-corpus.mjs`, 18 `wireMcp()` cases — 0 new npm deps |
 | v0.7.0 | 0 failures on `test:automated` (the project's floor; the whole-glob `npm test` still does not terminate unaided — `vice-proxy.test.ts` leaks two LISTEN sockets) | real ACME 0.97 as a byte-diff oracle, hard-failed in CI with `VICE_REQUIRE_ACME=1` | the annotation store on `node:sqlite` — a **built-in** at this project's Node floor; `better-sqlite3` rejected on 11.4 MB/consumer and 8 prebuild targets — 0 new npm deps |
 | v0.8.0 | **2 failures in 1 file** on `test:automated` (`anno-register.test.ts` `:385`/`:479` — the register cites v0.7.0 ids no v0.8.0 requirements document declares; root cause named, unfixed). ~3113 tests. The whole-glob `npm test` still does not terminate unaided | real dxa 0.1.5 and real Ghidra 12.1.3 as live oracles — `ghidra-live.test.ts` and `ghidra-opcode-live.test.ts` are the 11th and 12th manual-only files | a vendored, digest-verified dxa 0.1.5 build and a vendored NMOS 6502 SLEIGH language, both reached over the host-tool seam — Ghidra declared by version rather than vendored (543 MiB) — **0 new npm deps** |
+| v0.9.0 | **3 failures in 2 files** on `test:automated` (`anno-register.test.ts` `:385`/`:479` and `anno-import.test.ts` `:352` — same root cause as v0.8.0, now with `IMP-*`/`AUTO-*` ids joining the `STORE-*`/`MCP-*` ones; still unfixed, still named). 4051 tests, 4033 pass, 10 skipped, 5 todo, 24 suites. **Measured after the close's own `git rm` and ROADMAP collapse**, which reddened nothing — the `requirementsPath()` archive fallback added at v0.7.0 held. Beside the floor sits the intermittent `audit-root-args.test.ts` scratch race (a *second*, orthogonal hazard the v0.8.0 `mkdtemp` fix does not touch) | genuine stock `/usr/bin/x64sc` VICE 3.9 across five of six phases; `text-monitor-live.test.ts` joins the manual-only set with a teardown assertion proven able to go red | the text-monitor line protocol hand-rolled over a raw socket, `channel-lock.ts` (a FIFO async mutex), five zero-import format parsers, and `anno_evid_exec` on the built-in `node:sqlite` — **0 new npm deps, and 0 new external prerequisites** (`c1541`/`petcat` resolve as siblings of `x64sc`) |
 
 | Milestone | Audit verdict | Rounds | Open gaps at close | Deferred at close |
 |-----------|---------------|--------|--------------------|-------------------|
@@ -796,6 +947,21 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.6.0 | not run (gate's findings doc is the audit of record) | — | intent NOT delivered under 3 accepted overrides | — |
 | v0.7.0 | **not run** | — | 0 against its own 28 requirements | 15 newly acknowledged, 21 carried, **8 disclosed as un-acknowledgeable** |
 | v0.8.0 | **not run** | — | 0 against its own 43 requirements; `GATE-01` returned `degrade` (`R6`) | 4 newly acknowledged, 31 carried, **the same 8 disclosed as un-acknowledgeable for the second close running** |
+| v0.9.0 | **not run** | — | 0 against its own 20 in-scope requirements; `CHAN-01` returned **`go`** (`R15`) | 6 newly acknowledged, 33 carried, **the same 8 disclosed as un-acknowledgeable for the third close running** |
+
+**Five consecutive closes without a milestone audit** *(updated at the v0.9.0
+close, 2026-09-10; the paragraphs below are kept as written and extended, not
+rewritten)*. v0.9.0 skipped it too, on the same reasoning as its two
+predecessors — all six phases `verification_status: passed`. Two things are now
+worth separating. **The trend has stopped being a warning and become the
+project's actual practice**: five closes is not a lapse to re-flag each time,
+and the per-phase verifier plus the pre-committed gates have caught what the
+audits used to. **But the one concrete cost the trend was flagged to surface has
+compounded**: `STORE-03`'s row/prose contradiction, routed by Phase 29 to "a
+Phase 28 verification pass or a milestone audit", has now been carried by
+**three** milestones (v0.7.0, v0.8.0, v0.9.0) with neither ever run. That is a
+specific, named, cheap-to-close item that the practice demonstrably does not
+catch — the argument for the audit is now that single item, not the streak.
 
 **Four consecutive closes without a milestone audit** *(updated at the v0.8.0
 close, 2026-09-06; the paragraph below is kept as written and extended, not

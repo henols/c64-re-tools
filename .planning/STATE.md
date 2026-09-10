@@ -22,15 +22,29 @@ current_phase_name: PROOF-04 — The Independent External Check
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-10 after Phase 43)
+See: .planning/PROJECT.md (updated 2026-09-10 at the v0.9.0 close — full
+evolution review)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
 RAM, inspect chip state — and keep working when the emulator misbehaves.
-*Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
-the live drive, so the ONE thing did not move — it acquired a measured floor.*
+*Confirmed still correct at the v0.9.0 close: the milestone widened what "drive"
+means — two concurrent monitor channels to one machine, with contention reported
+by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
 
-**Current focus:** Phase 44 — PROOF-04 — The Independent External Check
+**Current focus:** **Planning the next milestone.** v0.9.0 shipped 2026-09-10;
+`.planning/REQUIREMENTS.md` was removed at the close and a fresh one is created
+by `/gsd-new-milestone`. The presumptive next scope is the **rebuild half**
+(`DECOMP-01`..`04`, `BUILD-01`..`06`, `EQUIV-01`..`04`), whose one stated
+blocker — the runtime-evidence layer sitting upstream of it — v0.9.0 discharged.
+
+---
+
+*Everything below in this section is the v0.9.0 milestone narrative as written
+during execution, kept as the historical record rather than rewritten at the
+close. It is superseded by the paragraph above wherever the two disagree.*
+
+**Superseded — v0.9.0 in-flight focus:** Phase 44 — PROOF-04 — The Independent External Check
 **v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
 Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
 Phase 38 rather than resetting, with 20/20 requirements mapped and cross-checked
