@@ -621,6 +621,9 @@ packages this phase.
      window (e.g. 10 and 50) rather than just one, since the existing S3
      survey already demonstrates behavior can differ meaningfully between
      "just after boot" and "just before the safe boundary."
+   - **Answered by measurement (plan 43-01):** the A/B ran at N = 10 and
+     N = 50 and came back `no-perturbation` at both depths --
+     `docs/phase43-instrumentation-perturbation-ab.md`.
 
 3. **Should the disagreement query (EVID-03) be exposed as a new `anno_*` tool, a CLI verb, or both?**
    - What we know: the existing `anno-coverage.ts` census is exposed via both
