@@ -997,15 +997,29 @@ decline wherever the evidence is genuinely path-dependent.
 **Plans**: 10 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 45-01-PLAN.md — Tracer: dxa/tracer.prg end to end through the new fifth `anno` verb, plus the Wave 0 measurements (label population, suite baseline) and the D-14 supersession record
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 45-02-PLAN.md — The committed store form: `anno-store-export.ts` JSON export/import with per-row derived/authored provenance (D-02, D-03)
 - [ ] 45-03-PLAN.md — `decomposeRegisterValue()`, the one owning multi-bit decoder, and the rebuilt enum fetch/install route (D-15, D-16); ANNO-13 partial reclaim recorded
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 45-04-PLAN.md — The full completeness gate, the planted control observed RED, and the routine-queue-walker rework (D-04, D-08, D-09, D-10, D-11, D-13)
 - [ ] 45-05-PLAN.md — OR-ed named constants plus decoded comment in the ACME export and in `anno_disassemble`, proven by the real-ACME byte-diff oracle (D-17)
 - [ ] 45-06-PLAN.md — Derive, execute and commit the dxa / export-asm / petcat fixtures (six stores, three live runs, three declared non-executed)
 - [ ] 45-07-PLAN.md — Derive, execute and commit the ghidra fixtures (bank, bank-path-dependent, charset-phantom), with the charset-phantom `code` typing resolved by observation
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 45-08-PLAN.md — Closure pass over the dxa / export-asm / petcat family: names, four-element purpose comments, persisted declines, installed enums
 - [ ] 45-09-PLAN.md — Closure pass over the ghidra family, including criterion 4's both-bank-states decline and the `$D011`/`$D018` enum install
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 45-10-PLAN.md — Criterion 5 demonstrated under real ACME on the real store, the nine-fixture gate sweep, and a committed offline closure regression test
 
 Notes:
