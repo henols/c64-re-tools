@@ -2472,6 +2472,14 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
     revision: written.revision,
     changed: written.changed,
     observationsRemoved: existing.length,
+    // `denominator` travels beside `observationsRemoved` for the same reason
+    // it travels beside every other count this evidence layer reports
+    // (EVID-04, plan 43-07's own structural guard): a bare count invites the
+    // reading "the rest is data". The bracket this call reset held exactly
+    // `existing.length` rows before the delete, so that is what
+    // `observationsRemoved` is a fraction of -- a full reset makes the two
+    // numbers equal, but the field is never omitted just because it agrees.
+    denominator: existing.length,
   };
 }
 
