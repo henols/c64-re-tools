@@ -328,6 +328,101 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
   });
 }
 
+/**
+ * `vice_memmap_zap` -- takes NO parameters at all (D-42-1 again, the
+ * strictest form: not even a client-side projection filter exists here to
+ * validate). Dials exactly two frozen allowlisted literals in sequence:
+ * `memmapzap` (plan 43-01, EVID-05/EVID-06's proven-dialable bracket-clear
+ * primitive), then `memmapshow`, so the answer carries an OBSERVABLE
+ * post-condition rather than a bare acknowledgement -- `memmapzap` alone
+ * returns nothing that proves anything was cleared.
+ *
+ * The build-capability verdict is BORROWED from classifying the second
+ * dial's reply (`classifyTextCapabilityResponse("memmapshow", ...)`),
+ * exactly `handleMemmapShow`'s own ordering above -- deliberately NOT by
+ * adding `"memmapzap"` to `CPUHISTORY_GATED_COMMANDS`
+ * (text-capability-probe.ts). Whether a build without FEATURE_CPUMEMHISTORY
+ * prints that same disabled stub for `memmapzap` itself is NOT known from
+ * any source this project has read; `memmapshow`'s own disabled stub IS
+ * source-traced (text-capability-probe.ts's own header). Classifying the
+ * `memmapshow` reply instead of inventing a fresh claim about `memmapzap`'s
+ * own stub means this handler asserts nothing beyond what is already
+ * proven -- and it still refuses correctly on a disabled build, because
+ * `memmapshow` shares the exact same build flag and would refuse right
+ * alongside it.
+ *
+ * On a genuine parse refusal of the `memmapshow` reply, answers
+ * `isErrorText` naming the tool, the refusal code, the line number and the
+ * offending line -- never a partial or best-effort answer, mirroring
+ * `handleMemmapShow`'s own discipline exactly -- WITH ONE MEASURED
+ * EXCEPTION, discovered live against genuine stock VICE (plan 43-03 Task 1):
+ * `no-data-lines` (header present, zero data lines -- `parseAccessMap()`'s
+ * own deliberate refusal, `textmon-memmap.ts`'s "never decoded as a
+ * zero-entry access map") is the GUARANTEED shape of a real `memmapshow`
+ * dialed immediately after a real `memmapzap`, inside this SAME
+ * `withTextChannelLock()` hold, with the machine halted the whole time --
+ * nothing can have executed between the two dials, so there is no
+ * "truncated wire reply vs. genuinely nothing recorded" ambiguity left to
+ * guard against for THIS caller specifically (the general ambiguity
+ * `parseAccessMap()`'s refusal exists to catch is real for an ARBITRARY
+ * caller of `memmapshow`, which `handleMemmapShow` above still refuses on,
+ * unchanged). Treated here, and ONLY here, as a confirmed zero-entry map
+ * (`{ entries: [] }`) rather than a refusal -- the literal fact this
+ * exact caller has already proven.
+ *
+ * The answer never carries a `ranges` key: this tool answers "is the map
+ * clear", not "what is in it" -- `vice_memmap_show` is the verb for the
+ * latter. It answers only the post-zap `addressesWithRecordedAccess` and
+ * `addressesQueried` (accessMapRanges()'s own denominator discipline,
+ * unbounded -- no `startAddress`/`endAddress`/`maxRanges` options exist here
+ * to narrow it) plus the same `executeCounts` triple `handleMemmapShow`
+ * reports.
+ */
+export async function handleMemmapZap(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
+  const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
+
+  return withTextTool("vice_memmap_zap", deps, async (client) => {
+    await client.command("memmapzap", { timeoutMs: 30000 });
+    const response = await client.command("memmapshow", { timeoutMs: 30000 });
+
+    const classification = classifyTextCapabilityResponse("memmapshow", response);
+    if (classification.outcome !== "capable") {
+      const verdict = await probeTextCapability({ command: "memmapshow", identity, brokerIdentity, dial: async () => response });
+      return isErrorText(withIdentityWarning(`vice_memmap_zap: ${textCapabilityRefusalMessage([verdict])}`, identityWarning));
+    }
+
+    const parsed = parseAccessMap(response);
+    let accessMap: AccessMap;
+    if (parsed.ok) {
+      accessMap = parsed.value;
+    } else if (parsed.refusal.code === "no-data-lines") {
+      // Live-measured (plan 43-03 Task 1): this IS what a real memmapzap
+      // followed immediately by memmapshow, in the same locked session,
+      // looks like -- see the doc comment above.
+      accessMap = { entries: [] };
+    } else {
+      return isErrorText(
+        withIdentityWarning(
+          `vice_memmap_zap: memmapshow's response (dialed after memmapzap) could not be parsed (${parsed.refusal.code} at line ` +
+            `${parsed.refusal.lineNumber}: ${JSON.stringify(parsed.refusal.line)}) -- ${parsed.refusal.message}`,
+          identityWarning,
+        ),
+      );
+    }
+
+    const projection = accessMapRanges(accessMap, {});
+
+    return derivedAnswer({
+      command: "memmapzap",
+      addressesWithRecordedAccess: projection.addressesWithRecordedAccess,
+      addressesQueried: projection.addressesQueried,
+      executeCounts: executeCounts(accessMap),
+      ...(identityWarning !== "" ? { identityWarning } : {}),
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Plan 42-07: the four remaining text formats -- chis, prof flat, bt, io --
 // plus the shared capability-identity helper every one of the five text

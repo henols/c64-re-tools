@@ -13,8 +13,13 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
+import { dispatchStock } from "./stock-dispatch.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import type { StockToolResult } from "./stock-handler.ts";
 import type { StockConnectBrokerControl } from "./stock-connect.ts";
@@ -23,6 +28,7 @@ import type { HeldLease } from "./vice-broker-client.ts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { CPUHISTORY_DISABLED_STUB, resetTextCapabilityCache } from "./text-capability-probe.ts";
 import { PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
+import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
 
 beforeEach(() => {
   resetChannelLockForTests();
@@ -462,6 +468,133 @@ test("handleMemmapShow: a disabled-stub reply (memmapshow shares FEATURE_CPUMEMH
       assert.match(result.content[0]!.text, /vice_memmap_show/);
       assert.match(result.content[0]!.text, /CPU-and-memory-history build support/);
       assert.doesNotMatch(result.content[0]!.text, /missing-header|malformed-line/, "a missing-capability reply must never surface as a parser refusal code");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// handleMemmapZap: dials memmapzap then memmapshow, and answers the
+// post-zap observable count -- Plan 43-03, EVID-05.
+// ---------------------------------------------------------------------------
+
+test("handleMemmapZap: dials exactly 'memmapzap' then 'memmapshow', in that order, and returns the post-zap observable count with no ranges key", async () => {
+  const receivedLines: string[] = [];
+  const body = "addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n";
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      if (line === "memmapzap") {
+        socket.write(`OK${PROMPT}`);
+      } else {
+        socket.write(`${body}${PROMPT}`);
+      }
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapZap({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["memmapzap", "memmapshow"], "exactly these two commands, in this order");
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, "memmapzap");
+      assert.equal(payload.addressesWithRecordedAccess, 1);
+      assert.equal(payload.addressesQueried, 65536);
+      assert.equal(Object.prototype.hasOwnProperty.call(payload, "ranges"), false, "vice_memmap_zap must never answer a ranges key");
+    },
+  );
+});
+
+test("handleMemmapZap: a build without FEATURE_CPUMEMHISTORY is reported as a named missing capability, via the memmapshow classification, never a parser refusal", async () => {
+  await withStubTextServer(
+    (line, socket) => {
+      if (line === "memmapzap") {
+        socket.write(`OK${PROMPT}`);
+      } else {
+        socket.write(`${CPUHISTORY_DISABLED_STUB}\n${PROMPT}`);
+      }
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapZap({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_memmap_zap/);
+      assert.match(result.content[0]!.text, /CPU-and-memory-history build support/);
+      assert.doesNotMatch(result.content[0]!.text, /missing-header|malformed-line/, "a missing-capability reply must never surface as a parser refusal code");
+    },
+  );
+});
+
+test("handleMemmapZap: a genuine parseAccessMap refusal on the memmapshow reply surfaces isErrorText naming the tool, the refusal code and the offending line -- never a partial answer", async () => {
+  await withStubTextServer(
+    (line, socket) => {
+      if (line === "memmapzap") {
+        socket.write(`OK${PROMPT}`);
+      } else {
+        socket.write(`not the memmapshow header at all\n0000: --- --- ---\n${PROMPT}`);
+      }
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapZap({}, deps);
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /vice_memmap_zap/);
+      assert.match(result.content[0]!.text, /missing-header/);
+    },
+  );
+});
+
+// Live-measured (plan 43-03 Task 1, against genuine stock VICE 3.9): a real
+// memmapshow dialed immediately after a real memmapzap, in the same locked
+// session with the machine halted the whole time, ALWAYS returns exactly
+// this shape -- header present, zero data lines -- because nothing can have
+// executed between the two dials. parseAccessMap()'s own no-data-lines
+// refusal exists for an ARBITRARY caller (handleMemmapShow, unaffected,
+// still refuses on it); this handler's own narrow, single-writer context
+// resolves the ambiguity that refusal guards against, so it is answered as
+// a confirmed empty map, never surfaced as an error.
+test("handleMemmapZap: a header-with-zero-data-lines memmapshow reply (the real shape of a just-cleared, unexecuted map) is answered as a confirmed-empty success, never the generic parser refusal", async () => {
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      if (line === "memmapzap") {
+        socket.write(`OK${PROMPT}`);
+      } else {
+        socket.write(`addr: IO  ROM RAM\n${PROMPT}`);
+      }
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapZap({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, ["memmapzap", "memmapshow"]);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, "memmapzap");
+      assert.equal(payload.addressesWithRecordedAccess, 0);
+      assert.equal(payload.addressesQueried, 65536);
+      const counts = payload.executeCounts as { io: number; rom: number; ram: number };
+      assert.deepEqual(counts, { io: 0, rom: 0, ram: 0 });
+      assert.equal(Object.prototype.hasOwnProperty.call(payload, "ranges"), false);
+    },
+  );
+});
+
+test("handleMemmapZap: takes no arguments -- an unexpected argument is simply ignored, no lease resolved differently", async () => {
+  const receivedLines: string[] = [];
+  const body = "addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n";
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      if (line === "memmapzap") {
+        socket.write(`OK${PROMPT}`);
+      } else {
+        socket.write(`${body}${PROMPT}`);
+      }
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleMemmapZap({ startAddress: 0, bogus: "x" }, deps);
+      assert.equal(result.isError, false);
+      assert.deepEqual(receivedLines, ["memmapzap", "memmapshow"]);
     },
   );
 });
@@ -1171,3 +1304,184 @@ test("all five text tools surface a disagreeing broker identity's warning on the
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// LIVE, OPT-IN (plan 43-03, EVID-05): one vice_memmap_zap call clears the
+// emulator's own accumulated access map and proves it, dialed against a
+// REAL, directly-spawned genuine stock VICE -- never a stub client. Same
+// opt-in gate `text-monitor-live.test.ts` already uses (VICE_LIVE_STOCK_BIN),
+// so this case is skipped by default and reachable deliberately, never a
+// second env var.
+//
+// Construction mirrors stock-dispatch.test.ts's own D-02 conformance
+// harness shape (a StockDispatchDeps whose ensureLease() hands back fixed
+// coordinates, a no-op claimMonitor/releaseMonitor stub) but substitutes a
+// REAL socket to a directly-spawned x64sc for the stubbed client --
+// `.planning/phases/43-.../evidence/evid06-instrumentation-ab.mjs` is plan
+// 43-01's own one-off broker-driven A/B measurement script and stays that
+// way; this is a new, independent, committed live test case.
+//
+// A stock x64sc launched with `-console` plus a monitor flag starts with
+// the CPU HALTED (MEASURED, `probe-harness.mjs`'s own `resumeExecution()`
+// header) and stays halted until an EXIT (0xaa) is sent over the BINARY
+// monitor -- text-monitor commands are drawn only from TEXT_COMMAND_ALLOWLIST
+// (D-01) and carry no resume verb, so this case opens its own throwaway
+// binary connection purely to issue that one resume, then dials
+// dispatchStock("vice_memmap_show"/"vice_memmap_zap", ...) exactly as
+// production does. Once resumed the CPU free-runs (recording continuously
+// and unconditionally, per RESEARCH.md's mon_memmap.c citation) until the
+// NEXT monitor command halts it again -- so nothing else is dialed during
+// the free-run window below.
+// ---------------------------------------------------------------------------
+
+const VICE_LIVE_STOCK_BIN_ENV = process.env.VICE_LIVE_STOCK_BIN;
+
+const LIVE_SKIP_REASON: string | false = !VICE_LIVE_STOCK_BIN_ENV
+  ? "text-tools.test.ts's vice_memmap_zap live case is opt-in and default-skipped -- set " +
+    "VICE_LIVE_STOCK_BIN=/usr/bin/x64sc (or another real, genuinely unpatched stock VICE binary's absolute path) " +
+    "to run it. A bare \"x64sc\" on PATH resolves to the fork build (which has no -remotemonitor text channel), " +
+    "always name the stock binary by absolute path."
+  : !existsSync(VICE_LIVE_STOCK_BIN_ENV)
+    ? `VICE_LIVE_STOCK_BIN="${VICE_LIVE_STOCK_BIN_ENV}" does not exist on disk -- opt-in requires a real stock ` +
+      "VICE binary at that absolute path (e.g. /usr/bin/x64sc). A bare \"x64sc\" on PATH would resolve to the " +
+      "fork build instead of genuine stock."
+    : false;
+
+/** Binds a throwaway server to 127.0.0.1:0, reads the OS-assigned port, and
+ * closes it -- the standard "free ephemeral port" idiom, mirroring
+ * stock-live.test.ts's own freeEphemeralPort() exactly. */
+async function freeEphemeralPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const address = srv.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      srv.close(() => {
+        if (port === null) reject(new Error("freeEphemeralPort: could not read an ephemeral port from address()"));
+        else resolve(port);
+      });
+    });
+  });
+}
+
+/** Retries `client.connect()` in a bounded loop (mirrors stock-live.test.ts's
+ * own connectWithRetry()) -- the emulator needs a moment to bind its
+ * listening socket after spawn. Works for either monitor client, both of
+ * which share the same `connect(host, port, { timeoutMs })` signature. */
+async function connectWithRetry(
+  client: { connect(host: string, port: number, opts?: { timeoutMs?: number }): Promise<void> },
+  host: string,
+  port: number,
+  deadlineMs = 10000,
+): Promise<void> {
+  const start = Date.now();
+  let lastErr: unknown = null;
+  while (Date.now() - start < deadlineMs) {
+    try {
+      await client.connect(host, port, { timeoutMs: 1000 });
+      return;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  throw new Error(`connectWithRetry: could not connect to ${host}:${port} within ${deadlineMs}ms (last error: ${String(lastErr)})`);
+}
+
+test(
+  "LIVE (opt-in): vice_memmap_zap against genuine stock VICE -- the post-zap addressesWithRecordedAccess is strictly lower than the pre-zap count measured in the same session",
+  { skip: LIVE_SKIP_REASON, timeout: 60000 },
+  async () => {
+    const binPath = VICE_LIVE_STOCK_BIN_ENV as string;
+    const binaryPort = await freeEphemeralPort();
+    const textPort = await freeEphemeralPort();
+    const scratchDir = mkdtempSync(join(tmpdir(), "gsd-4303-memmapzap-live-"));
+    const child: ChildProcess = spawn(
+      binPath,
+      [
+        "-default",
+        "-console",
+        "-binarymonitor",
+        "-binarymonitoraddress",
+        `ip4://127.0.0.1:${binaryPort}`,
+        "-remotemonitor",
+        "-remotemonitoraddress",
+        `ip4://127.0.0.1:${textPort}`,
+      ],
+      { stdio: "ignore", env: { ...process.env, XDG_CONFIG_HOME: scratchDir } },
+    );
+    child.once("error", (err) => {
+      console.error(`text-tools.test.ts LIVE case: spawned emulator process error: ${String(err)}`);
+    });
+
+    const binClient = new ViceMonitorClient();
+    try {
+      await connectWithRetry(binClient, "127.0.0.1", binaryPort);
+      // PING confirms the monitor is actually SERVING, not merely that the
+      // listen backlog accepted the TCP connection (probe-harness.mjs's own
+      // pingReady() note).
+      await binClient.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 3000 });
+
+      // Resume the CPU -- the ONE resume, per resumeExecution()'s own
+      // documented invariant: send nothing else to either monitor until the
+      // free-run window below has elapsed.
+      await binClient.send(CommandType.Exit, Buffer.alloc(0), { timeoutMs: 10000 });
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      const brokerControl = {
+        claimMonitor: async () => ({ ok: true as const }),
+        releaseMonitor: async () => ({ ok: true as const }),
+      } as unknown as StockConnectBrokerControl;
+
+      const deps: StockDispatchDeps = {
+        ensureLease: async () => ({
+          ok: true,
+          lease: {
+            host: "127.0.0.1",
+            port: binaryPort,
+            targetId: "text-tools-live-4303",
+            brokerControl: brokerControl as unknown as HeldLease["brokerControl"],
+            epochFile: "",
+            supervisorDir: "",
+            remoteMonitorPort: textPort,
+          } as HeldLease,
+        }),
+      };
+
+      // Dialing memmapshow itself halts the CPU again (same as the binary
+      // side) -- this IS the pre-zap read, through the REAL dispatchStock()
+      // seam, never the handler called directly.
+      const preResult = await dispatchStock("vice_memmap_show", {}, deps);
+      assert.equal(preResult.isError, false, `pre-zap vice_memmap_show failed: ${JSON.stringify(preResult)}`);
+      const prePayload = JSON.parse(preResult.content[0]!.text) as Record<string, unknown>;
+      const preZap = prePayload.addressesWithRecordedAccess;
+      assert.equal(typeof preZap, "number");
+
+      const zapResult = await dispatchStock("vice_memmap_zap", {}, deps);
+      assert.equal(zapResult.isError, false, `vice_memmap_zap failed: ${JSON.stringify(zapResult)}`);
+      const zapPayload = JSON.parse(zapResult.content[0]!.text) as Record<string, unknown>;
+      const postZap = zapPayload.addressesWithRecordedAccess;
+      assert.equal(typeof postZap, "number");
+      assert.equal(Object.prototype.hasOwnProperty.call(zapPayload, "ranges"), false);
+
+      // The relation, never a pinned count -- the exact number of addresses
+      // touched during a fixed sleep window is not this test's claim.
+      assert.ok(
+        (postZap as number) < (preZap as number),
+        `expected the post-zap recorded-access count (${String(postZap)}) to be strictly lower than the pre-zap count (${String(preZap)})`,
+      );
+    } finally {
+      await binClient.disconnect().catch(() => {});
+      child.kill("SIGKILL");
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 3000);
+        child.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  },
+);
