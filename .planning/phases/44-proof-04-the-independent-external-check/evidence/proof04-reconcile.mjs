@@ -26,6 +26,7 @@
 // scripts, dxa-run.ts, dxa-partition.ts, block-class.ts, probe-harness.mjs,
 // text-protocol.ts or textmon-memmap.ts.
 // -----------------------------------------------------------------------------
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -121,21 +122,200 @@ function renderOutcomeLines({ label, result, blockAddressesObserved, bucketIdent
 }
 
 function parseArgs(argv) {
-  const out = { subject: null, oracle: null, label: "reconcile", out: null };
+  const out = { subject: null, oracle: null, label: "reconcile", out: null, selfCheck: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--subject" && argv[i + 1]) out.subject = path.resolve(argv[++i]);
     else if (argv[i] === "--oracle" && argv[i + 1]) out.oracle = path.resolve(argv[++i]);
     else if (argv[i] === "--label" && argv[i + 1]) out.label = argv[++i];
     else if (argv[i] === "--out" && argv[i + 1]) out.out = path.resolve(argv[++i]);
+    else if (argv[i] === "--self-check") out.selfCheck = true;
   }
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// --self-check: four synthetic cases feeding the join function directly,
+// each asserting the derived verdict and printed values against SCHEMA.md's
+// committed rule. No case asserts any specific false-positive count against
+// REAL data (the measurement has no known-good number) -- every input here
+// is a small, hand-constructed literal.
+// ---------------------------------------------------------------------------
+
+/** Temporarily redirects `console.log` into an array of lines, restoring it
+ * in a `finally` even if `fn` throws. */
+function captureLines(fn) {
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => {
+    lines.push(args.join(" "));
+  };
+  try {
+    fn();
+  } finally {
+    console.log = original;
+  }
+  return lines;
+}
+
+/** Runs one self-check case through the SAME `reconcile()`/`renderOutcomeLines()`
+ * a live run uses, applies `checkFn` (which throws on failure), and prints
+ * exactly one `SELFCHECK_<name> pass|fail` line. Returns whether it passed. */
+function runSelfCheckCase(name, input, checkFn) {
+  const outcome = reconcile(input);
+  const lines = captureLines(() => renderOutcomeLines({ label: name, ...outcome }));
+  let ok = true;
+  let reason = "";
+  try {
+    checkFn({ outcome, lines, input });
+  } catch (err) {
+    ok = false;
+    reason = err instanceof Error ? err.message : String(err);
+  }
+  console.log(`SELFCHECK_${name} ${ok ? "pass" : "fail"}`);
+  if (!ok) console.log(`SELFCHECK_${name}_REASON ${reason}`);
+  return ok;
+}
+
+/** Case: `empty-observations` -- a non-empty block set, zero observations.
+ * Success Criterion 3's core failure mode, mechanically closed: the derived
+ * verdict must be `unresolved`, never `resolved`, and the never-observed
+ * population must equal the whole denominator -- never phrased as a class. */
+function checkEmptyObservations() {
+  return runSelfCheckCase(
+    "empty-observations",
+    {
+      blocks: [{ start_address: 0x1000, end_address: 0x1005, type: "data" }],
+      observations: [],
+      oracleDepthReached: 10,
+      oracleParseRefusal: "none",
+    },
+    ({ outcome }) => {
+      assert.equal(outcome.blockAddressesObserved, 0, "PROOF04_BLOCK_ADDRESSES_OBSERVED must be 0");
+      assert.equal(outcome.verdict, "unresolved", "verdict must be unresolved");
+      assert.notEqual(outcome.verdict, "resolved", "verdict must never be resolved on zero observations");
+      assert.equal(
+        outcome.result.blockCoveredNeverObservedCount,
+        outcome.result.denominator,
+        "PROOF04_BLOCK_COVERED_NEVER_OBSERVED must equal the denominator",
+      );
+    },
+  );
+}
+
+/** Case: `zero-denominator` -- an empty block set, non-empty observations.
+ * The verdict must be `not-exercised`, never a percentage anywhere, and the
+ * observations must not be silently dropped -- they surface under
+ * `PROOF04_OBSERVED_OUTSIDE_ANY_BLOCK`. */
+function checkZeroDenominator() {
+  return runSelfCheckCase(
+    "zero-denominator",
+    {
+      blocks: [],
+      observations: [
+        { address: 0x2000, sourceBank: "ram" },
+        { address: 0x2001, sourceBank: "rom" },
+      ],
+      oracleDepthReached: 10,
+      oracleParseRefusal: "none",
+    },
+    ({ outcome, lines }) => {
+      assert.equal(outcome.result.denominator, 0, "PROOF04_DENOMINATOR must be 0");
+      assert.equal(outcome.verdict, "not-exercised", "verdict must be not-exercised on a zero denominator");
+      assert.ok(
+        !lines.some((line) => line.includes("%")),
+        "no printed line may contain a % character",
+      );
+      assert.equal(
+        outcome.result.observedOutsideAnyBlockCount,
+        2,
+        "PROOF04_OBSERVED_OUTSIDE_ANY_BLOCK must carry the observation count",
+      );
+    },
+  );
+}
+
+/** Case: `single-address` -- one one-address `data` block, one observation
+ * at that address. The simplest possible `resolved` case. */
+function checkSingleAddress() {
+  return runSelfCheckCase(
+    "single-address",
+    {
+      blocks: [{ start_address: 0x3000, end_address: 0x3000, type: "data" }],
+      observations: [{ address: 0x3000, sourceBank: "ram" }],
+      oracleDepthReached: 10,
+      oracleParseRefusal: "none",
+    },
+    ({ outcome }) => {
+      assert.equal(outcome.result.disagreementCount, 1, "PROOF04_FALSE_POSITIVES must be 1");
+      assert.equal(outcome.result.denominator, 1, "PROOF04_DENOMINATOR must be 1");
+      assert.equal(outcome.verdict, "resolved", "verdict must be resolved");
+    },
+  );
+}
+
+/** Case: `ordering-determinism` -- two adjacent, touching `data` ranges and a
+ * deliberately shuffled observation array, including two observations at one
+ * address in different source banks. Asserts ascending, de-duplicated
+ * output and byte-identical re-runs. */
+function checkOrderingDeterminism() {
+  const blocks = [
+    { start_address: 0x4000, end_address: 0x4002, type: "data" },
+    { start_address: 0x4003, end_address: 0x4005, type: "data" },
+  ];
+  const observations = [
+    { address: 0x4005, sourceBank: "io" },
+    { address: 0x4000, sourceBank: "rom" },
+    { address: 0x4005, sourceBank: "ram" },
+    { address: 0x4002, sourceBank: "ram" },
+  ];
+  const input = { blocks, observations, oracleDepthReached: 10, oracleParseRefusal: "none" };
+  return runSelfCheckCase("ordering-determinism", input, ({ outcome, lines }) => {
+    const addresses = outcome.result.disagreements.map((d) => d.address);
+    assert.deepEqual(
+      addresses,
+      [...addresses].sort((a, b) => a - b),
+      "disagreement addresses must be strictly ascending",
+    );
+    for (const disagreement of outcome.result.disagreements) {
+      assert.deepEqual(
+        disagreement.sourceBanks,
+        [...new Set(disagreement.sourceBanks)].sort(),
+        "each row's sourceBanks must be de-duplicated and ascending",
+      );
+    }
+    assert.equal(outcome.result.denominator, 6, "touching ranges must neither double-count nor merge away an address");
+
+    // Determinism: re-run the SAME case and compare the rendered outcome-line
+    // block byte for byte.
+    const second = reconcile({
+      blocks,
+      observations,
+      oracleDepthReached: 10,
+      oracleParseRefusal: "none",
+    });
+    const secondLines = captureLines(() => renderOutcomeLines({ label: "ordering-determinism", ...second }));
+    assert.deepEqual(lines, secondLines, "re-running the same case must produce a byte-identical outcome-line block");
+  });
+}
+
+export function selfCheck() {
+  const results = [checkEmptyObservations(), checkZeroDenominator(), checkSingleAddress(), checkOrderingDeterminism()];
+  const allPass = results.every(Boolean);
+  console.log(`SELFCHECK_RESULT ${allPass ? "pass" : "fail"}`);
+  return allPass;
+}
+
 async function main() {
-  const { subject, oracle, label, out } = parseArgs(process.argv.slice(2));
+  const { subject, oracle, label, out, selfCheck: doSelfCheck } = parseArgs(process.argv.slice(2));
+
+  if (doSelfCheck) {
+    const ok = selfCheck();
+    process.exitCode = ok ? 0 : 1;
+    return;
+  }
 
   if (!subject || !oracle) {
-    console.error("usage: node proof04-reconcile.mjs --subject PATH --oracle PATH [--label L] [--out PATH]");
+    console.error("usage: node proof04-reconcile.mjs --subject PATH --oracle PATH [--label L] [--out PATH] | --self-check");
     process.exitCode = 1;
     return;
   }
