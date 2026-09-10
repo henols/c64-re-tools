@@ -4,16 +4,16 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 44
 current_phase_name: PROOF-04 — The Independent External Check
-status: planning
+status: executing
 stopped_at: Phase 43 complete, ready to plan Phase 44
-last_updated: "2026-09-10T13:01:37.889Z"
+last_updated: "2026-09-10T14:53:30.823Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 43 complete, transitioned to Phase 44
-state_head: fa5aec1029da22b833614419901e230a34b153c8
+state_head: b13d2e9545342f1c6e09bab3f3a8f9b96a85ac0e
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 48
+  total_plans: 51
   completed_plans: 48
   percent: 83
 ---
@@ -227,9 +227,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 44 — PROOF-04 — The Independent External Check
+Phase: 44 (PROOF-04 — The Independent External Check) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-09-10 — Phase 43 complete, transitioned to Phase 44
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
