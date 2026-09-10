@@ -994,7 +994,19 @@ decline wherever the evidence is genuinely path-dependent.
   4. Every referenced non-hardware address resolves to a named, documented symbol, **and** an address whose target is genuinely path-dependent produces an explicit recorded decline naming what is unknown rather than a fabricated symbol — observed on `bank-path-dependent.prg`, a fixture that already exists precisely because it contains one, and on a runtime-varying zero-page pointer.
   5. Hardware register writes render as named enum members rather than magic numbers, with at least one multi-bit register (`$D011` or `$D018`) shown decomposed into its named bits rather than emitted as one hex constant.
 
-**Plans**: TBD
+**Plans**: 10 plans
+
+Plans:
+- [ ] 45-01-PLAN.md — Tracer: dxa/tracer.prg end to end through the new fifth `anno` verb, plus the Wave 0 measurements (label population, suite baseline) and the D-14 supersession record
+- [ ] 45-02-PLAN.md — The committed store form: `anno-store-export.ts` JSON export/import with per-row derived/authored provenance (D-02, D-03)
+- [ ] 45-03-PLAN.md — `decomposeRegisterValue()`, the one owning multi-bit decoder, and the rebuilt enum fetch/install route (D-15, D-16); ANNO-13 partial reclaim recorded
+- [ ] 45-04-PLAN.md — The full completeness gate, the planted control observed RED, and the routine-queue-walker rework (D-04, D-08, D-09, D-10, D-11, D-13)
+- [ ] 45-05-PLAN.md — OR-ed named constants plus decoded comment in the ACME export and in `anno_disassemble`, proven by the real-ACME byte-diff oracle (D-17)
+- [ ] 45-06-PLAN.md — Derive, execute and commit the dxa / export-asm / petcat fixtures (six stores, three live runs, three declared non-executed)
+- [ ] 45-07-PLAN.md — Derive, execute and commit the ghidra fixtures (bank, bank-path-dependent, charset-phantom), with the charset-phantom `code` typing resolved by observation
+- [ ] 45-08-PLAN.md — Closure pass over the dxa / export-asm / petcat family: names, four-element purpose comments, persisted declines, installed enums
+- [ ] 45-09-PLAN.md — Closure pass over the ghidra family, including criterion 4's both-bank-states decline and the `$D011`/`$D018` enum install
+- [ ] 45-10-PLAN.md — Criterion 5 demonstrated under real ACME on the real store, the nine-fixture gate sweep, and a committed offline closure regression test
 
 Notes:
 
