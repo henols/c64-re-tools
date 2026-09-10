@@ -69,11 +69,17 @@ const NEW_SHIPPED_MODULES = ["anno-types.ts", "anno-index.ts", "anno-store.ts"];
  * a real import. It is DIVERGENCE 2's trade seen from the other side once more:
  * a guard that asserts the specifier is missing cannot itself avoid naming it.
  *
- * Neither member imports the builtin. Both reach the store only through
- * `anno-store.ts`'s own entry points, which is the property this list exists to
- * keep reviewed rather than the property it can mechanically prove.
+ * THIRD MEMBER, added by plan 43-04 for the identical reason. `evid-reconcile
+ * .test.ts`'s own structural assertion (its own module's WHAT-NOT-TO-DO trap 1)
+ * asserts that `evid-reconcile.ts` never names `node:sqlite` at all -- and, once
+ * more, spelling the banned specifier as a string literal is unavoidable for a
+ * test that asserts its absence.
+ *
+ * None of the three members imports the builtin. All reach the store only
+ * through `anno-store.ts`'s own entry points, which is the property this list
+ * exists to keep reviewed rather than the property it can mechanically prove.
  */
-const TEST_FILES_NAMING_SQLITE = ["anno-derive.test.ts", "anno-seam.test.ts"];
+const TEST_FILES_NAMING_SQLITE = ["anno-derive.test.ts", "anno-seam.test.ts", "evid-reconcile.test.ts"];
 
 /**
  * True iff the (already `codeOnly`-stripped, LITERAL-BODIES-KEPT) source names

@@ -76,6 +76,7 @@
     "anno-export-asm.ts",
     "anno-coverage.ts",
     "block-class.ts",
+    "evid-reconcile.ts",
     "prg-image.ts",
     "vsf-slice.ts",
     "capture-predicate.ts",
