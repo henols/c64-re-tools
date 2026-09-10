@@ -35,13 +35,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, currentRevision, listRanges, openStore, revertTo, setDataType } from "./anno-store.ts";
-import { AnnoStoreError } from "./anno-types.ts";
+import {
+  closeStore,
+  currentRevision,
+  insertExecObservations,
+  listExecObservations,
+  listRanges,
+  openStore,
+  revertTo,
+  setDataType,
+} from "./anno-store.ts";
+import { AnnoAddressError, AnnoStoreCorruptError, AnnoStoreError, AnnoTypeError, SCHEMA_VERSION } from "./anno-types.ts";
 import type { RangeRow } from "./anno-types.ts";
 import { ViceError } from "./vice.ts";
 
@@ -57,6 +66,23 @@ const MUTATOR = join(HERE, MUTATOR_FILENAME);
  * names its own mode constants: a typo in a mode string looks like a store bug,
  * not like a typo. */
 const MODE_HOLD_READ = "hold-read";
+
+/** The mutator's fifth mode: one `anno_evid_exec` insert, through the same
+ * commit/no-commit writer selection the range modes use (43-02). */
+const MODE_INSERT_EVID = "insert-evid";
+
+/** The one run identity plus one address every evidence durability test in
+ * this file plants and reads back BY VALUE. `imageSha256`/`argvDigest` are
+ * shaped like real sha256 hex digests (64 lowercase hex characters) even
+ * though nothing here computed them from real bytes -- `insertExecObservations`
+ * validates the SHAPE, not the provenance. */
+const EVID_IDENTITY = {
+  imageSha256: "a".repeat(64),
+  argvDigest: "b".repeat(64),
+  seed: "43-02-durability-seed",
+  address: 0xea31,
+  sourceBank: "rom",
+} as const;
 
 /**
  * Blocks until `marker` exists, with a HARD CAP. The cap is what makes a child
@@ -203,6 +229,59 @@ function observeMutateKillReopen(mode: "commit" | "no-commit"): Observation {
       } catch {
         // already closed by a successful revertTo -- nothing to do
       }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * `anno_evid_exec`'s own counterpart to `observeMutateKillReopen`, ONE
+ * HELPER CALLED BY BOTH the committing test and its planted counterpart, for
+ * the identical reason: `T-43-09` asks that removing the commit reddens THAT
+ * SAME TEST rather than a hand-copied variant that could drift out of
+ * agreement with it.
+ *
+ * Reads back through `listExecObservations` -- the SHIPPED read path -- never
+ * a raw query against `anno_evid_exec`, so this proof exercises the same
+ * surface a real caller would.
+ */
+function observeEvidenceMutateKillReopen(writerToken: "commit" | "no-commit"): { rows: ReturnType<typeof listExecObservations> } {
+  const dir = mkdtempSync(join(tmpdir(), "anno-"));
+  try {
+    const path = join(dir, "proj.annostore");
+
+    // The store exists, with its DDL (including `anno_evid_exec` at
+    // SCHEMA_VERSION 4) and its revision-0 meta row, BEFORE the child runs.
+    closeStore(openStore(path, { workspaceRoot: dir }));
+
+    try {
+      execFileSync(
+        process.execPath,
+        [
+          MUTATOR,
+          path,
+          MODE_INSERT_EVID,
+          writerToken,
+          EVID_IDENTITY.imageSha256,
+          EVID_IDENTITY.argvDigest,
+          EVID_IDENTITY.seed,
+          String(EVID_IDENTITY.address),
+          EVID_IDENTITY.sourceBank,
+        ],
+        { stdio: "pipe" },
+      );
+    } catch {
+      // EXPECTED AND IGNORED -- the self-SIGKILL, for the identical reason
+      // `observeMutateKillReopen`'s own catch gives.
+    }
+
+    // A different OS process from the mutator, by construction.
+    const reopened = openStore(path, { workspaceRoot: dir });
+    try {
+      return { rows: listExecObservations(reopened) };
+    } finally {
+      closeStore(reopened);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -483,6 +562,170 @@ test("CR-06: with a separate OS process holding a READ transaction, the commit R
     if (child !== undefined) child.kill("SIGKILL");
     closeStore(store);
     // THE PARENT DOES THE CLEANING, per this file's own rule.
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// EVID-01/EVID-02, SCHEMA_VERSION 4 (43-02): `anno_evid_exec` exists on a
+// fresh store, a version-3 store is refused by name and left untouched, and
+// one evidence observation survives a real process death end to end.
+// ---------------------------------------------------------------------------
+
+test("SCHEMA_VERSION 4: a fresh store carries anno_evid_exec with exactly the no-change run-identity column set, all NOT NULL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "anno-"));
+  try {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.equal(SCHEMA_VERSION, 4, "EVID-02's bump: this build's SCHEMA_VERSION is 4");
+      const meta = store.db.prepare("select schema_version from anno_meta where id = 1").get() as { schema_version: number };
+      assert.equal(meta.schema_version, 4, "a fresh store's declared schema_version is this build's SCHEMA_VERSION");
+
+      const columns = store.db.prepare("pragma table_info(anno_evid_exec)").all() as { name: string; notnull: number; pk: number }[];
+      assert.deepEqual(
+        columns.map((c) => c.name).sort(),
+        ["address", "argv_digest", "id", "image_sha256", "seed", "source_bank"],
+        "anno_evid_exec must carry exactly the no-change identity columns plus address and source_bank -- no run_class (plan 43-01's " +
+          "verdict), no bank (unlike the annotation tables), and no other column",
+      );
+      for (const column of columns) {
+        if (column.pk === 1) continue; // `id integer primary key` reports notnull:0 -- SQLite's own convention, measured.
+        assert.equal(column.notnull, 1, `${column.name} must be NOT NULL -- this table has no reserved or nullable column`);
+      }
+    } finally {
+      closeStore(store);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("SCHEMA_VERSION 4: a store whose anno_meta.schema_version is 3 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "anno-"));
+  try {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    // Forging the version-3 state directly -- the point is a file THIS BUILD
+    // must refuse, not a write it would ever perform (matching the existing
+    // D-15 test's own approach in anno-store.test.ts).
+    store.db.prepare("update anno_meta set schema_version = 3 where id = 1").run();
+    closeStore(store);
+
+    const statBefore = statSync(path);
+    const bytesBefore = readFileSync(path);
+
+    assert.throws(
+      () => openStore(path, { workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
+        assert.match(e.message, /schema_version 3/, "the refusal must name the version it found");
+        assert.match(e.message, /expected 4/, "the refusal must name the version it wanted");
+        return true;
+      },
+    );
+
+    const statAfter = statSync(path);
+    const bytesAfter = readFileSync(path);
+    assert.equal(bytesAfter.length, bytesBefore.length, "a refusal must not resize the file it refused");
+    assert.ok(bytesAfter.equals(bytesBefore), "and it must not change a single byte -- the file stays recoverable by hand");
+    assert.equal(statAfter.mtimeMs, statBefore.mtimeMs, "and it must not even touch the file's mtime");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("EVID-01/T-43-09: one evidence observation survives a real SIGKILL with no clean close and reads back BY VALUE via listExecObservations", () => {
+  const { rows } = observeEvidenceMutateKillReopen("commit");
+  assert.equal(rows.length, 1, `expected exactly one evidence row after the committing kill, got ${JSON.stringify(rows)}`);
+  assert.equal(rows[0].imageSha256, EVID_IDENTITY.imageSha256);
+  assert.equal(rows[0].argvDigest, EVID_IDENTITY.argvDigest);
+  assert.equal(rows[0].seed, EVID_IDENTITY.seed);
+  assert.equal(rows[0].address, EVID_IDENTITY.address);
+  assert.equal(rows[0].sourceBank, EVID_IDENTITY.sourceBank);
+});
+
+test("EVID-01/T-43-09's planted violation, through the SAME mutator mode: with the commit removed, the evidence insert leaves NO row", () => {
+  const { rows } = observeEvidenceMutateKillReopen("no-commit");
+  assert.deepEqual(
+    rows,
+    [],
+    "with the commit removed the evidence insert must NOT survive -- one planting, proving the readback and the transaction are fused " +
+      "rather than separately green",
+  );
+});
+
+test("insertExecObservations refuses an out-of-range address, a source bank outside the frozen three, and a non-64-lowercase-hex identity digest, each BY NAME, and none of the four attempts writes a row or advances the revision", () => {
+  const dir = mkdtempSync(join(tmpdir(), "anno-"));
+  try {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const validDigest = "c".repeat(64);
+
+      assert.throws(
+        () =>
+          insertExecObservations(store, {
+            imageSha256: validDigest,
+            argvDigest: validDigest,
+            seed: "s",
+            observations: [{ address: 0x10000, sourceBank: "ram" }],
+          }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoAddressError, `expected AnnoAddressError for an out-of-range address, got ${String(e)}`);
+          return true;
+        },
+      );
+
+      assert.throws(
+        () =>
+          insertExecObservations(store, {
+            imageSha256: validDigest,
+            argvDigest: validDigest,
+            seed: "s",
+            observations: [{ address: 0x1000, sourceBank: "vram" }],
+          }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoTypeError, `expected AnnoTypeError for an unknown source bank, got ${String(e)}`);
+          assert.match(e.message, /source bank/, "the refusal must name what was wrong -- the source bank");
+          return true;
+        },
+      );
+
+      assert.throws(
+        () =>
+          insertExecObservations(store, {
+            imageSha256: "not-a-hex-digest",
+            argvDigest: validDigest,
+            seed: "s",
+            observations: [{ address: 0x1000, sourceBank: "ram" }],
+          }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoTypeError, `expected AnnoTypeError for a malformed imageSha256, got ${String(e)}`);
+          return true;
+        },
+      );
+
+      assert.throws(
+        () =>
+          insertExecObservations(store, {
+            imageSha256: validDigest,
+            argvDigest: validDigest.toUpperCase(),
+            seed: "s",
+            observations: [{ address: 0x1000, sourceBank: "ram" }],
+          }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoTypeError, `expected AnnoTypeError for an uppercase (wrong-case) argvDigest, got ${String(e)}`);
+          return true;
+        },
+      );
+
+      assert.deepEqual(listExecObservations(store), [], "no refused call may leave a row behind");
+      assert.equal(currentRevision(store), 0, "and no refused call may advance the revision");
+    } finally {
+      closeStore(store);
+    }
+  } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });

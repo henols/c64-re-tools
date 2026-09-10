@@ -138,9 +138,12 @@ import {
   assertCommentType,
   assertDataType,
   assertEnumName,
+  assertEvidSourceBank,
   assertLabelKind,
   assertLegalLabel,
   assertRangeShape,
+  assertRunIdentityDigest,
+  assertRunIdentitySeed,
   isSplitDataType,
   splitEntryAddressPairs,
   AnnoCommentGradeError,
@@ -162,9 +165,12 @@ import {
   type CommentType,
   type ContradictedComment,
   type DataType,
+  type EvidExecRow,
+  type EvidSourceBank,
   type LabelKind,
   type LabelRow,
   type EnumUsageRow,
+  type ObservedRunRow,
   type ProjectEnumRow,
   type RangeRow,
   type ScopeRow,
@@ -241,6 +247,18 @@ export interface AnnoWriteResult {
  * that NOTHING in this module interprets and no code path reads except the row
  * mapper in `listRanges()`. It is reserved, and every row written today has it
  * null.
+ *
+ * AT `SCHEMA_VERSION` 4 (EVID-01/EVID-02), ONE MORE TABLE IS ADDED:
+ * `anno_evid_exec`, the durable runtime-execution evidence table. See
+ * `anno-types.ts`'s `SCHEMA_VERSION` doc comment for what the bump buys and
+ * the decided, dated fate of an existing version-3 store (`reaffirm-refusal`
+ * -- no migration arm). `anno_evid_exec` carries NO `bank` column and NO
+ * nullable column at all: unlike the annotation tables above, every field on
+ * a row here is a fact the runtime evidence layer is licensed to assert, or
+ * the row does not exist. Its run-identity key is the bare triple
+ * `(image_sha256, argv_digest, seed)`, selected by plan 43-01's live A/B
+ * (`docs/phase43-instrumentation-perturbation-ab.md`, verdict
+ * `no-perturbation`) -- there is deliberately no `run_class` column.
  */
 export const DDL = `
 create table anno_meta (
@@ -307,11 +325,22 @@ create table anno_snapshot (
   revision integer primary key
 );
 
+create table anno_evid_exec (
+  id integer primary key autoincrement,
+  image_sha256 text not null,
+  argv_digest text not null,
+  seed text not null,
+  address integer not null,
+  source_bank text not null,
+  unique(image_sha256, argv_digest, seed, address, source_bank)
+);
+
 create index anno_range_end_start on anno_range(end_inclusive, start);
 create index anno_label_address on anno_label(address);
 create index anno_comment_address on anno_comment(address);
 create index anno_enum_usage_address on anno_enum_usage(address);
 create index anno_xref_to on anno_xref(to_address);
+create index anno_evid_exec_address on anno_evid_exec(address);
 `;
 
 /** An open store: the connection, the resolved store path, and the directory
@@ -539,7 +568,19 @@ export function openStore(
 
   if (meta.schema_version !== SCHEMA_VERSION) {
     db.close();
-    throw new AnnoStoreCorruptError(`${resolved}: schema_version ${meta.schema_version}, expected ${SCHEMA_VERSION}`, { path: resolved });
+    // NAMES THE REMEDY AND DENIES NOTHING IS LOST (EVID-02's checkpoint,
+    // condition 2). This build refuses rather than upgrades -- see
+    // `anno-types.ts`'s `SCHEMA_VERSION` doc comment for the decided,
+    // dated reason -- and the refusal happens BEFORE any write, so the
+    // file on disk is exactly what it was a moment ago: its labels,
+    // comments and enums are not lost, only unreadable by this build.
+    throw new AnnoStoreCorruptError(
+      `${resolved}: schema_version ${meta.schema_version}, expected ${SCHEMA_VERSION} -- refusing to open rather than upgrade. This file is ` +
+        `left exactly as it was: nothing on it is read, rewritten or deleted by this refusal. Open it with a build whose SCHEMA_VERSION is ` +
+        `${meta.schema_version} to read it (see anno-types.ts's SCHEMA_VERSION doc comment for what changed at each version), or hand-copy ` +
+        `its rows into a fresh store at this build's version.`,
+      { path: resolved },
+    );
   }
 
   // WR-04, THE LAST KNOWN FAMILY ESCAPE IN THIS FUNCTION. The two blocks either
@@ -3403,6 +3444,207 @@ export function listEnumUsage(handle: AnnoStoreHandle): EnumUsageRow[] {
     enumId: row.enum_id,
     enumName: row.enum_name,
     bank: row.bank,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// THE RUNTIME EVIDENCE TABLE (`anno_evid_exec`, `SCHEMA_VERSION` 4, EVID-01).
+// One raw shape used by all three functions below.
+// ---------------------------------------------------------------------------
+
+/** One `anno_evid_exec` row exactly as the column names read on disk --
+ * `snake_case`, matching every other raw-row shape in this module.
+ *
+ * A `type` ALIAS RATHER THAN AN `interface`, and that is load-bearing rather
+ * than stylistic: `node:sqlite`'s `all()` returns `Record<string,
+ * SQLOutputValue>[]`, and casting that to a NAMED `interface` fails TS's
+ * type-assertion comparability check ("neither type sufficiently overlaps")
+ * even though the shapes are identical -- a `type` alias to the same object
+ * shape is accepted. Measured against this exact query shape during this
+ * plan's own implementation. */
+type RawEvidExecRow = {
+  id: number;
+  image_sha256: string;
+  argv_digest: string;
+  seed: string;
+  address: number;
+  source_bank: string;
+};
+
+/** `RawEvidExecRow` -> `EvidExecRow`, the one mapping site both read functions
+ * below share, so the two never drift into disagreeing about the shape. */
+function toEvidExecRow(row: RawEvidExecRow): EvidExecRow {
+  return {
+    id: row.id,
+    imageSha256: row.image_sha256,
+    argvDigest: row.argv_digest,
+    seed: row.seed,
+    address: row.address,
+    sourceBank: row.source_bank as EvidSourceBank,
+  };
+}
+
+/**
+ * Inserts one or more runtime-execution observations for one run identity,
+ * keyed `(imageSha256, argvDigest, seed, address, sourceBank)` -- the
+ * `no-change` composite plan 43-01's live A/B selected, with no `run_class`
+ * discriminator (`docs/phase43-instrumentation-perturbation-ab.md`).
+ *
+ * EVERY FIELD IS VALIDATED BEFORE THE FIRST STATEMENT RUNS, and every
+ * refusal is a named `AnnoTypeError`/`AnnoAddressError` carrying the
+ * offending value and the valid domain -- this module's existing refusal
+ * register, never a fresh one. A caller-supplied `imageSha256`/`argvDigest`
+ * that is not exactly 64 lowercase hex characters, a `seed` that is empty,
+ * an `address` outside `ADDRESS_MIN..ADDRESS_MAX`, or a `sourceBank` outside
+ * the frozen three is refused BEFORE the write transaction opens, so a bad
+ * argument never reaches SQL and never partially inserts the rest of the
+ * batch.
+ *
+ * THE WHOLE INSERT IS ONE `applyWrite` CALLBACK (T-43-09): every observation
+ * in `args.observations` is written -- or skipped -- inside the SAME
+ * transaction that `commitTransaction` commits, so a kill mid-ingest leaves
+ * the set fully committed or fully absent, never a partial row set.
+ *
+ * AN OBSERVATION ALREADY PRESENT IS SKIPPED, NOT RE-INSERTED (EVID-01's
+ * idempotent re-ingest): the existing row is selected first, by the full
+ * unique key, and the insert only runs when it is absent. `changed` is
+ * `false` exactly when every observation in this call was already present --
+ * the same `changed`-is-the-only-no-op-signal contract `AnnoWriteResult`
+ * states for every other write entry point in this module. `revision` still
+ * advances by exactly one on every accepted call, no-op or not, for the same
+ * reason.
+ */
+export function insertExecObservations(
+  handle: AnnoStoreHandle,
+  args: {
+    imageSha256: unknown;
+    argvDigest: unknown;
+    seed: unknown;
+    observations: readonly { address: unknown; sourceBank: unknown }[];
+    baseRevision?: number;
+  },
+): AnnoWriteResult {
+  const imageSha256 = assertRunIdentityDigest(args.imageSha256, "imageSha256");
+  const argvDigest = assertRunIdentityDigest(args.argvDigest, "argvDigest");
+  const seed = assertRunIdentitySeed(args.seed);
+
+  if (!Array.isArray(args.observations) || args.observations.length === 0) {
+    throw new AnnoTypeError(`observations must be a non-empty array, got ${JSON.stringify(args.observations)}`, {
+      dataType: args.observations,
+    });
+  }
+  // VALIDATED IN FULL BEFORE THE FIRST STATEMENT, per this function's own
+  // doc comment: a bad entry at index 9 must not leave entries 0..8 written.
+  const parsedObservations = args.observations.map((obs) => ({
+    address: parseStoreAddress((obs as { address: unknown }).address, { what: "address" }),
+    sourceBank: assertEvidSourceBank((obs as { sourceBank: unknown }).sourceBank),
+  }));
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      let anyInserted = false;
+      for (const obs of parsedObservations) {
+        const existing = db
+          .prepare("select id from anno_evid_exec where image_sha256 = ? and argv_digest = ? and seed = ? and address = ? and source_bank = ?")
+          .get(imageSha256, argvDigest, seed, obs.address, obs.sourceBank) as { id: number } | undefined;
+        if (existing) continue;
+        db.prepare("insert into anno_evid_exec(image_sha256, argv_digest, seed, address, source_bank) values (?, ?, ?, ?, ?)").run(
+          imageSha256,
+          argvDigest,
+          seed,
+          obs.address,
+          obs.sourceBank,
+        );
+        anyInserted = true;
+      }
+      return anyInserted;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/** One shape used by `listExecObservations`'s four fixed queries below. */
+type EvidRunIdentityFilter = { imageSha256: string; argvDigest: string; seed: string };
+
+/**
+ * Every runtime-execution observation, in ascending ADDRESS then `id` order,
+ * with optional filters on `address` and on the full run identity. Never a
+ * `select *` -- every column is named.
+ *
+ * A RUN-IDENTITY FILTER IS ALL THREE FIELDS TOGETHER OR NONE. A partial
+ * identity (the seed alone, say) would silently widen the match to every
+ * image/argv pair that happens to share it, which is not what "filter by run
+ * identity" means -- refused BY NAME rather than accepted as a wider query
+ * nobody asked for.
+ */
+export function listExecObservations(
+  handle: AnnoStoreHandle,
+  opts: { address?: number | string; imageSha256?: unknown; argvDigest?: unknown; seed?: unknown } = {},
+): EvidExecRow[] {
+  const hasAddress = opts.address !== undefined;
+  const identityFieldsGiven = [opts.imageSha256, opts.argvDigest, opts.seed].filter((v) => v !== undefined).length;
+  if (identityFieldsGiven > 0 && identityFieldsGiven < 3) {
+    throw new AnnoTypeError(
+      "listExecObservations: a run-identity filter requires imageSha256, argvDigest AND seed together -- a partial identity would silently widen the match",
+      { dataType: { imageSha256: opts.imageSha256, argvDigest: opts.argvDigest, seed: opts.seed } },
+    );
+  }
+  const hasIdentity = identityFieldsGiven === 3;
+
+  const address = hasAddress ? parseStoreAddress(opts.address as number | string, { what: "address" }) : undefined;
+  const identity: EvidRunIdentityFilter | undefined = hasIdentity
+    ? {
+        imageSha256: assertRunIdentityDigest(opts.imageSha256, "imageSha256"),
+        argvDigest: assertRunIdentityDigest(opts.argvDigest, "argvDigest"),
+        seed: assertRunIdentitySeed(opts.seed),
+      }
+    : undefined;
+
+  let rows: RawEvidExecRow[];
+  if (address !== undefined && identity !== undefined) {
+    rows = handle.db
+      .prepare(
+        "select id, image_sha256, argv_digest, seed, address, source_bank from anno_evid_exec where address = ? and image_sha256 = ? and argv_digest = ? and seed = ? order by address, id",
+      )
+      .all(address, identity.imageSha256, identity.argvDigest, identity.seed) as RawEvidExecRow[];
+  } else if (address !== undefined) {
+    rows = handle.db
+      .prepare("select id, image_sha256, argv_digest, seed, address, source_bank from anno_evid_exec where address = ? order by address, id")
+      .all(address) as RawEvidExecRow[];
+  } else if (identity !== undefined) {
+    rows = handle.db
+      .prepare(
+        "select id, image_sha256, argv_digest, seed, address, source_bank from anno_evid_exec where image_sha256 = ? and argv_digest = ? and seed = ? order by address, id",
+      )
+      .all(identity.imageSha256, identity.argvDigest, identity.seed) as RawEvidExecRow[];
+  } else {
+    rows = handle.db
+      .prepare("select id, image_sha256, argv_digest, seed, address, source_bank from anno_evid_exec order by address, id")
+      .all() as RawEvidExecRow[];
+  }
+
+  return rows.map(toEvidExecRow);
+}
+
+/** Every distinct run identity with an `anno_evid_exec` row, and its
+ * accumulated observation count, ordered by the identity columns. A count,
+ * never a percentage or rate -- see `deleteExecObservationsForRun`'s
+ * neighbour and this module's `listObservedRuns` (extended with a
+ * `denominator` at the same `SCHEMA_VERSION` in the following task) for why
+ * a bare count is never divided down inside this module. */
+export function listObservedRuns(handle: AnnoStoreHandle): ObservedRunRow[] {
+  const rows = handle.db
+    .prepare(
+      "select image_sha256, argv_digest, seed, count(*) as observation_count from anno_evid_exec group by image_sha256, argv_digest, seed order by image_sha256, argv_digest, seed",
+    )
+    .all() as { image_sha256: string; argv_digest: string; seed: string; observation_count: number }[];
+  return rows.map((row) => ({
+    imageSha256: row.image_sha256,
+    argvDigest: row.argv_digest,
+    seed: row.seed,
+    observationCount: row.observation_count,
   }));
 }
 

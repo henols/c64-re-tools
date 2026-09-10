@@ -258,7 +258,7 @@ import { ViceError, type ViceErrorOptions } from "./vice.ts";
  * store to users who have not yet upgraded past it. Absent that evidence, the
  * refusal stays the default.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** The 6510's address space, inclusive at both ends. */
 export const ADDRESS_MIN = 0x0000;
@@ -578,6 +578,81 @@ export interface XrefRow {
   toAddress: number;
   accessKind: XrefAccessKind;
   bank: number | null;
+}
+
+/**
+ * The three memory regions `memmapshow` reports an execute observation
+ * against, `SCHEMA_VERSION` 4 (EVID-01). This is the ONE place this
+ * vocabulary is written down.
+ *
+ * ALL THREE ARE INCLUDED DELIBERATELY, not for symmetry: `AccessFlags`
+ * (`textmon-memmap.ts`) carries `read`/`write`/`execute` as three
+ * INDEPENDENT bits per region, and dropping any one of the three regions
+ * here would discard a genuine positive observation the wire already
+ * reported -- `io.execute` is exactly as real a fact as `ram.execute`.
+ */
+export const EVID_SOURCE_BANKS = Object.freeze(["ram", "rom", "io"] as const);
+
+/** One of the three evidence source banks. */
+export type EvidSourceBank = (typeof EVID_SOURCE_BANKS)[number];
+
+/**
+ * The runtime evidence layer's own classification of an address, `SCHEMA_VERSION`
+ * 4 (EVID-04). This is a TYPE-LEVEL control, not a runtime check: the union has
+ * exactly two members and NO `"data"` member exists for a caller to return,
+ * mistakenly or otherwise.
+ *
+ * THIS IS THE SAME DISCIPLINE `textmon-memmap.ts` STATES FOR ITSELF, carried
+ * forward rather than re-derived: that module's own header forbids adding
+ * "a field, key, label or enum member anywhere in this module or its answer
+ * types that classifies an address as DATA on the strength of never having
+ * been observed" (`textmon-memmap.ts:32-38`). `BlockClass`'s three-valued
+ * union (`"code" | "data" | "undefined"`, `block-class.ts`) is the byte-derived
+ * classifier's own vocabulary and is DELIBERATELY NOT REUSED here: that union
+ * exists to name a byte-derived guess, and this one exists to name only what
+ * was actually witnessed executing. `"unobserved"` means exactly "no
+ * execution was ever recorded at this address" -- never "this address is
+ * data" -- and no code path in this layer may treat the two as
+ * interchangeable (see the ban on deriving `data` from absence, Pitfall 3 in
+ * this phase's research).
+ */
+export type RuntimeExecClass = "code" | "unobserved";
+
+/**
+ * One runtime-execution observation as the store holds it (`anno_evid_exec`,
+ * `SCHEMA_VERSION` 4). Keyed by the bare run-identity triple
+ * `(imageSha256, argvDigest, seed)` plus `address` plus `sourceBank` -- the
+ * `no-change` assumption-delta decision plan 43-01's live A/B selected
+ * (`docs/phase43-instrumentation-perturbation-ab.md`): there is no
+ * `run_class` discriminator column, because instrumentation was measured
+ * `no-perturbation` at anchor hit depths 10 and 50.
+ *
+ * A row here asserts exactly ONE fact: this address was observed executing,
+ * in this source bank, during this run. There is no `bank`-reserved column
+ * (unlike the annotation tables) and no nullable column -- every field is a
+ * fact this table is licensed to assert, or the row does not exist.
+ */
+export interface EvidExecRow {
+  id: number;
+  imageSha256: string;
+  argvDigest: string;
+  seed: string;
+  address: number;
+  sourceBank: EvidSourceBank;
+}
+
+/**
+ * One distinct run identity's accumulated observation count, as
+ * `listObservedRuns()` reports it. `observationCount` is a COUNT, never a
+ * percentage or rate -- see `listObservedRuns`'s own doc comment in
+ * `anno-store.ts` for the denominator this count is a fraction of (EVID-04:
+ * a count with no denominator invites the reading "the rest is data").
+ */
+export interface ObservedRunRow {
+  imageSha256: string;
+  argvDigest: string;
+  seed: string;
+  observationCount: number;
 }
 
 /** What `resolveSplitTargets()` returns: the entry count, the resolved 16-bit
@@ -1373,6 +1448,37 @@ export function assertLabelKind(value: unknown): LabelKind {
  * fifth access kind is refused here rather than stored and puzzled over later. */
 export function assertAccessKind(value: unknown): XrefAccessKind {
   return assertMember(value, XREF_ACCESS_KINDS, "access kind");
+}
+
+/** Narrows an unvalidated argument to an `EvidSourceBank`, or throws
+ * `AnnoTypeError` carrying the offending value and all three valid members. */
+export function assertEvidSourceBank(value: unknown): EvidSourceBank {
+  return assertMember(value, EVID_SOURCE_BANKS, "source bank");
+}
+
+/** Exactly 64 lowercase hex characters -- the shape `argvDigest()`
+ * (`capture-predicate.ts`) and a sha256 image hash both already produce.
+ * Refuses anything else BY NAME, including a correctly-shaped but
+ * UPPERCASE digest, rather than lower-casing it silently: two callers
+ * disagreeing on case is exactly the kind of divergence a store write must
+ * not launder into agreement. */
+export function assertRunIdentityDigest(value: unknown, what: string): string {
+  if (typeof value === "string" && /^[0-9a-f]{64}$/.test(value)) {
+    return value;
+  }
+  throw new AnnoTypeError(
+    `${what} ${JSON.stringify(value)} is not exactly 64 lowercase hex characters -- expected a sha256 hex digest such as argvDigest() or an image hash produces`,
+    { dataType: value },
+  );
+}
+
+/** A non-empty string. `seed` is not a digest and carries no shape beyond
+ * that -- REPRO-04's run-identity composite treats it as an opaque token. */
+export function assertRunIdentitySeed(value: unknown): string {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  throw new AnnoTypeError(`seed ${JSON.stringify(value)} is not a non-empty string`, { dataType: value });
 }
 
 /** The legal-identifier shape, quoted from the schema's own sentence

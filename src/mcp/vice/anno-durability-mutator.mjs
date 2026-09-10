@@ -91,6 +91,32 @@
 // process's chatter, and the `ExperimentalWarning` `node:sqlite` emits on first
 // load is left alone -- the parent's `stdio: "pipe"` is what keeps it out of
 // the TAP stream.
+//
+// ---------------------------------------------------------------------------
+// THE FIFTH MODE: INSERT ONE EVIDENCE OBSERVATION (EVID-01, 43-02)
+// ---------------------------------------------------------------------------
+// `insert-evid` is `anno_evid_exec`'s own counterpart to the RANGE modes
+// above, and it reuses their two decisions rather than re-deriving them:
+//
+//   * THE MUTATION IS A SINGLE RAW INSERT, for decision 2's exact reason.
+//     `insertExecObservations()` (`anno-store.ts`) hard-wires `applyWrite`
+//     (the COMMITTING wrapper) the same way `setDataType()` does, so routing
+//     a committing planting through it and a no-commit planting through
+//     `applyWriteWithoutCommit` would make the two plantings differ in more
+//     than the commit. This mode inserts directly into `anno_evid_exec`
+//     instead, through `mutateEvidence()` below -- the evidence-table analog
+//     of `mutateStore()`.
+//   * THE WRITER SELECTION IS THE SAME PARAMETER, not a new one: this mode's
+//     OWN writer token (argv[4]) is spelled with the identical two strings
+//     `MODE_COMMIT`/`MODE_NO_COMMIT` already use above, and
+//     `pickWriter()` is the one ternary both the range dispatch and this
+//     mode's dispatch read from. A caller cannot select a THIRD, undefined
+//     writer by typo -- there are only ever two, named once.
+//
+// Argv layout: `<storePath> insert-evid <writerToken> <imageSha256>
+// <argvDigest> <seed> <address> <sourceBank>`. Like the range modes, this
+// mode SIGKILLs itself with no clean close -- the kill is the point, not an
+// afterthought.
 import { writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -102,6 +128,7 @@ const MODE_COMMIT = "commit";
 const MODE_NO_COMMIT = "no-commit";
 const MODE_COMMIT_AND_EXIT = "commit-and-exit";
 const MODE_HOLD_READ = "hold-read";
+const MODE_INSERT_EVID = "insert-evid";
 
 /** How long `hold-read` keeps its read transaction open, in milliseconds. Well
  * clear of the writer's 5000 ms `busy_timeout` so the contention the parent
@@ -126,6 +153,19 @@ const commitWriter = (handle, mutate) => applyWrite(handle, mutate);
  * modes. */
 const noCommitWriter = (handle, mutate) => applyWriteWithoutCommit(handle, mutate);
 
+/** Resolves a writer-selection argv token to `commitWriter` or
+ * `noCommitWriter` -- the ONE ternary every mode that needs the choice reads
+ * from, so a typo'd third token fails loudly here rather than silently
+ * picking a writer nobody asked for. */
+function pickWriter(token) {
+  if (token === MODE_NO_COMMIT) return noCommitWriter;
+  if (token === MODE_COMMIT) return commitWriter;
+  process.stderr.write(
+    `anno-durability-mutator: expected a writer token of ${JSON.stringify(MODE_COMMIT)} or ${JSON.stringify(MODE_NO_COMMIT)}, got ${JSON.stringify(token)}\n`,
+  );
+  process.exit(2);
+}
+
 /**
  * Everything all three modes do, with the write wrapper and the range as its
  * only parameters. Returns the open handle; what happens to it next -- a
@@ -145,6 +185,28 @@ function mutateStore(storePath, write, range) {
       range.endInclusive,
       range.dataType,
       null,
+    );
+    return true;
+  });
+  return handle;
+}
+
+/**
+ * `mutateStore`'s evidence-table analog: the same shape, the same
+ * `write`-as-only-parameter contract, a single raw insert -- never
+ * `insertExecObservations()` itself, per this file's own decision 2 above.
+ * Returns the open handle; the caller's kill-or-close is, again, the only
+ * other thing this mode differs from the range modes in.
+ */
+function mutateEvidence(storePath, write, identity) {
+  const handle = openStore(storePath, { workspaceRoot: dirname(storePath) });
+  write(handle, (db) => {
+    db.prepare("insert into anno_evid_exec(image_sha256, argv_digest, seed, address, source_bank) values (?, ?, ?, ?, ?)").run(
+      identity.imageSha256,
+      identity.argvDigest,
+      identity.seed,
+      identity.address,
+      identity.sourceBank,
     );
     return true;
   });
@@ -200,6 +262,30 @@ if (mode === MODE_COMMIT || mode === MODE_NO_COMMIT) {
   handle.db.exec("rollback");
   closeStore(handle);
   process.exit(0);
+} else if (mode === MODE_INSERT_EVID) {
+  const writerToken = process.argv[4];
+  const imageSha256 = process.argv[5];
+  const argvDigest = process.argv[6];
+  const seed = process.argv[7];
+  const address = Number(process.argv[8]);
+  const sourceBank = process.argv[9];
+  if (
+    typeof imageSha256 !== "string" ||
+    typeof argvDigest !== "string" ||
+    typeof seed !== "string" ||
+    !Number.isInteger(address) ||
+    typeof sourceBank !== "string"
+  ) {
+    process.stderr.write(
+      `anno-durability-mutator: mode ${MODE_INSERT_EVID} needs argv[5..9] to be imageSha256, argvDigest, seed, address, sourceBank\n`,
+    );
+    process.exit(2);
+  }
+  const write = pickWriter(writerToken);
+  mutateEvidence(storePath, write, { imageSha256, argvDigest, seed, address, sourceBank });
+  // NO clean close and NO process.exit, for the identical reason the range
+  // modes give above: the kill IS the point.
+  process.kill(process.pid, "SIGKILL");
 } else {
   process.stderr.write(`anno-durability-mutator: unknown mode ${JSON.stringify(mode)}\n`);
   process.exit(2);

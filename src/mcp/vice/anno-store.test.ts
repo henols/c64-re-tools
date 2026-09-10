@@ -3866,11 +3866,18 @@ test("CR-08: a retained snapshot TRUNCATED to zero bytes is REFUSED by name -- t
       // the finding is quoted in and it is left spelled out here so the finding
       // stays matchable -- and what this line pins is TODAY's live store, whose
       // whole point is that the bytes below are IDENTICAL after the refusal.
+      //
+      // RE-RECORDED AGAIN 2026-09-10 (43-02), 81920 -> 94208, FOR THE SAME
+      // ADMISSIBLE REASON: `SCHEMA_VERSION` 4 adds `anno_evid_exec` and its
+      // own index, so the same three-write store carries more schema pages
+      // again. The CR-08 reproduction's own historical figures (69,632 and
+      // 81,920) are unchanged above and stay matchable against their own
+      // findings; only what this line pins -- TODAY's live store size -- moves.
       assert.equal(
         bytesBefore.length,
-        81920,
-        "the live store measures 81,920 bytes at SCHEMA_VERSION 3 -- the CR-08 reproduction destroyed 69,632, which is the same store " +
-          "one table and one index smaller (D-15)",
+        94208,
+        "the live store measures 94,208 bytes at SCHEMA_VERSION 4 -- one table and one index bigger than D-15's 81,920 (anno_evid_exec, " +
+          "43-02)",
       );
       assert.equal(rowsBefore.length, 3, "with the three rows the three writes added");
 
