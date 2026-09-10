@@ -47,7 +47,7 @@ whose whole job is to settle it.
 - [ ] **EVID-03**: A user can ask where the byte-derived block classification and the observed-execution evidence **disagree**, and get the disagreements first. The block table stays byte-derived and is never silently overwritten by an observation; agreement is reported as a count rather than as a wall of rows. *(Disagreement — bytes say data, execution says code — is the highest-value output of the whole design, and the two classifiers' independence is the asset that produces it.)*
 - [ ] **EVID-04**: The evidence layer cannot state, imply, or render that an address is `data` on the strength of never having been observed executing. An address observed executing **is** code; an address never touched proves nothing, and a union across runs — however many — never becomes exhaustive. Any percentage or summary carries the denominator it is a fraction of. *(The soundness asymmetry is a design constraint of the whole layer, not a caveat on it. Several individually-plausible implementation choices violate it quietly, so this is stated as a requirement rather than left to care.)*
 - [ ] **EVID-05**: Evidence gathered from a run states which bracket it belongs to, and a bracket can be reset and re-measured without a previous run's observations leaking into it.
-- [ ] **EVID-06**: Before any evidence is trusted as comparable across runs, a measurement establishes whether turning the instrumentation on perturbs the frame-exact reproducibility v0.8.0 shipped — A/B at the existing anchor sequence, with the pass/fail rule fixed before the measurement is taken. If it does perturb it, instrumented and frame-exact runs are separated and labelled as such rather than quietly conflated. *(UNVERIFIED and blocking: the evidence layer keys rows by a reproducibility that instrumenting the run may itself destroy. No documentation source answers this; only the A/B does.)*
+- [x] **EVID-06**: Before any evidence is trusted as comparable across runs, a measurement establishes whether turning the instrumentation on perturbs the frame-exact reproducibility v0.8.0 shipped — A/B at the existing anchor sequence, with the pass/fail rule fixed before the measurement is taken. If it does perturb it, instrumented and frame-exact runs are separated and labelled as such rather than quietly conflated. *(UNVERIFIED and blocking: the evidence layer keys rows by a reproducibility that instrumenting the run may itself destroy. No documentation source answers this; only the A/B does.)*
 
 ### Preprocessing — the three VICE host binaries
 
@@ -134,7 +134,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | EVID-03 | Phase 43 | Pending |
 | EVID-04 | Phase 43 | Pending |
 | EVID-05 | Phase 43 | Pending |
-| EVID-06 | Phase 43 | Pending |
+| EVID-06 | Phase 43 | Complete |
 | PREP-01 | Phase 40 | Complete |
 | PREP-02 | Phase 40 | Complete |
 | ~~PREP-03~~ | Phase 40 | ~~Pending~~ — **Removed 2026-09-08**, see Excluded table |

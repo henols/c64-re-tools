@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 43
 current_phase_name: The Runtime Evidence Layer
 status: executing
-stopped_at: Phase 43 planned (7 plans, 6 waves), ready to execute
-last_updated: "2026-09-10T06:11:50.917Z"
+stopped_at: Completed 43-01-PLAN.md
+last_updated: "2026-09-10T07:25:48.516Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 43 planned — 7 plans in 6 waves
-state_head: 68ad30423d8b480621c8fb6d6d40b09d5674d0ea
+last_activity_desc: Phase 43 execution started
+state_head: ad42d2a2bc6df2e232f6a7b0446e417ed330b13d
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 48
-  completed_plans: 41
+  completed_plans: 42
   percent: 67
 ---
 
@@ -30,7 +30,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Phase 43 — The Runtime Evidence Layer, in milestone
+**Current focus:** Phase 43 — The Runtime Evidence Layer
 **v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
 Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
 Phase 38 rather than resetting, with 20/20 requirements mapped and cross-checked
@@ -227,10 +227,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 43 (The Runtime Evidence Layer) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-09-10 — Phase 43 planned (7 plans, 6 waves)
+Phase: 43 (The Runtime Evidence Layer) — EXECUTING
+Plan: 2 of 7
+Status: Plan 01 complete (EVID-06 answered: no-perturbation), plan 02 next
+Last activity: 2026-09-10 — Phase 43 plan 01 complete
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -515,6 +515,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 42 P14 | 20min | 2 tasks | 3 files |
 | Phase 42 P15 | 17min | 2 tasks | 4 files |
 | Phase 42-the-text-format-parsers-and-their-two-binary-fixtures P16 | 20min | 3 tasks | 5 files |
+| Phase 43 P01 | 55min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1159,6 +1160,7 @@ Recent decisions affecting current work:
 - [Phase 42]: Restored PARSE-03 and PARSE-04 to Complete in REQUIREMENTS.md after re-measuring both demotion causes green on the final gap-closure-round tree (io drift refusal for all five formats; the cold-profiler state named and the identity disagreement reaching the caller) -- a conditional, scoped flip, never assumed from the plans having merely run.
 - [Phase 42]: CR-02 closed: io classified via a pure builder (textCapabilityVerdictFor), structurally excluded from the capability cache (NEVER_CACHED_COMMANDS) — Both remedies from 42-VERIFICATION.md's gap applied together -- either alone leaves a real hole
 - [Phase 42]: Plan 42-16 proved plan 42-15's CR-02 fix live over two io addresses in one genuine-stock VICE 3.9 session (fromCache=false, judged on the second reply), recorded the round-2 evidence in docs/phase42-text-format-drift-citations.md, returned PARSE-04 to Complete on that measurement, and closed the CR-02 disposition record with its STATE.md ledger row moving in the same commit (pending count 8 -> 7). — The flip was gated on re-measurement, not on a plan having run: every item the demotion cause named (cache exclusion in all three sites, both wrong-answer directions, empty-reply handling, and a live two-address proof) was individually confirmed green first.
+- [Phase 43]: EVID-06 verdict: no-perturbation (depths 10 and 50, control-of-the-control equivalent both depths, 0 differing bytes) — Live A/B against genuine stock VICE 3.9 in plan 43-01; memmapzap/memmapshow dials do not perturb the S3 anchor sequence's frame-exact capture through hit 50, so the evidence table's run-identity stays the bare triple with no run_class column
 
 ### Pending Todos
 
@@ -2177,8 +2179,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-09T22:22:12.419Z
-Stopped at: Phase 42 complete, ready to plan Phase 43
+Last session: 2026-09-10T07:25:47.552Z
+Stopped at: Completed 43-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)
