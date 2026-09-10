@@ -22,7 +22,7 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-10 after Phase 42)
+See: .planning/PROJECT.md (updated 2026-09-10 after Phase 43)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
@@ -30,7 +30,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 *Confirmed still correct at the v0.8.0 close: the added engines sit downstream of
 the live drive, so the ONE thing did not move — it acquired a measured floor.*
 
-**Current focus:** Phase 43 — The Runtime Evidence Layer
+**Current focus:** Phase 44 — PROOF-04 — The Independent External Check
 **v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
 Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
 Phase 38 rather than resetting, with 20/20 requirements mapped and cross-checked
