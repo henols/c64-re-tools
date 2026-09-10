@@ -68,6 +68,29 @@ with every other route banned by a CI gate observed biting on planted
 violations. New host prerequisites, both declared by version with a digest:
 locally built dxa 0.1.5, and Ghidra 12.1.3 (**not** vendored — 543 MiB).
 
+**As of v0.9.0 the plugin talks to one emulator over two channels, and stores
+what the machine *did* separately from what its bytes *imply*.** Alongside the
+binary monitor, the stock backend now dials VICE's `-remotemonitor` **text**
+channel — a port the broker had appended to every stock launch since Phase 3
+and that nothing had ever connected to. Both channels share one FIFO mutex, so
+neither can land inside the other's halt, and a machine merely contended
+between them is reported as contended **by name** rather than diagnosed as
+wedged and recycled. Five of the text monitor's human-formatted outputs
+(`memmapshow`, `chis`, `bt`, `prof flat`, `io`) are parsed into structured data
+by exactly one owning module each, with fixtures pinned to the two real VICE
+binaries they were captured from and every closed vocabulary refusing by name on
+version drift instead of guessing. Three preprocessing host tools — `c1541` and
+`petcat` over the same typed `host_tool` op — read a disk's real BAM, directory
+and sector chains, and decode a BASIC stub's `SYS` handover before any
+disassembler is spent. On top of this, `.annostore` gains a **runtime evidence
+layer** (`anno_evid_exec`, `SCHEMA_VERSION` 4): per-address records of what the
+emulator was *observed* executing, keyed by run identity, monotonically
+accumulating, and joined against the byte-derived block table by a query that
+reports **disagreement first**. Observed-executing means code; never-observed is
+a bare count that the type system gives no way to render as `data`. **Nine skills**
+ship, not seven — `c64-petcat` and `c64-disk-access` are this milestone's, both
+built on the `host_tool` seam rather than on new architecture.
+
 ## Core Value
 
 A Claude session can reliably drive a real C64 emulator to reverse-engineer a
@@ -87,6 +110,19 @@ drive — dxa and Ghidra read what the emulator produced — so the ONE thing th
 session needs did not move; it acquired a floor under it. The measured limit
 (exactness lost from anchor hit 75) narrows *how far* a run stays reproducible,
 not what the core value is.
+
+*Still correct after v0.9.0, and this milestone widened "drive" rather than
+moving it.* Until now "drive a real C64 emulator" meant one channel — the
+binary monitor. v0.9.0 opened a **second** channel to the same running machine
+(`-remotemonitor`), proved the two coexist without corrupting each other's view
+(`CHAN-01` → `go`, rule `R15`), and put both behind one cross-channel mutex so
+neither can land mid-wait. The ONE thing is unchanged; what changed is that
+"reliably" now survives two concurrent clients, and that a contended instance
+reports contention by name instead of being misdiagnosed as wedged and
+destroyed. The milestone also added a genuinely new *kind* of fact — what the
+emulator **observed** executing — kept structurally apart from what the bytes
+imply, with disagreement between them as the output. That is downstream of the
+live drive too, so it deepens the core value rather than competing with it.
 
 **Kept as-is (CORE-01, decided 2026-08-23).** The flag recorded at the v0.3.0
 close — quoted here rather than left standing as its own paragraph, since
@@ -236,34 +272,70 @@ rather than re-confirmed a fifth time.
 - ✓ All 105 opcode bytes stock `6502.slaspec` omits decode under a SLEIGH extension that does not collide with `65c02.slaspec` — v0.8.0 Phase 36 (`OPC-01`..`OPC-04`; a vendored NMOS extension compiled under `support/sleigh` into a new `6502:LE:16:nmos` language, installed by its own host tool, needing **no Gradle and no Ghidra rebuild**). The control is observed **red**: the same all-105 assertion FAILS under `6502:LE:16:default`. The six electrically-unstable and page-crossing bytes decode to a form naming their own opaque operation rather than plausible arithmetic, and the 15 bytes both languages claim keep the 65C02's own meaning, with the non-collision proven **structural** rather than asserted. `OPC-01` was **fix → compile → integrate → verify**, not the forecast integrate-and-verify — this milestone's research falsified the standing claim that `docs/undocumented-opcodes-ghidra.md`'s p-code compiled, and one root cause covered all eight failing constructors. On a real cracked release (`danish.d64`) the two languages differ by 103 classified addresses, attributable to a real illegal opcode's own file offset
 - ✓ Machine addresses annotate themselves into the owned store with no agent, no queue walk and no skill in the loop — narrowest-range-wins, in-image addresses skipped, bank state resolved before address, and a decline rather than a confident wrong comment wherever bank state is path-dependent — v0.8.0 Phase 37 (`IMP-01`, `IMP-02`, `AUTO-01`..`AUTO-08`; the hypothesis named `AUTO-01`..`AUTO-07`, and the phase also shipped the two importer ids and `AUTO-08`’s `memmapSha256` provenance). Six required controls landed as committed red transcripts under the phase’s `evidence/`, and the graphics feedback was **exercised, not merely built** — 512 phantom labels minted by a charset decoded as code before the feedback, 0 after, measured live against real Ghidra 12.1.3
 - ✓ `PROOF-01`..`PROOF-03` are real measurements on real cracked code rather than `could-not-run` — v0.8.0 Phase 38 (`PROOF-01`..`PROOF-03`; 3/3 observable truths verified, and **each of the three is stated beside the fixture figures rather than replacing them**). `PROOF-01`: `100.00 (24/24)` data recovery on `danish.d64`'s `BRUCE LEE (DC)`, positive class `data`, denominator the BASIC loader stub only, recorded beside the unchanged fixture `72.39 (97/134)` and pivot `72.46 (100/138)` figures, with the pivot's non-reproduction labelled a **hypothesis** and two weaknesses named rather than absorbed — no independent external check, and a structurally uncomputable false-positive count. `PROOF-02`: `not-exercised` at **both** searched depths — 53 `$6C` sites at loader/depacker depth and 1 at depacked depth, enumerated Ghidra-independently *before* each live `analyzeHeadless` run (document ordering asserted, not claimed), the roll-up derived from a rule stated before its value. This is a statement about **this corpus at the depths searched**, not a clean bill of health for computed dispatch, and no entry points were supplied to the depacked-depth run. `PROOF-03`: measured in **both** directions — the same `$D020` annotates differently under `$34` and `$33`, and `PROOF03_FORWARD_CARRY_WRONG_AT: $d020` is where a scratch-mutated forward-carry annotates confidently and wrongly while the committed branch declines with a reason naming both values. The fixture behind it is **synthetic** and the `danish.d64` question stays open, both stated in the record itself. Depacked capture obtained live through Phase 33's unchanged `capture-pair.mjs` (`differing=0`, two-term `(PC, hit_count)` oracle stated beside the numbers, frame term recorded not asserted)
+- ✓ A text-monitor client and a binary-monitor client drive the same running emulator without corrupting each other's view — v0.9.0 Phases 39, 41 (`CHAN-01`..`CHAN-05`). `CHAN-01` is the **first `go`** any of this project's four go/degrade/no-go gates has returned (rule `R15`), decided from seven values measured live against genuine stock VICE 3.9 with the rules and their 3,888-tuple executable totality proof frozen in one commit **before** any measurement existed. On that verdict Phase 41 dialed `-remotemonitor` end to end for the first time in the project's history: the broker now carries an instance's text-monitor port to the container (`CHAN-02`, previously a measured plumbing gap), `TextMonitorClient` frames real round trips against a prompt proven to arrive split, duplicated and banner-preceded (`CHAN-03`), and **both** channels pass through one FIFO cross-channel mutex (`channel-lock.ts`) so a text command attempted during a held binary wait is refused rather than landing mid-wait (`CHAN-04`, MEASURED live, not argued). `CHAN-05` closes the destructive failure mode: a contended instance answers `live` with `evidence.channelContention` naming the holder, guarded structurally inside `vice_diagnose`'s own handler rather than warned about in prose, so contention is no longer misread as a wedge and recycled. A stock launch that cannot bind its text port now fails the whole acquire instead of degrading.
+- ✓ Five human-formatted text-monitor outputs are structured data with one owning module each, and a build that lacks a command says so by name — v0.9.0 Phase 42 (`PARSE-01`..`PARSE-04`, verification `passed` 5/5 across two gap-closure rounds). `memmapshow` preserves **execute as its own bit** (`PARSE-01`); `chis`, `bt`, `prof flat` and `io` decode into ranked cycles, per-entry CPU history, the reconstructed JSR chain and the semantic register view (`PARSE-02`) — `prof flat` reading VICE's U+202F narrow-no-break-space thousands separator by ASCII-space-only tokenization, never a whitespace-class split. Every closed set (processor flags, memspace markers, register-label order, frame origins, sprite-table offsets) **refuses by name on drift** rather than decoding a plausible-looking wrong answer. Fixtures come from two real binaries (stock 3.9, fork 3.10) pinned to the binary they came from, and `textmon-seam.test.ts` mechanically enforces one owner per format against the real tree (`PARSE-03`). `PARSE-04` is answered per command rather than by a version gate — and the polarity is the **opposite** of a version floor: tracing/profiling support is opt-**out** at build time, `memmapshow`/`chis` share one guard and one remedy sentence, `bt`/`prof flat` are gated by nothing and never claim a build gap, and `io` degrades per-chip at runtime and is reported as a chip fact. All five decoded a reply dialed live from genuine stock `/usr/bin/x64sc`.
 - ✓ What the emulator observed becomes durable, run-keyed, monotonically accumulating store state, joined against the byte-derived block table by a query that reports disagreement **first** and agreement as a count, never overwriting it — v0.9.0 Phase 43 (`EVID-01`..`EVID-06`, verification `passed` 5/5; `anno_evid_exec` at `SCHEMA_VERSION` 4, `evid-reconcile.ts`'s join, `anno_evid_ingest`/`anno_evid_disagreements`/`anno_evid_runs`/`anno_evid_reset`). The soundness asymmetry the hypothesis was bounded by is enforced **structurally**, not by care: `RuntimeExecClass` is `"code" | "unobserved"` with no `data` member to return, the never-observed population is a count with no row array and no class field, and every summary carries the denominator it is a fraction of
 - ✓ `PROOF-01`'s missing independent external check, delivered — its false-positive count is computable for the first time — v0.9.0 Phase 44 (`PROOF-04`; 3/3 observable truths verified). The reversal condition stated verbatim at the v0.8.0 open — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — is closed by the **second** branch, deliberately and on the record. Measured live against genuine stock VICE 3.9 on `danish.d64`'s `BRUCE LEE (DC)`: **168 false positives / 45072** at anchor hit 50 (labelled `frame-exact-region`, inside `EVID-06`'s proven window) and **434 / 45072** at anchor hit 3000 (labelled `narrowed`, not frame-exact), positive class `code`, tier `runtime-observed`. Both runs are recorded **beside each other**, neither superseding the other, and both cite one identical `SUBJECT_ARTIFACT_SHA256` so anchor depth was the only variable. All three Phase 38 figures — `100.00 (24/24)`, `72.39 (97/134)`, `72.46 (100/138)` — are restated verbatim beside the new numbers rather than replaced. Independence is asserted **structurally, not promised**: two separately-invoked producers with closed import lists, proven non-vacuous by planted-violation controls in both directions, joined by exactly one call to the shipped `reconcileObservedExecution()`. Two limits are named rather than absorbed: the never-observed population stays a **count** and is never converted into a class, and the deeper run's reach past `EVID-06`'s hit-50 bound is labelled `narrowed` in its own section rather than softened into a parenthetical.
 
 ### Active
 
-<!-- Rewritten 2026-09-06 at the open of milestone v0.9.0 — The Text Channel and
-     the Runtime Evidence Layer. The four bullets below are this milestone's
-     hypotheses; `.planning/REQUIREMENTS.md` carries their REQ-ID form. The two
-     standing hypotheses v0.9.0 does NOT take are kept below them, re-dated
-     rather than dropped, so a reader can still see the project's full forward
-     intent. -->
+<!-- Rewritten 2026-09-10 at the CLOSE of milestone v0.9.0. Every v0.9.0
+     hypothesis moved to Validated; what remains below is forward intent.
+     `.planning/REQUIREMENTS.md` is deleted at each close and re-created by
+     `/gsd-new-milestone`, so no REQ-ID form of these exists right now. -->
 
-**This milestone's hypotheses (v0.9.0):**
+**v0.9.0's single hypothesis is Validated and is no longer listed here.** It
+read: *the text-monitor channel is claimable as a second client without
+corrupting the binary client's view* — with interleaved command behaviour called
+out as **Unverified** and the gate on everything else. It was measured, not
+assumed: `CHAN-01` returned `go` on rule `R15`.
 
-- [ ] The text-monitor channel is claimable as a *second* client without corrupting the binary client's view. Bind-time coexistence is confirmed against stock 3.9; interleaved command behaviour is **Unverified** and is the gate on everything else here, because the text monitor halts the machine on command exactly as the binary one does
+**Standing, not yet taken — the rebuild half (v1.0.0's presumptive scope):**
 
-**Standing, not taken by v0.9.0:**
+- [ ] Decomposition to closure, rebuildable source behind a reassembly gate, and
+  equivalence plus modifiability — `DECOMP-01`..`04`, `BUILD-01`..`06`,
+  `EQUIV-01`..`04`, whose text stands in
+  [`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md) and
+  has never been re-scoped since it was cut. Re-mapped v0.7.0 → v0.9.0 → **v1.0.0**
+  (2026-09-06), on the reasoning that the runtime-evidence layer is upstream of
+  it rather than parallel to it. **v0.9.0 discharged that reasoning rather than
+  merely restating it** — see the two entries below, both of which were open
+  questions when the re-map was made and are now answered.
+- [ ] `PROOF-03` on real cracked code. The bank-boundary claim is proven in
+  **both** directions, but on a **synthetic** two-caller fixture; the
+  `danish.d64` question is open and was recorded as open rather than quietly
+  satisfied. Not taken by v0.9.0. *(v0.9.0 did close its sibling: `PROOF-04`
+  delivered `PROOF-01`'s missing external check. `PROOF-03` is the last of the
+  four still owing a real-code measurement.)*
+- [ ] Absolute-cycle equivalence above the VICE 3.9 floor. **v0.9.0 answered the
+  capability half and left the criterion half open.** `chis` over the text
+  channel is now a shipped, parsed tool (`vice_cpu_history`) returning per-entry
+  cycle counts on genuine 3.9 — so the capability *is* reachable on this host
+  even though the `CPUHISTORY_GET` opcode still needs ≥ 3.10. Whether that is
+  enough to lift `EQUIV-*`'s measured ceiling (exact through anchor hit 50, lost
+  from 75) is now a concrete question with a real instrument behind it, not a
+  hypothetical.
 
-- [ ] The rebuild half, on the substrate v0.8.0 now owns: decomposition to closure, rebuildable source behind a reassembly gate, and equivalence plus modifiability — `DECOMP-01`..`04`, `BUILD-01`..`06`, `EQUIV-01`..`04`, whose text stands in [`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md) and has never been re-scoped since it was cut. **Re-mapped from v0.9.0 to v1.0.0 on 2026-09-06**, because the runtime-evidence layer is upstream of it rather than parallel to it
-- [ ] `PROOF-03` on real cracked code. The bank-boundary claim is proven in **both** directions, but on a **synthetic** two-caller fixture; the `danish.d64` question is open and was recorded as open rather than quietly satisfied. Not taken by v0.9.0
-- [ ] Absolute-cycle equivalence above the VICE 3.9 floor. The run-equivalence oracle is raster line plus raster cycle plus the 64K comparison; `CPUHISTORY_GET` would strengthen it and needs ≥ 3.10, which this host does not run. **v0.9.0 bears on this without owning it**: `chis` over the text channel returned per-entry cycle counts on genuine 3.9, so the *capability* may be reachable on this host even though the *opcode* is not — whether that is enough to lift the ceiling is a v1.0.0 question for `EQUIV-*`
+**Inherited test-suite debt, carried into v1.0.0 rather than fixed at the
+close** (both measured, both proven pre-existing, both disclosed in STATE.md's
+Deferred Items at this close):
+
+- [ ] The 3-failure `test:automated` floor — `anno-register.test.ts` /
+  `anno-import.test.ts` fail because the annotation register cites requirement
+  ids (`STORE-01`, `STORE-04`, `STORE-06`, `IMP-01`, `IMP-02`, `AUTO-01`,
+  `MCP-04`) that no longer appear in a live `REQUIREMENTS.md`. Either re-declare
+  them or retire the register entries that cite them.
+- [ ] `audit-root-args.test.ts`'s scratch-fixture race — four sequential spawns
+  compared against a shared, live `src/skills/` tree that another test file
+  mutates mid-suite. Needs either a more tolerant comparison or cross-file
+  serialization the runner does not currently provide.
 
 **Two capabilities are Validated but currently have NO ROUTE**, withdrawn by the
 v0.7.0 removal with no phase owning their return. They are named here as well as
 in their Validated notes, because a reader scanning only this list would
-otherwise miss that the project regressed on them deliberately. **v0.9.0 does not
+otherwise miss that the project regressed on them deliberately. **v0.9.0 did not
 restore them and was not scoped to** — the 2026-08-26 "no parity is owed"
-decision stands for a second milestone running:
+decision now stands for a third milestone running:
 
 - `ANNO-13` — generated bit-name enums from `memmap.json` (`gen-enums` withdrawn;
   the heuristics survive as live code in `anno-enum-gen.ts`, and the by-hand route
@@ -315,6 +387,24 @@ feature**, **sprite bitmap locations and the `$DD00` VIC banking axis** (carried
 gaps, unowned — no plan may quietly promise either), **`-limitcycles` as a
 capture route**, and **text-monitor `bsave` as a capture route**.*
 
+*Re-audited at the v0.9.0 close, 2026-09-10. **Every entry's reasoning still
+holds and none was removed** — and this close is the one where that sentence
+carries real weight, because v0.9.0 **deliberately reversed** one of the
+boundaries above rather than quietly working around it. "Dialling the
+`-remotemonitor` text channel at all" was excluded by v0.8.0 and became the
+whole of v0.9.0's first half. The entry is kept, dated, and marked reversed
+below rather than deleted, so the record shows a boundary that was reconsidered
+on evidence (a `go` gate on live measurement) instead of one that silently
+eroded. Two v0.8.0 entries were **confirmed rather than reversed** by adjacent
+work: the text monitor's `stopwatch` stayed out of scope even though the channel
+it lives on is now open, and `x64` ↔ `x64sc` switching stayed out even though
+the command is now reachable. Nothing was added this milestone beyond the two
+owner exclusions already recorded at the v0.9.0 open (text-monitor `a`/`d`, and
+mode switching), and the `cartconv`/`PREP-03` withdrawal is **not** recorded
+here — withdrawn requirements belong in `REQUIREMENTS.md`'s Excluded table, and
+that convention is unchanged.*
+
+
 - **Client-side SID write-shadowing mitigation** — switchability supersedes it. SID read-back routes to the fork backend, which retains `vice_sid_get_state`. Shadowing could only ever capture writes the client itself issued, never the running program's, so it was never parity. (Resolves ingest WARNING W1.)
 - **Removing or deprecating the fork backend** — it is the hedge against stock's three hard losses (SID read-back, matrix keyboard, RESTORE/NMI) and the reason this migration is not a bet. Its incremental maintenance cost is near zero since it already exists and is tested. *Reaffirmed at v0.2.0 close: the fork's 62-tool surface shipped unchanged. Formalised by FORK-01 (Key Decisions, 2026-08-22): retained as the default hedge, now with dated reversal criteria — see that row rather than treating this bullet as the sole record.*
 - **Upstreaming a `KEYBOARD_MATRIX_SET` opcode to VICE** — genuinely worth doing (~60 lines in `monitor_binary.c` calling `keyboard_set_keyarr_any`, and it would close the hardest loss for everyone), but it is an upstream contribution, not a deliverable of this project. Recorded as a follow-up.
@@ -333,45 +423,72 @@ capture route**, and **text-monitor `bsave` as a capture route**.*
 
 ## Context
 
-**Codebase as of the v0.8.0 close, 2026-09-06.** ~184k lines of TypeScript /
+**Codebase as of the v0.9.0 close, 2026-09-10.** ~209k lines of TypeScript /
 `.mts` / `.mjs` under `src/` (`git ls-files`, `wc -l`, vendored sources
-excluded) — up ~29k from v0.7.0's ~155k. Node ≥ 24 for the MCP server — it runs
+excluded) — up ~25k from v0.8.0's ~184k. Node ≥ 24 for the MCP server — it runs
 its `.ts` sources directly under native type-stripping, with no build step at
 runtime; Node ≥ 18 for the plain-`.mjs` installer. **No new npm runtime
-dependency was added this milestone**: `@mastra/mcp` for stdio JSON-RPC framing
-and the built-in `node:sqlite` are still the whole list. Seven skills ship. The
-`vice` tool surface is 62 tools on the fork backend and 38 on stock, plus 21
-`anno_*` tools that are backend-independent by construction. **Six host tools**
-are reachable over the `host_tool` control op and no other route —
-`acme.build`, `ghidra.analyze`, `ghidra.installExtension`, `dxa.disassemble`,
-`oracle.probe`, `oracle.run` — with `scripts/check-no-skill-external-spawn.mjs`
-in CI banning every other route. External prerequisites: a VICE build (stock
-`x64sc` ≥ 3.9, or the fork), ACME on `$PATH` for `acme-build` and the test-only
-export oracle, and — **new this milestone, both declared by version with a
-digest rather than vendored wholesale** — a locally built dxa 0.1.5 (vendored
-source, GPL-2.0-or-later, quoted in `THIRD-PARTY-NOTICES.md`) and a host Ghidra
-12.1.3 (543 MiB, explicitly *not* vendored; the NMOS SLEIGH extension this
-project ships installs into it).
+dependency was added this milestone either**: `@mastra/mcp` for stdio JSON-RPC
+framing and the built-in `node:sqlite` are still the whole list — the text
+channel is a hand-rolled line protocol over a raw socket, not a library. **Nine
+skills ship** (seven at the v0.8.0 close; `c64-petcat` and `c64-disk-access` are
+new). The `vice` tool surface is **62 tools on the fork backend and 46 on
+stock** — up from 38, the whole increase being text-channel tools the fork
+already had or does not need — plus **25 `anno_*` tools** (21 at the v0.8.0
+close; the four new ones are `anno_evid_ingest`, `anno_evid_disagreements`,
+`anno_evid_runs`, `anno_evid_reset`), backend-independent by construction.
+**Six host tools** are reachable over the `host_tool` control op and no other
+route — `acme.build`, `ghidra.analyze`, `ghidra.installExtension`,
+`dxa.disassemble`, `oracle.probe`, `oracle.run` — with
+`scripts/check-no-skill-external-spawn.mjs` in CI banning every other route.
+`c1541` and `petcat` are resolved as siblings of the already-resolved `x64sc`
+rather than added as new declared prerequisites, so **no new external
+prerequisite was introduced this milestone**: a VICE build (stock `x64sc` ≥ 3.9,
+or the fork), ACME on `$PATH`, a locally built dxa 0.1.5 (vendored source,
+GPL-2.0-or-later) and a host Ghidra 12.1.3 (543 MiB, explicitly *not* vendored)
+remain the whole list. All tool-written output lands under a single
+`.c64-re-tools/` root as of this milestone (`PREP-05`), the one exception —
+Ghidra's per-run project data — reached through a broker-minted relative
+symlink alias so it lands there physically too.
+
+**`.annostore` is at `SCHEMA_VERSION` 4.** The v3 → v4 bump added
+`anno_evid_exec` and was taken as a deliberate **`reaffirm-refusal`** — the
+store keeps its strict-equality schema check with no migration arm — after a
+factual check that *falsified* the v3 bump's own recorded justification yet
+still found no affected store in the field. The reversal condition for that
+decision is recorded against version 5.
 
 
-**Known issues carried out of v0.8.0**, disclosed in `STATE.md` →
-`### Deferred Items`: **8 of the 12 open audit items could not be acknowledged
+**Known issues carried out of v0.9.0**, disclosed in `STATE.md` →
+`### Deferred Items`: **8 of the 14 open audit items could not be acknowledged
 by any CLI path** — the same GFM table rows inside Phase 23's evidence tables
-that blocked the v0.7.0 close, still refused with `no deferred item matched
---text`, disclosed rather than falsified. `WR-03` (two holes in
-`host-tool.mts`'s never-throws contract) is filed as a todo rather than fixed.
-`PROOF-01` has **no independent external check** and its false-positive count is
-structurally uncomputable; `PROOF-03` is proven on a **synthetic** fixture with
-the `danish.d64` question open; `PROOF-02` reads `not-exercised`, a statement
-about this corpus at the depths searched. The frame-exact stop is **lost from
-anchor hit 75**. Phase 36's forced-conflict control is proven on the `flat64k`
-route only, accepted as an owner override 2026-09-05. Two test-suite hazards
-persist and are neither new nor CI-red: scratch fixtures written **inside walked
-trees** (`src/skills/acme-build/`, `resources/vendor/dxa/`) make
-`audit-root-args.test.ts` fail under Node's concurrent test-file execution — the
-culprit is named, the fix is `mkdtemp`, and no pass owns it; and
-`vice-proxy.test.ts` still leaks two LISTEN sockets so a whole-glob `npm test`
-does not terminate unaided (use `npm run test:automated`).
+that blocked the v0.7.0 *and* v0.8.0 closes, still refused with `no deferred
+item matched --text`, disclosed rather than falsified for the **third**
+consecutive close. `WR-03` was **fixed** this milestone (Phase 40 closed both
+never-throw holes in `host-tool.mts` with regression tests), and `PROOF-01`'s
+missing external check was **delivered** (`PROOF-04`) — its false-positive count
+is now 168/45072 at anchor hit 50 rather than structurally uncomputable. Still
+open: `PROOF-03` is proven on a **synthetic** fixture with the `danish.d64`
+question open; `PROOF-02` reads `not-exercised`, a statement about this corpus
+at the depths searched; the frame-exact stop is **lost from anchor hit 75**; and
+Phase 36's forced-conflict control is proven on the `flat64k` route only,
+accepted as an owner override 2026-09-05.
+
+**The test-suite hazards are now measured rather than estimated.** The
+documented `npm run test:automated` floor is **3 failures**, all in
+`anno-register.test.ts` / `anno-import.test.ts`, caused by the annotation
+register citing requirement ids (`STORE-01`, `STORE-04`, `STORE-06`, `IMP-01`,
+`IMP-02`, `AUTO-01`, `MCP-04`) that no live `REQUIREMENTS.md` declares — proven
+pre-existing and unrelated to the work that surfaced it. Beside that floor sits
+the `audit-root-args.test.ts` scratch-fixture race: Phase 40 **fixed** the two
+`mkdtemp` sites named at the v0.8.0 close, then discovered and proved a
+**second, orthogonal** hazard the fix does not touch — that test runs four
+sequential spawns against the shared, live `src/skills/` tree while another test
+file plants and removes a fixture inside it, so the four spawns can disagree.
+Closing it needs a more tolerant comparison or cross-file serialization the
+runner does not provide. Separately, `vice-proxy.test.ts` still leaks two LISTEN
+sockets, so a whole-glob `npm test` does not terminate unaided — use
+`npm run test:automated`.
 
 **Carried further forward, unresolved across two closes:** `STORE-03`'s
 traceability row (`Complete`) contradicts the round-6 verifier's own quoted
@@ -599,6 +716,11 @@ ceiling is explicitly recorded.
 | Prove producer independence **structurally**, with planted-violation controls in both directions, rather than asserting it in prose (Phase 44, `PROOF-04`, 2026-09-10) | The entire value of an external check is that it is external; a promise of independence is worth nothing when the two producers live in one repo and one author wrote both. A test that only ever passes proves nothing either — hence a control that plants a forbidden specifier in a real import position (must be flagged) **and** one that plants the same token inside a comment (must NOT be flagged) | ✓ Good — 7/7 with both controls; the specifier-scoped census distinguishes a real import from boundary-documentation prose, so the check has teeth without being brittle |
 | Record **two** anchor depths beside each other, neither superseding the other, rather than publishing the single most defensible number (Phase 44, `PROOF-04`, 2026-09-10) | The licensed run at hit 50 sits inside `EVID-06`'s proven frame-exact window; the run at hit 3000 sees more execution but past the bound. Publishing only the licensed one hides that the count grows with depth; publishing only the deeper one claims exactness that was not measured. Both, with the same subject artifact digest so depth is the only variable, states the actual shape of what is known | ✓ Good — 168/45072 and 434/45072 recorded with their own labels; the depth dependence is visible rather than averaged away |
 | Gate the findings record with a script that re-derives every number from the transcripts alone (Phase 44, `PROOF-04`, 2026-09-10) | A summary document is exactly where a number quietly drifts from the run that produced it — the provenance trail stays intact while the figure goes wrong. Authorship is not a control | ✓ Good — `proof04-verify-record.mjs` passes 7/7 and reds 3 tied assertions against a planted altered denominator, so the record cannot silently diverge from its own runs |
+| Freeze `CHAN-01`'s decision rules and their totality proof **before** taking any of the seven measurements (Phase 39, 2026-09-06) | A gate whose rules are written after the numbers are known is not a gate. Committing R1..R15 plus a 3,888-tuple executable proof that every input combination maps to exactly one verdict makes the verdict derived rather than judged, and makes `could-not-run` structurally unemittable. | ✓ Good — the gate returned **`go`** on rule `R15`, the first `go` any of this project's four gates has produced, and nobody had to argue about it |
+| Honour `CHAN-01`'s `go` by opening the text channel, having pre-committed to `no-go` on a single named trigger (Phase 39, 2026-09-06) | The sole no-go trigger was `IDLE_COEXIST` failing — two clients unable to bind at once. It measured clean on genuine stock 3.9, as did all six other inputs. | ✓ Good — the milestone's entire remaining scope rested on this one measurement, and it was taken before any of that scope was planned |
+| Route **both** channels through one FIFO cross-channel mutex rather than giving each its own lock (Phase 41, `CHAN-04`, 2026-09-09) | The text monitor halts the machine on command exactly as the binary one does (MEASURED 2026-08-27), so it inherits `vice-sync.ts`'s serialization invariants rather than being a free non-pausing side-channel. Two independent locks would let a text command land inside a held binary wait. | ✓ Good — MEASURED live: a text command attempted during a held `vice_run_until` is refused, not interleaved. It also forced a real design correction — `vice_device_console`/`vice_warp_set` had to register `needsSession:false`, because the plan's own suggested binary-locking adapter would have self-deadlocked against this very mutex |
+| Report channel contention as `live` with a named holder instead of the existing `wedged` verdict, guarded in the handler rather than in prose (Phase 41, `CHAN-05`, 2026-09-09) | `wedged` is a **destructive** verdict — it authorises a recycle. Stock's measured `accepted-then-silent` wire state makes a contended instance look exactly like a hung one, so opening a second channel without this would have made the triage playbook destroy healthy instances. | ✓ Good — a structural guard in `vice_diagnose`'s own handler, with the `vice-wedge-triage` playbook updated in the same phase rather than left to drift |
+| Delete the warm floor's speculative pre-launching outright, and fail the whole acquire when a text port cannot bind (Phase 41, 2026-09-09) | A stock launch that silently degrades to binary-only would hand callers an instance that fails later, at an unrelated call site. Launching strictly on demand removes the class of instance that exists before anyone asked for it. | ✓ Good — the launching-to-ready promotion step survived as its own function, so the deletion cost no capability |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -618,6 +740,65 @@ This document evolves at phase transitions and milestone boundaries.
 
 
 ## Current State
+
+**Shipped: v0.9.0 The Text Channel and the Runtime Evidence Layer** — 2026-09-10.
+6 phases (39-44 — no inserted decimals), 51 plans, 123 tasks,
+20/20 in-scope requirements, 5 days, 360 commits since the `v0.8.0` tag,
+`override_closeout`.
+Full record: [`MILESTONES.md`](MILESTONES.md) ·
+[`milestones/v0.9.0-ROADMAP.md`](milestones/v0.9.0-ROADMAP.md) ·
+[`milestones/v0.9.0-REQUIREMENTS.md`](milestones/v0.9.0-REQUIREMENTS.md)
+
+**This project now drives one emulator over two channels, and knows the
+difference between what the bytes imply and what the machine did.** The
+`-remotemonitor` port the broker has appended to every stock launch since Phase
+3, and that nothing had ever dialed, is open end to end — after a pre-committed
+gate answered from live measurement whether a second client could exist at all.
+`CHAN-01` returned **`go`** on rule `R15`: the first `go` any of this project's
+four go/degrade/no-go gates has returned, decided from seven values measured
+against genuine stock VICE 3.9 with the rules frozen in a commit before any of
+them existed. Both channels now pass through a single FIFO mutex, and a
+contended instance reports contention **by name** instead of being misdiagnosed
+as wedged and destroyed — a destructive failure mode closed, not merely
+documented.
+
+**Five human-formatted text outputs became structured data that refuses to
+guess.** `memmapshow`, `chis`, `bt`, `prof flat` and `io` each have exactly one
+owning parser, fixtures pinned to the two real binaries they came from, and a
+closed set of legitimate consumers enforced mechanically against the real tree.
+Every closed vocabulary — processor flags, memspace markers, register-label
+order, frame origins — **refuses by name on drift** rather than decoding a
+plausible-looking wrong answer, and a build missing a command says which
+capability, which binary and what remedy.
+
+**A third independent classifier now exists.** `anno_evid_exec`
+(`SCHEMA_VERSION` 4) stores what the emulator *observed* executing as durable,
+run-keyed, monotonically accumulating rows, joined against the byte-derived
+block table by a query that reports **disagreement first** and agreement as a
+bare count. The soundness asymmetry is enforced structurally rather than by
+care: `RuntimeExecClass` has no `data` member to return, so no amount of
+never-having-been-observed can be rendered as evidence of data. Turning the
+instrumentation on was A/B-measured against v0.8.0's frame-exact anchors before
+any of it was trusted — `no-perturbation`.
+
+**`PROOF-01`'s named reversal condition is closed, by its second branch.** Its
+false-positive count is computable for the first time: **168 / 45072** at anchor
+hit 50 and **434 / 45072** at hit 3000, measured live on `danish.d64`'s
+`BRUCE LEE (DC)`, both runs recorded beside each other with neither superseding
+the other, and Phase 38's original recall figures restated verbatim rather than
+replaced.
+
+**Three `CLAUDE.md` constraints were re-scoped rather than deleted**, each having
+been literally true but silently scoped to the *binary* monitor: `chis` returns
+CPU history with per-entry cycle counts on **3.9** (only the `CPUHISTORY_GET`
+opcode needs ≥ 3.10); `warp on` works at runtime as a monitor *command* though
+the `WarpMode` *resource* genuinely does not exist; and `device c:` is the
+`default_memspace` remedy the binary monitor has none for — the last of these
+MEASURED end to end, with a real drive checkpoint freezing main-CPU stepping and
+`device c:` restoring it.
+
+<details>
+<summary>Previous: v0.8.0 Frame-Exact Capture and the Two Engines (shipped 2026-09-06)</summary>
 
 **Shipped: v0.8.0 Frame-Exact Capture and the Two Engines** — 2026-09-06.
 6 phases (33-38 — no inserted decimals), 47 plans, 118 tasks,
@@ -774,6 +955,8 @@ keeps its 62 and is the documented route for the three capabilities stock
 provably cannot have. Verified end to end against a genuine `/usr/bin/x64sc`
 (VICE 3.9) through the real broker. Archived at
 [`milestones/v0.2.0-ROADMAP.md`](milestones/v0.2.0-ROADMAP.md).
+
+</details>
 
 ## Shipped: v0.5.0 Persistent Session and the Coverage Instrument
 
@@ -1290,7 +1473,19 @@ owned store.
   `ANNO-14` / `ANNO-15`, which no phase owns under the 2026-08-26 "no parity is
   owed" decision.
 
-## Current Milestone: v0.9.0 The Text Channel and the Runtime Evidence Layer
+## Shipped: v0.9.0 The Text Channel and the Runtime Evidence Layer
+
+**Shipped 2026-09-10** (`override_closeout`). 6 phases (39-44), 51 plans, 123
+tasks, 20/20 in-scope requirements, 5 days. `CHAN-01` returned **`go`** on rule
+`R15`. Every target feature below shipped; the section is kept as written at the
+open, so a reader can compare what was promised against what landed.
+
+**Delivered against the plan, with the two deliberate departures named:**
+`PREP-03` (cartridge banks via `cartconv`) was **removed by owner direction**
+during the Phase 40 discussion — not deferred to a named phase — and `PREP-05`
+(the broker owns every external-tool invocation and output path) was **added**
+by owner direction during the same UAT, keeping the count at 20. Both are
+recorded in `docs/phase40-preprocessing-tools-decisions.md`.
 
 **Goal:** Dial the `-remotemonitor` text-monitor port this project has opened on
 every stock launch since Phase 3 and never connected to, and make what the
@@ -1368,50 +1563,60 @@ over the text channel may lift.
 
 ## Next Milestone Goals
 
-**Both items that stood here are now scoped — v0.8.0 took them** (2026-09-02) —
-**and v0.8.0 shipped them** (2026-09-06). The frame-exact emulator stop is owned
-behind a pre-committed gate that fired and returned `degrade`, and v0.6.0's held
-Phases 24 and 26 carried forward under new numbers behind it. What remains below
-is what comes *after* v0.8.0.
+**The item that stood here is now unblocked, and v0.9.0 is why.** At the v0.8.0
+close this section said the rebuild half was next but that the runtime-evidence
+layer sat upstream of it. That layer now exists, so the dependency is discharged
+rather than merely restated.
 
-**v0.9.0 — the rebuild half, on the substrate that now exists.** v0.5.0's three
-cut phases, rewritten: decomposition to closure, rebuildable source and the
-reassembly gate, equivalence and modifiability — carrying `DECOMP-01..04`,
+**v1.0.0 — the rebuild half, on a substrate that is now complete.** v0.5.0's
+three cut phases, rewritten: decomposition to closure, rebuildable source and
+the reassembly gate, equivalence and modifiability — carrying `DECOMP-01..04`,
 `BUILD-01..06` and `EQUIV-01..04`, whose text stands in
-[`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md).
-`BUILD-01` is already reworded from "per the external analyser scope" to "per
-annotation-store scope". These were re-mapped from v0.7.0 to v0.9.0 on
-2026-08-26: each is written against a substrate v0.7.0 now builds, and
-`DECOMP-01` in particular is what `STORE-01`'s typing vocabulary is sized for,
-so scoping them before the store lands would still mean writing them twice.
+[`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md) and has
+never been re-scoped since it was cut. `BUILD-01` is already reworded from "per
+the external analyser scope" to "per annotation-store scope". Re-mapped v0.7.0 →
+v0.9.0 → v1.0.0; this is the third scoping conversation it enters, and the first
+one where nothing it depends on is hypothetical.
 
-**What v0.8.0 changes about that plan** (2026-09-06, recorded at its close so the
-next scoping conversation starts from evidence rather than the 2026-08-26
+**What v0.9.0 changes about that plan** (2026-09-10, recorded at its close so the
+next scoping conversation starts from evidence rather than the 2026-09-06
 framing):
 
-- **The preconditions are no longer hypothetical.** `DECOMP-01` needed a typed
-  store *and* a real code/data map on real code; both now exist and both were
-  measured on `danish.d64` rather than on a 279-byte fixture. The dxa partition
-  reproduces Phase 23's 145/131/3 exactly, and Ghidra's structural export carries
-  five fact kinds under a holding accounting identity.
-- **`EQUIV-*` inherits a measured ceiling, not an open question.** Run
-  equivalence is `(PC, hit_count, (LIN, CYC))` plus the 64K comparison on the
-  VICE 3.9 floor, exact through anchor hit 50 and lost from hit 75. Any
-  equivalence criterion written above that line is unmeasurable on this host
-  until `CPUHISTORY_GET` (VICE ≥ 3.10) is available.
-- **`BUILD-*` already has its oracle.** v0.7.0's real-ACME byte-diff verify path
-  refuses to read an exit status, refuses to trust the aggregate line, and
-  carries `skipped` as a third outcome that is never a pass. A reassembly gate
-  should reuse it rather than mint a second one.
-- **Three carried weaknesses are candidate scope, named rather than assumed
-  closed:** `PROOF-01`'s absent independent external check (reversal condition
-  unchanged — a binary-monitor-reachable execution oracle, or a decision to open
-  the text channel); `PROOF-03` unproven on real cracked code; and the scratch
-  fixtures written inside walked trees, whose culprit and fix (`mkdtemp`) are both
-  named and which no pass owns.
+- **`DECOMP-01`'s hardest input is now measured, not guessed.** Its code-vs-data
+  boundary problem in `$8000-$BFFF` is exactly what an execution oracle answers,
+  and that oracle shipped: `memmapshow`'s execute bit, parsed, stored per-address
+  in `anno_evid_exec`, and joined against the byte-derived block table by
+  `reconcileObservedExecution()`. The join reports **disagreement first**, so
+  `DECOMP-01` can start from where the two classifiers conflict rather than from
+  a flat listing. Note the asymmetry it must respect: observed-executing **is**
+  code, but never-observed proves nothing and cannot be rendered as `data`.
+- **`EQUIV-*`'s ceiling now has an instrument under it.** The ceiling itself is
+  unchanged — `(PC, hit_count, (LIN, CYC))` plus the 64K comparison, exact
+  through anchor hit 50, lost from 75. What changed is that `chis` over the text
+  channel returns per-entry cycle counts on genuine **3.9** and is now a shipped,
+  parsed tool (`vice_cpu_history`). Whether that lifts the ceiling is the first
+  question `EQUIV-*` should answer, and it is now answerable on this host rather
+  than blocked on VICE ≥ 3.10.
+- **`BUILD-*` still has its oracle, unchanged.** v0.7.0's real-ACME byte-diff
+  verify path refuses to read an exit status, refuses to trust the aggregate
+  line, and carries `skipped` as a third outcome that is never a pass. A
+  reassembly gate should reuse it rather than mint a second one.
+- **Two of the three carried weaknesses named at the v0.8.0 close are now
+  closed; the other two are not.** `PROOF-01`'s absent external check is
+  **delivered** (`PROOF-04`), and one of the two scratch-fixture races is fixed
+  (D-27's `mkdtemp` sites). Still open and now explicitly inherited by v1.0.0:
+  **`PROOF-03` unproven on real cracked code**, the **`audit-root-args.test.ts`
+  race** (a second, orthogonal hazard the D-27 fix does not touch), and the
+  **3-failure `test:automated` floor** in `anno-register`/`anno-import`.
 - **`ANNO-13` / `ANNO-14` / `ANNO-15` still have no route and still no owner.**
-  v0.8.0 did not restore them and was never scoped to; the 2026-08-26 "no parity
-  is owed" decision stands.
+  v0.9.0 did not restore them and was never scoped to; the 2026-08-26 "no parity
+  is owed" decision now stands for a third milestone running.
+- **A new capability is available and unscoped.** The text channel opens more
+  than the five parsed formats. VICE's `a` / `d` (assemble / disassemble) and
+  `x64` ↔ `x64sc` mode switching were **explicitly declined by owner decision on
+  2026-09-06** as carrying no value here — recorded so a later reader does not
+  read them as oversights.
+
 
 ---
 
@@ -1857,7 +2062,7 @@ written).
 
 ---
 
-*Last updated: 2026-09-10 after Phase 44 (PROOF-04 — The Independent External Check), the **last phase of milestone v0.9.0**, which closed at 3/3 plans with verification `passed` 3/3 observable truths and `PROOF-04` Complete. **One Active bullet moved to Validated** — `PROOF-01`'s missing independent external check — on the same single-phase-ownership test Phase 43 applied: this hypothesis is owned by Phase 44 alone, so the hypothesis-spanning-phases-waits-for-the-milestone-close convention does not apply to it. **The text-channel bullet is still deliberately standing** and now carries **three** unaudited phases (39, 41, 42) — unchanged from Phase 43, and now the milestone close's to audit. Four Key Decisions rows added: closing `PROOF-01`'s reversal condition by the **text-channel** branch rather than waiting for a `CPUHISTORY_GET` this host's VICE 3.9 cannot provide, and naming which branch was taken; proving producer independence **structurally** with planted-violation controls in *both* directions rather than in prose; recording **two** anchor depths beside each other (168/45072 licensed at hit 50, 434/45072 narrowed at hit 3000, one identical subject digest) rather than publishing the single most defensible number; and gating the findings record with a script that re-derives every figure from the transcripts alone, proven non-vacuous against a planted denominator. Nothing moved to Out of Scope and "What This Is" is unchanged — the phase validated planned scope and discovered no new boundary. Phase 44 closed **PARTIAL on Nyquist by design** (9 deliverables automated and green, 4 manual-only) because its central criterion is a *measurement*: a CI assertion of a specific false-positive count would be circular. Security closed `threats_open: 0` across 18 threats at ASVS L1. Two `phase.complete` write defects were repaired by hand rather than accepted — the ROADMAP Progress row left at "In Progress" with no date, and STATE.md's `current_phase_name` dropped with the plan counter reset to "Not started" over a 3/3 phase. Previously 2026-09-10 after Phase 43 (The Runtime Evidence Layer), which closed at 7/7 plans with verification `passed` 5/5 and all six of `EVID-01`..`EVID-06` Complete. **One Active bullet moved to Validated** — the runtime-evidence hypothesis — because unlike the text-channel bullet beside it, this one is owned by a *single* phase rather than spanning several, so this project's hypothesis-spanning-phases-waits-for-the-milestone-close convention does not apply to it. The text-channel bullet is deliberately still standing and now carries **three** unaudited phases (39, 41, 42) rather than two. Two Key Decisions rows added, both for verdicts this phase was structured to reach *before* the code that depends on them: `EVID-06`'s instrumentation-perturbation A/B (`no-perturbation`, measured live on genuine stock VICE 3.9 at two anchor depths, each gated by a passing control-of-the-control) taken before the evidence table existed rather than retrofitted onto a shipped key; and `EVID-02`'s `reaffirm-refusal`, reached from a factual check that **falsified** the v3 bump's own recorded justification (two releases now postdate the store) yet still observed a null result, and chose the reversible direction with its one-machine basis and its version-5 reversal condition recorded beside it. Nothing moved to Out of Scope and "What This Is" is unchanged — the phase validated planned scope and discovered no new boundary. The phase's code review closed 0 Critical / 2 Warning / 1 Info: both warnings were real and fixed in shipped code (a write path that skipped `base_revision` staleness checking, and a count read outside its own transaction), and the Info was declined on evidence that the guard it asked for already existed. Previously 2026-09-10 after Phase 42 (The Text-Format Parsers and Their Two-Binary Fixtures), which closed at 16/16 plans across two gap-closure rounds with verification `passed` 5/5 and all four of `PARSE-01`..`PARSE-04` Complete. **No Active bullet moved**, deliberately: Phase 42 delivers the parsers that sit on top of the text channel, but the v0.9.0 hypothesis a reader would compare it against — "the text-monitor channel is claimable as a *second* client without corrupting the binary client's view" — spans Phases 39, 41 and 42, and this project's convention is that a hypothesis spanning phases is audited as a whole at the milestone close, where Phases 38 and 41 left theirs standing for the same reason. **Phase 41 did not evolve this file at all** (no `docs(project): evolve PROJECT.md after Phase 41` commit exists; the last evolution was Phase 40's), so that bullet now carries two unaudited phases rather than one — named here so the milestone close finds it rather than inheriting it silently. One Key Decisions row added, for gap round 2's `CR-02`: closing a per-call cache-category defect by making the category error unrepresentable (a pure verdict builder plus a frozen never-cached command set closing write, read and in-flight-memo paths) rather than by tuning the cache, proven live on genuine stock VICE 3.9. Nothing moved to Out of Scope and "What This Is" is unchanged — the phase validated planned scope and discovered no new boundary. Previously 2026-09-08 after Phase 40 (The Three Preprocessing Host Tools) — the fourth v0.9.0 hypothesis moved from Active to Validated as `c1541` and `petcat`, with three scope notes attached rather than folded into the line: `cartconv`/`PREP-03` was **withdrawn by owner direction before any of it was built** (so the three-tool hypothesis shipped as two, and the missing third is named so it cannot read as delivered); the `.d64` supersession the phase planned to **defer** was reached and executed instead, deleting `d64-parse.mjs` and `anno-d64.ts`; and `PREP-05` was added mid-phase by owner direction at the UAT, whose one major issue took a four-plan gap round (`G-40-1`) to close. Two Key Decisions rows added — the in-phase parser supersession, and reaching the one tool-written root through a non-dotted alias symlink after measurement falsified the recorded "unavoidable external-tool constraint". **No Out of Scope entry was added for `cartconv`**, deliberately: withdrawn requirements are recorded in `REQUIREMENTS.md`'s Excluded table, and this section is re-audited as a whole at the milestone close, where prior milestones audited it — the withdrawal is instead named in the Validated entry a reader would compare against. Previously 2026-09-06 at the **start of milestone v0.9.0 — The Text Channel and the Runtime Evidence Layer** (`## Current Milestone: v0.9.0` added below `## Shipped: v0.8.0`; Active rewritten from four standing hypotheses to this milestone's four plus the three it deliberately does NOT take, each re-dated rather than dropped, with the rebuild half's re-map from v0.9.0 to v1.0.0 stated in the bullet itself; two Out of Scope entries added — the owner's 2026-09-06 exclusion of text-monitor assemble/disassemble and `x64`↔`x64sc` switching, and the explicit, reasoned REVERSAL of v0.8.0's "dialling the `-remotemonitor` text channel at all" exclusion, which is superseded here and left standing there. Phase numbering continues at 39; phase directories were again NOT archived, per the measured v0.7.0 decision.) Previously 2026-09-06 at the **close of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (full evolution review: "What This Is" and Core Value each gained a dated v0.8.0 paragraph rather than a rewrite; the **five** Active bullets from Phases 33, 35 and 36 that the Phase 38 transition deliberately left standing were moved to Validated together with a **sixth** entry for Phase 34's host-tool seam, which had no Active bullet of its own because it delivered the route the dxa and Ghidra hypotheses needed rather than either hypothesis; Active rewritten to four standing hypotheses that survive the milestone, with the note that `REQUIREMENTS.md` is deleted at the close and rewritten by `/gsd-new-milestone`; Out of Scope re-audited with **nothing removed** and this milestone's twelve owner-decided additions named; Context rewritten to the v0.8.0 codebase (~184k lines, six host tools, dxa 0.1.5 and Ghidra 12.1.3 as new declared prerequisites) with "Known issues" re-scoped from v0.7.0 to v0.8.0; Current State rewritten and the prior v0.7.0 narrative compressed to a "Prior milestone" paragraph since its detail already stands under `## Shipped: v0.7.0`; `## Current Milestone: v0.8.0` renamed to `## Shipped: v0.8.0` with its open-time scoping text preserved verbatim and labelled as the superseded forecast; `## Next Milestone Goals` re-grounded on v0.9.0 with five dated notes on what v0.8.0 changes about that plan; three Key Decisions rows added for the close itself — closing without a milestone audit for the **fourth** consecutive time, disclosing the same 8 un-acknowledgeable Phase 23 table rows a **second** time, and skipping quick-task archival). Previously 2026-09-06 after Phase 38 (PROOF-01..03 on Real Cracked Code) — the `PROOF-01`..`PROOF-03` hypothesis moved from Active to Validated with all three verdicts stated as measured (including PROOF-02's `not-exercised`, which is a statement about this corpus at the depths searched and not a clean bill of health), and three Key Decisions rows added: the `not-exercised` verdict itself, Ghidra-independent enumeration ordered before the Ghidra run, and real-release figures stated beside rather than in place of the fixture figures. **Five Active bullets from Phases 33, 35 and 36 remain unmoved** and are left for the v0.8.0 milestone close's full evolution review, which is where prior milestones audited them. Previously 2026-09-05 after Phase 37 (The Importer and the Automatic Annotation Join) — the `AUTO-01`..`AUTO-07` hypothesis moved from Active to Validated, and one Key Decisions row added for the const-write round-trip forced by code-review `CR-01`. Previously 2026-09-04 after Phase 34 (The Host-Tool Execution Seam) — one Key Decisions row added for the seam and its ban; no Active requirement moved, since Phase 34 delivers the route the dxa and Ghidra hypotheses need rather than either hypothesis itself. Previously 2026-09-02 at the **start of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (`## Current Milestone` added; Active rewritten from the empty placeholder to this milestone's seven hypotheses; `## Next Milestone Goals` narrowed to v0.9.0 now that both items standing there are scoped). Previously 2026-09-01 at the **close of milestone v0.7.0 — Own the Annotation Store** (full evolution review: What This Is, Core Value, all seven Active requirements moved to Validated, Out of Scope audited, Context and Current State rewritten, six Key Decisions rows added). Previously 2026-09-01 after Phase 32 (The Deletion and the Grep Gate) — the last phase of milestone v0.7.0. Previously 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
+*Last updated: 2026-09-10 at the **close of milestone v0.9.0 — The Text Channel and the Runtime Evidence Layer** (full evolution review). "What This Is" gained a dated v0.9.0 paragraph rather than a rewrite, correcting the skill count to **nine** against a measured tree (seven at the v0.8.0 tag; `c64-petcat` and `c64-disk-access` are this milestone's). Core Value gained a dated v0.9.0 paragraph and was **confirmed unmoved** — the milestone widened what "drive" means to two concurrent channels rather than shifting the ONE thing. **Two Active bullets moved to Validated**: the text-channel hypothesis, which had deliberately stood through Phases 39, 41 and 42 under this project's convention that a hypothesis spanning phases is audited whole at the close (`CHAN-01`..`CHAN-05`), and the text-format parser hypothesis (`PARSE-01`..`PARSE-04`); the other four v0.9.0 requirement families (`PREP-*`, `EVID-*`, `PROOF-04`) were already moved by their own phase transitions, so all 20 in-scope requirements are now Validated. Active was rewritten to the rebuild half as v1.0.0's presumptive scope, plus — new at this close — an explicit **inherited test-suite debt** block naming the 3-failure `test:automated` floor and the `audit-root-args.test.ts` race as v1.0.0's inheritance rather than leaving them only in STATE.md. Out of Scope was re-audited with **nothing removed**, and the audit note names the one boundary v0.9.0 **deliberately reversed** on evidence (dialling `-remotemonitor`, excluded by v0.8.0, delivered here after a `go` gate) plus two adjacent entries confirmed rather than reversed. Context was rewritten to the v0.9.0 codebase against measured figures (~209k lines; 62 fork / **46** stock tools, up from 38; **25** `anno_*` tools, up from 21; nine skills; `SCHEMA_VERSION` 4) and records that **no new npm dependency and no new external prerequisite** were added — `c1541` and `petcat` resolve as siblings of the already-resolved `x64sc`. "Known issues" was re-scoped from v0.8.0 to v0.9.0, and two of its carried items are struck as **fixed** (`WR-03`; `PROOF-01`'s missing external check) rather than restated. Current State was rewritten and the prior v0.8.0 narrative collapsed into a `<details>` block. `## Current Milestone: v0.9.0` was renamed to `## Shipped: v0.9.0` with its open-time scoping text preserved verbatim, and the two deliberate scope departures named against it (`PREP-03` withdrawn by owner direction, `PREP-05` added by owner direction, count held at 20). `## Next Milestone Goals` was re-grounded on v1.0.0 with six dated notes on what v0.9.0 changes about that plan — the headline being that the dependency stated at the v0.8.0 close (the runtime-evidence layer sits upstream of the rebuild half) is now **discharged**, and that `EQUIV-*`'s ceiling now has a real instrument under it because `chis` returns per-entry cycle counts on genuine 3.9. **Five Key Decisions rows added** for Phases 39 and 41, which had none: freezing `CHAN-01`'s rules and totality proof before taking any measurement; honouring the `go`; routing both channels through one FIFO mutex rather than two locks (which forced `vice_device_console`/`vice_warp_set` to register `needsSession:false` to avoid self-deadlock); reporting contention as `live` with a named holder instead of the destructive `wedged` verdict; and deleting the warm floor's speculative pre-launching outright. Closed **without a milestone audit for the fifth consecutive time** and with the same 8 un-acknowledgeable Phase 23 table rows disclosed for the **third** time; phase directories again NOT archived, per the v0.7.0-measured decision. Previously 2026-09-10 after Phase 44 (PROOF-04 — The Independent External Check), the **last phase of milestone v0.9.0**, which closed at 3/3 plans with verification `passed` 3/3 observable truths and `PROOF-04` Complete. **One Active bullet moved to Validated** — `PROOF-01`'s missing independent external check — on the same single-phase-ownership test Phase 43 applied: this hypothesis is owned by Phase 44 alone, so the hypothesis-spanning-phases-waits-for-the-milestone-close convention does not apply to it. **The text-channel bullet is still deliberately standing** and now carries **three** unaudited phases (39, 41, 42) — unchanged from Phase 43, and now the milestone close's to audit. Four Key Decisions rows added: closing `PROOF-01`'s reversal condition by the **text-channel** branch rather than waiting for a `CPUHISTORY_GET` this host's VICE 3.9 cannot provide, and naming which branch was taken; proving producer independence **structurally** with planted-violation controls in *both* directions rather than in prose; recording **two** anchor depths beside each other (168/45072 licensed at hit 50, 434/45072 narrowed at hit 3000, one identical subject digest) rather than publishing the single most defensible number; and gating the findings record with a script that re-derives every figure from the transcripts alone, proven non-vacuous against a planted denominator. Nothing moved to Out of Scope and "What This Is" is unchanged — the phase validated planned scope and discovered no new boundary. Phase 44 closed **PARTIAL on Nyquist by design** (9 deliverables automated and green, 4 manual-only) because its central criterion is a *measurement*: a CI assertion of a specific false-positive count would be circular. Security closed `threats_open: 0` across 18 threats at ASVS L1. Two `phase.complete` write defects were repaired by hand rather than accepted — the ROADMAP Progress row left at "In Progress" with no date, and STATE.md's `current_phase_name` dropped with the plan counter reset to "Not started" over a 3/3 phase. Previously 2026-09-10 after Phase 43 (The Runtime Evidence Layer), which closed at 7/7 plans with verification `passed` 5/5 and all six of `EVID-01`..`EVID-06` Complete. **One Active bullet moved to Validated** — the runtime-evidence hypothesis — because unlike the text-channel bullet beside it, this one is owned by a *single* phase rather than spanning several, so this project's hypothesis-spanning-phases-waits-for-the-milestone-close convention does not apply to it. The text-channel bullet is deliberately still standing and now carries **three** unaudited phases (39, 41, 42) rather than two. Two Key Decisions rows added, both for verdicts this phase was structured to reach *before* the code that depends on them: `EVID-06`'s instrumentation-perturbation A/B (`no-perturbation`, measured live on genuine stock VICE 3.9 at two anchor depths, each gated by a passing control-of-the-control) taken before the evidence table existed rather than retrofitted onto a shipped key; and `EVID-02`'s `reaffirm-refusal`, reached from a factual check that **falsified** the v3 bump's own recorded justification (two releases now postdate the store) yet still observed a null result, and chose the reversible direction with its one-machine basis and its version-5 reversal condition recorded beside it. Nothing moved to Out of Scope and "What This Is" is unchanged — the phase validated planned scope and discovered no new boundary. The phase's code review closed 0 Critical / 2 Warning / 1 Info: both warnings were real and fixed in shipped code (a write path that skipped `base_revision` staleness checking, and a count read outside its own transaction), and the Info was declined on evidence that the guard it asked for already existed. Previously 2026-09-10 after Phase 42 (The Text-Format Parsers and Their Two-Binary Fixtures), which closed at 16/16 plans across two gap-closure rounds with verification `passed` 5/5 and all four of `PARSE-01`..`PARSE-04` Complete. **No Active bullet moved**, deliberately: Phase 42 delivers the parsers that sit on top of the text channel, but the v0.9.0 hypothesis a reader would compare it against — "the text-monitor channel is claimable as a *second* client without corrupting the binary client's view" — spans Phases 39, 41 and 42, and this project's convention is that a hypothesis spanning phases is audited as a whole at the milestone close, where Phases 38 and 41 left theirs standing for the same reason. **Phase 41 did not evolve this file at all** (no `docs(project): evolve PROJECT.md after Phase 41` commit exists; the last evolution was Phase 40's), so that bullet now carries two unaudited phases rather than one — named here so the milestone close finds it rather than inheriting it silently. One Key Decisions row added, for gap round 2's `CR-02`: closing a per-call cache-category defect by making the category error unrepresentable (a pure verdict builder plus a frozen never-cached command set closing write, read and in-flight-memo paths) rather than by tuning the cache, proven live on genuine stock VICE 3.9. Nothing moved to Out of Scope and "What This Is" is unchanged — the phase validated planned scope and discovered no new boundary. Previously 2026-09-08 after Phase 40 (The Three Preprocessing Host Tools) — the fourth v0.9.0 hypothesis moved from Active to Validated as `c1541` and `petcat`, with three scope notes attached rather than folded into the line: `cartconv`/`PREP-03` was **withdrawn by owner direction before any of it was built** (so the three-tool hypothesis shipped as two, and the missing third is named so it cannot read as delivered); the `.d64` supersession the phase planned to **defer** was reached and executed instead, deleting `d64-parse.mjs` and `anno-d64.ts`; and `PREP-05` was added mid-phase by owner direction at the UAT, whose one major issue took a four-plan gap round (`G-40-1`) to close. Two Key Decisions rows added — the in-phase parser supersession, and reaching the one tool-written root through a non-dotted alias symlink after measurement falsified the recorded "unavoidable external-tool constraint". **No Out of Scope entry was added for `cartconv`**, deliberately: withdrawn requirements are recorded in `REQUIREMENTS.md`'s Excluded table, and this section is re-audited as a whole at the milestone close, where prior milestones audited it — the withdrawal is instead named in the Validated entry a reader would compare against. Previously 2026-09-06 at the **start of milestone v0.9.0 — The Text Channel and the Runtime Evidence Layer** (`## Current Milestone: v0.9.0` added below `## Shipped: v0.8.0`; Active rewritten from four standing hypotheses to this milestone's four plus the three it deliberately does NOT take, each re-dated rather than dropped, with the rebuild half's re-map from v0.9.0 to v1.0.0 stated in the bullet itself; two Out of Scope entries added — the owner's 2026-09-06 exclusion of text-monitor assemble/disassemble and `x64`↔`x64sc` switching, and the explicit, reasoned REVERSAL of v0.8.0's "dialling the `-remotemonitor` text channel at all" exclusion, which is superseded here and left standing there. Phase numbering continues at 39; phase directories were again NOT archived, per the measured v0.7.0 decision.) Previously 2026-09-06 at the **close of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (full evolution review: "What This Is" and Core Value each gained a dated v0.8.0 paragraph rather than a rewrite; the **five** Active bullets from Phases 33, 35 and 36 that the Phase 38 transition deliberately left standing were moved to Validated together with a **sixth** entry for Phase 34's host-tool seam, which had no Active bullet of its own because it delivered the route the dxa and Ghidra hypotheses needed rather than either hypothesis; Active rewritten to four standing hypotheses that survive the milestone, with the note that `REQUIREMENTS.md` is deleted at the close and rewritten by `/gsd-new-milestone`; Out of Scope re-audited with **nothing removed** and this milestone's twelve owner-decided additions named; Context rewritten to the v0.8.0 codebase (~184k lines, six host tools, dxa 0.1.5 and Ghidra 12.1.3 as new declared prerequisites) with "Known issues" re-scoped from v0.7.0 to v0.8.0; Current State rewritten and the prior v0.7.0 narrative compressed to a "Prior milestone" paragraph since its detail already stands under `## Shipped: v0.7.0`; `## Current Milestone: v0.8.0` renamed to `## Shipped: v0.8.0` with its open-time scoping text preserved verbatim and labelled as the superseded forecast; `## Next Milestone Goals` re-grounded on v0.9.0 with five dated notes on what v0.8.0 changes about that plan; three Key Decisions rows added for the close itself — closing without a milestone audit for the **fourth** consecutive time, disclosing the same 8 un-acknowledgeable Phase 23 table rows a **second** time, and skipping quick-task archival). Previously 2026-09-06 after Phase 38 (PROOF-01..03 on Real Cracked Code) — the `PROOF-01`..`PROOF-03` hypothesis moved from Active to Validated with all three verdicts stated as measured (including PROOF-02's `not-exercised`, which is a statement about this corpus at the depths searched and not a clean bill of health), and three Key Decisions rows added: the `not-exercised` verdict itself, Ghidra-independent enumeration ordered before the Ghidra run, and real-release figures stated beside rather than in place of the fixture figures. **Five Active bullets from Phases 33, 35 and 36 remain unmoved** and are left for the v0.8.0 milestone close's full evolution review, which is where prior milestones audited them. Previously 2026-09-05 after Phase 37 (The Importer and the Automatic Annotation Join) — the `AUTO-01`..`AUTO-07` hypothesis moved from Active to Validated, and one Key Decisions row added for the const-write round-trip forced by code-review `CR-01`. Previously 2026-09-04 after Phase 34 (The Host-Tool Execution Seam) — one Key Decisions row added for the seam and its ban; no Active requirement moved, since Phase 34 delivers the route the dxa and Ghidra hypotheses need rather than either hypothesis itself. Previously 2026-09-02 at the **start of milestone v0.8.0 — Frame-Exact Capture and the Two Engines** (`## Current Milestone` added; Active rewritten from the empty placeholder to this milestone's seven hypotheses; `## Next Milestone Goals` narrowed to v0.9.0 now that both items standing there are scoped). Previously 2026-09-01 at the **close of milestone v0.7.0 — Own the Annotation Store** (full evolution review: What This Is, Core Value, all seven Active requirements moved to Validated, Out of Scope audited, Context and Current State rewritten, six Key Decisions rows added). Previously 2026-09-01 after Phase 32 (The Deletion and the Grep Gate) — the last phase of milestone v0.7.0. Previously 2026-08-29 after Phase 28 (The Store Core). Previously 2026-08-27 after Phase 27 (Shared Seams Extracted). Previously 2026-08-26 at the **start of milestone v0.7.0 — Own the
 Annotation Store**. Written after Phase 23's pre-committed gate returned
 `no-go` (rule `R1`). Changes at this open: v0.6.0 moved from "Current
 Milestone" to "Held", shipping Phase 23 alone, with Phases 24 and 26 **held**

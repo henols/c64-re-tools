@@ -1,17 +1,7 @@
 ---
-created: 2026-09-07T09:46:41.197Z
-title: Move all tests into a separate test folder
-area: testing
-severity: minor
-files:
-  - src/mcp/vice/*.test.ts (154 test files, colocated)
-  - src/mcp/vice/package.json:122 (test script glob `node --test '*.test.*'`)
-  - src/mcp/vice/test-gate.mjs:122-133 (MANUAL_ONLY_TESTS, bare basenames)
-  - src/mcp/vice/ci-suite-coverage.test.ts:84-167 (suite-directory walk + SKILLS_GLOB_PROOF)
-  - scripts/check-npm-packages.mjs:95-102 (test-file/fixture tarball leak checks)
-  - src/mcp/vice/tsconfig.json
-  - CLAUDE.md (Conventions: "Test files are colocated ... next to the module under test")
-  - installer/wire-mcp.test.mjs, src/skills/*/scripts/*.test.mjs (9 more, outside src/mcp/vice)
+audit_acknowledged:
+  milestone: v0.9.0
+  at: 2026-09-10
 ---
 
 ## Problem

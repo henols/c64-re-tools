@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "ghidra-run-dir-outside-one-root: Ghidra per-run project directories are created at <repoRoot>/tools/ghidra-runs/, outside the D-33 one tool-written root (.c64-re-tools/). Owner REJECTED this location with two hard requirements (R1: not under tools/; R2: symlink created by the broker so container tooling keeps working). Find the root cause of why the design landed outside the root and determine precisely what must change."
 created: 2026-09-08T00:00:00Z
 updated: 2026-09-08T00:00:00Z
+audit_acknowledged:
+  milestone: v0.9.0
+  at: 2026-09-10
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -299,6 +303,7 @@ files_changed: []
 ## Consumer Census (grep -a, node_modules/.git/worktrees excluded)
 
 ### Production code (4 sites, 1 authoritative)
+
 - src/mcp/vice/ghidra-project.mts:94   GHIDRA_RUNS_DIR_NAME = "ghidra-runs"
 - src/mcp/vice/ghidra-project.mts:396  join(repoRoot, "tools", GHIDRA_RUNS_DIR_NAME)  <-- THE defect
 - src/mcp/vice/ghidra-project.mts:72-94 the doc comment recording the exception as fact
@@ -306,11 +311,13 @@ files_changed: []
 - (indirect, no literal) host-tool.mts:1454 runLogPath = join(dirname(projectLocation), ...) -- inherits the location
 
 ### Config (3 stanzas, 2 files)
+
 - .gitignore:19-24  the /.c64-re-tools/ stanza's "NOT covered by this stanza" carve-out comment
 - .gitignore:27-36  /tools/ghidra-runs/  (+ the FALSE "tools/ holds tracked tooling" claim)
 - .gitignore:137-144 /src/mcp/vice/tools/ghidra-runs/  (the nested-repo-root second entry)
 
 ### Tests (5 files)
+
 - ghidra-project.test.ts:71,76,140,141,198,206 + ~30 pinned "/repo/tools/ghidra-runs/r1" literals
 - host-tool.test.ts:1144,1148,1273-1274,2167-2168
 - ghidra-live.test.ts:29,57,244,267,938,980,1484  (reconstructs the run-log path itself)
@@ -318,6 +325,7 @@ files_changed: []
 - fixtures/ghidra/runlog-benign-base0-conflict.txt, runlog-script-error.txt (captured real logs; paths are historical data, no change needed)
 
 ### Docs asserting the exception (must be corrected)
+
 - CLAUDE.md            -- Configuration section, the D-33 bullet's ghidra.analyze exception
 - .planning/STATE.md:1111 -- "Verified directly" decision entry
 - .planning/phases/40-.../40-01-SUMMARY.md:12,60,61,99,107,159,167 + D5 rationale

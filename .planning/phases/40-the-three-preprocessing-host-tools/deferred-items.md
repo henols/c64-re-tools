@@ -32,6 +32,7 @@ and `docs-linerefs.test.ts`'s own planted-violation fixture — see
 **Not fixed here** — either add the missing `REQUIREMENTS.md` entries or
 retire the register entries that cite them, in whichever future phase owns
 that annotation-store work.
+  status: acknowledged
 
 ## 2026-09-08, plan 40-05: a SECOND, orthogonal concurrent-scanner race in `audit-root-args.test.ts`, pre-existing
 
@@ -83,3 +84,4 @@ run against any other file that plants a scratch fixture inside `src/skills/`
 mid-suite — a cross-file coordination this repository's test runner
 configuration does not currently provide. Left for whichever future pass owns
 `audit-root-args.test.ts`'s own hygiene.
+  status: acknowledged

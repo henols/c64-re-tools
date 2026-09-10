@@ -236,7 +236,7 @@
     {
       "number": "44",
       "name": "PROOF-04 — The Independent External Check",
-      "status": "in_progress"
+      "status": "complete"
     }
   ],
   "next": {
@@ -244,5 +244,5 @@
     "label": "Show progress",
     "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-10T16:30:44.106Z"
+  "updated_at": "2026-09-10T17:07:56.062Z"
 }

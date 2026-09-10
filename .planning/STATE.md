@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
-current_phase: 44
-current_phase_name: PROOF-04 — The Independent External Check
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 44 complete — all phases complete
-last_updated: "2026-09-10T16:33:50.696Z"
+last_updated: "2026-09-10T17:07:55.961Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 44 complete
-state_head: 45389fd9c328d89022915d11da46a2c7ef656c32
+last_activity_desc: Milestone v0.9.0 completed and archived
+state_head: 92db80db299d6959ddc7741082f0772d75d554b0
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 51
   completed_plans: 51
   percent: 100
+current_phase: 44
+current_phase_name: PROOF-04 — The Independent External Check
 ---
 
 # Project State
@@ -227,30 +227,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 44 (PROOF-04 — The Independent External Check)
-Plan: 3 of 3 (complete)
-Status: All phases complete
-Last activity: 2026-09-10 — Phase 44 complete
-
-**Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
-were measured live against genuine unpatched stock VICE 3.9 and every one came
-back at its best value: `IDLE_COEXIST: clean`, `FOREIGN_HALT_VISIBILITY: visible`,
-`CONCURRENT_INFLIGHT: clean`, `CROSS_CHANNEL_RESUME: clean`,
-`DISCONNECT_RECOVERY: recovers`, `HITCOUNT_INVARIANT_HOLDS: holds`,
-`TEXT_SINGLE_CLIENT: single`. Both blocking UNVERIFIED items are closed, and
-neither pre-mapped `degrade` narrowing triggered. **Phase 41 therefore builds the
-in-process async mutex** — both channels connected for the session's lifetime, the
-`channel` discriminator kept for bookkeeping only — not the broker lease and not
-the connect-gate. Phase 43's capture step stays concurrent. Verdict and its
-derivation: `docs/phase39-dual-channel-coexistence-gate-findings.md`. Phase 40
-(`c1541` / `petcat` — `cartconv` removed from scope 2026-09-08, see
-`docs/phase40-preprocessing-tools-decisions.md`) depended on neither the
-verdict nor the channel, and is now complete: `d64-parse.mjs` and `anno-d64.ts`
-are deleted, `c1541` is the ONE `.d64` route, `petcat.decode` ships with a
-named-decline verdict for computed `SYS` targets, and `.c64-re-tools/` is the
-one root every tool-written file lands under (Ghidra's per-run projects
-excepted, for a hard technical reason). `PREP-01` and `PREP-02` are now
-Complete; `PREP-03` is withdrawn, struck rather than deleted.
+Phase: Milestone v0.9.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-10 — Milestone v0.9.0 completed and archived
 
 ## Performance Metrics
 
@@ -2190,6 +2170,60 @@ close should recognise them by this note and **re-disclose rather than
 re-investigate**. The fix belongs upstream in the scanner, not in this project's
 evidence files.
 
+### Acknowledged at the v0.9.0 close (2026-09-10)
+
+The pre-close artifact audit reported **14** open items against **33** already
+suppressed by earlier closes. **6 were newly acknowledged through
+`query audit-open acknowledge`** — 1 debug session, 2 pending todos, 1 UAT file
+and 2 phase deferred items. The remaining **8 could not be acknowledged by any
+CLI path** and are disclosed below rather than suppressed. They are the *same* 8
+as at the v0.7.0 and v0.8.0 closes.
+
+**The v0.8.0 note's instruction was followed, and its prediction held.** That
+note said a future close should "re-disclose rather than re-investigate". This
+close re-confirmed the mechanism once, cheaply — all 8 refuse with
+`no deferred item matched --text`, and all 8 are markdown **table rows**
+(`.planning/phases/23-the-real-release-gate-go-degrade-no-go/deferred-items.md`
+lines 71-74 and 149-154), not deferred-item bullets. This is the **third
+consecutive close** to hit them. Nothing about the mechanism changed; the v0.7.0
+writer note remains the record. The fix belongs upstream in the scanner.
+
+Acknowledgment is verdict-preserving and self-invalidating: it never rewrites an
+artifact's own verdict, and the suppression lapses the moment the artifact's
+observed state changes again.
+
+**Counts:** 6 newly acknowledged, 33 carried forward from prior closes, 8
+disclosed-but-unsuppressable. `closeout_type=override_closeout`.
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| debug_sessions | ghidra-run-dir-outside-one-root | diagnosed — reasoning_checkpoint | 2026-09-10 | v0.9.0 |
+| todos | 2026-09-07-move-all-tests-into-a-separate-test-folder.md | (presence-only) | 2026-09-10 | v0.9.0 |
+| todos | 2026-09-07-remove-pre-warm-launch-vice-on-first-request.md | (presence-only) | 2026-09-10 | v0.9.0 |
+| uat_gaps | 40/40-UAT.md | diagnosed — 0 pending scenarios | 2026-09-10 | v0.9.0 |
+| deferred_items | 40/deferred-items.md: plan 40-01 — anno-register/anno-import requirement-id gap | acknowledged | 2026-09-10 | v0.9.0 |
+| deferred_items | 40/deferred-items.md: plan 40-05 — second concurrent-scanner race in `audit-root-args.test.ts` | acknowledged | 2026-09-10 | v0.9.0 |
+
+**On the 1 debug session.** `ghidra-run-dir-outside-one-root` is `diagnosed`, not
+open work: Phase 40 plans 40-06/40-09 landed the symlink-handle fix it diagnosed
+(`<repoRoot>/c64-re-tools` -> `.c64-re-tools`), and the live-Ghidra SYMLINK GUARD
+test in `ghidra-live.test.ts` covers it. The session file was never closed out.
+
+**On the 2 todos.** Both are real, unfixed, and stay pending — acknowledging a
+todo is presence-only and asserts nothing about the work. Both remain listed
+under `.planning/todos/pending/` and keep their `AUDIT-04` ledger rows above.
+
+**On the 1 UAT gap.** Phase 40's `40-UAT.md` reports **0 pending scenarios**; the
+scanner flags its `diagnosed` status, not an unanswered scenario.
+
+**On the 2 Phase 40 deferred items.** Both are pre-existing test-suite defects
+that Phase 40 measured, proved pre-existing (by stashing its own changes and
+reproducing them), and explicitly declined to fix out-of-scope. The first is the
+documented 3-failure `test:automated` floor in
+`anno-register.test.ts`/`anno-import.test.ts`; the second is the
+`audit-root-args.test.ts` scratch-fixture race. Both are still live at this close
+and are v1.0.0's inheritance.
+
 ### Carried forward from earlier closes
 
 | Category | Item | Status | Deferred At |
@@ -2723,10 +2757,4 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Plan Phase 39 with `/gsd-discuss-phase 39` (or `/gsd-plan-phase 39` to skip discussion)
-- Phase 39 is a pre-committed go / degrade / no-go gate whose deliverable is
-  **evidence, not code**, and whose verdict selects which serialization shape
-  Phase 41 builds. Its rules must be committed before any measurement is taken,
-  and `monitor-lock.ts` must not be written in Phase 39 in any shape.
-- Phase 40 (the three preprocessing host tools) is fully independent of Phase 39's
-  verdict and of the text channel, and can run beside it from day one.
+- Start the next milestone with /gsd-new-milestone

@@ -4,6 +4,7 @@ title: Remove pre-warm; launch VICE only on first request
 area: broker
 severity: minor
 files:
+
   - src/mcp/vice/broker-launch.mts:1148
   - src/mcp/vice/broker-launch.mts:1277
   - src/mcp/vice/vice-broker.mts:939
@@ -11,6 +12,10 @@ files:
   - src/mcp/vice/vice-broker.mts:680
   - src/mcp/vice/vice-broker.mts:181
   - src/mcp/vice/broker-e2e.test.ts:372
+
+audit_acknowledged:
+  milestone: v0.9.0
+  at: 2026-09-10
 ---
 
 ## Problem

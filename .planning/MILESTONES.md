@@ -1,5 +1,89 @@
 # Milestones
 
+## v0.9.0 The Text Channel and the Runtime Evidence Layer (Shipped: 2026-09-10)
+
+**Phases completed:** 6 phases, 51 plans, 123 tasks
+
+**Key accomplishments:**
+
+- Froze the CHAN-01 go/degrade/no-go decision rules (R1..R15) and their 3,888-tuple executable totality proof in one commit, before any of this phase's seven measurements exist.
+- Corrected `07-RESEARCH.md`'s Pitfall 5 and three distorted `CLAUDE.md` constraints to name `-remotemonitor`/`monitor_network.c` as the genuinely reachable text-monitor route, then closed the originating todo through the two-directional ledger guard.
+- IDLE_COEXIST: clean, measured live on genuine stock VICE 3.9 with both monitor channels bound from one directly-spawned process -- the phase's sole no-go trigger is now a written fact, not an assumption.
+- FOREIGN_HALT_VISIBILITY: visible and CROSS_CHANNEL_RESUME: clean, both measured live on genuine stock VICE 3.9 with both monitor channels bound from one directly-spawned process -- the two halt-crossing questions this phase exists to answer are now written facts, not assumptions.
+- Live-measured `CONCURRENT_INFLIGHT: clean` (0ms max write gap) and `HITCOUNT_INVARIANT_HOLDS: holds` against genuine stock VICE 3.9 — the milestone's first blocking UNVERIFIED item is now a settled, recorded fact rather than an assumption, with the D-11 pre-mapped narrowing read before the answer existed.
+- Live-measured `DISCONNECT_RECOVERY: recovers` (near-instant, ~100ms, self-healing after an uncatchable kill of a separate victim process) and `TEXT_SINGLE_CLIENT: single` (via `accepted-then-silent`) against genuine stock VICE 3.9 — the milestone's second and final blocking UNVERIFIED item is now a settled, recorded fact, and the last two of the phase's seven gate inputs are real.
+- Twelve real payload+sidecar pairs captured live from genuine stock VICE 3.9 and fork VICE 3.10 over the text monitor, plus `textmon-fixtures.ts` -- a sibling loader that refuses an incomplete provenance sidecar, proven by one new corpus-free test; no command in the set was unsupported on either binary.
+- CHAN-01 fires `go` (rule `R15`) — the first `go` any of this project's four go/degrade/no-go gates has returned — derived from all seven transcribed values and bound into Phases 41-44's ROADMAP entries with no test guard.
+- Six scattered tool-written locations collapse into one `.c64-re-tools/` root (a seventh, Ghidra's per-run projects, is exempted for a hard technical reason discovered mid-execution); WR-03's two never-throw holes in `host-tool.mts` close with committed regression tests.
+- One `petcat.decode` tool id detokenizes a BASIC stub over the host-tool seam and resolves its `SYS` handover address when literal, declining by name with the unresolved expression quoted verbatim when it isn't -- backed by a new `c64-petcat` skill and an authored computed-`SYS` fixture.
+- A dedicated `host-tool-oracle.test.ts` proves, for all six `host_tool` ids, that the real positive-shape classifier and a deliberately-wrong exit-status-only predicate DISAGREE on a planted-failure fixture; the `c64-disk-access` skill's new `audit` subcommand ports `d64-parse.mjs`'s fakery detector onto the seam with a sharper per-sector allocation check and a chain guard, cross-validated against a real, independently-produced release image.
+- Re-cut c64-ram-capture and c64-program-recon's descriptions to be true after 40-02/40-03's two new skills, corrected stale skill-count prose in two coverage scripts, and closed one of two carried scratch-artifact test races (with the second formally assessed and left unforced).
+- One dated decisions document records the `d64-parse.mjs` → `c1541` supersession and the `cartconv`/`PREP-03` removal; four locked statements across ROADMAP.md and REQUIREMENTS.md are amended in place with dated riders rather than deleted, correcting requirement coverage from 20/20 to 19/19; three resolved todos fold into the completed tree with the deferred-items ledger corrected in the same commits; PREP-01 flips Complete on the last declaring plan.
+- Re-pointed `resolveGhidraProject()` onto a broker-mintable, never-repairing symlink handle (`<repoRoot>/c64-re-tools` -> `.c64-re-tools`) so Ghidra's per-run project data lands physically under the single tool-written root while still satisfying Ghidra's own absolutized-path dot-segment refusal.
+- Five forward-looking documents (repo-root.ts, host-tool.mts, CLAUDE.md, docs/phase34-host-tool-seam-decisions.md, plus a new census gate) now say what is true; four historical records plus one addendum carry dated superseding notes instead of rewrites -- and the load-bearing "the literal has exactly one occurrence" claim can no longer go false silently.
+- REQUIREMENTS.md/ROADMAP.md/STATE.md bookkeeping brought into agreement with what plans 40-08/40-09/40-10 actually landed, the live-Ghidra symlink-guard todo closed with a two-half Resolution, and `npm run test:automated` confirmed back at its documented three-failure floor.
+- Opened the `-remotemonitor` text channel end to end for the first time in this project's history -- a stock grant now carries its text-monitor port to the container, `textConnect()` claims and dials it, and `TextMonitorClient` frames one real `device c:`/`memmapshow` round trip against genuine stock VICE 3.9, surviving a split prompt, prompt-shaped text mid-stream, a passive banner, and an over-cap response.
+- Built `channel-lock.ts` -- a hand-rolled FIFO async mutex with a readable holder record -- and routed both the binary-side `withStockSession()`/`withDerivedTool()` adapters and the text-side `TextMonitorClient.command()` through it, then MEASURED live against genuine stock VICE 3.9 that the same checkpoint's id/address/enabled state agree across both channels and that a text command attempted during a held binary `vice_run_until` wait is refused rather than landing mid-wait.
+- Promoted `InstanceRecord.monitorClient` to a per-channel holder map (`monitorClients`) and threaded an explicit `channel` field through the broker control wire, the container-side client, and both connect paths, so a second MCP process claiming an instance's text-monitor socket is now refused by name -- naming the holder and the channel -- instead of vanishing into stock's measured accepted-then-silent wire state.
+- A contended instance now answers `live` with `evidence.channelContention` naming the holder instead of the destructive `wedged` verdict — guarded structurally in `vice_diagnose`'s own handler, not merely warned about in prose — and `vice-wedge-triage`'s playbook and provenance table ship the fix in this same phase.
+- A stock launch that cannot bind a text-monitor port now fails the whole acquire instead of degrading, and the warm floor's speculative pre-launching is deleted outright -- VICE launches strictly on demand, with its launching-to-ready promotion step surviving as its own function.
+- Shipped `vice_device_console` and `vice_warp_set` (registered `needsSession:false` after measuring that the plan's own suggested binary-locking adapter would self-deadlock against `channel-lock.ts`'s single cross-channel mutex), then MEASURED — not merely made available — the `default_memspace` remedy live: a real drive checkpoint froze main-CPU stepping and `device c:` restored it, against genuine stock `/usr/bin/x64sc` VICE 3.9.
+- Pure, import-free `parseAccessMap()`/`accessMapRanges()` parser for VICE's `memmapshow` text-monitor output, wired end to end as the stock-only `vice_memmap_show` MCP tool through the existing `withTextTool()` seam, with execute proven as its own bit from real captured bytes plus a declared-synthetic RAM half.
+- Two pure, import-free parsers -- `parseCpuHistory()` for VICE's `chis` output and `parseBacktrace()` for `bt` -- both proven against real stock-3.9 and fork-3.10 captures, with every closed set (processor flags, memspace markers, register-label order, frame origins, SP-offset shape) refusing by name on drift rather than decoding a plausible-looking wrong answer.
+- Two pure, zero-import parsers -- `parseFlatProfile()` decoding VICE's U+202F narrow-no-break-space thousands separator via ASCII-space-only tokenization (never a whitespace-class split), and `parseIoRegisters()` decoding the VIC-II register dump plus its eight-column sprite table sliced at header-derived offsets -- completing PARSE-02's four structured text-monitor results.
+- A frozen per-verb spec table plus `buildTextCommand()` -- the one place a parameterized text-monitor command string is ever built -- lets `chis`, `prof flat`, and `io` carry a caller-chosen, typed, bounded value while `TEXT_COMMAND_ALLOWLIST` stays exactly its original eight literals; `isAllowlistedTextCommand()` accepts only a spec's own canonical rendering, proven by a re-render round trip and by controls showing every refusal still happens before a byte reaches the socket.
+- In-process, identity-keyed probe (`text-capability-probe.ts`) that answers PARSE-04: a text-monitor command disabled by a VICE build flag is named by command, capability, binary and remedy -- with memmapshow/chis merged into one remedy sentence (they share one macro), bt/prof flat never claiming a build gap (VICE gates neither), and io's own two runtime degradation strings reported as a chip fact, not a build fact.
+- A phase's own citation record with every drift claim independently re-verified against two host-local VICE source/NEWS trees (catching two wrong line numbers in the phase's own research document along the way), landing corrected version attributions and a corrected build-guard claim into ROADMAP.md, REQUIREMENTS.md and CLAUDE.md without deleting or weakening anything.
+- `vice_cpu_history`/`vice_profile_flat`/`vice_backtrace`/`vice_io_registers` wired end to end through `withTextTool()`, each classifying its reply for build capability (PARSE-04) before parsing, with `vice_backtrace` deliberately landed under the fork's own existing name and a backward-compatible argument shape rather than a second vocabulary for one capability.
+- A fifth structural-guard test file, `textmon-seam.test.ts`, mechanically enforces that each of the five text-monitor formats (access map, CPU history, backtrace, flat profile, IO registers) has exactly one owning parser module and a closed, measured set of legitimate raw-text and import consumers -- with the declared sets measured against the real tree rather than assumed from the plan's own prose.
+- All five text-monitor formats (memmapshow, chis, prof flat, bt, io) decode a reply dialed live from genuine stock `/usr/bin/x64sc` (VICE 3.9), the capability probe answers capable for all five and keys on the resolved absolute binary path, and this run surfaced two genuine live-only findings — a session-boundary prompt-doubling transport artifact and a real production gap in `vice_profile_flat` — recorded honestly rather than smoothed over, alongside a genuine parser-correctness fix (`textmon-profile.ts`'s ROOT pseudo-frame).
+- Closed CR-01 -- `decodeProseLines()` no longer casts a possibly-incomplete object onto `IoDecodedState`; a dropped, renamed, or emptied required decoded-prose field now refuses `incomplete-decoded-state` by name, proven at the parser and the tool-handler layer, with a source census keeping the guard's key list honest.
+- Closed WR-02 -- `parseIoRegisters()`'s sprite-table and decoded-prose requirements are now VIC-II-only; a CIA1, CIA2 or SID address (every one inside `vice_io_registers`'s own advertised 0-65535 range) is refused by the chip's own name with its dump reported as having read cleanly, never as a malformed VIC-II reply -- and IN-01's discarded classification call is gone.
+- Closed G5 -- `text-monitor-live.test.ts`'s teardown assertion now covers the broker daemon it directly spawns (not just the emulator), a scratch-path-scoped sweep catches any unrecorded grandchild, scratch-directory removal is proven rather than assumed, and an unskipped planted-violation control proves the whole assertion can go red -- with the file's own header recording the corrected method that replaces the systemd-unit-plus-emulator-only-grep check that missed the original leak.
+- Closed G2 and G3 -- `handleProfileFlat`'s cold-profiler reply no longer reads as "could not be parsed" (it is now a named `profiling-not-started` state owned by `textmon-profile.ts`), and `text-capability-probe.ts`'s own computed `identityDisagreement` now reaches the caller of all five text tools, on the success path as well as the refusal path, through one new exported renderer.
+- Appended five gap-closure evidence blocks plus a final gate reading and a live re-run to `docs/phase42-text-format-drift-citations.md`, then returned `PARSE-03` and `PARSE-04` to Complete in `REQUIREMENTS.md` only after re-measuring both demotion causes green on the tree the round ships.
+- Live A/B against genuine stock VICE 3.9 at anchor hit depths 10 and 50 answers EVID-06 as `no-perturbation`, keeping the runtime-evidence table's run identity at the bare `(binary sha256, argv digest, seed)` triple with no `run_class` column.
+- `SCHEMA_VERSION` 4 adds `anno_evid_exec`, a durable per-address runtime-execution evidence table keyed by the bare `(image_sha256, argv_digest, seed)` triple, with a recorded, dated `reaffirm-refusal` decision for the version-3 schema gap and a proven-across-a-real-SIGKILL durability guarantee.
+- `vice_memmap_zap` clears VICE's accumulated memory-access map and proves it cleared through an observable post-zap count -- live-verified against genuine stock VICE 3.9, with a real, measured discovery about what a real clear-then-read sequence actually returns.
+- `evid-reconcile.ts`'s `reconcileObservedExecution()` -- a pure, four-bucket join of the byte-derived block table against `anno_evid_exec`'s runtime evidence that reports disagreements first, agreement as a count, and carries an explicit denominator on every count so absence can never be read as `data`.
+- `evid-ingest.ts`'s pure transform plus the new `anno_evid_ingest` MCP verb turn one `memmapshow` reply and one run identity into durable `anno_evid_exec` rows -- a row exists only for an observed execute bit, and "no row" is proven, in both directions, to mean the absence of an assertion rather than a claim about data.
+- Stood up two structurally-independent evidence producers (dxa's byte-derived classification, a live stock-VICE runtime-execution capture) and joined them through the shipped `reconcileObservedExecution()`, closing PROOF-01's named reversal condition with one live measurement: 168 false positives out of a 45072-address denominator.
+- Took two live measurements against genuine stock VICE 3.9 -- 168 false positives at anchor hit 50 (licensed, `frame-exact-region`) and 434 false positives at anchor hit 3000 (`narrowed`) -- both against the identical 45072-address denominator and the identical subject artifact plan 44-01 produced, neither run superseding the other.
+- Wrote the PROOF-04 findings record stating 168/45072 false positives at anchor hit 50 and 434/45072 at anchor hit 3000, beside PROOF-01's own recall figures rather than replacing them, and built a committed gate that re-derives every number in it from the two run transcripts alone, proven non-vacuous against a planted altered denominator.
+
+**Stats:** 6 phases (39-44, no inserted decimals), 51 plans, 123 tasks,
+20/20 in-scope requirements, 5 days (2026-09-06 → 2026-09-10), 360 commits,
+401 files changed (+188,417 / -7,702). Closeout type: `override_closeout`.
+
+**Verification:** all six phases `phase_complete` with `verification_status:
+passed`; `CHAN-01` returned **`go`** on rule `R15` — the first `go` any of this
+project's four go/degrade/no-go gates has returned.
+
+**Known verification overrides:** 6 newly acknowledged, 33 carried forward from a
+prior close (see STATE.md Deferred Items). A further **8 scanner false positives**
+could not be acknowledged by the tool and are disclosed rather than suppressed:
+all eight are markdown **table rows** inside Phase 23's evidence tables
+(`.planning/phases/23-*/deferred-items.md` lines 71-74 and 149-154), which
+`audit-open` reads as deferred items but its `acknowledge` writer cannot match
+(`no deferred item matched --text`). They are evidence, not open work.
+
+**Not run:** no `v0.9.0-MILESTONE-AUDIT.md`. Consistent with the v0.5.0, v0.7.0
+and v0.8.0 closes, which also shipped without one; the per-phase verifier ran on
+all six phases instead.
+
+**Archived:**
+
+- [`milestones/v0.9.0-ROADMAP.md`](milestones/v0.9.0-ROADMAP.md)
+- [`milestones/v0.9.0-REQUIREMENTS.md`](milestones/v0.9.0-REQUIREMENTS.md)
+
+**Phase directories deliberately NOT archived** — the standing decision since
+v0.4.0, re-measured at the v0.7.0 close: archiving them reds at least twelve
+consumers (nine `docs-*` guards, `check-guard-fates.mjs`, `anno-register.test.ts`
+DIRECTION 5, `acme-verify.test.ts`), several of them the audit instruments
+themselves. Phases 39-44 stay under `.planning/phases/`.
+
+---
+
 ## v0.8.0 Frame-Exact Capture and the Two Engines (Shipped: 2026-09-06)
 
 **Phases completed:** 6 phases (33-38, no inserted decimals), 47 plans, 118 tasks
